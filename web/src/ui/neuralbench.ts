@@ -46,7 +46,7 @@ let coastMask = (query.get('coasts') ?? '').split(',').reduce((mask, d) => {
 }, 0);
 if (query.get('temperature') === null) applyClimate();
 
-const displayIds = new Set(['auto', 'style', 'showContours', 'showWater', 'showLakes', 'overlay', 'showPins']);
+const displayIds = new Set(['auto', 'style', 'showContours', 'showWater', 'showLakes', 'showOxbows', 'overlay', 'showPins']);
 const readControls = (): Map<string, string> => new Map(controls.map(control => [control.id,
   control instanceof HTMLInputElement && control.type === 'checkbox' ? (control.checked ? '1' : '0') : control.value]));
 // A shared link describes the displayed map, even with Auto off or a request in flight.
@@ -200,8 +200,8 @@ function rasterImage(rgba: Uint8Array, n: number, attributes = ''): string {
 
 function waterSvg(h: SimpleHydrology, water: WaterBodies): string {
   const s = style(), pal = PALETTES[s === 'copernicus' ? 'parchment' : s];
-  const fill = style() === 'copernicus' ? '#237daf' : pal.lakeFill;
-  const edge = style() === 'copernicus' ? '#14527a' : pal.waterEdge;
+  // Lakes take the rivers' colour: a river runs into its lake without a seam.
+  const edge = style() === 'copernicus' ? '#14527a' : pal.waterEdge, fill = edge;
   const n = h.n, cell = EXTENT / n;
   const lakes = new Uint8Array(n * n * 4);
   const [r, g, b] = [1, 3, 5].map(k => parseInt(fill.slice(k, k + 2), 16));
@@ -213,7 +213,7 @@ function waterSvg(h: SimpleHydrology, water: WaterBodies): string {
   if (applied('riverMode') === 'vector' && rivers) {
     // Each line is split where its width class changes; pieces share their end vertex.
     // Oxbows are drawn one class thinner than their river.
-    for (const line of [...rivers.oxbows, ...rivers.rivers]) {
+    for (const line of [...(input('showOxbows').checked ? rivers.oxbows : []), ...rivers.rivers]) {
       const { points, area } = line, thinner = rivers.oxbows.includes(line) ? 1 : 0;
       let k = Math.max(0, widthClass(area[0]) - thinner), d = `M${format(points[0])},${format(points[1])}`;
       for (let i = 1; i < area.length; i++) {
@@ -526,7 +526,7 @@ el('coastAll').onclick = () => { coastMask = coastMask === 255 ? 0 : 255; schedu
 el('histogramHero').onclick = () => { [0, 0, 0, 1, 1.5].forEach((v, k) => { input(`h${k}`).value = String(v); }); schedule(); };
 el('histogramZero').onclick = () => { [0, 1, 2, 3, 4].forEach(k => { input(`h${k}`).value = '0'; }); schedule(); };
 input('server').addEventListener('change', () => { void checkService(); schedule(); });
-for (const id of ['style', 'showContours', 'showWater', 'showLakes', 'overlay']) el(id).addEventListener('change', () => { render(); saveUrl(); });
+for (const id of ['style', 'showContours', 'showWater', 'showLakes', 'showOxbows', 'overlay']) el(id).addEventListener('change', () => { render(); saveUrl(); });
 
 syncControls();
 updateView();

@@ -21,10 +21,27 @@
  * never climbs: along the meandering channel its level is the running minimum
  * of the valley floor level (the nearest thalweg node's), and the terrain
  * under the channel may exceed it by a bankfull depth only, which admits
- * false flats and shallow basins but no valley side. The belt also stays in
- * the stream's own drainage corridor, so a channel never wanders into another
- * river. Widths follow downstream hydraulic geometry (W ∝ A^0.45); the
- * meander wavelength, about 11 W (Leopold & Wolman 1960), comes out of the model.
+ * false flats and shallow basins but no valley side. The model's nodes are
+ * most of a width apart, so the channel between them is checked too, and any
+ * stretch still standing above its water gives way to the thalweg. The belt
+ * also stays in the stream's own drainage corridor, so a channel never wanders
+ * into another river. Widths follow downstream hydraulic geometry
+ * (W ∝ A^0.45); the meander wavelength, about 11 W (Leopold & Wolman 1960),
+ * comes out of the model.
+ *
+ * Steepest descent crosses the flat surface of a filled depression in
+ * straight lines, over whatever it drowns. A course crossing a depression
+ * deeper than a few metres (a lake, drawn or not) follows its floor instead,
+ * along the cheapest path where cost grows with height; it meanders there
+ * only where the floor itself is flat; a tributary whose confluence lies on a
+ * stretch its parent left that way runs down the same depression to the
+ * parent's course. Standing water as drawn (sea, lakes, ground below sea
+ * level) stops courses at its shore. A lake drains through its undrawn
+ * shoals too: water leaving it there only to fall back into it is lake, not
+ * river, and a course ending on such a shoal runs on to the drawn shore. Channels whose banks
+ * touch merge; a tributary that meets its parent away from where the parent
+ * now runs joins it along a curve that stays in the valley, or else along the
+ * parent's former thalweg; self-intersections are cut off like meander necks.
  */
 import { Rng } from '../gen/core/rng';
 import type { SimpleHydrology } from './simpleHydrology';
@@ -91,6 +108,20 @@ const GENTLE_SHARE = 0.35;
 const MEANDER_DEPTH = 0.5, MEANDER_DEPTH_PER_WIDTH = 0.02;
 /** Height the thalweg fit may reach above the course's water level, metres. */
 const CURVE_TOLERANCE = 0.3;
+/**
+ * Filled depressions deeper than this (m) are lakes: a course crosses them
+ * along their floor, whose cost grows by one cell length per `BED_HEIGHT`
+ * metres above the lowest floor on the way.
+ */
+const DEEP = 3, BED_HEIGHT = 5;
+/**
+ * Smallest oxbow drawn, in channel widths, and the least area it encloses
+ * (with the chord between its ends), as a share of its length squared:
+ * a half circle encloses 0.08, a hairpin almost none.
+ */
+const OXBOW_LENGTH = 6, OXBOW_COMPACTNESS = 0.035;
+/** Most an oxbow turns along one channel width, radians: its bends are no tighter than the channel. */
+const OXBOW_TURN = 1.3;
 /** Meanders are simulated at least this many drainage cells wide (map generalisation). */
 const MIN_WIDTH_CELLS = 0.5;
 
@@ -155,6 +186,35 @@ function smoothChain(xs: ArrayLike<number>, ys: ArrayLike<number>, sigma: number
   return [ox, oy];
 }
 
+/**
+ * Centripetal Catmull–Rom curve through a polyline (Yuksel, Schaefer & Keyser
+ * 2011: no cusps or self-intersections within a span), sampled every `step` metres
+ * at most. The input points are kept.
+ */
+function spline(xs: ArrayLike<number>, ys: ArrayLike<number>, step: number): [number[], number[]] {
+  const n = xs.length, ox: number[] = [xs[0]], oy: number[] = [ys[0]];
+  for (let i = 0; i < n - 1; i++) {
+    const i0 = Math.max(0, i - 1), i3 = Math.min(n - 1, i + 2);
+    const x0 = i0 < i ? xs[i0] : 2 * xs[i] - xs[i + 1], y0 = i0 < i ? ys[i0] : 2 * ys[i] - ys[i + 1];
+    const x3 = i3 > i + 1 ? xs[i3] : 2 * xs[i + 1] - xs[i], y3 = i3 > i + 1 ? ys[i3] : 2 * ys[i + 1] - ys[i];
+    const x1 = xs[i], y1 = ys[i], x2 = xs[i + 1], y2 = ys[i + 1];
+    const t1 = Math.sqrt(Math.hypot(x1 - x0, y1 - y0)) || 1e-6, t2 = t1 + (Math.sqrt(Math.hypot(x2 - x1, y2 - y1)) || 1e-6);
+    const t3 = t2 + (Math.sqrt(Math.hypot(x3 - x2, y3 - y2)) || 1e-6);
+    const m = Math.ceil(Math.hypot(x2 - x1, y2 - y1) / step);
+    for (let j = 1; j < m; j++) {
+      const t = t1 + (t2 - t1) * j / m;
+      const ax1 = ((t1 - t) * x0 + t * x1) / t1, ay1 = ((t1 - t) * y0 + t * y1) / t1;
+      const ax2 = ((t2 - t) * x1 + (t - t1) * x2) / (t2 - t1), ay2 = ((t2 - t) * y1 + (t - t1) * y2) / (t2 - t1);
+      const ax3 = ((t3 - t) * x2 + (t - t2) * x3) / (t3 - t2), ay3 = ((t3 - t) * y2 + (t - t2) * y3) / (t3 - t2);
+      const bx1 = ((t2 - t) * ax1 + t * ax2) / t2, by1 = ((t2 - t) * ay1 + t * ay2) / t2;
+      const bx2 = ((t3 - t) * ax2 + (t - t1) * ax3) / (t3 - t1), by2 = ((t3 - t) * ay2 + (t - t1) * ay3) / (t3 - t1);
+      ox.push(((t2 - t) * bx1 + (t - t1) * bx2) / (t2 - t1)); oy.push(((t2 - t) * by1 + (t - t1) * by2) / (t2 - t1));
+    }
+    ox.push(x2); oy.push(y2);
+  }
+  return [ox, oy];
+}
+
 /** Cubic Hermite curve from a to b with end tangents ta and tb (vectors in metres). */
 function hermite(
   ax: number, ay: number, tax: number, tay: number, bx: number, by: number, tbx: number, tby: number, step: number,
@@ -178,15 +238,18 @@ function hermite(
  * without a thalweg, D8 runs straight at 0° or 45° whatever the slope's
  * aspect, while water follows the steepest descent. No node may stand higher than the course's water level
  * plus `tolerance` (or than where it started, when the raw chain already
- * does). Ends are fixed. Arrays are updated in place; `us` follows the nodes.
+ * does), nor enter standing water before node `shore`. Ends are fixed. Arrays are updated in place; `us` follows the nodes.
  */
 function thalweg(
   xs: Float64Array, ys: Float64Array, limit: Float64Array, terrain: (x: number, y: number) => number,
-  reach: number, iterations: number,
+  wet: (x: number, y: number) => boolean, shore: number, reach: number, iterations: number,
 ): void {
   const n = xs.length;
   if (n < 3) return;
   const nx = new Float64Array(n), ny = new Float64Array(n);
+  // A node on land never moves into standing water (sea, lake, ground below
+  // sea level), except from `shore` on, where the course runs into it.
+  const fits = (i: number, x: number, y: number): boolean => terrain(x, y) <= limit[i] && (i >= shore || !wet(x, y) || wet(xs[i], ys[i]));
   for (let it = 0; it < iterations; it++) {
     // Smoothing: move halfway to the neighbours' midpoint, or less if that climbs.
     nx.set(xs); ny.set(ys);
@@ -194,7 +257,7 @@ function thalweg(
       const dx = (xs[i - 1] + xs[i + 1]) / 2 - xs[i], dy = (ys[i - 1] + ys[i + 1]) / 2 - ys[i];
       for (let f = 0.5; f > 0.06; f /= 2) {
         const px = xs[i] + dx * f, py = ys[i] + dy * f;
-        if (terrain(px, py) <= limit[i]) { nx[i] = px; ny[i] = py; break; }
+        if (fits(i, px, py)) { nx[i] = px; ny[i] = py; break; }
       }
     }
     xs.set(nx); ys.set(ny);
@@ -213,7 +276,7 @@ function thalweg(
         const d = Math.hypot(xs[i] - x, ys[i] - y), ox = ty / tl, oy = -tx / tl;
         const shift = Math.max(-reach / 2, Math.min(reach / 2, ((x + fx * d - xs[i]) * ox + (y + fy * d - ys[i]) * oy) / 2));
         const px = xs[i] + ox * shift, py = ys[i] + oy * shift;
-        if (terrain(px, py) <= limit[i]) { xs[i] = px; ys[i] = py; }
+        if (fits(i, px, py)) { xs[i] = px; ys[i] = py; }
       }
       continue;
     }
@@ -222,8 +285,8 @@ function thalweg(
       const ox = ty / tl, oy = -tx / tl;
       let best = terrain(xs[i], ys[i]) - 0.02, bt = 0;
       for (const t of [-1, -0.5, 0.5, 1]) {
-        const z = terrain(xs[i] + ox * t * reach, ys[i] + oy * t * reach);
-        if (z < best) { best = z; bt = t; }
+        const x = xs[i] + ox * t * reach, y = ys[i] + oy * t * reach, z = terrain(x, y);
+        if (z < best && fits(i, x, y)) { best = z; bt = t; }
       }
       if (bt) { xs[i] += ox * bt * reach; ys[i] += oy * bt * reach; }
     }
@@ -234,7 +297,7 @@ export interface MeanderResult {
   xs: number[]; ys: number[];
   oxbows: [number[], number[]][];
   iterations: number;
-  /** False when no meandered channel fitted and the axis came back unchanged. */
+  /** False when no meandered channel fitted: the axis came back unchanged, or with a long stretch of it at the end. */
   meandered: boolean;
 }
 
@@ -254,7 +317,8 @@ export interface MeanderResult {
  */
 export function meander(
   axisX: number[], axisY: number[], width: number, rng: Rng, valleyAt: (x: number, y: number) => number,
-  allowed: (x: number, y: number, water: number) => boolean, targetAt: (x: number, y: number) => number, maxIterations = 800,
+  allowed: (x: number, y: number, water: number) => boolean, targetAt: (x: number, y: number) => number, resolution: number,
+  maxIterations = 800,
 ): MeanderResult {
   const ds = SPACING * width;
   const [rx, ry] = resample(axisX, axisY, axisX.length, ds);
@@ -284,6 +348,21 @@ export function meander(
   // virtual and free; a loop poking just past the exit normal must still fit.
   let water = waterProfile(xs, ys, n, valleyAt);
   const free = (x: number, y: number, i: number): boolean => extended(x, y) || allowed(x, y, water[Math.max(0, i - 1)]);
+  // Nodes are most of a width apart, so the straight channel between two
+  // nodes is checked too, every `resolution` metres: it may not cut a spur.
+  const freeSpan = (ax: number, ay: number, bx2: number, by2: number, i: number): boolean => {
+    const m = Math.ceil(Math.hypot(bx2 - ax, by2 - ay) / resolution);
+    for (let k = 1; k < m; k++) if (!free(ax + (bx2 - ax) * k / m, ay + (by2 - ay) * k / m, i)) return false;
+    return true;
+  };
+  const allowedSpan = (ax: number, ay: number, bx2: number, by2: number, level: number): boolean => {
+    const m = Math.ceil(Math.hypot(bx2 - ax, by2 - ay) / resolution);
+    for (let k = 1; k < m; k++) if (!allowed(ax + (bx2 - ax) * k / m, ay + (by2 - ay) * k / m, level)) return false;
+    return true;
+  };
+  // A node may move to (x, y) when it and the channel to its neighbours stay free.
+  const fits = (x: number, y: number, i: number, x0: number, y0: number, x1: number, y1: number): boolean =>
+    free(x, y, i) && freeSpan(x0, y0, x, y, i) && freeSpan(x, y, x1, y1, i);
   const localTarget = (x: number, y: number): number => beyond(x, y) > 0 ? targetAt(bx, by) : targetAt(x, y);
 
   const oxbows: [number[], number[]][] = [];
@@ -316,7 +395,7 @@ export function meander(
       for (const w of waves) offset += w.amp * Math.sin(w.k * s + w.phase);
       const tx = xs[i + 1] - xs[i - 1], ty = ys[i + 1] - ys[i - 1], tl = Math.hypot(tx, ty) || 1;
       const px = xs[i] + offset * taper * ty / tl, py = ys[i] - offset * taper * tx / tl;
-      if (free(px, py, i)) { nx[i] = px; ny[i] = py; }
+      if (fits(px, py, i, nx[i - 1], ny[i - 1], xs[i + 1], ys[i + 1])) { nx[i] = px; ny[i] = py; }
     }
     xs = nx; ys = ny;
   }
@@ -381,7 +460,7 @@ export function meander(
       // A move blocked by the floodplain edge tries shorter steps, so the bank slides along it.
       for (let f = 1; f > 0.2; f /= 2) {
         const px = xs[i] + f * step * ty / tl, py = ys[i] - f * step * tx / tl;
-        if (free(px, py, i)) { nx[i] = px; ny[i] = py; moved++; break; }
+        if (fits(px, py, i, nx[i - 1], ny[i - 1], xs[i + 1], ys[i + 1])) { nx[i] = px; ny[i] = py; moved++; break; }
       }
     }
     if (!moved) break;
@@ -390,7 +469,7 @@ export function meander(
     if (iterations % 4 === 0) {
       const cut = findCutoff(xs, ys, cutoff, minGap, entryMargin, exitMargin);
       // The neck closes only where the new short course stays on the floodplain.
-      if (cut && free((xs[cut[0]] + xs[cut[1]]) / 2, (ys[cut[0]] + ys[cut[1]]) / 2, cut[0])) {
+      if (cut && freeSpan(xs[cut[0]], ys[cut[0]], xs[cut[1]], ys[cut[1]], cut[0])) {
         const [i, j] = cut;
         // The abandoned loop, detached from the new channel by a width and a half at each end.
         const trim = Math.ceil(1.5 * width / ds);
@@ -408,7 +487,7 @@ export function meander(
   const [sx, sy] = smoothChain(xs, ys, 1);
   const fx = Array.from(xs), fy = Array.from(ys);
   water = waterProfile(xs, ys, n, valleyAt);
-  for (let k = 1; k < fx.length - 1; k++) if (free(sx[k], sy[k], k)) { fx[k] = sx[k]; fy[k] = sy[k]; }
+  for (let k = 1; k < fx.length - 1; k++) if (fits(sx[k], sy[k], k, fx[k - 1], fy[k - 1], fx[k + 1], fy[k + 1])) { fx[k] = sx[k]; fy[k] = sy[k]; }
 
   // Cut where the channel crosses the exit normal, then ease onto the exit.
   // Candidates near the exit and heading along its tangent come first; the
@@ -443,13 +522,71 @@ export function meander(
     const tail = waterProfile(tx, ty, tx.length, valleyAt), easedFrom = k - Math.ceil(ease / ds) - 1;
     for (let j = 1; j < tx.length - 1 && ok; j++) {
       if (j < easedFrom && !extended(fx[j], fy[j])) continue;
-      ok = allowed(tx[j], ty[j], tail[j - 1]) && allowed((tx[j] + tx[j + 1]) / 2, (ty[j] + ty[j + 1]) / 2, tail[j]);
+      ok = allowed(tx[j], ty[j], tail[j - 1]) && allowedSpan(tx[j], ty[j], tx[j + 1], ty[j + 1], tail[j]);
     }
     if (ok) { result = [tx, ty]; break; }
   }
-  // No cut fits: keep the axis, which does.
-  if (!result) return { xs: Array.from(rx), ys: Array.from(ry), oxbows: [], iterations, meandered: false };
-  return { xs: result[0], ys: result[1], oxbows, iterations, meandered: true };
+  // No cut fits (the eased tail would leave the floodplain): rejoin the axis
+  // where the channel comes back onto it, as close to the exit as possible,
+  // and follow the axis from there.
+  let rejoined = -1;
+  if (!result) {
+    const near = 0.5 * width, blend = 3 * width;
+    // Axis nodes binned by `near`, and the channel's water level along it.
+    const bins = new Map<number, number[]>();
+    for (let j = 1; j < real - 1; j++) {
+      const key = Math.floor(rx[j] / near) * 1048576 + Math.floor(ry[j] / near), bin = bins.get(key);
+      if (bin) bin.push(j); else bins.set(key, [j]);
+    }
+    const before = waterProfile(fx, fy, fx.length, valleyAt);
+    for (let k = fx.length - 2; k > 0 && !result; k--) {
+      if (beyond(fx[k], fy[k]) >= 0) continue;
+      let best = near * near, ja = -1;
+      const gx = Math.floor(fx[k] / near), gy = Math.floor(fy[k] / near);
+      for (let ox = -1; ox <= 1; ox++) for (let oy = -1; oy <= 1; oy++) {
+        for (const j of bins.get((gx + ox) * 1048576 + gy + oy) ?? []) {
+          const d = (rx[j] - fx[k]) ** 2 + (ry[j] - fy[k]) ** 2;
+          if (d < best) { best = d; ja = j; }
+        }
+      }
+      if (ja < 0) continue;
+      // Same heading as the axis there, or the join would turn back.
+      const hx = fx[k + 1] - fx[k - 1], hy = fy[k + 1] - fy[k - 1], ax = rx[ja + 1] - rx[ja - 1], ay = ry[ja + 1] - ry[ja - 1];
+      if (hx * ax + hy * ay < 0.7 * Math.hypot(hx, hy) * Math.hypot(ax, ay)) continue;
+      // The last few widths of channel shift onto the axis node.
+      const ox = rx[ja] - fx[k], oy = ry[ja] - fy[k];
+      let from = k;
+      for (let arc = 0; from > 1 && arc < blend; from--) arc += Math.hypot(fx[from] - fx[from - 1], fy[from] - fy[from - 1]);
+      const bxs = fx.slice(from, k + 1), bys = fy.slice(from, k + 1);
+      for (let j = k, arc = 0; j >= from; j--) {
+        const w = smoothstep(1 - arc / blend);
+        bxs[j - from] += ox * w; bys[j - from] += oy * w;
+        if (j > from) arc += Math.hypot(fx[j] - fx[j - 1], fy[j] - fy[j - 1]);
+      }
+      let level = before[from - 1], ok = true;
+      for (let j = 0; j < bxs.length - 1 && ok; j++) {
+        const previous = level;
+        level = Math.min(level, valleyAt(bxs[j], bys[j]));
+        ok = allowed(bxs[j], bys[j], previous) && allowedSpan(bxs[j], bys[j], bxs[j + 1], bys[j + 1], level);
+      }
+      if (!ok) continue;
+      const tx = fx.slice(0, from), ty = fy.slice(0, from);
+      tx.push(...bxs); ty.push(...bys);
+      // The axis itself, not its resampling, whose chords cut the valley's bends.
+      let onAxis = 0, gap = Infinity;
+      for (let j = 0; j < axisX.length; j++) {
+        const d = (axisX[j] - rx[ja]) ** 2 + (axisY[j] - ry[ja]) ** 2;
+        if (d < gap) { gap = d; onAxis = j; }
+      }
+      for (let j = onAxis + 1; j < axisX.length; j++) { tx.push(axisX[j]); ty.push(axisY[j]); }
+      result = [tx, ty]; rejoined = ja;
+    }
+  }
+  // Nothing fits: keep the axis, which does.
+  if (!result) return { xs: axisX.slice(), ys: axisY.slice(), oxbows: [], iterations, meandered: false };
+  // A long stretch of axis left at the end does not count as meandered.
+  const meandered = rejoined < 0 || (real - 1 - rejoined) * ds <= Math.max(20 * width, 0.25 * axisLength);
+  return { xs: result[0], ys: result[1], oxbows, iterations, meandered };
 }
 
 /**
@@ -533,7 +670,9 @@ function findCutoff(xs: Float64Array, ys: Float64Array, distance: number, minGap
  * below its water level plus `tolerance`, and never higher than it stood;
  * a turn over 75° may rise 0.7 m more. Ends stay fixed.
  */
-function relax(points: number[], level: number[], terrain: (x: number, y: number) => number, tolerance: number): void {
+function relax(
+  points: number[], level: number[], terrain: (x: number, y: number) => number, wet: (x: number, y: number) => boolean, tolerance: number,
+): void {
   const cos40 = Math.cos(40 * Math.PI / 180), cos75 = Math.cos(75 * Math.PI / 180);
   for (let pass = 0; pass < 12; pass++) {
     let moved = 0;
@@ -547,7 +686,8 @@ function relax(points: number[], level: number[], terrain: (x: number, y: number
       const mx = (points[2 * i - 2] + points[2 * i + 2]) / 2 - x, my = (points[2 * i - 1] + points[2 * i + 3]) / 2 - y;
       const ceiling = Math.max(terrain(x, y), level[i] + tolerance) + (turn < cos75 ? 0.7 : 0);
       for (let f = 1; f > 0.1; f /= 2) {
-        if (terrain(x + mx * f, y + my * f) <= ceiling) { points[2 * i] = x + mx * f; points[2 * i + 1] = y + my * f; moved++; break; }
+        const px = x + mx * f, py = y + my * f;
+        if (terrain(px, py) <= ceiling && (!wet(px, py) || wet(x, y))) { points[2 * i] = px; points[2 * i + 1] = py; moved++; break; }
       }
     }
     if (!moved) break;
@@ -589,16 +729,59 @@ function despike(points: number[], ...values: number[][]): void {
   }
 }
 
+/**
+ * Cuts self-intersections: the loop between two crossing segments goes, as in
+ * a neck cutoff, and the crossing point joins the two parts. `size` bins the
+ * segments.
+ */
+function uncross(points: number[], size: number, ...values: number[][]): void {
+  for (let guard = 0; guard < 100; guard++) {
+    const m = points.length / 2, bins = new Map<number, number[]>();
+    let cut: [number, number, number, number] | undefined;
+    for (let i = 0; i < m - 1 && !cut; i++) {
+      const ax = points[2 * i], ay = points[2 * i + 1], rx = points[2 * i + 2] - ax, ry = points[2 * i + 3] - ay;
+      const x0 = Math.floor(Math.min(ax, ax + rx) / size), x1 = Math.floor(Math.max(ax, ax + rx) / size);
+      const y0 = Math.floor(Math.min(ay, ay + ry) / size), y1 = Math.floor(Math.max(ay, ay + ry) / size);
+      // Earliest segment crossing this one: the whole knot goes.
+      let first = Infinity, cx = 0, cy = 0;
+      for (let gx = x0; gx <= x1; gx++) for (let gy = y0; gy <= y1; gy++) {
+        for (const j of bins.get(gx * 1048576 + gy) ?? []) {
+          if (j >= i - 1 || j >= first) continue;
+          const bx = points[2 * j], by = points[2 * j + 1], sx = points[2 * j + 2] - bx, sy = points[2 * j + 3] - by;
+          const den = rx * sy - ry * sx;
+          if (Math.abs(den) < 1e-12) continue;
+          const t = ((bx - ax) * sy - (by - ay) * sx) / den, u = ((bx - ax) * ry - (by - ay) * rx) / den;
+          if (t >= 0 && t <= 1 && u >= 0 && u <= 1) { first = j; cx = ax + rx * t; cy = ay + ry * t; }
+        }
+      }
+      if (first < Infinity) { cut = [first, i, cx, cy]; break; }
+      for (let gx = x0; gx <= x1; gx++) for (let gy = y0; gy <= y1; gy++) {
+        const k = gx * 1048576 + gy, bin = bins.get(k);
+        if (bin) bin.push(i); else bins.set(k, [i]);
+      }
+    }
+    if (!cut) return;
+    const [j, i, cx, cy] = cut;
+    points.splice(2 * j + 2, 2 * (i - j), cx, cy);
+    for (const v of values) v.splice(j + 1, i - j, v[i]);
+  }
+}
+
+interface NearPoint { d: number; x: number; y: number; line: number; index: number }
+
 /** Uniform-grid index of the segments of the courses traced so far. */
 class SegmentIndex {
   private bins = new Map<number, number[]>();
   private segments: number[] = [];
+  /** Line id and index of the first vertex of each segment. */
+  private owners: number[] = [];
   constructor(private size: number) {}
-  add(points: number[]): void {
+  add(points: number[], line: number): void {
     const size = this.size;
     for (let i = 0; i + 3 < points.length; i += 2) {
       const id = this.segments.length / 4;
       this.segments.push(points[i], points[i + 1], points[i + 2], points[i + 3]);
+      this.owners.push(line, i / 2);
       const x0 = Math.floor(Math.min(points[i], points[i + 2]) / size), x1 = Math.floor(Math.max(points[i], points[i + 2]) / size);
       const y0 = Math.floor(Math.min(points[i + 1], points[i + 3]) / size), y1 = Math.floor(Math.max(points[i + 1], points[i + 3]) / size);
       for (let gx = x0; gx <= x1; gx++) for (let gy = y0; gy <= y1; gy++) {
@@ -624,6 +807,22 @@ class SegmentIndex {
     }
     return first;
   }
+  /** Nearest point of an indexed segment within `radius`. */
+  nearest(x: number, y: number, radius: number): NearPoint | undefined {
+    const p = this.segments, size = this.size;
+    let best: NearPoint | undefined;
+    const x0 = Math.floor((x - radius) / size), x1 = Math.floor((x + radius) / size);
+    const y0 = Math.floor((y - radius) / size), y1 = Math.floor((y + radius) / size);
+    for (let gx = x0; gx <= x1; gx++) for (let gy = y0; gy <= y1; gy++) {
+      for (const i of this.bins.get(gx * 1048576 + gy) ?? []) {
+        const ax = p[4 * i], ay = p[4 * i + 1], dx = p[4 * i + 2] - ax, dy = p[4 * i + 3] - ay;
+        const t = Math.max(0, Math.min(1, ((x - ax) * dx + (y - ay) * dy) / (dx * dx + dy * dy || 1)));
+        const qx = ax + dx * t, qy = ay + dy * t, d = Math.hypot(qx - x, qy - y);
+        if (d <= radius && (!best || d < best.d)) best = { d, x: qx, y: qy, line: this.owners[2 * i], index: this.owners[2 * i + 1] };
+      }
+    }
+    return best;
+  }
 }
 
 /** Nearest point of a polyline to (x, y). */
@@ -644,8 +843,56 @@ export function vectorRivers(h: SimpleHydrology, lake: Uint8Array, settings: Riv
   const total = n * n, cell = h.width / n, threshold = settings.riverArea * 1e6;
   const rng = new Rng(`rivers:${settings.seed}`);
 
+  // Standing water as drawn: the sea, lakes, and any ground below sea level
+  // (inland basins below zero are not sea for the drainage, but look like it).
+  const standing = new Uint8Array(total);
+  for (let c = 0; c < total; c++) standing[c] = sea[c] || lake[c] || height[c] <= 0 ? 1 : 0;
+  // The flood front drains a lake through its shoals and shallow margins, cells
+  // at its level not deep enough to be drawn. Water that leaves a body there
+  // only to flow back into the same body crosses it: it is no river. Water
+  // running on to another body or below the level stays a river.
+  const body = new Int32Array(total).fill(-1);
+  for (let s = 0, bodies = 0; s < total; s++) {
+    if (!standing[s] || body[s] >= 0) continue;
+    const stack = [s];
+    body[s] = bodies;
+    while (stack.length) {
+      const c = stack.pop()!, x = c % n, y = (c - x) / n;
+      for (let k = 0; k < 8; k++) {
+        const xx = x + DX[k], yy = y + DY[k];
+        if (xx < 0 || yy < 0 || xx >= n || yy >= n) continue;
+        const nb = yy * n + xx;
+        if (standing[nb] && body[nb] < 0) { body[nb] = bodies; stack.push(nb); }
+      }
+    }
+    bodies++;
+  }
+  // Cells at a body's level downstream of it, and the body their water falls
+  // back into (−1: none, it leaves the level).
+  const back = new Int32Array(total).fill(-2);
+  const below = (r: number, a: number): boolean => r < 0 || standing[r] === 1 || filled[r] !== filled[a];
+  const path: number[] = [];
+  for (let c = 0; c < total; c++) {
+    if (!standing[c]) continue;
+    const r = receiver[c];
+    if (below(r, c) || back[r] !== -2) continue;
+    path.length = 0;
+    let a = c, q = r;
+    while (!below(q, a) && back[q] === -2) { path.push(q); a = q; q = receiver[q]; }
+    const into = !below(q, a) ? back[q] : q >= 0 && standing[q] && filled[q] === filled[a] ? body[q] : -1;
+    for (const p of path) back[p] = into;
+  }
+  // A shoal fed by another body links two bodies: a river.
+  const link = new Uint8Array(total);
+  for (let c = 0; c < total; c++) {
+    if (!standing[c]) continue;
+    for (let r = receiver[c]; r >= 0 && !standing[r] && back[r] >= 0 && back[r] !== body[c] && !link[r]; r = receiver[r]) link[r] = 1;
+  }
+  // Water for the courses: standing water as drawn and the shoals it crosses.
+  const still = new Uint8Array(total);
+  for (let c = 0; c < total; c++) still[c] = standing[c] || (back[c] >= 0 && !link[c]) ? 1 : 0;
   const river = new Uint8Array(total);
-  for (let c = 0; c < total; c++) river[c] = !sea[c] && !lake[c] && accumulation[c] >= threshold ? 1 : 0;
+  for (let c = 0; c < total; c++) river[c] = !still[c] && accumulation[c] >= threshold ? 1 : 0;
   // The larger donor of each river cell continues its stream.
   const main = new Int32Array(total).fill(-1);
   for (let c = 0; c < total; c++) {
@@ -680,6 +927,10 @@ export function vectorRivers(h: SimpleHydrology, lake: Uint8Array, settings: Riv
   const cellAt = (x: number, y: number): number => {
     const gx = Math.floor(x / cell), gy = Math.floor(y / cell);
     return gx < 0 || gy < 0 || gx >= n || gy >= n ? -1 : gy * n + gx;
+  };
+  const wet = (x: number, y: number): boolean => {
+    const c = cellAt(x, y);
+    return c >= 0 && (standing[c] === 1 || terrain(x, y) <= 0);
   };
 
   // Target sinuosity of each river cell, from the gradient over ±4 cells along
@@ -730,18 +981,198 @@ export function vectorRivers(h: SimpleHydrology, lake: Uint8Array, settings: Riv
     return accumulation[sb.cells[sb.cells.length - 1]] - accumulation[sa.cells[sa.cells.length - 1]] || a - b;
   });
   const lines: RiverLine[] = new Array(streams.length);
+  // Each course's thalweg fit, for tributaries that join it after it meandered away.
+  const thalwegs: [Float64Array, Float64Array][] = new Array(streams.length);
   const traced = new SegmentIndex(4 * cell);
+  let widest = 0;
   const oxbows: RiverLine[] = [];
   let meanderRuns = 0, meanderLength = 0;
 
+  // Deep filled depressions are lakes, drawn or not. Steepest descent crosses
+  // their flat filled surface in straight lines, over drowned hills; a course
+  // crossing one instead follows its floor: the cheapest path through it,
+  // where cost grows with the height above the lowest floor met on the way.
+  const chains: number[][] = new Array(streams.length);
+  const floorPath = (from: number, targets: Set<number>, x0: number, y0: number, x1: number, y1: number, lowest: number): number[] | undefined => {
+    const w = x1 - x0 + 1, size = w * (y1 - y0 + 1);
+    const cost = new Float64Array(size).fill(Infinity), previous = new Int32Array(size).fill(-1);
+    const local = (c: number): number => (Math.floor(c / n) - y0) * w + c % n - x0;
+    const heap: number[] = [], keys: number[] = [];
+    const push = (c: number, key: number): void => {
+      let i = heap.length;
+      heap.push(c); keys.push(key);
+      while (i > 0) {
+        const up = (i - 1) >> 1;
+        if (keys[up] <= key) break;
+        heap[i] = heap[up]; keys[i] = keys[up]; heap[up] = c; keys[up] = key; i = up;
+      }
+    };
+    const pop = (): number => {
+      const top = heap[0], c = heap.pop()!, key = keys.pop()!;
+      if (heap.length) {
+        let i = 0;
+        heap[0] = c; keys[0] = key;
+        for (;;) {
+          const l = 2 * i + 1, r = l + 1;
+          let m = i;
+          if (l < heap.length && keys[l] < keys[m]) m = l;
+          if (r < heap.length && keys[r] < keys[m]) m = r;
+          if (m === i) break;
+          [heap[i], heap[m]] = [heap[m], heap[i]]; [keys[i], keys[m]] = [keys[m], keys[i]]; i = m;
+        }
+      }
+      return top;
+    };
+    cost[local(from)] = 0; push(from, 0);
+    while (heap.length) {
+      const c = pop(), lc = local(c);
+      if (targets.has(c)) {
+        const path = [c];
+        for (let k = previous[lc]; k >= 0; k = previous[k]) path.push((y0 + Math.floor(k / w)) * n + x0 + k % w);
+        return path.reverse();
+      }
+      const x = c % n, y = (c - x) / n;
+      for (let k = 0; k < 8; k++) {
+        const xx = x + DX[k], yy = y + DY[k];
+        if (xx < x0 || yy < y0 || xx > x1 || yy > y1) continue;
+        const nb = yy * n + xx, lnb = local(nb);
+        if (still[nb] || (filled[nb] - height[nb] <= 0.01 && !targets.has(nb))) continue;
+        const step = (DX[k] && DY[k] ? Math.SQRT2 : 1) * (1 + Math.max(0, height[nb] - lowest) / BED_HEIGHT);
+        if (cost[lc] + step < cost[lnb]) { cost[lnb] = cost[lc] + step; previous[lnb] = lc; push(nb, cost[lnb]); }
+      }
+    }
+    return undefined;
+  };
+  const acrossBeds = (cells: number[], parentChain: number[] | undefined, bed: Set<number>): number[] => {
+    let result = cells;
+    const onParent = new Set(parentChain);
+    // Parent cells within a box, as targets of a floor path.
+    const parentIn = (x0: number, y0: number, x1: number, y1: number): Set<number> => {
+      const found = new Set<number>();
+      for (const c of parentChain ?? []) {
+        const x = c % n, y = (c - x) / n;
+        if (x >= x0 && x <= x1 && y >= y0 && y <= y1) found.add(c);
+      }
+      return found;
+    };
+    for (let i = 0; i < result.length; i++) {
+      if (filled[result[i]] - height[result[i]] <= DEEP) continue;
+      // The whole crossing of the depression, shallow margins included,
+      // where steepest descent wanders just as much.
+      let j = i;
+      while (i > 0 && filled[result[i - 1]] - height[result[i - 1]] > 0.01) i--;
+      while (j + 1 < result.length && filled[result[j + 1]] - height[result[j + 1]] > 0.01) j++;
+      const entry = Math.max(0, i - 1), exit = Math.min(result.length - 1, j + 1);
+      let x0 = n, y0 = n, x1 = 0, y1 = 0, lowest = Infinity;
+      for (let k = entry; k <= exit; k++) {
+        const c = result[k], x = c % n, y = (c - x) / n;
+        x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y);
+        lowest = Math.min(lowest, height[c]);
+      }
+      x0 = Math.max(0, x0 - 24); y0 = Math.max(0, y0 - 24); x1 = Math.min(n - 1, x1 + 24); y1 = Math.min(n - 1, y1 + 24);
+      // A tributary ending in the lake runs to its parent's own path across
+      // it, not to the confluence cell its parent may have left for the floor.
+      const toParent = exit === result.length - 1 ? parentIn(x0, y0, x1, y1) : new Set<number>();
+      let path = toParent.size && !onParent.has(result[exit]) ? floorPath(result[entry], toParent, x0, y0, x1, y1, lowest) : undefined;
+      path ??= floorPath(result[entry], new Set([result[exit], ...toParent]), x0, y0, x1, y1, lowest);
+      if (!path || path.length < 2) { i = j; continue; }
+      for (let k = 1; k < path.length - 1; k++) bed.add(path[k]);
+      const tail = path[path.length - 1] === result[exit] ? result.slice(exit + 1) : [];
+      result = [...result.slice(0, entry), ...path, ...tail];
+      i = entry + path.length - 1;
+    }
+    // A confluence in a shallower depression: the parent crossed it along its
+    // floor and no longer passes there. The tributary runs down the same
+    // depression to the parent's course.
+    const last = result.length - 1;
+    if (parentChain && last > 0 && !onParent.has(result[last]) && filled[result[last]] - height[result[last]] > 0.01) {
+      let i = last;
+      while (i > 0 && filled[result[i - 1]] - height[result[i - 1]] > 0.01) i--;
+      const entry = Math.max(0, i - 1);
+      let x0 = n, y0 = n, x1 = 0, y1 = 0, lowest = Infinity;
+      for (let k = entry; k <= last; k++) {
+        const c = result[k], x = c % n, y = (c - x) / n;
+        x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y);
+        lowest = Math.min(lowest, height[c]);
+      }
+      x0 = Math.max(0, x0 - 64); y0 = Math.max(0, y0 - 64); x1 = Math.min(n - 1, x1 + 64); y1 = Math.min(n - 1, y1 + 64);
+      const targets = parentIn(x0, y0, x1, y1);
+      const path = targets.size ? floorPath(result[entry], targets, x0, y0, x1, y1, lowest) : undefined;
+      if (path && path.length >= 2) {
+        for (let k = 1; k < path.length - 1; k++) bed.add(path[k]);
+        result = [...result.slice(0, entry), ...path];
+      }
+    }
+    return result;
+  };
+
+  // Cells after `from` across its shoal to the nearest drawn standing water, 8-connected.
+  const toStanding = (from: number): number[] => {
+    const previous = new Map<number, number>([[from, -1]]), queue = [from];
+    for (let i = 0; i < queue.length; i++) {
+      const c = queue[i], x = c % n, y = (c - x) / n;
+      if (standing[c]) {
+        const path: number[] = [];
+        for (let k = c; k !== from; k = previous.get(k)!) path.push(k);
+        return path.reverse();
+      }
+      for (let k = 0; k < 8; k++) {
+        const xx = x + DX[k], yy = y + DY[k];
+        if (xx < 0 || yy < 0 || xx >= n || yy >= n) continue;
+        const nb = yy * n + xx;
+        if (still[nb] && !previous.has(nb)) { previous.set(nb, c); queue.push(nb); }
+      }
+    }
+    return [];
+  };
+
   for (const id of order) {
-    const stream = streams[id], cells = stream.cells.slice();
+    const stream = streams[id], bed = new Set<number>();
+    let cells = stream.cells.slice();
     if (stream.end >= 0) cells.push(stream.end);
+    cells = acrossBeds(cells, stream.parent >= 0 ? chains[stream.parent] : undefined, bed);
+    // A course ending on a shoal runs on to the nearest standing water as drawn.
+    const shoal = stream.end >= 0 && !standing[stream.end] && still[stream.end] ? toStanding(stream.end) : [];
+    cells.push(...shoal);
+    chains[id] = cells;
     const xs: number[] = [], ys: number[] = [], area: number[] = [], level: number[] = [], local: number[] = [], plain: number[] = [];
     for (const c of cells) {
-      const [x, y] = centre(c);
-      xs.push(x); ys.push(y); area.push(accumulation[c]); level.push(filled[c]);
-      local.push(river[c] ? sinuosity[c] : 1); plain.push(river[c] ? flat[c] : 0);
+      const [x, y] = centre(c), onBed = bed.has(c);
+      // On a lake floor the course lies on the ground.
+      xs.push(x); ys.push(y); area.push(onBed ? NaN : accumulation[c]); level.push(onBed ? height[c] : filled[c]);
+      local.push(!onBed && river[c] ? sinuosity[c] : 1); plain.push(!onBed && river[c] ? flat[c] : 0);
+    }
+    // On a floor, water fills the small dips: its level is the highest
+    // floor within two cells along the path, never above the lake surface.
+    const floor = level.slice();
+    for (let i = 0; i < cells.length; i++) {
+      if (!bed.has(cells[i])) continue;
+      for (let k = Math.max(0, i - 2); k <= Math.min(cells.length - 1, i + 2); k++) {
+        if (bed.has(cells[k])) level[i] = Math.max(level[i], floor[k]);
+      }
+      level[i] = Math.min(level[i], filled[cells[i]]);
+    }
+    // On a floor the course meanders where the floor itself is flat or gentle.
+    for (let i = 0; i < cells.length; i++) {
+      if (!bed.has(cells[i])) continue;
+      const j0 = Math.max(0, i - 4), j1 = Math.min(cells.length - 1, i + 4);
+      const gradient = Math.abs(level[j0] - level[j1]) / Math.max(cell, Math.hypot(xs[j1] - xs[j0], ys[j1] - ys[j0]));
+      const share = gradient < flatGradient ? 1 : GENTLE_SHARE * Math.max(0, 1 - Math.log(gradient / flatGradient) / Math.log(GENTLE));
+      const size = Math.max(0.4, Math.min(1, 0.4 + 0.15 * Math.log2(accumulation[cells[j1]] / threshold)));
+      local[i] = 1 + (settings.sinuosity - 1) * share * size; plain[i] = gradient < flatGradient ? 1 : 0;
+    }
+    // A course led across a floor to its parent's path, or across a shoal,
+    // keeps its own area there.
+    if (stream.end >= 0 && cells[cells.length - 1] !== stream.end) area[area.length - 1] = accumulation[stream.cells[stream.cells.length - 1]];
+    for (let k = cells.length - shoal.length; k < cells.length; k++) area[k] = area[area.length - 1];
+    // Areas across a floor: interpolated between its ends.
+    for (let i = 0; i < area.length; i++) {
+      if (!Number.isNaN(area[i])) continue;
+      let j = i;
+      while (j < area.length && Number.isNaN(area[j])) j++;
+      const a0 = i > 0 ? area[i - 1] : area[j], a1 = j < area.length ? area[j] : a0;
+      for (let k = i; k < j; k++) area[k] = a0 + (a1 - a0) * (k - i + 1) / (j - i + 1);
+      i = j;
     }
     // The end cell drains the whole stream.
     if (stream.end >= 0) {
@@ -777,7 +1208,10 @@ export function vectorRivers(h: SimpleHydrology, lake: Uint8Array, settings: Riv
     const px = Float64Array.from(dx), py = Float64Array.from(dy), nodes = px.length;
     const limit = new Float64Array(nodes);
     for (let k = 0; k < nodes; k++) limit[k] = Math.max(levelAt(du[k]) + CURVE_TOLERANCE, terrain(px[k], py[k]));
-    thalweg(px, py, limit, terrain, cell / 4, 60);
+    // A course ending in standing water may run into it over its last two cells.
+    const shore = stream.end >= 0 && still[stream.end] ? nodeOf[Math.max(0, count - 3)] : nodes;
+    thalweg(px, py, limit, terrain, wet, shore, cell / 4, 60);
+    thalwegs[id] = [px, py];
 
     // Meandering runs: vertices that should wander, short steep gaps closed.
     const s = [0];
@@ -802,7 +1236,7 @@ export function vectorRivers(h: SimpleHydrology, lake: Uint8Array, settings: Riv
       const ia = nodeOf[a], ib = nodeOf[b];
       const width = Math.max(channelWidth(area[b], settings.widthScale), MIN_WIDTH_CELLS * cell);
       const chord = Math.hypot(px[ib] - px[ia], py[ib] - py[ia]);
-      if (chord < Math.max(6 * cell, 25 * width) || b - a < 4) continue;
+      if (chord < Math.max(6 * cell, 15 * width) || b - a < 4) continue;
       // Valley floor level of a point: the water level of the nearest thalweg
       // node of this run, on a local grid filled outwards from the thalweg.
       const bottom = levelAt(du[ib]);
@@ -810,11 +1244,13 @@ export function vectorRivers(h: SimpleHydrology, lake: Uint8Array, settings: Riv
       // Water may stand a bankfull depth above the valley floor (false flats,
       // shallow basins), never on a valley side: the floor never rises
       // downstream (`water` is its running minimum along the channel).
-      const depth = MEANDER_DEPTH + MEANDER_DEPTH_PER_WIDTH * width, parent = stream.parent;
+      // The depth is the physical channel's: a wider drawn channel does not dig deeper.
+      const depth = MEANDER_DEPTH + MEANDER_DEPTH_PER_WIDTH * channelWidth(area[b], 1), parent = stream.parent;
       const allowed = (x: number, y: number, water: number): boolean => {
         const c = cellAt(x, y);
-        if (c < 0 || sea[c] || lake[c] || (owner[c] !== id && owner[c] !== parent)) return false;
-        return terrain(x, y) <= Math.min(valleyAt(x, y), water) + depth;
+        if (c < 0 || still[c] || (owner[c] !== id && owner[c] !== parent)) return false;
+        const z = terrain(x, y);
+        return z > 0 && z <= Math.min(valleyAt(x, y), water) + depth;
       };
       const targetAt = (x: number, y: number): number => {
         const c = cellAt(x, y);
@@ -835,77 +1271,211 @@ export function vectorRivers(h: SimpleHydrology, lake: Uint8Array, settings: Riv
         const water = waterProfile(hx, hy, hx.length, valleyAt);
         if (hx.every((x, k) => allowed(x, hy[k], water[Math.max(0, k - 1)]))) { axisX = hx; axisY = hy; }
       }
-      let result = meander(axisX, axisY, width, rng.fork(`${id}:${a}`), valleyAt, allowed, targetAt);
+      let result = meander(axisX, axisY, width, rng.fork(`${id}:${a}`), valleyAt, allowed, targetAt, cell / 2);
       // A Hermite axis that could not meander would stay nearly straight: retry on the thalweg.
       if (!result.meandered && axisX.length !== ib - ia + 1) {
-        result = meander(Array.from(px.subarray(ia, ib + 1)), Array.from(py.subarray(ia, ib + 1)), width, rng.fork(`${id}:${a}:thalweg`), valleyAt, allowed, targetAt);
+        result = meander(Array.from(px.subarray(ia, ib + 1)), Array.from(py.subarray(ia, ib + 1)), width, rng.fork(`${id}:${a}:thalweg`), valleyAt, allowed, targetAt, cell / 2);
       }
-      const water = waterProfile(result.xs, result.ys, result.xs.length, valleyAt);
-      course(cursor, ia);
+      // The model's nodes are most of a width apart: draw the curve through them.
+      const [mx, my] = spline(result.xs, result.ys, cell / 3);
+      const water = waterProfile(mx, my, mx.length, valleyAt), last = mx.length - 1;
       // Each meander vertex takes the chain index of the nearest thalweg node, never going back.
-      let near = ia, u = du[ia];
-      for (let k = 1; k < result.xs.length; k++) {
-        const x = result.xs[k], y = result.ys[k];
+      const nearOf = new Int32Array(last + 1), gapOf = new Float64Array(last + 1), vu = new Float64Array(last + 1), vl = new Float64Array(last + 1);
+      for (let k = 0, near = ia, u = du[ia]; k <= last; k++) {
         let best = Infinity;
         for (let j = Math.max(ia, near - 60); j <= Math.min(ib, near + 60); j++) {
-          const d = (px[j] - x) ** 2 + (py[j] - y) ** 2;
+          const d = (px[j] - mx[k]) ** 2 + (py[j] - my[k]) ** 2;
           if (d < best) { best = d; near = j; }
         }
         u = Math.max(u, du[near]);
-        meanderLength += Math.hypot(x - result.xs[k - 1], y - result.ys[k - 1]);
-        out.push(x, y); us.push(k === result.xs.length - 1 ? du[ib] : u); kind.push(1);
-        lv.push(k === result.xs.length - 1 ? bottom : water[k]);
+        nearOf[k] = k === last ? ib : near; gapOf[k] = Math.sqrt(best);
+        vu[k] = k === last ? du[ib] : u; vl[k] = k === last ? bottom : Math.max(water[k], levelAt(u));
       }
-      for (const [ox, oy] of result.oxbows) {
-        const points: number[] = [];
+      // Where the channel still stands above its water (its nodes were too far
+      // apart to follow a tight valley), the thalweg replaces it between the
+      // nearest points where the channel lies on it.
+      const above = (k: number): boolean => {
+        const ceiling = vl[k] + depth + 0.5;
+        return terrain(mx[k], my[k]) > ceiling || (k < last && terrain((mx[k] + mx[k + 1]) / 2, (my[k] + my[k + 1]) / 2) > ceiling);
+      };
+      const onThalweg = Math.max(0.3 * width, cell / 2);
+      course(cursor, ia);
+      const runStart = out.length / 2, emitted: number[] = [];
+      for (let k = 1; k <= last;) {
+        if (!above(k)) {
+          out.push(mx[k], my[k]); us.push(vu[k]); kind.push(1); lv.push(vl[k]); emitted.push(k);
+          k++;
+          continue;
+        }
+        let q = k;
+        while (q < last && (above(q) || gapOf[q] > onThalweg)) q++;
+        while (emitted.length && gapOf[emitted[emitted.length - 1]] > onThalweg) {
+          emitted.pop(); out.length -= 2; us.length--; kind.length--; lv.length--;
+        }
+        const from = emitted.length ? nearOf[emitted[emitted.length - 1]] : ia;
+        for (let j = from + 1; j <= nearOf[q]; j++) {
+          out.push(px[j], py[j]); us.push(Math.max(us[us.length - 1], du[j])); kind.push(0); lv.push(Math.min(lv[lv.length - 1], levelAt(du[j])));
+        }
+        k = q + 1;
+      }
+      for (let k = runStart; k < out.length / 2; k++) {
+        if (kind[k] === 1) meanderLength += Math.hypot(out[2 * k] - out[2 * k - 2], out[2 * k + 1] - out[2 * k - 1]);
+      }
+      for (const loop of result.oxbows) {
+        const [ox, oy] = spline(loop[0], loop[1], cell / 3), points: number[] = [];
         for (let k = 0; k < ox.length; k++) points.push(ox[k], oy[k]);
-        oxbows.push({ points, area: ox.map(() => area[b]), level: ox.map(() => level[b]), kind: ox.map(() => 1) });
+        uncross(points, cell);
+        const m = points.length / 2;
+        oxbows.push({ points, area: new Array<number>(m).fill(area[b]), level: new Array<number>(m).fill(level[b]), kind: new Array<number>(m).fill(1) });
       }
       meanderRuns++;
       cursor = ib;
     }
     course(cursor, nodes - 1);
 
-    // A course stops where it first meets one already traced: its parent, or
-    // another course close to a confluence.
-    let joined = false;
-    for (let k = 0; k < out.length / 2 - 1 && !joined; k++) {
-      const ax = out[2 * k], ay = out[2 * k + 1], bx = out[2 * k + 2], by = out[2 * k + 3];
-      const t = traced.crossing(ax, ay, bx, by);
+    const lerp = (values: number[], u: number): number => {
+      const i = Math.min(count - 2, Math.floor(u)), f = u - i;
+      return values[i] + (values[i + 1] - values[i]) * f;
+    };
+    // Whether the terrain along a straight line stays at or below `ceiling`.
+    const below = (ax: number, ay: number, bx: number, by: number, ceiling: number): boolean => {
+      const steps = Math.max(1, Math.ceil(Math.hypot(bx - ax, by - ay) / (cell / 4)));
+      for (let j = 0; j <= steps; j++) if (terrain(ax + (bx - ax) * j / steps, ay + (by - ay) * j / steps) > ceiling) return false;
+      return true;
+    };
+
+    // A course stops where it first meets one already traced (its parent, or
+    // another course near a confluence), or where it first runs alongside one
+    // closer than half their summed widths: channels whose banks touch merge,
+    // unless a spur separates them. A course born alongside another is part of it.
+    let joined = false, beside = -1, absorbed = false;
+    for (let k = 0; k < out.length / 2; k++) {
+      const x = out[2 * k], y = out[2 * k + 1], own = channelWidth(lerp(area, us[k]), settings.widthScale);
+      const near = traced.nearest(x, y, Math.max(0.75 * cell, 0.5 * (own + widest)));
+      if (near) {
+        const other = channelWidth(lines[near.line].area[near.index], settings.widthScale);
+        const gap = Math.max(0.75 * cell, 0.5 * (own + other));
+        // A crossing just ahead is a confluence, not two channels side by side.
+        let ahead = false;
+        if (near.d < gap) for (let j = k, arc = 0; j + 1 < out.length / 2 && arc < 3 * gap && !ahead; j++) {
+          ahead = traced.crossing(out[2 * j], out[2 * j + 1], out[2 * j + 2], out[2 * j + 3]) <= 1;
+          arc += Math.hypot(out[2 * j + 2] - out[2 * j], out[2 * j + 3] - out[2 * j + 1]);
+        }
+        if (near.d < gap && !ahead && below(x, y, near.x, near.y, lv[k] + 1)) {
+          if (k === 0) absorbed = true;
+          out.length = 2 * k + 2; us.length = k + 1; kind.length = k + 1; lv.length = k + 1;
+          beside = near.line;
+          break;
+        }
+      }
+      if (2 * k + 3 >= out.length) break;
+      const bx = out[2 * k + 2], by = out[2 * k + 3];
+      const t = traced.crossing(x, y, bx, by);
       if (t <= 1 && (k > 0 || t > 0)) {
         const u = us[k] + (us[k + 1] - us[k]) * t, z = lv[k] + (lv[k + 1] - lv[k]) * t;
         out.length = 2 * k + 2; us.length = k + 1; kind.length = k + 1; lv.length = k + 1;
-        out.push(ax + (bx - ax) * t, ay + (by - ay) * t); us.push(u); kind.push(kind[k]); lv.push(z);
+        out.push(x + (bx - x) * t, y + (by - y) * t); us.push(u); kind.push(kind[k]); lv.push(z);
         joined = true;
+        break;
       }
     }
-    if (!joined && stream.parent >= 0 && lines[stream.parent]) {
-      // The parent meandered away from the confluence cell: join it ahead of
-      // the tributary's end along a curve tangent to both courses.
-      const parentPoints = lines[stream.parent].points, m = out.length / 2 - 1;
+    if (absorbed) continue;
+    // A tributary that did not reach its parent joins it, or whichever course
+    // passes nearest when the parent's drawn line stops short of the confluence.
+    let joinTo = beside;
+    if (joinTo < 0 && !joined && stream.parent >= 0) {
+      const m = out.length / 2 - 1, reach = 12 * cell;
+      const parent = lines[stream.parent];
+      if (parent) {
+        const [qx, qy] = nearestOnLine(parent.points, out[2 * m], out[2 * m + 1]);
+        if (Math.hypot(qx - out[2 * m], qy - out[2 * m + 1]) <= reach) joinTo = stream.parent;
+      }
+      if (joinTo < 0) joinTo = traced.nearest(out[2 * m], out[2 * m + 1], reach)?.line ?? -1;
+    }
+    if (joinTo >= 0) {
+      // Join the other course ahead of the end, along a curve tangent to both
+      // courses that stays in the valley: of the nearest points ahead, the
+      // first whose curve does not rise above the water.
+      const tp = lines[joinTo].points, m = out.length / 2 - 1;
       const ex = out[2 * m], ey = out[2 * m + 1], back = Math.max(0, m - 3);
-      const tl = Math.hypot(ex - out[2 * back], ey - out[2 * back + 1]) || 1;
-      const tx = (ex - out[2 * back]) / tl, ty = (ey - out[2 * back + 1]) / tl;
-      let best = Infinity, j = -1;
-      for (let k = 0; k < parentPoints.length / 2; k++) {
-        const vx = parentPoints[2 * k] - ex, vy = parentPoints[2 * k + 1] - ey, d = Math.hypot(vx, vy);
-        if (d > 12 * cell) continue;
-        const score = d - 0.7 * (vx * tx + vy * ty);
-        if (score < best) { best = score; j = k; }
+      const [qx, qy] = nearestOnLine(tp, ex, ey);
+      let tx = ex - out[2 * back], ty = ey - out[2 * back + 1], tl = Math.hypot(tx, ty);
+      if (tl < 1e-6) { tx = qx - ex; ty = qy - ey; tl = Math.hypot(tx, ty) || 1; }
+      tx /= tl; ty /= tl;
+      const candidates: [number, number][] = [];
+      for (let k = 0; k < tp.length / 2; k++) {
+        const vx = tp[2 * k] - ex, vy = tp[2 * k + 1] - ey, d = Math.hypot(vx, vy);
+        if (d <= 12 * cell) candidates.push([d - 0.7 * (vx * tx + vy * ty), k]);
       }
-      let jx: number, jy: number, px2: number, py2: number;
-      if (j >= 0) {
-        jx = parentPoints[2 * j]; jy = parentPoints[2 * j + 1];
-        const k0 = Math.max(0, j - 1), k1 = Math.min(parentPoints.length / 2 - 1, j + 1);
-        const pl = Math.hypot(parentPoints[2 * k1] - parentPoints[2 * k0], parentPoints[2 * k1 + 1] - parentPoints[2 * k0 + 1]) || 1;
-        px2 = (parentPoints[2 * k1] - parentPoints[2 * k0]) / pl; py2 = (parentPoints[2 * k1 + 1] - parentPoints[2 * k0 + 1]) / pl;
-      } else {
-        [jx, jy] = nearestOnLine(parentPoints, ex, ey);
-        px2 = tx; py2 = ty;
+      candidates.sort((a, b) => a[0] - b[0]);
+      // Last, the nearest point of the other course, however far it meandered.
+      const nearestVertex = (): number => {
+        let best = Infinity, j = 0;
+        for (let k = 0; k < tp.length / 2; k++) {
+          const d = (tp[2 * k] - qx) ** 2 + (tp[2 * k + 1] - qy) ** 2;
+          if (d < best) { best = d; j = k; }
+        }
+        return j;
+      };
+      candidates.push([Infinity, nearestVertex()]);
+      // Height of a curve above the water, which may rise to the other course's bank.
+      const excess = (hx: number[], hy: number[]): number => {
+        const ceiling = Math.max(lv[m], terrain(hx[hx.length - 1], hy[hy.length - 1])) + 0.5;
+        let worst = -Infinity;
+        for (let k = 0; k < hx.length; k++) worst = Math.max(worst, terrain(hx[k], hy[k]) - ceiling);
+        return worst;
+      };
+      let best: [number[], number[]] | undefined, bestExcess = Infinity;
+      for (const [, j] of [...candidates.slice(0, 8), ...candidates.slice(-1)]) {
+        if (bestExcess <= 0) break;
+        const jx = tp[2 * j], jy = tp[2 * j + 1];
+        const k0 = Math.max(0, j - 1), k1 = Math.min(tp.length / 2 - 1, j + 1);
+        const pl = Math.hypot(tp[2 * k1] - tp[2 * k0], tp[2 * k1 + 1] - tp[2 * k0 + 1]) || 1;
+        const px2 = (tp[2 * k1] - tp[2 * k0]) / pl, py2 = (tp[2 * k1 + 1] - tp[2 * k0 + 1]) / pl;
+        const d = Math.hypot(jx - ex, jy - ey), ax2 = tx + px2, ay2 = ty + py2, al = Math.hypot(ax2, ay2) || 1;
+        for (const f of [0.8, 0.4]) {
+          const curve = hermite(ex, ey, tx * f * d, ty * f * d, jx, jy, ax2 / al * f * d, ay2 / al * f * d, cell / 3);
+          const e = excess(curve[0], curve[1]);
+          if (e < bestExcess) { best = curve; bestExcess = e; }
+          if (e <= 0) break;
+        }
       }
-      const d = Math.hypot(jx - ex, jy - ey), ax2 = tx + px2, ay2 = ty + py2, al = Math.hypot(ax2, ay2) || 1;
-      const [hx, hy] = hermite(ex, ey, tx * 0.8 * d, ty * 0.8 * d, jx, jy, ax2 / al * 0.8 * d, ay2 / al * 0.8 * d, cell / 3);
-      const z = Math.min(lv[m], level[count - 1]);
+      // No curve stays in the valley: follow the other course's thalweg (the
+      // valley bottom it meandered away from) down to where it crosses its course.
+      if (bestExcess > 0 && thalwegs[joinTo]) {
+        const [gx, gy] = thalwegs[joinTo];
+        let start = -1, nearest = (2 * cell) ** 2;
+        for (let k = 0; k < gx.length; k++) {
+          const d = (gx[k] - ex) ** 2 + (gy[k] - ey) ** 2;
+          if (d < nearest) { nearest = d; start = k; }
+        }
+        if (start >= 0) {
+          const wx = [ex], wy = [ey];
+          for (let k = start; k < gx.length && k < start + 300; k++) {
+            // The thalweg may run along the course itself: touching it is joining it.
+            const touch = traced.nearest(gx[k], gy[k], 1.5);
+            if (touch) {
+              wx.push(touch.x); wy.push(touch.y);
+              const e = excess(wx, wy);
+              if (e < bestExcess) { best = [wx, wy]; bestExcess = e; }
+              break;
+            }
+            const t = traced.crossing(wx[wx.length - 1], wy[wy.length - 1], gx[k], gy[k]);
+            if (t <= 1) {
+              wx.push(wx[wx.length - 1] + (gx[k] - wx[wx.length - 1]) * t); wy.push(wy[wy.length - 1] + (gy[k] - wy[wy.length - 1]) * t);
+              const e = excess(wx, wy);
+              if (e < bestExcess) { best = [wx, wy]; bestExcess = e; }
+              break;
+            }
+            wx.push(gx[k]); wy.push(gy[k]);
+          }
+        }
+      }
+      // The straight line to the nearest point only when it is much lower than any curve.
+      const [sx, sy] = resample([ex, qx], [ey, qy], 2, cell / 3);
+      const straight: [number[], number[]] = [Array.from(sx), Array.from(sy)];
+      if (!best || excess(straight[0], straight[1]) < bestExcess - 1) best = straight;
+      const [hx, hy] = best, z = Math.min(lv[m], level[count - 1]);
       for (let k = 1; k < hx.length; k++) {
         const t = traced.crossing(hx[k - 1], hy[k - 1], hx[k], hy[k]);
         const last = t <= 1 || k === hx.length - 1;
@@ -916,23 +1486,73 @@ export function vectorRivers(h: SimpleHydrology, lake: Uint8Array, settings: Riv
     }
     unfold(out, us, kind, lv);
     despike(out, us, kind, lv);
-    relax(out, lv, terrain, CURVE_TOLERANCE);
+    uncross(out, cell, us, kind, lv);
+    relax(out, lv, terrain, wet, CURVE_TOLERANCE);
+    uncross(out, cell, us, kind, lv);
+    // A course ending in standing water stops at its shore.
+    if (stream.end >= 0 && still[stream.end] && joinTo < 0) {
+      let k = out.length / 2 - 1;
+      while (k > 0 && wet(out[2 * k], out[2 * k + 1])) k--;
+      if (k < out.length / 2 - 1 && !wet(out[2 * k], out[2 * k + 1])) {
+        const ax = out[2 * k], ay = out[2 * k + 1], bx = out[2 * k + 2], by = out[2 * k + 3];
+        let lo = 0, hi = 1;
+        for (let j = 0; j < 16; j++) { const mid = (lo + hi) / 2; if (wet(ax + (bx - ax) * mid, ay + (by - ay) * mid)) hi = mid; else lo = mid; }
+        const u = us[k + 1], z = lv[k + 1], kd = kind[k + 1];
+        out.length = 2 * k + 2; us.length = k + 1; kind.length = k + 1; lv.length = k + 1;
+        out.push(ax + (bx - ax) * hi, ay + (by - ay) * hi); us.push(u); kind.push(kd); lv.push(z);
+      }
+    }
     if (out.length < 4) continue;
-    const lerp = (values: number[], u: number): number => {
-      const i = Math.min(count - 2, Math.floor(u)), f = u - i;
-      return values[i] + (values[i + 1] - values[i]) * f;
-    };
     lines[id] = { points: out, area: us.map(u => lerp(area, u)), level: lv, kind };
-    traced.add(out);
+    // Tributaries crossing a lake floor run to the part of this course that is drawn.
+    chains[id] = cells.slice(0, Math.min(cells.length, Math.floor(us[us.length - 1]) + 2));
+    widest = Math.max(widest, channelWidth(lines[id].area[lines[id].area.length - 1], settings.widthScale));
+    traced.add(out, id);
   }
 
   const rivers = lines.filter(Boolean);
-  // Later migration may have swept through an oxbow: keep only those clear of every course.
-  const clear = oxbows.filter(oxbow => {
-    const p = oxbow.points;
-    for (let k = 0; k + 3 < p.length; k += 2) if (traced.crossing(p[k], p[k + 1], p[k + 2], p[k + 3]) <= 1) return false;
-    return true;
-  });
+  // Later migration may have swept through an oxbow or carried the channel
+  // away from it: keep only those clear of every course and of standing water,
+  // with both ends still beside the channel that abandoned them. Ends running
+  // along a course are trimmed; what remains must still read as an oxbow, a
+  // crescent at least `OXBOW_LENGTH` channel widths long enclosing some area,
+  // not a hairpin or a kink.
+  const clear: RiverLine[] = [];
+  for (const oxbow of oxbows) {
+    const p = oxbow.points, width = Math.max(channelWidth(oxbow.area[0], settings.widthScale), MIN_WIDTH_CELLS * cell);
+    if (p.some((_, k) => k % 2 === 0 && k + 3 < p.length && traced.crossing(p[k], p[k + 1], p[k + 2], p[k + 3]) <= 1)) continue;
+    if (p.some((_, k) => k % 2 === 0 && wet(p[k], p[k + 1]))) continue;
+    let first = 0, last = p.length / 2 - 1;
+    while (first < last && traced.nearest(p[2 * first], p[2 * first + 1], width)) first++;
+    while (last > first && traced.nearest(p[2 * last], p[2 * last + 1], width)) last--;
+    if (last - first < 3) continue;
+    let length = 0, enclosed = 0;
+    for (let k = first; k <= last; k++) {
+      const j = k === last ? first : k + 1;
+      if (k < last) length += Math.hypot(p[2 * j] - p[2 * k], p[2 * j + 1] - p[2 * k + 1]);
+      enclosed += p[2 * k] * p[2 * j + 1] - p[2 * j] * p[2 * k + 1];
+    }
+    if (length < OXBOW_LENGTH * width || Math.abs(enclosed / 2) < OXBOW_COMPACTNESS * length * length) continue;
+    // A bend tighter than the channel itself is a fold of the model, no oxbow.
+    let sharp = false;
+    for (let k = first + 1; k < last && !sharp; k++) {
+      let turn = 0;
+      const heading = (j: number): number => Math.atan2(p[2 * j + 3] - p[2 * j + 1], p[2 * j + 2] - p[2 * j]);
+      for (let j = k, arc = 0; j < last && arc < width; j++) {
+        let t = heading(j) - heading(j - 1);
+        t -= 2 * Math.PI * Math.round(t / (2 * Math.PI));
+        turn += t; arc += Math.hypot(p[2 * j + 2] - p[2 * j], p[2 * j + 3] - p[2 * j + 1]);
+        if (Math.abs(turn) > OXBOW_TURN) sharp = true;
+      }
+    }
+    if (sharp) continue;
+    const reach = 3 * width;
+    if (!traced.nearest(p[2 * first], p[2 * first + 1], reach) || !traced.nearest(p[2 * last], p[2 * last + 1], reach)) continue;
+    clear.push({
+      points: p.slice(2 * first, 2 * last + 2), area: oxbow.area.slice(first, last + 1),
+      level: oxbow.level.slice(first, last + 1), kind: oxbow.kind.slice(first, last + 1),
+    });
+  }
   let length = 0;
   for (const line of rivers) for (let k = 2; k < line.points.length; k += 2) {
     length += Math.hypot(line.points[k] - line.points[k - 2], line.points[k + 1] - line.points[k - 1]);
