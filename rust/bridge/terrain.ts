@@ -15,7 +15,17 @@ export type TerrainCompute = typeof COMPUTE_MODES[number];
 export const COAST_DIRECTIONS = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'] as const;
 export const ISLAND_MODES = ['island', 'archipelago', 'random'] as const;
 export type IslandMode = typeof ISLAND_MODES[number];
-export interface TerrainSettings { seed: string; width: number; motifSize: number; relief: TerrainRelief; environment?: TerrainEnvironment; coastMask?: number; islandMode?: IslandMode; erosion: number; mountainMix: number; resolution: number; compute?: TerrainCompute; generationCompute?: 'cpu' | 'gpu' | 'gpu-all' | 'gpu-erosion'; hydrology?: HydrologySettings }
+export const TERRAIN_SOURCES = ['procedural', 'neural'] as const;
+export type TerrainSource = typeof TERRAIN_SOURCES[number];
+/** Relief families sketched for the neural coarse network (7.68 km cells). */
+export const NEURAL_RELIEFS = ['flat', 'hills', 'valley', 'mountains', 'mixed', 'plateau', 'high-mountains'] as const;
+export const NEURAL_CLIMATES = ['temperate', 'oceanic', 'mediterranean', 'arid', 'cold', 'tropical'] as const;
+export type NeuralClimate = typeof NEURAL_CLIMATES[number];
+/** The neural chain currently delivers one fixed 40 × 40 km map. */
+export const NEURAL_EXTENT = 40000;
+export const DEFAULT_NEURAL_SERVER = 'http://127.0.0.1:8792';
+export interface TerrainSettings { seed: string; width: number; motifSize: number; relief: TerrainRelief; environment?: TerrainEnvironment; coastMask?: number; islandMode?: IslandMode; erosion: number; mountainMix: number; resolution: number; compute?: TerrainCompute; generationCompute?: 'cpu' | 'gpu' | 'gpu-all' | 'gpu-erosion'; hydrology?: HydrologySettings; source?: TerrainSource; climate?: NeuralClimate; fidelity?: number; neuralServer?: string }
+export interface NeuralInfo { totalMs: number; coarseMs: number; baseMs: number; decoderMs: number; reconstructionMs: number; requestMs: number; evaluations: [number, number, number]; profile: string; land: number }
 export interface TerrainRegion { x: number; y: number; extent: number; resolution: number }
 export interface TerrainData {
   x: number; y: number; width: number; resolution: number; minHeight: number; maxHeight: number;
@@ -23,11 +33,13 @@ export interface TerrainData {
   height: Float32Array; caveMask: Uint8Array;
   normalX: Float32Array; normalY: Float32Array; normalZ: Float32Array; generationMs: number;
   backend?: TerrainCompute; backendReason?: string; prepareMs?: number; samplingMs?: number; gpuSetupMs?: number;
-  generationBackend?: 'cpu' | 'gpu-noise-f32' | 'gpu-noise-all-f32' | 'gpu-erosion-f32'; generationReason?: string; noiseMs?: number; erosionMs?: number; gpuSimulationMs?: number; nativeEnvironmentMs?: number;
+  generationBackend?: 'cpu' | 'gpu-noise-f32' | 'gpu-noise-all-f32' | 'gpu-erosion-f32' | 'neural'; generationReason?: string; noiseMs?: number; erosionMs?: number; gpuSimulationMs?: number; nativeEnvironmentMs?: number;
   erosionProfile?: ErosionProfile[];
   coastBackend?: 'cpu' | 'gpu-f32'; coastMs?: number; coastReason?: string;
   hydrology?: HydrologyData;
   hydrologySurfaceMs?: number;
+  hydrologyError?: string;
+  neural?: NeuralInfo;
 }
 export interface TerrainRequest { id: number; generation: number; kind: 'overview' | 'detail'; settings: TerrainSettings; region: TerrainRegion; scene?: { style: TerrainStyle; showContours: boolean } }
 export type TerrainResponse = Pick<TerrainRequest, 'id' | 'generation' | 'kind'> & ({ terrain: TerrainData; scene?: TerrainScene; scenePreparationMs?: number } | { error: string });
@@ -41,6 +53,27 @@ let generationBackend: TerrainData['generationBackend'] = 'cpu', generationReaso
 let queue: Promise<unknown> = Promise.resolve();
 let preparedHydrology: PreparedHydrology | undefined, hydrologyKey = '', hydrologyVectorKey = '';
 let hydrology: HydrologyData | undefined;
+let neuralInfo: NeuralInfo | undefined;
+let hydrologyFailure: { key: string; message: string } | undefined;
+
+/** Heights of the local Rust neural service: `1024²` FP32 metres over 40 km, sea at zero. */
+async function fetchNeuralRelief(settings: TerrainSettings, coastMask: number, islandMode: IslandMode): Promise<{ heights: Float32Array; info: NeuralInfo }> {
+  const server = (settings.neuralServer || DEFAULT_NEURAL_SERVER).replace(/\/$/, '');
+  const params = new URLSearchParams({
+    seed: settings.seed, relief: settings.relief, mix: String(settings.relief === 'mixed' ? settings.mountainMix : 0.5),
+    coasts: String(coastMask), islands: islandMode, climate: settings.climate ?? 'temperate', noise: String(settings.fidelity ?? 0.05),
+  });
+  const started = performance.now();
+  let response: Response;
+  try { response = await fetch(`${server}/generate?${params}`, { cache: 'no-store' }); }
+  catch { throw new Error(`service neuronal injoignable (${server}) : lancer « npm run neural:serve » dans web/`); }
+  if (!response.ok) throw new Error(`service neuronal : ${await response.text()}`);
+  const heights = new Float32Array(await response.arrayBuffer());
+  const meta = JSON.parse(response.headers.get('X-Neural-Meta') ?? '{}');
+  if (heights.length !== 1024 * 1024) throw new Error('service neuronal : surface incomplète');
+  return { heights, info: { ...meta, requestMs: performance.now() - started } as NeuralInfo };
+}
+
 export function sampleRustTerrain(request: TerrainRequest): Promise<TerrainData> {
   const result = queue.then(() => sampleTerrain(request));
   queue = result.catch(() => undefined);
@@ -64,7 +97,10 @@ async function sampleTerrain({ settings, region, kind }: TerrainRequest): Promis
   const requestedGpuGeneration = generationMode !== 'cpu' && mode !== 'wasm' && GPU_GENERATION_RELIEFS.includes(settings.relief);
   const gpuGeneration = requestedGpuGeneration && !!readyGpu;
   // Device loss affects sampling; it must not replace an already prepared landscape.
-  const key = JSON.stringify([settings.seed, settings.width, settings.relief, settings.relief === 'cavern' ? 0 : settings.erosion, settings.motifSize, settings.relief === 'mixed' ? settings.mountainMix : 0.5, requestedGpuGeneration ? generationMode : 'cpu', environment]);
+  const neural = settings.source === 'neural';
+  const key = neural
+    ? JSON.stringify(['neural', settings.seed, settings.relief, settings.relief === 'mixed' ? settings.mountainMix : 0.5, coastMask, coastMask === 255 ? islandMode : 'island', settings.climate ?? 'temperate', settings.fidelity ?? 0.05, settings.neuralServer ?? ''])
+    : JSON.stringify([settings.seed, settings.width, settings.relief, settings.relief === 'cavern' ? 0 : settings.erosion, settings.motifSize, settings.relief === 'mixed' ? settings.mountainMix : 0.5, requestedGpuGeneration ? generationMode : 'cpu', environment]);
   let prepareMs = 0, noiseMs = 0, erosionMs = 0, gpuSimulationMs = 0, nativeEnvironmentMs = 0;
   let erosionProfile: ErosionProfile[] | undefined;
   if (!engine || engineKey !== key) {
@@ -73,7 +109,14 @@ async function sampleTerrain({ settings, region, kind }: TerrainRequest): Promis
     const prepareStarted = performance.now();
     generationBackend = 'cpu'; generationReason = undefined;
     const mix = settings.relief === 'mixed' ? settings.mountainMix : 0.5;
-    if (gpuGeneration && readyGpu) {
+    neuralInfo = undefined;
+    if (neural) {
+      // The coasts belong to the neural sketch; the engine retains the surface as is.
+      const result = await fetchNeuralRelief(settings, coastMask, islandMode);
+      engine = TerrainEngine.with_surface(settings.seed, NEURAL_EXTENT, result.heights);
+      neuralInfo = result.info;
+      generationBackend = 'neural';
+    } else if (gpuGeneration && readyGpu) {
       try {
         if (generationMode === 'gpu-erosion' || settings.relief === 'volcano' || settings.relief === 'caldera' || settings.relief === 'plateau' || settings.relief === 'canyon') {
           const timing = { nativeEnvironmentMs: 0, profiles: [] as ErosionProfile[] };
@@ -101,9 +144,11 @@ async function sampleTerrain({ settings, region, kind }: TerrainRequest): Promis
   }
   // Reuse the underlying relief, then cut the coast before its physical erosion.
   const gpuCoast = coastMask !== 0 && generationMode !== 'cpu' && mode !== 'wasm';
-  const coastKey = JSON.stringify([coastMask, coastMask === 255 ? islandMode : 'island', coastMask ? gpuCoast : false]);
+  const coastKey = neural ? 'neural' : JSON.stringify([coastMask, coastMask === 255 ? islandMode : 'island', coastMask ? gpuCoast : false]);
   let coastMs = 0;
-  if (engineCoastKey !== coastKey) {
+  if (neural) {
+    engineCoastKey = coastKey; coastBackend = undefined; coastReason = undefined;
+  } else if (engineCoastKey !== coastKey) {
     sampler?.dispose(); sampler = undefined; samplerMode = undefined;
     coastBackend = undefined; coastReason = undefined;
     const coastStarted = performance.now();
@@ -133,8 +178,12 @@ async function sampleTerrain({ settings, region, kind }: TerrainRequest): Promis
   }
   async function finish(data: TerrainData): Promise<TerrainData> {
     const config = settings.hydrology;
-    if (config?.enabled && settings.relief !== 'cavern') {
-      const inputKey = JSON.stringify([engineKey, engineCoastKey, config.resolution, config.compute]);
+    data.neural = neuralInfo;
+    const inputKey = config ? JSON.stringify([engineKey, engineCoastKey, config.resolution, config.compute]) : '';
+    // A refused neural relief is retried only when the relief or the hydrology settings change.
+    const failureKey = `${inputKey}|${JSON.stringify(config)}`;
+    if (neural && hydrologyFailure?.key === failureKey) data.hydrologyError = hydrologyFailure.message;
+    else if (config?.enabled && settings.relief !== 'cavern') try {
       if (!preparedHydrology || hydrologyKey !== inputKey) {
         preparedHydrology?.dispose(); preparedHydrology = undefined; hydrology = undefined;
         hydrologyVectorKey = '';
@@ -148,7 +197,7 @@ async function sampleTerrain({ settings, region, kind }: TerrainRequest): Promis
           const source = engine!.sample_region(0, 0, settings.width, n);
           try { height = source.height; } finally { source.free(); }
         }
-        preparedHydrology = await PreparedHydrology.create(settings.seed, settings.width, n, height, config.compute, coastMask !== 0);
+        preparedHydrology = await PreparedHydrology.create(settings.seed, settings.width, n, height, config.compute, neural ? engine!.min_height < 0 : coastMask !== 0);
         hydrologyKey = inputKey;
       }
       const vectorKey = JSON.stringify(config);
@@ -161,6 +210,12 @@ async function sampleTerrain({ settings, region, kind }: TerrainRequest): Promis
       // Intermediate grids stay in the worker cache. Only overview replies clone
       // them for inspection; camera requests carry just their terrain region.
       if (kind === 'overview') data.hydrology = hydrology;
+    } catch (error) {
+      // Neural surfaces can exceed the current river-profile budgets: keep the relief.
+      if (!neural) throw error;
+      preparedHydrology?.dispose(); preparedHydrology = undefined; hydrology = undefined; hydrologyKey = '';
+      hydrologyFailure = { key: failureKey, message: error instanceof Error ? error.message : String(error) };
+      data.hydrologyError = hydrologyFailure.message;
     }
     data.generationMs = performance.now() - started;
     return data;

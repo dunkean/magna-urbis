@@ -29,8 +29,20 @@ const wasm = release => run(executable('wasm-pack'), [
 ]);
 const vite = (...args) => run(process.execPath, [join(webDir, 'node_modules/vite/bin/vite.js'), ...args], webDir);
 
+// Native neural relief service (pure Rust, Vulkan/DX12/Metal through wgpu).
+async function neural() {
+  const neuralArgs = ['run', '--release', '-p', 'magna-urbis-neural', '--bin', 'neural', '--'];
+  const weights = process.env.MAGNA_NEURAL_WEIGHTS ?? join(rustDir, 'pkg/neural-weights');
+  if (!['coarse', 'base', 'decoder'].every(name => existsSync(join(weights, `${name}.safetensors`)))) {
+    console.log('Préparation des poids neuronaux (une fois) depuis Infinite Map et le cache Terrain Diffusion…');
+    await run(executable('cargo'), [...neuralArgs, 'export', '--out', weights]);
+  }
+  await run(executable('cargo'), [...neuralArgs, 'serve', '--weights', weights, ...process.argv.slice(3)]);
+}
+
 async function main() {
   if (action === 'wasm') return wasm(false);
+  if (action === 'neural') return neural();
   if (action === 'check') {
     await run(executable('cargo'), ['fmt', '--all', '--', '--check']);
     await run(executable('cargo'), ['clippy', '--workspace', '--all-targets', '--', '-D', 'warnings']);
@@ -43,7 +55,7 @@ async function main() {
     console.log(`Terrain bench: ${join(rustDir, 'out/browser/terrainbench.html')}`);
     return;
   }
-  if (action !== 'dev') throw new Error('Usage: terrain.mjs dev|wasm|build|check');
+  if (action !== 'dev') throw new Error('Usage: terrain.mjs dev|wasm|build|check|neural');
   await wasm(false);
   let timer, building = false, pending = false;
   async function rebuild() {
@@ -58,7 +70,8 @@ async function main() {
   }
   const schedule = () => { clearTimeout(timer); timer = setTimeout(() => void rebuild(), 250); };
   const crateWatch = watch(join(rustDir, 'crates'), { recursive: true }, (_event, file) => {
-    if (file && /\.(rs|toml)$/.test(String(file))) schedule();
+    // The native neural crates are not part of the bench's WASM package.
+    if (file && /\.(rs|toml)$/.test(String(file)) && !/^neural/.test(String(file))) schedule();
   });
   const manifestWatch = watch(join(rustDir, 'Cargo.toml'), schedule);
   console.log('Terrain bench: http://localhost:5173/terrainbench.html · Rust auto-rebuild enabled');

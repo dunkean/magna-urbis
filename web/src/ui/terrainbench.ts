@@ -8,7 +8,7 @@ import { createPins } from './pins';
 import { createRuler } from './ruler';
 import { pinsFromString, pinsToString, viewFromString, viewToString } from './share';
 import { clampView, fitView, panBy, screenToWorld, zoomAt, type View } from '../render/view';
-import { COAST_DIRECTIONS, ISLAND_MODES, type IslandMode } from '../../../rust/bridge/terrain';
+import { COAST_DIRECTIONS, ISLAND_MODES, type IslandMode, TERRAIN_SOURCES, NEURAL_RELIEFS, NEURAL_CLIMATES, NEURAL_EXTENT, DEFAULT_NEURAL_SERVER, type TerrainSource, type NeuralClimate } from '../../../rust/bridge/terrain';
 
 const el = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T;
 const input = (id: string): HTMLInputElement => el<HTMLInputElement>(id);
@@ -20,6 +20,10 @@ const bounded = (value: number, min: number, max: number): number => Math.max(mi
 const initialRelief = query.get('relief') as TerrainRelief;
 const geological = (relief: string): boolean => (GEOLOGICAL_RELIEFS as readonly string[]).includes(relief);
 const initialEnvironment = query.get('environment') as TerrainEnvironment;
+const initialSource: TerrainSource = TERRAIN_SOURCES.includes(query.get('source') as TerrainSource) ? query.get('source') as TerrainSource : 'procedural';
+const neuralRelief = (relief: string): boolean => (NEURAL_RELIEFS as readonly string[]).includes(relief);
+const neuralServer = query.get('neural')?.trim() || DEFAULT_NEURAL_SERVER;
+const fidelities = ['0.02', '0.05', '0.15'];
 let settings: TerrainSettings = {
   seed: query.get('seed')?.slice(0, 120) || '42',
   width: bounded(finite(query.get('width'), 2400), 500, 100000),
@@ -36,7 +40,17 @@ let settings: TerrainSettings = {
   erosion: bounded(finite(query.get('erosion'), 1), 0, 2), resolution: 512,
   compute: COMPUTE_MODES.includes(query.get('compute') as TerrainCompute) ? query.get('compute') as TerrainCompute : 'gpu-f32',
   generationCompute: query.get('generation') === 'cpu' ? 'cpu' : query.get('generation') === 'gpu-all' ? 'gpu-all' : query.get('generation') === 'gpu' ? 'gpu' : 'gpu-erosion',
+  source: initialSource,
+  climate: NEURAL_CLIMATES.includes(query.get('climate') as NeuralClimate) ? query.get('climate') as NeuralClimate : 'temperate',
+  fidelity: Number(fidelities.includes(query.get('fidelity') ?? '') ? query.get('fidelity') : '0.05'),
+  neuralServer,
 };
+// Links without a source remain procedural; neural maps are fixed at 40 km.
+let proceduralWidth = settings.width;
+if (settings.source === 'neural') {
+  settings.width = NEURAL_EXTENT;
+  if (!neuralRelief(settings.relief)) settings.relief = 'mixed';
+}
 const hydroFields = {
   enabled: 'hydroEnabled', main: 'hydroMain', density: 'hydroDensity', wetness: 'hydroWetness', lakes: 'hydroLakes',
   meanders: 'hydroMeanders', meanderIntensity: 'hydroMeanderIntensity', estuary: 'hydroEstuary', widthScale: 'hydroWidthScale',
@@ -151,6 +165,11 @@ el<HTMLSelectElement>('relief').value = settings.relief; el<HTMLSelectElement>('
 el<HTMLSelectElement>('environment').value = settings.environment!;
 el<HTMLSelectElement>('compute').value = settings.compute!;
 el<HTMLSelectElement>('generationCompute').value = settings.generationCompute!;
+el<HTMLSelectElement>('terrainSource').value = settings.source!;
+// Already in neural mode: keep the procedural width for a later switch back.
+input('width').disabled = settings.source === 'neural';
+el<HTMLSelectElement>('climate').value = settings.climate!;
+el<HTMLSelectElement>('fidelity').value = String(settings.fidelity);
 input('auto').checked = query.get('auto') !== '0'; input('showPins').checked = query.get('showPins') !== '0';
 input('showContours').checked = query.get('contours') !== '0';
 function updateContourControl(): void {
@@ -184,7 +203,49 @@ function updateHydrologyControl(): void {
   el('hydroDensityValue').textContent = `${Math.round(Number(input('hydroDensity').value) * 100)} %`;
   el('hydroLakeAbundanceValue').textContent = `× ${Number(input('hydroLakeAbundance').value).toFixed(2)}`;
 }
+const isNeural = (): boolean => el<HTMLSelectElement>('terrainSource').value === 'neural';
+/** Neural relief: fixed 40 km map, regional families only, no procedural motif or erosion. */
+function updateSourceControl(): void {
+  const neural = isNeural(), relief = el<HTMLSelectElement>('relief');
+  for (const option of Array.from(relief.options)) option.disabled = neural && !neuralRelief(option.value);
+  if (neural && !neuralRelief(relief.value)) relief.value = 'mixed';
+  const width = input('width');
+  if (neural && !width.disabled) { proceduralWidth = Number(width.value) || proceduralWidth; width.value = String(NEURAL_EXTENT); }
+  if (!neural && width.disabled) width.value = String(proceduralWidth);
+  width.disabled = neural;
+  width.title = neural ? 'Carte neuronale fixe : 40 × 40 km' : '';
+  el('motifControl').hidden = neural;
+  el('erosionControl').hidden = neural;
+  el('climateControl').hidden = !neural;
+  el('fidelityControl').hidden = !neural;
+  el<HTMLSelectElement>('generationCompute').disabled = neural;
+  el('neuralState').hidden = !neural;
+  if (neural) void pollNeural();
+}
+let neuralPolling = false;
+async function pollNeural(): Promise<void> {
+  if (neuralPolling) return;
+  neuralPolling = true;
+  const state = el('neuralState');
+  try {
+    while (isNeural()) {
+      let settled = false;
+      try {
+        const status = await (await fetch(`${neuralServer}/status`, { cache: 'no-store' })).json() as { state: string; message: string };
+        state.dataset.state = status.state;
+        state.textContent = `Service neuronal : ${status.message}`;
+        settled = status.state === 'ready' || status.state === 'error';
+      } catch {
+        state.dataset.state = 'error';
+        state.textContent = `Service neuronal absent (${neuralServer}) : lancer « npm run neural:serve » dans web/`;
+      }
+      if (settled && el('generate').getAttribute('aria-busy') !== 'true') break;
+      await new Promise(resolve => setTimeout(resolve, 2000));
+    }
+  } finally { neuralPolling = false; }
+}
 function updateErosionControl(): void {
+  updateSourceControl();
   updateCoastControl();
   updateHydrologyControl();
   el('environmentControl').hidden = !geological(el<HTMLSelectElement>('relief').value);
@@ -207,6 +268,10 @@ function shareQuery(): string {
   params.set('contours', input('showContours').checked ? '1' : '0');
   if (settings.relief === 'mixed') params.set('mix', String(settings.mountainMix));
   if (geological(settings.relief)) params.set('environment', settings.environment ?? 'mixed');
+  if (settings.source === 'neural') {
+    params.set('source', 'neural'); params.set('climate', settings.climate ?? 'temperate'); params.set('fidelity', String(settings.fidelity ?? 0.05));
+    if (neuralServer !== DEFAULT_NEURAL_SERVER) params.set('neural', neuralServer);
+  }
   if (settings.relief !== 'cavern' && settings.coastMask) {
     params.set('coasts', COAST_DIRECTIONS.filter((_, i) => settings.coastMask! & (1 << i)).join(','));
     params.set('islands', settings.islandMode ?? 'island');
@@ -278,8 +343,15 @@ function renderedStatus(): void {
   const coast = terrain.coastBackend ? ` · littoral + érosion ${terrain.coastBackend === 'gpu-f32' ? 'GPU FP32' : 'CPU Rust'}${terrain.coastMs ? ` ${terrain.coastMs.toFixed(0)} ms` : ''}${terrain.coastReason ? ` (${terrain.coastReason})` : ''}` : '';
   const hydro = terrain.hydrology;
   const hydroStatus = el('hydrologyStatus');
-  hydroStatus.hidden = !hydro;
+  hydroStatus.hidden = !hydro && !terrain.hydrologyError;
+  if (terrain.hydrologyError) hydroStatus.textContent = `Hydrologie indisponible sur ce relief neuronal : ${terrain.hydrologyError}`;
   if (hydro) hydroStatus.textContent = `Hydrologie · ${hydro.backend === 'gpu-f32' ? 'GPU FP32 + finalisation Rust' : 'CPU Rust'} · ${hydro.riverCount} tronçons · ${hydro.lakeCount} lacs (${(hydro.lakeFraction * 100).toFixed(1)} % des terres) · ${hydro.basinCount} bassins · grille ${hydro.resolution}² · ${hydro.breachCount} ouvertures bornées · drainage préparé ${hydro.drainageMs.toFixed(0)} ms · finalisation ${hydro.vectorMs.toFixed(0)} ms${hydro.backendReason ? ` · ${hydro.backendReason}` : ''}`;
+  const neural = terrain.neural;
+  if (neural) {
+    const contours = contourStep && map.dataset.contours === 'true' ? `courbes ${contourStep} m` : 'sans courbes';
+    status(`${name} · neuronal ${neural.profile} · évaluations ${neural.evaluations.join('/')} (coarse/base/decoder) · service ${neural.totalMs.toFixed(0)} ms (coarse ${neural.coarseMs.toFixed(0)}, base ${neural.baseMs.toFixed(0)}, decoder ${neural.decoderMs.toFixed(0)}, reconstruction ${neural.reconstructionMs.toFixed(0)}) · requête ${neural.requestMs.toFixed(0)} ms · terres ${(neural.land * 100).toFixed(0)} % · ${backend} · carte 40 km · aperçu ${terrain.resolution}² · ${contours} · génération + aperçu ${terrain.generationMs.toFixed(0)} ms${detail} · rendu ${renderingMs.toFixed(0)} ms`);
+    return;
+  }
   status(`${name}${environment} · ${backend} · carte ${settings.width.toLocaleString('fr-FR')} m · relief ${settings.motifSize.toLocaleString('fr-FR')} m · aperçu ${terrain.resolution}² · ${contourStep && map.dataset.contours === 'true' ? `courbes ${contourStep} m` : 'sans courbes'}${preparation}${coast}${setup} · génération + aperçu ${terrain.generationMs.toFixed(0)} ms${detail} · rendu ${renderingMs.toFixed(0)} ms`);
 }
 function renderWater(): void {
@@ -420,7 +492,8 @@ try {
 function readSettings(stage: GenerationStage = 'all', reportError = true): TerrainSettings | undefined {
   if (stage === 'hydrology') return { ...settings, hydrology: readHydrology() };
   if (stage === 'coasts') return { ...settings, coastMask: settings.relief === 'cavern' ? 0 : draftCoastMask, islandMode: el<HTMLSelectElement>('islandMode').value as IslandMode };
-  const width = Number(input('width').value), motifSize = Number(input('motifSize').value), seed = input('seed').value.trim();
+  const source = el<HTMLSelectElement>('terrainSource').value as TerrainSource;
+  const width = source === 'neural' ? NEURAL_EXTENT : Number(input('width').value), motifSize = Number(input('motifSize').value), seed = input('seed').value.trim();
   if (!Number.isFinite(width) || width < 500 || width > 100000 || !seed) {
     if (reportError) status('Saisissez une largeur entre 500 et 100 000 m et une graine.', true); return;
   }
@@ -429,9 +502,10 @@ function readSettings(stage: GenerationStage = 'all', reportError = true): Terra
   }
   const relief = el<HTMLSelectElement>('relief').value as TerrainRelief;
   if (!RELIEFS.includes(relief)) { if (reportError) status('Choisissez un relief dans le menu.', true); return; }
+  if (source === 'neural' && !neuralRelief(relief)) { if (reportError) status('Ce relief n’est pas disponible en source neuronale.', true); return; }
   const environment = el<HTMLSelectElement>('environment').value as TerrainEnvironment;
   if (!ENVIRONMENT_RELIEFS.includes(environment)) { if (reportError) status('Choisissez un relief environnant dans le menu.', true); return; }
-  return { seed, width, motifSize, relief, environment, coastMask: relief === 'cavern' ? 0 : draftCoastMask, islandMode: el<HTMLSelectElement>('islandMode').value as IslandMode, erosion: Number(input('erosion').value), mountainMix: Number(input('mountainMix').value), resolution: 512, hydrology: readHydrology(), compute: el<HTMLSelectElement>('compute').value as TerrainCompute, generationCompute: el<HTMLSelectElement>('generationCompute').value as TerrainSettings['generationCompute'] };
+  return { seed, width, motifSize, relief, environment, coastMask: relief === 'cavern' ? 0 : draftCoastMask, islandMode: el<HTMLSelectElement>('islandMode').value as IslandMode, erosion: Number(input('erosion').value), mountainMix: Number(input('mountainMix').value), resolution: 512, hydrology: readHydrology(), compute: el<HTMLSelectElement>('compute').value as TerrainCompute, generationCompute: el<HTMLSelectElement>('generationCompute').value as TerrainSettings['generationCompute'], source, climate: el<HTMLSelectElement>('climate').value as NeuralClimate, fidelity: Number(el<HTMLSelectElement>('fidelity').value), neuralServer };
 }
 type GenerationStage = 'all' | 'relief' | 'coasts' | 'hydrology';
 function generate(stage: GenerationStage = 'all'): void {
@@ -439,11 +513,15 @@ function generate(stage: GenerationStage = 'all'): void {
   const draft = readSettings(stage); if (!draft) return;
   const next = stage === 'hydrology' ? { ...settings, hydrology: draft.hydrology }
     : stage === 'coasts' ? { ...settings, coastMask: draft.coastMask, islandMode: draft.islandMode }
-    : stage === 'relief' ? { ...settings, seed: draft.seed, width: draft.width, motifSize: draft.motifSize, relief: draft.relief, environment: draft.environment, erosion: draft.erosion, mountainMix: draft.mountainMix, compute: draft.compute, generationCompute: draft.generationCompute }
+    : stage === 'relief' ? { ...settings, seed: draft.seed, width: draft.width, motifSize: draft.motifSize, relief: draft.relief, environment: draft.environment, erosion: draft.erosion, mountainMix: draft.mountainMix, compute: draft.compute, generationCompute: draft.generationCompute, source: draft.source, climate: draft.climate, fidelity: draft.fidelity }
     : draft;
   generation++; clearTimeout(detailTimer); detailRequest = undefined; detailCache.clear();
   overviewRequest = { id: ++requestId, generation, kind: 'overview', settings: next, region: { x: 0, y: 0, extent: next.width, resolution: 512 } };
-  el('generate').setAttribute('aria-busy', 'true'); status(stage === 'hydrology' ? 'Recalcul des eaux… relief et côtes conservés.' : stage === 'coasts' ? 'Recalcul des côtes et des eaux… relief conservé.' : 'Génération du terrain et du réseau hydrique en Rust…'); dispatch(overviewRequest);
+  el('generate').setAttribute('aria-busy', 'true');
+  const neural = next.source === 'neural' && stage !== 'hydrology';
+  status(neural ? 'Génération neuronale par le service Rust natif (coarse → base → decoder), puis eaux…' : stage === 'hydrology' ? 'Recalcul des eaux… relief et côtes conservés.' : stage === 'coasts' ? 'Recalcul des côtes et des eaux… relief conservé.' : 'Génération du terrain et du réseau hydrique en Rust…');
+  if (neural) void pollNeural();
+  dispatch(overviewRequest);
 }
 function updateStageStates(): void {
   const draft = readSettings('all', false);
@@ -453,7 +531,7 @@ function updateStageStates(): void {
     el('hydroState').textContent = 'à recalculer après amont';
     return;
   }
-  const reliefChanged = ['seed', 'width', 'motifSize', 'relief', 'environment', 'mountainMix', 'erosion', 'compute', 'generationCompute'].some(key => draft[key as keyof TerrainSettings] !== settings[key as keyof TerrainSettings]);
+  const reliefChanged = ['seed', 'width', 'motifSize', 'relief', 'environment', 'mountainMix', 'erosion', 'compute', 'generationCompute', 'source', 'climate', 'fidelity'].some(key => draft[key as keyof TerrainSettings] !== settings[key as keyof TerrainSettings]);
   const coastChanged = draft.coastMask !== settings.coastMask || draft.islandMode !== settings.islandMode;
   const hydroChanged = JSON.stringify(draft.hydrology) !== JSON.stringify(settings.hydrology);
   el('reliefState').textContent = reliefChanged ? 'modifié' : '';
@@ -465,7 +543,7 @@ function parameterChanged(): void {
   if (input('auto').checked) generationTimer = setTimeout(() => generate(), 220);
   else status('Paramètres modifiés · recalculer une étape conserve les réglages amont ; Générer applique tout.');
 }
-for (const id of ['width', 'motifSize', 'relief', 'environment', 'mountainMix', 'erosion', 'seed', 'islandMode']) el(id).addEventListener('input', parameterChanged);
+for (const id of ['width', 'motifSize', 'relief', 'environment', 'mountainMix', 'erosion', 'seed', 'islandMode', 'terrainSource', 'climate', 'fidelity']) el(id).addEventListener('input', parameterChanged);
 for (const id of Object.values(hydroFields)) el(id).addEventListener('input', parameterChanged);
 coastButtons.forEach(button => { button.onclick = () => {
   draftCoastMask ^= 1 << (COAST_DIRECTIONS as readonly string[]).indexOf(button.dataset.coast!);

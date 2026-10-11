@@ -28,6 +28,8 @@ pub struct TerrainGenerator {
     cave: Option<CavernShape>,
     coast: crate::coast::Coast,
     coastal_surface: Surface,
+    /// Externally prepared signed surface (neural relief): never cut or eroded again.
+    prepared: bool,
 }
 
 impl TerrainGenerator {
@@ -351,8 +353,36 @@ impl TerrainGenerator {
                 },
             ),
             coastal_surface: Surface::new(Vec::new()),
+            prepared: false,
         };
         Ok(result)
+    }
+
+    /// Retains an externally prepared signed surface: `1024²` metres over the
+    /// map, row-major from the north-west corner, sea level at zero. Sampling
+    /// reads it as is; no procedural relief, coast cut or erosion is applied.
+    pub fn with_surface(seed: &str, map_width: f64, heights: &[f32]) -> Result<Self, String> {
+        if heights.len() != SOURCE_N * SOURCE_N || !heights.iter().all(|h| h.is_finite()) {
+            return Err("Surface préparée invalide.".into());
+        }
+        // A constant placeholder source skips any procedural relief generation.
+        let placeholder = vec![1.0; SOURCE_N * SOURCE_N];
+        let mut generator = Self::new_prepared(
+            seed,
+            map_width,
+            "hills",
+            0.0,
+            map_width.clamp(250.0, 50000.0),
+            0.5,
+            None,
+            Some(&placeholder),
+            None,
+        )?;
+        let max = heights.iter().copied().fold(f32::MIN, f32::max) as f64;
+        generator.max_height = max.max(1.0);
+        generator.coastal_surface = Surface::new(heights.to_vec());
+        generator.prepared = true;
+        Ok(generator)
     }
 
     /// Retained mip levels, largest first. Empty correction means no field for plains.
@@ -492,6 +522,14 @@ impl TerrainGenerator {
 
     /// Shape only, for GPU assembly followed by physical surface erosion.
     pub fn configure_coast(&mut self, mask: u32, mode: &str) -> Result<(), String> {
+        if self.prepared {
+            // Its shorelines are part of the prepared surface.
+            return if mask == 0 {
+                Ok(())
+            } else {
+                Err("Les côtes d’une surface préparée sont déjà fixées.".into())
+            };
+        }
         if self.relief == Relief::Cavern && mask != 0 {
             return Err("Les côtes ne s’appliquent pas aux cavernes.".into());
         }

@@ -359,6 +359,12 @@ impl TerrainEngine {
         .map(|generator| TerrainEngine { generator })
         .map_err(|e| JsValue::from_str(&e))
     }
+    /// Prepared signed surface (neural relief), `1024²` metres over the map.
+    pub fn with_surface(seed: &str, width: f64, heights: &[f32]) -> Result<TerrainEngine, JsValue> {
+        magna_urbis_core::TerrainGenerator::with_surface(seed, width, heights)
+            .map(|generator| TerrainEngine { generator })
+            .map_err(|e| JsValue::from_str(&e))
+    }
     /// Temporary interchange: externally evaluated FP32 noises, unchanged CPU erosion.
     #[allow(clippy::too_many_arguments)]
     pub fn with_generation_noise(

@@ -9,6 +9,7 @@
     "wasm:terrain": "node ../rust/scripts/terrain.mjs wasm",
     "build:terrain": "node ../rust/scripts/terrain.mjs build",
     "check:terrain": "node ../rust/scripts/terrain.mjs check",
+    "neural:serve": "node ../rust/scripts/terrain.mjs neural",
     "build": "vite build && vite build --mode testbench",
     "test": "vitest run",
     "test:fast": "vitest run --project fast",

@@ -89,3 +89,7 @@ summary { cursor: pointer; font-size: 12px; font-weight: 600; }
 #hydrologyOverlay { pointer-events: none; }
 
 #hydrologyLegend { position: absolute; top: 10px; left: 10px; max-width: min(430px, 85%); background: #fffef4e8; color: #34535a; border: 1px solid #d3e3e8; padding: 6px 9px; border-radius: 4px; font-size: 11px; pointer-events: none; }
+
+.neural-state { font-size: 11px; color: #657670; }
+.neural-state[data-state=ready] { color: #2d6a4f; }
+.neural-state[data-state=error] { color: #a62222; }
