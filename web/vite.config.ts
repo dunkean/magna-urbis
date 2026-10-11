@@ -38,12 +38,13 @@ export default defineConfig(({ mode }) => ({
   server: mode === 'terrainbench' ? { fs: { allow: [fileURLToPath(new URL('..', import.meta.url))] } } : undefined,
   build: {
     target: 'es2022',
-    outDir: mode === 'terrainbench' ? fileURLToPath(new URL('../rust/out/browser', import.meta.url)) : '../../dist',
-    emptyOutDir: mode !== 'testbench',
+    outDir: mode === 'terrainbench' || mode === 'neuralbench' ? fileURLToPath(new URL('../rust/out/browser', import.meta.url)) : '../../dist',
+    emptyOutDir: mode !== 'testbench' && mode !== 'neuralbench',
     chunkSizeWarningLimit: 6000,
     rollupOptions: {
       ...(mode === 'testbench' ? { input: 'src/ui/testbench.html' } : {}),
       ...(mode === 'terrainbench' ? { input: 'src/ui/terrainbench.html' } : {}),
+      ...(mode === 'neuralbench' ? { input: 'src/ui/neuralbench.html' } : {}),
       output: { banner: vendorNotice },
     },
   },

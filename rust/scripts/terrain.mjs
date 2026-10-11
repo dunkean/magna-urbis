@@ -52,7 +52,9 @@ async function main() {
   if (action === 'build') {
     await wasm(true);
     await vite('build', '--mode', 'terrainbench');
+    await vite('build', '--mode', 'neuralbench');
     console.log(`Terrain bench: ${join(rustDir, 'out/browser/terrainbench.html')}`);
+    console.log(`Neural bench: ${join(rustDir, 'out/browser/neuralbench.html')}`);
     return;
   }
   if (action !== 'dev') throw new Error('Usage: terrain.mjs dev|wasm|build|check|neural');
@@ -74,7 +76,7 @@ async function main() {
     if (file && /\.(rs|toml)$/.test(String(file)) && !/^neural/.test(String(file))) schedule();
   });
   const manifestWatch = watch(join(rustDir, 'Cargo.toml'), schedule);
-  console.log('Terrain bench: http://localhost:5173/terrainbench.html · Rust auto-rebuild enabled');
+  console.log('Terrain bench: http://localhost:5173/terrainbench.html · Neural bench: http://localhost:5173/neuralbench.html · Rust auto-rebuild enabled');
   try { await vite('--mode', 'terrainbench', '--host', '127.0.0.1'); }
   finally { clearTimeout(timer); crateWatch.close(); manifestWatch.close(); }
 }

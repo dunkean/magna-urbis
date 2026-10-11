@@ -1,0 +1,17 @@
+header input[type=text].wide { width: 160px; }
+.stage input[type=number].short { width: 46px; }
+#report p { margin: 6px 0; }
+#report b { color: #285849; font-weight: 600; }
+aside code { font-size: 11px; }
+#coordinates:empty { display: none; }
+#measure, #clearMeasure { width: auto; flex: 0 0 auto; padding: 2px 6px; }
+#distance { font-size: 12px; font-variant-numeric: tabular-nums; }
+#map.measuring { cursor: crosshair; }
+#map.drag { cursor: grabbing; }
+#measureHint { position: absolute; top: 10px; left: 10px; max-width: calc(100% - 20px); margin: 0; padding: 6px 9px; border-radius: 4px; background: #fffdf2e6; font-size: 12px; pointer-events: none; }
+.distance-measure { pointer-events: none; }
+.distance-measure line { stroke: #a83330; stroke-width: 2; }
+.distance-measure circle { fill: #a83330; stroke: #fffdf2; stroke-width: 2; }
+.distance-measure text { fill: #a83330; stroke: #fffdf2; stroke-width: 4px; stroke-linejoin: round; paint-order: stroke; font-weight: 600; text-anchor: middle; }
+#pins .pinbtn { height: auto; min-height: 40px; white-space: normal; padding: 4px; }
+#shareState { font-size: 11px; color: #285849; }

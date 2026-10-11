@@ -22,7 +22,6 @@ const COARSE_STDS: [f32; 6] = [39.742, 1.768184, 8.921469, 321.766, 842.9294, 31
 const COND_MEANS: [f32; 7] = [14.99, 11.65, 15.87, 619.26, 833.12, 69.40, 0.66];
 const COND_STDS: [f32; 7] = [21.72, 21.78, 10.40, 452.29, 738.09, 34.59, 0.47];
 const SIGMA_DATA: f32 = 0.5;
-const COARSE_STEPS: usize = 4;
 
 fn round(v: f32) -> f32 {
     bf16::from_f32(v).to_f32()
@@ -85,6 +84,20 @@ impl Field {
     }
 
     /// Normalized channel `c` over `[y0, y0+size) × [x0, x0+size)`.
+    /// Rewrites one cell's normalized values in place, keeping its weight.
+    fn update(&mut self, y: usize, x: usize, f: impl FnOnce(&mut [f32])) {
+        let plane = self.n * self.n;
+        let at = y * self.n + x;
+        let w = self.v[self.channels * plane + at].max(1e-12);
+        let mut values: Vec<f32> = (0..self.channels)
+            .map(|c| self.v[c * plane + at] / w)
+            .collect();
+        f(&mut values);
+        for (c, value) in values.into_iter().enumerate() {
+            self.v[c * plane + at] = value * w;
+        }
+    }
+
     fn normalized(&self, c: usize, y0: i64, x0: i64, size: usize) -> Vec<f32> {
         let plane = self.n * self.n;
         let mut out = Vec::with_capacity(size * size);
@@ -106,6 +119,37 @@ pub struct Networks {
     decoder: Student,
 }
 
+/// Network properties exposed by the neural bench. Defaults reproduce the
+/// production chain (coarse4, original base in one pass, decoder student).
+#[derive(Clone, Debug, PartialEq)]
+pub struct Tuning {
+    /// Noise/signal ratios of the four climate conditioning channels.
+    pub climate_noise: [f32; 4],
+    /// Coarse solver steps; the coarse4 weights are distilled for four.
+    pub coarse_steps: usize,
+    /// Multiplies the coarse local relief (mean − 5th percentile, metres) given to base.
+    pub relief_scale: f32,
+    /// Imposes that local relief in metres instead of the coarse network's.
+    pub relief_fixed: Option<f32>,
+    /// Pre-softmax "beauty" histogram of the base conditioning.
+    pub histogram: [f32; 5],
+    /// Multiplies the decoder residual (fine detail) before reconstruction.
+    pub residual_scale: f32,
+}
+
+impl Default for Tuning {
+    fn default() -> Self {
+        Self {
+            climate_noise: [0.5; 4],
+            coarse_steps: 4,
+            relief_scale: 1.0,
+            relief_fixed: None,
+            histogram: [0.0; 5],
+            residual_scale: 1.0,
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct Request {
     pub seed: u64,
@@ -119,6 +163,7 @@ pub struct Request {
     pub base_batch: usize,
     pub decoder_batch: usize,
     pub keep_stages: bool,
+    pub tuning: Tuning,
 }
 
 impl Request {
@@ -163,6 +208,7 @@ impl Request {
             base_batch: 16,
             decoder_batch: 2,
             keep_stages: false,
+            tuning: Tuning::default(),
         }
     }
 }
@@ -182,8 +228,21 @@ pub struct Stages {
     pub residual: Vec<f32>,
 }
 
+/// Means over the delivered map of the sketch and of the coarse field, in metres.
+#[derive(Default, Clone, Debug)]
+pub struct CoarseStats {
+    pub sketch_m: f64,
+    pub elevation_m: f64,
+    /// Local relief (mean − 5th percentile) produced by the coarse network.
+    pub relief_m: f64,
+    /// Local relief given to base, after the tuning override.
+    pub relief_used_m: f64,
+    pub cells: usize,
+}
+
 pub struct Output {
     pub stages: Option<Stages>,
+    pub coarse: CoarseStats,
     pub native: Vec<f32>,
     pub native_n: usize,
     pub heights: Vec<f32>,
@@ -222,7 +281,8 @@ impl Networks {
         let mut timings = Timings::default();
 
         let started = clock.now_ms();
-        let coarse = self.coarse_stage(request, &plan).await?;
+        let mut coarse = self.coarse_stage(request, &plan).await?;
+        let coarse_stats = Self::tune_relief(request, &plan, size, &mut coarse);
         timings.coarse_ms = clock.now_ms() - started;
 
         let started = clock.now_ms();
@@ -235,9 +295,14 @@ impl Networks {
 
         let started = clock.now_ms();
         let r = &plan.residual;
+        let scale = request.tuning.residual_scale;
         let residual = Grid {
             n: r.len(),
-            v: residual.normalized(0, r.start, r.start, r.len()),
+            v: residual
+                .normalized(0, r.start, r.start, r.len())
+                .into_iter()
+                .map(|v| v * scale)
+                .collect(),
         };
         let low = r.start / LATENT;
         let lowfreq = Grid {
@@ -270,13 +335,52 @@ impl Networks {
         });
         Ok(Output {
             stages,
+            coarse: coarse_stats,
             native,
             native_n: size,
             heights,
             resolution: request.resolution,
-            evaluations: plan.evaluations(COARSE_STEPS),
+            evaluations: plan.evaluations(request.tuning.coarse_steps),
             timings,
         })
+    }
+
+    /// Applies the local relief override to coarse cells and measures the map's cells.
+    fn tune_relief(request: &Request, plan: &Plan, size: usize, coarse: &mut Field) -> CoarseStats {
+        let extent = size as f64 * crate::plan::NATIVE_M;
+        let tuning = &request.tuning;
+        let square = |s: f32| s.signum() * s * s;
+        let root = |h: f32| h.signum() * h.abs().sqrt();
+        let mut stats = CoarseStats::default();
+        for y in 0..coarse.n {
+            let cy = plan.coarse_center_m(coarse.start + y as i64);
+            for x in 0..coarse.n {
+                let cx = plan.coarse_center_m(coarse.start + x as i64);
+                let mut cell = (0.0f32, 0.0f32, 0.0f32);
+                coarse.update(y, x, |v| {
+                    let mean = square(v[0]);
+                    let relief = mean - square(v[1]);
+                    let used = tuning.relief_fixed.unwrap_or(relief * tuning.relief_scale);
+                    if used != relief {
+                        v[1] = root(mean - used);
+                    }
+                    cell = (mean, relief, used);
+                });
+                if (0.0..extent).contains(&cy) && (0.0..extent).contains(&cx) {
+                    stats.sketch_m += request.sketch.elevation(cx, cy);
+                    stats.elevation_m += cell.0 as f64;
+                    stats.relief_m += cell.1 as f64;
+                    stats.relief_used_m += cell.2 as f64;
+                    stats.cells += 1;
+                }
+            }
+        }
+        let n = stats.cells.max(1) as f64;
+        stats.sketch_m /= n;
+        stats.elevation_m /= n;
+        stats.relief_m /= n;
+        stats.relief_used_m /= n;
+        stats
     }
 
     async fn coarse_stage(&self, request: &Request, plan: &Plan) -> Result<Field, String> {
@@ -291,6 +395,8 @@ impl Networks {
         // Conditioning mixture: t = atan(noise/signal), in production BF16.
         let mut ratios = [0.5f32; 5];
         ratios[0] = request.height_noise;
+        ratios[1..].copy_from_slice(&request.tuning.climate_noise);
+        let steps = request.tuning.coarse_steps.clamp(1, 32);
         let t: Vec<f32> = ratios.iter().map(|r| round(r.atan())).collect();
         let labels: Vec<f32> = t
             .iter()
@@ -317,8 +423,8 @@ impl Networks {
         // Karras schedule of the four-step solver, then DPM-Solver++ (2M, midpoint).
         let rho = 7.0f64;
         let (lo, hi) = (0.002f64.powf(1.0 / rho), 80f64.powf(1.0 / rho));
-        let mut sigmas: Vec<f64> = (0..COARSE_STEPS)
-            .map(|k| (hi + k as f64 / (COARSE_STEPS - 1) as f64 * (lo - hi)).powf(rho))
+        let mut sigmas: Vec<f64> = (0..steps)
+            .map(|k| (hi + k as f64 / (steps - 1).max(1) as f64 * (lo - hi)).powf(rho))
             .collect();
         sigmas.push(0.0);
         let condition = self.gpu.image(condition, [n, 5, s, s]);
@@ -328,7 +434,7 @@ impl Networks {
             .mul_scalar(sigmas[0] as f32);
         let mut previous: Option<Tensor<4>> = None;
         let label_rows: Vec<Vec<f32>> = labels.iter().map(|&l| vec![l; n]).collect();
-        for step in 0..COARSE_STEPS {
+        for step in 0..steps {
             let sigma = sigmas[step];
             let scale = 1.0 / (sigma * sigma + 0.25).sqrt();
             let input = Tensor::cat(
@@ -345,7 +451,7 @@ impl Networks {
                 .mul_scalar(c_skip as f32)
                 .add(out.mul_scalar(c_out as f32));
             let next = sigmas[step + 1];
-            x = if step == COARSE_STEPS - 1 || next == 0.0 {
+            x = if step == steps - 1 || next == 0.0 {
                 x0.clone()
             } else if let Some(m1) = previous.take().filter(|_| step > 0) {
                 let h = (sigma / next).ln();
@@ -384,7 +490,7 @@ impl Networks {
     }
 
     /// 58-value conditioning vector of one base window from its 4×4 coarse support.
-    fn base_condition(coarse: &Field, i: i64, j: i64) -> Vec<f32> {
+    fn base_condition(coarse: &Field, i: i64, j: i64, histogram: &[f32; 5]) -> Vec<f32> {
         let mut channels: Vec<Vec<f32>> = (0..6)
             .map(|c| coarse.normalized(c, i - 1, j - 1, 4))
             .collect();
@@ -402,7 +508,7 @@ impl Networks {
             (channels[1].clone(), 16),
             (climate, 4),
             (channels[6].clone(), 16),
-            (vec![0.0; 5], 5),
+            (histogram.to_vec(), 5),
             (vec![-0.5 * 12f32.sqrt()], 1),
         ];
         // mp_concat with equal weights 1/6.
@@ -450,7 +556,12 @@ impl Networks {
                     s,
                     s,
                 ));
-                conditions.extend(Self::base_condition(coarse, i, j));
+                conditions.extend(Self::base_condition(
+                    coarse,
+                    i,
+                    j,
+                    &request.tuning.histogram,
+                ));
             }
             let noise_gpu = self.gpu.image(noise.clone(), [n, 5, s, s]);
             let emb = self

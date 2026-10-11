@@ -112,6 +112,8 @@ pub struct Regional {
     pub islands: Islands,
     pub climate: Climate,
     pub extent: f64,
+    /// Multiplies land elevations of the sketch (not sea depths).
+    pub land_scale: f64,
     waves: [(f64, f64, f64); 3],
     axis: (f64, f64),
     offset: f64,
@@ -202,6 +204,7 @@ impl Regional {
             islands,
             climate,
             extent,
+            land_scale: 1.0,
             waves,
             axis: (angle.cos(), angle.sin()),
             offset,
@@ -291,7 +294,7 @@ impl Regional {
     }
 
     pub fn elevation(&self, x: f64, y: f64) -> f64 {
-        let land = self.land(x, y);
+        let land = self.land(x, y) * self.land_scale;
         match self.shore_distance(x, y) {
             None => land,
             Some(d) if d >= 0.0 => land * (d / 8000.0).tanh(),

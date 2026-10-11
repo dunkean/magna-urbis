@@ -4,7 +4,7 @@
 //! start. `GET /status` reports its state; `GET /generate?seed=…&relief=…`
 //! returns the delivered `1024²` little-endian FP32 heights (metres, row-major
 //! from the north-west corner, sea at zero), with metadata in `X-Neural-Meta`.
-use crate::{Clock, Networks, Request};
+use crate::{Clock, Networks, Request, Sketch};
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Write};
 use std::net::{TcpListener, TcpStream};
@@ -61,7 +61,7 @@ fn request(query: &HashMap<String, String>) -> Result<Request, String> {
             .and_then(|v| v.parse().ok())
             .unwrap_or(default)
     };
-    Request::regional(
+    let mut request = Request::regional(
         &get("seed", "42"),
         &get("relief", "hills"),
         number("mix", 0.5),
@@ -69,7 +69,53 @@ fn request(query: &HashMap<String, String>) -> Result<Request, String> {
         &get("islands", "island"),
         &get("climate", "temperate"),
         number("noise", 0.05) as f32,
-    )
+    )?;
+    // Optional network properties of the neural bench; absent keys keep production values.
+    let bounded = |key: &str, default: f64, min: f64, max: f64| -> Result<f64, String> {
+        let value = number(key, default);
+        if value.is_finite() && (min..=max).contains(&value) {
+            Ok(value)
+        } else {
+            Err(format!("{key} : {value} hors de [{min}, {max}]"))
+        }
+    };
+    if let Sketch::Regional(sketch) = &mut request.sketch {
+        sketch.land_scale = bounded("landScale", 1.0, 0.0, 5.0)?;
+        let c = &mut sketch.climate;
+        c.temperature = bounded("temperature", c.temperature as f64, -30.0, 40.0)? as f32;
+        c.temperature_std =
+            bounded("temperatureStd", c.temperature_std as f64, 0.0, 3000.0)? as f32;
+        c.precipitation = bounded("precipitation", c.precipitation as f64, 0.0, 6000.0)? as f32;
+        c.precipitation_cv =
+            bounded("precipitationCv", c.precipitation_cv as f64, 0.0, 200.0)? as f32;
+    }
+    let t = &mut request.tuning;
+    let climate_keys = [
+        "noiseTemperature",
+        "noiseTemperatureStd",
+        "noisePrecipitation",
+        "noisePrecipitationCv",
+    ];
+    for (k, key) in climate_keys.iter().enumerate() {
+        t.climate_noise[k] = bounded(key, t.climate_noise[k] as f64, 0.001, 10.0)? as f32;
+    }
+    t.coarse_steps = bounded("steps", 4.0, 1.0, 32.0)? as usize;
+    t.relief_scale = bounded("reliefScale", 1.0, 0.0, 5.0)? as f32;
+    if query.contains_key("reliefFixed") {
+        t.relief_fixed = Some(bounded("reliefFixed", 0.0, 0.0, 5000.0)? as f32);
+    }
+    if let Some(list) = query.get("histogram") {
+        let values: Vec<f32> = list
+            .split(',')
+            .filter_map(|v| v.trim().parse().ok())
+            .collect();
+        if values.len() != 5 || !values.iter().all(|v| v.is_finite()) {
+            return Err("histogram : cinq valeurs attendues".into());
+        }
+        t.histogram.copy_from_slice(&values);
+    }
+    t.residual_scale = bounded("detail", 1.0, 0.0, 5.0)? as f32;
+    Ok(request)
 }
 
 fn generate(networks: &Networks, query: &HashMap<String, String>, clock: &Wall) -> Reply {
@@ -83,8 +129,9 @@ fn generate(networks: &Networks, query: &HashMap<String, String>, clock: &Wall) 
         .fold((f32::MAX, f32::MIN), |(a, b), &h| (a.min(h), b.max(h)));
     let land =
         output.heights.iter().filter(|&&h| h > 0.0).count() as f64 / output.heights.len() as f64;
+    let c = &output.coarse;
     let meta = format!(
-        r#"{{"resolution":{},"extent":{},"min":{min},"max":{max},"land":{land},"totalMs":{:.1},"coarseMs":{:.1},"baseMs":{:.1},"decoderMs":{:.1},"reconstructionMs":{:.1},"evaluations":[{},{},{}],"profile":"coarse4 \u00b7 base 1 passe \u00b7 decoder student200k \u00b7 FP16 Vulkan"}}"#,
+        r#"{{"resolution":{},"extent":{},"min":{min},"max":{max},"land":{land},"totalMs":{:.1},"coarseMs":{:.1},"baseMs":{:.1},"decoderMs":{:.1},"reconstructionMs":{:.1},"evaluations":[{},{},{}],"coarse":{{"sketch":{:.1},"elevation":{:.1},"relief":{:.1},"reliefUsed":{:.1},"cells":{}}},"profile":"coarse{} \u00b7 base 1 passe \u00b7 decoder student200k \u00b7 FP16 Vulkan"}}"#,
         output.resolution,
         request.extent_m,
         clock.now_ms() - started,
@@ -95,6 +142,12 @@ fn generate(networks: &Networks, query: &HashMap<String, String>, clock: &Wall) 
         output.evaluations.0,
         output.evaluations.1,
         output.evaluations.2,
+        c.sketch_m,
+        c.elevation_m,
+        c.relief_m,
+        c.relief_used_m,
+        c.cells,
+        request.tuning.coarse_steps,
     );
     Ok((output.heights, meta))
 }
