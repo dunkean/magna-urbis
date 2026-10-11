@@ -59,6 +59,15 @@ export function encodePng(pixels: Uint8Array | Uint8ClampedArray, w: number, h: 
 
 const B64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
 export function toBase64(b: Uint8Array): string {
+  // Native encoding avoids constructing four tiny strings for every 3 bytes.
+  // Keep the portable path for runtimes without either browser primitive.
+  const native = b as Uint8Array & { toBase64?: () => string };
+  if (native.toBase64) return native.toBase64();
+  if (typeof btoa === 'function') {
+    const chunks: string[] = [];
+    for (let i = 0; i < b.length; i += 32768) chunks.push(String.fromCharCode(...b.subarray(i, i + 32768)));
+    return btoa(chunks.join(''));
+  }
   const parts: string[] = [];
   const n = b.length;
   let s = '';
