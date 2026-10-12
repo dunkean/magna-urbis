@@ -1,0 +1,11 @@
+docs/*.md text eol=lf
+rust/crates/houses/data/*.json text eol=lf
+rust/fixtures/houses/*.json text eol=lf
+rust/bridge/house*.ts text eol=lf
+rust/crates/houses/** text eol=lf
+rust/crates/houses-wasm/** text eol=lf
+rust/crates/random/** text eol=lf
+rust/scripts/*house*.mjs text eol=lf
+rust/scripts/*house*.py text eol=lf
+web/scripts/houses*.mjs text eol=lf
+web/src/ui/house* text eol=lf

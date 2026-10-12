@@ -1,0 +1,20 @@
+[package]
+name = "magna-urbis-houses"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+magna-urbis-random = { path = "../random" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+geo = { version = "=0.33.1", default-features = false, features = ["earcut"] }
+i_overlay = "=4.5.2"
+libm = "0.2"
+num-bigint = "=0.4.8"
+num-rational = "=0.4.2"
+num-traits = "=0.2.19"
+
+[dev-dependencies]
+sha2 = "0.10"

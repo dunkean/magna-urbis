@@ -1,0 +1,29 @@
+{
+  "schema_version": "2",
+  "seed": "42",
+  "pack": "OC-PAC",
+  "recipe": null,
+  "mode": "historical_inspired",
+  "era": "any",
+  "allow_late": false,
+  "count": 10,
+  "size": 1,
+  "variation": 0.65,
+  "wealth": 0.5,
+  "orientation_deg": 0,
+  "overrides": {
+    "variant": null,
+    "footprint": null,
+    "roof": null,
+    "frame": null,
+    "infill": null,
+    "coating": null,
+    "cladding": null,
+    "floors": null,
+    "bodies": null,
+    "courtyard_ratio": null,
+    "overhang_m": null,
+    "roof_pitch_deg": null,
+    "site_slope_deg": null
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "schema_version": "2",
+  "seed": "étoile 🏠",
+  "pack": "EUR-MED",
+  "recipe": "EUR-MED-B01",
+  "count": 1,
+  "variation": 0,
+  "overrides": {"floors": 1}
+}

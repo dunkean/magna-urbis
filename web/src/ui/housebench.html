@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="fr">
+<head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/><title>Atlas des maisons · Magna Urbis</title></head>
+<body>
+  <header class="masthead"><a class="wordmark" href="#controls">MAGNA URBIS</a><span class="divider"></span><div><span class="eyebrow">ATELIER ARCHITECTURAL</span><h1>Atlas des maisons</h1></div><span class="engine-label">RUST · WASM</span></header>
+  <main class="workspace">
+    <aside class="controls">
+      <form id="controls" novalidate>
+        <div class="section-title"><span>01</span><h2>Composer un lot</h2></div>
+        <label>Parcours<select id="source" disabled><option value="atlas">Atlas · traditions sourcées</option><option value="workshop" disabled>Atelier libre · primitives</option></select></label>
+        <div id="workshop-controls" hidden>
+          <label>Preset libre<select id="workshop-preset" disabled></select></label>
+          <div class="two-columns"><label>Largeur · m<input id="workshop-width" type="number" min="4" max="80" step="0.1" placeholder="Preset"/></label><label>Profondeur · m<input id="workshop-depth" type="number" min="4" max="80" step="0.1" placeholder="Preset"/></label></div>
+          <p class="hint">Dimensions absolues. Une valeur vide utilise le preset natif ; une emprise trop étroite est refusée.</p>
+        </div>
+        <div id="atlas-controls">
+        <label>Tradition architecturale<select id="pack" name="pack" disabled><option>Chargement du catalogue…</option></select></label>
+        <label>Type de maison<select id="recipe" name="recipe" disabled><option value="">Palette résidentielle du pack</option></select></label>
+        </div>
+        <p id="recipe-hint" class="hint">Chaque tradition réunit plusieurs plans, structures et couvertures.</p>
+        <label>Graine<input id="seed" name="seed" value="42" maxlength="4096" autocomplete="off"/></label>
+        <div class="range-control"><label for="size">Taille <output id="size-out">1,00×</output></label><input id="size" name="size" type="range" min="0.5" max="2" step="0.05" value="1"/></div>
+        <div class="range-control"><label for="variation">Variation <output id="variation-out">65 %</output></label><input id="variation" name="variation" type="range" min="0" max="1" step="0.05" value="0.65"/></div>
+        <div class="range-control"><label for="wealth">Richesse <output id="wealth-out">50 %</output></label><input id="wealth" name="wealth" type="range" min="0" max="1" step="0.05" value="0.5"/></div>
+        <div class="two-columns"><label>Orientation<input id="orientation" name="orientation" type="number" min="-360" max="360" step="1" value="0"/></label><label>Maisons<input id="count" name="count" type="number" min="1" max="40" step="1" value="10"/></label></div>
+        <details id="advanced"><summary>Paramètres avancés <span>+</span></summary>
+          <label>Contexte<select id="mode" name="mode"><option value="historical_inspired">Historique inspiré</option><option value="historical_strict">Historique strict · avant 1500</option><option value="fantasy_mix">Fantasy · mélanges libres</option></select></label>
+          <label>Époque locale<select id="era" name="era"><option value="any">Toutes les époques admises</option><option value="A">Antiquité locale</option><option value="M">Moyen Âge / équivalent local</option></select></label>
+          <label class="check"><input id="allow-late" name="allow_late" type="checkbox"/>Autoriser les profils tardifs L</label>
+          <p class="hint">Les traditions T ne sont pas une époque. Les plages inconnues et reconstructions stylisées restent signalées.</p>
+          <label>Variante<select id="variant" data-override="variant" disabled><option value="">Choisissez un type explicite</option></select></label>
+          <label>Plan<select id="footprint" data-override="footprint"><option value="">Selon la recette</option></select></label>
+          <p id="footprint-hint" class="hint">L'organisation de l'ensemble reste celle de la recette. Une substitution non appliquée est refusée.</p>
+          <label>Toiture<select id="roof" data-override="roof"><option value="">Selon la recette</option></select></label>
+          <label>Structure porteuse<select id="frame" data-override="frame"><option value="">Selon la recette</option></select></label>
+          <label>Remplissage<select id="infill" data-override="infill"><option value="">Selon la recette</option></select></label>
+          <label>Enduit<select id="coating" data-override="coating"><option value="">Selon la recette</option></select></label>
+          <label>Couverture<select id="cladding" data-override="cladding"><option value="">Selon la recette</option></select></label>
+          <div id="workshop-advanced" hidden>
+            <label>Porteur du toit<select id="workshop-roof-frame"><option value="">Preset</option></select></label>
+            <label>Matériau de base<select id="workshop-base"><option value="">Preset</option></select></label>
+            <label>Support<select id="workshop-support"><option value="">Preset</option><option value="ground">Sol</option><option value="posts">Poteaux</option><option value="piers">Piles</option><option value="raft">Radeau</option><option value="rock">Roche</option></select></label>
+            <label>Matériau des supports<select id="workshop-support-material"><option value="">Preset</option></select></label>
+            <label>Hauteur du support · m<input id="workshop-support-height" type="number" min="0" max="6" step="0.1" placeholder="Preset"/></label>
+            <p class="hint">Un support surélevé exige un matériau porteur et une hauteur déclarée. Le moteur vérifie sa compatibilité.</p>
+          </div>
+          <div class="two-columns"><label>Niveaux<input id="floors" data-override="floors" type="number" min="1" max="12" placeholder="Recette"/></label><label>Corps<input id="bodies" data-override="bodies" type="number" min="1" max="600" placeholder="Recette"/></label></div>
+          <label>Ratio de cour<input id="courtyard-ratio" data-override="courtyard_ratio" type="number" min="0.1" max="0.8" step="0.05" placeholder="Recette"/></label>
+          <label>Débord du toit · m<input id="overhang" data-override="overhang_m" type="number" min="0" max="4" step="0.1" placeholder="Recette"/></label>
+          <label>Pente du toit · °<input id="roof-pitch" data-override="roof_pitch_deg" type="number" min="0" max="85" step="1" placeholder="Recette"/></label>
+          <label>Pente du site · °<input id="site-slope" data-override="site_slope_deg" type="number" min="0" max="45" step="1" placeholder="Recette"/></label>
+          <button id="reset-overrides" type="button" class="subtle">Réinitialiser les substitutions</button>
+        </details>
+        <button id="generate" class="primary" type="submit" disabled>Générer les maisons <span>↗</span></button>
+        <p id="preflight" class="hint" aria-live="polite"></p>
+      </form>
+      <div class="aside-foot"><span class="eyebrow">UN ATLAS, PAS UNE RECONSTRUCTION</span><p>Plans géométriques en mètres, dérivés des recettes de l’atlas. Les sources et degrés de confiance sont consultables.</p><button id="show-catalogue" class="text-button" disabled>Explorer le catalogue ↗</button></div>
+    </aside>
+    <section class="atlas">
+      <div class="atlas-heading"><div><span class="eyebrow">PLANCHE DE GÉNÉRATION</span><h2 id="batch-title">Dix maisons, une tradition</h2><p id="batch-meta">Sélectionnez une tradition pour explorer ses formes domestiques.</p></div><span id="batch-number" class="batch-number">10</span></div>
+      <div class="view-toolbar"><div class="segmented" role="group" aria-label="Vue"><button id="view-roof" class="active" type="button">Toitures</button><button id="view-plan" type="button">Plan</button></div><label class="inline-label">Niveau<select id="level" disabled><option value="0">0</option></select></label><label class="check compact"><input id="graph" type="checkbox"/>Accès</label><label class="check compact"><input id="dimensions" type="checkbox"/>Cotes</label><div class="toolbar-spacer"></div><button id="copy-link" class="subtle" disabled>Lien</button><button id="export-svg" class="subtle" disabled>SVG</button><button id="export-json" class="subtle" disabled>JSON</button></div>
+      <div id="status" class="status" role="status" aria-live="polite">Chargement du moteur architectural…</div><div id="error" class="error" role="alert" hidden></div><div id="replay-warning" class="notice" hidden></div><div id="link-warning" class="notice" hidden></div>
+      <div id="gallery" class="gallery"><div class="empty-state"><span class="empty-symbol">⌂</span><h3>La première planche se prépare</h3><p>Dix variantes à échelle commune, puis un détail pour chaque maison.</p></div></div>
+      <div id="legend" class="legend" hidden></div>
+      <details class="tour-panel"><summary><span>Explorer les 32 traditions</span><span>TOURNÉE DES PACKS</span></summary><p>Une palette résidentielle par pack, avec votre graine et vos paramètres de taille. Les substitutions et le type explicite sont remis aux valeurs de recette. Seul le bilan est conservé ; une ligne permet de rejouer son lot.</p><div class="tour-actions"><button id="tour" class="subtle" disabled>Lancer la tournée</button><button id="stop-tour" class="subtle" hidden>Arrêter après ce pack</button><span id="tour-progress"></span></div><table id="tour-table"><thead><tr><th>Tradition</th><th>Résultat</th><th>Pièces</th><th>Durée</th></tr></thead><tbody></tbody></table></details>
+    </section>
+  </main>
+  <dialog id="detail-dialog"><div class="dialog-heading"><div><span class="eyebrow">DÉTAIL ARCHITECTURAL</span><h2 id="detail-title"></h2></div><button id="close-detail" class="close" aria-label="Fermer">×</button></div><div class="detail-toolbar"><div class="segmented" role="group" aria-label="Vue du détail"><button id="detail-view-roof" type="button">Toitures</button><button id="detail-view-plan" type="button">Plan</button></div><label class="inline-label">Niveau<select id="detail-level"></select></label><label class="inline-label">Zoom<input id="detail-zoom" type="range" min="0.5" max="6" step="0.1" value="1"/></label><button id="detail-svg" class="subtle">Exporter ce détail</button></div><div class="detail-body"><div id="detail-map"></div><aside id="detail-info"></aside></div></dialog>
+  <dialog id="catalogue-dialog"><div class="dialog-heading"><div><span class="eyebrow">SOURCE ET COUVERTURE</span><h2>Catalogue architectural</h2></div><button id="close-catalogue" class="close" aria-label="Fermer">×</button></div><p id="catalogue-summary"></p><div class="catalogue-filters"><input id="catalogue-search" type="search" placeholder="Chercher un ID, un type ou une tradition…"/><select id="catalogue-kind"><option value="coverage">Entrées B et couverture</option><option value="recipes">Recettes détaillées</option><option value="workshop">Presets de l'atelier libre</option><option value="footprints">Primitives de plan FP</option><option value="roofs">Systèmes de toit RF</option><option value="materials">Matériaux MAT</option><option value="functional">Catalogue fonctionnel</option><option value="geometry">Traits géométriques et statut</option></select></div><div id="catalogue-content"></div></dialog>
+  <dialog id="link-dialog"><div class="dialog-heading"><h2>Lien rejouable</h2><button id="close-link" class="close" aria-label="Fermer">×</button></div><p>Copiez le lien. Il conserve les réglages du lot affiché et les options de vue.</p><input id="link-input" readonly/></dialog>
+  <script type="module" src="./housebench.ts"></script>
+</body>
+</html>

@@ -30,23 +30,43 @@ function terrainWasmReload(): Plugin {
   };
 }
 
+function housesWasmReload(): Plugin {
+  const packageDir = normalizePath(fileURLToPath(new URL('../rust/pkg/houses/', import.meta.url)));
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  return {
+    name: 'houses-wasm-reload', apply: 'serve',
+    configureServer(server) {
+      server.watcher.add(packageDir);
+      server.httpServer?.once('close', () => clearTimeout(timer));
+    },
+    handleHotUpdate({ file, server }) {
+      if (!normalizePath(file).startsWith(packageDir) || !/\.(js|wasm)$/.test(file)) return;
+      clearTimeout(timer);
+      timer = setTimeout(() => { server.moduleGraph.invalidateAll(); server.ws.send({ type: 'full-reload', path: '*' }); }, 200);
+      return [];
+    },
+  };
+}
+
 export default defineConfig(({ mode }) => ({
   root: 'src/ui',
-  plugins: [viteSingleFile(), ...(mode === 'terrainbench' ? [terrainWasmReload()] : [])],
+  plugins: [viteSingleFile(), ...(mode === 'terrainbench' ? [terrainWasmReload()] : []), ...(mode === 'housebench' ? [housesWasmReload()] : [])],
   // Keep third-party notices inside the self-contained offline bundle.
   esbuild: { legalComments: 'inline' },
-  server: mode === 'terrainbench' ? { fs: { allow: [fileURLToPath(new URL('..', import.meta.url))] } } : undefined,
+  optimizeDeps: mode === 'housebench' ? { entries: ['housebench.html'] } : undefined,
+  server: mode === 'terrainbench' || mode === 'housebench' ? { fs: { allow: [fileURLToPath(new URL('..', import.meta.url))] } } : undefined,
   build: {
     target: 'es2022',
-    outDir: mode === 'terrainbench' || mode === 'neuralbench' ? fileURLToPath(new URL('../rust/out/browser', import.meta.url)) : '../../dist',
+    outDir: mode === 'housebench' ? fileURLToPath(new URL('../rust/out/houses', import.meta.url)) : mode === 'terrainbench' || mode === 'neuralbench' ? fileURLToPath(new URL('../rust/out/browser', import.meta.url)) : '../../dist',
     emptyOutDir: mode !== 'testbench' && mode !== 'neuralbench',
     chunkSizeWarningLimit: 6000,
     rollupOptions: {
       ...(mode === 'testbench' ? { input: 'src/ui/testbench.html' } : {}),
       ...(mode === 'terrainbench' ? { input: 'src/ui/terrainbench.html' } : {}),
       ...(mode === 'neuralbench' ? { input: 'src/ui/neuralbench.html' } : {}),
+      ...(mode === 'housebench' ? { input: 'src/ui/housebench.html' } : {}),
       output: { banner: vendorNotice },
     },
   },
-  worker: { format: 'es', rollupOptions: { output: { banner: vendorNotice } } },
+  worker: { format: mode === 'housebench' ? 'iife' : 'es', rollupOptions: { output: { banner: vendorNotice } } },
 }));

@@ -5,6 +5,10 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:houses": "node ../rust/scripts/houses.mjs dev",
+    "wasm:houses": "node ../rust/scripts/houses.mjs wasm",
+    "build:houses": "node ../rust/scripts/houses.mjs build",
+    "check:houses": "node ../rust/scripts/houses.mjs check",
     "dev:terrain": "node ../rust/scripts/terrain.mjs dev",
     "wasm:terrain": "node ../rust/scripts/terrain.mjs wasm",
     "build:terrain": "node ../rust/scripts/terrain.mjs build",

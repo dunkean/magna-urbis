@@ -72,8 +72,8 @@ async function main() {
   }
   const schedule = () => { clearTimeout(timer); timer = setTimeout(() => void rebuild(), 250); };
   const crateWatch = watch(join(rustDir, 'crates'), { recursive: true }, (_event, file) => {
-    // The native neural crates are not part of the bench's WASM package.
-    if (file && /\.(rs|toml)$/.test(String(file)) && !/^neural/.test(String(file))) schedule();
+    // Neural and house crates are independent of the terrain WASM package.
+    if (file && /\.(rs|toml)$/.test(String(file)) && !/^(neural|houses)/.test(String(file))) schedule();
   });
   const manifestWatch = watch(join(rustDir, 'Cargo.toml'), schedule);
   console.log('Terrain bench: http://localhost:5173/terrainbench.html · Neural bench: http://localhost:5173/neuralbench.html · Rust auto-rebuild enabled');

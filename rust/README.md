@@ -57,3 +57,18 @@ Climate controls remain active; the sketch owns its shorelines. Features
 smaller than the network's approximately 7.7 km coarse cells may not survive.
 `GET /sketch` returns the current analytic neural sketch without running networks.
 Restart `npm run neural:serve` after updating the service.
+
+## Houses bench
+
+The independent `crates/houses/` engine generates domestic buildings and compounds from the architectural catalogue, with a separate free workshop for geometric primitives. `crates/houses-wasm/` provides coarse JSON calls; `bridge/houseRender.ts` is a temporary SVG adapter. The [houses guide](crates/houses/README.md) explains the French controls, historical modes, native levels, source confidence, replay links and SVG/JSON exports. Catalogue coverage records do not guarantee every recipe or configuration can be generated; the bench reports native errors.
+
+From `web/`:
+
+```sh
+npm run dev:houses    # Rust watcher and /housebench.html
+npm run wasm:houses   # Development WASM package only
+npm run build:houses  # Standalone rust/out/houses/housebench.html
+npm run check:houses  # Native, WASM and contract checks
+```
+
+The standalone HTML embeds its WASM and works offline in a modern browser. Generated packages stay in ignored `rust/pkg/houses/`. The ordinary TypeScript application commands remain independent of Rust. See the [WASM boundary](crates/houses-wasm/README.md) for the API and limits.

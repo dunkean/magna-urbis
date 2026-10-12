@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/core", "crates/wasm", "crates/neural", "crates/neural-wasm"]
+members = ["crates/core", "crates/wasm", "crates/neural", "crates/neural-wasm", "crates/random", "crates/houses", "crates/houses-wasm"]
 
 [workspace.package]
 edition = "2024"
