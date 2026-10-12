@@ -13,6 +13,7 @@
 import { PALETTES } from '../render/styles';
 import { CANVAS_MAP_STROKES, mapStrokeWidth } from '../render/strokes';
 import type { View } from '../render/view';
+import { FRACTAL_ROTATIONS, type FractalDetail } from '../../../rust/bridge/terrainAdjust';
 
 export type GlStyle = 'parchment' | 'atlas' | 'topographic' | 'copernicus';
 
@@ -28,7 +29,7 @@ export interface TerrainLook {
   globalMin: number; globalMax: number;
   contours: boolean; contourStep: number; flatRelief: boolean;
   /** Fractal refinement below `sourceCell` (metres), seeded. */
-  refine: boolean; sourceCell: number; seed: number;
+  refine: boolean; sourceCell: number; seed: number; detail: FractalDetail;
   /** Lower clamp of the regional reliefs (the engine keeps land at ≥ 0.3 m). */
   floor: number;
   frame: boolean; background: string;
@@ -79,6 +80,8 @@ uniform float uShade, uMinH, uMaxH, uGlobalMin, uFloor;
 uniform int uCoastal, uFrame;
 uniform int uContours; uniform float uStep, uThinW, uIndexW, uThinA, uIndexA, uFlatSlope;
 uniform int uRefine; uniform float uSourceCell; uniform uint uSeed;
+// Detail noise: amplitude, Hurst, lacunarity, first wavelength (source cells); slope exponent, slope floor, shore fade (m); octaves.
+uniform vec4 uDetailA; uniform vec3 uDetailB; uniform int uOctaves;
 
 vec4 bw(float t) { float t2 = t * t, t3 = t2 * t, u = 1.0 - t; return vec4(u * u * u, 3.0 * t3 - 6.0 * t2 + 4.0, -3.0 * t3 + 3.0 * t2 + 3.0 * t + 1.0, t3) / 6.0; }
 vec4 bd(float t) { float t2 = t * t, u = 1.0 - t; return vec4(-0.5 * u * u, 1.5 * t2 - 2.0 * t, -1.5 * t2 + t + 0.5, 0.5 * t2); }
@@ -136,25 +139,27 @@ vec3 gnoise(vec2 p, uint seed) {
   return vec3(value, grad) * 1.4;
 }
 
-const float ROT[8] = float[8](0.3, 1.1, 2.2, 0.7, 2.9, 1.7, 0.1, 2.5);
+const float ROT[${FRACTAL_ROTATIONS.length}] = float[${FRACTAL_ROTATIONS.length}](${FRACTAL_ROTATIONS.map(r => r.toFixed(3)).join(', ')});
 
 vec3 detail(vec2 world, vec3 s) {
   float slope = length(s.yz);
+  float scale = uDetailA.x * pow(max(slope + uDetailB.y, 1e-6), uDetailB.x) * uSourceCell;
   vec3 sum = vec3(0.0);
-  float wavelength = uSourceCell;
-  for (int k = 0; k < 8; k++) {
+  float wavelength = uSourceCell * uDetailA.w;
+  for (int k = 0; k < ${FRACTAL_ROTATIONS.length}; k++) {
+    if (k >= uOctaves) break;
     // Octaves fade in between four and two device pixels: no shimmer, no popping.
     float weight = clamp(wavelength / uPx * 0.5 - 1.0, 0.0, 1.0);
     if (weight <= 0.0) break;
     float c = cos(ROT[k]), sn = sin(ROT[k]);
     vec2 p = vec2(world.x * c - world.y * sn, world.x * sn + world.y * c) / wavelength;
     vec3 v = gnoise(p, uSeed + uint(k * 7919));
-    float amplitude = 0.18 * (slope + 0.004) * uSourceCell * pow(wavelength / uSourceCell, 0.8) * weight;
+    float amplitude = scale * pow(wavelength / uSourceCell, uDetailA.y) * weight;
     sum += vec3(v.x, (v.y * c + v.z * sn) / wavelength, (-v.y * sn + v.z * c) / wavelength) * amplitude;
-    wavelength *= 0.5;
+    wavelength /= uDetailA.z;
   }
   // Fade out near the shore: the coast keeps its line.
-  float shore = clamp(s.x / 2.0, 0.0, 1.0);
+  float shore = uDetailB.z > 0.0 ? clamp(s.x / uDetailB.z, 0.0, 1.0) : 1.0;
   return vec3(sum.x * shore, sum.yz * shore);
 }
 
@@ -207,7 +212,7 @@ void main() {
     if (uFloor > 0.0) s.x = max(s.x, uFloor);
     // Contours follow the raster surface: refinement adds relief, not ink.
     vec3 raster = s;
-    if (uRefine == 1 && s.x > 0.0 && uPx * 2.0 < uSourceCell) s += detail(world, s);
+    if (uRefine == 1 && s.x > 0.0 && uPx * 2.0 < uSourceCell * uDetailA.w) s += detail(world, s);
     float grad = length(s.yz);
     // Antialiased coast at the zero level (screen-space width of the height ramp).
     float ramp = max(grad * uPx, 1e-4);
@@ -516,6 +521,10 @@ export class TerrainGl {
     gl.uniform1f(u('uThinA'), pal.contourOpacity * 0.5); gl.uniform1f(u('uIndexA'), pal.contourOpacity * 0.75);
     gl.uniform1f(u('uFlatSlope'), look.flatRelief ? 0.004 : 0.012);
     gl.uniform1i(u('uRefine'), look.refine ? 1 : 0); gl.uniform1f(u('uSourceCell'), look.sourceCell); gl.uniform1ui(u('uSeed'), look.seed >>> 0);
+    const d = look.detail;
+    gl.uniform4f(u('uDetailA'), d.amplitude, d.hurst, Math.max(1.1, d.lacunarity), d.start);
+    gl.uniform3f(u('uDetailB'), d.slope, d.flat, d.shore);
+    gl.uniform1i(u('uOctaves'), Math.min(FRACTAL_ROTATIONS.length, Math.round(d.octaves)));
     // Textures: 0 field, 1 cave, 2 lake, 3 overlay.
     gl.uniform1i(u('uField'), 0); gl.uniform1i(u('uCave'), 1); gl.uniform1i(u('uLake'), 2); gl.uniform1i(u('uOverlay'), 3);
     gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, this.lake ?? this.empty);

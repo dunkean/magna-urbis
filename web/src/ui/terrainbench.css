@@ -1,6 +1,8 @@
 * { box-sizing: border-box; }
 :root { font-family: system-ui, sans-serif; color: #253b38; background: #f3f5f2; font-synthesis: none; }
 body { margin: 0; height: 100vh; height: 100dvh; display: flex; flex-direction: column; font-size: 13px; }
+.terrain-workspace { display: flex; flex: 1; min-height: 0; }
+.terrain-content { display: flex; flex: 1; min-width: 0; min-height: 0; flex-direction: column; }
 header, nav { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; padding: 4px 8px; background: #fff; border-bottom: 1px solid #dce3df; }
 .brand { display: flex; flex-direction: column; gap: 0; margin-right: 4px; font-size: 13px; letter-spacing: -0.5px; }
 .brand small { font-size: 10px; font-weight: 500; letter-spacing: 1px; text-transform: uppercase; color: #6b7e78; white-space: nowrap; }
@@ -65,6 +67,7 @@ summary { cursor: pointer; font-size: 12px; font-weight: 600; }
 #status[data-error=true] { color: #a62222; }
 @media (max-width: 650px) {
   body { height: auto; min-height: 100dvh; }
+  .terrain-workspace { flex-direction: column; }
   .brand { flex-direction: row; align-items: baseline; gap: 6px; }
   .terrain-settings { gap: 4px 8px; }
   nav .control-group { border: 0; padding: 0; }
@@ -74,11 +77,14 @@ summary { cursor: pointer; font-size: 12px; font-weight: 600; }
 }
 
 .section-label { color: #285849; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; }
-.stages { display: flex; flex-wrap: wrap; gap: 6px; padding: 6px 8px; background: #eef3ee; border-bottom: 1px solid #dce3df; max-height: 35vh; overflow: auto; }
-.stage { background: #fff; border: 1px solid #d3ddd7; border-radius: 5px; align-self: flex-start; }
+.stages { display: flex; flex: 0 0 310px; width: 310px; min-height: 0; flex-direction: column; gap: 6px; padding: 8px; background: #eef3ee; border-right: 1px solid #dce3df; overflow: auto; }
+.stage { width: 100%; background: #fff; border: 1px solid #d3ddd7; border-radius: 5px; }
 .stage > summary { padding: 5px 8px; color: #285849; }
 .stage > summary span { color: #9a6b2e; font-size: 10px; font-weight: 500; }
-.stage-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 7px 12px; padding: 5px 8px 9px; max-width: 700px; }
+.stage-controls { display: flex; flex-direction: column; align-items: stretch; gap: 7px; padding: 5px 8px 9px; }
+.stage-controls > label, .stage-controls > .control-group > label, .advanced .control-group > label { justify-content: space-between; }
+.stage-controls > .control-group, .advanced .control-group { flex-direction: column; align-items: stretch; }
+.stage-controls > .stage-action { width: 100%; }
 .stage input[type=number] { width: 80px; }
 .stage input[type=range] { width: 70px; }
 .stage select { max-width: 160px; }
@@ -110,3 +116,7 @@ aside:has(.sketch-editor[open]) { flex-basis: 360px; width: 360px; max-width: 45
 #report b { color: #285849; font-weight: 600; }
 #vectorControls, #rustControls { gap: 7px 12px; }
 #hydroCondStrengthValue { min-width: 33px; font-variant-numeric: tabular-nums; }
+
+@media (max-width: 650px) {
+  .stages { flex: none; width: 100%; max-height: 42vh; border-right: 0; border-bottom: 1px solid #dce3df; }
+}

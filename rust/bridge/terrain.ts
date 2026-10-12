@@ -5,7 +5,7 @@ import { generateGpuTerrain, erodeGpuCoast, type ErosionProfile } from './terrai
 import { PreparedHydrology, applyHydrologySurface, riverAreaFor, type HydrologyData, type HydrologySettings } from './hydrology';
 import type { TerrainScene, TerrainStyle } from './terrainRender';
 import { refineSketch, parseTerrainSketch, neuralSketchInput, type TerrainSketch } from './terrainSketch';
-import { applyDelta, applyFractalDetail, fitNeuralSurface, neuralWindow, seedHash, upsampleDelta } from './terrainAdjust';
+import { applyDelta, applyFractalDetail, fitNeuralSurface, type FractalDetail, neuralWindow, seedHash, upsampleDelta } from './terrainAdjust';
 import { conditionRelief, type ConditioningResult } from '../../web/src/ui/reliefConditioning';
 import { computeVectorWater, type VectorWater } from '../../web/src/ui/vectorWater';
 import { setFloodKernel } from '../../web/src/ui/simpleHydrology';
@@ -68,6 +68,8 @@ export interface TerrainSettings {
   neuralFit?: 'crop' | 'scale'; neuralSlopes?: boolean;
   /** Fractal refinement below the source raster's cell when zooming in. */
   refine?: boolean;
+  /** Shape of that refinement (defaults: `DEFAULT_FRACTAL_DETAIL`). */
+  detailNoise?: FractalDetail;
 }
 export const climateOf = (settings: TerrainSettings): ClimateValues => settings.climateValues ?? CLIMATE_VALUES[settings.climate ?? 'temperate'];
 export interface NeuralInfo { totalMs: number; coarseMs: number; baseMs: number; decoderMs: number; reconstructionMs: number; requestMs: number; evaluations: [number, number, number]; profile: string; land: number }
@@ -360,7 +362,7 @@ async function sampleTerrain({ settings, region, kind, display }: TerrainRequest
       applyHydrologySurface(data, hydrology);
       data.hydrologySurfaceMs = performance.now() - surfaceStarted;
     }
-    if (settings.refine && display !== 'gl') applyFractalDetail(data, settings.width / 1024, seedHash(settings.seed));
+    if (settings.refine && display !== 'gl') applyFractalDetail(data, settings.width / 1024, seedHash(settings.seed), settings.detailNoise);
     if (kind === 'overview' && display === 'gl') data.field = displayField(data, water, vector);
     // Intermediate grids stay in the worker cache. Only overview replies clone
     // them for inspection; camera requests carry just their terrain region.

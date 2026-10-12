@@ -11,7 +11,7 @@ import { CLIMATE_VALUES, DEFAULT_NEURAL_TUNING, NEURAL_RELIEF_DEFAULTS, climateO
 import { lakeColour, riverSegments, vectorOverlayPixels, vectorOverlaySvg, vectorWaterSvg, VECTOR_LEGENDS, VECTOR_OVERLAYS, type VectorOverlay } from './vectorWaterRender';
 import { TerrainGl, type TerrainLook } from './terrainGl';
 import { CONTOUR_INTERVAL } from '../render/contours';
-import { seedHash } from '../../../rust/bridge/terrainAdjust';
+import { DEFAULT_FRACTAL_DETAIL, seedHash, type FractalDetail } from '../../../rust/bridge/terrainAdjust';
 import { renderHydrology, HYDROLOGY_LEGENDS } from '../../../rust/bridge/hydrologyRender';
 import { createPins } from './pins';
 import { createRuler } from './ruler';
@@ -52,6 +52,14 @@ const tuningFields = {
   landScale: 'nLandScale', steps: 'nSteps', noiseTemperature: 'nNoiseTemperature', noiseTemperatureStd: 'nNoiseTemperatureStd',
   noisePrecipitation: 'nNoisePrecipitation', noisePrecipitationCv: 'nNoisePrecipitationCv', reliefScale: 'nReliefScale', reliefFixed: 'nReliefFixed', detail: 'nDetail',
 } as const;
+// Detail noise of the fractal refinement: display only, applied live by the WebGL renderer.
+const detailNoiseFields = {
+  amplitude: ['dnAmplitude', 0, 2], hurst: ['dnHurst', 0, 1.5], lacunarity: ['dnLacunarity', 1.2, 4], octaves: ['dnOctaves', 1, 12],
+  start: ['dnStart', 0.25, 8], slope: ['dnSlope', 0, 2], flat: ['dnFlat', 0, 0.5], shore: ['dnShore', 0, 50],
+} as const satisfies Record<keyof FractalDetail, readonly [string, number, number]>;
+const readDetailNoise = (value: (key: keyof FractalDetail, id: string) => string | null): FractalDetail => Object.fromEntries(
+  (Object.entries(detailNoiseFields) as [keyof FractalDetail, readonly [string, number, number]][])
+    .map(([key, [id, min, max]]) => [key, bounded(finite(value(key, id), DEFAULT_FRACTAL_DETAIL[key]), min, max)])) as unknown as FractalDetail;
 const initialClimate = query.get('climate') ?? 'temperate';
 const initialClimateValues: ClimateValues = { ...CLIMATE_VALUES[(NEURAL_CLIMATES as readonly string[]).includes(initialClimate) ? initialClimate as NeuralClimate : 'temperate'] };
 if (initialClimate === 'custom') for (const key of Object.keys(climateFields) as (keyof ClimateValues)[]) initialClimateValues[key] = finite(query.get(key), initialClimateValues[key]);
@@ -92,6 +100,7 @@ let settings: TerrainSettings = {
   neuralFit: query.get('fit') === 'scale' ? 'scale' : 'crop',
   neuralSlopes: query.get('slopes') !== '0',
   refine: query.get('refine') !== '0',
+  detailNoise: readDetailNoise(key => query.get(`d_${key}`)),
 };
 // Links without a source remain procedural. Version 3 neural links were fixed at 40 km.
 if (settings.source === 'neural') {
@@ -245,6 +254,7 @@ el<HTMLSelectElement>('nReliefMode').value = initialTuning.reliefMode;
 initialTuning.histogram.forEach((v, k) => { input(`nH${k}`).value = String(v); });
 el<HTMLSelectElement>('neuralFit').value = settings.neuralFit!; input('neuralSlopes').checked = settings.neuralSlopes!;
 input('refine').checked = settings.refine!;
+for (const [key, [id]] of Object.entries(detailNoiseFields)) input(id).value = String(settings.detailNoise![key as keyof FractalDetail]);
 input('auto').checked = query.get('auto') !== '0'; input('showPins').checked = query.get('showPins') !== '0';
 input('showContours').checked = query.get('contours') !== '0';
 function updateContourControl(): void {
@@ -355,6 +365,7 @@ function shareQuery(): string {
   params.set('climate', custom ? 'custom' : settings.climate ?? 'temperate');
   if (custom) for (const [key, value] of Object.entries(climate)) params.set(key, String(value));
   params.set('refine', settings.refine ? '1' : '0');
+  for (const [key, value] of Object.entries(settings.detailNoise ?? DEFAULT_FRACTAL_DETAIL)) if (value !== DEFAULT_FRACTAL_DETAIL[key as keyof FractalDetail]) params.set(`d_${key}`, String(value));
   params.set('water', input('showWater').checked ? '1' : '0'); params.set('lakes', input('showLakes').checked ? '1' : '0'); params.set('oxbows', input('showOxbows').checked ? '1' : '0');
   if (settings.source === 'neural') {
     params.set('source', 'neural'); params.set('fidelity', String(settings.fidelity ?? 0.05));
@@ -532,6 +543,7 @@ function renderGpu(): void {
     style, mapWidth: terrain.width, globalMin: terrain.globalMinHeight, globalMax: terrain.globalMaxHeight,
     contours: input('showContours').checked && contourStep > 0, contourStep, flatRelief: settings.relief === 'flat',
     refine: !!settings.refine && !terrain.caveMask.length, sourceCell: settings.width / 1024, seed: seedHash(settings.seed),
+    detail: settings.detailNoise ?? DEFAULT_FRACTAL_DETAIL,
     floor: field?.floor ?? 0, frame: true, background: '#f1f0e9',
   };
   gpu.setLook(look);
@@ -715,7 +727,8 @@ function readSettings(stage: GenerationStage = 'all', reportError = true): Terra
   const environment = el<HTMLSelectElement>('environment').value as TerrainEnvironment;
   if (!ENVIRONMENT_RELIEFS.includes(environment)) { if (reportError) status('Choisissez un relief environnant dans le menu.', true); return; }
   return { sketch: relief === 'cavern' ? undefined : sketchEditor.snapshot(), seed, width, motifSize, relief, environment, coastMask: relief === 'cavern' ? 0 : draftCoastMask, islandMode: el<HTMLSelectElement>('islandMode').value as IslandMode, erosion: Number(input('erosion').value), mountainMix: Number(input('mountainMix').value), resolution: 512, hydrology: readHydrology(), compute: el<HTMLSelectElement>('compute').value as TerrainCompute, generationCompute: el<HTMLSelectElement>('generationCompute').value as TerrainSettings['generationCompute'], source, climate: readClimate(), climateValues: readClimateValues(), fidelity: bounded(finite(input('fidelity').value, 0.05), 0.001, 2), neuralServer,
-    neuralTuning: readTuning(), neuralFit: el<HTMLSelectElement>('neuralFit').value === 'scale' ? 'scale' : 'crop', neuralSlopes: input('neuralSlopes').checked, refine: input('refine').checked };
+    neuralTuning: readTuning(), neuralFit: el<HTMLSelectElement>('neuralFit').value === 'scale' ? 'scale' : 'crop', neuralSlopes: input('neuralSlopes').checked, refine: input('refine').checked,
+    detailNoise: readDetailNoise((_, id) => input(id).value) };
 }
 function readClimate(): NeuralClimate {
   const value = el<HTMLSelectElement>('climate').value;
@@ -738,7 +751,7 @@ function generate(stage: GenerationStage = 'all'): void {
   // The climate of a procedural relief only drives the water budget.
   const next = stage === 'hydrology' ? { ...settings, hydrology: draft.hydrology, ...(settings.source === 'neural' ? {} : { climate: draft.climate, climateValues: draft.climateValues }) }
     : stage === 'coasts' ? { ...settings, coastMask: draft.coastMask, islandMode: draft.islandMode }
-    : stage === 'relief' ? { ...settings, seed: draft.seed, width: draft.width, motifSize: draft.motifSize, relief: draft.relief, environment: draft.environment, erosion: draft.erosion, mountainMix: draft.mountainMix, compute: draft.compute, generationCompute: draft.generationCompute, source: draft.source, climate: draft.climate, climateValues: draft.climateValues, fidelity: draft.fidelity, sketch: draft.sketch, neuralTuning: draft.neuralTuning, neuralFit: draft.neuralFit, neuralSlopes: draft.neuralSlopes, refine: draft.refine }
+    : stage === 'relief' ? { ...settings, seed: draft.seed, width: draft.width, motifSize: draft.motifSize, relief: draft.relief, environment: draft.environment, erosion: draft.erosion, mountainMix: draft.mountainMix, compute: draft.compute, generationCompute: draft.generationCompute, source: draft.source, climate: draft.climate, climateValues: draft.climateValues, fidelity: draft.fidelity, sketch: draft.sketch, neuralTuning: draft.neuralTuning, neuralFit: draft.neuralFit, neuralSlopes: draft.neuralSlopes, refine: draft.refine, detailNoise: draft.detailNoise }
     : draft;
   generation++; clearTimeout(detailTimer); detailRequest = undefined; detailCache.clear();
   overviewRequest = { id: ++requestId, generation, kind: 'overview', settings: next, region: { x: 0, y: 0, extent: next.width, resolution: 512 } };
@@ -758,7 +771,7 @@ function updateStageStates(): void {
   }
   const neural = draft.source === 'neural';
   const climateChanged = JSON.stringify(draft.climateValues) !== JSON.stringify(settings.climateValues);
-  const reliefChanged = (draft.sketch !== settings.sketch && JSON.stringify(draft.sketch) !== JSON.stringify(settings.sketch)) || (neural && (climateChanged || JSON.stringify(draft.neuralTuning) !== JSON.stringify(settings.neuralTuning)))
+  const reliefChanged = (draft.sketch !== settings.sketch && JSON.stringify(draft.sketch) !== JSON.stringify(settings.sketch)) || JSON.stringify(draft.detailNoise) !== JSON.stringify(settings.detailNoise) || (neural && (climateChanged || JSON.stringify(draft.neuralTuning) !== JSON.stringify(settings.neuralTuning)))
     || ['seed', 'width', 'motifSize', 'relief', 'environment', 'mountainMix', 'erosion', 'compute', 'generationCompute', 'source', 'fidelity', 'neuralFit', 'neuralSlopes', 'refine'].some(key => draft[key as keyof TerrainSettings] !== settings[key as keyof TerrainSettings]);
   const coastChanged = draft.coastMask !== settings.coastMask || draft.islandMode !== settings.islandMode;
   const hydroChanged = JSON.stringify(draft.hydrology) !== JSON.stringify(settings.hydrology) || (!neural && climateChanged);
@@ -772,6 +785,20 @@ function parameterChanged(): void {
   else status('Paramètres modifiés · recalculer une étape conserve les réglages amont ; Générer applique tout.');
 }
 for (const id of ['width', 'motifSize', 'relief', 'environment', 'mountainMix', 'erosion', 'seed', 'islandMode', 'terrainSource', 'fidelity', 'neuralFit', 'neuralSlopes', 'refine', 'nReliefMode', ...Object.values(tuningFields), 'nH0', 'nH1', 'nH2', 'nH3', 'nH4']) el(id).addEventListener('input', parameterChanged);
+// The GL renderer applies the detail noise live; the SVG fallback bakes it into the relief.
+function detailNoiseChanged(): void {
+  if (!gpu) { parameterChanged(); return; }
+  settings.detailNoise = readDetailNoise((_, id) => input(id).value);
+  // A pending generation must not bring back the previous values when it lands.
+  if (overviewRequest) overviewRequest.settings.detailNoise = settings.detailNoise;
+  if (terrain) renderGpu();
+  deferSave();
+}
+for (const [id] of Object.values(detailNoiseFields)) el(id).addEventListener('input', detailNoiseChanged);
+el('dnReset').onclick = () => {
+  for (const [key, [id]] of Object.entries(detailNoiseFields)) input(id).value = String(DEFAULT_FRACTAL_DETAIL[key as keyof FractalDetail]);
+  detailNoiseChanged();
+};
 el('climate').addEventListener('input', () => {
   const preset = CLIMATE_VALUES[el<HTMLSelectElement>('climate').value as NeuralClimate];
   if (preset) for (const [key, id] of Object.entries(climateFields)) input(id).value = String(preset[key as keyof ClimateValues]);

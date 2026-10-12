@@ -74,31 +74,54 @@ export function seedHash(text: string): number {
   return h | 0;
 }
 
+/** Shape of the fractal refinement; shared by the CPU path and the WebGL renderer. */
+export interface FractalDetail {
+  /** Amplitude, in source cells, on a unit slope (45°). */
+  amplitude: number;
+  /** Hurst exponent: amplitude ∝ wavelength^H (low: rough, high: smooth). */
+  hurst: number;
+  /** Wavelength ratio between successive octaves. */
+  lacunarity: number;
+  octaves: number;
+  /** First octave's wavelength, in source cells. */
+  start: number;
+  /** Slope exponent γ: amplitude ∝ (slope + flat)^γ (0: uniform, 1: linear). */
+  slope: number;
+  /** Slope floor: detail kept on flats. */
+  flat: number;
+  /** Height (metres) over which the detail fades in from the shore. */
+  shore: number;
+}
+export const DEFAULT_FRACTAL_DETAIL: FractalDetail = { amplitude: 0.008, hurst: 1, lacunarity: 1.5, octaves: 8, start: 1, slope: 0.5, flat: 0.004, shore: 2 };
+/** Octave rotations, shared with the WebGL renderer. */
+export const FRACTAL_ROTATIONS = [0.3, 1.1, 2.2, 0.7, 2.9, 1.7, 0.1, 2.5, 1.4, 2.0, 0.5, 2.7];
+
 /**
  * Fractal refinement below the source raster's cell `sourceCell`: self-affine
- * octaves (Hurst 0.8) whose amplitude follows the local slope, so slopes gain
- * rills and rock while flats stay flat. Octaves stop at two samples, so a
- * coarse view is unchanged and zooming in adds detail without pixels.
+ * octaves whose amplitude follows a power of the local slope, so slopes gain
+ * rills and rock while flats keep a faint texture. Octaves stop at two samples, so a coarse view is
+ * unchanged and zooming in adds detail without pixels.
  */
-export function applyFractalDetail(data: SurfaceData, sourceCell: number, seed: number): void {
+export function applyFractalDetail(data: SurfaceData, sourceCell: number, seed: number, detail: FractalDetail = DEFAULT_FRACTAL_DETAIL): void {
   const n = data.resolution, cell = data.width / n;
-  const octaves: number[] = [];
-  for (let wavelength = sourceCell; wavelength >= 2 * cell && octaves.length < 8; wavelength /= 2) octaves.push(wavelength);
-  if (!octaves.length) return;
+  const octaves: number[] = [], lacunarity = Math.max(1.1, detail.lacunarity);
+  const count = Math.min(FRACTAL_ROTATIONS.length, Math.round(detail.octaves));
+  for (let wavelength = sourceCell * detail.start; wavelength >= 2 * cell && octaves.length < count; wavelength /= lacunarity) octaves.push(wavelength);
+  if (!octaves.length || !detail.amplitude) return;
   const change = new Float32Array(n * n);
-  const rotation = [0.3, 1.1, 2.2, 0.7, 2.9, 1.7, 0.1, 2.5];
   for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
     const i = y * n + x, h = data.height[i];
     if (h <= 0) continue;
     const nz = Math.max(1e-6, data.normalZ[i]), slope = Math.hypot(data.normalX[i], data.normalY[i]) / nz;
+    const scale = detail.amplitude * Math.pow(slope + detail.flat, detail.slope) * sourceCell;
     const wx = data.x + (x + 0.5) * cell, wy = data.y + (y + 0.5) * cell;
     let v = 0;
     octaves.forEach((wavelength, k) => {
-      const c = Math.cos(rotation[k]), s = Math.sin(rotation[k]), u = (wx * c - wy * s) / wavelength, w = (wx * s + wy * c) / wavelength;
-      v += gradientNoise(u, w, seed + k * 7919) * 0.18 * (slope + 0.004) * sourceCell * Math.pow(wavelength / sourceCell, 0.8);
+      const c = Math.cos(FRACTAL_ROTATIONS[k]), s = Math.sin(FRACTAL_ROTATIONS[k]), u = (wx * c - wy * s) / wavelength, w = (wx * s + wy * c) / wavelength;
+      v += gradientNoise(u, w, seed + k * 7919) * scale * Math.pow(wavelength / sourceCell, detail.hurst);
     });
     // Fade out near the shore: the coast keeps its line.
-    v *= Math.min(1, h / 2);
+    v *= detail.shore > 0 ? Math.min(1, h / detail.shore) : 1;
     change[i] = v; data.height[i] = h + v;
   }
   addGradient(data, change);
