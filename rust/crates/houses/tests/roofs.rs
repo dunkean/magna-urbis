@@ -2299,3 +2299,47 @@ fn a_canopy_above_a_walkable_roof_floor_preserves_both_stages() {
     assert!(error.contains("dalle praticable"), "{error}");
     assert_eq!(before, unit.roofs);
 }
+
+#[test]
+fn captured_inward_unit_keeps_shed_rives_at_their_finite_raw_source_positions() {
+    // MED-ANT-B02, seed42, variation0.65, unit4: the affine world
+    // constant used to lift x=0 by one ULP and create an extra thin cell.
+    let mut unit: HouseUnit = serde_json::from_str(include_str!(
+        "fixtures/med32-unit4-before-roof.json"
+    ))
+    .unwrap();
+    build_roofs(&mut unit).unwrap();
+    assert_eq!(unit.bodies.len(), 4);
+    assert_eq!(unit.roofs.groups.len(), 8);
+    assert_eq!(
+        unit.roofs
+            .groups
+            .iter()
+            .filter(|group| group.id.ends_with(":intermediate"))
+            .count(),
+        4
+    );
+    let group = unit
+        .roofs
+        .groups
+        .iter()
+        .find(|group| group.id == "unit-4:body:2:0:intermediate")
+        .unwrap();
+    let z = geometry::snap(
+        unit.bodies[2].levels[0].z_m + unit.bodies[2].levels[0].height_m,
+    );
+    for y in [4.823_f64, 13.711] {
+        let vertex = unit
+            .roofs
+            .faces
+            .iter()
+            .filter(|face| face.roof_group == group.id)
+            .flat_map(|face| &face.vertices)
+            .map(|&index| &unit.roofs.vertices[index as usize])
+            .find(|v| v.x == 0.0 && v.y.to_bits() == y.to_bits())
+            .unwrap();
+        // The graph uses the exact Source anchor; exported SourceZ keeps its
+        // existing affine F64 evaluation, bounded by the reviewed four ULPs.
+        assert!(vertex.z.to_bits().abs_diff(z.to_bits()) <= 4);
+    }
+}

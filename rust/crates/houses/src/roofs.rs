@@ -1238,6 +1238,30 @@ fn offset_recipes(unit: &HouseUnit, body: &RoofSource, surface: &Surface) -> Nat
         })
         .collect()
 }
+
+fn legacy_eaves_domain(domain: Surface, boundary: bool) -> Surface {
+    if boundary || domain.len() < 2 {
+        return domain;
+    }
+    let overlaps = domain.iter().enumerate().any(|(i, a)| {
+        domain[i + 1..]
+            .iter()
+            .any(|b| !intersection(&vec![a.clone()], &vec![b.clone()]).is_empty())
+    });
+    if !overlaps {
+        return domain;
+    }
+    // Boolean operands use EvenOdd within each MultiPolygon. Overlapping
+    // eaves of this same cover are material union, not an XOR hole. Fold
+    // single polygons to keep the existing intra-ring fill semantics; leave
+    // disjoint inputs and the exact Boundary authority untouched.
+    g::unite(&domain.into_iter().map(|p| vec![p]).collect::<Vec<_>>())
+}
+
+#[cfg(test)]
+#[path = "legacy_eaves_tests.rs"]
+mod legacy_eaves_tests;
+
 fn roof_domain(unit: &HouseUnit, body: &RoofSource, level: &Level) -> Surface {
     if let Some(domain) = &body.declared_domain {
         return domain.clone();
@@ -1254,6 +1278,7 @@ fn roof_domain(unit: &HouseUnit, body: &RoofSource, level: &Level) -> Surface {
                 .collect(),
         })
         .collect();
+    domain = legacy_eaves_domain(domain, body.boundary_triangulation);
     // Interior eaves may project a little into a court; its reserved inner
     // core remains a genuine hole, including on extremely narrow courts.
     let cores: Surface = unit
@@ -2944,12 +2969,16 @@ fn make_roofs(unit: &HouseUnit) -> Result<(RoofMesh, Vec<Feature>, Vec<String>),
                         );
                     }
                 }
-                "RF-SHED" => add_plan(
-                    &mut candidates,
-                    &t,
-                    d.clone(),
-                    affine(&arm, 0.0, -p, z + p * arm.width_m),
-                ),
+                "RF-SHED" => {
+                    let plane = affine(&arm, 0.0, -p, z + p * arm.width_m);
+                    let side = [
+                        local(&arm, 0.0, arm.width_m),
+                        local(&arm, arm.length_m, arm.width_m),
+                    ];
+                    let mut t = t.clone();
+                    t.native_anchor = native_anchor(&t, plane, side, z);
+                    add_plan(&mut candidates, &t, d.clone(), plane);
+                }
                 "RF-CONE" | "RF-TENT" | "RF-DOME" | "RF-SNOW" | "RF-DOME-CONE" => {
                     let drum = if rf == "RF-DOME-CONE" {
                         s.drum_height_m
