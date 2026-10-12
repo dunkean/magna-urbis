@@ -142,6 +142,8 @@ const GENTLE_SHARE = 0.35;
 const MEANDER_DEPTH = 0.5, MEANDER_DEPTH_PER_WIDTH = 0.02;
 /** Height the thalweg fit may reach above the course's water level, metres. */
 const CURVE_TOLERANCE = 0.3;
+/** Braid threads part from and rejoin the main channel at most this steeply: lateral metres per metre along it (about 27°). */
+const BRAID_SPREAD = 0.5;
 /**
  * Filled depressions deeper than this (m) are lakes: a course crosses them
  * along their floor, whose cost grows by one cell length per `BED_HEIGHT`
@@ -1021,8 +1023,10 @@ export function vectorRivers(h: SimpleHydrology, lake: Uint8Array, settings: Riv
   // Braided where the gradient exceeds the Leopold & Wolman (1957) threshold
   // S = 0.012 Q^-0.44 for the bankfull discharge Q (m³/s, here 0.5 A^0.8 with A
   // in km² of reference runoff), below cascades (4 %); dry climates, with their
-  // high sediment supply, braid more readily.
-  const braidFactor = (braiding >= 2 ? 0.6 : 1.2) * (aridity < 0.5 ? 0.7 : 1);
+  // high sediment supply, braid more readily. Wet climates grow vegetated
+  // banks, which about double the threshold slope (Millar 2000).
+  const vegetation = Math.max(0, Math.min(1, (aridity - 0.2) / 0.6));
+  const braidFactor = (braiding >= 2 ? 0.6 : 1.2) * (aridity < 0.5 ? 0.7 : 1) * (1 + vegetation);
   const flatGradient = settings.flatSlope / 1000, window = 4 * cell;
   for (const stream of streams) {
     const cells = stream.cells, count = cells.length, s = new Float64Array(count);
@@ -1350,17 +1354,29 @@ export function vectorRivers(h: SimpleHydrology, lake: Uint8Array, settings: Riv
         if (!open(out[2 * k] + nx * o, out[2 * k + 1] + ny * o, k)) o = 0;
         offsets[j] = o;
       }
-      // Pieces where the thread leaves the main channel, joined to it at both ends.
+      // A thread leaves and rejoins the main channel at a low angle: its offset
+      // grows by at most `BRAID_SPREAD` per metre from where it is zero or
+      // changes side, both ways. Lowering an offset keeps it on open ground.
+      for (const forward of [true, false]) {
+        for (let t = 1; t < m; t++) {
+          const j = forward ? t : m - 1 - t, p = forward ? j - 1 : j + 1;
+          const reach = (Math.sign(offsets[p]) === Math.sign(offsets[j]) ? Math.abs(offsets[p]) : 0) + BRAID_SPREAD * Math.abs(s[j] - s[p]);
+          if (Math.abs(offsets[j]) > reach) offsets[j] = Math.sign(offsets[j]) * reach;
+        }
+      }
+      // Pieces where the thread leaves the main channel, from the vertex where
+      // it parts to the one where it rejoins, both on the main channel.
       for (let j = 0; j < m; j++) {
-        if (Math.abs(offsets[j]) < 0.4 * width) continue;
-        let e = j;
-        while (e + 1 < m && Math.abs(offsets[e + 1]) >= 0.4 * width) e++;
+        if (!offsets[j]) continue;
+        let e = j, peak = 0;
+        while (e + 1 < m && Math.sign(offsets[e + 1]) === Math.sign(offsets[j])) e++;
+        for (let t = j; t <= e; t++) peak = Math.max(peak, Math.abs(offsets[t]));
         const a = Math.max(0, j - 1), b = Math.min(m - 1, e + 1);
-        if (b - a >= 3) {
+        if (peak >= 0.4 * width && b - a >= 3) {
           const points: number[] = [], level: number[] = [], areas: number[] = [];
           for (let t = a; t <= b; t++) {
-            const k = k0 + t, [nx, ny] = normal(k);
-            points.push(out[2 * k] + nx * offsets[t], out[2 * k + 1] + ny * offsets[t]); level.push(lv[k]); areas.push(lineArea[k] / (count + 1));
+            const k = k0 + t, [nx, ny] = normal(k), o = t === a || t === b ? 0 : offsets[t];
+            points.push(out[2 * k] + nx * o, out[2 * k + 1] + ny * o); level.push(lv[k]); areas.push(lineArea[k] / (count + 1));
           }
           threads.push({ points, area: areas, level, kind: new Array<number>(areas.length).fill(3), id });
         }
@@ -1547,11 +1563,15 @@ export function vectorRivers(h: SimpleHydrology, lake: Uint8Array, settings: Riv
         vu[k] = k === last ? du[ib] : u; vl[k] = k === last ? bottom : Math.max(water[k], levelAt(u));
       }
       // Where the channel still stands above its water (its nodes were too far
-      // apart to follow a tight valley), the thalweg replaces it between the
-      // nearest points where the channel lies on it.
+      // apart to follow a tight valley) or the curve through them cuts into a
+      // lake or the sea, the thalweg replaces it between the nearest points
+      // where the channel lies on it.
       const above = (k: number): boolean => {
         const ceiling = vl[k] + depth + 0.5;
-        return terrain(mx[k], my[k]) > ceiling || (k < last && terrain((mx[k] + mx[k + 1]) / 2, (my[k] + my[k + 1]) / 2) > ceiling);
+        if (terrain(mx[k], my[k]) > ceiling || wet(mx[k], my[k])) return true;
+        if (k === last) return false;
+        const hx = (mx[k] + mx[k + 1]) / 2, hy = (my[k] + my[k + 1]) / 2;
+        return terrain(hx, hy) > ceiling || wet(hx, hy);
       };
       const onThalweg = Math.max(0.3 * width, cell / 2);
       course(cursor, ia);
