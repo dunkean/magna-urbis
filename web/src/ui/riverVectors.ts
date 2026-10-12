@@ -44,7 +44,7 @@
  * parent's former thalweg; self-intersections are cut off like meander necks.
  */
 import { Rng } from '../gen/core/rng';
-import type { SimpleHydrology } from './simpleHydrology';
+import { Heap, type SimpleHydrology } from './simpleHydrology';
 
 export interface RiverSettings {
   /** Upstream area that starts a river, km². */
@@ -56,6 +56,25 @@ export interface RiverSettings {
   /** Multiplier of the hydraulic-geometry channel width. */
   widthScale: number;
   seed: string;
+  /**
+   * Braided reaches: 0 none, 1 above the Leopold & Wolman (1957) slope–discharge
+   * threshold in unconfined valleys, 2 more readily (high sediment supply).
+   */
+  braiding?: number;
+  /** Anastomosing side channels on very flat, wet floodplains. */
+  anabranching?: boolean;
+  /** Valley sides slow bank migration (Paris et al. 2023) besides bounding the belt. */
+  terrainInfluence?: boolean;
+  /** Avulsions: a meander belt now and then takes a shorter course, leaving its old channel. */
+  avulsions?: boolean;
+  /** Confluence angle in degrees (Seybold, Rothman & Kirchner 2017); absent: the drainage's own. */
+  confluenceAngle?: number;
+  /** Distributary deltas where large rivers reach the sea across a low coastal plain. */
+  deltas?: boolean;
+  /** Bankfull discharge per unit of reference area, relative to a 300 mm runoff. */
+  dischargeScale?: number;
+  /** Aridity index P / PET: dry climates braid more, wet ones anastomose. */
+  aridity?: number;
 }
 
 export interface RiverLine {
@@ -65,17 +84,32 @@ export interface RiverLine {
   area: number[];
   /** Water surface at each vertex, metres: the filled drainage level of the course. */
   level: number[];
-  /** How each vertex was traced: 0 smoothed course, 1 meander, 2 confluence join. */
+  /**
+   * How each vertex was traced: 0 smoothed course, 1 meander, 2 confluence join,
+   * 3 braided reach, 4 anastomosing side channel, 5 delta distributary.
+   */
   kind: number[];
+  /** Stream id, and the stream this course joins (−1: sea, lake or map edge). */
+  id?: number;
+  joins?: number;
+  /** Number of channels sharing the flow at each vertex (braids), 1 by default. */
+  threads?: number[];
 }
 
 export interface RiverNetwork {
   rivers: RiverLine[];
-  /** Abandoned meander loops; `area` is the river's upstream area when cut off. */
+  /** Abandoned meander loops and avulsed channels; `area` is the river's upstream area when cut off. */
   oxbows: RiverLine[];
+  /** Braided and anastomosing side channels. */
+  braids: RiverLine[];
+  /** Delta distributaries. */
+  distributaries: RiverLine[];
   meanderRuns: number;
   lengthKm: number;
   meanderKm: number;
+  braidedKm: number;
+  avulsions: number;
+  deltas: number;
   ms: number;
 }
 
@@ -299,6 +333,18 @@ export interface MeanderResult {
   iterations: number;
   /** False when no meandered channel fitted: the axis came back unchanged, or with a long stretch of it at the end. */
   meandered: boolean;
+  avulsions: number;
+}
+
+export interface MeanderOptions {
+  /**
+   * Share (0–1] of the migration a bank keeps at (x, y) given the water level:
+   * rising valley sides resist erosion, so bends slide along them (Paris,
+   * Guérin, Collon & Galin 2023) rather than stopping dead at the belt bound.
+   */
+  resistance?: (x: number, y: number, water: number) => number;
+  /** Now and then the channel avulses onto a shorter course across its belt. */
+  avulsion?: boolean;
 }
 
 /**
@@ -318,7 +364,7 @@ export interface MeanderResult {
 export function meander(
   axisX: number[], axisY: number[], width: number, rng: Rng, valleyAt: (x: number, y: number) => number,
   allowed: (x: number, y: number, water: number) => boolean, targetAt: (x: number, y: number) => number, resolution: number,
-  maxIterations = 800,
+  maxIterations = 800, options: MeanderOptions = {},
 ): MeanderResult {
   const ds = SPACING * width;
   const [rx, ry] = resample(axisX, axisY, axisX.length, ds);
@@ -405,7 +451,7 @@ export function meander(
   const minGap = Math.ceil(6 * width / ds), cutoff = CUTOFF * width;
   const entryMargin = Math.ceil(entryTaper / ds), exitMargin = Math.ceil(exitTaper / ds);
   let field = new Float64Array(0), saturation = new Float64Array(0);
-  let iterations = 0, stalled = 0;
+  let iterations = 0, stalled = 0, avulsions = 0;
   for (; iterations < maxIterations; iterations++) {
     if (n < 5) break;
     if (iterations % 8 === 0) {
@@ -454,8 +500,13 @@ export function meander(
       const damping = Math.max(0, Math.min(1, (limit - local) / (limit - 1)));
       const rate = (OMEGA * curvature + GAMMA * sum / norm) * taper * damping;
       if (rate === 0) continue;
-      const step = Math.max(-maxStep, Math.min(maxStep, rate * RATE * width * field[i]));
+      let step = Math.max(-maxStep, Math.min(maxStep, rate * RATE * width * field[i]));
       const tx = xs[i + 1] - xs[i - 1], ty = ys[i + 1] - ys[i - 1], tl = Math.sqrt(tx * tx + ty * ty) || 1;
+      if (options.resistance) {
+        // The bank being eroded: a channel half-width and a half towards the move.
+        const side = Math.sign(step) * 0.75 * width;
+        step *= options.resistance(xs[i] + side * ty / tl, ys[i] - side * tx / tl, water[Math.max(0, i - 1)]);
+      }
       // Positive rates move towards the right of the flow: the outer bank of a left bend.
       // A move blocked by the floodplain edge tries shorter steps, so the bank slides along it.
       for (let f = 1; f > 0.2; f /= 2) {
@@ -480,6 +531,36 @@ export function meander(
         kx.set(xs.subarray(0, i + 1)); kx.set(xs.subarray(j), i + 1);
         ky.set(ys.subarray(0, i + 1)); ky.set(ys.subarray(j), i + 1);
         [xs, ys] = resample(kx, ky, kx.length, ds); n = xs.length;
+      }
+    }
+    // Avulsion: where the belt has grown long loops, the channel breaks through
+    // to a course several times shorter, leaving the loops as a paleochannel.
+    if (options.avulsion && iterations >= 64 && iterations % 24 === 0 && rng.chance(0.35)) {
+      let best: [number, number, number] | undefined;
+      const span = Math.ceil(25 * width / ds);
+      for (let i = entryMargin; i < n - exitMargin; i += 2) {
+        for (let j = i + 4 * minGap; j < Math.min(n - exitMargin, i + 12 * minGap); j += 2) {
+          const d = Math.hypot(xs[j] - xs[i], ys[j] - ys[i]);
+          if (d < 3 * width || d > span * ds) continue;
+          const ratio = (j - i) * ds / d;
+          if (ratio > 2.2 && (!best || ratio > best[2])) best = [i, j, ratio];
+        }
+      }
+      if (best && beyond(xs[best[1]], ys[best[1]]) < 0) {
+        const [i, j] = best, d = Math.hypot(xs[j] - xs[i], ys[j] - ys[i]);
+        const ta = Math.hypot(xs[i + 1] - xs[i - 1], ys[i + 1] - ys[i - 1]) || 1, tb = Math.hypot(xs[j + 1] - xs[j - 1], ys[j + 1] - ys[j - 1]) || 1;
+        const [hx, hy] = hermite(xs[i], ys[i], (xs[i + 1] - xs[i - 1]) / ta * 0.6 * d, (ys[i + 1] - ys[i - 1]) / ta * 0.6 * d,
+          xs[j], ys[j], (xs[j + 1] - xs[j - 1]) / tb * 0.6 * d, (ys[j + 1] - ys[j - 1]) / tb * 0.6 * d, ds);
+        let ok = true;
+        for (let k = 1; k < hx.length && ok; k++) ok = free(hx[k], hy[k], i) && freeSpan(hx[k - 1], hy[k - 1], hx[k], hy[k], i);
+        if (ok) {
+          const trim = Math.ceil(1.5 * width / ds);
+          oxbows.push([Array.from(xs.subarray(i + trim, j + 1 - trim)), Array.from(ys.subarray(i + trim, j + 1 - trim))]);
+          const kx = [...xs.subarray(0, i + 1), ...hx.slice(1, -1), ...xs.subarray(j)];
+          const ky = [...ys.subarray(0, i + 1), ...hy.slice(1, -1), ...ys.subarray(j)];
+          [xs, ys] = resample(kx, ky, kx.length, ds); n = xs.length;
+          avulsions++;
+        }
       }
     }
   }
@@ -583,10 +664,10 @@ export function meander(
     }
   }
   // Nothing fits: keep the axis, which does.
-  if (!result) return { xs: axisX.slice(), ys: axisY.slice(), oxbows: [], iterations, meandered: false };
+  if (!result) return { xs: axisX.slice(), ys: axisY.slice(), oxbows: [], iterations, meandered: false, avulsions: 0 };
   // A long stretch of axis left at the end does not count as meandered.
   const meandered = rejoined < 0 || (real - 1 - rejoined) * ds <= Math.max(20 * width, 0.25 * axisLength);
-  return { xs: result[0], ys: result[1], oxbows, iterations, meandered };
+  return { xs: result[0], ys: result[1], oxbows, iterations, meandered, avulsions };
 }
 
 /**
@@ -842,6 +923,7 @@ export function vectorRivers(h: SimpleHydrology, lake: Uint8Array, settings: Riv
   const { n, receiver, accumulation, sea, filled, height } = h;
   const total = n * n, cell = h.width / n, threshold = settings.riverArea * 1e6;
   const rng = new Rng(`rivers:${settings.seed}`);
+  const braiding = settings.braiding ?? 0, aridity = settings.aridity ?? 1, dischargeScale = settings.dischargeScale ?? 1;
 
   // Standing water as drawn: the sea, lakes, and any ground below sea level
   // (inland basins below zero are not sea for the drainage, but look like it).
@@ -935,7 +1017,12 @@ export function vectorRivers(h: SimpleHydrology, lake: Uint8Array, settings: Riv
 
   // Target sinuosity of each river cell, from the gradient over ±4 cells along
   // its stream and from the stream's size: small streams meander less.
-  const sinuosity = new Float32Array(total).fill(1), flat = new Uint8Array(total);
+  const sinuosity = new Float32Array(total).fill(1), flat = new Uint8Array(total), braided = new Uint8Array(total);
+  // Braided where the gradient exceeds the Leopold & Wolman (1957) threshold
+  // S = 0.012 Q^-0.44 for the bankfull discharge Q (m³/s, here 0.5 A^0.8 with A
+  // in km² of reference runoff), below cascades (4 %); dry climates, with their
+  // high sediment supply, braid more readily.
+  const braidFactor = (braiding >= 2 ? 0.6 : 1.2) * (aridity < 0.5 ? 0.7 : 1);
   const flatGradient = settings.flatSlope / 1000, window = 4 * cell;
   for (const stream of streams) {
     const cells = stream.cells, count = cells.length, s = new Float64Array(count);
@@ -954,6 +1041,10 @@ export function vectorRivers(h: SimpleHydrology, lake: Uint8Array, settings: Riv
         : GENTLE_SHARE * Math.max(0, 1 - Math.log(gradient / flatGradient) / Math.log(GENTLE));
       const size = Math.max(0.4, Math.min(1, 0.4 + 0.15 * Math.log2(accumulation[c] / threshold)));
       sinuosity[c] = 1 + (settings.sinuosity - 1) * share * size;
+      if (braiding > 0 && !filledDepression && accumulation[c] >= 4 * threshold) {
+        const q = 0.5 * Math.pow(accumulation[c] / 1e6, 0.8) * dischargeScale;
+        if (gradient > braidFactor * 0.012 * Math.pow(q, -0.44) && gradient < 0.04) { braided[c] = 1; sinuosity[c] = 1; flat[c] = 0; }
+      }
     }
   }
 
@@ -986,7 +1077,8 @@ export function vectorRivers(h: SimpleHydrology, lake: Uint8Array, settings: Riv
   const traced = new SegmentIndex(4 * cell);
   let widest = 0;
   const oxbows: RiverLine[] = [];
-  let meanderRuns = 0, meanderLength = 0;
+  let meanderRuns = 0, meanderLength = 0, avulsions = 0, braidedLength = 0, deltas = 0;
+  const braids: RiverLine[] = [], distributaries: RiverLine[] = [];
 
   // Deep filled depressions are lakes, drawn or not. Steepest descent crosses
   // their flat filled surface in straight lines, over drowned hills; a course
@@ -1126,6 +1218,158 @@ export function vectorRivers(h: SimpleHydrology, lake: Uint8Array, settings: Riv
     return [];
   };
 
+  /** Redraws the end of a course so that it meets `target` at `angle` degrees. */
+  const reangle = (out: number[], us: number[], kind: number[], lv: number[], target: RiverLine, angle: number, width: number): void => {
+    const m = out.length / 2 - 1, tp = target.points;
+    if (m < 3) return;
+    const jx = out[2 * m], jy = out[2 * m + 1];
+    let best = Infinity, pk = 0;
+    for (let k = 0; k + 3 < tp.length; k += 2) {
+      const ax = tp[k], ay = tp[k + 1], dx = tp[k + 2] - ax, dy = tp[k + 3] - ay;
+      const t = Math.max(0, Math.min(1, ((jx - ax) * dx + (jy - ay) * dy) / (dx * dx + dy * dy || 1)));
+      const d = Math.hypot(ax + dx * t - jx, ay + dy * t - jy);
+      if (d < best) { best = d; pk = k; }
+    }
+    if (best > cell) return;
+    const k0 = Math.max(0, pk - 4), k1 = Math.min(tp.length - 2, pk + 6);
+    let px2 = tp[k1] - tp[k0], py2 = tp[k1 + 1] - tp[k0 + 1];
+    const pl = Math.hypot(px2, py2);
+    if (pl < 1e-6) return;
+    px2 /= pl; py2 /= pl;
+    const reach = Math.max(2 * cell, Math.min(8 * cell, 3 * width));
+    let k = m, arc = 0;
+    while (k > 1 && arc < reach) { arc += Math.hypot(out[2 * k] - out[2 * k - 2], out[2 * k + 1] - out[2 * k - 1]); k--; }
+    if (arc < 1.5 * cell) return;
+    const ax = out[2 * k], ay = out[2 * k + 1], vx = ax - jx, vy = ay - jy, along = vx * px2 + vy * py2;
+    let nx = vx - along * px2, ny = vy - along * py2;
+    const nl = Math.hypot(nx, ny);
+    if (nl < 0.2 * arc) return;
+    nx /= nl; ny /= nl;
+    const theta = angle * Math.PI / 180, tx = Math.cos(theta) * px2 - Math.sin(theta) * nx, ty = Math.cos(theta) * py2 - Math.sin(theta) * ny;
+    const sx = out[2 * k + 2] - out[2 * k - 2], sy = out[2 * k + 3] - out[2 * k - 1], sl = Math.hypot(sx, sy) || 1;
+    const [hx, hy] = hermite(ax, ay, sx / sl * arc, sy / sl * arc, jx, jy, tx * arc, ty * arc, cell / 3);
+    // Never higher than the stretch it replaces, and no crossing before the end.
+    let ceiling = -Infinity;
+    for (let j = k; j <= m; j++) ceiling = Math.max(ceiling, terrain(out[2 * j], out[2 * j + 1]));
+    for (let j = 1; j < hx.length; j++) {
+      if (terrain(hx[j], hy[j]) > ceiling + 0.25 || wet(hx[j], hy[j])) return;
+      if (j < hx.length - 2 && traced.crossing(hx[j - 1], hy[j - 1], hx[j], hy[j]) <= 1) return;
+    }
+    const u = us[m], z = lv[m];
+    out.length = 2 * k + 2; us.length = k + 1; kind.length = k + 1; lv.length = k + 1;
+    for (let j = 1; j < hx.length; j++) { out.push(hx[j], hy[j]); us.push(u); kind.push(2); lv.push(z); }
+  };
+
+  /** Side channels along a meandering run: (main channel, its thalweg axis). */
+  const sideChannels = (mx: number[], my: number[], ax: ArrayLike<number>, ay: ArrayLike<number>, width: number,
+    fits: (x: number, y: number) => boolean, r: Rng): [number[], number[]][] => {
+    const [sx, sy] = smoothChain(ax, ay, 6), m = sx.length, arc = [0];
+    for (let k = 1; k < m; k++) arc.push(arc[k - 1] + Math.hypot(sx[k] - sx[k - 1], sy[k] - sy[k - 1]));
+    const total = arc[m - 1], main: number[] = [];
+    for (let k = 0; k < mx.length; k++) main.push(mx[k], my[k]);
+    const index = new SegmentIndex(Math.max(4 * width, cell));
+    index.add(main, 0);
+    const at = (s: number): [number, number, number, number] => {
+      let k = 0;
+      while (k < m - 2 && arc[k + 1] < s) k++;
+      const f = (s - arc[k]) / Math.max(1e-9, arc[k + 1] - arc[k]), tx = sx[k + 1] - sx[k], ty = sy[k + 1] - sy[k], tl = Math.hypot(tx, ty) || 1;
+      return [sx[k] + tx * f, sy[k] + ty * f, ty / tl, -tx / tl];
+    };
+    const result: [number[], number[]][] = [];
+    for (let s0 = r.range(10, 30) * width; s0 + 20 * width < total - 10 * width;) {
+      const s1 = Math.min(total - 10 * width, s0 + r.range(20, 50) * width);
+      if (s1 - s0 < 15 * width) break;
+      if (r.chance(0.6)) {
+        const b = r.range(2.5, 5) * width, phase = r.range(0, 2 * Math.PI);
+        for (const side of r.chance(0.5) ? [1, -1] : [-1, 1]) {
+          const steps = Math.ceil((s1 - s0) / (0.75 * width)), xs: number[] = [], ys: number[] = [];
+          let ok = true;
+          for (let j = 0; j <= steps && ok; j++) {
+            const t = j / steps, [x, y, nx, ny] = at(s0 + (s1 - s0) * t);
+            if (j === 0 || j === steps) { const [qx, qy] = nearestOnLine(main, x, y); xs.push(qx); ys.push(qy); continue; }
+            const o = side * b * Math.pow(Math.sin(Math.PI * t), 0.6) + 0.4 * width * Math.sin(2 * Math.PI * (s0 + (s1 - s0) * t) / (8 * width) + phase) * Math.sin(Math.PI * t);
+            xs.push(x + nx * o); ys.push(y + ny * o);
+            ok = fits(x + nx * o, y + ny * o);
+          }
+          for (let j = 2; j < xs.length - 1 && ok; j++) ok = index.crossing(xs[j - 1], ys[j - 1], xs[j], ys[j]) > 1;
+          if (!ok) continue;
+          result.push(spline(xs, ys, cell / 3));
+          break;
+        }
+      }
+      s0 = s1 + r.range(20, 60) * width;
+    }
+    return result;
+  };
+
+  /** Braid threads over vertices k0..k1 of a course; undefined when the plain is too narrow. */
+  const braidThreads = (out: number[], lv: number[], lineArea: number[], k0: number, k1: number, id: number, r: Rng):
+    { threads: RiverLine[]; count: number; length: number } | undefined => {
+    const m = k1 - k0 + 1;
+    if (m < 6) return;
+    const s = [0];
+    for (let k = k0 + 1; k <= k1; k++) s.push(s[s.length - 1] + Math.hypot(out[2 * k] - out[2 * k - 2], out[2 * k + 1] - out[2 * k - 1]));
+    const width = Math.max(channelWidth(lineArea[Math.floor((k0 + k1) / 2)], settings.widthScale), MIN_WIDTH_CELLS * cell);
+    const length = s[m - 1];
+    if (length < 15 * width) return;
+    const normal = (k: number): [number, number] => {
+      const a = Math.max(0, k - 2), b = Math.min(out.length / 2 - 1, k + 2), tx = out[2 * b] - out[2 * a], ty = out[2 * b + 1] - out[2 * a + 1], tl = Math.hypot(tx, ty) || 1;
+      return [ty / tl, -tx / tl];
+    };
+    const depth = MEANDER_DEPTH + MEANDER_DEPTH_PER_WIDTH * width + 0.5;
+    const open = (x: number, y: number, k: number): boolean => !wet(x, y) && terrain(x, y) <= lv[k] + depth;
+    // Unconfined plain on either side: how far the ground stays near the water.
+    const left = new Float64Array(m), right = new Float64Array(m);
+    for (let j = 0; j < m; j++) {
+      const k = k0 + j, [nx, ny] = normal(k), x = out[2 * k], y = out[2 * k + 1];
+      for (const [side, extent] of [[1, right], [-1, left]] as const) {
+        let t = 0;
+        while (t < 8 * width && open(x + side * nx * (t + 0.5 * width), y + side * ny * (t + 0.5 * width), k)) t += 0.5 * width;
+        extent[j] = t;
+      }
+    }
+    const smooth = (a: Float64Array): Float64Array => Float64Array.from(a, (_, j) => {
+      let sum = 0, w = 0;
+      for (let q = Math.max(0, j - 4); q <= Math.min(m - 1, j + 4); q++) { sum += a[q]; w++; }
+      return sum / w;
+    });
+    const l = smooth(left), rgt = smooth(right);
+    let mean = 0;
+    for (let j = 0; j < m; j++) mean += l[j] + rgt[j];
+    if (mean / m < 3 * width) return;
+    const count = braiding >= 2 ? 3 : 2, seed = r.int(0, 1 << 30), threads: RiverLine[] = [];
+    for (let q = 0; q < count; q++) {
+      const wavelength = r.range(5, 10) * width, shift = r.range(0, 100);
+      const offsets = new Float64Array(m);
+      for (let j = 0; j < m; j++) {
+        const k = k0 + j, taper = smoothstep(Math.min(s[j], length - s[j]) / (4 * width));
+        const f = Math.max(-1, Math.min(1, 1.4 * valueNoise(s[j] / wavelength + shift, 17.3 * q + 0.37, seed)));
+        let o = f * (f > 0 ? rgt[j] : l[j]) * 0.85 * taper;
+        const [nx, ny] = normal(k);
+        for (let tries = 0; tries < 3 && o !== 0 && !open(out[2 * k] + nx * o, out[2 * k + 1] + ny * o, k); tries++) o /= 2;
+        if (!open(out[2 * k] + nx * o, out[2 * k + 1] + ny * o, k)) o = 0;
+        offsets[j] = o;
+      }
+      // Pieces where the thread leaves the main channel, joined to it at both ends.
+      for (let j = 0; j < m; j++) {
+        if (Math.abs(offsets[j]) < 0.4 * width) continue;
+        let e = j;
+        while (e + 1 < m && Math.abs(offsets[e + 1]) >= 0.4 * width) e++;
+        const a = Math.max(0, j - 1), b = Math.min(m - 1, e + 1);
+        if (b - a >= 3) {
+          const points: number[] = [], level: number[] = [], areas: number[] = [];
+          for (let t = a; t <= b; t++) {
+            const k = k0 + t, [nx, ny] = normal(k);
+            points.push(out[2 * k] + nx * offsets[t], out[2 * k + 1] + ny * offsets[t]); level.push(lv[k]); areas.push(lineArea[k] / (count + 1));
+          }
+          threads.push({ points, area: areas, level, kind: new Array<number>(areas.length).fill(3), id });
+        }
+        j = e;
+      }
+    }
+    return threads.length ? { threads, count: count + 1, length } : undefined;
+  };
+
   for (const id of order) {
     const stream = streams[id], bed = new Set<number>();
     let cells = stream.cells.slice();
@@ -1135,12 +1379,13 @@ export function vectorRivers(h: SimpleHydrology, lake: Uint8Array, settings: Riv
     const shoal = stream.end >= 0 && !standing[stream.end] && still[stream.end] ? toStanding(stream.end) : [];
     cells.push(...shoal);
     chains[id] = cells;
-    const xs: number[] = [], ys: number[] = [], area: number[] = [], level: number[] = [], local: number[] = [], plain: number[] = [];
+    const xs: number[] = [], ys: number[] = [], area: number[] = [], level: number[] = [], local: number[] = [], plain: number[] = [], braid: number[] = [];
     for (const c of cells) {
       const [x, y] = centre(c), onBed = bed.has(c);
       // On a lake floor the course lies on the ground.
       xs.push(x); ys.push(y); area.push(onBed ? NaN : accumulation[c]); level.push(onBed ? height[c] : filled[c]);
       local.push(!onBed && river[c] ? sinuosity[c] : 1); plain.push(!onBed && river[c] ? flat[c] : 0);
+      braid.push(!onBed && river[c] ? braided[c] : 0);
     }
     // On a floor, water fills the small dips: its level is the highest
     // floor within two cells along the path, never above the lake surface.
@@ -1178,6 +1423,7 @@ export function vectorRivers(h: SimpleHydrology, lake: Uint8Array, settings: Riv
     if (stream.end >= 0) {
       area[area.length - 1] = Math.max(area[area.length - 1], area[area.length - 2]);
       local[local.length - 1] = local[local.length - 2]; plain[plain.length - 1] = plain[plain.length - 2];
+      braid[braid.length - 1] = braid[braid.length - 2];
     } else {
       // Map-edge outlet: run on to the border.
       const c = cells[cells.length - 1], gx = c % n, gy = Math.floor(c / n);
@@ -1185,7 +1431,7 @@ export function vectorRivers(h: SimpleHydrology, lake: Uint8Array, settings: Riv
       const bx = gx === 0 ? 0 : gx === n - 1 ? h.width : x, by = gy === 0 ? 0 : gy === n - 1 ? h.width : y;
       if (bx !== x || by !== y) {
         xs.push(bx); ys.push(by); area.push(area[area.length - 1]); level.push(level[level.length - 1]);
-        local.push(local[local.length - 1]); plain.push(plain[plain.length - 1]);
+        local.push(local[local.length - 1]); plain.push(plain[plain.length - 1]); braid.push(braid[braid.length - 1]);
       }
     }
     const count = xs.length;
@@ -1271,11 +1517,20 @@ export function vectorRivers(h: SimpleHydrology, lake: Uint8Array, settings: Riv
         const water = waterProfile(hx, hy, hx.length, valleyAt);
         if (hx.every((x, k) => allowed(x, hy[k], water[Math.max(0, k - 1)]))) { axisX = hx; axisY = hy; }
       }
-      let result = meander(axisX, axisY, width, rng.fork(`${id}:${a}`), valleyAt, allowed, targetAt, cell / 2);
+      // Valley sides resist erosion more the higher they rise above the water.
+      const options: MeanderOptions = {
+        avulsion: settings.avulsions,
+        resistance: settings.terrainInfluence ? (x, y, water) => {
+          const rise = terrain(x, y) - Math.min(valleyAt(x, y), water);
+          return rise <= 0 ? 1 : 1 / (1 + (rise / depth) ** 2);
+        } : undefined,
+      };
+      let result = meander(axisX, axisY, width, rng.fork(`${id}:${a}`), valleyAt, allowed, targetAt, cell / 2, 800, options);
       // A Hermite axis that could not meander would stay nearly straight: retry on the thalweg.
       if (!result.meandered && axisX.length !== ib - ia + 1) {
-        result = meander(Array.from(px.subarray(ia, ib + 1)), Array.from(py.subarray(ia, ib + 1)), width, rng.fork(`${id}:${a}:thalweg`), valleyAt, allowed, targetAt, cell / 2);
+        result = meander(Array.from(px.subarray(ia, ib + 1)), Array.from(py.subarray(ia, ib + 1)), width, rng.fork(`${id}:${a}:thalweg`), valleyAt, allowed, targetAt, cell / 2, 800, options);
       }
+      avulsions += result.avulsions;
       // The model's nodes are most of a width apart: draw the curve through them.
       const [mx, my] = spline(result.xs, result.ys, cell / 3);
       const water = waterProfile(mx, my, mx.length, valleyAt), last = mx.length - 1;
@@ -1327,6 +1582,17 @@ export function vectorRivers(h: SimpleHydrology, lake: Uint8Array, settings: Riv
         uncross(points, cell);
         const m = points.length / 2;
         oxbows.push({ points, area: new Array<number>(m).fill(area[b]), level: new Array<number>(m).fill(level[b]), kind: new Array<number>(m).fill(1) });
+      }
+      // Anastomosing: on wide, very flat and wet floodplains a side channel
+      // leaves the river and rejoins it downstream around a vegetated island.
+      if (settings.anabranching && aridity >= 0.8 && area[b] >= 25 * threshold && flats >= 0.5 * (b - a + 1)) {
+        const fits = (x: number, y: number): boolean => !wet(x, y) && allowed(x, y, valleyAt(x, y));
+        for (const [sx, sy] of sideChannels(mx, my, px.subarray(ia, ib + 1), py.subarray(ia, ib + 1), width, fits, rng.fork(`${id}:${a}:anabranch`))) {
+          const points: number[] = [];
+          for (let k = 0; k < sx.length; k++) points.push(sx[k], sy[k]);
+          const m = sx.length;
+          braids.push({ points, area: new Array<number>(m).fill(0.35 * area[b]), level: new Array<number>(m).fill(level[b]), kind: new Array<number>(m).fill(4), id });
+        }
       }
       meanderRuns++;
       cursor = ib;
@@ -1484,6 +1750,13 @@ export function vectorRivers(h: SimpleHydrology, lake: Uint8Array, settings: Riv
         if (last) break;
       }
     }
+    // Confluence angle: the last stretch of a tributary is redrawn to meet its
+    // parent at the climate's angle, where that keeps it in the valley.
+    let joins = joinTo;
+    if (joins < 0 && joined) joins = traced.nearest(out[out.length - 2], out[out.length - 1], 1)?.line ?? -1;
+    if (settings.confluenceAngle !== undefined && joins >= 0 && lines[joins]) {
+      reangle(out, us, kind, lv, lines[joins], settings.confluenceAngle, channelWidth(lines[joins].area[lines[joins].area.length - 1], settings.widthScale));
+    }
     unfold(out, us, kind, lv);
     despike(out, us, kind, lv);
     uncross(out, cell, us, kind, lv);
@@ -1503,11 +1776,140 @@ export function vectorRivers(h: SimpleHydrology, lake: Uint8Array, settings: Riv
       }
     }
     if (out.length < 4) continue;
-    lines[id] = { points: out, area: us.map(u => lerp(area, u)), level: lv, kind };
+    const lineArea = us.map(u => lerp(area, u));
+    // Braided reaches: a few channels split from the course, wander across the
+    // gravel plain and rejoin it, crossing each other around braid bars.
+    const threads = new Array<number>(us.length).fill(1);
+    if (braiding > 0) {
+      const isBraid = us.map((u, k) => kind[k] === 0 && braid[Math.min(count - 1, Math.round(u))] === 1);
+      for (let k0 = 0; k0 < isBraid.length; k0++) {
+        if (!isBraid[k0]) continue;
+        let k1 = k0;
+        while (k1 + 1 < isBraid.length && isBraid[k1 + 1]) k1++;
+        const made = braidThreads(out, lv, lineArea, k0, k1, id, rng.fork(`${id}:${k0}:braid`));
+        if (made) {
+          for (const thread of made.threads) braids.push(thread);
+          for (let k = k0; k <= k1; k++) { threads[k] = made.count; kind[k] = 3; }
+          braidedLength += made.length;
+        }
+        k0 = k1;
+      }
+    }
+    lines[id] = { points: out, area: lineArea, level: lv, kind, id, joins, threads };
     // Tributaries crossing a lake floor run to the part of this course that is drawn.
     chains[id] = cells.slice(0, Math.min(cells.length, Math.floor(us[us.length - 1]) + 2));
     widest = Math.max(widest, channelWidth(lines[id].area[lines[id].area.length - 1], settings.widthScale));
     traced.add(out, id);
+  }
+
+  /**
+   * Cheapest way from (ax, ay) to standing water near (ex, ey) on the grid,
+   * cost growing with the height above `level`; undefined when it must climb
+   * more than 2.5 m above it.
+   */
+  const lowRoute = (ax: number, ay: number, ex: number, ey: number, level: number, avoid: SegmentIndex): [number[], number[]] | undefined => {
+    const margin = 12, from = cellAt(ax, ay), to = cellAt(ex, ey);
+    if (from < 0 || to < 0) return;
+    const x0 = Math.max(0, Math.min(from % n, to % n) - margin), x1 = Math.min(n - 1, Math.max(from % n, to % n) + margin);
+    const y0 = Math.max(0, Math.min(Math.floor(from / n), Math.floor(to / n)) - margin), y1 = Math.min(n - 1, Math.max(Math.floor(from / n), Math.floor(to / n)) + margin);
+    const w = x1 - x0 + 1, size = w * (y1 - y0 + 1), cost = new Float64Array(size).fill(Infinity), previous = new Int32Array(size).fill(-1);
+    const local = (c: number): number => (Math.floor(c / n) - y0) * w + c % n - x0;
+    const heap = new Heap(8 * size);
+    cost[local(from)] = 0; heap.push(from, 0);
+    while (heap.length) {
+      const c = heap.pop(), lc = local(c);
+      if (c !== from && standing[c] && sea[c]) {
+        const xs: number[] = [], ys: number[] = [];
+        for (let k = lc; k >= 0; k = previous[k]) { xs.push((x0 + k % w + 0.5) * cell); ys.push((y0 + Math.floor(k / w) + 0.5) * cell); }
+        xs.reverse(); ys.reverse(); xs[0] = ax; ys[0] = ay;
+        return [xs, ys];
+      }
+      const x = c % n, y = (c - x) / n;
+      for (let k = 0; k < 8; k++) {
+        const xx = x + DX[k], yy = y + DY[k];
+        if (xx < x0 || yy < y0 || xx > x1 || yy > y1) continue;
+        const nb = yy * n + xx, rise = height[nb] - level;
+        if (rise > 2.5 && !standing[nb]) continue;
+        // Away from the apex, keep clear of the channels already drawn.
+        const cx = (xx + 0.5) * cell, cy = (yy + 0.5) * cell;
+        const crowded = Math.hypot(cx - ax, cy - ay) > 3 * cell && !standing[nb] && avoid.nearest(cx, cy, 2 * cell) !== undefined;
+        const lnb = local(nb), step = (DX[k] && DY[k] ? Math.SQRT2 : 1) * (1 + Math.max(0, rise) * 4) * (crowded ? 12 : 1);
+        if (cost[lc] + step < cost[lnb]) { cost[lnb] = cost[lc] + step; previous[lnb] = lc; heap.push(nb, cost[lnb]); }
+      }
+    }
+    return undefined;
+  };
+
+  // Deltas: a large river crossing a low coastal plain to the sea splits at an
+  // apex into distributaries that fan out to the shore.
+  if (settings.deltas) {
+    const fan = new SegmentIndex(4 * cell);
+    for (const id of order) {
+      const line = lines[id], stream = streams[id];
+      if (!line || stream.end < 0 || !sea[stream.end]) continue;
+      const p = line.points, m = p.length / 2 - 1, mouth = line.area[m];
+      if (mouth < 30 * threshold) continue;
+      // Apex: up the course while its water surface stays nearly flat (under 1.5 m/km).
+      const width = channelWidth(mouth, settings.widthScale), sea0 = Math.max(0, line.level[m]);
+      let k = m, arc = 0;
+      while (k > 1 && arc < Math.min(12000, 40 * width)) {
+        const step = Math.hypot(p[2 * k] - p[2 * k - 2], p[2 * k + 1] - p[2 * k - 1]);
+        if (line.level[k - 1] - sea0 > 0.0015 * (arc + step) + 1) break;
+        arc += step; k--;
+      }
+      const apexHeight = Math.max(line.level[k], terrain(p[2 * k], p[2 * k + 1])) + 1.5;
+      if (arc < Math.max(20 * width, 4 * cell)) continue;
+      const ax = p[2 * k], ay = p[2 * k + 1], dl = Math.hypot(p[2 * m] - ax, p[2 * m + 1] - ay);
+      if (dl < 2 * cell) continue;
+      const dx = (p[2 * m] - ax) / dl, dy = (p[2 * m + 1] - ay) / dl;
+      const tx0 = p[2 * k + 2] - p[2 * k - 2], ty0 = p[2 * k + 3] - p[2 * k - 1], tl0 = Math.hypot(tx0, ty0) || 1;
+      const branches = mouth > 2000e6 ? 4 : mouth > 500e6 ? 3 : 2, r = rng.fork(`delta:${id}`);
+      const own = new SegmentIndex(4 * cell);
+      own.add(p.slice(0, 2 * k), id); own.add(p.slice(2 * k + 6), id);
+      let made = 0;
+      for (let b = 0; b < branches; b++) {
+        const phi = ((b + 0.5) / branches - 0.5) * 1.6 + r.range(-0.15, 0.15);
+        const ux = dx * Math.cos(phi) - dy * Math.sin(phi), uy = dx * Math.sin(phi) + dy * Math.cos(phi);
+        // The sea ahead in that direction, then the lowest way there: a
+        // distributary follows the lowest ground of the plain to the shore.
+        let found = -1;
+        for (let t = 0.3 * dl; t < 2.5 * dl; t += cell / 2) if (wet(ax + ux * t, ay + uy * t)) { found = t; break; }
+        if (found < 0) continue;
+        const ex = ax + ux * found, ey = ay + uy * found;
+        if (Math.hypot(ex - p[2 * m], ey - p[2 * m + 1]) < 8 * width) continue;
+        const route = lowRoute(ax, ay, ex, ey, apexHeight - 1.5, own);
+        if (!route) continue;
+        const [hx, hy] = spline(...smoothChain(route[0], route[1], 2), cell / 3);
+        const phase = r.range(0, 2 * Math.PI), points: number[] = [];
+        let ok = true, arcLength = 0;
+        for (let j = 0; j < hx.length && ok; j++) {
+          if (j) arcLength += Math.hypot(hx[j] - hx[j - 1], hy[j] - hy[j - 1]);
+          const t = j / (hx.length - 1), wiggle = 0.6 * width * Math.sin(arcLength / (6 * width) + phase) * Math.sin(Math.PI * t);
+          const nx = j + 1 < hx.length ? hy[j + 1] - hy[j] : hy[j] - hy[j - 1], ny = j + 1 < hx.length ? hx[j] - hx[j + 1] : hx[j - 1] - hx[j], nl = Math.hypot(nx, ny) || 1;
+          const x = hx[j] + nx / nl * wiggle, y = hy[j] + ny / nl * wiggle;
+          if (j > 0 && wet(x, y)) { points.push(x, y); break; }
+          // Meeting its river or another distributary, it joins it if it has gone far enough on its own;
+          // tributaries crossing the delta plain join the distributary.
+          if (j > 3 && points.length >= 2) {
+            const px2 = points[points.length - 2], py2 = points[points.length - 1];
+            const t = Math.min(own.crossing(px2, py2, x, y), fan.crossing(px2, py2, x, y));
+            if (t <= 1) {
+              ok = j >= 0.4 * hx.length;
+              points.push(px2 + (x - px2) * t, py2 + (y - py2) * t);
+              break;
+            }
+          }
+          points.push(x, y);
+        }
+        if (!ok || points.length < 8) continue;
+        const count = points.length / 2;
+        const share = mouth / (branches + 1);
+        distributaries.push({ points, area: new Array<number>(count).fill(share), level: new Array<number>(count).fill(Math.max(0, line.level[k])), kind: new Array<number>(count).fill(5), id });
+        fan.add(points, id);
+        made++;
+      }
+      if (made) deltas++;
+    }
   }
 
   const rivers = lines.filter(Boolean);
@@ -1557,7 +1959,17 @@ export function vectorRivers(h: SimpleHydrology, lake: Uint8Array, settings: Riv
   for (const line of rivers) for (let k = 2; k < line.points.length; k += 2) {
     length += Math.hypot(line.points[k] - line.points[k - 2], line.points[k + 1] - line.points[k - 1]);
   }
+  // Side channels may have been crossed by later courses: keep those clear of them.
+  const kept = braids.filter(line => {
+    const p = line.points;
+    for (let k = 2; k + 3 < p.length - 2; k += 2) {
+      const near = traced.nearest(p[k], p[k + 1], 0.5);
+      if (near && near.line !== line.id) return false;
+    }
+    return true;
+  });
   return {
-    rivers, oxbows: clear, meanderRuns, lengthKm: length / 1000, meanderKm: meanderLength / 1000, ms: performance.now() - started,
+    rivers, oxbows: clear, braids: kept, distributaries, meanderRuns, lengthKm: length / 1000, meanderKm: meanderLength / 1000,
+    braidedKm: braidedLength / 1000, avulsions, deltas, ms: performance.now() - started,
   };
 }

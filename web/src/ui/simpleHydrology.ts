@@ -14,8 +14,10 @@ export interface SimpleHydrology {
   filled: Float32Array;
   /** Downstream cell, or -1 for outlets (sea, map edge). */
   receiver: Int32Array;
-  /** Upstream area of each cell in m², itself included. */
+  /** Upstream area of each cell in m², itself included (weighted by runoff when given). */
   accumulation: Float32Array;
+  /** Cells in flood order: every receiver comes before its donors. */
+  order: Int32Array;
   /** Outlet index of each cell. */
   basin: Int32Array;
   sea: Uint8Array;
@@ -44,7 +46,7 @@ const DX = [-1, 0, 1, -1, 1, -1, 0, 1];
 const DY = [-1, -1, -1, 0, 0, 1, 1, 1];
 
 /** Binary min-heap of cells keyed by height, ties in insertion order. */
-class Heap {
+export class Heap {
   private cells: Int32Array;
   private keys: Float64Array;
   private order: Float64Array;
@@ -104,7 +106,16 @@ export function downsample(height: Float32Array, n: number, factor: number): Flo
   return out;
 }
 
-export function computeHydrology(height: Float32Array, n: number, width: number): SimpleHydrology {
+export interface HydrologyOptions {
+  /** Runoff weight of each cell (1: the reference runoff); areas are weighted by it. */
+  weight?: Float32Array;
+  /** Extra outlets: cells that absorb all the water reaching them (closed lakes). */
+  outlet?: Uint8Array;
+  /** Water lost by each cell before it passes on, m² of reference runoff (lake evaporation at its exit). */
+  loss?: Float32Array;
+}
+
+export function computeHydrology(height: Float32Array, n: number, width: number, options: HydrologyOptions = {}): SimpleHydrology {
   const started = performance.now();
   const total = n * n, cell = width / n;
   const filled = new Float32Array(height);
@@ -132,7 +143,7 @@ export function computeHydrology(height: Float32Array, n: number, width: number)
   const heap = new Heap(total);
   for (let c = 0; c < total; c++) {
     const x = c % n, y = (c - x) / n;
-    if (sea[c] || x === 0 || y === 0 || x === n - 1 || y === n - 1) { heap.push(c, height[c]); done[c] = 1; }
+    if (sea[c] || options.outlet?.[c] || x === 0 || y === 0 || x === n - 1 || y === n - 1) { heap.push(c, height[c]); done[c] = 1; }
   }
   // Cells discovered at or below the current level go through a FIFO "pit"
   // queue, so flats and basins drain by breadth-first fronts from the spill.
@@ -158,7 +169,7 @@ export function computeHydrology(height: Float32Array, n: number, width: number)
   // Follow slopes where the filled surface descends: steepest D8 descent.
   // Receivers stay strictly lower or flood parents, so `order` remains topological.
   for (let c = 0; c < total; c++) {
-    if (receiver[c] < 0 || sea[c]) continue;
+    if (receiver[c] < 0 || sea[c] || options.outlet?.[c]) continue;
     const x = c % n, y = (c - x) / n;
     let best = -1, slope = 0;
     for (let k = 0; k < 8; k++) {
@@ -173,9 +184,11 @@ export function computeHydrology(height: Float32Array, n: number, width: number)
 
   const cellArea = cell * cell;
   const accumulation = new Float32Array(total);
-  for (let c = 0; c < total; c++) if (!sea[c]) accumulation[c] = cellArea;
+  const { weight, loss } = options;
+  for (let c = 0; c < total; c++) if (!sea[c]) accumulation[c] = cellArea * (weight ? weight[c] : 1);
   for (let k = total - 1; k >= 0; k--) {
     const c = order[k], r = receiver[c];
+    if (loss && loss[c]) accumulation[c] = Math.max(0, accumulation[c] - loss[c]);
     if (r >= 0) accumulation[r] += accumulation[c];
   }
   const basin = new Int32Array(total);
@@ -188,7 +201,7 @@ export function computeHydrology(height: Float32Array, n: number, width: number)
   const drains = new Uint8Array(ids);
   let outlets = 0;
   for (let c = 0; c < total; c++) if (!sea[c] && !drains[basin[c]]) { drains[basin[c]] = 1; outlets++; }
-  return { n, width, cellArea, height, filled, receiver, accumulation, basin, sea, outlets, ms: performance.now() - started };
+  return { n, width, cellArea, height, filled, receiver, accumulation, order, basin, sea, outlets, ms: performance.now() - started };
 }
 
 /** Lakes are filled basins deep and large enough; rivers start above an upstream area. */

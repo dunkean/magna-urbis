@@ -13,6 +13,15 @@ export interface HydrologySettings {
   lakeAbundance: number; lakeCoverage: number; maxLakeArea: number;
   depressionPolicy: 'auto' | 'fill'; maxBreachDepth: number; maxBreachLength: number;
   resolution: 256 | 512 | 1024; compute: 'auto' | 'cpu' | 'gpu';
+  /** Water chain: the vector chain (priority-flood, water budget, vector rivers) or the Rust hydrology. */
+  engine: 'vector' | 'rust';
+  /** Pre-hydrology conditioning of the relief, shared by both chains. */
+  condMode: 'none' | 'erosion' | 'breach' | 'both'; condStrength: number; condDepth: number; condLength: number;
+  /** Vector chain: river threshold (km², 0 = from the map size), lakes (m, ha), tracing and channel styles. */
+  riverArea: number; lakeDepth: number; lakeArea: number; riverMode: 'vector' | 'grid';
+  flatSlope: number; sinuosity: number; vectorWidth: number; vectorResolution: 512 | 1024;
+  balance: boolean; braiding: number; anabranching: boolean; terrainInfluence: boolean; avulsions: boolean;
+  confluence: 'climate' | 'drainage'; deltas: boolean;
 }
 
 export const DEFAULT_HYDROLOGY: HydrologySettings = {
@@ -21,7 +30,12 @@ export const DEFAULT_HYDROLOGY: HydrologySettings = {
   incision: 1, minLakeArea: 2500, resolution: 512, compute: 'auto',
   lakeAbundance: 0.5, lakeCoverage: 0.05, maxLakeArea: 0.02,
   depressionPolicy: 'auto', maxBreachDepth: 12, maxBreachLength: 1000,
+  engine: 'vector', condMode: 'both', condStrength: 2, condDepth: 30, condLength: 3000,
+  riverArea: 0, lakeDepth: 1, lakeArea: 10, riverMode: 'vector', flatSlope: 1, sinuosity: 1.8, vectorWidth: 3, vectorResolution: 1024,
+  balance: true, braiding: 1, anabranching: true, terrainInfluence: true, avulsions: true, confluence: 'climate', deltas: true,
 };
+/** River threshold of the vector chain: 0 means about 0.3 % of the map (5 km² on 40 km). */
+export const riverAreaFor = (settings: HydrologySettings, width: number): number => settings.riverArea > 0 ? settings.riverArea : Math.max(0.02, 0.003 * (width / 1000) ** 2);
 export type HydrologyOverlay = 'none' | 'basins' | 'accumulation' | 'flow' | 'depressions' | 'lakes' | 'channels' | 'raw-basins' | 'raw-accumulation' | 'raw-flow' | 'raw-depressions' | 'flats' | 'flat-rank';
 
 /** Retained physical grids and packed vector topology; lengths are metres, areas m².

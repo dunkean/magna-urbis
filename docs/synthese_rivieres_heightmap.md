@@ -2,7 +2,7 @@
 
 > **Objet :** situer les chaînes hydrologiques de Magna Urbis (Rust `rust/crates/core`, TypeScript `web/src/gen/terrain`, banc neuronal `web/src/ui/riverVectors.ts`) par rapport à la littérature, et fixer la liste des améliorations à implémenter.
 >
-> **Date :** 2026-10-12. État de référence : tag `rivers-neural-best-2026-10-12`.
+> **Date :** 2026-10-12. État de référence avant implémentation : tag `rivers-neural-best-2026-10-12`. Implémentation : section 6.
 
 ## 1. Résumé
 
@@ -107,7 +107,40 @@ Par priorité, toutes les étapes restant optionnelles dans le banc.
 6. **Mesures** : Hack, Horton, Flint, longueur d'onde, angles de confluence, calculés dans les scripts de vérification.
 7. Plus tard : deltas (arbre de bifurcations procédural, sans aller jusqu'à DeltaRCM).
 
-## 6. Références
+## 6. Implémentation (2026-10-12)
+
+Le banc neuronal est fusionné dans le banc terrain (`terrainbench.html` ; `neuralbench.html` redirige en gardant les réglages des anciens liens). Tout est optionnel et partageable par lien.
+
+| Point du plan | Où | État |
+|---|---|---|
+| Choix du relief | étape Relief : source procédurale (± érosion Rust) ou neuronale | fait |
+| Relief neuronal sur la carte | emprise *recadrer* (fenêtre de la taille de la carte, déplacée vers les côtes) ou *mettre à l'échelle* (± pentes conservées) | fait |
+| Familles neuronales | relief local imposé par famille en mode Auto : plaine 20 m, colline 110 m, plateau 100 m (mesuré sur les graines 42, 7, 1234) | fait |
+| Pixelisation au zoom | rééchantillonnage régional du moteur Rust + raffinement fractal optionnel sous la maille source (Hurst 0,8, amplitude ∝ pente) | fait |
+| Réglages des réseaux neuronaux | « Réseaux neuronaux » (altitude ×, pas, bruits, relief local, histogramme, détail decoder) et « Climat détaillé » | fait |
+| 1 · Conditionnement pré-hydrique | `web/src/ui/reliefConditioning.ts` : stream power implicite à 512² (niveau de base = surface de l'eau) + ouverture des seuils à pleine résolution ; force, profondeur et longueur réglables ; diagnostic « Conditionnement pré-hydrique » | fait, pour les deux moteurs |
+| 2 · Lacs par bilan hydrique | `waterBalance.ts` : Turc–Pike, dépressions du routage priority-flood, passes de remplissage-débordement, lacs fermés à e·A = Q ; micro-cuvettes non dessinables comblées avant | fait |
+| 3 · Styles de chenal | `riverVectors.ts` : tresses (seuil de Leopold & Wolman, vallée non confinée), anastomoses (plaines plates et humides), méandres encaissés via le talweg | fait |
+| 4 · Influence du relief, avulsions | migration freinée par la hauteur de berge au-dessus de l'eau ; avulsions laissant d'anciens chenaux | fait |
+| Angles de confluence | redessin de l'arrivée des affluents à 45–72° selon l'aridité | fait |
+| 5 · Banc unique | moteur hydrique *Vectoriel* (défaut) ou *Rust (ancien)* ; diagnostics des deux chaînes ; rendus du banc terrain | fait |
+| 6 · Mesures | `riverMetrics.ts`, panneau « Mesures » : Hack, Flint, Horton, longueur d'onde, sinuosité, confluences | fait |
+| 7 · Deltas | défluents suivant le chemin le plus bas jusqu'à la mer depuis un apex où la ligne d'eau descend sous 1,5 m/km | fait, rares sur les reliefs actuels |
+
+Mesures sur le relief neuronal *colline*, graine 42, 40 km, climat tempéré :
+
+| Loi | Sans conditionnement | Avec (défaut) | Réel |
+|---|---|---|---|
+| Hack h | 0,53 | 0,54 | 0,5–0,6 |
+| Horton R_b | 4,4 | 3,9 | 3–5 |
+| Flint θ | 0,10 | 0,24 | 0,35–0,6 |
+| Confluences | 52° | 62° (cible 71°) | 45–72° |
+| Cuvettes > 1 m (grille 1024²) | 1 003 (4 570 hm³) | 504 (164 hm³) | — |
+| Lacs dessinés | 112 (122 km²) | 26 (53 km²) | — |
+
+Constats : le relief neuronal brut a des profils en long trop peu concaves (θ ≈ 0,1). Le conditionnement les rend plus concaves, sans atteindre les valeurs réelles : seule une évolution du relief plus longue y parviendrait. Les deltas demandent une plaine côtière basse, que ni l'esquisse neuronale (côte en tanh) ni le relief procédural ne produisent encore. Sans GPU, le calcul complet prend 10 à 25 s pour une grille de 1024².
+
+## 7. Références
 
 - Barnes, Lehman & Mulla 2014, *Priority-flood: an optimal depression-filling and watershed-labeling algorithm*, Computers & Geosciences 62.
 - Barnes, Lehman & Mulla 2014, *An efficient assignment of drainage direction over flat surfaces in raster digital elevation models*, Computers & Geosciences 62.
