@@ -32,7 +32,13 @@ declare module '*magna_urbis_wasm.js' {
     free(): void;
   }
   export function generate_terrain(seed: string, width: number, relief: string, erosion: number, resolution: number): TerrainOutput;
+  export class Flood {
+    take_filled(): Float32Array; take_receiver(): Int32Array; take_order(): Int32Array; take_accumulation(): Float32Array;
+    take_basin(): Int32Array; take_sea(): Uint8Array; readonly outlets: number; free(): void;
+  }
+  export function flood_hydrology(height: Float32Array, n: number, cellArea: number, weight: Float32Array, outlet: Uint8Array, loss: Float32Array): Flood;
   export class TerrainEngine {
+    set_edited_surface(heights: Float32Array): void;
     static with_surface(seed: string, width: number, heights: Float32Array): TerrainEngine;
     static with_source(seed: string, width: number, relief: string, erosion: number, motif: number, mix: number, source: Float32Array, environment?: string): TerrainEngine;
     static with_generation_noise(seed: string, width: number, relief: string, erosion: number, motif: number, mix: number, coarse: Float32Array, fine: Float32Array, environment?: string): TerrainEngine;

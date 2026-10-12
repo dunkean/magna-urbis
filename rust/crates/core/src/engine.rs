@@ -28,6 +28,7 @@ pub struct TerrainGenerator {
     cave: Option<CavernShape>,
     coast: crate::coast::Coast,
     coastal_surface: Surface,
+    edited_surface: Surface,
     /// Externally prepared signed surface (neural relief): never cut or eroded again.
     prepared: bool,
 }
@@ -353,6 +354,7 @@ impl TerrainGenerator {
                 },
             ),
             coastal_surface: Surface::new(Vec::new()),
+            edited_surface: Surface::new(Vec::new()),
             prepared: false,
         };
         Ok(result)
@@ -385,16 +387,39 @@ impl TerrainGenerator {
         Ok(generator)
     }
 
+    /// Replace regional elevations while retaining procedural detail, then erode once.
+    pub fn set_edited_surface(&mut self, heights: &[f32]) -> Result<(), String> {
+        if self.prepared
+            || self.relief == Relief::Cavern
+            || heights.len() != SOURCE_N * SOURCE_N
+            || !heights.iter().all(|h| h.is_finite())
+        {
+            return Err("Surface éditée invalide.".into());
+        }
+        let mut field = heights.to_vec();
+        crate::erosion::erode_surface(
+            &mut field,
+            SOURCE_N,
+            self.map_width / SOURCE_N as f64,
+            self.erosion,
+            self.coast_talus(),
+            self.motif,
+        );
+        self.max_height = field.iter().copied().fold(f32::NEG_INFINITY, f32::max) as f64;
+        self.edited_surface = Surface::new(field);
+        self.coastal_surface = Surface::new(Vec::new());
+        Ok(())
+    }
+
     /// Retained mip levels, largest first. Empty correction means no field for plains.
     pub fn sampling_field(&self) -> Vec<f32> {
-        if !self.coastal_surface.levels.is_empty() {
-            return self
-                .coastal_surface
-                .levels
-                .iter()
-                .flatten()
-                .copied()
-                .collect();
+        let physical = if !self.coastal_surface.levels.is_empty() {
+            &self.coastal_surface
+        } else {
+            &self.edited_surface
+        };
+        if !physical.levels.is_empty() {
+            return physical.levels.iter().flatten().copied().collect();
         }
         let mut values: Vec<f32> = self
             .sampling_surface()
@@ -454,7 +479,7 @@ impl TerrainGenerator {
             values[21] = self.feature_origin.0;
             values[22] = self.feature_origin.1;
         }
-        if !self.coastal_surface.levels.is_empty() {
+        if !self.coastal_surface.levels.is_empty() || !self.edited_surface.levels.is_empty() {
             values[5] = 4.0;
         }
         values
@@ -582,6 +607,8 @@ impl TerrainGenerator {
         }
         if self.coast.active() {
             -self.coast.depth()
+        } else if let Some(field) = self.edited_surface.levels.first() {
+            field.iter().copied().fold(f32::INFINITY, f32::min) as f64
         } else {
             0.3
         }
@@ -694,6 +721,15 @@ impl TerrainGenerator {
     fn height_at(&self, x: f64, y: f64, footprint: f64) -> f64 {
         if !self.coastal_surface.levels.is_empty() {
             return self.regional(&self.coastal_surface, x, y, footprint);
+        }
+        if !self.edited_surface.levels.is_empty() {
+            return self.coast.apply(
+                x,
+                y,
+                self.map_width,
+                self.regional(&self.edited_surface, x, y, footprint),
+                footprint,
+            );
         }
         let fbm = |noise: &Noise, x: f64, y: f64, wavelength: f64, octaves: usize| {
             noise.fbm_filtered(

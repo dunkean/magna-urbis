@@ -6,7 +6,7 @@
 //! from the north-west corner, sea at zero), with metadata in `X-Neural-Meta`.
 use crate::{Clock, Networks, Request, Sketch};
 use std::collections::HashMap;
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::sync::mpsc::{Sender, channel};
 use std::sync::{Arc, Mutex};
@@ -115,6 +115,52 @@ fn request(query: &HashMap<String, String>) -> Result<Request, String> {
         t.histogram.copy_from_slice(&values);
     }
     t.residual_scale = bounded("detail", 1.0, 0.0, 5.0)? as f32;
+    if let Some(json) = query.get("sketch") {
+        let value: serde_json::Value = serde_json::from_str(json).map_err(|e| e.to_string())?;
+        let n = value["resolution"].as_u64().unwrap_or(0) as usize;
+        let values = value["heights"]
+            .as_array()
+            .ok_or("Esquisse : altitudes manquantes")?;
+        if value["version"].as_u64() != Some(1) || !(8..=128).contains(&n) || values.len() != n * n
+        {
+            return Err("Esquisse : grille 8–128² attendue".into());
+        }
+        let heights = values
+            .iter()
+            .map(|v| {
+                v.as_f64()
+                    .filter(|h| h.is_finite() && (-12000.0..=12000.0).contains(h))
+                    .ok_or_else(|| "Esquisse : altitude invalide".to_owned())
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let mut extent = request.extent_m;
+        let mut origin = (0.0, 0.0);
+        if let Some(region) = value.get("region") {
+            let coordinate = |key: &str| {
+                region[key]
+                    .as_f64()
+                    .filter(|v| v.is_finite())
+                    .ok_or_else(|| format!("Esquisse : région invalide ({key})"))
+            };
+            extent = coordinate("width")?;
+            origin = (coordinate("x")?, coordinate("y")?);
+            if !(500.0..=request.extent_m).contains(&extent)
+                || origin.0 < 0.0
+                || origin.1 < 0.0
+                || origin.0 + extent > request.extent_m + 1e-6
+                || origin.1 + extent > request.extent_m + 1e-6
+            {
+                return Err("Esquisse : région hors de la surface neuronale".into());
+            }
+        }
+        request.sketch = Sketch::Grid {
+            resolution: n,
+            heights,
+            extent,
+            origin,
+            context: Box::new(request.sketch),
+        };
+    }
     Ok(request)
 }
 
@@ -130,8 +176,9 @@ fn generate(networks: &Networks, query: &HashMap<String, String>, clock: &Wall) 
     let land =
         output.heights.iter().filter(|&&h| h > 0.0).count() as f64 / output.heights.len() as f64;
     let c = &output.coarse;
+    let edited = query.contains_key("sketch");
     let meta = format!(
-        r#"{{"resolution":{},"extent":{},"min":{min},"max":{max},"land":{land},"totalMs":{:.1},"coarseMs":{:.1},"baseMs":{:.1},"decoderMs":{:.1},"reconstructionMs":{:.1},"evaluations":[{},{},{}],"coarse":{{"sketch":{:.1},"elevation":{:.1},"relief":{:.1},"reliefUsed":{:.1},"cells":{}}},"profile":"coarse{} \u00b7 base 1 passe \u00b7 decoder student200k \u00b7 FP16 Vulkan"}}"#,
+        r#"{{"edited":{edited},"sketchRegion":{edited},"resolution":{},"extent":{},"min":{min},"max":{max},"land":{land},"totalMs":{:.1},"coarseMs":{:.1},"baseMs":{:.1},"decoderMs":{:.1},"reconstructionMs":{:.1},"evaluations":[{},{},{}],"coarse":{{"sketch":{:.1},"elevation":{:.1},"relief":{:.1},"reliefUsed":{:.1},"cells":{}}},"profile":"coarse{} \u00b7 base 1 passe \u00b7 decoder student200k \u00b7 FP16 Vulkan"}}"#,
         output.resolution,
         request.extent_m,
         clock.now_ms() - started,
@@ -175,17 +222,23 @@ fn handle(
     let mut reader = BufReader::new(stream.try_clone()?);
     let mut line = String::new();
     reader.read_line(&mut line)?;
+    let mut content_length = 0usize;
     loop {
         let mut header = String::new();
         if reader.read_line(&mut header)? == 0 || header.trim().is_empty() {
             break;
+        }
+        if let Some((name, value)) = header.split_once(':')
+            && name.eq_ignore_ascii_case("Content-Length")
+        {
+            content_length = value.trim().parse().unwrap_or(usize::MAX);
         }
     }
     let mut parts = line.split_whitespace();
     let method = parts.next().unwrap_or_default();
     let target = parts.next().unwrap_or("/");
     let (path, query) = target.split_once('?').unwrap_or((target, ""));
-    let query: HashMap<String, String> = query
+    let mut query: HashMap<String, String> = query
         .split('&')
         .filter_map(|pair| pair.split_once('='))
         .map(|(k, v)| (decode(k), decode(v)))
@@ -195,11 +248,73 @@ fn handle(
             &mut stream,
             "204 No Content",
             "text/plain",
-            "Access-Control-Allow-Methods: GET\r\n",
+            "Access-Control-Allow-Methods: GET, POST, OPTIONS\r\nAccess-Control-Allow-Headers: Content-Type\r\n",
             b"",
         );
     }
+    if method == "POST" && path == "/generate" {
+        if content_length == 0 || content_length > 1_000_000 {
+            return respond(
+                &mut stream,
+                "400 Bad Request",
+                "text/plain",
+                "",
+                b"Invalid sketch size",
+            );
+        }
+        let mut body = vec![0; content_length];
+        reader.read_exact(&mut body)?;
+        let json = String::from_utf8(body).unwrap_or_default();
+        query.insert("sketch".into(), json);
+        if let Err(error) = request(&query) {
+            return respond(
+                &mut stream,
+                "400 Bad Request",
+                "text/plain; charset=utf-8",
+                "",
+                error.as_bytes(),
+            );
+        }
+    } else if method != "GET" {
+        return respond(
+            &mut stream,
+            "405 Method Not Allowed",
+            "text/plain",
+            "Allow: GET, POST, OPTIONS\r\n",
+            b"Method not allowed",
+        );
+    }
     match path {
+        "/sketch" => match request(&query) {
+            Ok(r) => {
+                let n = 64;
+                let mut heights = Vec::with_capacity(n * n);
+                for y in 0..n {
+                    for x in 0..n {
+                        heights.push(r.sketch.elevation(
+                            (x as f64 + 0.5) * r.extent_m / n as f64,
+                            (y as f64 + 0.5) * r.extent_m / n as f64,
+                        ));
+                    }
+                }
+                let body = serde_json::json!({ "version": 1, "resolution": n, "heights": heights })
+                    .to_string();
+                respond(
+                    &mut stream,
+                    "200 OK",
+                    "application/json",
+                    "",
+                    body.as_bytes(),
+                )
+            }
+            Err(e) => respond(
+                &mut stream,
+                "400 Bad Request",
+                "text/plain; charset=utf-8",
+                "",
+                e.as_bytes(),
+            ),
+        },
         "/status" => {
             let s = status.lock().unwrap().clone();
             let body = format!(

@@ -40,14 +40,15 @@ export interface VectorWater {
   hydrologyMs: number; balanceMs: number;
 }
 
-export function computeVectorWater(height: Float32Array, n: number, width: number, settings: VectorWaterSettings, climate: ClimateInput, seed: string): VectorWater {
+/** `drainage`: `computeHydrology(height, n, width)` when already known (the conditioning's last pass). */
+export function computeVectorWater(height: Float32Array, n: number, width: number, settings: VectorWaterSettings, climate: ClimateInput, seed: string, drainage?: SimpleHydrology): VectorWater {
   const started = performance.now();
   const runoff = runoffModel(climate);
-  let hydro = computeHydrology(height, n, width);
+  let hydro = drainage ?? computeHydrology(height, n, width);
   let lake: Uint8Array, lakes: number, closedLakes = 0, lakeAreaKm2: number, lakeLevel: Float32Array | undefined, lakeKind: Uint8Array | undefined;
   let balanceMs = 0;
   if (settings.balance) {
-    const balance = waterBalance(height, n, width, hydro.sea, climate, settings.lakeDepth, settings.lakeArea * 1e4);
+    const balance = waterBalance(height, n, width, hydro.sea, climate, settings.lakeDepth, settings.lakeArea * 1e4, hydro);
     balanceMs = balance.ms;
     // Closed lakes absorb their inflow; spilling ones lose their evaporation where they leave.
     hydro = computeHydrology(height, n, width, { weight: balance.weight, outlet: balance.closed, loss: balance.loss });

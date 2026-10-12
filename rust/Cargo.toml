@@ -11,6 +11,18 @@ publish = false
 [profile.dev]
 opt-level = 2
 
+# The terrain engine and its water kernels run per camera move and per flood:
+# full speed without debug checks, also in the development build.
+[profile.dev.package.magna-urbis-core]
+opt-level = 3
+debug-assertions = false
+overflow-checks = false
+
+[profile.dev.package.magna-urbis-wasm]
+opt-level = 3
+debug-assertions = false
+overflow-checks = false
+
 [profile.release]
 opt-level = 3
 lto = "thin"

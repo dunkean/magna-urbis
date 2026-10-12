@@ -115,14 +115,81 @@ export interface HydrologyOptions {
   loss?: Float32Array;
 }
 
+/**
+ * Min-heap of the flood: one Float64 priority per cell, the float32 height's
+ * sortable bits times 2²¹ plus the insertion count, so ties pop in insertion
+ * order exactly as `Heap` does, with a single comparison. Up to 2²¹ pushes.
+ */
+class FloodHeap {
+  private cells: Int32Array; private keys: Float64Array;
+  private size = 0; private count = 0;
+  private f32 = new Float32Array(1); private u32 = new Uint32Array(this.f32.buffer);
+  constructor(capacity: number) { this.cells = new Int32Array(capacity); this.keys = new Float64Array(capacity); }
+  get length(): number { return this.size; }
+  push(cell: number, height: number): void {
+    this.f32[0] = height === 0 ? 0 : height;
+    const u = this.u32[0], sortable = u & 0x80000000 ? ~u >>> 0 : (u | 0x80000000) >>> 0;
+    const key = sortable * 2097152 + this.count++;
+    const cells = this.cells, keys = this.keys;
+    let i = this.size++;
+    while (i > 0) {
+      const parent = (i - 1) >> 1;
+      if (keys[parent] <= key) break;
+      cells[i] = cells[parent]; keys[i] = keys[parent]; i = parent;
+    }
+    cells[i] = cell; keys[i] = key;
+  }
+  pop(): number {
+    const cells = this.cells, keys = this.keys, top = cells[0], size = --this.size;
+    if (size > 0) {
+      const cell = cells[size], key = keys[size];
+      let i = 0;
+      for (;;) {
+        let m = 2 * i + 1;
+        if (m >= size) break;
+        if (m + 1 < size && keys[m + 1] < keys[m]) m++;
+        if (keys[m] >= key) break;
+        cells[i] = cells[m]; keys[i] = keys[m]; i = m;
+      }
+      cells[i] = cell; keys[i] = key;
+    }
+    return top;
+  }
+}
+
+/** Generic heap for grids above 2²¹ cells (same pop order). */
+const floodHeap = (total: number): { length: number; push(cell: number, key: number): void; pop(): number } => total <= 2097152 ? new FloodHeap(total) : new Heap(total);
+
+/** A compiled flood (the Rust `flood_hydrology` in WASM), bit-identical to the TypeScript one below. */
+export interface FloodKernel {
+  (height: Float32Array, n: number, cellArea: number, weight: Float32Array, outlet: Uint8Array, loss: Float32Array): {
+    take_filled(): Float32Array; take_receiver(): Int32Array; take_order(): Int32Array; take_accumulation(): Float32Array;
+    take_basin(): Int32Array; take_sea(): Uint8Array; readonly outlets: number; free(): void;
+  };
+}
+let kernel: FloodKernel | undefined;
+/** Installs (or removes) the compiled flood; workers install it once their WASM is ready. */
+export function setFloodKernel(next: FloodKernel | undefined): void { kernel = next; }
+
 export function computeHydrology(height: Float32Array, n: number, width: number, options: HydrologyOptions = {}): SimpleHydrology {
   const started = performance.now();
   const total = n * n, cell = width / n;
+  if (kernel) {
+    const none = new Float32Array(0);
+    const flood = kernel(height, n, cell * cell, options.weight ?? none, options.outlet ?? new Uint8Array(0), options.loss ?? none);
+    try {
+      return { n, width, cellArea: cell * cell, height, filled: flood.take_filled(), receiver: flood.take_receiver(), accumulation: flood.take_accumulation(),
+        order: flood.take_order(), basin: flood.take_basin(), sea: flood.take_sea(), outlets: flood.outlets, ms: performance.now() - started };
+    } finally { flood.free(); }
+  }
   const filled = new Float32Array(height);
   const receiver = new Int32Array(total).fill(-1);
   const order = new Int32Array(total);
   const done = new Uint8Array(total);
   const sea = new Uint8Array(total);
+  // Neighbour offsets in DX/DY order, for cells away from the map edge.
+  const offsets = DX.map((dx, k) => DY[k] * n + dx);
+  const interior = (x: number, y: number): boolean => x > 0 && y > 0 && x < n - 1 && y < n - 1;
 
   // Sea: cells at or below zero connected to the map edge.
   const stack: number[] = [];
@@ -140,43 +207,55 @@ export function computeHydrology(height: Float32Array, n: number, width: number,
   }
 
   // Outlets: the sea and the map edge.
-  const heap = new Heap(total);
-  for (let c = 0; c < total; c++) {
-    const x = c % n, y = (c - x) / n;
-    if (sea[c] || options.outlet?.[c] || x === 0 || y === 0 || x === n - 1 || y === n - 1) { heap.push(c, height[c]); done[c] = 1; }
+  const heap = floodHeap(total), outlet = options.outlet;
+  for (let y = 0, c = 0; y < n; y++) for (let x = 0; x < n; x++, c++) {
+    if (sea[c] || outlet?.[c] || x === 0 || y === 0 || x === n - 1 || y === n - 1) { heap.push(c, height[c]); done[c] = 1; }
   }
   // Cells discovered at or below the current level go through a FIFO "pit"
   // queue, so flats and basins drain by breadth-first fronts from the spill.
   const pit = new Int32Array(total);
   let pitHead = 0, pitTail = 0, popped = 0;
+  const o0 = offsets[0], o1 = offsets[1], o2 = offsets[2], o3 = offsets[3], o4 = offsets[4], o5 = offsets[5], o6 = offsets[6], o7 = offsets[7];
+  const last = n - 1;
   while (pitHead < pitTail || heap.length) {
     const c = pitHead < pitTail ? pit[pitHead++] : heap.pop();
     order[popped++] = c;
-    const x = c % n, y = (c - x) / n;
+    const x = c % n, y = (c - x) / n, level = filled[c];
     for (let k = 0; k < 8; k++) {
-      const xx = x + DX[k], yy = y + DY[k];
-      if (xx < 0 || yy < 0 || xx >= n || yy >= n) continue;
-      const nb = yy * n + xx;
+      let nb: number;
+      if (x > 0 && y > 0 && x < last && y < last) nb = c + (k === 0 ? o0 : k === 1 ? o1 : k === 2 ? o2 : k === 3 ? o3 : k === 4 ? o4 : k === 5 ? o5 : k === 6 ? o6 : o7);
+      else {
+        const xx = x + DX[k], yy = y + DY[k];
+        if (xx < 0 || yy < 0 || xx >= n || yy >= n) continue;
+        nb = yy * n + xx;
+      }
       if (done[nb]) continue;
       done[nb] = 1;
       receiver[nb] = c;
-      if (height[nb] <= filled[c]) { filled[nb] = filled[c]; pit[pitTail++] = nb; }
-      else heap.push(nb, height[nb]);
+      const z = height[nb];
+      if (z <= level) { filled[nb] = level; pit[pitTail++] = nb; }
+      else heap.push(nb, z);
     }
     if (pitHead === pitTail) { pitHead = 0; pitTail = 0; }
   }
 
   // Follow slopes where the filled surface descends: steepest D8 descent.
   // Receivers stay strictly lower or flood parents, so `order` remains topological.
-  for (let c = 0; c < total; c++) {
-    if (receiver[c] < 0 || sea[c] || options.outlet?.[c]) continue;
-    const x = c % n, y = (c - x) / n;
+  const distance = DX.map((dx, k) => dx && DY[k] ? Math.SQRT2 : 1);
+  for (let y = 0, c = 0; y < n; y++) for (let x = 0; x < n; x++, c++) {
+    if (receiver[c] < 0 || sea[c] || outlet?.[c]) continue;
     let best = -1, slope = 0;
-    for (let k = 0; k < 8; k++) {
+    const z = filled[c];
+    if (interior(x, y)) {
+      for (let k = 0; k < 8; k++) {
+        const nb = c + offsets[k], s = (z - filled[nb]) / distance[k];
+        if (s > slope) { slope = s; best = nb; }
+      }
+    } else for (let k = 0; k < 8; k++) {
       const xx = x + DX[k], yy = y + DY[k];
       if (xx < 0 || yy < 0 || xx >= n || yy >= n) continue;
       const nb = yy * n + xx;
-      const s = (filled[c] - filled[nb]) / (DX[k] && DY[k] ? Math.SQRT2 : 1);
+      const s = (z - filled[nb]) / distance[k];
       if (s > slope) { slope = s; best = nb; }
     }
     if (best >= 0) receiver[c] = best;

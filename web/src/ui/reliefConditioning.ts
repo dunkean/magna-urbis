@@ -17,7 +17,7 @@
  * runs on the full hydrology grid, whose own small pits it opens. The bench
  * applies the height change to the displayed terrain at every zoom.
  */
-import { computeHydrology, downsample } from './simpleHydrology';
+import { computeHydrology, downsample, type SimpleHydrology } from './simpleHydrology';
 import { upsampleDelta } from '../../../rust/bridge/terrainAdjust';
 
 export type ConditioningMode = 'none' | 'erosion' | 'breach' | 'both';
@@ -42,11 +42,13 @@ export interface ConditioningResult {
   breaches: number;
   steps: number;
   ms: number;
+  /** Drainage of the conditioned height, reused by the water chain. */
+  hydrology: SimpleHydrology;
 }
 
 export const DEFAULT_CONDITIONING: ConditioningSettings = { mode: 'none', strength: 2, maxDepth: 30, maxLength: 3000 };
 
-function depressions(height: Float32Array, n: number, width: number): { depressions: number; volume: number; filled: Float32Array; receiver: Int32Array } {
+function depressions(height: Float32Array, n: number, width: number): { depressions: number; volume: number; hydrology: SimpleHydrology } {
   const h = computeHydrology(height, n, width);
   const seen = new Uint8Array(n * n);
   let count = 0, volume = 0;
@@ -69,7 +71,7 @@ function depressions(height: Float32Array, n: number, width: number): { depressi
     }
     if (deepest > 1) count++;
   }
-  return { depressions: count, volume, filled: h.filled, receiver: h.receiver };
+  return { depressions: count, volume, hydrology: h };
 }
 
 /** Implicit stream-power incision without uplift, deposition in depressions. */
@@ -172,6 +174,6 @@ export function conditionRelief(height: Float32Array, n: number, width: number, 
   const after = depressions(result, n, width);
   return {
     height: result, delta, before: { depressions: before.depressions, volume: before.volume }, after: { depressions: after.depressions, volume: after.volume },
-    breaches, steps, ms: performance.now() - started,
+    breaches, steps, ms: performance.now() - started, hydrology: after.hydrology,
   };
 }

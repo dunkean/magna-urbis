@@ -54,6 +54,60 @@ function lakeShores(water: VectorWater): string {
 
 export interface WaterDisplay { style: TerrainStyle; showLakes: boolean; showOxbows: boolean; riverArea: number; riverMode: 'vector' | 'grid'; overlay: VectorOverlay }
 
+/** Stroke colour of the water, its width classes and the per-vertex style colours. */
+function waterInk(display: Pick<WaterDisplay, 'style' | 'riverArea' | 'overlay'>): { edge: string; widthClass: (area: number) => number; colourOf: (kind: number) => string } {
+  const s = display.style, pal = PALETTES[s === 'copernicus' ? 'parchment' : s];
+  // Lakes take the rivers' colour: a river runs into its lake without a seam.
+  const edge = s === 'copernicus' ? '#14527a' : pal.waterEdge;
+  // Stroke width grows with the logarithm of upstream area, in screen pixels.
+  const threshold = display.riverArea * 1e6;
+  const widthClass = (area: number): number => Math.max(0, Math.min(9, Math.floor(Math.log2(Math.max(1, area / threshold)))));
+  const styled = display.overlay === 'v-styles';
+  const colourOf = (kind: number): string => !styled ? edge : ['#2a6fc9', '#c62828', '#7b1fa2', '#ef6c00', '#d81b60', '#2e7d32'][kind] ?? edge;
+  return { edge, widthClass, colourOf };
+}
+
+/** Lake colour of a display style. */
+export const lakeColour = (display: Pick<WaterDisplay, 'style' | 'riverArea' | 'overlay'>): string => waterInk(display).edge;
+
+const rgb = (value: string): [number, number, number] => [parseInt(value.slice(1, 3), 16) / 255, parseInt(value.slice(3, 5), 16) / 255, parseInt(value.slice(5, 7), 16) / 255];
+
+/**
+ * River segments for the GPU, in drawing order (oxbows, braids, distributaries,
+ * rivers): x0, y0, x1, y1 in metres, width in CSS pixels, then r, g, b.
+ */
+export function riverSegments(water: VectorWater, display: Omit<WaterDisplay, 'showLakes'>): Float32Array {
+  const { hydro: h } = water, n = h.n, cell = h.width / n;
+  const { edge, widthClass, colourOf } = waterInk(display);
+  const threshold = display.riverArea * 1e6;
+  const colours = new Map<string, [number, number, number]>();
+  const colour = (c: string): [number, number, number] => { let v = colours.get(c); if (!v) colours.set(c, v = rgb(c)); return v; };
+  const out: number[] = [];
+  const push = (x0: number, y0: number, x1: number, y1: number, k: number, c: string): void => {
+    const [r, g, b] = colour(c);
+    out.push(x0, y0, x1, y1, 0.7 + 0.45 * k, r, g, b);
+  };
+  const line = (l: RiverLine, thinner: number): void => {
+    const { points, area, kind } = l, threads = l.threads;
+    for (let i = 1; i < area.length; i++) {
+      push(points[2 * i - 2], points[2 * i - 1], points[2 * i], points[2 * i + 1], Math.max(0, widthClass(area[i - 1] / (threads?.[i - 1] ?? 1)) - thinner), colourOf(kind[i - 1]));
+    }
+  };
+  const rivers = water.rivers;
+  if (display.riverMode === 'vector' && rivers) {
+    if (display.showOxbows) for (const o of rivers.oxbows) line(o, 1);
+    for (const l of rivers.braids) line(l, 0);
+    for (const l of rivers.distributaries) line(l, 0);
+    for (const l of rivers.rivers) line(l, 0);
+  } else for (let c = 0; c < n * n; c++) {
+    const a = h.accumulation[c], next = h.receiver[c];
+    if (h.sea[c] || water.lake[c] || a < threshold || next < 0) continue;
+    const x = c % n, y = (c - x) / n, nx = next % n, ny = (next - nx) / n;
+    push((x + 0.5) * cell, (y + 0.5) * cell, (nx + 0.5) * cell, (ny + 0.5) * cell, widthClass(a), edge);
+  }
+  return Float32Array.from(out);
+}
+
 export function vectorWaterSvg(water: VectorWater, display: WaterDisplay): string {
   const { hydro: h } = water, n = h.n, width = h.width, cell = width / n;
   const s = display.style, pal = PALETTES[s === 'copernicus' ? 'parchment' : s];
@@ -103,6 +157,12 @@ export function vectorWaterSvg(water: VectorWater, display: WaterDisplay): strin
 
 /** Raster diagnostics over the hydrology grid; `delta` is the conditioning's height change on its own grid. */
 export function vectorOverlaySvg(water: VectorWater, overlay: VectorOverlay, delta?: { values: Float32Array; n: number }): string {
+  const pixels = vectorOverlayPixels(water, overlay, delta);
+  return pixels ? rasterImage(pixels.rgba, pixels.n, water.hydro.width, 'style="image-rendering:pixelated"') : '';
+}
+
+/** RGBA cells of a diagnostic over the whole map (`n²`, row-major from the north-west), or none. */
+export function vectorOverlayPixels(water: VectorWater, overlay: VectorOverlay, delta?: { values: Float32Array; n: number }): { rgba: Uint8Array; n: number } | undefined {
   const h = water.hydro, n = h.n, rgba = new Uint8Array(n * n * 4);
   if (overlay === 'v-accumulation') {
     let top = 0;
@@ -141,7 +201,7 @@ export function vectorOverlaySvg(water: VectorWater, overlay: VectorOverlay, del
       const t = Math.min(1, Math.sqrt(Math.abs(v) / 40));
       out.set(v < 0 ? [20, 70, 200, Math.round(80 + 175 * t)] : [150, 95, 30, Math.round(80 + 175 * t)], c * 4);
     }
-    return rasterImage(out, m, h.width, 'style="image-rendering:pixelated"');
-  } else return '';
-  return rasterImage(rgba, n, h.width, 'style="image-rendering:pixelated"');
+    return { rgba: out, n: m };
+  } else return;
+  return { rgba, n };
 }

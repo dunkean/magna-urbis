@@ -1,5 +1,8 @@
 use wasm_bindgen::prelude::*;
 
+mod flood;
+pub use flood::{flood_hydrology, Flood};
+
 #[wasm_bindgen]
 extern "C" {
     #[wasm_bindgen(js_namespace = performance, js_name = now)]
@@ -335,6 +338,11 @@ pub struct TerrainEngine {
 
 #[wasm_bindgen]
 impl TerrainEngine {
+    pub fn set_edited_surface(&mut self, heights: &[f32]) -> Result<(), JsValue> {
+        self.generator
+            .set_edited_surface(heights)
+            .map_err(|e| JsValue::from_str(&e))
+    }
     #[allow(clippy::too_many_arguments)]
     pub fn with_source(
         seed: &str,

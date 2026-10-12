@@ -125,6 +125,14 @@ pub struct Regional {
 pub enum Sketch {
     Validation(Validation),
     Regional(Box<Regional>),
+    /// Edited cell-centred elevations over the map; regional context outside it.
+    Grid {
+        resolution: usize,
+        heights: Vec<f64>,
+        extent: f64,
+        origin: (f64, f64),
+        context: Box<Sketch>,
+    },
 }
 
 /// SplitMix64: independent uniform parameters from the world seed.
@@ -323,6 +331,34 @@ impl Sketch {
         match self {
             Sketch::Validation(case) => validation(*case, x, y),
             Sketch::Regional(sketch) => sketch.elevation(x, y),
+            Sketch::Grid {
+                resolution,
+                heights,
+                extent,
+                origin,
+                context,
+            } => {
+                let (x, y) = (x - origin.0, y - origin.1);
+                let n = *resolution;
+                let gx = (x / extent * n as f64 - 0.5).clamp(0.0, (n - 1) as f64);
+                let gy = (y / extent * n as f64 - 0.5).clamp(0.0, (n - 1) as f64);
+                let (x0, y0) = (gx.floor() as usize, gy.floor() as usize);
+                let (x1, y1) = ((x0 + 1).min(n - 1), (y0 + 1).min(n - 1));
+                let (tx, ty) = (gx - x0 as f64, gy - y0 as f64);
+                let a = heights[y0 * n + x0] * (1.0 - tx) + heights[y0 * n + x1] * tx;
+                let b = heights[y1 * n + x0] * (1.0 - tx) + heights[y1 * n + x1] * tx;
+                let outside = (-x).max(x - extent).max(-y).max(y - extent).max(0.0);
+                let t = (outside / 15360.0).clamp(0.0, 1.0);
+                let blend = t * t * (3.0 - 2.0 * t);
+                let height = a * (1.0 - ty) + b * ty;
+                if outside == 0.0 {
+                    return height;
+                }
+                if blend == 1.0 {
+                    return context.elevation(x + origin.0, y + origin.1);
+                }
+                height * (1.0 - blend) + context.elevation(x + origin.0, y + origin.1) * blend
+            }
         }
     }
 
@@ -330,6 +366,7 @@ impl Sketch {
         match self {
             Sketch::Validation(_) => Climate::REFERENCE,
             Sketch::Regional(sketch) => sketch.climate,
+            Sketch::Grid { context, .. } => context.climate(),
         }
     }
 

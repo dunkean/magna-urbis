@@ -18,7 +18,7 @@
  * runoff at sea level): a cell weighs its runoff ratio, a lake cell evaporates
  * e / r₀ of its area.
  */
-import { computeHydrology } from './simpleHydrology';
+import { computeHydrology, type SimpleHydrology } from './simpleHydrology';
 
 export interface ClimateInput {
   /** Mean annual temperature at sea level, °C (−6.5 °C/km above). */
@@ -81,8 +81,8 @@ const DY = [-1, -1, -1, 0, 0, 1, 1, 1];
  * slight slope to their spill: they are grid noise, not ponds. Left as they
  * are, a plain riddled with them would evaporate its rivers away pit by pit.
  */
-function fillNoise(height: Float32Array, n: number, width: number, minDepth: number, minArea: number): Float32Array {
-  const h = computeHydrology(height, n, width), total = n * n, out = new Float32Array(height);
+function fillNoise(height: Float32Array, n: number, width: number, minDepth: number, minArea: number, drainage?: SimpleHydrology): Float32Array {
+  const h = drainage ?? computeHydrology(height, n, width), total = n * n, out = new Float32Array(height);
   const seen = new Uint8Array(total), noise = new Uint8Array(total), component: number[] = [];
   for (let s = 0; s < total; s++) {
     if (seen[s] || h.filled[s] - height[s] <= 0) continue;
@@ -108,10 +108,11 @@ function fillNoise(height: Float32Array, n: number, width: number, minDepth: num
   return out;
 }
 
-export function waterBalance(source: Float32Array, n: number, width: number, sea: Uint8Array, climate: ClimateInput, minDepth = 1, minArea = 1e5): WaterBalance {
+/** `drainage`: `computeHydrology(source, n, width)` when already known. */
+export function waterBalance(source: Float32Array, n: number, width: number, sea: Uint8Array, climate: ClimateInput, minDepth = 1, minArea = 1e5, drainage?: SimpleHydrology): WaterBalance {
   const started = performance.now();
   const total = n * n, cell = width / n, cellArea = cell * cell;
-  const height = fillNoise(source, n, width, minDepth, minArea);
+  const height = fillNoise(source, n, width, minDepth, minArea, drainage);
   const runoff = runoffModel(climate);
   const weight = new Float32Array(total);
   for (let c = 0; c < total; c++) weight[c] = sea[c] ? 0 : runoff.runoffAt(height[c]) / runoff.r0;
