@@ -2,7 +2,7 @@
 
 DEMO: https://dunkean.github.io/magna-urbis/
 
-**Magna Urbis is inspired by [TownGeneratorOS by Watabou (Oleg Dolya)](https://github.com/watabou/TownGeneratorOS) and his [Medieval Fantasy City Generator](https://watabou.itch.io/medieval-fantasy-city-generator).** The original Python prototype began as a port of TownGeneratorOS; the TypeScript and Rust implementations continue that exploration.
+**Magna Urbis is inspired by [TownGeneratorOS by Watabou (Oleg Dolya)](https://github.com/watabou/TownGeneratorOS) and his [Medieval Fantasy City Generator](https://watabou.itch.io/medieval-fantasy-city-generator).** The project began as a Python port of TownGeneratorOS; that prototype has since been retired, and the TypeScript and Rust implementations continue the exploration.
 
 **Work in progress. Alpha. Prototype.** Magna Urbis generates pre-modern settlements and their surrounding landscapes for maps and tabletop role-playing games. Its output, performance and interfaces are still evolving. This is an experimental project, not a finished application.
 
@@ -93,12 +93,8 @@ rust/crates/core/ Rust engine without browser dependencies
 rust/crates/wasm/ WebAssembly bindings
 rust/bridge/      Temporary interface and rendering adapters
 rust/scripts/     Rust development commands
-town_generator/  Earlier Python prototype, retained as a reference
-tests/           Python prototype tests
 docs/images/     README screenshots and reproduction settings
 ```
-
-The Python prototype is historical; it is not a third active engine.
 
 ## Contributing
 
@@ -110,4 +106,4 @@ When reporting a problem, include the version, seed, settings and shared link, w
 
 Thank you to **Watabou** for TownGeneratorOS and Medieval Fantasy City Generator, the starting point for this project and an ongoing reference.
 
-Magna Urbis is distributed under the **GNU GPL v3**; see [LICENSE](LICENSE). The Python prototype retains its lineage from TownGeneratorOS. Third-party resources and dependencies retain their own license and provenance notices.
+Magna Urbis is distributed under the **GNU GPL v3**; see [LICENSE](LICENSE). The earlier Python port of TownGeneratorOS has been removed from the repository; it remains available in the Git history. Third-party resources and dependencies retain their own license and provenance notices.
