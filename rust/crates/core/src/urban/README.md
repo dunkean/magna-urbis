@@ -44,3 +44,22 @@ Vérification depuis `rust/` : `cargo test -p magna-urbis-core urban --lib`,
 `cargo clippy -p magna-urbis-core -p magna-urbis-wasm --all-targets -- -D warnings`,
 `cargo check -p magna-urbis-core -p magna-urbis-wasm --target wasm32-unknown-unknown`.
 Depuis `web/` : `npm run typecheck`, `npm run build`, `npm run build:terrain`.
+
+## Urban Bench
+
+`web/src/ui/urbanbench.html` (`http://localhost:5173/urbanbench.html` with
+`npm run dev:terrain`) prototype les mêmes blocs 6 et 7 sans la chaîne
+terrain → eaux → settlements → routes. Il charge des **décors** : le raster
+exact transmis à Rust par Terrain Bench, les settlements, les routes et l'eau
+vectorielle d'une carte, au format `.decor` (`web/src/ui/decor.ts`).
+
+- Exporter la carte courante : bouton **Export decor** du bloc Settlements.
+- Exporter un lot varié (relief, côtes, rivières, routes, tailles, cultures) :
+  `node scripts/export_decors.mjs [--count 100] [--force]` depuis `web/`, serveur
+  de développement lancé. Les fichiers vont dans `web/decors/` (ignoré par git)
+  avec `index.json` ; `--index` reconstruit l'index après suppression manuelle.
+- Graine de ville : un lieu du décor (mêmes routes, même graine, mêmes quartiers
+  que Terrain Bench) ou une graine libre posée sur la carte (P), avec population,
+  culture et rayon. Les routes régionales peuvent être recalculées avec la graine.
+- Le bench construit hors ligne (`npm run build:terrain`) ouvre ou reçoit par
+  glisser-déposer des fichiers `.decor`.

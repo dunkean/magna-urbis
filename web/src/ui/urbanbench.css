@@ -1,0 +1,18 @@
+.decor-list { display: flex; flex-direction: column; gap: 4px; max-height: 260px; overflow: auto; }
+.decor-list .terrain-place[aria-selected=true] { border-color: #2d8060; background: #e3f1e8; }
+#decorFilters label { justify-content: space-between; }
+#decorQuick { max-width: 230px; }
+.file-button { display: inline-flex; align-items: center; height: 25px; padding: 2px 6px; border: 1px solid #d3ddd7; border-radius: 4px; background: #fff; cursor: pointer; }
+.file-button:hover { background: #edf3ef; border-color: #9baea3; }
+#seedStage .stage-controls > label { justify-content: space-between; }
+#seedStage input[type=text] { width: 130px; }
+#seedInfo { font-size: 11px; }
+#map .contour { fill: none; stroke: #7d6a4c; stroke-opacity: .45; stroke-width: .6px; vector-effect: non-scaling-stroke; }
+#map .contour.index { stroke-opacity: .7; stroke-width: 1.1px; }
+#map #reliefImage { image-rendering: auto; }
+#waterLayer, #contourLayer, #baseLayer { pointer-events: none; }
+.seed-ring { fill: #b2452f10; stroke: #b2452f; stroke-width: 1.4px; stroke-dasharray: 6 4; vector-effect: non-scaling-stroke; pointer-events: none; }
+.seed-handle { cursor: move; }
+.seed-handle circle { fill: #b2452f; stroke: #fffdf0; stroke-width: 2px; }
+.seed-handle path { stroke: #b2452f; stroke-width: 1.5px; }
+#status { margin: 4px 0 0; border: 0; background: transparent; padding: 0 2px; }

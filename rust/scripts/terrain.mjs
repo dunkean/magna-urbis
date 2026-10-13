@@ -53,8 +53,10 @@ async function main() {
     await wasm(true);
     await vite('build', '--mode', 'terrainbench');
     await vite('build', '--mode', 'neuralbench');
+    await vite('build', '--mode', 'urbanbench');
     console.log(`Terrain bench: ${join(rustDir, 'out/browser/terrainbench.html')}`);
     console.log(`Neural bench: ${join(rustDir, 'out/browser/neuralbench.html')}`);
+    console.log(`Urban bench: ${join(rustDir, 'out/browser/urbanbench.html')} (open .decor files from web/decors)`);
     return;
   }
   if (action !== 'dev') throw new Error('Usage: terrain.mjs dev|wasm|build|check|neural');
@@ -76,7 +78,7 @@ async function main() {
     if (file && /\.(rs|toml)$/.test(String(file)) && !/^(neural|houses)/.test(String(file))) schedule();
   });
   const manifestWatch = watch(join(rustDir, 'Cargo.toml'), schedule);
-  console.log('Terrain bench: http://localhost:5173/terrainbench.html · Neural bench: http://localhost:5173/neuralbench.html · Rust auto-rebuild enabled');
+  console.log('Terrain bench: http://localhost:5173/terrainbench.html · Urban bench: http://localhost:5173/urbanbench.html · Neural bench: http://localhost:5173/neuralbench.html · Rust auto-rebuild enabled');
   try { await vite('--mode', 'terrainbench', '--host', '127.0.0.1'); }
   finally { clearTimeout(timer); crateWatch.close(); manifestWatch.close(); }
 }

@@ -1,0 +1,54 @@
+import { settlementRaster, type RoadConfig, type RoadOutput, type SettlementOutput } from '../../../rust/bridge/settlements';
+import { COAST_DIRECTIONS, type TerrainData, type TerrainSettings } from '../../../rust/bridge/terrain';
+import { DEFAULT_HYDROLOGY, riverAreaFor } from '../../../rust/bridge/hydrology';
+import { renderHydrology } from '../../../rust/bridge/hydrologyRender';
+import { vectorWaterSvg } from './vectorWaterRender';
+import { encodeDecor, rasterStats, type Decor, type DecorMeta } from './decor';
+
+/** Default classification of a Terrain Bench map; the batch exporter adds its own tags. */
+function tagsOf(settings: TerrainSettings, output: SettlementOutput, roadConfig: RoadConfig | null): Record<string, string> {
+  const mask = settings.coastMask ?? 0, coasts = COAST_DIRECTIONS.filter((_, i) => mask & (1 << i));
+  const h = settings.hydrology ?? DEFAULT_HYDROLOGY, main = output.settlements.slice().sort((a, b) => b.population - a.population)[0];
+  return {
+    relief: settings.relief, coast: mask === 255 ? settings.islandMode ?? 'island' : coasts.length ? coasts.join('+') : 'inland',
+    river: h.enabled ? h.main : 'none', meanders: h.meanders, lakes: h.lakes,
+    roads: roadConfig ? `${roadConfig.level}/${roadConfig.culture}` : 'none', culture: main?.culture ?? '',
+  };
+}
+
+/** Length of the Rust hydrology network (x, y, width, z per vertex). */
+function riverKm(t: TerrainData): number {
+  const h = t.hydrology; if (!h) return 0;
+  let m = 0;
+  for (let id = 0; id < h.riverOffsets.length - 1; id++) for (let j = h.riverOffsets[id] + 1; j < h.riverOffsets[id + 1]; j++) {
+    m += Math.hypot(h.riverPoints[j * 4] - h.riverPoints[j * 4 - 4], h.riverPoints[j * 4 + 1] - h.riverPoints[j * 4 - 3]);
+  }
+  return m / 1000;
+}
+
+/** The base layers of the current Terrain Bench map, encoded as a decor file. */
+export function captureDecor(t: TerrainData, settings: TerrainSettings, output: SettlementOutput, roads: RoadOutput | undefined, roadConfig: RoadConfig | null,
+  extra: { id?: string; label?: string; tags?: Record<string, string>; query?: string } = {}): { bytes: Uint8Array; meta: DecorMeta } {
+  const raster = settlementRaster(t), h = settings.hydrology ?? DEFAULT_HYDROLOGY;
+  const waterSvg = t.water
+    ? vectorWaterSvg(t.water, { style: 'atlas', showLakes: true, showOxbows: true, riverArea: riverAreaFor(h, settings.width), riverMode: h.riverMode ?? 'vector', overlay: 'none' })
+    : t.hydrology ? renderHydrology(t.hydrology, 'none', true, 'atlas') : '';
+  const relief = settings.relief, id = extra.id ?? `${relief}-${settings.seed}`.replace(/[^\w.-]+/g, '_');
+  const decor: Decor = {
+    meta: {
+      format: 'magna-decor', version: 1, id, label: extra.label ?? `${relief} · seed ${settings.seed}`,
+      tags: { ...tagsOf(settings, output, roadConfig), ...extra.tags },
+      seed: settings.seed, width: t.width, query: extra.query ?? location.search.replace(/^\?/, ''), created: new Date().toISOString(),
+      settlements: output.settlements, roadConfig, roads: roads ?? null, waterSvg,
+      stats: { ...rasterStats(raster), riverKm: t.water?.rivers?.lengthKm ?? riverKm(t), roadKm: (roads?.segments.reduce((s, r) => s + r.length, 0) ?? 0) / 1000 },
+    },
+    raster,
+  };
+  return { bytes: encodeDecor(decor), meta: decor.meta };
+}
+
+export function downloadBytes(bytes: Uint8Array, name: string): void {
+  const url = URL.createObjectURL(new Blob([bytes as BlobPart], { type: 'application/octet-stream' }));
+  const a = document.createElement('a'); a.href = url; a.download = name; a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}

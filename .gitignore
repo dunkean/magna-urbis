@@ -34,3 +34,6 @@ rust/benches/
 web/scripts/*audit*
 web/scripts/dbg_*
 web/scripts/perf*
+
+# Urban Bench decors (regenerate with web/scripts/export_decors.mjs)
+web/decors/

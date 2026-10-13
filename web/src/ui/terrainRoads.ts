@@ -247,6 +247,8 @@ export function createTerrainRoads(options: { map: SVGSVGElement; before: Elemen
   controls(); legend();
   return {
     get config(): RoadConfig { return config; },
+    /** Replace the routing options (a loaded decor's), without routing. */
+    setConfig(next: RoadConfig): void { config = { ...defaultRoadConfig(), ...next }; controls(); },
     get enabled(): boolean { return enabled; },
     pending(text = 'Routing in Rust…'): void { q('#roadStatus').textContent = text; panel.setAttribute('aria-busy', 'true'); },
     error(text: string): void { q('#roadStatus').textContent = `Roads: ${text}`; panel.removeAttribute('aria-busy'); },

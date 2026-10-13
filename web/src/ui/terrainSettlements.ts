@@ -7,6 +7,8 @@ import { SITE_ARCHETYPES, classOfPop } from '../gen/options';
 import { SETTLEMENT_KINDS } from './settlementKinds';
 import { createTerrainRoads } from './terrainRoads';
 import { createTerrainUrban } from './terrainUrban';
+import { captureDecor, downloadBytes } from './decorCapture';
+import { decorEntry, type DecorEntry } from './decor';
 import './terrainSettlements.css';
 
 const ns = 'http://www.w3.org/2000/svg';
@@ -35,7 +37,7 @@ export function createTerrainSettlements(options: {
   let cachedTerrain: TerrainData | undefined, worker: Worker | undefined, id = 0, timer: ReturnType<typeof setTimeout> | undefined;
   // Placement reruns only when its inputs changed; road edits reroute between the current places.
   let complete = false, needsPlacement = true, validation: { width: number; n: number; water: Uint8Array } | undefined;
-  let fallback = false;
+  let fallback = false, answered = 0;
   let drawnLayer: SVGGElement | undefined, drawnOutput: SettlementOutput | undefined, drawnState = '';
   let drag: { key: string; pointer: number; start: Point; point: Point; moved: boolean } | undefined;
   const initial = new URLSearchParams(location.search).get('settlements');
@@ -64,7 +66,7 @@ export function createTerrainSettlements(options: {
     </div>
     <label>Default culture <select id="setCulture"></select></label>
     <div id="setCounts" class="control-group" hidden>${['city', 'town', 'village', 'hamlet', 'farmstead'].map(cls => `<label>${cls}<input data-count="${cls}" type="number" min="0" max="1000" step="1"></label>`).join('')}</div>
-    <div class="settlement-actions"><button id="setGenerate" type="button">Recalculate settlements</button><button id="setTakeOver" type="button">Edit generated list</button><button id="setAdd" type="button">Place a settlement</button></div>
+    <div class="settlement-actions"><button id="setGenerate" type="button">Recalculate settlements</button><button id="setTakeOver" type="button">Edit generated list</button><button id="setAdd" type="button">Place a settlement</button><button id="setExportDecor" type="button" title="Save terrain, water, settlements and roads as a decor for the Urban Bench">Export decor</button></div>
     <small id="setPickHint">Select a marker to inspect its scores. Drag it to move it: only the roads are recalculated.</small>
     <details class="advanced"><summary>Spacing</summary><div class="control-group">
     ${number('spread', 'Spacing ×', 0.1, 5, 0.1, 'Automatic composition')}${number('smallTop', 'Best land share for small places', 0, 1, 0.05)}${number('mainClear', 'Main settlement clearance × radius', 0, 10, 0.1)}
@@ -164,6 +166,7 @@ export function createTerrainSettlements(options: {
     if (response.id !== id) return;
     el('setGenerate').removeAttribute('aria-busy');
     if ('error' in response) { el('setStatus').textContent = `Settlement generation: ${response.error}`; roads.error(response.error); return; }
+    answered = response.id;
     if (response.settlements) {
       output = response.settlements; needsPlacement = false;
       window.dispatchEvent(new CustomEvent('settlements:generated', { detail: output }));
@@ -321,6 +324,26 @@ export function createTerrainSettlements(options: {
   el('setGenerate').onclick = () => { needsPlacement = true; recalculate(); };
   el('setTakeOver').onclick = () => { adopt(); selection = config.list[0]?.key ?? ''; controls(); list(); editor(); changed(); };
   el('setAdd').onclick = () => setPicking(picking === 'new' ? undefined : 'new');
+  /** Decor of the current map, once placement and routing answered the latest request. */
+  const decorReady = (): boolean => complete && enabled && !!output && answered === id && (!roads.enabled || !!roads.output);
+  const decor = (extra?: Parameters<typeof captureDecor>[5]): ReturnType<typeof captureDecor> => {
+    const t = options.getTerrain();
+    if (!t || !decorReady()) throw new Error('Wait for the settlements and roads of the completed map.');
+    return captureDecor(t, options.getSettings(), output!, roads.output, roads.enabled ? clone(roads.config) : null, extra);
+  };
+  el('setExportDecor').onclick = () => {
+    try { const s = options.getSettings(); downloadBytes(decor().bytes, `${s.relief}-${s.seed}.decor`.replace(/[^\w.-]+/g, '_')); }
+    catch (error) { el('setStatus').textContent = String(error instanceof Error ? error.message : error); }
+  };
+  // Batch export (web/scripts/export_decors.mjs) drives the bench through this hook.
+  (window as unknown as { magnaDecor: unknown }).magnaDecor = {
+    ready: decorReady,
+    export(file: string, extra?: Parameters<typeof captureDecor>[5]): { base64: string; entry: DecorEntry } {
+      const { bytes, meta } = decor(extra); let text = '';
+      for (let i = 0; i < bytes.length; i += 0x8000) text += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+      return { base64: btoa(text), entry: decorEntry(meta, file) };
+    },
+  };
   controls(); list();
   return {
     cancelPicking(): void { setPicking(); },

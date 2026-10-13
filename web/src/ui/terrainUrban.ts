@@ -1,7 +1,7 @@
 import UrbanWorker from './urbanWorker?worker&inline';
 import catalogueJson from '../../../rust/crates/core/src/urban/catalogue.json';
 import { defaultLayoutConfig, defaultParcelConfig, runUrbanRequest, type Layout, type LayoutConfig, type ParcelConfig, type Partition, type Point, type Shape, type UrbanRequest, type UrbanResponse } from '../../../rust/bridge/urban';
-import { settlementRaster, type RoadOutput, type SettlementOutput } from '../../../rust/bridge/settlements';
+import { settlementRaster, type RoadOutput, type SettlementOutput, type SettlementRaster } from '../../../rust/bridge/settlements';
 import type { TerrainData } from '../../../rust/bridge/terrain';
 import './terrainUrban.css';
 
@@ -17,13 +17,14 @@ const shapePath = (s: Shape): string => [s.outer, ...(s.holes ?? [])].map(p => p
 interface Render { quarters: boolean; blocks: boolean; streets: boolean; parcels: boolean; gardens: boolean; places: boolean; fronts: boolean; axes: boolean; opacity: number; width: number; palette: 'atlas' | 'ink' | 'terrain' }
 type Kind = 'quarters' | 'parcels';
 
-export function createTerrainUrban(options: { map: SVGSVGElement; before: Element | null; getTerrain(): TerrainData | undefined; getSeed(): string; onChange(): void; onFocus?(center: Point, radius: number): void }) {
+/** `getRaster` replaces `getTerrain` where the raster is already adapted (Urban Bench decors). */
+export function createTerrainUrban(options: { map: SVGSVGElement; before: Element | null; getTerrain(): TerrainData | undefined; getRaster?(): SettlementRaster | undefined; getSeed(): string; onChange(): void; onFocus?(center: Point, radius: number): void }) {
   let settlements: SettlementOutput | undefined, roads: RoadOutput | undefined;
   let layouts: Layout[] | undefined, partitions: Partition[] | undefined;
   let layoutConfig = defaultLayoutConfig(), parcelConfig = defaultParcelConfig();
   let quarterSeed = '', parcelSeed = '', target = '', ready = false;
   let enabled = true, parcelEnabled = true, appliedKind: Kind = 'quarters';
-  let worker: Worker | undefined, fallback = false, cachedTerrain: TerrainData | undefined, id = 0;
+  let worker: Worker | undefined, fallback = false, cachedTerrain: TerrainData | SettlementRaster | undefined, id = 0;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let drawnLayer: SVGGElement | undefined, drawnLayouts: Layout[] | undefined, drawnPartitions: Partition[] | undefined, drawnState = '';
   let render: Render = { quarters: false, blocks: true, streets: true, parcels: true, gardens: true, places: true, fronts: false, axes: false, opacity: 0.8, width: 0.6, palette: 'atlas' };
@@ -140,17 +141,22 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
   }
   function request(kind: Kind): void {
     clearTimeout(timer);
-    if (!ready || !options.getTerrain() || !settlements) return;
+    const source = options.getRaster ? options.getRaster() : options.getTerrain();
+    if (!ready || !source || !settlements) return;
     if (kind === 'quarters' && !enabled || kind === 'parcels' && !parcelEnabled) return;
     if (kind === 'parcels' && !layouts) { status(kind, 'Générez d’abord les quartiers (bloc 6).'); return; }
     if (!worker && !fallback) {
       try { worker = new UrbanWorker(); worker.onmessage = (e: MessageEvent<UrbanResponse>) => receive(e.data); worker.onerror = e => { e.preventDefault(); useFallback(); }; }
       catch { fallback = true; }
     }
-    const t = options.getTerrain()!;
     const selected = settlements.settlements.filter(s => target === 'all' || s.key === target);
     const message: UrbanRequest = { id: ++id, kind, seed: kind === 'quarters' ? appliedQuarterSeed || options.getSeed() : appliedParcelSeed || options.getSeed() };
-    if (cachedTerrain !== t) { message.raster = settlementRaster(t); cachedTerrain = t; }
+    if (cachedTerrain !== source) {
+      // The worker takes ownership of the buffers: a retained raster is copied.
+      const r = 'n' in source ? source : settlementRaster(source);
+      message.raster = r === source ? { ...r, height: r.height.slice(), water: r.water.slice(), waterLevel: r.waterLevel.slice(), riverWidth: r.riverWidth.slice(), riverIds: r.riverIds.slice() } : r;
+      cachedTerrain = source;
+    }
     if (kind === 'quarters') {
       layouts = undefined; partitions = undefined; draw();
       message.layoutConfig = clone(appliedLayout); message.sites = selected.map(s => ({ key: s.key, population: s.population, culture: s.culture, center: s.center, radius: s.radius }));
