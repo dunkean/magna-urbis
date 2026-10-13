@@ -440,6 +440,89 @@ fn roads_hold_their_grade_with_switchbacks_on_an_escarpment() {
     assert_clean_network(&graded, WIDTH / map.n as f64);
 }
 
+/// Resampled every half cell along a path.
+fn resample(path: &[Point], step: f64) -> Vec<Point> {
+    let mut out = vec![path[0]];
+    let mut carry = 0.0;
+    for w in path.windows(2) {
+        let l = w[0].distance_to(w[1]);
+        let mut d = step - carry;
+        while d <= l {
+            let t = d / l;
+            out.push(Point {
+                x: w[0].x + (w[1].x - w[0].x) * t,
+                y: w[0].y + (w[1].y - w[0].y) * t,
+            });
+            d += step;
+        }
+        carry = l - (d - step);
+    }
+    out
+}
+
+/// A face of `slope` rising `rise` metres, reachable only through a 2 km wide corridor between
+/// seas, routed between a town below and one above.
+fn corridor_face(slope: f64, rise: f64) -> (RoadOutput, f64) {
+    let mut map = Map::sized(320);
+    let cell = WIDTH / map.n as f64;
+    for y in 0..map.n {
+        for x in 0..map.n {
+            let (px, py) = ((x as f64 + 0.5) * cell, (y as f64 + 0.5) * cell);
+            let i = y * map.n + x;
+            let h = (30.0 + slope * (px - 6000.0).clamp(0.0, rise / slope)) as f32;
+            map.height[i] = h;
+            map.level[i] = h;
+            if !(7000.0..=9000.0).contains(&py) {
+                map.water[i] = 1;
+                map.level[i] = 0.0;
+                map.height[i] = -5.0;
+            }
+        }
+    }
+    let cfg = list(vec![
+        fixed("low", 3000, 3000.0, 8000.0),
+        fixed("high", 3000, 12500.0, 8000.0),
+    ]);
+    let (_, roads) = place_and_route(&map, "face", &cfg, &no_exits());
+    assert!(roads.unreachable.is_empty());
+    assert_clean_network(&roads, cell);
+    // Hatching: another part of the same road, eight cells or more further along, within a cell
+    // and a half (the legs of a switchback stacked one cell apart).
+    for s in &roads.segments {
+        let points = resample(&s.path, 0.5 * cell);
+        for (a, p) in points.iter().enumerate() {
+            if roads
+                .junctions
+                .iter()
+                .any(|j| j.point.distance_to(*p) < 3.0 * cell)
+            {
+                continue;
+            }
+            if let Some(q) = points[(a + 16).min(points.len())..]
+                .iter()
+                .find(|q| q.distance_to(*p) < 1.5 * cell)
+            {
+                panic!("switchback legs touch at {p:?} / {q:?} on a {slope} face");
+            }
+        }
+    }
+    (roads, cell)
+}
+
+#[test]
+fn switchbacks_keep_their_legs_apart_even_on_a_very_steep_face() {
+    // 30 %: a ramp of (1, 3) moves holds 10 %, so the road zigzags at a cart's grade, far longer
+    // than the 2.5 km fall line.
+    let (roads, _) = corridor_face(0.3, 750.0);
+    let length: f64 = roads.segments.iter().map(|s| s.length).sum();
+    assert!(length > 9500.0 + 2500.0, "no switchbacks ({length:.0} m)");
+    let steepest = roads.segments.iter().map(|s| s.grade).fold(0.0, f64::max);
+    assert!(steepest < 0.3, "road reaches {steepest:.3}");
+    // 60 %: no move holds the grade off the contour. The road used to climb in a dense ladder of
+    // legs one cell apart; it now takes the slope on a few legs instead.
+    corridor_face(0.6, 750.0);
+}
+
 fn hilly(n: usize) -> Map {
     let mut map = Map::sized(n);
     let cell = WIDTH / n as f64;

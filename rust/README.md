@@ -84,15 +84,23 @@ tree plus shortcuts (network density). Routes are searched most important first
 on 24 directions, so switchbacks hold a per-class grade limit on raw ground
 heights; long moves are graded along their whole line, and bridges cross at bank
 level. Reuse is per road move and cells beside a road cost more, so routes share
-trunks instead of running alongside; a turn cost lengthens hairpin legs. All
-routes then merge into one planar graph (crossings become junctions, chains
-between junctions become segments), whose class (highway, main, local, track,
-trail) comes from the most important trip carried on the final network. The
+trunks instead of running alongside. The search state carries the heading (eight
+sectors) and each class has a sharpest turn per move (45° for roads), so a
+hairpin is a rounded loop a few cells across and switchback legs never stack one
+cell apart; turns cost the square of their angle, more on steep ground, and the
+meander noise fades on slopes. Roads therefore follow contours and valleys with
+few hairpins rather than zigzagging up steep faces. All routes then merge into
+one planar graph (crossings become junctions, chains between junctions become
+segments), whose class (highway, main, local, track, trail) comes from the most
+important trip carried on the final network. The
 development level (primitive, rural, developed, imperial) maps traffic to
 classes and surfaces (dirt, gravel, paved, flagstone); a surface can be forced.
 Road cultures (`roads/profile.rs`, auto from each link's larger place or forced)
 set grades, straightness, meandering, bridge preference, causeways over shallow
 lakes and surface bias. Exits run to the cheapest dry cell of the nearest borders.
+The **Rendering** section of the Roads stage only redraws: style (by surface,
+road atlas, topographic, ink on parchment, minimal), width, opacity, smooth
+curves, casing and bridges. It is saved in the shared link.
 Lakes, sea and cavern rock block roads except causeway cultures. The routing
 raster is capped at 512², independently of camera zoom.
 
@@ -108,7 +116,8 @@ switchbacks, culture and level typing, causeways, rank-size law) run from `rust/
 with `cargo test --release -p magna-urbis-core --test settlements`. For a bench map,
 `DUMP=1 node scripts/terrain_roads_visual.mjs` (from `web/`) writes screenshots
 and the adapted raster; `cargo run --release -p magna-urbis-core --example
-roads_inspect -- <dump.json>` then reports grade bands, doubled length and the
+roads_inspect -- <dump.json>` then reports grade bands, doubled length,
+switchback shape (hairpins, leg length and spacing, hatched length) and the
 steepest stretches.
 
 ## Houses bench

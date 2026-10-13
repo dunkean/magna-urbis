@@ -185,6 +185,7 @@ fn main() {
             100.0 * doubled / total
         );
     }
+    switchbacks(&out, cell);
     let mut segments: Vec<_> = out.segments.iter().collect();
     segments.sort_by(|a, b| b.grade.total_cmp(&a.grade));
     for s in segments.iter().take(4) {
@@ -255,4 +256,97 @@ fn main() {
             println!("  {}", row.join(" "));
         }
     }
+}
+
+/// Switchback shape: hairpins (a heading reversal within a few cells), their leg spacing,
+/// and self-crossings. Hatching shows as many hairpins with legs about one cell apart.
+fn switchbacks(out: &magna_urbis_core::settlements::roads::RoadOutput, cell: f64) {
+    let (mut hairpins, mut crossings, mut tight, mut length) = (0, 0, 0.0, 0.0);
+    let mut legs = vec![];
+    let mut spacings = vec![];
+    for s in &out.segments {
+        // Resample every half cell.
+        let step = 0.5 * cell;
+        let mut pts = vec![s.path[0]];
+        let mut carry = 0.0;
+        for w in s.path.windows(2) {
+            let l = (w[1].x - w[0].x).hypot(w[1].y - w[0].y);
+            let mut d = step - carry;
+            while d <= l {
+                let t = d / l;
+                pts.push(Point {
+                    x: w[0].x + (w[1].x - w[0].x) * t,
+                    y: w[0].y + (w[1].y - w[0].y) * t,
+                });
+                d += step;
+            }
+            carry = l - (d - step);
+        }
+        length += s.length;
+        let heading: Vec<f64> = pts
+            .windows(2)
+            .map(|w| (w[1].y - w[0].y).atan2(w[1].x - w[0].x))
+            .collect();
+        // A hairpin: headings 3 cells apart differ by more than 135 degrees.
+        let k = 6;
+        let mut last_turn: Option<usize> = None;
+        let mut i = k;
+        while i + k < heading.len() {
+            let mut a = heading[i + k] - heading[i - k];
+            while a > std::f64::consts::PI {
+                a -= 2.0 * std::f64::consts::PI;
+            }
+            while a < -std::f64::consts::PI {
+                a += 2.0 * std::f64::consts::PI;
+            }
+            if a.abs() > 0.75 * std::f64::consts::PI {
+                hairpins += 1;
+                if let Some(t) = last_turn {
+                    legs.push((i - t) as f64 * step);
+                }
+                last_turn = Some(i);
+                // Leg spacing: points 4 cells before and after the apex.
+                let (p, q) = (pts[i.saturating_sub(8)], pts[(i + 8).min(pts.len() - 1)]);
+                spacings.push((p.x - q.x).hypot(p.y - q.y));
+                i += 2 * k;
+                continue;
+            }
+            i += 1;
+        }
+        // Hatching: points with another part of the same road (6+ cells along) within 1.5 cells.
+        for (a, p) in pts.iter().enumerate() {
+            if pts
+                .iter()
+                .enumerate()
+                .any(|(b, q)| a.abs_diff(b) > 12 && (p.x - q.x).hypot(p.y - q.y) < 1.5 * cell)
+            {
+                tight += step;
+            }
+        }
+        for a in 0..s.path.len().saturating_sub(1) {
+            for b in a + 2..s.path.len().saturating_sub(1) {
+                let (p, q, r, t) = (s.path[a], s.path[a + 1], s.path[b], s.path[b + 1]);
+                let d = (q.x - p.x) * (t.y - r.y) - (q.y - p.y) * (t.x - r.x);
+                if d.abs() < 1e-12 {
+                    continue;
+                }
+                let u = ((r.x - p.x) * (t.y - r.y) - (r.y - p.y) * (t.x - r.x)) / d;
+                let v = ((r.x - p.x) * (q.y - p.y) - (r.y - p.y) * (q.x - p.x)) / d;
+                if u > 1e-9 && u < 1.0 - 1e-9 && v > 1e-9 && v < 1.0 - 1e-9 {
+                    crossings += 1;
+                }
+            }
+        }
+    }
+    legs.sort_by(f64::total_cmp);
+    spacings.sort_by(f64::total_cmp);
+    let median = |v: &[f64]| if v.is_empty() { 0.0 } else { v[v.len() / 2] };
+    println!(
+        "switchbacks: {hairpins} hairpins ({:.1}/km) · median leg {:.0} m · median leg spacing {:.0} m (min {:.0}) · self-crossings {crossings} · hatched {:.1}% of length",
+        hairpins as f64 / (length / 1000.0),
+        median(&legs),
+        median(&spacings),
+        spacings.first().copied().unwrap_or(0.0),
+        100.0 * tight / length
+    );
 }
