@@ -4112,6 +4112,7 @@ name = "magna-urbis-core"
 version = "0.1.0"
 dependencies = [
  "delaunator",
+ "geo",
  "magna-urbis-random",
  "serde",
  "serde_json",

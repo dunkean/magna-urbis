@@ -120,6 +120,14 @@ roads_inspect -- <dump.json>` then reports grade bands, doubled length,
 switchback shape (hairpins, leg length and spacing, hatched length) and the
 steepest stretches.
 
+## Urban stages in Terrain Bench
+
+**6 · Quartiers et îlots** and **7 · Parcelles** extend the settlement and road
+stages with independent native Rust generation calls. Select one settlement
+(largest first), or **All**; cultural recipes, fine generation parameters,
+separate seeds and display controls are available. Parcel edits retain streets.
+See the [urban-stage contract and controls](crates/core/src/urban/README.md).
+
 ## Houses bench
 
 The independent `crates/houses/` engine generates domestic buildings and compounds from the architectural catalogue, with a separate free workshop for geometric primitives. `crates/houses-wasm/` provides coarse JSON calls; `bridge/houseRender.ts` is a temporary SVG adapter. The [houses guide](crates/houses/README.md) explains the French controls, historical modes, native levels, source confidence, replay links and SVG/JSON exports. Catalogue coverage records do not guarantee every recipe or configuration can be generated; the bench reports native errors.

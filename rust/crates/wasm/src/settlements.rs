@@ -11,6 +11,42 @@ pub struct SettlementTerrain {
 
 #[wasm_bindgen]
 impl SettlementTerrain {
+    /// Native urban cuts on the retained terrain. Inputs and outputs use metric JSON.
+    pub fn urban_quarters(
+        &self,
+        seed: &str,
+        sites: &str,
+        config: &str,
+        roads: &str,
+    ) -> Result<String, JsValue> {
+        let decode_error = |e: serde_json::Error| JsValue::from_str(&e.to_string());
+        let sites = serde_json::from_str::<Vec<magna_urbis_core::urban::Site>>(sites)
+            .map_err(decode_error)?;
+        let cfg = serde_json::from_str(config).map_err(decode_error)?;
+        let roads = serde_json::from_str::<Vec<magna_urbis_core::urban::Street>>(roads)
+            .map_err(decode_error)?;
+        let output = self
+            .inner
+            .urban_quarters(seed, &sites, &cfg, &roads)
+            .map_err(|e| JsValue::from_str(&e))?;
+        serde_json::to_string(&output).map_err(decode_error)
+    }
+
+    /// Recut parcels from retained blocks without modifying streets, terrain or sites.
+    pub fn urban_parcels(
+        &self,
+        seed: &str,
+        layouts: &str,
+        config: &str,
+    ) -> Result<String, JsValue> {
+        let decode_error = |e: serde_json::Error| JsValue::from_str(&e.to_string());
+        let layouts = serde_json::from_str::<Vec<magna_urbis_core::urban::Layout>>(layouts)
+            .map_err(decode_error)?;
+        let cfg = serde_json::from_str(config).map_err(decode_error)?;
+        let output = magna_urbis_core::urban::generate_parcels(seed, &layouts, &cfg)
+            .map_err(|e| JsValue::from_str(&e))?;
+        serde_json::to_string(&output).map_err(decode_error)
+    }
     #[wasm_bindgen(constructor)]
     #[allow(clippy::too_many_arguments)]
     pub fn new(

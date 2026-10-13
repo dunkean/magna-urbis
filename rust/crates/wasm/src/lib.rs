@@ -2,7 +2,7 @@ use wasm_bindgen::prelude::*;
 
 mod flood;
 mod settlements;
-pub use flood::{flood_hydrology, Flood};
+pub use flood::{Flood, flood_hydrology};
 
 #[wasm_bindgen]
 extern "C" {

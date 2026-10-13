@@ -6,6 +6,7 @@ import { CULTURES, getCulture } from '../gen/urban/culture';
 import { SITE_ARCHETYPES, classOfPop } from '../gen/options';
 import { SETTLEMENT_KINDS } from './settlementKinds';
 import { createTerrainRoads } from './terrainRoads';
+import { createTerrainUrban } from './terrainUrban';
 import './terrainSettlements.css';
 
 const ns = 'http://www.w3.org/2000/svg';
@@ -26,7 +27,7 @@ const sites = (output: SettlementOutput): RoadSite[] => output.settlements.map(s
 
 export function createTerrainSettlements(options: {
   map: SVGSVGElement; viewport: HTMLElement; getTerrain(): TerrainData | undefined; getSettings(): TerrainSettings;
-  getView(): View; onChange(): void; onPicking(): void;
+  getView(): View; onChange(): void; onPicking(): void; onFocus?(center: Point, radius: number): void;
 }) {
   const { map, viewport } = options;
   let config = defaultSettlementConfig(), enabled = true, showPoints = true;
@@ -88,6 +89,8 @@ export function createTerrainSettlements(options: {
     onConfigChange: () => { options.onChange(); schedule(); },
     onDisplayChange: options.onChange,
   });
+  const urban = createTerrainUrban({ map, before: backend, getTerrain: options.getTerrain,
+    getSeed: () => options.getSettings().seed, onChange: options.onChange, onFocus: options.onFocus });
   if (legacyRoads === false && !new URLSearchParams(location.search).has('roads')) {
     const box = document.getElementById('roadEnabled') as HTMLInputElement; box.checked = false; box.dispatchEvent(new Event('change'));
   }
@@ -128,7 +131,7 @@ export function createTerrainSettlements(options: {
   function recalculate(): void {
     clearTimeout(timer);
     const t = options.getTerrain(); if (!t || !complete) return;
-    if (!enabled) { ++id; output = undefined; draw(); list(); roads.set(undefined); el('setStatus').textContent = 'Settlement generation disabled.'; el('setState').textContent = ''; return; }
+    if (!enabled) { ++id; output = undefined; draw(); list(); roads.set(undefined); urban.setSettlements(undefined); el('setStatus').textContent = 'Settlement generation disabled.'; el('setState').textContent = ''; return; }
     config.relief = options.getSettings().relief;
     const place = needsPlacement || !output;
     const request: SettlementRequest = { id: ++id, seed: options.getSettings().seed, roads: roads.enabled ? clone(roads.config) : null };
@@ -171,6 +174,7 @@ export function createTerrainSettlements(options: {
       el('setWarnings').textContent = output.warnings.join('\n');
     }
     roads.set(response.roads ?? undefined);
+    urban.setSettlements(output, response.roads ?? undefined);
     draw(); list(); editor(); options.onChange();
   }
   function list(): void {
@@ -321,13 +325,14 @@ export function createTerrainSettlements(options: {
   return {
     cancelPicking(): void { setPicking(); },
     terrainReady(): void { complete = true; needsPlacement = true; recalculate(); },
-    terrainPending(): void { complete = false; ++id; output = undefined; cachedTerrain = undefined; validation = undefined; roads.set(undefined); draw(); el('setStatus').textContent = 'Waiting for the completed map…'; },
-    updateView: draw,
+    terrainPending(): void { complete = false; ++id; output = undefined; cachedTerrain = undefined; validation = undefined; roads.set(undefined); urban.terrainPending(); draw(); el('setStatus').textContent = 'Waiting for the completed map…'; },
+    updateView(): void { draw(); urban.updateView(); },
     isPicking: (): boolean => !!picking,
     click(event: MouseEvent): boolean { if (!picking) return false; placeAt(world(event)); return true; },
     share(params: URLSearchParams): void {
       params.set('settlements', JSON.stringify({ config, enabled, showPoints }));
       params.set('roads', roads.share());
+      urban.share(params);
     },
   };
 }

@@ -197,6 +197,28 @@ pub struct Terrain {
     fields: grid::Fields,
 }
 impl Terrain {
+    /// Uses the retained physical ground and wet/rock mask; no terrain regeneration.
+    pub fn urban_quarters(
+        &self,
+        seed: &str,
+        sites: &[crate::urban::Site],
+        config: &crate::urban::LayoutConfig,
+        roads: &[crate::urban::Street],
+    ) -> Result<Vec<crate::urban::Layout>, String> {
+        let r = &self.fields.r;
+        crate::urban::generate_quarters(
+            seed,
+            sites,
+            config,
+            crate::urban::Surface {
+                width: r.width,
+                n: r.n,
+                height: &r.height,
+                water: &r.water,
+            },
+            roads,
+        )
+    }
     pub fn new(raster: Raster<'_>) -> Result<Self, String> {
         let size = raster.n.checked_mul(raster.n).ok_or("Invalid raster")?;
         if !(16..=1024).contains(&raster.n)

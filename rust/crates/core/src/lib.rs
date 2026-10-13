@@ -9,6 +9,7 @@ mod hydrology;
 mod noise;
 mod rng;
 pub mod settlements;
+pub mod urban;
 
 use erosion::{MountainCfg, erode_shape, erode_surface, mountain};
 use noise::Noise;

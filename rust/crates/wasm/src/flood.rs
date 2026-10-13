@@ -24,15 +24,28 @@ struct FloodHeap {
 
 impl FloodHeap {
     fn new() -> Self {
-        Self { buckets: (0..33).map(|_| Vec::new()).collect(), last: 0, head: 0, size: 0 }
+        Self {
+            buckets: (0..33).map(|_| Vec::new()).collect(),
+            last: 0,
+            head: 0,
+            size: 0,
+        }
     }
     #[inline]
     fn bucket(&self, key: u32) -> usize {
-        if key == self.last { 0 } else { 32 - (key ^ self.last).leading_zeros() as usize }
+        if key == self.last {
+            0
+        } else {
+            32 - (key ^ self.last).leading_zeros() as usize
+        }
     }
     fn push(&mut self, cell: usize, height: f32) {
         let bits = if height == 0.0 { 0.0_f32 } else { height }.to_bits();
-        let key = if bits & 0x8000_0000 != 0 { !bits } else { bits | 0x8000_0000 };
+        let key = if bits & 0x8000_0000 != 0 {
+            !bits
+        } else {
+            bits | 0x8000_0000
+        };
         debug_assert!(key >= self.last);
         let b = self.bucket(key);
         self.buckets[b].push((key, cell as u32));
@@ -108,7 +121,14 @@ impl Flood {
 /// on the filled surface, upstream areas and basins. Empty `weight`, `outlet`
 /// and `loss` slices mean none.
 #[wasm_bindgen]
-pub fn flood_hydrology(height: &[f32], n: usize, cell_area: f64, weight: &[f32], outlet: &[u8], loss: &[f32]) -> Result<Flood, JsValue> {
+pub fn flood_hydrology(
+    height: &[f32],
+    n: usize,
+    cell_area: f64,
+    weight: &[f32],
+    outlet: &[u8],
+    loss: &[f32],
+) -> Result<Flood, JsValue> {
     let total = n * n;
     if n < 2 || height.len() != total {
         return Err(JsValue::from_str("Grille hydrologique invalide."));
@@ -152,7 +172,13 @@ pub fn flood_hydrology(height: &[f32], n: usize, cell_area: f64, weight: &[f32],
     for y in 0..n {
         for x in 0..n {
             let c = y * n + x;
-            if sea[c] != 0 || outlet.is_some_and(|o| o[c] != 0) || x == 0 || y == 0 || x == last || y == last {
+            if sea[c] != 0
+                || outlet.is_some_and(|o| o[c] != 0)
+                || x == 0
+                || y == 0
+                || x == last
+                || y == last
+            {
                 heap.push(c, height[c]);
                 // Outlets are done: marked -2 until the flood ends.
                 receiver[c] = -2;
@@ -210,7 +236,13 @@ pub fn flood_hydrology(height: &[f32], n: usize, cell_area: f64, weight: &[f32],
     }
 
     // Steepest D8 descent on the filled surface; flats keep their flood parent.
-    let distance: [f64; 8] = std::array::from_fn(|k| if DX[k] != 0 && DY[k] != 0 { std::f64::consts::SQRT_2 } else { 1.0 });
+    let distance: [f64; 8] = std::array::from_fn(|k| {
+        if DX[k] != 0 && DY[k] != 0 {
+            std::f64::consts::SQRT_2
+        } else {
+            1.0
+        }
+    });
     for y in 0..n {
         for x in 0..n {
             let c = y * n + x;
@@ -270,8 +302,8 @@ pub fn flood_hydrology(height: &[f32], n: usize, cell_area: f64, weight: &[f32],
     }
     let mut basin = vec![0_i32; total];
     let mut ids = 0_i32;
-    for k in 0..total {
-        let c = order[k] as usize;
+    for &cell in order.iter().take(total) {
+        let c = cell as usize;
         let r = receiver[c];
         basin[c] = if r < 0 {
             ids += 1;
@@ -289,5 +321,13 @@ pub fn flood_hydrology(height: &[f32], n: usize, cell_area: f64, weight: &[f32],
             outlets += 1;
         }
     }
-    Ok(Flood { filled, receiver, order, accumulation, basin, sea, outlets })
+    Ok(Flood {
+        filled,
+        receiver,
+        order,
+        accumulation,
+        basin,
+        sea,
+        outlets,
+    })
 }

@@ -1,0 +1,10 @@
+.urban-stage .urban-fields { display: grid; grid-template-columns: 1fr; gap: 5px; }
+.urban-stage .urban-fields label { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.urban-stage .urban-fields label > span:first-child { flex: 1; }
+.urban-stage .urban-fields input[type="number"] { width: 72px; min-width: 0; }
+.urban-stage .urban-array { display: flex; gap: 3px; flex-wrap: wrap; justify-content: flex-end; max-width: 60%; }
+.urban-stage .urban-array input[type="number"] { width: 52px; }
+.urban-stage textarea { width: 100%; box-sizing: border-box; font: 11px ui-monospace, monospace; }
+.urban-stage [data-warnings] { white-space: pre-line; font-size: 11px; color: #956228; }
+.urban-stage [aria-busy="true"] { opacity: .6; }
+.urban-stage summary > span { font-size: 10px; float: right; }

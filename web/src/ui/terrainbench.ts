@@ -476,7 +476,9 @@ const ruler = createRuler({ container: viewport, surface: map, getView: () => vi
 } });
 
 const settlements = createTerrainSettlements({ map, viewport, getTerrain: () => terrain, getSettings: () => settings,
-  getView: () => view, onChange: deferSave, onPicking: () => {
+  getView: () => view, onChange: deferSave,
+  onFocus: (center, radius) => setView({ cx: center.x, cy: center.y, scale: Math.min(viewport.clientWidth, viewport.clientHeight) / Math.max(100, radius * 2.6) }),
+  onPicking: () => {
     pinMode = false; el('pinMode').setAttribute('aria-pressed', 'false'); viewport.classList.remove('pin-mode'); ruler.setEnabled(false);
   },
 });
