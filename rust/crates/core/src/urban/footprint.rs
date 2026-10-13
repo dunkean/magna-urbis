@@ -778,14 +778,71 @@ fn smooth_growth(
     anchors: &[Point],
 ) -> Vec<Shape> {
     fn ring(points: &[Point], step: f64) -> Vec<Point> {
-        let mut points = points.to_vec();
-        for limit in [0.22, 0.13] {
+        // Collapse complete lattice steps before rounding. Rounding each raw
+        // right angle alone preserves the staircase at every zoom level.
+        let mut closed: Vec<_> = points
+            .iter()
+            .map(|p| geo::Coord { x: p.x, y: p.y })
+            .collect();
+        if let Some(p) = closed.first().copied() {
+            closed.push(p);
+        }
+        let simplified = LineString(closed).simplify(step * 0.55);
+        let mut outline: Vec<_> = simplified
+            .0
+            .into_iter()
+            .map(|p| Point { x: p.x, y: p.y })
+            .collect();
+        outline.pop();
+        if outline.len() < 3 {
+            return points.to_vec();
+        }
+        // Sample by physical distance so long sides and dense raster corners
+        // receive the same smoothing, without shrinking narrow branches.
+        let mut points: Vec<_> = outline
+            .iter()
+            .zip(outline.iter().cycle().skip(1))
+            .take(outline.len())
+            .flat_map(|(&a, &b)| {
+                let n = (distance(a, b) / step).ceil().max(1.0) as usize;
+                (0..n).map(move |i| {
+                    let t = i as f64 / n as f64;
+                    Point {
+                        x: a.x * (1.0 - t) + b.x * t,
+                        y: a.y * (1.0 - t) + b.y * t,
+                    }
+                })
+            })
+            .collect();
+        // Attenuate residual one-cell undulations over several cells before
+        // fitting the corners. Keep displacement below half a cell so thin
+        // arms retain their supporting cell centers.
+        let sampled = points.clone();
+        for _ in 0..3 {
+            points = (0..points.len())
+                .map(|i| {
+                    let mut p = Point { x: 0.0, y: 0.0 };
+                    for (j, weight) in [1.0, 4.0, 6.0, 4.0, 1.0].into_iter().enumerate() {
+                        let q = points[(i + points.len() + j - 2) % points.len()];
+                        p.x += q.x * weight / 16.0;
+                        p.y += q.y * weight / 16.0;
+                    }
+                    let a = sampled[i];
+                    let t = (step * 0.45 / distance(a, p).max(1.0e-9)).min(1.0);
+                    Point {
+                        x: a.x + (p.x - a.x) * t,
+                        y: a.y + (p.y - a.y) * t,
+                    }
+                })
+                .collect();
+        }
+        for _ in 0..3 {
             points = points
                 .iter()
                 .zip(points.iter().cycle().skip(1))
                 .take(points.len())
                 .flat_map(|(&a, &b)| {
-                    let t = (step * limit / distance(a, b).max(1.0e-9)).min(0.25);
+                    let t = 0.25;
                     [
                         Point {
                             x: a.x * (1.0 - t) + b.x * t,
@@ -806,7 +863,7 @@ fn smooth_growth(
         if let Some(p) = closed.first().copied() {
             closed.push(p);
         }
-        let simplified = LineString(closed).simplify(step * 0.18);
+        let simplified = LineString(closed).simplify(step * 0.025);
         let mut result: Vec<_> = simplified
             .0
             .into_iter()
@@ -843,7 +900,17 @@ fn smooth_growth(
             .iter()
             .copied()
             .filter(|&p| g::contains(original, p));
-        let accepted = changed_area <= original_area * 0.01 + 0.001
+        // Boundary displacement scales with perimeter and grid spacing, not
+        // just total area. An area-only 1% cap rejected valid smoothing of small
+        // or elongated districts and restored their entire raw staircase.
+        let perimeter: f64 = original
+            .outer
+            .iter()
+            .zip(original.outer.iter().cycle().skip(1))
+            .take(original.outer.len())
+            .map(|(&a, &b)| distance(a, b))
+            .sum();
+        let accepted = changed_area <= (perimeter * step * 0.6).min(original_area * 0.08) + 0.001
             && (g::area(candidate) - original_area).abs() <= original_area * 0.01 + 0.001
             && g::contains(candidate, g::interior_point(original))
             && protected.into_iter().all(|p| g::contains(candidate, p));
@@ -1839,6 +1906,73 @@ mod tests {
     }
 
     #[test]
+    fn seeded_growth_contours_remove_lattice_stairs_instead_of_only_rounding_corners() {
+        let grid = Grid {
+            x0: 0.0,
+            y0: 0.0,
+            step: 10.0,
+            nx: 64,
+            ny: 64,
+        };
+        let noise = crate::noise::Noise::new(Rng::new("decor-70-smooth-growth"));
+        let mask: Vec<_> = (0..grid.nx * grid.ny)
+            .map(|i| {
+                let p = grid.point(i);
+                let radius = 170.0 + 12.0 * noise.noise(p.x / 90.0, p.y / 90.0);
+                (p.x - 320.0).hypot((p.y - 320.0) * 1.3) < radius
+            })
+            .collect();
+        let h = vec![0.0; 64 * 64];
+        let w = vec![0; h.len()];
+        let surface = Surface {
+            geometry: None,
+            width: 640.0,
+            n: 64,
+            height: &h,
+            water: &w,
+        };
+        let raw = grid.contours(&mask);
+        let anchors = grid.boundary_centers(&mask);
+        let smooth = smooth_growth(&raw, grid.step, surface, &anchors);
+        assert_eq!(smooth.len(), 1);
+        let ring = &smooth[0].outer;
+        let mut axial = 0.0;
+        let mut perimeter = 0.0;
+        let mut max_turn = 0.0_f64;
+        for i in 0..ring.len() {
+            let a = ring[(i + ring.len() - 1) % ring.len()];
+            let b = ring[i];
+            let c = ring[(i + 1) % ring.len()];
+            let (dx, dy) = (b.x - a.x, b.y - a.y);
+            let (ex, ey) = (c.x - b.x, c.y - b.y);
+            max_turn = max_turn.max((dx * ey - dy * ex).atan2(dx * ex + dy * ey).abs());
+        }
+        assert!(max_turn < 0.6, "abrupt raster corner: {} radians", max_turn);
+        for (&a, &b) in ring
+            .iter()
+            .zip(ring.iter().cycle().skip(1))
+            .take(ring.len())
+        {
+            let length = distance(a, b);
+            perimeter += length;
+            if (a.x - b.x).abs().min((a.y - b.y).abs()) < length * 0.02 {
+                axial += length;
+            }
+        }
+        assert!(
+            axial / perimeter < 0.25,
+            "lattice-aligned perimeter: {}",
+            axial / perimeter
+        );
+        assert!((area(&smooth) - area(&raw)).abs() < area(&raw) * 0.01);
+        assert!(anchors.iter().all(|&p| g::contains(&smooth[0], p)));
+        assert_eq!(
+            serde_json::to_string(&smooth).unwrap(),
+            serde_json::to_string(&smooth_growth(&raw, grid.step, surface, &anchors)).unwrap()
+        );
+    }
+
+    #[test]
     fn smoothing_retains_thin_branches_components_centers_and_exact_water_holes() {
         let grid = Grid {
             x0: 0.0,
@@ -1899,5 +2033,10 @@ mod tests {
             serde_json::to_string(&raw).unwrap(),
             serde_json::to_string(&smooth).unwrap()
         );
+        // Terrain clipping may leave a component smaller than the growth cell.
+        let sliver = vec![g::rectangle(100.0, 100.0, 100.2, 100.3)];
+        let retained = smooth_growth(&sliver, grid.step, surface, &[]);
+        assert_eq!(retained.len(), 1);
+        assert!((area(&retained) - area(&sliver)).abs() < 1.0e-6);
     }
 }

@@ -113,6 +113,9 @@ fn accessible_growth_approaches_a_dry_coast_without_spending_land_on_water() {
     };
     let mut cfg = LayoutConfig {
         fortification: "none".into(),
+        // Isolate coastal growth from outer frontage added by the street fabric.
+        exit_treatment: "closed".into(),
+        peripheral_road: "none".into(),
         ..Default::default()
     };
     cfg.footprint.mechanism = "accessibility".into();
