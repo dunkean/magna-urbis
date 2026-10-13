@@ -1,10 +1,12 @@
 import { CULTURES, getCulture } from '../gen/urban/culture';
 import { benchLayout, benchParcels, benchBuildings, type BenchOptions, type BenchLayout, type BenchHouses, type BenchParcels } from '../gen/urban/testbench';
 import { BENCH_STAGES, BENCH_PRESETS, BENCH_FIELDS, BENCH_OPERATORS, BENCH_METHODS, benchMethod, benchMethodFields, benchRecipes, benchMorph, validateBenchParams, type BenchStage, type BenchParams } from '../gen/urban/testbenchConfig';
-import { HOUSE_VARIATION_ENABLED, effectiveHouseVariation, type MorphologyParams, type Zone } from '../gen/urban/morphology';
+import { HOUSE_VARIATION_ENABLED, effectiveHouseVariation, deepMerge, type MorphologyParams, type Zone } from '../gen/urban/morphology';
 import type { Polygon } from '../gen/core/geom';
 import { polygonCentroid } from '../gen/core/geom';
 import { waterContains } from '../gen/urban/waterland';
+import { createWorkshopClient, WORKSHOP_CHANNEL, workshopConfig, workshopOptions, workshopView, workshopStreetSvg, workshopEnclosureSvg, type WorkshopCatalogue, type WorkshopContext, type WorkshopResult, type WorkshopState } from './testbenchUrban';
+import type { LayoutConfig, ParcelConfig } from '../../../rust/bridge/urban';
 import './testbench.css';
 
 const el = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T;
@@ -17,22 +19,71 @@ interface State {
   v: 2; options: BenchOptions; settings: BenchOptions; plotOptions: BenchOptions; houseOptions: BenchOptions;
   layoutSeed: string; plotSeed: string; houseSeed: string; stage: 1 | 2 | 3;
   pins: Pin[]; view: number[]; showBlocks: boolean; showPlots: boolean; showHouses: boolean; showOrientation?: boolean; realPlan?: boolean;
+  engine?: 'typescript' | 'rust'; urban?: WorkshopContext;
 }
+const query = new URLSearchParams(location.search);
+const hosted = window.parent !== window && query.get('embedded') === '1';
+let rustMode = query.get('engine') === 'rust';
+if (rustMode && !hosted) {
+  const params = new URLSearchParams({ space: 'workshop' });
+  if (query.has('case')) params.set('workshop', query.get('case')!);
+  location.replace(`urbanbench.html?${params}`);
+}
+const nativeClient = createWorkshopClient();
+let nativeCatalogue: WorkshopCatalogue | undefined = hosted ? await nativeClient.catalogue() : undefined;
+function editorRecipes(id: string) { return rustMode && nativeCatalogue ? nativeCatalogue.cultures[id]?.recipes ?? [] : benchRecipes(getCulture(id)); }
+function editorPresets() { return rustMode && nativeCatalogue ? nativeCatalogue.presets : BENCH_PRESETS; }
+function cultureLabel(id: string): string { return rustMode && nativeCatalogue ? nativeCatalogue.cultures[id]?.label ?? id : getCulture(id).label; }
+function validCulture(id: string): boolean { return !!(rustMode && nativeCatalogue ? nativeCatalogue.cultures[id] : CULTURES[id]); }
+function editorMorph(options: BenchOptions, stage: BenchStage): MorphologyParams {
+  if (!rustMode || !nativeCatalogue) return benchMorph(options, stage);
+  const config = options.stages?.[stage];
+  if (config?.params) validateBenchParams(stage, config.params);
+  const preset = config?.preset && config.preset !== 'culture' ? config.preset : nativeCatalogue.cultures[options.culture]?.recipes.find(r => r.id === (options.recipe ?? 'core'))?.preset;
+  const P = preset && nativeCatalogue.presets[preset]?.params;
+  if (!P) throw new Error(`Recette native inconnue : ${options.culture}/${options.recipe}`);
+  // Mirror the native resolver's five density-scaled fields before overrides.
+  const resolved = structuredClone(P), f = Math.log2(Math.max(0.5, Math.min(2, 1 / options.density)));
+  for (const [key, scale, lo, hi] of [
+    ['coverage', 1 - 0.24 * f, 0.05, 0.97], ['frontage', 1 + 0.32 * f, 3.5, Infinity],
+    ['plotDepth', 1 + 0.22 * f, 8, Infinity], ['blockSize', 1 + (f > 0 ? 0.45 : 0.1) * f, 300, Infinity],
+    ['houseArea', 1 + (f > 0 ? 0.25 : 0.12) * f, 30, Infinity],
+  ] as const) {
+    const values = resolved[key]; if (!values) continue;
+    for (const [zone, range] of Object.entries(values)) values[zone as Zone] = range.map(n => Math.max(lo, Math.min(hi, n * scale))) as [number, number];
+  }
+  return deepMerge(resolved, config?.params ?? {});
+}
+function cultureMenus(): void {
+  const previous = culture.value; culture.replaceChildren();
+  for (const [id, c] of Object.entries(rustMode && nativeCatalogue ? nativeCatalogue.cultures : CULTURES)) culture.add(new Option(c.label, id));
+  culture.value = validCulture(previous) ? previous : 'european-organic';
+  for (const stage of BENCH_STAGES) {
+    const menu = select(stage + 'Preset'), previous = menu.value;
+    menu.replaceChildren(new Option('Culture / recette sélectionnée', 'culture'));
+    const morphs = document.createElement('optgroup'); morphs.label = 'Morphologies';
+    const cultural = document.createElement('optgroup'); cultural.label = 'Recettes culturelles / phases / secteurs';
+    for (const [id, preset] of Object.entries(editorPresets())) (id.startsWith('morph/') ? morphs : cultural).append(new Option(preset.label, id));
+    menu.append(morphs, cultural); menu.value = previous in editorPresets() ? previous : 'culture';
+  }
+}
+let nativeResult: WorkshopResult | undefined;
+const nativeControls = document.createElement('fieldset'); nativeControls.hidden = true;
+nativeControls.innerHTML = '<legend>Plan urbain · Rust</legend><label>Enceinte <select data-native="fortification"><option value="culture">Selon la culture</option><option value="none">Ville ouverte</option><option value="wall">Muraille</option><option value="palisade">Palissade</option></select></label><label><input data-native="autoQuarterZones" type="checkbox">Progression des quartiers</label><label><input data-native="autoParcelZones" type="checkbox">Parcelles selon leur quartier</label><label>Pente maximale des rues <input data-native="maxStreetGrade" type="number" min="0.01" max="1" step="0.01"></label><label>Pente des ruelles <input data-native="maxLaneGrade" type="number" min="0.01" max="1" step="0.01"></label><label><input data-native="allowStairs" type="checkbox">Escaliers piétons</label><label>Pente des escaliers <input data-native="maxStairGrade" type="number" min="0.01" max="1" step="0.01"></label><small>0,12 = 12 %. La progression utilise les zones du plan ; décochez-la pour appliquer la zone sélectionnée partout.</small>';
+nativeControls.style.cssText = 'margin:8px 12px;gap:12px;flex-wrap:wrap;align-items:center';
+document.querySelector('header')!.after(nativeControls);
+nativeControls.addEventListener('change', changed);
 const initial: BenchOptions = { culture: 'european-organic', recipe: 'core', zone: 'core', placement: 'center', density: 1, count: 4, radius: 160, monument: 'none', stages: {} };
 let draft = structuredClone(initial);
 let state: State = { v: 2, options: structuredClone(initial), settings: structuredClone(initial), plotOptions: structuredClone(initial), houseOptions: structuredClone(initial), layoutSeed: '42', plotSeed: '42', houseSeed: '42', stage: 2, pins: [], view: [280, 280, 440, 440], showBlocks: true, showPlots: true, showHouses: true };
 let layout: BenchLayout, houses: BenchHouses = { parcels: [], buildings: [] };
 let partition: BenchParcels = { parcels: [], plots: [], compounds: [] };
 let pinMode = false, busy = false;
+let pendingWorkshopMessage: MessageEvent | undefined;
 const status = (text: string) => { el('status').textContent = text; };
-for (const c of Object.values(CULTURES)) culture.add(new Option(c.label, c.id));
+cultureMenus();
 for (const stage of BENCH_STAGES) {
   const menu = select(stage + 'Preset');
-  menu.add(new Option('Culture / recette sélectionnée', 'culture'));
-  const native = document.createElement('optgroup'); native.label = 'Morphologies natives';
-  const cultural = document.createElement('optgroup'); cultural.label = 'Recettes culturelles / phases / secteurs';
-  for (const [id, preset] of Object.entries(BENCH_PRESETS)) (id.startsWith('morph/') ? native : cultural).append(new Option(preset.label, id));
-  menu.append(native, cultural);
   menu.onchange = () => {
     draft.stages![stage] = { preset: menu.value };
     syncMethods(); changed();
@@ -45,7 +96,7 @@ for (const [key, values] of Object.entries(BENCH_OPERATORS)) {
   else BENCH_METHODS[stage].forEach(method => menu.add(new Option(method.id, method.id)));
   menu.onchange = () => {
     const config = draft.stages![stage] ??= {};
-    const P = benchMorph(controls(), stage);
+    const P = editorMorph(controls(), stage);
     const method = stage === 'streets' ? undefined : BENCH_METHODS[stage].find(m => m.id === menu.value)!;
     const value = method ? (method.aliases.includes(String(P[key as keyof MorphologyParams])) ? P[key as keyof MorphologyParams] : method.aliases[0]) : menu.value;
     config.params = { ...config.params, [key]: value };
@@ -54,7 +105,7 @@ for (const [key, values] of Object.entries(BENCH_OPERATORS)) {
 }
 function recipes(value = 'core'): void {
   const menu = select('recipe'); menu.replaceChildren();
-  benchRecipes(getCulture(culture.value)).forEach(r => menu.add(new Option(r.label, r.id)));
+  editorRecipes(culture.value).forEach(r => menu.add(new Option(r.label, r.id)));
   menu.value = value;
   if (!menu.value) menu.selectedIndex = 0;
 }
@@ -63,6 +114,9 @@ function monuments(value = 'none'): void {
   const c = getCulture(culture.value);
   const kinds = new Set(c.landmarks.map(l => l.kind));
   if (c.nucleus.compound) kinds.add(c.nucleus.builder ?? ({ mosque: 'great-mosque', temple: 'hindu-temple' } as Record<string, string>)[c.nucleus.kind] ?? c.nucleus.kind);
+  const nucleus = rustMode ? nativeCatalogue?.cultures[culture.value]?.nucleus : undefined;
+  if (nucleus?.compound) kinds.add(nucleus.builder ?? nucleus.kind);
+  if (rustMode && value !== 'none') kinds.add(value);
   kinds.forEach(kind => monument.add(new Option(kind, kind)));
   monument.value = kinds.has(value) ? value : 'none';
 }
@@ -72,13 +126,31 @@ culture.onchange = () => {
 select('recipe').onchange = () => applyRecipe();
 function applyRecipe(): void {
   draft.culture = culture.value; draft.recipe = select('recipe').value; draft.stages = {};
-  select('zone').value = benchRecipes(getCulture(culture.value)).find(r => r.id === draft.recipe)?.zone ?? 'core';
+  select('zone').value = editorRecipes(culture.value).find(r => r.id === draft.recipe)?.zone ?? 'core';
   syncMethods(); changed();
 }
 function controls(): BenchOptions {
-  return { ...structuredClone(draft), mode: select('mode').value as BenchOptions['mode'], microScale: Math.max(1, Math.min(5, Number(input('microScale').value) || 1)), microFrontage: select('microFrontage').value as BenchOptions['microFrontage'], culture: culture.value, recipe: select('recipe').value, zone: select('zone').value as Zone, placement: select('placement').value as BenchOptions['placement'], rings: select('rings').value === '2' ? 2 : 1, density: Number(select('density').value), count: Math.max(3, Math.min(8, Math.round(Number(input('count').value) || 4))), radius: Math.max(80, Math.min(300, Number(input('radius').value) || 160)), monument: monument.value, relief: select('relief').value as BenchOptions['relief'], reliefSlope: Math.max(5, Math.min(60, Number(input('reliefSlope').value) || 18)), river: select('river').value as BenchOptions['river'], riverWidth: Math.max(4, Math.min(50, Number(input('riverWidth').value) || 14)) };
+  return { ...structuredClone(draft), mode: select('mode').value as BenchOptions['mode'], microScale: Math.max(1, Math.min(5, Number(input('microScale').value) || 1)), microFrontage: select('microFrontage').value as BenchOptions['microFrontage'], culture: culture.value, recipe: select('recipe').value, zone: select('zone').value as Zone, placement: select('placement').value as BenchOptions['placement'], rings: select('rings').value === '2' ? 2 : 1, density: Number(select('density').value), count: Math.max(3, Math.min(rustMode ? 64 : 8, Math.round(Number(input('count').value) || 4))), radius: Math.max(rustMode ? 0.1 : 80, Math.min(rustMode ? 25000 : 300, Number(input('radius').value) || 160)), monument: monument.value, relief: select('relief').value as BenchOptions['relief'], reliefSlope: Math.max(5, Math.min(60, Number(input('reliefSlope').value) || 18)), river: select('river').value as BenchOptions['river'], riverWidth: Math.max(4, Math.min(50, Number(input('riverWidth').value) || 14)) };
 }
 function restoreControls(): void {
+  select('engine').value = rustMode ? 'rust' : 'typescript';
+  const buildingsOption = select('advancedStage').querySelector<HTMLOptionElement>('option[value=buildings]')!;
+  buildingsOption.disabled = rustMode; buildingsOption.hidden = rustMode;
+  if (rustMode && select('advancedStage').value === 'buildings') select('advancedStage').value = 'streets';
+  input('radius').min = rustMode ? '0.1' : '80'; input('radius').max = rustMode ? '25000' : '300';
+  input('radius').step = rustMode ? 'any' : '20'; input('count').max = rustMode ? '64' : '8';
+  el('houses').closest('fieldset')!.hidden = rustMode;
+  el('houses').closest('fieldset')!.style.display = rustMode ? 'none' : '';
+  input('showHouses').closest('label')!.hidden = rustMode;
+  select('placement').querySelector<HTMLOptionElement>('option[value=center]')!.textContent = rustMode ? 'Plan culturel adapté au terrain' : 'Autour du centre';
+  el('editorSource').textContent = rustMode ? state.urban?.source === 'map' ? 'Rust · plan de la carte' : 'Rust · atelier indépendant' : '';
+  nativeControls.hidden = !rustMode; nativeControls.style.display = rustMode ? 'flex' : 'none';
+  const native = { fortification: 'culture', maxStreetGrade: 0.12, maxLaneGrade: 0.18, maxStairGrade: 0.65, allowStairs: true, ...state.urban?.layoutConfig,
+    autoQuarterZones: state.urban?.layoutConfig?.zone === 'auto', autoParcelZones: state.urban?.parcelConfig?.zone === 'auto' };
+  for (const control of Array.from(nativeControls.querySelectorAll<HTMLInputElement | HTMLSelectElement>('[data-native]'))) {
+    const value = native[control.dataset.native! as keyof typeof native];
+    if (control instanceof HTMLInputElement && control.type === 'checkbox') control.checked = Boolean(value); else control.value = String(value);
+  }
   draft = structuredClone(state.settings); draft.stages ??= {};
   culture.value = draft.culture; recipes(draft.recipe ?? (draft.zone === 'village' ? 'village' : 'core'));
   select('zone').value = draft.zone;
@@ -88,6 +160,7 @@ function restoreControls(): void {
   syncMode();
   select('placement').value = draft.placement === 'lateral' ? 'rectangle' : draft.placement ?? 'center';
   select('rings').value = String(draft.rings ?? 1);
+  if (!Array.from(select('density').options).some(option => option.value === String(draft.density))) select('density').add(new Option(`× ${draft.density}`, String(draft.density)));
   select('density').value = String(draft.density);
   input('count').value = String(draft.count);
   input('radius').value = String(draft.radius);
@@ -124,8 +197,9 @@ function syncMethods(): void {
   el('microScaleValue').textContent = `×${input('microScale').value}`;
   const options = controls();
   for (const stage of BENCH_STAGES) {
+    if (rustMode && stage === 'buildings') continue;
     select(stage + 'Preset').value = draft.stages?.[stage]?.preset ?? 'culture';
-    const P = benchMorph(options, stage);
+    const P = editorMorph(options, stage);
     for (const key of Object.keys(BENCH_OPERATORS) as (keyof typeof BENCH_OPERATORS)[]) {
       if ((stage === 'plots' && key === 'plotOp') || (stage === 'buildings' && key === 'buildingOp') || (stage === 'streets' && ['streetOp', 'closeOp', 'orientation'].includes(key))) select(key).value = stage === 'streets' ? String(P[key]) : benchMethod(stage, String(P[key]));
     }
@@ -141,12 +215,13 @@ function methodValues(stage: 'plots' | 'buildings', P: MorphologyParams, zone: Z
 function refreshMethodParams(): void {
   const options = controls();
   for (const stage of ['plots', 'buildings'] as const) {
-    const P = benchMorph(options, stage), container = el(stage + 'Params');
+    if (rustMode && stage === 'buildings') continue;
+    const P = editorMorph(options, stage), container = el(stage + 'Params');
     const values = methodValues(stage, P, options.zone);
     container.replaceChildren();
     const caption = document.createElement('small');
     const preset = draft.stages?.[stage]?.preset;
-    const source = preset && preset !== 'culture' ? BENCH_PRESETS[preset].label : `${getCulture(options.culture).label} / ${select('recipe').selectedOptions[0].textContent}`;
+    const source = preset && preset !== 'culture' ? editorPresets()[preset].label : `${cultureLabel(options.culture)} / ${select('recipe').selectedOptions[0].textContent}`;
     caption.textContent = `${source} · zone ${options.zone} · valeurs après densité et surcharges`;
     container.append(caption);
     const editors: { path: string[]; control: HTMLInputElement; value: unknown }[] = [];
@@ -214,11 +289,11 @@ function refreshMethodParams(): void {
   }
 }
 function refreshCultureDifferences(stage: 'plots' | 'buildings'): void {
-  const options = controls(), P = benchMorph(options, stage), key = stage === 'plots' ? 'plotOp' : 'buildingOp';
+  const options = controls(), P = editorMorph(options, stage), key = stage === 'plots' ? 'plotOp' : 'buildingOp';
   const method = benchMethod(stage, P[key]), current = methodValues(stage, P, options.zone);
   const grouped = new Map<string, string[]>();
-  for (const culture of Object.values(CULTURES)) for (const recipe of benchRecipes(culture)) {
-    const native = benchMorph({ ...options, culture: culture.id, recipe: recipe.id, stages: {} }, stage);
+  for (const [id, culture] of Object.entries(rustMode && nativeCatalogue ? nativeCatalogue.cultures : CULTURES)) for (const recipe of editorRecipes(id)) {
+    const native = editorMorph({ ...options, culture: id, recipe: recipe.id, stages: {} }, stage);
     if (benchMethod(stage, native[key]) !== method) continue;
     const values = methodValues(stage, native, options.zone);
     const differences = Object.fromEntries(Object.entries(values).filter(([k, v]) => JSON.stringify(v) !== JSON.stringify(current[k])));
@@ -239,7 +314,7 @@ function refreshCultureDifferences(stage: 'plots' | 'buildings'): void {
 }
 function refreshAdvanced(): void {
   const stage = select('advancedStage').value as BenchStage;
-  const P = benchMorph(controls(), stage);
+  const P = editorMorph(controls(), stage);
   el<HTMLTextAreaElement>('params').value = JSON.stringify(draft.stages?.[stage]?.params ?? {}, null, 2);
   el('effectiveParams').textContent = JSON.stringify(Object.fromEntries(BENCH_FIELDS[stage].filter(key => P[key] !== undefined).map(key => [key, P[key]])), null, 2);
 }
@@ -265,28 +340,38 @@ for (const id of ['zone', 'placement', 'rings', 'density', 'microScale', 'microF
 function save(): void {
   const bytes = new TextEncoder().encode(JSON.stringify(state));
   const payload = btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-  history.replaceState(null, '', `${location.pathname}?case=${payload}`);
+  const params = new URLSearchParams({ case: payload });
+  if (rustMode) params.set('engine', 'rust'); if (query.get('embedded') === '1') params.set('embedded', '1');
+  history.replaceState(null, '', `${location.pathname}?${params}`);
+  if (rustMode && state.urban?.layoutConfig && state.urban?.parcelConfig) nativeClient.state(payload, {
+    layoutConfig: { ...state.urban.layoutConfig, ...workshopConfig(state.options, state.urban, 'quarters') } as LayoutConfig,
+    parcelConfig: { ...state.urban.parcelConfig, ...workshopConfig(state.plotOptions, state.urban, 'parcels') } as ParcelConfig,
+    quarterSeed: state.layoutSeed, parcelSeed: state.plotSeed,
+  }, state.urban.source);
 }
 function path(poly: Polygon): string { return poly.length ? 'M' + poly.map(p => `${p.x},${p.y}`).join('L') + 'Z' : ''; }
 function escape(text: string): string { return text.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!)); }
 function render(): void {
   const realPlan = input('realPlan').checked;
   const streetColor = '#fff';
-  const quarterPaths = layout.quarters.map(q => `<path d="${path(q.lp.pts)}"/>`).join('');
+  const nativeQuarters = nativeResult?.layouts.flatMap(l => l.quarters), nativeBlocks = nativeResult?.layouts.flatMap(l => l.blocks);
+  const nativeParcels = nativeResult?.partitions?.flatMap(p => p.parcels);
+  const quarterPath = (i: number): string => path(layout.quarters[i].lp.pts) + (nativeQuarters?.[i]?.shape.holes.map(path).join(' ') ?? '');
+  const quarterPaths = layout.quarters.map((_, i) => `<path d="${quarterPath(i)}" fill-rule="evenodd" clip-rule="evenodd"/>`).join('');
   let svg = `<defs><clipPath id="landClip">${quarterPaths}</clipPath><clipPath id="waterClip">${layout.water.map(w => `<path d="${path(w.outer)}"/>`).join('')}</clipPath></defs>`;
   for (const contour of layout.contours) svg += `<path data-overlay="relief" d="M${contour.map(p => `${p.x},${p.y}`).join('L')}" fill="none" stroke="#9c8a5c" stroke-opacity=".45" stroke-dasharray="3 4" stroke-width="1"/>`;
   for (const water of layout.water) svg += `<path data-overlay="river" d="${path(water.outer)}" fill="#8ac4d6"/>`;
   layout.quarters.forEach((q, i) => {
-    svg += `<path data-quarter="${i}" d="${path(q.lp.pts)}" fill="${realPlan ? streetColor : `hsl(${i * 137.5 % 360} 60% 75%)`}" fill-opacity="${realPlan ? 1 : .35}" stroke="${realPlan ? 'none' : '#888'}" stroke-width=".5"/>`;
+    svg += `<path data-quarter="${i}" d="${quarterPath(i)}" fill-rule="evenodd" fill="${realPlan ? streetColor : `hsl(${i * 137.5 % 360} 60% 75%)`}" fill-opacity="${realPlan ? 1 : .35}" stroke="${realPlan ? 'none' : '#888'}" stroke-width=".5"/>`;
     const c = polygonCentroid(q.lp.pts);
     const name = layout.shapeNames?.[i];
     const y = name ? Math.min(...q.lp.pts.map(p => p.y)) - 5 : c.y;
     svg += `<text data-shape-label="${i}" x="${c.x}" y="${y}" text-anchor="middle" fill="#777" font-size="${name ? 4 : 8}">${name ? escape(name) : 'Q' + (i + 1)}</text>`;
   });
   svg += '<g clip-path="url(#landClip)">';
-  for (const st of layout.streets.list) if (st.ribbon) svg += `<path d="M${st.path.map(p => `${p.x},${p.y}`).join('L')}" fill="none" stroke="${streetColor}" stroke-width="${st.widths[0]}" stroke-linejoin="round"/>`;
+  for (const st of layout.streets.list) if (!nativeResult && st.ribbon) svg += `<path d="M${st.path.map(p => `${p.x},${p.y}`).join('L')}" fill="none" stroke="${streetColor}" stroke-width="${st.widths[0]}" stroke-linejoin="round"/>`;
   svg += '</g>';
-  if (layout.water.length) {
+  if (!nativeResult && layout.water.length) {
     svg += '<g data-overlay="bridges" clip-path="url(#waterClip)">';
     for (const st of layout.streets.list) {
       if (!st.ribbon || st.path.length < 2 || waterContains(layout.water, st.path[0]) || waterContains(layout.water, st.path[st.path.length - 1])) continue;
@@ -295,23 +380,25 @@ function render(): void {
     }
     svg += '</g>';
   }
+  if (nativeResult) svg += workshopStreetSvg(nativeResult.layouts);
   if (input('showHouses').checked) for (const b of houses.buildings) svg += `<path data-building="${b.parcel}" d="${path(b.poly)} ${b.courtyards?.map(path).join(' ') ?? ''}" fill="${b.kind === 'garden' ? '#a1b688' : b.kind === 'landmark' ? '#9b6450' : '#59646f'}" fill-rule="evenodd" stroke="#202b35" stroke-width=".45"><title>${escape(b.arch ?? b.kind)} · parcelle ${b.parcel}</title></path>`;
   if (input('plots').checked) {
     svg += '<g data-overlay="plots" stroke-width="1" stroke-opacity=".8">';
     houses.parcels.forEach((p, i) => {
-      const color = p.use === 'garden' ? '#5f8d42' : p.use === 'place' ? '#9b6450' : '#d68634';
-      svg += `<path data-parcel="${i}" d="${path(p.poly)}" fill="${color}" fill-opacity=".07" stroke="${color}" vector-effect="non-scaling-stroke"><title>Parcelle ${i} · ${escape(p.use)} · îlot ${p.block} · ${p.poly.length} sommets</title></path>`;
+      const color = ['garden', 'reserve'].includes(p.use) ? '#5f8d42' : p.use === 'place' ? '#9b6450' : '#d68634';
+      svg += `<path data-parcel="${i}" d="${path(p.poly)} ${nativeParcels?.[i]?.shape.holes.map(path).join(' ') ?? ''}" fill-rule="evenodd" fill="${color}" fill-opacity=".07" stroke="${color}" vector-effect="non-scaling-stroke"><title>Parcelle ${i} · ${escape(p.use)} · îlot ${p.block} · ${p.poly.length} sommets</title></path>`;
     });
     svg += '</g>';
   }
   if (input('blocks').checked && !realPlan) {
     svg += '<g data-overlay="blocks" fill="none" stroke="#b12e86" stroke-width="1.4" stroke-dasharray="5 3" pointer-events="none">';
-    for (const b of layout.blocks) svg += `<path d="${path(b.poly)}" vector-effect="non-scaling-stroke"/>`;
+    for (const [i, b] of layout.blocks.entries()) svg += `<path data-block-kind="${nativeBlocks?.[i]?.kind ?? b.kind}" ${nativeBlocks?.[i]?.kind === 'reserve' ? 'stroke="#7e9569" fill="#b8c8a9" fill-opacity=".2"' : ''} d="${path(b.poly)} ${nativeBlocks?.[i]?.shape.holes.map(path).join(' ') ?? ''}" fill-rule="evenodd" vector-effect="non-scaling-stroke"/>`;
     svg += '</g>';
   }
   if (input('showOrientation').checked) {
     svg += '<g data-overlay="block-y-axes" pointer-events="none">';
     for (const [index, block] of layout.blocks.entries()) {
+      if (nativeBlocks?.[index]?.kind === 'reserve') continue;
       // Display the same post-cut frame that drives this sub-quarter's parcels.
       const frame = block.plotFrame;
       const axis = frame.u.y < 0 ? { x: -frame.u.x, y: -frame.u.y } : frame.u;
@@ -329,6 +416,7 @@ function render(): void {
     }
     svg += '</g>';
   }
+  if (nativeResult) svg += workshopEnclosureSvg(nativeResult.layouts);
   const pinSize = state.view[2] / 100;
   state.pins.forEach((p, i) => { svg += `<g data-pin="${i}" style="cursor:pointer"><circle cx="${p.x}" cy="${p.y}" r="${pinSize * 1.25}" fill="#bd2638" stroke="white" stroke-width="${pinSize * .2}"/><text x="${p.x}" y="${p.y}" text-anchor="middle" dominant-baseline="central" fill="white" font-size="${pinSize * 1.7}">${i + 1}</text><title>${escape(p.note)}</title></g>`; });
   map.innerHTML = svg;
@@ -347,6 +435,7 @@ function render(): void {
 }
 function fit(): void {
   const pts = layout.quarters.flatMap(q => q.lp.pts);
+  if (!pts.length) return;
   const x0 = Math.min(...pts.map(p => p.x)) - 20, y0 = Math.min(...pts.map(p => p.y)) - 20;
   if (layout.options.mode === 'micro') {
     state.view = [x0, y0, Math.max(...pts.map(p => p.x)) - x0 + 20, Math.max(...pts.map(p => p.y)) - y0 + 20];
@@ -357,8 +446,8 @@ function fit(): void {
 }
 function newSeed(): string { return crypto.getRandomValues(new Uint32Array(1))[0].toString(36); }
 function counts(ms?: number): void {
-  el('pipeline').textContent = `${layout.options.mode === 'micro' ? 'Diversité · 10 micro formes' : layout.morph.streetOp + ' → ' + layout.morph.closeOp} → ${state.stage >= 2 ? benchMethod('plots', benchMorph(state.plotOptions, 'plots').plotOp) : '…'} → ${state.stage === 3 ? benchMethod('buildings', benchMorph(state.houseOptions, 'buildings').buildingOp) : '…'}`;
-  status(`${layout.quarters.length} ${layout.options.mode === 'micro' ? 'micro formes' : 'quartiers'} · ${layout.blocks.length} îlots · ${houses.parcels.filter(p => p.use === 'plot').length} parcelles constructibles · ${houses.parcels.filter(p => p.use === 'garden').length} arrière-terrains · ${houses.buildings.filter(b => b.kind !== 'garden').length} bâtiments${ms === undefined ? '' : ` · ${Math.round(ms)} ms`}`);
+  el('pipeline').textContent = `${layout.options.mode === 'micro' ? 'Diversité · 10 micro formes' : layout.morph.streetOp + ' → ' + layout.morph.closeOp} → ${state.stage >= 2 ? benchMethod('plots', editorMorph(state.plotOptions, 'plots').plotOp) : '…'} → ${state.stage === 3 ? benchMethod('buildings', editorMorph(state.houseOptions, 'buildings').buildingOp) : '…'}`;
+  status(`${rustMode ? 'Rust · ' : ''}${layout.quarters.length} ${layout.options.mode === 'micro' ? 'micro formes' : 'quartiers'} · ${layout.blocks.length} îlots · ${houses.parcels.filter(p => p.use === 'plot').length} parcelles constructibles · ${houses.parcels.filter(p => p.use === 'garden').length} arrière-terrains${rustMode ? '' : ` · ${houses.buildings.filter(b => b.kind !== 'garden').length} bâtiments`}${ms === undefined ? '' : ` · ${Math.round(ms)} ms`}${nativeResult?.layouts.flatMap(l => l.warnings).length ? ' · ' + nativeResult.layouts.flatMap(l => l.warnings).join(' ') : ''}`);
 }
 async function generate(action: 'layout' | 'parcels' | 'houses' | 'replay' | 'random' | 'load'): Promise<void> {
   if (busy) return;
@@ -372,10 +461,10 @@ async function generate(action: 'layout' | 'parcels' | 'houses' | 'replay' | 'ra
   await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
   const start = performance.now();
   const previous = structuredClone(state);
-  const previousLayout = layout, previousPartition = partition, previousHouses = houses;
+  const previousLayout = layout, previousPartition = partition, previousHouses = houses, previousNative = nativeResult;
   try {
     const settings = controls();
-    for (const stage of BENCH_STAGES) benchMorph(settings, stage);
+    for (const stage of BENCH_STAGES) if (!rustMode || stage !== 'buildings') editorMorph(settings, stage);
     if (action !== 'load') state.settings = settings;
     if (action === 'layout') {
       state.options = settings; state.layoutSeed = input('layoutSeed').value || '42'; state.stage = 1; state.pins = [];
@@ -395,18 +484,42 @@ async function generate(action: 'layout' | 'parcels' | 'houses' | 'replay' | 'ra
       state.options = settings; state.plotOptions = settings; state.houseOptions = settings;
       state.layoutSeed = input('layoutSeed').value || '42'; state.plotSeed = input('plotSeed').value || '42'; state.houseSeed = input('houseSeed').value || '42';
     }
-    if (action === 'layout' || action === 'replay' || action === 'random' || action === 'load') layout = benchLayout(state.options, state.layoutSeed);
-    if (state.stage === 1) partition = { parcels: [], plots: [], compounds: [] };
-    else if (action !== 'houses' || previous.stage === 1) partition = benchParcels(layout, state.plotSeed, state.plotOptions);
-    houses = state.stage === 3 ? benchBuildings(layout, partition, state.houseSeed, state.houseOptions) : { parcels: partition.parcels, buildings: [] };
+    if (rustMode) {
+      state.engine = 'rust'; state.urban ??= { source: 'fixture' };
+      if (action !== 'load') {
+        const native: Record<string, unknown> = {};
+        for (const control of Array.from(nativeControls.querySelectorAll<HTMLInputElement | HTMLSelectElement>('[data-native]'))) {
+          if (!control.checkValidity()) { control.reportValidity(); throw new Error('Corrigez les paramètres du plan urbain.'); }
+          native[control.dataset.native!] = control instanceof HTMLInputElement ? control.type === 'checkbox' ? control.checked : Number(control.value) : control.value;
+        }
+        const quarterZone = native.autoQuarterZones ? 'auto' : settings.zone, parcelZone = native.autoParcelZones ? 'auto' : settings.zone; delete native.autoQuarterZones; delete native.autoParcelZones;
+        if (['layout', 'replay', 'random'].includes(action)) state.urban.layoutConfig = { ...state.urban.layoutConfig, ...native, zone: quarterZone } as LayoutConfig;
+        if (['parcels', 'replay', 'random'].includes(action)) state.urban.parcelConfig = { ...state.urban.parcelConfig, zone: parcelZone } as ParcelConfig;
+      }
+      if (state.stage === 3) state.stage = 2;
+      if (action === 'layout' || action === 'replay' || action === 'random' || action === 'load') nativeResult = await nativeClient.generate({ kind: 'quarters', options: state.options, seed: state.layoutSeed, context: state.urban });
+      if (!nativeResult) throw new Error('Générez d’abord les quartiers.');
+      if (state.stage >= 2) nativeResult = await nativeClient.generate({ kind: 'parcels', options: state.plotOptions, seed: state.plotSeed, context: { ...state.urban, layoutConfig: nativeResult.layoutConfig }, layouts: nativeResult.layouts });
+      state.urban = { ...state.urban, layoutConfig: nativeResult.layoutConfig, parcelConfig: nativeResult.parcelConfig };
+      const view = workshopView(nativeResult, state.options, editorMorph(state.options, 'streets')); layout = view.layout; partition = view.partition;
+      houses = { parcels: partition.parcels, buildings: [] };
+    } else {
+      nativeResult = undefined; state.engine = 'typescript';
+      if (action === 'layout' || action === 'replay' || action === 'random' || action === 'load') layout = benchLayout(state.options, state.layoutSeed);
+      if (state.stage === 1) partition = { parcels: [], plots: [], compounds: [] };
+      else if (action !== 'houses' || previous.stage === 1) partition = benchParcels(layout, state.plotSeed, state.plotOptions);
+      houses = state.stage === 3 ? benchBuildings(layout, partition, state.houseSeed, state.houseOptions) : { parcels: partition.parcels, buildings: [] };
+    }
     if (action === 'layout' || action === 'replay' || action === 'random') fit();
     restoreControls(); render(); save();
     counts(performance.now() - start);
   } catch (error) {
-    state = previous; layout = previousLayout; partition = previousPartition; houses = previousHouses;
+    state = previous; layout = previousLayout; partition = previousPartition; houses = previousHouses; nativeResult = previousNative;
     status(`Erreur : ${String(error)}`);
   }
-  finally { busy = false; document.querySelectorAll<HTMLButtonElement>('button').forEach(b => { b.disabled = false; }); }
+  finally { busy = false; document.querySelectorAll<HTMLButtonElement>('button').forEach(b => { b.disabled = false; });
+    if (pendingWorkshopMessage) { const pending = pendingWorkshopMessage; pendingWorkshopMessage = undefined; receiveWorkshop(pending); }
+  }
 }
 el('layout').onclick = () => void generate('layout');
 el('parcels').onclick = () => void generate('parcels');
@@ -447,6 +560,17 @@ el('clearHouses').onclick = () => {
   counts();
 };
 el('replay').onclick = () => void generate('replay');
+select('engine').onchange = () => {
+  const next = select('engine').value;
+  if (next === 'rust' && !hosted) {
+    save(); const params = new URLSearchParams({ space: 'workshop', workshop: new URLSearchParams(location.search).get('case')! });
+    location.href = `urbanbench.html?${params}`; return;
+  }
+  rustMode = next === 'rust'; state.engine = rustMode ? 'rust' : 'typescript';
+  cultureMenus();
+  if (!validCulture(state.settings.culture)) { state.settings = { ...state.settings, culture: culture.value, recipe: 'core', stages: {} }; }
+  restoreControls(); void generate('replay');
+};
 el('randomAll').onclick = () => {
   if (busy) return;
   const randomIndex = (count: number): number => Math.floor(crypto.getRandomValues(new Uint32Array(1))[0] / 0x100000000 * count);
@@ -477,6 +601,7 @@ input('realPlan').onchange = () => { state.realPlan = input('realPlan').checked;
 el('pinMode').onclick = () => { pinMode = !pinMode; el('pinMode').setAttribute('aria-pressed', String(pinMode)); map.style.cursor = pinMode ? 'crosshair' : 'grab'; };
 el('copy').onclick = async () => {
   save();
+  if (rustMode && window.parent !== window) { window.parent.postMessage({ channel: WORKSHOP_CHANNEL, type: 'copy' }, location.protocol === 'file:' || location.origin === 'null' ? '*' : location.origin); return; }
   try { await navigator.clipboard.writeText(location.href); status('URL copiée : graines, paramètres, pins et vue.'); }
   catch { window.prompt('Copier cette URL', location.href); }
 };
@@ -522,11 +647,11 @@ try {
       const fill = { ...old.options, culture: old.houseCulture, density: old.houseDensity };
       parsed = { v: 2, options: old.options, settings: fill, plotOptions: fill, houseOptions: fill, layoutSeed: old.layoutSeed, plotSeed: old.houseSeed, houseSeed: old.houseSeed, stage: old.houses ? 3 : 1, pins: old.pins, view: old.view, showBlocks: old.showBlocks ?? true, showPlots: old.showPlots ?? false, showHouses: true };
     }
-    if (parsed.v !== 2 || !CULTURES[parsed.options.culture] || !Array.isArray(parsed.pins) || !Array.isArray(parsed.view) || parsed.view.length !== 4 || !parsed.view.every(Number.isFinite) || parsed.view[2] <= 0 || parsed.view[3] <= 0 || ![1, 2, 3].includes(parsed.stage)) throw new Error('Cas invalide');
-    parsed.options.count = Math.max(3, Math.min(8, Math.round(parsed.options.count)));
-    parsed.options.radius = Math.max(80, Math.min(300, parsed.options.radius));
+    if (parsed.v !== 2 || !validCulture(parsed.options.culture) || !Array.isArray(parsed.pins) || !Array.isArray(parsed.view) || parsed.view.length !== 4 || !parsed.view.every(Number.isFinite) || parsed.view[2] <= 0 || parsed.view[3] <= 0 || ![1, 2, 3].includes(parsed.stage)) throw new Error('Cas invalide');
+    parsed.options.count = Math.max(3, Math.min(rustMode ? 64 : 8, Math.round(parsed.options.count)));
+    parsed.options.radius = Math.max(rustMode ? 0.1 : 80, Math.min(rustMode ? 25000 : 300, parsed.options.radius));
     for (const options of [parsed.options, parsed.settings, parsed.plotOptions, parsed.houseOptions]) {
-      if (!CULTURES[options.culture] || !Number.isFinite(options.density) || options.density <= 0) throw new Error('Culture ou densité invalide');
+      if (!validCulture(options.culture) || !Number.isFinite(options.density) || options.density <= 0) throw new Error('Culture ou densité invalide');
       if (!Number.isFinite(options.count) || !Number.isFinite(options.radius) || !['core', 'middle', 'edge', 'faubourg', 'village'].includes(options.zone)) throw new Error('Dimensions ou zone invalides');
       if (options.microScale !== undefined && (!Number.isFinite(options.microScale) || options.microScale < 1 || options.microScale > 5)) throw new Error('Facteur de taille invalide');
       if (options.microFrontage !== undefined && !['front', 'perimeter'].includes(options.microFrontage)) throw new Error('Desserte micro invalide');
@@ -536,10 +661,37 @@ try {
       if (options.river && !['none', 'vertical', 'horizontal', 'diagonal'].includes(options.river)) throw new Error('Rivière invalide');
       if (options.reliefSlope !== undefined && (!Number.isFinite(options.reliefSlope) || options.reliefSlope < 5 || options.reliefSlope > 60)) throw new Error('Pente invalide');
       if (options.riverWidth !== undefined && (!Number.isFinite(options.riverWidth) || options.riverWidth < 4 || options.riverWidth > 50)) throw new Error('Largeur rivière invalide');
-      for (const stage of BENCH_STAGES) benchMorph(options, stage);
+      for (const stage of BENCH_STAGES) if (!rustMode || stage !== 'buildings') editorMorph(options, stage);
     }
     state = parsed;
   }
 } catch { status('URL invalide, paramètres par défaut.'); }
+function receiveWorkshop(event: MessageEvent): void {
+  if (event.source !== window.parent || event.origin !== (location.protocol === 'file:' ? 'null' : location.origin) || event.data?.channel !== WORKSHOP_CHANNEL || !['import', 'fixture'].includes(event.data.type)) return;
+  if (busy) { pendingWorkshopMessage = event; return; }
+  if (event.source === window.parent && event.origin === (location.protocol === 'file:' ? 'null' : location.origin) && event.data?.channel === WORKSHOP_CHANNEL && event.data.type === 'fixture') {
+    if (busy) return;
+    rustMode = true; state.urban = { source: 'fixture' }; state.settings.radius = 160; state.settings.relief = 'flat'; state.settings.river = 'none';
+    restoreControls(); void generate('replay'); return;
+  }
+  if (event.source !== window.parent || event.origin !== (location.protocol === 'file:' ? 'null' : location.origin) || event.data?.channel !== WORKSHOP_CHANNEL || event.data.type !== 'import') return;
+  const imported = event.data.state as WorkshopState;
+  if (!imported?.layouts?.length) return;
+  rustMode = true; state.engine = 'rust';
+  const first = imported.layouts[0];
+  const base = { ...initial, culture: first.culture, radius: event.data.radius ?? initial.radius };
+  state.options = workshopOptions(imported.layoutConfig, base);
+  state.plotOptions = workshopOptions(imported.parcelConfig, state.options);
+  state.settings = structuredClone(state.plotOptions); state.houseOptions = structuredClone(state.plotOptions);
+  state.layoutSeed = imported.quarterSeed; state.plotSeed = imported.parcelSeed;
+  state.urban = { source: 'map', siteCulture: first.culture, layoutConfig: imported.layoutConfig, parcelConfig: imported.parcelConfig, radius: base.radius };
+  state.stage = imported.partitions ? 2 : 1; state.pins = [];
+  nativeResult = { layouts: imported.layouts, partitions: imported.partitions, water: [], contours: [], layoutConfig: imported.layoutConfig, parcelConfig: imported.parcelConfig };
+  const adapted = workshopView(nativeResult, state.options, editorMorph(state.options, 'streets')); layout = adapted.layout; partition = adapted.partition;
+  houses = { parcels: partition.parcels, buildings: [] };
+  restoreControls(); fit(); render(); save(); counts();
+}
+window.addEventListener('message', receiveWorkshop);
 restoreControls();
+if (hosted) window.parent.postMessage({ channel: WORKSHOP_CHANNEL, type: 'ready' }, location.protocol === 'file:' || location.origin === 'null' ? '*' : location.origin);
 void generate('load');

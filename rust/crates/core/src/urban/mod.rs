@@ -2,8 +2,14 @@
 //! parameter application and deterministic partitioning execute only in Rust.
 //! Layouts are retained inputs to the parcel stage; this is not the future World model.
 mod geometry;
+mod macroplan;
+mod network;
 mod parcels;
+mod profiles;
 mod quarters;
+#[cfg(test)]
+mod regression;
+mod routing;
 
 use crate::rng::Rng;
 pub use crate::settlements::Point;
@@ -29,6 +35,17 @@ pub struct Street {
 pub struct Quarter {
     pub shape: Shape,
     pub phase: usize,
+    #[serde(default = "core_zone")]
+    pub zone: String,
+}
+fn core_zone() -> String {
+    "core".into()
+}
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Enclosure {
+    pub path: Vec<Point>,
+    pub kind: String,
+    pub gates: Vec<Point>,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Block {
@@ -36,6 +53,8 @@ pub struct Block {
     pub quarter: usize,
     pub kind: String,
     pub axis: Point,
+    #[serde(default = "core_zone")]
+    pub zone: String,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Layout {
@@ -46,6 +65,8 @@ pub struct Layout {
     pub streets: Vec<Street>,
     pub blocks: Vec<Block>,
     pub warnings: Vec<String>,
+    #[serde(default)]
+    pub enclosures: Vec<Enclosure>,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Parcel {
@@ -89,6 +110,11 @@ pub struct LayoutConfig {
     pub radius_scale: f64,
     pub placement: String,
     pub monument: String,
+    pub fortification: String,
+    pub max_street_grade: f64,
+    pub max_lane_grade: f64,
+    pub max_stair_grade: f64,
+    pub allow_stairs: bool,
     pub params: Value,
 }
 impl Default for LayoutConfig {
@@ -97,7 +123,7 @@ impl Default for LayoutConfig {
             culture: "site".into(),
             preset: "culture".into(),
             recipe: "core".into(),
-            zone: "core".into(),
+            zone: "auto".into(),
             density: 1.0,
             count: 4,
             rings: 1,
@@ -105,6 +131,11 @@ impl Default for LayoutConfig {
             radius_scale: 1.0,
             placement: "center".into(),
             monument: "none".into(),
+            fortification: "culture".into(),
+            max_street_grade: 0.12,
+            max_lane_grade: 0.18,
+            max_stair_grade: 0.65,
+            allow_stairs: true,
             params: json!({}),
         }
     }
@@ -125,7 +156,7 @@ impl Default for ParcelConfig {
             culture: "site".into(),
             preset: "culture".into(),
             recipe: "core".into(),
-            zone: "core".into(),
+            zone: "auto".into(),
             density: 1.0,
             params: json!({}),
         }
@@ -375,6 +406,21 @@ pub fn generate_quarters(
     surface: Surface<'_>,
     roads: &[Street],
 ) -> Result<Vec<Layout>, String> {
+    if surface.n < 2
+        || !surface.width.is_finite()
+        || surface.width <= 0.0
+        || surface.height.len() != surface.n * surface.n
+        || surface.water.len() != surface.n * surface.n
+        || surface.height.iter().any(|h| !h.is_finite())
+        || roads.iter().any(|s| {
+            s.path.iter().any(|p| !p.x.is_finite() || !p.y.is_finite())
+                || s.widths
+                    .iter()
+                    .any(|w| !w.is_finite() || *w <= 0.0 || *w > 100.0)
+        })
+    {
+        return Err("Terrain ou routes urbaines invalides".into());
+    }
     if sites.len() > 1000
         || !(3..=64).contains(&config.count)
         || !(1..=2).contains(&config.rings)
@@ -383,6 +429,13 @@ pub fn generate_quarters(
         || !config.radius_scale.is_finite()
         || !(0.1..=5.0).contains(&config.radius_scale)
         || !["center", "rectangle", "skew", "notched"].contains(&config.placement.as_str())
+        || !["culture", "none", "wall", "palisade"].contains(&config.fortification.as_str())
+        || !config.max_street_grade.is_finite()
+        || !(0.02..=0.3).contains(&config.max_street_grade)
+        || !config.max_lane_grade.is_finite()
+        || !(config.max_street_grade..=0.4).contains(&config.max_lane_grade)
+        || !config.max_stair_grade.is_finite()
+        || !(config.max_lane_grade..=1.0).contains(&config.max_stair_grade)
     {
         return Err("Configuration de quartiers invalide".into());
     }
@@ -410,7 +463,11 @@ pub fn generate_quarters(
             culture,
             &config.preset,
             &config.recipe,
-            &config.zone,
+            if config.zone == "auto" {
+                "core"
+            } else {
+                &config.zone
+            },
             config.density,
             &config.params,
             "quarters",
@@ -438,7 +495,11 @@ pub fn generate_parcels(
             culture,
             &config.preset,
             &config.recipe,
-            &config.zone,
+            if config.zone == "auto" {
+                "core"
+            } else {
+                &config.zone
+            },
             config.density,
             &config.params,
             "parcels",

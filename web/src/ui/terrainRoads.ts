@@ -1,4 +1,6 @@
 import { ROAD_CLASSES, ROAD_LEVELS, ROAD_PROFILES, ROAD_SURFACES, defaultRoadConfig, type Point, type RoadClass, type RoadConfig, type RoadOutput, type RoadSegment, type RoadSurface } from '../../../rust/bridge/settlements';
+import type { Layout } from '../../../rust/bridge/urban';
+import { outsideUrbanStreets } from '../../../rust/bridge/urbanNetwork';
 
 const ns = 'http://www.w3.org/2000/svg';
 const CLASS_LABEL: Record<RoadClass, string> = { highway: 'Highway', main: 'Main road', local: 'Local road', track: 'Track', trail: 'Trail' };
@@ -95,6 +97,7 @@ const esc = (text: string): string => text.replace(/[&<>"']/g, ch => ({ '&': '&a
 export function createTerrainRoads(options: { map: SVGSVGElement; before: Element | null; onConfigChange(): void; onDisplayChange(): void }) {
   let config = defaultRoadConfig(), style = defaultRoadStyle(), enabled = true, show = true, output: RoadOutput | undefined;
   let drawnLayer: SVGGElement | undefined, drawnState = '', drawn: RoadOutput | undefined;
+  let urbanOwnership: Layout[] | undefined, drawnOwnership: Layout[] | undefined;
   const saved = new URLSearchParams(location.search).get('roads');
   if (saved) try {
     const s = JSON.parse(saved);
@@ -207,8 +210,8 @@ export function createTerrainRoads(options: { map: SVGSVGElement; before: Elemen
       if (markers) options.map.insertBefore(layer, markers); else options.map.append(layer);
     }
     const state = `${enabled}|${show}|${JSON.stringify(style)}`;
-    if (layer === drawnLayer && drawn === output && state === drawnState) return;
-    drawnLayer = layer; drawn = output; drawnState = state; layer.replaceChildren();
+    if (layer === drawnLayer && drawn === output && state === drawnState && drawnOwnership === urbanOwnership) return;
+    drawnLayer = layer; drawn = output; drawnState = state; drawnOwnership = urbanOwnership; layer.replaceChildren();
     if (!output || !show || !enabled) return;
     const order = [...output.segments].sort((a, b) => ROAD_CLASSES.indexOf(b.class) - ROAD_CLASSES.indexOf(a.class));
     const line = (d: string, stroke: string, width: number, extra: Record<string, string> = {}): SVGPathElement => {
@@ -222,19 +225,32 @@ export function createTerrainRoads(options: { map: SVGSVGElement; before: Elemen
     // One group opacity, so casings and overlapping roads do not show through each other.
     const painted = document.createElementNS(ns, 'g');
     if (style.opacity < 1) painted.setAttribute('opacity', String(style.opacity));
+    const outsidePaths = (path: Point[], width: number): Point[][] => urbanOwnership?.length
+      ? outsideUrbanStreets([{ path, widths: path.map(() => width), rank: 1, role: 'regional' }], urbanOwnership).map(street => street.path)
+      : [path];
     for (const s of order) {
-      const d = style.curves ? curveData(s.path) : pathData(s.path), { fill, casing, width: w, dash } = paintOf(style, s.class, s.surface);
+      // Cut the physical polyline first: smoothing each remainder preserves its
+      // exact attachment to the native street instead of moving it along a curve.
+      const d = outsidePaths(s.path, s.width).map(style.curves ? curveData : pathData).join(' ');
+      const { fill, casing, width: w, dash } = paintOf(style, s.class, s.surface);
       const extra: Record<string, string> = dash ? { 'stroke-dasharray': dash } : {};
-      if (casing) casings.append(line(d, casing, w + 1.6, extra));
-      fills.append(line(d, fill, w, extra));
+      if (d) {
+        if (casing) casings.append(line(d, casing, w + 1.6, extra));
+        fills.append(line(d, fill, w, extra));
+      }
+      // A crossing can extend beyond the main segment's visible pieces. Clip it
+      // independently once, including its casing, rather than repeating its art.
       if (style.crossings) for (const c of s.crossings) {
-        const cd = pathData(c.path);
+        const cd = outsidePaths(c.path, s.width).map(pathData).join(' ');
+        if (!cd) continue;
         if (c.kind === 'bridge') { crossings.append(line(cd, '#4f3c2a', w + 3.4, { 'stroke-linecap': 'butt' }), line(cd, '#e8d8b8', w + 1.2, { 'stroke-linecap': 'butt' })); }
         else if (c.kind === 'causeway') { crossings.append(line(cd, '#5d5446', w + 2.6), line(cd, '#cfc3a5', w + 0.8)); }
         else crossings.append(line(cd, '#3f7fa6', w + 0.6, { 'stroke-dasharray': '1 2.5' }));
       }
-      const hit = line(d, 'transparent', Math.max(8, w + 6)); hit.style.pointerEvents = 'stroke'; hit.dataset.road = '';
-      const title = document.createElementNS(ns, 'title'); title.textContent = describe(s); hit.append(title); hits.append(hit);
+      if (d) {
+        const hit = line(d, 'transparent', Math.max(8, w + 6)); hit.style.pointerEvents = 'stroke'; hit.dataset.road = '';
+        const title = document.createElementNS(ns, 'title'); title.textContent = describe(s); hit.append(title); hits.append(hit);
+      }
     }
     painted.append(casings, fills, crossings);
     layer.append(painted, hits);
@@ -244,6 +260,12 @@ export function createTerrainRoads(options: { map: SVGSVGElement; before: Elemen
     const bridges = s.crossings.length ? ` · ${s.crossings.map(c => c.kind).join(', ')}` : '';
     return `${CLASS_LABEL[s.class]} · ${SURFACE_LABEL[s.surface]} · ${profile}\n${(s.length / 1000).toFixed(2)} km · steepest ${(s.grade * 100).toFixed(1)} % · width ${s.width.toFixed(1)} m${bridges}`;
   }
+  options.map.addEventListener('urban:road-ownership', event => {
+    const next = (event as CustomEvent<Layout[] | undefined>).detail;
+    if (next === urbanOwnership) return;
+    urbanOwnership = next;
+    draw();
+  });
   controls(); legend();
   return {
     get config(): RoadConfig { return config; },

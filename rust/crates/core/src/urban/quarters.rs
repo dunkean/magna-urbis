@@ -1,6 +1,9 @@
 //! Native quarter fixture, guidance field, recursive street cuts and ribbon carving.
 use super::geometry as g;
-use super::{Block, Layout, LayoutConfig, Morph, Point, Quarter, Shape, Site, Street, Surface};
+use super::{
+    Block, Layout, LayoutConfig, Morph, Point, Quarter, Shape, Site, Street, Surface, macroplan,
+    network, profiles, routing,
+};
 use crate::{noise::Noise, rng::Rng};
 use std::f64::consts::{FRAC_PI_2, PI, TAU};
 
@@ -78,21 +81,45 @@ fn smooth(x: f64, a: f64, b: f64) -> f64 {
     let t = ((x - a) / (b - a)).clamp(0.0, 1.0);
     t * t * (3.0 - 2.0 * t)
 }
+fn zone_at(p: Point, center: Point, radius: f64, population: u32) -> &'static str {
+    let d = (p.x - center.x).hypot(p.y - center.y) / radius;
+    if population < 500 {
+        "village"
+    } else if d < 0.4 {
+        "core"
+    } else if d < 0.72 {
+        "middle"
+    } else {
+        "edge"
+    }
+}
 fn delta(a: f64, b: f64) -> f64 {
     (a - b + PI).rem_euclid(TAU) - PI
 }
 fn nearest(p: Point, streets: &[Street], max_rank: usize) -> Option<(f64, f64)> {
-    streets
+    let mut best = f64::INFINITY;
+    let mut segment = None;
+    for q in streets
         .iter()
         .filter(|s| s.rank <= max_rank)
         .flat_map(|s| s.path.windows(2))
-        .map(|q| {
-            (
-                g::distance(p, q[0], q[1]).0,
-                (q[1].y - q[0].y).atan2(q[1].x - q[0].x),
-            )
-        })
-        .min_by(|a, b| a.0.total_cmp(&b.0))
+    {
+        let dx = (q[0].x.min(q[1].x) - p.x)
+            .max(0.0)
+            .max(p.x - q[0].x.max(q[1].x));
+        let dy = (q[0].y.min(q[1].y) - p.y)
+            .max(0.0)
+            .max(p.y - q[0].y.max(q[1].y));
+        if dx * dx + dy * dy > best * best {
+            continue;
+        }
+        let d = g::distance(p, q[0], q[1]).0;
+        if d < best {
+            best = d;
+            segment = Some((q[0], q[1]));
+        }
+    }
+    segment.map(|(a, b)| (best, (b.y - a.y).atan2(b.x - a.x)))
 }
 fn acute_ends(s: &Shape, path: &[Point]) -> bool {
     let r = &s.outer;
@@ -130,6 +157,9 @@ struct Field<'a> {
     water: f64,
     surface: Surface<'a>,
     noise: Noise,
+    radius: f64,
+    population: u32,
+    radial: bool,
 }
 impl Field<'_> {
     fn gradient(&self, p: Point, r: f64) -> (f64, f64) {
@@ -161,7 +191,11 @@ impl Field<'_> {
         let slope = gx.hypot(gy);
         let contour = gy.atan2(gx) + FRAC_PI_2;
         let cf = m.number_or("contourFollow", 0.0);
-        let th = (p.y - self.center.y).atan2(p.x - self.center.x) + m.number("fieldTwist");
+        let th = if self.radial {
+            (p.y - self.center.y).atan2(p.x - self.center.x)
+        } else {
+            base
+        } + m.number("fieldTwist");
         let mut cx = (4.0 * th).cos();
         let mut cy = (4.0 * th).sin();
         if cf > 0.0 {
@@ -198,6 +232,7 @@ impl Field<'_> {
         seed: Point,
         heading: f64,
         streets: &[Street],
+        max_grade: f64,
     ) -> Option<Vec<Point>> {
         let mut out = vec![seed];
         let mut cur = seed;
@@ -208,23 +243,49 @@ impl Field<'_> {
             let dh = (0..4)
                 .map(|k| delta(a + k as f64 * FRAC_PI_2, head))
                 .min_by(|a, b| a.abs().total_cmp(&b.abs()))?;
-            head += dh.clamp(-turn, turn);
-            let nx = Point {
-                x: cur.x + head.cos() * 5.0,
-                y: cur.y + head.sin() * 5.0,
-            };
-            let hit = s
-                .outer
-                .iter()
-                .zip(s.outer.iter().cycle().skip(1))
-                .take(s.outer.len())
-                .filter_map(|(&a, &b)| g::segment_hit(cur, nx, a, b))
-                .min_by(|a, b| a.0.total_cmp(&b.0));
-            if let Some((_, p)) = hit {
-                out.push(p);
+            let desired = head + dh.clamp(-turn, turn);
+            let (next_heading, nx, ends) = [0.0, 0.12, -0.12, 0.28, -0.28, 0.5, -0.5, 0.8, -0.8]
+                .into_iter()
+                .map(|offset| {
+                    let h = desired + offset;
+                    let next = Point {
+                        x: cur.x + h.cos() * 5.0,
+                        y: cur.y + h.sin() * 5.0,
+                    };
+                    let hit = s
+                        .outer
+                        .iter()
+                        .zip(s.outer.iter().cycle().skip(1))
+                        .take(s.outer.len())
+                        .filter_map(|(&a, &b)| g::segment_hit(cur, next, a, b))
+                        .min_by(|a, b| a.0.total_cmp(&b.0));
+                    if let Some((_, p)) = hit {
+                        (
+                            h,
+                            Point {
+                                x: p.x + (cur.x - p.x) * 1e-8,
+                                y: p.y + (cur.y - p.y) * 1e-8,
+                            },
+                            true,
+                        )
+                    } else {
+                        (h, next, false)
+                    }
+                })
+                .find(|(_, next, _)| routing::segment_clear(self.surface, cur, *next, max_grade))?;
+            head = next_heading;
+            if ends {
+                out.push(nx);
                 return Some(out);
             }
             if !g::contains(s, nx) {
+                return None;
+            }
+            if out.len() > 8
+                && out[..out.len() - 6]
+                    .windows(2)
+                    .any(|q| g::segment_hit(cur, nx, q[0], q[1]).is_some())
+            {
                 return None;
             }
             out.push(nx);
@@ -244,7 +305,26 @@ fn add(
     if path.len() < 2 || len(&path) < 0.2 {
         return;
     }
-    let widths = path.iter().map(|_| m.width(rank, rng)).collect();
+    // Width changes are gradual along the street, not a new jitter every 5 m.
+    let wa = m.width(rank, rng);
+    let wb = m.width(rank, rng);
+    let length = len(&path);
+    let mut at = 0.0;
+    let widths = path
+        .iter()
+        .enumerate()
+        .map(|(i, p)| {
+            if i > 0 {
+                at += (p.x - path[i - 1].x).hypot(p.y - path[i - 1].y);
+            }
+            let width = wa + (wb - wa) * at / length;
+            if role == "stairs" {
+                width.min(2.2)
+            } else {
+                width
+            }
+        })
+        .collect();
     streets.push(Street {
         path,
         widths,
@@ -284,7 +364,12 @@ fn split_quarter(
         }
         let a0 = g::area(&pc.shape);
         let f = frame(&pc.shape);
-        let bs = m.range("blockSize", &cfg.zone);
+        let zone = if cfg.zone == "auto" {
+            zone_at(f.c, field.center, field.radius, field.population)
+        } else {
+            &q.zone
+        };
+        let bs = m.range("blockSize", zone);
         let target = bs[0].max(1.0)
             * (bs[1].max(bs[0].max(1.0)) / bs[0].max(1.0)).powf(rng.float())
             * (0.85
@@ -405,10 +490,27 @@ fn split_quarter(
                 if !g::contains(&pc.shape, seed) {
                     continue;
                 }
-                let Some(mut back) = field.trace(&pc.shape, seed, heading + PI, streets) else {
-                    continue;
+                let grade = if rank < 3 {
+                    cfg.max_street_grade
+                } else {
+                    cfg.max_lane_grade
                 };
-                let Some(front) = field.trace(&pc.shape, seed, heading, streets) else {
+                let trace = |limit| {
+                    Some((
+                        field.trace(&pc.shape, seed, heading + PI, streets, limit)?,
+                        field.trace(&pc.shape, seed, heading, streets, limit)?,
+                    ))
+                };
+                let Some((mut back, front)) = trace(grade)
+                    .or_else(|| trace(cfg.max_lane_grade))
+                    .or_else(|| {
+                        if cfg.allow_stairs {
+                            trace(cfg.max_stair_grade)
+                        } else {
+                            None
+                        }
+                    })
+                else {
                     continue;
                 };
                 back.reverse();
@@ -430,13 +532,27 @@ fn split_quarter(
                         snapped[end] = v;
                     }
                 }
-                if g::split(&pc.shape, &snapped).is_some() {
+                let allowed = if cfg.allow_stairs {
+                    cfg.max_stair_grade
+                } else {
+                    cfg.max_lane_grade
+                };
+                if routing::path_clear(field.surface, &snapped, allowed)
+                    && g::split(&pc.shape, &snapped).is_some()
+                {
                     back = snapped;
                 }
                 // Every recursive street must connect to the existing primary or recursive network.
                 if ![back[0], *back.last().unwrap()]
                     .iter()
                     .any(|&p| nearest(p, streets, 4).is_some_and(|(d, _)| d < 0.2))
+                    && !back.windows(2).any(|cut| {
+                        streets.iter().any(|s| {
+                            s.path.windows(2).any(|road| {
+                                g::segment_hit(cut[0], cut[1], road[0], road[1]).is_some()
+                            })
+                        })
+                    })
                 {
                     continue;
                 }
@@ -465,7 +581,18 @@ fn split_quarter(
                 {
                     continue;
                 }
+                let steepest = back
+                    .windows(2)
+                    .map(|p| routing::segment_grade(field.surface, p[0], p[1]))
+                    .fold(0.0, f64::max);
                 let cost = (aa - ab).abs() / a0
+                    + if steepest > cfg.max_lane_grade {
+                        0.8
+                    } else if steepest > grade {
+                        0.2
+                    } else {
+                        0.0
+                    }
                     + 0.25
                         * ((fa.hu / fa.hv.max(1.0) - 2.5).max(0.0)
                             + (fb.hu / fb.hv.max(1.0) - 2.5).max(0.0))
@@ -477,17 +604,28 @@ fn split_quarter(
         }
         if let Some((_, a, b, path, mut rank, pa, pb)) = best {
             let lc = m.number_or("longCut", 0.0);
-            if lc > 0.0 && len(&path) >= lc {
+            if lc > 0.0
+                && len(&path) >= lc
+                && routing::path_clear(field.surface, &path, cfg.max_street_grade)
+            {
                 rank = rank.min(2)
             }
-            add(
-                streets,
-                path,
-                rank,
-                if rank <= 2 { "street" } else { "lane" },
-                m,
-                rng,
-            );
+            let steepest = path
+                .windows(2)
+                .map(|p| routing::segment_grade(field.surface, p[0], p[1]))
+                .fold(0.0, f64::max);
+            if steepest > cfg.max_street_grade {
+                rank = 3;
+            }
+            let role = if steepest > cfg.max_lane_grade {
+                rank = 3;
+                "stairs"
+            } else if rank <= 2 {
+                "street"
+            } else {
+                "lane"
+            };
+            add(streets, path, rank, role, m, rng);
             if pa || pb {
                 places += 1
             }
@@ -529,7 +667,14 @@ fn closes(
             continue;
         }
         let f = frame(&pc.shape);
-        let pd = m.range("plotDepth", &cfg.zone)[1];
+        let pd = m.range(
+            "plotDepth",
+            if cfg.zone == "auto" {
+                "middle"
+            } else {
+                &cfg.zone
+            },
+        )[1];
         if f.hv < pd * 0.95 && op == "closes" {
             continue;
         }
@@ -1083,71 +1228,18 @@ pub(super) fn generate(
                         holes: vec![],
                     }),
                     phase: band,
+                    zone: if cfg.zone == "auto" {
+                        "core".into()
+                    } else {
+                        cfg.zone.clone()
+                    },
                 })
             }
-        }
-    } else {
-        let jitter_angle = 0.12_f64.min(0.2 * TAU / count as f64);
-        let angles: Vec<_> = (0..count)
-            .map(|i| {
-                angle + i as f64 * TAU / count as f64 + prim.range(-jitter_angle, jitter_angle)
-            })
-            .collect();
-        let inner_r = (if cfg.zone == "core" {
-            25.0_f64
-        } else {
-            16.0_f64
-        })
-        .min(radius * 0.2);
-        let inner: Vec<_> = angles
-            .iter()
-            .map(|&a| Point {
-                x: center.x + a.cos() * inner_r,
-                y: center.y + a.sin() * inner_r,
-            })
-            .collect();
-        let mut previous = inner;
-        for band in 0..rings {
-            let rr = radius + if band == 0 { 0.0 } else { 100.0 };
-            let outer: Vec<_> = angles
-                .iter()
-                .map(|&a| {
-                    let r = rr * prim.range(0.85, 1.15);
-                    Point {
-                        x: center.x + a.cos() * r,
-                        y: center.y + a.sin() * r,
-                    }
-                })
-                .collect();
-            for i in 0..count {
-                let j = (i + 1) % count;
-                add(
-                    &mut streets,
-                    vec![previous[i], outer[i]],
-                    0,
-                    "radial",
-                    m,
-                    &mut prim,
-                );
-                add(
-                    &mut streets,
-                    vec![previous[i], previous[j]],
-                    1,
-                    "ring",
-                    m,
-                    &mut prim,
-                );
-                raw.push(Quarter {
-                    shape: g::normalized(Shape {
-                        outer: vec![previous[i], outer[i], outer[j], previous[j]],
-                        holes: vec![],
-                    }),
-                    phase: band,
-                })
-            }
-            previous = outer
         }
     }
+    let fixture_footprint = g::shapes(geo::algorithm::bool_ops::unary_union(
+        &raw.iter().map(|q| g::polygon(&q.shape)).collect::<Vec<_>>(),
+    ));
     let quarters: Vec<_> = raw
         .into_iter()
         .flat_map(|q| {
@@ -1157,9 +1249,29 @@ pub(super) fn generate(
                 .map(move |shape| Quarter {
                     shape,
                     phase: q.phase,
+                    zone: q.zone.clone(),
                 })
         })
         .collect();
+    let (quarters, mut streets, enclosures, mut warnings) = if cfg.placement == "center" {
+        let plan = macroplan::generate(seed, site, cfg, m, surface, roads, radius);
+        (plan.quarters, plan.streets, plan.enclosures, plan.warnings)
+    } else {
+        streets = streets
+            .iter()
+            .flat_map(|s| clip_street(s, surface, None))
+            .collect();
+        for st in roads {
+            if matches!(st.role.as_str(), "bridge" | "ford" | "causeway") {
+                for shape in &fixture_footprint {
+                    streets.extend(macroplan::clip(st, shape));
+                }
+            } else {
+                streets.extend(clip_street(st, surface, Some(&quarters)));
+            }
+        }
+        (quarters, streets, vec![], vec![])
+    };
     if quarters.is_empty() {
         return Ok(Layout {
             key: site.key.clone(),
@@ -1175,15 +1287,8 @@ pub(super) fn generate(
             warnings: vec![
                 "Aucun quartier constructible à cet emplacement et avec ce rayon.".into(),
             ],
+            enclosures,
         });
-    }
-    streets = streets
-        .iter()
-        .flat_map(|s| clip_street(s, surface, None))
-        .collect();
-    // Regional roads become native frontage only where they intersect the settlement's extent.
-    for st in roads {
-        streets.extend(clip_street(st, surface, Some(&quarters)));
     }
     let gradients = |p: Point| {
         let r = 70.0;
@@ -1221,6 +1326,17 @@ pub(super) fn generate(
         water,
         surface,
         noise: Noise::new(rng.fork("field")),
+        radius,
+        population: site.population,
+        radial: cfg.preset == "culture"
+            && cfg.params.get("streetOp").is_none()
+            && profiles::profile(if cfg.culture == "site" {
+                &site.culture
+            } else {
+                &cfg.culture
+            })
+            .pattern
+                == "radial",
     };
     let mut pieces = vec![];
     for (i, q) in quarters.iter().enumerate() {
@@ -1236,15 +1352,52 @@ pub(super) fn generate(
         cfg,
         &mut cr,
     );
+    // Slits and snapped endpoints must obey the same physical rules as arterials.
+    streets.retain_mut(|s| {
+        if matches!(s.role.as_str(), "bridge" | "ford" | "causeway") {
+            return true;
+        }
+        let limit = if s.rank >= 3 {
+            cfg.max_lane_grade
+        } else {
+            cfg.max_street_grade
+        };
+        if routing::path_clear(surface, &s.path, limit) {
+            return true;
+        }
+        if s.rank >= 3
+            && cfg.allow_stairs
+            && routing::path_clear(surface, &s.path, cfg.max_stair_grade)
+        {
+            s.role = "stairs".into();
+            for w in &mut s.widths {
+                *w = w.min(2.2);
+            }
+            return true;
+        }
+        false
+    });
+    warnings.extend(network::clean(
+        &mut streets,
+        center,
+        radius,
+        !enclosures.is_empty(),
+    ));
     let ribbons: Vec<_> = streets
         .iter()
         .flat_map(|s| g::ribbon(&s.path, &s.widths))
+        .chain(
+            enclosures
+                .iter()
+                .flat_map(|e| g::ribbon(&e.path, &[if e.kind == "wall" { 3.0 } else { 1.5 }])),
+        )
         .map(|p| {
             let bb = g::bbox(&p);
             (p, bb)
         })
         .collect();
     let mut blocks = vec![];
+    let mut fringe = rng.fork("open-fringe");
     for (qi, pcs) in pieces.into_iter().enumerate() {
         for pc in pcs {
             let bb = g::bbox(&pc.shape);
@@ -1263,10 +1416,26 @@ pub(super) fn generate(
             }
             for shape in polys.into_iter().filter(|p| g::area(p) > 1.0) {
                 let f = frame(&shape);
+                let mut kind = pc.kind.clone();
+                if kind == "block" && cfg.placement == "center" && enclosures.is_empty() {
+                    let distance = (f.c.x - center.x).hypot(f.c.y - center.y) / radius;
+                    let arterial = nearest(f.c, &streets, 2).map_or(f64::INFINITY, |v| v.0);
+                    // Leave whole backland cells between the populated fingers.
+                    // No parcel is clipped by a second decorative city outline.
+                    let vacancy = smooth(distance, 0.7, 1.05) * smooth(arterial, 18.0, 90.0) * 0.8;
+                    if fringe.chance(vacancy) {
+                        kind = "reserve".into();
+                    }
+                }
                 blocks.push(Block {
+                    zone: if cfg.zone == "auto" {
+                        zone_at(f.c, center, radius, site.population).into()
+                    } else {
+                        cfg.zone.clone()
+                    },
                     shape,
                     quarter: qi,
-                    kind: pc.kind.clone(),
+                    kind,
                     axis: f.u,
                 })
             }
@@ -1291,7 +1460,8 @@ pub(super) fn generate(
         quarters,
         streets,
         blocks,
-        warnings: vec![],
+        warnings,
+        enclosures,
     })
 }
 
@@ -1327,7 +1497,11 @@ mod tests {
             &site.culture,
             &cfg.preset,
             &cfg.recipe,
-            &cfg.zone,
+            if cfg.zone == "auto" {
+                "core"
+            } else {
+                &cfg.zone
+            },
             cfg.density,
             &cfg.params,
             "quarters",

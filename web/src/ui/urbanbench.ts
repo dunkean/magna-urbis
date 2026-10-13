@@ -6,6 +6,7 @@ import catalogueJson from '../../../rust/crates/core/src/urban/catalogue.json';
 import { decodeDecor, type Decor, type DecorEntry } from './decor';
 import { createTerrainRoads } from './terrainRoads';
 import { createTerrainUrban } from './terrainUrban';
+import { createUrbanWorkshop } from './urbanWorkshop';
 import { runSettlementRequest, type Point, type RoadOutput, type RoadSite, type Settlement, type SettlementOutput, type SettlementRaster, type SettlementRequest, type SettlementResponse } from '../../../rust/bridge/settlements';
 import { clampView, fitView, panBy, screenToWorld, zoomAt, type View } from '../render/view';
 import { viewFromString, viewToString } from './share';
@@ -60,6 +61,7 @@ const urban = createTerrainUrban({
   map, before: el('status'), getTerrain: () => undefined, getRaster: () => decor?.raster,
   getSeed: () => decor?.meta.seed ?? '', onChange: save, onFocus: (center, radius) => focus(center, radius),
 });
+const workshop = createUrbanWorkshop({ urban, getContext: () => decor && city ? { raster: decor.raster, sites: [{ key: city.key, population: city.population, culture: city.culture, center: city.center, radius: radiusOf(city) }], roads: roads.output, seed: decor.meta.seed } : undefined, onChange: save });
 
 // ---------------------------------------------------------------- decor catalogue
 async function loadIndex(): Promise<void> {
@@ -483,6 +485,7 @@ function shareQuery(): string {
   if (Object.values(filters).some(Boolean)) params.set('filters', JSON.stringify(filters));
   params.set('roads', roads.share());
   urban.share(params);
+  workshop.share(params);
   params.set('view', viewToString(view));
   return params.toString();
 }
@@ -499,6 +502,21 @@ el('openTerrain').onclick = () => { if (decor) window.open(`terrainbench.html?${
 (async () => {
   updateView(); cityControls(); placeMode();
   await loadIndex();
+  if (decorId && !entries.some(e => e.id === decorId)) {
+    // A catalogue can be refreshed while a shared case still names an older retained file.
+    try {
+      if (!/^[\w.-]+$/.test(decorId)) throw new Error('Identifiant de décor invalide.');
+      const response = await fetch(`decors/${decorId}.decor`);
+      if (!response.ok) throw new Error('Fichier absent.');
+      const d = decodeDecor(new Uint8Array(await response.arrayBuffer()));
+      if (d.meta.id !== decorId) throw new Error('Le fichier ne correspond plus au décor du lien.');
+      decoded.set(decorId, d);
+      entries.push({ id: decorId, label: d.meta.label, file: `${decorId}.decor`, tags: d.meta.tags, width: d.meta.width,
+        settlements: d.meta.settlements.length, roadKm: d.meta.stats.roadKm, riverKm: d.meta.stats.riverKm, source: { kind: 'server' } });
+    } catch {
+      catalogue(); status(`Décor du lien introuvable : ${decorId}. Ouvrez son fichier .decor ou choisissez un autre décor.`, true); return;
+    }
+  }
   catalogue();
   if (!entries.length) { status('Aucun décor. Lancez « node scripts/export_decors.mjs » (serveur npm run dev:terrain), exportez une carte depuis Terrain Bench (Export decor), ou ouvrez / déposez des fichiers .decor.'); return; }
   const first = entries.find(e => e.id === decorId) ?? visible()[0] ?? entries[0];

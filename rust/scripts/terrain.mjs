@@ -54,6 +54,7 @@ async function main() {
     await vite('build', '--mode', 'terrainbench');
     await vite('build', '--mode', 'neuralbench');
     await vite('build', '--mode', 'urbanbench');
+    await vite('build', '--mode', 'urbaneditor');
     console.log(`Terrain bench: ${join(rustDir, 'out/browser/terrainbench.html')}`);
     console.log(`Neural bench: ${join(rustDir, 'out/browser/neuralbench.html')}`);
     console.log(`Urban bench: ${join(rustDir, 'out/browser/urbanbench.html')} (open .decor files from web/decors)`);

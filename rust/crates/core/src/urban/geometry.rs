@@ -1,6 +1,6 @@
 //! Exact polygon operations shared by the two urban stages (coordinates in metres).
 use super::{Point, Shape, Surface};
-use geo::{Area, BooleanOps, Centroid, Contains, Coord, LineString, Polygon};
+use geo::{Area, BooleanOps, Centroid, Coord, LineString, Polygon};
 
 pub(super) fn signed(r: &[Point]) -> f64 {
     r.iter()
@@ -63,7 +63,18 @@ pub(super) fn centroid(s: &Shape) -> Point {
         .unwrap_or(Point { x: 0.0, y: 0.0 })
 }
 pub(super) fn contains(s: &Shape, p: Point) -> bool {
-    polygon(s).contains(&geo::Point::new(p.x, p.y))
+    // This is the hottest operation during tracing. Avoid allocating a geo
+    // polygon and copying every ring for each five-metre integration step.
+    fn ring(r: &[Point], p: Point) -> bool {
+        let mut inside = false;
+        for (&a, &b) in r.iter().zip(r.iter().cycle().skip(1)).take(r.len()) {
+            if (a.y > p.y) != (b.y > p.y) && p.x < (b.x - a.x) * (p.y - a.y) / (b.y - a.y) + a.x {
+                inside = !inside;
+            }
+        }
+        inside
+    }
+    ring(&s.outer, p) && !s.holes.iter().any(|h| ring(h, p))
 }
 pub(super) fn bbox(s: &Shape) -> (f64, f64, f64, f64) {
     s.outer.iter().fold(
