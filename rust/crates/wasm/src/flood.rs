@@ -8,53 +8,58 @@ use wasm_bindgen::prelude::*;
 const DX: [isize; 8] = [-1, 0, 1, -1, 1, -1, 0, 1];
 const DY: [isize; 8] = [-1, -1, -1, 0, 0, 1, 1, 1];
 
-/// Monotone priority queue on unique keys (sortable float32 bits, then the
-/// insertion count): a radix heap. The flood only pushes cells above the level
-/// it pops, so keys never fall below the last popped one and the pop order is
-/// exactly the binary heap's.
+/// Monotone priority queue in (height, insertion) order: a radix heap on the
+/// sortable float32 bits. The flood only pushes cells at or above the level it
+/// pops, so keys never fall below the last popped one. Equal heights pop
+/// first-in, first-out, so the order is exactly the binary heap's on the
+/// (height, insertion count) key, without one redistribution per pop.
 struct FloodHeap {
-    buckets: Vec<Vec<(u64, u32)>>,
-    last: u64,
+    /// Bucket b > 0 holds keys whose highest bit differing from `last` is b - 1;
+    /// bucket 0 the keys equal to `last`, unpopped from `head` on.
+    buckets: Vec<Vec<(u32, u32)>>,
+    last: u32,
+    head: usize,
     size: usize,
-    count: u64,
 }
 
 impl FloodHeap {
     fn new() -> Self {
-        Self { buckets: (0..65).map(|_| Vec::new()).collect(), last: 0, size: 0, count: 0 }
+        Self { buckets: (0..33).map(|_| Vec::new()).collect(), last: 0, head: 0, size: 0 }
     }
     #[inline]
-    fn bucket(&self, key: u64) -> usize {
-        if key == self.last { 0 } else { 64 - (key ^ self.last).leading_zeros() as usize }
+    fn bucket(&self, key: u32) -> usize {
+        if key == self.last { 0 } else { 32 - (key ^ self.last).leading_zeros() as usize }
     }
     fn push(&mut self, cell: usize, height: f32) {
         let bits = if height == 0.0 { 0.0_f32 } else { height }.to_bits();
-        let sortable = if bits & 0x8000_0000 != 0 { !bits } else { bits | 0x8000_0000 };
-        let key = ((sortable as u64) << 32) | self.count;
-        self.count += 1;
+        let key = if bits & 0x8000_0000 != 0 { !bits } else { bits | 0x8000_0000 };
         debug_assert!(key >= self.last);
         let b = self.bucket(key);
         self.buckets[b].push((key, cell as u32));
         self.size += 1;
     }
     fn pop(&mut self) -> usize {
-        if self.buckets[0].is_empty() {
-            let i = (1..65).find(|&i| !self.buckets[i].is_empty()).unwrap();
-            let moved = std::mem::take(&mut self.buckets[i]);
+        if self.head == self.buckets[0].len() {
+            self.buckets[0].clear();
+            self.head = 0;
+            let i = (1..33).find(|&i| !self.buckets[i].is_empty()).unwrap();
+            let mut moved = std::mem::take(&mut self.buckets[i]);
             self.last = moved.iter().map(|e| e.0).min().unwrap();
+            // Every lower bucket is empty and each bucket stays in insertion
+            // order, so ties keep their first-in, first-out order.
             for &(key, cell) in &moved {
                 let b = self.bucket(key);
                 self.buckets[b].push((key, cell));
             }
             // Keep the emptied bucket's allocation.
-            let mut moved = moved;
             moved.clear();
             if self.buckets[i].is_empty() {
                 self.buckets[i] = moved;
             }
         }
         self.size -= 1;
-        self.buckets[0].pop().unwrap().1 as usize
+        self.head += 1;
+        self.buckets[0][self.head - 1].1 as usize
     }
     fn is_empty(&self) -> bool {
         self.size == 0
@@ -225,10 +230,15 @@ pub fn flood_hydrology(height: &[f32], n: usize, cell_area: f64, weight: &[f32],
                     }
                     yy * n as isize + xx
                 };
-                let s = (z - filled[nb as usize] as f64) / distance[k];
-                if s > slope {
-                    slope = s;
-                    best = nb;
+                // Only a positive drop above the best slope can win: a diagonal
+                // divides it by sqrt(2), never raising it, so skip that division.
+                let drop = z - filled[nb as usize] as f64;
+                if drop > slope {
+                    let s = drop / distance[k];
+                    if s > slope {
+                        slope = s;
+                        best = nb;
+                    }
                 }
             }
             if best >= 0 {

@@ -1,0 +1,27 @@
+.settlement-actions { display: flex; flex-wrap: wrap; gap: 5px; }
+.settlement-actions button { height: auto; min-height: 25px; white-space: normal; }
+.road-legend { display: flex; flex-direction: column; gap: 5px; font-size: 10px; color: #667771; }
+.road-legend > div { display: flex; flex-wrap: wrap; gap: 3px 12px; }
+.road-legend span { display: flex; align-items: center; gap: 5px; }
+.road-legend i { width: 10px; height: 10px; border: 1.5px solid; border-radius: 2px; }
+#setWarnings, #roadWarnings { white-space: pre-line; font-size: 11px; color: #946130; max-height: 140px; overflow: auto; }
+.stage[aria-busy="true"] > summary span { opacity: 0.5; }
+.stage-controls output { min-width: 30px; text-align: right; font-size: 11px; font-variant-numeric: tabular-nums; }
+.stage-controls label:has(input[type=range]) { gap: 6px; }
+.stage-controls label:has(input[type=range]) input { margin-left: auto; }
+#setList { display: flex; flex-direction: column; gap: 4px; margin: 8px 0; max-height: 220px; overflow: auto; }
+.terrain-place { display: flex; flex-direction: column; height: auto; text-align: left; padding: 5px 7px; white-space: normal; }
+.terrain-place b, .terrain-place small { overflow-wrap: anywhere; }
+.terrain-place small { font-size: 10px; }
+.settlement-editor { display: flex; flex-direction: column; gap: 6px; border: 1px solid #d3ddd7; border-radius: 5px; padding: 8px; margin-bottom: 16px; }
+.settlement-editor label { display: flex; justify-content: space-between; gap: 5px; font-size: 11px; }
+.settlement-editor input, .settlement-editor select { width: 110px; min-width: 0; }
+.settlement-editor details { margin-top: 0; padding-top: 0; border: 0; }
+.settlement-editor details label { margin-top: 5px; }
+#setScore small { display: block; font-size: 10px; }
+#setScore table { width: 100%; font-size: 11px; margin: 5px 0; font-variant-numeric: tabular-nums; }
+#setScore td:last-child { text-align: right; }
+.settlement-marker { cursor: pointer; }
+#roadOverlay [data-road] { cursor: help; }
+.settlement-marker text { font-size: 11px; font-weight: 600; fill: #452f25; stroke: #fffdf0; stroke-width: 3px; paint-order: stroke; stroke-linejoin: round; }
+#viewport.settlement-picking #map { cursor: crosshair; }

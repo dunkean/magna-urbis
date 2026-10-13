@@ -8,6 +8,7 @@ mod generation_noise;
 mod hydrology;
 mod noise;
 mod rng;
+pub mod settlements;
 
 use erosion::{MountainCfg, erode_shape, erode_surface, mountain};
 use noise::Noise;
@@ -15,6 +16,7 @@ use rng::Rng;
 use std::f64::consts::{PI, TAU};
 
 pub use engine::TerrainGenerator;
+pub use erosion::{EROSION_TUNING, set_erosion_tuning};
 pub use generation_noise::{GenerationNoise, GenerationNoisePlan};
 pub use hydrology::{HydrologyConfig, HydrologyEngine, HydrologyOutput};
 
@@ -302,6 +304,7 @@ fn generate_motif_base_with_noise(
                     0.55
                 },
                 motif,
+                false,
             );
         } else {
             erode_shape(
@@ -334,6 +337,7 @@ fn generate_motif_base_with_noise(
             erosion,
             mountain_parameters(relief, width, motif, mountain_mix).talus,
             motif,
+            false,
         );
     }
     Ok(PreparedTerrain { height })
@@ -350,6 +354,52 @@ pub(crate) struct MountainParameters {
     crest: f64,
 }
 fn mountain_parameters(relief: Relief, width: f64, motif: f64, mix: f64) -> MountainParameters {
+    use erosion::{DETAIL, DIFFUSION, ITERATIONS, TALUS, tuned};
+    let base = relief_mountain_parameters(relief, width, motif, mix);
+    MountainParameters {
+        iterations: tuned(ITERATIONS, base.iterations as f64)
+            .round()
+            .clamp(1.0, 200.0) as usize,
+        talus: tuned(TALUS, base.talus).max(0.01),
+        detail: tuned(DETAIL, base.detail).max(0.0),
+        diffusion: tuned(DIFFUSION, base.diffusion).max(0.0),
+        ..base
+    }
+}
+
+/// Effective erosion settings of a relief without overrides, in `EROSION_TUNING` order.
+pub fn erosion_defaults(
+    relief: &str,
+    width: f64,
+    motif: f64,
+    mix: f64,
+) -> Result<Vec<f64>, String> {
+    let relief = Relief::parse(relief)?;
+    let source = if relief == Relief::Valley {
+        Relief::Mixed
+    } else {
+        relief
+    };
+    let base = relief_mountain_parameters(
+        source,
+        width,
+        motif,
+        if relief == Relief::Mixed { mix } else { 0.5 },
+    );
+    let mut values = erosion::TUNING_DEFAULTS.to_vec();
+    values[erosion::ITERATIONS] = base.iterations as f64;
+    values[erosion::TALUS] = base.talus;
+    values[erosion::DIFFUSION] = base.diffusion;
+    values[erosion::DETAIL] = base.detail;
+    Ok(values)
+}
+
+fn relief_mountain_parameters(
+    relief: Relief,
+    width: f64,
+    motif: f64,
+    mix: f64,
+) -> MountainParameters {
     let gentle = matches!(relief, Relief::Hills | Relief::Valley);
     let high = relief == Relief::HighMountains;
     let canyon = relief == Relief::Canyon;

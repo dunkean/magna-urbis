@@ -1,3 +1,5 @@
+import { terrainLights, type TerrainLighting } from './terrainLighting';
+import { coastalSeaColor, coastalSeaColors, hasCoastalSea } from './terrainSea';
 import { zlibSync } from 'fflate';
 import type { World } from '../gen/types';
 import { Palette, hexToRgb } from './styles';
@@ -97,6 +99,9 @@ export interface TerrainRasterOptions {
   normals?: { x: Float32Array; y: Float32Array; z: Float32Array };
   heightRange?: { min: number; max: number };
   exaggeration?: number;
+  lighting?: TerrainLighting;
+  /** Signed distance to the coast in metres, aligned to the sampled surface. */
+  sea?: { distance: Float32Array; bandWidth: number };
   /** Keep paper grain anchored in world coordinates across camera regions. */
   grainCoordinates?: { x: number; y: number; cell: number };
 }
@@ -178,7 +183,7 @@ export function renderTerrainPixels(world: World, pal: Palette, options: Terrain
   }
   slopes.sort((a, b) => a - b);
   const p90 = slopes[Math.floor(slopes.length * 0.9)] || 0.01;
-  const exag = options.exaggeration ?? Math.max(1.2, Math.min(6, 0.3 / p90));
+  const exag = options.lighting?.exaggeration ?? options.exaggeration ?? Math.max(1.2, Math.min(6, 0.3 / p90));
 
   const stops = pal.hypso.map(([t, hex]) => ({ t, c: hexToRgb(hex) }));
   const colorAt = (t: number): [number, number, number] => {
@@ -193,30 +198,38 @@ export function renderTerrainPixels(world: World, pal: Palette, options: Terrain
     return stops[stops.length - 1].c;
   };
   const paper = hexToRgb(pal.paper);
+  const seaColors = options.sea && hasCoastalSea(pal.name) ? coastalSeaColors(pal) : undefined;
   const inkRgb = hexToRgb(pal.ink);
   const HP = 6; // hatch period in raster px
   const out = new Uint8Array(W * H * 3);
-  const L = { x: -0.5, y: -0.5, z: 0.7071 };
-  const L2 = { x: 0.2, y: -0.75, z: 0.63 };
-  const flat = 0.7071;
+  const lights = options.lighting ? terrainLights(options.lighting) : undefined;
+  const [lx, ly, lz] = lights?.primary ?? [-0.5, -0.5, 0.7071];
+  const [l2x, l2y, l2z] = lights?.secondary ?? [0.2, -0.75, 0.63];
+  const flat = lights?.flat ?? 0.7071;
+  const shade = pal.shade * (options.lighting ? options.lighting.enabled ? options.lighting.strength : 0 : 1);
   for (let y = 0; y < H; y++) {
     for (let x = 0; x < W; x++) {
       const i = y * W + x;
       const hv = hs[i];
       const o = i * 3;
-      if (hv <= 0) { out[o] = paper[0]; out[o + 1] = paper[1]; out[o + 2] = paper[2]; continue; }
+      if (hv <= 0 && !seaColors) { out[o] = paper[0]; out[o + 1] = paper[1]; out[o + 2] = paper[2]; continue; }
       const xl = x > 0 ? x - 1 : x, xr = x < W - 1 ? x + 1 : x, yu = y > 0 ? y - 1 : y, yd = y < H - 1 ? y + 1 : y;
       const normals = options.normals;
       const gx = normals ? -normals.x[i] / Math.max(1e-8, normals.z[i]) * exag : ((hs[y * W + xr] - hs[y * W + xl]) / ((xr - xl) * pxM)) * exag;
       const gy = normals ? -normals.y[i] / Math.max(1e-8, normals.z[i]) * exag : ((hs[yd * W + x] - hs[yu * W + x]) / ((yd - yu) * pxM)) * exag;
       const inv = 1 / Math.sqrt(gx * gx + gy * gy + 1);
       const nx = -gx * inv, ny = -gy * inv, nz = inv;
-      const s1 = nx * L.x + ny * L.y + nz * L.z;
-      const s2 = nx * L2.x + ny * L2.y + nz * L2.z;
+      const s1 = nx * lx + ny * ly + nz * lz;
+      const s2 = nx * l2x + ny * l2y + nz * l2z;
       const sh = 0.75 * s1 + 0.25 * s2;
       const dd = sh - flat;
-      let f = 1 + pal.shade * (dd > 0 ? 1.0 : 0.8) * dd * 1.15;
+      let f = 1 + shade * (dd > 0 ? 1.0 : 0.8) * dd * 1.15;
       f = f < 0.58 ? 0.58 : f > 1.25 ? 1.25 : f;
+      if (hv <= 0 && seaColors) {
+        const c = coastalSeaColor(options.sea!.distance[i], options.sea!.bandWidth, f, seaColors);
+        for (let channel = 0; channel < 3; channel++) out[o + channel] = Math.round(c[channel]);
+        continue;
+      }
       const t = options.heightRange ? Math.max(0, Math.min(1, (hv - options.heightRange.min) / Math.max(1, options.heightRange.max - options.heightRange.min))) : Math.min(1, hv / landMax);
       const c = colorAt(Math.pow(t, 0.85));
       const grain = options.grainCoordinates;

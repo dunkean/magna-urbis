@@ -1,4 +1,5 @@
-import init, { TerrainEngine, flood_hydrology } from '../pkg/wasm/magna_urbis_wasm.js';
+import type { TerrainLayers, TerrainLighting } from '../../web/src/render/terrainLighting';
+import init, { TerrainEngine, erosion_defaults, flood_hydrology, set_erosion_tuning } from '../pkg/wasm/magna_urbis_wasm.js';
 import wasmUrl from '../pkg/wasm/magna_urbis_wasm_bg.wasm?url&inline';
 import { GpuTerrainSampler, prepareGpu, generateGpuNoise, GPU_RELIEFS, GPU_GENERATION_RELIEFS } from './terrainGpu';
 import { generateGpuTerrain, erodeGpuCoast, type ErosionProfile } from './terrainErosion';
@@ -58,6 +59,14 @@ export const DEFAULT_NEURAL_TUNING: NeuralTuning = {
  * (≈ 11°), plateaus 100 m (flat tables and escarpments).
  */
 export const NEURAL_RELIEF_DEFAULTS: Partial<Record<TerrainRelief, number>> = { flat: 20, hills: 110, plateau: 100 };
+/** Procedural erosion settings, in `EROSION_TUNING` order (`crates/core/src/erosion.rs`). */
+export const EROSION_SETTINGS = [
+  'iterations', 'incision', 'incisionSlope', 'fill', 'carve', 'finalCarve', 'talus', 'thermal', 'diffusion', 'detail', 'warp',
+  'surfaceIterations', 'surfaceIncision', 'surfaceCarve', 'surfaceRouted', 'surfaceThermal', 'surfaceDiffusion',
+] as const;
+export type ErosionSetting = typeof EROSION_SETTINGS[number];
+/** Overrides of the procedural erosion; a missing setting keeps the relief default. */
+export type ErosionTuning = Partial<Record<ErosionSetting, number>>;
 export interface TerrainSettings {
   seed: string; width: number; motifSize: number; relief: TerrainRelief; environment?: TerrainEnvironment; coastMask?: number; islandMode?: IslandMode; erosion: number; mountainMix: number; resolution: number;
   compute?: TerrainCompute; generationCompute?: 'cpu' | 'gpu' | 'gpu-all' | 'gpu-erosion'; hydrology?: HydrologySettings; source?: TerrainSource; climate?: NeuralClimate; fidelity?: number; neuralServer?: string; sketch?: TerrainSketch;
@@ -70,6 +79,7 @@ export interface TerrainSettings {
   refine?: boolean;
   /** Shape of that refinement (defaults: `DEFAULT_FRACTAL_DETAIL`). */
   detailNoise?: FractalDetail;
+  erosionTuning?: ErosionTuning;
 }
 export const climateOf = (settings: TerrainSettings): ClimateValues => settings.climateValues ?? CLIMATE_VALUES[settings.climate ?? 'temperate'];
 export interface NeuralInfo { totalMs: number; coarseMs: number; baseMs: number; decoderMs: number; reconstructionMs: number; requestMs: number; evaluations: [number, number, number]; profile: string; land: number }
@@ -86,6 +96,8 @@ export interface TerrainData {
   hydrology?: HydrologyData;
   hydrologySurfaceMs?: number;
   hydrologyError?: string;
+  /** Procedural overviews: the relief's own erosion settings, in `EROSION_SETTINGS` order. */
+  erosionDefaults?: number[];
   neural?: NeuralInfo;
   /** Vector water chain (overview replies). */
   water?: VectorWater;
@@ -111,7 +123,7 @@ export function reliefStatistics(data: Pick<TerrainData, 'height' | 'normalZ'>):
  */
 export interface DisplayField { n: number; data: Float32Array; exact: boolean; floor: number; cave?: Uint8Array }
 export interface TerrainRequest {
-  id: number; generation: number; kind: 'overview' | 'detail'; settings: TerrainSettings; region: TerrainRegion; scene?: { style: TerrainStyle; showContours: boolean };
+  id: number; generation: number; kind: 'overview' | 'detail'; settings: TerrainSettings; region: TerrainRegion; scene?: { style: TerrainStyle; showContours: boolean; lighting?: TerrainLighting; layers?: TerrainLayers };
   /** `gl`: the page refines and shades on the GPU; replies carry raw heights and, for overviews, the display field. */
   display?: 'svg' | 'gl';
 }
@@ -152,12 +164,12 @@ async function fetchNeuralRelief(settings: TerrainSettings, coastMask: number, i
   const started = performance.now();
   let response: Response;
   try { response = await fetch(`${server}/generate?${params}`, { cache: 'no-store', ...(sketch ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(sketch) } : {}) }); }
-  catch { throw new Error(`service neuronal injoignable (${server}) : lancer « npm run neural:serve » dans web/`); }
-  if (!response.ok) throw new Error(`service neuronal : ${await response.text()}`);
+  catch { throw new Error(`Neural service unreachable (${server}): run “npm run neural:serve” from web/`); }
+  if (!response.ok) throw new Error(`Neural service: ${await response.text()}`);
   const heights = new Float32Array(await response.arrayBuffer());
   const meta = JSON.parse(response.headers.get('X-Neural-Meta') ?? '{}');
-  if (sketch && (meta.edited !== true || ((sketch.region.x !== 0 || sketch.region.y !== 0 || sketch.region.width !== NEURAL_EXTENT) && meta.sketchRegion !== true))) throw new Error('Service neuronal ancien : redémarrer « npm run neural:serve » pour appliquer l’esquisse éditée.');
-  if (heights.length !== 1024 * 1024) throw new Error('service neuronal : surface incomplète');
+  if (sketch && (meta.edited !== true || ((sketch.region.x !== 0 || sketch.region.y !== 0 || sketch.region.width !== NEURAL_EXTENT) && meta.sketchRegion !== true))) throw new Error('Outdated neural service: restart “npm run neural:serve” to apply the edited sketch.');
+  if (heights.length !== 1024 * 1024) throw new Error('Neural service: incomplete surface');
   return { heights, info: { ...meta, requestMs: performance.now() - started } as NeuralInfo };
 }
 
@@ -195,7 +207,7 @@ async function sampleTerrain({ settings, region, kind, display }: TerrainRequest
   const neural = settings.source === 'neural';
   const key = neural
     ? JSON.stringify(['neural', settings.seed, settings.relief, settings.relief === 'mixed' ? settings.mountainMix : 0.5, coastMask, coastMask === 255 ? islandMode : 'island', climateOf(settings), settings.fidelity ?? 0.05, settings.neuralServer ?? '', settings.sketch, settings.neuralTuning ?? DEFAULT_NEURAL_TUNING, settings.width, settings.neuralFit ?? 'crop', settings.neuralSlopes ?? true])
-    : JSON.stringify([settings.seed, settings.width, settings.relief, settings.relief === 'cavern' ? 0 : settings.erosion, settings.motifSize, settings.relief === 'mixed' ? settings.mountainMix : 0.5, requestedGpuGeneration ? generationMode : 'cpu', environment, settings.sketch]);
+    : JSON.stringify([settings.seed, settings.width, settings.relief, settings.relief === 'cavern' ? 0 : settings.erosion, settings.motifSize, settings.relief === 'mixed' ? settings.mountainMix : 0.5, requestedGpuGeneration ? generationMode : 'cpu', environment, settings.sketch, settings.erosionTuning ?? {}]);
   let prepareMs = 0, noiseMs = 0, erosionMs = 0, gpuSimulationMs = 0, nativeEnvironmentMs = 0;
   let erosionProfile: ErosionProfile[] | undefined;
   if (!engine || engineKey !== key) {
@@ -205,6 +217,8 @@ async function sampleTerrain({ settings, region, kind, display }: TerrainRequest
     generationBackend = 'cpu'; generationReason = undefined;
     const mix = settings.relief === 'mixed' ? settings.mountainMix : 0.5;
     neuralInfo = undefined;
+    // Read by the CPU engine and the GPU erosion plan built below, and by later coasts.
+    set_erosion_tuning(Float64Array.from(EROSION_SETTINGS, name => settings.erosionTuning?.[name] ?? NaN));
     if (neural) {
       // The coasts belong to the neural sketch; the engine retains the surface as is.
       const result = await fetchNeuralRelief(settings, coastMask, islandMode);
@@ -231,7 +245,7 @@ async function sampleTerrain({ settings, region, kind, display }: TerrainRequest
           generationBackend = generationMode === 'gpu-all' ? 'gpu-noise-all-f32' : 'gpu-noise-f32';
         }
       } catch (error) {
-        generationReason = `Génération GPU indisponible : ${error instanceof Error ? error.message : String(error)}`;
+        generationReason = `GPU generation unavailable: ${error instanceof Error ? error.message : String(error)}`;
       }
     }
     if (!engine) engine = new TerrainEngine(settings.seed, settings.width, settings.relief, settings.erosion, settings.motifSize, mix, environment);
@@ -240,7 +254,7 @@ async function sampleTerrain({ settings, region, kind, display }: TerrainRequest
       const sample = engine.sample_region(0, 0, settings.width, 1024);
       try { engine.set_edited_surface(refineSketch(sketch, sample.height, 1024)); }
       finally { sample.free(); }
-      generationReason = 'Esquisse éditée + détail procédural et érosion Rust.';
+      generationReason = 'Edited sketch + procedural detail and Rust erosion.';
     }
     prepareMs = performance.now() - prepareStarted;
     engineKey = key;
@@ -282,6 +296,9 @@ async function sampleTerrain({ settings, region, kind, display }: TerrainRequest
   async function finish(data: TerrainData): Promise<TerrainData> {
     const config = settings.hydrology;
     data.neural = neuralInfo;
+    if (kind === 'overview' && !neural && settings.relief !== 'cavern') {
+      data.erosionDefaults = Array.from(erosion_defaults(settings.relief, settings.width, settings.motifSize, settings.mountainMix));
+    }
     const water = !!config?.enabled && settings.relief !== 'cavern', vector = config?.engine !== 'rust';
     if (onRelief && config && water && kind === 'overview' && display === 'gl') {
       const n = vector ? config.vectorResolution : config.resolution;
@@ -342,9 +359,10 @@ async function sampleTerrain({ settings, region, kind, display }: TerrainRequest
               settings.sketch ? engine!.min_height <= 0 : neural ? engine!.min_height < 0 : coastMask !== 0);
             hydrologyKey = inputKey;
           }
-          const vectorKey = JSON.stringify(config);
+          const climate = climateOf(settings);
+          const vectorKey = JSON.stringify([config, climate.temperature, climate.precipitation]);
           if (!hydrology || hydrologyVectorKey !== vectorKey) {
-            hydrology = preparedHydrology.generate(config); hydrologyVectorKey = vectorKey;
+            hydrology = preparedHydrology.generate(config, climate); hydrologyVectorKey = vectorKey;
           }
         } catch (error) {
           // Neural surfaces can exceed the current river-profile budgets: keep the relief.
@@ -416,7 +434,7 @@ async function sampleTerrain({ settings, region, kind, display }: TerrainRequest
       backendReason = `GPU indisponible : ${error instanceof Error ? error.message : String(error)}`;
       sampler?.dispose(); sampler = undefined; samplerMode = undefined;
     }
-  } else if (mode !== 'wasm') backendReason = 'relief actuellement échantillonné en WASM';
+  } else if (mode !== 'wasm') backendReason = 'terrain currently sampled in WASM';
   if (gpuSampled) return finish(gpuSampled);
   const samplingStarted = performance.now();
   const result = engine.sample_region(region.x, region.y, region.extent, region.resolution);

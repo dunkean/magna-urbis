@@ -144,13 +144,34 @@ impl GenerationNoisePlan {
             (cfg.amp * 1.25 / cfg.iterations as f64) as f32,
             down.0 as f32,
             down.1 as f32,
-            (strength * (width * 1.44 / cfg.coarse as f64) / (0.004_f64.sqrt() * motif)) as f32,
+            (crate::erosion::tuning(crate::erosion::INCISION)
+                * strength
+                * (width * 1.44 / cfg.coarse as f64)
+                / (0.004_f64.sqrt() * motif)) as f32,
             erosion as f32,
         ]);
         plan.parameters.extend(crate::erosion::surface_parameters(
             width, motif, erosion, cfg.talus,
         ));
         plan.parameters.push(cfg.crest as f32);
+        // GPU block of the overridable settings (terrainErosion.wgsl `p.values[12..14]`).
+        use crate::erosion::{
+            CARVE, FILL, FINAL_CARVE, INCISION_SLOPE, SURFACE_CARVE, SURFACE_ROUTED, THERMAL, WARP,
+            tuning,
+        };
+        plan.parameters.extend(
+            [
+                FILL,
+                CARVE,
+                FINAL_CARVE,
+                INCISION_SLOPE,
+                THERMAL,
+                WARP,
+                SURFACE_ROUTED,
+                SURFACE_CARVE,
+            ]
+            .map(|i| tuning(i) as f32),
+        );
         Ok(plan)
     }
 }

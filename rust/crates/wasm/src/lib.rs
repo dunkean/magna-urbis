@@ -1,6 +1,7 @@
 use wasm_bindgen::prelude::*;
 
 mod flood;
+mod settlements;
 pub use flood::{flood_hydrology, Flood};
 
 #[wasm_bindgen]
@@ -87,6 +88,10 @@ impl HydrologyEngine {
         depression_policy: Option<String>,
         max_breach_depth: Option<f32>,
         max_breach_length: Option<f32>,
+        min_lake_depth: Option<f32>,
+        temperature: Option<f32>,
+        precipitation: Option<f32>,
+        coastal_streams: Option<f32>,
     ) -> Result<HydrologyOutput, JsValue> {
         let defaults = magna_urbis_core::HydrologyConfig::default();
         let cfg = magna_urbis_core::HydrologyConfig {
@@ -106,6 +111,10 @@ impl HydrologyEngine {
             depression_policy: depression_policy.unwrap_or(defaults.depression_policy),
             max_breach_depth: max_breach_depth.unwrap_or(defaults.max_breach_depth),
             max_breach_length: max_breach_length.unwrap_or(defaults.max_breach_length),
+            min_lake_depth: min_lake_depth.unwrap_or(defaults.min_lake_depth),
+            temperature: temperature.unwrap_or(defaults.temperature),
+            precipitation: precipitation.unwrap_or(defaults.precipitation),
+            coastal_streams: coastal_streams.unwrap_or(defaults.coastal_streams),
         };
         let mut previous = performance_now();
         let mut stage_ms = Vec::new();
@@ -267,6 +276,14 @@ impl HydrologyOutput {
     #[wasm_bindgen(getter)]
     pub fn lake_meta(&self) -> Vec<f32> {
         self.output.lake_meta.clone()
+    }
+    #[wasm_bindgen(getter)]
+    pub fn lake_closed(&self) -> Vec<u32> {
+        self.output.lake_closed.clone()
+    }
+    #[wasm_bindgen(getter)]
+    pub fn water_field(&self) -> Vec<f32> {
+        self.output.water_field.clone()
     }
 }
 
@@ -595,5 +612,24 @@ pub fn generate_terrain(
 ) -> Result<TerrainOutput, JsValue> {
     magna_urbis_core::generate_terrain(seed, width, relief, erosion, raster_resolution(resolution)?)
         .map(|terrain| TerrainOutput { terrain })
+        .map_err(|error| JsValue::from_str(&error))
+}
+
+/// Erosion overrides (NaN: relief default) for the engines and GPU plans built next,
+/// in `EROSION_TUNING` order (`crates/core/src/erosion.rs`).
+#[wasm_bindgen]
+pub fn set_erosion_tuning(values: &[f64]) {
+    magna_urbis_core::set_erosion_tuning(values);
+}
+
+/// Effective erosion settings of a relief without overrides.
+#[wasm_bindgen]
+pub fn erosion_defaults(
+    relief: &str,
+    width: f64,
+    motif: f64,
+    mix: f64,
+) -> Result<Vec<f64>, JsValue> {
+    magna_urbis_core::erosion_defaults(relief, width, motif, mix)
         .map_err(|error| JsValue::from_str(&error))
 }

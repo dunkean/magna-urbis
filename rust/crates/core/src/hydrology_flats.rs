@@ -1,7 +1,7 @@
 //! Convergent metric drainage through exact equal-spill-level components.
 //! Positive symmetric travel costs favour the basin's buried thalwegs without
 //! modifying H or F. Settled order supplies a strict, diagnostic drainage rank.
-use super::{Drainage, HeapCell, OUT, border, fill_cardinal, neighbor};
+use super::{Drainage, HeapCell, OUT, border, fill_cardinal, neighbors};
 use std::cmp::Reverse;
 use std::collections::BinaryHeap;
 
@@ -37,8 +37,9 @@ pub(super) fn resolve(
             continue;
         }
         let mut best = 0.0;
-        for d in 0..8 {
-            let Some(j) = neighbor(i, d, n) else { continue };
+        let around_i = neighbors(i, n);
+        for (d, neighbor) in around_i.into_iter().enumerate() {
+            let Some(j) = neighbor else { continue };
             if allowed[i] & (1 << d) == 0 {
                 continue;
             }
@@ -73,8 +74,9 @@ pub(super) fn resolve(
         while k < pool.len() {
             let i = pool[k];
             k += 1;
-            for d in 0..8 {
-                if let Some(j) = neighbor(i, d, n)
+            let around_i = neighbors(i, n);
+            for (d, neighbor) in around_i.into_iter().enumerate() {
+                if let Some(j) = neighbor
                     && labels[j] == OUT
                     && !sea[j]
                     && filled[j] == level
@@ -108,8 +110,9 @@ pub(super) fn resolve(
                 // routing cost while retaining broad buried valley corridors.
                 let mut sum = 4.0 * (level - physical[i]).max(0.0);
                 let mut weight = 4.0;
-                for d in 0..8 {
-                    if let Some(j) = neighbor(i, d, n)
+                let around_i = neighbors(i, n);
+                for (d, neighbor) in around_i.into_iter().enumerate() {
+                    if let Some(j) = neighbor
                         && labels[j] == label
                     {
                         let w = if d.is_multiple_of(2) { 2.0 } else { 1.0 };
@@ -159,8 +162,9 @@ pub(super) fn resolve(
             for _ in 0..6 {
                 for &i in &pool {
                     let mut value = influence[i];
-                    for d in 0..8 {
-                        if let Some(j) = neighbor(i, d, n)
+                    let around_i = neighbors(i, n);
+                    for (d, neighbor) in around_i.into_iter().enumerate() {
+                        if let Some(j) = neighbor
                             && labels[j] == label
                         {
                             value = value.max(influence[j] - 0.15 * step_length(d));
@@ -279,8 +283,9 @@ fn external_halo(path: &[bool], sea: &[bool], n: usize, cell: f32, radius: f32) 
             continue;
         }
         influence[i] = (1.0 - cost as f32 / radius).max(0.0);
-        for d in 0..8 {
-            let Some(j) = neighbor(i, d, n) else { continue };
+        let around_i = neighbors(i, n);
+        for (d, neighbor) in around_i.into_iter().enumerate() {
+            let Some(j) = neighbor else { continue };
             let next = cost + f64::from(cell * step_length(d));
             if !sea[j] && next < f64::from(radius) && next < distance[j] {
                 distance[j] = next;
@@ -344,15 +349,17 @@ fn consolidate_slopes(
     };
     let capture_radius = external.map_or(steps as f32 * cell, |corridor| corridor.radius);
     let mut next = if steps == 0 { vec![] } else { vec![0.0; len] };
+    let decay: [f32; 8] = std::array::from_fn(|d| step_length(d) / steps as f32);
     for _ in 0..steps {
         for i in 0..len {
             let mut value = influence[i];
             if !sea[i] {
-                for d in 0..8 {
-                    if let Some(j) = neighbor(i, d, n)
+                let around_i = neighbors(i, n);
+                for (d, neighbor) in around_i.into_iter().enumerate() {
+                    if let Some(j) = neighbor
                         && !sea[j]
                     {
-                        value = value.max(influence[j] - step_length(d) / steps as f32);
+                        value = value.max(influence[j] - decay[d]);
                     }
                 }
             }
@@ -424,9 +431,10 @@ fn consolidate_slopes(
             length[i] = length[j] + cell * step;
             continue;
         }
+        let around_i = neighbors(i, n);
         let steepest = (0..8)
             .filter_map(|d| {
-                neighbor(i, d, n).map(|j| ((filled[i] - filled[j]) / step_length(d)).max(0.0))
+                around_i[d].map(|j| ((filled[i] - filled[j]) / step_length(d)).max(0.0))
             })
             .fold(0.0_f32, f32::max);
         let mut best = f64::INFINITY;
@@ -434,10 +442,11 @@ fn consolidate_slopes(
         let mut best_length = 0.0;
         // The extra physical distance is bounded: attraction cannot send a
         // slope stream around the map merely to reach a cheap distant trunk.
-        for d in 0..8 {
-            let Some(j) = neighbor(i, d, n) else { continue };
+        let around_i = neighbors(i, n);
+        for (d, neighbor) in around_i.into_iter().enumerate() {
+            let Some(j) = neighbor else { continue };
             let gradient = (filled[i] - filled[j]) / step_length(d);
-            if gradient <= 0.0 || allowed[i] & (1 << d) == 0 || crosses_diagonal(i, j, receivers, n)
+            if gradient <= 0.0 || allowed[i] & (1 << d) == 0 || crosses_diagonal(i, d, receivers, n)
             {
                 continue;
             }
@@ -460,11 +469,12 @@ fn consolidate_slopes(
         if receiver == OUT {
             // Planarity remains mandatory when a fixed neighbouring flat entry
             // excludes the original steepest diagonal. Take any real descent.
-            for d in 0..8 {
-                let Some(j) = neighbor(i, d, n) else { continue };
+            let around_i = neighbors(i, n);
+            for (d, neighbor) in around_i.into_iter().enumerate() {
+                let Some(j) = neighbor else { continue };
                 if filled[j] >= filled[i]
                     || allowed[i] & (1 << d) == 0
-                    || crosses_diagonal(i, j, receivers, n)
+                    || crosses_diagonal(i, d, receivers, n)
                     || length[j] + cell * step_length(d) > old_length[i] * 1.35 + capture_radius
                 {
                     continue;
@@ -522,18 +532,19 @@ fn consolidate_slopes(
                     potential[i] = potential[j] + f64::from(original_step);
                     continue;
                 }
+                let around_i = neighbors(i, n);
                 let steepest = (0..8)
                     .filter_map(|d| {
-                        neighbor(i, d, n)
-                            .map(|j| ((filled[i] - filled[j]) / step_length(d)).max(0.0))
+                        around_i[d].map(|j| ((filled[i] - filled[j]) / step_length(d)).max(0.0))
                     })
                     .fold(0.0_f32, f32::max);
                 let mut best = f64::INFINITY;
                 let mut target = OUT;
                 let mut target_distance = f32::INFINITY;
                 let mut target_length = length[i];
-                for d in 0..8 {
-                    let Some(j) = neighbor(i, d, n) else { continue };
+                let around_i = neighbors(i, n);
+                for (d, neighbor) in around_i.into_iter().enumerate() {
+                    let Some(j) = neighbor else { continue };
                     let gradient = (filled[i] - filled[j]) / step_length(d);
                     let distance = first_hit[j] + cell * step_length(d);
                     let actual_length = length[j] + cell * step_length(d);
@@ -542,7 +553,7 @@ fn consolidate_slopes(
                         || !potential[j].is_finite()
                         || distance > corridor.bank_radius
                         || actual_length > old_length[i] * 1.35 + capture_radius
-                        || crosses_diagonal(i, j, receivers, n)
+                        || crosses_diagonal(i, d, receivers, n)
                     {
                         continue;
                     }
@@ -572,12 +583,15 @@ fn consolidate_slopes(
     Ok(())
 }
 
-fn crosses_diagonal(i: usize, j: usize, receivers: &[u32], n: usize) -> bool {
-    if i % n == j % n || i / n == j / n {
+/// Whether the step from i in direction d crosses an existing diagonal
+/// receiver between the two other cells of its 2 x 2 block.
+fn crosses_diagonal(i: usize, d: usize, receivers: &[u32], n: usize) -> bool {
+    if d.is_multiple_of(2) {
         return false;
     }
-    let a = i / n * n + j % n;
-    let b = j / n * n + i % n;
+    // Same row as i, column of the neighbour; and same column, its row.
+    let a = if d == 1 || d == 7 { i + 1 } else { i - 1 };
+    let b = if d == 1 || d == 3 { i + n } else { i - n };
     receivers[a] == b as u32 || receivers[b] == a as u32
 }
 
@@ -637,8 +651,9 @@ fn solve(
         }
         settled += 1;
         rank[i] = settled;
-        for d in 0..8 {
-            if let Some(j) = neighbor(i, d, n)
+        let around_i = neighbors(i, n);
+        for (d, neighbor) in around_i.into_iter().enumerate() {
+            if let Some(j) = neighbor
                 && labels[j] == label
                 && rank[j] == 0
                 && distance[j] != 0.0
@@ -821,8 +836,9 @@ fn repair_lake_contact(
         if rank[i] != 0 {
             continue;
         }
+        let around_i = neighbors(i, n);
         for d in (1..8).step_by(2) {
-            let Some(j) = neighbor(i, d, n) else { continue };
+            let Some(j) = around_i[d] else { continue };
             if lakes[j] != label || rank[j] == 0 {
                 continue;
             }
@@ -869,8 +885,9 @@ pub(super) fn diagonal_open(i: usize, j: usize, filled: &[f32], n: usize, budget
 fn diagonal_masks(filled: &[f32], n: usize, budget: f32) -> Vec<u8> {
     let mut allowed = vec![0x55; filled.len()];
     for i in 0..filled.len() {
+        let around_i = neighbors(i, n);
         for d in [1, 7] {
-            if let Some(j) = neighbor(i, d, n)
+            if let Some(j) = around_i[d]
                 && diagonal_open(i, j, filled, n, budget)
             {
                 allowed[i] |= 1 << d;
@@ -903,6 +920,10 @@ fn surface_order(filled: &[f32], rank: &[u32]) -> Vec<usize> {
         let mut positions = [0_usize; 256];
         for &i in &order {
             positions[((keys[i] >> shift) & 255) as usize] += 1;
+        }
+        // One shared byte (e.g. the high bytes of every rank) keeps the order.
+        if positions.contains(&order.len()) {
+            continue;
         }
         let mut offset = 0;
         for position in &mut positions {
@@ -951,22 +972,19 @@ pub(super) fn condition(
     for i in 0..len {
         if border(i, n) || sea[i] {
             filled[i] = height[i];
-            heap.push(HeapCell {
-                z: height[i],
-                tie: i as u32,
-                cell: i,
-            });
+            heap.push(HeapCell::new(height[i], i as u32, i));
         }
     }
     while let Some(node) = heap.pop() {
         let i = node.cell;
-        if settled[i] || node.z != filled[i] {
+        if settled[i] || node.z() != filled[i] {
             continue;
         }
         settled[i] = true;
         order.push(i);
-        for d in 0..8 {
-            let Some(j) = neighbor(i, d, n) else { continue };
+        let around_i = neighbors(i, n);
+        for (d, neighbor) in around_i.into_iter().enumerate() {
+            let Some(j) = neighbor else { continue };
             if settled[j] {
                 continue;
             }
@@ -994,11 +1012,7 @@ pub(super) fn condition(
             if next < filled[j] {
                 filled[j] = next;
                 receivers[j] = i as u32;
-                heap.push(HeapCell {
-                    z: next,
-                    tie: j as u32,
-                    cell: j,
-                });
+                heap.push(HeapCell::new(next, j as u32, j));
             }
         }
     }

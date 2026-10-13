@@ -27,7 +27,7 @@ async function drain(): Promise<void> {
         // A newer camera region replaces a region; nothing but a new generation replaces an overview.
         if (generation !== latestGeneration || (waiting && waiting.id > id && waiting.kind === kind)) continue;
         const started = performance.now();
-        const scene = request.scene ? renderRustTerrain(terrain, request.scene.style, kind === 'overview', request.settings, request.scene.showContours, `worker-${generation}-${id}`) : undefined;
+        const scene = request.scene ? renderRustTerrain(terrain, request.scene.style, kind === 'overview', request.settings, request.scene.showContours, `worker-${generation}-${id}`, request.scene.lighting, request.scene.layers) : undefined;
         const scenePreparationMs = scene ? performance.now() - started : undefined;
         self.postMessage({ id, generation, kind, terrain, scene, scenePreparationMs } satisfies TerrainResponse, { transfer: transfers(terrain) });
       } catch (error) {

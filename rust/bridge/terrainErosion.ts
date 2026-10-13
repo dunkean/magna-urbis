@@ -26,7 +26,7 @@ async function pipelines(device: GPUDevice, entries: Set<Entry>, modes: Set<numb
   if (!result) {
     result = (async () => {
       const layout = device.createBindGroupLayout({ entries: [
-        { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'uniform', hasDynamicOffset: true, minBindingSize: 192 } },
+        { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'uniform', hasDynamicOffset: true, minBindingSize: 224 } },
         ...[1, 2].map(binding => ({ binding, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' as const } })),
         ...[3, 4, 5, 6, 7].map(binding => ({ binding, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' as const } })),
       ] });
@@ -123,6 +123,10 @@ async function generateOnce(state: Context, settings: TerrainSettings, factor: n
   try {
     const parameters = plan.parameters(), base = parameters.slice(0, 24), tuning = coast?.tuning ?? parameters.slice(24, 32);
     const n = base[2], iterations = base[13], strength = base[18];
+    // Overridable settings block (fill ×, carve, final carve, incision slope, thermal ×, warp ×, routed, surface carve).
+    const block = coast ? [1, 0, 0, .2, 1, 1, 0, 0] : Array.from(parameters.slice(33, 41));
+    const surfaceBlock = block.slice(); surfaceBlock[4] = 1;
+    const routed = !coast && block[6] > .5;
     const coarseFactor = Math.min(factor, 4);
     const surfacePasses = Math.min((shape || coast || settings.relief === 'mixed' ? 64 : 32) * factor, 512);
     const surface = base.slice();
@@ -136,13 +140,14 @@ async function generateOnce(state: Context, settings: TerrainSettings, factor: n
     if (!coast && !shape) {
       require('initialize', 'uplift', 'bounds', 'reconstruct', 'detail');
       if (strength > 0) {
-        graph(); require('floodInit', 'floodCheck', 'pitInit', 'pitUnion', 'pitCompress', 'pitReduce', 'pitPour', 'pitFill');
+        graph(); require('floodInit', 'floodCheck', 'pitInit', 'pitUnion', 'pitCompress', 'pitReduce', 'pitPour', 'pitFill', 'breachInit', 'breach', 'breachFinish');
         [0, 1, 2].forEach(mode => modes.add(mode));
       }
     } else if (shape && !coast) require('volcanicInitial');
     if (settings.erosion > 0) {
       graph(); require('surfaceLoad', 'surfaceFlowInit', 'surfaceDelta', 'surfaceReconstruct'); modes.add(1); modes.add(3);
       if (settings.relief === 'canyon' && !coast) { require('floodInit', 'floodCheck', 'canyonSeed', 'canyonSpread', 'canyonApply'); modes.add(0); }
+      if (routed) { require('floodInit', 'floodCheck', 'pitInit', 'pitUnion', 'pitCompress', 'pitReduce', 'pitPour', 'breachInit', 'breach', 'breachFinish'); modes.add(0); }
     }
     const pipelineStarted = performance.now();
     const program = await pipelines(device, entries, modes);
@@ -174,15 +179,16 @@ async function generateOnce(state: Context, settings: TerrainSettings, factor: n
     const queryBuffer = querySet ? create(48, GPUBufferUsage.QUERY_RESOLVE | GPUBufferUsage.COPY_SRC) : undefined;
     const queryReadback = querySet ? create(48, GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ) : undefined;
     const group = device.createBindGroup({ layout: program.layout, entries: [
-      { binding: 0, resource: { buffer: uniform, size: 192 } },
+      { binding: 0, resource: { buffer: uniform, size: 224 } },
       ...[upload(plan.permutations()), upload(plan.gradients()), nodes, fine, control, output, tileFlags].map((buffer, i) => ({ binding: i + 1, resource: { buffer } })),
     ] });
     const variants = new Map<string, number>();
+    let settingsBlock = block;
     const offset = (extra: number[], config: Float32Array) => {
-      const key = [...config, ...extra].join(','); let value = variants.get(key);
+      const key = [...config, ...extra, ...settingsBlock].join(','); let value = variants.get(key);
       if (value === undefined) {
-        value = variants.size * 256; if (value + 192 > 65536) throw new Error('Trop de variantes GPU.');
-        variants.set(key, value); device.queue.writeBuffer(uniform, value, new Float32Array([...config, ...extra, ...(shape ?? new Float32Array(16))]));
+        value = variants.size * 256; if (value + 224 > 65536) throw new Error('Too many GPU variants.');
+        variants.set(key, value); device.queue.writeBuffer(uniform, value, new Float32Array([...config, ...extra, ...(shape ?? new Float32Array(16)), ...settingsBlock]));
       }
       return value;
     };
@@ -213,10 +219,16 @@ async function generateOnce(state: Context, settings: TerrainSettings, factor: n
       if (mode === 0) { dispatch('floodCheck', extras, 1); dispatch('receivers'); }
       else dispatch('graphFinish', extras);
     };
-    const pits = (extra = normal) => {
+    const pits = (extra = normal, fill = true) => {
       dispatch('pitInit');
       for (let k = 0; k < 8 * coarseFactor; k++) { dispatch('pitUnion'); dispatch('pitCompress'); }
-      for (const entry of ['pitReduce', 'pitPour', 'pitFill'] as const) dispatch(entry, extra);
+      for (const entry of fill ? ['pitReduce', 'pitPour', 'pitFill'] as const : ['pitReduce', 'pitPour'] as const) dispatch(entry, extra);
+    };
+    // Lowers each depression's sill towards `carve` of its depth (CPU `carve_sills`).
+    const carve = (amount: number) => {
+      if (amount <= 0) return;
+      const extras = normal.slice(); extras[6] = amount;
+      dispatch('breachInit'); dispatch('breach', extras); dispatch('breachFinish');
     };
     const thermal = (passes: number, extra = normal) => {
       for (let k = 0; k < passes; k++) for (const entry of ['thermalFlux', 'thermalApply', 'copyHeight'] as const) dispatch(entry, extra);
@@ -237,7 +249,7 @@ async function generateOnce(state: Context, settings: TerrainSettings, factor: n
       for (let iteration = 0; iteration < iterations; iteration++) {
         dispatch('uplift');
         if (strength > 0) {
-          solve(0, 64 * coarseFactor); pits(); dispatch('flow'); solve(1, 128 * coarseFactor); solve(2, 128 * coarseFactor); thermal(3);
+          solve(0, 64 * coarseFactor); pits(); carve(block[1]); dispatch('flow'); solve(1, 128 * coarseFactor); solve(2, 128 * coarseFactor); thermal(3);
           const dose = base[17] * 3 * strength;
           for (let k = 0; k < Math.floor(dose); k++) diffuse(.5);
           if (dose % 1 > 0) diffuse(.5 * (dose % 1));
@@ -247,7 +259,7 @@ async function generateOnce(state: Context, settings: TerrainSettings, factor: n
       const clamp = normal.slice(); clamp[7] = 1; dispatch('bounds', clamp);
       if (strength > 0) {
         thermal(4, tail);
-        for (let k = 0; k < 2; k++) { solve(0, 64 * coarseFactor); pits(tail); }
+        for (let k = 0; k < 2; k++) { solve(0, 64 * coarseFactor); pits(tail); carve(block[2]); }
         diffuse(strength * .5, tail);
       }
       dispatch('reconstruct', normal, 4096);
@@ -257,7 +269,7 @@ async function generateOnce(state: Context, settings: TerrainSettings, factor: n
     }
     pass.end(); pass = beginPass(2);
     if (settings.erosion > 0) {
-      config = surface; dispatch('surfaceLoad');
+      config = surface; settingsBlock = surfaceBlock; dispatch('surfaceLoad');
       if (settings.relief === 'canyon' && !coast) {
         // Basin routing supplies continuous trunk rivers. Only this relief
         // deliberately enlarges their incision into deep, broad canyons.
@@ -274,7 +286,10 @@ async function generateOnce(state: Context, settings: TerrainSettings, factor: n
         const extras = normal.slice(); extras[0] = phase; dispatch('canyonApply', extras);
       }
       for (let step = 0; step < tuning[3]; step++) {
-        dispatch('surfaceFlowInit'); dispatch('receivers'); dispatch('flow');
+        // Routed: water crosses depressions to their spill, whose sill is carved.
+        if (routed) { solve(0, surfacePasses); pits(normal, false); carve(block[7]); }
+        else { dispatch('surfaceFlowInit'); dispatch('receivers'); }
+        dispatch('flow');
         // Surface graphs converge sooner than the basin-wide coarse graph;
         // mixed/finite/coastal surfaces need a longer initial budget. Retain
         // validation and retries up to the old 512-pass ceiling.

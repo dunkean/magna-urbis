@@ -1,8 +1,40 @@
 //! Isolated hydrology stage. Drainage is raster based; retained water geometry is vectorial.
 //! Heights, coordinates, widths and areas are metres / square metres. No renderer types.
 use crate::rng::Rng;
+use std::cell::RefCell;
 use std::cmp::Ordering;
-use std::collections::{BinaryHeap, HashMap, HashSet, VecDeque};
+use std::collections::{BinaryHeap, VecDeque};
+use std::hash::{BuildHasherDefault, Hasher};
+
+/// Multiplicative hash for the small integer keys of spatial bins and graph
+/// nodes. No container is iterated in hash order without sorting, so this
+/// only replaces SipHash's cost, not any output.
+#[derive(Default, Clone, Copy)]
+struct FastHasher(u64);
+impl Hasher for FastHasher {
+    fn finish(&self) -> u64 {
+        self.0
+    }
+    fn write(&mut self, bytes: &[u8]) {
+        for &byte in bytes {
+            self.write_u64(u64::from(byte));
+        }
+    }
+    fn write_u64(&mut self, value: u64) {
+        self.0 = (self.0.rotate_left(5) ^ value).wrapping_mul(0x517c_c1b7_2722_0a95);
+    }
+    fn write_u32(&mut self, value: u32) {
+        self.write_u64(u64::from(value));
+    }
+    fn write_usize(&mut self, value: usize) {
+        self.write_u64(value as u64);
+    }
+    fn write_isize(&mut self, value: isize) {
+        self.write_u64(value as u64);
+    }
+}
+type HashMap<K, V> = std::collections::HashMap<K, V, BuildHasherDefault<FastHasher>>;
+type HashSet<K> = std::collections::HashSet<K, BuildHasherDefault<FastHasher>>;
 
 #[path = "hydrology_meanders.rs"]
 mod meanders;
@@ -16,21 +48,22 @@ mod flats;
 #[path = "hydrology_depressions.rs"]
 mod depressions;
 
+#[path = "hydrology_balance.rs"]
+mod balance;
+
+#[cfg(test)]
+#[path = "hydrology_invariants.rs"]
+mod invariants;
+
 const OUT: u32 = u32::MAX;
-const D8: [(isize, isize); 8] = [
-    (1, 0),
-    (1, 1),
-    (0, 1),
-    (-1, 1),
-    (-1, 0),
-    (-1, -1),
-    (0, -1),
-    (1, -1),
-];
 
 pub struct HydrologyConfig {
     pub main: String,
     pub density: f32,
+    /// Streams reaching the sea on their own, 0..2: 1 keeps systems whose
+    /// basin reaches `COAST_BASIN` initiation areas, each step of 0.25 halves
+    /// (above 1) or doubles (below 1) that basin; 0 keeps only large rivers.
+    pub coastal_streams: f32,
     pub wetness: f32,
     pub lakes: String,
     pub meanders: String,
@@ -39,6 +72,12 @@ pub struct HydrologyConfig {
     pub width_scale: f32,
     pub incision: f32,
     pub min_lake_area: f32,
+    /// `lakes = "auto"`: minimum depth of a lake, metres (shallower basins are breached or filled).
+    pub min_lake_depth: f32,
+    /// Climate of the water budget (`lakes = "auto"`): mean annual temperature at
+    /// sea level, °C, and annual precipitation, mm.
+    pub temperature: f32,
+    pub precipitation: f32,
     /// Retention intensity, 0..2 (2 retains all suitable natural basins).
     pub lake_abundance: f32,
     /// Maximum combined lake area as a fraction of dry land.
@@ -56,6 +95,7 @@ impl Default for HydrologyConfig {
         Self {
             main: "auto".into(),
             density: 1.0,
+            coastal_streams: 1.0,
             wetness: 1.0,
             lakes: "auto".into(),
             meanders: "natural".into(),
@@ -63,7 +103,10 @@ impl Default for HydrologyConfig {
             estuary: "auto".into(),
             width_scale: 1.0,
             incision: 1.0,
-            min_lake_area: 2500.0,
+            min_lake_area: 100_000.0,
+            min_lake_depth: 1.0,
+            temperature: 18.0,
+            precipitation: 1000.0,
             lake_abundance: 0.5,
             lake_coverage: 0.05,
             max_lake_area: 0.02,
@@ -95,11 +138,15 @@ impl HydrologyConfig {
         }
         for (value, min, max) in [
             (self.density, 0.0, 2.0),
+            (self.coastal_streams, 0.0, 2.0),
             (self.wetness, 0.1, 2.0),
             (self.meander_intensity, 0.0, 2.0),
             (self.width_scale, 0.5, 2.0),
             (self.incision, 0.0, 2.0),
             (self.min_lake_area, 0.0, 1.0e10),
+            (self.min_lake_depth, 0.0, 100.0),
+            (self.temperature, -30.0, 40.0),
+            (self.precipitation, 0.0, 10_000.0),
             (self.lake_abundance, 0.0, 2.0),
             (self.lake_coverage, 0.0, 1.0),
             (self.max_lake_area, 0.0, 1.0),
@@ -163,6 +210,11 @@ pub struct HydrologyOutput {
     pub lake_ring_meta: Vec<u32>,
     /// lake id, elevation, area, max depth, outlet x, outlet y; stride 6.
     pub lake_meta: Vec<f32>,
+    /// 1 for a closed lake (its evaporation balances its inflow, no outlet), per lake.
+    pub lake_closed: Vec<u32>,
+    /// Shore field: control values of a cubic B-spline over the cells whose
+    /// positive part is open water (clamped, smoothed depth; −1 on dry land).
+    pub water_field: Vec<f32>,
 }
 
 #[derive(Clone)]
@@ -181,13 +233,85 @@ pub struct HydrologyEngine {
     height: Vec<f32>,
     sea: Vec<bool>,
     drainage: Drainage,
+    /// Option-independent stages of the last generation, reused when only
+    /// river, meander or estuary options change.
+    cache: RefCell<StageCache>,
 }
 
+/// Routed surface before lake selection: depends only on optional lake
+/// carving and the bank budget (incision), never on river options.
+struct RoutedSurface {
+    carve: bool,
+    bank_budget: u32,
+    physical: Vec<f32>,
+    raw: Drainage,
+    routed: Drainage,
+    flat_labels: Vec<u32>,
+    flat_rank: Vec<u32>,
+}
+
+/// Accepted bounded breaches for one routed surface, lake layout and policy.
+struct BreachedSurface {
+    key: (String, u32, u32),
+    lake_labels: Vec<u32>,
+    accepted: Option<AcceptedBreach>,
+}
+
+struct AcceptedBreach {
+    physical: Vec<f32>,
+    drainage: Drainage,
+    flat_labels: Vec<u32>,
+    flat_rank: Vec<u32>,
+    breach_count: u32,
+    breach_cut_volume_m3: f32,
+    avoided_fill_volume_m3: f32,
+}
+
+/// Lakes of the climate's water budget on one routed surface. Closed lakes are
+/// sinks: their basins are routed again into them.
+struct BalancedSurface {
+    key: [u32; 5],
+    lakes: Vec<balance::BalancedLake>,
+    sinks: Vec<bool>,
+    rerouted: Option<(Drainage, Vec<u32>, Vec<u32>)>,
+}
+
+#[derive(Default)]
+struct StageCache {
+    routed: Option<RoutedSurface>,
+    balanced: Option<BalancedSurface>,
+    breached: Option<BreachedSurface>,
+}
+
+/// Min-heap entry. `key` packs the height (total order) above the tie-break,
+/// so a pop compares one integer instead of a float, a tie and a cell.
 #[derive(Clone, Copy)]
 struct HeapCell {
-    z: f32,
-    tie: u32,
+    key: u64,
     cell: usize,
+}
+impl HeapCell {
+    fn new(z: f32, tie: u32, cell: usize) -> Self {
+        let bits = z.to_bits();
+        // Same order as f32::total_cmp, as an unsigned integer.
+        let ordered = if bits >> 31 == 0 {
+            bits | 1 << 31
+        } else {
+            !bits
+        };
+        Self {
+            key: u64::from(ordered) << 32 | u64::from(tie),
+            cell,
+        }
+    }
+    fn z(self) -> f32 {
+        let ordered = (self.key >> 32) as u32;
+        f32::from_bits(if ordered >> 31 == 1 {
+            ordered & !(1 << 31)
+        } else {
+            !ordered
+        })
+    }
 }
 impl PartialEq for HeapCell {
     fn eq(&self, other: &Self) -> bool {
@@ -203,17 +327,33 @@ impl PartialOrd for HeapCell {
 impl Ord for HeapCell {
     fn cmp(&self, other: &Self) -> Ordering {
         other
-            .z
-            .total_cmp(&self.z)
-            .then_with(|| other.tie.cmp(&self.tie))
+            .key
+            .cmp(&self.key)
             .then_with(|| other.cell.cmp(&self.cell))
     }
 }
 
-fn neighbor(i: usize, d: usize, n: usize) -> Option<usize> {
-    let x = (i % n) as isize + D8[d].0;
-    let y = (i / n) as isize + D8[d].1;
-    (x >= 0 && y >= 0 && x < n as isize && y < n as isize).then_some((y * n as isize + x) as usize)
+/// The eight D8 neighbours of a cell (`None` off the map), from a single
+/// division. Direction d is E, SE, S, SW, W, NW, N, NE for d = 0..8 (y down):
+/// odd directions are diagonals and d + 4 is the opposite one.
+#[inline]
+fn neighbors(i: usize, n: usize) -> [Option<usize>; 8] {
+    let x = i % n;
+    let y = i / n;
+    let east = x + 1 < n;
+    let west = x > 0;
+    let south = y + 1 < n;
+    let north = y > 0;
+    [
+        east.then(|| i + 1),
+        (east && south).then(|| i + n + 1),
+        south.then(|| i + n),
+        (west && south).then(|| i + n - 1),
+        west.then(|| i - 1),
+        (west && north).then(|| i - n - 1),
+        north.then(|| i - n),
+        (east && north).then(|| i - n + 1),
+    ]
 }
 fn border(i: usize, n: usize) -> bool {
     i.is_multiple_of(n) || i % n == n - 1 || i / n == 0 || i / n == n - 1
@@ -246,8 +386,9 @@ fn sea_mask(height: &[f32], n: usize, enabled: bool) -> Vec<bool> {
                 && height[i + 1] <= 0.0
                 && height[i + n] <= 0.0
                 && height[i + n + 1] <= 0.0;
-            for d in 0..8 {
-                if let Some(j) = neighbor(i, d, n)
+            let around_i = neighbors(i, n);
+            for neighbor in around_i {
+                if let Some(j) = neighbor
                     && !seen[j]
                     && height[j] <= 0.0
                 {
@@ -296,8 +437,9 @@ fn drain_neighbors(
             continue;
         }
         let mut best = 0.0;
-        for d in 0..8 {
-            if let Some(j) = neighbor(i, d, n) {
+        let around_i = neighbors(i, n);
+        for (d, neighbor) in around_i.into_iter().enumerate() {
+            if let Some(j) = neighbor {
                 if rank[j] >= rank[i] {
                     continue;
                 }
@@ -351,11 +493,7 @@ fn flood_neighbors(
     for i in 0..height.len() {
         if border(i, n) || sea[i] {
             seen[i] = true;
-            heap.push(HeapCell {
-                z: height[i],
-                tie: hash(i as u32 ^ salt),
-                cell: i,
-            });
+            heap.push(HeapCell::new(height[i], hash(i as u32 ^ salt), i));
         }
     }
     let mut order = Vec::with_capacity(if graph { height.len() } else { 0 });
@@ -375,9 +513,10 @@ fn flood_neighbors(
         } else {
             ((hash(cell as u32 ^ salt) & 3) * 2) as usize
         };
+        let around = neighbors(cell, n);
         for step in 0..if diagonals { 8 } else { 4 } {
             let direction = (first + step * if diagonals { 1 } else { 2 }) % 8;
-            if let Some(j) = neighbor(cell, direction, n) {
+            if let Some(j) = around[direction] {
                 if seen[j] {
                     continue;
                 }
@@ -389,11 +528,7 @@ fn flood_neighbors(
                 if filled[j] <= filled[cell] {
                     pond.push_back(j);
                 } else {
-                    heap.push(HeapCell {
-                        z: filled[j],
-                        tie: hash(j as u32 ^ salt),
-                        cell: j,
-                    });
+                    heap.push(HeapCell::new(filled[j], hash(j as u32 ^ salt), j));
                 }
             }
         }
@@ -419,6 +554,7 @@ impl HydrologyEngine {
             height: height.to_vec(),
             sea,
             drainage,
+            cache: RefCell::default(),
         })
     }
     #[allow(clippy::too_many_arguments)]
@@ -494,6 +630,7 @@ impl HydrologyEngine {
                 accumulation: accumulation.to_vec(),
                 order,
             },
+            cache: RefCell::default(),
         })
     }
     pub fn filled(&self) -> &[f32] {
@@ -519,40 +656,82 @@ impl HydrologyEngine {
         cfg.validate()?;
         let n = self.n;
         let cell = self.width / n as f32;
-        let mut physical = self.height.clone();
-        let mut drainage = self.drainage.clone();
-        if cfg.lakes == "some"
+        let carve = cfg.lakes == "some"
             && cfg.lake_abundance > 0.0
             && cfg.lake_coverage > 0.0
-            && cfg.max_lake_area > 0.0
-            && carve_some_lakes(
-                &mut physical,
+            && cfg.max_lake_area > 0.0;
+        // Conditioning and flat routing do not depend on river options.
+        let bank_budget = channel_bank_clearance(0.0, cfg);
+        let mut cache = self.cache.borrow_mut();
+        if cache
+            .routed
+            .as_ref()
+            .is_none_or(|r| r.carve != carve || r.bank_budget != bank_budget.to_bits())
+        {
+            cache.routed = None;
+            cache.balanced = None;
+            cache.breached = None;
+            let mut physical = self.height.clone();
+            let mut raw = self.drainage.clone();
+            if carve && carve_some_lakes(&mut physical, &self.sea, &raw, n, self.width, &self.seed)
+            {
+                raw = drain(&physical, &self.sea, n, self.width, &self.seed);
+            }
+            profile("snapshots");
+            let mut routed = flats::condition(
+                raw.clone(),
+                &physical,
                 &self.sea,
-                &drainage,
                 n,
                 self.width,
                 &self.seed,
-            )
-        {
-            drainage = drain(&physical, &self.sea, n, self.width, &self.seed);
+                bank_budget,
+            );
+            profile("conditioning");
+            let mask = flats::resolve(
+                &routed.filled,
+                &physical,
+                &self.sea,
+                n,
+                cell,
+                &mut routed.receivers,
+                bank_budget,
+            )?;
+            rebuild_drainage(&mut routed, &self.sea, cell)?;
+            cache.routed = Some(RoutedSurface {
+                carve,
+                bank_budget: bank_budget.to_bits(),
+                physical,
+                raw,
+                routed,
+                flat_labels: mask.labels,
+                flat_rank: mask.rank,
+            });
         }
+        let routed = cache.routed.as_ref().unwrap();
+        let mut physical = routed.physical.clone();
+        let raw = &routed.raw;
+        let mut drainage = routed.routed.clone();
         let mut output = HydrologyOutput {
             width: self.width,
             resolution: n,
             receivers: vec![],
             accumulation: vec![],
             basins: vec![],
-            raw_receivers: drainage.receivers.clone(),
-            raw_accumulation: drainage.accumulation.clone(),
-            raw_basins: basins(&drainage, &self.sea),
-            raw_filled: drainage.filled.clone(),
+            raw_receivers: raw.receivers.clone(),
+            raw_accumulation: raw.accumulation.clone(),
+            raw_basins: basins(raw, &self.sea),
+            raw_filled: raw.filled.clone(),
             raw_drainage_height: physical.clone(),
-            flat_labels: vec![],
-            flat_rank: vec![],
+            flat_labels: routed.flat_labels.clone(),
+            flat_rank: routed.flat_rank.clone(),
             external_inflow_area: 0.0,
             breach_count: 0,
             breach_cut_volume_m3: 0.0,
             avoided_fill_volume_m3: 0.0,
+            // The GPU/CPU D8 preparation remains available unchanged in raw_*;
+            // the derived graph is conditioned for the continuous terrain it
+            // uses: rejected ponds later raise the dry surface to these F levels.
             filled: drainage.filled.clone(),
             lake_depth: physical
                 .iter()
@@ -578,120 +757,195 @@ impl HydrologyEngine {
             lake_offsets: vec![0],
             lake_ring_meta: vec![],
             lake_meta: vec![],
+            lake_closed: vec![],
+            water_field: vec![-SHORE_CLAMP; n * n],
         };
-        // GPU/CPU D8 preparation remains available unchanged in raw_*.
-        // Condition the derived graph for the continuous terrain it will use:
-        // rejected ponds later raise the dry surface to these final F levels.
-        let bank_budget = channel_bank_clearance(0.0, cfg);
-        profile("snapshots");
-        drainage = flats::condition(
-            drainage,
-            &physical,
-            &self.sea,
-            n,
-            self.width,
-            &self.seed,
-            bank_budget,
-        );
-        output.filled.clone_from(&drainage.filled);
-        profile("conditioning");
-        for (i, depth) in output.lake_depth.iter_mut().enumerate() {
-            *depth = if self.sea[i] {
-                0.0
-            } else {
-                (drainage.filled[i] - physical[i]).max(0.0)
-            };
-        }
-        let mask = flats::resolve(
-            &drainage.filled,
-            &physical,
-            &self.sea,
-            n,
-            cell,
-            &mut drainage.receivers,
-            bank_budget,
-        )?;
-        output.flat_labels = mask.labels;
-        output.flat_rank = mask.rank;
-        rebuild_drainage(&mut drainage, &self.sea, cell)?;
         profile("flat-routing");
-        let lakes = identify_lakes(&mut output, &physical, &drainage, &self.sea, cfg);
-        profile("lake-selection");
-        let plan = depressions::plan(
-            &physical,
-            &drainage.filled,
-            &self.sea,
-            &output.lake_labels,
-            n,
-            self.width,
-            &depressions::Options {
-                mode: &cfg.depression_policy,
-                max_depth_m: cfg.max_breach_depth,
-                max_length_m: cfg.max_breach_length,
-            },
-        );
-        profile("breach-search");
-        if let Some(proposal) = plan.physical {
-            let proposed = drain(&proposal, &self.sea, n, self.width, &self.seed);
-            profile("breach-drain");
-            let mut candidate = flats::condition(
-                proposed,
-                &proposal,
-                &self.sea,
-                n,
-                self.width,
-                &self.seed,
-                bank_budget,
-            );
-            profile("breach-conditioning");
-            // Storage levels belong to the selected lakes. If a proposed notch
-            // changes one, keep the complete previous surface and drainage.
-            let preserves_lakes = output
-                .lake_labels
-                .iter()
-                .enumerate()
-                .all(|(i, &lake)| lake == 0 || candidate.filled[i] == drainage.filled[i]);
-            if preserves_lakes {
-                let mask = flats::resolve(
-                    &candidate.filled,
-                    &proposal,
+        // Routing outlets: the sea, and closed lakes, which keep their basin's water.
+        let mut sinks = self.sea.clone();
+        let mut closed_pits = Vec::new();
+        let lakes = if cfg.lakes == "auto" {
+            let key = [
+                cfg.temperature.to_bits(),
+                cfg.precipitation.to_bits(),
+                cfg.min_lake_depth.to_bits(),
+                cfg.min_lake_area.to_bits(),
+                bank_budget.to_bits(),
+            ];
+            if cache.balanced.as_ref().is_none_or(|b| b.key != key) {
+                cache.balanced = None;
+                cache.breached = None;
+                let found = balance::lakes(
+                    &physical,
+                    &drainage,
                     &self.sea,
                     n,
                     cell,
-                    &mut candidate.receivers,
-                    bank_budget,
-                )?;
-                rebuild_drainage(&mut candidate, &self.sea, cell)?;
-                profile("breach-routing");
-                let fill_delta: f64 = (0..physical.len())
-                    .filter(|&i| !self.sea[i] && output.lake_labels[i] == 0)
-                    .map(|i| {
-                        f64::from((drainage.filled[i] - physical[i]).max(0.0))
-                            - f64::from((candidate.filled[i] - proposal[i]).max(0.0))
-                    })
-                    .sum();
-                output.breach_count = plan.stats.breach_count;
-                output.breach_cut_volume_m3 = plan.stats.breach_cut_volume_m3 as f32;
-                output.avoided_fill_volume_m3 =
-                    (fill_delta.max(0.0) * f64::from(cell) * f64::from(cell)) as f32;
-                physical = proposal;
-                drainage = candidate;
-                output.flat_labels = mask.labels;
-                output.flat_rank = mask.rank;
-                output.filled.clone_from(&drainage.filled);
-                output.drainage_height.clone_from(&physical);
-                output.adjusted_height.clone_from(&physical);
+                    &balance::Options {
+                        climate: balance::Climate {
+                            temperature: cfg.temperature,
+                            precipitation: cfg.precipitation,
+                        },
+                        min_depth: cfg.min_lake_depth,
+                        min_area: cfg.min_lake_area.max(cell * cell * 3.0),
+                        bank_budget,
+                    },
+                );
+                let mut closed_sinks = self.sea.clone();
+                for lake in found.iter().filter(|lake| lake.closed) {
+                    for &i in &lake.cells {
+                        closed_sinks[i] = true;
+                    }
+                }
+                let rerouted = if found.iter().any(|lake| lake.closed) {
+                    Some(route(
+                        &physical,
+                        &closed_sinks,
+                        n,
+                        self.width,
+                        &self.seed,
+                        bank_budget,
+                    )?)
+                } else {
+                    None
+                };
+                cache.balanced = Some(BalancedSurface {
+                    key,
+                    lakes: found,
+                    sinks: closed_sinks,
+                    rerouted,
+                });
             }
+            let balanced = cache.balanced.as_ref().unwrap();
+            sinks.clone_from(&balanced.sinks);
+            if let Some((rerouted, labels, rank)) = &balanced.rerouted {
+                drainage.clone_from(rerouted);
+                output.flat_labels.clone_from(labels);
+                output.flat_rank.clone_from(rank);
+            }
+            for lake in balanced.lakes.iter().filter(|lake| lake.closed) {
+                closed_pits.push((lake.pit, lake.cells.clone(), lake.level));
+            }
+            // A closed lake's surface is its water level, flat across the lake.
+            flood_closed(&mut drainage, &closed_pits);
+            output.filled.clone_from(&drainage.filled);
+            register_lakes(&mut output, &balanced.lakes, &physical, n, cell)
+        } else {
+            identify_lakes(&mut output, &physical, &drainage, &self.sea, cfg)
+        };
+        profile("lake-selection");
+        // Bounded breaches depend on the routed surface, the selected lakes and
+        // the depression policy only.
+        let policy = (
+            cfg.depression_policy.clone(),
+            cfg.max_breach_depth.to_bits(),
+            cfg.max_breach_length.to_bits(),
+        );
+        if cache
+            .breached
+            .as_ref()
+            .is_none_or(|b| b.key != policy || b.lake_labels != output.lake_labels)
+        {
+            cache.breached = None;
+            let plan = depressions::plan(
+                &physical,
+                &drainage.filled,
+                &sinks,
+                &output.lake_labels,
+                n,
+                self.width,
+                &depressions::Options {
+                    mode: &cfg.depression_policy,
+                    max_depth_m: cfg.max_breach_depth,
+                    max_length_m: cfg.max_breach_length,
+                },
+            );
+            profile("breach-search");
+            let mut accepted = None;
+            if let Some(proposal) = plan.physical {
+                let proposed = drain(&proposal, &sinks, n, self.width, &self.seed);
+                profile("breach-drain");
+                let mut candidate = flats::condition(
+                    proposed,
+                    &proposal,
+                    &sinks,
+                    n,
+                    self.width,
+                    &self.seed,
+                    bank_budget,
+                );
+                profile("breach-conditioning");
+                // Storage levels belong to the selected lakes. If a proposed notch
+                // changes one, keep the complete previous surface and drainage.
+                let preserves_lakes = output.lake_labels.iter().enumerate().all(|(i, &lake)| {
+                    lake == 0
+                        || self.sea[i] != sinks[i]
+                        || candidate.filled[i] == drainage.filled[i]
+                });
+                if preserves_lakes {
+                    let mask = flats::resolve(
+                        &candidate.filled,
+                        &proposal,
+                        &sinks,
+                        n,
+                        cell,
+                        &mut candidate.receivers,
+                        bank_budget,
+                    )?;
+                    rebuild_drainage(&mut candidate, &sinks, cell)?;
+                    flood_closed(&mut candidate, &closed_pits);
+                    profile("breach-routing");
+                    let fill_delta: f64 = (0..physical.len())
+                        .filter(|&i| !self.sea[i] && output.lake_labels[i] == 0)
+                        .map(|i| {
+                            f64::from((drainage.filled[i] - physical[i]).max(0.0))
+                                - f64::from((candidate.filled[i] - proposal[i]).max(0.0))
+                        })
+                        .sum();
+                    accepted = Some(AcceptedBreach {
+                        physical: proposal,
+                        drainage: candidate,
+                        flat_labels: mask.labels,
+                        flat_rank: mask.rank,
+                        breach_count: plan.stats.breach_count,
+                        breach_cut_volume_m3: plan.stats.breach_cut_volume_m3 as f32,
+                        avoided_fill_volume_m3: (fill_delta.max(0.0)
+                            * f64::from(cell)
+                            * f64::from(cell))
+                            as f32,
+                    });
+                }
+            }
+            cache.breached = Some(BreachedSurface {
+                key: policy,
+                lake_labels: output.lake_labels.clone(),
+                accepted,
+            });
         }
+        if let Some(breach) = cache.breached.as_ref().and_then(|b| b.accepted.as_ref()) {
+            output.breach_count = breach.breach_count;
+            output.breach_cut_volume_m3 = breach.breach_cut_volume_m3;
+            output.avoided_fill_volume_m3 = breach.avoided_fill_volume_m3;
+            physical.clone_from(&breach.physical);
+            drainage.clone_from(&breach.drainage);
+            output.flat_labels.clone_from(&breach.flat_labels);
+            output.flat_rank.clone_from(&breach.flat_rank);
+            output.filled.clone_from(&drainage.filled);
+            output.drainage_height.clone_from(&physical);
+            output.adjusted_height.clone_from(&physical);
+        }
+        drop(cache);
         profile("depressions");
         if !lakes.is_empty() {
+            // A closed lake drains to its lowest floor, its single sink.
+            for (pit, cells, _) in &closed_pits {
+                for &i in cells {
+                    drainage.receivers[i] = if i == *pit { OUT } else { *pit as u32 };
+                }
+            }
             flats::aggregate_lakes(&mut drainage, &output.lake_labels, n, bank_budget)?;
             rebuild_drainage(&mut drainage, &self.sea, cell)?;
             update_lake_outlets(&mut output, &drainage, cell)?;
-        }
-        let labels = output.lake_labels.clone();
-        for lake in &lakes {
-            lake_rings(lake, &physical, &labels, n, cell, &mut output);
         }
         for (i, depth) in output.lake_depth.iter_mut().enumerate() {
             if output.lake_labels[i] == 0 {
@@ -704,6 +958,11 @@ impl HydrologyEngine {
             }
         }
         let channel_ground = output.adjusted_height.clone();
+        // Shores on the ground as drawn: lakes, and the filled dry surface around them.
+        let labels = output.lake_labels.clone();
+        for lake in &lakes {
+            lake_rings(lake, &channel_ground, &labels, n, cell, &mut output);
+        }
         profile("water-surfaces");
         let (main_source, external) = principal_source(
             &channel_ground,
@@ -859,7 +1118,7 @@ fn validate_field(width: f64, n: usize, height: &[f32]) -> Result<(), String> {
 
 fn basins(drainage: &Drainage, sea: &[bool]) -> Vec<u32> {
     let mut labels = vec![0; sea.len()];
-    let mut roots = HashMap::new();
+    let mut roots = HashMap::default();
     for &i in &drainage.order {
         if sea[i] {
             continue;
@@ -974,6 +1233,79 @@ fn carve_some_lakes(
     !chosen.is_empty()
 }
 
+/// Closed lakes routed as sinks keep their floor as filled height: raise it to their level.
+fn flood_closed(drainage: &mut Drainage, closed: &[(usize, Vec<usize>, f32)]) {
+    for (_, cells, level) in closed {
+        for &i in cells {
+            drainage.filled[i] = drainage.filled[i].max(*level);
+        }
+    }
+}
+
+/// Priority flood, diagonal conditioning and flat resolution towards `sinks`
+/// (sea and closed lakes): the routed drainage, flat labels and ranks.
+fn route(
+    physical: &[f32],
+    sinks: &[bool],
+    n: usize,
+    width: f32,
+    seed: &str,
+    bank_budget: f32,
+) -> Result<(Drainage, Vec<u32>, Vec<u32>), String> {
+    let cell = width / n as f32;
+    let raw = drain(physical, sinks, n, width, seed);
+    let mut routed = flats::condition(raw, physical, sinks, n, width, seed, bank_budget);
+    let mask = flats::resolve(
+        &routed.filled,
+        physical,
+        sinks,
+        n,
+        cell,
+        &mut routed.receivers,
+        bank_budget,
+    )?;
+    rebuild_drainage(&mut routed, sinks, cell)?;
+    Ok((routed, mask.labels, mask.rank))
+}
+
+/// Labels, depths and metadata of the water-budget lakes.
+fn register_lakes(
+    out: &mut HydrologyOutput,
+    found: &[balance::BalancedLake],
+    h: &[f32],
+    n: usize,
+    cell: f32,
+) -> Vec<Lake> {
+    let mut lakes = Vec::with_capacity(found.len());
+    for lake in found {
+        let id = lakes.len() as u32 + 1;
+        for &i in &lake.cells {
+            out.lake_labels[i] = id;
+            out.lake_depth[i] = (lake.level - h[i]).max(0.0);
+        }
+        let (px, py) = point(lake.pit, n, cell);
+        out.lake_meta.extend([
+            id as f32,
+            lake.level,
+            lake.cells.len() as f32 * cell * cell,
+            lake.max_depth,
+            px,
+            py,
+        ]);
+        out.lake_closed.push(u32::from(lake.closed));
+        let [min_x, min_y, max_x, max_y] = lake.bounds;
+        lakes.push(Lake {
+            id,
+            level: lake.level,
+            min_x,
+            min_y,
+            max_x,
+            max_y,
+        });
+    }
+    lakes
+}
+
 struct Lake {
     id: u32,
     level: f32,
@@ -1023,8 +1355,9 @@ fn identify_lakes(
             max_x = max_x.max(i % n);
             min_y = min_y.min(i / n);
             max_y = max_y.max(i / n);
-            for d in 0..8 {
-                if let Some(j) = neighbor(i, d, n)
+            let around_i = neighbors(i, n);
+            for neighbor in around_i {
+                if let Some(j) = neighbor
                     && !seen[j]
                     && !sea[j]
                     && out.lake_depth[j] >= 0.025
@@ -1082,6 +1415,7 @@ fn identify_lakes(
             ox,
             oy,
         ]);
+        out.lake_closed.push(0);
         let [min_x, min_y, max_x, max_y] = candidate.bounds;
         lakes.push(Lake {
             id,
@@ -1095,7 +1429,109 @@ fn identify_lakes(
     lakes
 }
 
-/// Marching squares on physical heights, restricted to the lake's connected depression.
+/// Samples per cell of a lake shore.
+const SHORE_SAMPLES: usize = 4;
+
+/// Uniform cubic B-spline weights at `t` in [0, 1): the renderer's surface.
+fn bspline_weights(t: f32) -> [f32; 4] {
+    let u = 1.0 - t;
+    let t2 = t * t;
+    let t3 = t2 * t;
+    [
+        u * u * u / 6.0,
+        (3.0 * t3 - 6.0 * t2 + 4.0) / 6.0,
+        (-3.0 * t3 + 3.0 * t2 + 3.0 * t + 1.0) / 6.0,
+        t3 / 6.0,
+    ]
+}
+
+/// The drawn ground at (x, y) metres: cubic B-spline of the cell-centre grid, clamped at the edges.
+fn bspline_sample(h: &[f32], n: usize, cell: f32, x: f32, y: f32) -> f32 {
+    let gx = x / cell - 0.5;
+    let gy = y / cell - 0.5;
+    let fx = gx.floor();
+    let fy = gy.floor();
+    let wx = bspline_weights(gx - fx);
+    let wy = bspline_weights(gy - fy);
+    let last = n as isize - 1;
+    let mut sum = 0.0;
+    for (j, wy) in wy.iter().enumerate() {
+        let yy = (fy as isize + j as isize - 1).clamp(0, last) as usize;
+        let mut row = 0.0;
+        for (i, wx) in wx.iter().enumerate() {
+            let xx = (fx as isize + i as isize - 1).clamp(0, last) as usize;
+            row += h[yy * n + xx] * wx;
+        }
+        sum += row * wy;
+    }
+    sum
+}
+
+/// Depth, metres, at which the shore field saturates: within a metre of its
+/// level, the shore follows the ground; deeper water and higher banks weigh alike.
+const SHORE_CLAMP: f32 = 1.0;
+
+/// Shore field of one lake over its box (two cells of margin), cell values:
+/// the water depth over the ground (negative on dry ground), clamped to
+/// ±`SHORE_CLAMP` and smoothed over about a cell, so that micro-relief at the
+/// level draws no archipelago. Only the lake and the dry bank cells rising
+/// above its level around it can be wet: a neighbouring cell below the level
+/// outside the lake (its spill channel, another basin) stays dry.
+/// Returns (x0, y0, width, height, values).
+fn shore_field(
+    lake: &Lake,
+    h: &[f32],
+    labels: &[u32],
+    n: usize,
+) -> (usize, usize, usize, usize, Vec<f32>) {
+    let x0 = lake.min_x.saturating_sub(3);
+    let y0 = lake.min_y.saturating_sub(3);
+    let x1 = (lake.max_x + 3).min(n - 1);
+    let y1 = (lake.max_y + 3).min(n - 1);
+    let (w, hgt) = (x1 - x0 + 1, y1 - y0 + 1);
+    let mut raw = vec![-SHORE_CLAMP; w * hgt];
+    for y in 0..hgt {
+        for x in 0..w {
+            let i = (y0 + y) * n + x0 + x;
+            let bank = labels[i] == 0
+                && h[i] >= lake.level
+                && neighbors(i, n)
+                    .into_iter()
+                    .flatten()
+                    .any(|j| labels[j] == lake.id);
+            if labels[i] == lake.id || bank {
+                raw[y * w + x] = (lake.level - h[i]).clamp(-SHORE_CLAMP, SHORE_CLAMP);
+            }
+        }
+    }
+    // Binomial (1, 4, 6, 4, 1) / 16 along each axis.
+    const KERNEL: [f32; 5] = [1.0 / 16.0, 4.0 / 16.0, 6.0 / 16.0, 4.0 / 16.0, 1.0 / 16.0];
+    let mut pass = vec![0.0; w * hgt];
+    for y in 0..hgt {
+        for x in 0..w {
+            pass[y * w + x] = KERNEL
+                .iter()
+                .enumerate()
+                .map(|(k, c)| c * raw[y * w + (x + k).saturating_sub(2).min(w - 1)])
+                .sum();
+        }
+    }
+    let mut values = vec![0.0; w * hgt];
+    for y in 0..hgt {
+        for x in 0..w {
+            values[y * w + x] = KERNEL
+                .iter()
+                .enumerate()
+                .map(|(k, c)| c * pass[(y + k).saturating_sub(2).min(hgt - 1) * w + x])
+                .sum();
+        }
+    }
+    (x0, y0, w, hgt, values)
+}
+
+/// Shore rings: the zero contour of the cubic B-spline of a lake's shore
+/// field (marching squares on a sub-cell grid). The renderer draws the same
+/// B-spline of the same field (`water_field`).
 fn lake_rings(
     lake: &Lake,
     h: &[f32],
@@ -1104,60 +1540,88 @@ fn lake_rings(
     cell: f32,
     out: &mut HydrologyOutput,
 ) {
-    type Vertex = (f32, f32);
-    let mut vertices: Vec<Vertex> = Vec::new();
-    let mut indices = HashMap::new();
-    let mut links: Vec<Vec<usize>> = Vec::new();
-    let xmin = lake.min_x.saturating_sub(1);
-    let ymin = lake.min_y.saturating_sub(1);
-    for y in ymin..=(lake.max_y.min(n - 2)) {
-        for x in xmin..=(lake.max_x.min(n - 2)) {
-            let cells = [
-                y * n + x,
-                y * n + x + 1,
-                (y + 1) * n + x + 1,
-                (y + 1) * n + x,
-            ];
-            let values = cells.map(|i| {
-                if labels[i] == lake.id {
-                    (lake.level - h[i]).max(0.001)
+    let (fx0, fy0, fw, fh, field) = shore_field(lake, h, labels, n);
+    for y in 0..fh {
+        for x in 0..fw {
+            let i = (fy0 + y) * n + fx0 + x;
+            out.water_field[i] = out.water_field[i].max(field[y * fw + x]);
+        }
+    }
+    // The field's B-spline in world metres, dry beyond its box.
+    let sample = |px: f32, py: f32| {
+        let gx = px / cell - 0.5 - fx0 as f32;
+        let gy = py / cell - 0.5 - fy0 as f32;
+        let (bx, by) = (gx.floor(), gy.floor());
+        let wx = bspline_weights(gx - bx);
+        let wy = bspline_weights(gy - by);
+        let mut sum = 0.0;
+        for (j, wy) in wy.iter().enumerate() {
+            let yy = by as isize + j as isize - 1;
+            for (i, wx) in wx.iter().enumerate() {
+                let xx = bx as isize + i as isize - 1;
+                let v = if xx < 0 || yy < 0 || xx >= fw as isize || yy >= fh as isize {
+                    -SHORE_CLAMP
                 } else {
-                    -(h[i] - lake.level).abs().max(0.001)
-                }
-            });
+                    field[yy as usize * fw + xx as usize]
+                };
+                sum += v * wx * wy;
+            }
+        }
+        sum
+    };
+    let s = SHORE_SAMPLES;
+    let w = fw * s + 1;
+    let hgt = fh * s + 1;
+    let step = cell / s as f32;
+    let origin = (fx0 as f32 * cell, fy0 as f32 * cell);
+    let mut values = vec![0.0_f32; w * hgt];
+    for y in 0..hgt {
+        for x in 0..w {
+            // Never exactly zero: contour vertices stay strictly between samples.
+            let v = sample(origin.0 + x as f32 * step, origin.1 + y as f32 * step);
+            values[y * w + x] = if v.abs() < 1e-5 { -1e-5 } else { v };
+        }
+    }
+    // Marching squares; an edge's crossing vertex is shared by both squares.
+    let mut vertices: Vec<(f32, f32)> = Vec::new();
+    let mut indices = HashMap::default();
+    let mut links: Vec<Vec<usize>> = Vec::new();
+    for y in 0..hgt - 1 {
+        for x in 0..w - 1 {
+            let corners = [(x, y), (x + 1, y), (x + 1, y + 1), (x, y + 1)];
+            let v = corners.map(|(cx, cy)| values[cy * w + cx]);
             let mut cuts = Vec::with_capacity(4);
             for edge in 0..4 {
-                let a = edge;
-                let b = (edge + 1) % 4;
-                if (values[a] > 0.0) == (values[b] > 0.0) {
+                let (a, b) = (edge, (edge + 1) % 4);
+                if (v[a] > 0.0) == (v[b] > 0.0) {
                     continue;
                 }
-                let low = cells[a].min(cells[b]);
-                let high = cells[a].max(cells[b]);
-                let key = (low as u64) << 32 | high as u64;
+                let ka = corners[a].1 * w + corners[a].0;
+                let kb = corners[b].1 * w + corners[b].0;
+                let key = (ka.min(kb) as u64) << 32 | ka.max(kb) as u64;
                 let index = *indices.entry(key).or_insert_with(|| {
-                    let t = values[a] / (values[a] - values[b]);
-                    let pa = point(cells[a], n, cell);
-                    let pb = point(cells[b], n, cell);
-                    let index = vertices.len();
-                    vertices.push((pa.0 + (pb.0 - pa.0) * t, pa.1 + (pb.1 - pa.1) * t));
+                    let t = v[a] / (v[a] - v[b]);
+                    let (ax, ay) = corners[a];
+                    let (bx, by) = corners[b];
+                    vertices.push((
+                        origin.0 + (ax as f32 + (bx as f32 - ax as f32) * t) * step,
+                        origin.1 + (ay as f32 + (by as f32 - ay as f32) * t) * step,
+                    ));
                     links.push(Vec::with_capacity(2));
-                    index
+                    vertices.len() - 1
                 });
-                cuts.push((edge, index));
+                cuts.push(index);
             }
             if cuts.len() == 2 {
-                let a = cuts[0].1;
-                let b = cuts[1].1;
-                links[a].push(b);
-                links[b].push(a);
+                links[cuts[0]].push(cuts[1]);
+                links[cuts[1]].push(cuts[0]);
             } else if cuts.len() == 4 {
-                // Keep each dry corner as an island when the cell centre is water.
-                let positive = values.iter().sum::<f32>() > 0.0;
-                let shift = usize::from((values[0] > 0.0) == positive);
+                // Saddle: the centre's sign decides which corners connect.
+                let centre = v.iter().sum::<f32>() > 0.0;
+                let shift = usize::from((v[0] > 0.0) == centre);
                 for pair in 0..2 {
-                    let a = cuts[(pair * 2 + shift) % 4].1;
-                    let b = cuts[(pair * 2 + shift + 1) % 4].1;
+                    let a = cuts[(pair * 2 + shift) % 4];
+                    let b = cuts[(pair * 2 + shift + 1) % 4];
                     links[a].push(b);
                     links[b].push(a);
                 }
@@ -1165,7 +1629,7 @@ fn lake_rings(
         }
     }
     let mut seen = vec![false; vertices.len()];
-    let mut rings: Vec<Vec<Vertex>> = Vec::new();
+    let mut rings: Vec<Vec<(f32, f32)>> = Vec::new();
     for start in 0..vertices.len() {
         if seen[start] || links[start].len() != 2 {
             continue;
@@ -1188,17 +1652,16 @@ fn lake_rings(
     }
     for (index, ring) in rings.iter().enumerate() {
         let p = ring[0];
-        let mut nesting = 0;
-        for (j, other) in rings.iter().enumerate() {
-            if j != index && inside(p, other) {
-                nesting += 1;
-            }
-        }
+        let nesting = rings
+            .iter()
+            .enumerate()
+            .filter(|&(j, other)| j != index && inside(p, other))
+            .count();
         for &(x, y) in ring {
             out.lake_points.extend([x, y]);
         }
         out.lake_offsets.push((out.lake_points.len() / 2) as u32);
-        out.lake_ring_meta.extend([lake.id, nesting % 2]);
+        out.lake_ring_meta.extend([lake.id, (nesting % 2) as u32]);
     }
 }
 fn inside(p: (f32, f32), ring: &[(f32, f32)]) -> bool {
@@ -1406,7 +1869,7 @@ fn rivers(
             i = j as usize;
         }
     }
-    let mut lake_outlets: HashMap<u32, usize> = HashMap::new();
+    let mut lake_outlets: HashMap<u32, usize> = HashMap::default();
     for (i, &lake) in out.lake_labels.iter().enumerate() {
         let j = drainage.receivers[i];
         if lake > 0 && j != OUT && out.lake_labels[j as usize] != lake {
@@ -1465,6 +1928,105 @@ fn rivers(
             }
         }
     }
+    // Map generalisation of the coast: a system reaching the sea on its own is
+    // drawn only when its whole basin is large. Inland, small torrents join a
+    // hierarchy; on a coastal slope they would draw a fringe of parallel
+    // streams. Systems leaving the map continue beyond it, and systems fed by
+    // a lake keep their outlet.
+    let fed = {
+        let mut fed: Vec<bool> = (0..h.len())
+            .map(|i| selected[i] && out.lake_labels[i] > 0)
+            .collect();
+        for &i in drainage.order.iter().rev() {
+            let j = drainage.receivers[i];
+            if fed[i] && j != OUT && selected[j as usize] {
+                fed[j as usize] = true;
+            }
+        }
+        fed
+    };
+    let basin = threshold * COAST_BASIN * 16.0_f32.powf(1.0 - cfg.coastal_streams);
+    let mut drop: Vec<bool> = (0..h.len())
+        .map(|i| {
+            let j = drainage.receivers[i];
+            selected[i]
+                && j != OUT
+                && sea[j as usize]
+                && out.lake_labels[i] == 0
+                && !principal[i]
+                && !fed[i]
+                && drainage.accumulation[i] < basin
+        })
+        .collect();
+    for &i in &drainage.order {
+        let j = drainage.receivers[i];
+        if selected[i] && j != OUT && drop[j as usize] {
+            drop[i] = true;
+        }
+    }
+    for (on, &dropped) in selected.iter_mut().zip(&drop) {
+        *on &= !dropped;
+    }
+    // A lake is the junction of its inlets and its outlet: no course runs
+    // across it. An inlet ends, and an outlet starts, in open water as drawn
+    // (the cubic B-spline of the ground below the level); every other lake
+    // cell leaves the network. An inlet that meets the outlet first ends at
+    // the outlet's node. Every course touching a lake thus starts or ends on
+    // one of its nodes.
+    let mut lake_root = vec![false; h.len()];
+    if !out.lake_meta.is_empty() {
+        let open_water = |i: usize| bspline_at_cell(&out.water_field, n, i) >= LAKE_END_DEPTH;
+        let mut keep = vec![false; h.len()];
+        for (i, &on) in selected.iter().enumerate() {
+            let j = drainage.receivers[i];
+            if !on
+                || j == OUT
+                || out.lake_labels[j as usize] == 0
+                || out.lake_labels[j as usize] == out.lake_labels[i]
+            {
+                continue;
+            }
+            let lake = out.lake_labels[j as usize];
+            let mut c = j as usize;
+            for _ in 0..LAKE_END_CELLS {
+                keep[c] = true;
+                let next = drainage.receivers[c];
+                if open_water(c) || next == OUT || out.lake_labels[next as usize] != lake {
+                    break;
+                }
+                c = next as usize;
+            }
+        }
+        for (i, &on) in selected.iter().enumerate() {
+            let lake = out.lake_labels[i];
+            let j = drainage.receivers[i];
+            if lake == 0 || j == OUT || out.lake_labels[j as usize] == lake || !on {
+                continue;
+            }
+            // The outlet's own reach upstream into the lake, along its largest donors.
+            let mut c = i;
+            keep[c] = true;
+            lake_root[c] = true;
+            for _ in 1..LAKE_END_CELLS {
+                if open_water(c) {
+                    break;
+                }
+                let donor = neighbors(c, n)
+                    .into_iter()
+                    .flatten()
+                    .filter(|&k| drainage.receivers[k] == c as u32 && out.lake_labels[k] == lake)
+                    .max_by(|&a, &b| drainage.accumulation[a].total_cmp(&drainage.accumulation[b]));
+                let Some(donor) = donor else { break };
+                keep[donor] = true;
+                c = donor;
+            }
+        }
+        for i in 0..h.len() {
+            if out.lake_labels[i] != 0 {
+                selected[i] = keep[i];
+            }
+        }
+    }
     let incoming = incoming_counts(&selected, &drainage.receivers);
     let mut upstream = vec![OUT; h.len()];
     for (i, &yes) in selected.iter().enumerate() {
@@ -1479,23 +2041,21 @@ fn rivers(
             continue;
         }
         let j = drainage.receivers[i];
-        let u = upstream[i];
         let lake = out.lake_labels[i];
-        let transition = (j != OUT && out.lake_labels[j as usize] != lake)
-            || (u != OUT && out.lake_labels[u as usize] != lake);
         if incoming[i] != 1
             || j == OUT
             || (j != OUT && !selected[j as usize] && !sea[j as usize])
-            || transition
             || main_source == Some(i)
+            || lake_root[i]
         {
+            // Lake cells left in the network are only the ends of inlets, the
+            // starts of outlets in open water, and the spill cells.
             let kind = if main_source == Some(i) && external {
                 6
-            } else if (lake > 0 && incoming[i] == 0)
-                || (u != OUT && out.lake_labels[u as usize] > 0 && lake == 0)
-            {
+            } else if lake > 0 && (incoming[i] == 0 || lake_root[i]) {
                 5
-            } else if lake > 0 && u != OUT && out.lake_labels[u as usize] == 0 {
+            } else if lake > 0 && (j == OUT || !selected[j as usize]) {
+                // An inlet's end in open water (a closed lake's sink included).
                 4
             } else if j == OUT {
                 3
@@ -1569,7 +2129,7 @@ fn rivers(
             estuary,
         });
     }
-    let mut edge_from_node = HashMap::new();
+    let mut edge_from_node = HashMap::default();
     for (index, edge) in edges.iter().enumerate() {
         edge_from_node.insert(edge.from, index as u32 + 1);
     }
@@ -1777,7 +2337,7 @@ fn rivers(
         })
         .collect();
     profile("confluences");
-    let compact = compact_network(
+    let mut compact = compact_network(
         &curves,
         &references,
         &edges,
@@ -1790,11 +2350,17 @@ fn rivers(
         h,
         sea,
     )?;
+    smooth_network(&mut compact, cell);
     profile("network-clearance");
     for (id, edge) in edges.iter().enumerate() {
         let mut points = compact[id].clone();
         if edge.flags & 4 != 0 {
-            widen_mouth(&mut points, edge.estuary, out.width);
+            widen_mouth(
+                &mut points,
+                edge.estuary,
+                out.width,
+                hash(*edge.cells.last().unwrap() as u32),
+            );
         }
         if main_source == Some(edge.cells[0]) && external && !points.is_empty() {
             let b = boundary_point(edge.cells[0], n, cell, out.width);
@@ -1840,6 +2406,30 @@ fn rivers(
     }
     out.accumulation = effective;
     Ok(())
+}
+
+/// Shore field value (smoothed depth, metres) where an inlet ends and an outlet starts.
+const LAKE_END_DEPTH: f32 = 0.3;
+/// Longest reach of a course into its lake, cells.
+const LAKE_END_CELLS: usize = 256;
+/// Smallest basin of a system reaching the sea on its own (`coastal_streams`
+/// = 1), in plains' initiation areas: 29 km² at the default density.
+const COAST_BASIN: f32 = 16.0;
+
+/// The drawn ground at a cell centre: the uniform cubic B-spline of the grid
+/// (the renderer's surface), (1, 4, 1) / 6 per axis.
+fn bspline_at_cell(h: &[f32], n: usize, i: usize) -> f32 {
+    let x = i % n;
+    let y = i / n;
+    let mut sum = 0.0;
+    for (dy, wy) in [(-1, 1.0), (0, 4.0), (1, 1.0)] {
+        let yy = (y as isize + dy).clamp(0, n as isize - 1) as usize;
+        for (dx, wx) in [(-1, 1.0), (0, 4.0), (1, 1.0)] {
+            let xx = (x as isize + dx).clamp(0, n as isize - 1) as usize;
+            sum += h[yy * n + xx] * wx * wy;
+        }
+    }
+    sum / 36.0
 }
 
 fn incoming_counts(selected: &[bool], receivers: &[u32]) -> Vec<u8> {
@@ -1959,6 +2549,20 @@ fn vector_course(
     smooth_widths(&mut points, cell);
 
     // Two bounded corner-cutting passes remove D8 stairsteps without wandering out of valleys.
+    // The cut guide is also the profile fallback of the natural course: each new
+    // span must hold its own water above the banks along its whole length, not
+    // only at the moved vertex, or a cut across a valley shoulder leaves no
+    // feasible water profile at all.
+    let context = RiverPatchContext {
+        ground: h,
+        lakes,
+        sea,
+        n,
+        cell,
+        cfg,
+    };
+    let holds_water =
+        |a: RiverPoint, b: RiverPoint| profile_requirement(a, b, &context).0 <= a.z + 0.001;
     for _ in 0..2 {
         let original = points.clone();
         for k in 1..points.len().saturating_sub(1) {
@@ -1986,6 +2590,8 @@ fn vector_course(
                         <= sample(valley, n, cell, p.x, p.y).max(p.z) + p.width.mul_add(0.1, 0.3)
                     && clear_segment(points[k - 1], candidate, id, occupied, links, n, cell)
                     && clear_segment(candidate, after, id, occupied, links, n, cell)
+                    && holds_water(points[k - 1], candidate)
+                    && holds_water(candidate, after)
                     && geometry_index.clear(points[k - 1], candidate, id)
                     && geometry_index.clear(candidate, after, id)
                 {
@@ -2014,22 +2620,87 @@ fn vector_course(
         edge.flags & 1 != 0,
     );
     let mut points = geometry.points;
-    // Clip the mouth to the zero-height crossing; sea bathymetry is not a water slope.
+    // The mouth meets the sea as drawn (the ground's cubic B-spline): a narrow
+    // inlet the drawing smooths into land is followed through its sea cells,
+    // then the course is clipped at the drawn zero.
     if edge.flags & 4 != 0 && points.len() >= 2 {
-        let end = points.len() - 1;
-        let a = points[end - 1];
-        let b = points[end];
-        let za = sample(h, n, cell, a.x, a.y);
-        let zb = sample(h, n, cell, b.x, b.y);
-        let t = if za > 0.0 && zb <= 0.0 {
-            (za / (za - zb)).clamp(0.0, 1.0)
-        } else {
-            1.0
-        };
-        points[end].x = a.x + (b.x - a.x) * t;
-        points[end].y = a.y + (b.y - a.y) * t;
-        points[end].z = 0.0;
-    } else if edge.flags & 4 == 0 && drainage.receivers[*edge.cells.last().unwrap()] == OUT {
+        let mut c = *edge.cells.last().unwrap();
+        let mut visited = vec![c];
+        for _ in 0..16 {
+            if bspline_at_cell(h, n, c) <= 0.0 {
+                break;
+            }
+            let Some(next) = neighbors(c, n)
+                .into_iter()
+                .flatten()
+                .filter(|j| sea[*j] && !visited.contains(j))
+                .min_by(|&a, &b| bspline_at_cell(h, n, a).total_cmp(&bspline_at_cell(h, n, b)))
+            else {
+                break;
+            };
+            visited.push(next);
+            c = next;
+            let (x, y) = point(c, n, cell);
+            let width = points.last().unwrap().width;
+            points.push(RiverPoint {
+                x,
+                y,
+                width,
+                z: 0.0,
+            });
+        }
+        let drawn = |p: RiverPoint| bspline_sample(h, n, cell, p.x, p.y);
+        // The planform may stop short of its sea cell: run on to it.
+        if drawn(*points.last().unwrap()) > 0.0 && bspline_at_cell(h, n, c) <= 0.0 {
+            let (x, y) = point(c, n, cell);
+            let width = points.last().unwrap().width;
+            points.push(RiverPoint {
+                x,
+                y,
+                width,
+                z: 0.0,
+            });
+        }
+        let from = geometry.cuts[edge.cells.len().saturating_sub(4)].max(1);
+        if let Some(k) =
+            (from..points.len()).find(|&k| drawn(points[k]) <= 0.0 && drawn(points[k - 1]) > 0.0)
+        {
+            let (a, b) = (points[k - 1], points[k]);
+            // The drawn surface is not linear along the segment (cliffs): bisect its zero.
+            let (mut lo, mut hi) = (0.0_f32, 1.0_f32);
+            for _ in 0..24 {
+                let mid = 0.5 * (lo + hi);
+                let p = RiverPoint {
+                    x: a.x + (b.x - a.x) * mid,
+                    y: a.y + (b.y - a.y) * mid,
+                    ..a
+                };
+                if drawn(p) > 0.0 {
+                    lo = mid;
+                } else {
+                    hi = mid;
+                }
+            }
+            let t = hi;
+            points[k] = RiverPoint {
+                x: a.x + (b.x - a.x) * t,
+                y: a.y + (b.y - a.y) * t,
+                width: a.width + (b.width - a.width) * t,
+                z: 0.0,
+            };
+            points.truncate(k + 1);
+        }
+        let last = points.len() - 1;
+        if let Some(end) = geometry.cuts.last_mut() {
+            *end = last;
+        }
+        for cut in &mut geometry.cuts {
+            *cut = (*cut).min(last);
+        }
+    } else if edge.flags & 4 == 0
+        && drainage.receivers[*edge.cells.last().unwrap()] == OUT
+        && border(*edge.cells.last().unwrap(), n)
+    {
         let end = points.len() - 1;
         let b = boundary_point(*edge.cells.last().unwrap(), n, cell, width);
         points[end].x = b.0;
@@ -2393,14 +3064,33 @@ fn natural_course(
             && sample(ground, n, cell, x, y) <= p.z + bank_clearance(p.width)
             && clear(p, RiverPoint { x, y, ..p })
     };
+    // Repair passes change only local envelopes. Both tests are pure in their
+    // sample scale or segment endpoints (widths and levels stay per index), so
+    // unchanged samples and segments reuse their previous verdict.
+    let mut admissible_memo = vec![(u32::MAX, false); raw.len()];
+    let admissible_cached = |memo: &mut [(u32, bool)], k: usize, scale: f32| {
+        let key = scale.to_bits();
+        if memo[k].0 != key {
+            memo[k] = (key, admissible(k, scale));
+        }
+        memo[k].1
+    };
+    let mut clear_memo = vec![([u32::MAX; 4], false); raw.len().saturating_sub(1)];
+    let clear_cached = |memo: &mut [([u32; 4], bool)], k: usize, a: RiverPoint, b: RiverPoint| {
+        let key = [a.x.to_bits(), a.y.to_bits(), b.x.to_bits(), b.y.to_bits()];
+        if memo[k].0 != key {
+            memo[k] = (key, clear(a, b));
+        }
+        memo[k].1
+    };
     for (k, envelope) in envelopes.iter_mut().enumerate() {
         for _ in 0..9 {
-            if admissible(k, *envelope) {
+            if admissible_cached(&mut admissible_memo, k, *envelope) {
                 break;
             }
             *envelope *= 0.5;
         }
-        if !admissible(k, *envelope) {
+        if !admissible_cached(&mut admissible_memo, k, *envelope) {
             *envelope = 0.0;
         }
     }
@@ -2458,10 +3148,12 @@ fn natural_course(
         let mut centres: Vec<usize> = envelopes
             .iter()
             .enumerate()
-            .filter_map(|(k, &t)| (!admissible(k, t * t * (2.0 - t))).then_some(k))
+            .filter_map(|(k, &t)| {
+                (!admissible_cached(&mut admissible_memo, k, t * t * (2.0 - t))).then_some(k)
+            })
             .collect();
         for (k, pair) in points.windows(2).enumerate() {
-            if !clear(pair[0], pair[1]) {
+            if !clear_cached(&mut clear_memo, k, pair[0], pair[1]) {
                 centres.extend([k, k + 1]);
             }
         }
@@ -2483,10 +3175,12 @@ fn natural_course(
         let mut centres: Vec<usize> = envelopes
             .iter()
             .enumerate()
-            .filter_map(|(k, &t)| (!admissible(k, t * t * (2.0 - t))).then_some(k))
+            .filter_map(|(k, &t)| {
+                (!admissible_cached(&mut admissible_memo, k, t * t * (2.0 - t))).then_some(k)
+            })
             .collect();
         for (k, pair) in points.windows(2).enumerate() {
-            if !clear(pair[0], pair[1]) {
+            if !clear_cached(&mut clear_memo, k, pair[0], pair[1]) {
                 centres.extend([k, k + 1]);
             }
         }
@@ -2506,12 +3200,12 @@ fn natural_course(
     // support reduction has already made these isolated residuals nearly zero.
     let mut residual = Vec::new();
     for (k, &t) in envelopes.iter().enumerate() {
-        if !admissible(k, t * t * (2.0 - t)) {
+        if !admissible_cached(&mut admissible_memo, k, t * t * (2.0 - t)) {
             residual.push(k);
         }
     }
     for (k, pair) in points.windows(2).enumerate() {
-        if !clear(pair[0], pair[1]) {
+        if !clear_cached(&mut clear_memo, k, pair[0], pair[1]) {
             residual.extend([k, k + 1]);
         }
     }
@@ -2549,7 +3243,7 @@ fn natural_course(
             centres.extend([k, k + 1]);
         }
         for (k, pair) in points.windows(2).enumerate() {
-            if !clear(pair[0], pair[1]) {
+            if !clear_cached(&mut clear_memo, k, pair[0], pair[1]) {
                 centres.extend([k, k + 1]);
             }
         }
@@ -2599,18 +3293,13 @@ fn natural_course(
     for pair in anchors.windows(2) {
         let begin = cuts[pair[0]];
         let end = cuts[pair[1]];
-        let compact = compact_course_mode(&points[begin..=end], cell, false);
-        let mut k = begin;
-        for p in compact.into_iter().skip(usize::from(!controls.is_empty())) {
-            while k < end
-                && (points[k].x != p.x
-                    || points[k].y != p.y
-                    || points[k].z != p.z
-                    || points[k].width != p.width)
-            {
-                k += 1;
-            }
-            controls.push((p.x, p.y));
+        // Retained indices, not a search for equal points: f32 rounding can
+        // make consecutive samples coincide, and the search then stopped at the
+        // first copy, dropping the anchor's final point from the course.
+        let compact = compact_course_indices(&points[begin..=end], false);
+        for k in compact.into_iter().skip(usize::from(!controls.is_empty())) {
+            let k = begin + k;
+            controls.push((points[k].x, points[k].y));
             control_stations.push(samples[k]);
             control_indices.push(k);
         }
@@ -2874,7 +3563,7 @@ fn course_crosses(points: &[RiverPoint], cell: f32) -> bool {
 }
 
 fn first_course_crossing(points: &[RiverPoint], cell: f32) -> Option<(usize, usize)> {
-    let mut bins: HashMap<(isize, isize), Vec<usize>> = HashMap::new();
+    let mut bins: HashMap<(isize, isize), Vec<usize>> = HashMap::default();
     let side = |a: RiverPoint, b: RiverPoint, p: RiverPoint| {
         (b.x - a.x) * (p.y - a.y) - (b.y - a.y) * (p.x - a.x)
     };
@@ -2912,7 +3601,7 @@ fn curves_cross(a: &[RiverPoint], b: &[RiverPoint], cell: f32) -> bool {
 }
 
 fn first_curves_crossing(a: &[RiverPoint], b: &[RiverPoint], cell: f32) -> Option<(usize, usize)> {
-    let mut bins: HashMap<(isize, isize), Vec<usize>> = HashMap::new();
+    let mut bins: HashMap<(isize, isize), Vec<usize>> = HashMap::default();
     let bounds = |a: RiverPoint, b: RiverPoint| {
         (
             (a.x.min(b.x) / cell).floor() as isize,
@@ -2956,9 +3645,18 @@ fn compact_course(points: &[RiverPoint], cell: f32) -> Vec<RiverPoint> {
 }
 
 fn compact_course_mode(points: &[RiverPoint], cell: f32, retain_profiles: bool) -> Vec<RiverPoint> {
+    let _ = cell;
+    compact_course_indices(points, retain_profiles)
+        .into_iter()
+        .map(|k| points[k])
+        .collect()
+}
+
+/// Indices of the retained points, in course order.
+fn compact_course_indices(points: &[RiverPoint], retain_profiles: bool) -> Vec<usize> {
     // Retain bends, confluence endpoints and material width changes after all joins.
     if points.len() < 3 {
-        return points.to_vec();
+        return (0..points.len()).collect();
     }
     let mut keep = vec![false; points.len()];
     keep[0] = true;
@@ -2994,11 +3692,9 @@ fn compact_course_mode(points: &[RiverPoint], cell: f32, retain_profiles: bool) 
             ranges.extend([(start, k), (k, end)]);
         }
     }
-    let _ = cell;
-    points
-        .iter()
-        .zip(keep)
-        .filter_map(|(&p, keep)| keep.then_some(p))
+    keep.iter()
+        .enumerate()
+        .filter_map(|(k, &keep)| keep.then_some(k))
         .collect()
 }
 
@@ -3104,8 +3800,8 @@ impl<'a> RiverGeometryIndex<'a> {
             cell,
             revisions: vec![0; owners],
             segments: Vec::new(),
-            bins: HashMap::new(),
-            junctions: HashMap::new(),
+            bins: HashMap::default(),
+            junctions: HashMap::default(),
             lakes: &[],
             n: 0,
             bank_margin: 3.0,
@@ -3129,7 +3825,7 @@ impl<'a> RiverGeometryIndex<'a> {
         cfg: &HydrologyConfig,
         curves: Option<&[Vec<RiverPoint>]>,
     ) {
-        let mut nodes: BankNodeIncidents = HashMap::new();
+        let mut nodes: BankNodeIncidents = HashMap::default();
         for (id, edge) in edges.iter().enumerate() {
             for (node, cell, incoming) in [
                 (edge.from, edge.cells[0], false),
@@ -3268,6 +3964,7 @@ impl<'a> RiverGeometryIndex<'a> {
                     let segment = &self.segments[id];
                     if segment.owner != owner
                         && segment.revision == self.revisions[segment.owner as usize]
+                        && !river_segments_far(a, b, segment.a, segment.b)
                     {
                         let junctions = self
                             .junctions
@@ -3379,7 +4076,7 @@ fn terminal_bank_extent(guide: &[RiverPoint], other: &[RiverPoint], step: f32) -
             let touching = other.windows(2).any(|segment| {
                 let margin =
                     (p.width.max(segment[0].width).max(segment[1].width) * 0.15).clamp(1.0, 3.0);
-                river_bank_gap(p, p, segment[0], segment[1]) < margin
+                river_bank_gap_below(p, p, segment[0], segment[1], margin)
             });
             if !touching {
                 return extent;
@@ -3399,8 +4096,55 @@ fn river_point_lerp(a: RiverPoint, b: RiverPoint, t: f32) -> RiverPoint {
     }
 }
 
-fn river_bank_gap(a: RiverPoint, b: RiverPoint, c: RiverPoint, d: RiverPoint) -> f32 {
-    river_bank_closest(a, b, c, d).0
+/// Conservative reject: the axis-aligned separation of two segments exceeds
+/// their widest bank plus any contact margin (at most max(15 % width, 1 m)),
+/// so neither an axis intersection nor a bank contact is possible.
+fn river_segments_far(a: RiverPoint, b: RiverPoint, c: RiverPoint, d: RiverPoint) -> bool {
+    let width = a.width.max(b.width).max(c.width).max(d.width);
+    let reach = width * 1.15 + 2.0;
+    a.x.max(b.x) + reach < c.x.min(d.x)
+        || c.x.max(d.x) + reach < a.x.min(b.x)
+        || a.y.max(b.y) + reach < c.y.min(d.y)
+        || c.y.max(d.y) + reach < a.y.min(b.y)
+}
+
+/// Exactly `river_bank_closest(a, b, c, d).0 < margin`: the minimum is below the
+/// margin when any of its four endpoint candidates is.
+fn river_bank_gap_below(
+    a: RiverPoint,
+    b: RiverPoint,
+    c: RiverPoint,
+    d: RiverPoint,
+    margin: f32,
+) -> bool {
+    [(a, c, d), (b, c, d), (c, a, b), (d, a, b)]
+        .into_iter()
+        .any(|(p, x, y)| {
+            let dx = y.x - x.x;
+            let dy = y.y - x.y;
+            let t = (((p.x - x.x) * dx + (p.y - x.y) * dy) / (dx * dx + dy * dy).max(0.0001))
+                .clamp(0.0, 1.0);
+            endpoint_gap_below(p, river_point_lerp(x, y, t), margin)
+        })
+}
+
+/// Exactly `point_distance(p, q) - (p.width + q.width) * 0.5 < margin`.
+/// The f64 distance decides away from the boundary; the f32 expression,
+/// whose rounding stays far below the tolerance, decides near it.
+fn endpoint_gap_below(p: RiverPoint, q: RiverPoint, margin: f32) -> bool {
+    let dx = p.x - q.x;
+    let dy = p.y - q.y;
+    let half = (p.width + q.width) * 0.5;
+    let distance = (f64::from(dx) * f64::from(dx) + f64::from(dy) * f64::from(dy)).sqrt();
+    let gap = distance - f64::from(half);
+    let tolerance = 1.0e-6 * (distance + f64::from(half).abs() + f64::from(margin).abs()) + 1.0e-30;
+    if gap < f64::from(margin) - tolerance {
+        true
+    } else if gap > f64::from(margin) + tolerance {
+        false
+    } else {
+        dx.hypot(dy) - half < margin
+    }
 }
 
 fn river_bank_closest(
@@ -3477,7 +4221,7 @@ fn river_banks_contact(
     let margin = (a.width.max(b.width).max(c.width).max(d.width) * 0.15)
         .min(margin_cap)
         .max(margin_cap.min(1.0));
-    if river_bank_gap(a, b, c, d) >= margin {
+    if river_segments_far(a, b, c, d) || !river_bank_gap_below(a, b, c, d, margin) {
         return false;
     }
     if junctions.is_empty() {
@@ -3498,7 +4242,7 @@ fn river_banks_contact(
     first.iter().any(|&(a, b)| {
         second
             .iter()
-            .any(|&(c, d)| river_bank_gap(a, b, c, d) < margin)
+            .any(|&(c, d)| river_bank_gap_below(a, b, c, d, margin))
     })
 }
 
@@ -3657,7 +4401,7 @@ fn terminal_contact_range(
         (p.x - node.x).hypot(p.y - node.y) <= node.radius
             && nearby
                 .iter()
-                .any(|segment| river_bank_gap(p, p, segment[0], segment[1]) < 0.0)
+                .any(|segment| river_bank_gap_below(p, p, segment[0], segment[1], 0.0))
     };
     let mut station = 0.0;
     if !touching(point_at(0)) {
@@ -3700,6 +4444,108 @@ fn terminal_contact_range(
     } else {
         [0.0, station + 0.001]
     })
+}
+
+/// Chaikin corner cutting with fixed ends, each cut at most `reach` metres
+/// from its corner: water level and width are interpolated alike, so a
+/// descending profile stays descending.
+fn chaikin(points: &[RiverPoint], reach: f32) -> Vec<RiverPoint> {
+    let mut out = Vec::with_capacity(points.len() * 2);
+    out.push(points[0]);
+    for (k, pair) in points.windows(2).enumerate() {
+        let (a, b) = (pair[0], pair[1]);
+        let t = (reach / point_distance(a, b).max(1e-6)).min(0.25);
+        if k > 0 {
+            out.push(river_point_lerp(a, b, t));
+        }
+        if k + 2 < points.len() {
+            out.push(river_point_lerp(a, b, 1.0 - t));
+        }
+    }
+    out.push(*points.last().unwrap());
+    out
+}
+
+/// Final planform rounding. The simplified courses keep long straight
+/// segments whose corners show at close range; each course is rounded with
+/// its ends fixed (every junction stays where it is) unless the rounded axis
+/// would cross another course, in which case it keeps its shape.
+fn smooth_network(curves: &mut [Vec<RiverPoint>], cell: f32) {
+    let mut candidates: Vec<Option<Vec<RiverPoint>>> = curves
+        .iter()
+        .map(|c| {
+            (c.len() >= 3).then(|| {
+                // Corners of the planform alone: dense profile vertices along
+                // a straight reach would otherwise keep each cut tiny.
+                let mut p = compact_course_mode(c, cell, false);
+                for _ in 0..3 {
+                    p = chaikin(&p, 1.5 * cell);
+                }
+                // Keep only the vertices the rounded shape needs.
+                compact_course(&p, cell)
+            })
+        })
+        .collect();
+    let bin = 2.0 * cell;
+    let key = |x: f32, y: f32| ((x / bin).floor() as i32, (y / bin).floor() as i32);
+    // Settled geometry against which a candidate is checked; a refused
+    // candidate falls back to its original shape, which is checked in turn.
+    for _ in 0..4 {
+        let shape = |id: usize| candidates[id].as_deref().unwrap_or(&curves[id]);
+        let mut bins: HashMap<(i32, i32), Vec<(u32, u32)>> = HashMap::default();
+        for id in 0..curves.len() {
+            for (k, pair) in shape(id).windows(2).enumerate() {
+                let (x0, y0) = key(pair[0].x.min(pair[1].x), pair[0].y.min(pair[1].y));
+                let (x1, y1) = key(pair[0].x.max(pair[1].x), pair[0].y.max(pair[1].y));
+                for y in y0..=y1 {
+                    for x in x0..=x1 {
+                        bins.entry((x, y)).or_default().push((id as u32, k as u32));
+                    }
+                }
+            }
+        }
+        let mut refused = Vec::new();
+        for (id, candidate) in candidates.iter().enumerate() {
+            let Some(candidate) = candidate else {
+                continue;
+            };
+            let crosses = candidate.windows(2).any(|pair| {
+                let (x0, y0) = key(pair[0].x.min(pair[1].x), pair[0].y.min(pair[1].y));
+                let (x1, y1) = key(pair[0].x.max(pair[1].x), pair[0].y.max(pair[1].y));
+                (y0..=y1).any(|y| {
+                    (x0..=x1).any(|x| {
+                        bins.get(&(x, y)).is_some_and(|list| {
+                            list.iter().any(|&(other, k)| {
+                                let other = other as usize;
+                                let q = shape(other);
+                                other != id
+                                    && river_segments_intersect(
+                                        pair[0],
+                                        pair[1],
+                                        q[k as usize],
+                                        q[k as usize + 1],
+                                    )
+                            })
+                        })
+                    })
+                })
+            });
+            if crosses || course_crosses(candidate, cell) {
+                refused.push(id);
+            }
+        }
+        if refused.is_empty() {
+            break;
+        }
+        for id in refused {
+            candidates[id] = None;
+        }
+    }
+    for (curve, candidate) in curves.iter_mut().zip(candidates) {
+        if let Some(candidate) = candidate {
+            *curve = candidate;
+        }
+    }
 }
 
 fn river_segments_intersect(a: RiverPoint, b: RiverPoint, c: RiverPoint, d: RiverPoint) -> bool {
@@ -3919,8 +4765,8 @@ fn river_network_pairs(
 ) -> Vec<(usize, usize)> {
     // Compaction can cross an unrelated nearby course, too. Query spatial
     // neighbours rather than limiting checks to branches of the same junction.
-    let mut bins: HashMap<(isize, isize), Vec<usize>> = HashMap::new();
-    let mut pairs = HashSet::new();
+    let mut bins: HashMap<(isize, isize), Vec<usize>> = HashMap::default();
+    let mut pairs = HashSet::default();
     for (id, curve) in curves.iter().enumerate() {
         // Include the fallback corridor: local repairs must also be checked
         // against nearby courses that did not overlap the deformed bounds.
@@ -3985,8 +4831,12 @@ fn compact_network(
         cell,
         cfg,
     };
+    // Geometry never changes the network: a curve that cannot be fitted keeps
+    // its detailed course, then the drainage reference, with the same ends.
     for (id, curve) in result.iter_mut().enumerate() {
-        fit_compact_profile(curve, &curves[id], &patch_context)?;
+        if fit_compact_profile(curve, &curves[id], &patch_context).is_err() {
+            curve.clone_from(&curves[id]);
+        }
     }
     for _ in 0..8 {
         let mut changed = false;
@@ -4121,13 +4971,11 @@ fn compact_network(
     // Repairs can move outside their original spatial bins. Check the actual
     // retained network after the bounded work, never export an unresolved X.
     for (id, curve) in result.iter_mut().enumerate() {
-        fit_compact_profile(curve, &curves[id], &patch_context)?;
-    }
-    for (id, curve) in result.iter().enumerate() {
+        if fit_compact_profile(curve, &curves[id], &patch_context).is_err() {
+            curve.clone_from(&curves[id]);
+        }
         if course_crosses(curve, cell) {
-            return Err(format!(
-                "river vector clearance: self-intersection on river {id}"
-            ));
+            curve.clone_from(&references[id]);
         }
     }
     for (a, b) in river_network_pairs(&result, None, cell) {
@@ -4154,9 +5002,27 @@ fn compact_network(
         )
         .is_some()
         {
-            return Err(format!(
-                "river vector clearance: unresolved axis or bank contact between rivers {a} and {b}"
-            ));
+            // Banks left touching are only drawn closer than their clearance;
+            // crossing axes would change the network. Those return to their
+            // detailed courses, else to their drainage references, whose cells
+            // never cross.
+            if curves_cross(&result[a], &result[b], cell) {
+                let options = [
+                    (&curves[a], &result[b]),
+                    (&result[a], &curves[b]),
+                    (&curves[a], &curves[b]),
+                    (&references[a], &references[b]),
+                ];
+                let (pa, pb) = options
+                    .iter()
+                    .find(|(pa, pb)| !curves_cross(pa, pb, cell))
+                    .map_or(
+                        (references[a].clone(), references[b].clone()),
+                        |(pa, pb)| ((*pa).clone(), (*pb).clone()),
+                    );
+                result[a] = pa;
+                result[b] = pb;
+            }
         }
     }
     Ok(result)
@@ -4222,7 +5088,7 @@ fn join_confluences(
     for (id, curve) in curves.iter().enumerate() {
         bank_index.insert(id as u32, curve);
     }
-    let mut incoming_at: HashMap<u32, Vec<usize>> = HashMap::new();
+    let mut incoming_at: HashMap<u32, Vec<usize>> = HashMap::default();
     for (id, edge) in edges.iter().enumerate() {
         incoming_at.entry(edge.to).or_default().push(id);
     }
@@ -4477,26 +5343,33 @@ fn choose_estuary(
         }
     }
 }
-fn widen_mouth(points: &mut [RiverPoint], kind: u32, map_width: f32) {
+/// Estuary flare: towards the sea the width grows exponentially (convergent
+/// estuaries, Savenije 2005) over some tens of channel widths, each mouth
+/// with its own length and profile. Small streams barely widen.
+fn widen_mouth(points: &mut [RiverPoint], kind: u32, map_width: f32, variation: u32) {
     if points.len() < 2 {
         return;
     }
     let base = points.last().unwrap().width;
-    let reach = (base * 15.0).max(map_width * 0.008).min(map_width * 0.05);
-    let factor = match kind {
+    let full = match kind {
         2 => 1.8,
         3 => 3.6,
         4 => 2.6,
         _ => 1.05,
     };
+    // 0 for a brook of 4 m or less, 1 for a river of 60 m or more.
+    let size = ((base / 4.0).max(1.0).ln() / 15.0_f32.ln()).min(1.0);
+    let factor = 1.0 + (full - 1.0) * size * size * (3.0 - 2.0 * size);
+    let unit = |shift: u32| (variation >> shift & 0xff) as f32 / 255.0;
+    let reach = (base * (10.0 + 18.0 * unit(0))).min(map_width * 0.05);
+    let profile = 1.3 + 1.2 * unit(8);
     let mut along = 0.0;
     for k in (0..points.len()).rev() {
         if k + 1 < points.len() {
             along += (points[k + 1].x - points[k].x).hypot(points[k + 1].y - points[k].y);
         }
         let t = (1.0 - along / reach).clamp(0.0, 1.0);
-        let smooth = t * t * (3.0 - 2.0 * t);
-        points[k].width *= 1.0 + (factor - 1.0) * smooth;
+        points[k].width *= factor.powf(t.powf(profile));
     }
 }
 

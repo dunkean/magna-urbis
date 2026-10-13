@@ -21,6 +21,89 @@ fn erosion_strength(erosion: f64) -> f64 {
     0.12 * erosion
 }
 
+/// Erosion settings a client may override; NaN keeps the relief default.
+/// Multipliers default to 1. The same values reach the GPU erosion plan.
+/// Basins fill with sediment (fill ×3) while their sills are carved (0.1 of
+/// their depth per step): plains survive and drain, instead of staying closed
+/// (38% of a mixed relief under water before) or being dissected.
+pub const EROSION_TUNING: [&str; 17] = [
+    "iterations",
+    "incision",
+    "incisionSlope",
+    "fill",
+    "carve",
+    "finalCarve",
+    "talus",
+    "thermal",
+    "diffusion",
+    "detail",
+    "warp",
+    "surfaceIterations",
+    "surfaceIncision",
+    "surfaceCarve",
+    "surfaceRouted",
+    "surfaceThermal",
+    "surfaceDiffusion",
+];
+pub(crate) const ITERATIONS: usize = 0;
+pub(crate) const INCISION: usize = 1;
+pub(crate) const INCISION_SLOPE: usize = 2;
+pub(crate) const FILL: usize = 3;
+pub(crate) const CARVE: usize = 4;
+pub(crate) const FINAL_CARVE: usize = 5;
+pub(crate) const TALUS: usize = 6;
+pub(crate) const THERMAL: usize = 7;
+pub(crate) const DIFFUSION: usize = 8;
+pub(crate) const DETAIL: usize = 9;
+pub(crate) const WARP: usize = 10;
+pub(crate) const SURFACE_ITERATIONS: usize = 11;
+pub(crate) const SURFACE_INCISION: usize = 12;
+pub(crate) const SURFACE_CARVE: usize = 13;
+pub(crate) const SURFACE_ROUTED: usize = 14;
+pub(crate) const SURFACE_THERMAL: usize = 15;
+pub(crate) const SURFACE_DIFFUSION: usize = 16;
+/// Defaults of the settings shared by every relief (the others come from the relief).
+pub(crate) const TUNING_DEFAULTS: [f64; 17] = [
+    f64::NAN,
+    1.0,
+    0.2,
+    3.0,
+    0.1,
+    1.0,
+    f64::NAN,
+    1.0,
+    f64::NAN,
+    f64::NAN,
+    1.0,
+    12.0,
+    1.0,
+    0.3,
+    1.0,
+    1.0,
+    1.0,
+];
+
+thread_local! {
+    static TUNING: std::cell::Cell<[f64; 17]> = const { std::cell::Cell::new([f64::NAN; 17]) };
+}
+/// Overrides for the generators built afterwards on this thread (a wasm worker).
+pub fn set_erosion_tuning(values: &[f64]) {
+    let mut tuning = [f64::NAN; 17];
+    for (slot, &value) in tuning.iter_mut().zip(values) {
+        *slot = if value.is_finite() { value } else { f64::NAN };
+    }
+    TUNING.with(|t| t.set(tuning));
+}
+/// The override of setting `i`, or `default`.
+pub(crate) fn tuned(i: usize, default: f64) -> f64 {
+    let value = TUNING.with(|t| t.get()[i]);
+    if value.is_nan() { default } else { value }
+}
+/// The override of setting `i`, or its shared default.
+pub(crate) fn tuning(i: usize) -> f64 {
+    tuned(i, TUNING_DEFAULTS[i])
+}
+
 // Reuse the same D8 topology through every erosion iteration. Sentinel edges
 // preserve visiting order while removing repeated divisions and bounds arithmetic.
 struct Grid {
@@ -282,6 +365,78 @@ fn resolve_pits(h: &mut [f32], fl: &Flood, grid: &Grid, frac: f64) -> usize {
     resolved
 }
 
+// Sill carving (Lindsay 2016, bounded): each depression's outlet sill and the
+// reach below it are lowered towards a level `carve` of the way from the spill
+// to the depression floor. The lake floor itself is never trenched; repeated
+// over the evolution, incision, relaxation and diffusion widen the cut into a
+// valley. Mirrors the GPU `breach` kernel.
+fn carve_sills(h: &mut [f32], fl: &Flood, grid: &Grid, cell: f64, carve: f64) -> usize {
+    if carve <= 0.0 {
+        return 0;
+    }
+    let total = h.len();
+    let mut component = vec![usize::MAX; total];
+    let mut stack = Vec::new();
+    let mut cells = Vec::new();
+    let mut target = vec![f32::INFINITY; total];
+    let mut carved = 0;
+    for start in 0..total {
+        if component[start] != usize::MAX || fl.filled[start] - h[start] <= 0.05 {
+            continue;
+        }
+        cells.clear();
+        component[start] = start;
+        stack.push(start);
+        while let Some(c) = stack.pop() {
+            cells.push(c);
+            for d in 0..8 {
+                if let Some(r) = grid.neighbor(c, d)
+                    && component[r] == usize::MAX
+                    && fl.filled[r] - h[r] > 0.05
+                {
+                    component[r] = start;
+                    stack.push(r);
+                }
+            }
+        }
+        let (mut pour, mut bottom) = (usize::MAX, f64::INFINITY);
+        for &c in &cells {
+            bottom = bottom.min(h[c] as f64);
+            let r = fl.receiver[c];
+            if r != usize::MAX
+                && component[r] != start
+                && (pour == usize::MAX || fl.filled[c] < fl.filled[pour])
+            {
+                pour = c;
+            }
+        }
+        if pour == usize::MAX {
+            continue;
+        }
+        let spill = fl.filled[pour] as f64;
+        let mut level = (h[pour] as f64).min(spill - carve * (spill - bottom));
+        target[pour] = target[pour].min((h[pour] as f64 + carve * (level - h[pour] as f64)) as f32);
+        let mut r = fl.receiver[pour];
+        for _ in 0..400 {
+            if r == usize::MAX {
+                break;
+            }
+            level = (level - 0.01 * cell).max(0.5);
+            let old = h[r] as f64;
+            if old <= level {
+                break;
+            }
+            target[r] = target[r].min((old + carve * (level - old)) as f32);
+            r = fl.receiver[r];
+        }
+        carved += 1;
+    }
+    for (value, &t) in h.iter_mut().zip(&target) {
+        *value = value.min(t);
+    }
+    carved
+}
+
 fn thermal(h: &mut [f32], grid: &Grid, cell: f64, talus: f64, passes: usize, rate: f64) {
     let mut delta = vec![0.0_f64; h.len()];
     for _ in 0..passes {
@@ -485,7 +640,9 @@ pub(crate) fn mountain(cfg: &MountainCfg<'_>) -> Vec<f32> {
     }
     let uplift_step = cfg.amp * 1.25 / cfg.iterations as f64;
     let strength = erosion_strength(cfg.erosion);
-    let incision = strength * cc / (0.004_f64.sqrt() * cfg.k * 2400.0);
+    let incision = tuning(INCISION) * strength * cc / (0.004_f64.sqrt() * cfg.k * 2400.0);
+    let threshold = tuning(INCISION_SLOPE).powi(2);
+    let thermal_rate = tuning(THERMAL) * strength * 0.8;
     let catchment_cap = 4.0 * 0.004_f64.sqrt() * cfg.k * 2400.0 / cc;
     let mut acc = vec![1.0_f32; count];
     let mut channels = vec![false; count];
@@ -497,7 +654,8 @@ pub(crate) fn mountain(cfg: &MountainCfg<'_>) -> Vec<f32> {
         }
         if cfg.erosion > 0.0 {
             let fl = flood(&h, &grid);
-            resolve_pits(&mut h, &fl, &grid, (strength * 0.6).min(0.6));
+            resolve_pits(&mut h, &fl, &grid, (tuning(FILL) * strength * 0.6).min(0.6));
+            carve_sills(&mut h, &fl, &grid, cc, tuning(CARVE));
             let flow = continuous_flow(&fl, &grid);
             acc.fill(1.0);
             for &c in fl.order.iter().rev() {
@@ -534,13 +692,13 @@ pub(crate) fn mountain(cfg: &MountainCfg<'_>) -> Vec<f32> {
                     .max(0.0);
                 // A flood potential routes water across sinks; it must not cut a
                 // physical channel across a flat or uphill saddle in that potential.
-                let response = slope * slope / (slope * slope + 0.04);
+                let response = slope * slope / (slope * slope + threshold);
                 let factor = (incision * (acc[c] as f64).sqrt().min(catchment_cap) * response
                     / flow.distance[c] as f64)
                     .min(6.0);
                 h[c] = (h[c] as f64).min((h[c] as f64 + factor * lower) / (1.0 + factor)) as f32;
             }
-            thermal(&mut h, &grid, cc, cfg.talus, 3, strength * 0.8);
+            thermal(&mut h, &grid, cc, cfg.talus, 3, thermal_rate);
             for i in 0..count {
                 channels[i] = acc[i] as f64 >= count as f64 * 0.001;
             }
@@ -562,12 +720,13 @@ pub(crate) fn mountain(cfg: &MountainCfg<'_>) -> Vec<f32> {
         *value = value.max(0.0);
     }
     if cfg.erosion > 0.0 {
-        thermal(&mut h, &grid, cc, cfg.talus * 0.95, 4, strength * 0.8);
+        thermal(&mut h, &grid, cc, cfg.talus * 0.95, 4, thermal_rate);
         for _ in 0..2 {
             let fl = flood(&h, &grid);
-            if resolve_pits(&mut h, &fl, &grid, strength * 0.5) == 0 {
+            if resolve_pits(&mut h, &fl, &grid, tuning(FILL) * strength * 0.5) == 0 {
                 break;
             }
+            carve_sills(&mut h, &fl, &grid, cc, tuning(FINAL_CARVE));
         }
         diffuse(&mut h, nc, &channels, strength * 0.5);
     }
@@ -579,7 +738,7 @@ pub(crate) fn mountain(cfg: &MountainCfg<'_>) -> Vec<f32> {
             let px = (x as f64 + 0.5) * cell;
             let py = (y as f64 + 0.5) * cell;
             let drainage = sample(&acc, nc, (px - x0) / cc - 0.5, (py - x0) / cc - 0.5, false);
-            let warp = (16.0 * cfg.k).min(cc * 0.9);
+            let warp = tuning(WARP) * (16.0 * cfg.k).min(cc * 0.9);
             let warp_wavelength = (110.0 * cfg.k).max(cc * 4.0);
             let wx = px
                 + warp
@@ -697,10 +856,11 @@ pub(crate) fn erode_shape(h: &mut [f32], n: usize, cell: f64, erosion: f64, talu
         erosion,
         talus,
         &ShapeErosion {
-            gain: 1.0,
+            gain: tuning(SURFACE_INCISION),
+            routed: tuning(SURFACE_ROUTED) > 0.5,
             motif: cell * n as f64,
             coarse: 320,
-            iterations: 12,
+            iterations: tuning(SURFACE_ITERATIONS).max(0.0) as usize,
             canyon_amplitude: None,
         },
     );
@@ -723,16 +883,18 @@ pub(crate) fn erode_canyon(
         erosion,
         talus,
         &ShapeErosion {
-            gain: 1.0,
+            gain: tuning(SURFACE_INCISION),
+            routed: tuning(SURFACE_ROUTED) > 0.5,
             motif,
             coarse: surface_resolution(cell * n as f64, motif),
-            iterations: 12,
+            iterations: tuning(SURFACE_ITERATIONS).max(0.0) as usize,
             canyon_amplitude: Some(amplitude),
         },
     );
 }
 
 /// Shared erosion of physical surface detail after regional reconstruction.
+/// Coasts keep strict descent: the sea floor holds no sill to carve.
 pub(crate) fn erode_surface(
     h: &mut [f32],
     n: usize,
@@ -740,6 +902,7 @@ pub(crate) fn erode_surface(
     erosion: f64,
     talus: f64,
     motif: f64,
+    coast: bool,
 ) {
     erode_with(
         h,
@@ -748,10 +911,11 @@ pub(crate) fn erode_surface(
         erosion,
         talus,
         &ShapeErosion {
-            gain: 1.0,
+            gain: tuning(SURFACE_INCISION),
+            routed: !coast && tuning(SURFACE_ROUTED) > 0.5,
             motif,
             coarse: surface_resolution(cell * n as f64, motif),
-            iterations: 12,
+            iterations: tuning(SURFACE_ITERATIONS).max(0.0) as usize,
             canyon_amplitude: None,
         },
     );
@@ -759,6 +923,8 @@ pub(crate) fn erode_surface(
 
 struct ShapeErosion {
     gain: f64,
+    /// Water crosses depressions and carves their sills (else strict descent).
+    routed: bool,
     motif: f64,
     coarse: usize,
     iterations: usize,
@@ -837,13 +1003,13 @@ fn canyon_cut(h: &mut [f32], n: usize, cell: f64, erosion: f64, motif: f64, ampl
     }
 }
 
-fn erode_with(h: &mut [f32], n: usize, cell: f64, erosion: f64, talus: f64, tuning: &ShapeErosion) {
+fn erode_with(h: &mut [f32], n: usize, cell: f64, erosion: f64, talus: f64, shape: &ShapeErosion) {
     if erosion == 0.0 {
         return;
     }
     // Move the fixed simulation border outside the displayed map. Extrapolate its
     // slope rather than adding a raised/lowered rim that would divert drainage.
-    let coarse_n = n.min(tuning.coarse);
+    let coarse_n = n.min(shape.coarse);
     let padding = 12;
     let padded_n = coarse_n + padding * 2;
     let ratio = n as f64 / coarse_n as f64;
@@ -859,17 +1025,17 @@ fn erode_with(h: &mut [f32], n: usize, cell: f64, erosion: f64, talus: f64, tuni
         }
     }
     let original = coarse.clone();
-    if let Some(amplitude) = tuning.canyon_amplitude {
+    if let Some(amplitude) = shape.canyon_amplitude {
         canyon_cut(
             &mut coarse,
             padded_n,
             cell * ratio,
             erosion,
-            tuning.motif,
+            shape.motif,
             amplitude,
         );
     }
-    erode_shape_coarse(&mut coarse, padded_n, cell * ratio, erosion, talus, tuning);
+    erode_shape_coarse(&mut coarse, padded_n, cell * ratio, erosion, talus, shape);
     for (value, baseline) in coarse.iter_mut().zip(original) {
         *value -= baseline;
     }
@@ -892,13 +1058,13 @@ fn erode_shape_coarse(
     cell: f64,
     erosion: f64,
     talus: f64,
-    tuning: &ShapeErosion,
+    shape: &ShapeErosion,
 ) {
     let grid = Grid::new(n);
-    let strength = erosion * tuning.gain;
+    let strength = erosion * shape.gain;
     let mut order: Vec<_> = (0..h.len()).collect();
     let mut acc = vec![1.0_f32; h.len()];
-    for _ in 0..tuning.iterations {
+    for _ in 0..shape.iterations {
         order.sort_unstable_by(|&a, &b| h[a].total_cmp(&h[b]).then(a.cmp(&b)));
         let mut receiver = vec![usize::MAX; h.len()];
         for c in 0..h.len() {
@@ -917,10 +1083,22 @@ fn erode_shape_coarse(
         }
         // Strict physical descent: closed bowls stay closed instead of acquiring
         // artificial breach trenches on hills. The same D-infinity split is used on GPU.
-        let fl = Flood {
-            filled: h.to_vec(),
-            receiver,
-            order: order.clone(),
+        // Routed: water crosses depressions to their spill, whose sill is carved.
+        let fl = if shape.routed {
+            let fl = flood(h, &grid);
+            carve_sills(h, &fl, &grid, cell, tuning(SURFACE_CARVE));
+            fl
+        } else {
+            Flood {
+                filled: h.to_vec(),
+                receiver,
+                order: order.clone(),
+            }
+        };
+        let order = if shape.routed {
+            fl.order.clone()
+        } else {
+            order.clone()
         };
         let flow = continuous_flow(&fl, &grid);
         acc.fill(1.0);
@@ -961,7 +1139,7 @@ fn erode_shape_coarse(
             let response = 0.08 + 0.92 * slope * slope / (slope * slope + threshold * threshold);
             let factor = (strength
                 * 0.40
-                * (acc[c] as f64 * cell * cell / (0.004 * tuning.motif * tuning.motif))
+                * (acc[c] as f64 * cell * cell / (0.004 * shape.motif * shape.motif))
                     .sqrt()
                     .min(4.0)
                 * response
@@ -969,9 +1147,21 @@ fn erode_shape_coarse(
                 .min(4.0);
             h[c] = (h[c] as f64).min((h[c] as f64 + factor * lower) / (1.0 + factor)) as f32;
         }
-        thermal(h, &grid, cell, talus, 1, (erosion * 0.09).min(0.3));
+        thermal(
+            h,
+            &grid,
+            cell,
+            talus,
+            1,
+            (tuning(SURFACE_THERMAL) * erosion * 0.09).min(0.3),
+        );
         let channels: Vec<_> = acc.iter().map(|&a| a > (n * n) as f32 * 0.001).collect();
-        diffuse(h, n, &channels, (erosion * 0.025).min(0.1));
+        diffuse(
+            h,
+            n,
+            &channels,
+            (tuning(SURFACE_DIFFUSION) * erosion * 0.025).min(0.1),
+        );
     }
 }
 
@@ -989,10 +1179,10 @@ pub(crate) fn surface_parameters(width: f64, motif: f64, erosion: f64, talus: f6
         n as f32,
         cell as f32,
         (-12.0 * cell) as f32,
-        12.0,
+        tuning(SURFACE_ITERATIONS).max(0.0).floor() as f32,
         talus as f32,
-        (erosion * 0.1125) as f32,
-        (erosion * 0.40 * cell / (0.004_f64.sqrt() * motif)) as f32,
-        (erosion * 0.025).min(0.1) as f32,
+        (tuning(SURFACE_THERMAL) * erosion * 0.1125) as f32,
+        (tuning(SURFACE_INCISION) * erosion * 0.40 * cell / (0.004_f64.sqrt() * motif)) as f32,
+        (tuning(SURFACE_DIFFUSION) * erosion * 0.025).min(0.1) as f32,
     ]
 }

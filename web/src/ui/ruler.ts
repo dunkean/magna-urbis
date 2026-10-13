@@ -25,11 +25,11 @@ export function createRuler(o: {
   controls.className = 'ruler-controls';
   const result = document.createElement('output');
   result.className = 'ruler-distance';
-  result.setAttribute('aria-label', 'Distance mesurée');
+  result.setAttribute('aria-label', 'Measured distance');
   const button = document.createElement('button');
   button.type = 'button';
-  button.textContent = 'Règle';
-  button.title = 'Mesurer une distance : cliquer puis glisser entre deux points';
+  button.textContent = 'Ruler';
+  button.title = 'Measure a distance: click and drag between two points';
   button.setAttribute('aria-pressed', 'false');
   controls.append(result, button);
   (o.controlsHost ?? o.container).append(controls);
@@ -45,7 +45,7 @@ export function createRuler(o: {
     const visible = enabled && start !== null && end !== null;
     for (const shape of [halo, line, ...ends]) shape.style.display = visible ? '' : 'none';
     result.hidden = !enabled;
-    if (!visible) { result.textContent = 'Cliquer puis glisser'; return; }
+    if (!visible) { result.textContent = 'Click and drag'; return; }
     const a = worldToScreen(o.getView(), o.container.clientWidth, o.container.clientHeight, ...start!);
     const b = worldToScreen(o.getView(), o.container.clientWidth, o.container.clientHeight, ...end!);
     for (const stroke of [halo, line]) {
@@ -54,7 +54,7 @@ export function createRuler(o: {
     }
     [a, b].forEach((p, i) => { ends[i].setAttribute('cx', String(p[0])); ends[i].setAttribute('cy', String(p[1])); });
     const meters = Math.hypot(end![0] - start![0], end![1] - start![1]);
-    result.textContent = `Distance : ${new Intl.NumberFormat('fr-FR', { maximumFractionDigits: meters >= 1000 ? 2 : 1 }).format(meters >= 1000 ? meters / 1000 : meters)} ${meters >= 1000 ? 'km' : 'm'}`;
+    result.textContent = `Distance: ${new Intl.NumberFormat('en-US', { maximumFractionDigits: meters >= 1000 ? 2 : 1 }).format(meters >= 1000 ? meters / 1000 : meters)} ${meters >= 1000 ? 'km' : 'm'}`;
   }
   function setEnabled(on: boolean): void {
     if (pointer !== null && layer.hasPointerCapture(pointer)) layer.releasePointerCapture(pointer);

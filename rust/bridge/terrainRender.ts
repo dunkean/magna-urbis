@@ -1,13 +1,15 @@
+import { terrainLights, DEFAULT_TERRAIN_LAYERS, DEFAULT_TERRAIN_LIGHTING, type TerrainLayers, type TerrainLighting } from '../../web/src/render/terrainLighting';
 import type { World } from '../../web/src/gen/types';
 import { marchingSquares } from '../../web/src/gen/terrain/contour';
 import { slopeGrid } from '../../web/src/gen/core/grid';
 import { contourSet, CONTOUR_INTERVAL } from '../../web/src/render/contours';
 import { CANVAS_MAP_STROKES, mapStrokeWidth } from '../../web/src/render/strokes';
 import { encodePng, pngDataUrl, renderTerrainPixels } from '../../web/src/render/raster';
-import { PALETTES } from '../../web/src/render/styles';
+import { PALETTES, type MapStyle } from '../../web/src/render/styles';
+import { coastalSeaColors, coastDistances, hasCoastalSea, SEA_BAND_WIDTH } from '../../web/src/render/terrainSea';
 import type { TerrainData, TerrainSettings } from './terrain';
 
-export type TerrainStyle = 'parchment' | 'atlas' | 'topographic' | 'copernicus';
+export type TerrainStyle = MapStyle | 'copernicus';
 export interface TerrainScene { svg: string; imageUrl: string; contourStep: number; profile?: { pixelsMs: number; imageMs: number; contoursMs: number } }
 let coastClipId = 0;
 const contourPaths = new WeakMap<TerrainData, { relief: string; mapWidth: number; step: number; thin: string; index: string }>();
@@ -102,13 +104,20 @@ function renderElevation(terrain: TerrainData, frame: boolean, clipNamespace: st
 }
 
 /** Transitional renderer adapter. Rust never depends on the legacy World schema. */
-export function renderRustTerrain(terrain: TerrainData, style: TerrainStyle, frame = true, settings: Pick<TerrainSettings, 'relief' | 'width'> = { relief: 'mountains', width: terrain.width }, showContours = true, clipNamespace = 'main'): TerrainScene {
-  if (style === 'copernicus') return renderElevation(terrain, frame, clipNamespace);
+export function renderRustTerrain(terrain: TerrainData, style: TerrainStyle, frame = true, settings: Pick<TerrainSettings, 'relief' | 'width'> = { relief: 'mountains', width: terrain.width }, showContours = true, clipNamespace = 'main', lighting: TerrainLighting = DEFAULT_TERRAIN_LIGHTING, layers: TerrainLayers = DEFAULT_TERRAIN_LAYERS): TerrainScene {
+  frame &&= layers.frame;
+  if (style === 'copernicus') {
+    const scene = renderElevation(terrain, frame, clipNamespace);
+    if (!layers.relief) scene.svg = `<rect width="${terrain.width}" height="${terrain.width}" fill="#f3ead2"/>` + (frame ? `<rect width="${terrain.width}" height="${terrain.width}" fill="none" stroke="#333" vector-effect="non-scaling-stroke"/>` : '');
+    return scene;
+  }
   const started = performance.now();
   const n = terrain.resolution, width = terrain.width, cell = width / n;
   const cavern = terrain.caveMask.length > 0;
+  const coastal = terrain.globalMinHeight < 0 && !cavern;
   // Stable continuous shading, without engraved bands or high-frequency paper grain.
   const pal = { ...PALETTES[style], hatch: 0, grain: 0 };
+  if (!layers.hypsometry) pal.hypso = [[0, pal.paper], [1, pal.paper]];
   // The shared rasterizer only reads mapSize, terrain.height and terrain.water.
   const legacyRasterInput = {
     mapSize: width,
@@ -117,17 +126,29 @@ export function renderRustTerrain(terrain: TerrainData, style: TerrainStyle, fra
   const pixels = renderTerrainPixels(legacyRasterInput, pal, {
     pixels: n, surface: terrain.height,
     normals: { x: terrain.normalX, y: terrain.normalY, z: terrain.normalZ },
+    lighting,
+    sea: coastal && hasCoastalSea(style) ? { distance: coastDistances(terrain.height, n, cell, settings.width * SEA_BAND_WIDTH), bandWidth: settings.width * SEA_BAND_WIDTH } : undefined,
     heightRange: { min: Math.max(0, terrain.globalMinHeight), max: terrain.globalMaxHeight }, exaggeration: 2,
     grainCoordinates: { x: terrain.x, y: terrain.y, cell: terrain.motifSize / 512 },
   });
-  const coastal = terrain.globalMinHeight < 0 && !cavern;
+  let sea = `<rect width="${width}" height="${width}" fill="${pal.seaFill}"/>`;
+  if (coastal && hasCoastalSea(style)) {
+    const water = pixels.rgb.slice(), shore = coastalSeaColors(pal).shore;
+    // The unclipped sea image extends shore ink under land, so SVG filtering
+    // and shoreline antialiasing never expose a paper fringe.
+    for (let i = 0; i < n * n; i++) if (terrain.height[i] > 0) water.set(shore, i * 3);
+    sea = `<image width="${width}" height="${width}" href="${pngDataUrl(encodePng(water, n, n, 3, 1))}"/>`;
+  }
   if (coastal) extendLandColors(pixels.rgb, terrain);
   if (cavern) {
+    const light = terrainLights(lighting).primary;
     for (let i = 0; i < n * n; i++) if (terrain.caveMask[i]) {
       // Black rock with continuous inward-facing wall light; no stripes or grain.
-      const nx = terrain.normalX[i], ny = terrain.normalY[i], nz = terrain.normalZ[i];
+      const gx = terrain.normalX[i] / Math.max(1e-8, terrain.normalZ[i]) * lighting.exaggeration * 0.5;
+      const gy = terrain.normalY[i] / Math.max(1e-8, terrain.normalZ[i]) * lighting.exaggeration * 0.5;
+      const inv = 1 / Math.sqrt(gx * gx + gy * gy + 1), nx = gx * inv, ny = gy * inv, nz = inv;
       const slope = Math.hypot(nx, ny);
-      const shade = Math.max(0, Math.min(72, slope * (36 - 42 * nx - 42 * ny) + (1 - nz) * 12));
+      const shade = Math.max(0, Math.min(72, (lighting.enabled ? lighting.strength : 0) * (slope * (36 + 84 * (nx * light[0] + ny * light[1])) + (1 - nz) * 12)));
       pixels.rgb[i * 3] = shade; pixels.rgb[i * 3 + 1] = shade; pixels.rgb[i * 3 + 2] = shade;
     }
   }
@@ -152,7 +173,7 @@ export function renderRustTerrain(terrain: TerrainData, style: TerrainStyle, fra
   }
   const weights = terrainContourWidths(style, 1e-6);
   let svg = `<rect width="${width}" height="${width}" fill="${pal.paper}"/>`;
-  svg += coastal ? coastImage(terrain, background, `<rect width="${width}" height="${width}" fill="${pal.seaFill}"/>`, clipNamespace) : `<image width="${width}" height="${width}" href="${background}"/>`;
+  if (layers.relief) svg += coastal ? coastImage(terrain, background, sea, clipNamespace) : `<image width="${width}" height="${width}" href="${background}"/>`;
   if (!cavern && showContours) svg += `<g class="layer-contours" fill="none" stroke="${pal.contour}" stroke-linejoin="round" stroke-linecap="round"><path d="${paths!.thin}" style="stroke-width:var(--terrain-contour-width,${weights.thin}px)" vector-effect="non-scaling-stroke" opacity="${pal.contourOpacity * 0.5}"/><path d="${paths!.index}" style="stroke-width:var(--terrain-contour-index-width,${weights.index}px)" vector-effect="non-scaling-stroke" opacity="${pal.contourOpacity * 0.75}"/></g>`;
   if (frame) svg += `<rect x="0" y="0" width="${width}" height="${width}" fill="none" stroke="${pal.frame}" stroke-width="1.2" vector-effect="non-scaling-stroke"/>`;
   return { svg, imageUrl: background, contourStep: cavern ? 0 : step, profile: { pixelsMs, imageMs, contoursMs: performance.now() - contourStarted } };

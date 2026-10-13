@@ -58,6 +58,59 @@ smaller than the network's approximately 7.7 km coarse cells may not survive.
 `GET /sketch` returns the current analytic neural sketch without running networks.
 Restart `npm run neural:serve` after updating the service.
 
+## Settlement points and regional roads
+
+Terrainbench has two stages after hydrology. **4 · Settlements** places points on
+the completed map; **5 · Roads** links them. They are separate Rust calls on one
+`settlements::Terrain` handle (kept by the WASM worker as `SettlementTerrain`):
+road options never move a settlement, and moving a settlement only reroutes.
+Neither stage regenerates terrain or water. The standalone HTML falls back to the
+same engine on the page when the browser refuses a worker opened from `file://`.
+
+**Settlements** (`crates/core/src/settlements/placement.rs`) ports the legacy
+planner's suitability scores, central-place spacing and extent exclusions.
+Automatic composition uses either a rank-size law (rank *r* holds main ÷ *r*^q
+inhabitants, with a density, smallest place and log-normal spread) or the legacy
+class bands; counts by class and an editable list remain. Geography weights
+(flat ground, buildable land, fresh water, river, coast, flood avoidance,
+defensible heights, elevation preference, seed variation), global site-type
+multipliers on top of each culture's preferences, clustering towards larger
+places and the border margin are exposed. Select a marker or list entry to see
+its score terms and edit name, population, class, culture, site preference and
+coordinates; markers can be dragged, returned to automatic placement or deleted.
+
+**Roads** (`crates/core/src/settlements/roads/`) link a Delaunay graph's spanning
+tree plus shortcuts (network density). Routes are searched most important first
+on 24 directions, so switchbacks hold a per-class grade limit on raw ground
+heights; long moves are graded along their whole line, and bridges cross at bank
+level. Reuse is per road move and cells beside a road cost more, so routes share
+trunks instead of running alongside; a turn cost lengthens hairpin legs. All
+routes then merge into one planar graph (crossings become junctions, chains
+between junctions become segments), whose class (highway, main, local, track,
+trail) comes from the most important trip carried on the final network. The
+development level (primitive, rural, developed, imperial) maps traffic to
+classes and surfaces (dirt, gravel, paved, flagstone); a surface can be forced.
+Road cultures (`roads/profile.rs`, auto from each link's larger place or forced)
+set grades, straightness, meandering, bridge preference, causeways over shallow
+lakes and surface bias. Exits run to the cheapest dry cell of the nearest borders.
+Lakes, sea and cavern rock block roads except causeway cultures. The routing
+raster is capped at 512², independently of camera zoom.
+
+Validation from `web/`: `npm run typecheck`,
+`npx vitest run --project fast tests/terrainSettlements.raster.test.ts`, and
+`node scripts/terrain_settlements_ui_check.mjs` against a running terrainbench
+(defaults to port 5174; `PLAYWRIGHT_CHANNEL` selects the browser).
+Add `--water` after the URL for both water engines, or `--vector-water` for
+the vector chain only. Pass the standalone HTML's `file:///…` URL to verify
+offline editing and sharing.
+Native invariants (no doubled roads, junctions at every crossing, grades with
+switchbacks, culture and level typing, causeways, rank-size law) run from `rust/`
+with `cargo test --release -p magna-urbis-core --test settlements`. For a bench map,
+`DUMP=1 node scripts/terrain_roads_visual.mjs` (from `web/`) writes screenshots
+and the adapted raster; `cargo run --release -p magna-urbis-core --example
+roads_inspect -- <dump.json>` then reports grade bands, doubled length and the
+steepest stretches.
+
 ## Houses bench
 
 The independent `crates/houses/` engine generates domestic buildings and compounds from the architectural catalogue, with a separate free workshop for geometric primitives. `crates/houses-wasm/` provides coarse JSON calls; `bridge/houseRender.ts` is a temporary SVG adapter. The [houses guide](crates/houses/README.md) explains the French controls, historical modes, native levels, source confidence, replay links and SVG/JSON exports. Catalogue coverage records do not guarantee every recipe or configuration can be generated; the bench reports native errors.

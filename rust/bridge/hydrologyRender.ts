@@ -4,19 +4,19 @@ import type { HydrologyData, HydrologyOverlay } from './hydrology';
 import type { TerrainStyle } from './terrainRender';
 
 export const HYDROLOGY_LEGENDS: Record<HydrologyOverlay, string> = {
-  none: 'Eaux vectorielles : lacs et berges à leur largeur physique.',
-  basins: 'Une couleur par bassin drainant vers un même exutoire ; mer transparente.',
-  accumulation: 'Surface drainée : bleu → turquoise → jaune → rouge, échelle logarithmique en m².',
-  flow: 'Flèches vers l’aval ; échantillonnage du drainage pour garder la carte lisible.',
-  depressions: 'Cuvettes : différence entre le seuil de débordement et le terrain, bleu clair → bleu foncé.',
-  lakes: 'Lacs retenus : profondeur sous le niveau d’eau, bleu clair → bleu foncé.',
-  channels: 'Graphe : orange = cours principal, bleu = affluents ; flèches vers l’aval, points = sources et connexions.',
-  'raw-basins': 'Drainage brut : bassins avant le routage convergent des surfaces plates.',
-  'raw-accumulation': 'Drainage brut : surface contributive avant le routage convergent.',
-  'raw-flow': 'Drainage brut : directions avant le routage convergent.',
-  'raw-depressions': 'Cuvettes avant le traitement des dépressions : différence entre le seuil brut et la hauteur physique initiale.',
-  flats: 'Une couleur par composante plate ; les pentes physiques restent transparentes.',
-  'flat-rank': 'Rang terrestre avant agrégation des lacs : bleu près des sorties, rouge aux rangs élevés ; aucune altitude ajoutée.',
+  none: 'Vector water: lakes and banks at their physical width.',
+  basins: 'One color per watershed draining to the same outlet; transparent sea.',
+  accumulation: 'Drained area: blue → turquoise → yellow → red, logarithmic scale in m².',
+  flow: 'Downstream arrows; drainage is sampled to keep the map readable.',
+  depressions: 'Depressions: difference between spill elevation and terrain, light blue → dark blue.',
+  lakes: 'Retained lakes: depth below water level, light blue → dark blue.',
+  channels: 'Graph: orange = main channel, blue = tributaries; downstream arrows, points = sources and connections.',
+  'raw-basins': 'Raw drainage: watersheds before convergent routing across flat surfaces.',
+  'raw-accumulation': 'Raw drainage: contributing area before convergent routing.',
+  'raw-flow': 'Raw drainage: directions before convergent routing.',
+  'raw-depressions': 'Depressions before treatment: difference between the raw spill elevation and initial physical height.',
+  flats: 'One color per flat component; physical slopes remain transparent.',
+  'flat-rank': 'Land rank before lake aggregation: blue near outlets, red at high ranks; no elevation added.',
 };
 const format = (v: number): string => v.toFixed(2);
 const diagnosticImages = new WeakMap<HydrologyData, Map<HydrologyOverlay, string>>();
@@ -30,7 +30,7 @@ function ring(points: Float32Array, start: number, end: number): string {
   return d + 'Z';
 }
 
-function riverBank(points: Float32Array, start: number, end: number): string {
+export function riverBank(points: Float32Array, start: number, end: number): string {
   if (end - start < 2) return '';
   const left: number[][] = [], right: number[][] = [];
   for (let i = start; i < end; i++) {
@@ -97,17 +97,33 @@ function diagnosticImage(data: HydrologyData, overlay: HydrologyOverlay): string
   return svg;
 }
 
+/** Water colour of a display style, shared by lakes and rivers. */
+export function hydrologyWaterColour(style: TerrainStyle): string {
+  return style === 'copernicus' ? '#14527a' : PALETTES[style].waterEdge;
+}
+
+/** River capsules for the GPU renderer: x0, y0, x1, y1, widths (m) at both ends, r, g, b. */
+export function hydrologySegments(data: HydrologyData, colour: string): Float32Array {
+  const r = parseInt(colour.slice(1, 3), 16) / 255, g = parseInt(colour.slice(3, 5), 16) / 255, b = parseInt(colour.slice(5, 7), 16) / 255;
+  const p = data.riverPoints, out: number[] = [];
+  for (let i = 0; i < data.riverCount; i++) {
+    for (let k = data.riverOffsets[i]; k + 1 < data.riverOffsets[i + 1]; k++) {
+      out.push(p[k * 4], p[k * 4 + 1], p[k * 4 + 4], p[k * 4 + 5], p[k * 4 + 2], p[k * 4 + 6], r, g, b);
+    }
+  }
+  return Float32Array.from(out);
+}
+
 /** Display-only adapter: diagnostic rasters and full physical vector water are
  * retained in world coordinates, independently of camera-region terrain tiles. */
 export function renderHydrology(data: HydrologyData, overlay: HydrologyOverlay, showWater: boolean, style: TerrainStyle = 'parchment'): string {
-  const pal = PALETTES[style === 'copernicus' ? 'parchment' : style];
-  const waterFill = style === 'copernicus' ? '#237daf' : pal.seaFill;
+  const waterFill = hydrologyWaterColour(style);
   let svg = '';
   if (['basins', 'accumulation', 'depressions', 'lakes', 'raw-basins', 'raw-accumulation', 'raw-depressions', 'flats', 'flat-rank'].includes(overlay)) svg += diagnosticImage(data, overlay);
   if (showWater) {
     let lakes = '';
     for (let i = 0; i < data.lakeOffsets.length - 1; i++) lakes += ring(data.lakePoints, data.lakeOffsets[i], data.lakeOffsets[i + 1]);
-    svg += `<defs><clipPath id="hydrology-map-clip"><rect width="${data.width}" height="${data.width}"/></clipPath></defs><g class="hydrology-water" clip-path="url(#hydrology-map-clip)" fill="${waterFill}"><path d="${lakes}" fill-rule="evenodd" stroke="${pal.waterEdge}" stroke-width="0.35" vector-effect="non-scaling-stroke"/>`;
+    svg += `<defs><clipPath id="hydrology-map-clip"><rect width="${data.width}" height="${data.width}"/></clipPath></defs><g class="hydrology-water" clip-path="url(#hydrology-map-clip)" fill="${waterFill}"><path d="${lakes}" fill-rule="evenodd" stroke="${waterFill}" stroke-width="0.35" vector-effect="non-scaling-stroke"/>`;
     const junctionWidths = new Float32Array(data.nodePoints.length / 2);
     for (let i = 0; i < data.riverCount; i++) svg += `<path d="${riverBank(data.riverPoints, data.riverOffsets[i], data.riverOffsets[i + 1])}" stroke="none"/>`;
     for (let i = 0; i < data.riverCount; i++) {

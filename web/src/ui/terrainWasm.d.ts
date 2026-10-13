@@ -15,13 +15,14 @@ declare module '*magna_urbis_wasm.js' {
     readonly node_points: Float32Array; readonly node_meta: Uint32Array;
     readonly lake_points: Float32Array; readonly lake_offsets: Uint32Array;
     readonly lake_ring_meta: Uint32Array; readonly lake_meta: Float32Array;
+    readonly lake_closed: Uint32Array; readonly water_field: Float32Array;
     free(): void;
   }
   export class HydrologyEngine {
     constructor(seed: string, width: number, resolution: number, height: Float32Array, seaEnabled: boolean);
     static with_drainage(seed: string, width: number, resolution: number, height: Float32Array, seaEnabled: boolean, filled: Float32Array, receivers: Uint32Array, accumulation: Float32Array): HydrologyEngine;
     filled(): Float32Array; receivers(): Uint32Array; accumulation(): Float32Array;
-    generate(main: string, density: number, wetness: number, lakes: string, meanders: string, meanderIntensity: number, estuary: string, widthScale: number, incision: number, minLakeArea: number, lakeAbundance?: number, lakeCoverage?: number, maxLakeArea?: number, depressionPolicy?: string, maxBreachDepth?: number, maxBreachLength?: number): HydrologyOutput;
+    generate(main: string, density: number, wetness: number, lakes: string, meanders: string, meanderIntensity: number, estuary: string, widthScale: number, incision: number, minLakeArea: number, lakeAbundance?: number, lakeCoverage?: number, maxLakeArea?: number, depressionPolicy?: string, maxBreachDepth?: number, maxBreachLength?: number, minLakeDepth?: number, temperature?: number, precipitation?: number, coastalStreams?: number): HydrologyOutput;
     free(): void;
   }
   export interface TerrainOutput {
@@ -32,6 +33,13 @@ declare module '*magna_urbis_wasm.js' {
     free(): void;
   }
   export function generate_terrain(seed: string, width: number, relief: string, erosion: number, resolution: number): TerrainOutput;
+  /** Adapted terrain kept between settlement placement and road routing (JSON in, JSON out). */
+  export class SettlementTerrain {
+    constructor(width: number, resolution: number, height: Float32Array, water: Uint8Array, waterLevel: Float32Array, riverWidth: Float32Array, riverIds: Int32Array);
+    place(seed: string, config: string): string;
+    roads(seed: string, sites: string, config: string): string;
+    free(): void;
+  }
   export class Flood {
     take_filled(): Float32Array; take_receiver(): Int32Array; take_order(): Int32Array; take_accumulation(): Float32Array;
     take_basin(): Int32Array; take_sea(): Uint8Array; readonly outlets: number; free(): void;

@@ -3,19 +3,19 @@ import { coarseSurface, parseTerrainSketch, type TerrainSketch } from '../../../
 export function createTerrainSketchEditor(host: HTMLElement, initial: TerrainSketch | undefined,
   surface: () => { height: Float32Array; resolution: number } | undefined, changed: () => void,
   preset?: () => Promise<TerrainSketch>, initialError?: string, onStrokeStart?: () => void): { snapshot: () => TerrainSketch | undefined } {
-  host.innerHTML = `<details class="sketch-editor"><summary>Éditeur de relief grossier</summary>
-    <p>Peindre l’altitude avant le raffinement. La grille couvre toute la carte ; 0 m = mer. Le neural suit les grandes masses (mailles ≈ 7,7 km).</p>
-    <div class="sketch-tools"><label><input data-id="enabled" type="checkbox">Utiliser cette esquisse</label>
-    <label>Pinceau <select data-id="tool"><option value="raise">Élever</option><option value="lower">Creuser</option><option value="level">Altitude</option><option value="smooth">Lisser</option><option value="plateau">Plateau</option><option value="volcano">Volcan</option><option value="caldera">Caldeira</option></select></label>
-    <label>Rayon % <input data-id="radius" type="number" min="2" max="50" value="15"></label>
-    <label>Altitude / force m <input data-id="height" type="number" min="-12000" max="12000" value="1000"></label>
-    <button data-id="flat">Tout à l’altitude</button><button data-id="surface">Depuis le terrain affiché</button>
-    ${preset ? '<button data-id="preset">Depuis l’esquisse du relief</button>' : ''}
-    <button data-id="undo">Annuler</button><button data-id="redo">Rétablir</button>
-    <button data-id="import">Importer JSON</button><button data-id="export">Exporter JSON</button>
+  host.innerHTML = `<details class="sketch-editor"><summary>Coarse terrain editor</summary>
+    <p>Paint elevation before refinement. The grid covers the entire map; 0 m is sea level. The neural model follows the large land masses (about 7.7 km cells).</p>
+    <div class="sketch-tools"><label><input data-id="enabled" type="checkbox">Use this sketch</label>
+    <label>Brush <select data-id="tool"><option value="raise">Raise</option><option value="lower">Lower</option><option value="level">Elevation</option><option value="smooth">Smooth</option><option value="plateau">Plateau</option><option value="volcano">Volcano</option><option value="caldera">Caldera</option></select></label>
+    <label>Radius % <input data-id="radius" type="number" min="2" max="50" value="15"></label>
+    <label>Elevation / strength m <input data-id="height" type="number" min="-12000" max="12000" value="1000"></label>
+    <button data-id="flat">Set all to elevation</button><button data-id="surface">From displayed terrain</button>
+    ${preset ? '<button data-id="preset">From terrain sketch</button>' : ''}
+    <button data-id="undo">Undo</button><button data-id="redo">Redo</button>
+    <button data-id="import">Import JSON</button><button data-id="export">Export JSON</button>
     <input data-id="file" type="file" accept=".json,application/json" hidden></div>
-    <canvas tabindex="0" width="512" height="512" aria-label="Peindre le relief grossier"></canvas><output data-id="state" role="status"></output>
-    <small>Bleu : mer · vert : bas relief · brun/blanc : hauts reliefs. Les éditions sont appliquées à la fin du geste avec Auto, ou avec Générer. Ctrl+Z : annuler · Ctrl+Maj+Z : rétablir.</small></details>`;
+    <canvas tabindex="0" width="512" height="512" aria-label="Paint coarse terrain"></canvas><output data-id="state" role="status"></output>
+    <small>Blue: sea · green: low terrain · brown/white: high terrain. Edits are applied at the end of a stroke with Auto, or with Generate. Ctrl+Z: undo · Ctrl+Shift+Z: redo.</small></details>`;
   const get = <T extends HTMLElement>(id: string): T => host.querySelector(`[data-id="${id}"]`)! as T;
   const enabled = get<HTMLInputElement>('enabled'), canvas = host.querySelector('canvas')!, ctx = canvas.getContext('2d')!;
   const toolControl = get<HTMLSelectElement>('tool'), radiusControl = get<HTMLInputElement>('radius'), heightControl = get<HTMLInputElement>('height');
@@ -47,7 +47,7 @@ export function createTerrainSketchEditor(host: HTMLElement, initial: TerrainSke
       image.data[p + 3] = 255;
     }
     smallContext.putImageData(image, 0, 0); ctx.drawImage(small, 0, 0, canvas.width, canvas.height);
-    state.textContent = `${n}² · ${Math.round(min)} à ${Math.round(max)} m${active ? ' · active' : ' · inactive'}`;
+    state.textContent = `${n}² · ${Math.round(min)} to ${Math.round(max)} m${active ? ' · active' : ' · inactive'}`;
     undoButton.disabled = !undo.length; redoButton.disabled = !redo.length;
   }
   const deferDraw = (): void => { drawFrame ??= requestAnimationFrame(() => { drawFrame = undefined; draw(); }); };
@@ -132,14 +132,14 @@ export function createTerrainSketchEditor(host: HTMLElement, initial: TerrainSke
   enabled.onchange = () => { remember(); active = enabled.checked; mutated(); notify(); };
   get('flat').onclick = () => { remember(); sketch.heights.fill(numeric(heightControl, -12000, 12000)); active = enabled.checked = true; mutated(); notify(); };
   get('surface').onclick = () => {
-    const s = surface(); if (!s) { state.textContent = 'Générer d’abord un terrain.'; return; }
+    const s = surface(); if (!s) { state.textContent = 'Generate terrain first.'; return; }
     try { const next = parseTerrainSketch(coarseSurface(s.height, s.resolution)); remember(); sketch = next; active = enabled.checked = true; mutated(); notify(); }
     catch (e) { state.textContent = String(e); }
   };
   const load = async (read: () => Promise<unknown>, button?: HTMLButtonElement): Promise<void> => {
     const token = ++loadToken, expectedRevision = revision;
     if (button) button.disabled = true;
-    state.textContent = 'Chargement de l’esquisse…';
+    state.textContent = 'Loading sketch…';
     try {
       const s = parseTerrainSketch(await read());
       if (token !== loadToken || expectedRevision !== revision || pointer !== undefined) return;
@@ -159,7 +159,7 @@ export function createTerrainSketchEditor(host: HTMLElement, initial: TerrainSke
   get('import').onclick = () => fileInput.click();
   fileInput.onchange = () => {
     const file = fileInput.files?.[0]; fileInput.value = ''; if (!file) return;
-    void load(async () => { if (file.size > 1000000) throw new Error('Fichier trop volumineux.'); return JSON.parse(await file.text()); });
+    void load(async () => { if (file.size > 1000000) throw new Error('File is too large.'); return JSON.parse(await file.text()); });
   };
   const snapshot = (): TerrainSketch => {
     if (!cached) {

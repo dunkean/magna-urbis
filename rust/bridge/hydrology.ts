@@ -6,10 +6,15 @@ export interface HydrologySettings {
   enabled: boolean;
   main: 'auto' | 'none' | 'stream' | 'river' | 'major';
   density: number; wetness: number;
+  /** Streams reaching the sea on their own: 1 keeps basins from about 30 km², each 0.25 less doubles it (0: only large rivers). */
+  coastalStreams: number;
   lakes: 'auto' | 'none' | 'some';
   meanders: 'natural' | 'reduced' | 'none'; meanderIntensity: number;
   estuary: 'auto' | 'simple' | 'widening' | 'funnel' | 'tidal';
-  widthScale: number; incision: number; minLakeArea: number;
+  widthScale: number; incision: number;
+  /** Lakes: smallest area (m²) and depth (m) of a lake of the water budget. */
+  minLakeArea: number; minLakeDepth: number;
+  /** Synthetic lakes (`lakes: 'some'`) only. */
   lakeAbundance: number; lakeCoverage: number; maxLakeArea: number;
   depressionPolicy: 'auto' | 'fill'; maxBreachDepth: number; maxBreachLength: number;
   resolution: 256 | 512 | 1024; compute: 'auto' | 'cpu' | 'gpu';
@@ -25,12 +30,12 @@ export interface HydrologySettings {
 }
 
 export const DEFAULT_HYDROLOGY: HydrologySettings = {
-  enabled: true, main: 'auto', density: 1, wetness: 1, lakes: 'auto',
+  enabled: true, main: 'auto', density: 1, coastalStreams: 1, wetness: 1, lakes: 'auto',
   meanders: 'natural', meanderIntensity: 1, estuary: 'auto', widthScale: 1,
-  incision: 1, minLakeArea: 2500, resolution: 512, compute: 'auto',
+  incision: 1, minLakeArea: 100000, minLakeDepth: 1, resolution: 512, compute: 'auto',
   lakeAbundance: 0.5, lakeCoverage: 0.05, maxLakeArea: 0.02,
   depressionPolicy: 'auto', maxBreachDepth: 12, maxBreachLength: 1000,
-  engine: 'vector', condMode: 'both', condStrength: 2, condDepth: 30, condLength: 3000,
+  engine: 'rust', condMode: 'both', condStrength: 2, condDepth: 30, condLength: 3000,
   riverArea: 0, lakeDepth: 1, lakeArea: 10, riverMode: 'vector', flatSlope: 1, sinuosity: 1.8, vectorWidth: 3, vectorResolution: 1024,
   balance: true, braiding: 1, anabranching: true, terrainInfluence: true, avulsions: true, confluence: 'climate', deltas: true,
 };
@@ -41,7 +46,8 @@ export type HydrologyOverlay = 'none' | 'basins' | 'accumulation' | 'flow' | 'de
 /** Retained physical grids and packed vector topology; lengths are metres, areas m².
  * UINT_MAX is the receiver outlet sentinel. Vector offsets count vertices.
  * riverPoints: x,y,width,waterZ; riverMeta: id,from,to,host+1,flags,estuary.
- * lakePoints: x,y; lakeMeta: id,waterZ,area,maxDepth,outletX,outletY.
+ * lakePoints: x,y; lakeMeta: id,waterZ,area,maxDepth,outletX,outletY (a closed lake: its sink).
+ * lakeClosed: 1 per closed lake; waterField: per cell, B-spline control values whose positive part is open water.
  */
 export interface HydrologyData {
   width: number; resolution: number;
@@ -55,6 +61,7 @@ export interface HydrologyData {
   baseHeight: Float32Array; drainageHeight: Float32Array; surfaceHeight: Float32Array; adjustedHeight: Float32Array;
   riverPoints: Float32Array; riverOffsets: Uint32Array; riverMeta: Uint32Array;
   lakePoints: Float32Array; lakeOffsets: Uint32Array; lakeMeta: Float32Array; lakeRingMeta: Uint32Array;
+  lakeClosed: Uint32Array; waterField: Float32Array; closedLakeCount: number;
   nodePoints: Float32Array; nodeMeta: Uint32Array;
   riverCount: number; lakeCount: number; basinCount: number;
   lakeFraction: number;
@@ -82,20 +89,22 @@ export class PreparedHydrology {
         engine = HydrologyEngine.with_drainage(seed, width, resolution, height, seaEnabled,
           drainage.filled, drainage.receivers, drainage.accumulation);
         gpu = drainage;
-      } catch (error) { reason = `Hydrologie GPU indisponible : ${error instanceof Error ? error.message : String(error)}`; }
+      } catch (error) { reason = `GPU hydrology unavailable: ${error instanceof Error ? error.message : String(error)}`; }
     }
     const backend = engine ? 'gpu-f32' : 'cpu';
     engine ??= new HydrologyEngine(seed, width, resolution, height, seaEnabled);
     return new PreparedHydrology(engine, height, backend, reason, performance.now() - start, gpu);
   }
 
-  generate(settings: HydrologySettings): HydrologyData {
+  /** `climate`: the water budget's mean annual temperature at sea level (°C) and precipitation (mm). */
+  generate(settings: HydrologySettings, climate: { temperature: number; precipitation: number }): HydrologyData {
     const start = performance.now();
     const output = this.engine.generate(settings.main, settings.density, settings.wetness,
       settings.lakes, settings.meanders, settings.meanderIntensity, settings.estuary,
       settings.widthScale, settings.incision, settings.minLakeArea,
       settings.lakeAbundance, settings.lakeCoverage, settings.maxLakeArea,
-      settings.depressionPolicy, settings.maxBreachDepth, settings.maxBreachLength);
+      settings.depressionPolicy, settings.maxBreachDepth, settings.maxBreachLength,
+      settings.minLakeDepth, climate.temperature, climate.precipitation, settings.coastalStreams);
     try {
       const stageTimes = output.stage_ms;
       const stageMs = output.stage_labels ? Object.fromEntries(output.stage_labels.split(',').map((label, i) => [label, stageTimes[i]])) : undefined;
@@ -103,7 +112,7 @@ export class PreparedHydrology {
       let basinCount = 0;
       let landCells = 0;
       for (const value of basins) { basinCount = Math.max(basinCount, value); if (value) landCells++; }
-      const riverOffsets = output.river_offsets, lakeMeta = output.lake_meta;
+      const riverOffsets = output.river_offsets, lakeMeta = output.lake_meta, lakeClosed = output.lake_closed;
       let lakeArea = 0;
       for (let i = 2; i < lakeMeta.length; i += 6) lakeArea += lakeMeta[i];
       const riverMeta = output.river_meta;
@@ -127,14 +136,15 @@ export class PreparedHydrology {
         baseHeight: this.baseHeight, drainageHeight: output.drainage_height, surfaceHeight: output.surface_height, adjustedHeight: output.adjusted_height,
         riverPoints: output.river_points, riverOffsets, riverMeta,
         lakePoints: output.lake_points, lakeOffsets: output.lake_offsets, lakeMeta, lakeRingMeta: output.lake_ring_meta,
+        lakeClosed, waterField: output.water_field, closedLakeCount: lakeClosed.reduce((sum, c) => sum + c, 0),
         nodePoints: output.node_points, nodeMeta: output.node_meta,
         riverCount: riverOffsets.length - 1, lakeCount: lakeMeta.length / 6, basinCount,
         lakeFraction: lakeArea / Math.max(1, landCells * (output.width / output.resolution) ** 2),
         incision: settings.incision,
         backend: this.backend,
         backendReason: [this.backendReason,
-          this.backend === 'gpu-f32' && settings.lakes === 'some' ? 'Aménagement des lacs et drainage associé en Rust.' : undefined,
-          ['stream', 'river', 'major'].includes(settings.main) && !externalInflow ? 'Aucune entrée terrestre adaptée : cours principal limité à son bassin local.' : undefined,
+          this.backend === 'gpu-f32' && settings.lakes === 'some' ? 'Lake layout and associated drainage completed in Rust.' : undefined,
+          ['stream', 'river', 'major'].includes(settings.main) && !externalInflow ? 'No suitable land inflow: the main channel is limited to its local watershed.' : undefined,
         ].filter(Boolean).join(' · ') || undefined,
         drainageMs: this.drainageMs, vectorMs: performance.now() - start,
         stageMs,

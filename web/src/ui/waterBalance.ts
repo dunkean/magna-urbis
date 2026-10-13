@@ -53,6 +53,8 @@ export function runoffModel(climate: ClimateInput): Runoff {
 }
 
 export interface WaterBalance {
+  /** Relief after removal of sub-threshold pits, used to locate evaporation exits. */
+  routingHeight: Float32Array;
   /** Runoff weight of each cell (its runoff over the reference runoff). */
   weight: Float32Array;
   /** Lake id of each submerged cell, −1 elsewhere. */
@@ -185,7 +187,7 @@ export function waterBalance(source: Float32Array, n: number, width: number, sea
     }
     lakes++;
   }
-  return { weight, lakeOf, level, closed, loss, lakes, closedLakes, lakeArea, runoff, ms: performance.now() - started };
+  return { routingHeight: height, weight, lakeOf, level, closed, loss, lakes, closedLakes, lakeArea, runoff, ms: performance.now() - started };
 }
 
 export interface BalancedBodies {

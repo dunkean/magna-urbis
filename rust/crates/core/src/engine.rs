@@ -404,6 +404,7 @@ impl TerrainGenerator {
             self.erosion,
             self.coast_talus(),
             self.motif,
+            false,
         );
         self.max_height = field.iter().copied().fold(f32::NEG_INFINITY, f32::max) as f64;
         self.edited_surface = Surface::new(field);
@@ -541,6 +542,7 @@ impl TerrainGenerator {
             self.erosion,
             self.coast_talus(),
             self.motif,
+            true,
         );
         self.set_coast_surface(&field)
     }

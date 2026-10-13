@@ -1,7 +1,7 @@
 //! Bounded hybrid treatment of rejected depressions. The upstream terrain is untouched.
 //! A local notch may lower a spill; the caller recomputes F and fills the remainder.
 //! This is a conservative procedural policy, not an exhaustive least-cost breaching solver.
-use super::{OUT, neighbor};
+use super::{OUT, neighbors};
 use std::cmp::Ordering;
 use std::collections::BinaryHeap;
 
@@ -92,8 +92,9 @@ pub(super) fn plan(
             let i = queue[k];
             k += 1;
             has_lake |= lakes[i] != 0;
-            for d in 0..8 {
-                if let Some(j) = neighbor(i, d, n)
+            let around_i = neighbors(i, n);
+            for neighbor in around_i {
+                if let Some(j) = neighbor
                     && groups[j] == OUT
                     && filled[j] == filled[start]
                 {
@@ -135,8 +136,9 @@ pub(super) fn plan(
             if height[i] < height[lowest] {
                 lowest = i;
             }
-            for d in 0..8 {
-                if let Some(j) = neighbor(i, d, n)
+            let around_i = neighbors(i, n);
+            for neighbor in around_i {
+                if let Some(j) = neighbor
                     && !seen[j]
                     && !sea[j]
                     && groups[j] == group
@@ -166,8 +168,9 @@ pub(super) fn plan(
         while k < queue.len() {
             let i = queue[k];
             k += 1;
-            for d in 0..8 {
-                if let Some(j) = neighbor(i, d, n)
+            let around_i = neighbors(i, n);
+            for neighbor in around_i {
+                if let Some(j) = neighbor
                     && pocket[j] != epoch
                     && groups[j] == group
                     && height[j] <= target
@@ -184,7 +187,8 @@ pub(super) fn plan(
         let current = plan.physical.as_deref().unwrap_or(height);
         heap.clear();
         for &i in &queue {
-            if !(0..8).any(|d| neighbor(i, d, n).is_some_and(|j| pocket[j] != epoch)) {
+            let around_i = neighbors(i, n);
+            if !(0..8).any(|d| around_i[d].is_some_and(|j| pocket[j] != epoch)) {
                 continue;
             }
             stamp[i] = epoch;
@@ -213,8 +217,9 @@ pub(super) fn plan(
                 exit = i as u32;
                 break;
             }
-            for d in 0..8 {
-                let Some(j) = neighbor(i, d, n) else { continue };
+            let around_i = neighbors(i, n);
+            for (d, neighbor) in around_i.into_iter().enumerate() {
+                let Some(j) = neighbor else { continue };
                 if pocket[j] == epoch || protected[groups[j] as usize] {
                     continue;
                 }
