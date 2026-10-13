@@ -39,6 +39,19 @@ maisons : moteur indépendant, raccordement aux parcelles en cours
 
 Une modification de parcelles n'a pas à recalculer le terrain. La caméra échantillonne la surface conservée : zoomer ne relance ni l'érosion ni les réseaux neuronaux. Voir [le moteur de terrain](../rust/crates/core/src/engine.rs), [les implantations](../rust/crates/core/src/settlements/mod.rs) et [les étapes urbaines](../rust/crates/core/src/urban/mod.rs).
 
+### Explorer les implémentations
+
+Après installation des outils indiqués dans le [README Rust](../rust/README.md), les commandes suivantes se lancent depuis `web/`. Choisir le banc à examiner ; le service neuronal s'exécute dans un terminal séparé lorsque cette source est utilisée.
+
+| Commande | Point d'entrée |
+| --- | --- |
+| `npm run dev` | Application TypeScript de référence |
+| `npm run dev:terrain` | Compilation WASM et bancs `terrainbench.html` / `urbanbench.html` |
+| `npm run dev:houses` | Moteur de maisons indépendant, `housebench.html` |
+| `npm run neural:serve` | Service natif optionnel pour le relief neuronal |
+
+Pour reproduire un résultat, conserver la graine, les paramètres appliqués et les versions du moteur, des catalogues et des poids. Les [instructions du banc de maisons](../rust/crates/houses/README.md) précisent ses entrées et ses refus de configuration.
+
 ## 2. Relief procédural : bruits, motifs et échelles
 
 Un bruit cohérent attribue des valeurs voisines à des coordonnées voisines. La référence classique est le travail de Perlin sur les bruits de gradient ; l'implémentation locale utilise un **bruit simplex 2D** et des sommes d'octaves. Il faut distinguer cette variante du bruit amélioré de Perlin, cité ici comme fondement général. [Perlin, 2002](https://mrl.cs.nyu.edu/~perlin/paper445.pdf) ; [code local](../rust/crates/core/src/noise.rs).
