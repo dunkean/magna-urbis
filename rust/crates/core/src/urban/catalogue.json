@@ -92402,7 +92402,8 @@
       },
       "render": {
         "towerShape": "round"
-      }
+      },
+      "growth": null
     },
     "bastide": {
       "label": "Bastide (planned grid)",
@@ -92484,7 +92485,8 @@
       },
       "render": {
         "towerShape": "round"
-      }
+      },
+      "growth": null
     },
     "medina": {
       "label": "Medina (North Africa)",
@@ -92550,7 +92552,8 @@
           "wall": "wall",
           "fossil": "none",
           "towers": "square"
-        }
+        },
+        "share": 0.1
       },
       "ring": {
         "enclosure": {
@@ -92589,7 +92592,8 @@
       },
       "render": {
         "towerShape": "square"
-      }
+      },
+      "growth": null
     },
     "chinese": {
       "label": "Chinese walled city",
@@ -92710,7 +92714,8 @@
         "wardWalls": true,
         "moat": true,
         "compoundWalls": true
-      }
+      },
+      "growth": null
     },
     "japanese-jokamachi": {
       "label": "Japanese castle town (jōkamachi)",
@@ -92775,7 +92780,8 @@
           "shape": "organic",
           "wall": "none",
           "fossil": "street"
-        }
+        },
+        "share": 0.3
       },
       "ring": {
         "enclosure": {
@@ -92807,7 +92813,8 @@
       "render": {
         "towerShape": "square",
         "compoundWalls": true
-      }
+      },
+      "growth": null
     },
     "indian-temple": {
       "label": "Indian temple town",
@@ -92907,7 +92914,8 @@
       },
       "render": {
         "towerShape": "square"
-      }
+      },
+      "growth": null
     },
     "roman-core": {
       "label": "Roman castrum core",
@@ -92978,7 +92986,8 @@
             1.25,
             1.5
           ]
-        }
+        },
+        "share": 0.3
       },
       "ring": {
         "enclosure": {
@@ -93021,7 +93030,8 @@
       },
       "render": {
         "towerShape": "round"
-      }
+      },
+      "growth": null
     },
     "elven": {
       "label": "Elven forest town",
@@ -93121,7 +93131,8 @@
       "render": {
         "towerShape": "round",
         "canopy": true
-      }
+      },
+      "growth": null
     },
     "dwarven": {
       "label": "Dwarven hold",
@@ -93221,7 +93232,8 @@
       "render": {
         "towerShape": "square",
         "terraces": true
-      }
+      },
+      "growth": null
     },
     "necropolis": {
       "label": "Necropolis (city of the dead)",
@@ -93335,7 +93347,8 @@
       "render": {
         "towerShape": "square",
         "graves": true
-      }
+      },
+      "growth": null
     },
     "russian-kremlin": {
       "label": "Russian kremlin and posad",
@@ -93437,7 +93450,8 @@
       "render": {
         "towerShape": "square",
         "compoundWalls": true
-      }
+      },
+      "growth": null
     },
     "aztec": {
       "label": "Aztec city (Tenochtitlan)",
@@ -93550,7 +93564,8 @@
         "streetCanals": true,
         "chinampas": true,
         "plotLines": true
-      }
+      },
+      "growth": null
     },
     "inca": {
       "label": "Inca city (Cusco)",
@@ -93660,7 +93675,8 @@
         "compoundWalls": true,
         "andenes": true,
         "canals": true
-      }
+      },
+      "growth": null
     },
     "byzantine-greek": {
       "label": "Byzantine hill town (Mystras)",
@@ -93762,7 +93778,8 @@
       "render": {
         "towerShape": "square",
         "stairs": true
-      }
+      },
+      "growth": null
     },
     "venetian-lagoon": {
       "label": "Venetian lagoon town",
@@ -93862,7 +93879,8 @@
       "render": {
         "towerShape": "round",
         "lagoon": true
-      }
+      },
+      "growth": null
     },
     "persian": {
       "label": "Persian city (Isfahan)",
@@ -93928,7 +93946,8 @@
           "wall": "wall",
           "fossil": "none",
           "towers": "round"
-        }
+        },
+        "share": 0.12
       },
       "ring": {
         "enclosure": {
@@ -93969,7 +93988,8 @@
         "towerShape": "round",
         "bazaarRoof": true,
         "qanats": true
-      }
+      },
+      "growth": null
     },
     "ottoman": {
       "label": "Ottoman town (Bursa)",
@@ -94033,7 +94053,8 @@
           "shape": "organic",
           "wall": "none",
           "fossil": "none"
-        }
+        },
+        "share": 0.08
       },
       "ring": {
         "enclosure": {
@@ -94064,7 +94085,8 @@
       },
       "render": {
         "towerShape": "round"
-      }
+      },
+      "growth": null
     },
     "sahel": {
       "label": "Sahelian mud town (Djenne)",
@@ -94170,7 +94192,8 @@
       "render": {
         "towerShape": "square",
         "compoundWalls": true
-      }
+      },
+      "growth": null
     },
     "hanseatic": {
       "label": "Hanseatic port (Lubeck)",
@@ -94268,7 +94291,8 @@
       },
       "render": {
         "towerShape": "square"
-      }
+      },
+      "growth": null
     },
     "korean": {
       "label": "Korean walled town (Hanyang)",
@@ -94367,7 +94391,8 @@
       "render": {
         "towerShape": "square",
         "compoundWalls": true
-      }
+      },
+      "growth": null
     },
     "wizard-city": {
       "label": "Wizard city",
@@ -94474,7 +94499,8 @@
       },
       "render": {
         "towerShape": "round"
-      }
+      },
+      "growth": null
     },
     "gnomish": {
       "label": "Gnomish canal town",
@@ -94578,7 +94604,8 @@
         "towerShape": "square",
         "lagoon": true,
         "locks": true
-      }
+      },
+      "growth": null
     },
     "stilt-town": {
       "label": "Stilt town (marsh folk)",
@@ -94657,7 +94684,8 @@
       "camp": {
         "layout": "stilts",
         "variant": "lagoon"
-      }
+      },
+      "growth": null
     },
     "barbarian": {
       "label": "Barbarian: Germanic village",
@@ -94754,6 +94782,60 @@
       "camp": {
         "layout": "yards",
         "variant": "germanic"
+      },
+      "growth": {
+        "minPop": 2000,
+        "plan": {
+          "pattern": "organic",
+          "enclosure": "organic",
+          "fortification": "palisade",
+          "gates": "roads",
+          "orientation": "road",
+          "stairs": false,
+          "waterfront": false,
+          "sources": [
+            "web/src/gen/urban/culture.ts",
+            ".local-archive/publication-2026-10-09/repository/web/URBAN_MORPHOLOGY.md"
+          ]
+        },
+        "core": {
+          "enclosure": {
+            "shape": "organic",
+            "wall": "palisade",
+            "fossil": "street",
+            "orientation": "road"
+          }
+        },
+        "ring": {
+          "enclosure": {
+            "shape": "organic",
+            "wall": "palisade",
+            "fossil": "street",
+            "orientation": "road"
+          }
+        },
+        "phaseCount": [
+          [
+            0,
+            1
+          ],
+          [
+            8000,
+            2
+          ],
+          [
+            40000,
+            3
+          ],
+          [
+            250000,
+            4
+          ]
+        ],
+        "faubShare": [
+          0.14,
+          0.12
+        ]
       }
     },
     "barbarian-celtic": {
@@ -94851,6 +94933,60 @@
       "camp": {
         "layout": "yards",
         "variant": "celtic"
+      },
+      "growth": {
+        "minPop": 2400,
+        "plan": {
+          "pattern": "radial",
+          "enclosure": "circle",
+          "fortification": "palisade",
+          "gates": "roads",
+          "orientation": "terrain",
+          "stairs": false,
+          "waterfront": false,
+          "sources": [
+            "web/src/gen/urban/culture.ts",
+            ".local-archive/publication-2026-10-09/repository/web/URBAN_MORPHOLOGY.md"
+          ]
+        },
+        "core": {
+          "enclosure": {
+            "shape": "circle",
+            "wall": "palisade",
+            "fossil": "street",
+            "orientation": "terrain"
+          }
+        },
+        "ring": {
+          "enclosure": {
+            "shape": "circle",
+            "wall": "palisade",
+            "fossil": "street",
+            "orientation": "terrain"
+          }
+        },
+        "phaseCount": [
+          [
+            0,
+            1
+          ],
+          [
+            8000,
+            2
+          ],
+          [
+            40000,
+            3
+          ],
+          [
+            250000,
+            4
+          ]
+        ],
+        "faubShare": [
+          0.14,
+          0.12
+        ]
       }
     },
     "barbarian-norse": {
@@ -94948,6 +95084,68 @@
       "camp": {
         "layout": "yards",
         "variant": "norse"
+      },
+      "growth": {
+        "minPop": 2200,
+        "plan": {
+          "pattern": "grid",
+          "enclosure": "oval",
+          "fortification": "none",
+          "gates": "roads",
+          "orientation": "water",
+          "stairs": false,
+          "waterfront": false,
+          "sources": [
+            "web/src/gen/urban/culture.ts",
+            ".local-archive/publication-2026-10-09/repository/web/URBAN_MORPHOLOGY.md"
+          ]
+        },
+        "core": {
+          "enclosure": {
+            "shape": "oval",
+            "wall": "none",
+            "fossil": "street",
+            "orientation": "water",
+            "aspect": [
+              1.9,
+              2.5
+            ]
+          }
+        },
+        "ring": {
+          "enclosure": {
+            "shape": "organic",
+            "wall": "none",
+            "fossil": "street",
+            "orientation": "water",
+            "aspect": [
+              1.9,
+              2.5
+            ]
+          }
+        },
+        "phaseCount": [
+          [
+            0,
+            1
+          ],
+          [
+            8000,
+            2
+          ],
+          [
+            40000,
+            3
+          ],
+          [
+            250000,
+            4
+          ]
+        ],
+        "faubShare": [
+          0.14,
+          0.12
+        ]
       }
     },
     "norse-ringfort": {
@@ -95045,6 +95243,60 @@
       "camp": {
         "layout": "ringfort",
         "variant": "trelleborg"
+      },
+      "growth": {
+        "minPop": 1800,
+        "plan": {
+          "pattern": "grid",
+          "enclosure": "circle",
+          "fortification": "palisade",
+          "gates": "roads",
+          "orientation": "cardinal",
+          "stairs": false,
+          "waterfront": false,
+          "sources": [
+            "web/src/gen/urban/culture.ts",
+            ".local-archive/publication-2026-10-09/repository/web/URBAN_MORPHOLOGY.md"
+          ]
+        },
+        "core": {
+          "enclosure": {
+            "shape": "circle",
+            "wall": "palisade",
+            "fossil": "street",
+            "orientation": "cardinal"
+          }
+        },
+        "ring": {
+          "enclosure": {
+            "shape": "circle",
+            "wall": "palisade",
+            "fossil": "street",
+            "orientation": "cardinal"
+          }
+        },
+        "phaseCount": [
+          [
+            0,
+            1
+          ],
+          [
+            8000,
+            2
+          ],
+          [
+            40000,
+            3
+          ],
+          [
+            250000,
+            4
+          ]
+        ],
+        "faubShare": [
+          0.14,
+          0.12
+        ]
       }
     },
     "maya": {
@@ -95124,7 +95376,8 @@
       "camp": {
         "layout": "yards",
         "variant": "maya"
-      }
+      },
+      "growth": null
     },
     "khmer": {
       "label": "Khmer city (Angkor)",
@@ -95203,7 +95456,8 @@
       "camp": {
         "layout": "khmer",
         "variant": "angkor"
-      }
+      },
+      "growth": null
     },
     "celtic-oppidum": {
       "label": "Celtic oppidum",
@@ -95300,6 +95554,60 @@
       "camp": {
         "layout": "yards",
         "variant": "oppidum"
+      },
+      "growth": {
+        "minPop": 20000,
+        "plan": {
+          "pattern": "organic",
+          "enclosure": "organic",
+          "fortification": "palisade",
+          "gates": "roads",
+          "orientation": "terrain",
+          "stairs": false,
+          "waterfront": false,
+          "sources": [
+            "web/src/gen/urban/culture.ts",
+            ".local-archive/publication-2026-10-09/repository/web/URBAN_MORPHOLOGY.md"
+          ]
+        },
+        "core": {
+          "enclosure": {
+            "shape": "organic",
+            "wall": "palisade",
+            "fossil": "street",
+            "orientation": "terrain"
+          }
+        },
+        "ring": {
+          "enclosure": {
+            "shape": "organic",
+            "wall": "palisade",
+            "fossil": "street",
+            "orientation": "terrain"
+          }
+        },
+        "phaseCount": [
+          [
+            0,
+            1
+          ],
+          [
+            8000,
+            2
+          ],
+          [
+            40000,
+            3
+          ],
+          [
+            250000,
+            4
+          ]
+        ],
+        "faubShare": [
+          0.14,
+          0.12
+        ]
       }
     },
     "orcish": {
@@ -95397,6 +95705,60 @@
       "camp": {
         "layout": "warcamp",
         "variant": "orc"
+      },
+      "growth": {
+        "minPop": 45000,
+        "plan": {
+          "pattern": "organic",
+          "enclosure": "organic",
+          "fortification": "palisade",
+          "gates": "roads",
+          "orientation": "road",
+          "stairs": false,
+          "waterfront": false,
+          "sources": [
+            "web/src/gen/urban/culture.ts",
+            ".local-archive/publication-2026-10-09/repository/web/URBAN_MORPHOLOGY.md"
+          ]
+        },
+        "core": {
+          "enclosure": {
+            "shape": "organic",
+            "wall": "palisade",
+            "fossil": "street",
+            "orientation": "road"
+          }
+        },
+        "ring": {
+          "enclosure": {
+            "shape": "organic",
+            "wall": "palisade",
+            "fossil": "street",
+            "orientation": "road"
+          }
+        },
+        "phaseCount": [
+          [
+            0,
+            1
+          ],
+          [
+            8000,
+            2
+          ],
+          [
+            40000,
+            3
+          ],
+          [
+            250000,
+            4
+          ]
+        ],
+        "faubShare": [
+          0.14,
+          0.12
+        ]
       }
     },
     "halfling": {
@@ -95494,6 +95856,60 @@
       "camp": {
         "layout": "yards",
         "variant": "halfling"
+      },
+      "growth": {
+        "minPop": 1500,
+        "plan": {
+          "pattern": "organic",
+          "enclosure": "organic",
+          "fortification": "none",
+          "gates": "roads",
+          "orientation": "terrain",
+          "stairs": false,
+          "waterfront": false,
+          "sources": [
+            "web/src/gen/urban/culture.ts",
+            ".local-archive/publication-2026-10-09/repository/web/URBAN_MORPHOLOGY.md"
+          ]
+        },
+        "core": {
+          "enclosure": {
+            "shape": "organic",
+            "wall": "none",
+            "fossil": "street",
+            "orientation": "terrain"
+          }
+        },
+        "ring": {
+          "enclosure": {
+            "shape": "organic",
+            "wall": "none",
+            "fossil": "street",
+            "orientation": "terrain"
+          }
+        },
+        "phaseCount": [
+          [
+            0,
+            1
+          ],
+          [
+            8000,
+            2
+          ],
+          [
+            40000,
+            3
+          ],
+          [
+            250000,
+            4
+          ]
+        ],
+        "faubShare": [
+          0.14,
+          0.12
+        ]
       }
     },
     "kraal": {
@@ -95591,6 +96007,60 @@
       "camp": {
         "layout": "ring",
         "variant": "kraal"
+      },
+      "growth": {
+        "minPop": 3000,
+        "plan": {
+          "pattern": "organic",
+          "enclosure": "organic",
+          "fortification": "palisade",
+          "gates": "roads",
+          "orientation": "terrain",
+          "stairs": false,
+          "waterfront": false,
+          "sources": [
+            "web/src/gen/urban/culture.ts",
+            ".local-archive/publication-2026-10-09/repository/web/URBAN_MORPHOLOGY.md"
+          ]
+        },
+        "core": {
+          "enclosure": {
+            "shape": "organic",
+            "wall": "palisade",
+            "fossil": "street",
+            "orientation": "terrain"
+          }
+        },
+        "ring": {
+          "enclosure": {
+            "shape": "organic",
+            "wall": "palisade",
+            "fossil": "street",
+            "orientation": "terrain"
+          }
+        },
+        "phaseCount": [
+          [
+            0,
+            1
+          ],
+          [
+            8000,
+            2
+          ],
+          [
+            40000,
+            3
+          ],
+          [
+            250000,
+            4
+          ]
+        ],
+        "faubShare": [
+          0.14,
+          0.12
+        ]
       }
     },
     "native-iroquoian": {
@@ -95688,6 +96158,68 @@
       "camp": {
         "layout": "longhouses",
         "variant": "iroquoian"
+      },
+      "growth": {
+        "minPop": 3500,
+        "plan": {
+          "pattern": "grid",
+          "enclosure": "oval",
+          "fortification": "palisade",
+          "gates": "roads",
+          "orientation": "terrain",
+          "stairs": false,
+          "waterfront": false,
+          "sources": [
+            "web/src/gen/urban/culture.ts",
+            ".local-archive/publication-2026-10-09/repository/web/URBAN_MORPHOLOGY.md"
+          ]
+        },
+        "core": {
+          "enclosure": {
+            "shape": "oval",
+            "wall": "palisade",
+            "fossil": "street",
+            "orientation": "terrain",
+            "aspect": [
+              1.5,
+              2
+            ]
+          }
+        },
+        "ring": {
+          "enclosure": {
+            "shape": "organic",
+            "wall": "palisade",
+            "fossil": "street",
+            "orientation": "terrain",
+            "aspect": [
+              1.5,
+              2
+            ]
+          }
+        },
+        "phaseCount": [
+          [
+            0,
+            1
+          ],
+          [
+            8000,
+            2
+          ],
+          [
+            40000,
+            3
+          ],
+          [
+            250000,
+            4
+          ]
+        ],
+        "faubShare": [
+          0.14,
+          0.12
+        ]
       }
     },
     "native-pueblo": {
@@ -95785,6 +96317,60 @@
       "camp": {
         "layout": "pueblo",
         "variant": "pueblo"
+      },
+      "growth": {
+        "minPop": 5000,
+        "plan": {
+          "pattern": "grid",
+          "enclosure": "rect",
+          "fortification": "none",
+          "gates": "roads",
+          "orientation": "terrain",
+          "stairs": false,
+          "waterfront": false,
+          "sources": [
+            "web/src/gen/urban/culture.ts",
+            ".local-archive/publication-2026-10-09/repository/web/URBAN_MORPHOLOGY.md"
+          ]
+        },
+        "core": {
+          "enclosure": {
+            "shape": "rect",
+            "wall": "none",
+            "fossil": "street",
+            "orientation": "terrain"
+          }
+        },
+        "ring": {
+          "enclosure": {
+            "shape": "organic",
+            "wall": "none",
+            "fossil": "street",
+            "orientation": "terrain"
+          }
+        },
+        "phaseCount": [
+          [
+            0,
+            1
+          ],
+          [
+            8000,
+            2
+          ],
+          [
+            40000,
+            3
+          ],
+          [
+            250000,
+            4
+          ]
+        ],
+        "faubShare": [
+          0.14,
+          0.12
+        ]
       }
     },
     "native-plains": {
@@ -95882,6 +96468,60 @@
       "camp": {
         "layout": "ring",
         "variant": "tipi"
+      },
+      "growth": {
+        "minPop": 4500,
+        "plan": {
+          "pattern": "radial",
+          "enclosure": "circle",
+          "fortification": "none",
+          "gates": "roads",
+          "orientation": "road",
+          "stairs": false,
+          "waterfront": false,
+          "sources": [
+            "web/src/gen/urban/culture.ts",
+            ".local-archive/publication-2026-10-09/repository/web/URBAN_MORPHOLOGY.md"
+          ]
+        },
+        "core": {
+          "enclosure": {
+            "shape": "circle",
+            "wall": "none",
+            "fossil": "street",
+            "orientation": "road"
+          }
+        },
+        "ring": {
+          "enclosure": {
+            "shape": "circle",
+            "wall": "none",
+            "fossil": "street",
+            "orientation": "road"
+          }
+        },
+        "phaseCount": [
+          [
+            0,
+            1
+          ],
+          [
+            8000,
+            2
+          ],
+          [
+            40000,
+            3
+          ],
+          [
+            250000,
+            4
+          ]
+        ],
+        "faubShare": [
+          0.14,
+          0.12
+        ]
       }
     },
     "nomad-camp": {
@@ -95979,6 +96619,68 @@
       "camp": {
         "layout": "ring",
         "variant": "nomad"
+      },
+      "growth": {
+        "minPop": 6000,
+        "plan": {
+          "pattern": "organic",
+          "enclosure": "oval",
+          "fortification": "none",
+          "gates": "roads",
+          "orientation": "road",
+          "stairs": false,
+          "waterfront": false,
+          "sources": [
+            "web/src/gen/urban/culture.ts",
+            ".local-archive/publication-2026-10-09/repository/web/URBAN_MORPHOLOGY.md"
+          ]
+        },
+        "core": {
+          "enclosure": {
+            "shape": "oval",
+            "wall": "none",
+            "fossil": "street",
+            "orientation": "road",
+            "aspect": [
+              1.4,
+              1.9
+            ]
+          }
+        },
+        "ring": {
+          "enclosure": {
+            "shape": "organic",
+            "wall": "none",
+            "fossil": "street",
+            "orientation": "road",
+            "aspect": [
+              1.4,
+              1.9
+            ]
+          }
+        },
+        "phaseCount": [
+          [
+            0,
+            1
+          ],
+          [
+            8000,
+            2
+          ],
+          [
+            40000,
+            3
+          ],
+          [
+            250000,
+            4
+          ]
+        ],
+        "faubShare": [
+          0.14,
+          0.12
+        ]
       }
     },
     "swahili-stone-town": {
@@ -96092,7 +96794,8 @@
       "render": {
         "towerShape": "square",
         "carvedDoors": true
-      }
+      },
+      "growth": null
     },
     "drow-enclave": {
       "label": "Drow enclave",
@@ -96199,7 +96902,8 @@
       "render": {
         "towerShape": "square",
         "compoundWalls": true
-      }
+      },
+      "growth": null
     },
     "duergar-hold": {
       "label": "Duergar industrial hold",
@@ -96304,7 +97008,8 @@
       "render": {
         "towerShape": "square",
         "compoundWalls": true
-      }
+      },
+      "growth": null
     },
     "myconid-colony": {
       "label": "Myconid colony",
@@ -96390,7 +97095,8 @@
         "towerShape": "round",
         "openGround": true,
         "plotLines": false
-      }
+      },
+      "growth": null
     },
     "egyptian-planned": {
       "label": "Égypte · ville planifiée du Nil",
@@ -96440,6 +97146,62 @@
         ]
       },
       "description": "Quartiers rectilignes compacts orientés sur la vallée ; les complexes sacrés restent des réserves, sans génération de temples.",
+      "core": {
+        "enclosure": {
+          "shape": "rect",
+          "wall": "none",
+          "fossil": "street",
+          "towers": "round",
+          "orientation": "water",
+          "aspect": [
+            1.25,
+            1.5
+          ]
+        }
+      },
+      "ring": {
+        "enclosure": {
+          "shape": "rect",
+          "wall": "none",
+          "fossil": "street",
+          "towers": "round",
+          "orientation": "water"
+        }
+      },
+      "phaseCount": [
+        [
+          0,
+          1
+        ],
+        [
+          3000,
+          2
+        ],
+        [
+          12000,
+          3
+        ]
+      ],
+      "faubShare": [
+        0.12,
+        0.1
+      ],
+      "village": {
+        "form": "walled",
+        "enclosure": {
+          "shape": "rect",
+          "wall": "none",
+          "orientation": "water"
+        }
+      },
+      "hamlet": {
+        "form": "auto",
+        "enclosure": {
+          "shape": "rect",
+          "wall": "none",
+          "orientation": "water"
+        }
+      },
       "scope": "Settlement patterns only; numerical ranges are artistic, not measured reconstructions."
     },
     "nubian-fortified": {
@@ -96489,6 +97251,62 @@
         ]
       },
       "description": "Blocs de brique dans une enceinte compacte, liés aux rives du Nil.",
+      "core": {
+        "enclosure": {
+          "shape": "rounded-rect",
+          "wall": "wall",
+          "fossil": "street",
+          "towers": "round",
+          "orientation": "water",
+          "aspect": [
+            1.25,
+            1.5
+          ]
+        }
+      },
+      "ring": {
+        "enclosure": {
+          "shape": "rounded-rect",
+          "wall": "wall",
+          "fossil": "street",
+          "towers": "round",
+          "orientation": "water"
+        }
+      },
+      "phaseCount": [
+        [
+          0,
+          1
+        ],
+        [
+          3000,
+          2
+        ],
+        [
+          12000,
+          3
+        ]
+      ],
+      "faubShare": [
+        0.12,
+        0.1
+      ],
+      "village": {
+        "form": "walled",
+        "enclosure": {
+          "shape": "rounded-rect",
+          "wall": "wall",
+          "orientation": "water"
+        }
+      },
+      "hamlet": {
+        "form": "auto",
+        "enclosure": {
+          "shape": "rounded-rect",
+          "wall": "wall",
+          "orientation": "water"
+        }
+      },
       "scope": "Settlement patterns only; numerical ranges are artistic, not measured reconstructions."
     },
     "mesopotamian": {
@@ -96539,6 +97357,54 @@
         ]
       },
       "description": "Îlots massifs à patios, voies marchandes et venelles ; les canaux et temples ne sont pas synthétisés par cette recette.",
+      "core": {
+        "enclosure": {
+          "shape": "organic",
+          "wall": "wall",
+          "fossil": "none",
+          "towers": "square",
+          "orientation": "road"
+        }
+      },
+      "ring": {
+        "enclosure": {
+          "shape": "organic",
+          "wall": "wall",
+          "fossil": "none",
+          "towers": "square",
+          "orientation": "road"
+        }
+      },
+      "phaseCount": [
+        [
+          0,
+          2
+        ],
+        [
+          9000,
+          3
+        ]
+      ],
+      "faubShare": [
+        0.04,
+        0.06
+      ],
+      "village": {
+        "form": "walled",
+        "enclosure": {
+          "shape": "organic",
+          "wall": "wall",
+          "orientation": "road"
+        }
+      },
+      "hamlet": {
+        "form": "auto",
+        "enclosure": {
+          "shape": "organic",
+          "wall": "wall",
+          "orientation": "road"
+        }
+      },
       "scope": "Settlement patterns only; numerical ranges are artistic, not measured reconstructions."
     },
     "levantine-tell": {
@@ -96588,6 +97454,58 @@
         ]
       },
       "description": "Rues de pente et enceintes adaptées au relief ; le tell existant appartient au décor.",
+      "core": {
+        "enclosure": {
+          "shape": "organic",
+          "wall": "wall",
+          "fossil": "street",
+          "towers": "square",
+          "orientation": "terrain"
+        }
+      },
+      "ring": {
+        "enclosure": {
+          "shape": "organic",
+          "wall": "wall",
+          "fossil": "street",
+          "towers": "square",
+          "orientation": "terrain"
+        }
+      },
+      "phaseCount": [
+        [
+          0,
+          1
+        ],
+        [
+          4000,
+          2
+        ],
+        [
+          15000,
+          3
+        ]
+      ],
+      "faubShare": [
+        0.08,
+        0.08
+      ],
+      "village": {
+        "form": "auto",
+        "enclosure": {
+          "shape": "organic",
+          "wall": "wall",
+          "orientation": "terrain"
+        }
+      },
+      "hamlet": {
+        "form": "auto",
+        "enclosure": {
+          "shape": "organic",
+          "wall": "wall",
+          "orientation": "terrain"
+        }
+      },
       "scope": "Settlement patterns only; numerical ranges are artistic, not measured reconstructions."
     },
     "oasis-caravan": {
@@ -96638,6 +97556,54 @@
         ]
       },
       "description": "Axes caravaniers entre portes, noyau de marché et grands enclos ; irrigation et citadelle restent des réserves futures.",
+      "core": {
+        "enclosure": {
+          "shape": "rounded-rect",
+          "wall": "wall",
+          "fossil": "none",
+          "towers": "round",
+          "orientation": "road"
+        }
+      },
+      "ring": {
+        "enclosure": {
+          "shape": "rounded-rect",
+          "wall": "wall",
+          "fossil": "none",
+          "towers": "round",
+          "orientation": "road"
+        }
+      },
+      "phaseCount": [
+        [
+          0,
+          2
+        ],
+        [
+          9000,
+          3
+        ]
+      ],
+      "faubShare": [
+        0.05,
+        0.06
+      ],
+      "village": {
+        "form": "walled",
+        "enclosure": {
+          "shape": "rounded-rect",
+          "wall": "wall",
+          "orientation": "road"
+        }
+      },
+      "hamlet": {
+        "form": "auto",
+        "enclosure": {
+          "shape": "rounded-rect",
+          "wall": "wall",
+          "orientation": "road"
+        }
+      },
       "scope": "Settlement patterns only; numerical ranges are artistic, not measured reconstructions."
     },
     "ksar-oasis": {
@@ -96687,6 +97653,54 @@
         ]
       },
       "description": "Noyau très compact, accès défensifs et venelles ; distinct de la kasbah et de la médina urbaine.",
+      "core": {
+        "enclosure": {
+          "shape": "rounded-rect",
+          "wall": "wall",
+          "fossil": "none",
+          "towers": "square",
+          "orientation": "road"
+        }
+      },
+      "ring": {
+        "enclosure": {
+          "shape": "rounded-rect",
+          "wall": "wall",
+          "fossil": "none",
+          "towers": "square",
+          "orientation": "road"
+        }
+      },
+      "phaseCount": [
+        [
+          0,
+          2
+        ],
+        [
+          9000,
+          3
+        ]
+      ],
+      "faubShare": [
+        0.04,
+        0.06
+      ],
+      "village": {
+        "form": "walled",
+        "enclosure": {
+          "shape": "rounded-rect",
+          "wall": "wall",
+          "orientation": "road"
+        }
+      },
+      "hamlet": {
+        "form": "auto",
+        "enclosure": {
+          "shape": "rounded-rect",
+          "wall": "wall",
+          "orientation": "road"
+        }
+      },
       "scope": "Settlement patterns only; numerical ranges are artistic, not measured reconstructions."
     },
     "yoruba": {
@@ -96737,6 +97751,56 @@
         ]
       },
       "description": "Grands enclos lignagers, quartiers et axes de marché ; aucune copie des palais tardifs d’Abomey.",
+      "core": {
+        "enclosure": {
+          "shape": "organic",
+          "wall": "auto",
+          "fossil": "none",
+          "orientation": "road"
+        }
+      },
+      "ring": {
+        "enclosure": {
+          "shape": "organic",
+          "wall": "auto",
+          "fossil": "none",
+          "orientation": "road"
+        }
+      },
+      "phaseCount": [
+        [
+          0,
+          1
+        ],
+        [
+          2500,
+          2
+        ],
+        [
+          12000,
+          3
+        ]
+      ],
+      "faubShare": [
+        0.1,
+        0.1
+      ],
+      "village": {
+        "form": "walled",
+        "enclosure": {
+          "shape": "organic",
+          "wall": "auto",
+          "orientation": "road"
+        }
+      },
+      "hamlet": {
+        "form": "auto",
+        "enclosure": {
+          "shape": "organic",
+          "wall": "auto",
+          "orientation": "road"
+        }
+      },
       "scope": "Settlement patterns only; numerical ranges are artistic, not measured reconstructions."
     },
     "himalayan-terraces": {
@@ -96787,6 +97851,58 @@
         ]
       },
       "description": "Venelles en courbes de niveau, blocs compacts et escaliers ; pas de dzong tardif automatique.",
+      "core": {
+        "enclosure": {
+          "shape": "terraces",
+          "wall": "none",
+          "fossil": "street",
+          "towers": "square",
+          "orientation": "terrain"
+        }
+      },
+      "ring": {
+        "enclosure": {
+          "shape": "terraces",
+          "wall": "none",
+          "fossil": "street",
+          "towers": "square",
+          "orientation": "terrain"
+        }
+      },
+      "phaseCount": [
+        [
+          0,
+          1
+        ],
+        [
+          4000,
+          2
+        ],
+        [
+          15000,
+          3
+        ]
+      ],
+      "faubShare": [
+        0.08,
+        0.08
+      ],
+      "village": {
+        "form": "auto",
+        "enclosure": {
+          "shape": "terraces",
+          "wall": "none",
+          "orientation": "terrain"
+        }
+      },
+      "hamlet": {
+        "form": "auto",
+        "enclosure": {
+          "shape": "terraces",
+          "wall": "none",
+          "orientation": "terrain"
+        }
+      },
       "scope": "Settlement patterns only; numerical ranges are artistic, not measured reconstructions."
     },
     "newar": {
@@ -96836,6 +97952,58 @@
         ]
       },
       "description": "Îlots denses autour de cours et places rituelles ; les pavillons du palais ne sont pas générés ici.",
+      "core": {
+        "enclosure": {
+          "shape": "organic",
+          "wall": "none",
+          "fossil": "street",
+          "towers": "round",
+          "orientation": "terrain"
+        }
+      },
+      "ring": {
+        "enclosure": {
+          "shape": "organic",
+          "wall": "none",
+          "fossil": "street",
+          "towers": "round",
+          "orientation": "terrain"
+        }
+      },
+      "phaseCount": [
+        [
+          0,
+          2
+        ],
+        [
+          5000,
+          3
+        ],
+        [
+          20000,
+          4
+        ]
+      ],
+      "faubShare": [
+        0.17,
+        0.1
+      ],
+      "village": {
+        "form": "auto",
+        "enclosure": {
+          "shape": "organic",
+          "wall": "none",
+          "orientation": "terrain"
+        }
+      },
+      "hamlet": {
+        "form": "auto",
+        "enclosure": {
+          "shape": "organic",
+          "wall": "none",
+          "orientation": "terrain"
+        }
+      },
       "scope": "Settlement patterns only; numerical ranges are artistic, not measured reconstructions."
     },
     "indus-planned": {
@@ -96885,6 +98053,62 @@
         ]
       },
       "description": "Grille hiérarchisée, blocs de maisons à cour et ruelles ; les réseaux de drains ne sont pas encore produits.",
+      "core": {
+        "enclosure": {
+          "shape": "rect",
+          "wall": "wall",
+          "fossil": "street",
+          "towers": "round",
+          "orientation": "cardinal",
+          "aspect": [
+            1.25,
+            1.5
+          ]
+        }
+      },
+      "ring": {
+        "enclosure": {
+          "shape": "rect",
+          "wall": "wall",
+          "fossil": "street",
+          "towers": "round",
+          "orientation": "cardinal"
+        }
+      },
+      "phaseCount": [
+        [
+          0,
+          1
+        ],
+        [
+          3000,
+          2
+        ],
+        [
+          12000,
+          3
+        ]
+      ],
+      "faubShare": [
+        0.12,
+        0.1
+      ],
+      "village": {
+        "form": "walled",
+        "enclosure": {
+          "shape": "rect",
+          "wall": "wall",
+          "orientation": "cardinal"
+        }
+      },
+      "hamlet": {
+        "form": "auto",
+        "enclosure": {
+          "shape": "rect",
+          "wall": "wall",
+          "orientation": "cardinal"
+        }
+      },
       "scope": "Settlement patterns only; numerical ranges are artistic, not measured reconstructions."
     },
     "javanese-courts": {
@@ -96935,6 +98159,48 @@
         ]
       },
       "description": "Grands enclos, places publiques et cours séparées ; cette recette ne confond pas Java avec les temples de l’Inde.",
+      "core": {
+        "enclosure": {
+          "shape": "rect",
+          "wall": "none",
+          "fossil": "street",
+          "orientation": "cardinal"
+        }
+      },
+      "ring": {
+        "enclosure": {
+          "shape": "rect",
+          "wall": "none",
+          "fossil": "street",
+          "orientation": "cardinal"
+        }
+      },
+      "phaseCount": [
+        [
+          0,
+          1
+        ]
+      ],
+      "faubShare": [
+        0.1,
+        0.1
+      ],
+      "village": {
+        "form": "walled",
+        "enclosure": {
+          "shape": "rect",
+          "wall": "none",
+          "orientation": "cardinal"
+        }
+      },
+      "hamlet": {
+        "form": "auto",
+        "enclosure": {
+          "shape": "rect",
+          "wall": "none",
+          "orientation": "cardinal"
+        }
+      },
       "scope": "Settlement patterns only; numerical ranges are artistic, not measured reconstructions."
     },
     "mississippian": {
@@ -96986,6 +98252,58 @@
         ]
       },
       "description": "Place ouverte, chemins et grands îlots de maisons/jardins ; les tertres artificiels restent à intégrer au relief.",
+      "core": {
+        "enclosure": {
+          "shape": "oval",
+          "wall": "palisade",
+          "fossil": "street",
+          "towers": "round",
+          "orientation": "road"
+        }
+      },
+      "ring": {
+        "enclosure": {
+          "shape": "oval",
+          "wall": "palisade",
+          "fossil": "street",
+          "towers": "round",
+          "orientation": "road"
+        }
+      },
+      "phaseCount": [
+        [
+          0,
+          2
+        ],
+        [
+          5000,
+          3
+        ],
+        [
+          20000,
+          4
+        ]
+      ],
+      "faubShare": [
+        0.17,
+        0.1
+      ],
+      "village": {
+        "form": "auto",
+        "enclosure": {
+          "shape": "oval",
+          "wall": "palisade",
+          "orientation": "road"
+        }
+      },
+      "hamlet": {
+        "form": "auto",
+        "enclosure": {
+          "shape": "oval",
+          "wall": "palisade",
+          "orientation": "road"
+        }
+      },
       "scope": "Settlement patterns only; numerical ranges are artistic, not measured reconstructions."
     }
   }

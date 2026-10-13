@@ -106,11 +106,11 @@ fn half(shape: &Shape, axis: Point, at: f64, below: bool) -> Vec<Shape> {
     )
 }
 
-struct FrontageIndex {
+pub(super) struct FrontageIndex {
     cells: BTreeMap<(i32, i32), Vec<(usize, usize)>>,
 }
 impl FrontageIndex {
-    fn new(layout: &Layout) -> Self {
+    pub(super) fn new(layout: &Layout) -> Self {
         let mut cells: BTreeMap<(i32, i32), Vec<(usize, usize)>> = BTreeMap::new();
         for (si, s) in layout.streets.iter().enumerate() {
             for (j, w) in s.path.windows(2).enumerate() {
@@ -141,69 +141,83 @@ impl FrontageIndex {
 }
 fn frontages(shape: &Shape, layout: &Layout, index: &FrontageIndex) -> Vec<Front> {
     let mut out = Vec::new();
-    for i in 0..shape.outer.len() {
-        let a = shape.outer[i];
-        let b = shape.outer[(i + 1) % shape.outer.len()];
-        if length(sub(b, a)) < 0.5 {
-            continue;
-        }
-        let mut best: Option<(usize, usize)> = None;
-        for (si, k) in index.candidates(a, b) {
-            let street = &layout.streets[si];
-            let segment = &street.path[k..=k + 1];
-            let p = segment[0];
-            let q = segment[1];
-            let d = sub(q, p);
-            let l2 = dot(d, d);
-            let mut contact = true;
-            for j in 0..=4 {
-                let sample = add(a, scale(sub(b, a), f64::from(j) / 4.0));
-                let t = (dot(sub(sample, p), d) / l2.max(1e-12)).clamp(0.0, 1.0);
-                let hw = (street.widths.get(k).copied().unwrap_or(4.0) * (1.0 - t)
-                    + street.widths.get(k + 1).copied().unwrap_or(4.0) * t)
-                    * 0.5;
-                let dist = length(sub(sample, add(p, scale(d, t))));
-                if dist >= 14.0 || (dist - hw).abs() > (0.3 * hw).max(0.8) {
-                    contact = false;
-                    break;
+    for ring in std::iter::once(&shape.outer).chain(shape.holes.iter()) {
+        for i in 0..ring.len() {
+            let a = ring[i];
+            let b = ring[(i + 1) % ring.len()];
+            if length(sub(b, a)) < 0.5 {
+                continue;
+            }
+            let mut best: Option<(usize, usize)> = None;
+            for (si, k) in index.candidates(a, b) {
+                let street = &layout.streets[si];
+                let segment = &street.path[k..=k + 1];
+                let p = segment[0];
+                let q = segment[1];
+                let d = sub(q, p);
+                let l2 = dot(d, d);
+                let mut contact = true;
+                for j in 0..=4 {
+                    let sample = add(a, scale(sub(b, a), f64::from(j) / 4.0));
+                    let t = (dot(sub(sample, p), d) / l2.max(1e-12)).clamp(0.0, 1.0);
+                    let hw = (street.widths.get(k).copied().unwrap_or(4.0) * (1.0 - t)
+                        + street.widths.get(k + 1).copied().unwrap_or(4.0) * t)
+                        * 0.5;
+                    let dist = length(sub(sample, add(p, scale(d, t))));
+                    if dist >= 14.0 || (dist - hw).abs() > (0.3 * hw).max(0.8) {
+                        contact = false;
+                        break;
+                    }
+                    // The centreline must be outside the block, not beyond an
+                    // unrelated boundary which happens to be equally close.
+                    let outside = sub(add(p, scale(d, t)), sample);
+                    if dot(outside, normal(unit(sub(b, a)))) > 0.15 {
+                        contact = false;
+                        break;
+                    }
                 }
-                // The centreline must be outside the block, not beyond an
-                // unrelated boundary which happens to be equally close.
-                let outside = sub(add(p, scale(d, t)), sample);
-                if dot(outside, normal(unit(sub(b, a)))) > 0.15 {
-                    contact = false;
-                    break;
+                if contact && best.is_none_or(|(rank, _)| street.rank < rank) {
+                    best = Some((street.rank, si));
                 }
             }
-            if contact && best.is_none_or(|(rank, _)| street.rank < rank) {
-                best = Some((street.rank, si));
+            if let Some((rank, street)) = best {
+                out.push(Front { a, b, rank, street });
             }
-        }
-        if let Some((rank, street)) = best {
-            out.push(Front { a, b, rank, street });
         }
     }
     out
+}
+pub(super) fn access_fronts(
+    shape: &Shape,
+    layout: &Layout,
+    index: &FrontageIndex,
+) -> Vec<(Point, Point, usize)> {
+    frontages(shape, layout, index)
+        .iter()
+        .map(|f| (f.a, f.b, f.street))
+        .collect()
 }
 
 /// Count actual shared boundary rather than an inferred frontage chord.
 fn frontage(shape: &Shape, fronts: &[Front]) -> (f64, Option<Front>) {
     let mut total = 0.0;
     let mut best: Option<Front> = None;
-    for i in 0..shape.outer.len() {
-        let a = shape.outer[i];
-        let b = shape.outer[(i + 1) % shape.outer.len()];
-        let len = length(sub(b, a));
-        if len < 0.05 {
-            continue;
-        }
-        for f in fronts {
-            if distance(a, f.a, f.b) < 0.025 && distance(b, f.a, f.b) < 0.025 {
-                total += len;
-                if best.is_none_or(|old| length(sub(old.b, old.a)) < len) {
-                    best = Some(Front { a, b, ..*f });
+    for ring in std::iter::once(&shape.outer).chain(shape.holes.iter()) {
+        for i in 0..ring.len() {
+            let a = ring[i];
+            let b = ring[(i + 1) % ring.len()];
+            let len = length(sub(b, a));
+            if len < 0.05 {
+                continue;
+            }
+            for f in fronts {
+                if distance(a, f.a, f.b) < 0.025 && distance(b, f.a, f.b) < 0.025 {
+                    total += len;
+                    if best.is_none_or(|old| length(sub(old.b, old.a)) < len) {
+                        best = Some(Front { a, b, ..*f });
+                    }
+                    break;
                 }
-                break;
             }
         }
     }
@@ -219,6 +233,11 @@ fn parcel(shape: Shape, block: usize, axis: Point, fronts: &[Front], kind: &str)
         use_kind: if len >= 3.0 { kind } else { "garden" }.to_owned(),
         front: f.filter(|_| len >= 3.0).map(|f| [f.a, f.b]),
         rank: f.map_or(99, |f| f.rank),
+        access: Some(super::ParcelAccess {
+            kind: if len >= 3.0 { "public" } else { "unserved" }.into(),
+            street: f.filter(|_| len >= 3.0).map(|f| f.street),
+            front_length: len,
+        }),
     }
 }
 
@@ -464,6 +483,70 @@ fn minimum_angle(shape: &Shape) -> f64 {
         angle = angle.min(interior_angle);
     }
     angle
+}
+
+/// Competing inward frontage planes. Unlike first-front wins, opposite fronts
+/// meet at their equal-distance seam; non-convex results retain separate components.
+fn frontage_territories(
+    shape: &Shape,
+    block: usize,
+    axis: Point,
+    fronts: &[Front],
+    morph: &Morph,
+    zone: &str,
+    rng: &mut Rng,
+) -> Vec<Parcel> {
+    let rs = runs(fronts);
+    let planes: Vec<_> = rs
+        .iter()
+        .filter_map(|run| {
+            let a = run.first()?.a;
+            let b = run.last()?.b;
+            (length(sub(b, a)) > 3.0).then(|| (normal(unit(sub(b, a))), a, run))
+        })
+        .collect();
+    let mut available = vec![shape.clone()];
+    let mut plots = vec![];
+    for (i, &(n, a, run)) in planes.iter().enumerate().take(64) {
+        let mut territories = available.clone();
+        for &(other, b, _) in &planes {
+            let delta = sub(n, other);
+            let len = length(delta);
+            if len < 1e-8 {
+                continue;
+            }
+            // n·(p-a) <= other·(p-b).
+            let at = (dot(n, a) - dot(other, b)) / len;
+            let d = scale(delta, 1.0 / len);
+            territories = territories
+                .into_iter()
+                .flat_map(|s| half(&s, d, at, true))
+                .collect();
+        }
+        territories.retain(|s| frontage(s, run).0 >= 3.0);
+        for territory in territories {
+            available = available
+                .into_iter()
+                .flat_map(|s| difference(&s, &territory))
+                .collect();
+            plots.extend(strips(
+                &territory,
+                block,
+                axis,
+                run,
+                morph,
+                zone,
+                &mut rng.fork(&format!("territory:{i}")),
+            ));
+        }
+    }
+    plots.extend(
+        available
+            .into_iter()
+            .map(|s| parcel(s, block, axis, &[], "garden")),
+    );
+    merge_slivers(&mut plots, fronts, Some(maximum_plot_depth(morph, zone)));
+    plots
 }
 
 fn courtyards(
@@ -717,16 +800,71 @@ pub(super) fn generate(
         key: layout.key.clone(),
         parcels: Vec::new(),
         warnings: Vec::new(),
+        diagnostics: None,
     };
+    let mut diagnostics = super::PartitionDiagnostics::default();
     let root = Rng::new(seed).fork(&format!("parcels:{}", layout.key));
     let index = FrontageIndex::new(layout);
+    let culture = if cfg.culture == "site" {
+        &layout.culture
+    } else {
+        &cfg.culture
+    };
+    let phase_morphs = layout
+        .phases
+        .iter()
+        .map(|p| {
+            super::composition::phase_morph(
+                if cfg.culture == "site" && !p.culture.is_empty() {
+                    &p.culture
+                } else {
+                    culture
+                },
+                &p.recipe,
+                if cfg.zone == "auto" {
+                    &p.zone
+                } else {
+                    &cfg.zone
+                },
+                &cfg.preset,
+                &cfg.recipe,
+                cfg.density,
+                &cfg.params,
+                "parcels",
+            )
+        })
+        .collect::<Result<Vec<_>, _>>()?;
     for (bi, block) in layout.blocks.iter().enumerate() {
+        let morph = layout
+            .quarters
+            .get(block.quarter)
+            .and_then(|q| phase_morphs.get(block.phase.unwrap_or(q.phase)))
+            .unwrap_or(morph);
+        let tissue = layout
+            .structure
+            .as_ref()
+            .and_then(|s| {
+                s.districts
+                    .iter()
+                    .find(|d| d.quarters.contains(&block.quarter))
+            })
+            .map_or("culture", |d| d.tissue.as_str());
+        let mut local_morph = super::with_tissue(morph.clone(), tissue);
+        if cfg.operator != "culture" {
+            local_morph.value["plotOp"] = serde_json::json!(match cfg.operator.as_str() {
+                "strips" => "burgage",
+                "oriented" => "courtyard",
+                op => op,
+            });
+        }
+        let morph = &local_morph;
         let zone = if cfg.zone == "auto" {
             &block.zone
         } else {
             &cfg.zone
         };
         if block.kind != "block" {
+            diagnostics.covered_area += area(&block.shape);
             result.parcels.push(Parcel {
                 shape: block.shape.clone(),
                 block: bi,
@@ -734,6 +872,11 @@ pub(super) fn generate(
                 use_kind: block.kind.split(':').next().unwrap_or("place").to_owned(),
                 front: None,
                 rank: 99,
+                access: Some(super::ParcelAccess {
+                    kind: "reserved".into(),
+                    street: None,
+                    front_length: 0.0,
+                }),
             });
             continue;
         }
@@ -756,6 +899,8 @@ pub(super) fn generate(
             result
                 .parcels
                 .push(parcel(block.shape.clone(), bi, axis, &[], "garden"));
+            diagnostics.covered_area += area(&block.shape);
+            diagnostics.unserved_area += area(&block.shape);
             continue;
         }
         let mut parcels = match morph.text("plotOp") {
@@ -764,6 +909,9 @@ pub(super) fn generate(
                 courtyards(&block.shape, bi, axis, &fronts, morph, zone, &mut rng)
             }
             "wholeBlock" => vec![parcel(block.shape.clone(), bi, axis, &fronts, "plot")],
+            "frontage" => {
+                frontage_territories(&block.shape, bi, axis, &fronts, morph, zone, &mut rng)
+            }
             _ => strips(&block.shape, bi, axis, &fronts, morph, zone, &mut rng),
         };
         if morph.text("plotOp") == "siheyuan" {
@@ -803,6 +951,51 @@ pub(super) fn generate(
         // never replaced by a filled exterior ring.
         let actual: f64 = parcels.iter().map(|p| area(&p.shape)).sum();
         let expected = area(&block.shape);
+        use geo::BooleanOps;
+        let merged = geo::algorithm::bool_ops::unary_union(
+            &parcels
+                .iter()
+                .map(|p| super::geometry::polygon(&p.shape))
+                .collect::<Vec<_>>(),
+        );
+        let coverage =
+            super::geometry::shapes(super::geometry::polygon(&block.shape).intersection(&merged))
+                .iter()
+                .map(area)
+                .sum::<f64>();
+        let union_area = super::geometry::shapes(merged)
+            .iter()
+            .map(area)
+            .sum::<f64>();
+        let residual = (expected - coverage).max(0.0) + (union_area - coverage).max(0.0);
+        let overlap = (actual - union_area).max(0.0);
+        diagnostics.covered_area += coverage;
+        diagnostics.residual_area += residual;
+        diagnostics.overlap_area += overlap;
+        for p in &mut parcels {
+            let (len, f) = frontage(&p.shape, &fronts);
+            let street = f.filter(|_| len >= 3.0).map(|f| f.street);
+            let kind = street.map_or("unserved", |si| match layout.streets[si].role.as_str() {
+                "private" | "derb" | "hutong" | "roji" => "private",
+                "collective" | "close" => "collective",
+                _ => "public",
+            });
+            p.access = Some(super::ParcelAccess {
+                kind: kind.into(),
+                street,
+                front_length: len,
+            });
+        }
+        diagnostics.unserved_area += parcels
+            .iter()
+            .filter(|p| p.access.as_ref().is_some_and(|a| a.kind == "unserved"))
+            .map(|p| area(&p.shape))
+            .sum::<f64>();
+        if residual + overlap > expected.max(1.0) * 1e-5 {
+            result.warnings.push(format!(
+                "Îlot {bi} : couverture résiduelle {residual:.3} m², chevauchement {overlap:.3} m²"
+            ));
+        }
         if (actual - expected).abs() > expected.max(1.0) * 1e-5 {
             result.warnings.push(format!(
                 "Block {bi}: cadastral area residual {:.3} m²",
@@ -811,6 +1004,7 @@ pub(super) fn generate(
         }
         result.parcels.extend(parcels);
     }
+    result.diagnostics = Some(diagnostics);
     Ok(result)
 }
 
@@ -846,6 +1040,7 @@ mod tests {
                 rank: 2,
                 front: Some([Point { x: 0.0, y: 0.0 }, Point { x: 10.0, y: 0.0 }]),
                 use_kind: "plot".into(),
+                access: None,
             },
             60.0,
         );
@@ -869,12 +1064,16 @@ mod tests {
         );
         let layout = Layout {
             key: "unserved-deep-sector".into(),
+            structure: None,
+            phases: vec![],
+            archetype: "district".into(),
             culture: "european-organic".into(),
             center: Point { x: 120.0, y: 200.0 },
             quarters: vec![],
             enclosures: vec![],
             warnings: vec![],
             blocks: vec![Block {
+                phase: None,
                 shape: shape.clone(),
                 quarter: 0,
                 kind: "block".into(),
@@ -989,12 +1188,16 @@ mod tests {
         );
         let layout = Layout {
             key: "frontage-fixture".into(),
+            structure: None,
+            phases: vec![],
+            archetype: "district".into(),
             culture: "european".into(),
             center: Point { x: 50.0, y: 40.0 },
             quarters: vec![],
             enclosures: vec![],
             warnings: vec![],
             blocks: vec![Block {
+                phase: None,
                 shape: shape.clone(),
                 quarter: 0,
                 kind: "block".into(),

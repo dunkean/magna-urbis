@@ -1,13 +1,15 @@
 //! Geography first: preserve regional corridors, then partition their dry land.
 //! The cultural envelope is a growth budget, not a mandatory peripheral street.
 use super::{
-    Enclosure, LayoutConfig, Morph, Point, Quarter, Shape, Site, Street, Surface, geometry as g,
-    profiles, routing,
+    Enclosure, LayoutConfig, Morph, Point, Quarter, Shape, Site, Street, Surface, UrbanStructure,
+    geometry as g, profiles, routing,
 };
 use crate::rng::Rng;
 use std::f64::consts::{PI, TAU};
 
 pub(super) struct Plan {
+    pub envelope: Shape,
+    pub structure: Option<UrbanStructure>,
     pub quarters: Vec<Quarter>,
     pub streets: Vec<Street>,
     pub enclosures: Vec<Enclosure>,
@@ -31,6 +33,49 @@ fn nearest(p: Point, roads: &[Street]) -> Option<(f64, Point, f64)> {
             (d, q, (w[1].y - w[0].y).atan2(w[1].x - w[0].x))
         })
         .min_by(|a, b| a.0.total_cmp(&b.0))
+}
+
+/// Prefer an entering main regional road over a nearby track or a generated
+/// footprint guide. Use its local tangent, independent of direction and vertices.
+pub(super) fn regional_axis(p: Point, reach: f64, roads: &[Street]) -> Option<f64> {
+    roads
+        .iter()
+        .enumerate()
+        .filter_map(|(i, s)| {
+            if !matches!(
+                s.role.as_str(),
+                "regional" | "bridge" | "ford" | "causeway" | "approach"
+            ) {
+                return None;
+            }
+            let mut score = 0.0;
+            let mut tangent = None;
+            for (j, pair) in s.path.windows(2).enumerate() {
+                let length = dist(pair[0], pair[1]);
+                let (d, _, _) = g::distance(p, pair[0], pair[1]);
+                if length <= 1e-6 || d > reach {
+                    continue;
+                }
+                let width = s
+                    .widths
+                    .get(j)
+                    .copied()
+                    .or_else(|| s.widths.last().copied())
+                    .unwrap_or(4.0);
+                score +=
+                    length.min(reach * 2.0) * width / (1.0 + d / (reach * 0.3).max(1.0)).powi(2);
+                if tangent.is_none_or(|(nearest, _)| d < nearest) {
+                    tangent = Some((d, (pair[1].y - pair[0].y).atan2(pair[1].x - pair[0].x)));
+                }
+            }
+            tangent.map(|(_, angle)| (s.rank, score, i, angle))
+        })
+        .min_by(|a, b| {
+            a.0.cmp(&b.0)
+                .then_with(|| b.1.total_cmp(&a.1))
+                .then_with(|| a.2.cmp(&b.2))
+        })
+        .map(|v| v.3)
 }
 /// Exact geometric clipping, independent of water: existing crossings survive.
 pub(super) fn clip(st: &Street, shape: &Shape) -> Vec<Street> {
@@ -97,7 +142,7 @@ pub(super) fn clip(st: &Street, shape: &Shape) -> Vec<Street> {
     }
     result
 }
-fn split_by(shapes: &mut Vec<Shape>, street: &Street) {
+pub(super) fn split_by(shapes: &mut Vec<Shape>, street: &Street) {
     let previous = std::mem::take(shapes);
     for s in previous {
         let mut pieces = vec![s];
@@ -320,13 +365,79 @@ fn cultural_spines(
         // junction quantization used by the shared street graph.
         let a = point(a, nucleus, (1e-7 / dist(a, nucleus).max(0.03)).min(0.01));
         let b = point(b, nucleus, (1e-7 / dist(b, nucleus).max(0.03)).min(0.01));
-        let Some(mut path) = planner.route(a, nucleus, cfg.max_street_grade) else {
+        let inherited = |target: Point| {
+            if cfg.axis_alignment != "regional" {
+                return None;
+            }
+            let dx = target.x - nucleus.x;
+            let dy = target.y - nucleus.y;
+            let length = dx.hypot(dy).max(1e-6);
+            streets
+                .iter()
+                .filter(|s| matches!(s.role.as_str(), "regional" | "bridge" | "ford" | "causeway"))
+                .filter(|s| {
+                    s.path
+                        .windows(2)
+                        .any(|p| g::distance(nucleus, p[0], p[1]).0 < 3.0)
+                })
+                .flat_map(|s| &s.path)
+                .filter_map(|p| {
+                    let x = p.x - nucleus.x;
+                    let y = p.y - nucleus.y;
+                    let d = x.hypot(y);
+                    let cosine = (x * dx + y * dy) / (d * length).max(1e-6);
+                    (d > radius * 0.15 && cosine > 0.85)
+                        .then_some((y.atan2(x), (d - radius * 0.25).abs()))
+                })
+                .min_by(|a, b| a.1.total_cmp(&b.1))
+                .map(|p| p.0)
+        };
+        let (inherited_a, inherited_b) = (inherited(a), inherited(b));
+        let (old_a, old_b) = (inherited_a.is_some(), inherited_b.is_some());
+        if old_a && old_b {
+            continue;
+        }
+        let mut a = a;
+        let mut b = b;
+        if let Some(incoming) = inherited_a.or(inherited_b) {
+            let direction = incoming + PI;
+            if let Some((left, right)) = chord(shape, nucleus, direction) {
+                let along = |p: Point| {
+                    (p.x - nucleus.x) * direction.cos() + (p.y - nucleus.y) * direction.sin()
+                };
+                let target = if along(left) > along(right) {
+                    left
+                } else {
+                    right
+                };
+                let target = point(
+                    target,
+                    nucleus,
+                    (1e-7 / dist(target, nucleus).max(0.03)).min(0.01),
+                );
+                if old_a {
+                    b = target;
+                } else {
+                    a = target;
+                }
+            }
+        }
+        let path = if old_a {
+            planner.route(nucleus, b, cfg.max_street_grade)
+        } else if old_b {
+            planner.route(a, nucleus, cfg.max_street_grade)
+        } else {
+            planner
+                .route(a, nucleus, cfg.max_street_grade)
+                .and_then(|mut path| {
+                    let tail = planner.route(nucleus, b, cfg.max_street_grade)?;
+                    path.extend(tail.into_iter().skip(1));
+                    Some(path)
+                })
+        };
+        let Some(path) = path else {
             continue;
         };
-        let Some(tail) = planner.route(nucleus, b, cfg.max_street_grade) else {
-            continue;
-        };
-        path.extend(tail.into_iter().skip(1));
         if !inside_path(shape, &path) || !simple_path(&path, false) {
             continue;
         }
@@ -336,7 +447,21 @@ fn cultural_spines(
         {
             continue;
         }
-        let width = m.width(if i == 0 { 0 } else { 1 }, rng);
+        let width = if old_a || old_b {
+            streets
+                .iter()
+                .filter(|s| s.role == "regional")
+                .filter(|s| {
+                    s.path
+                        .windows(2)
+                        .any(|p| g::distance(nucleus, p[0], p[1]).0 < 3.0)
+                })
+                .flat_map(|s| s.widths.iter().copied())
+                .fold(0.0_f64, f64::max)
+                .max(2.0)
+        } else {
+            m.width(if i == 0 { 0 } else { 1 }, rng)
+        };
         let street = Street {
             widths: vec![width; path.len()],
             path,
@@ -416,15 +541,46 @@ pub(super) fn generate(
     roads: &[Street],
     radius: f64,
 ) -> Plan {
+    generate_domain(seed, site, cfg, m, surface, roads, radius, None)
+}
+
+/// The same shared armature runs inside each actual land component. The supplied
+/// domain retains concavities and holes; it is never replaced by its convex hull.
+#[allow(clippy::too_many_arguments)]
+pub(super) fn generate_domain(
+    seed: &str,
+    site: &Site,
+    cfg: &LayoutConfig,
+    m: &Morph,
+    surface: Surface<'_>,
+    roads: &[Street],
+    radius: f64,
+    domain: Option<&Shape>,
+) -> Plan {
     let mut rng = Rng::new(seed).fork("geographic-plan");
     let culture = if cfg.culture == "site" {
         &site.culture
     } else {
         &cfg.culture
     };
-    let profile = profiles::profile(culture);
-    let pattern_override = cfg.params.get("streetOp").is_some() || cfg.preset != "culture";
-    let pattern = if pattern_override {
+    let profile = if cfg.composition == "settlement" {
+        profiles::settlement_profile(culture, site.population, cfg.phases)
+    } else {
+        profiles::profile(culture)
+    };
+    let pattern_override = cfg.tissue != "culture"
+        || cfg.params.get("streetOp").is_some()
+        || cfg.preset != "culture"
+        || cfg.composition == "settlement" && cfg.recipe != "auto";
+    let pattern = if cfg.tissue != "culture" {
+        match cfg.tissue.as_str() {
+            "grid" => "grid",
+            "radial" => "radial",
+            "terraces" => "terraces",
+            "clusters" => "dispersed",
+            _ => "organic",
+        }
+    } else if pattern_override {
         m.text("streetOp")
     } else {
         profile.pattern
@@ -461,19 +617,16 @@ pub(super) fn generate(
     } else if orientation == "water" {
         angle = water_angle(surface, c, radius).unwrap_or(angle);
     }
-    let fortified = match cfg.fortification.as_str() {
-        "culture" => match profile.fortification {
-            "auto" => {
-                if site.population >= 1000 {
-                    "wall"
-                } else {
-                    "none"
-                }
-            }
-            s => s,
-        },
-        s => s,
-    };
+    if domain.is_some() {
+        angle += cfg.footprint.orientation.to_radians();
+    }
+    if cfg.axis_alignment == "regional"
+        && !orientation_override
+        && let Some(regional) = regional_axis(c, radius * 1.5, roads)
+    {
+        angle = regional + cfg.footprint.orientation.to_radians();
+    }
+    let fortified = profiles::fortification(profile, &cfg.fortification, site.population);
     let closed = matches!(fortified, "wall" | "palisade" | "hedge");
     let rect = (!pattern_override
         && matches!(profile.enclosure, "rect" | "rounded-rect" | "square"))
@@ -527,9 +680,11 @@ pub(super) fn generate(
             y: c.y + x * angle.sin() + y * angle.cos(),
         });
     }
-    let envelope = g::normalized(Shape {
-        outer,
-        holes: vec![],
+    let envelope = domain.cloned().unwrap_or_else(|| {
+        g::normalized(Shape {
+            outer,
+            holes: vec![],
+        })
     });
     let mut regions = g::dry_clip(&surface, &envelope);
     regions.retain(|s| g::area(s) > 25.0);
@@ -545,11 +700,18 @@ pub(super) fn generate(
         y1 = y1.max(anchor.y + step * 2.0);
     }
     let mut planner = routing::RoutePlanner::new(surface, (x0, y0, x1, y1));
+    planner.set_adaptation(cfg.site_adaptation);
     // Dry portions of imported roads must satisfy the same physical contract.
     let mut retained = vec![];
     for st in streets {
         if matches!(st.role.as_str(), "bridge" | "ford" | "causeway")
             || routing::path_clear(surface, &st.path, cfg.max_street_grade)
+                && (cfg.site_adaptation == 0.0
+                    || st.role == "regional"
+                    || st
+                        .path
+                        .windows(2)
+                        .all(|p| routing::segment_grade(surface, p[0], p[1]) < 0.015))
         {
             retained.push(st);
         } else if let Some(path) = planner.route_within(
@@ -591,6 +753,7 @@ pub(super) fn generate(
             profile.gates == "cardinal",
             &mut rng,
         );
+        split_joined_roads(&mut regions, &streets);
     }
     let desired = (cfg.count * cfg.rings).min(64);
     let mut attempts = 0;
@@ -606,9 +769,14 @@ pub(super) fn generate(
             break;
         };
         let shape = &regions[index];
-        let center = g::centroid(shape);
+        let center = g::interior_point(shape);
         let mut selected = None;
-        let local_angle = if pattern == "terraces" || profile.stairs {
+        let local_angle = if cfg.axis_alignment == "regional"
+            && !orientation_override
+            && let Some(regional) = regional_axis(center, radius * 1.5, roads)
+        {
+            regional + cfg.footprint.orientation.to_radians()
+        } else if pattern == "terraces" || profile.stairs {
             let dx = surface.height_at(Point {
                 x: center.x + step,
                 y: center.y,
@@ -754,6 +922,8 @@ pub(super) fn generate(
             .push("Terrain trop contraint : aucun axe carrossable ne rejoint ce quartier.".into());
     }
     Plan {
+        envelope,
+        structure: None,
         quarters,
         streets,
         enclosures,
@@ -888,6 +1058,7 @@ mod tests {
         let heights = vec![0.0; 64 * 64];
         let water = vec![0; 64 * 64];
         let surface = Surface {
+            geometry: None,
             width: 512.0,
             n: 64,
             height: &heights,
@@ -977,6 +1148,7 @@ mod tests {
             }
         }
         let surface = Surface {
+            geometry: None,
             width: 512.0,
             n: 64,
             height: &heights,

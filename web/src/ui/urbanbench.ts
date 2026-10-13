@@ -1,3 +1,7 @@
+import { landPath } from '../../../rust/bridge/urbanGeography';
+import { isFantasyStyle, DEFAULT_FANTASY_OPTIONS, type FantasyStyle } from '../../../rust/bridge/fantasyPainting';
+import { fantasyLibraries } from '../render/fantasyBrushAssets';
+import { paintFantasyDecor } from './fantasyUrban';
 import './terrainbench.css';
 import './terrainSettlements.css';
 import './urbanbench.css';
@@ -12,6 +16,7 @@ import type { Relief } from '../gen/options';
 import { runSettlementRequest, type Point, type RoadOutput, type RoadSite, type Settlement, type SettlementOutput, type SettlementRaster, type SettlementRequest, type SettlementResponse } from '../../../rust/bridge/settlements';
 import { clampView, fitView, panBy, screenToWorld, zoomAt, type View } from '../render/view';
 import { viewFromString, viewToString } from './share';
+import { createRuler } from './ruler';
 
 /**
  * Urban Bench: quarters and parcels on retained decors (Terrain Bench maps), around one city
@@ -40,6 +45,14 @@ interface City { key: string; name: string; population: number; culture: string;
 type RoadMode = 'decor' | 'reroute' | 'none';
 
 const query = new URLSearchParams(location.search);
+let mapStyle: 'relief' | FantasyStyle = isFantasyStyle(query.get('style') ?? '') ? query.get('style') as FantasyStyle : 'relief';
+const fantasyOptions = { ...DEFAULT_FANTASY_OPTIONS };
+for (const key of ['density', 'size', 'spacing'] as const) {
+  const value = Number(query.get(`brush_${key}`));
+  if (value > 0 && Number.isFinite(value)) fantasyOptions[key] = Math.max(.3, Math.min(2, value));
+  input(`brush_${key}`).value = String(fantasyOptions[key]);
+}
+select('mapStyle').value = mapStyle; el('fantasyStyleControls').hidden = !isFantasyStyle(mapStyle);
 let entries: Entry[] = [];
 let decor: Decor | undefined, decorId = query.get('decor') ?? '';
 const decoded = new Map<string, Decor>();
@@ -49,6 +62,9 @@ let view: View = viewFromString(query.get('view')) ?? { cx: 1200, cy: 1200, scal
 let reliefBitmap: HTMLCanvasElement | undefined;
 let initialView = !!query.get('view');
 let initialCityRemoved = false;
+const ruler = createRuler({ container: viewport, surface: map, language: 'fr', getView: () => view, onEnable: () => {
+  placing = false; placeMode();
+} });
 const filters: Record<string, string> = {};
 try {
   const saved = JSON.parse(query.get('city') ?? 'null');
@@ -62,18 +78,21 @@ function status(text: string, error = false): void { el('status').textContent = 
 
 // ---------------------------------------------------------------- stages shared with Terrain Bench
 const roads = createTerrainRoads({ map, before: el('status'), onConfigChange: () => { if (roadMode === 'reroute') schedulePush(true); save(); }, onDisplayChange: save });
+el<HTMLDetailsElement>('roadStage').open = false;
 const urban = createTerrainUrban({
   map, before: el('status'), getTerrain: () => undefined, getRaster: () => decor?.raster,
   getSeed: () => decor?.meta.seed ?? '', onChange: () => { syncLanduse(); save(); }, onPlanChange: syncLanduse,
   onFocus: (center, radius) => focus(center, radius),
 });
 const landuse = createUrbanLanduse({ map, before: el('status'), onChange: save,
+  getDisplayStyle: () => isFantasyStyle(mapStyle) ? mapStyle : undefined,
   getView: () => ({ view, width: viewport.clientWidth, height: viewport.clientHeight }),
   getBackground: () => ({ image: reliefBitmap, opacity: input('showRelief').checked ? Number(select('baseOpacity').value) : 0 }),
 });
 const workshop = createUrbanWorkshop({ urban, getContext: () => decor && city ? { raster: decor.raster, sites: [{ key: city.key, population: city.population, culture: city.culture, center: city.center, radius: radiusOf(city) }], roads: currentRoads, seed: decor.meta.seed } : undefined, onChange: save });
 
 function syncLanduse(): void {
+  drawFantasy();
   if (!decor) { landuse.set(); return; }
   const c = city, radius = c ? radiusOf(c) : 0;
   const relief = decor.meta.tags.relief;
@@ -108,7 +127,8 @@ async function openFiles(files: FileList): Promise<void> {
     } catch (error) { status(`${file.name} : ${error instanceof Error ? error.message : error}`, true); }
   }
   catalogue();
-  if (added.length) await choose(added[0].id);
+  // Reattaching a shared file decor restores the retained seed and camera.
+  if (added.length) await choose(added[0].id, added[0].id === decorId);
 }
 const visible = (): Entry[] => entries.filter(e => Object.entries(filters).every(([k, v]) => !v || e.tags[k] === v));
 function catalogue(): void {
@@ -222,7 +242,10 @@ select('seedCulture').onchange = () => editCity(c => { c.culture = select('seedC
 input('seedRadius').onchange = () => { if (input('seedRadius').reportValidity()) editCity(c => { c.radius = Number(input('seedRadius').value); }); };
 input('seedX').onchange = input('seedY').onchange = () => editCity(c => { c.center = { x: Number(input('seedX').value), y: Number(input('seedY').value) }; });
 select('seedRoads').onchange = () => { roadMode = select('seedRoads').value as RoadMode; schedulePush(true); save(); };
-function placeMode(): void { el('seedPlace').setAttribute('aria-pressed', String(placing)); viewport.classList.toggle('settlement-picking', placing); }
+function placeMode(): void {
+  if (placing) ruler.setEnabled(false);
+  el('seedPlace').setAttribute('aria-pressed', String(placing)); viewport.classList.toggle('settlement-picking', placing);
+}
 el('seedPlace').onclick = () => { placing = !placing; placeMode(); };
 el('seedClear').onclick = () => { city = undefined; cityControls(); push(); save(); };
 function placeAt(p: Point): void {
@@ -291,14 +314,66 @@ function routed(response: SettlementResponse): void {
 }
 
 // ---------------------------------------------------------------- base layers
+let paintedDecor: Decor | undefined, paintedLayouts: typeof urban.layouts, paintedRoads: RoadOutput | undefined, paintedKey = '';
+function drawFantasy(): void {
+  const layer = map.querySelector('#fantasyPainting'); if (!layer) return;
+  if (!decor || !isFantasyStyle(mapStyle)) { layer.innerHTML = ''; paintedKey = ''; return; }
+  const key = JSON.stringify([mapStyle, fantasyOptions, city?.center, city ? radiusOf(city) : 0]);
+  if (paintedDecor === decor && paintedLayouts === urban.layouts && paintedRoads === currentRoads && paintedKey === key) return;
+  const source = new URLSearchParams(decor.meta.query), preset = source.get('climate') ?? decor.meta.tags.climate ?? 'temperate';
+  const climates: Record<string, [number, number]> = { temperate: [18, 1000], oceanic: [11, 1300], mediterranean: [16, 600], arid: [23, 150], cold: [1, 550], tropical: [26, 2300] };
+  const climate = climates[preset] ?? climates.temperate;
+  const climateValue = (key: string, fallback: number): number => source.has(key) && Number.isFinite(Number(source.get(key))) ? Number(source.get(key)) : fallback;
+  layer.innerHTML = paintFantasyDecor({ raster: decor.raster, seed: decor.meta.seed, temperature: climateValue('temperature', climate[0]), rain: climateValue('precipitation', climate[1]),
+    layouts: urban.layouts, roads: currentRoads, city: city ? { center: city.center, radius: radiusOf(city) } : undefined }, fantasyLibraries[mapStyle], fantasyOptions);
+  paintedDecor = decor; paintedLayouts = urban.layouts; paintedRoads = currentRoads; paintedKey = key;
+}
+select('mapStyle').onchange = () => {
+  mapStyle = select('mapStyle').value as 'relief' | FantasyStyle; el('fantasyStyleControls').hidden = !isFantasyStyle(mapStyle);
+  drawBase(); landuse.refreshBackground(); save();
+};
+let fantasyTimer: ReturnType<typeof setTimeout> | undefined;
+for (const key of ['density', 'size', 'spacing'] as const) input(`brush_${key}`).oninput = () => {
+  fantasyOptions[key] = Number(input(`brush_${key}`).value); clearTimeout(fantasyTimer); fantasyTimer = setTimeout(() => { drawFantasy(); save(); }, 50);
+};
+for (const format of ['svg', 'png'] as const) el<HTMLButtonElement>(`fantasyExport_${format}`).onclick = async () => {
+  if (!decor || !isFantasyStyle(mapStyle)) return;
+  const button = el<HTMLButtonElement>(`fantasyExport_${format}`); button.disabled = true;
+  try {
+    drawFantasy();
+    const svg = map.cloneNode(true) as SVGSVGElement; svg.querySelector('#landuseLayer')?.remove();
+    svg.setAttribute('viewBox', `0 0 ${decor.raster.width} ${decor.raster.width}`); svg.setAttribute('width', '4096'); svg.setAttribute('height', '4096');
+    const css = document.createElementNS(ns, 'style'); css.textContent = Array.from(document.querySelectorAll('style')).map(style => style.textContent).join('\n'); svg.prepend(css);
+    let blob = new Blob([new XMLSerializer().serializeToString(svg)], { type: 'image/svg+xml' });
+    if (format === 'png') {
+      const url = URL.createObjectURL(blob), image = new Image();
+      try {
+        image.src = url; await image.decode(); const canvas = document.createElement('canvas'); canvas.width = canvas.height = 4096;
+        canvas.getContext('2d')!.drawImage(image, 0, 0);
+        blob = await new Promise<Blob>((resolve, reject) => canvas.toBlob(value => value ? resolve(value) : reject(new Error('Export PNG impossible')), 'image/png'));
+      } finally { URL.revokeObjectURL(url); }
+    }
+    const url = URL.createObjectURL(blob), anchor = document.createElement('a'); anchor.href = url; anchor.download = `urbanbench-${mapStyle}.${format}`; anchor.click(); setTimeout(() => URL.revokeObjectURL(url), 10000);
+  } catch (error) { status(`Export : ${error instanceof Error ? error.message : error}`, true); }
+  finally { button.disabled = false; }
+};
 function drawBase(): void {
   if (!decor) return;
   const r = decor.raster, w = r.width;
   const image = map.querySelector('#reliefImage')!;
   image.setAttribute('width', String(w)); image.setAttribute('height', String(w));
   image.setAttribute('href', reliefImage(r));
-  map.querySelector('#contourLayer')!.innerHTML = contours(r);
-  map.querySelector('#waterLayer')!.innerHTML = decor.meta.waterSvg;
+  const base = map.querySelector('#baseLayer')!;
+  let sea = base.querySelector<SVGRectElement>('[data-decor-sea]');
+  if (!sea) { sea = document.createElementNS(ns, 'rect'); sea.dataset.decorSea = ''; base.insertBefore(sea, image); }
+  sea.setAttribute('width', String(w)); sea.setAttribute('height', String(w)); sea.setAttribute('fill', '#aac8d6');
+  let clip = base.querySelector<SVGClipPathElement>('#decor-land');
+  if (!clip) { clip = document.createElementNS(ns, 'clipPath'); clip.id = 'decor-land'; base.prepend(clip); }
+  const boundary = document.createElementNS(ns, 'path'); boundary.setAttribute('d', landPath(r.geometry?.land ?? [])); boundary.setAttribute('clip-rule', 'evenodd');
+  clip.replaceChildren(boundary); image.setAttribute('clip-path', 'url(#decor-land)');
+  map.querySelector('#contourLayer')!.innerHTML = isFantasyStyle(mapStyle) ? '' : contours(r);
+  map.querySelector('#waterLayer')!.innerHTML = decor.meta.waterSvg || (r.geometry?.water ?? []).map(rings => `<path d="${landPath(rings)}" fill="#96bed2" fill-rule="evenodd"/>`).join('');
+  drawFantasy();
   layers();
 }
 /** Hillshade and elevation tint of the decor raster, sampled at twice its resolution. */
@@ -326,7 +401,7 @@ function reliefImage(r: SettlementRaster): string {
   for (let y = 0; y < m; y++) for (let x = 0; x < m; x++) {
     const gx = (x + 0.5) * scale - 0.5, gy = (y + 0.5) * scale - 0.5, o = (y * m + x) * 4;
     const water = r.water[Math.min(n - 1, Math.floor((y + 0.5) * scale)) * n + Math.min(n - 1, Math.floor((x + 0.5) * scale))];
-    if (water === 1) {
+    if (water === 1 && !r.geometry) {
       const depth = Math.max(0, -sample(gx, gy));
       const k = Math.min(1, depth / 40);
       img.data.set([170 - 40 * k, 200 - 30 * k, 214 - 14 * k, 255], o); continue;
@@ -334,9 +409,9 @@ function reliefImage(r: SettlementRaster): string {
     const dx = (sample(gx + scale, gy) - sample(gx - scale, gy)) / (2 * cell) * exaggeration;
     const dy = (sample(gx, gy + scale) - sample(gx, gy - scale)) / (2 * cell) * exaggeration;
     const len = Math.hypot(dx, dy, 1), shade = Math.max(0, (-dx * light[0] - dy * light[1] + light[2]) / len);
-    const [cr, cg, cb] = tint((sample(gx, gy) - lo) / (hi - lo)), s = 0.5 + 0.62 * shade;
+    const [cr, cg, cb] = isFantasyStyle(mapStyle) ? mapStyle === 'fantasy-ink' ? [250, 249, 245] : [239, 232, 210] : tint((sample(gx, gy) - lo) / (hi - lo)), s = isFantasyStyle(mapStyle) ? .97 + .04 * shade : 0.5 + 0.62 * shade;
     img.data.set([Math.min(255, cr * s), Math.min(255, cg * s), Math.min(255, cb * s), 255], o);
-    if (water && !decor?.meta.waterSvg) img.data.set([150, 190, 210, 255], o);
+    if (water && !decor?.meta.waterSvg && !r.geometry) img.data.set([150, 190, 210, 255], o);
   }
   ctx.putImageData(img, 0, 0);
   reliefBitmap = canvas;
@@ -380,15 +455,18 @@ function contours(r: SettlementRaster): string {
   return `<path class="contour" d="${thin}"/><path class="contour index" d="${index}"/><title>Courbes tous les ${interval} m</title>`;
 }
 function layers(): void {
+  map.style.filter = mapStyle === 'fantasy-ink' ? 'grayscale(1)' : '';
+  map.dataset.fantasyRelief = String(input('showRelief').checked); map.dataset.fantasyLanduse = String(input('showLanduse').checked);
   (map.querySelector('#baseLayer') as SVGGElement).style.display = input('showRelief').checked ? '' : 'none';
   (map.querySelector('#baseLayer') as SVGGElement).setAttribute('opacity', select('baseOpacity').value);
-  (map.querySelector('#contourLayer') as SVGGElement).style.display = input('showContours').checked ? '' : 'none';
+  (map.querySelector('#contourLayer') as SVGGElement).style.display = input('showContours').checked && !isFantasyStyle(mapStyle) ? '' : 'none';
   (map.querySelector('#waterLayer') as SVGGElement).style.display = input('showWater').checked ? '' : 'none';
   (map.querySelector('#settlementOverlay') as SVGGElement).style.display = input('showMarkers').checked ? '' : 'none';
 }
 for (const id of ['showRelief', 'showContours', 'showWater', 'showMarkers', 'baseOpacity']) el(id).onchange = () => {
   layers(); if (id === 'showRelief' || id === 'baseOpacity') landuse.refreshBackground(); save();
 };
+input('showLanduse').addEventListener('change', () => { layers(); save(); });
 function drawSites(): void {
   const layer = map.querySelector('#settlementOverlay')!; layer.replaceChildren();
   for (const s of decor?.meta.settlements ?? []) {
@@ -422,14 +500,17 @@ function markers(): void {
 // ---------------------------------------------------------------- view and pointer
 function updateView(): void {
   const w = viewport.clientWidth, h = viewport.clientHeight;
-  view = clampView(view, decor?.meta.width ?? 2400, w, h);
+  // A saved camera belongs to the incoming decor. Its bounds are unknown until
+  // loading completes; clamping to the placeholder width destroys the replay.
+  if (decor) view = clampView(view, decor.meta.width, w, h);
   map.setAttribute('viewBox', `${view.cx - w / (2 * view.scale)} ${view.cy - h / (2 * view.scale)} ${w / view.scale} ${h / view.scale}`);
   markers(); urban.updateView(); landuse.updateView();
+  ruler.update();
   el('scale').textContent = `${(1 / view.scale).toFixed(2)} m / px`;
 }
 function setView(next: View): void { view = next; updateView(); deferSave(); }
 function fitTo(c?: City): void {
-  if (c) focus(c.center, radiusOf(c));
+  if (c) { const extent = urban.extent; focus(extent?.center ?? c.center, extent?.radius ?? radiusOf(c)); }
   else view = fitView(decor?.meta.width ?? 2400, viewport.clientWidth, viewport.clientHeight);
 }
 function focus(center: Point, radius: number): void {
@@ -443,6 +524,7 @@ viewport.addEventListener('pointerdown', event => {
   if (event.button !== 0) return;
   const target = event.target as Element, seed = !!target.closest('[data-seed-handle]');
   drag = { pointer: event.pointerId, x: event.clientX, y: event.clientY, moved: false, seed, target };
+  if (seed) map.classList.add('seed-moving');
   viewport.setPointerCapture(event.pointerId); if (!seed) map.classList.add('drag');
 });
 viewport.addEventListener('pointermove', event => {
@@ -462,7 +544,7 @@ viewport.addEventListener('pointermove', event => {
 });
 viewport.addEventListener('pointerup', event => {
   if (!drag || drag.pointer !== event.pointerId) return;
-  const d = drag; drag = undefined; map.classList.remove('drag');
+  const d = drag; drag = undefined; map.classList.remove('drag', 'seed-moving');
   if (viewport.hasPointerCapture(event.pointerId)) viewport.releasePointerCapture(event.pointerId);
   if (d.seed && d.moved && city) { editCity(c => { if (c.site) { c.site = ''; c.key = 'city'; } }); return; }
   if (d.moved) { deferSave(); return; }
@@ -470,7 +552,7 @@ viewport.addEventListener('pointerup', event => {
   if (site && !placing) { const s = decor?.meta.settlements.find(p => p.key === site.dataset.site); if (s) { city = cityOf(s); cityControls(); schedulePush(true); save(); } return; }
   if (placing) placeAt(world(event));
 });
-viewport.addEventListener('pointercancel', () => { drag = undefined; map.classList.remove('drag'); });
+viewport.addEventListener('pointercancel', () => { drag = undefined; map.classList.remove('drag', 'seed-moving'); });
 viewport.addEventListener('wheel', event => { event.preventDefault(); zoom(Math.exp(-event.deltaY * (event.deltaMode ? 0.05 : 0.0015)), ...local(event)); }, { passive: false });
 viewport.addEventListener('dblclick', event => { if (!placing) zoom(event.shiftKey ? 0.5 : 2, ...local(event)); });
 function heightAt(r: SettlementRaster, p: Point): number | undefined {
@@ -510,7 +592,7 @@ function report(): void {
     + row('Graine de la carte', `<code>${esc(m.seed)}</code>`);
 }
 function shareQuery(): string {
-  const params = new URLSearchParams();
+  const params = new URLSearchParams({ style: mapStyle, brush_density: String(fantasyOptions.density), brush_size: String(fantasyOptions.size), brush_spacing: String(fantasyOptions.spacing) });
   if (decorId) params.set('decor', decorId);
   params.set('city', JSON.stringify(city ? { ...city, roads: roadMode } : { removed: true, roads: roadMode }));
   if (Object.values(filters).some(Boolean)) params.set('filters', JSON.stringify(filters));

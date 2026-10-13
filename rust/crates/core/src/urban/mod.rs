@@ -1,15 +1,25 @@
 //! Temporary metric urban-stage contract for Terrain Bench. Geometry, cultural
 //! parameter application and deterministic partitioning execute only in Rust.
 //! Layouts are retained inputs to the parcel stage; this is not the future World model.
+mod access;
+mod composition;
+mod footprint;
+mod fringe;
+mod geography;
 mod geometry;
+pub use geography::{Geography, VectorGeography};
+mod influences;
 mod macroplan;
 mod network;
 mod parcels;
 mod profiles;
 mod quarters;
 #[cfg(test)]
+mod refonte_tests;
+#[cfg(test)]
 mod regression;
 mod routing;
+mod widths;
 
 use crate::rng::Rng;
 pub use crate::settlements::Point;
@@ -55,6 +65,8 @@ pub struct Block {
     pub axis: Point,
     #[serde(default = "core_zone")]
     pub zone: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub phase: Option<usize>,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Layout {
@@ -67,6 +79,72 @@ pub struct Layout {
     pub warnings: Vec<String>,
     #[serde(default)]
     pub enclosures: Vec<Enclosure>,
+    #[serde(default)]
+    pub phases: Vec<GrowthPhase>,
+    #[serde(default)]
+    pub archetype: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub structure: Option<UrbanStructure>,
+}
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct UrbanStructure {
+    pub version: u32,
+    pub mechanism: String,
+    pub family: String,
+    pub reserve: Vec<Shape>,
+    pub allocated: Vec<Shape>,
+    pub centers: Vec<UrbanCenter>,
+    pub districts: Vec<UrbanDistrict>,
+    pub history: Vec<UrbanEvent>,
+    pub metrics: UrbanMetrics,
+}
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct UrbanCenter {
+    pub id: usize,
+    pub point: Point,
+    pub weight: f64,
+}
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct UrbanDistrict {
+    pub id: usize,
+    pub center: usize,
+    pub phase: usize,
+    pub tissue: String,
+    pub quarters: Vec<usize>,
+}
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct UrbanEvent {
+    pub epoch: usize,
+    pub kind: String,
+    pub center: usize,
+    pub area: f64,
+}
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct UrbanMetrics {
+    pub target_area: f64,
+    pub allocated_area: f64,
+    pub street_area: f64,
+    pub reserved_area: f64,
+    pub gross_density: f64,
+    pub planned_population: f64,
+    pub shortfall_area: f64,
+    pub components: usize,
+    pub access_added: usize,
+}
+/// Applied growth budgets and their disjoint land, before street carving.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GrowthPhase {
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub culture: String,
+    pub kind: String,
+    pub zone: String,
+    pub recipe: String,
+    pub population: f64,
+    pub target_area: f64,
+    pub shapes: Vec<Shape>,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Parcel {
@@ -77,12 +155,74 @@ pub struct Parcel {
     pub front: Option<[Point; 2]>,
     pub axis: Point,
     pub rank: usize,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub access: Option<ParcelAccess>,
+}
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ParcelAccess {
+    pub kind: String,
+    pub street: Option<usize>,
+    pub front_length: f64,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Partition {
     pub key: String,
     pub parcels: Vec<Parcel>,
     pub warnings: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub diagnostics: Option<PartitionDiagnostics>,
+}
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PartitionDiagnostics {
+    pub covered_area: f64,
+    pub residual_area: f64,
+    pub overlap_area: f64,
+    pub unserved_area: f64,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase", deny_unknown_fields)]
+pub struct FootprintConfig {
+    pub mechanism: String,
+    pub family: String,
+    pub budget: String,
+    pub gross_density: f64,
+    pub aspect: f64,
+    pub orientation: f64,
+    pub nuclei: usize,
+    pub irregularity: f64,
+    pub anisotropy: f64,
+    pub separation: f64,
+    pub epochs: usize,
+}
+impl Default for FootprintConfig {
+    fn default() -> Self {
+        Self {
+            mechanism: "auto".into(),
+            family: "auto".into(),
+            budget: "population".into(),
+            gross_density: 0.0,
+            aspect: 1.4,
+            orientation: 0.0,
+            nuclei: 3,
+            irregularity: 0.2,
+            anisotropy: 0.65,
+            separation: 1.3,
+            epochs: 3,
+        }
+    }
+}
+fn legacy_footprint() -> FootprintConfig {
+    FootprintConfig {
+        mechanism: "legacy".into(),
+        budget: "radius".into(),
+        ..FootprintConfig::default()
+    }
+}
+fn cultural_access() -> String {
+    "cultural".into()
 }
 #[derive(Clone, Debug, Deserialize)]
 pub struct Site {
@@ -98,6 +238,29 @@ pub struct Site {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase", deny_unknown_fields)]
 pub struct LayoutConfig {
+    #[serde(default = "culture_axis")]
+    pub axis_alignment: String,
+    #[serde(default)]
+    pub site_adaptation: f64,
+    pub mix_culture: String,
+    pub mix_mode: String,
+    pub mix_share: f64,
+    pub mix_angle: f64,
+    #[serde(default = "legacy_exits")]
+    pub exit_treatment: String,
+    pub peripheral_road: String,
+    #[serde(default = "legacy_footprint")]
+    pub footprint: FootprintConfig,
+    pub tissue: String,
+    #[serde(default = "cultural_access")]
+    pub access_mode: String,
+    pub access_depth: f64,
+    pub access_budget: usize,
+    pub composition: String,
+    pub settlement_form: String,
+    pub suburbs: String,
+    /// Zero follows the cultural population thresholds.
+    pub phases: usize,
     pub culture: String,
     pub preset: String,
     pub recipe: String,
@@ -120,9 +283,26 @@ pub struct LayoutConfig {
 impl Default for LayoutConfig {
     fn default() -> Self {
         Self {
+            footprint: FootprintConfig::default(),
+            axis_alignment: "regional".into(),
+            site_adaptation: 1.0,
+            mix_culture: String::new(),
+            mix_mode: "phases".into(),
+            mix_share: 0.5,
+            mix_angle: 0.0,
+            exit_treatment: "adaptive".into(),
+            peripheral_road: "auto".into(),
+            tissue: "culture".into(),
+            access_mode: "adaptive".into(),
+            access_depth: 0.0,
+            access_budget: 4,
+            composition: "settlement".into(),
+            settlement_form: "auto".into(),
+            suburbs: "auto".into(),
+            phases: 0,
             culture: "site".into(),
             preset: "culture".into(),
-            recipe: "core".into(),
+            recipe: "auto".into(),
             zone: "auto".into(),
             density: 1.0,
             count: 4,
@@ -140,9 +320,16 @@ impl Default for LayoutConfig {
         }
     }
 }
+fn legacy_exits() -> String {
+    "legacy".into()
+}
+fn culture_axis() -> String {
+    "culture".into()
+}
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase", deny_unknown_fields)]
 pub struct ParcelConfig {
+    pub operator: String,
     pub culture: String,
     pub preset: String,
     pub recipe: String,
@@ -153,9 +340,10 @@ pub struct ParcelConfig {
 impl Default for ParcelConfig {
     fn default() -> Self {
         Self {
+            operator: "culture".into(),
             culture: "site".into(),
             preset: "culture".into(),
-            recipe: "core".into(),
+            recipe: "auto".into(),
             zone: "auto".into(),
             density: 1.0,
             params: json!({}),
@@ -165,6 +353,7 @@ impl Default for ParcelConfig {
 
 #[derive(Clone, Copy)]
 pub struct Surface<'a> {
+    pub geometry: Option<&'a Geography>,
     pub width: f64,
     pub n: usize,
     pub height: &'a [f32],
@@ -186,14 +375,50 @@ impl Surface<'_> {
         if p.x < 0.0 || p.y < 0.0 || p.x >= self.width || p.y >= self.width {
             return true;
         }
+        if let Some(geometry) = self.geometry {
+            return geometry.wet(p);
+        }
         let x = (p.x / self.width * self.n as f64) as usize;
         let y = (p.y / self.width * self.n as f64) as usize;
         self.water[y.min(self.n - 1) * self.n + x.min(self.n - 1)] != 0
     }
 }
 
+#[derive(Clone)]
 pub(super) struct Morph {
     pub value: Value,
+}
+/// Tissue is independent from footprint and cultural defaults. Access recipes stay cultural.
+pub(super) fn with_tissue(mut morph: Morph, tissue: &str) -> Morph {
+    match tissue {
+        "grid" => {
+            morph.value["streetOp"] = json!("grid");
+            morph.value["fieldNoise"] = json!(0.0);
+        }
+        "organic" => {
+            morph.value["streetOp"] = json!("organic");
+            morph.value["fieldRandom"] = json!(0.6);
+        }
+        "radial" => {
+            morph.value["streetOp"] = json!("organic");
+            morph.value["fieldRandom"] = json!(0.0);
+        }
+        "terraces" => {
+            morph.value["streetOp"] = json!("organic");
+            morph.value["contourFollow"] = json!(1.0);
+        }
+        "dendritic" => {
+            morph.value["streetOp"] = json!("organic");
+            morph.value["closeOp"] = json!("derbs");
+            morph.value["deadEndRatio"] = json!(0.8);
+        }
+        "clusters" => {
+            morph.value["streetOp"] = json!("organic");
+            morph.value["closeOp"] = json!("closes");
+        }
+        _ => {}
+    }
+    morph
 }
 impl Morph {
     pub fn number(&self, key: &str) -> f64 {
@@ -254,7 +479,10 @@ fn resolve(
     }
     let cat = catalogue();
     let preset_id = if preset == "culture" {
-        format!("{culture}/{recipe}")
+        format!(
+            "{culture}/{}",
+            if recipe == "auto" { "core" } else { recipe }
+        )
     } else {
         preset.into()
     };
@@ -406,6 +634,79 @@ pub fn generate_quarters(
     surface: Surface<'_>,
     roads: &[Street],
 ) -> Result<Vec<Layout>, String> {
+    if !["regional", "culture"].contains(&config.axis_alignment.as_str())
+        || !config.site_adaptation.is_finite()
+        || !(0.0..=2.0).contains(&config.site_adaptation)
+        || !["phases", "sectors"].contains(&config.mix_mode.as_str())
+        || !config.mix_share.is_finite()
+        || !(0.0..=1.0).contains(&config.mix_share)
+        || !config.mix_angle.is_finite()
+        || !(-180.0..=180.0).contains(&config.mix_angle)
+        || (!config.mix_culture.is_empty()
+            && !catalogue()["cultures"][&config.mix_culture].is_object())
+        || !["legacy", "adaptive", "closed"].contains(&config.exit_treatment.as_str())
+        || !["auto", "none", "partial", "full"].contains(&config.peripheral_road.as_str())
+    {
+        return Err("Configuration des influences ou des sorties invalide".into());
+    }
+    let f = &config.footprint;
+    if ![
+        "auto",
+        "legacy",
+        "planned",
+        "accessibility",
+        "ribbon",
+        "fusion",
+    ]
+    .contains(&f.mechanism.as_str())
+        || ![
+            "auto",
+            "circle",
+            "rectangle",
+            "polygon",
+            "compact",
+            "elongated",
+            "linear",
+            "fan",
+            "fingers",
+            "dendritic",
+            "lobed",
+            "archipelago",
+            "composite",
+        ]
+        .contains(&f.family.as_str())
+        || !["population", "radius"].contains(&f.budget.as_str())
+        || !f.gross_density.is_finite()
+        || !(0.0..=1000.0).contains(&f.gross_density)
+        || !f.aspect.is_finite()
+        || !(1.0..=6.0).contains(&f.aspect)
+        || !f.orientation.is_finite()
+        || !(-180.0..=180.0).contains(&f.orientation)
+        || !(1..=6).contains(&f.nuclei)
+        || !(1..=5).contains(&f.epochs)
+        || !f.irregularity.is_finite()
+        || !(0.0..=1.0).contains(&f.irregularity)
+        || !f.anisotropy.is_finite()
+        || !(0.0..=1.0).contains(&f.anisotropy)
+        || !f.separation.is_finite()
+        || !(0.4..=3.0).contains(&f.separation)
+        || ![
+            "culture",
+            "grid",
+            "organic",
+            "radial",
+            "terraces",
+            "dendritic",
+            "clusters",
+        ]
+        .contains(&config.tissue.as_str())
+        || !["adaptive", "cultural", "none"].contains(&config.access_mode.as_str())
+        || !config.access_depth.is_finite()
+        || !(0.0..=200.0).contains(&config.access_depth)
+        || config.access_budget > 12
+    {
+        return Err("Configuration d’empreinte, de tissu ou de desserte invalide".into());
+    }
     if surface.n < 2
         || !surface.width.is_finite()
         || surface.width <= 0.0
@@ -422,6 +723,10 @@ pub fn generate_quarters(
         return Err("Terrain ou routes urbaines invalides".into());
     }
     if sites.len() > 1000
+        || !["settlement", "district"].contains(&config.composition.as_str())
+        || !["auto", "nucleated", "ribbon"].contains(&config.settlement_form.as_str())
+        || !["auto", "none", "few", "many"].contains(&config.suburbs.as_str())
+        || config.phases > 5
         || !(3..=64).contains(&config.count)
         || !(1..=2).contains(&config.rings)
         || !config.radius.is_finite()
@@ -472,10 +777,12 @@ pub fn generate_quarters(
             &config.params,
             "quarters",
         )?;
+        let morph = with_tissue(morph, &config.tissue);
         let key_seed = format!("{seed}\u{1}settlement:{}", site.key);
-        out.push(quarters::generate(
-            &key_seed, site, config, &morph, surface, roads,
-        )?);
+        let mut layout = quarters::generate(&key_seed, site, config, &morph, surface, roads)?;
+        access::refine(&mut layout, config, &morph, surface);
+        access::summarize(&mut layout, config);
+        out.push(layout);
     }
     Ok(out)
 }
@@ -484,6 +791,19 @@ pub fn generate_parcels(
     layouts: &[Layout],
     config: &ParcelConfig,
 ) -> Result<Vec<Partition>, String> {
+    if ![
+        "culture",
+        "strips",
+        "oriented",
+        "frontage",
+        "compound",
+        "wholeBlock",
+        "garden",
+    ]
+    .contains(&config.operator.as_str())
+    {
+        return Err("Opérateur de parcelles inconnu".into());
+    }
     let mut out = vec![];
     for layout in layouts {
         let culture = if config.culture == "site" {

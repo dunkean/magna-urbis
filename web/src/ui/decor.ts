@@ -1,3 +1,4 @@
+import { decorGeography, type VectorGeography } from '../../../rust/bridge/urbanGeography';
 import { gunzipSync, gzipSync } from 'fflate';
 import type { RoadConfig, RoadOutput, Settlement, SettlementRaster } from '../../../rust/bridge/settlements';
 
@@ -46,7 +47,7 @@ export function encodeDecor(decor: Decor): Uint8Array {
   // Land cells keep their own height as water level: store water levels only on water.
   const level = new Float32Array(size);
   for (let i = 0; i < size; i++) level[i] = r.water[i] ? r.waterLevel[i] : 0;
-  const header = new TextEncoder().encode(JSON.stringify({ meta: decor.meta, width: r.width, n: r.n }));
+  const header = new TextEncoder().encode(JSON.stringify({ meta: decor.meta, width: r.width, n: r.n, geometry: r.geometry }));
   const parts = [shuffle(r.height), r.water, shuffle(level), shuffle(r.riverWidth), new Uint8Array(r.riverIds.buffer, r.riverIds.byteOffset, r.riverIds.byteLength)];
   const total = 12 + header.length + parts.reduce((s, p) => s + p.length, 0);
   const out = new Uint8Array(total), view = new DataView(out.buffer);
@@ -62,14 +63,16 @@ export function decodeDecor(data: Uint8Array): Decor {
   if (view.getUint32(0, true) !== MAGIC) throw new Error('Not a Magna Urbis decor file');
   if (view.getUint32(4, true) !== 1) throw new Error(`Unsupported decor version ${view.getUint32(4, true)}`);
   const headerLength = view.getUint32(8, true);
-  const header = JSON.parse(new TextDecoder().decode(raw.subarray(12, 12 + headerLength))) as { meta: DecorMeta; width: number; n: number };
+  const header = JSON.parse(new TextDecoder().decode(raw.subarray(12, 12 + headerLength))) as { meta: DecorMeta; width: number; n: number; geometry?: VectorGeography };
   const n = header.n, size = n * n;
   let offset = 12 + headerLength;
   const take = (bytes: number): Uint8Array => { const part = raw.slice(offset, offset + bytes); offset += bytes; return part; };
   const height = unshuffle(take(size * 4), size), water = take(size), waterLevel = unshuffle(take(size * 4), size);
   const riverWidth = unshuffle(take(size * 4), size), riverIds = new Int32Array(take(size * 4).buffer);
   for (let i = 0; i < size; i++) if (!water[i]) waterLevel[i] = height[i];
-  return { meta: header.meta, raster: { width: header.width, n, height, water, waterLevel, riverWidth, riverIds } };
+  const raster: SettlementRaster = { width: header.width, n, height, water, waterLevel, riverWidth, riverIds };
+  raster.geometry = header.geometry ?? decorGeography(raster, header.meta.waterSvg);
+  return { meta: header.meta, raster };
 }
 
 export const decorEntry = (meta: DecorMeta, file: string): DecorEntry => ({

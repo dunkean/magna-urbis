@@ -5,8 +5,9 @@ import { HOUSE_VARIATION_ENABLED, effectiveHouseVariation, deepMerge, type Morph
 import type { Polygon } from '../gen/core/geom';
 import { polygonCentroid } from '../gen/core/geom';
 import { waterContains } from '../gen/urban/waterland';
-import { createWorkshopClient, WORKSHOP_CHANNEL, workshopConfig, workshopOptions, workshopView, workshopStreetSvg, workshopEnclosureSvg, type WorkshopCatalogue, type WorkshopContext, type WorkshopResult, type WorkshopState } from './testbenchUrban';
+import { createWorkshopClient, WORKSHOP_CHANNEL, normalizeWorkshopContext, workshopConfig, workshopOptions, workshopView, workshopStreetSvg, workshopEnclosureSvg, type WorkshopCatalogue, type WorkshopContext, type WorkshopResult, type WorkshopState } from './testbenchUrban';
 import type { LayoutConfig, ParcelConfig } from '../../../rust/bridge/urban';
+import { normalizeLayoutConfig, normalizeParcelConfig } from '../../../rust/bridge/urbanConfig';
 import './testbench.css';
 
 const el = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T;
@@ -31,7 +32,11 @@ if (rustMode && !hosted) {
 }
 const nativeClient = createWorkshopClient();
 let nativeCatalogue: WorkshopCatalogue | undefined = hosted ? await nativeClient.catalogue() : undefined;
-function editorRecipes(id: string) { return rustMode && nativeCatalogue ? nativeCatalogue.cultures[id]?.recipes ?? [] : benchRecipes(getCulture(id)); }
+function editorRecipes(id: string) {
+  if (!rustMode || !nativeCatalogue) return benchRecipes(getCulture(id));
+  const recipes = nativeCatalogue.cultures[id]?.recipes ?? [];
+  return [{ id: 'auto', label: 'Par phase du plan', zone: 'core' as Zone, preset: `${id}/core` }, ...recipes];
+}
 function editorPresets() { return rustMode && nativeCatalogue ? nativeCatalogue.presets : BENCH_PRESETS; }
 function cultureLabel(id: string): string { return rustMode && nativeCatalogue ? nativeCatalogue.cultures[id]?.label ?? id : getCulture(id).label; }
 function validCulture(id: string): boolean { return !!(rustMode && nativeCatalogue ? nativeCatalogue.cultures[id] : CULTURES[id]); }
@@ -39,7 +44,7 @@ function editorMorph(options: BenchOptions, stage: BenchStage): MorphologyParams
   if (!rustMode || !nativeCatalogue) return benchMorph(options, stage);
   const config = options.stages?.[stage];
   if (config?.params) validateBenchParams(stage, config.params);
-  const preset = config?.preset && config.preset !== 'culture' ? config.preset : nativeCatalogue.cultures[options.culture]?.recipes.find(r => r.id === (options.recipe ?? 'core'))?.preset;
+  const preset = config?.preset && config.preset !== 'culture' ? config.preset : nativeCatalogue.cultures[options.culture]?.recipes.find(r => r.id === (options.recipe === 'auto' ? 'core' : options.recipe ?? 'core'))?.preset;
   const P = preset && nativeCatalogue.presets[preset]?.params;
   if (!P) throw new Error(`Recette native inconnue : ${options.culture}/${options.recipe}`);
   // Mirror the native resolver's five density-scaled fields before overrides.
@@ -69,8 +74,8 @@ function cultureMenus(): void {
 }
 let nativeResult: WorkshopResult | undefined;
 const nativeControls = document.createElement('fieldset'); nativeControls.hidden = true;
-nativeControls.innerHTML = '<legend>Plan urbain · Rust</legend><label>Enceinte <select data-native="fortification"><option value="culture">Selon la culture</option><option value="none">Ville ouverte</option><option value="wall">Muraille</option><option value="palisade">Palissade</option></select></label><label><input data-native="autoQuarterZones" type="checkbox">Progression des quartiers</label><label><input data-native="autoParcelZones" type="checkbox">Parcelles selon leur quartier</label><label>Pente maximale des rues <input data-native="maxStreetGrade" type="number" min="0.01" max="1" step="0.01"></label><label>Pente des ruelles <input data-native="maxLaneGrade" type="number" min="0.01" max="1" step="0.01"></label><label><input data-native="allowStairs" type="checkbox">Escaliers piétons</label><label>Pente des escaliers <input data-native="maxStairGrade" type="number" min="0.01" max="1" step="0.01"></label><small>0,12 = 12 %. La progression utilise les zones du plan ; décochez-la pour appliquer la zone sélectionnée partout.</small>';
-nativeControls.style.cssText = 'margin:8px 12px;gap:12px;flex-wrap:wrap;align-items:center';
+nativeControls.innerHTML = '<legend>Plan urbain · Rust</legend><label>Enceinte <select data-native="fortification"><option value="culture">Selon la culture</option><option value="none">Sans enceinte</option><option value="wall">Muraille</option><option value="palisade">Palissade</option></select></label><button data-remove-enclosure type="button">Retirer l’enceinte</button><label><input data-native="autoQuarterZones" type="checkbox">Progression des quartiers</label><label><input data-native="autoParcelZones" type="checkbox">Parcelles selon leur quartier</label><label>Pente maximale des rues <input data-native="maxStreetGrade" type="number" min="0.01" max="1" step="0.01"></label><label>Pente des ruelles <input data-native="maxLaneGrade" type="number" min="0.01" max="1" step="0.01"></label><label><input data-native="allowStairs" type="checkbox">Escaliers piétons</label><label>Pente des escaliers <input data-native="maxStairGrade" type="number" min="0.01" max="1" step="0.01"></label><small>0,12 = 12 %. La progression utilise les zones du plan ; décochez-la pour appliquer la zone sélectionnée partout.</small>';
+nativeControls.style.cssText = 'margin:8px 12px;gap:12px;flex-direction:row;flex-wrap:wrap;align-items:center';
 document.querySelector('header')!.after(nativeControls);
 nativeControls.addEventListener('change', changed);
 const initial: BenchOptions = { culture: 'european-organic', recipe: 'core', zone: 'core', placement: 'center', density: 1, count: 4, radius: 160, monument: 'none', stages: {} };
@@ -338,14 +343,15 @@ el('resetParams').onclick = () => {
 };
 for (const id of ['zone', 'placement', 'rings', 'density', 'microScale', 'microFrontage', 'count', 'radius', 'monument', 'relief', 'reliefSlope', 'river', 'riverWidth']) el(id).addEventListener('change', () => { syncMethods(); changed(); });
 function save(): void {
+  if (rustMode && state.urban) state.urban = normalizeWorkshopContext(state.urban);
   const bytes = new TextEncoder().encode(JSON.stringify(state));
   const payload = btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
   const params = new URLSearchParams({ case: payload });
   if (rustMode) params.set('engine', 'rust'); if (query.get('embedded') === '1') params.set('embedded', '1');
   history.replaceState(null, '', `${location.pathname}?${params}`);
   if (rustMode && state.urban?.layoutConfig && state.urban?.parcelConfig) nativeClient.state(payload, {
-    layoutConfig: { ...state.urban.layoutConfig, ...workshopConfig(state.options, state.urban, 'quarters') } as LayoutConfig,
-    parcelConfig: { ...state.urban.parcelConfig, ...workshopConfig(state.plotOptions, state.urban, 'parcels') } as ParcelConfig,
+    layoutConfig: workshopConfig(state.options, state.urban, 'quarters'),
+    parcelConfig: workshopConfig(state.plotOptions, state.urban, 'parcels'),
     quarterSeed: state.layoutSeed, parcelSeed: state.plotSeed,
   }, state.urban.source);
 }
@@ -449,9 +455,9 @@ function counts(ms?: number): void {
   el('pipeline').textContent = `${layout.options.mode === 'micro' ? 'Diversité · 10 micro formes' : layout.morph.streetOp + ' → ' + layout.morph.closeOp} → ${state.stage >= 2 ? benchMethod('plots', editorMorph(state.plotOptions, 'plots').plotOp) : '…'} → ${state.stage === 3 ? benchMethod('buildings', editorMorph(state.houseOptions, 'buildings').buildingOp) : '…'}`;
   status(`${rustMode ? 'Rust · ' : ''}${layout.quarters.length} ${layout.options.mode === 'micro' ? 'micro formes' : 'quartiers'} · ${layout.blocks.length} îlots · ${houses.parcels.filter(p => p.use === 'plot').length} parcelles constructibles · ${houses.parcels.filter(p => p.use === 'garden').length} arrière-terrains${rustMode ? '' : ` · ${houses.buildings.filter(b => b.kind !== 'garden').length} bâtiments`}${ms === undefined ? '' : ` · ${Math.round(ms)} ms`}${nativeResult?.layouts.flatMap(l => l.warnings).length ? ' · ' + nativeResult.layouts.flatMap(l => l.warnings).join(' ') : ''}`);
 }
-async function generate(action: 'layout' | 'parcels' | 'houses' | 'replay' | 'random' | 'load'): Promise<void> {
+async function generate(action: 'layout' | 'parcels' | 'houses' | 'replay' | 'random' | 'load' | 'fortification'): Promise<void> {
   if (busy) return;
-  if (action !== 'load') {
+  if (action !== 'load' && action !== 'fortification') {
     const invalid = document.querySelector<HTMLInputElement>('.operator-params input:invalid');
     if (invalid) { invalid.reportValidity(); status('Corriger les paramètres invalides avant de générer.'); return; }
   }
@@ -463,9 +469,9 @@ async function generate(action: 'layout' | 'parcels' | 'houses' | 'replay' | 'ra
   const previous = structuredClone(state);
   const previousLayout = layout, previousPartition = partition, previousHouses = houses, previousNative = nativeResult;
   try {
-    const settings = controls();
+    const settings = action === 'fortification' ? state.options : controls();
     for (const stage of BENCH_STAGES) if (!rustMode || stage !== 'buildings') editorMorph(settings, stage);
-    if (action !== 'load') state.settings = settings;
+    if (action !== 'load' && action !== 'fortification') state.settings = settings;
     if (action === 'layout') {
       state.options = settings; state.layoutSeed = input('layoutSeed').value || '42'; state.stage = 1; state.pins = [];
     }
@@ -485,8 +491,10 @@ async function generate(action: 'layout' | 'parcels' | 'houses' | 'replay' | 'ra
       state.layoutSeed = input('layoutSeed').value || '42'; state.plotSeed = input('plotSeed').value || '42'; state.houseSeed = input('houseSeed').value || '42';
     }
     if (rustMode) {
-      state.engine = 'rust'; state.urban ??= { source: 'fixture' };
-      if (action !== 'load') {
+      state.engine = 'rust'; state.urban = normalizeWorkshopContext(state.urban ?? { source: 'fixture' });
+      if (action === 'fortification') {
+        state.urban.layoutConfig = { ...state.urban.layoutConfig, fortification: 'none' } as LayoutConfig;
+      } else if (action !== 'load') {
         const native: Record<string, unknown> = {};
         for (const control of Array.from(nativeControls.querySelectorAll<HTMLInputElement | HTMLSelectElement>('[data-native]'))) {
           if (!control.checkValidity()) { control.reportValidity(); throw new Error('Corrigez les paramètres du plan urbain.'); }
@@ -497,7 +505,7 @@ async function generate(action: 'layout' | 'parcels' | 'houses' | 'replay' | 'ra
         if (['parcels', 'replay', 'random'].includes(action)) state.urban.parcelConfig = { ...state.urban.parcelConfig, zone: parcelZone } as ParcelConfig;
       }
       if (state.stage === 3) state.stage = 2;
-      if (action === 'layout' || action === 'replay' || action === 'random' || action === 'load') nativeResult = await nativeClient.generate({ kind: 'quarters', options: state.options, seed: state.layoutSeed, context: state.urban });
+      if (action === 'layout' || action === 'replay' || action === 'random' || action === 'load' || action === 'fortification') nativeResult = await nativeClient.generate({ kind: 'quarters', options: state.options, seed: state.layoutSeed, context: state.urban });
       if (!nativeResult) throw new Error('Générez d’abord les quartiers.');
       if (state.stage >= 2) nativeResult = await nativeClient.generate({ kind: 'parcels', options: state.plotOptions, seed: state.plotSeed, context: { ...state.urban, layoutConfig: nativeResult.layoutConfig }, layouts: nativeResult.layouts });
       state.urban = { ...state.urban, layoutConfig: nativeResult.layoutConfig, parcelConfig: nativeResult.parcelConfig };
@@ -511,7 +519,8 @@ async function generate(action: 'layout' | 'parcels' | 'houses' | 'replay' | 'ra
       houses = state.stage === 3 ? benchBuildings(layout, partition, state.houseSeed, state.houseOptions) : { parcels: partition.parcels, buildings: [] };
     }
     if (action === 'layout' || action === 'replay' || action === 'random') fit();
-    restoreControls(); render(); save();
+    if (action !== 'fortification') restoreControls();
+    render(); save();
     counts(performance.now() - start);
   } catch (error) {
     state = previous; layout = previousLayout; partition = previousPartition; houses = previousHouses; nativeResult = previousNative;
@@ -524,6 +533,11 @@ async function generate(action: 'layout' | 'parcels' | 'houses' | 'replay' | 'ra
 el('layout').onclick = () => void generate('layout');
 el('parcels').onclick = () => void generate('parcels');
 el('houses').onclick = () => void generate('houses');
+nativeControls.querySelector<HTMLButtonElement>('[data-remove-enclosure]')!.onclick = () => {
+  if (busy) return;
+  nativeControls.querySelector<HTMLSelectElement>('[data-native="fortification"]')!.value = 'none';
+  void generate('fortification');
+};
 for (const [id, action] of [
   ['streetsPreset', 'layout'], ['streetOp', 'layout'],
   ['plotsPreset', 'parcels'], ['plotOp', 'parcels'],
@@ -663,6 +677,7 @@ try {
       if (options.riverWidth !== undefined && (!Number.isFinite(options.riverWidth) || options.riverWidth < 4 || options.riverWidth > 50)) throw new Error('Largeur rivière invalide');
       for (const stage of BENCH_STAGES) if (!rustMode || stage !== 'buildings') editorMorph(options, stage);
     }
+    if (parsed.urban) parsed.urban = normalizeWorkshopContext(parsed.urban);
     state = parsed;
   }
 } catch { status('URL invalide, paramètres par défaut.'); }
@@ -675,7 +690,8 @@ function receiveWorkshop(event: MessageEvent): void {
     restoreControls(); void generate('replay'); return;
   }
   if (event.source !== window.parent || event.origin !== (location.protocol === 'file:' ? 'null' : location.origin) || event.data?.channel !== WORKSHOP_CHANNEL || event.data.type !== 'import') return;
-  const imported = event.data.state as WorkshopState;
+  const incoming = event.data.state as WorkshopState;
+  const imported = { ...incoming, layoutConfig: normalizeLayoutConfig(incoming?.layoutConfig, true), parcelConfig: normalizeParcelConfig(incoming?.parcelConfig) };
   if (!imported?.layouts?.length) return;
   rustMode = true; state.engine = 'rust';
   const first = imported.layouts[0];

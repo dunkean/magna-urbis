@@ -24,11 +24,336 @@ fn lerp(a: Point, b: Point, t: f64) -> Point {
 fn protected(s: &Street) -> bool {
     matches!(
         s.role.as_str(),
-        "regional" | "bridge" | "ford" | "causeway" | "approach"
+        "regional" | "bridge" | "ford" | "causeway" | "approach" | "peripheral" | "outbound"
     )
 }
+
+/// Resolve real outer leaves before carving blocks: joins, rural paths or closed
+/// access ends. Enclosed towns retain their wall/gate termination semantics.
+pub(super) fn resolve_exits(
+    streets: &mut Vec<Street>,
+    quarters: &[super::Quarter],
+    roads: &[Street],
+    surface: super::Surface<'_>,
+    cfg: &super::LayoutConfig,
+    rng: &mut crate::rng::Rng,
+) {
+    use super::{geometry as g, routing};
+    let domains = g::union(&quarters.iter().map(|q| q.shape.clone()).collect::<Vec<_>>());
+    let graph = Graph::new(streets);
+    let boundary = |p: Point| {
+        domains
+            .iter()
+            .flat_map(|s| std::iter::once(&s.outer).chain(s.holes.iter()))
+            .flat_map(|ring| {
+                ring.iter()
+                    .zip(ring.iter().cycle().skip(1))
+                    .take(ring.len())
+            })
+            .map(|(&a, &b)| g::distance(p, a, b).0)
+            .fold(f64::INFINITY, f64::min)
+    };
+    let mut leaves = vec![];
+    for (i, s) in streets.iter().enumerate() {
+        if private(s) || matches!(s.role.as_str(), "quay" | "bridge" | "ford" | "causeway") {
+            continue;
+        }
+        for end in [false, true] {
+            let j = if end { s.path.len() - 1 } else { 0 };
+            let p = s.path[j];
+            if graph.degree(p) == 1 && boundary(p) < width(s, j).max(10.0) {
+                leaves.push((i, end, p));
+            }
+        }
+    }
+    let mut served = BTreeSet::new();
+    let mut feeders = 0;
+    let make = |path: Vec<Point>, w: f64, role: &str| Street {
+        widths: vec![w; path.len()],
+        path,
+        rank: 2,
+        role: role.into(),
+    };
+    // Circumferential sections connect pairs of actual streets. No ornamental
+    // circle and no arc can be left attached at only one end.
+    if cfg.exit_treatment != "closed" && cfg.peripheral_road != "none" {
+        for domain in &domains {
+            // The centreline follows the actual land boundary. Its inner half
+            // is carved from the blocks, so frontage touches the road exactly.
+            for ring in std::iter::once(&domain.outer) {
+                let mut stations = vec![0.0];
+                for j in 0..ring.len() {
+                    stations.push(stations[j] + distance(ring[j], ring[(j + 1) % ring.len()]));
+                }
+                let mut anchors: Vec<_> = leaves
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(id, &(_, _, p))| {
+                        let (j, (d, t, q)) = (0..ring.len())
+                            .map(|j| (j, g::distance(p, ring[j], ring[(j + 1) % ring.len()])))
+                            .min_by(|a, b| a.1.0.total_cmp(&b.1.0))?;
+                        (d < 30.0).then_some((
+                            stations[j] + t * distance(ring[j], ring[(j + 1) % ring.len()]),
+                            j,
+                            q,
+                            id,
+                            p,
+                        ))
+                    })
+                    .collect();
+                anchors.sort_by(|a, b| a.0.total_cmp(&b.0));
+                if anchors.len() < 2 {
+                    continue;
+                }
+                let mut ring_widths: Vec<_> = anchors
+                    .iter()
+                    .map(|a| {
+                        let (i, end, _) = leaves[a.3];
+                        width(&streets[i], if end { streets[i].path.len() - 1 } else { 0 })
+                    })
+                    .collect();
+                ring_widths.sort_by(f64::total_cmp);
+                let ring_width = ring_widths[ring_widths.len() / 2].clamp(3.0, 8.0);
+                let full = cfg.peripheral_road == "full";
+                for k in 0..anchors.len() {
+                    if !full
+                        && (k == anchors.len() - 1
+                            || cfg.peripheral_road == "auto" && !rng.chance(0.35))
+                    {
+                        continue;
+                    }
+                    let a = anchors[k];
+                    let b = anchors[(k + 1) % anchors.len()];
+                    let mut path = vec![a.4, a.2];
+                    let mut j = (a.1 + 1) % ring.len();
+                    while j != (b.1 + 1) % ring.len() {
+                        path.push(ring[j]);
+                        j = (j + 1) % ring.len();
+                    }
+                    path.extend([b.2, b.4]);
+                    // Reuse a close parallel corridor rather than laying a
+                    // second ribbon beside it. Original junctions stay fixed.
+                    if path.len() > 3 {
+                        for j in 1..path.len() - 1 {
+                            let dx = path[j + 1].x - path[j - 1].x;
+                            let dy = path[j + 1].y - path[j - 1].y;
+                            let run = dx.hypot(dy).max(1e-6);
+                            let closest = streets
+                                .iter()
+                                .filter(|s| !private(s) && s.role != "stairs")
+                                .flat_map(|s| {
+                                    let p = path[j];
+                                    s.path.windows(2).enumerate().filter_map(move |(i, pair)| {
+                                        let sx = pair[1].x - pair[0].x;
+                                        let sy = pair[1].y - pair[0].y;
+                                        let length = sx.hypot(sy);
+                                        if length < EPS
+                                            || ((dx * sx + dy * sy) / (run * length)).abs() < 0.94
+                                        {
+                                            return None;
+                                        }
+                                        let (d, _, q) = g::distance(p, pair[0], pair[1]);
+                                        (d < (width(s, i) + ring_width) * 0.5 + 2.0)
+                                            .then_some((d, q))
+                                    })
+                                })
+                                .min_by(|a, b| a.0.total_cmp(&b.0));
+                            if let Some((_, q)) = closest {
+                                path[j] = q;
+                            }
+                        }
+                    }
+                    path.dedup_by(|a, b| distance(*a, *b) < 1e-6);
+                    if routing::path_clear(surface, &path, cfg.max_street_grade) {
+                        streets.push(make(path, ring_width, "peripheral"));
+                        served.extend([a.3, b.3]);
+                    }
+                }
+            }
+        }
+    }
+    for (id, &(i, end, p)) in leaves.iter().enumerate() {
+        let ring_served = served.contains(&id);
+        let s = &streets[i];
+        if s.path.len() < 2 {
+            continue;
+        }
+        let adjacent = s.path[if end { s.path.len() - 2 } else { 1 }];
+        let run = distance(adjacent, p).max(1e-6);
+        let direction = Point {
+            x: (p.x - adjacent.x) / run,
+            y: (p.y - adjacent.y) / run,
+        };
+        // Local feeders can reach a regional axis beyond the immediate urban edge.
+        let reach = 360.0;
+        let mut targets: Vec<_> = roads
+            .iter()
+            .flat_map(|s| {
+                s.path
+                    .windows(2)
+                    .enumerate()
+                    .map(move |(i, seg)| (seg, width(s, i), width(s, i + 1)))
+            })
+            .filter_map(|(seg, wa, wb)| {
+                let (d, t, q) = g::distance(p, seg[0], seg[1]);
+                (d > 1.0
+                    && d < reach
+                    && !domains.iter().any(|s| g::contains(s, q))
+                    && (q.x - p.x) * direction.x + (q.y - p.y) * direction.y > -5.0)
+                    .then_some((d, q, wa * (1.0 - t) + wb * t))
+            })
+            .collect();
+        targets.sort_by(|a, b| a.0.total_cmp(&b.0));
+        let mut joined = false;
+        if cfg.exit_treatment != "closed" && feeders < 3 {
+            let mut planner = routing::RoutePlanner::new(
+                surface,
+                (p.x - reach, p.y - reach, p.x + reach, p.y + reach),
+            );
+            for &(_, target, target_width) in targets.iter().take(4) {
+                if let Some(path) = planner.route(p, target, cfg.max_lane_grade) {
+                    let source_width =
+                        width(&streets[i], if end { streets[i].path.len() - 1 } else { 0 });
+                    let mut connection = make(path, source_width, "outbound");
+                    if connection
+                        .path
+                        .windows(2)
+                        .map(|w| distance(w[0], w[1]))
+                        .sum::<f64>()
+                        > 60.0
+                    {
+                        // Keep the urban junction width, then narrow into a small connector.
+                        connection.widths.fill(2.5);
+                        connection.path.reverse();
+                        connection.widths.reverse();
+                        super::widths::taper_end(&mut connection, source_width);
+                        connection.path.reverse();
+                        connection.widths.reverse();
+                        connection.rank = 3;
+                    }
+                    super::widths::taper_end(&mut connection, target_width);
+                    streets.push(connection);
+                    feeders += 1;
+                    joined = true;
+                    break;
+                }
+            }
+            // A minority become genuine narrow rural paths into the landscape.
+            if !joined && !ring_served && !protected(&streets[i]) && rng.chance(0.18) {
+                let target = Point {
+                    x: p.x + direction.x * 80.0,
+                    y: p.y + direction.y * 80.0,
+                };
+                if !domains.iter().any(|s| g::contains(s, target))
+                    && let Some(path) = planner.route(p, target, cfg.max_lane_grade)
+                {
+                    let mut st = make(path, 2.0, "outbound");
+                    st.rank = 3;
+                    let last = st.widths.len() - 1;
+                    st.widths[last] = 1.0;
+                    streets.push(st);
+                    joined = true;
+                }
+            }
+        }
+        if joined || ring_served || protected(&streets[i]) {
+            continue;
+        }
+        // Retract the terminal corridor into its land cell. Its reclaimed ribbon
+        // belongs to the block/parcel partition, closing the end with backland.
+        let s = &mut streets[i];
+        if !end {
+            s.path.reverse();
+            s.widths.reverse();
+        }
+        let mut retract = 14.0;
+        while s.path.len() >= 2 {
+            let last = s.path.len() - 1;
+            let length = distance(s.path[last - 1], s.path[last]);
+            if length > retract {
+                s.path[last] = lerp(s.path[last], s.path[last - 1], retract / length);
+                break;
+            }
+            let junction = graph.degree(s.path[last - 1]) >= 3;
+            retract -= length;
+            s.path.pop();
+            s.widths.pop();
+            if junction {
+                break;
+            }
+        }
+        if !end {
+            s.path.reverse();
+            s.widths.reverse();
+        }
+    }
+    streets.retain(|s| s.path.len() >= 2);
+}
 fn private(s: &Street) -> bool {
-    matches!(s.role.as_str(), "close" | "derb" | "hutong" | "roji")
+    matches!(
+        s.role.as_str(),
+        "close" | "derb" | "hutong" | "roji" | "collective" | "private"
+    )
+}
+
+/// A frequent intramural lane abuts the wall's inner face. Other seeds retain
+/// plots against the enclosure; unsupported hillside fragments are discarded by
+/// the shared network cleanup rather than inventing a dry crossing.
+pub(super) fn enclosure_lanes(
+    streets: &mut Vec<Street>,
+    enclosures: &[super::Enclosure],
+    surface: super::Surface<'_>,
+    cfg: &super::LayoutConfig,
+    rng: &mut crate::rng::Rng,
+) {
+    use super::{geometry as g, routing};
+    use geo::Buffer;
+    for enclosure in enclosures {
+        if !rng.chance(0.8) {
+            continue;
+        }
+        let wall_half = if enclosure.kind == "wall" { 1.5 } else { 0.75 };
+        let w = if enclosure.kind == "wall" { 4.0 } else { 3.0 };
+        let mut outer = enclosure.path.clone();
+        if outer.len() > 2 && distance(outer[0], *outer.last().unwrap()) < EPS {
+            outer.pop();
+        }
+        let shape = g::normalized(super::Shape {
+            outer,
+            holes: vec![],
+        });
+        for shape in g::shapes(g::polygon(&shape).buffer(-wall_half - w * 0.5)) {
+            let mut path = vec![];
+            for (&a, &b) in shape
+                .outer
+                .iter()
+                .zip(shape.outer.iter().cycle().skip(1))
+                .take(shape.outer.len())
+            {
+                if routing::segment_clear(surface, a, b, cfg.max_street_grade) {
+                    if path.is_empty() {
+                        path.push(a);
+                    }
+                    path.push(b);
+                } else if path.len() >= 2 {
+                    streets.push(Street {
+                        widths: vec![w; path.len()],
+                        path: std::mem::take(&mut path),
+                        rank: 2,
+                        role: "wall-lane".into(),
+                    });
+                }
+            }
+            if path.len() >= 2 {
+                streets.push(Street {
+                    widths: vec![w; path.len()],
+                    path,
+                    rank: 2,
+                    role: "wall-lane".into(),
+                });
+            }
+        }
+    }
 }
 fn width(s: &Street, i: usize) -> f64 {
     s.widths
@@ -361,8 +686,35 @@ pub(super) fn clean(
     radius: f64,
     fortified: bool,
 ) -> Vec<String> {
+    clean_with_centers(streets, center, radius, fortified, &[])
+}
+
+pub(super) fn clean_with_centers(
+    streets: &mut Vec<Street>,
+    center: Point,
+    radius: f64,
+    fortified: bool,
+    centers: &[Point],
+) -> Vec<String> {
     planarize(streets, radius);
-    let graph = Graph::new(streets);
+    let mut graph = Graph::new(streets);
+    for &p in centers {
+        if let Some((d, s)) = streets
+            .iter()
+            .map(|s| {
+                let d = s
+                    .path
+                    .windows(2)
+                    .map(|w| super::geometry::distance(p, w[0], w[1]).0)
+                    .fold(f64::INFINITY, f64::min);
+                (d, s)
+            })
+            .min_by(|a, b| a.0.total_cmp(&b.0))
+            && d < radius.max(30.0)
+        {
+            graph.anchored[graph.component[&key(s.path[0])]] = true;
+        }
+    }
     let has_anchor = graph.anchored.iter().any(|&v| v);
     let largest = graph
         .length
@@ -385,10 +737,15 @@ pub(super) fn clean(
             .iter_mut()
             .filter(|s| !protected(s) && !private(s) && s.role != "quay")
         {
-            trim_end(s, &graph, center, radius);
+            let local_center = centers
+                .iter()
+                .copied()
+                .min_by(|a, b| distance(*a, s.path[0]).total_cmp(&distance(*b, s.path[0])))
+                .unwrap_or(center);
+            trim_end(s, &graph, local_center, radius);
             s.path.reverse();
             s.widths.reverse();
-            trim_end(s, &graph, center, radius);
+            trim_end(s, &graph, local_center, radius);
             s.path.reverse();
             s.widths.reverse();
         }
@@ -407,6 +764,71 @@ pub(super) fn clean(
 mod tests {
     use super::*;
 
+    #[test]
+    fn fringe_exits_form_connected_peripheral_sections_or_reclaimed_caps() {
+        let h = vec![20.0; 64 * 64];
+        let water = vec![0; h.len()];
+        let surface = super::super::Surface {
+            geometry: None,
+            width: 400.0,
+            n: 64,
+            height: &h,
+            water: &water,
+        };
+        let quarter = super::super::Quarter {
+            shape: super::super::geometry::rectangle(80.0, 80.0, 320.0, 320.0),
+            phase: 0,
+            zone: "core".into(),
+        };
+        let initial = vec![
+            street(&[(80.0, 200.0), (200.0, 200.0), (320.0, 200.0)], "street"),
+            street(&[(200.0, 80.0), (200.0, 200.0), (200.0, 320.0)], "street"),
+        ];
+        let cfg = super::super::LayoutConfig {
+            peripheral_road: "full".into(),
+            ..Default::default()
+        };
+        let mut streets = initial.clone();
+        resolve_exits(
+            &mut streets,
+            std::slice::from_ref(&quarter),
+            &[],
+            surface,
+            &cfg,
+            &mut crate::rng::Rng::new("exits"),
+        );
+        planarize(&mut streets, 120.0);
+        let graph = Graph::new(&streets);
+        assert!(streets.iter().any(|s| s.role == "peripheral"));
+        assert!(graph.neighbors.values().all(|n| n.len() >= 2));
+        assert!(streets.iter().all(|s| super::super::routing::path_clear(
+            surface,
+            &s.path,
+            cfg.max_street_grade
+        )));
+        let mut streets = initial;
+        let cfg = super::super::LayoutConfig {
+            exit_treatment: "closed".into(),
+            ..cfg
+        };
+        resolve_exits(
+            &mut streets,
+            &[quarter],
+            &[],
+            surface,
+            &cfg,
+            &mut crate::rng::Rng::new("exits"),
+        );
+        for s in &streets {
+            for p in [s.path[0], *s.path.last().unwrap()] {
+                assert!(
+                    p.x >= 94.0 && p.x <= 306.0 && p.y >= 94.0 && p.y <= 306.0,
+                    "{p:?}"
+                );
+            }
+        }
+    }
+
     fn street(points: &[(f64, f64)], role: &str) -> Street {
         Street {
             path: points.iter().map(|&(x, y)| Point { x, y }).collect(),
@@ -414,6 +836,56 @@ mod tests {
             rank: 2,
             role: role.into(),
         }
+    }
+
+    #[test]
+    fn local_feeder_reaches_a_regional_axis_beyond_the_immediate_fringe() {
+        use super::super::{LayoutConfig, Quarter, Surface, geometry as g};
+        let height = vec![20.0; 64 * 64];
+        let water = vec![0; height.len()];
+        let surface = Surface {
+            geometry: None,
+            width: 1000.0,
+            n: 64,
+            height: &height,
+            water: &water,
+        };
+        let quarter = Quarter {
+            shape: g::rectangle(200.0, 200.0, 400.0, 400.0),
+            phase: 0,
+            zone: "core".into(),
+        };
+        let mut streets = vec![street(
+            &[(200.0, 300.0), (300.0, 300.0), (400.0, 300.0)],
+            "street",
+        )];
+        let roads = vec![street(&[(650.0, 100.0), (650.0, 900.0)], "regional")];
+        let cfg = LayoutConfig {
+            peripheral_road: "none".into(),
+            ..Default::default()
+        };
+        resolve_exits(
+            &mut streets,
+            &[quarter],
+            &roads,
+            surface,
+            &cfg,
+            &mut crate::rng::Rng::new("feeder"),
+        );
+        let feeder = streets
+            .iter()
+            .find(|s| s.role == "outbound" && (s.path.last().unwrap().x - 650.0).abs() < 0.001)
+            .unwrap();
+        assert_eq!(feeder.path[0], Point { x: 400.0, y: 300.0 });
+        assert_eq!(feeder.rank, 3);
+        assert!(feeder.widths.iter().any(|w| *w <= 2.5));
+        assert!((feeder.widths[0] - 5.0).abs() < 0.001);
+        assert!((feeder.widths.last().unwrap() - 5.0).abs() < 0.001);
+        assert!(super::super::routing::path_clear(
+            surface,
+            &feeder.path,
+            cfg.max_lane_grade
+        ));
     }
 
     #[test]

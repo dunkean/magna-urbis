@@ -8,3 +8,29 @@
 .urban-stage [data-warnings] { white-space: pre-line; font-size: 11px; color: #956228; }
 .urban-stage [aria-busy="true"] { opacity: .6; }
 .urban-stage summary > span { font-size: 10px; float: right; }
+.urban-stage [hidden] { display: none !important; }
+.urban-composition-controls { padding: 7px; border: 1px solid #c5d5c9; border-radius: 5px; background: #f3f7f1; }
+.urban-composition-controls label, .urban-stage [data-fixture-settings] label { display: flex; justify-content: space-between; align-items: center; gap: 5px; margin-bottom: 5px; }
+.urban-composition { font-size: 11px; }
+.urban-composition table { width: 100%; border-collapse: collapse; margin-top: 5px; }
+.urban-composition caption { text-align: left; font-size: 10px; color: #5c695f; margin-bottom: 4px; }
+.urban-composition th, .urban-composition td { text-align: left; padding: 4px; border-bottom: 1px solid #dce5da; }
+.urban-composition td { text-align: right; white-space: nowrap; }
+.urban-composition small { display: block; font-weight: normal; }
+.urban-swatch { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 5px; }
+.urban-enclosure-controls { margin-top: 8px; padding-top: 8px; border-top: 1px solid #c5d5c9; }
+.urban-enclosure-controls small { display: block; margin-top: 5px; }
+.urban-footprint-controls { margin-bottom: 8px; }
+.urban-footprint-controls summary { cursor: pointer; font-weight: 600; margin-bottom: 5px; }
+.urban-stage .urban-footprint-controls select, .urban-stage [data-config="tissue"], .urban-stage [data-config="operator"] { max-width: 62%; }
+.urban-stage .urban-metrics { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 3px 8px; margin: 7px 0; font-size: 11px; }
+.urban-stage .urban-metrics dt, .urban-stage .urban-metrics dd { margin: 0; }
+.urban-stage .urban-metrics dd { text-align: right; font-variant-numeric: tabular-nums; }
+.urban-composition article, .urban-diagnostics article { margin-bottom: 8px; }
+.urban-composition ul, .urban-composition ol { padding-left: 18px; margin: 5px 0; }
+
+.urban-stage .urban-actions { position: sticky; top: 0; z-index: 3; display: grid; gap: 4px; padding: 6px 0; background: #f7faf6; }
+.urban-stage .urban-actions button { width: 100%; font-weight: 600; }
+.urban-stage .urban-tissue-controls { padding-top: 8px; border-top: 1px solid #c5d5c9; }
+.urban-stage .advanced { margin: 5px 0; }
+.urban-stage .advanced > summary { cursor: pointer; }

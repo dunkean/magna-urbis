@@ -1,6 +1,6 @@
 # Magna Urbis - Rust / WASM engine
 
-**Alpha, under development.** This experimental engine is gradually catching up with the TypeScript implementation. Relief, erosion, coasts and hydrology are under development; urban generation and full application integration remain to come.
+**Alpha, under development.** This experimental engine is gradually catching up with the TypeScript implementation. Relief, erosion, coasts, hydrology, regional roads, urban footprints, street fabrics, blocks and parcels are available in the benches. Full application integration and buildings on these native city layouts remain separate work.
 
 The [main README](../README.md) introduces the project and shows screenshots of the TypeScript application. The long-term goal is integration into [Neural Earth](https://github.com/dunkean/neural-earth), developed in Infinite Map.
 
@@ -26,6 +26,21 @@ The terrain bench can also take its relief from Terrain Diffusion's coarse → b
 The neural controls live in `terrainbench.html`, including sketch, climate,
 conditioning noise, coarse steps, local relief passed to base, histogram and
 decoder detail. Old `neuralbench.html` links redirect there with their settings.
+
+## Neural Earth display style
+
+Choose **Render · Neural Earth** in the terrain bench's style menu (`style=render`
+in shared links). The material compositor is copied from Infinite Map's Neural
+Earth and translated from WGSL to GLSL: continuous grass and forest coverage,
+exposed rock, snow, beaches and depth-coloured sea. It works with both terrain
+sources and the existing lighting, water, contours and exports. Display and SVG
+raster preparation share the material shader and require WebGL2.
+
+The bench supplies its regional temperature and rainfall. Material settings use
+Neural Earth's defaults (summer); the soil and seasonal climate inputs are local
+approximations because its geographic pedology/climate atlases are absent here.
+Terrain generation is unchanged. The port lives in `bridge/terrainMaterial.ts`
+and remains part of the temporary renderer, outside the Rust engine.
 
 ## Coarse terrain editor
 

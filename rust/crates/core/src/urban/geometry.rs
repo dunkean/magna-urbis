@@ -1,6 +1,6 @@
 //! Exact polygon operations shared by the two urban stages (coordinates in metres).
 use super::{Point, Shape, Surface};
-use geo::{Area, BooleanOps, Centroid, Coord, LineString, Polygon};
+use geo::{Area, BooleanOps, Centroid, Coord, InteriorPoint, LineString, Polygon};
 
 pub(super) fn signed(r: &[Point]) -> f64 {
     r.iter()
@@ -62,6 +62,46 @@ pub(super) fn centroid(s: &Shape) -> Point {
         .map(|p| Point { x: p.x(), y: p.y() })
         .unwrap_or(Point { x: 0.0, y: 0.0 })
 }
+/// Unlike a centroid, this lies in the polygon, including concave domains and holes.
+pub(super) fn interior_point(s: &Shape) -> Point {
+    let c = centroid(s);
+    if contains(s, c) {
+        return c;
+    }
+    polygon(s)
+        .interior_point()
+        .map(|p| Point { x: p.x(), y: p.y() })
+        .unwrap_or(c)
+}
+
+pub(super) fn union(shapes: &[Shape]) -> Vec<Shape> {
+    self::shapes(geo::algorithm::bool_ops::unary_union(
+        &shapes.iter().map(polygon).collect::<Vec<_>>(),
+    ))
+}
+
+/// Check every interval cut by outer and hole boundaries, not just sampled endpoints.
+pub(super) fn segment_within(s: &Shape, a: Point, b: Point) -> bool {
+    let mut ts = vec![0.0, 1.0];
+    for r in std::iter::once(&s.outer).chain(s.holes.iter()) {
+        for (&c, &d) in r.iter().zip(r.iter().cycle().skip(1)).take(r.len()) {
+            if let Some((t, _)) = segment_hit(a, b, c, d) {
+                ts.push(t.clamp(0.0, 1.0));
+            }
+        }
+    }
+    ts.sort_by(f64::total_cmp);
+    ts.windows(2).all(|w| {
+        let t = (w[0] + w[1]) * 0.5;
+        contains(
+            s,
+            Point {
+                x: a.x + (b.x - a.x) * t,
+                y: a.y + (b.y - a.y) * t,
+            },
+        )
+    })
+}
 pub(super) fn contains(s: &Shape, p: Point) -> bool {
     // This is the hottest operation during tracing. Avoid allocating a geo
     // polygon and copying every ring for each five-metre integration step.
@@ -75,6 +115,56 @@ pub(super) fn contains(s: &Shape, p: Point) -> bool {
         inside
     }
     ring(&s.outer, p) && !s.holes.iter().any(|h| ring(h, p))
+}
+
+/// Exact even/odd containment with edges binned by ordinate. Phase lookups use
+/// the same arithmetic as contains(), but skip edges that cannot cross the ray.
+pub(super) struct ContainmentIndex {
+    bounds: (f64, f64, f64, f64),
+    rows: Vec<Vec<(Point, Point)>>,
+}
+impl ContainmentIndex {
+    pub(super) fn new(shape: &Shape) -> Self {
+        let bounds = bbox(shape);
+        let mut index = Self {
+            bounds,
+            rows: vec![vec![]; 64],
+        };
+        for ring in std::iter::once(&shape.outer).chain(shape.holes.iter()) {
+            for (&a, &b) in ring
+                .iter()
+                .zip(ring.iter().cycle().skip(1))
+                .take(ring.len())
+            {
+                if a.y == b.y {
+                    continue;
+                }
+                let low = index.row(a.y.min(b.y));
+                let high = index.row(a.y.max(b.y));
+                for row in low..=high {
+                    index.rows[row].push((a, b));
+                }
+            }
+        }
+        index
+    }
+    fn row(&self, y: f64) -> usize {
+        (((y - self.bounds.1) / (self.bounds.3 - self.bounds.1).max(1e-12) * 64.0).floor() as usize)
+            .min(63)
+    }
+    pub(super) fn contains(&self, p: Point) -> bool {
+        let (x0, y0, x1, y1) = self.bounds;
+        if p.x < x0 || p.x > x1 || p.y < y0 || p.y > y1 {
+            return false;
+        }
+        let mut inside = false;
+        for &(a, b) in &self.rows[self.row(p.y)] {
+            if (a.y > p.y) != (b.y > p.y) && p.x < (b.x - a.x) * (p.y - a.y) / (b.y - a.y) + a.x {
+                inside = !inside;
+            }
+        }
+        inside
+    }
 }
 pub(super) fn bbox(s: &Shape) -> (f64, f64, f64, f64) {
     s.outer.iter().fold(
@@ -263,6 +353,9 @@ pub(super) fn ribbon(path: &[Point], widths: &[f64]) -> Vec<Shape> {
 /// Clip only the site's local raster window; run-length water cells are unioned before subtraction.
 pub(super) fn dry_clip(surface: &Surface<'_>, s: &Shape) -> Vec<Shape> {
     let land = intersection(s, &rectangle(0.0, 0.0, surface.width, surface.width));
+    if let Some(geometry) = surface.geometry {
+        return land.iter().flat_map(|s| geometry.clip(s)).collect();
+    }
     if surface.n == 0 || surface.water.is_empty() {
         return land;
     }
@@ -321,6 +414,7 @@ mod tests {
             water[y * 10 + 4] = 1;
         }
         let surface = Surface {
+            geometry: None,
             width: 100.0,
             n: 10,
             height: &heights,

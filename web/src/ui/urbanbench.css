@@ -11,10 +11,16 @@
 #map .contour.index { stroke-opacity: .7; stroke-width: 1.1px; }
 #map #reliefImage { image-rendering: auto; }
 #waterLayer, #contourLayer, #baseLayer, #landuseLayer { pointer-events: none; }
+#fantasyPainting { pointer-events: none; }
+#map[data-fantasy-relief=false] .fantasy-relief,
+#map[data-fantasy-landuse=false] .fantasy-landuse { display: none; }
+#mapStyle { max-width: 170px; }
+#fantasyStyleControls label { justify-content: space-between; }
 #landuseStage label { justify-content: space-between; }
 #landuseStage input[type=text] { width: 130px; }
 #landuseStage .advanced { display: flex; flex-direction: column; gap: 5px; }
-.seed-ring { fill: #b2452f10; stroke: #b2452f; stroke-width: 1.4px; stroke-dasharray: 6 4; vector-effect: non-scaling-stroke; pointer-events: none; }
+.seed-ring { fill: #b2452f10; stroke: #b2452f; stroke-width: 1.4px; stroke-dasharray: 6 4; vector-effect: non-scaling-stroke; pointer-events: none; opacity: 0; }
+.settlement-picking .seed-ring, #map.seed-moving .seed-ring { opacity: 1; }
 .seed-handle { cursor: move; }
 .seed-handle circle { fill: #b2452f; stroke: #fffdf0; stroke-width: 2px; }
 .seed-handle path { stroke: #b2452f; stroke-width: 1.5px; }

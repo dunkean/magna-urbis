@@ -1,3 +1,5 @@
+import { isFantasyStyle, renderFantasyTerrain, registerFantasyBrushes, DEFAULT_FANTASY_OPTIONS } from '../../../rust/bridge/fantasyTerrain';
+import { fantasyLibraries } from '../render/fantasyBrushAssets';
 import { isMapStyle, STYLE_LIST } from '../render/styles';
 import { DEFAULT_TERRAIN_LAYERS, DEFAULT_TERRAIN_LIGHTING, type TerrainLayers, type TerrainLighting } from '../render/terrainLighting';
 import { neuralWindow } from '../../../rust/bridge/terrainAdjust';
@@ -24,11 +26,18 @@ import { clampView, fitView, panBy, screenToWorld, zoomAt, type View } from '../
 import { COAST_DIRECTIONS, ISLAND_MODES, type IslandMode, TERRAIN_SOURCES, NEURAL_RELIEFS, NEURAL_CLIMATES, NEURAL_EXTENT, DEFAULT_NEURAL_SERVER, type TerrainSource, type NeuralClimate } from '../../../rust/bridge/terrain';
 
 const el = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T;
+registerFantasyBrushes(fantasyLibraries);
 const input = (id: string): HTMLInputElement => el<HTMLInputElement>(id);
 const map = document.getElementById('map') as unknown as SVGSVGElement;
 const viewport = el('viewport');
 // GPU renderer; the SVG keeps the legacy Rust hydrology diagnostics and serves as the event surface.
 let gpu: TerrainGl | undefined;
+let fantasyScene = '';
+const fantasyOptions = { ...DEFAULT_FANTASY_OPTIONS };
+for (const key of ['density', 'size', 'spacing'] as const) {
+  const value = Number(new URLSearchParams(location.search).get(`brush_${key}`));
+  if (value > 0 && Number.isFinite(value)) fantasyOptions[key] = Math.max(.3, Math.min(2, value));
+}
 if (new URLSearchParams(location.search).get('render') !== 'svg') {
   try { gpu = new TerrainGl(el<HTMLCanvasElement>('gl')); viewport.classList.add('gl'); }
   catch (error) { console.warn('WebGL2 rendering unavailable, falling back to SVG:', error); }
@@ -45,9 +54,46 @@ else {
 const query = new URLSearchParams(location.search);
 const finite = (value: string | null, fallback: number): number => value !== null && value.trim() !== '' && Number.isFinite(Number(value)) ? Number(value) : fallback;
 const bounded = (value: number, min: number, max: number): number => Math.max(min, Math.min(max, value));
-el<HTMLSelectElement>('style').replaceChildren(...[...STYLE_LIST, { id: 'copernicus', label: 'DEM · Copernicus' }].map(style => {
+el<HTMLSelectElement>('style').replaceChildren(...[...STYLE_LIST, { id: 'fantasy-ink', label: 'Fantasy · Encre N&B' }, { id: 'fantasy-color', label: 'Fantasy · Aquarelle' }, { id: 'render', label: 'Render · Neural Earth' }, { id: 'copernicus', label: 'DEM · Copernicus' }].map(style => {
   const option = document.createElement('option'); option.value = style.id; option.textContent = style.label; return option;
 }));
+const brushPanel = document.createElement('fieldset');
+brushPanel.innerHTML = '<legend>Fantasy · Brushes</legend>';
+for (const [key, label] of [['density', 'Densité'], ['size', 'Taille'], ['spacing', 'Espacement']] as const) {
+  const row = document.createElement('label'), slider = document.createElement('input');
+  row.textContent = label; slider.type = 'range'; slider.min = '.3'; slider.max = '2'; slider.step = '.05'; slider.value = String(fantasyOptions[key]); slider.id = `brush_${key}`;
+  slider.oninput = () => { fantasyOptions[key] = Number(slider.value); fantasyScene = ''; render(); deferSave(); };
+  row.append(slider); brushPanel.append(row);
+}
+el('lightingControls').querySelector('.lighting-fields')!.append(brushPanel);
+for (const format of ['svg', 'png'] as const) {
+  const button = document.createElement('button'); button.textContent = format === 'svg' ? 'Exporter SVG' : 'Exporter PNG · 4K';
+  button.type = 'button'; button.style.width = 'auto'; button.style.flex = '0 0 auto'; button.style.padding = '2px 8px';
+  button.id = `fantasyExport_${format}`; button.onclick = async () => {
+    if (!terrain || !isFantasyStyle(style)) return;
+    button.disabled = true;
+    try {
+      const scene = renderRustTerrain(terrain, style, true, settings, false, 'export', lighting, layers, fantasyOptions);
+      const svg = map.cloneNode(true) as SVGSVGElement;
+      for (const id of ['terrainOverview', 'terrainDetail', 'fantasyPainting']) svg.querySelector(`#${id}`)?.remove();
+      svg.setAttribute('viewBox', `0 0 ${terrain.width} ${terrain.width}`); svg.setAttribute('width', '4096'); svg.setAttribute('height', '4096');
+      const ground = document.createElementNS('http://www.w3.org/2000/svg', 'g'); ground.innerHTML = scene.svg; svg.prepend(ground);
+      const blob = new Blob([new XMLSerializer().serializeToString(svg)], { type: 'image/svg+xml' });
+      let exported = blob;
+      if (format === 'png') {
+        const source = URL.createObjectURL(blob), image = new Image();
+        try {
+          image.src = source; await image.decode();
+          const canvas = document.createElement('canvas'); canvas.width = canvas.height = 4096;
+          canvas.getContext('2d')!.drawImage(image, 0, 0);
+          exported = await new Promise<Blob>((resolve, reject) => canvas.toBlob(result => result ? resolve(result) : reject(new Error('PNG export failed')), 'image/png'));
+        } finally { URL.revokeObjectURL(source); }
+      }
+      const url = URL.createObjectURL(exported), a = document.createElement('a'); a.href = url; a.download = `magna-urbis-${style}.${format}`; a.click(); setTimeout(() => URL.revokeObjectURL(url), 10000);
+    } catch (error) { status(`Export: ${error instanceof Error ? error.message : error}`, true); }
+    finally { button.disabled = false; }
+  }; brushPanel.append(button);
+}
 const layerFields = { relief: 'showRelief', hypsometry: 'showHypsometry', frame: 'showFrame' } as const;
 let layers: TerrainLayers = { ...DEFAULT_TERRAIN_LAYERS };
 for (const [key, id] of Object.entries(layerFields)) {
@@ -224,7 +270,7 @@ const isVectorOverlay = (overlay: string): overlay is VectorOverlay => (VECTOR_O
 input('showLakes').checked = query.get('lakes') !== '0'; input('showOxbows').checked = query.get('oxbows') !== '0';
 el<HTMLSelectElement>('hydroOverlay').value = hydroOverlay;
 input('showWater').checked = query.get('water') !== '0';
-let style: TerrainStyle = isMapStyle(query.get('style')) || query.get('style') === 'copernicus' ? query.get('style') as TerrainStyle : 'parchment';
+let style: TerrainStyle = isMapStyle(query.get('style')) || isFantasyStyle(query.get('style') ?? '') || query.get('style') === 'copernicus' || query.get('style') === 'render' ? query.get('style') as TerrainStyle : 'parchment';
 let view: View = viewFromString(query.get('view')) || fitView(settings.width, viewport.clientWidth, viewport.clientHeight);
 let terrain: TerrainData | undefined;
 let pinMode = false, generation = 0, requestId = 0, terrainGeneration = 0;
@@ -318,7 +364,7 @@ function updateContourControl(): void {
   input('showShading').disabled = !shaded;
   input('showHypsometry').disabled = !shaded;
   for (const [id] of Object.values(lightingFields)) input(id).disabled = !shaded || !lighting.enabled;
-  input('showContours').disabled = style === 'copernicus' || settings.relief === 'cavern';
+  input('showContours').disabled = isFantasyStyle(style) || style === 'copernicus' || settings.relief === 'cavern';
   map.dataset.contours = String(input('showContours').checked && !input('showContours').disabled);
 }
 updateContourControl();
@@ -417,7 +463,7 @@ function status(message: string, error = false): void {
   el('status').textContent = message; el('status').dataset.error = String(error);
 }
 function shareQuery(): string {
-  const params = new URLSearchParams({ engine: 'rust', v: '4', seed: settings.seed, width: String(settings.width), motif: String(settings.motifSize), relief: settings.relief, erosion: String(settings.erosion), style, auto: input('auto').checked ? '1' : '0' });
+  const params = new URLSearchParams({ brush_density: String(fantasyOptions.density), brush_size: String(fantasyOptions.size), brush_spacing: String(fantasyOptions.spacing), engine: 'rust', v: '4', seed: settings.seed, width: String(settings.width), motif: String(settings.motifSize), relief: settings.relief, erosion: String(settings.erosion), style, auto: input('auto').checked ? '1' : '0' });
   for (const [key, value] of Object.entries(settings.hydrology ?? DEFAULT_HYDROLOGY)) params.set(`hydro_${key}`, typeof value === 'boolean' ? value ? '1' : '0' : String(value));
   params.set('overlay', hydroOverlay); params.set('water', input('showWater').checked ? '1' : '0');
   params.set('contours', input('showContours').checked ? '1' : '0');
@@ -550,7 +596,8 @@ function renderWater(): void {
   const layer = document.getElementById('hydrologyOverlay');
   if (!layer) return;
   const water = terrain?.water;
-  if (gpu) {
+  if (gpu && isFantasyStyle(style)) { gpu.setWater(undefined); gpu.setOverlay(undefined); }
+  if (gpu && !isFantasyStyle(style)) {
     const vectorOverlay = water && isVectorOverlay(hydroOverlay) ? hydroOverlay : 'none';
     const cond = terrain?.conditioning;
     const display = { style, showLakes: input('showLakes').checked, showOxbows: input('showOxbows').checked, riverArea: riverAreaFor(settings.hydrology ?? DEFAULT_HYDROLOGY, settings.width), riverMode: settings.hydrology?.riverMode ?? 'vector', overlay: vectorOverlay };
@@ -608,7 +655,7 @@ function report(): void {
 let uploaded: TerrainData | undefined;
 /** Contour interval of the bench: shared intervals, doubled in mountains; none in caverns. */
 function contourInterval(): number {
-  if (!terrain || terrain.caveMask.length || style === 'copernicus') return 0;
+  if (!terrain || terrain.caveMask.length || isFantasyStyle(style) || style === 'copernicus') return 0;
   const relief = settings.relief === 'flat' || settings.relief === 'hills' || settings.relief === 'valley' ? settings.relief : 'mountains';
   return CONTOUR_INTERVAL[relief] * (relief === 'mountains' ? 2 : 1);
 }
@@ -619,28 +666,35 @@ function renderGpu(): void {
     // A new landscape: its control grid replaces every layer.
     const base = field ?? { n: terrain.resolution, data: terrain.height, exact: false, floor: 0, cave: terrain.caveMask.length ? terrain.caveMask : undefined };
     gpu.setBase({ x: 0, y: 0, width: terrain.width, n: base.n, data: base.data, cave: base.cave });
-    uploaded = terrain; displayedDetail = undefined;
+    uploaded = terrain; displayedDetail = undefined; fantasyScene = '';
     map.innerHTML = '<g id="hydrologyOverlay"></g>';
   }
   contourStep = contourInterval();
   const look: TerrainLook = {
-    style, lighting, layers, mapWidth: terrain.width, globalMin: terrain.globalMinHeight, globalMax: terrain.globalMaxHeight,
-    contours: input('showContours').checked && contourStep > 0, contourStep, flatRelief: settings.relief === 'flat',
+    style, lighting: isFantasyStyle(style) ? { ...lighting, strength: .12 } : lighting, layers: isFantasyStyle(style) ? { ...layers, hypsometry: false } : layers, climate: climateOf(settings), mapWidth: terrain.width, globalMin: terrain.globalMinHeight, globalMax: terrain.globalMaxHeight,
+    contours: !isFantasyStyle(style) && input('showContours').checked && contourStep > 0, contourStep, flatRelief: settings.relief === 'flat',
     refine: !!settings.refine && !terrain.caveMask.length, sourceCell: settings.width / 1024, seed: seedHash(settings.seed),
     detail: settings.detailNoise ?? DEFAULT_FRACTAL_DETAIL,
     floor: field?.floor ?? 0, frame: layers.frame, background: '#f1f0e9',
   };
   gpu.setLook(look);
+  let fantasy: Element | null = document.getElementById('fantasyPainting');
+  if (isFantasyStyle(style) && layers.relief) {
+    if (!fantasy) { fantasy = document.createElementNS('http://www.w3.org/2000/svg', 'g'); fantasy.id = 'fantasyPainting'; map.insertBefore(fantasy, document.getElementById('hydrologyOverlay')); }
+    const scene = renderFantasyTerrain(terrain, style, settings, fantasyOptions);
+    if (scene !== fantasyScene) { fantasy.innerHTML = scene; fantasyScene = scene; }
+  } else { fantasy?.remove(); fantasyScene = ''; }
   renderWater();
   renderingMs = performance.now() - start;
   updateView(); renderedStatus();
 }
 function render(preparedScene?: TerrainScene, preparationMs = 0): void {
+  brushPanel.hidden = !isFantasyStyle(style);
   if (!terrain) return;
   if (gpu) { updateContourControl(); renderGpu(); return; }
   updateContourControl();
-  const start = performance.now(), scene = preparedScene ?? renderRustTerrain(terrain, style, true, settings, input('showContours').checked, 'main', lighting, layers);
-  map.innerHTML = `<g id="terrainOverview">${scene.svg}</g><g id="terrainDetail"></g><g id="hydrologyOverlay"></g>`;
+  const start = performance.now(), scene = (!isFantasyStyle(style) ? preparedScene : undefined) ?? renderRustTerrain(terrain, style, true, settings, input('showContours').checked, 'main', lighting, layers, fantasyOptions, false);
+  map.innerHTML = `<g id="terrainOverview">${scene.svg}</g><g id="terrainDetail"></g>${isFantasyStyle(style) && layers.relief ? `<g id="fantasyPainting">${renderFantasyTerrain(terrain, style, settings, fantasyOptions)}</g>` : ''}<g id="hydrologyOverlay"></g>`;
   renderWater();
   contourStep = scene.contourStep; renderingMs = preparationMs + performance.now() - start;
   displayedDetail = undefined;
@@ -784,7 +838,7 @@ async function runOnMain(request: TerrainRequest): Promise<void> {
 }
 function dispatch(request: TerrainRequest): void {
   if (gpu) request.display = 'gl';
-  else request.scene = { style, lighting, layers, showContours: input('showContours').checked };
+  else if (!isFantasyStyle(style)) request.scene = { style, lighting, layers, showContours: input('showContours').checked };
   if (worker) worker.postMessage(request); else void runOnMain(request);
 }
 try {
@@ -919,7 +973,7 @@ el<HTMLSelectElement>('generationCompute').onchange = parameterChanged;
 input('auto').onchange = () => { clearTimeout(generationTimer); save(); if (input('auto').checked) generate(); };
 el('randomSeed').onclick = () => { input('seed').value = crypto.getRandomValues(new Uint32Array(1))[0].toString(36); generate(); };
 el<HTMLSelectElement>('style').onchange = () => {
-  style = el<HTMLSelectElement>('style').value as TerrainStyle;
+  style = el<HTMLSelectElement>('style').value as TerrainStyle; brushPanel.hidden = !isFantasyStyle(style);
   detailRequest = undefined; render(); save();
 };
 el('fit').onclick = fit; el('zoomIn').onclick = () => zoom(1.4); el('zoomOut').onclick = () => zoom(1 / 1.4);

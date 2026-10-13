@@ -1,9 +1,11 @@
-// Batch export of Urban Bench decors: Terrain Bench maps (relief, water, settlements, roads)
+// Batch export of Urban Bench decors: neural relief + Rust rivers, settlements and roads.
 // covering reliefs, coasts, rivers, road networks and settlement sizes.
 //
 //   npm run dev:terrain                      (in another terminal)
+//   npm run neural:serve                     (native neural service, in another terminal)
 //   node scripts/export_decors.mjs [--count 100] [--from 0] [--force] [--headed] [--cpu]
 //                                  [--url http://127.0.0.1:5173] [--out decors] [--only d004]
+//                                  [--neural http://127.0.0.1:8792]
 //   node scripts/export_decors.mjs --index   (rebuild decors/index.json only)
 //
 // Decors land in web/decors/ (ignored by git) with an index.json read by urbanbench.html.
@@ -20,12 +22,14 @@ const option = (name, fallback) => { const i = args.indexOf(`--${name}`); return
 const web = fileURLToPath(new URL('..', import.meta.url));
 const out = resolve(web, option('out', 'decors'));
 const base = option('url', 'http://127.0.0.1:5173').replace(/\/$/, '');
+const neural = option('neural', 'http://127.0.0.1:8792').replace(/\/$/, '');
 const count = Number(option('count', 100)), from = Number(option('from', 0)), only = option('only', '');
 mkdirSync(out, { recursive: true });
 
 // ---------------------------------------------------------------- variations
 function prng(seed) { return () => { seed = (seed + 0x6d2b79f5) | 0; let t = Math.imul(seed ^ (seed >>> 15), 1 | seed); t ^= t + Math.imul(t ^ (t >>> 7), 61 | t); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
-const RELIEFS = ['flat', 'hills', 'valley', 'canyon', 'mountains', 'mixed', 'plateau', 'high-mountains', 'volcano', 'caldera'];
+// Neural-supported families only: the bench silently maps the other families to mixed.
+const RELIEFS = ['flat', 'hills', 'valley', 'mountains', 'mixed', 'plateau', 'high-mountains'];
 const COASTS = [
   { id: 'inland', coasts: [] }, { id: 'inland', coasts: [] }, { id: 'inland', coasts: [] },
   { id: 'coast-S', coasts: ['S'] }, { id: 'coast-E', coasts: ['E'] }, { id: 'coast-N', coasts: ['N'] }, { id: 'coast-W', coasts: ['W'] },
@@ -51,18 +55,24 @@ const CULTURES = ['european-organic', 'european-organic', 'european-organic', 'b
 
 function variation(i, attempt = 0) {
   const r = prng(2026 + i * 7919), pick = list => list[Math.floor(r() * list.length)];
-  const relief = RELIEFS[i % RELIEFS.length], size = SIZES[Math.floor(i / RELIEFS.length) % SIZES.length];
+  const relief = RELIEFS[i % RELIEFS.length], size = SIZES[Math.floor(i / 10) % SIZES.length];
   const coast = pick(COASTS), river = pick(RIVERS), meanders = pick(MEANDERS), lakes = pick(LAKES);
   const level = pick(ROAD_LEVELS), roadCulture = pick(ROAD_CULTURES), culture = pick(CULTURES);
   const density = Math.round((0.15 + 0.8 * r()) * 20) / 20, exits = Math.floor(r() * 5);
-  // Retries stretch the landforms: same relief type, gentler slopes for placement.
+  // Retries change the neural seed while preserving the catalogue classification.
   const seed = attempt ? `decor-${i}-${attempt}` : `decor-${i}`, width = size.width, motif = Math.max(1500, Math.min(6000, Math.round(width * (0.6 + 0.6 * r()) / 250) * 250)) * (1 + attempt);
   const params = new URLSearchParams({
-    engine: 'rust', v: '4', seed, width: String(width), motif: String(motif), relief, erosion: String(Math.round((0.6 + 0.8 * r()) * 20) / 20),
+    engine: 'rust', source: 'neural', neural, v: '4', seed, width: String(width), motif: String(motif), relief, erosion: String(Math.round((0.6 + 0.8 * r()) * 20) / 20),
     auto: '1', style: 'atlas', hydro_main: river, hydro_meanders: meanders, hydro_lakes: lakes,
     compute: flag('cpu') ? 'wasm' : 'gpu-f32', generation: flag('cpu') ? 'cpu' : 'gpu-erosion',
+    hydro_engine: 'rust', hydro_enabled: '1', hydro_compute: flag('cpu') ? 'cpu' : 'auto',
+    fit: 'scale', slopes: '1',
   });
   if (relief === 'mixed') params.set('mix', String(Math.round(r() * 100) / 100));
+  // On steep neural families, retries also soften local relief through the existing controls.
+  if (attempt && !['flat', 'hills', 'plateau'].includes(relief)) {
+    params.set('n_reliefMode', 'scale'); params.set('n_reliefScale', String(0.7 ** attempt));
+  }
   if (coast.coasts === 'all') { params.set('coasts', 'N,NE,E,SE,S,SW,W,NW'); params.set('islands', coast.islands); }
   else if (coast.coasts.length) { params.set('coasts', coast.coasts.join(',')); params.set('islands', 'island'); }
   params.set('settlements', JSON.stringify({ config: { mode: 'counts', counts: size.counts, main: { population: size.population, culture } }, enabled: true, showPoints: true }));
@@ -71,7 +81,7 @@ function variation(i, attempt = 0) {
   params.set('urban', JSON.stringify({ enabled: false, parcelEnabled: false }));
   const id = `d${String(i).padStart(3, '0')}-${relief}-${coast.id}-${size.size}`;
   const label = `${String(i).padStart(3, '0')} · ${relief} · ${coast.id} · ${size.size} · ${culture}`;
-  const tags = { relief, coast: coast.id, river, meanders, lakes, roads: `${level}/${roadCulture}`, culture, size: size.size, seed };
+  const tags = { source: 'neural', hydrology: 'rust', relief, coast: coast.id, river, meanders, lakes, roads: `${level}/${roadCulture}`, culture, size: size.size, seed };
   return { id, label, tags, query: params.toString() };
 }
 
@@ -94,6 +104,10 @@ function writeIndex() {
 }
 if (flag('index')) { writeIndex(); process.exit(0); }
 
+// Fail before starting a batch when the required native service is unavailable.
+const service = await fetch(`${neural}/status`, { signal: AbortSignal.timeout(10000) });
+if (!service.ok) throw new Error(`Neural service: HTTP ${service.status}. Run npm run neural:serve.`);
+
 // ---------------------------------------------------------------- export
 const browser = await chromium.launch({ headless: !flag('headed'), args: ['--enable-unsafe-webgpu', '--enable-gpu', '--ignore-gpu-blocklist', '--use-angle=d3d11'] });
 const page = await browser.newPage({ viewport: { width: 1400, height: 900 } });
@@ -102,7 +116,11 @@ let done = 0, failed = 0;
 for (let i = from; i < from + count; i++) {
   const first = variation(i), file = `${first.id}.decor`;
   if (only && !first.id.startsWith(only)) continue;
-  if (!flag('force') && existsSync(join(out, file))) { console.log(`${first.id}: exists`); continue; }
+  if (!flag('force') && existsSync(join(out, file))) {
+    const previous = readHeader(join(out, file));
+    if (previous.tags?.source === 'neural' && previous.tags?.hydrology === 'rust') { console.log(`${first.id}: exists (neural + Rust)`); continue; }
+    console.log(`${first.id}: replacing old generators`);
+  }
   // Another terrain seed when placement fails (steep or drowned maps) or generation stalls.
   for (let attempt = 0; attempt < 4; attempt++) {
   const v = variation(i, attempt), start = Date.now();
@@ -118,7 +136,9 @@ for (let i = from; i < from + count; i++) {
       stable = state.ready ? stable + 1 : 0;
     }
     const { base64, entry } = await page.evaluate(([file, extra]) => window.magnaDecor.export(file, extra), [file, { id: v.id, label: v.label, tags: v.tags, query: v.query }]);
+    if (entry.tags.source !== 'neural' || entry.tags.hydrology !== 'rust') throw new Error('Unexpected terrain or hydrology generator');
     if (entry.settlements < 2 && attempt < 3) { console.log(`${v.id}: ${entry.settlements} place(s) with seed ${v.tags.seed}, retrying`); continue; }
+    if (entry.settlements < 2) throw new Error('Fewer than two settlements after all retries');
     const bytes = Buffer.from(base64, 'base64');
     writeFileSync(join(out, file), bytes);
     done++;
@@ -133,3 +153,4 @@ for (let i = from; i < from + count; i++) {
 await browser.close();
 writeIndex();
 console.log(`${done} exported, ${failed} failed`);
+if (failed) process.exitCode = 1;

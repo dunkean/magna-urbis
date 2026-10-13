@@ -1,3 +1,4 @@
+import { NEURAL_EARTH_MATERIAL_GLSL } from '../../../rust/bridge/terrainMaterial';
 import { terrainLights, type TerrainLayers, type TerrainLighting } from '../render/terrainLighting';
 import { coastDistances, hasCoastalSea, SEA_BAND_WIDTH, SEA_SHADE_LIMIT, SEA_SHADE_STRENGTH } from '../render/terrainSea';
 import { resampleTerrainSurface } from '../render/raster';
@@ -19,7 +20,7 @@ import { CANVAS_MAP_STROKES, mapStrokeWidth } from '../render/strokes';
 import type { View } from '../render/view';
 import { FRACTAL_ROTATIONS, type FractalDetail } from '../../../rust/bridge/terrainAdjust';
 
-export type GlStyle = MapStyle | 'copernicus';
+export type GlStyle = MapStyle | 'copernicus' | 'render' | 'fantasy-ink' | 'fantasy-color';
 
 /** Control points of a height layer: `n²` values at cell centres of the square `[x, x + width]²`. */
 export interface HeightLayer {
@@ -29,6 +30,7 @@ export interface HeightLayer {
 }
 
 export interface TerrainLook {
+  climate?: { temperature: number; precipitation: number };
   style: GlStyle; mapWidth: number; lighting: TerrainLighting; layers: TerrainLayers;
   globalMin: number; globalMax: number;
   contours: boolean; contourStep: number; flatRelief: boolean;
@@ -195,7 +197,21 @@ float hillshade(vec2 gradient) {
   return clamp(1.0 + uShade * (dd > 0.0 ? 1.0 : 0.8) * dd * 1.15, 0.58, 1.25);
 }
 
+${NEURAL_EARTH_MATERIAL_GLSL}
+vec3 naturalMaterial(vec3 s, vec2 world) {
+  float r=max(300.,uFieldCell*2.);
+  float mean=(surface(world+vec2(r,0.)).x+surface(world-vec2(r,0.)).x+surface(world+vec2(0.,r)).x+surface(world-vec2(0.,r)).x)*.25;
+  float shore=1e9, openness=0.;
+  if(s.x<12. && length(s.yz)<.5) for(int i=0;i<12;i++) {
+    vec2 d=vec2(cos(float(i)*.523598776),sin(float(i)*.523598776));
+    if(surface(world+d*r).x<0.) {shore=min(shore,r);openness+=1./12.;}
+    if(surface(world+d*r*.5).x<0.) shore=min(shore,r*.5);
+  }
+  shore=min(shore,max(s.x,0.)/max(length(s.yz),.0001));
+  return earthMaterial(s,world,max(uPx,1.),(s.x-mean)/(6.*r),shore,openness);
+}
 vec3 land(vec3 s, vec2 world) {
+  if(uMode==2) return naturalMaterial(s,world)*hillshade(s.yz);
   if (uMode == 1) {
     float landMin = uCoastal == 1 ? 0.0 : uGlobalMin;
     float t = clamp((s.x - landMin) / max(1e-6, uMaxH - landMin), 0.0, 1.0);
@@ -211,6 +227,7 @@ vec3 land(vec3 s, vec2 world) {
 
 vec3 sea(vec3 s, vec2 world) {
   float h = s.x;
+  if(uMode==2) return surfaceWater(max(-s.x,0.),surfaceSeaIce(vec3(world,0.),uMaterialClimate.x+6.,uMaterialClimate.x-6.,max(uPx,1.)));
   if (uMode == 1) { float d = clamp(h / min(-1e-6, uGlobalMin), 0.0, 1.0); return vec3(35.0 - 27.0 * d, 125.0 - 85.0 * d, 175.0 - 79.0 * d) / 255.0; }
   if (uCoastal == 1 && uCoastalSea == 1) {
     float distance = (texture(uCoastDistance, world / uMapW).r * 2.0 - 1.0) * uSeaBand;
@@ -247,7 +264,7 @@ void main() {
       float shade = clamp(uRockStrength * (length(nn.xy) * (36.0 + 84.0 * dot(nn.xy, uLight.xy)) + (1.0 - nn.z) * 12.0), 0.0, 72.0) / 255.0;
       color = mix(color, vec3(shade), rock);
     }
-    if (uContours == 1 && s.x > 0.0 && uMode == 0) {
+    if (uContours == 1 && s.x > 0.0 && uMode != 1) {
       float v = raster.x / uStep;
       float slope = length(raster.yz);
       float dv = max(slope * uPx / uStep, 1e-6);           // levels per device pixel
@@ -533,7 +550,8 @@ export class TerrainGl {
     gl.viewport(0, 0, width, height);
     const { view } = state, px = 1 / (view.scale * dpr);
     const origin: [number, number] = [view.cx - state.width / (2 * view.scale), view.cy - state.height / (2 * view.scale)];
-    const pal = PALETTES[look.style === 'copernicus' ? 'parchment' : look.style];
+    const basePalette = PALETTES[look.style === 'copernicus' || look.style === 'render' || (look.style === 'fantasy-ink' || look.style === 'fantasy-color') ? 'parchment' : look.style];
+    const pal = look.style === 'fantasy-ink' ? { ...basePalette, paper: '#faf9f4', seaFill: '#e5e7e6', waterEdge: '#666968' } : look.style === 'fantasy-color' ? { ...basePalette, paper: '#eee6ce', seaFill: '#b9ccd0', waterEdge: '#648f99' } : basePalette;
     const u = (name: string): WebGLUniformLocation | null => this.uniform(name);
     gl.useProgram(this.terrain);
     gl.uniform2f(u('uCanvas'), width, height);
@@ -541,7 +559,9 @@ export class TerrainGl {
     gl.uniform1f(u('uPx'), px); gl.uniform1f(u('uDpr'), dpr);
     gl.uniform1f(u('uMapW'), look.mapWidth);
     gl.uniform1i(u('uRelief'), look.layers.relief ? 1 : 0);
-    gl.uniform1i(u('uMode'), look.style === 'copernicus' ? 1 : 0);
+    gl.uniform1ui(u('uMaterialSeed'), look.seed >>> 0);
+    gl.uniform2f(u('uMaterialClimate'), look.climate?.temperature ?? 18, look.climate?.precipitation ?? 1000);
+    gl.uniform1i(u('uMode'), look.style === 'copernicus' ? 1 : look.style === 'render' && look.layers.hypsometry ? 2 : 0);
     gl.uniform3fv(u('uPaper'), hex(pal.paper)); gl.uniform3fv(u('uSea'), hex(pal.seaFill));
     gl.uniform3fv(u('uShore'), hex(pal.waterEdge)); gl.uniform1i(u('uCoastalSea'), hasCoastalSea(look.style) && this.coastDistance ? 1 : 0);
     gl.uniform1f(u('uSeaBand'), look.mapWidth * SEA_BAND_WIDTH);

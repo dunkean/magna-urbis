@@ -39,7 +39,7 @@ function originalPlan(c: Culture): Plan {
     pattern: terraces ? 'terraces' : c.camp ? 'dispersed' : m.streetOp === 'grid' ? 'grid' : e.shape === 'circle' ? 'radial' : 'organic',
     enclosure: e.shape, fortification: e.wall, gates: e.gates ?? 'roads',
     orientation: e.orientation ?? m.orientation, stairs: terraces, waterfront,
-    ...campPlans[c.id],
+    ...(c.camp ? campPlans[c.id] : {}),
     sources: ['web/src/gen/urban/culture.ts', '.local-archive/publication-2026-10-09/repository/web/URBAN_MORPHOLOGY.md'],
   };
 }
@@ -48,12 +48,19 @@ const cultures: Record<string, unknown> = Object.fromEntries(Object.values(CULTU
   recipes: benchRecipes(c).map(r => ({ id: r.id, label: r.label, zone: r.zone, preset: `${c.id}/${r.id}` })),
   plan: originalPlan(c),
   nucleus: c.nucleus,
-  core: { enclosure: c.core.enclosure },
-  ring: c.ring ? { enclosure: c.ring.enclosure } : null,
+  core: { enclosure: c.core.enclosure, share: c.core.share },
+  ring: c.ring ? { enclosure: c.ring.enclosure, share: c.ring.share } : null,
   phaseCount: c.phaseCount, faubShare: c.faubShare,
   village: { form: c.village.form, enclosure: c.village.enclosure },
   hamlet: { form: c.hamlet.form, enclosure: c.hamlet.enclosure },
   render: c.render, camp: c.camp,
+  growth: c.urbanGrowth ? {
+    minPop: c.urbanGrowth.minPop,
+    plan: originalPlan({ ...c, ...c.urbanGrowth.recipe, camp: undefined }),
+    core: { enclosure: c.urbanGrowth.recipe.core.enclosure, share: c.urbanGrowth.recipe.core.share },
+    ring: c.urbanGrowth.recipe.ring ? { enclosure: c.urbanGrowth.recipe.ring.enclosure, share: c.urbanGrowth.recipe.ring.share } : null,
+    phaseCount: c.urbanGrowth.recipe.phaseCount, faubShare: c.urbanGrowth.recipe.faubShare,
+  } : null,
 }]));
 
 // These are distinct settlement recipes from the supplied atlas, not claims to
@@ -186,6 +193,11 @@ for (const e of extensions) {
     presets[r.preset] = { label: `${e.label} · ${r.label}`, params };
   }
   cultures[e.id] = { label: e.label, recipes, plan, description: e.description,
+    core: { enclosure: { ...base.core.enclosure, shape: plan.enclosure, wall: plan.fortification, orientation: plan.orientation } },
+    ring: base.ring ? { enclosure: { ...base.ring.enclosure, shape: plan.enclosure, wall: plan.fortification, orientation: plan.orientation } } : null,
+    phaseCount: base.phaseCount, faubShare: base.faubShare,
+    village: { form: base.village.form, enclosure: { shape: plan.enclosure, wall: plan.fortification, orientation: plan.orientation } },
+    hamlet: { form: base.hamlet.form, enclosure: { shape: plan.enclosure, wall: plan.fortification, orientation: plan.orientation } },
     scope: 'Settlement patterns only; numerical ranges are artistic, not measured reconstructions.' };
 }
 writeFileSync(new URL('../crates/core/src/urban/catalogue.json', import.meta.url), JSON.stringify({ version: 2, fields: { quarters: BENCH_FIELDS.streets, parcels: BENCH_FIELDS.plots }, presets, cultures }, null, 2) + '\n');

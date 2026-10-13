@@ -1,5 +1,6 @@
 /** Shared workshop protocol and temporary adaptation into the existing editor view. */
 import type { Layout, LayoutConfig, ParcelConfig, Partition, Shape } from '../../../rust/bridge/urban';
+import { normalizeLayoutConfig, normalizeParcelConfig } from '../../../rust/bridge/urbanConfig';
 import type { BenchLayout, BenchOptions, BenchParcels } from '../gen/urban/testbench';
 import { benchMorph } from '../gen/urban/testbenchConfig';
 import { Streets, LAB_OPEN } from '../gen/urban/streets';
@@ -32,13 +33,20 @@ export function workshopOptions(config: LayoutConfig | ParcelConfig, previous: B
       placement: config.placement, monument: config.monument } as Partial<BenchOptions> : {}),
     stages: { ...previous.stages, ['count' in config ? 'streets' : 'plots']: { preset: config.preset, params: config.params } } };
 }
-export function workshopConfig(options: BenchOptions, context: WorkshopContext, kind: 'quarters' | 'parcels'): Partial<LayoutConfig> | Partial<ParcelConfig> {
+export function normalizeWorkshopContext(context: WorkshopContext): WorkshopContext {
+  return { ...context, layoutConfig: normalizeLayoutConfig(context.layoutConfig, true), parcelConfig: normalizeParcelConfig(context.parcelConfig) };
+}
+export function workshopConfig(options: BenchOptions, context: WorkshopContext, kind: 'quarters'): LayoutConfig;
+export function workshopConfig(options: BenchOptions, context: WorkshopContext, kind: 'parcels'): ParcelConfig;
+export function workshopConfig(options: BenchOptions, context: WorkshopContext, kind: 'quarters' | 'parcels'): LayoutConfig | ParcelConfig {
+  context = normalizeWorkshopContext(context);
   const stage = options.stages?.[kind === 'quarters' ? 'streets' : 'plots'];
   const retained = kind === 'quarters' ? context.layoutConfig : context.parcelConfig;
-  return { ...retained, culture: context.source === 'map' && retained?.culture === 'site' && options.culture === context.siteCulture ? 'site' : options.culture, recipe: options.recipe ?? 'core', zone: retained?.zone === 'auto' ? 'auto' : options.zone,
+  const config = { ...retained, culture: context.source === 'map' && retained?.culture === 'site' && options.culture === context.siteCulture ? 'site' : options.culture, recipe: options.recipe ?? 'core', zone: retained?.zone === 'auto' ? 'auto' : options.zone,
     density: options.density, preset: stage?.preset ?? 'culture', params: stage?.params ?? {},
-    ...(kind === 'quarters' ? { count: options.count, rings: options.rings ?? 1, radius: context.source === 'map' && context.layoutConfig?.radius === 0 && options.radius === context.radius ? 0 : options.radius,
+    ...(kind === 'quarters' ? { composition: context.source === 'fixture' ? 'district' : context.layoutConfig?.composition ?? 'settlement', count: options.count, rings: options.rings ?? 1, radius: context.source === 'map' && context.layoutConfig?.radius === 0 && options.radius === context.radius ? 0 : options.radius,
       placement: options.placement === 'lateral' ? 'rectangle' : options.placement ?? 'center', monument: options.monument } : {}) };
+  return kind === 'quarters' ? normalizeLayoutConfig(config) : normalizeParcelConfig(config);
 }
 export function workshopView(result: WorkshopResult, options: BenchOptions, nativeMorph?: MorphologyParams): { layout: BenchLayout; partition: BenchParcels } {
   const morph = nativeMorph ?? benchMorph(options, 'streets'), streets = new Streets();
@@ -49,7 +57,7 @@ export function workshopView(result: WorkshopResult, options: BenchOptions, nati
     for (const q of layout.quarters) quarters.push({ lp: { pts: q.shape.outer, lab: q.shape.outer.map(() => LAB_OPEN) },
       phase: q.phase, zone: (q.zone ?? options.zone) as Zone, age: 1, kind: 'quarter', morph });
     for (const b of layout.blocks) blocks.push({ poly: b.shape.outer, quarter: quarterOffset + b.quarter,
-      phase: 0, zone: (b.zone ?? options.zone) as Zone, age: 1, kind: b.kind as BenchLayout['blocks'][number]['kind'], plotFrame: { ...detectPlotFrame(b.shape.outer), u: b.axis, v: { x: -b.axis.y, y: b.axis.x } } });
+      phase: b.phase ?? layout.quarters[b.quarter]?.phase ?? 0, zone: (b.zone ?? options.zone) as Zone, age: 1, kind: (b.kind === 'common' ? 'place' : b.kind) as BenchLayout['blocks'][number]['kind'], plotFrame: { ...detectPlotFrame(b.shape.outer), u: b.axis, v: { x: -b.axis.y, y: b.axis.x } } });
     for (const p of result.partitions?.find(p => p.key === layout.key)?.parcels ?? []) parcels.push({ poly: p.shape.outer,
       use: p.use, block: blockOffset + p.block, front: p.front ?? undefined });
     quarterOffset += layout.quarters.length; blockOffset += layout.blocks.length;

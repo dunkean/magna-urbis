@@ -99,7 +99,9 @@ function diagnosticImage(data: HydrologyData, overlay: HydrologyOverlay): string
 
 /** Water colour of a display style, shared by lakes and rivers. */
 export function hydrologyWaterColour(style: TerrainStyle): string {
-  return style === 'copernicus' ? '#14527a' : PALETTES[style].waterEdge;
+  if (style === 'fantasy-ink') return '#666968';
+  if (style === 'fantasy-color') return '#648f99';
+  return style === 'copernicus' || style === 'render' ? '#14527a' : PALETTES[style].waterEdge;
 }
 
 /** River capsules for the GPU renderer: x0, y0, x1, y1, widths (m) at both ends, r, g, b. */

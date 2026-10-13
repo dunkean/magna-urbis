@@ -1,3 +1,4 @@
+import { terrainGeography } from '../../../rust/bridge/urbanGeography';
 import { settlementRaster, type RoadConfig, type RoadOutput, type SettlementOutput } from '../../../rust/bridge/settlements';
 import { COAST_DIRECTIONS, type TerrainData, type TerrainSettings } from '../../../rust/bridge/terrain';
 import { DEFAULT_HYDROLOGY, riverAreaFor } from '../../../rust/bridge/hydrology';
@@ -10,6 +11,7 @@ function tagsOf(settings: TerrainSettings, output: SettlementOutput, roadConfig:
   const mask = settings.coastMask ?? 0, coasts = COAST_DIRECTIONS.filter((_, i) => mask & (1 << i));
   const h = settings.hydrology ?? DEFAULT_HYDROLOGY, main = output.settlements.slice().sort((a, b) => b.population - a.population)[0];
   return {
+    source: settings.source ?? 'procedural', hydrology: h.engine,
     relief: settings.relief, coast: mask === 255 ? settings.islandMode ?? 'island' : coasts.length ? coasts.join('+') : 'inland',
     river: h.enabled ? h.main : 'none', meanders: h.meanders, lakes: h.lakes,
     roads: roadConfig ? `${roadConfig.level}/${roadConfig.culture}` : 'none', culture: main?.culture ?? '',
@@ -29,7 +31,8 @@ function riverKm(t: TerrainData): number {
 /** The base layers of the current Terrain Bench map, encoded as a decor file. */
 export function captureDecor(t: TerrainData, settings: TerrainSettings, output: SettlementOutput, roads: RoadOutput | undefined, roadConfig: RoadConfig | null,
   extra: { id?: string; label?: string; tags?: Record<string, string>; query?: string } = {}): { bytes: Uint8Array; meta: DecorMeta } {
-  const raster = settlementRaster(t), h = settings.hydrology ?? DEFAULT_HYDROLOGY;
+  if (t.hydrologyError) throw new Error(`Cannot export decor: ${t.hydrologyError}`);
+  const raster = { ...settlementRaster(t, 1024), geometry: terrainGeography(t) }, h = settings.hydrology ?? DEFAULT_HYDROLOGY;
   const waterSvg = t.water
     ? vectorWaterSvg(t.water, { style: 'atlas', showLakes: true, showOxbows: true, riverArea: riverAreaFor(h, settings.width), riverMode: h.riverMode ?? 'vector', overlay: 'none' })
     : t.hydrology ? renderHydrology(t.hydrology, 'none', true, 'atlas') : '';
@@ -37,7 +40,7 @@ export function captureDecor(t: TerrainData, settings: TerrainSettings, output: 
   const decor: Decor = {
     meta: {
       format: 'magna-decor', version: 1, id, label: extra.label ?? `${relief} · seed ${settings.seed}`,
-      tags: { ...tagsOf(settings, output, roadConfig), ...extra.tags },
+      tags: { ...tagsOf(settings, output, roadConfig), ...extra.tags, source: settings.source ?? 'procedural', hydrology: h.engine },
       seed: settings.seed, width: t.width, query: extra.query ?? location.search.replace(/^\?/, ''), created: new Date().toISOString(),
       settlements: output.settlements, roadConfig, roads: roads ?? null, waterSvg,
       stats: { ...rasterStats(raster), riverKm: t.water?.rivers?.lengthKm ?? riverKm(t), roadKm: (roads?.segments.reduce((s, r) => s + r.length, 0) ?? 0) / 1000 },

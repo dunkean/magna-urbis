@@ -64,6 +64,9 @@ fn inspect_segment(surface: Surface<'_>, a: Point, b: Point, dry: bool) -> Optio
     if !valid_surface(surface) || !on_map(surface, a) || !on_map(surface, b) {
         return None;
     }
+    if dry && surface.geometry.is_some_and(|g| !g.segment_dry(a, b)) {
+        return None;
+    }
     let distance = distance(a, b);
     if distance < 1e-8 {
         return (!dry || !surface.wet(a)).then_some(0.0);
@@ -200,6 +203,7 @@ impl Ord for Entry {
 /// A shared, bounded local lattice. The maximum side is 161 nodes; edge grades
 /// and obstacles are cached across primary routes and connector searches.
 pub(super) struct RoutePlanner<'a> {
+    adaptation: f64,
     surface: Surface<'a>,
     x0: f64,
     y0: f64,
@@ -223,6 +227,7 @@ impl<'a> RoutePlanner<'a> {
         let nx = ((x1 - x0) / step).floor() as usize + 1;
         let ny = ((y1 - y0) / step).floor() as usize + 1;
         Self {
+            adaptation: 0.0,
             surface,
             x0,
             y0,
@@ -235,6 +240,10 @@ impl<'a> RoutePlanner<'a> {
         }
     }
 
+    fn cost(&self, length: f64, grade: f64, max_grade: f64) -> f64 {
+        route_cost(length, grade, max_grade)
+            + length * self.adaptation * 6.0 * (grade / max_grade).powi(2)
+    }
     fn position(&self, cell: usize) -> Point {
         Point {
             x: self.x0 + (cell % self.nx) as f64 * self.step,
@@ -270,6 +279,10 @@ impl<'a> RoutePlanner<'a> {
 
     /// Connect exact endpoints over dry land. A failed search returns no road;
     /// callers may explicitly try a separate stair limit and tag that result.
+    pub(super) fn set_adaptation(&mut self, value: f64) {
+        self.adaptation = value;
+    }
+
     pub(super) fn route(&mut self, start: Point, end: Point, max_grade: f64) -> Option<Vec<Point>> {
         self.route_inner(start, end, max_grade, None)
     }
@@ -301,7 +314,8 @@ impl<'a> RoutePlanner<'a> {
         {
             return None;
         }
-        if segment_clear(self.surface, start, end, max_grade)
+        if (self.adaptation == 0.0 || segment_grade(self.surface, start, end) < 0.015)
+            && segment_clear(self.surface, start, end, max_grade)
             && shape.is_none_or(|shape| inside(shape, start, end))
         {
             return Some(vec![start, end]);
@@ -421,7 +435,7 @@ impl<'a> RoutePlanner<'a> {
                 }
                 let length = self.step * ((dx * dx + dy * dy) as f64).sqrt();
                 let bend = self.step * 0.35 * (1.0 - cosine).powi(2);
-                let cost = entry.cost + route_cost(length, grade, max_grade) + bend;
+                let cost = entry.cost + self.cost(length, grade, max_grade) + bend;
                 let state = next * HEADINGS + dir;
                 if self.slots[state].epoch != epoch || cost < self.slots[state].cost {
                     self.slots[state] = Slot {
@@ -455,7 +469,23 @@ impl<'a> RoutePlanner<'a> {
             let mut j = (i + 24).min(path.len() - 1);
             while j > i + 1
                 && (!segment_clear(self.surface, path[i], path[j], max_grade)
-                    || shape.is_some_and(|shape| !inside(shape, path[i], path[j])))
+                    || shape.is_some_and(|shape| !inside(shape, path[i], path[j]))
+                    || self.adaptation > 0.0
+                        && self.cost(
+                            distance(path[i], path[j]),
+                            segment_grade(self.surface, path[i], path[j]),
+                            max_grade,
+                        ) > path[i..=j]
+                            .windows(2)
+                            .map(|p| {
+                                self.cost(
+                                    distance(p[0], p[1]),
+                                    segment_grade(self.surface, p[0], p[1]),
+                                    max_grade,
+                                )
+                            })
+                            .sum::<f64>()
+                            * 1.05)
             {
                 j -= 1;
             }
@@ -479,9 +509,50 @@ mod tests {
     use super::*;
 
     #[test]
+    fn adaptation_keeps_a_cheaper_contour_detour_even_when_direct_grade_is_legal() {
+        let n = 65;
+        let width = 520.0;
+        let height: Vec<_> = (0..n * n)
+            .map(|i| {
+                let x = (i % n) as f64 * width / n as f64 + 4.0 - 260.0;
+                let y = (i / n) as f64 * width / n as f64 + 4.0 - 260.0;
+                (20.0 + 30.0 * (-(x * x + y * y) / 10000.0).exp()) as f32
+            })
+            .collect();
+        let water = vec![0; height.len()];
+        let surface = Surface {
+            geometry: None,
+            width,
+            n,
+            height: &height,
+            water: &water,
+        };
+        let a = Point { x: 70.0, y: 260.0 };
+        let b = Point { x: 450.0, y: 260.0 };
+        let mut planner = RoutePlanner::new(surface, (30.0, 30.0, 490.0, 490.0));
+        assert_eq!(planner.route(a, b, 0.3).unwrap().len(), 2);
+        planner.set_adaptation(1.0);
+        let path = planner.route(a, b, 0.3).unwrap();
+        assert!(path.iter().any(|p| (p.y - 260.0).abs() > 40.0), "{path:?}");
+        let cost: f64 = path
+            .windows(2)
+            .map(|p| {
+                planner.cost(
+                    distance(p[0], p[1]),
+                    segment_grade(surface, p[0], p[1]),
+                    0.3,
+                )
+            })
+            .sum();
+        assert!(cost < planner.cost(distance(a, b), segment_grade(surface, a, b), 0.3));
+        assert!(path_clear(surface, &path, 0.3));
+    }
+
+    #[test]
     fn grade_detects_crest_and_bilinear_derivative() {
         let height = [0.0, 10.0, 0.0, 0.0, 10.0, 0.0, 0.0, 10.0, 0.0];
         let surface = Surface {
+            geometry: None,
             width: 30.0,
             n: 3,
             height: &height,
@@ -493,6 +564,7 @@ mod tests {
         assert!(!segment_clear(surface, a, b, 0.15));
 
         let surface = Surface {
+            geometry: None,
             width: 20.0,
             n: 2,
             height: &[0.0, 0.0, 0.0, 10.0],
@@ -514,6 +586,7 @@ mod tests {
             }
         }
         let surface = Surface {
+            geometry: None,
             width: 200.0,
             n,
             height: &height,
@@ -548,6 +621,7 @@ mod tests {
         let height: Vec<_> = (0..n * n).map(|i| (i % n) as f32 * 5.0 * 0.24).collect();
         let water = vec![0; n * n];
         let surface = Surface {
+            geometry: None,
             width: 240.0,
             n,
             height: &height,
@@ -573,6 +647,7 @@ mod tests {
             water[y * n + 16] = 3;
         }
         let surface = Surface {
+            geometry: None,
             width: 160.0,
             n,
             height: &height,
@@ -592,6 +667,7 @@ mod tests {
         let height = vec![0.0; n * n];
         let water = vec![0; n * n];
         let surface = Surface {
+            geometry: None,
             width: 256.0,
             n,
             height: &height,

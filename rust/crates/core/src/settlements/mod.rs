@@ -195,6 +195,7 @@ pub struct Output {
 /// The adapted terrain with its derived fields, computed once and shared by placement and routing.
 pub struct Terrain {
     fields: grid::Fields,
+    urban_geometry: Option<crate::urban::Geography>,
 }
 impl Terrain {
     /// Uses the retained physical ground and wet/rock mask; no terrain regeneration.
@@ -211,6 +212,7 @@ impl Terrain {
             sites,
             config,
             crate::urban::Surface {
+                geometry: self.urban_geometry.as_ref(),
                 width: r.width,
                 n: r.n,
                 height: &r.height,
@@ -245,7 +247,15 @@ impl Terrain {
         }
         Ok(Self {
             fields: grid::Fields::new(raster),
+            urban_geometry: None,
         })
+    }
+    pub fn set_urban_geometry(
+        &mut self,
+        input: crate::urban::VectorGeography,
+    ) -> Result<(), String> {
+        self.urban_geometry = Some(crate::urban::Geography::new(input, self.fields.r.width)?);
+        Ok(())
     }
     pub fn place(&self, seed: &str, cfg: &Config) -> Result<Output, String> {
         validate(cfg, self.fields.r.width)?;

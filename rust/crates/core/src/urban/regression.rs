@@ -1,7 +1,7 @@
 //! Seeded end-to-end checks of retained streets, after infill and graph cleanup.
 use super::{
-    Block, Layout, LayoutConfig, ParcelConfig, Point, Site, Street, Surface, generate_parcels,
-    generate_quarters, geometry as g,
+    Block, Layout, LayoutConfig, ParcelConfig, Point, Shape, Site, Street, Surface,
+    generate_parcels, generate_quarters, geometry as g,
 };
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -36,6 +36,229 @@ fn run(
         .unwrap()
         .pop()
         .unwrap()
+}
+
+#[test]
+fn large_village_retains_a_nucleus_and_disjoint_served_faubourgs() {
+    let height = vec![20.0; 64 * 64];
+    let water = vec![0; 64 * 64];
+    let surface = Surface {
+        geometry: None,
+        width: 1600.0,
+        n: 64,
+        height: &height,
+        water: &water,
+    };
+    let mut village = site("european-organic");
+    village.population = 900;
+    village.center = Point { x: 800.0, y: 800.0 };
+    village.radius = 260.0;
+    let roads = vec![
+        street(&[(100.0, 800.0), (1500.0, 800.0)], "regional"),
+        street(&[(800.0, 100.0), (800.0, 800.0)], "regional"),
+    ];
+    let cfg = LayoutConfig {
+        settlement_form: "nucleated".into(),
+        suburbs: "few".into(),
+        ..legacy_config()
+    };
+    let a = run("large-village-composition", &village, &cfg, surface, &roads);
+    let b = run("large-village-composition", &village, &cfg, surface, &roads);
+    assert_eq!(
+        serde_json::to_string(&a).unwrap(),
+        serde_json::to_string(&b).unwrap()
+    );
+    assert_eq!(a.archetype, "nucleated-village");
+    assert_eq!(a.phases.len(), 2);
+    assert_eq!(
+        (&*a.phases[0].kind, &*a.phases[1].kind),
+        ("village", "faubourg")
+    );
+    assert!(
+        a.phases
+            .iter()
+            .all(|p| p.recipe == "village" && !p.shapes.is_empty())
+    );
+    assert!((a.phases.iter().map(|p| p.population).sum::<f64>() - 900.0).abs() < 1e-7);
+    assert!(
+        a.blocks
+            .iter()
+            .any(|b| a.quarters[b.quarter].phase == 1 && b.kind == "block")
+    );
+    for (i, q) in a.quarters.iter().enumerate() {
+        for other in &a.quarters[i + 1..] {
+            assert!(
+                g::intersection(&q.shape, &other.shape)
+                    .iter()
+                    .map(g::area)
+                    .sum::<f64>()
+                    < 0.01
+            );
+        }
+    }
+    for block in &a.blocks {
+        assert_eq!(block.zone, a.quarters[block.quarter].zone);
+    }
+    assert_connected(&a);
+    assert_physical(&a, surface, &cfg);
+    let parcels = generate_parcels(
+        "large-village-parcels",
+        std::slice::from_ref(&a),
+        &ParcelConfig::default(),
+    )
+    .unwrap();
+    assert!(!parcels[0].parcels.is_empty());
+    assert_eq!(
+        serde_json::to_string(&a).unwrap(),
+        serde_json::to_string(&b).unwrap()
+    );
+    let without = run(
+        "large-village-composition",
+        &village,
+        &LayoutConfig {
+            suburbs: "none".into(),
+            ..cfg
+        },
+        surface,
+        &roads,
+    );
+    assert_eq!(without.phases.len(), 1);
+    assert_eq!(without.phases[0].population, 900.0);
+}
+
+#[test]
+fn complete_town_inherits_phase_recipes_and_keeps_faubourgs_outside_its_wall() {
+    let height = vec![20.0; 64 * 64];
+    let water = vec![0; 64 * 64];
+    let surface = Surface {
+        geometry: None,
+        width: 1800.0,
+        n: 64,
+        height: &height,
+        water: &water,
+    };
+    let mut town = site("chinese");
+    town.center = Point { x: 900.0, y: 900.0 };
+    town.radius = 280.0;
+    let roads = vec![street(&[(100.0, 900.0), (1700.0, 900.0)], "regional")];
+    let cfg = LayoutConfig {
+        suburbs: "many".into(),
+        phases: 3,
+        ..legacy_config()
+    };
+    let layout = run("town-composition", &town, &cfg, surface, &roads);
+    assert_eq!(layout.phases.len(), 4);
+    assert_eq!(
+        layout
+            .phases
+            .iter()
+            .map(|p| p.recipe.as_str())
+            .collect::<Vec<_>>(),
+        ["core", "ring", "ring", "faubourg"]
+    );
+    assert!(
+        (layout.phases.iter().map(|p| p.population).sum::<f64>() - town.population as f64).abs()
+            < 1e-7
+    );
+    assert!(!layout.enclosures.is_empty());
+    let wall = Shape {
+        outer: layout.enclosures[0].path.clone(),
+        holes: vec![],
+    };
+    for shape in &layout.phases.last().unwrap().shapes {
+        assert!(
+            g::intersection(shape, &wall)
+                .iter()
+                .map(g::area)
+                .sum::<f64>()
+                < 0.01
+        );
+    }
+    assert!(
+        layout
+            .blocks
+            .iter()
+            .any(|b| b.zone == "faubourg" && b.kind == "block")
+    );
+    assert_connected(&layout);
+    assert_physical(&layout, surface, &cfg);
+    let snapshot = serde_json::to_string(&layout).unwrap();
+    let auto = generate_parcels(
+        "phase-parcels",
+        std::slice::from_ref(&layout),
+        &ParcelConfig::default(),
+    )
+    .unwrap();
+    let core = generate_parcels(
+        "phase-parcels",
+        std::slice::from_ref(&layout),
+        &ParcelConfig {
+            recipe: "core".into(),
+            ..ParcelConfig::default()
+        },
+    )
+    .unwrap();
+    assert_ne!(
+        serde_json::to_string(&auto).unwrap(),
+        serde_json::to_string(&core).unwrap()
+    );
+    assert_eq!(snapshot, serde_json::to_string(&layout).unwrap());
+}
+
+#[test]
+fn isolated_scene_and_village_ribbon_remain_separate_from_full_town_composition() {
+    let height = vec![20.0; 64 * 64];
+    let water = vec![0; 64 * 64];
+    let surface = Surface {
+        geometry: None,
+        width: 1200.0,
+        n: 64,
+        height: &height,
+        water: &water,
+    };
+    let mut village = site("european-organic");
+    village.population = 600;
+    village.center = Point { x: 600.0, y: 600.0 };
+    village.radius = 220.0;
+    let roads = vec![street(&[(100.0, 600.0), (1100.0, 600.0)], "regional")];
+    let ribbon = run(
+        "ribbon-composition",
+        &village,
+        &LayoutConfig {
+            settlement_form: "ribbon".into(),
+            ..legacy_config()
+        },
+        surface,
+        &roads,
+    );
+    assert_eq!(ribbon.archetype, "street-village");
+    assert_eq!(ribbon.phases.len(), 1);
+    assert_eq!(ribbon.phases[0].recipe, "village");
+    assert_connected(&ribbon);
+    let isolated = run(
+        "isolated-composition",
+        &village,
+        &LayoutConfig {
+            composition: "district".into(),
+            placement: "rectangle".into(),
+            ..legacy_config()
+        },
+        surface,
+        &roads,
+    );
+    assert_eq!(isolated.archetype, "district");
+    assert!(isolated.phases.is_empty());
+    village.population = 3500;
+    village.culture = "kraal".into();
+    let grown = run(
+        "grown-composition",
+        &village,
+        &legacy_config(),
+        surface,
+        &roads,
+    );
+    assert_eq!(grown.archetype, "town");
+    assert!(grown.phases.iter().all(|p| p.recipe.starts_with("grown-")));
 }
 
 fn assert_connected(layout: &Layout) {
@@ -191,6 +414,7 @@ fn seeded_hillside_enforces_street_lane_and_optional_stair_grades() {
     let height: Vec<_> = (0..n * n).map(|i| (i % n) as f32 * 8.0 * 0.28).collect();
     let water = vec![0; n * n];
     let surface = Surface {
+        geometry: None,
         width: 512.0,
         n,
         height: &height,
@@ -200,7 +424,7 @@ fn seeded_hillside_enforces_street_lane_and_optional_stair_grades() {
     let roads = [street(&[(256.0, 40.0), (256.0, 470.0)], "regional")];
     let mut cfg = LayoutConfig {
         fortification: "none".into(),
-        ..LayoutConfig::default()
+        ..legacy_config()
     };
     let with = run("urban-slope-stairs-20261013", &site, &cfg, surface, &roads);
     assert_connected(&with);
@@ -230,6 +454,7 @@ fn seeded_river_town_preserves_the_only_bridge_and_connected_banks() {
         }
     }
     let surface = Surface {
+        geometry: None,
         width: 512.0,
         n,
         height: &height,
@@ -239,7 +464,7 @@ fn seeded_river_town_preserves_the_only_bridge_and_connected_banks() {
     site.center.x = 232.0;
     let cfg = LayoutConfig {
         fortification: "none".into(),
-        ..LayoutConfig::default()
+        ..legacy_config()
     };
     let roads = [
         street(&[(30.0, 256.0), (248.0, 256.0)], "regional"),
@@ -293,6 +518,7 @@ fn seeded_flat_town_keeps_real_junctions_and_replays_exactly() {
     let height = vec![5.0; n * n];
     let water = vec![0; n * n];
     let surface = Surface {
+        geometry: None,
         width: 512.0,
         n,
         height: &height,
@@ -301,7 +527,7 @@ fn seeded_flat_town_keeps_real_junctions_and_replays_exactly() {
     let site = site("european-organic");
     let cfg = LayoutConfig {
         fortification: "none".into(),
-        ..LayoutConfig::default()
+        ..legacy_config()
     };
     let roads = [street(&[(20.0, 220.0), (490.0, 290.0)], "regional")];
     let first = run(
@@ -334,6 +560,7 @@ fn seeded_open_fringe_leaves_reserves_while_wall_town_keeps_a_defined_edge() {
     let height = vec![5.0; n * n];
     let water = vec![0; n * n];
     let surface = Surface {
+        geometry: None,
         width: 512.0,
         n,
         height: &height,
@@ -342,8 +569,10 @@ fn seeded_open_fringe_leaves_reserves_while_wall_town_keeps_a_defined_edge() {
     let site = site("european-organic");
     let roads = [street(&[(20.0, 220.0), (490.0, 290.0)], "regional")];
     let mut cfg = LayoutConfig {
+        // This seed pins the original single-envelope edge treatment.
+        composition: "district".into(),
         fortification: "none".into(),
-        ..LayoutConfig::default()
+        ..legacy_config()
     };
     let seed = "urban-fringe-3";
     let open = run(seed, &site, &cfg, surface, &roads);
@@ -380,4 +609,12 @@ fn seeded_open_fringe_leaves_reserves_while_wall_town_keeps_a_defined_edge() {
         }
     }
     report_frontage("flat/walled", &walled);
+}
+
+fn legacy_config() -> LayoutConfig {
+    LayoutConfig {
+        footprint: super::legacy_footprint(),
+        access_mode: "cultural".into(),
+        ..LayoutConfig::default()
+    }
 }

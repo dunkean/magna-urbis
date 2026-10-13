@@ -11,6 +11,7 @@ mkdirSync('out', { recursive: true });
 page.on('pageerror', e => errors.push(e.message));
 await page.addInitScript(() => {
   window.landuseReplies = 0;
+  window.landuseRequests = 0;
   const Base = window.Worker;
   window.Worker = class extends Base {
     constructor(...args) {
@@ -20,7 +21,7 @@ await page.addInitScript(() => {
       });
     }
     postMessage(message, ...args) {
-      if (message.input?.raster && message.input?.biome) window.landuseInput = message.input;
+      if (message.input?.raster && message.input?.biome) { window.landuseInput = message.input; window.landuseRequests++; }
       super.postMessage(message, ...args);
     }
   };
@@ -119,6 +120,25 @@ try {
   const beforeZoom = await page.evaluate(() => window.landuseReplies);
   await page.locator('#fit').click(); await frames(); await compareReference();
   assert.equal(await page.evaluate(() => window.landuseReplies), beforeZoom);
+  const requests = await page.evaluate(() => window.landuseRequests);
+  await page.locator('#landuseEnabled').uncheck();
+  assert.equal(await page.locator('#landuseLayer').isVisible(), false);
+  assert.equal(await page.locator('#landuseGenerate').isDisabled(), true);
+  await page.locator('#landuseEnabled').check(); await ready();
+  assert.equal(await page.evaluate(() => window.landuseRequests), requests, 'Re-enabling should reuse the retained scene');
+  await page.locator('#landuseEnabled').uncheck();
+  await page.locator('#decorQuick').selectOption(ids[0]);
+  await page.waitForFunction(id => new URL(location.href).searchParams.get('decor') === id, ids[0]);
+  assert.equal(await page.evaluate(() => window.landuseRequests), requests, 'Disabled stage generated on a decor change');
+  await page.goto(page.url());
+  await page.waitForFunction(() => document.getElementById('landuseStatus')?.textContent === 'Occupation du territoire désactivée.');
+  assert.equal(await page.locator('#landuseEnabled').isChecked(), false);
+  assert.equal(await page.evaluate(() => window.landuseRequests), 0, 'Disabled URL started a worker');
+  await page.locator('#landuseEnabled').check(); await ready();
+  await page.evaluate(() => { document.getElementById('landuseGenerate').click(); document.getElementById('landuseEnabled').click(); });
+  assert.equal(await page.locator('#landuseGenerate').getAttribute('aria-busy'), 'false');
+  assert.equal(await page.locator('#landuseLayer').isVisible(), false);
+  await page.locator('#landuseEnabled').check(); await ready();
   assert.deepEqual(errors, []);
   results.push({ lifecycle: 'display, visibility, background, URL replay and zoom preserve geometry', errors });
   writeFileSync('out/urban-landuse-canvas-check.json', JSON.stringify(results, null, 2));

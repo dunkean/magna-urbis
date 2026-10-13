@@ -1,3 +1,5 @@
+import { normalizeLayoutConfig, normalizeParcelConfig, type LayoutConfig, type ParcelConfig } from './urbanConfig';
+export * from './urbanConfig';
 import init, { SettlementTerrain } from '../pkg/wasm/magna_urbis_wasm.js';
 import wasmUrl from '../pkg/wasm/magna_urbis_wasm_bg.wasm?url&inline';
 import type { Point, RoadOutput, RoadSite, SettlementRaster } from './settlements';
@@ -6,18 +8,27 @@ export type { Point } from './settlements';
 export interface Shape { outer: Point[]; holes: Point[][] }
 export interface Street { path: Point[]; widths: number[]; rank: number; role: string }
 export interface Quarter { shape: Shape; phase: number; zone?: string }
-export interface Block { shape: Shape; quarter: number; kind: string; axis: Point; zone?: string }
+export interface Block { shape: Shape; quarter: number; kind: string; axis: Point; zone?: string; phase?: number }
 export interface Enclosure { path: Point[]; kind: string; gates: Point[] }
-export interface Layout { key: string; culture: string; center: Point; quarters: Quarter[]; streets: Street[]; blocks: Block[]; enclosures?: Enclosure[]; warnings: string[] }
-export interface Parcel { shape: Shape; block: number; use: 'plot' | 'garden' | 'place' | 'compound' | 'market' | 'reserve'; front: [Point, Point] | null; axis: Point; rank: number }
-export interface Partition { key: string; parcels: Parcel[]; warnings: string[] }
-export interface ParcelConfig { preset: string; culture?: string; recipe: string; zone: string; density: number; params: Record<string, unknown> }
-export interface LayoutConfig extends ParcelConfig {
-  count: number; rings: number; radius: number; radiusScale: number; placement: 'center' | 'rectangle' | 'skew' | 'notched'; monument: string;
-  fortification: 'culture' | 'none' | 'wall' | 'palisade'; maxStreetGrade: number; maxLaneGrade: number; maxStairGrade: number; allowStairs: boolean;
+export interface GrowthPhase { culture?: string; kind: string; zone: string; recipe: string; population: number; targetArea: number; shapes: Shape[] }
+export interface UrbanStructure {
+  version: 1; mechanism: string; family: string; reserve: Shape[]; allocated: Shape[];
+  centers: { id: number; point: Point; weight: number }[];
+  districts: { id: number; center: number; phase: number; tissue: string; quarters: number[] }[];
+  history: { epoch: number; kind: string; center: number; area: number }[];
+  metrics: { targetArea: number; allocatedArea: number; streetArea: number; reservedArea: number; grossDensity: number; plannedPopulation: number; shortfallArea: number; components: number; accessAdded: number };
 }
-export const defaultLayoutConfig = (): LayoutConfig => ({ preset: 'culture', culture: 'site', recipe: 'core', zone: 'auto', density: 1, count: 4, rings: 1, radius: 0, radiusScale: 1, placement: 'center', params: {}, monument: 'none', fortification: 'culture', maxStreetGrade: 0.12, maxLaneGrade: 0.18, maxStairGrade: 0.65, allowStairs: true });
-export const defaultParcelConfig = (): ParcelConfig => ({ preset: 'culture', culture: 'site', recipe: 'core', zone: 'auto', density: 1, params: {} });
+export interface Layout { key: string; culture: string; center: Point; quarters: Quarter[]; streets: Street[]; blocks: Block[]; enclosures?: Enclosure[]; phases?: GrowthPhase[]; archetype?: string; structure?: UrbanStructure; warnings: string[] }
+export interface Parcel { shape: Shape; block: number; use: 'plot' | 'garden' | 'place' | 'compound' | 'market' | 'reserve' | 'common'; front: [Point, Point] | null; axis: Point; rank: number; access?: { kind: 'public' | 'collective' | 'private' | 'unserved' | 'reserved'; street: number | null; frontLength: number } }
+export interface Partition { key: string; parcels: Parcel[]; warnings: string[]; diagnostics?: { coveredArea: number; residualArea: number; overlapArea: number; unservedArea: number } }
+/** Include outward growth when framing a completed settlement. */
+export function layoutExtent(layouts?: Layout[]): { center: Point; radius: number } | undefined {
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const layout of layouts ?? []) for (const shape of layout.structure?.allocated ?? layout.quarters.map(q => q.shape)) for (const p of shape.outer) {
+    x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y); x1 = Math.max(x1, p.x); y1 = Math.max(y1, p.y);
+  }
+  return Number.isFinite(x0) ? { center: { x: (x0 + x1) / 2, y: (y0 + y1) / 2 }, radius: Math.max(x1 - x0, y1 - y0) / 2 } : undefined;
+}
 
 /** Preserve crossing spans when the regional network becomes urban frontage. */
 export function regionalStreets(roads?: RoadOutput): Street[] {
@@ -70,14 +81,15 @@ export async function createUrbanEngine(): Promise<UrbanEngine> {
         const r = request.raster;
         terrain?.free();
         terrain = new SettlementTerrain(r.width, r.n, r.height, r.water, r.waterLevel, r.riverWidth, r.riverIds);
+        if (r.geometry) terrain.set_urban_geometry(JSON.stringify(r.geometry));
       }
       if (!terrain) throw new Error('Générez le terrain avant les quartiers.');
       const start = performance.now();
       if (request.kind === 'quarters') {
-        const layouts = JSON.parse(terrain.urban_quarters(request.seed, JSON.stringify(request.sites ?? []), JSON.stringify(request.layoutConfig ?? defaultLayoutConfig()), JSON.stringify(request.roads ?? []))) as Layout[];
+        const layouts = JSON.parse(terrain.urban_quarters(request.seed, JSON.stringify(request.sites ?? []), JSON.stringify(normalizeLayoutConfig(request.layoutConfig, true)), JSON.stringify(request.roads ?? []))) as Layout[];
         return { id: request.id, layouts, ms: performance.now() - start };
       }
-      const partitions = JSON.parse(terrain.urban_parcels(request.seed, JSON.stringify(request.layouts ?? []), JSON.stringify(request.parcelConfig ?? defaultParcelConfig()))) as Partition[];
+      const partitions = JSON.parse(terrain.urban_parcels(request.seed, JSON.stringify(request.layouts ?? []), JSON.stringify(normalizeParcelConfig(request.parcelConfig)))) as Partition[];
       return { id: request.id, partitions, ms: performance.now() - start };
     } catch (error) { return { id: request.id, error: String(error) }; }
   } };

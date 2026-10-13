@@ -3,7 +3,7 @@
 <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Magna Urbis — Urban Bench</title></head>
 <body>
 <header>
-  <strong class="brand">Urban Bench <small>Quartiers · parcelles · paysages</small></strong>
+  <strong class="brand">Urban Bench <small>Empreinte · tissus · parcelles</small></strong>
   <div class="control-group" role="group" aria-label="Décor">
     <button id="decorPrev" title="Décor précédent ([)" aria-label="Décor précédent">‹</button>
     <select id="decorQuick" aria-label="Décor"></select>
@@ -11,6 +11,7 @@
   </div>
   <div class="control-group" role="group" aria-label="Navigation"><button id="fit" title="Tout afficher (0)" aria-label="Tout afficher"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5"/><circle cx="12" cy="12" r="3"/></svg></button><button id="focusSeed" title="Centrer sur la ville (F)" aria-label="Centrer sur la ville"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="2"/></svg></button><button id="zoomIn" title="Zoom avant" aria-label="Zoom avant">+</button><button id="zoomOut" title="Zoom arrière" aria-label="Zoom arrière">−</button></div>
   <div class="control-group" role="group" aria-label="Affichage">
+    <label>Rendu <select id="mapStyle" aria-label="Rendu de la carte"><option value="relief">Relief</option><option value="fantasy-ink">Fantasy · Encre N&B</option><option value="fantasy-color">Fantasy · Aquarelle</option></select></label>
     <label><input id="showRelief" type="checkbox" checked>Relief</label>
     <label><input id="showContours" type="checkbox" checked>Courbes</label>
     <label><input id="showWater" type="checkbox" checked>Eaux</label>
@@ -23,7 +24,8 @@
 <div class="terrain-workspace">
 <div class="terrain-left-panel">
 <section class="stages" aria-label="Étapes">
-<details class="stage" id="decorStage" open><summary>1 · Décor <span id="decorState"></span></summary><div class="stage-controls">
+<details class="stage" id="fantasyStyleControls" hidden><summary>Fantasy · Brushes et export</summary><div class="stage-controls"><label>Densité<input id="brush_density" type="range" min=".3" max="2" step=".05" value="1"></label><label>Taille<input id="brush_size" type="range" min=".3" max="2" step=".05" value="1"></label><label>Espacement<input id="brush_spacing" type="range" min=".3" max="2" step=".05" value="1"></label><div class="settlement-actions"><button id="fantasyExport_svg" type="button">Exporter SVG</button><button id="fantasyExport_png" type="button">Exporter PNG · 4K</button></div></div></details>
+<details class="stage" id="decorStage"><summary>1 · Décor <span id="decorState"></span></summary><div class="stage-controls">
   <div class="control-group" id="decorFilters"></div>
   <div id="decorList" class="decor-list" role="listbox" aria-label="Décors"></div>
   <div class="settlement-actions"><button id="decorRandom" type="button">Décor au hasard</button><label class="file-button">Ouvrir des fichiers…<input id="decorFiles" type="file" accept=".decor" multiple hidden></label></div>
@@ -35,7 +37,7 @@
   <label>Nom <input id="seedName" type="text" maxlength="60" placeholder="Ville"></label>
   <label>Population <input id="seedPopulation" type="number" min="1" max="5000000" step="1" value="3000"></label>
   <label>Culture <select id="seedCulture"></select></label>
-  <label title="0 : rayon d'emprise du moteur de settlements, selon la population">Rayon m (0 = auto) <input id="seedRadius" type="number" min="0" max="25000" step="10" value="0"></label>
+  <label title="Rayon utilisé par le budget spatial « Rayon artistique » de l’étape 6. Avec le budget démographique, la population et la densité brute fixent la surface cible.">Rayon indicatif m (0 = auto) <input id="seedRadius" type="number" min="0" max="25000" step="10" value="0"></label>
   <label>X m <input id="seedX" type="number" min="0" step="1"></label><label>Y m <input id="seedY" type="number" min="0" step="1"></label>
   <label title="Décor : routes telles qu'exportées (seules les villes du décor y sont reliées). Recalculer : le réseau est routé de nouveau avec la graine parmi les lieux du décor.">Routes régionales <select id="seedRoads"><option value="decor">Routes du décor</option><option value="reroute">Recalculer avec la graine</option><option value="none">Aucune</option></select></label>
   <small id="seedInfo" role="status"></small>
@@ -49,6 +51,7 @@
       <svg id="map" xmlns="http://www.w3.org/2000/svg" aria-label="Décor et ville">
         <g id="baseLayer"><image id="reliefImage" preserveAspectRatio="none"/></g>
         <g id="landuseLayer"></g>
+        <g id="fantasyPainting"></g>
         <g id="contourLayer"></g>
         <g id="waterLayer"></g>
         <g id="seedLayer"></g>
@@ -57,7 +60,7 @@
       <output id="coordinates"></output><output id="scale"></output>
     </div>
     <aside><strong>Décor</strong><div id="report"><p><small>—</small></p></div>
-      <details><summary>Aide</summary><p><small>Molette : zoom · glisser : déplacer · double-clic : zoom.<br>P : poser la graine · F : centrer · 0 : tout afficher · [ / ] : décor précédent / suivant.<br><br>Les décors sont des cartes de Terrain Bench (relief, eaux, settlements, routes) exportées avec « Export decor » ou en lot par <code>node scripts/export_decors.mjs</code>. Le raster transmis à Rust est exactement celui de Terrain Bench : un lieu du décor, avec les routes du décor et la graine de la carte, donne les mêmes quartiers que dans Terrain Bench.<br><br>Les étapes Quartiers et Parcelles sont celles de Terrain Bench (même code, mêmes paramètres, même lien). Avec <code>npm run dev:terrain</code>, une modification de <code>rust/crates/core/src/urban</code> recompile le WASM et recharge la page.</small></p></details>
+      <details><summary>Aide</summary><p><small>Molette : zoom · glisser : déplacer · double-clic : zoom.<br>Règle : activer le bouton puis glisser entre deux points pour mesurer en m / km ; Échap : quitter la mesure.<br>P : poser la graine · F : centrer sur toute l’agglomération · 0 : tout afficher · [ / ] : décor précédent / suivant.<br><br>L’étape 6 compose l’empreinte, l’armature, les tissus et les accès locaux. Choisissez une silhouette et un mécanisme : fondation planifiée, croissance par accessibilité, accrétion le long des voies ou fusion de noyaux. Le budget spatial vient de la population et de la densité brute, ou d’un rayon artistique. Les diagnostics distinguent la réserve de croissance, les terres attribuées, la voirie et les enceintes ; ils expliquent les noyaux, les identités de quartier et les époques.<br><br>L’étape 7 découpe ces mêmes îlots avec un opérateur foncier indépendant. Les statuts d’accès et les résidus restent visibles avant les bâtiments. Les réglages de rendu ne régénèrent pas le plan. « Secteur isolé » et l’atelier permettent de travailler sur une recette seule.<br><br>Les décors sont des cartes de Terrain Bench (relief, eaux, lieux et routes). Les deux bancs utilisent le même moteur Rust. Les liens conservent les paramètres appliqués et la vue ; les anciens liens utilisent le mécanisme historique.</small></p></details>
     </aside>
   </main>
 </div>

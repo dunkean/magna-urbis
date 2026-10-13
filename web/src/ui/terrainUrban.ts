@@ -1,8 +1,10 @@
 import UrbanWorker from './urbanWorker?worker&inline';
 import catalogueJson from '../../../rust/crates/core/src/urban/catalogue.json';
-import { defaultLayoutConfig, defaultParcelConfig, regionalStreets, runUrbanRequest, type Layout, type LayoutConfig, type ParcelConfig, type Partition, type Point, type Shape, type UrbanRequest, type UrbanResponse } from '../../../rust/bridge/urban';
+import { defaultLayoutConfig, defaultParcelConfig, layoutExtent, normalizeLayoutConfig, normalizeParcelConfig, regionalStreets, runUrbanRequest, type Layout, type LayoutConfig, type ParcelConfig, type Partition, type Point, type Shape, type UrbanRequest, type UrbanResponse } from '../../../rust/bridge/urban';
 import { settlementRaster, type RoadOutput, type SettlementOutput, type SettlementRaster } from '../../../rust/bridge/settlements';
 import type { TerrainData } from '../../../rust/bridge/terrain';
+import { terrainGeography } from '../../../rust/bridge/urbanGeography';
+import { streetSurfacePath } from '../../../rust/bridge/urbanStreetSurface';
 import './terrainUrban.css';
 
 interface Catalogue { fields: Record<'quarters' | 'parcels', string[]>; presets: Record<string, { label: string; params: Record<string, unknown> }>; cultures: Record<string, { label: string; recipes: { id: string; label: string; zone: string; preset: string }[] }> }
@@ -14,6 +16,10 @@ const operators: Record<string, string[]> = { streetOp: ['organic', 'grid'], clo
 const labels: Record<string, string> = { streetOp: 'Rues', closeOp: 'Dessertes', orientation: 'Orientation', laneSpacing: 'Espacement des ruelles', wardArea: 'Surface des quartiers', accessDepth: 'Profondeur accessible', fieldTwist: 'Rotation du champ', curvature: 'Courbure', fieldNoise: 'Bruit du champ', fieldWavelength: 'Longueur du champ', fieldRandom: 'Variation du champ', gridSpacing: 'Espacement de grille', gridSkew: 'Obliquité de grille', blockSize: 'Taille des îlots', minBlock: 'Surface minimale des îlots', minWidth: 'Largeur minimale', widthByRank: 'Largeurs par rang', widthScale: 'Échelle des largeurs', widthJitter: 'Variation des largeurs', placeThreshold: 'Seuil des places', deadEndRatio: 'Impasse / longueur', slitDepth: 'Profondeur des passages', plotDepth: 'Profondeur des parcelles', contourFollow: 'Suivi des courbes de niveau', contourBlend: 'Influence du relief', longCut: 'Coupures longues', plotOp: 'Méthode de parcelles', houseArea: 'Surface de cour', coverage: 'Occupation', frontage: 'Largeur de façade', plotTilt: 'Inclinaison des parcelles', wideLotChance: 'Probabilité de grande parcelle', deepFill: 'Remplir les fonds' };
 const path = (pts: Point[], close = false): string => pts.map((p, i) => `${i ? 'L' : 'M'}${p.x.toFixed(3)},${p.y.toFixed(3)}`).join(' ') + (close ? 'Z' : '');
 const shapePath = (s: Shape): string => [s.outer, ...(s.holes ?? [])].map(p => path(p, true)).join(' ');
+const shapeArea = (s: Shape): number => {
+  const ring = (r: Point[]): number => Math.abs(r.reduce((sum, p, i) => { const n = r[(i + 1) % r.length]; return sum + p.x * n.y - p.y * n.x; }, 0)) / 2;
+  return ring(s.outer) - (s.holes ?? []).reduce((sum, h) => sum + ring(h), 0);
+};
 const configValue = (input: HTMLInputElement | HTMLSelectElement): string | number | boolean => input instanceof HTMLInputElement ? input.type === 'checkbox' ? input.checked : input.type === 'number' ? Number(input.value) : input.value : input.value;
 /** The wall stroke stops at each gate, so roads and terrain remain visible through it. */
 function enclosurePath(points: Point[], gates: Point[]): string {
@@ -52,7 +58,11 @@ function stairMarks(points: Point[], widths: number[]): string {
   }
   return marks.join(' ');
 }
-interface Render { quarters: boolean; blocks: boolean; streets: boolean; enclosures: boolean; parcels: boolean; gardens: boolean; places: boolean; fronts: boolean; axes: boolean; opacity: number; width: number; palette: 'atlas' | 'ink' | 'terrain' }
+const mechanisms: Record<string, string> = { auto: 'Selon le relief et les accès', accessibility: 'Croissance par accessibilité', ribbon: 'Accrétion le long des voies', fusion: 'Fusion de noyaux', legacy: 'Contour historique du banc' };
+const families: Record<string, string> = { auto: 'Selon culture, relief et accès', circle: 'Circulaire / ovalaire', rectangle: 'Carrée / rectangulaire', polygon: 'Polygonale', compact: 'Organique compacte', elongated: 'Allongée / fusiforme', linear: 'Linéaire / ruban', fan: 'Éventail / secteur', fingers: 'Radiale à bras', dendritic: 'Ramifiée / dendritique', lobed: 'Lobée / polynucléaire', archipelago: 'Discontinue / archipel', composite: 'Composite / asymétrique' };
+const tissues: Record<string, string> = { culture: 'Recettes culturelles par phase', grid: 'Grille orthogonale', organic: 'Organique', radial: 'Radial', terraces: 'Topographique / terrasses', dendritic: 'Ramifié', clusters: 'Groupes autour de communs' };
+const parcelOperators: Record<string, string> = { culture: 'Recettes culturelles par phase', strips: 'Bandes de façade', oriented: 'Subdivision orientée', frontage: 'Territoires de façade', compound: 'Domaines / compounds', wholeBlock: 'Îlot entier', garden: 'Jardin' };
+interface Render { reserve: boolean; allocated: boolean; centers: boolean; domains: boolean; quarters: boolean; blocks: boolean; streets: boolean; enclosures: boolean; parcels: boolean; gardens: boolean; places: boolean; fronts: boolean; axes: boolean; access: boolean; opacity: number; width: number; palette: 'growth' | 'atlas' | 'ink' | 'terrain' }
 type Kind = 'quarters' | 'parcels';
 
 /** `getRaster` replaces `getTerrain` where the raster is already adapted (Urban Bench decors). */
@@ -65,33 +75,41 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
   let worker: Worker | undefined, fallback = false, cachedTerrain: TerrainData | SettlementRaster | undefined, id = 0;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let drawnLayer: SVGGElement | undefined, drawnLayouts: Layout[] | undefined, drawnPartitions: Partition[] | undefined, drawnState = '';
-  let render: Render = { quarters: false, blocks: true, streets: true, enclosures: true, parcels: true, gardens: true, places: true, fronts: false, axes: false, opacity: 0.8, width: 0.6, palette: 'atlas' };
+  let render: Render = { reserve: false, allocated: false, centers: false, domains: true, quarters: false, blocks: true, streets: true, enclosures: true, parcels: true, gardens: true, places: true, fronts: false, axes: false, access: false, opacity: 0.8, width: 0.6, palette: 'growth' };
   const saved = new URLSearchParams(location.search).get('urban');
   if (saved) try {
     const s = JSON.parse(saved);
-    layoutConfig = { ...layoutConfig, ...s.layoutConfig }; parcelConfig = { ...parcelConfig, ...s.parcelConfig };
+    layoutConfig = normalizeLayoutConfig(s.layoutConfig, true); parcelConfig = normalizeParcelConfig(s.parcelConfig);
     quarterSeed = s.quarterSeed ?? ''; parcelSeed = s.parcelSeed ?? ''; target = s.target ?? '';
     enabled = s.enabled !== false; parcelEnabled = s.parcelEnabled !== false; render = { ...render, ...s.render };
   } catch { /* Broken links keep native defaults. */ }
   const stages = document.querySelector('.stages')!;
   const common = (kind: Kind): string => `<label>Culture<select data-config="culture"><option value="site">Culture de chaque settlement</option>${Object.entries(catalogue.cultures).map(([id, c]) => `<option value="${esc(id)}">${esc(c.label)}</option>`).join('')}</select></label>
-    <label>Recette<select data-config="recipe"></select></label><label>Préréglage<select data-config="preset"><option value="culture">Recette culturelle</option>${Object.entries(catalogue.presets).map(([id, p]) => `<option value="${esc(id)}">${esc(p.label)}</option>`).join('')}</select></label>
-    <label>Zones<select data-config="zone"><option value="auto">Du centre vers la campagne</option>${Object.entries({ core: 'Cœur', middle: 'Quartiers intermédiaires', edge: 'Périphérie', faubourg: 'Faubourgs', village: 'Village' }).map(([id, label]) => `<option value="${id}">${label}</option>`).join('')}</select></label><label>Densité<input data-config="density" type="number" min="0.1" max="10" step="0.1"></label>`;
+    <label>Recettes<select data-config="recipe"></select></label><label>Préréglage<select data-config="preset"><option value="culture">Recettes culturelles</option>${Object.entries(catalogue.presets).map(([id, p]) => `<option value="${esc(id)}">${esc(p.label)}</option>`).join('')}</select></label>
+    <label>Zones<select data-config="zone"><option value="auto">Du centre vers la campagne</option>${Object.entries({ core: 'Cœur', middle: 'Quartiers intermédiaires', edge: 'Périphérie', faubourg: 'Faubourgs', village: 'Village' }).map(([id, label]) => `<option value="${id}">${label}</option>`).join('')}</select></label><label>Multiplicateur de densité<input data-config="density" type="number" min="0.1" max="10" step="0.1"></label>`;
   const number = (key: string, label: string, min: number, max: number, step = 1): string => `<label>${label}<input data-config="${key}" type="number" min="${min}" max="${max}" step="${step}"></label>`;
+  const select = (key: string, label: string, values: Record<string, string>, footprint = false): string => `<label>${label}<select data-${footprint ? 'footprint' : 'config'}="${key}">${Object.entries(values).map(([id, text]) => `<option value="${id}">${esc(text)}</option>`).join('')}</select></label>`;
+  const footprintNumber = (key: string, label: string, min: number, max: number, step = 1): string => number(key, label, min, max, step).replace('data-config=', 'data-footprint=');
+  const footprintControls = `<div class="urban-footprint-controls"><div class="control-group">${select('family', 'Forme de ville', families, true)}${select('mechanism', 'Croissance', mechanisms, true)}</div><details class="advanced"><summary>Dimensions et budget</summary><div class="control-group">${select('budget', 'Budget spatial', { population: 'Population / densité brute', radius: 'Rayon artistique' }, true)}${footprintNumber('grossDensity', 'Densité brute (hab./ha · 0 = culture)', 0, 1000, 1)}${footprintNumber('aspect', 'Allongement', 1, 6, 0.1)}${footprintNumber('orientation', 'Orientation (°)', -180, 180, 5)}${footprintNumber('nuclei', 'Noyaux de croissance', 1, 6)}${footprintNumber('irregularity', 'Irrégularité', 0, 1, 0.05)}${footprintNumber('anisotropy', 'Attraction des axes', 0, 1, 0.05)}${footprintNumber('separation', 'Écartement des noyaux', 0.4, 3, 0.1)}${footprintNumber('epochs', 'Époques de croissance', 1, 5)}</div></details></div>`;
+  const tissueControls = `<div class="urban-tissue-controls"><div class="control-group">${select('tissue', 'Maillage des rues', tissues)}${select('accessMode', 'Accessibilité des îlots', { adaptive: 'Adaptative selon le parcellaire', cultural: 'Dessertes culturelles', none: 'Conserver les accès existants' })}</div><details class="advanced"><summary>Réglages des accès</summary><div class="control-group">${number('accessDepth', 'Profondeur accessible (m · 0 = culture)', 0, 200, 5)}${number('accessBudget', 'Accès ajoutés au plus par îlot', 0, 12)}</div></details></div>`;
+  const influenceControls = `<details class="advanced"><summary>Influences et sorties</summary><div class="control-group">${select('mixCulture', 'Seconde influence', { '': 'Aucune', ...Object.fromEntries(Object.entries(catalogue.cultures).map(([id, c]) => [id, c.label])) })}${select('mixMode', 'Répartition', { phases: 'Chronologique · extensions plus récentes', sectors: 'Géométrique · secteurs' })}${number('mixShare', 'Part de la seconde influence', 0, 1, 0.05)}${number('mixAngle', 'Orientation des secteurs (°)', -180, 180, 5)}${select('exitTreatment', 'Sorties de rues', { adaptive: 'Raccordements, chemins et impasses', closed: 'Impasses fermées', legacy: 'Ancien comportement' })}${select('peripheralRoad', 'Chemin périphérique', { auto: 'Selon les accès', none: 'Aucun', partial: 'Partiel', full: 'Complet si le terrain le permet' })}${select('axisAlignment', 'Orientation des axes urbains', { regional: 'Routes régionales principales', culture: 'Orientation culturelle' })}${number('siteAdaptation', 'Adaptation au relief et aux berges', 0, 2, 0.1)}</div><small>Les influences suivent les rues et les parcelles. Les sorties et le périphérique respectent l’eau et les pentes ; une enceinte conserve ses portes.</small></details>`;
+  const enclosureControls = '<details class="advanced urban-enclosure-controls"><summary>Enceinte</summary><label>Enceinte du noyau<select data-config="fortification"><option value="culture">Selon la culture</option><option value="none">Sans enceinte</option><option value="wall">Muraille</option><option value="palisade">Palissade</option></select></label><button data-remove-enclosure type="button">Retirer l’enceinte</button><small>Retirer recalcule immédiatement le plan ouvert. Les autres choix s’appliquent avec « Régénérer la ville ».</small></details>';
   function panel(kind: Kind, title: string): HTMLDetailsElement {
     const p = document.createElement('details'); p.className = 'stage urban-stage'; p.id = kind === 'quarters' ? 'urbanQuarterStage' : 'urbanParcelStage'; p.open = true;
     p.innerHTML = `<summary>${title}<span data-state></span></summary><div class="stage-controls">
+      <div class="urban-actions"><button data-apply type="button">${kind === 'quarters' ? 'Régénérer la ville' : 'Régénérer les parcelles'}</button><small data-status role="status">En attente des settlements…</small></div>
       <label><input data-enabled type="checkbox">Générer ${kind === 'quarters' ? 'les quartiers' : 'les parcelles'}</label>
       ${kind === 'quarters' ? '<label>Settlement ciblé<select id="urbanTarget"></select></label><button type="button" id="urbanFocus">Centrer sur la sélection</button>' : '<small>Les parcelles utilisent les îlots du bloc 6, sans régénérer les rues.</small>'}
-      <label>Graine ${kind === 'quarters' ? 'quartiers' : 'parcelles'}<input data-seed type="text" placeholder="Graine de la carte"></label>
-      <div class="control-group">${common(kind)}${kind === 'quarters' ? number('count', 'Quartiers par anneau', 3, 8) + number('rings', 'Anneaux', 1, 2) + number('radius', 'Rayon (m · 0 = settlement)', 0, 20000) + number('radiusScale', 'Échelle du rayon', 0.1, 5, 0.1) + '<label>Disposition<select data-config="placement"><option value="center">Plan culturel adapté au terrain</option><option value="rectangle">Rectangle</option><option value="skew">Oblique</option><option value="notched">Avec encoche</option></select></label><label>Enceinte<select data-config="fortification"><option value="culture">Selon la culture</option><option value="none">Ville ouverte</option><option value="wall">Muraille</option><option value="palisade">Palissade</option></select></label><label>Réservation monument<input data-config="monument" type="text" list="urbanMonuments"></label><datalist id="urbanMonuments"><option value="none"><option value="cathedral"><option value="great-mosque"><option value="temple"><option value="castle"><option value="palace"></datalist>' : ''}</div>
-      ${kind === 'quarters' ? `<details class="advanced"><summary>Rues et relief</summary><div class="control-group">${number('maxStreetGrade', 'Pente maximale des rues (m/m)', 0.01, 1, 0.01)}${number('maxLaneGrade', 'Pente maximale des ruelles (m/m)', 0.01, 1, 0.01)}<label><input data-config="allowStairs" type="checkbox">Autoriser les escaliers piétons</label>${number('maxStairGrade', 'Pente maximale des escaliers (m/m)', 0.01, 1, 0.01)}</div><small>0,12 = 12 % : 12 m de montée pour 100 m au sol. Les rues cherchent un passage praticable ; les escaliers sont dessinés avec des marches. Les ponts régionaux conservent leur franchissement.</small></details>` : ''}
+      <details class="advanced"><summary>Graine</summary><label>Graine ${kind === 'quarters' ? 'quartiers' : 'parcelles'}<input data-seed type="text" placeholder="Graine de la carte"></label></details>
+      ${kind === 'quarters' ? `<div class="urban-composition-controls"><details class="advanced"><summary>Mode de génération</summary><label>Génération<select data-config="composition"><option value="settlement">Agglomération complète</option><option value="district">Secteur isolé · ancien banc</option></select></label></details><div data-settlement-settings>${footprintControls}<details class="advanced" data-legacy-settings><summary>Composition historique</summary><label>Composition du lieu<select data-config="settlementForm"><option value="auto">Selon population, culture et accès</option><option value="nucleated">Noyau groupé et faubourgs</option><option value="ribbon">Village-rue</option></select></label><label>Faubourgs<select data-config="suburbs"><option value="auto">Croissance variable</option><option value="none">Aucun</option><option value="few">Quelques faubourgs</option><option value="many">Faubourgs étendus</option></select></label>${number('phases', 'Phases du noyau (0 = culture)', 0, 5)}</details></div>${tissueControls}</div>${enclosureControls}${influenceControls}<details class="advanced"><summary>Diagnostic du plan</summary><div data-composition class="urban-composition" aria-live="polite"></div></details>` : `${select('operator', 'Opérateur parcellaire', parcelOperators)}<small>« Par phase » conserve les recettes du noyau, des extensions et des faubourgs du plan affiché.</small><div data-parcel-diagnostics class="urban-diagnostics" aria-live="polite"></div>`}
+      <details class="advanced"><summary>Recettes et dimensions avancées</summary><div class="control-group">${common(kind)}${kind === 'quarters' ? number('count', 'Secteurs de calcul visés', 3, 8) + `<div data-fixture-settings>${number('rings', 'Anneaux de la scène', 1, 2)}<label>Disposition<select data-config="placement"><option value="center">Plan culturel adapté au terrain</option><option value="rectangle">Rectangle</option><option value="skew">Oblique</option><option value="notched">Avec encoche</option></select></label></div>` + number('radius', 'Rayon d’emprise (m · 0 = lieu)', 0, 25000) + number('radiusScale', 'Échelle de l’emprise', 0.1, 5, 0.1) + '<label>Réservation monument<input data-config="monument" type="text" list="urbanMonuments"></label><datalist id="urbanMonuments"><option value="none"><option value="cathedral"><option value="great-mosque"><option value="temple"><option value="castle"><option value="palace"></datalist>' : ''}</div></details>
+      ${kind === 'quarters' ? `<details class="advanced"><summary>Rues et relief</summary><div class="control-group">${number('maxStreetGrade', 'Pente maximale des rues (m/m)', 0.02, 0.3, 0.01)}${number('maxLaneGrade', 'Pente maximale des ruelles (m/m)', 0.02, 0.4, 0.01)}<label><input data-config="allowStairs" type="checkbox">Autoriser les escaliers piétons</label>${number('maxStairGrade', 'Pente maximale des escaliers (m/m)', 0.02, 1, 0.01)}</div><small>0,12 = 12 % : 12 m de montée pour 100 m au sol. Les rues cherchent un passage praticable ; les escaliers sont dessinés avec des marches. Les ponts régionaux conservent leur franchissement.</small></details>` : ''}
       <details class="advanced"><summary>Tous les paramètres natifs</summary><div data-fields class="urban-fields"></div><label>Overrides JSON<textarea data-json rows="4" spellcheck="false" placeholder="{}"></textarea></label><small>Les valeurs modifiées remplacent la recette. Les mesures géométriques sont en mètres (surfaces en m²).${kind === 'quarters' ? ' En progression automatique, les valeurs par zone affichées sont celles du cœur ; sélectionnez une zone pour modifier ses valeurs, puis revenez à la progression automatique.' : ''}</small><button data-reset type="button">Réinitialiser les paramètres</button></details>
       ${kind === 'quarters' ? '<small>Relief, rivières et lacs viennent du terrain réel. Les réglages de relief synthétique de l’ancien bench sont remplacés par les blocs 1–3.</small>' : ''}
-      <button data-apply type="button">${kind === 'quarters' ? 'Générer les quartiers et îlots' : 'Générer les parcelles'}</button><small data-status role="status">En attente des settlements…</small><div data-warnings role="status"></div></div>`;
+      <div data-warnings role="status"></div></div>`;
     stages.insertBefore(p, options.before); return p;
   }
-  const quarterPanel = panel('quarters', '6 · Quartiers et îlots '), parcelPanel = panel('parcels', '7 · Parcelles ');
+  const quarterPanel = panel('quarters', '6 · Empreinte, quartiers et îlots '), parcelPanel = panel('parcels', '7 · Parcelles ');
   const targetSelect = quarterPanel.querySelector<HTMLSelectElement>('#urbanTarget')!;
   const q = <T extends HTMLElement>(p: HTMLElement, selector: string): T => p.querySelector(selector) as T;
   const getConfig = (kind: Kind): LayoutConfig | ParcelConfig => kind === 'quarters' ? layoutConfig : parcelConfig;
@@ -100,10 +118,26 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
     const site = settlements?.settlements.find(s => s.key === target) ?? settlements?.settlements.slice().sort((a, b) => b.population - a.population)[0];
     return (kind === 'parcels' ? layouts?.find(l => l.key === site?.key)?.culture : undefined) ?? site?.culture ?? 'european-organic';
   }
-  function baseline(config: ParcelConfig): Record<string, unknown> {
+  function baseline(config: Omit<ParcelConfig, 'operator'>): Record<string, unknown> {
     const c = catalogue.cultures[config.culture && config.culture !== 'site' ? config.culture : siteCulture(config === parcelConfig ? 'parcels' : 'quarters')];
     const recipe = c?.recipes.find(r => r.id === config.recipe) ?? c?.recipes[0];
     return catalogue.presets[config.preset === 'culture' ? recipe?.preset ?? 'morph/european-organic' : config.preset]?.params ?? {};
+  }
+  function generationControls(): void {
+    const complete = layoutConfig.composition === 'settlement';
+    const legacy = layoutConfig.footprint.mechanism === 'legacy';
+    for (const [selector, active] of [['[data-settlement-settings]', complete], ['[data-fixture-settings]', !complete], ['[data-legacy-settings]', complete && legacy]] as const) {
+      const group = q<HTMLElement>(quarterPanel, selector); group.hidden = !active;
+      for (const e of Array.from(group.querySelectorAll<HTMLInputElement | HTMLSelectElement>('input,select'))) e.disabled = !active;
+    }
+    for (const e of Array.from(quarterPanel.querySelectorAll<HTMLInputElement | HTMLSelectElement>('[data-footprint]'))) {
+      const inactive = legacy && e.dataset.footprint !== 'mechanism';
+      e.closest('label')!.hidden = inactive;
+      e.disabled = !complete || inactive || e.dataset.footprint === 'grossDensity' && layoutConfig.footprint.budget !== 'population';
+    }
+    q<HTMLInputElement>(quarterPanel, '[data-config="radius"]').disabled = complete && !legacy && layoutConfig.footprint.budget !== 'radius';
+    q<HTMLInputElement>(quarterPanel, '[data-config="radiusScale"]').disabled = complete && !legacy && layoutConfig.footprint.budget !== 'radius';
+    for (const key of ['accessDepth', 'accessBudget']) q<HTMLInputElement>(quarterPanel, `[data-config="${key}"]`).disabled = layoutConfig.accessMode !== 'adaptive';
   }
   function populate(kind: Kind): void {
     const p = getPanel(kind), config = getConfig(kind);
@@ -111,12 +145,16 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
     q<HTMLInputElement>(p, '[data-seed]').value = kind === 'quarters' ? quarterSeed : parcelSeed;
     const culture = catalogue.cultures[config.culture && config.culture !== 'site' ? config.culture : siteCulture(kind)];
     const recipe = q<HTMLSelectElement>(p, '[data-config="recipe"]');
-    recipe.replaceChildren(...(culture?.recipes ?? [{ id: 'core', label: 'Cœur', zone: 'core', preset: '' }]).map(r => new Option(r.label, r.id)));
+    recipe.replaceChildren(new Option('Par phase · culture du lieu', 'auto'), ...(culture?.recipes ?? [{ id: 'core', label: 'Cœur', zone: 'core', preset: '' }]).map(r => new Option(r.label, r.id)));
     // A shared recipe may be valid for another settlement culture; Rust validates it per site.
     if (!Array.from(recipe.options).some(o => o.value === config.recipe)) recipe.add(new Option(config.recipe, config.recipe));
     for (const c of Array.from(p.querySelectorAll<HTMLInputElement | HTMLSelectElement>('[data-config]'))) {
       const value = (config as unknown as Record<string, unknown>)[c.dataset.config!];
       if (c instanceof HTMLInputElement && c.type === 'checkbox') c.checked = Boolean(value); else c.value = String(value ?? '');
+    }
+    if (kind === 'quarters') {
+      for (const c of Array.from(p.querySelectorAll<HTMLInputElement | HTMLSelectElement>('[data-footprint]'))) c.value = String(layoutConfig.footprint[c.dataset.footprint as keyof LayoutConfig['footprint']]);
+      generationControls();
     }
     const base = baseline(config), fields = q<HTMLElement>(p, '[data-fields]'); fields.replaceChildren();
     for (const key of catalogue.fields[kind]) {
@@ -150,7 +188,7 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
     }
   }
   const rendering = document.createElement('details'); rendering.className = 'advanced';
-  rendering.innerHTML = `<summary>Rendu · quartiers et parcelles</summary><div class="control-group">${(['quarters', 'blocks', 'streets', 'enclosures', 'parcels', 'gardens', 'places', 'fronts', 'axes'] as const).map((key, i) => `<label><input data-render="${key}" type="checkbox">${['Limites des quartiers', 'Îlots', 'Rues urbaines', 'Enceintes et portes', 'Parcelles', 'Jardins', 'Places', 'Façades accessibles', 'Axes des parcelles'][i]}</label>`).join('')}<label>Palette<select data-render="palette"><option value="atlas">Atlas</option><option value="ink">Encre</option><option value="terrain">Terrain</option></select></label><label>Opacité<input data-render="opacity" type="number" min="0" max="1" step="0.05"></label><label>Épaisseur des traits (px)<input data-render="width" type="number" min="0" max="5" step="0.1"></label></div><small>Ces réglages redessinent les résultats conservés, sans appel de génération.</small>`;
+  rendering.innerHTML = `<summary>Rendu · empreinte, quartiers et parcelles</summary><div class="control-group">${Object.entries({ reserve: 'Réserve de croissance', allocated: 'Terre urbaine attribuée', centers: 'Noyaux et identités de quartier', domains: 'Domaines réservés', quarters: 'Secteurs de calcul', blocks: 'Îlots', streets: 'Rues urbaines', enclosures: 'Enceintes et portes', parcels: 'Parcelles', gardens: 'Jardins', places: 'Places et communs', fronts: 'Façades accessibles', axes: 'Axes des parcelles', access: 'Statut de desserte des parcelles' }).map(([key, label]) => `<label><input data-render="${key}" type="checkbox">${label}</label>`).join('')}<label>Palette<select data-render="palette"><option value="growth">Phases de croissance</option><option value="atlas">Atlas · quartiers</option><option value="ink">Encre</option><option value="terrain">Terrain</option></select></label><label>Opacité<input data-render="opacity" type="number" min="0" max="1" step="0.05"></label><label>Épaisseur des traits (px)<input data-render="width" type="number" min="0" max="5" step="0.1"></label></div><small>Ces réglages redessinent les résultats conservés, sans appel de génération. La réserve, la terre attribuée et les enceintes sont trois objets différents.</small>`;
   parcelPanel.querySelector('.stage-controls')!.append(rendering);
   for (const e of Array.from(rendering.querySelectorAll<HTMLInputElement | HTMLSelectElement>('[data-render]'))) {
     const key = e.dataset.render as keyof Render;
@@ -161,8 +199,14 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
   function read(kind: Kind): void {
     const p = getPanel(kind), config = getConfig(kind);
     for (const c of Array.from(p.querySelectorAll<HTMLInputElement | HTMLSelectElement>('[data-config]'))) {
+      if (c.disabled) continue;
       if (!c.checkValidity()) { c.reportValidity(); throw new Error('Corrigez les paramètres signalés.'); }
       (config as unknown as Record<string, unknown>)[c.dataset.config!] = configValue(c);
+    }
+    if (kind === 'quarters') for (const c of Array.from(p.querySelectorAll<HTMLInputElement | HTMLSelectElement>('[data-footprint]'))) {
+      if (c.disabled) continue;
+      if (!c.checkValidity()) { c.reportValidity(); throw new Error('Corrigez les paramètres d’empreinte signalés.'); }
+      (layoutConfig.footprint as unknown as Record<string, unknown>)[c.dataset.footprint!] = configValue(c);
     }
     const json = q<HTMLTextAreaElement>(p, '[data-json]').value.trim();
     if (json) {
@@ -196,7 +240,7 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
     const message: UrbanRequest = { id: ++id, kind, seed: kind === 'quarters' ? appliedQuarterSeed || options.getSeed() : appliedParcelSeed || options.getSeed() };
     if (cachedTerrain !== source) {
       // The worker takes ownership of the buffers: a retained raster is copied.
-      const r = 'n' in source ? source : settlementRaster(source);
+      const r = 'n' in source ? source : { ...settlementRaster(source, 1024), geometry: terrainGeography(source) };
       message.raster = r === source ? { ...r, height: r.height.slice(), water: r.water.slice(), waterLevel: r.waterLevel.slice(), riverWidth: r.riverWidth.slice(), riverIds: r.riverIds.slice() } : r;
       cachedTerrain = source;
     }
@@ -233,6 +277,41 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
     draw(); options.onChange();
   }
   const palette = ['#dfb973', '#90bdc7', '#c5a3ce', '#a0bc84', '#d29c8e', '#bdc4d5'];
+  const zoneColors: Record<string, string> = { core: '#dfb973', middle: '#bfa4ca', edge: '#91bdc5', faubourg: '#a0bc84', village: '#dfb973' };
+  const phaseLabel = (kind: string, zone: string): string => kind === 'faubourg' ? 'Faubourgs' : kind === 'hamlet' ? 'Hameau' : kind === 'village' ? 'Noyau villageois' : zone === 'core' ? 'Cœur' : zone === 'middle' ? 'Extension' : 'Périphérie';
+  function compositionReport(): void {
+    const box = q<HTMLElement>(quarterPanel, '[data-composition]');
+    if (!enabled || !layouts) { box.replaceChildren(); return; }
+    const names: Record<string, string> = { town: 'Bourg / ville', 'nucleated-village': 'Village groupé', 'street-village': 'Village-rue', hamlet: 'Hameau', district: 'Secteur isolé' };
+    const hectares = (a: number): string => `${(a / 1e4).toFixed(2)} ha`;
+    const historyNames: Record<string, string> = { foundation: 'Fondation', growth: 'Croissance', extension: 'Extension', absorption: 'Absorption d’un noyau', merge: 'Fusion de noyaux', enclosure: 'Agrandissement d’enceinte', access: 'Ouverture d’un accès', 'planned-extension': 'Extension planifiée', 'nucleus-absorption': 'Absorption d’un noyau', 'nucleus-growth': 'Croissance d’un noyau', 'nucleus-merger': 'Fusion de noyaux', 'road-accretion': 'Accrétion le long d’une voie', 'accessible-extension': 'Extension par accessibilité' };
+    box.innerHTML = layouts.map(l => {
+      const structure = l.structure, metrics = structure?.metrics;
+      return `<article><strong>${esc(names[l.archetype ?? 'district'] ?? l.archetype ?? 'Lieu')}${layouts!.length > 1 ? ` · ${esc(l.key)}` : ''}</strong>${structure ? `<small data-growth-method>${esc(mechanisms[structure.mechanism] ?? structure.mechanism)} · ${esc(families[structure.family] ?? structure.family)}</small>` : ''}${metrics ? `<dl class="urban-metrics" data-urban-metrics><dt>Surface cible</dt><dd>${hectares(metrics.targetArea)}</dd><dt>Terre attribuée</dt><dd>${hectares(metrics.allocatedArea)}</dd><dt>Voirie et limites</dt><dd>${hectares(metrics.streetArea)}</dd><dt>Réserves et espaces communs</dt><dd>${hectares(metrics.reservedArea)}</dd><dt>Densité brute appliquée</dt><dd>${metrics.grossDensity.toFixed(1)} hab./ha</dd><dt>Population de planification</dt><dd>${Math.round(metrics.plannedPopulation).toLocaleString()} hab.</dd><dt>Déficit de surface</dt><dd>${hectares(metrics.shortfallArea)}</dd><dt>Noyaux / composantes</dt><dd>${structure!.centers.length} / ${metrics.components}</dd><dt>Accès ajoutés</dt><dd>${metrics.accessAdded}</dd></dl><small>Ces budgets précèdent les bâtiments ; ils ne mesurent pas une capacité d’hébergement.</small>` : ''}${l.phases?.length ? `<table><caption>Composition appliquée · population prévue et emprise sèche</caption><thead><tr><th>Phase</th><th>Hab.</th><th>ha</th></tr></thead><tbody>${l.phases.map((p, i) => `<tr data-phase="${i}" data-kind="${esc(p.kind)}"><th><span class="urban-swatch" style="background:${p.kind === 'faubourg' ? zoneColors.faubourg : zoneColors[p.zone] ?? '#a0bc84'}"></span>${phaseLabel(p.kind, p.zone)}<small>${esc(p.recipe)} · ${l.quarters.filter(q => q.phase === i).length} secteurs</small></th><td>${Math.round(p.population).toLocaleString()}</td><td title="Emprise prévue : ${hectares(p.targetArea)}">${(p.shapes.reduce((sum, s) => sum + shapeArea(s), 0) / 1e4).toFixed(1)}</td></tr>`).join('')}</tbody></table>` : '<small>Une seule recette dans une emprise de travail. Choisissez « Agglomération complète » pour évaluer un lieu entier.</small>'}${structure ? `<details class="advanced"><summary>Identités et histoire appliquées</summary><ul>${structure.districts.map(d => `<li data-district="${esc(String(d.id))}">Q${d.id + 1} · noyau ${d.center + 1} · ${esc(tissues[d.tissue] ?? d.tissue)} · phase ${d.phase + 1} · ${d.quarters.length} secteurs</li>`).join('')}</ul><ol>${structure.history.map(h => `<li data-epoch="${h.epoch}">Époque ${h.epoch + 1} · ${esc(historyNames[h.kind] ?? h.kind)} · noyau ${h.center + 1} · ${hectares(h.area)}</li>`).join('')}</ol></details>` : ''}</article>`;
+    }).join('');
+  }
+  function parcelReport(): void {
+    const box = q<HTMLElement>(parcelPanel, '[data-parcel-diagnostics]');
+    if (!enabled || !parcelEnabled || !partitions) { box.replaceChildren(); return; }
+    const accessNames: Record<string, string> = { public: 'public', collective: 'collectif', private: 'privé', unserved: 'sans desserte', reserved: 'réservé' };
+    box.innerHTML = partitions.map(p => {
+      const d = p.diagnostics;
+      const counts = p.parcels.reduce<Record<string, number>>((result, parcel) => { if (parcel.access) result[parcel.access.kind] = (result[parcel.access.kind] ?? 0) + 1; return result; }, {});
+      return `<article>${partitions!.length > 1 ? `<strong>${esc(p.key)}</strong>` : ''}${Object.keys(counts).length ? `<small data-access-summary>Accès : ${Object.entries(counts).map(([kind, n]) => `${n} ${accessNames[kind] ?? kind}`).join(' · ')}</small>` : ''}${d ? `<dl class="urban-metrics" data-parcel-metrics><dt>Surface couverte</dt><dd>${(d.coveredArea / 1e4).toFixed(2)} ha</dd><dt>Résidu non attribué</dt><dd>${d.residualArea.toFixed(2)} m²</dd><dt>Chevauchement</dt><dd>${d.overlapArea.toFixed(2)} m²</dd><dt>Terre sans desserte</dt><dd>${(d.unservedArea / 1e4).toFixed(2)} ha</dd></dl>` : ''}</article>`;
+    }).join('');
+  }
+  function identityScale(layer: SVGGElement): void {
+    const pixel = options.map.viewBox.baseVal.width / Math.max(1, options.map.getBoundingClientRect().width);
+    for (const p of Array.from(layer.querySelectorAll<SVGPathElement>('[data-urban-center]'))) {
+      const x = Number(p.dataset.centerX), y = Number(p.dataset.centerY), half = pixel * 5;
+      p.setAttribute('d', path([{ x: x - half, y }, { x: x + half, y }]) + ' ' + path([{ x, y: y - half }, { x, y: y + half }]));
+    }
+    for (const text of Array.from(layer.querySelectorAll<SVGTextElement>('[data-urban-district]'))) {
+      text.setAttribute('x', String(Number(text.dataset.centerX) + pixel * 8));
+      text.setAttribute('y', String(Number(text.dataset.centerY) + pixel * 13 * (Number(text.dataset.phase) + 1)));
+      text.setAttribute('font-size', String(pixel * 11));
+    }
+  }
   function draw(): void {
     // Regional pieces are clipped before smoothing so their rendered endpoints
     // meet the retained native junctions, including at water crossings.
@@ -242,7 +321,9 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
     let layer = options.map.querySelector<SVGGElement>('#urbanOverlay');
     if (!layer) { layer = document.createElementNS(ns, 'g'); layer.id = 'urbanOverlay'; layer.style.pointerEvents = 'none'; options.map.insertBefore(layer, options.map.querySelector('#roadOverlay, #settlementOverlay')); }
     const state = JSON.stringify({ enabled, parcelEnabled, render });
-    if (layer === drawnLayer && layouts === drawnLayouts && partitions === drawnPartitions && state === drawnState) return;
+    if (layer === drawnLayer && layouts === drawnLayouts && partitions === drawnPartitions && state === drawnState) { if (render.centers) identityScale(layer); return; }
+    compositionReport();
+    parcelReport();
     const planChanged = drawnLayouts !== layouts;
     drawnLayer = layer; drawnLayouts = layouts; drawnPartitions = partitions; drawnState = state; layer.replaceChildren();
     if (planChanged) options.onPlanChange?.();
@@ -254,33 +335,48 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
     };
     const stroke = render.palette === 'ink' ? '#3c3024' : '#655847';
     for (const l of layouts) {
-      if (render.quarters) for (const [i, quarter] of l.quarters.entries()) add(shapePath(quarter.shape), 'none', palette[i % palette.length], render.width * 2).setAttribute('stroke-dasharray', '4 3');
-      const peripheral = (quarter: number, zone?: string): boolean => ['edge', 'faubourg', 'village'].includes(zone ?? l.quarters[quarter]?.zone ?? 'core') && !(l.enclosures?.length);
-      if (render.blocks) for (const block of l.blocks) {
-        if (block.kind === 'reserve') continue;
-        const p = add(shapePath(block.shape), render.palette === 'terrain' ? 'none' : render.palette === 'ink' ? '#e3d1b5' : palette[block.quarter % palette.length], stroke, render.width);
-        if (peripheral(block.quarter, block.zone)) { p.setAttribute('fill-opacity', '0.55'); p.setAttribute('stroke-opacity', '0.35'); }
+      const growthColor = (quarter: number, phase?: number): string => { const q = l.quarters[quarter], p = l.phases?.[phase ?? q?.phase]; return p?.kind === 'faubourg' ? zoneColors.faubourg : zoneColors[p?.zone ?? q?.zone ?? 'core'] ?? zoneColors.core; };
+      if (render.reserve) for (const shape of l.structure?.reserve ?? []) {
+        const p = add(shapePath(shape), '#6a8eb1', '#416784', render.width * 2);
+        p.dataset.urbanSurface = 'reserve'; p.setAttribute('fill-opacity', '0.08'); p.setAttribute('stroke-dasharray', '7 4');
+      }
+      if (render.allocated) for (const shape of l.structure?.allocated ?? []) {
+        const p = add(shapePath(shape), '#c0a366', '#8a632d', render.width * 2);
+        p.dataset.urbanSurface = 'allocated'; p.setAttribute('fill-opacity', '0.12');
+      }
+      if (render.quarters) for (const [i, quarter] of l.quarters.entries()) add(shapePath(quarter.shape), 'none', render.palette === 'growth' ? growthColor(i) : palette[i % palette.length], render.width * 2).setAttribute('stroke-dasharray', '4 3');
+      const peripheral = (quarter: number, zone?: string, phase?: number): boolean => { const p = l.phases?.[phase ?? l.quarters[quarter]?.phase]; return p?.kind === 'faubourg' || ['edge', 'faubourg', 'village'].includes(p?.zone ?? zone ?? l.quarters[quarter]?.zone ?? 'core') && !(l.enclosures?.length); };
+      if (render.blocks || render.domains) for (const block of l.blocks) {
+        if (block.kind === 'reserve' ? !render.domains : !render.blocks) continue;
+        const p = add(shapePath(block.shape), render.palette === 'terrain' ? 'none' : render.palette === 'ink' ? '#e3d1b5' : block.kind === 'reserve' ? '#cbc2a8' : block.kind === 'common' ? '#adc5bf' : render.palette === 'growth' ? growthColor(block.quarter, block.phase) : palette[block.quarter % palette.length], stroke, render.width);
+        p.dataset.phase = String(block.phase ?? l.quarters[block.quarter]?.phase ?? 0);
+        p.dataset.blockKind = block.kind;
+        if (block.kind === 'reserve') p.setAttribute('stroke-dasharray', '3 2');
+        if (peripheral(block.quarter, block.zone, block.phase)) { p.setAttribute('fill-opacity', '0.55'); p.setAttribute('stroke-opacity', '0.35'); }
       }
       const partition = parcelEnabled ? partitions?.find(p => p.key === l.key) : undefined;
       for (const [i, parcel] of (partition?.parcels ?? []).entries()) {
-        if ((['plot', 'compound'].includes(parcel.use) && render.parcels) || (parcel.use === 'garden' && render.gardens) || (['place', 'market'].includes(parcel.use) && render.places)) {
-          const fill = render.palette === 'terrain' ? 'none' : render.palette === 'ink' ? '#eee0c9' : parcel.use === 'garden' ? '#a8bc89' : parcel.use === 'place' ? '#e6d1a5' : palette[i % palette.length];
+        if ((['plot', 'compound'].includes(parcel.use) && render.parcels) || (parcel.use === 'garden' && render.gardens) || (['place', 'market', 'common'].includes(parcel.use) && render.places) || parcel.use === 'reserve' && render.domains) {
+          const fill = render.palette === 'terrain' ? 'none' : render.palette === 'ink' ? '#eee0c9' : parcel.use === 'garden' ? '#a8bc89' : parcel.use === 'reserve' ? '#cbc2a8' : parcel.use === 'common' ? '#adc5bf' : parcel.use === 'place' ? '#e6d1a5' : render.palette === 'growth' ? growthColor(l.blocks[parcel.block]?.quarter ?? -1, l.blocks[parcel.block]?.phase) : palette[i % palette.length];
           const p = add(shapePath(parcel.shape), fill, stroke, render.width);
-          if (peripheral(l.blocks[parcel.block]?.quarter ?? -1, l.blocks[parcel.block]?.zone)) { p.setAttribute('fill-opacity', '0.65'); p.setAttribute('stroke-opacity', '0.5'); }
+          p.dataset.parcelUse = parcel.use;
+          if (peripheral(l.blocks[parcel.block]?.quarter ?? -1, l.blocks[parcel.block]?.zone, l.blocks[parcel.block]?.phase)) { p.setAttribute('fill-opacity', '0.65'); p.setAttribute('stroke-opacity', '0.5'); }
         }
         if (render.fronts && parcel.front) add(path(parcel.front), 'none', '#a92d34', render.width * 2);
+        if (render.access && parcel.access) {
+          const colors = { public: '#26815d', collective: '#456fba', private: '#aa6dad', unserved: '#cc383c', reserved: '#81725b' };
+          const p = add(shapePath(parcel.shape), colors[parcel.access.kind], colors[parcel.access.kind], render.width * 1.5);
+          p.dataset.parcelAccess = parcel.access.kind; p.setAttribute('fill-opacity', '0.25');
+        }
         if (render.axes && parcel.shape.outer.length) {
           const vertices = parcel.shape.outer, center = vertices.reduce((c, p) => ({ x: c.x + p.x / vertices.length, y: c.y + p.y / vertices.length }), { x: 0, y: 0 });
           add(path([{ x: center.x - parcel.axis.x * 4, y: center.y - parcel.axis.y * 4 }, { x: center.x + parcel.axis.x * 4, y: center.y + parcel.axis.y * 4 }]), 'none', '#396781', render.width);
         }
       }
       if (render.streets) for (const street of l.streets) {
-        // Rust widths are physical metres, independent of the screen-space diagnostic outlines.
-        for (let i = 1; i < street.path.length; i++) {
-          const width = ((street.widths[i - 1] ?? 3) + (street.widths[i] ?? street.widths[i - 1] ?? 3)) / 2;
-          const p = add(path([street.path[i - 1], street.path[i]]), 'none', render.palette === 'ink' ? '#6b5640' : '#f3dfb3', street.role === 'stairs' ? Math.min(2, width) : width, true);
-          p.dataset.streetRole = street.role;
-        }
+        const p = add(streetSurfacePath(street), render.palette === 'ink' ? '#6b5640' : street.role === 'collective' ? '#ccdacf' : street.role === 'private' ? '#d9cddf' : '#f3dfb3', 'none', 0, true);
+        p.setAttribute('fill-rule', 'nonzero');
+        p.dataset.streetRole = street.role;
         if (street.role === 'stairs') add(stairMarks(street.path, street.widths), 'none', '#705d45', 0.3, true).dataset.streetRole = 'steps';
       }
       if (render.enclosures) for (const enclosure of l.enclosures ?? []) {
@@ -290,9 +386,30 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
         if (palisade) wall.setAttribute('stroke-dasharray', '1.3 0.5');
         else add(d, 'none', '#b6a793', 1.7, true);
       }
+      if (render.centers && l.structure) {
+        for (const center of l.structure.centers) {
+          const p = center.point;
+          const marker = add('', 'none', '#a43526', Math.max(1, render.width * 2));
+          marker.dataset.urbanCenter = String(center.id); marker.dataset.centerX = String(p.x); marker.dataset.centerY = String(p.y);
+        }
+        for (const district of l.structure.districts) {
+          const center = l.structure.centers.find(c => c.id === district.center)?.point;
+          if (!center) continue;
+          const text = document.createElementNS(ns, 'text'); text.setAttribute('x', String(center.x + 12)); text.setAttribute('y', String(center.y + 12 * (district.phase + 1))); text.setAttribute('font-size', '8'); text.setAttribute('text-anchor', 'middle'); text.setAttribute('fill', '#534235');
+          text.textContent = `Q${district.id + 1}`; text.dataset.urbanDistrict = String(district.id); layer!.append(text);
+          text.dataset.centerX = String(center.x); text.dataset.centerY = String(center.y); text.dataset.phase = String(district.phase);
+        }
+      }
     }
+    if (render.centers) identityScale(layer);
   }
   function schedule(): void { clearTimeout(timer); timer = setTimeout(() => request('quarters'), 120); }
+  q<HTMLButtonElement>(quarterPanel, '[data-remove-enclosure]').onclick = () => {
+    layoutConfig.fortification = 'none';
+    appliedLayout = { ...appliedLayout, fortification: 'none' };
+    q<HTMLSelectElement>(quarterPanel, '[data-config="fortification"]').value = 'none';
+    request('quarters'); options.onChange();
+  };
   for (const kind of ['quarters', 'parcels'] as const) {
     const p = getPanel(kind);
     q<HTMLButtonElement>(p, '[data-apply]').onclick = () => { try { read(kind); populate(kind); options.onChange(); request(kind); } catch (e) { status(kind, String(e)); } };
@@ -312,7 +429,16 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
     };
     for (const c of Array.from(p.querySelectorAll<HTMLInputElement | HTMLSelectElement>('[data-config]'))) c.onchange = () => {
       (getConfig(kind) as unknown as Record<string, unknown>)[c.dataset.config!] = configValue(c);
-      if (c.dataset.config === 'zone') populate(kind);
+      if (c.dataset.config === 'composition') {
+        if (layoutConfig.composition === 'settlement') { layoutConfig.placement = 'center'; layoutConfig.recipe = 'auto'; layoutConfig.zone = 'auto'; }
+        else if (layoutConfig.recipe === 'auto') layoutConfig.recipe = 'core';
+      }
+      if (['zone', 'composition'].includes(c.dataset.config!)) populate(kind);
+      if (kind === 'quarters' && c.dataset.config === 'accessMode') generationControls();
+    };
+    for (const c of Array.from(p.querySelectorAll<HTMLInputElement | HTMLSelectElement>('[data-footprint]'))) c.onchange = () => {
+      (layoutConfig.footprint as unknown as Record<string, unknown>)[c.dataset.footprint!] = configValue(c);
+      if (['mechanism', 'budget'].includes(c.dataset.footprint!)) generationControls();
     };
     q<HTMLInputElement>(p, '[data-seed]').oninput = e => {
       if (kind === 'quarters') quarterSeed = (e.target as HTMLInputElement).value;
@@ -320,7 +446,7 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
     };
     for (const c of Array.from(p.querySelectorAll<HTMLSelectElement>('[data-config="culture"], [data-config="preset"], [data-config="recipe"]'))) c.onchange = () => {
       const config = getConfig(kind); (config as unknown as Record<string, unknown>)[c.dataset.config!] = c.value;
-      if (c.dataset.config === 'culture') config.recipe = 'core';
+      if (c.dataset.config === 'culture') config.recipe = 'auto';
       if (c.dataset.config === 'recipe' && config.zone !== 'auto') config.zone = catalogue.cultures[config.culture && config.culture !== 'site' ? config.culture : siteCulture(kind)]?.recipes.find(r => r.id === config.recipe)?.zone ?? config.zone;
       populate(kind);
     };
@@ -330,18 +456,21 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
   q<HTMLButtonElement>(quarterPanel, '#urbanFocus').onclick = () => {
     const selection = settlements?.settlements.filter(s => target === 'all' || s.key === target) ?? [];
     if (!selection.length || !options.onFocus) return;
+    const extent = layoutExtent(layouts);
+    if (extent) { options.onFocus(extent.center, extent.radius); return; }
     const minX = Math.min(...selection.map(s => s.center.x - s.radius)), maxX = Math.max(...selection.map(s => s.center.x + s.radius)), minY = Math.min(...selection.map(s => s.center.y - s.radius)), maxY = Math.max(...selection.map(s => s.center.y + s.radius));
     options.onFocus({ x: (minX + maxX) / 2, y: (minY + maxY) / 2 }, Math.max(maxX - minX, maxY - minY) / 2);
   };
   populate('quarters'); populate('parcels');
   return {
     get layouts(): Layout[] | undefined { return layouts; },
+    get extent() { return layoutExtent(layouts); },
     workshopState() { return clone({ layoutConfig: appliedLayout, parcelConfig: appliedParcel, quarterSeed: appliedQuarterSeed, parcelSeed: appliedParcelSeed, layouts, partitions }); },
     applyWorkshop(state: { layoutConfig?: LayoutConfig; parcelConfig?: ParcelConfig; quarterSeed?: string; parcelSeed?: string }): void {
       const quartersChanged = state.layoutConfig !== undefined && JSON.stringify(state.layoutConfig) !== JSON.stringify(appliedLayout)
         || state.quarterSeed !== undefined && state.quarterSeed !== appliedQuarterSeed;
-      if (state.layoutConfig) layoutConfig = appliedLayout = clone(state.layoutConfig);
-      if (state.parcelConfig) parcelConfig = appliedParcel = clone(state.parcelConfig);
+      if (state.layoutConfig) { layoutConfig = normalizeLayoutConfig(clone(state.layoutConfig), true); appliedLayout = clone(layoutConfig); }
+      if (state.parcelConfig) { parcelConfig = normalizeParcelConfig(clone(state.parcelConfig)); appliedParcel = clone(parcelConfig); }
       if (state.quarterSeed !== undefined) quarterSeed = appliedQuarterSeed = state.quarterSeed;
       if (state.parcelSeed !== undefined) parcelSeed = appliedParcelSeed = state.parcelSeed;
       populate('quarters'); populate('parcels');

@@ -19,12 +19,14 @@ function oriented(ring: Point[], positive: boolean): Point[] {
 }
 
 /** Native ownership for both transport clipping and an SVG nonzero union mask.
- * Quarters leave water holes open unless an explicit native crossing owns them.
+ * Allocated land leaves water holes open unless an explicit crossing owns them.
+ * Legacy layouts retain quarter ownership; a growth reserve never hides a road.
  */
 export function urbanRoadOwnership(layouts: Layout[]): Shape[] {
   const shapes: Shape[] = [];
   for (const layout of layouts) {
-    for (const { shape } of layout.quarters) if (shape.outer.length >= 3) {
+    const allocated = layout.structure && layout.structure.mechanism !== 'legacy' ? layout.structure.allocated : layout.quarters.map(q => q.shape);
+    for (const shape of allocated) if (shape.outer.length >= 3) {
       shapes.push({ outer: oriented(shape.outer, true), holes: shape.holes.map(hole => oriented(hole, false)) });
     }
     for (const street of layout.streets) {
@@ -119,7 +121,7 @@ function uncovered(a: Point, b: Point, covered: Map<string, [number, number][]>)
   }).sort((a, b) => a[0] - b[0]);
 }
 
-/** Keep original regional geometry outside native quarters and crossing ribbons.
+/** Keep original regional geometry outside attributed land and crossing ribbons.
  * This is a downstream view; neither RoadOutput nor the generation inputs change.
  * Type-only imports keep this adapter usable without loading the Rust WASM engine.
  */

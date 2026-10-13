@@ -5,7 +5,7 @@ import { marchingSquares } from '../gen/terrain/contour';
 export const SEA_BAND_WIDTH = 0.016;
 export const SEA_SHADE_STRENGTH = 0.15;
 export const SEA_SHADE_LIMIT = 0.035;
-export const hasCoastalSea = (style: MapStyle | 'copernicus'): boolean => style === 'parchment' || style === 'atlas';
+export const hasCoastalSea = (style: MapStyle | 'copernicus' | 'render' | 'fantasy-ink' | 'fantasy-color'): boolean => style === 'parchment' || style === 'atlas';
 
 export function coastalSeaColors(pal: Palette): { shore: number[]; offshore: number[] } {
   return { shore: hexToRgb(pal.waterEdge), offshore: hexToRgb(pal.seaFill) };

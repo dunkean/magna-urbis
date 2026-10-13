@@ -11,6 +11,13 @@ pub struct SettlementTerrain {
 
 #[wasm_bindgen]
 impl SettlementTerrain {
+    pub fn set_urban_geometry(&mut self, geometry: &str) -> Result<(), JsValue> {
+        let input =
+            serde_json::from_str(geometry).map_err(|e| JsValue::from_str(&e.to_string()))?;
+        self.inner
+            .set_urban_geometry(input)
+            .map_err(|e| JsValue::from_str(&e))
+    }
     /// Native urban cuts on the retained terrain. Inputs and outputs use metric JSON.
     pub fn urban_quarters(
         &self,

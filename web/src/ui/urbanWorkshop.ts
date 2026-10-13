@@ -1,12 +1,12 @@
 import catalogue from '../../../rust/crates/core/src/urban/catalogue.json';
 import UrbanWorker from './urbanWorker?worker&inline';
-import { createUrbanEngine, defaultLayoutConfig, defaultParcelConfig, regionalStreets, type Layout, type Shape, type UrbanRequest, type UrbanResponse } from '../../../rust/bridge/urban';
+import { createUrbanEngine, normalizeLayoutConfig, normalizeParcelConfig, regionalStreets, type Layout, type Shape, type UrbanRequest, type UrbanResponse } from '../../../rust/bridge/urban';
 import type { RoadOutput, RoadSite, SettlementRaster } from '../../../rust/bridge/settlements';
 import { benchLayout, type BenchOptions } from '../gen/urban/testbench';
 import { createGrid } from '../gen/core/grid';
 import { applyBenchConstraints } from '../gen/urban/testbenchConstraints';
 import type { World } from '../gen/types';
-import { WORKSHOP_CHANNEL, workshopConfig, type WorkshopRequest, type WorkshopResult, type WorkshopState } from './testbenchUrban';
+import { WORKSHOP_CHANNEL, normalizeWorkshopContext, workshopConfig, type WorkshopRequest, type WorkshopResult, type WorkshopState } from './testbenchUrban';
 
 interface MapContext { raster: SettlementRaster; sites: RoadSite[]; roads?: RoadOutput; seed: string }
 /** Two workspaces, one existing editor and the same native worker as the map. */
@@ -85,6 +85,7 @@ export function createUrbanWorkshop(options: {
     return new Promise((resolve, reject) => { pending.set(message.id, { resolve, reject, request: message }); worker!.postMessage(message); });
   }
   async function generate(request: WorkshopRequest): Promise<WorkshopResult> {
+    request = { ...request, context: normalizeWorkshopContext(request.context) };
     let context = options.getContext();
     if (request.context.source === 'map') {
       for (let i = 0; !context && i < 100; i++) { await new Promise(resolve => setTimeout(resolve, 50)); context = options.getContext(); }
@@ -99,7 +100,7 @@ export function createUrbanWorkshop(options: {
         const response = await native({ kind: 'quarters', seed: request.seed, raster,
           sites: fixture ? [{ key: 'workshop', population: 1000, culture: request.options.culture, center: { x: 500, y: 500 }, radius: request.options.radius }] : context!.sites,
           roads: fixture ? [] : regionalStreets(context!.roads),
-          layoutConfig: { ...defaultLayoutConfig(), ...workshopConfig(request.options, request.context, 'quarters') } });
+          layoutConfig: workshopConfig(request.options, request.context, 'quarters') });
         if (response.error) throw new Error(response.error); layouts = response.layouts!;
       }
     }
@@ -107,12 +108,12 @@ export function createUrbanWorkshop(options: {
     let partitions;
     if (request.kind === 'parcels') {
       const response = await native({ kind: 'parcels', seed: request.seed, raster, layouts,
-        parcelConfig: { ...defaultParcelConfig(), ...workshopConfig(request.options, request.context, 'parcels') } });
+        parcelConfig: workshopConfig(request.options, request.context, 'parcels') });
       if (response.error) throw new Error(response.error); partitions = response.partitions;
     }
     return { layouts, partitions, water: fixture?.water ?? [], contours: fixture?.contours ?? [],
-      layoutConfig: { ...defaultLayoutConfig(), ...request.context.layoutConfig, ...(request.kind === 'quarters' ? workshopConfig(request.options, request.context, 'quarters') : {}) },
-      parcelConfig: { ...defaultParcelConfig(), ...request.context.parcelConfig, ...(request.kind === 'parcels' ? workshopConfig(request.options, request.context, 'parcels') : {}) },
+      layoutConfig: request.kind === 'quarters' ? workshopConfig(request.options, request.context, 'quarters') : normalizeLayoutConfig(request.context.layoutConfig, true),
+      parcelConfig: request.kind === 'parcels' ? workshopConfig(request.options, request.context, 'parcels') : normalizeParcelConfig(request.context.parcelConfig),
       shapeNames: request.options.mode === 'micro' && fixture ? benchLayout({ ...request.options, mode: 'micro', culture: 'european-organic', recipe: 'core', stages: {} }, request.seed).shapeNames : undefined };
   }
   window.addEventListener('message', event => {
@@ -125,7 +126,7 @@ export function createUrbanWorkshop(options: {
       workshopSource = message.source === 'map' ? 'map' : 'fixture';
       if (workshopSource === 'map' && !retainedContext) retainContext();
       if (workshopSource === 'fixture') retainedContext = undefined;
-      caseState = message.caseState; latest = message.state; applyButton.disabled = false;
+      caseState = message.caseState; latest = { ...message.state, layoutConfig: normalizeLayoutConfig(message.state?.layoutConfig, true), parcelConfig: normalizeParcelConfig(message.state?.parcelConfig) }; applyButton.disabled = false;
       display(); options.onChange();
     }
     if (message.type === 'generate') void generate(message).then(result => send({ type: 'result', id: message.id, result }), error => send({ type: 'result', id: message.id, error: String(error) }));

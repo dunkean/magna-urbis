@@ -67,7 +67,7 @@ export interface RoadOutput {
   lengthByClass: Partial<Record<RoadClass, number>>; lengthBySurface: Partial<Record<RoadSurface, number>>; ms: number;
 }
 
-export interface SettlementRaster { width: number; n: number; height: Float32Array; water: Uint8Array; waterLevel: Float32Array; riverWidth: Float32Array; riverIds: Int32Array }
+export interface SettlementRaster { geometry?: import('./urbanGeography').VectorGeography; width: number; n: number; height: Float32Array; water: Uint8Array; waterLevel: Float32Array; riverWidth: Float32Array; riverIds: Int32Array }
 /**
  * One worker request. `place` reruns placement (then routes the new places); without it the
  * roads are rerouted between `sites`. `roads: null` skips routing.
@@ -83,9 +83,9 @@ export async function runSettlementRequest(request: SettlementRequest): Promise<
 }
 
 /** Adapt the completed terrain and the displayed water geometry, without regenerating either. */
-export function settlementRaster(t: TerrainData): SettlementRaster {
+export function settlementRaster(t: TerrainData, maxResolution = 512): SettlementRaster {
   const source = t.field?.data ?? t.height, sn = t.field?.n ?? t.resolution;
-  const n = Math.min(512, sn), width = t.width, cell = width / n, size = n * n;
+  const n = Math.min(maxResolution, sn), width = t.width, cell = width / n, size = n * n;
   const height = new Float32Array(size), water = new Uint8Array(size), waterLevel = new Float32Array(size), riverWidth = new Float32Array(size), riverIds = new Int32Array(size).fill(-1);
   const sample = (values: ArrayLike<number>, vn: number, x: number, y: number): number => {
     const gx = Math.max(0, Math.min(vn - 1, x / width * vn - 0.5)), gy = Math.max(0, Math.min(vn - 1, y / width * vn - 0.5));

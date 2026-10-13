@@ -1,6 +1,6 @@
 //! Cultural settlement patterns retained by the temporary Urban Bench contract.
 //! The exported ranges are artistic recipes, not measured reconstructions.
-use super::catalogue;
+use super::{catalogue, composition};
 
 #[derive(Clone, Copy, Debug)]
 pub(super) struct UrbanProfile {
@@ -14,7 +14,9 @@ pub(super) struct UrbanProfile {
 }
 
 pub(super) fn profile(culture: &str) -> UrbanProfile {
-    let p = &catalogue()["cultures"][culture]["plan"];
+    from_plan(&catalogue()["cultures"][culture]["plan"])
+}
+fn from_plan(p: &'static serde_json::Value) -> UrbanProfile {
     UrbanProfile {
         pattern: p["pattern"].as_str().unwrap_or("organic"),
         enclosure: p["enclosure"].as_str().unwrap_or("organic"),
@@ -23,6 +25,54 @@ pub(super) fn profile(culture: &str) -> UrbanProfile {
         orientation: p["orientation"].as_str().unwrap_or("road"),
         stairs: p["stairs"].as_bool().unwrap_or(false),
         waterfront: p["waterfront"].as_bool().unwrap_or(false),
+    }
+}
+
+pub(super) fn settlement_profile(culture: &str, population: u32, phases: usize) -> UrbanProfile {
+    let c = composition::culture_data(culture, population);
+    let mut p = from_plan(&c["plan"]);
+    if population >= 1200 && phases > 1 && c["ring"].is_object() {
+        let enclosure = &c["ring"]["enclosure"];
+        p.enclosure = enclosure["shape"].as_str().unwrap_or(p.enclosure);
+        p.fortification = enclosure["wall"].as_str().unwrap_or(p.fortification);
+        p.orientation = enclosure["orientation"].as_str().unwrap_or(p.orientation);
+        p.gates = enclosure["gates"].as_str().unwrap_or("roads");
+        let grown = !std::ptr::eq(c, &catalogue()["cultures"][culture]);
+        let recipe = if grown { "grown-ring" } else { "ring" };
+        let op =
+            catalogue()["presets"][format!("{culture}/{recipe}")]["params"]["streetOp"].as_str();
+        if p.pattern == "grid" && op == Some("organic") {
+            p.pattern = "organic";
+        }
+    } else if population < 1200 {
+        let form = &c[if population < 200 {
+            "hamlet"
+        } else {
+            "village"
+        }];
+        let enclosure = &form["enclosure"];
+        p.enclosure = enclosure["shape"].as_str().unwrap_or(p.enclosure);
+        p.fortification = enclosure["wall"].as_str().unwrap_or(p.fortification);
+        p.orientation = enclosure["orientation"].as_str().unwrap_or(p.orientation);
+        p.pattern = match form["form"].as_str() {
+            Some("ring") => "radial",
+            Some("terraces") => "terraces",
+            Some("grove") => "dispersed",
+            _ => p.pattern,
+        };
+    }
+    p
+}
+pub(super) fn fortification(profile: UrbanProfile, selected: &str, population: u32) -> &str {
+    let selected = if selected == "culture" {
+        profile.fortification
+    } else {
+        selected
+    };
+    if selected == "auto" {
+        if population >= 1000 { "wall" } else { "none" }
+    } else {
+        selected
     }
 }
 

@@ -1,8 +1,8 @@
 //! Native quarter fixture, guidance field, recursive street cuts and ribbon carving.
 use super::geometry as g;
 use super::{
-    Block, Layout, LayoutConfig, Morph, Point, Quarter, Shape, Site, Street, Surface, macroplan,
-    network, profiles, routing,
+    Block, Layout, LayoutConfig, Morph, Point, Quarter, Shape, Site, Street, Surface, composition,
+    macroplan, network, profiles, routing,
 };
 use crate::{noise::Noise, rng::Rng};
 use std::f64::consts::{FRAC_PI_2, PI, TAU};
@@ -150,6 +150,9 @@ fn acute_ends(s: &Shape, path: &[Point]) -> bool {
     false
 }
 struct Field<'a> {
+    regional: &'a [Street],
+    align_regional: bool,
+    adaptation: f64,
     p: &'a Morph,
     center: Point,
     angle: f64,
@@ -160,8 +163,28 @@ struct Field<'a> {
     radius: f64,
     population: u32,
     radial: bool,
+    phases: &'a [super::GrowthPhase],
+    phase_morphs: &'a [Morph],
+    phase_index: &'a [(usize, g::ContainmentIndex)],
 }
 impl Field<'_> {
+    fn phase_at(&self, p: Point) -> Option<usize> {
+        if !self.phase_index.is_empty() {
+            return self
+                .phase_index
+                .iter()
+                .find(|(_, s)| s.contains(p))
+                .map(|(i, _)| *i);
+        }
+        self.phases
+            .iter()
+            .position(|phase| phase.shapes.iter().any(|s| g::contains(s, p)))
+    }
+    fn morph_at(&self, p: Point) -> &Morph {
+        self.phase_at(p)
+            .and_then(|i| self.phase_morphs.get(i))
+            .unwrap_or(self.p)
+    }
     fn gradient(&self, p: Point, r: f64) -> (f64, f64) {
         (
             (self.surface.height_at(Point { x: p.x + r, y: p.y })
@@ -172,20 +195,70 @@ impl Field<'_> {
                 / (2.0 * r),
         )
     }
+    fn adapt_angle(&self, p: Point, angle: f64) -> f64 {
+        if self.adaptation == 0.0 {
+            return angle;
+        }
+        let (gx, gy) = self.gradient(
+            p,
+            (self.surface.width / self.surface.n as f64).clamp(10.0, 35.0),
+        );
+        let slope = gx.hypot(gy);
+        let w = (self.adaptation * 0.85 * smooth(slope, 0.015, 0.10)).min(0.92);
+        let contour = gy.atan2(gx) + FRAC_PI_2;
+        let mut cx = (1.0 - w) * (4.0 * angle).cos() + w * (4.0 * contour).cos();
+        let mut cy = (1.0 - w) * (4.0 * angle).sin() + w * (4.0 * contour).sin();
+        let (mut wx, mut wy, mut weight) = (0.0, 0.0, 0.0);
+        for radius in [15.0, 35.0, 70.0] {
+            for i in 0..16 {
+                let a = i as f64 * TAU / 16.0;
+                let q = Point {
+                    x: p.x + radius * a.cos(),
+                    y: p.y + radius * a.sin(),
+                };
+                if q.x >= 0.0
+                    && q.y >= 0.0
+                    && q.x < self.surface.width
+                    && q.y < self.surface.width
+                    && self.surface.wet(q)
+                {
+                    let v = (-radius / 35.0_f64).exp();
+                    wx += a.cos() * v;
+                    wy += a.sin() * v;
+                    weight += v;
+                }
+            }
+        }
+        if weight > 0.0 && wx.hypot(wy) > 0.1 {
+            let tangent = wy.atan2(wx) + FRAC_PI_2;
+            let w = (self.adaptation * wx.hypot(wy) / (weight + 1.0)).min(0.90);
+            cx = (1.0 - w) * cx + w * (4.0 * tangent).cos();
+            cy = (1.0 - w) * cy + w * (4.0 * tangent).sin();
+        }
+        cy.atan2(cx) / 4.0
+    }
     fn angle(&self, p: Point, streets: &[Street]) -> f64 {
-        let m = self.p;
+        let m = self.morph_at(p);
         let wl = m.number("fieldWavelength").max(1.0);
         let nz = m.number("fieldNoise").to_radians() * self.noise.fbm(p.x / wl, p.y / wl, 2);
-        let base = match m.text("orientation") {
+        let cultural_base = match m.text("orientation") {
             "cardinal" => 0.0,
             "terrain" => self.terrain,
             "water" => self.water,
             _ => self.angle,
         };
+        let base = if self.align_regional {
+            macroplan::regional_axis(p, self.radius * 1.5, self.regional).unwrap_or(cultural_base)
+        } else {
+            cultural_base
+        };
         if m.text("streetOp") == "grid" {
-            return base
-                + nz
-                + m.number("gridSkew") * self.noise.fbm(p.x / 600.0 + 9.0, p.y / 600.0 - 3.0, 2);
+            return self.adapt_angle(
+                p,
+                base + nz
+                    + m.number("gridSkew")
+                        * self.noise.fbm(p.x / 600.0 + 9.0, p.y / 600.0 - 3.0, 2),
+            );
         }
         let (gx, gy) = self.gradient(p, 70.0);
         let slope = gx.hypot(gy);
@@ -202,7 +275,7 @@ impl Field<'_> {
             let w = cf * smooth(slope, 0.02, 0.06);
             cx = (1.0 - w) * (4.0 * self.terrain).cos() + w * (4.0 * contour).cos();
             cy = (1.0 - w) * (4.0 * self.terrain).sin() + w * (4.0 * contour).sin();
-            return cy.atan2(cx) / 4.0;
+            return self.adapt_angle(p, cy.atan2(cx) / 4.0);
         }
         let wr = m.number("fieldRandom");
         let psi = PI * self.noise.fbm(p.x / 260.0 + 31.7, p.y / 260.0 - 12.3, 2);
@@ -217,7 +290,7 @@ impl Field<'_> {
         let w = (0.75 * smooth(slope, 0.06, 0.14)).max(cb * smooth(slope, 0.025, 0.08));
         cx = (1.0 - w) * cx + w * (4.0 * contour).cos();
         cy = (1.0 - w) * cy + w * (4.0 * contour).sin();
-        cy.atan2(cx) / 4.0
+        self.adapt_angle(p, cy.atan2(cx) / 4.0)
             + nz * (0.5
                 + 0.5
                     * smooth(
@@ -237,7 +310,7 @@ impl Field<'_> {
         let mut out = vec![seed];
         let mut cur = seed;
         let mut head = heading;
-        let turn = self.p.number("curvature") * 5.0 * PI / 180.0;
+        let turn = (self.p.number("curvature") + self.adaptation * 1.5) * 5.0 * PI / 180.0;
         for _ in 0..800 {
             let a = self.angle(cur, streets);
             let dh = (0..4)
@@ -346,7 +419,6 @@ fn split_quarter(
     streets: &mut Vec<Street>,
     rng: &mut Rng,
 ) -> Vec<Piece> {
-    let m = field.p;
     let mut queue = vec![Piece {
         shape: q.shape.clone(),
         level: 1,
@@ -364,7 +436,11 @@ fn split_quarter(
         }
         let a0 = g::area(&pc.shape);
         let f = frame(&pc.shape);
-        let zone = if cfg.zone == "auto" {
+        let point = g::interior_point(&pc.shape);
+        let m = field.morph_at(point);
+        let zone = if let Some(phase) = field.phase_at(point) {
+            field.phases[phase].zone.as_str()
+        } else if cfg.zone == "auto" {
             zone_at(f.c, field.center, field.radius, field.population)
         } else {
             &q.zone
@@ -1253,8 +1329,21 @@ pub(super) fn generate(
                 })
         })
         .collect();
-    let (quarters, mut streets, enclosures, mut warnings) = if cfg.placement == "center" {
-        let plan = macroplan::generate(seed, site, cfg, m, surface, roads, radius);
+    let mut phases = vec![];
+    let mut structure = None;
+    let mut nucleus_radius = radius;
+    let mut archetype = "district".to_owned();
+    let (mut quarters, mut streets, enclosures, mut warnings) = if cfg.placement == "center" {
+        let plan = if cfg.composition == "settlement" {
+            let result = composition::generate(seed, site, cfg, surface, roads, radius)?;
+            phases = result.phases;
+            archetype = result.archetype;
+            nucleus_radius = result.nucleus_radius;
+            result.plan
+        } else {
+            macroplan::generate(seed, site, cfg, m, surface, roads, radius)
+        };
+        structure = plan.structure;
         (plan.quarters, plan.streets, plan.enclosures, plan.warnings)
     } else {
         streets = streets
@@ -1272,6 +1361,16 @@ pub(super) fn generate(
         }
         (quarters, streets, vec![], vec![])
     };
+    super::influences::apply(&mut phases, &mut quarters, site, cfg);
+    if !cfg.mix_culture.is_empty()
+        && let Some(s) = &mut structure
+    {
+        for d in &mut s.districts {
+            if let Some(q) = d.quarters.first().and_then(|&i| quarters.get(i)) {
+                d.phase = q.phase;
+            }
+        }
+    }
     if quarters.is_empty() {
         return Ok(Layout {
             key: site.key.clone(),
@@ -1288,6 +1387,9 @@ pub(super) fn generate(
                 "Aucun quartier constructible à cet emplacement et avec ce rayon.".into(),
             ],
             enclosures,
+            phases,
+            archetype,
+            structure,
         });
     }
     let gradients = |p: Point| {
@@ -1319,6 +1421,11 @@ pub(super) fn generate(
         .next()
         .unwrap_or(angle);
     let field = Field {
+        regional: roads,
+        align_regional: cfg.axis_alignment == "regional"
+            && cfg.params.get("orientation").is_none()
+            && cfg.preset == "culture",
+        adaptation: cfg.site_adaptation,
         p: m,
         center,
         angle,
@@ -1326,7 +1433,7 @@ pub(super) fn generate(
         water,
         surface,
         noise: Noise::new(rng.fork("field")),
-        radius,
+        radius: nucleus_radius,
         population: site.population,
         radial: cfg.preset == "culture"
             && cfg.params.get("streetOp").is_none()
@@ -1337,21 +1444,109 @@ pub(super) fn generate(
             })
             .pattern
                 == "radial",
+        phases: &[],
+        phase_morphs: &[],
+        phase_index: &[],
     };
     let mut pieces = vec![];
+    let culture = if cfg.culture == "site" {
+        &site.culture
+    } else {
+        &cfg.culture
+    };
+    let phase_morphs = phases
+        .iter()
+        .map(|p| {
+            composition::phase_morph(
+                if p.culture.is_empty() {
+                    culture
+                } else {
+                    &p.culture
+                },
+                &p.recipe,
+                &p.zone,
+                &cfg.preset,
+                &cfg.recipe,
+                cfg.density,
+                &cfg.params,
+                "quarters",
+            )
+        })
+        .map(|r| r.map(|m| super::with_tissue(m, &cfg.tissue)))
+        .collect::<Result<Vec<_>, _>>()?;
+    let phase_index = phases
+        .iter()
+        .enumerate()
+        .flat_map(|(i, p)| {
+            p.shapes
+                .iter()
+                .map(move |s| (i, g::ContainmentIndex::new(s)))
+        })
+        .collect::<Vec<_>>();
     for (i, q) in quarters.iter().enumerate() {
         let mut qr = rng.fork(&format!("quarter:{i}"));
-        let pcs = split_quarter(q, &field, cfg, &mut streets, &mut qr);
+        let mut local_cfg = cfg.clone();
+        let interior = g::interior_point(&q.shape);
+        let origin = structure.as_ref().and_then(|s| {
+            s.centers.iter().min_by(|a, b| {
+                let p = interior;
+                (p.x - a.point.x)
+                    .hypot(p.y - a.point.y)
+                    .total_cmp(&(p.x - b.point.x).hypot(p.y - b.point.y))
+            })
+        });
+        let local_center = origin.map_or(field.center, |c| c.point);
+        let local_tissue = if cfg.tissue == "culture"
+            && structure.as_ref().is_some_and(|s| s.family == "composite")
+            && origin.is_some_and(|c| c.id > 0)
+            && cfg.mix_culture.is_empty()
+        {
+            "grid"
+        } else {
+            &cfg.tissue
+        };
+        let local_morph =
+            super::with_tissue(phase_morphs.get(q.phase).unwrap_or(m).clone(), local_tissue);
+        let local_field = Field {
+            p: &local_morph,
+            noise: Noise::new(rng.fork("field")),
+            radial: (cfg.tissue == "radial" || field.radial)
+                && phases.get(q.phase).is_none_or(|p| p.kind != "faubourg"),
+            center: local_center,
+            phases: &phases,
+            phase_morphs: if local_tissue == cfg.tissue {
+                &phase_morphs
+            } else {
+                &[]
+            },
+            phase_index: &phase_index,
+            ..field
+        };
+        if !phases.is_empty() {
+            local_cfg.zone = q.zone.clone();
+        }
+        let pcs = split_quarter(q, &local_field, &local_cfg, &mut streets, &mut qr);
+        if !phases.is_empty() && cfg.access_mode != "none" {
+            closes(
+                &pcs,
+                &mut streets,
+                &local_field,
+                &local_cfg,
+                &mut rng.fork(&format!("closes:{i}")),
+            );
+        }
         pieces.push(pcs)
     }
     let mut cr = rng.fork("closes");
-    closes(
-        &pieces.iter().flatten().cloned().collect::<Vec<_>>(),
-        &mut streets,
-        &field,
-        cfg,
-        &mut cr,
-    );
+    if phases.is_empty() && cfg.access_mode != "none" {
+        closes(
+            &pieces.iter().flatten().cloned().collect::<Vec<_>>(),
+            &mut streets,
+            &field,
+            cfg,
+            &mut cr,
+        );
+    }
     // Slits and snapped endpoints must obey the same physical rules as arterials.
     streets.retain_mut(|s| {
         if matches!(s.role.as_str(), "bridge" | "ford" | "causeway") {
@@ -1377,12 +1572,107 @@ pub(super) fn generate(
         }
         false
     });
-    warnings.extend(network::clean(
+    network::enclosure_lanes(
         &mut streets,
-        center,
-        radius,
-        !enclosures.is_empty(),
-    ));
+        &enclosures,
+        surface,
+        cfg,
+        &mut rng.fork("wall-lanes"),
+    );
+    let centers = structure
+        .as_ref()
+        .map_or_else(Vec::new, |s| s.centers.iter().map(|c| c.point).collect());
+    warnings.extend(if centers.is_empty() {
+        network::clean(
+            &mut streets,
+            center,
+            radius,
+            !enclosures.is_empty() || cfg.exit_treatment != "legacy",
+        )
+    } else {
+        network::clean_with_centers(
+            &mut streets,
+            center,
+            radius,
+            !enclosures.is_empty() || cfg.exit_treatment != "legacy",
+            &centers,
+        )
+    });
+    if enclosures.is_empty() && cfg.exit_treatment != "legacy" {
+        network::resolve_exits(
+            &mut streets,
+            &quarters,
+            roads,
+            surface,
+            cfg,
+            &mut rng.fork("exit-destinations"),
+        );
+        warnings.extend(network::clean_with_centers(
+            &mut streets,
+            center,
+            radius,
+            true,
+            &centers,
+        ));
+    }
+    super::widths::harmonize(&mut streets);
+    if enclosures.is_empty()
+        && cfg.composition == "settlement"
+        && cfg.exit_treatment != "legacy"
+        && cfg.footprint.mechanism != "legacy"
+    {
+        let frontage = super::fringe::frontages(
+            &quarters,
+            &streets,
+            surface,
+            m.range("plotDepth", "edge")[0],
+            cfg.max_lane_grade,
+            &mut rng.fork("peripheral-frontage"),
+        );
+        let first_outer = quarters.len();
+        let mut extensions = phases.clone();
+        for p in &mut extensions {
+            p.shapes.clear();
+        }
+        for (shape, source) in frontage {
+            let phase = quarters[source].phase;
+            quarters.push(Quarter {
+                shape: shape.clone(),
+                phase,
+                zone: quarters[source].zone.clone(),
+            });
+            pieces.push(vec![Piece {
+                shape: shape.clone(),
+                level: 0,
+                kind: "block".into(),
+            }]);
+            if let Some(p) = extensions.get_mut(phase) {
+                p.shapes.push(shape);
+            }
+        }
+        if !cfg.mix_culture.is_empty() && first_outer < quarters.len() {
+            extensions.retain(|p| !p.shapes.is_empty());
+            super::influences::apply(&mut extensions, &mut quarters[first_outer..], site, cfg);
+            for q in &mut quarters[first_outer..] {
+                q.phase += phases.len();
+            }
+            phases.extend(extensions);
+        } else {
+            for (p, extension) in phases.iter_mut().zip(extensions) {
+                p.shapes.extend(extension.shapes);
+            }
+        }
+        let area: f64 = phases.iter().flat_map(|p| &p.shapes).map(g::area).sum();
+        if area > 0.0 {
+            for p in &mut phases {
+                let share = p.shapes.iter().map(g::area).sum::<f64>() / area;
+                p.population = site.population as f64 * share;
+                if let Some(s) = &structure {
+                    p.target_area = s.metrics.target_area * share;
+                }
+            }
+        }
+    }
     let ribbons: Vec<_> = streets
         .iter()
         .flat_map(|s| g::ribbon(&s.path, &s.widths))
@@ -1414,11 +1704,24 @@ pub(super) fn generate(
                     break;
                 }
             }
+            if !cfg.mix_culture.is_empty() {
+                polys = polys
+                    .into_iter()
+                    .flat_map(|shape| {
+                        phases.iter().flat_map(move |p| {
+                            p.shapes.iter().flat_map({
+                                let shape = shape.clone();
+                                move |s| g::intersection(&shape, s)
+                            })
+                        })
+                    })
+                    .collect();
+            }
             for shape in polys.into_iter().filter(|p| g::area(p) > 1.0) {
                 let f = frame(&shape);
                 let mut kind = pc.kind.clone();
                 if kind == "block" && cfg.placement == "center" && enclosures.is_empty() {
-                    let distance = (f.c.x - center.x).hypot(f.c.y - center.y) / radius;
+                    let distance = (f.c.x - center.x).hypot(f.c.y - center.y) / nucleus_radius;
                     let arterial = nearest(f.c, &streets, 2).map_or(f64::INFINITY, |v| v.0);
                     // Leave whole backland cells between the populated fingers.
                     // No parcel is clipped by a second decorative city outline.
@@ -1428,7 +1731,25 @@ pub(super) fn generate(
                     }
                 }
                 blocks.push(Block {
-                    zone: if cfg.zone == "auto" {
+                    phase: (!phases.is_empty())
+                        .then(|| {
+                            phases.iter().position(|p| {
+                                p.shapes
+                                    .iter()
+                                    .any(|s| g::contains(s, g::interior_point(&shape)))
+                            })
+                        })
+                        .flatten(),
+                    zone: if !phases.is_empty()
+                        && let Some(p) = phases.iter().find(|p| {
+                            p.shapes
+                                .iter()
+                                .any(|s| g::contains(s, g::interior_point(&shape)))
+                        }) {
+                        p.zone.clone()
+                    } else if !phases.is_empty() {
+                        quarters[qi].zone.clone()
+                    } else if cfg.zone == "auto" {
                         zone_at(f.c, center, radius, site.population).into()
                     } else {
                         cfg.zone.clone()
@@ -1462,6 +1783,9 @@ pub(super) fn generate(
         blocks,
         warnings,
         enclosures,
+        phases,
+        archetype,
+        structure,
     })
 }
 
@@ -1476,6 +1800,7 @@ mod tests {
             water[y * 64 + 32] = 1;
         }
         let surface = Surface {
+            geometry: None,
             width: 512.0,
             n: 64,
             height: &heights,
@@ -1490,6 +1815,8 @@ mod tests {
             radius: 24.0,
         };
         let cfg = LayoutConfig {
+            footprint: super::super::legacy_footprint(),
+            access_mode: "cultural".into(),
             preset: "morph/european-organic".into(),
             ..LayoutConfig::default()
         };

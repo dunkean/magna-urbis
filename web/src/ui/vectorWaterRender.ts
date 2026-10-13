@@ -92,9 +92,9 @@ export interface WaterDisplay { style: TerrainStyle; showLakes: boolean; showOxb
 
 /** Shared water colour and per-vertex diagnostic colours. */
 function waterInk(display: Pick<WaterDisplay, 'style' | 'riverArea' | 'overlay'>): { edge: string; colourOf: (kind: number) => string } {
-  const s = display.style, pal = PALETTES[s === 'copernicus' ? 'parchment' : s];
+  const s = display.style, pal = PALETTES[(s === 'copernicus' || s === 'render' || (s === 'fantasy-ink' || s === 'fantasy-color')) ? 'parchment' : s];
   // Lakes take the rivers' colour: a river runs into its lake without a seam.
-  const edge = s === 'copernicus' ? '#14527a' : pal.waterEdge;
+  const edge = s === 'fantasy-ink' ? '#666968' : s === 'fantasy-color' ? '#648f99' : (s === 'copernicus' || s === 'render') ? '#14527a' : pal.waterEdge;
   const styled = display.overlay === 'v-styles';
   const colourOf = (kind: number): string => !styled ? edge : ['#2a6fc9', '#c62828', '#7b1fa2', '#ef6c00', '#d81b60', '#2e7d32'][kind] ?? edge;
   return { edge, colourOf };

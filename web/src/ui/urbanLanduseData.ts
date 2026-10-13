@@ -76,7 +76,7 @@ export function urbanLanduseWorld(input: UrbanLanduseInput): World {
     kind: road.rank < 2 ? 'major' : road.rank === 2 ? 'minor' : 'track' }));
   // Urban streets also guide field access; retain each segment's physical width.
   for (const layout of input.layouts ?? []) for (const street of layout.streets) {
-    if (street.role === 'boundary' || street.role === 'wall-lane') continue;
+    if (['boundary', 'wall-lane', 'private', 'collective'].includes(street.role)) continue;
     for (let i = 1; i < street.path.length; i++) {
       const width = ((street.widths[i - 1] ?? 3) + (street.widths[i] ?? street.widths[i - 1] ?? 3)) / 2;
       if (width > 0) world.roads.push({ path: [street.path[i - 1], street.path[i]], width, kind: 'minor' });
@@ -114,8 +114,9 @@ export function generateUrbanLanduse(input: UrbanLanduseInput): UrbanLanduseScen
   const start = performance.now(), world = urbanLanduseWorld(input), root = new Rng('magna-urbis:' + input.seed);
   if (input.city) {
     const footprint = input.layouts === undefined ? [extent(input.city)]
-      : differenceS(unionS(input.layouts.flatMap(layout => layout.quarters.map(q => q.shape))),
-        unionS(input.layouts.flatMap(layout => layout.blocks.filter(b => b.kind === 'reserve').map(b => b.shape))));
+      : unionS(input.layouts.flatMap(layout => layout.structure && layout.structure.mechanism !== 'legacy'
+        ? layout.structure.allocated
+        : differenceS(unionS(layout.quarters.map(q => q.shape)), unionS(layout.blocks.filter(b => b.kind === 'reserve').map(b => b.shape)))));
     const generated = generateRural(world, root, undefined, undefined,
       { footprint, population: input.city.population, farmsteads: false });
     world.landuse = generated.layer; world.stats = generated.stats;

@@ -8,6 +8,10 @@ DEMO: https://dunkean.github.io/magna-urbis/
 
 There are two implementations: **TypeScript**, currently the most complete, and **Rust / WebAssembly**, which is still behind in features but is gradually catching up.
 
+**The Rust version is actively being implemented.** Its dedicated benches already expose terrain, erosion, hydrology, settlement placement, regional roads, streets, blocks and parcels. A separate Rust house generator is also under development; assembling these stages into the complete application is ongoing.
+
+Read the [technical and scientific overview (in French)](docs/TECHNICAL_AND_SCIENTIFIC_OVERVIEW.md) for the generation pipeline, InfiniteDiffusion / Terrain Diffusion, erosion, rivers and lakes, urban plans, and the Rust / WASM / neural-network stack. It includes research citations, source-code links and the current implementation boundaries.
+
 The long-term goal is to **integrate Magna Urbis into [Neural Earth](https://github.com/dunkean/neural-earth)**, the procedural world project developed in Infinite Map, placing cities and villages within a regional and planetary landscape. This integration is planned for the future and has not been delivered yet.
 
 ## Prototype screenshots
@@ -38,7 +42,7 @@ The [capture seeds, settings and views](docs/images/screenshots.json) let you re
 | --- | --- | --- |
 | Status | Most complete prototype and reference application | New engine under development |
 | Landscape | Relief, biomes, coasts, rivers, lakes and rural land use | Relief, erosion, coasts, lakes and river networks |
-| Settlements | Hamlets, villages and cities; quarters, streets, plots, buildings and landmarks | Urban generation still to come |
+| Settlements | Hamlets, villages and cities; quarters, streets, plots, buildings and landmarks | Settlement placement, regional roads, urban footprints, street fabrics, blocks and parcels in Terrain / Urban Bench |
 | Interface | Interactive map, settings, seeds, sharing and SVG / PNG / JSON exports | Browser integration in progress |
 | Computation | TypeScript in the browser, without a generation server | Rust compiled to WebAssembly, with WebGPU paths for selected stages |
 
@@ -80,6 +84,8 @@ npm run check:terrain  # Check Rust code and WASM compilation
 ```
 
 Generated modules stay in `rust/pkg/wasm/`, which Git ignores. See the [Rust README](rust/README.md) for the engine's organization.
+
+The terrain bench also supports **neural relief** through a local native Rust service using Burn and Terrain Diffusion's coarse → base → decoder models. Start it from `web/` with `npm run neural:serve`. This optional source requires model weights and a compatible GPU; it is separate from the serverless TypeScript application. Magna Urbis's browser neural-inference crate remains experimental and is not connected to the bench. See the [execution paths and limitations](docs/TECHNICAL_AND_SCIENTIFIC_OVERVIEW.md#7-rust-webassembly-webgpu-et-inférence-neuronale).
 
 ## Repository layout
 
