@@ -107,9 +107,33 @@ vectorielle d'une carte, au format `.decor` (`web/src/ui/decor.ts`).
   les paramètres. Le lien mémorise les deux espaces. L'atelier seul s'ouvre par
   `urbanbench.html?space=workshop` ; `testbench.html?engine=rust` y redirige.
   Le testbench TypeScript original reste indépendant de Rust.
+- **8 · Occupation du territoire** reprend `gen/landuse/rural.ts` et le rendu
+  Canvas 2D de l'application TypeScript : champs et sillons, haies, chemins agricoles,
+  vergers, jardins, prairies, bois et marais. Le terrain, les niveaux d'eau et les
+  routes du décor alimentent un adaptateur temporaire (`ui/urbanLanduseData.ts`).
+  Les quartiers réservent leur emprise exacte même sans maisons ; les autres
+  lieux du décor conservent leurs réserves projetées. Les bâtiments agricoles
+  attendent eux aussi l'intégration des maisons.
+  Le calcul s'exécute dans un Worker avec repli local. Déplacer la ville ou
+  régénérer ses quartiers recalcule les paysages ; modifier les parcelles,
+  le style, les textures ou l'opacité conserve leur géométrie. Biome, graine et
+  affichage sont enregistrés dans le lien. Le bouton **Occupation** masque la
+  couche. Le rendu Rust et le modèle urbain natif ne sont pas modifiés.
+
+  Le Canvas suit la caméra SVG, avec les niveaux de détail et les caches du
+  moteur TypeScript. Le relief conservé sert de fond pour le mélange des teintes.
+  **Feuillages et canopée** remplace les ronds par des couronnes irrégulières,
+  ombrées et jointives en forêt, alignées en verger ; **Symboles classiques**
+  permet la comparaison. Les textures peintes restent disponibles. Les motifs
+  de feuillage sont vectoriels, déterministes et partagés avec l'export SVG.
+  Les arbres sont placés individuellement avec un espacement minimal et des
+  nuances discrètes, sans tuile répétée. Leur centre appartient à la zone boisée ;
+  leur couronne reste entière et peut dépasser du contour. Les vergers gardent
+  leurs rangées. Les sillons utilisent l'échelle du preset TypeScript de la ville,
+  indépendamment de la largeur du décor chargé.
 
 Les tracés régionaux sont conservés à l'extérieur des quartiers et remplacés
-par le graphe natif à l'intérieur, pour l'affichage.
+par le graphe natif à l'intérieur, pour l'affichage comme pour les coûts ruraux.
 Une approche physiquement impraticable donne un avertissement explicite.
 
 Références de méthode : Galin et al., *Procedural Generation of Roads* (2010),

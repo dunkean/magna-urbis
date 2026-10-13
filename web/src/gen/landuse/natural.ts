@@ -11,7 +11,8 @@ export function generateNaturalCover(terrain: TerrainLayer, biomeOption: string 
   const N = w * h;
   const water = terrain.water;
   const waterMask = new Uint8Array(N);
-  for (let i = 0; i < N; i++) if (water[i]) waterMask[i] = 1;
+  // Retained terrain adapters may mark solid ground with 4: excluded, but not a water source.
+  for (let i = 0; i < N; i++) if (water[i] > 0 && water[i] < 4) waterMask[i] = 1;
   const dWater = distanceField(waterMask, w, h, cell).dist;
   const slope = terrain.slope.data;
   const height = terrain.height.data;

@@ -91,8 +91,9 @@ describe('optional painted natural textures', () => {
       expect(svg.includes('fill="url(#brush-p-garden)"')).toBe(biomePalette(style).tex.garden); renderer.dispose();
     }
   });
-  it('embeds each atlas once and shares pattern definitions without changing the model or classic SVG', () => {
+  it('embeds each atlas once and draws complete tree stamps without changing the model or classic SVG', () => {
     const world = fakeWorld({ mapSize: 1600, buildings: 0, streets: 0, clusters: 1, landAreas: 0 });
+    world.urban = undefined; world.settlements = []; world.megaDetail = undefined;
     const p = [{ x: 50, y: 50 }, { x: 150, y: 50 }, { x: 150, y: 150 }, { x: 50, y: 150 }];
     world.landuse!.areas = ['forest', 'garden', 'field'].map(kind => ({ kind: kind as 'forest' | 'garden' | 'field', poly: p, holes: [[{ x: 80, y: 80 }, { x: 120, y: 80 }, { x: 120, y: 120 }, { x: 80, y: 120 }]] }));
     const before = JSON.stringify(world), classic = renderSvg(world, { raster: false });
@@ -100,7 +101,8 @@ describe('optional painted natural textures', () => {
     expect(painted.split(BRUSH_SOURCES.vegetation).length - 1).toBe(1);
     expect(painted.split(BRUSH_SOURCES.terrain).length - 1).toBe(1);
     expect(painted).toContain('fill="url(#brush-p-field)" fill-rule="evenodd"');
-    expect(painted).toContain('fill="url(#brush-p-forest)" fill-rule="evenodd"');
+    expect(painted.includes('class="lu-forest-stamps"')).toBe(true);
+    expect(painted.includes('fill="url(#brush-p-forest)" fill-rule="evenodd"')).toBe(false);
     expect(classic).not.toContain('brush-'); expect(renderSvg(world, { raster: false })).toBe(classic);
     expect(JSON.stringify(world)).toBe(before);
     const defs = svgBrushes(world, biomePalette('parchment'), BRUSH_SOURCES).defs;

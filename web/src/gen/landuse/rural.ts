@@ -22,6 +22,9 @@ type Ring = [number, number][];
 /** Extra layer data (field ways = cart tracks between furlongs, headlands = narrow baulks/hedges); closes carry `enclosed` on their LandArea. */
 export interface FieldNetExtras { ways: Polyline[]; headlands: Polyline[] }
 
+/** A retained urban plan can reserve its real land before its buildings exist. */
+export interface RuralPlan { footprint: PolyH[]; population: number; farmsteads?: boolean }
+
 /** Reserve a lazy roof's bounded outer collar for farm lots, accounting for raster and lot-sampling error. */
 export function farmGrowthReserve(base: Uint8Array, n: number, cell: number, openMacroFootprints: PolyH[][]): Uint8Array {
   if (!openMacroFootprints.length) return base;
@@ -127,7 +130,7 @@ export function ringScale(pop: number): number {
  * and hamlet's own fields, commons and woods, and the planner's farmsteads sitting in their fields.
  * `mainRoads`: number of leading roads that belong to the main town (the legacy roadside farmsteads use only those).
  */
-export function generateRural(world: World, root: Rng, mainRoads?: number, stripLod?: { center: Vec2; radius: number }): { layer: LandUseLayer; stats: Record<string, number> } {
+export function generateRural(world: World, root: Rng, mainRoads?: number, stripLod?: { center: Vec2; radius: number }, plan?: RuralPlan): { layer: LandUseLayer; stats: Record<string, number> } {
   const terrain = world.terrain, site = world.site!;
   const roads = world.roads ?? [];
   const S = world.mapSize;
@@ -161,18 +164,18 @@ export function generateRural(world: World, root: Rng, mainRoads?: number, strip
   // exists, else the old travel-cost disc. `uDist` = travel cost beyond the footprint edge (von Thünen rings).
   const secondary = (world.settlements ?? []).filter((st) => !st.main);
   // ring scale of the main settlement: the map extent on the legacy presets (unchanged maps), else its population
-  const Lm = world.options.mapSize === undefined ? S : Math.min(S, ringScale(world.urban?.population ?? 100));
+  const Lm = world.options.mapSize === undefined ? S : Math.min(S, ringScale(plan?.population ?? world.urban?.population ?? 100));
   const reserveCost = 1.25 * site.reserveRadius;
   const costC = site.cost.data;
   const reserve = new Uint8Array(N);
   // Farm placement keeps its full safety reserve. Vegetation can meet an open town much more closely.
-  const openTown = world.urban?.archetype === 'town' && !world.urban.renderHints?.openGround && !world.urban.renderHints?.stilts
+  const openTown = !!plan || world.urban?.archetype === 'town' && !world.urban.renderHints?.openGround && !world.urban.renderHints?.stilts
     && !(world.urban.walls ?? []).some((w) => !w.role || w.role === 'town' || w.role === 'outer')
     && !world.urban.phases.some((p) => p.walled) && !(world.urban.lines ?? []).some((l) => l.kind === 'hedge');
   let coverReserve: Uint8Array | null = null;
   const uDist = new Float32Array(N);
-  const emptyMainUrban = !!world.urban && !world.urban.macro && world.urban.buildings.length === 0;
-  const builtFoot = emptyMainUrban ? [] : world.urban?.footprintH ?? [];
+  const emptyMainUrban = plan ? !plan.footprint.length : !!world.urban && !world.urban.macro && world.urban.buildings.length === 0;
+  const builtFoot = plan?.footprint ?? (emptyMainUrban ? [] : world.urban?.footprintH ?? []);
   const foot = !emptyMainUrban && world.urban?.ruralReserve?.length ? unionS(builtFoot, world.urban.ruralReserve) : builtFoot;
   if (foot.length) {
     const rings: Polygon[] = [];
@@ -372,7 +375,7 @@ export function generateRural(world: World, root: Rng, mainRoads?: number, strip
     return { d, bp, t: bt, w: bwid };
   };
   // farmsteads of the settlement system first: the farm on its track, in the middle of its own fields
-  for (const st of secondary) {
+  for (const st of plan?.farmsteads === false ? [] : secondary) {
     if (st.detail !== 'farmstead') continue;
     const fr = root.fork('settlement:' + st.key).fork('farm');
     const nr = nearestRoad(st.center);
@@ -405,7 +408,7 @@ export function generateRural(world: World, root: Rng, mainRoads?: number, strip
     accept(pl, st.culture, nr.d < 400 ? nr.bp : null);
   }
   // farmsteads along the roads: dispersed farms of the main town's farmland (and, on custom maps, of the whole country)
-  {
+  if (plan?.farmsteads !== false) {
     const custom = world.options.mapSize !== undefined;
     const farmCount = ({ hamlet: 0, village: 2, town: 4, city: 7, capital: 10 } as const)[world.options.size] + (custom ? Math.min(90, Math.round(0.2 * (S / 1000) ** 2)) : 0);
     const fr = rr.fork('farm');

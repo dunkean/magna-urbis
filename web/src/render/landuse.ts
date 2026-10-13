@@ -14,6 +14,8 @@ import { f1, pathD } from './util';
 import { regionalBridgeSurface, regionalRoadSurface } from './roadSurfaces';
 import { MAP_STROKES, svgMapStroke } from './strokes';
 import { underdarkPatterns, underdarkMarkSvg } from './underdark';
+import { canopyAreaMarks, canopySvg, type VegetationStyle } from './canopy';
+import { insideArea } from './scene';
 
 /** Land-use tints multiply over the hillshaded terrain so relief stays readable under them (browsers; resvg falls back to plain alpha). Dark styles blend normally. */
 const mul = (pal: Palette): string => (pal.landBlend === 'multiply' ? ' style="mix-blend-mode:multiply"' : '');
@@ -25,7 +27,7 @@ const ringsD = (a: LandArea): string => {
 };
 
 /** SVG <pattern> definitions for land-use textures. `s` scales symbols with map size. */
-function patterns(world: World, pal: Palette, s: number, scale: number): string {
+function patterns(world: Pick<World, 'options' | 'mapSize' | 'landuse'> & { seed?: string }, pal: Palette, s: number, scale: number): string {
   if (isUnderdarkBiome(world.options.biome)) return `<defs>${underdarkPatterns(pal, s)}</defs>`;
   const out: string[] = [];
   const pat = (id: string, w: number, h: number, body: string, extra = '') =>
@@ -96,11 +98,12 @@ function patterns(world: World, pal: Palette, s: number, scale: number): string 
   return `<defs>${out.join('')}</defs>`;
 }
 
-export function landuseLayer(world: World, pal: Palette, u: number, scale = 1600 / world.mapSize, brushes?: SvgBrushes, forestMask = ''): string {
+export function landuseLayer(world: Pick<World, 'options' | 'mapSize' | 'landuse'> & { seed?: string }, pal: Palette, u: number, scale = 1600 / world.mapSize, brushes?: SvgBrushes, forestMask = '', vegetation?: VegetationStyle, clearings: PolyH[] = []): string {
   const lu = world.landuse;
   if (!lu) return '';
   const s = Math.max(1, u);
   let out = patterns(world, pal, s, scale);
+  const individualTrees = (vegetation === 'canopy' || !!brushes) && !isUnderdarkBiome(world.options.biome);
   const order: LandKind[] = ['meadow', 'marsh', 'pasture', 'commons', 'forest', 'garden', 'orchard', 'field'];
   out += `<g class="layer-landuse" stroke-linejoin="round">`;
   for (const kind of order) {
@@ -125,23 +128,33 @@ export function landuseLayer(world: World, pal: Palette, u: number, scale = 1600
       // furlong edges: a faint line where the strips end (open fields carry no hedges)
       out += `<g fill="none" stroke="${pal.furrow}" ${svgMapStroke(MAP_STROKES.furlong, scale)} stroke-opacity="0.55" stroke-linejoin="round">${list.filter((a) => !(a as Enc).enclosed).map((a) => `<path d="${ringsD(a)}"/>`).join('')}</g>`;
     } else {
-      out += coverAreasSvg(kind, list, pal, s, true, brushes, world.options.biome);
+      out += coverAreasSvg(kind, list, pal, s, true, brushes, world.options.biome, individualTrees && (kind === 'forest' || kind === 'orchard'));
     }
     if (brushes && kind === 'field') out += `<path d="${list.map(ringsD).join('')}" fill="url(#${brushes.pattern('field')})" fill-rule="evenodd"/>`;
     out += '</g>';
   }
   out += fieldNetwork(world, pal, s, scale, brushes);
+  if (individualTrees && scale >= .7) for (const kind of ['forest', 'orchard'] as const) {
+    if (!pal.tex[kind]) continue;
+    const marks = canopyAreaMarks(lu.areas.filter(a => a.kind === kind), kind, world.mapSize, world.seed ?? '')
+      .filter(m => kind !== 'forest' || !clearings.some(p => insideArea({ kind, poly: p.outer, holes: p.holes }, m.x, m.y)));
+    if (!marks.length) continue;
+    out += `<g class="lu-${kind}-stamps">` + (brushes ? marks.map(m => `<g opacity="${.88 + .12 * m.k}">${brushes.tree(m.x, m.y, (kind === 'orchard' ? 3.5 : 4.75) * m.r, kind === 'orchard')}</g>`).join('')
+      : canopySvg(marks, kind, world.seed ?? '', pal)) + '</g>';
+  }
   out += '</g>';
   return out;
 }
 
 /** Identical cover marks in the base landscape and in restored urban ground; pattern defs live in landuseLayer. */
-function coverAreasSvg(kind: LandKind, list: LandArea[], pal: Palette, s: number, edges = true, brushes?: SvgBrushes, biome?: string): string {
+function coverAreasSvg(kind: LandKind, list: LandArea[], pal: Palette, s: number, edges = true, brushes?: SvgBrushes, biome?: string, individualTrees = false): string {
   const d = list.map(ringsD).join('');
   const alpha = kind === 'forest' ? 0.7 : pal.landOpacity;
   let out = `<path d="${d}" fill="${pal.land[kind]}" fill-opacity="${alpha}" fill-rule="evenodd" stroke="${pal.land[kind]}" stroke-width="${f1(0.6 * s)}"${mul(pal)}/>`;
-  if (brushes && isBrushKind(kind) && brushTextureOn(kind, pal, biome)) out += `<path d="${d}" fill="url(#${brushes.pattern(kind)})" fill-rule="evenodd"/>`;
-  else if (pal.tex[kind]) out += `<path d="${d}" fill="url(#p-${kind})" fill-rule="evenodd"/>`;
+  if (!individualTrees) {
+    if (brushes && isBrushKind(kind) && brushTextureOn(kind, pal, biome)) out += `<path d="${d}" fill="url(#${brushes.pattern(kind)})" fill-rule="evenodd"/>`;
+    else if (pal.tex[kind]) out += `<path d="${d}" fill="url(#p-${kind})" fill-rule="evenodd"/>`;
+  }
   if (edges && kind === 'forest') out += `<path d="${d}" fill="none" stroke="${pal.treeInk}" stroke-width="${f1(0.7 * s)}" stroke-opacity="0.55" stroke-linejoin="round"/>`;
   else if (kind === 'orchard' || kind === 'garden') out += `<path d="${d}" fill="none" stroke="${pal.hedge}" stroke-width="${f1(0.8 * s)}" stroke-opacity="0.7"/>`;
   return out;
@@ -169,7 +182,7 @@ type Enc = LandArea & { enclosed?: boolean };
 type Net = { ways?: Vec2[][]; headlands?: Vec2[][] };
 
 /** Field ways (cart tracks), narrow headlands and the hedgerows of the closes, with an occasional tree. */
-function fieldNetwork(world: World, pal: Palette, s: number, scale: number, brushes?: SvgBrushes): string {
+function fieldNetwork(world: Pick<World, 'landuse'>, pal: Palette, s: number, scale: number, brushes?: SvgBrushes): string {
   const lu = world.landuse as (World['landuse'] & Net) | undefined;
   if (!lu) return '';
   let out = '';

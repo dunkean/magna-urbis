@@ -6,7 +6,9 @@ import catalogueJson from '../../../rust/crates/core/src/urban/catalogue.json';
 import { decodeDecor, type Decor, type DecorEntry } from './decor';
 import { createTerrainRoads } from './terrainRoads';
 import { createTerrainUrban } from './terrainUrban';
+import { createUrbanLanduse } from './urbanLanduse';
 import { createUrbanWorkshop } from './urbanWorkshop';
+import type { Relief } from '../gen/options';
 import { runSettlementRequest, type Point, type RoadOutput, type RoadSite, type Settlement, type SettlementOutput, type SettlementRaster, type SettlementRequest, type SettlementResponse } from '../../../rust/bridge/settlements';
 import { clampView, fitView, panBy, screenToWorld, zoomAt, type View } from '../render/view';
 import { viewFromString, viewToString } from './share';
@@ -41,13 +43,16 @@ const query = new URLSearchParams(location.search);
 let entries: Entry[] = [];
 let decor: Decor | undefined, decorId = query.get('decor') ?? '';
 const decoded = new Map<string, Decor>();
-let city: City | undefined, roadMode: RoadMode = 'decor', rerouted: RoadOutput | undefined;
+let city: City | undefined, roadMode: RoadMode = 'decor', rerouted: RoadOutput | undefined, currentRoads: RoadOutput | undefined;
 let placing = false;
 let view: View = viewFromString(query.get('view')) ?? { cx: 1200, cy: 1200, scale: 0.3 };
+let reliefBitmap: HTMLCanvasElement | undefined;
 let initialView = !!query.get('view');
+let initialCityRemoved = false;
 const filters: Record<string, string> = {};
 try {
   const saved = JSON.parse(query.get('city') ?? 'null');
+  initialCityRemoved = saved?.removed === true;
   if (saved?.center) city = { key: 'city', name: '', population: 3000, culture: 'european-organic', radius: 0, site: '', ...saved };
   if (['decor', 'reroute', 'none'].includes(saved?.roads)) roadMode = saved.roads;
   Object.assign(filters, JSON.parse(query.get('filters') ?? '{}'));
@@ -59,9 +64,29 @@ function status(text: string, error = false): void { el('status').textContent = 
 const roads = createTerrainRoads({ map, before: el('status'), onConfigChange: () => { if (roadMode === 'reroute') schedulePush(true); save(); }, onDisplayChange: save });
 const urban = createTerrainUrban({
   map, before: el('status'), getTerrain: () => undefined, getRaster: () => decor?.raster,
-  getSeed: () => decor?.meta.seed ?? '', onChange: save, onFocus: (center, radius) => focus(center, radius),
+  getSeed: () => decor?.meta.seed ?? '', onChange: () => { syncLanduse(); save(); }, onPlanChange: syncLanduse,
+  onFocus: (center, radius) => focus(center, radius),
 });
-const workshop = createUrbanWorkshop({ urban, getContext: () => decor && city ? { raster: decor.raster, sites: [{ key: city.key, population: city.population, culture: city.culture, center: city.center, radius: radiusOf(city) }], roads: roads.output, seed: decor.meta.seed } : undefined, onChange: save });
+const landuse = createUrbanLanduse({ map, before: el('status'), onChange: save,
+  getView: () => ({ view, width: viewport.clientWidth, height: viewport.clientHeight }),
+  getBackground: () => ({ image: reliefBitmap, opacity: input('showRelief').checked ? Number(select('baseOpacity').value) : 0 }),
+});
+const workshop = createUrbanWorkshop({ urban, getContext: () => decor && city ? { raster: decor.raster, sites: [{ key: city.key, population: city.population, culture: city.culture, center: city.center, radius: radiusOf(city) }], roads: currentRoads, seed: decor.meta.seed } : undefined, onChange: save });
+
+function syncLanduse(): void {
+  if (!decor) { landuse.set(); return; }
+  const c = city, radius = c ? radiusOf(c) : 0;
+  const relief = decor.meta.tags.relief;
+  landuse.set({
+    raster: decor.raster, seed: decor.meta.seed,
+    relief: (['flat', 'hills', 'valley'].includes(relief) ? relief : 'mountains') as Relief,
+    city: c ? { key: c.key, center: c.center, population: c.population, culture: c.culture, radius } : undefined,
+    neighbours: decor.meta.settlements.filter(s => !c || s.key !== c.site && s.key !== c.key
+      && Math.hypot(s.center.x - c.center.x, s.center.y - c.center.y) > radius + s.radius * 0.5)
+      .map(s => ({ key: s.key, center: s.center, population: s.population, culture: s.culture, radius: s.radius })),
+    roads: currentRoads, layouts: urban.layouts,
+  }, urban.layoutPending);
+}
 
 // ---------------------------------------------------------------- decor catalogue
 async function loadIndex(): Promise<void> {
@@ -129,11 +154,12 @@ async function choose(id: string, keepCity = false): Promise<void> {
   try { next = await fetchDecor(entry); } catch (error) { status(`Décor ${entry.label} : ${error instanceof Error ? error.message : error}`, true); return; }
   if (token !== choosing) return;
   decor = next; rerouted = undefined;
+  landuse.set();
   urban.terrainPending();
   roads.setConfig(decor.meta.roadConfig ?? roads.config);
   drawBase();
-  if (!keepCity || !city) defaultCity();
-  else if (city.site && !decor.meta.settlements.some(s => s.key === city!.site)) city.site = '';
+  if (!keepCity) defaultCity();
+  else if (city?.site && !decor.meta.settlements.some(s => s.key === city!.site)) city.site = '';
   if (!initialView) fitTo(city);
   initialView = false;
   sites(); cityControls(); report(); updateView(); push(); save();
@@ -224,8 +250,10 @@ function push(): void {
   if (!decor) return;
   if (roadMode === 'reroute' && city && !rerouted) { reroute(); return; }
   const r = roadMode === 'none' ? undefined : roadMode === 'reroute' && city ? rerouted : decor.meta.roads ?? undefined;
+  currentRoads = r;
   roads.set(r);
   urban.setSettlements(cityOutput(), r);
+  syncLanduse();
   drawSites();
 }
 let routeWorker: Worker | undefined, routeFallback = false, routeRaster: SettlementRaster | undefined, routeId = 0;
@@ -311,6 +339,7 @@ function reliefImage(r: SettlementRaster): string {
     if (water && !decor?.meta.waterSvg) img.data.set([150, 190, 210, 255], o);
   }
   ctx.putImageData(img, 0, 0);
+  reliefBitmap = canvas;
   return canvas.toDataURL('image/png');
 }
 /** Marching-squares contours of the raster; index lines every fifth level. */
@@ -357,7 +386,9 @@ function layers(): void {
   (map.querySelector('#waterLayer') as SVGGElement).style.display = input('showWater').checked ? '' : 'none';
   (map.querySelector('#settlementOverlay') as SVGGElement).style.display = input('showMarkers').checked ? '' : 'none';
 }
-for (const id of ['showRelief', 'showContours', 'showWater', 'showMarkers', 'baseOpacity']) el(id).onchange = () => { layers(); save(); };
+for (const id of ['showRelief', 'showContours', 'showWater', 'showMarkers', 'baseOpacity']) el(id).onchange = () => {
+  layers(); if (id === 'showRelief' || id === 'baseOpacity') landuse.refreshBackground(); save();
+};
 function drawSites(): void {
   const layer = map.querySelector('#settlementOverlay')!; layer.replaceChildren();
   for (const s of decor?.meta.settlements ?? []) {
@@ -393,7 +424,7 @@ function updateView(): void {
   const w = viewport.clientWidth, h = viewport.clientHeight;
   view = clampView(view, decor?.meta.width ?? 2400, w, h);
   map.setAttribute('viewBox', `${view.cx - w / (2 * view.scale)} ${view.cy - h / (2 * view.scale)} ${w / view.scale} ${h / view.scale}`);
-  markers(); urban.updateView();
+  markers(); urban.updateView(); landuse.updateView();
   el('scale').textContent = `${(1 / view.scale).toFixed(2)} m / px`;
 }
 function setView(next: View): void { view = next; updateView(); deferSave(); }
@@ -481,10 +512,11 @@ function report(): void {
 function shareQuery(): string {
   const params = new URLSearchParams();
   if (decorId) params.set('decor', decorId);
-  if (city) params.set('city', JSON.stringify({ ...city, roads: roadMode })); else if (roadMode !== 'decor') params.set('city', JSON.stringify({ roads: roadMode }));
+  params.set('city', JSON.stringify(city ? { ...city, roads: roadMode } : { removed: true, roads: roadMode }));
   if (Object.values(filters).some(Boolean)) params.set('filters', JSON.stringify(filters));
   params.set('roads', roads.share());
   urban.share(params);
+  landuse.share(params);
   workshop.share(params);
   params.set('view', viewToString(view));
   return params.toString();
@@ -520,5 +552,5 @@ el('openTerrain').onclick = () => { if (decor) window.open(`terrainbench.html?${
   catalogue();
   if (!entries.length) { status('Aucun décor. Lancez « node scripts/export_decors.mjs » (serveur npm run dev:terrain), exportez une carte depuis Terrain Bench (Export decor), ou ouvrez / déposez des fichiers .decor.'); return; }
   const first = entries.find(e => e.id === decorId) ?? visible()[0] ?? entries[0];
-  await choose(first.id, !!city);
+  await choose(first.id, !!city || initialCityRemoved);
 })();

@@ -56,7 +56,7 @@ interface Render { quarters: boolean; blocks: boolean; streets: boolean; enclosu
 type Kind = 'quarters' | 'parcels';
 
 /** `getRaster` replaces `getTerrain` where the raster is already adapted (Urban Bench decors). */
-export function createTerrainUrban(options: { map: SVGSVGElement; before: Element | null; getTerrain(): TerrainData | undefined; getRaster?(): SettlementRaster | undefined; getSeed(): string; onChange(): void; onFocus?(center: Point, radius: number): void }) {
+export function createTerrainUrban(options: { map: SVGSVGElement; before: Element | null; getTerrain(): TerrainData | undefined; getRaster?(): SettlementRaster | undefined; getSeed(): string; onChange(): void; onPlanChange?(): void; onFocus?(center: Point, radius: number): void }) {
   let settlements: SettlementOutput | undefined, roads: RoadOutput | undefined;
   let layouts: Layout[] | undefined, partitions: Partition[] | undefined;
   let layoutConfig = defaultLayoutConfig(), parcelConfig = defaultParcelConfig();
@@ -243,7 +243,9 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
     if (!layer) { layer = document.createElementNS(ns, 'g'); layer.id = 'urbanOverlay'; layer.style.pointerEvents = 'none'; options.map.insertBefore(layer, options.map.querySelector('#roadOverlay, #settlementOverlay')); }
     const state = JSON.stringify({ enabled, parcelEnabled, render });
     if (layer === drawnLayer && layouts === drawnLayouts && partitions === drawnPartitions && state === drawnState) return;
+    const planChanged = drawnLayouts !== layouts;
     drawnLayer = layer; drawnLayouts = layouts; drawnPartitions = partitions; drawnState = state; layer.replaceChildren();
+    if (planChanged) options.onPlanChange?.();
     if (!enabled || !layouts) return;
     layer.setAttribute('opacity', String(render.opacity));
     const add = (d: string, fill: string, stroke: string, width: number, scalable = false): SVGPathElement => {
@@ -333,6 +335,7 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
   };
   populate('quarters'); populate('parcels');
   return {
+    get layouts(): Layout[] | undefined { return layouts; },
     workshopState() { return clone({ layoutConfig: appliedLayout, parcelConfig: appliedParcel, quarterSeed: appliedQuarterSeed, parcelSeed: appliedParcelSeed, layouts, partitions }); },
     applyWorkshop(state: { layoutConfig?: LayoutConfig; parcelConfig?: ParcelConfig; quarterSeed?: string; parcelSeed?: string }): void {
       const quartersChanged = state.layoutConfig !== undefined && JSON.stringify(state.layoutConfig) !== JSON.stringify(appliedLayout)
@@ -345,6 +348,7 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
       if (quartersChanged || !layouts) void request('quarters'); else void request('parcels');
       options.onChange();
     },
+    get layoutPending(): boolean { return enabled && ready && !!settlements?.settlements.length && !layouts; },
     setSettlements(output?: SettlementOutput, roadOutput?: RoadOutput): void {
       if (settlements === output && roads === roadOutput && ready) return;
       ++id; settlements = output; roads = roadOutput; ready = !!output;

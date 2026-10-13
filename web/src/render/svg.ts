@@ -28,6 +28,7 @@ import type { BrushSources } from './brushes';
 import { supportsPaintedBiome } from './brushes';
 import type { Measure } from './mapLabels';
 import type { ExportLayers } from './exportLayers';
+import type { VegetationStyle } from './canopy';
 
 export interface RenderOptions {
   /** Independent export layers; omitted flags stay visible. */
@@ -41,6 +42,7 @@ export interface RenderOptions {
   measure?: Measure;
   /** Optional display-only raster stamps; omitted keeps classic output byte-for-byte. */
   brushes?: BrushSources;
+  vegetation?: VegetationStyle;
 }
 
 function contourLayer(world: World, pal: Palette, u: number, scale: number): string {
@@ -115,7 +117,7 @@ export function renderSvg(world0: World, opts: RenderOptions = {}): string {
   if (layers.decor !== false && pal.grid) parts.push(gridSvg(world, pal, u));
   if (contours) parts.push(contourLayer(world, pal, u, scale));
 
-  if (landuse) parts.push(landuseLayer(world, pal, u, scale, painted?.brushes, forestMask));
+  if (landuse) parts.push(landuseLayer(world, pal, u, scale, painted?.brushes, forestMask, opts.vegetation, clearings));
 
   // rivers: casing first, then fill so confluences merge cleanly
   const minW = 1.1 * u;

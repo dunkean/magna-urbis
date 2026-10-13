@@ -13,6 +13,7 @@ import { isUnderdarkBiome } from '../gen/biomes';
  * Everything DOM-ish is injectable (`CanvasRendererDeps`) so a mock 2D context can drive it in Node.
  */
 import { CanvasBrushes } from './brushCanvas';
+import { CanvasCanopy, canopyMarks, CANOPY_MARGIN, type VegetationStyle } from './canopy';
 import { brushTextureOn, isBrushKind, supportsPaintedBiome, type BrushImages, type BrushKind } from './brushes';
 import { bridgeShapes, isKinded, type BridgeShapes } from './townbridges';
 import type { World, LandKind, Vec2 } from '../gen/types';
@@ -28,7 +29,7 @@ import { TERRACE_STROKES as TS, terraceDetailAlpha } from './terraces';
 import { regionalBridgeSurface, regionalRoadSurface } from './roadSurfaces';
 import { renderTerrainPixels } from './raster';
 import { RasterTileCache } from './rasterTiles';
-import { buildScene, Scene, PolyLayer, LineLayer, TextureLayer, textureMarks, LAND_ORDER, WALL_LINE_W, CAMP_FENCE_W, FENCE_STYLE } from './scene';
+import { buildScene, Scene, PolyLayer, LineLayer, TextureLayer, textureMarks, pointInPoly, type Mark, LAND_ORDER, WALL_LINE_W, CAMP_FENCE_W, FENCE_STYLE } from './scene';
 import { renderView } from '../gen/settlements/merge';
 import { selectLod, lineWidth, Lod, BAND_MIN_EDGE, WAY_SCALE, FURROW_MIN_PX, FURROW_HOLDER_BUDGET } from './lod';
 import { View, viewRect, Rect4 } from './view';
@@ -59,6 +60,10 @@ export interface CanvasRendererDeps {
   rasterBytes?: number;
   /** Decoded display-only atlases; undefined is the unchanged classic renderer. */
   brushes?: BrushImages;
+  /** Irregular, shaded foliage in place of round forest/orchard symbols. */
+  vegetation?: VegetationStyle;
+  /** Decorative field scale, independent of the retained terrain extent. */
+  furrowReferenceSize?: number;
 }
 
 export interface FrameStats {
@@ -190,9 +195,11 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
   const pal = biomePalette(style, world.options.biome);
   let scene = deps.scene ?? buildScene(world0, deps.tileSize);
   const S = world.mapSize;
+  const furrowSize = deps.furrowReferenceSize ?? S;
   const now = deps.now ?? (() => (typeof performance !== 'undefined' ? performance.now() : Date.now()));
   const P: new () => Path2D = deps.Path2D ?? (globalThis as unknown as { Path2D: new () => Path2D }).Path2D;
   const makeCanvas = deps.createCanvas ?? defaultCreateCanvas;
+  const canopy = deps.vegetation === 'canopy' && !isUnderdarkBiome(world.options.biome) ? new CanvasCanopy(world.seed, pal, makeCanvas) : undefined;
   let brushes: CanvasBrushes | undefined;
   if (deps.brushes && supportsPaintedBiome(world.options.biome)) { try { brushes = new CanvasBrushes(world, pal, deps.brushes, makeCanvas); } catch { /* Keep classic when allocations/tinting are unavailable. */ } }
   const brushIds = new WeakMap<TextureLayer, number>();
@@ -201,6 +208,7 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
 
   const cache: PathMap = new Map();
   const furrowCache = new Map<number, FurrowPaths>();
+  const treeMarks = new Map<TextureLayer, Map<number, Mark[]>>();
   let built = 0;
   let labels: Label[] = [];
   const overlays: Overlays = { labels: world.options.labels !== false, legend: !!world.options.legend, cartouche: true };
@@ -302,7 +310,7 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
   }
 
   function update(nextSource: World, nextScene: Scene, nextStyle: MapStyle | Palette = style): boolean {
-    if (brushes && nextSource.seed !== sourceWorld.seed) return false;
+    if ((brushes || canopy) && nextSource.seed !== sourceWorld.seed) return false;
     if (nextSource.mapSize !== S || biomePalette(nextStyle, nextSource.options.biome) !== pal) return false;
     // Prepare potentially fallible metadata before committing the replacement.
     const nextWorld = cavernDisplayWorld(nextScene.renderedWorld ? { ...nextScene.renderedWorld, options: nextSource.options } : renderView(cavernDisplayWorld(nextSource)));
@@ -313,6 +321,7 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
     if (terrainChanged) { terrainImg = undefined; cache.clear(); rasterCache.clear(); }
     if (nextScene.density?.cov !== scene.density?.cov) densityImg = undefined;
     if (nextScene.furrows !== scene.furrows) furrowCache.clear();
+    if (nextScene !== scene) treeMarks.clear();
     if (nextScene !== scene && !nextScene.dirty) cache.clear();
     if (world.options.landuse !== nextSource.options.landuse || world.options.contours !== nextSource.options.contours) rasterCache.clear();
     // Entries can predate several scene updates; expand by the new absolute paint radius, not a last-update delta.
@@ -331,7 +340,7 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
     addRing(holder, orientPos(a.poly));
     for (const hole of a.holes ?? []) addRing(holder, orientPos(hole).slice().reverse());
     for (const strip of a.strips) addRing(strips, orientPos(strip));
-    for (const line of furrowLines(a.poly, S, a.angle)) { lines.moveTo(line[0].x, line[0].y); lines.lineTo(line[1].x, line[1].y); }
+    for (const line of furrowLines(a.poly, furrowSize, a.angle)) { lines.moveTo(line[0].x, line[0].y); lines.lineTo(line[1].x, line[1].y); }
     paths = { holder, strips, lines }; built += 3;
     furrowCache.set(i, paths);
     if (furrowCache.size > FURROW_CACHE_MAX) {
@@ -650,8 +659,8 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
       fillPolys(name, pal.land[kind], kind === 'forest' ? 0.7 : luAlpha);
       multiply(false);
       // Actual parallel plough lines, anchored like the SVG pattern. Suppress subpixel moire at far zoom.
-      if (kind === 'field' && !isUnderdarkBiome(world.options.biome) && lod.strips && pal.furrowAlpha > 0 && scene.furrows && furrowSpacing(S) * sc >= 1.5) {
-        const fade = Math.min(1, (furrowSpacing(S) * sc - 1.5) / 1.5);
+      if (kind === 'field' && !isUnderdarkBiome(world.options.biome) && lod.strips && pal.furrowAlpha > 0 && scene.furrows && furrowSpacing(furrowSize) * sc >= 1.5) {
+        const fade = Math.min(1, (furrowSpacing(furrowSize) * sc - 1.5) / 1.5);
         const visible: number[] = [], boxes = scene.furrows.index.boxes;
         // TileIndex.query returns sorted unique ids. Cull by precomputed projected bbox before allocating paths.
         for (const i of scene.furrows.index.query(budgetRect)) {
@@ -1305,6 +1314,31 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
   }
 
   function drawTexture(ctx: CanvasRenderingContext2D, tl: TextureLayer, rect: Rect4, band: number, lw: (w: number, m: number) => number, budgetRect: Rect4 = rect): number {
+    if ((canopy || brushes) && (tl.kind === 'forest' || tl.kind === 'orchard')) {
+      // Select centres inside the cover, then draw whole trees, including overhanging crowns.
+      const expanded = { minX: rect.minX - CANOPY_MARGIN, minY: rect.minY - CANOPY_MARGIN,
+        maxX: rect.maxX + CANOPY_MARGIN, maxY: rect.maxY + CANOPY_MARGIN };
+      const tiles = tl.index.tilesInRect(expanded), marks: Mark[] = [];
+      let entries = treeMarks.get(tl); if (!entries) { entries = new Map(); treeMarks.set(tl, entries); }
+      const exclusion = tl.kind === 'forest' ? polyL('u-forest-clearings') : undefined;
+      for (const tile of tiles) {
+        let points = entries.get(tile);
+        if (!points) {
+          points = canopyMarks(tl, tile, world.seed).filter(m => !exclusion || !exclusion.index.query({ minX: m.x, minY: m.y, maxX: m.x, maxY: m.y }).some(i =>
+            pointInPoly(exclusion.polys[i], m.x, m.y) && !(exclusion.holes?.[i] ?? []).some(h => pointInPoly(h, m.x, m.y))));
+          if (entries.size >= 128) entries.delete(entries.keys().next().value!);
+          entries.set(tile, points);
+        }
+        for (const m of points) if (m.x >= expanded.minX && m.x <= expanded.maxX && m.y >= expanded.minY && m.y <= expanded.maxY) marks.push(m);
+      }
+      marks.sort((a, b) => a.y - b.y || a.x - b.x);
+      if (brushes) for (const m of marks) {
+        ctx.globalAlpha = .88 + .12 * m.k;
+        brushes.tree(ctx, m.x, m.y, (tl.kind === 'orchard' ? 3.5 : 4.75) * m.r, tl.kind === 'orchard');
+      }
+      else canopy!.draw(ctx, marks, tl.kind, ctx.getTransform().a / (deps.dpr ?? 1), deps.dpr ?? 1);
+      ctx.globalAlpha = 1; return tiles.length;
+    }
     if (tl.kind !== 'forest') return drawTextureMarks(ctx, tl, rect, band, lw, budgetRect);
     ctx.save(); const clip = forestClip(rect); if (clip) ctx.clip(clip, 'nonzero');
     try { return drawTextureMarks(ctx, tl, rect, band, lw, budgetRect); }
@@ -1447,7 +1481,7 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
     drawMinimap,
     lastStats: () => stats,
     getMapInfo: () => ({ cartouche: infoPanel ??= cartoucheModel(world, pal, 1, false), legend: legendPanel ??= legendModel(world, pal), fontFamily: family }),
-    dispose() { brushes?.dispose(); patterns.clear(); cache.clear(); furrowCache.clear(); rasterCache.clear(); terrainImg = densityImg = cavernRockImg = undefined; },
+    dispose() { canopy?.dispose(); brushes?.dispose(); treeMarks.clear(); patterns.clear(); cache.clear(); furrowCache.clear(); rasterCache.clear(); terrainImg = densityImg = cavernRockImg = undefined; },
   };
 }
 

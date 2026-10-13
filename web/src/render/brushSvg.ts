@@ -5,7 +5,7 @@ import { BRUSH_ATLAS, BRUSH_CELL, brushCell, brushColorMatrix, brushMotif, type 
 export interface SvgBrushes { tree(x: number, y: number, radius: number, orchard?: boolean): string; pattern(kind: BrushKind): string }
 const n = (x: number): string => String(Number(x.toFixed(5)));
 
-export function svgBrushes(world: World, pal: Palette, sources: BrushSources): { defs: string; brushes: SvgBrushes } {
+export function svgBrushes(world: Pick<World, 'seed' | 'options'>, pal: Palette, sources: BrushSources): { defs: string; brushes: SvgBrushes } {
   const use = (atlas: string, cell: number, x: number, y: number, size: number, alpha = 1): string =>
     `<use href="#brush-${atlas}-${cell}" xlink:href="#brush-${atlas}-${cell}" x="${n(x - size / 2)}" y="${n(y - size / 2)}" width="${n(size)}" height="${n(size)}" opacity="${n(alpha)}"/>`;
   let defs = '<defs>';

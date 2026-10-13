@@ -20,18 +20,29 @@ class RecordedPath extends MockPath2D {
   }
 }
 
-function fieldRenderer(w: World, width = 900, height = 700) {
+function fieldRenderer(w: World, width = 900, height = 700, furrowReferenceSize?: number) {
   w.urban = undefined; w.roads = []; w.terrain.rivers = []; w.options.contours = false; w.options.labels = false;
   const scene = buildScene(w), m = mockCanvas(width, height), strokes: RecordedPath[] = [];
   const ctx = m.canvas.getContext('2d') as Record<string, unknown>;
   ctx.stroke = (p?: RecordedPath) => {
     if (p instanceof RecordedPath && p.rings.length > 2 && p.rings.every((r) => !r.closed && r.points.length === 2)) strokes.push(p);
   };
-  const renderer = createCanvasRenderer(m.canvas as unknown as CanvasLike, w, 'parchment', { scene, Path2D: RecordedPath as never, terrain: () => null, createCanvas: () => null, dpr: 1 });
+  const renderer = createCanvasRenderer(m.canvas as unknown as CanvasLike, w, 'parchment', { scene, Path2D: RecordedPath as never, terrain: () => null, createCanvas: () => null, dpr: 1, furrowReferenceSize });
   return { renderer, scene, strokes };
 }
 
 describe('actual plough lines in Canvas fields', () => {
+  it('can retain the TypeScript town furrow scale on a larger retained decor', () => {
+    const w = fakeWorld({ mapSize: 6000, buildings: 0, streets: 0, landAreas: 0 }), poly = rect(200, 200, 600);
+    w.landuse!.areas = [{ kind: 'field', poly, strips: [poly], stripAngle: 0 }];
+    const h = fieldRenderer(w, 900, 700, 2400);
+    h.renderer.draw({ cx: 500, cy: 500, scale: 2 });
+    expect(h.strokes).toHaveLength(1);
+    const lines = h.strokes[0].rings;
+    expect(lines[1].points[0].y - lines[0].points[0].y).toBeCloseTo(2.4, 8);
+    expect(lines.length).toBeGreaterThan(furrowLines(poly, w.mapSize, 0).length * 2);
+    h.renderer.dispose();
+  });
   it('matches the SVG world phase, direction and spacing, independently of viewport position', () => {
     const theta = .63, deg = furrowDegrees(theta), sp = furrowSpacing(3600), offset = furrowOffset(3600), angle = deg * Math.PI / 180;
     const a = furrowLines(rect(100, 100, 400), 3600, theta), b = furrowLines(rect(300, 200, 400), 3600, theta);

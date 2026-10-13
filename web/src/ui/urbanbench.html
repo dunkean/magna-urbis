@@ -3,7 +3,7 @@
 <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Magna Urbis — Urban Bench</title></head>
 <body>
 <header>
-  <strong class="brand">Urban Bench <small>Quartiers · parcelles · Rust</small></strong>
+  <strong class="brand">Urban Bench <small>Quartiers · parcelles · paysages</small></strong>
   <div class="control-group" role="group" aria-label="Décor">
     <button id="decorPrev" title="Décor précédent ([)" aria-label="Décor précédent">‹</button>
     <select id="decorQuick" aria-label="Décor"></select>
@@ -14,6 +14,7 @@
     <label><input id="showRelief" type="checkbox" checked>Relief</label>
     <label><input id="showContours" type="checkbox" checked>Courbes</label>
     <label><input id="showWater" type="checkbox" checked>Eaux</label>
+    <label><input id="showLanduse" type="checkbox" checked>Occupation</label>
     <label><input id="showMarkers" type="checkbox" checked>Lieux</label>
     <label>Fond <select id="baseOpacity"><option value="1">100 %</option><option value="0.6">60 %</option><option value="0.3">30 %</option></select></label>
   </div>
@@ -47,6 +48,7 @@
     <div id="viewport" tabindex="0" aria-label="Carte. Molette : zoom, glisser : déplacer, clic en mode pose : graine.">
       <svg id="map" xmlns="http://www.w3.org/2000/svg" aria-label="Décor et ville">
         <g id="baseLayer"><image id="reliefImage" preserveAspectRatio="none"/></g>
+        <g id="landuseLayer"></g>
         <g id="contourLayer"></g>
         <g id="waterLayer"></g>
         <g id="seedLayer"></g>
