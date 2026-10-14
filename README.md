@@ -14,7 +14,23 @@ Read the [technical and scientific overview (in French)](docs/TECHNICAL_AND_SCIE
 
 The long-term goal is to **integrate Magna Urbis into [Neural Earth](https://github.com/dunkean/neural-earth)**, the procedural world project developed in Infinite Map, placing cities and villages within a regional and planetary landscape. This integration is planned for the future and has not been delivered yet.
 
-## Prototype screenshots
+## A first look at the Rust landscapes
+
+**The next chapter of Magna Urbis is taking shape.** From tropical islands to snow-covered volcanic craters, the Rust prototype is already exploring landscapes for future settlements and adventures. These five captures show its current terrain renders, with coastlines, rivers, lakes, settlement locations and regional routes.
+
+### Snow-covered volcanic island
+
+![Rust prototype: volcanic island with snowy slopes, crater lake and coastal settlements](docs/rust_images/volcano-cold.jpg)
+
+| Tropical island | Arid hills |
+| --- | --- |
+| ![Rust prototype: green tropical island with coastal villages and routes](docs/rust_images/island-tropical.jpg) | ![Rust prototype: arid hills crossed by rivers and regional roads](docs/rust_images/hills-arid.jpg) |
+| **Mountains by the ocean** | **Cold plateau** |
+| ![Rust prototype: snowy mountains, lakes and winding routes above an ocean coastline](docs/rust_images/oceanic-mountains.jpg) | ![Rust prototype: snowy plateau overlooking a valley with lakes and settlements](docs/rust_images/plateau-cold.jpg) |
+
+These are snapshots of the Rust prototype in development. Detailed towns and buildings are the next part of the picture as the terrain and urban stages come together. See the [Rust engine documentation](rust/README.md) for its current status.
+
+## TypeScript prototype screenshots
 
 Actual captures from the TypeScript application: three cities of 30,000 inhabitants and a village of 600. They show different urban layouts and the **Parchment** and **Atlas** map styles, including the prototype's current imperfections.
 
@@ -100,6 +116,7 @@ rust/crates/wasm/ WebAssembly bindings
 rust/bridge/      Temporary interface and rendering adapters
 rust/scripts/     Rust development commands
 docs/images/     README screenshots and reproduction settings
+docs/rust_images/ Rust prototype landscape screenshots
 ```
 
 ## Contributing
