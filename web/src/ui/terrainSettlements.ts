@@ -10,6 +10,7 @@ import { createTerrainUrban } from './terrainUrban';
 import { captureDecor, downloadBytes } from './decorCapture';
 import { decorEntry, type DecorEntry } from './decor';
 import './terrainSettlements.css';
+import type { UrbanPaintingContext } from '../../../rust/bridge/urbanPaintingMask';
 
 const ns = 'http://www.w3.org/2000/svg';
 const clone = <T>(value: T): T => structuredClone(value);
@@ -29,7 +30,7 @@ const sites = (output: SettlementOutput): RoadSite[] => output.settlements.map(s
 
 export function createTerrainSettlements(options: {
   map: SVGSVGElement; viewport: HTMLElement; getTerrain(): TerrainData | undefined; getSettings(): TerrainSettings;
-  getView(): View; onChange(): void; onPicking(): void; onFocus?(center: Point, radius: number): void;
+  getView(): View; getAuto?(): boolean; getQuery?(): string; onChange(): void; onPlanChange?(): void; onPicking(): void; onFocus?(center: Point, radius: number): void;
 }) {
   const { map, viewport } = options;
   let config = defaultSettlementConfig(), enabled = true, showPoints = true;
@@ -92,7 +93,8 @@ export function createTerrainSettlements(options: {
     onDisplayChange: options.onChange,
   });
   const urban = createTerrainUrban({ map, before: backend, getTerrain: options.getTerrain,
-    getSeed: () => options.getSettings().seed, onChange: options.onChange, onFocus: options.onFocus });
+    getSeed: () => options.getSettings().seed, getAuto: options.getAuto, onChange: options.onChange, onPlanChange: options.onPlanChange, onFocus: options.onFocus });
+  let paintingContext: UrbanPaintingContext | undefined;
   if (legacyRoads === false && !new URLSearchParams(location.search).has('roads')) {
     const box = document.getElementById('roadEnabled') as HTMLInputElement; box.checked = false; box.dispatchEvent(new Event('change'));
   }
@@ -179,6 +181,7 @@ export function createTerrainSettlements(options: {
     roads.set(response.roads ?? undefined);
     urban.setSettlements(output, response.roads ?? undefined);
     draw(); list(); editor(); options.onChange();
+    options.onPlanChange?.();
   }
   function list(): void {
     const entries = config.mode === 'list' ? config.list : output?.settlements ?? [];
@@ -329,7 +332,8 @@ export function createTerrainSettlements(options: {
   const decor = (extra?: Parameters<typeof captureDecor>[5]): ReturnType<typeof captureDecor> => {
     const t = options.getTerrain();
     if (!t || !decorReady()) throw new Error('Wait for the settlements and roads of the completed map.');
-    return captureDecor(t, options.getSettings(), output!, roads.output, roads.enabled ? clone(roads.config) : null, extra);
+    return captureDecor(t, options.getSettings(), output!, roads.output, roads.enabled ? clone(roads.config) : null,
+      { ...extra, query: extra?.query ?? options.getQuery?.() });
   };
   el('setExportDecor').onclick = () => {
     try { const s = options.getSettings(); downloadBytes(decor().bytes, `${s.relief}-${s.seed}.decor`.replace(/[^\w.-]+/g, '_')); }
@@ -346,10 +350,25 @@ export function createTerrainSettlements(options: {
   };
   controls(); list();
   return {
+    get paintingContext(): UrbanPaintingContext {
+      const cities = enabled ? output?.settlements : undefined, roadOutput = roads.enabled ? roads.output : undefined;
+      if (!paintingContext || paintingContext.layouts !== urban.layouts || paintingContext.roads !== roadOutput || paintingContext.cities !== cities) {
+        paintingContext = { layouts: urban.layouts, roads: roadOutput, cities };
+      }
+      return paintingContext;
+    },
+    applyUrbanChanges: urban.applyPending,
     cancelPicking(): void { setPicking(); },
     terrainReady(): void { complete = true; needsPlacement = true; recalculate(); },
+    terrainFailed(message: string): void {
+      complete = false; ++id; clearTimeout(timer);
+      el('setGenerate').removeAttribute('aria-busy');
+      el('setStatus').textContent = `Settlements blocked by terrain generation: ${message}`;
+      roads.error(`Terrain generation failed: ${message}`);
+      urban.terrainFailed(message);
+    },
     terrainPending(): void { complete = false; ++id; output = undefined; cachedTerrain = undefined; validation = undefined; roads.set(undefined); urban.terrainPending(); draw(); el('setStatus').textContent = 'Waiting for the completed map…'; },
-    updateView(): void { draw(); urban.updateView(); },
+    updateView(): void { draw(); roads.draw(); urban.updateView(); },
     isPicking: (): boolean => !!picking,
     click(event: MouseEvent): boolean { if (!picking) return false; placeAt(world(event)); return true; },
     share(params: URLSearchParams): void {

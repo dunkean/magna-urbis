@@ -117,6 +117,33 @@ les quartiers, îlots et rues. Les contrôles de rendu ne lancent aucun calcul.
 Les liens conservent les paramètres appliqués, graines, sélection et rendu ; les
 changements de paramètres non appliqués ne modifient pas le replay.
 
+Dans Terrain Bench, **Auto** applique les menus urbains après une courte pause,
+sans recalculer le terrain ou l'eau. Auto désactivé, un message signale les
+modifications en attente ; les boutons de chaque étape ou le bouton général
+**Générer** les appliquent. Urban Bench conserve ses boutons d'application.
+Changer de culture revient aux recettes culturelles et retire le préréglage
+forcé précédent. Le menu **Génération** reste visible : les secteurs isolés
+conservent leur contour de scène, même avec un maillage organique.
+
+Un décor exporté transmet les paramètres urbains **appliqués**, les graines et
+le settlement ciblé à Urban Bench. Sans paramètres urbains propres dans son
+lien, Urban Bench reprend cette configuration au lieu de ses valeurs par
+défaut. Les étapes y sont activées pour travailler les décors du catalogue,
+exportés sans génération de villes. Un lien Urban Bench explicite garde la
+priorité sur le décor, y compris pour les paramètres routiers. Réattacher le même
+fichier conserve aussi les réglages routiers courants. « Ouvrir Terrain Bench »
+reprend les paramètres urbains et routiers actuels, la sélection et la désactivation
+des routes lorsqu’elles sont retirées. À terrain, ville, routes, options et graines identiques,
+les deux benches produisent les mêmes rues, îlots et parcelles.
+
+Changer de style restaure aussi les routes régionales lorsque le rendu SVG
+reconstruit ses calques. Les styles Fantasy des deux bancs utilisent le même
+masque : terre attribuée native, trous conservés et approches régionales
+remplacées par la voirie urbaine. Le lissage conserve la surface des petits
+quartiers et répare localement les cellules protégées, sans rétablir tout le
+contour en escalier. Vérification : `node scripts/urban_styles_ui_check.mjs`
+(styles Terrain en SVG/WebGL, styles Urban et cinq rendus de routes).
+
 Un index spatial accélère la recherche des façades sans changer leur sélection.
 Les parcelles résidentielles profondes sont bornées par leur profondeur
 culturelle ; les fonds inaccessibles restent des jardins, même dans un grand

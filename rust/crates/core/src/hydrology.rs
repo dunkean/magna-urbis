@@ -2859,6 +2859,12 @@ fn fit_channel_profile(
                 // This interior station can hold the upstream water while the
                 // downstream station stays lower. Raising it only improves the
                 // already-fitted downstream span's terrain clearance.
+                if b.z == ceiling {
+                    // A rounded terrain bound may still reject this span at
+                    // the ceiling. Let the caller repair it instead of looping
+                    // with the same station and unchanged downstream water.
+                    return Err(points[k - 1].1);
+                }
                 points[k].0.z = ceiling;
             } else {
                 let t = (points[k - 1].1 + points[k].1) * 0.5;

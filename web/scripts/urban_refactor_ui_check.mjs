@@ -36,6 +36,7 @@ async function ready(after = 0) {
   await page.waitForFunction(after => window.urbanReplies > after && window.urbanLayouts && window.urbanPartitions
     && document.querySelector('#urbanQuarterStage [data-apply]')?.getAttribute('aria-busy') === 'false'
     && document.querySelector('#urbanParcelStage [data-apply]')?.getAttribute('aria-busy') === 'false', after, { timeout: 120000 });
+  await page.locator('#urbanQuarterStage, #urbanParcelStage').evaluateAll(panels => panels.forEach(p => p.querySelectorAll('details').forEach(d => { d.open = true; })));
 }
 async function apply() {
   const before = await page.evaluate(() => window.urbanReplies);
@@ -77,7 +78,7 @@ try {
   assert.equal(await config('radius').isEnabled(), false, 'Population budget must disable the ignored radius control');
   assert.equal(await footprint('family').locator('option').count(), 13, 'Twelve silhouette families plus automatic choice');
 
-  await footprint('mechanism').selectOption('planned'); await footprint('family').selectOption('rectangle');
+  await footprint('mechanism').selectOption('auto'); await footprint('family').selectOption('rectangle');
   await footprint('grossDensity').fill('160'); await footprint('aspect').fill('2');
   await config('fortification').selectOption('none');
   await config('tissue').selectOption('grid'); await apply();
@@ -140,7 +141,7 @@ try {
   await page.locator('#focusSeed').click(); await page.screenshot({ path: `${out}/fusion.png` });
 
   // A larger scene uses the same frozen site, planned/grid recipe and density.
-  await footprint('mechanism').selectOption('planned'); await footprint('family').selectOption('rectangle');
+  await footprint('mechanism').selectOption('auto'); await footprint('family').selectOption('rectangle');
   await footprint('grossDensity').fill('160'); await config('tissue').selectOption('grid');
   await page.locator('#urbanParcelStage [data-config="operator"]').selectOption('culture');
   await page.locator('#urbanParcelStage [data-apply]').click();

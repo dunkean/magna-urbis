@@ -31,8 +31,10 @@ target.searchParams.set('settlements', JSON.stringify({ config: { mode: 'counts'
 target.searchParams.set('roads', JSON.stringify({ config: { exits: 2, level: 'developed' } }));
 async function settled() {
   await page.waitForSelector('#setStatus');
-  await page.waitForFunction(() => document.getElementById('setStatus').textContent.startsWith('Rust ·') && !document.getElementById('setGenerate').hasAttribute('aria-busy')
-    && document.getElementById('roadStatus').textContent.startsWith('Rust ·') && !document.getElementById('roadStage').hasAttribute('aria-busy'), null, { timeout: 120000 });
+  await page.waitForFunction(() => document.getElementById('status').dataset.error === 'true'
+    || (document.getElementById('setStatus').textContent.startsWith('Rust ·') && !document.getElementById('setGenerate').hasAttribute('aria-busy')
+    && document.getElementById('roadStatus').textContent.startsWith('Rust ·') && !document.getElementById('roadStage').hasAttribute('aria-busy')), null, { timeout: 120000 });
+  assert.notEqual(await page.locator('#status').getAttribute('data-error'), 'true', await page.locator('#status').textContent());
 }
 async function screenPoint(x, y) {
   return page.evaluate(({ x, y }) => {

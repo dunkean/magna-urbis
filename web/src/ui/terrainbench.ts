@@ -275,6 +275,7 @@ let view: View = viewFromString(query.get('view')) || fitView(settings.width, vi
 let terrain: TerrainData | undefined;
 let pinMode = false, generation = 0, requestId = 0, terrainGeneration = 0;
 let overviewRequest: TerrainRequest | undefined, detailRequest: TerrainRequest | undefined;
+let overviewPending = false, generationError: string | undefined;
 let generationTimer: ReturnType<typeof setTimeout> | undefined, detailTimer: ReturnType<typeof setTimeout> | undefined;
 let saveTimer: ReturnType<typeof setTimeout> | undefined;
 let renderingMs = 0, contourStep = 0, detailSamplingMs = 0;
@@ -522,12 +523,20 @@ const ruler = createRuler({ container: viewport, surface: map, getView: () => vi
 } });
 
 const settlements = createTerrainSettlements({ map, viewport, getTerrain: () => terrain, getSettings: () => settings,
-  getView: () => view, onChange: deferSave,
+  getView: () => view, getAuto: () => input('auto').checked, getQuery: shareQuery, onChange: deferSave,
+  onPlanChange: () => queueMicrotask(refreshUrbanPainting),
   onFocus: (center, radius) => setView({ cx: center.x, cy: center.y, scale: Math.min(viewport.clientWidth, viewport.clientHeight) / Math.max(100, radius * 2.6) }),
   onPicking: () => {
     pinMode = false; el('pinMode').setAttribute('aria-pressed', 'false'); viewport.classList.remove('pin-mode'); ruler.setEnabled(false);
   },
 });
+
+function refreshUrbanPainting(): void {
+  const layer = map.querySelector('#fantasyPainting');
+  if (!terrain || !layer || !isFantasyStyle(style) || !layers.relief) return;
+  fantasyScene = renderFantasyTerrain(terrain, style, settings, fantasyOptions, settlements.paintingContext);
+  layer.innerHTML = fantasyScene;
+}
 
 function updateView(): void {
   const w = viewport.clientWidth, h = viewport.clientHeight;
@@ -562,6 +571,8 @@ function showPins(): void {
 showPins();
 
 function renderedStatus(): void {
+  if (generationError) { status(`Rust engine error: ${generationError}`, true); return; }
+  if (overviewPending) return;
   if (!terrain || terrainGeneration !== generation) return;
   const name = el<HTMLSelectElement>('relief').querySelector<HTMLOptionElement>(`option[value="${settings.relief}"]`)!.textContent;
   const environment = geological(settings.relief) ? ` · surroundings ${el<HTMLSelectElement>('environment').querySelector<HTMLOptionElement>(`option[value="${settings.environment ?? 'mixed'}"]`)!.textContent}` : '';
@@ -681,7 +692,7 @@ function renderGpu(): void {
   let fantasy: Element | null = document.getElementById('fantasyPainting');
   if (isFantasyStyle(style) && layers.relief) {
     if (!fantasy) { fantasy = document.createElementNS('http://www.w3.org/2000/svg', 'g'); fantasy.id = 'fantasyPainting'; map.insertBefore(fantasy, document.getElementById('hydrologyOverlay')); }
-    const scene = renderFantasyTerrain(terrain, style, settings, fantasyOptions);
+    const scene = renderFantasyTerrain(terrain, style, settings, fantasyOptions, settlements.paintingContext);
     if (scene !== fantasyScene) { fantasy.innerHTML = scene; fantasyScene = scene; }
   } else { fantasy?.remove(); fantasyScene = ''; }
   renderWater();
@@ -694,7 +705,7 @@ function render(preparedScene?: TerrainScene, preparationMs = 0): void {
   if (gpu) { updateContourControl(); renderGpu(); return; }
   updateContourControl();
   const start = performance.now(), scene = (!isFantasyStyle(style) ? preparedScene : undefined) ?? renderRustTerrain(terrain, style, true, settings, input('showContours').checked, 'main', lighting, layers, fantasyOptions, false);
-  map.innerHTML = `<g id="terrainOverview">${scene.svg}</g><g id="terrainDetail"></g>${isFantasyStyle(style) && layers.relief ? `<g id="fantasyPainting">${renderFantasyTerrain(terrain, style, settings, fantasyOptions)}</g>` : ''}<g id="hydrologyOverlay"></g>`;
+  map.innerHTML = `<g id="terrainOverview">${scene.svg}</g><g id="terrainDetail"></g>${isFantasyStyle(style) && layers.relief ? `<g id="fantasyPainting">${renderFantasyTerrain(terrain, style, settings, fantasyOptions, settlements.paintingContext)}</g>` : ''}<g id="hydrologyOverlay"></g>`;
   renderWater();
   contourStep = scene.contourStep; renderingMs = preparationMs + performance.now() - start;
   displayedDetail = undefined;
@@ -783,7 +794,7 @@ function receive(response: TerrainResponse): void {
   if (response.kind === 'detail') {
     if (!detailRequest || response.id !== detailRequest.id) return;
     const request = detailRequest; detailRequest = undefined;
-    if ('error' in response) { status(`Rust detail error: ${response.error}`, true); return; }
+    if ('error' in response) { if (!overviewPending && !generationError) status(`Rust detail error: ${response.error}`, true); return; }
     // The camera can move again while Rust samples the previous region.
     if (detailKey(request.region) !== detailKey(regionForView())) { scheduleDetail(); return; }
     if (gpu) {
@@ -820,7 +831,13 @@ function receive(response: TerrainResponse): void {
     return;
   }
   el('generate').removeAttribute('aria-busy');
-  if ('error' in response) { status(`Rust engine error: ${response.error}`, true); return; }
+  overviewPending = false;
+  if ('error' in response) {
+    generationError = response.error;
+    settlements.terrainFailed(response.error);
+    status(`Rust engine error: ${response.error}`, true);
+    return;
+  }
   const previousWidth = terrain?.width;
   terrain = response.terrain; settings = overviewRequest.settings; terrainGeneration = generation;
   if (previousWidth !== undefined && previousWidth !== terrain.width) view = fitView(terrain.width, viewport.clientWidth, viewport.clientHeight);
@@ -845,7 +862,7 @@ try {
   worker = new TerrainWorker(); worker.onmessage = (event: MessageEvent<TerrainResponse>) => receive(event.data);
   worker.onerror = event => {
     event.preventDefault(); worker?.terminate(); worker = undefined;
-    const request = terrainGeneration === generation ? detailRequest : overviewRequest;
+    const request = overviewPending ? overviewRequest : detailRequest;
     if (request) void runOnMain(request);
   };
 } catch { worker = undefined; }
@@ -888,12 +905,15 @@ type GenerationStage = 'all' | 'relief' | 'coasts' | 'hydrology';
 function generate(stage: GenerationStage = 'all'): void {
   clearTimeout(generationTimer);
   const draft = readSettings(stage); if (!draft) return;
+  if (stage === 'all') try { settlements.applyUrbanChanges(); }
+  catch (error) { status(String(error), true); return; }
   // The climate of a procedural relief only drives the water budget.
   const next = stage === 'hydrology' ? { ...settings, hydrology: draft.hydrology, ...(settings.source === 'neural' ? {} : { climate: draft.climate, climateValues: draft.climateValues }) }
     : stage === 'coasts' ? { ...settings, coastMask: draft.coastMask, islandMode: draft.islandMode }
     : stage === 'relief' ? { ...settings, seed: draft.seed, width: draft.width, motifSize: draft.motifSize, relief: draft.relief, environment: draft.environment, erosion: draft.erosion, mountainMix: draft.mountainMix, compute: draft.compute, generationCompute: draft.generationCompute, source: draft.source, climate: draft.climate, climateValues: draft.climateValues, fidelity: draft.fidelity, sketch: draft.sketch, neuralTuning: draft.neuralTuning, neuralFit: draft.neuralFit, neuralSlopes: draft.neuralSlopes, refine: draft.refine, detailNoise: draft.detailNoise, erosionTuning: draft.erosionTuning }
     : draft;
   generation++; clearTimeout(detailTimer); detailRequest = undefined; detailCache.clear(); settlements.terrainPending();
+  overviewPending = true; generationError = undefined;
   overviewRequest = { id: ++requestId, generation, kind: 'overview', settings: next, region: { x: 0, y: 0, extent: next.width, resolution: 512 } };
   el('generate').setAttribute('aria-busy', 'true');
   const neural = next.source === 'neural' && stage !== 'hydrology';

@@ -128,7 +128,7 @@ async function openFiles(files: FileList): Promise<void> {
   }
   catalogue();
   // Reattaching a shared file decor restores the retained seed and camera.
-  if (added.length) await choose(added[0].id, added[0].id === decorId);
+  if (added.length) await choose(added[0].id, added[0].id === decorId, added[0].id !== decorId || !query.has('urban'), added[0].id === decorId);
 }
 const visible = (): Entry[] => entries.filter(e => Object.entries(filters).every(([k, v]) => !v || e.tags[k] === v));
 function catalogue(): void {
@@ -166,7 +166,7 @@ async function fetchDecor(entry: Entry): Promise<Decor> {
   return d;
 }
 let choosing = 0;
-async function choose(id: string, keepCity = false): Promise<void> {
+async function choose(id: string, keepCity = false, restoreUrban = false, keepRoadConfig = false): Promise<void> {
   const entry = entries.find(e => e.id === id); if (!entry) return;
   const token = ++choosing; decorId = id; catalogue();
   status(`Chargement du décor ${entry.label}…`);
@@ -176,9 +176,18 @@ async function choose(id: string, keepCity = false): Promise<void> {
   decor = next; rerouted = undefined;
   landuse.set();
   urban.terrainPending();
-  roads.setConfig(decor.meta.roadConfig ?? roads.config);
+  const sourceQuery = new URLSearchParams(decor.meta.query);
+  if (restoreUrban) urban.restoreFromQuery(sourceQuery, true);
+  if (!keepRoadConfig) roads.setConfig(decor.meta.roadConfig ?? roads.config);
   drawBase();
-  if (!keepCity) defaultCity();
+  if (!keepCity) {
+    defaultCity();
+    const savedUrban = restoreUrban ? sourceQuery.get('urban') : query.get('urban');
+    if (savedUrban) try {
+      const selected = decor.meta.settlements.find(s => s.key === JSON.parse(savedUrban).target);
+      if (selected) city = cityOf(selected);
+    } catch { /* A malformed selection keeps the largest settlement. */ }
+  }
   else if (city?.site && !decor.meta.settlements.some(s => s.key === city!.site)) city.site = '';
   if (!initialView) fitTo(city);
   initialView = false;
@@ -214,7 +223,11 @@ function cityControls(): void {
   el('seedInfo').textContent = `Clé ${c.key}${c.site ? ' (lieu du décor)' : ''} · rayon ${r.toFixed(0)} m${c.radius ? '' : ' (auto)'}${wet ? ' · le centre est sur l’eau ou la roche' : ''}`;
   drawCity();
 }
-const radiusOf = (c: City): number => c.radius > 0 ? c.radius : extentRadius(c.population);
+const radiusOf = (c: City): number => {
+  if (c.radius > 0) return c.radius;
+  const source = decor?.meta.settlements.find(s => s.key === c.site);
+  return source?.population === c.population ? source.radius : extentRadius(c.population);
+};
 function wetAt(r: SettlementRaster, p: Point): boolean {
   const x = Math.floor(p.x / r.width * r.n), y = Math.floor(p.y / r.width * r.n);
   return x < 0 || y < 0 || x >= r.n || y >= r.n || r.water[y * r.n + x] !== 0;
@@ -610,7 +623,17 @@ el('copy').onclick = async () => {
   save();
   try { await navigator.clipboard.writeText(location.href); status('Lien copié : décor, graine, paramètres urbains et vue.'); } catch { window.prompt('Copier', location.href); }
 };
-el('openTerrain').onclick = () => { if (decor) window.open(`terrainbench.html?${decor.meta.query}`, '_blank'); };
+el('openTerrain').onclick = () => {
+  if (!decor) return;
+  const params = new URLSearchParams(decor.meta.query); urban.share(params);
+  const routing = JSON.parse(roads.share());
+  if (roadMode === 'none') routing.enabled = false;
+  params.set('roads', JSON.stringify(routing));
+  if (city?.site) {
+    const state = JSON.parse(params.get('urban')!); state.target = city.site; params.set('urban', JSON.stringify(state));
+  }
+  window.open(`terrainbench.html?${params}`, '_blank');
+};
 
 // ---------------------------------------------------------------- start
 (async () => {
@@ -634,5 +657,5 @@ el('openTerrain').onclick = () => { if (decor) window.open(`terrainbench.html?${
   catalogue();
   if (!entries.length) { status('Aucun décor. Lancez « node scripts/export_decors.mjs » (serveur npm run dev:terrain), exportez une carte depuis Terrain Bench (Export decor), ou ouvrez / déposez des fichiers .decor.'); return; }
   const first = entries.find(e => e.id === decorId) ?? visible()[0] ?? entries[0];
-  await choose(first.id, !!city || initialCityRemoved);
+  await choose(first.id, !!city || initialCityRemoved, !query.has('urban'), query.has('roads'));
 })();

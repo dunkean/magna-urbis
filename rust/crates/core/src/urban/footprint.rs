@@ -884,13 +884,85 @@ fn smooth_growth(
             candidates.push(original.clone());
             continue;
         }
-        let clipped = g::dry_clip(&surface, &outline);
+        let mut clipped = g::dry_clip(&surface, &outline);
         if clipped.len() != 1
             || clipped[0].holes.len() != original.holes.len()
             || !g::polygon(&clipped[0]).is_valid()
         {
             candidates.push(original.clone());
             continue;
+        }
+        // Rounding small districts can lose just over 1% of their area and
+        // restore the whole lattice contour. Recover that area with a bounded
+        // correction of the outer ring; water holes stay fixed and are clipped
+        // again before the same topology, displacement and anchor checks.
+        if (g::area(&clipped[0]) - g::area(original)).abs() > g::area(original) * 0.01 {
+            let outer_area = |shape: &Shape| g::signed(&shape.outer).abs();
+            let scale = (outer_area(original) / outer_area(&clipped[0])).sqrt();
+            let center = g::interior_point(original);
+            let mut adjusted = clipped[0].clone();
+            let mut bounded = true;
+            for p in &mut adjusted.outer {
+                let q = Point {
+                    x: center.x + (p.x - center.x) * scale,
+                    y: center.y + (p.y - center.y) * scale,
+                };
+                bounded &= distance(*p, q) <= step * 0.45;
+                *p = q;
+            }
+            if bounded && g::polygon(&adjusted).is_valid() {
+                let next = g::dry_clip(&surface, &adjusted);
+                if next.len() == 1
+                    && next[0].holes.len() == original.holes.len()
+                    && g::polygon(&next[0]).is_valid()
+                {
+                    clipped = next;
+                }
+            }
+        }
+        // Preserve an isolated boundary cell locally instead of restoring the
+        // staircase of the entire district when one smoothing corner clips it.
+        let mut repaired = clipped[0].clone();
+        let mut moved = false;
+        for &p in anchors.iter().filter(|&&p| g::contains(original, p)) {
+            if g::contains(&repaired, p) {
+                continue;
+            }
+            let closest = repaired
+                .outer
+                .iter()
+                .enumerate()
+                .map(|(i, &a)| {
+                    let (d, t, q) =
+                        g::distance(p, a, repaired.outer[(i + 1) % repaired.outer.len()]);
+                    (i, d, t, q)
+                })
+                .min_by(|a, b| a.1.total_cmp(&b.1));
+            let Some((i, d, t, q)) = closest else {
+                continue;
+            };
+            if d <= 1.0e-9 || d > step * 0.45 {
+                continue;
+            }
+            moved = true;
+            if t > 1.0e-6 && t < 1.0 - 1.0e-6 {
+                repaired.outer.insert(i + 1, q);
+            }
+            let shift = (d + step * 0.02) / d;
+            for v in &mut repaired.outer {
+                let weight = (1.0 - distance(*v, q) / (step * 2.0)).max(0.0).powi(2);
+                v.x += (p.x - q.x) * shift * weight;
+                v.y += (p.y - q.y) * shift * weight;
+            }
+        }
+        if moved && g::polygon(&repaired).is_valid() {
+            let next = g::dry_clip(&surface, &repaired);
+            if next.len() == 1
+                && next[0].holes.len() == original.holes.len()
+                && g::polygon(&next[0]).is_valid()
+            {
+                clipped = next;
+            }
         }
         let candidate = &clipped[0];
         let original_area = g::area(original);
@@ -1969,6 +2041,64 @@ mod tests {
         assert_eq!(
             serde_json::to_string(&smooth).unwrap(),
             serde_json::to_string(&smooth_growth(&raw, grid.step, surface, &anchors)).unwrap()
+        );
+    }
+
+    #[test]
+    fn small_growth_components_keep_their_area_without_restoring_lattice_steps() {
+        let grid = Grid {
+            x0: 0.0,
+            y0: 0.0,
+            step: 10.0,
+            nx: 64,
+            ny: 64,
+        };
+        let mask: Vec<_> = (0..grid.nx * grid.ny)
+            .map(|i| {
+                let p = grid.point(i);
+                (p.x - 150.0).hypot((p.y - 150.0) * 1.3) < 65.0
+                    || (p.x - 410.0).hypot((p.y - 410.0) * 1.3) < 80.0
+            })
+            .collect();
+        let h = vec![0.0; 64 * 64];
+        let w = vec![0; h.len()];
+        let surface = Surface {
+            geometry: None,
+            width: 640.0,
+            n: 64,
+            height: &h,
+            water: &w,
+        };
+        let raw = grid.contours(&mask);
+        let anchors = grid.boundary_centers(&mask);
+        let smooth = smooth_growth(&raw, grid.step, surface, &anchors);
+        assert_eq!(smooth.len(), 2);
+        for shape in &smooth {
+            let mut axial = 0.0;
+            let mut perimeter = 0.0;
+            for (&a, &b) in shape
+                .outer
+                .iter()
+                .zip(shape.outer.iter().cycle().skip(1))
+                .take(shape.outer.len())
+            {
+                let length = distance(a, b);
+                perimeter += length;
+                if (a.x - b.x).abs().min((a.y - b.y).abs()) < length * 0.02 {
+                    axial += length;
+                }
+            }
+            assert!(
+                axial / perimeter < 0.25,
+                "small district reverted to the lattice: {}",
+                axial / perimeter
+            );
+        }
+        assert!((area(&smooth) - area(&raw)).abs() < area(&raw) * 0.01);
+        assert!(
+            anchors
+                .iter()
+                .all(|&p| smooth.iter().any(|s| g::contains(s, p)))
         );
     }
 

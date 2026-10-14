@@ -320,6 +320,11 @@ fn consolidate_slopes(
             sea[i]
                 || border(i, n)
                 || flat_storage[labels[i] as usize]
+                // A singleton next to a sea or closed-lake sink can share F
+                // with its receiver without belonging to a land flat.
+                || (receivers[i] != OUT
+                    && sea[receivers[i] as usize]
+                    && filled[receivers[i] as usize] == filled[i])
                 || external.is_some_and(|corridor| corridor.path[i])
         })
         .collect();

@@ -66,7 +66,7 @@ interface Render { reserve: boolean; allocated: boolean; centers: boolean; domai
 type Kind = 'quarters' | 'parcels';
 
 /** `getRaster` replaces `getTerrain` where the raster is already adapted (Urban Bench decors). */
-export function createTerrainUrban(options: { map: SVGSVGElement; before: Element | null; getTerrain(): TerrainData | undefined; getRaster?(): SettlementRaster | undefined; getSeed(): string; onChange(): void; onPlanChange?(): void; onFocus?(center: Point, radius: number): void }) {
+export function createTerrainUrban(options: { map: SVGSVGElement; before: Element | null; getTerrain(): TerrainData | undefined; getRaster?(): SettlementRaster | undefined; getSeed(): string; getAuto?(): boolean; onChange(): void; onPlanChange?(): void; onFocus?(center: Point, radius: number): void }) {
   let settlements: SettlementOutput | undefined, roads: RoadOutput | undefined;
   let layouts: Layout[] | undefined, partitions: Partition[] | undefined;
   let layoutConfig = defaultLayoutConfig(), parcelConfig = defaultParcelConfig();
@@ -74,15 +74,22 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
   let enabled = true, parcelEnabled = true, appliedKind: Kind = 'quarters';
   let worker: Worker | undefined, fallback = false, cachedTerrain: TerrainData | SettlementRaster | undefined, id = 0;
   let timer: ReturnType<typeof setTimeout> | undefined;
+  const draftTimers: Partial<Record<Kind, ReturnType<typeof setTimeout>>> = {};
+  const dirty: Record<Kind, boolean> = { quarters: false, parcels: false };
   let drawnLayer: SVGGElement | undefined, drawnLayouts: Layout[] | undefined, drawnPartitions: Partition[] | undefined, drawnState = '';
   let render: Render = { reserve: false, allocated: false, centers: false, domains: true, quarters: false, blocks: true, streets: true, enclosures: true, parcels: true, gardens: true, places: true, fronts: false, axes: false, access: false, opacity: 0.8, width: 0.6, palette: 'growth' };
-  const saved = new URLSearchParams(location.search).get('urban');
-  if (saved) try {
-    const s = JSON.parse(saved);
-    layoutConfig = normalizeLayoutConfig(s.layoutConfig, true); parcelConfig = normalizeParcelConfig(s.parcelConfig);
-    quarterSeed = s.quarterSeed ?? ''; parcelSeed = s.parcelSeed ?? ''; target = s.target ?? '';
-    enabled = s.enabled !== false; parcelEnabled = s.parcelEnabled !== false; render = { ...render, ...s.render };
-  } catch { /* Broken links keep native defaults. */ }
+  function restoreState(saved: string | null): boolean {
+    if (!saved) return false;
+    try {
+      const s = JSON.parse(saved);
+      const layout = normalizeLayoutConfig(s.layoutConfig, true), parcels = normalizeParcelConfig(s.parcelConfig);
+      layoutConfig = layout; parcelConfig = parcels;
+      quarterSeed = s.quarterSeed ?? ''; parcelSeed = s.parcelSeed ?? ''; target = s.target ?? '';
+      enabled = s.enabled !== false; parcelEnabled = s.parcelEnabled !== false; render = { ...render, ...s.render };
+      return true;
+    } catch { return false; }
+  }
+  restoreState(new URLSearchParams(location.search).get('urban'));
   const stages = document.querySelector('.stages')!;
   const common = (kind: Kind): string => `<label>Culture<select data-config="culture"><option value="site">Culture de chaque settlement</option>${Object.entries(catalogue.cultures).map(([id, c]) => `<option value="${esc(id)}">${esc(c.label)}</option>`).join('')}</select></label>
     <label>Recettes<select data-config="recipe"></select></label><label>Préréglage<select data-config="preset"><option value="culture">Recettes culturelles</option>${Object.entries(catalogue.presets).map(([id, p]) => `<option value="${esc(id)}">${esc(p.label)}</option>`).join('')}</select></label>
@@ -98,10 +105,11 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
     const p = document.createElement('details'); p.className = 'stage urban-stage'; p.id = kind === 'quarters' ? 'urbanQuarterStage' : 'urbanParcelStage'; p.open = true;
     p.innerHTML = `<summary>${title}<span data-state></span></summary><div class="stage-controls">
       <div class="urban-actions"><button data-apply type="button">${kind === 'quarters' ? 'Régénérer la ville' : 'Régénérer les parcelles'}</button><small data-status role="status">En attente des settlements…</small></div>
+      <small data-draft-state role="status" hidden></small>
       <label><input data-enabled type="checkbox">Générer ${kind === 'quarters' ? 'les quartiers' : 'les parcelles'}</label>
       ${kind === 'quarters' ? '<label>Settlement ciblé<select id="urbanTarget"></select></label><button type="button" id="urbanFocus">Centrer sur la sélection</button>' : '<small>Les parcelles utilisent les îlots du bloc 6, sans régénérer les rues.</small>'}
       <details class="advanced"><summary>Graine</summary><label>Graine ${kind === 'quarters' ? 'quartiers' : 'parcelles'}<input data-seed type="text" placeholder="Graine de la carte"></label></details>
-      ${kind === 'quarters' ? `<div class="urban-composition-controls"><details class="advanced"><summary>Mode de génération</summary><label>Génération<select data-config="composition"><option value="settlement">Agglomération complète</option><option value="district">Secteur isolé · ancien banc</option></select></label></details><div data-settlement-settings>${footprintControls}<details class="advanced" data-legacy-settings><summary>Composition historique</summary><label>Composition du lieu<select data-config="settlementForm"><option value="auto">Selon population, culture et accès</option><option value="nucleated">Noyau groupé et faubourgs</option><option value="ribbon">Village-rue</option></select></label><label>Faubourgs<select data-config="suburbs"><option value="auto">Croissance variable</option><option value="none">Aucun</option><option value="few">Quelques faubourgs</option><option value="many">Faubourgs étendus</option></select></label>${number('phases', 'Phases du noyau (0 = culture)', 0, 5)}</details></div>${tissueControls}</div>${enclosureControls}${influenceControls}<details class="advanced"><summary>Diagnostic du plan</summary><div data-composition class="urban-composition" aria-live="polite"></div></details>` : `${select('operator', 'Opérateur parcellaire', parcelOperators)}<small>« Par phase » conserve les recettes du noyau, des extensions et des faubourgs du plan affiché.</small><div data-parcel-diagnostics class="urban-diagnostics" aria-live="polite"></div>`}
+      ${kind === 'quarters' ? `<div class="urban-composition-controls"><label>Génération<select data-config="composition"><option value="settlement">Agglomération complète</option><option value="district">Secteur isolé · ancien banc</option></select></label><small data-mode-hint></small><div data-settlement-settings>${footprintControls}<details class="advanced" data-legacy-settings><summary>Composition historique</summary><label>Composition du lieu<select data-config="settlementForm"><option value="auto">Selon population, culture et accès</option><option value="nucleated">Noyau groupé et faubourgs</option><option value="ribbon">Village-rue</option></select></label><label>Faubourgs<select data-config="suburbs"><option value="auto">Croissance variable</option><option value="none">Aucun</option><option value="few">Quelques faubourgs</option><option value="many">Faubourgs étendus</option></select></label>${number('phases', 'Phases du noyau (0 = culture)', 0, 5)}</details></div>${tissueControls}</div>${enclosureControls}${influenceControls}<details class="advanced"><summary>Diagnostic du plan</summary><div data-composition class="urban-composition" aria-live="polite"></div></details>` : `${select('operator', 'Opérateur parcellaire', parcelOperators)}<small>« Par phase » conserve les recettes du noyau, des extensions et des faubourgs du plan affiché.</small><div data-parcel-diagnostics class="urban-diagnostics" aria-live="polite"></div>`}
       <details class="advanced"><summary>Recettes et dimensions avancées</summary><div class="control-group">${common(kind)}${kind === 'quarters' ? number('count', 'Secteurs de calcul visés', 3, 8) + `<div data-fixture-settings>${number('rings', 'Anneaux de la scène', 1, 2)}<label>Disposition<select data-config="placement"><option value="center">Plan culturel adapté au terrain</option><option value="rectangle">Rectangle</option><option value="skew">Oblique</option><option value="notched">Avec encoche</option></select></label></div>` + number('radius', 'Rayon d’emprise (m · 0 = lieu)', 0, 25000) + number('radiusScale', 'Échelle de l’emprise', 0.1, 5, 0.1) + '<label>Réservation monument<input data-config="monument" type="text" list="urbanMonuments"></label><datalist id="urbanMonuments"><option value="none"><option value="cathedral"><option value="great-mosque"><option value="temple"><option value="castle"><option value="palace"></datalist>' : ''}</div></details>
       ${kind === 'quarters' ? `<details class="advanced"><summary>Rues et relief</summary><div class="control-group">${number('maxStreetGrade', 'Pente maximale des rues (m/m)', 0.02, 0.3, 0.01)}${number('maxLaneGrade', 'Pente maximale des ruelles (m/m)', 0.02, 0.4, 0.01)}<label><input data-config="allowStairs" type="checkbox">Autoriser les escaliers piétons</label>${number('maxStairGrade', 'Pente maximale des escaliers (m/m)', 0.02, 1, 0.01)}</div><small>0,12 = 12 % : 12 m de montée pour 100 m au sol. Les rues cherchent un passage praticable ; les escaliers sont dessinés avec des marches. Les ponts régionaux conservent leur franchissement.</small></details>` : ''}
       <details class="advanced"><summary>Tous les paramètres natifs</summary><div data-fields class="urban-fields"></div><label>Overrides JSON<textarea data-json rows="4" spellcheck="false" placeholder="{}"></textarea></label><small>Les valeurs modifiées remplacent la recette. Les mesures géométriques sont en mètres (surfaces en m²).${kind === 'quarters' ? ' En progression automatique, les valeurs par zone affichées sont celles du cœur ; sélectionnez une zone pour modifier ses valeurs, puis revenez à la progression automatique.' : ''}</small><button data-reset type="button">Réinitialiser les paramètres</button></details>
@@ -138,6 +146,9 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
     q<HTMLInputElement>(quarterPanel, '[data-config="radius"]').disabled = complete && !legacy && layoutConfig.footprint.budget !== 'radius';
     q<HTMLInputElement>(quarterPanel, '[data-config="radiusScale"]').disabled = complete && !legacy && layoutConfig.footprint.budget !== 'radius';
     for (const key of ['accessDepth', 'accessBudget']) q<HTMLInputElement>(quarterPanel, `[data-config="${key}"]`).disabled = layoutConfig.accessMode !== 'adaptive';
+    const hint = complete ? '' : 'Secteur isolé : sa disposition impose le contour, indépendamment de la culture et du maillage des rues. Choisissez « Agglomération complète » pour une ville adaptée au site.';
+    const preset = layoutConfig.preset === 'culture' ? '' : ` Préréglage imposé : ${catalogue.presets[layoutConfig.preset]?.label ?? layoutConfig.preset}. Il remplace les recettes culturelles.`;
+    q(quarterPanel, '[data-mode-hint]').textContent = hint + preset;
   }
   function populate(kind: Kind): void {
     const p = getPanel(kind), config = getConfig(kind);
@@ -196,7 +207,7 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
     e.onchange = () => { (render as unknown as Record<string, unknown>)[key] = e instanceof HTMLInputElement && e.type === 'checkbox' ? e.checked : key === 'palette' ? e.value : Number(e.value); draw(); options.onChange(); };
   }
   let appliedLayout = clone(layoutConfig), appliedParcel = clone(parcelConfig), appliedQuarterSeed = quarterSeed, appliedParcelSeed = parcelSeed;
-  function read(kind: Kind): void {
+  function read(kind: Kind, commit = true): void {
     const p = getPanel(kind), config = getConfig(kind);
     for (const c of Array.from(p.querySelectorAll<HTMLInputElement | HTMLSelectElement>('[data-config]'))) {
       if (c.disabled) continue;
@@ -219,8 +230,25 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
           ? { ...previous, ...value } : value;
       }
     }
+    if (!commit) return;
     if (kind === 'quarters') { quarterSeed = q<HTMLInputElement>(p, '[data-seed]').value; appliedLayout = clone(layoutConfig); appliedQuarterSeed = quarterSeed; }
     else { parcelSeed = q<HTMLInputElement>(p, '[data-seed]').value; appliedParcel = clone(parcelConfig); appliedParcelSeed = parcelSeed; }
+    dirty[kind] = false;
+    q(getPanel(kind), '[data-draft-state]').hidden = true;
+  }
+  function apply(kind: Kind): void {
+    clearTimeout(draftTimers[kind]);
+    try { read(kind); populate(kind); request(kind); options.onChange(); }
+    catch (error) { status(kind, String(error)); }
+  }
+  function changed(kind: Kind): void {
+    dirty[kind] = true;
+    const hint = q(getPanel(kind), '[data-draft-state]'); hint.hidden = false;
+    hint.textContent = options.getAuto?.() ? 'Modifications en attente · application automatique…' : `Modifications non appliquées · cliquez sur « ${kind === 'quarters' ? 'Régénérer la ville' : 'Régénérer les parcelles'} ».`;
+    clearTimeout(draftTimers[kind]);
+    if (options.getAuto?.()) draftTimers[kind] = setTimeout(() => {
+      if (options.getAuto?.()) apply(kind);
+    }, 220);
   }
   function status(kind: Kind, text: string, busy = false): void {
     const p = getPanel(kind); q(p, '[data-status]').textContent = text;
@@ -412,7 +440,7 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
   };
   for (const kind of ['quarters', 'parcels'] as const) {
     const p = getPanel(kind);
-    q<HTMLButtonElement>(p, '[data-apply]').onclick = () => { try { read(kind); populate(kind); options.onChange(); request(kind); } catch (e) { status(kind, String(e)); } };
+    q<HTMLButtonElement>(p, '[data-apply]').onclick = () => apply(kind);
     q<HTMLInputElement>(p, '[data-enabled]').onchange = e => {
       const checked = (e.target as HTMLInputElement).checked;
       if (kind === 'quarters') {
@@ -433,7 +461,7 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
         if (layoutConfig.composition === 'settlement') { layoutConfig.placement = 'center'; layoutConfig.recipe = 'auto'; layoutConfig.zone = 'auto'; }
         else if (layoutConfig.recipe === 'auto') layoutConfig.recipe = 'core';
       }
-      if (['zone', 'composition'].includes(c.dataset.config!)) populate(kind);
+      if (['zone', 'composition', 'placement'].includes(c.dataset.config!)) populate(kind);
       if (kind === 'quarters' && c.dataset.config === 'accessMode') generationControls();
     };
     for (const c of Array.from(p.querySelectorAll<HTMLInputElement | HTMLSelectElement>('[data-footprint]'))) c.onchange = () => {
@@ -446,11 +474,17 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
     };
     for (const c of Array.from(p.querySelectorAll<HTMLSelectElement>('[data-config="culture"], [data-config="preset"], [data-config="recipe"]'))) c.onchange = () => {
       const config = getConfig(kind); (config as unknown as Record<string, unknown>)[c.dataset.config!] = c.value;
-      if (c.dataset.config === 'culture') config.recipe = 'auto';
+      if (c.dataset.config === 'culture') { config.recipe = 'auto'; config.zone = 'auto'; config.preset = 'culture'; }
       if (c.dataset.config === 'recipe' && config.zone !== 'auto') config.zone = catalogue.cultures[config.culture && config.culture !== 'site' ? config.culture : siteCulture(kind)]?.recipes.find(r => r.id === config.recipe)?.zone ?? config.zone;
       populate(kind);
     };
-    q<HTMLButtonElement>(p, '[data-reset]').onclick = () => { getConfig(kind).params = {}; q<HTMLTextAreaElement>(p, '[data-json]').value = ''; populate(kind); };
+    q<HTMLButtonElement>(p, '[data-reset]').onclick = () => { getConfig(kind).params = {}; q<HTMLTextAreaElement>(p, '[data-json]').value = ''; populate(kind); changed(kind); };
+    p.addEventListener('change', event => {
+      if ((event.target as Element).closest('[data-config], [data-footprint], [data-fields], [data-json], [data-seed]')) changed(kind);
+    });
+    p.addEventListener('input', event => {
+      if ((event.target as Element).matches('[data-json], [data-seed]')) changed(kind);
+    });
   }
   targetSelect.onchange = () => { target = targetSelect.value; ++id; layouts = undefined; partitions = undefined; populate('quarters'); populate('parcels'); draw(); schedule(); options.onChange(); };
   q<HTMLButtonElement>(quarterPanel, '#urbanFocus').onclick = () => {
@@ -463,6 +497,24 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
   };
   populate('quarters'); populate('parcels');
   return {
+    restoreFromQuery(params: URLSearchParams, activate = false): boolean {
+      if (!restoreState(params.get('urban'))) return false;
+      if (activate) { enabled = true; parcelEnabled = true; }
+      clearTimeout(timer); ++id; layouts = undefined; partitions = undefined;
+      appliedLayout = clone(layoutConfig); appliedParcel = clone(parcelConfig); appliedQuarterSeed = quarterSeed; appliedParcelSeed = parcelSeed;
+      for (const kind of ['quarters', 'parcels'] as const) {
+        clearTimeout(draftTimers[kind]); dirty[kind] = false; q(getPanel(kind), '[data-draft-state]').hidden = true; populate(kind);
+      }
+      for (const e of Array.from(rendering.querySelectorAll<HTMLInputElement | HTMLSelectElement>('[data-render]'))) {
+        const value = render[e.dataset.render as keyof Render];
+        if (e instanceof HTMLInputElement && e.type === 'checkbox') e.checked = Boolean(value); else e.value = String(value);
+      }
+      draw(); return true;
+    },
+    applyPending(): void {
+      for (const kind of ['quarters', 'parcels'] as const) if (dirty[kind]) read(kind, false);
+      for (const kind of ['quarters', 'parcels'] as const) if (dirty[kind]) { clearTimeout(draftTimers[kind]); read(kind); populate(kind); }
+    },
     get layouts(): Layout[] | undefined { return layouts; },
     get extent() { return layoutExtent(layouts); },
     workshopState() { return clone({ layoutConfig: appliedLayout, parcelConfig: appliedParcel, quarterSeed: appliedQuarterSeed, parcelSeed: appliedParcelSeed, layouts, partitions }); },
@@ -473,6 +525,11 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
       if (state.parcelConfig) { parcelConfig = normalizeParcelConfig(clone(state.parcelConfig)); appliedParcel = clone(parcelConfig); }
       if (state.quarterSeed !== undefined) quarterSeed = appliedQuarterSeed = state.quarterSeed;
       if (state.parcelSeed !== undefined) parcelSeed = appliedParcelSeed = state.parcelSeed;
+      for (const kind of ['quarters', 'parcels'] as const) {
+        if (kind === 'quarters' ? state.layoutConfig !== undefined || state.quarterSeed !== undefined : state.parcelConfig !== undefined || state.parcelSeed !== undefined) {
+          clearTimeout(draftTimers[kind]); dirty[kind] = false; q(getPanel(kind), '[data-draft-state]').hidden = true;
+        }
+      }
       populate('quarters'); populate('parcels');
       if (quartersChanged || !layouts) void request('quarters'); else void request('parcels');
       options.onChange();
@@ -490,6 +547,11 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
       if (ready && sorted.length && enabled) schedule(); else { status('quarters', 'En attente des settlements…'); status('parcels', 'En attente des quartiers…'); }
     },
     terrainPending(): void { ++id; ready = false; clearTimeout(timer); layouts = undefined; partitions = undefined; cachedTerrain = undefined; draw(); status('quarters', 'En attente du terrain et des settlements…'); status('parcels', 'En attente des quartiers…'); },
+    terrainFailed(message: string): void {
+      ++id; ready = false; clearTimeout(timer);
+      status('quarters', `Génération du terrain échouée : ${message}`);
+      status('parcels', `Génération du terrain échouée : ${message}`);
+    },
     updateView: draw,
     share(params: URLSearchParams): void { params.set('urban', JSON.stringify({ enabled, parcelEnabled, target, quarterSeed: appliedQuarterSeed, parcelSeed: appliedParcelSeed, layoutConfig: appliedLayout, parcelConfig: appliedParcel, render })); },
   };

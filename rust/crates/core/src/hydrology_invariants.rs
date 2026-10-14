@@ -40,6 +40,97 @@ fn maps() -> Vec<Map> {
     maps
 }
 
+#[test]
+fn flat_coast_seed_42_has_planar_downhill_drainage() {
+    let width = 16_000.0;
+    let n = 256;
+    let mut terrain = TerrainGenerator::new("42", width, "flat", 1.0, 3000.0).unwrap();
+    terrain.set_coast(16, "island").unwrap();
+    let height = terrain.sample_region(0.0, 0.0, width, n).unwrap().height;
+    let engine = HydrologyEngine::new("42", width, n, &height, true).unwrap();
+    let cfg = HydrologyConfig::default();
+    let budget = channel_bank_clearance(0.0, &cfg);
+    let mut routed = flats::condition(
+        engine.drainage.clone(),
+        &height,
+        &engine.sea,
+        n,
+        width as f32,
+        "42",
+        budget,
+    );
+    flats::resolve(
+        &routed.filled,
+        &height,
+        &engine.sea,
+        n,
+        width as f32 / n as f32,
+        &mut routed.receivers,
+        budget,
+    )
+    .unwrap();
+    for (i, &j) in routed.receivers.iter().enumerate() {
+        if j == OUT {
+            continue;
+        }
+        let j = j as usize;
+        assert!(
+            routed.filled[j] <= routed.filled[i],
+            "uphill receiver {i} -> {j}"
+        );
+        if i % n != j % n && i / n != j / n {
+            let a = i / n * n + j % n;
+            let b = j / n * n + i % n;
+            assert!(
+                routed.receivers[a] != b as u32 && routed.receivers[b] != a as u32,
+                "crossing receivers at {i} -> {j}"
+            );
+        }
+    }
+    rebuild_drainage(&mut routed, &engine.sea, width as f32 / n as f32).unwrap();
+    engine.generate(&cfg).unwrap();
+}
+
+#[test]
+fn channel_profile_saturated_station_uses_local_repair() {
+    let cfg = HydrologyConfig {
+        incision: 0.0,
+        ..HydrologyConfig::default()
+    };
+    let mut ground = [1.0; 16];
+    // This sub-millimetre rounding strip passes the crest tolerance, but the
+    // downstream bound still requires an infinite upstream level.
+    ground[1] = 1.0 + channel_bank_clearance(1.0, &cfg) + 0.00075;
+    let context = RiverPatchContext {
+        ground: &ground,
+        lakes: &[0; 16],
+        sea: &[false; 16],
+        n: 4,
+        cell: 1.0,
+        cfg: &cfg,
+    };
+    let mut points: Vec<_> = (0..3)
+        .map(|i| {
+            (
+                RiverPoint {
+                    x: i as f32 + 0.5,
+                    y: 0.5,
+                    width: 1.0,
+                    z: 1.0,
+                },
+                i as f32,
+            )
+        })
+        .collect();
+    let (required, crest) = profile_requirement(points[0].0, points[1].0, &context);
+    assert!(required.is_infinite() && crest <= 1.001);
+    assert_eq!(
+        fit_channel_profile(&mut points, &[0.0, 2.0], &context),
+        Err(0.0)
+    );
+    assert!(points.iter().all(|p| p.0.z == 1.0));
+}
+
 /// A course's segment: its river and both ends.
 type Segment = (usize, (f32, f32), (f32, f32));
 
