@@ -1,5 +1,19 @@
 # Right rail icons
 
+## Magna Urbis favicon
+
+`logo-magna-urbis.png` is a 64 × 64 PNG favicon, derived on 2026-10-14
+from the user-provided `docs/logo_magna_urbis.png` with the built-in ImageGen
+tool, then downscaled for browser tabs. The README retains the original logo.
+All application and bench pages embed the favicon in their offline builds.
+
+Edit prompt: Remove the MAGNA URBIS title and decorative underline. Keep only
+the circular city-map and compass emblem, including its four compass points.
+Preserve the navy blue and antique gold palette and ivory background. Center
+the emblem in a square image with small margins; no text or added marks.
+
+## Rail atlas
+
 Created on 2026-10-06 with the built-in ImageGen tool at the user's request.
 `rail-icons.png` is the untouched transparent RGBA atlas (1254 × 1254),
 five rows and five columns. CSS selects whole cells without pixel edits.

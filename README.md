@@ -1,5 +1,9 @@
 # Magna Urbis
 
+<p align="center">
+  <img src="docs/logo_magna_urbis.png" alt="Magna Urbis — city map and compass logo" width="360">
+</p>
+
 DEMO: https://dunkean.github.io/magna-urbis/
 
 **Magna Urbis is inspired by [TownGeneratorOS by Watabou (Oleg Dolya)](https://github.com/watabou/TownGeneratorOS) and his [Medieval Fantasy City Generator](https://watabou.itch.io/medieval-fantasy-city-generator).** The project began as a Python port of TownGeneratorOS; that prototype has since been retired, and the TypeScript and Rust implementations continue the exploration.
@@ -13,22 +17,6 @@ There are two implementations: **TypeScript**, currently the most complete, and 
 Read the [technical and scientific overview (in French)](docs/TECHNICAL_AND_SCIENTIFIC_OVERVIEW.md) for the generation pipeline, InfiniteDiffusion / Terrain Diffusion, erosion, rivers and lakes, urban plans, and the Rust / WASM / neural-network stack. It includes research citations, source-code links and the current implementation boundaries.
 
 The long-term goal is to **integrate Magna Urbis into [Neural Earth](https://github.com/dunkean/neural-earth)**, the procedural world project developed in Infinite Map, placing cities and villages within a regional and planetary landscape. This integration is planned for the future and has not been delivered yet.
-
-## A first look at the Rust landscapes
-
-**The next chapter of Magna Urbis is taking shape.** From tropical islands to snow-covered volcanic craters, the Rust prototype is already exploring landscapes for future settlements and adventures. These five captures show its current terrain renders, with coastlines, rivers, lakes, settlement locations and regional routes.
-
-### Snow-covered volcanic island
-
-![Rust prototype: volcanic island with snowy slopes, crater lake and coastal settlements](docs/rust_images/volcano-cold.jpg)
-
-| Tropical island | Arid hills |
-| --- | --- |
-| ![Rust prototype: green tropical island with coastal villages and routes](docs/rust_images/island-tropical.jpg) | ![Rust prototype: arid hills crossed by rivers and regional roads](docs/rust_images/hills-arid.jpg) |
-| **Mountains by the ocean** | **Cold plateau** |
-| ![Rust prototype: snowy mountains, lakes and winding routes above an ocean coastline](docs/rust_images/oceanic-mountains.jpg) | ![Rust prototype: snowy plateau overlooking a valley with lakes and settlements](docs/rust_images/plateau-cold.jpg) |
-
-These are snapshots of the Rust prototype in development. Detailed towns and buildings are the next part of the picture as the terrain and urban stages come together. See the [Rust engine documentation](rust/README.md) for its current status.
 
 ## TypeScript prototype screenshots
 
@@ -51,6 +39,22 @@ Actual captures from the TypeScript application: three cities of 30,000 inhabita
 ![Village surrounded by countryside in the Parchment map style](docs/images/village.png)
 
 The [capture seeds, settings and views](docs/images/screenshots.json) let you reproduce these examples with the corresponding version. Rust does not generate these cities yet.
+
+## A first look at the Rust landscapes
+
+**The next chapter of Magna Urbis is taking shape.** From tropical islands to snow-covered volcanic craters, the Rust prototype is already exploring landscapes for future settlements and adventures. These five captures show its current terrain renders, with coastlines, rivers, lakes, settlement locations and regional routes.
+
+### Snow-covered volcanic island
+
+![Rust prototype: volcanic island with snowy slopes, crater lake and coastal settlements](docs/rust_images/volcano-cold.jpg)
+
+| Tropical island | Arid hills |
+| --- | --- |
+| ![Rust prototype: green tropical island with coastal villages and routes](docs/rust_images/island-tropical.jpg) | ![Rust prototype: arid hills crossed by rivers and regional roads](docs/rust_images/hills-arid.jpg) |
+| **Mountains by the ocean** | **Cold plateau** |
+| ![Rust prototype: snowy mountains, lakes and winding routes above an ocean coastline](docs/rust_images/oceanic-mountains.jpg) | ![Rust prototype: snowy plateau overlooking a valley with lakes and settlements](docs/rust_images/plateau-cold.jpg) |
+
+These are snapshots of the Rust prototype in development. Detailed towns and buildings are the next part of the picture as the terrain and urban stages come together. See the [Rust engine documentation](rust/README.md) for its current status.
 
 ## TypeScript and Rust
 
