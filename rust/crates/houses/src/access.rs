@@ -6,8 +6,12 @@ use crate::model::*;
 use crate::wall_geometry::wall_section;
 use geo::Contains;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
+mod disjoint_walk_trim;
 mod profiles;
 mod public_roofs;
+mod roof_apertures;
+mod roof_walk_components;
+pub(crate) use roof_walk_components::native_roof_walk_component;
 
 pub(crate) fn reachable(unit: &HouseUnit) -> BTreeSet<String> {
     reachable_allowed(unit, |_| true)
@@ -989,22 +993,23 @@ fn connect_horizontal(
 }
 
 fn add_vertical(unit: &mut HouseUnit) -> Result<(), String> {
+    let preserve_hatches = roof_apertures::collective(unit);
     let bodies = unit.bodies.clone();
     let mut roof_nodes = vec![];
     // Each connected structural terrace is a real walk surface at an exact z.
-    let mut slabs: BTreeMap<i64, Surface> = BTreeMap::new();
+    let mut slab_keys = BTreeSet::new();
     for body in &bodies {
         for level in &body.levels {
             if let Some(slab) = &level.roof_slab
                 && slab.walkable
             {
                 let key = libm::round(slab.z_m * 1000.0) as i64;
-                let prior = slabs.remove(&key).unwrap_or_default();
-                slabs.insert(key, union(&prior, &slab.surface));
+                slab_keys.insert(key);
             }
         }
     }
-    for (z, s) in slabs {
+    for z in slab_keys {
+        let s = roof_apertures::walk_surface(unit, z)?;
         for polygon in s {
             if area(&vec![polygon.clone()]) > 0.05 {
                 roof_nodes.push(node(
@@ -1219,14 +1224,22 @@ fn add_vertical(unit: &mut HouseUnit) -> Result<(), String> {
                         p.width_m = 0.66;
                     }
                     if let Some(slab) = &mut unit.bodies[bi].levels[max_level as usize].roof_slab {
-                        slab.surface = difference(&slab.surface, &hole);
+                        slab.surface = if preserve_hatches {
+                            roof_apertures::cut(&slab.surface, &hole)
+                        } else {
+                            difference(&slab.surface, &hole)
+                        };
                         slab.access_node = Some(target.clone());
                     }
                     // The hatch is a genuine hole; the landing remains on its rim.
                     if let Some(n) = unit.access.nodes.iter_mut().find(|n| n.id == target) {
-                        n.floor = difference(&n.floor, &offset(&anchor, -0.12));
+                        n.floor = if preserve_hatches && n.kind == AccessKind::Terrace {
+                            roof_apertures::cut(&n.floor, &hole)
+                        } else {
+                            difference(&n.floor, &offset(&anchor, -0.12))
+                        };
                     }
-                    trim_walk_plane(unit, roof_z, &hole);
+                    trim_walk_plane_impl(unit, roof_z, &hole, preserve_hatches);
                 } else {
                     return Err(format!(
                         "{} : trappe sans dalle accessible à {roof_z} m.",
@@ -1659,13 +1672,23 @@ fn search_exterior_flight(
 }
 
 fn trim_walk_plane(unit: &mut HouseUnit, z: f64, cut: &Surface) {
+    trim_walk_plane_impl(unit, z, cut, false);
+}
+
+fn trim_walk_plane_impl(unit: &mut HouseUnit, z: f64, cut: &Surface, preserve_hatch: bool) {
+    let collective = roof_apertures::collective(unit);
+
     for n in unit
         .access
         .nodes
         .iter_mut()
         .filter(|n| n.kind != AccessKind::Room && (n.z_m - z).abs() < 0.001)
     {
-        n.floor = difference(&n.floor, cut);
+        n.floor = if n.kind == AccessKind::Terrace {
+            disjoint_walk_trim::apply(&n.floor, cut, preserve_hatch, collective)
+        } else {
+            difference(&n.floor, cut)
+        };
     }
     for f in &mut unit.features {
         if matches!(
@@ -1677,7 +1700,11 @@ fn trim_walk_plane(unit: &mut HouseUnit, z: f64, cut: &Surface) {
                 | FeatureKind::FloorSlab
         ) && (f.z_m - z).abs() < 0.001
         {
-            f.surface = difference(&f.surface, cut);
+            f.surface = if f.kind == FeatureKind::Terrace {
+                disjoint_walk_trim::apply(&f.surface, cut, preserve_hatch, collective)
+            } else {
+                difference(&f.surface, cut)
+            };
         }
         if let Some(roof) = &mut f.roof
             && (roof.support_z_m - z).abs() < 2.3
@@ -1694,7 +1721,8 @@ fn trim_walk_plane(unit: &mut HouseUnit, z: f64, cut: &Surface) {
             if let Some(slab) = &mut level.roof_slab
                 && (slab.z_m - z).abs() < 0.001
             {
-                slab.surface = difference(&slab.surface, cut);
+                slab.surface =
+                    disjoint_walk_trim::apply(&slab.surface, cut, preserve_hatch, collective);
             }
         }
     }
@@ -2161,3 +2189,6 @@ fn add_exterior_interfaces(
 #[cfg(test)]
 #[path = "access/batches25_tests.rs"]
 mod batches25_tests;
+
+#[cfg(test)]
+mod fixture_json_exact;

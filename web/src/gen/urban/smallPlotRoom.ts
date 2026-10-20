@@ -3,7 +3,7 @@ import type { Polygon, Vec2 } from '../core/geom';
 import { polygonCentroid } from '../core/geom';
 import { area, inscribed, isSimple, minAngle, minNeck, obb } from '../geo/poly';
 import { isConvex } from '../geo/split';
-import { mpArea, tryDifference, tryIntersection } from '../geo/bool';
+import { mpArea, tryDifference, tryIntersection, prepareIntersection } from '../geo/bool';
 
 const MIN_AREA = 12;
 const MIN_WIDTH = 3.2;
@@ -25,6 +25,8 @@ export function reconstructSmallPlotRoom(poly: Polygon, owner: Polygon, front: [
   validate: (candidate: Polygon) => boolean): Polygon | null {
   const oldArea = area(poly);
   if (poly.length < 3 || owner.length < 3 || !Number.isFinite(oldArea) || oldArea < MIN_AREA) return null;
+  // Occupied roofs stay unchanged until this synchronous search returns.
+  const occupiedIntersections = occupied.map(other => prepareIntersection(other));
   const axes: Vec2[] = [];
   const addAxis = (raw: Vec2) => {
     const u = unit(raw);
@@ -72,12 +74,12 @@ export function reconstructSmallPlotRoom(poly: Polygon, owner: Polygon, front: [
         || !isSimple(candidate) || !isConvex(candidate, 1e-3) || minAngle(candidate) < Math.PI / 3) continue;
       const box = obb(candidate), narrow = 2 * Math.min(box.hu, box.hv);
       if (narrow < MIN_WIDTH || Math.max(box.hu, box.hv) / Math.max(1e-6, Math.min(box.hu, box.hv)) > MAX_ASPECT
-        || 2 * inscribed(candidate, [], 0.05).r < MIN_WIDTH
+        || 2 * inscribed(candidate, [], 0.05, MIN_WIDTH / 2).r < MIN_WIDTH
         || (minNeck(candidate)?.w ?? Infinity) < MIN_WIDTH) continue;
       const escaped = tryDifference(candidate, owner);
       if (escaped.failed || mpArea(escaped.pieces) > 1e-6) continue;
-      if (occupied.some((other) => {
-        const hit = tryIntersection(candidate, other);
+      if (occupiedIntersections.some((intersect) => {
+        const hit = intersect(candidate);
         return hit.failed || mpArea(hit.pieces) > 1e-6;
       })) continue;
       if (clear(candidate, poly) && validate(candidate)) return candidate;

@@ -355,6 +355,47 @@ pub struct TerrainEngine {
 
 #[wasm_bindgen]
 impl TerrainEngine {
+    pub fn with_zoned_surface(
+        seed: &str,
+        width: f64,
+        motif_size: f64,
+        heights: &[f32],
+        zones_json: &str,
+    ) -> Result<TerrainEngine, JsValue> {
+        let zones = serde_json::from_str(zones_json)
+            .map_err(|e| JsValue::from_str(&format!("Zones : {e}")))?;
+        magna_urbis_core::TerrainGenerator::with_zoned_surface(
+            seed, width, motif_size, heights, &zones,
+        )
+        .map(|generator| TerrainEngine { generator })
+        .map_err(|e| JsValue::from_str(&e))
+    }
+    #[allow(clippy::too_many_arguments)]
+    pub fn with_zones(
+        seed: &str,
+        width: f64,
+        relief: &str,
+        erosion: f64,
+        motif_size: f64,
+        mountain_mix: f64,
+        environment: Option<String>,
+        zones_json: &str,
+    ) -> Result<TerrainEngine, JsValue> {
+        let zones = serde_json::from_str(zones_json)
+            .map_err(|e| JsValue::from_str(&format!("Zones : {e}")))?;
+        magna_urbis_core::TerrainGenerator::with_zones(
+            seed,
+            width,
+            relief,
+            erosion,
+            motif_size,
+            mountain_mix,
+            environment.as_deref(),
+            &zones,
+        )
+        .map(|generator| TerrainEngine { generator })
+        .map_err(|e| JsValue::from_str(&e))
+    }
     pub fn set_edited_surface(&mut self, heights: &[f32]) -> Result<(), JsValue> {
         self.generator
             .set_edited_surface(heights)

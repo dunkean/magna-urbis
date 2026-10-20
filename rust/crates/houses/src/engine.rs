@@ -16,6 +16,22 @@ pub const MAX_ROOMS: u32 = 2400;
 pub const MAX_BODIES: u32 = 600;
 pub const MAX_BATCH_FACES: u32 = 20_000;
 
+pub(crate) fn exposed_roof_domain(domain: &Surface, upper: &Surface) -> Surface {
+    difference(domain, upper)
+}
+
+#[cfg(test)]
+fn native_level_footprints(unit: &HouseUnit) -> Vec<(String, u32, Surface)> {
+    unit.bodies
+        .iter()
+        .flat_map(|b| {
+            b.levels
+                .iter()
+                .map(move |l| (b.id.clone(), l.index, l.footprint.clone()))
+        })
+        .collect()
+}
+
 fn amount(range: [f64; 2], variation: f64, wealth: f64, rng: &mut Rng) -> f64 {
     let center = if wealth == 0.5 {
         (range[0] + range[1]) * 0.5
@@ -416,8 +432,12 @@ pub fn generate_batch(config: HouseConfig) -> Result<HouseBatch, String> {
     let mut total_faces = 0usize;
     for (i, (source, p, seed)) in selected.into_iter().enumerate() {
         let mut unit = generate_unit(source, &p, &config, &seed, i as u32)?;
+        #[cfg(test)]
+        let footprints_before_roofs = native_level_footprints(&unit);
         roofs::build_roofs_with_budget(&mut unit, MAX_BATCH_FACES as usize)?;
         crate::features::add_post_roof_details(&mut unit, &p)?;
+        #[cfg(test)]
+        assert_eq!(native_level_footprints(&unit), footprints_before_roofs);
         total_faces += unit.roofs.faces.len();
         if total_faces > MAX_BATCH_FACES as usize {
             return Err(format!(
@@ -540,6 +560,8 @@ fn generate_unit(
         }
     }
     build_tunnels(&mut unit, p, &mut circulations)?;
+    #[cfg(test)]
+    let footprints_before_access = native_level_footprints(&unit);
     if unit.rooms.len() > MAX_ROOMS as usize || unit.bodies.len() > MAX_BODIES as usize {
         return Err("Budget de pièces/corps dépassé avant toitures.".into());
     }
@@ -711,6 +733,8 @@ fn generate_unit(
     }
     unit.diagnostics
         .extend(p.notes.iter().map(|s| format!("Note de recette : {s}.")));
+    #[cfg(test)]
+    assert_eq!(native_level_footprints(&unit), footprints_before_access);
     Ok(unit)
 }
 
@@ -774,6 +798,7 @@ fn build_tunnels(
                     component: Some(format!("entrance-tunnel:{entrance}")),
                     z,
                     arms: vec![RoofArm {
+                        source_component: None,
                         origin: point(x + width, b[3]),
                         axis: [0.0, 1.0],
                         length_m: length,
@@ -1088,7 +1113,7 @@ fn build_body(
             .map(|m| m.materials.clone())
             .unwrap_or_else(|| p.materials.clone());
         let upper = spec.levels.get(li + 1).cloned().unwrap_or_default();
-        let exposed = difference(domain, &upper);
+        let exposed = exposed_roof_domain(domain, &upper);
         let walkable = p.roof_system == "RF-FLAT" || p.roof_system == "RF-STEP";
         let slab = if walkable && !exposed.is_empty() {
             Some(RoofSlab {
@@ -1732,4 +1757,19 @@ mod partition_tests {
             }
         }
     }
+}
+
+#[cfg(test)]
+pub(crate) fn native_outboard787_draw() -> Result<HouseUnit, String> {
+    let config: HouseConfig = serde_json::from_str(include_str!(
+        "../../../fixtures/houses/config-outboard787.json"
+    ))
+    .unwrap();
+    assert_eq!(config.count, 10);
+    let data = catalogue()?;
+    let (source, p, seed) = selected_draws(data, &config)?
+        .into_iter()
+        .nth(2)
+        .ok_or("Témoin 787 sans draw original 2.")?;
+    generate_unit(source, &p, &config, &seed, 2)
 }

@@ -712,17 +712,22 @@ export function cutPlots(
       c.plot.blockPoly = B;
       const sides = houseBoundarySides(B, c.poly, c.plot.front);
       if (sides.length) c.plot.boundarySides = sides;
-      c.plot.streetSides = sides.filter(([a, b]) => plotFrontOnStreet(streets, a, b));
+      c.plot.streetSides = P.plotOp === 'siheyuan'
+        ? c.poly.flatMap((a, i) => {
+          const b = c.poly[(i + 1) % c.poly.length];
+          return plotFrontOnStreet(streets, a, b) ? [[a, b] as [Vec2, Vec2]] : [];
+        }) : sides.filter(([a, b]) => plotFrontOnStreet(streets, a, b));
       plotsF.push(c.plot);
     } else backF.push(c.poly);
   }
-  if (P.plotOp !== 'siheyuan') return { plots: plotsF, back: backF };
+  if (P.plotOp !== 'siheyuan' && P.plotOp !== 'machiya') return { plots: plotsF, back: backF };
   // Back-land merges can leave a compound fronting several hutongs with only one recorded facade.
   // Refine just those oversized lots, using every actual street edge and preserving the exact partition.
   const refined: Plot[] = [], back = [...backF];
   const firstRun = Math.max(-1, ...plotsF.map((p) => p.run)) + 1;
   for (const [i, p] of plotsF.entries()) {
-    if (area(p.poly) <= Math.max(1600, P.houseArea[zone][1] * 1.8)) { refined.push(p); continue; }
+    const maximum = P.plotOp === 'machiya' ? 15000 : Math.max(1600, P.houseArea[zone][1] * 1.8);
+    if (area(p.poly) <= maximum) { refined.push(p); continue; }
     const parts = cutCourtyards(p.poly, bi, zone, P, streets, rng.fork('siheyuan:' + i), axis);
     if (parts.plots.length < 2) { refined.push(p); continue; }
     refined.push(...parts.plots.map((q) => ({ ...q, run: firstRun + i, wealth: p.wealth, fade: p.fade })));

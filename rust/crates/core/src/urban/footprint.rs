@@ -15,6 +15,8 @@ use std::cmp::Ordering;
 use std::collections::BinaryHeap;
 use std::f64::consts::{PI, TAU};
 
+mod sparse;
+
 pub(super) struct Footprint {
     pub structure: UrbanStructure,
     /// Chronological, disjoint attributed land. Earlier boundaries survive.
@@ -23,6 +25,8 @@ pub(super) struct Footprint {
     pub warnings: Vec<String>,
     /// Intended corridors are routed by the armature stage before acceptance.
     pub guides: Vec<Street>,
+    /// Validated access through open land; never counted as an occupied ribbon.
+    pub links: Vec<Street>,
 }
 
 fn distance(a: Point, b: Point) -> f64 {
@@ -1168,6 +1172,10 @@ fn accessible(
     let mut dry_mask = vec![false; n];
     let mut heights = vec![0.0; n];
     let mut costs = vec![1.0; n];
+    let porous = sparse::enabled(cfg);
+    let strongest = centers.iter().map(|c| c.weight).fold(0.0, f64::max);
+    let open_space = crate::noise::Noise::new(rng.fork("growth-open-space"));
+    let mut occupied = vec![true; n];
     for i in 0..n {
         let p = grid.point(i);
         let mut grade: f64 = 0.0;
@@ -1199,6 +1207,8 @@ fn accessible(
         };
         let attraction = 1.0
             - cfg.footprint.anisotropy * road_attraction * (-rd / (radius * 0.07).max(step)).exp();
+        let branches =
+            1.0 - cfg.footprint.branch_depth * 0.85 * (-rd / (radius * 0.06).max(step)).exp();
         let scale = radius.max(1.0);
         let broad = noise.fbm(p.x / (scale * 0.9), p.y / (scale * 0.9), 3);
         let medium = noise.fbm(p.x / (scale * 0.32) + 17.0, p.y / (scale * 0.32) - 11.0, 2);
@@ -1219,7 +1229,24 @@ fn accessible(
         let resource = 1.0
             - (0.2 + water_affinity * 0.8).min(0.7)
                 * (-shore.distances[i] / (radius * 0.6).max(20.0)).exp();
-        costs[i] = attraction * resource * variation * terrain * terminal;
+        costs[i] = attraction * branches * resource * variation * terrain * terminal;
+        if porous {
+            // A small satellite protects a smaller core than the main town;
+            // overlapping full-size core exemptions would erase its gaps.
+            let core_distance = centers
+                .iter()
+                .map(|c| distance(p, c.point) / (c.weight / strongest).sqrt().max(0.2))
+                .fold(f64::INFINITY, f64::min);
+            occupied[i] = sparse::occupied(
+                cfg,
+                &open_space,
+                p,
+                radius,
+                step,
+                core_distance,
+                grade / grade_limit,
+            );
+        }
         if family == "fan" {
             let c = centers[0].point;
             let q = rotate(
@@ -1233,6 +1260,9 @@ fn accessible(
                 dry_mask[i] = false;
             }
         }
+    }
+    if porous {
+        sparse::resolve_gaps(&mut occupied, &dry_mask, &grid, cfg.footprint.gap_size);
     }
     let mut arrivals = vec![f64::INFINITY; n];
     let mut parents = vec![usize::MAX; n];
@@ -1248,9 +1278,15 @@ fn accessible(
         {
             c.point = grid.point(i);
             active_centers.push(c.id);
+            occupied[i] = true;
             if arrivals[i] > 0.0 {
-                arrivals[i] = 0.0;
-                heap.push(Arrival { cost: 0.0, cell: i });
+                let cost = if porous {
+                    (1.0 - c.weight / strongest) * radius * 0.8
+                } else {
+                    0.0
+                };
+                arrivals[i] = cost;
+                heap.push(Arrival { cost, cell: i });
             }
         }
     }
@@ -1291,7 +1327,7 @@ fn accessible(
             grid.move_cells(parents[cell], cell, &costs)
         };
         for i in connection {
-            if !selected[i] {
+            if !selected[i] && occupied[i] {
                 selected[i] = true;
                 order.push(i);
             }
@@ -1376,7 +1412,7 @@ fn accessible(
     let land = |mask: &[bool]| {
         dry(surface, &grid.contours(mask))
             .into_iter()
-            .filter(|s| centers.iter().any(|c| g::contains(s, c.point)))
+            .filter(|s| porous || centers.iter().any(|c| g::contains(s, c.point)))
             .collect::<Vec<_>>()
     };
     let mut final_mask = vec![false; n];
@@ -1565,9 +1601,39 @@ pub(super) fn generate(
     };
     let mut centers = centers(site, cfg, family, mechanism, radius, angle, surface, &rng);
     let epochs = cfg.footprint.epochs;
+    let natural = mechanism != "planned"
+        && !(mechanism == "ribbon"
+            && cfg.footprint.mechanism == "ribbon"
+            && compatible_foundation(geography, radius));
+    if natural {
+        sparse::satellites(
+            &mut centers,
+            cfg,
+            surface,
+            roads,
+            radius,
+            buildable_grade(site, cfg),
+            &rng,
+        );
+    }
+    let guide_family = if natural
+        && cfg.footprint.branch_depth > 0.0
+        && !matches!(family, "fingers" | "dendritic" | "linear")
+    {
+        "dendritic"
+    } else {
+        family
+    };
+    let guide_radius = radius
+        * (1.0
+            + if natural {
+                cfg.footprint.branch_depth * 0.8
+            } else {
+                0.0
+            });
     let mut guides = centers
         .first()
-        .map(|c| guides(family, c.point, radius, angle, &rng))
+        .map(|c| guides(guide_family, c.point, guide_radius, angle, &rng))
         .unwrap_or_default();
     let growth_roads = [roads, guides.as_slice()].concat();
     let mut warnings = vec![];
@@ -1641,6 +1707,11 @@ pub(super) fn generate(
             morph.value["growth"]["water"].as_f64().unwrap_or(0.3),
         )
     };
+    let links = if natural && sparse::enabled(cfg) {
+        sparse::serve(&mut phases, &centers, cfg, surface, radius, target)
+    } else {
+        vec![]
+    };
     let allocated = union(&phases.iter().flatten().cloned().collect::<Vec<_>>());
     let allocated_area = area(&allocated);
     centers.retain(|c| allocated.iter().any(|s| g::contains(s, c.point)));
@@ -1656,7 +1727,7 @@ pub(super) fn generate(
             );
         }
     } else if mechanism != "planned" {
-        guides = self::guides(family, centers[0].point, radius, angle, &rng);
+        guides = self::guides(guide_family, centers[0].point, guide_radius, angle, &rng);
     }
     // A planned outline cut by a river can intentionally allocate several dry
     // masses. Give each mass an explicit service center rather than inventing a
@@ -1741,6 +1812,7 @@ pub(super) fn generate(
         radius,
         warnings,
         guides,
+        links,
     }
 }
 
@@ -1774,6 +1846,100 @@ mod tests {
             .unwrap(),
         )
     }
+    #[test]
+    fn porous_growth_is_seeded_and_keeps_a_measured_population_budget() {
+        let (site, morph) = input();
+        let height = vec![100.0; 128 * 128];
+        let water = vec![0; height.len()];
+        let surface = Surface {
+            geometry: None,
+            width: 3000.0,
+            n: 128,
+            height: &height,
+            water: &water,
+        };
+        let mut cfg = LayoutConfig {
+            footprint: FootprintConfig {
+                family: "dendritic".into(),
+                gross_density: 70.0,
+                cohesion: 0.6,
+                satellites: 0.7,
+                branch_depth: 0.6,
+                gap_size: 100.0,
+                ..FootprintConfig::default()
+            },
+            ..LayoutConfig::default()
+        };
+        let grown = generate(
+            "porous-regression-2026-10-20",
+            &site,
+            &cfg,
+            &morph,
+            surface,
+            &[],
+            250.0,
+        );
+        let replay = generate(
+            "porous-regression-2026-10-20",
+            &site,
+            &cfg,
+            &morph,
+            surface,
+            &[],
+            250.0,
+        );
+        assert_eq!(
+            serde_json::to_string(&(&grown.structure, &grown.links)).unwrap(),
+            serde_json::to_string(&(&replay.structure, &replay.links)).unwrap()
+        );
+        assert!(grown.structure.metrics.allocated_area > grown.structure.metrics.target_area * 0.9);
+        assert!(
+            grown.structure.metrics.allocated_area < grown.structure.metrics.target_area * 1.02
+        );
+        assert!(grown.structure.centers.iter().all(|c| {
+            grown
+                .structure
+                .allocated
+                .iter()
+                .any(|s| g::contains(s, c.point))
+        }));
+        assert!(grown.links.iter().all(|s| routing::path_clear(
+            surface,
+            &s.path,
+            if s.role == "stairs" {
+                cfg.max_stair_grade
+            } else {
+                cfg.max_lane_grade
+            }
+        )));
+        cfg.footprint.cohesion = 1.0;
+        cfg.footprint.satellites = 0.0;
+        cfg.footprint.branch_depth = 0.0;
+        let compact = generate(
+            "porous-regression-2026-10-20",
+            &site,
+            &cfg,
+            &morph,
+            surface,
+            &[],
+            250.0,
+        );
+        let overlap: f64 = grown
+            .structure
+            .allocated
+            .iter()
+            .flat_map(|a| {
+                compact
+                    .structure
+                    .allocated
+                    .iter()
+                    .flat_map(move |b| g::intersection(a, b))
+            })
+            .map(|s| g::area(&s))
+            .sum();
+        assert!(overlap < grown.structure.metrics.allocated_area * 0.95);
+    }
+
     #[test]
     fn population_budget_and_chronology_are_replayable_without_overlap() {
         let (site, morph) = input();

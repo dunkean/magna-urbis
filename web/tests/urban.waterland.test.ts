@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import polygonClipping from 'polygon-clipping';
+import localPolygonClipping from '../src/vendor/polygonClipping';
 import type { World, Polygon } from '../src/gen/types';
 import type { Culture } from '../src/gen/urban/culture';
 import { createGrid } from '../src/gen/core/grid';
@@ -26,6 +26,9 @@ import * as activityLots from '../src/gen/urban/m4/activities';
 import type { ReservedLot } from '../src/gen/urban/primary';
 import touchingGeometry from './fixtures/urban.water.touching.json';
 import { terrainForExtent, clipRiverAtWater } from '../src/gen/terrain/hydrology';
+
+// The vendored JavaScript uses `arguments`; retain the upstream variadic types for mocks.
+const polygonClipping: typeof import('polygon-clipping') = localPolygonClipping;
 
 const box = (x0: number, y0: number, x1: number, y1: number): Polygon => [{ x: x0, y: y0 }, { x: x1, y: y0 }, { x: x1, y: y1 }, { x: x0, y: y1 }];
 function world(): World {

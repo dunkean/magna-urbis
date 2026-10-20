@@ -1,0 +1,16 @@
+{
+  "schema_version": "2",
+  "seed": "42",
+  "pack": "AM-PUEB",
+  "recipe": "AM-PUEB-B03",
+  "count": 10,
+  "variation": 0.65,
+  "overrides": {
+    "floors": null,
+    "variant": null
+  },
+  "allow_late": false,
+  "size": 1,
+  "wealth": 0.5,
+  "orientation_deg": 0
+}

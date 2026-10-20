@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { outsideUrbanStreets, regionalOutsideUrban, urbanRoadOwnership } from '../../rust/bridge/urbanNetwork';
+import { outsideUrbanStreets, prepareUrbanRoadClip, regionalOutsideUrban, urbanRoadOwnership } from '../../rust/bridge/urbanNetwork';
 import type { Layout, Shape, Street } from '../../rust/bridge/urban';
 import type { RoadOutput } from '../../rust/bridge/settlements';
 
@@ -87,5 +87,31 @@ describe('regional geometry outside native urban quarters', () => {
     expect(outsideUrbanStreets([road(0, 15), divided], [layout(rectangle(3, 0, 7, 10))])
       .flatMap(s => s.path.slice(1).map((p, i) => Math.hypot(p.x - s.path[i].x, p.y - s.path[i].y)))
       .reduce((a, b) => a + b, 0)).toBeCloseTo(16, 8);
+  });
+
+  it('reuses prepared ownership with holes and crossings without retaining duplicate coverage between draws', () => {
+    const shape = rectangle(0, 0, 10, 10);
+    shape.holes = [rectangle(4, 1, 6, 9).outer];
+    const town = layout(shape);
+    town.streets = [{ path: [{ x: 3, y: 3 }, { x: 7, y: 3 }], widths: [1, 1], rank: 1, role: 'bridge' }];
+    const clip = prepareUrbanRoadClip([town]);
+    const crossing = { ...road(), path: [{ x: -5, y: 3 }, { x: 15, y: 3 }] };
+    const unrelated = { ...road(), path: [{ x: -5, y: 7 }, { x: 15, y: 7 }] };
+    for (let draw = 0; draw < 3; draw++) {
+      expect(xPaths(clip([crossing, crossing]))).toEqual([[-5, 0], [10, 15]]);
+      expect(xPaths(clip([unrelated]))).toEqual([[-5, 0], [4, 6], [10, 15]]);
+      expect(clip([crossing, unrelated])).toEqual(outsideUrbanStreets([crossing, unrelated], [town]));
+    }
+    const first = clip([unrelated]);
+    first[0].path[0].x = 100;
+    expect(xPaths(clip([unrelated]))).toEqual([[-5, 0], [4, 6], [10, 15]]);
+  });
+
+  it('keeps the one-shot adapter responsive to edited ownership and prepares replacement snapshots independently', () => {
+    const shape = rectangle(0, 0, 10, 10), town = layout(shape);
+    expect(xPaths(prepareUrbanRoadClip([town])([road()]))).toEqual([[-5, 0], [10, 15]]);
+    shape.outer[1].x = shape.outer[2].x = 7;
+    expect(xPaths(outsideUrbanStreets([road()], [town]))).toEqual([[-5, 0], [7, 15]]);
+    expect(xPaths(prepareUrbanRoadClip([town])([road()]))).toEqual([[-5, 0], [7, 15]]);
   });
 });

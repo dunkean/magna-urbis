@@ -25,6 +25,7 @@ try {
   await page.waitForFunction(()=>new URL(location.href).searchParams.get('brush_density')==='.5'||new URL(location.href).searchParams.get('brush_density')==='0.5');
   for(const format of ['svg','png']){
     const download=page.waitForEvent('download');await page.locator('#fantasyExport_'+format).click();
+    await page.locator('.export-crop [data-action="export"]').click();
     const result=await download;assert(result.suggestedFilename().endsWith('.'+format));await result.saveAs('out/fantasy/urban-export.'+format);
     const bytes=await readFile('out/fantasy/urban-export.'+format);
     if(format==='svg')assert(bytes.toString('utf8').startsWith('<svg'));else assert.equal(bytes.readUInt32BE(16),4096);

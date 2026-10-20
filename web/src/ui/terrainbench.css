@@ -111,7 +111,26 @@ summary { cursor: pointer; font-size: 12px; font-weight: 600; }
 .sketch-editor canvas { width: 100%; aspect-ratio: 1; display: block; border: 1px solid #9baea3; cursor: crosshair; touch-action: none; }
 .sketch-editor canvas:focus-visible { outline: 2px solid #2d8060; outline-offset: 2px; }
 .sketch-editor output { display: block; margin: 6px 0; font-size: 11px; }
-aside:has(.sketch-editor[open]) { flex-basis: 360px; width: 360px; max-width: 45vw; }
+.sketch-editor output[data-pending=true] { color: #94621c; font-weight: 600; }
+.stages .sketch-editor { margin: 0; padding: 8px; border: 1px solid #9aafa1; border-radius: 5px; background: #fff; }
+.sketch-tools { display: flex; flex-direction: column; gap: 7px; margin-top: 8px; }
+.sketch-tools > label, .sketch-tools > details > label { display: flex; justify-content: space-between; gap: 5px; }
+.sketch-tools select { max-width: 178px; }
+.sketch-actions { display: flex; flex-wrap: wrap; gap: 4px; }
+.sketch-actions button { height: auto; min-height: 25px; white-space: normal; }
+.sketch-editor .terrain-flow { margin: 0; padding: 6px; background: #eef4ef; border-left: 2px solid #75a48b; }
+#viewport .terrain-paint-overlay { position: absolute; z-index: 2; opacity: .86; border: 1px solid #75a48b; border-radius: 0; max-width: none; touch-action: none; cursor: crosshair; }
+.terrain-brush-cursor { position: absolute; z-index: 3; border: 1px solid white; outline: 1px solid #253b38; border-radius: 50%; transform: translate(-50%, -50%); pointer-events: none; }
+.terrain-editing #pinLayer { visibility: hidden; }
+.terrain-help-row { display: flex; gap: 4px; align-items: center; min-width: 0; }
+.terrain-help-row > label { flex: 1; justify-content: space-between; min-width: 0; }
+.terrain-help-row:has(> [hidden]) { display: none; }
+button.terrain-help { display: inline-flex; justify-content: center; align-items: center; flex: 0 0 17px; width: 17px; height: 17px; border-radius: 50%; padding: 0; font-size: 11px; color: #386a58; background: #f1f7f3; }
+.terrain-help-text { position: fixed; inset: auto; width: min(340px, calc(100vw - 16px)); margin: 0; padding: 12px; border: 1px solid #9aafa1; border-radius: 6px; background: #fff; color: #253b38; box-shadow: 0 4px 20px #18392d33; font-size: 12px; line-height: 1.6; }
+.sketch-tools > details { border-top: 1px solid #dce3df; padding-top: 6px; }
+.zone-legend { display: flex; flex-wrap: wrap; gap: 4px 8px; font-size: 10px; color: #52645f; }
+.zone-legend span::before { content: ''; display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 3px; background: var(--zone-colour); }
+.heightmap-tools > p { margin: 5px 0; }
 
 .stage input[type=number].short { width: 46px; }
 #report p { margin: 6px 0; }
@@ -125,7 +144,7 @@ aside:has(.sketch-editor[open]) { flex-basis: 360px; width: 360px; max-width: 45
 
 .display-settings { position: relative; }
 .display-settings summary { cursor: pointer; font-size: 12px; color: #52645f; }
-.lighting-fields { position: absolute; top: 25px; left: 0; z-index: 5; width: 245px; padding: 12px; display: grid; gap: 8px; background: #fff; border: 1px solid #d3ddd7; border-radius: 6px; box-shadow: 0 4px 16px #18392d26; }
+.lighting-fields { position: absolute; top: 25px; left: 0; z-index: 5; width: 245px; max-height: min(620px, 75dvh); overflow-y: auto; padding: 12px; display: grid; gap: 8px; background: #fff; border: 1px solid #d3ddd7; border-radius: 6px; box-shadow: 0 4px 16px #18392d26; }
 .lighting-fields label { justify-content: space-between; }
 .lighting-fields input[type=number] { width: 70px; }
 nav .lighting-fields button { width: auto; }

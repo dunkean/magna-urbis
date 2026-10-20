@@ -1,15 +1,20 @@
 [package]
 name = "magna-urbis-neural-wasm"
 version = "0.1.0"
-edition.workspace = true
-license.workspace = true
-publish.workspace = true
+edition = "2024"
+license = "GPL-3.0-only"
+publish = false
+
+[workspace]
+resolver = "3"
 
 [lib]
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-magna-urbis-neural = { path = "../neural" }
+magna-urbis-core = { path = "../core" }
+neural_runtime = { package = "neural-earth-wasm", path = "../../../../infinite_map/native/neural-earth" }
+serde_json = "1"
 wasm-bindgen = "0.2"
 wasm-bindgen-futures = "0.4"
 js-sys = "0.3"
@@ -20,3 +25,7 @@ wasm-opt = false
 
 [package.metadata.wasm-pack.profile.release]
 wasm-opt = false
+
+[profile.release]
+opt-level = 3
+lto = "thin"

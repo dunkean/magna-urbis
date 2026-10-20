@@ -6,6 +6,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 const terrainUrl = new URL(process.argv[2] ?? 'http://localhost:5173/terrainbench.html?v=4&seed=42&width=40000&source=neural&relief=valley&coasts=N&climate=mediterranean&style=render&auto=0');
 if (!terrainUrl.searchParams.has('settlements')) terrainUrl.searchParams.set('settlements', JSON.stringify({ config: { mode: 'counts', main: { key: 'main', population: 3000, culture: 'european-organic', sitePrefs: {} }, counts: { village: 2, hamlet: 2, farmstead: 2 } } }));
 if (!terrainUrl.searchParams.has('urban')) terrainUrl.searchParams.set('urban', JSON.stringify({ target: 'main', quarterSeed: 'shared-quarter-seed', parcelSeed: 'shared-parcel-seed', layoutConfig: { composition: 'settlement', culture: 'european-organic', preset: 'culture', recipe: 'auto', zone: 'auto', count: 3, fortification: 'none', tissue: 'organic', footprint: { mechanism: 'auto', family: 'compact', budget: 'population' } } }));
+terrainUrl.searchParams.set('pipeline', 'legacy');
 const browser = await chromium.launch({ channel: process.env.PLAYWRIGHT_CHANNEL ?? 'msedge', headless: true, args: ['--enable-unsafe-webgpu', '--ignore-gpu-blocklist'] });
 const errors = [];
 async function instrument(page) {

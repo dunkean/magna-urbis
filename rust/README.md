@@ -19,13 +19,85 @@ Generated modules are placed in `rust/pkg/wasm/`, which Git ignores. The TypeScr
 
 `crates/core/` contains the engine without browser dependencies; `crates/wasm/` exposes bindings; `bridge/` temporarily adapts output to the existing interface and renderer. The current renderer is provisional, and the TypeScript model is not imposed as the permanent Rust engine model.
 
+## Shared benches page
+
+On Windows, run `start-terrainbench.bat` from the repository root (or
+`npm run start:benches` from `web/`). It stops existing project instances,
+starts the shared site on port 5173 and the Python/CUDA service on port 8793
+in the background, and waits for both services to respond. Re-running it
+restarts both services. Use `stop-terrainbench.bat` or `npm run stop:benches`
+to stop them and their child processes. Logs are in
+`web/out/benches-runtime/`. An unrelated program occupying either port is
+reported without being killed. Existing WASM packages and npm dependencies
+are required. Python runs directly in Neural Earth's virtual environment;
+`MAGNA_NEURAL_PYTHON` overrides that executable. There is no Docker or compilation
+at startup; neural weights load on the first Python generation. To run just the
+site for procedural/browser inference, pass `-NeuralBackend none` to the launcher.
+`-NeuralBackend native` retains the old native Rust service for legacy URLs and
+reference checks, with optional `-Warmup`. Use `npm run build:neural` to rebuild
+that reference binary explicitly.
+
+From `web/`, `npm run dev:benches` serves `/rustbench.html`, a shared container
+for Terrain (stages 1–3), Settlements (regional roads and quarters), Urban and Houses. Each bench loads on its first
+visit and retains its settings and results while switching tabs. **Lien** copies
+a container link with the active bench's shared settings; **Ouvrir** opens that
+bench independently. Reloading the container closes its live sessions; explicitly
+saved exports remain in the browser's IndexedDB history. Terrain can send its whole
+surface or a square crop to Settlements. A selected city opens directly in Urban's
+quarter/parcel workshop with its computed streets and blocks. Parcels are off by
+default in Settlements. Urban contains the quarter/parcel workshop only. The existing decor catalogue,
+terrain import and territory occupation options live in Settlements. City transfers
+include a local relief/water/road crop; shared settings synchronize between live
+sessions, and returning restores the full regional map. See [the staged workflow and portable format](../docs/RUST_BENCH_PIPELINE.md).
+
+`npm run build:benches` assembles the container and all benches in
+`rust/out/benches/index.html`. It uses the existing terrain and houses WASM
+packages; build them with `npm run wasm:terrain` and `npm run wasm:houses` if
+needed. This command does not compile Rust. The generated folder can be served
+statically or opened locally. For Urban Bench without a decor server, load a
+`.decor` file manually. Python relief requires its service; browser neural
+relief requires HTTPS or localhost and WebGPU. Neural runtime and model files
+are separate assets in the generated `neural/` folder, not embedded in HTML.
+When local file permissions prevent reading an embedded bench's current URL,
+the container disables **Lien**; open the bench independently to share from it.
+The development container reloads when generated WASM changes; use the existing
+terrain/houses development commands when automatic Rust compilation is needed.
+
 ## Neural relief
 
-The terrain bench can also take its relief from Terrain Diffusion's coarse → base → decoder chain, reimplemented in Rust with [Burn](https://burn.dev) in `crates/neural/`. It produces one 40 × 40 km map in about one second on an RTX 3090. Start the local native service from `web/` with `npm run neural:serve`. On first use, it prepares the weights from `../infinite_map` and the local Terrain Diffusion cache. Then choose **Source: Neuronal** in the Relief stage. The relief family, coasts and climate form a regional sketch that conditions the coarse network; the service warms its GPU kernels for about a minute after each launch.
+World offers three sources in the Relief stage:
+
+| Source | Execution | Network profile |
+| --- | --- | --- |
+| Procedural | Rust/WASM and selected WebGPU stages in the browser | Analytic relief and erosion |
+| Neural WASM | Direct WebGPU runtime, through Rust/WASM, in a browser worker | coarse4, NF4 B75 two-step base, distilled decoder |
+| Neural Python | PyTorch/CUDA on the local service, port 8793 | coarse4, original one-pass base, distilled decoder |
+
+`npm run wasm:neural` builds the browser adapter and prepares about 162 MB of
+external, SHA-256-checked model assets. It reuses the shared runtime and prepared
+models from the sibling `../infinite_map` checkout (`wasm/dist/runtime/models`);
+it does not use the old Burn browser convolution path. Run Neural Earth's
+`npm run build:wasm` first if those prepared models are absent. Browser weights
+are cached when storage permits, and only downloaded when that source is used.
+The adapter is an optional standalone Cargo workspace: ordinary terrain/houses
+builds do not depend on the sibling checkout. Ordinary TypeScript builds
+require neither those assets nor Rust.
+
+`npm run neural:python` starts the Python service with the sibling Neural Earth
+virtual environment, source and checkpoints; `MAGNA_NEURAL_EARTH` selects another
+checkout. Its conditioning is prepared with the same regional Rust sketch as
+browser inference, including manual edits. Different base models and numerical
+precisions mean the two neural modes are not numerically interchangeable;
+the delivered metadata reports backend, profile, precision and stage timings.
+Both deliver signed metre elevations over 40 km in a 1024-square raster.
 
 The neural controls live in `terrainbench.html`, including sketch, climate,
 conditioning noise, coarse steps, local relief passed to base, histogram and
-decoder detail. Old `neuralbench.html` links redirect there with their settings.
+decoder detail. The obsolete standalone neural bench has been removed;
+Use `terrainbench.html?source=neural-wasm` or `?source=neural-python`.
+Existing `source=neural` URLs retain the old native Rust backend on port 8792;
+that compatibility choice only appears when such a link is opened. Existing
+container links using `#neural` enter the same World session.
 
 ## Neural Earth display style
 
@@ -42,36 +114,43 @@ approximations because its geographic pedology/climate atlases are absent here.
 Terrain generation is unchanged. The port lives in `bridge/terrainMaterial.ts`
 and remains part of the temporary renderer, outside the Rust engine.
 
-## Coarse terrain editor
+## Painted terrain operations
 
-The terrain bench offers **Éditeur de relief grossier** in the side panel, for
-both procedural and neural sources. Enable the sketch, paint elevations or stamp a plateau, volcano or caldera,
-then use **Générer** (or Auto). Undo/redo operates on complete strokes and restores
-whether the sketch was enabled; Ctrl+Z and Ctrl+Shift+Z work in the editor. Start from
-the displayed terrain or the current relief sketch, and import/export
-`terrain-sketch.json` to edit the input before generation. Shared links retain the
-applied sketch; unapplied edits do not change the displayed map's replay.
+**Zones de génération** in Terrainbench paints semantic masks in the main map:
+sea, plains, hills, mountains and high mountains. The brush stores operation
+weights, not elevations. Brush radius and transition width shape the regions;
+the eraser returns to the selected automatic background. **Exemple : côte et
+massifs** provides an editable starting layout. Undo/redo and shared links retain
+whole applied masks; ungenerated strokes remain drafts.
 
-The JSON format is `{ "version": 1, "resolution": 64, "heights": [...] }`:
-8–128 square cells per side, row-major from the north-west, cell-centred elevations
-in metres, sea at zero, covering the whole map. The editor starts at 64². Imported
-values must be finite and between −12,000 and 12,000 m. Applied snapshots, exported
-files and links round to centimetres. Changing map size rescales
-the sketch horizontally. Caverns do not use it.
+The procedural Rust simulation uses these weights in its initial noise,
+regional uplift, mountain distribution, ridge skeleton and fine detail before
+erosion. One shared physical pass joins the result. Sea masks apply a signed
+coastal cut. Empty masks restore the ordinary seeded generator. Zoned generation
+runs in CPU/WASM; retained sampling and display can use the GPU.
 
-Procedural refinement replaces the generated large-scale elevations with the
-sketch, retains smaller-scale relief, and applies physical Rust erosion. This
-edited path uses CPU/WASM for generation, erosion and coasts, and can sample the
-retained surface with WebGPU; later coast and water recalculations retain the edited relief. Neural refinement sends the sketch to
-the native service's `POST /generate`, conditioning coarse before base and
-decoder. The request places it in the same 40 km window that will be cropped for
-the user's map, or compensates the altitude scale when slopes are preserved.
-Portable JSON files always cover the user's whole map; only the service request
-adds a `region` object (`x`, `y`, `width`, metres within the 40 km surface).
-Climate controls remain active; the sketch owns its shorelines. Features
-smaller than the network's approximately 7.7 km coarse cells may not survive.
-`GET /sketch` returns the current analytic neural sketch without running networks.
-Restart `npm run neural:serve` after updating the service.
+Neural WASM and Python use the same Rust regional profiles to generate mean
+height conditioning and local relief constraints from the masks. Local relief
+is applied before the base network, so a mountain region is not flattened by a
+global plain preset. Both networks generate their own terrain details. The
+marine operation also applies to the delivered surface, preserving the painted
+sea. The network's coarse cells cover about 7.7 km of its native 40 km surface:
+use broad regions. Entering zoned neural generation selects Scale so the whole
+mask participates, including on smaller displayed maps; Crop remains selectable.
+
+Zone JSON: `{ "version": 1, "resolution": 128, "weights": [...] }`, with five
+interleaved bytes per cell in the order sea/plain/hills/mountains/high-mountains.
+Cells are centred, origin north-west. The sum is at most 255; the remainder uses
+the automatic background. Valid resolutions are 8–128. Zone exports and links
+contain no user-painted height samples. The browser runtime's small local-relief
+overlay is installed by `npm run wasm:neural` over generated sources, leaving
+the shared upstream implementation unchanged.
+
+Heightmap JSON and grayscale PNG 8/16-bit import, plus JSON/PNG 16-bit export,
+remain in a separate expandable section, up to 1024². They exchange existing
+rasters; they do not define the zone brushes. Old height sketches and shared
+links remain readable. Restart the Python service after updating its code;
+older running services are rejected for zoned conditioning.
 
 ## Settlement points and regional roads
 

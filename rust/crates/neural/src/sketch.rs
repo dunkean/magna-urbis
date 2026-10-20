@@ -123,6 +123,15 @@ pub struct Regional {
 
 #[derive(Clone, Debug)]
 pub enum Sketch {
+    /// Local relief constraints generated from operation masks, before base inference.
+    ReliefMap {
+        resolution: usize,
+        relief: Vec<f32>,
+        strength: Vec<f32>,
+        extent: f64,
+        origin: (f64, f64),
+        context: Box<Sketch>,
+    },
     Validation(Validation),
     Regional(Box<Regional>),
     /// Edited cell-centred elevations over the map; regional context outside it.
@@ -329,6 +338,7 @@ fn validation(case: Validation, x: f64, y: f64) -> f64 {
 impl Sketch {
     pub fn elevation(&self, x: f64, y: f64) -> f64 {
         match self {
+            Sketch::ReliefMap { context, .. } => context.elevation(x, y),
             Sketch::Validation(case) => validation(*case, x, y),
             Sketch::Regional(sketch) => sketch.elevation(x, y),
             Sketch::Grid {
@@ -364,6 +374,7 @@ impl Sketch {
 
     fn climate(&self) -> Climate {
         match self {
+            Sketch::ReliefMap { context, .. } => context.climate(),
             Sketch::Validation(_) => Climate::REFERENCE,
             Sketch::Regional(sketch) => sketch.climate,
             Sketch::Grid { context, .. } => context.climate(),

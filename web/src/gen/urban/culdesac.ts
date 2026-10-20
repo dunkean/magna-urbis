@@ -78,7 +78,7 @@ export function culDeSacTree(pieces: Piece[], streets: Streets, rng: Rng): numbe
     }
     if (!S.length) continue;
     const slits: Polyline[] = [];
-    const gapB = w / 2 + 6.5, gapS = w + 12;
+    const gapB = w / 2 + (roji ? 1.5 : 6.5), gapS = w + 12;
     // A large merchant ward needs more short branches; keep other cultures' budgets unchanged.
     // Each interior sample represents 16 m². Bound the extra work even for giant districts.
     const budget = roji ? Math.min(160, Math.max(60, Math.ceil(S.length * 16 / (Dmax * Dmax)))) : 60;
@@ -162,6 +162,10 @@ export function culDeSacTree(pieces: Piece[], streets: Streets, rng: Rng): numbe
                 alternatives.push([start, q0, entry, end].filter((p, i, arr) => i === 0 || dist(p, arr[i - 1]) > 0.05));
               }
             }
+            // A river-clipped neck may be narrower than a full orthogonal
+            // turn. Let a short trunk follow its actual dry corridor when
+            // both grid routes fail; branches resume the street grid beyond it.
+            alternatives.push([start, q0, entry, e].filter((p, i, arr) => i === 0 || dist(p, arr[i - 1]) > 0.05));
           }
         } else if (stop > 22 && rng.chance(0.55)) {
           const m = { x: (q0.x + e.x) / 2, y: (q0.y + e.y) / 2 };

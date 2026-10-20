@@ -19,10 +19,14 @@ export function thickenNarrowWing(poly: Polygon, owner: Polygon, occupied: Polyg
     const parts = cut.map(p => p.pts).sort((a, b) => area(b) - area(a));
     if (Math.abs(area(parts[0]) + area(parts[1]) - area(source)) > 1e-5) break;
     if (area(parts[1]) >= 12 && area(parts[1]) <= 0.15 * originalArea) { wing = parts[1]; break; }
-    if (area(parts[1]) > 1) break;
+    // Boolean cleanup can leave a small spur before the real habitable wing.
+    // Ignore it for locating the wing; every proposal still retains the whole original roof.
+    if (area(parts[1]) >= 12) break;
     source = parts[0];
   }
-  if (!wing) return null;
+  // A neck may isolate only a small corner rather than the whole wing. The
+  // original boundary still supplies candidate edges; physical proofs decide.
+  wing ??= source;
   const straightRuns = poly.flatMap((a, i) => {
     const mid = poly[(i + 1) % poly.length], b = poly[(i + 2) % poly.length];
     const ux = mid.x - a.x, uy = mid.y - a.y, vx = b.x - mid.x, vy = b.y - mid.y;
@@ -35,12 +39,28 @@ export function thickenNarrowWing(poly: Polygon, owner: Polygon, occupied: Polyg
     .filter(e => e.length >= 5).sort((a, b) => b.length - a.length);
   // A split can omit a straight outer run when an extra collinear vertex lies on it.
   // Try those short runs first, then retain the established wing-edge search.
+  const roofFrame = obb(poly), axes = [roofFrame.u, { x: -roofFrame.u.y, y: roofFrame.u.x }];
+  for (const [i, a] of poly.entries()) {
+    const b = poly[(i + 1) % poly.length], length = Math.hypot(b.x - a.x, b.y - a.y);
+    if (length < 5) continue;
+    const axis = { x: (b.x - a.x) / length, y: (b.y - a.y) / length };
+    if (!axes.some((u) => Math.abs(u.x * axis.y - u.y * axis.x) < 1e-6)) axes.push(axis);
+  }
+  const alignedRuns = poly.flatMap((a, i) => axes.flatMap((axis) => {
+    const distances = poly.map((p) => (p.x - a.x) * axis.x + (p.y - a.y) * axis.y);
+    return [Math.min(...distances), Math.max(...distances)].map((d) => ({
+      a, b: { x: a.x + d * axis.x, y: a.y + d * axis.y }, i,
+    }));
+  }));
   const edges = [...ranked(straightRuns).filter(e => e.length <= 12),
-    ...ranked(wing.map((a, i) => ({ a, b: wing![(i + 1) % wing!.length], i })))];
+    ...ranked(wing.map((a, i) => ({ a, b: wing![(i + 1) % wing!.length], i }))),
+    ...ranked(poly.map((a, i) => ({ a, b: poly[(i + 1) % poly.length], i }))),
+    ...ranked(alignedRuns).sort((a, b) => a.length - b.length)];
   let trials = 0;
-  for (const edge of edges) for (const side of [1, -1]) for (const depth of [3.6, 2, 2.5, 3, 3.5, 4])
+  let best: Polygon | null = null, bestArea = originalArea;
+  for (const edge of edges) for (const side of [1, -1]) for (const depth of [3.6, 2, 2.5, 3, 3.5, 4, 4.5, 5])
     for (const cap of [3, 0, 0.5, 1, 1.5, 2, 2.5, 4]) {
-      if (++trials > 400) return null;
+      if (++trials > 64000) return best;
       const t = { x: (edge.b.x - edge.a.x) / edge.length, y: (edge.b.y - edge.a.y) / edge.length };
       const n = { x: side * t.y, y: -side * t.x };
       const a = { x: edge.a.x - t.x * cap, y: edge.a.y - t.y * cap };
@@ -64,7 +84,7 @@ export function thickenNarrowWing(poly: Polygon, owner: Polygon, occupied: Polyg
         const blocked = tryIntersection(added.pieces, other);
         return blocked.failed || mpArea(blocked.pieces) > 1e-6;
       })) continue;
-      if (validate(candidate)) return candidate;
+      if (area(candidate) > bestArea && validate(candidate)) { best = candidate; bestArea = area(candidate); }
     }
-  return null;
+  return best;
 }

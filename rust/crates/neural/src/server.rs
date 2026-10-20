@@ -117,6 +117,10 @@ fn request(query: &HashMap<String, String>) -> Result<Request, String> {
     t.residual_scale = bounded("detail", 1.0, 0.0, 5.0)? as f32;
     if let Some(json) = query.get("sketch") {
         let value: serde_json::Value = serde_json::from_str(json).map_err(|e| e.to_string())?;
+        if value.get("zones").is_some() {
+            crate::zones::apply(&mut request, &value)?;
+            return Ok(request);
+        }
         let n = value["resolution"].as_u64().unwrap_or(0) as usize;
         let values = value["heights"]
             .as_array()

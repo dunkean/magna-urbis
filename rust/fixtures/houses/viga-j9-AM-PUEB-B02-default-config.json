@@ -1,0 +1,30 @@
+{
+  "schema_version": "2",
+  "seed": "42",
+  "pack": "AM-PUEB",
+  "recipe": "AM-PUEB-B02",
+  "mode": "historical_inspired",
+  "era": "any",
+  "allow_late": false,
+  "count": 1,
+  "size": 1.0,
+  "variation": 0,
+  "wealth": 0.5,
+  "orientation_deg": 0.0,
+  "overrides": {
+    "variant": null,
+    "footprint": null,
+    "roof": null,
+    "frame": null,
+    "infill": null,
+    "coating": null,
+    "cladding": null,
+    "floors": null,
+    "bodies": null,
+    "courtyard_ratio": null,
+    "overhang_m": null,
+    "roof_pitch_deg": null,
+    "site_slope_deg": null
+  },
+  "workshop": null
+}

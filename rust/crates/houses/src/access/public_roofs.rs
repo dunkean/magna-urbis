@@ -1,15 +1,53 @@
 //! Public, supported routes to collective terraces. Private hatches are exits
 //! from a household, never evidence that a terrace has a public entrance.
 use super::*;
+#[path = "public_roof_band_open.rs"]
+mod band_open;
 #[path = "public_roof_bridge.rs"]
 mod bridge;
 #[path = "public_roof_links.rs"]
 mod links;
 #[path = "public_roof_outboard.rs"]
 mod outboard;
+#[path = "public_roof_route_roofs.rs"]
+mod route_roofs;
+#[path = "public_roof_bands.rs"]
+mod timber;
+#[path = "public_roof_twoflight.rs"]
+mod twoflight;
+#[path = "public_roof_vigas.rs"]
+mod vigas;
+#[cfg(test)]
+#[path = "public_roof_vigas_j9_test.rs"]
+mod vigas_j9_test;
+
+pub(super) fn twoflight_add_route(
+    unit: &mut HouseUnit,
+    bases: &[AccessNode],
+    target: &AccessNode,
+) -> Result<bool, String> {
+    twoflight::add_route(unit, bases, target)
+}
+
+#[cfg(test)]
+pub(super) fn walk_component_fixture() -> HouseUnit {
+    outboard::eaves_fixture(0.566)
+}
 
 pub(super) fn low_band(f: &Feature) -> Option<Surface> {
     links::low_band(f)
+}
+
+pub(super) fn native_link_occupation(
+    unit: &HouseUnit,
+    node: &AccessNode,
+) -> Result<Surface, String> {
+    links::occupation(unit, node)
+}
+
+#[cfg(test)]
+pub(super) fn walk_occupation_fixture() -> HouseUnit {
+    links::occupation_fixture()
 }
 
 const WIDTH: f64 = 0.9;
@@ -26,6 +64,16 @@ struct Frame {
     tangent: Point,
     outward: Point,
     distance: f64,
+}
+
+#[derive(Clone, Copy)]
+enum RouteMode {
+    Legacy,
+    LegacyFrontReduced,
+    Outboard,
+    OutboardEaves,
+    BandOpen,
+    OutboardTwoFlight,
 }
 
 impl Frame {
@@ -46,19 +94,7 @@ impl Frame {
 }
 
 fn collective_targets(unit: &HouseUnit) -> BTreeSet<String> {
-    if !unit
-        .bodies
-        .iter()
-        .any(|b| b.cells.iter().any(|c| c.household_id.is_some()))
-    {
-        return BTreeSet::new();
-    }
-    let owners: BTreeSet<_> = unit
-        .rooms
-        .iter()
-        .filter_map(|r| r.household_id.as_ref())
-        .collect();
-    if owners.len() < 2 {
+    if !super::roof_apertures::collective(unit) {
         return BTreeSet::new();
     }
     unit.access
@@ -77,150 +113,152 @@ fn collective_targets(unit: &HouseUnit) -> BTreeSet<String> {
 }
 
 pub(super) fn add_routes(unit: &mut HouseUnit) -> Result<(), String> {
-    let needed = collective_targets(unit);
-    let mut targets: Vec<_> = unit
-        .access
-        .nodes
-        .iter()
-        .filter(|n| needed.contains(&n.id))
-        .cloned()
-        .collect();
-    targets.sort_by(|a, b| a.z_m.total_cmp(&b.z_m).then(a.id.cmp(&b.id)));
-    for target in targets {
-        let public = public_reachable(unit);
-        if public.contains(&target.id) {
-            continue;
-        }
-        let mut bases: Vec<_> = unit
-            .access
-            .nodes
-            .iter()
-            .filter(|n| public.contains(&n.id) && n.z_m < target.z_m - CONTACT)
-            .cloned()
-            .collect();
-        bases.sort_by(|a, b| b.z_m.total_cmp(&a.z_m).then(a.id.cmp(&b.id)));
-        let mut selected = None;
-        'search: for minimal in [false, true] {
-            for shifted in [false, true] {
-                for base in &bases {
-                    let stops = stops(unit, base.z_m, target.z_m, minimal);
-                    if stops.is_empty() {
-                        continue;
-                    }
-                    for polygon in &target.floor {
-                        for (a, b) in polygon
-                            .outer
-                            .iter()
-                            .zip(polygon.outer.iter().cycle().skip(1))
-                            .take(polygon.outer.len())
-                        {
-                            let length = libm::hypot(b.x - a.x, b.y - a.y);
-                            if length < RUN + PAD + 0.062 {
-                                continue;
-                            }
-                            let tangent = Point {
-                                x: (b.x - a.x) / length,
-                                y: (b.y - a.y) / length,
+    #[cfg(test)]
+    super::roof_apertures::capture_before_routes(unit);
+    pipeline27j::add_routes(unit)
+}
+
+fn search(
+    unit: &HouseUnit,
+    bases: &[AccessNode],
+    target: &AccessNode,
+    opening_bands: bool,
+) -> Option<HouseUnit> {
+    let mut selected = None;
+    'search: for minimal in [false, true] {
+        for shifted in [false, true] {
+            for base in bases {
+                let stops = stops(unit, base.z_m, target.z_m, minimal);
+                if stops.is_empty() || (opening_bands && stops.len() != 2) {
+                    continue;
+                }
+                for polygon in &target.floor {
+                    for (a, b) in polygon
+                        .outer
+                        .iter()
+                        .zip(polygon.outer.iter().cycle().skip(1))
+                        .take(polygon.outer.len())
+                    {
+                        let length = libm::hypot(b.x - a.x, b.y - a.y);
+                        if length < RUN + PAD + 0.062 {
+                            continue;
+                        }
+                        let tangent = Point {
+                            x: (b.x - a.x) / length,
+                            y: (b.y - a.y) / length,
+                        };
+                        let outward = Point {
+                            x: tangent.y,
+                            y: -tangent.x,
+                        };
+                        let mut offsets = vec![
+                            (length - RUN - PAD) * 0.5,
+                            0.031,
+                            length - RUN - PAD - 0.031,
+                        ];
+                        for p in rings(&base.floor).flat_map(|r| r.iter()) {
+                            offsets.push(
+                                ((p.x - a.x) * tangent.x + (p.y - a.y) * tangent.y - PAD * 0.5)
+                                    .clamp(0.031, length - RUN - PAD - 0.031),
+                            );
+                        }
+                        offsets.sort_by(f64::total_cmp);
+                        offsets.dedup_by(|a, b| (*a - *b).abs() < 0.001);
+                        for x in offsets {
+                            let edge = point(a.x + tangent.x * x, a.y + tangent.y * x);
+                            let legacy = Frame {
+                                origin: point(edge.x + outward.x * GAP, edge.y + outward.y * GAP),
+                                tangent,
+                                outward,
+                                distance: GAP,
                             };
-                            let outward = Point {
-                                x: tangent.y,
-                                y: -tangent.x,
+                            let distances = if shifted {
+                                bridge::distances(unit, base, legacy, edge)
+                            } else {
+                                vec![GAP]
                             };
-                            let mut offsets = vec![
-                                (length - RUN - PAD) * 0.5,
-                                0.031,
-                                length - RUN - PAD - 0.031,
-                            ];
-                            for p in rings(&base.floor).flat_map(|r| r.iter()) {
-                                offsets.push(
-                                    ((p.x - a.x) * tangent.x + (p.y - a.y) * tangent.y - PAD * 0.5)
-                                        .clamp(0.031, length - RUN - PAD - 0.031),
-                                );
-                            }
-                            offsets.sort_by(f64::total_cmp);
-                            offsets.dedup_by(|a, b| (*a - *b).abs() < 0.001);
-                            for x in offsets {
-                                let edge = point(a.x + tangent.x * x, a.y + tangent.y * x);
-                                let legacy = Frame {
+                            for distance in distances {
+                                let frame = Frame {
                                     origin: point(
-                                        edge.x + outward.x * GAP,
-                                        edge.y + outward.y * GAP,
+                                        edge.x + outward.x * distance,
+                                        edge.y + outward.y * distance,
                                     ),
                                     tangent,
                                     outward,
-                                    distance: GAP,
+                                    distance,
                                 };
-                                let distances = if shifted {
-                                    bridge::distances(unit, base, legacy, edge)
-                                } else {
-                                    vec![GAP]
-                                };
-                                for distance in distances {
-                                    let frame = Frame {
-                                        origin: point(
-                                            edge.x + outward.x * distance,
-                                            edge.y + outward.y * distance,
-                                        ),
-                                        tangent,
-                                        outward,
-                                        distance,
-                                    };
-                                    let plan = frame.rect(0.0, 0.0, RUN + PAD, DEPTH);
-                                    // A roof departure bears the entire route, not just its
-                                    // first endpoint. Enclosed ground voids are not public.
-                                    if area(&difference(&plan, &base.floor)) > AREA_EPS
-                                        || blocked(unit, &plan, base.z_m)
-                                    {
-                                        continue;
-                                    }
-                                    let odd = stops.len() % 2 == 1;
-                                    let top = bridge::floor(frame, odd);
-                                    let (opening, passage) = bridge::passage(frame, odd);
-                                    if !bridge::admissible(
-                                        unit, &target, frame, odd, &top, &passage,
-                                    ) {
-                                        continue;
-                                    }
-                                    let mut candidate = unit.clone();
-                                    if install(
-                                        &mut candidate,
-                                        base,
-                                        &target,
-                                        frame,
-                                        &stops,
-                                        opening,
-                                        passage,
-                                        top,
-                                    )
-                                    .is_err()
-                                        || validate_geometry(&candidate, false).is_err()
-                                    {
-                                        continue;
-                                    }
-                                    selected = Some(candidate);
-                                    break 'search;
+                                let plan = frame.rect(0.0, 0.0, RUN + PAD, DEPTH);
+                                // A roof departure bears the entire route, not just its
+                                // first endpoint. Enclosed ground voids are not public.
+                                if area(&difference(&plan, &base.floor)) > AREA_EPS
+                                    || blocked(unit, &plan, base.z_m)
+                                {
+                                    continue;
                                 }
+                                let odd = stops.len() % 2 == 1;
+                                let top = bridge::floor(frame, odd);
+                                let (opening, passage) = bridge::passage(frame, odd);
+                                if !opening_bands
+                                    && !bridge::admissible(unit, target, frame, odd, &top, &passage)
+                                {
+                                    continue;
+                                }
+                                let mut candidate = unit.clone();
+                                let outcome = (|| {
+                                    if opening_bands {
+                                        install_mode(
+                                            &mut candidate,
+                                            base,
+                                            target,
+                                            frame,
+                                            &stops,
+                                            opening,
+                                            passage.clone(),
+                                            top.clone(),
+                                            RouteMode::BandOpen,
+                                        )?;
+                                        let p = candidate.access.portals.last().unwrap().clone();
+                                        let cuts = timber::prepare_bridge(&candidate, &p)?;
+                                        // Recheck admissibility with a real aperture before
+                                        // the new landing and flight occupy the same plane.
+                                        let mut before = unit.clone();
+                                        timber::apply(&mut before, cuts.clone(), &p.id);
+                                        if !bridge::admissible(
+                                            &before, target, frame, odd, &top, &passage,
+                                        ) {
+                                            return Err(
+                                                "Pont après ouverture de bande inadmissible."
+                                                    .into(),
+                                            );
+                                        }
+                                        timber::apply(&mut candidate, cuts, &p.id);
+                                    } else {
+                                        install(
+                                            &mut candidate,
+                                            base,
+                                            target,
+                                            frame,
+                                            &stops,
+                                            opening,
+                                            passage,
+                                            top,
+                                        )?;
+                                    }
+                                    validate_geometry(&candidate, false)
+                                })();
+                                if outcome.is_err() {
+                                    continue;
+                                }
+                                selected = Some(candidate);
+                                break 'search;
                             }
                         }
                     }
                 }
             }
         }
-        let Some(candidate) = selected else {
-            if links::add_route(unit, &bases, &target)? {
-                continue;
-            }
-            if outboard::add_route(unit, &bases, &target)? {
-                continue;
-            }
-            return Err(format!(
-                "{} : terrasse collective à {} m sans route publique portée (échelles 0.9 × 1.3 m, paliers et deux bandes de retour dégagées).",
-                target.id, target.z_m
-            ));
-        };
-        *unit = candidate;
     }
-    validate(unit, false)
+    selected
 }
 
 fn stops(unit: &HouseUnit, base: f64, top: f64, minimal: bool) -> Vec<f64> {
@@ -309,7 +347,9 @@ fn landing(
         // Both bearings lie beyond the flight's longitudinal interval. Their
         // feet are on the already public ground or structural terrace.
         let x = if side == 0.0 { 0.1 } else { RUN + PAD - 0.1 };
-        let external = key.ends_with(":outboard:landing:3");
+        let external = key.ends_with(":outboard:landing:3")
+            || key.ends_with(":outboard-eaves:landing:3")
+            || key.ends_with(":outboard-two-flight-eaves:landing:2");
         let front = if external { -outboard::ROW_OFFSET } else { 0.1 };
         let back = if external {
             DEPTH + outboard::ROW_OFFSET
@@ -354,7 +394,7 @@ fn install(
         opening,
         passage,
         final_floor,
-        false,
+        RouteMode::Legacy,
     )
 }
 
@@ -368,16 +408,29 @@ fn install_mode(
     opening: [Point; 2],
     passage: Surface,
     final_floor: Surface,
-    external: bool,
+    mode: RouteMode,
 ) -> Result<(), String> {
-    if external && stops.len() != 3 {
+    if matches!(mode, RouteMode::Outboard | RouteMode::OutboardEaves) && stops.len() != 3 {
         return Err("Cadre à appuis extérieurs limité à trois volées.".into());
+    }
+    if matches!(mode, RouteMode::BandOpen) && stops.len() != 2 {
+        return Err("Ouverture de bande limitée à deux volées natives.".into());
+    }
+    if matches!(mode, RouteMode::OutboardTwoFlight) && stops.len() != 2 {
+        return Err("Cadre pair extérieur limité à deux volées natives.".into());
     }
     let key = format!(
         "{}:public-roof:{}{}",
         unit.id,
         unit.access.portals.len(),
-        if external { ":outboard" } else { "" }
+        match mode {
+            RouteMode::Legacy => "",
+            RouteMode::LegacyFrontReduced => ":legacy-front-reduced",
+            RouteMode::Outboard => ":outboard",
+            RouteMode::OutboardEaves => ":outboard-eaves",
+            RouteMode::BandOpen => ":band-open",
+            RouteMode::OutboardTwoFlight => ":outboard-two-flight-eaves",
+        }
     );
     let first = frame.rect(0.0, 0.0, PAD, DEPTH);
     let first_flight = planned_flight(
@@ -522,8 +575,15 @@ pub(super) fn validate(unit: &HouseUnit, check_roofs: bool) -> Result<(), String
 }
 
 fn validate_geometry(unit: &HouseUnit, check_roofs: bool) -> Result<(), String> {
+    vigas::validate(unit)?;
+    twoflight::validate(unit, check_roofs)?;
     bridge::validate_landings(unit)?;
     outboard::validate_columns(unit, check_roofs)?;
+    if check_roofs {
+        route_roofs::validate(unit)?;
+        legacy27j::validate_roofs(unit)?;
+    }
+    timber::validate(unit)?;
     for f in unit
         .features
         .iter()
@@ -742,3 +802,6 @@ fn validate_clearance(unit: &HouseUnit, flight: &Feature) -> Result<(), String> 
     }
     Ok(())
 }
+
+pub(super) mod legacy27j;
+pub(super) mod pipeline27j;

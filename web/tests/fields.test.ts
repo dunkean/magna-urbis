@@ -227,6 +227,9 @@ describe('open fields on town maps (seeds 1-4)', () => {
       tl = Math.min(tl, timeIt(() => legacyRural(mv, new Rng('magna-urbis:' + w.options.seed), main), 1));
       tn = Math.min(tn, timeIt(() => generateRural(mv, new Rng('magna-urbis:' + w.options.seed), main), 1));
     }
+    console.info('[MAGNA_URBIS_PERF] ' + JSON.stringify({ file: 'tests/fields.test.ts',
+      fullName: 'open fields on town maps (seeds 1-4) land use takes at most 1.2x the previous generator time',
+      metric: 'rural.relative', value: tn, operator: '<=', limit: 1.2 * tl, reference: tl, multiplier: 1.2 }));
     expect(tn).toBeLessThanOrEqual(1.2 * tl);
   });
 });
@@ -238,6 +241,9 @@ describe('open fields on a 10 km multi-settlement map', () => {
   it.runIf(PERF)('land-use stage runs in at most 3 s', () => {
     const mv = mainView(w);
     const t = timeIt(() => generateRural(mv, new Rng('magna-urbis:' + w.options.seed), w.roads?.length), 3);
+    console.info('[MAGNA_URBIS_PERF] ' + JSON.stringify({ file: 'tests/fields.test.ts',
+      fullName: 'open fields on a 10 km multi-settlement map land-use stage runs in at most 3 s',
+      metric: 'rural.absolute', value: t, operator: '<=', limit: 3000 }));
     expect(t).toBeLessThanOrEqual(3000);
   }, T);
 

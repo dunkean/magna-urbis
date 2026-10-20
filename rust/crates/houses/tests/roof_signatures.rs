@@ -17,6 +17,7 @@ fn materials() -> MaterialSlots {
 }
 fn arm(x: f64, y: f64, w: f64, d: f64) -> RoofArm {
     RoofArm {
+        source_component: None,
         origin: Point { x, y },
         axis: [1.0, 0.0],
         length_m: w,

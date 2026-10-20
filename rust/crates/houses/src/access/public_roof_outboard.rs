@@ -14,6 +14,34 @@ pub(super) const BACK_MAX: f64 = 0.07;
 pub(super) enum BearingMode {
     Legacy,
     Outboard,
+    OutboardEaves,
+    OutboardTwoFlight,
+}
+
+#[path = "public_roof_outboard_eaves.rs"]
+mod eaves;
+
+pub(super) fn twoflight_event(
+    profile: &HouseUnit,
+    candidate: &HouseUnit,
+    frame: Frame,
+    low: f64,
+    high: f64,
+) -> Result<Option<f64>, String> {
+    eaves::distance(profile, candidate, frame, low, high)
+}
+
+pub(super) fn certify_twoflight_event(
+    unit: &HouseUnit,
+    head: &Feature,
+    frame: Frame,
+    low: f64,
+) -> Result<(), String> {
+    eaves::certify_twoflight_event(unit, head, frame, low)
+}
+
+pub(super) fn external(mode: BearingMode) -> bool {
+    mode != BearingMode::Legacy
 }
 
 pub(super) fn heads(frame: Frame) -> Surface {
@@ -34,6 +62,23 @@ pub(super) fn add_route(
     unit: &mut HouseUnit,
     bases: &[AccessNode],
     target: &AccessNode,
+) -> Result<bool, String> {
+    add_route_mode(unit, bases, target, false)
+}
+
+pub(super) fn add_eaves_route(
+    unit: &mut HouseUnit,
+    bases: &[AccessNode],
+    target: &AccessNode,
+) -> Result<bool, String> {
+    add_route_mode(unit, bases, target, true)
+}
+
+fn add_route_mode(
+    unit: &mut HouseUnit,
+    bases: &[AccessNode],
+    target: &AccessNode,
+    eaves_mode: bool,
 ) -> Result<bool, String> {
     for minimal in [false, true] {
         for shifted in [false, true] {
@@ -124,11 +169,80 @@ pub(super) fn add_route(
                                             opening,
                                             passage,
                                             top,
-                                            true,
+                                            RouteMode::Outboard,
                                         )
                                         .is_err()
                                             || validate_geometry(&candidate, false).is_err()
                                         {
+                                            continue;
+                                        }
+                                        let mut profile = candidate.clone();
+                                        crate::roofs::build_roofs_with_budget(
+                                            &mut profile,
+                                            crate::engine::MAX_BATCH_FACES as usize,
+                                        )?;
+                                        if !eaves_mode {
+                                            if validate_geometry(&profile, true).is_err() {
+                                                continue;
+                                            }
+                                            *unit = candidate;
+                                            return Ok(true);
+                                        }
+                                        let Some(distance) = eaves::distance(
+                                            &profile, &candidate, frame, base.z_m, target.z_m,
+                                        )?
+                                        else {
+                                            continue;
+                                        };
+                                        let frame = Frame {
+                                            origin: point(
+                                                edge.x + outward.x * distance,
+                                                edge.y + outward.y * distance,
+                                            ),
+                                            distance,
+                                            ..frame
+                                        };
+                                        let plan = frame.rect(0.0, 0.0, RUN + PAD, DEPTH);
+                                        if area(&difference(&plan, &base.floor)) > AREA_EPS
+                                            || blocked(unit, &plan, base.z_m)
+                                        {
+                                            continue;
+                                        }
+                                        let top = floor(frame);
+                                        let (opening, passage) = bridge::passage(frame, true);
+                                        if !bridge::admissible_eaves(
+                                            unit,
+                                            target,
+                                            frame,
+                                            &top,
+                                            &passage,
+                                            &heads(frame),
+                                        ) {
+                                            continue;
+                                        }
+                                        let mut candidate = unit.clone();
+                                        if install_mode(
+                                            &mut candidate,
+                                            base,
+                                            target,
+                                            frame,
+                                            &stops,
+                                            opening,
+                                            passage,
+                                            top,
+                                            RouteMode::OutboardEaves,
+                                        )
+                                        .is_err()
+                                            || validate_geometry(&candidate, false).is_err()
+                                        {
+                                            continue;
+                                        }
+                                        let mut profile = candidate.clone();
+                                        crate::roofs::build_roofs_with_budget(
+                                            &mut profile,
+                                            crate::engine::MAX_BATCH_FACES as usize,
+                                        )?;
+                                        if validate_geometry(&profile, true).is_err() {
                                             continue;
                                         }
                                         *unit = candidate;
@@ -145,8 +259,199 @@ pub(super) fn add_route(
     Ok(false)
 }
 
+pub(super) fn add_roof_event_route(
+    unit: &mut HouseUnit,
+    bases: &[AccessNode],
+    target: &AccessNode,
+) -> Result<bool, String> {
+    add_roof_event_route_with_budget(unit, bases, target, crate::engine::MAX_BATCH_FACES as usize)
+}
+
+fn add_roof_event_route_with_budget(
+    unit: &mut HouseUnit,
+    bases: &[AccessNode],
+    target: &AccessNode,
+    budget: usize,
+) -> Result<bool, String> {
+    for minimal in [false, true] {
+        for shifted in [false, true] {
+            for base in bases {
+                let stops = stops(unit, base.z_m, target.z_m, minimal);
+                if stops.len() != 3 {
+                    continue;
+                }
+                for polygon in &target.floor {
+                    for (a, b) in polygon
+                        .outer
+                        .iter()
+                        .zip(polygon.outer.iter().cycle().skip(1))
+                        .take(polygon.outer.len())
+                    {
+                        let length = libm::hypot(b.x - a.x, b.y - a.y);
+                        if length < PAD + 2.0 * GAP {
+                            continue;
+                        }
+                        let tangent = Point {
+                            x: (b.x - a.x) / length,
+                            y: (b.y - a.y) / length,
+                        };
+                        for sign in [1.0, -1.0] {
+                            let outward = Point {
+                                x: sign * tangent.y,
+                                y: -sign * tangent.x,
+                            };
+                            for ratio in [0.5, 0.25, 0.75] {
+                                for offset in [0.0, RUN] {
+                                    let edge = point(
+                                        a.x + tangent.x * (length * ratio - PAD * 0.5 - offset),
+                                        a.y + tangent.y * (length * ratio - PAD * 0.5 - offset),
+                                    );
+                                    let legacy = Frame {
+                                        origin: point(
+                                            edge.x + outward.x * GAP,
+                                            edge.y + outward.y * GAP,
+                                        ),
+                                        tangent,
+                                        outward,
+                                        distance: GAP,
+                                    };
+                                    let distances = if shifted {
+                                        bridge::distances(unit, base, legacy, edge)
+                                    } else {
+                                        vec![GAP]
+                                    };
+                                    for distance in distances {
+                                        let distance = distance + SHIFT;
+                                        if distance > DISTANCE_MAX + 1e-9 {
+                                            continue;
+                                        }
+                                        let frame = Frame {
+                                            origin: point(
+                                                edge.x + outward.x * distance,
+                                                edge.y + outward.y * distance,
+                                            ),
+                                            tangent,
+                                            outward,
+                                            distance,
+                                        };
+                                        let plan = frame.rect(0.0, 0.0, RUN + PAD, DEPTH);
+                                        if area(&difference(&plan, &base.floor)) > AREA_EPS
+                                            || blocked(unit, &plan, base.z_m)
+                                        {
+                                            continue;
+                                        }
+                                        let top = floor(frame);
+                                        let (opening, passage) = bridge::passage(frame, true);
+                                        if !bridge::admissible_outboard(
+                                            unit,
+                                            target,
+                                            frame,
+                                            &top,
+                                            &passage,
+                                            &heads(frame),
+                                        ) {
+                                            continue;
+                                        }
+                                        let mut candidate = unit.clone();
+                                        if install_mode(
+                                            &mut candidate,
+                                            base,
+                                            target,
+                                            frame,
+                                            &stops,
+                                            opening,
+                                            passage,
+                                            top,
+                                            RouteMode::Outboard,
+                                        )
+                                        .is_err()
+                                            || validate_geometry(&candidate, false).is_err()
+                                        {
+                                            continue;
+                                        }
+                                        let mut profile = candidate.clone();
+                                        crate::roofs::build_roofs_with_budget(
+                                            &mut profile,
+                                            budget,
+                                        )?;
+                                        let Some(distance) = eaves::distance_existing(
+                                            &profile, &candidate, frame, base.z_m, target.z_m,
+                                        )?
+                                        else {
+                                            continue;
+                                        };
+                                        let frame = Frame {
+                                            origin: point(
+                                                edge.x + outward.x * distance,
+                                                edge.y + outward.y * distance,
+                                            ),
+                                            distance,
+                                            ..frame
+                                        };
+                                        let plan = frame.rect(0.0, 0.0, RUN + PAD, DEPTH);
+                                        if area(&difference(&plan, &base.floor)) > AREA_EPS
+                                            || blocked(unit, &plan, base.z_m)
+                                        {
+                                            continue;
+                                        }
+                                        let top = floor(frame);
+                                        let (opening, passage) = bridge::passage(frame, true);
+                                        if !bridge::admissible_outboard(
+                                            unit,
+                                            target,
+                                            frame,
+                                            &top,
+                                            &passage,
+                                            &heads(frame),
+                                        ) {
+                                            continue;
+                                        }
+                                        let mut candidate = unit.clone();
+                                        if install_mode(
+                                            &mut candidate,
+                                            base,
+                                            target,
+                                            frame,
+                                            &stops,
+                                            opening,
+                                            passage,
+                                            top,
+                                            RouteMode::Outboard,
+                                        )
+                                        .is_err()
+                                            || validate_geometry(&candidate, false).is_err()
+                                        {
+                                            continue;
+                                        }
+                                        let mut profile = candidate.clone();
+                                        crate::roofs::build_roofs_with_budget(
+                                            &mut profile,
+                                            budget,
+                                        )?;
+                                        if validate_geometry(&profile, true).is_err() {
+                                            continue;
+                                        }
+                                        #[cfg(test)]
+                                        eaves::event_tests::capture(&profile);
+                                        *unit = candidate;
+                                        return Ok(true);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    Ok(false)
+}
+
 /// The mode is a complete native route certificate, never a guessed axis.
 pub(super) fn mode(unit: &HouseUnit, slab: &Feature) -> Result<BearingMode, String> {
+    if slab.id.contains(":outboard-two-flight") {
+        return twoflight::mode(unit, slab);
+    }
     let Some((key, index)) = slab.id.rsplit_once(":landing:") else {
         return Err("Palier sans index natif de cadre.".into());
     };
@@ -156,7 +461,20 @@ pub(super) fn mode(unit: &HouseUnit, slab: &Feature) -> Result<BearingMode, Stri
     let index = index
         .parse::<usize>()
         .map_err(|_| "Index de palier outboard invalide.")?;
-    if !key.ends_with(":outboard") || index > 3 {
+    let selected = if let Some(native) = key.strip_suffix(":outboard") {
+        (native, BearingMode::Outboard)
+    } else if let Some(native) = key.strip_suffix(":outboard-eaves") {
+        (native, BearingMode::OutboardEaves)
+    } else {
+        return Err("Marqueur de cadre outboard incomplet ou combiné.".into());
+    };
+    if selected
+        .0
+        .strip_prefix(&format!("{}:public-roof:", unit.id))
+        .and_then(|n| n.parse::<usize>().ok())
+        .is_none()
+        || index > 3
+    {
         return Err("Cadre outboard hors des trois volées déclarées.".into());
     }
     let mut portals = vec![];
@@ -245,7 +563,7 @@ pub(super) fn mode(unit: &HouseUnit, slab: &Feature) -> Result<BearingMode, Stri
         return Err("Cadre outboard sans Passage final unique vers la terrasse publique.".into());
     }
     Ok(if index == 3 {
-        BearingMode::Outboard
+        selected.1
     } else {
         BearingMode::Legacy
     })
@@ -265,13 +583,33 @@ fn clipped_range(vertices: &[Vertex3], foot: &Surface) -> Result<Option<(f64, f6
 }
 
 pub(super) fn validate_columns(unit: &HouseUnit, check_roofs: bool) -> Result<(), String> {
-    for head in unit
+    for piece in unit
         .features
         .iter()
-        .filter(|f| f.kind == FeatureKind::Landing && f.id.ends_with(":outboard:landing:3"))
+        .filter(|f| f.id.contains(":outboard-eaves"))
     {
-        if mode(unit, head)? != BearingMode::Outboard || (head.height_m - 0.15).abs() > 1e-9 {
+        if !unit.features.iter().any(|head| {
+            head.kind == FeatureKind::Landing
+                && head.id.ends_with(":outboard-eaves:landing:3")
+                && head
+                    .id
+                    .strip_suffix(":landing:3")
+                    .is_some_and(|key| piece.id.starts_with(&format!("{key}:")))
+        }) {
+            return Err("Pièce eaves sans cadre matériel complet déclaré.".into());
+        }
+    }
+    for head in unit.features.iter().filter(|f| {
+        f.kind == FeatureKind::Landing
+            && (f.id.ends_with(":outboard:landing:3")
+                || f.id.ends_with(":outboard-eaves:landing:3")
+                || f.id.ends_with(":outboard-two-flight-eaves:landing:2"))
+    }) {
+        if !external(mode(unit, head)?) || (head.height_m - 0.15).abs() > 1e-9 {
             return Err("Tête outboard sans dalle native de0.15m.".into());
+        }
+        if mode(unit, head)? == BearingMode::OutboardEaves {
+            eaves::validate(unit, head, check_roofs)?;
         }
         for i in 0..4 {
             let id = format!("{}:post:{i}", head.id);
@@ -423,4 +761,64 @@ pub(super) fn validate_columns(unit: &HouseUnit, check_roofs: bool) -> Result<()
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+#[path = "public_roof_outboard_tests.rs"]
+mod tests;
+
+#[cfg(test)]
+#[test]
+fn native_event_pass_propagates_speculative_roof_budget_error() {
+    let profile = eaves::event_tests::witness();
+    let mut unit = eaves::event_tests::rebuild(&profile, 0.171);
+    // Remove the just-created native chain, retaining its original public base.
+    let last = unit.access.portals.last().unwrap();
+    let target = unit
+        .access
+        .nodes
+        .iter()
+        .find(|n| n.id == last.to)
+        .unwrap()
+        .clone();
+    let key = last.feature_ids[0]
+        .strip_suffix(":landing:3")
+        .unwrap()
+        .to_string();
+    let serial: usize = key
+        .strip_prefix("unit-2:public-roof:")
+        .unwrap()
+        .strip_suffix(":outboard")
+        .unwrap()
+        .parse()
+        .unwrap();
+    let own: Vec<_> = unit
+        .access
+        .portals
+        .iter()
+        .filter(|p| (0..5).any(|i| p.id == format!("unit-2:portal:{}", serial + i)))
+        .cloned()
+        .collect();
+    let base = unit
+        .access
+        .nodes
+        .iter()
+        .find(|n| n.id == own[0].from)
+        .unwrap()
+        .clone();
+    unit.features
+        .retain(|f| !f.id.starts_with(&format!("{key}:")));
+    unit.access
+        .nodes
+        .retain(|n| !own[..4].iter().any(|p| p.to == n.id));
+    unit.access
+        .portals
+        .retain(|p| !own.iter().any(|old| old.id == p.id));
+    let error = add_roof_event_route_with_budget(&mut unit, &[base], &target, 0).unwrap_err();
+    assert!(error.contains("Budget"), "{error}");
+}
+
+#[cfg(test)]
+pub(super) fn eaves_fixture(d: f64) -> HouseUnit {
+    eaves::tests::route(d)
 }

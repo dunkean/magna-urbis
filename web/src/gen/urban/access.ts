@@ -200,39 +200,30 @@ export function blockReach(block: Polygon, blds: Polygon[], streetAt0: StreetAt 
     return x >= 1 && x < w - 1 && y >= 1 && y < h - 1 && free(j) && okN(j - 1) && okN(j + 1) && okN(j - w) && okN(j + w);
   };
   const settle = (i: number) => { const k = bid[i]; if (k && !ok[k - 1]) { ok[k - 1] = true; left--; } };
-  const settleFromFree = (i: number) => {
-    if (!free(i)) return;
-    const x = i % w, y = (i / w) | 0;
-    // Terminal contact must share an edge with the free apron. A diagonal across two occupied
-    // cardinal neighbours is only a closed corner, not an entrance.
-    if (x > 0) settle(i - 1);
-    if (x < w - 1) settle(i + 1);
-    if (y > 0) settle(i - w);
-    if (y < h - 1) settle(i + w);
-  };
   if (++pool.ep === 0xffffffff) { pool.seen.fill(0); pool.ep = 1; }
   const ep = pool.ep, seen = pool.seen, queue = pool.queue;
   let qh = 0, qt = 0;
   const visit = (j: number) => {
-    if (seen[j] === ep || !passable(j)) return;
-    seen[j] = ep; queue[qt++] = j;
+    if (seen[j] === ep) return;
+    // Occupancy is fixed throughout this flood. Rejected cells cannot become
+    // passable, so test each boundary/obstacle cell only once too.
+    seen[j] = ep;
+    if (!passable(j)) return;
+    queue[qt++] = j;
     const x = j % w;
-    const l = x > 0, r = x < w - 1, u = j >= w, d = j + w < N;
-    if (l) settle(j - 1);
-    if (r) settle(j + 1);
-    if (u) settle(j - w);
-    if (d) settle(j + w);
-    if (l && u) settle(j - w - 1);
-    if (r && u) settle(j - w + 1);
-    if (l && d) settle(j + w - 1);
-    if (r && d) settle(j + w + 1);
+    // Passable centres are strictly inside the padded raster, so their eight
+    // neighbours exist. Keep cardinal contacts for footprints outside the block.
+    settle(j - 1); settle(j + 1); settle(j - w); settle(j + w);
+    settle(j - w - 1); settle(j - w + 1); settle(j + w - 1); settle(j + w + 1);
     // The passable centre is one cell away from a terminal facade: its free neighbour is the doorway apron.
     // Restore that free contact cell after the clearance erosion, without flooding narrow or blocked cells.
     if (left > 0) {
-      if (l) settleFromFree(j - 1);
-      if (r) settleFromFree(j + 1);
-      if (u) settleFromFree(j - w);
-      if (d) settleFromFree(j + w);
+      // Each apron's other three neighbours are the centre and two diagonals
+      // already settled above. Only its outward edge adds a new contact.
+      if (x > 1 && free(j - 1)) settle(j - 2);
+      if (x < w - 2 && free(j + 1)) settle(j + 2);
+      if (j >= 2 * w && free(j - w)) settle(j - 2 * w);
+      if (j + 2 * w < N && free(j + w)) settle(j + 2 * w);
     }
   };
   for (const i of streetSeeds) {

@@ -11560,15 +11560,16 @@
         "elevation_family": "ground",
         "details": [
           "masonry_joints",
-          "hearth"
+          "hearth",
+          "front_porch"
         ],
         "roof_pitch_deg": [
           20,
           40
         ],
         "overhang_m": [
-          0.25,
-          0.6
+          0,
+          0
         ],
         "wall_thickness_m": [
           0.25,
@@ -11608,7 +11609,7 @@
           "curve_sections": 12
         },
         "gallery_cover": {
-          "enabled": false,
+          "enabled": true,
           "rf": "RF-SHED",
           "spec": {
             "axis": "longitudinal",
@@ -11636,7 +11637,8 @@
           "width_m": 0.85,
           "pitch_deg": 10.0,
           "max_span_m": 3.0,
-          "support_spacing_m": 1.5
+          "support_spacing_m": 1.5,
+          "facade_mode": "wall_bearing"
         },
         "level_height_m": 2.8,
         "detail_spec": null,
@@ -11690,8 +11692,8 @@
               40
             ],
             "overhang_m": [
-              0.25,
-              0.6
+              0,
+              0
             ],
             "materials": {
               "frame": "MAT-STONE-MORTAR",
@@ -11741,7 +11743,9 @@
             ]
           }
         ],
-        "notes": [],
+        "notes": [
+          "Appentis RF-SHED joint au mur, rive haute portée par les murs réels et rive basse par poteaux ; débord principal nul et dimensions stylisées, tuile ou lauze du bundle conservée."
+        ],
         "enclosure_family": "none",
         "envelope": "walled",
         "support": {
@@ -11810,15 +11814,16 @@
             "elevation_family": "ground",
             "details": [
               "masonry_joints",
-              "hearth"
+              "hearth",
+              "front_porch"
             ],
             "roof_pitch_deg": [
               25,
               45
             ],
             "overhang_m": [
-              0.25,
-              0.6
+              0,
+              0
             ],
             "wall_thickness_m": [
               0.25,
@@ -11858,7 +11863,7 @@
               "curve_sections": 12
             },
             "gallery_cover": {
-              "enabled": false,
+              "enabled": true,
               "rf": "RF-SHED",
               "spec": {
                 "axis": "longitudinal",
@@ -11886,7 +11891,8 @@
               "width_m": 0.85,
               "pitch_deg": 10.0,
               "max_span_m": 3.0,
-              "support_spacing_m": 1.5
+              "support_spacing_m": 1.5,
+              "facade_mode": "wall_bearing"
             },
             "level_height_m": 2.8,
             "detail_spec": null,
@@ -11940,8 +11946,8 @@
                   45
                 ],
                 "overhang_m": [
-                  0.25,
-                  0.6
+                  0,
+                  0
                 ],
                 "materials": {
                   "frame": "MAT-STONE-MORTAR",
@@ -11991,7 +11997,9 @@
                 ]
               }
             ],
-            "notes": [],
+            "notes": [
+              "Appentis RF-SHED joint au mur, rive haute portée par les murs réels et rive basse par poteaux ; débord principal nul et dimensions stylisées, tuile ou lauze du bundle conservée."
+            ],
             "enclosure_family": "none",
             "envelope": "walled",
             "support": {
@@ -24656,8 +24664,8 @@
       "role": "domestic_annex",
       "profile": "round",
       "parameters": {
-        "layout": "single",
-        "footprint_family": "FP-ROUND",
+        "layout": "hut_compound",
+        "footprint_family": "FP-CLUSTER-ROUND",
         "roof_system": "RF-DOME",
         "structure_system": "masonry",
         "materials": {
@@ -24669,20 +24677,20 @@
           "roof_frame": "MAT-ADOBE"
         },
         "width_m": [
-          4,
-          8
+          14,
+          18
         ],
         "depth_m": [
-          4,
-          8
+          14,
+          18
         ],
         "floors": [
           1,
           1
         ],
         "bodies": [
-          1,
-          1
+          3,
+          5
         ],
         "rooms_per_body": [
           1,
@@ -24713,7 +24721,7 @@
           "RF-DOME"
         ],
         "allowed_footprints": [
-          "FP-ROUND"
+          "FP-CLUSTER-ROUND"
         ],
         "variant_id": "default",
         "roof_spec": {
@@ -24780,8 +24788,8 @@
             "id": "main",
             "role": "domestic_annex",
             "count": [
-              1,
-              1
+              3,
+              5
             ],
             "placement": "main",
             "width_ratio": [
@@ -24792,7 +24800,7 @@
               1,
               1
             ],
-            "footprint_family": "FP-ROUND",
+            "footprint_family": "FP-CLUSTER-ROUND",
             "roof_system": "RF-DOME",
             "roof_spec": {
               "axis": "longitudinal",
@@ -24865,7 +24873,8 @@
           }
         ],
         "notes": [
-          "Le cylindre reçoit le dôme; une voûte en berceau longitudinale ne correspond pas à son plan rond."
+          "Le cylindre reçoit le dôme; une voûte en berceau longitudinale ne correspond pas à son plan rond.",
+          "Trois à cinq réserves groupées autour d’un vide commun : quantité et dimensions stylisées, rôle annexe Storage et même propriétaire, sans foyer ni clôture inventée."
         ],
         "enclosure_family": "none",
         "envelope": "walled",
@@ -29109,8 +29118,8 @@
       "role": "domestic_annex",
       "profile": "round",
       "parameters": {
-        "layout": "single",
-        "footprint_family": "FP-ROUND",
+        "layout": "hut_compound",
+        "footprint_family": "FP-CLUSTER-ROUND",
         "roof_system": "RF-DOME",
         "structure_system": "earth_shell",
         "materials": {
@@ -29122,20 +29131,20 @@
           "roof_frame": "MAT-COB"
         },
         "width_m": [
-          4,
-          8
+          22,
+          28
         ],
         "depth_m": [
-          4,
-          8
+          22,
+          28
         ],
         "floors": [
           1,
           1
         ],
         "bodies": [
-          1,
-          1
+          3,
+          5
         ],
         "rooms_per_body": [
           1,
@@ -29166,7 +29175,7 @@
           "RF-DOME"
         ],
         "allowed_footprints": [
-          "FP-ROUND"
+          "FP-CLUSTER-ROUND"
         ],
         "variant_id": "default",
         "roof_spec": {
@@ -29233,8 +29242,8 @@
             "id": "main",
             "role": "domestic_annex",
             "count": [
-              1,
-              1
+              3,
+              5
             ],
             "placement": "main",
             "width_ratio": [
@@ -29245,7 +29254,7 @@
               1,
               1
             ],
-            "footprint_family": "FP-ROUND",
+            "footprint_family": "FP-CLUSTER-ROUND",
             "roof_system": "RF-DOME",
             "roof_spec": {
               "axis": "longitudinal",
@@ -29317,7 +29326,9 @@
             ]
           }
         ],
-        "notes": [],
+        "notes": [
+          "Trois à cinq réserves groupées autour d’un vide commun : quantité et dimensions stylisées, rôle annexe Storage et même propriétaire, sans foyer ni clôture inventée."
+        ],
         "enclosure_family": "none",
         "envelope": "shell",
         "support": {
@@ -72604,7 +72615,8 @@
           "width_m": 0.85,
           "pitch_deg": 10.0,
           "max_span_m": 3.0,
-          "support_spacing_m": 1.5
+          "support_spacing_m": 1.5,
+          "facade_mode": "residential"
         },
         "level_height_m": 4.164,
         "detail_spec": null,
@@ -72614,7 +72626,7 @@
         "structural_spec": null,
         "components": [
           {
-            "id": "main",
+            "id": "main_house",
             "role": "dwelling",
             "count": [
               1,
@@ -72699,9 +72711,98 @@
               0.35,
               0.55
             ]
+          },
+          {
+            "id": "rear_annexes",
+            "role": "domestic_annex",
+            "count": [
+              1,
+              2
+            ],
+            "placement": "rear",
+            "width_ratio": [
+              0.4,
+              0.6
+            ],
+            "depth_ratio": [
+              0.4,
+              0.6
+            ],
+            "footprint_family": "FP-RECT",
+            "roof_system": "RF-REED-HIP",
+            "roof_spec": {
+              "axis": "longitudinal",
+              "tiers": 3,
+              "tier_inset_ratio": 0.15,
+              "tier_rise_m": 1.0,
+              "drum_height_m": 0.7,
+              "gambrel_break_ratio": 0.55,
+              "gambrel_lower_pitch_deg": 55.0,
+              "saddle_rise_ratio": 0.18,
+              "step_count": 7,
+              "shell_sections": 12,
+              "parapet_height_m": 0.4,
+              "drainage_side": 2,
+              "dome_rise_ratio": 1.0,
+              "oculus_ratio": 0.0,
+              "curve_lift_ratio": 0.12,
+              "tent_crown_ratio": 0.08,
+              "shell_cross_rise_ratio": 0.7,
+              "shell_long_rise_ratio": 0.18,
+              "round_segments": 32,
+              "curve_sections": 12
+            },
+            "roof_pitch_deg": [
+              20,
+              40
+            ],
+            "overhang_m": [
+              0.1,
+              0.15
+            ],
+            "materials": {
+              "frame": "MAT-WOOD-MORTISE",
+              "infill": "MAT-WATTLE-DAUB",
+              "coating": "MAT-MUD-PLASTER",
+              "cladding": "MAT-THATCH",
+              "base": "MAT-STONE-DRY",
+              "roof_frame": "MAT-TIMBER-POST"
+            },
+            "structure_system": "post_beam",
+            "envelope": "walled",
+            "floors": [
+              1,
+              1
+            ],
+            "level_height_m": 2.8,
+            "rooms_per_body": [
+              1,
+              1
+            ],
+            "vertical_access": "none",
+            "vertical_routes": [],
+            "support": {
+              "kind": "ground",
+              "material": null,
+              "height_m": [
+                0,
+                0
+              ]
+            },
+            "level_materials": [],
+            "wall_thickness_m": [
+              0.25,
+              0.45
+            ],
+            "courtyard_ratio": [
+              0.35,
+              0.55
+            ]
           }
         ],
-        "notes": [],
+        "notes": [
+          "Une à deux annexes de réserve à l’arrière : quantité et dimensions stylisées, niveau de 2,8 m et petit débord de chaume ; aucun logement supplémentaire."
+        ],
         "enclosure_family": "none",
         "envelope": "walled",
         "support": {
@@ -72837,7 +72938,8 @@
               "width_m": 0.85,
               "pitch_deg": 10.0,
               "max_span_m": 3.0,
-              "support_spacing_m": 1.5
+              "support_spacing_m": 1.5,
+              "facade_mode": "residential"
             },
             "level_height_m": 4.164,
             "detail_spec": null,
@@ -72847,7 +72949,7 @@
             "structural_spec": null,
             "components": [
               {
-                "id": "main",
+                "id": "main_house",
                 "role": "dwelling",
                 "count": [
                   1,
@@ -72932,9 +73034,98 @@
                   0.35,
                   0.55
                 ]
+              },
+              {
+                "id": "rear_annexes",
+                "role": "domestic_annex",
+                "count": [
+                  1,
+                  2
+                ],
+                "placement": "rear",
+                "width_ratio": [
+                  0.4,
+                  0.6
+                ],
+                "depth_ratio": [
+                  0.4,
+                  0.6
+                ],
+                "footprint_family": "FP-RECT",
+                "roof_system": "RF-REED-HIP",
+                "roof_spec": {
+                  "axis": "longitudinal",
+                  "tiers": 3,
+                  "tier_inset_ratio": 0.15,
+                  "tier_rise_m": 1.0,
+                  "drum_height_m": 0.7,
+                  "gambrel_break_ratio": 0.55,
+                  "gambrel_lower_pitch_deg": 55.0,
+                  "saddle_rise_ratio": 0.18,
+                  "step_count": 7,
+                  "shell_sections": 12,
+                  "parapet_height_m": 0.4,
+                  "drainage_side": 2,
+                  "dome_rise_ratio": 1.0,
+                  "oculus_ratio": 0.0,
+                  "curve_lift_ratio": 0.12,
+                  "tent_crown_ratio": 0.08,
+                  "shell_cross_rise_ratio": 0.7,
+                  "shell_long_rise_ratio": 0.18,
+                  "round_segments": 32,
+                  "curve_sections": 12
+                },
+                "roof_pitch_deg": [
+                  20,
+                  40
+                ],
+                "overhang_m": [
+                  0.1,
+                  0.15
+                ],
+                "materials": {
+                  "frame": "MAT-WOOD-MORTISE",
+                  "infill": "MAT-WATTLE-DAUB",
+                  "coating": "MAT-MUD-PLASTER",
+                  "cladding": "MAT-THATCH",
+                  "base": "MAT-STONE-DRY",
+                  "roof_frame": "MAT-TIMBER-POST"
+                },
+                "structure_system": "post_beam",
+                "envelope": "walled",
+                "floors": [
+                  1,
+                  1
+                ],
+                "level_height_m": 2.8,
+                "rooms_per_body": [
+                  1,
+                  1
+                ],
+                "vertical_access": "none",
+                "vertical_routes": [],
+                "support": {
+                  "kind": "ground",
+                  "material": null,
+                  "height_m": [
+                    0,
+                    0
+                  ]
+                },
+                "level_materials": [],
+                "wall_thickness_m": [
+                  0.25,
+                  0.45
+                ],
+                "courtyard_ratio": [
+                  0.35,
+                  0.55
+                ]
               }
             ],
-            "notes": [],
+            "notes": [
+              "Une à deux annexes de réserve à l’arrière : quantité et dimensions stylisées, niveau de 2,8 m et petit débord de chaume ; aucun logement supplémentaire."
+            ],
             "enclosure_family": "none",
             "envelope": "walled",
             "support": {
@@ -87571,7 +87762,9 @@
             ]
           }
         ],
-        "notes": [],
+        "notes": [
+          "Plan de barque représenté par une ellipse native très allongée aux extrémités arrondies ; abstraction stylisée vérifiée sur la géométrie réelle."
+        ],
         "enclosure_family": "none",
         "envelope": "walled",
         "support": {

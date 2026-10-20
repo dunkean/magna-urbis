@@ -1,0 +1,13 @@
+.recipe-actions { display: inline-flex; flex-wrap: wrap; gap: 5px; align-items: center; }
+.recipe-actions button { width: auto; flex: 0 0 auto; padding: 2px 6px; }
+.shell-header > .recipe-actions button { padding: 7px 10px; border: 1px solid #ffffff35; border-radius: 3px; background: transparent; color: inherit; cursor: pointer; font: 11px system-ui, sans-serif; }
+.recipe-dialog { box-sizing: border-box; width: min(720px, 94vw); max-height: 85vh; padding: 18px; border: 1px solid #9c998c; border-radius: 8px; background: #faf8f1; color: #252b25; box-shadow: 0 12px 60px #0005; }
+.recipe-dialog::backdrop { background: #15201980; }
+.recipe-dialog form { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+.recipe-dialog .recipe-close { margin-left: auto; }
+.recipe-dialog textarea { box-sizing: border-box; display: block; width: 100%; height: 200px; resize: vertical; font: 12px/1.5 monospace; padding: 10px; overflow-wrap: anywhere; background: white; color: #252b25; border: 1px solid #9c998c; }
+.recipe-dialog p { font: 13px/1.5 system-ui, sans-serif; }
+.recipe-dialog button { cursor: pointer; padding: 5px 9px; }
+.recipe-dialog .recipe-file { display: inline-flex; align-items: center; gap: 6px; font: 13px system-ui, sans-serif; }
+.recipe-dialog .recipe-file input { width: auto; max-width: 240px; }
+.recipe-dialog [hidden] { display: none; }

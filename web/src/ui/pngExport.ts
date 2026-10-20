@@ -27,8 +27,10 @@ export interface PngExportDeps {
 }
 
 /** Preserve native SVG rasterization on the page, then encode its Canvas snapshot in a fresh worker. */
-export async function exportPng(blob: Blob, width: number, progress: (phase: PngPhase) => void, deps: PngExportDeps = {}): Promise<Blob> {
-  if (!Number.isSafeInteger(width) || width <= 0) throw new Error('invalid PNG dimensions');
+export async function exportPng(blob: Blob, size: number | { width: number; height: number }, progress: (phase: PngPhase) => void, deps: PngExportDeps = {}): Promise<Blob> {
+  const width = typeof size === 'number' ? size : size.width;
+  const height = typeof size === 'number' ? size : size.height;
+  if (!Number.isSafeInteger(width) || width <= 0 || !Number.isSafeInteger(height) || height <= 0) throw new Error('invalid PNG dimensions');
   let worker: Worker | undefined;
   let canvas: HTMLCanvasElement | undefined;
   let workerFailed = false;
@@ -47,7 +49,7 @@ export async function exportPng(blob: Blob, width: number, progress: (phase: Png
     progress('decode');
     const image = await (deps.decode ?? decodeSvg)(blob);
     canvas = (deps.canvas ?? (() => document.createElement('canvas')))();
-    canvas.width = width; canvas.height = width;
+    canvas.width = width; canvas.height = height;
     const c = canvas.getContext('2d');
     if (!c) throw new Error('no PNG canvas context');
     const yieldPage = deps.yield ?? (() => new Promise<void>((resolve) => setTimeout(resolve, 0)));
@@ -55,7 +57,7 @@ export async function exportPng(blob: Blob, width: number, progress: (phase: Png
     await yieldPage();
     // A whole native draw preserves historical text antialiasing; SVG Image bitmaps and clipped strips differ.
     // This native draw and its snapshot remain on the page, and very large SVGs can still pause it.
-    c.drawImage(image, 0, 0, width, width);
+    c.drawImage(image, 0, 0, width, height);
     if (worker && !workerFailed) {
       let bitmap: ImageBitmap | undefined;
       try {
@@ -72,7 +74,7 @@ export async function exportPng(blob: Blob, width: number, progress: (phase: Png
             if (e.data.type === 'progress' && e.data.phase === 'encode') progress('encode');
             if (e.data.type === 'done') { clearTimeout(timeout); if (e.data.blob) resolve(e.data.blob); else reject(new Error(e.data.error ?? 'PNG encoding failed')); }
           };
-          try { active.postMessage({ bitmap, width }, [bitmap!]); }
+          try { active.postMessage({ bitmap, width, height }, [bitmap!]); }
           catch (e) { clearTimeout(timeout); reject(e); }
         });
       } catch {

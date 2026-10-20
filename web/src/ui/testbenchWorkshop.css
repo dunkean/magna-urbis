@@ -1,0 +1,64 @@
+.urban-workshop { --paper:#f3efdf; --ink:#323b33; --muted:#717466; --line:#d3cfbe; --green:#344c3e; --accent:#b99b57; height:100dvh; display:flex; flex-direction:column; background:var(--paper); color:var(--ink); font:12px system-ui,sans-serif; overflow:hidden; }
+.urban-workshop .workshop-masthead { display:flex; align-items:center; flex:none; min-height:76px; gap:26px; padding:12px 25px; border-bottom:1px solid var(--line); background:#f7f3e7; }
+.urban-workshop .workshop-wordmark { padding-right:25px; border-right:1px solid var(--line); color:var(--green); font:bold 12px Georgia,serif; letter-spacing:.15em; }
+.urban-workshop .workshop-wordmark span { display:block; font:8px system-ui,sans-serif; margin-top:6px; color:var(--muted); letter-spacing:.2em; }
+.urban-workshop .workshop-masthead small { font-size:8px; letter-spacing:.17em; color:var(--muted); }
+.urban-workshop h1 { font:normal 25px Georgia,serif; margin:4px 0 0; }
+.urban-workshop .workshop-engine { margin-left:auto; padding:6px 9px; border:1px solid var(--line); font-size:9px; letter-spacing:.13em; color:var(--green); white-space:nowrap; }
+.urban-workshop .workshop-layout { display:grid; grid-template-columns:330px minmax(0,1fr); flex:1; min-height:0; }
+.urban-workshop .workshop-controls { overflow:auto; padding:14px; border-right:1px solid var(--line); background:#f7f3e7; }
+.urban-workshop .workshop-primary-controls { display:flex; flex-direction:column; gap:8px; margin-bottom:14px; }
+.urban-workshop .workshop-primary-controls label { justify-content:space-between; font-size:11px; }
+.urban-workshop .workshop-primary-controls select { max-width:190px; }
+.urban-workshop .workshop-context { border-top:1px solid var(--line); border-bottom:1px solid var(--line); padding:10px 0; margin-bottom:18px; }
+.urban-workshop .workshop-context > summary { color:var(--muted); font-size:11px; }
+.urban-workshop .workshop-context[open] > summary { margin-bottom:12px; }
+.urban-workshop header { padding:0 0 14px; border:0; gap:7px; background:transparent; }
+.urban-workshop header > strong { font:normal 18px Georgia,serif; width:100%; margin-bottom:6px; }
+.urban-workshop header > label { width:100%; justify-content:space-between; font-size:11px; }
+.urban-workshop header > label select { max-width:180px; }
+.urban-workshop input,.urban-workshop select,.urban-workshop button { border:1px solid #c3c6b5; border-radius:3px; background:#fffdf7; color:var(--ink); font:11px system-ui,sans-serif; padding:5px 7px; min-height:27px; }
+.urban-workshop input[type=checkbox] { accent-color:var(--green); min-height:0; }
+.urban-workshop button { color:var(--green); }
+.urban-workshop button:hover { border-color:#75866b; background:#edf0e2; }
+.urban-workshop button[aria-pressed=true] { background:var(--green); color:#fffdf0; border-color:var(--green); }
+.urban-workshop button:disabled { opacity:.45; cursor:default; }
+.urban-workshop :is(button,input,select,summary):focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+.urban-workshop #stages { display:flex; flex-direction:column; padding:0; gap:18px; }
+.urban-workshop fieldset { border:1px solid var(--line); border-radius:3px; padding:12px 10px; gap:9px; background:#fffdf333; }
+.urban-workshop legend { color:var(--green); font:normal 17px Georgia,serif; padding:0 4px; }
+.urban-workshop fieldset label { font-size:11px; gap:8px; }
+.urban-workshop fieldset select { width:58%; }
+.urban-workshop .select-stepper { width:58%; }
+.urban-workshop .select-stepper select { width:0; }
+.urban-workshop .select-stepper button { padding:4px 6px; }
+.urban-workshop small { font-size:10px; color:var(--muted); line-height:1.6; }
+.urban-workshop :is(.operator-settings,.culture-settings) { border-color:var(--line); }
+.urban-workshop :is(#layout,#parcels,#houses) { background:var(--green); color:#fffdf0; border-color:var(--green); }
+.urban-workshop #advanced { margin:18px 0 10px; padding:10px; border-color:var(--line); }
+.urban-workshop #reproduction { margin:10px 0 0; }
+.urban-workshop #pipeline { display:block; margin:10px 0 0; font-size:10px; }
+.urban-workshop textarea { font-size:11px; background:#fffdf7; color:var(--ink); border:1px solid var(--line); }
+.urban-workshop .workshop-preview { min-width:0; min-height:0; display:flex; flex-direction:column; }
+.urban-workshop #status { flex:none; padding:10px 14px; font-size:11px; border-bottom:1px solid var(--line); background:#f7f3e7; min-height:36px; }
+.urban-workshop main { flex:1; height:auto; min-height:0; }
+.urban-workshop #map { background:#e9e4d5; }
+.urban-workshop main > aside { width:210px; padding:14px; border-color:var(--line); background:#f7f3e7; }
+.urban-workshop aside h3 { font:normal 18px Georgia,serif; margin:10px 0 15px; }
+.urban-workshop .culture-variants td,.urban-workshop .culture-variants th { border-color:var(--line); }
+@media(max-width:1050px) { .urban-workshop main > aside { width:170px; } .urban-workshop .workshop-layout { grid-template-columns:300px minmax(0,1fr); } }
+@media(max-width:750px) { .urban-workshop { height:auto; overflow:auto; } .urban-workshop .workshop-layout { display:flex; flex-direction:column; } .urban-workshop .workshop-controls { order:2; border-right:0; border-top:1px solid var(--line); } .urban-workshop .workshop-masthead { gap:12px; padding:12px 15px; } .urban-workshop .workshop-wordmark { display:none; } .urban-workshop h1 { font-size:23px; } .urban-workshop main { min-height:440px; } .urban-workshop main > aside { width:100%; } .urban-workshop #map { min-height:360px; height:55vh; } }
+
+/* The embedded editor uses the same compact scale as the map controls. */
+.urban-workshop .workshop-masthead { min-height:32px; padding:4px 10px; gap:8px; }
+.urban-workshop .workshop-wordmark, .urban-workshop .workshop-masthead small { display:none; }
+.urban-workshop h1 { font:600 12px system-ui,sans-serif; margin:0; }
+.urban-workshop .workshop-engine { padding:3px 5px; font-size:9px; }
+.urban-workshop .workshop-layout { grid-template-columns:300px minmax(0,1fr); }
+.urban-workshop .workshop-controls { padding:6px 6px 155px; }
+.urban-workshop .workshop-primary-controls { gap:4px; margin-bottom:6px; }
+.urban-workshop .workshop-context { padding:5px 0; margin-bottom:6px; }
+.urban-workshop #stages { gap:6px; }
+.urban-workshop fieldset { padding:6px; gap:4px; }
+.urban-workshop legend { font:600 11px system-ui,sans-serif; }
+.urban-workshop input,.urban-workshop select,.urban-workshop button { padding:2px 5px; min-height:23px; }

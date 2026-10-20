@@ -527,6 +527,15 @@ BATCH_DIMENSION_DEFAULTS = {
 
 def complete_parameters(identifier, data, role):
     apply_parameters(data, BATCH_DIMENSION_DEFAULTS.get(identifier, {}))
+    if identifier in {'AF-NILE-B04', 'AF-MAG-B08'}:
+        dimensions = [14, 18] if identifier == 'AF-NILE-B04' else [22, 28]
+        data.update(layout='hut_compound', footprint_family='FP-CLUSTER-ROUND',
+                    bodies=[3, 5], floors=[1, 1], rooms_per_body=[1, 1],
+                    width_m=dimensions, depth_m=dimensions)
+    if identifier == 'EUR-MED-B04':
+        data['overhang_m'] = [0, 0]
+        if 'front_porch' not in data['details']:
+            data['details'].append('front_porch')
     # Remove inherited specifics not justified by either primary source.
     unsupported = {
         'AS-JAP-B01': ['wood_floor', 'earth_floor_kitchen'],
@@ -594,6 +603,8 @@ def complete_parameters(identifier, data, role):
     # Auxiliary cover dimensions are stylized construction defaults, exported
     # for inspection rather than inferred from cultural identifiers at runtime.
     data['gallery_cover'] = gallery_defaults(data)
+    if identifier in {'AS-JAP-B01', 'EUR-MED-B04'}:
+        data['gallery_cover']['facade_mode'] = 'residential' if identifier == 'AS-JAP-B01' else 'wall_bearing'
     if identifier == 'AF-SAHEL-B05':
         data['gallery_cover'].update(enabled=True, pitch_deg=10.0)
         data['gallery_cover']['spec']['parapet_height_m'] = 0.0
@@ -652,6 +663,8 @@ def complete_parameters(identifier, data, role):
         data['enclosure_family'] = 'none'
     if data['layout'] == 'hut_compound':
         data['enclosure_family'] = 'thorn_fence' if data['structure_system'] != 'earth_wall' else 'earth_wall'
+    if identifier in {'AF-NILE-B04', 'AF-MAG-B08'}:
+        data['enclosure_family'] = 'none'
     if data['elevation_family'] == 'stilt':
         data['support'] = dict(kind='posts', material='MAT-RAISED-POST', height_m=[1.2, 2.5])
         data['materials']['base'] = ''
@@ -759,6 +772,14 @@ def complete_parameters(identifier, data, role):
         data['notes'].append('Quatre cornes sur trois selles longitudinales : dimensions stylisées, axe du bras natif long et profondeur minimale 19,2 m = 1,2 × largeur maximale ; débord à plateau aux pointes, sans mesure archéologique.')
     if identifier == 'AF-NILE-B04':
         data['notes'].append('Le cylindre reçoit le dôme; une voûte en berceau longitudinale ne correspond pas à son plan rond.')
+    if identifier in {'AF-NILE-B04', 'AF-MAG-B08'}:
+        data['notes'].append('Trois à cinq réserves groupées autour d’un vide commun : quantité et dimensions stylisées, rôle annexe Storage et même propriétaire, sans foyer ni clôture inventée.')
+    if identifier == 'AS-JAP-B01':
+        data['notes'].append('Une à deux annexes de réserve à l’arrière : quantité et dimensions stylisées, niveau de 2,8 m et petit débord de chaume ; aucun logement supplémentaire.')
+    if identifier == 'EUR-MED-B04':
+        data['notes'].append('Appentis RF-SHED joint au mur, rive haute portée par les murs réels et rive basse par poteaux ; débord principal nul et dimensions stylisées, tuile ou lauze du bundle conservée.')
+    if identifier == 'OC-PAC-B10':
+        data['notes'].append('Plan de barque représenté par une ellipse native très allongée aux extrémités arrondies ; abstraction stylisée vérifiée sur la géométrie réelle.')
     if identifier == 'AM-MESO-B07':
         data['notes'].append('Voûtes sous terrasse : un niveau de 4,6 m et murs de 1,5–1,6 m sont des mesures stylisées compatibles avec les appuis, non des dimensions archéologiques.')
     if identifier == 'AS-MIDE-B09':
@@ -787,6 +808,16 @@ def complete_parameters(identifier, data, role):
                                    vertical_access=data['vertical_access'], vertical_routes=copy.deepcopy(data['vertical_routes']),
                                    support=copy.deepcopy(data['support']), level_materials=copy.deepcopy(data['level_materials']),
                                    wall_thickness_m=data['wall_thickness_m'], courtyard_ratio=data['courtyard_ratio'])]
+    if identifier == 'AS-JAP-B01':
+        data['components'][0]['id'] = 'main_house'
+        annex = component('rear_annexes', 'farm', role='domestic_annex', count=(1, 2),
+                          placement='rear', size=(0.4, 0.6), depth_size=(0.4, 0.6),
+                          footprint_family='FP-RECT', floors=[1, 1], rooms_per_body=[1, 1],
+                          roof_system='RF-REED-HIP', overhang_m=[0.1, 0.15],
+                          materials=copy.deepcopy(data['materials']),
+                          structure_system=data['structure_system'])
+        annex['level_height_m'] = 2.8
+        data['components'].append(annex)
     data['allowed_roofs'] = [] if data['roof_system'] == 'uncovered' else [data['roof_system']]
     data['allowed_footprints'] = [data['footprint_family']]
     data['portal_profile'] = portal_defaults(identifier, data)
@@ -954,6 +985,8 @@ def variants_for(identifier, parameters, role):
         data['variant_id'] = key
         data['roof_spec'] = roof_spec(data['roof_system'], data['details'])
         data['gallery_cover'] = gallery_defaults(data)
+        if identifier in {'AS-JAP-B01', 'EUR-MED-B04'}:
+            data['gallery_cover']['facade_mode'] = 'residential' if identifier == 'AS-JAP-B01' else 'wall_bearing'
         if identifier == 'AF-SAHEL-B05':
             data['gallery_cover'].update(enabled=True, pitch_deg=10.0)
             data['gallery_cover']['spec']['parapet_height_m'] = 0.0
@@ -974,7 +1007,7 @@ def variants_for(identifier, parameters, role):
         data['allowed_footprints'] = [data['footprint_family']]
         # Main components mirror their resolved bundle. Specialized components
         # keep their independently specified roofing and materials.
-        if len(data['components']) == 1 and data['components'][0]['id'] == 'main':
+        if (len(data['components']) == 1 and data['components'][0]['id'] == 'main') or identifier == 'AS-JAP-B01':
             part = data['components'][0]
             for field in ['footprint_family', 'roof_system', 'roof_spec', 'roof_pitch_deg', 'overhang_m', 'materials', 'structure_system', 'floors', 'level_height_m', 'rooms_per_body', 'envelope', 'vertical_access', 'level_materials', 'wall_thickness_m', 'support', 'vertical_routes']:
                 part[field] = copy.deepcopy(data[field])

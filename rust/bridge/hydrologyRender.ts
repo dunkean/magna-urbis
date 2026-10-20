@@ -1,5 +1,6 @@
 import { encodePng, pngDataUrl } from '../../web/src/render/raster';
 import { PALETTES } from '../../web/src/render/styles';
+import { lakeMaterialSvg, RENDER_WATER_SHORE } from '../../web/src/render/terrainWater';
 import type { HydrologyData, HydrologyOverlay } from './hydrology';
 import type { TerrainStyle } from './terrainRender';
 
@@ -99,9 +100,17 @@ function diagnosticImage(data: HydrologyData, overlay: HydrologyOverlay): string
 
 /** Water colour of a display style, shared by lakes and rivers. */
 export function hydrologyWaterColour(style: TerrainStyle): string {
+  if (style === 'render') return RENDER_WATER_SHORE;
   if (style === 'fantasy-ink') return '#666968';
   if (style === 'fantasy-color') return '#648f99';
-  return style === 'copernicus' || style === 'render' ? '#14527a' : PALETTES[style].waterEdge;
+  return style === 'copernicus' ? '#14527a' : PALETTES[style].waterEdge;
+}
+
+/** Shared lake material for live rendering and retained terrain exports. */
+export function hydrologyLakeMaterial(data: HydrologyData): string {
+  let lakes = '';
+  for (let i = 0; i < data.lakeOffsets.length - 1; i++) lakes += ring(data.lakePoints, data.lakeOffsets[i], data.lakeOffsets[i + 1]);
+  return lakes ? lakeMaterialSvg(data.waterField, data.resolution, data.width, lakes, 'hydrology-lake-material') : '';
 }
 
 /** River capsules for the GPU renderer: x0, y0, x1, y1, widths (m) at both ends, r, g, b. */
@@ -125,7 +134,7 @@ export function renderHydrology(data: HydrologyData, overlay: HydrologyOverlay, 
   if (showWater) {
     let lakes = '';
     for (let i = 0; i < data.lakeOffsets.length - 1; i++) lakes += ring(data.lakePoints, data.lakeOffsets[i], data.lakeOffsets[i + 1]);
-    svg += `<defs><clipPath id="hydrology-map-clip"><rect width="${data.width}" height="${data.width}"/></clipPath></defs><g class="hydrology-water" clip-path="url(#hydrology-map-clip)" fill="${waterFill}"><path d="${lakes}" fill-rule="evenodd" stroke="${waterFill}" stroke-width="0.35" vector-effect="non-scaling-stroke"/>`;
+    svg += `<defs><clipPath id="hydrology-map-clip"><rect width="${data.width}" height="${data.width}"/></clipPath></defs><g class="hydrology-water" clip-path="url(#hydrology-map-clip)" fill="${waterFill}"><path class="water-lakes" d="${lakes}" fill-rule="evenodd" stroke="${waterFill}" stroke-width="0.35" vector-effect="non-scaling-stroke"/>`;
     const junctionWidths = new Float32Array(data.nodePoints.length / 2);
     for (let i = 0; i < data.riverCount; i++) svg += `<path d="${riverBank(data.riverPoints, data.riverOffsets[i], data.riverOffsets[i + 1])}" stroke="none"/>`;
     for (let i = 0; i < data.riverCount; i++) {
@@ -140,6 +149,7 @@ export function renderHydrology(data: HydrologyData, overlay: HydrologyOverlay, 
     for (let i = 0; i < junctionWidths.length; i++) if (data.nodeMeta[i * 3 + 2] === 1 && junctionWidths[i]) {
       svg += `<circle cx="${format(data.nodePoints[i * 2])}" cy="${format(data.nodePoints[i * 2 + 1])}" r="${format(junctionWidths[i] / 2)}"/>`;
     }
+    if (style === 'render' && lakes) svg += hydrologyLakeMaterial(data);
     svg += '</g>';
   }
   if (overlay === 'flow' || overlay === 'raw-flow') {

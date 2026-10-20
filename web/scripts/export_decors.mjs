@@ -125,7 +125,7 @@ for (let i = from; i < from + count; i++) {
   for (let attempt = 0; attempt < 4; attempt++) {
   const v = variation(i, attempt), start = Date.now();
   try {
-    await page.goto(`${base}/terrainbench.html?${v.query}`);
+    await page.goto(`${base}/terrainbench.html?${v.query}&pipeline=legacy`);
     // Ready twice in a row: placement answered and roads routed for the latest request.
     let stable = 0;
     while (stable < 2) {

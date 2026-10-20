@@ -53,8 +53,14 @@ describe('served urban footprint', () => {
   it('restores land use on the unbuilt p4uefz Japanese district without losing urban geometry', () => {
     const w = generate(makeOptions({ seed: 'p4uefz', size: 'city', culture: 'japanese-jokamachi', settlements: 'none' }));
     const u = w.urban!;
-    // The old coarse outline reserved 139,847 m² here although no quarter was built.
-    const released = rect(2320, 2340, 260, 200);
+    // Two served fringe quarters now intersect the historical abandoned district.
+    // Whole quarters stay protected; the remaining land must return to rural use.
+    const district = rect(2320, 2340, 260, 200);
+    const quarters = unionMany(u.quarters.map((q) => q.poly));
+    expect(u.quarters.filter((q) => mpArea(intersectionS(q.poly, district)) > 0.01)).toHaveLength(2);
+    expect(mpArea(intersectionS(quarters, district))).toBeGreaterThan(0);
+    const released = differenceS(district, quarters);
+    expect(mpArea(released)).toBeGreaterThan(30000);
     expect(mpArea(intersectionS(u.footprintH, released))).toBeLessThan(500);
     const rural = unionMany(w.landuse!.areas.map((a) => ({ outer: a.poly, holes: a.holes ?? [] })));
     expect(mpArea(intersectionS(rural, released))).toBeGreaterThan(30000);

@@ -4,6 +4,7 @@ export interface FootprintConfig {
   mechanism: 'auto' | 'legacy' | 'planned' | 'accessibility' | 'ribbon' | 'fusion';
   family: 'auto' | 'circle' | 'rectangle' | 'polygon' | 'compact' | 'elongated' | 'linear' | 'fan' | 'fingers' | 'dendritic' | 'lobed' | 'archipelago' | 'composite';
   budget: 'population' | 'radius'; grossDensity: number; aspect: number; orientation: number; nuclei: number; irregularity: number; anisotropy: number; separation: number; epochs: number;
+  cohesion: number; satellites: number; branchDepth: number; gapSize: number;
 }
 export interface LayoutConfig extends Omit<ParcelConfig, 'operator'> {
   axisAlignment: 'regional' | 'culture'; mixCulture: string; mixMode: 'phases' | 'sectors'; mixShare: number; mixAngle: number; exitTreatment: 'legacy' | 'adaptive' | 'closed'; peripheralRoad: 'auto' | 'none' | 'partial' | 'full'; siteAdaptation: number;
@@ -12,7 +13,7 @@ export interface LayoutConfig extends Omit<ParcelConfig, 'operator'> {
   fortification: 'culture' | 'none' | 'wall' | 'palisade'; maxStreetGrade: number; maxLaneGrade: number; maxStairGrade: number; allowStairs: boolean;
   footprint: FootprintConfig; tissue: 'culture' | 'grid' | 'organic' | 'radial' | 'terraces' | 'dendritic' | 'clusters'; accessMode: 'adaptive' | 'cultural' | 'none'; accessDepth: number; accessBudget: number;
 }
-export const defaultFootprintConfig = (): FootprintConfig => ({ mechanism: 'auto', family: 'auto', budget: 'population', grossDensity: 0, aspect: 1.4, orientation: 0, nuclei: 3, irregularity: 0.2, anisotropy: 0.65, separation: 1.3, epochs: 3 });
+export const defaultFootprintConfig = (): FootprintConfig => ({ mechanism: 'auto', family: 'auto', budget: 'population', grossDensity: 0, aspect: 1.4, orientation: 0, nuclei: 3, irregularity: 0.2, anisotropy: 0.65, separation: 1.3, epochs: 3, cohesion: 0.85, satellites: 0.15, branchDepth: 0.2, gapSize: 60 });
 export const defaultLayoutConfig = (): LayoutConfig => ({ axisAlignment: 'regional', mixCulture: '', mixMode: 'phases', mixShare: 0.5, mixAngle: 0, exitTreatment: 'adaptive', peripheralRoad: 'auto', siteAdaptation: 1, composition: 'settlement', settlementForm: 'auto', suburbs: 'auto', phases: 0, preset: 'culture', culture: 'site', recipe: 'auto', zone: 'auto', density: 1, count: 4, rings: 1, radius: 0, radiusScale: 1, placement: 'center', params: {}, monument: 'none', fortification: 'culture', maxStreetGrade: 0.12, maxLaneGrade: 0.18, maxStairGrade: 0.65, allowStairs: true, footprint: defaultFootprintConfig(), tissue: 'culture', accessMode: 'adaptive', accessDepth: 0, accessBudget: 4 });
 export const defaultParcelConfig = (): ParcelConfig => ({ preset: 'culture', culture: 'site', recipe: 'auto', zone: 'auto', density: 1, params: {}, operator: 'culture' });
 
@@ -28,6 +29,12 @@ export function normalizeLayoutConfig(saved?: Partial<Omit<LayoutConfig, 'footpr
   const defaults = defaultLayoutConfig();
   const config = contractFields(defaults, saved as Partial<LayoutConfig>);
   config.footprint = contractFields(defaults.footprint, saved?.footprint);
+  // Missing controls in an existing scene retain the former geometry.
+  if (saved) {
+    config.footprint.cohesion = saved.footprint?.cohesion ?? 1;
+    config.footprint.satellites = saved.footprint?.satellites ?? 0;
+    config.footprint.branchDepth = saved.footprint?.branchDepth ?? 0;
+  }
   // Old planned links follow the selected form without imposing a geometric outline on organic towns.
   if (config.footprint.mechanism === 'planned') config.footprint.mechanism = 'auto';
   config.params = { ...saved?.params };

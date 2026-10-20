@@ -29,6 +29,7 @@ target.search = new URLSearchParams({ width: '16000', motif: '3000', relief: 'fl
 const spec = { key: 'main', population: 3000, name: '', culture: 'european-organic', kind: 'settlement', siteType: 'auto', sitePrefs: {} };
 target.searchParams.set('settlements', JSON.stringify({ config: { mode: 'counts', main: spec, counts: { village: 2, hamlet: 2, farmstead: 2 } } }));
 target.searchParams.set('roads', JSON.stringify({ config: { exits: 2, level: 'developed' } }));
+target.searchParams.set('pipeline', 'legacy');
 async function settled() {
   await page.waitForSelector('#setStatus');
   await page.waitForFunction(() => document.getElementById('status').dataset.error === 'true'

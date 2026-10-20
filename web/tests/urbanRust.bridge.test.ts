@@ -39,6 +39,14 @@ describe('Rust urban configuration and framing boundary', () => {
     expect(defaultLayoutConfig().footprint.nuclei).toBe(3);
   });
 
+  it('preserves old growth while new scenes start with restrained dispersion', () => {
+    const old = normalizeLayoutConfig({ footprint: { family: 'archipelago' } }, true);
+    expect(old.footprint).toMatchObject({ cohesion: 1, satellites: 0, branchDepth: 0, gapSize: 60 });
+    expect(normalizeLayoutConfig().footprint).toMatchObject({ cohesion: 0.85, satellites: 0.15, branchDepth: 0.2 });
+    const saved = { footprint: { cohesion: 0, satellites: 0.6, branchDepth: 0.8, gapSize: 120 } };
+    expect(normalizeLayoutConfig(JSON.parse(JSON.stringify(saved)), true).footprint).toMatchObject(saved.footprint);
+  });
+
   it('repairs a saved modern Urban Bench link without passing parcel-only or unknown fields to Rust', () => {
     const saved = { ...defaultLayoutConfig(), culture: 'russian-kremlin', zone: 'village', count: 7,
       operator: 'culture', unknownLayoutOption: true, footprint: { ...defaultLayoutConfig().footprint, unknownFootprintOption: 3 }, params: { fieldNoise: 0 } };

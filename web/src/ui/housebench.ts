@@ -1,4 +1,5 @@
 import './housebench.css';
+import { installRecipeSharing, portableRecipe } from './recipeSharing';
 import HouseWorker from './houseWorker?worker&inline';
 import { callHouses, compileHousesModule, defaultHouseConfig, decodeHouseReplay, encodeHouseReplay, parseHouseBatch, parseHouseCatalogue, parseHouseEnvelope, ROLE_LABELS, validateHouseConfig, wellFormedSeed, type CatalogueBundle, type HouseBatch, type HouseConfig, type HouseRequest, type HouseResponse, type HouseUnit, type HouseView, type Preflight, type Point } from '../../../rust/bridge/houses';
 import { commonHouseExtent, renderHouseSheet, renderHouseSvg, surfaceArea, unitBounds, xml } from '../../../rust/bridge/houseRender';
@@ -328,8 +329,10 @@ function recipeInfo(unit: HouseUnit): string {
   const preset = workshopPresets().find(preset => preset.id === unit.recipe_id);
   const slots = unit.bodies[0]?.levels[0]?.materials;
   const materialName = (id: string) => id === '' ? 'Aucun matériau' : bundle?.catalogue.materials.find(material => material.id === id)?.label ?? id;
+  const roofSystems = [...new Set([...unit.bodies.map(body => body.roof_system), ...unit.roofs.groups.filter(group => group.feature_id).map(group => group.rf)])];
+  const roofName = (id: string) => { const label = bundle?.inventory.entries.find(entry => entry.id === id)?.label; return label ? `${label} (${id})` : id; };
   const context = recipe ? `<h3>Contexte</h3><p>${xml(recipe.subtradition || recipe.context_note)}</p><p>${xml(recipe.chronology_note)} ${recipe.temporal.late_only ? 'Profil caractéristique postérieur à 1500.' : ''}</p><div class="source-note"><strong>Confiance de la recette : ${xml(recipe.confidence)}</strong>${variant ? `<br/>Bundle ${xml(variant.label)} : ${xml(variant.confidence)}` : ''}<br/>Toit : ${xml(recipe.roof_confidence)} · chronologie : ${xml(recipe.chronology_confidence)}<p>${recipe.source_description.map(description => xml(description)).join('<br/>')}</p><small>${recipe.sources.map(source => `${xml(source.path)}:${source.line}`).join('<br/>')}</small></div>` : `<h3>Atelier libre</h3><p>${xml(preset?.label ?? unit.label)}</p><p>${xml(preset?.description ?? 'Primitive paramétrique sans recette culturelle.')}</p><div class="source-note"><strong>Confiance : ${xml(preset?.confidence ?? 'non renseignée')}</strong><p>Origine : preset libre du moteur. Aucune chronologie ou provenance archéologique attribuée.</p></div>`;
-  return `<h3>Forme et métriques</h3><dl><dt>${recipe ? 'Recette' : 'Preset'}</dt><dd>${xml(unit.recipe_id)}</dd><dt>Variante</dt><dd>${xml(unit.variant_id)}</dd><dt>Rôle</dt><dd>${xml(ROLE_LABELS[unit.role])}</dd><dt>Corps / pièces</dt><dd>${unit.bodies.length} / ${unit.rooms.length}</dd><dt>Emprise occupée</dt><dd>${surfaceArea(unit.partition.occupied).toFixed(1)} m²</dd><dt>Cours ouvertes</dt><dd>${surfaceArea(unit.partition.courtyards).toFixed(1)} m²</dd><dt>Niveaux</dt><dd>${unit.levels.length}</dd><dt>Toitures</dt><dd>${xml([...new Set(unit.bodies.map(body => body.roof_system))].join(', '))}</dd></dl>${slots ? `<h3>Construction du corps principal</h3><dl><dt>Structure</dt><dd>${xml(materialName(slots.frame))}</dd><dt>Remplissage</dt><dd>${xml(materialName(slots.infill))}</dd><dt>Enduit</dt><dd>${xml(materialName(slots.coating))}</dd><dt>Couverture</dt><dd>${xml(materialName(slots.cladding))}</dd><dt>Porteur du toit</dt><dd>${xml(materialName(slots.roof_frame))}</dd><dt>Base</dt><dd>${xml(materialName(slots.base))}</dd></dl>` : ''}${context}${unit.diagnostics.length ? `<h3>Diagnostics</h3><p>${unit.diagnostics.map(diagnostic => xml(diagnostic)).join('<br/>')}</p>` : ''}`;
+  return `<h3>Forme et métriques</h3><dl><dt>${recipe ? 'Recette' : 'Preset'}</dt><dd>${xml(unit.recipe_id)}</dd><dt>Variante</dt><dd>${xml(unit.variant_id)}</dd><dt>Rôle</dt><dd>${xml(ROLE_LABELS[unit.role])}</dd><dt>Corps / pièces</dt><dd>${unit.bodies.length} / ${unit.rooms.length}</dd><dt>Emprise occupée</dt><dd>${surfaceArea(unit.partition.occupied).toFixed(1)} m²</dd><dt>Cours ouvertes</dt><dd>${surfaceArea(unit.partition.courtyards).toFixed(1)} m²</dd><dt>Niveaux</dt><dd>${unit.levels.length}</dd><dt>Toitures</dt><dd>${xml(roofSystems.map(roofName).join(', '))}</dd></dl>${slots ? `<h3>Construction du corps principal</h3><dl><dt>Structure</dt><dd>${xml(materialName(slots.frame))}</dd><dt>Remplissage</dt><dd>${xml(materialName(slots.infill))}</dd><dt>Enduit</dt><dd>${xml(materialName(slots.coating))}</dd><dt>Couverture</dt><dd>${xml(materialName(slots.cladding))}</dd><dt>Porteur du toit</dt><dd>${xml(materialName(slots.roof_frame))}</dd><dt>Base</dt><dd>${xml(materialName(slots.base))}</dd></dl>` : ''}${context}${unit.diagnostics.length ? `<h3>Diagnostics</h3><p>${unit.diagnostics.map(diagnostic => xml(diagnostic)).join('<br/>')}</p>` : ''}`;
 }
 function openDetail(unit: HouseUnit): void {
   selected = unit; detailMode = view.mode; detailPan = {x: 0, y: 0}; input('detail-zoom').value = '1';
@@ -461,4 +464,25 @@ async function start(): Promise<void> {
     await generate(config);
   } catch (error) { showError(error); message('Moteur maisons indisponible. Lancez « npm run dev:houses » depuis web/.'); }
 }
+window.magnaBenchContext = {
+  ready: () => !!bundle && !busy,
+  capture: () => {
+    let config: HouseConfig | undefined;
+    try { config = readConfig(); } catch { /* Keep incomplete field values in the DOM snapshot. */ }
+    return { config, selected: selected?.id, detailMode, detailPan };
+  },
+  restore: saved => {
+    if (saved?.config) setConfig(saved.config);
+    const unit = batch?.units.find(unit => unit.id === saved?.selected);
+    if (unit) { openDetail(unit); detailMode = saved.detailMode; detailPan = saved.detailPan; }
+  },
+  refresh: () => { updateOutputs(); dirtyState(); if (selected) renderDetail(); },
+};
+installRecipeSharing({
+  host: button('copy-link').parentElement!, embedded: window.parent !== window,
+  capture: async () => {
+    if (!batch || busy || !updateReplay()) throw new Error('Générez un lot de maisons avant d’exporter.');
+    return portableRecipe('houses', new URL(location.href).searchParams.toString());
+  },
+});
 void start();

@@ -126,7 +126,18 @@ function uncovered(a: Point, b: Point, covered: Map<string, [number, number][]>)
  * Type-only imports keep this adapter usable without loading the Rust WASM engine.
  */
 export function outsideUrbanStreets(streets: Street[], layouts: Layout[]): Street[] {
+  return prepareUrbanRoadClip(layouts)(streets);
+}
+
+/** Prepare an immutable layout snapshot once for all regional roads and display styles.
+ * Each call retains its own duplicate coverage, including independent bridge artwork.
+ */
+export function prepareUrbanRoadClip(layouts: Layout[]): (streets: Street[]) => Street[] {
   const masks = urbanRoadOwnership(layouts).map(shape => ({ shape, bounds: bounds(shape.outer) }));
+  return streets => clipUrbanStreets(streets, masks);
+}
+
+function clipUrbanStreets(streets: Street[], masks: { shape: Shape; bounds: Bounds }[]): Street[] {
   const result: Street[] = [], covered = new Map<string, [number, number][]>();
   for (const street of streets) {
     let path: Point[] = [], widths: number[] = [];

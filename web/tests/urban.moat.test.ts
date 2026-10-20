@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import polygonClipping from 'polygon-clipping';
+import polygonClipping from '../src/vendor/polygonClipping';
 import { Resvg } from '@resvg/resvg-js';
 import { makeOptions, fromQuery, toQuery, applyOverride } from '../src/gen/options';
 import { generate } from '../src/gen/pipeline';

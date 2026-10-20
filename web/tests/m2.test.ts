@@ -19,12 +19,68 @@ const cases: Partial<Options>[] = [
   { seed: '11', size: 'town', relief: 'hills', coast: 'W', river: 'none' },
 ];
 const worlds: World[] = cases.map((c) => generate(makeOptions(c)));
+let chineseBridgeWorld: World | undefined;
+const chineseCrossings = (): World => chineseBridgeWorld ??= generate(makeOptions({
+  seed: 'p4uefz', size: 'city', culture: 'chinese', moat: 'no', settlements: 'none',
+}));
 
 const waterAt = (w: World, p: Vec2): number => {
   const g = w.terrain.height;
   const x = Math.min(g.w - 1, Math.max(0, Math.floor(p.x / g.cell))), y = Math.min(g.h - 1, Math.max(0, Math.floor(p.y / g.cell)));
   return w.terrain.water[y * g.w + x];
 };
+
+function checkRegionalWater(w: World): void {
+  for (const r of w.roads!) {
+    for (let i = 1; i < r.path.length; i++) {
+      const a = r.path[i - 1], b = r.path[i];
+      const m = Math.max(1, Math.ceil(dist(a, b) / 3));
+      for (let k = 0; k <= m; k++) {
+        const p = { x: a.x + ((b.x - a.x) * k) / m, y: a.y + ((b.y - a.y) * k) / m };
+        if (waterAt(w, p)) {
+          const onBridge = w.bridges!.some((br) => distToPolyline(p, [br.a, br.b]) < br.width + 2);
+          // fords are allowed on brooks only (local width < 3.7 m)
+          const ford = w.terrain.rivers.some((rv) => {
+            let best = Infinity, bw = 99;
+            for (let q = 1; q < rv.path.length; q++) {
+              const d = distToPolyline(p, [rv.path[q - 1], rv.path[q]]);
+              if (d < best) { best = d; bw = Math.max(rv.width[q - 1], rv.width[q]); }
+            }
+            return best < bw / 2 + w.terrain.height.cell && bw < 3.7;
+          });
+          expect(onBridge || ford, `wet road sample (${p.x}, ${p.y}) must be bridged or fordable`).toBe(true);
+        }
+      }
+    }
+  }
+}
+
+function checkBridgeBanks(w: World): number {
+  let urbanBanks = 0;
+  for (const br of w.bridges! as KindedBridge[]) {
+    if (!br.kind) {
+      expect(waterAt(w, br.a)).toBe(0);
+      expect(waterAt(w, br.b)).toBe(0);
+      continue;
+    }
+    // Urban decks join exact vector banks. A 5 m raster cell can still mark
+    // dry bank ground wet; extending the deck would detach its connecting streets.
+    const water = makeCtx(w, resolveMorph(undefined), w.mapSize).water;
+    const length = dist(br.a, br.b);
+    expect(length).toBeGreaterThan(0);
+    const dx = (br.b.x - br.a.x) / length, dy = (br.b.y - br.a.y) / length;
+    const streets = w.urban!.streets;
+    const own = streets.findIndex((s) => s.path.length === 2 && dist(s.path[0], br.a) < 1e-6 && dist(s.path[1], br.b) < 1e-6);
+    expect(own).toBeGreaterThanOrEqual(0);
+    for (const [p, sign] of [[br.a, -1], [br.b, 1]] as const) {
+      urbanBanks++;
+      if (waterContains(water, p)) expect(Math.min(...water.flatMap((ph) => [ph.outer, ...ph.holes]).map((ring) => distToRing(ring, p)))).toBeLessThan(1e-6);
+      expect(waterContains(water, { x: p.x + sign * dx * 0.05, y: p.y + sign * dy * 0.05 })).toBe(false);
+      expect(streets.some((s, i) => i !== own && s.path.some((q, j) => j > 0 && distToSeg(p, s.path[j - 1], q) < 0.05))).toBe(true);
+    }
+  }
+  return urbanBanks;
+}
 
 describe('M2 determinism', () => {
   it('site, roads and land use are reproducible', () => {
@@ -86,59 +142,30 @@ describe('regional roads', () => {
   });
 
   it('never runs through water except on bridges', () => {
-    let urbanBanks = 0;
     for (const w of worlds) {
-      for (const r of w.roads!) {
-        for (let i = 1; i < r.path.length; i++) {
-          const a = r.path[i - 1], b = r.path[i];
-          const m = Math.max(1, Math.ceil(dist(a, b) / 3));
-          for (let k = 0; k <= m; k++) {
-            const p = { x: a.x + ((b.x - a.x) * k) / m, y: a.y + ((b.y - a.y) * k) / m };
-            if (waterAt(w, p)) {
-              const onBridge = w.bridges!.some((br) => distToPolyline(p, [br.a, br.b]) < br.width + 2);
-              // fords are allowed on brooks only (local width < 3.7 m)
-              const ford = w.terrain.rivers.some((rv) => {
-                let best = Infinity, bw = 99;
-                for (let q = 1; q < rv.path.length; q++) {
-                  const d = distToPolyline(p, [rv.path[q - 1], rv.path[q]]);
-                  if (d < best) { best = d; bw = Math.max(rv.width[q - 1], rv.width[q]); }
-                }
-                return best < bw / 2 + w.terrain.height.cell && bw < 3.7;
-              });
-              expect(onBridge || ford).toBe(true);
-            }
-          }
-        }
-      }
-      for (const br of w.bridges! as KindedBridge[]) {
-        if (!br.kind) {
-          expect(waterAt(w, br.a)).toBe(0);
-          expect(waterAt(w, br.b)).toBe(0);
-          continue;
-        }
-        // Urban decks join the exact partition banks. A 5m raster cell can still mark dry bank ground wet
-        // (seed11 below); extending the deck to the cell edge would detach it from its connecting streets.
-        const water = makeCtx(w, resolveMorph(undefined), w.mapSize).water;
-        const length = dist(br.a, br.b);
-        expect(length).toBeGreaterThan(0);
-        const dx = (br.b.x - br.a.x) / length, dy = (br.b.y - br.a.y) / length;
-        const streets = w.urban!.streets;
-        const own = streets.findIndex((s) => s.path.length === 2 && dist(s.path[0], br.a) < 1e-6 && dist(s.path[1], br.b) < 1e-6);
-        expect(own).toBeGreaterThanOrEqual(0);
-        for (const [p, sign] of [[br.a, -1], [br.b, 1]] as const) {
-          urbanBanks++;
-          if (waterContains(water, p)) expect(Math.min(...water.flatMap((ph) => [ph.outer, ...ph.holes]).map((ring) => distToRing(ring, p)))).toBeLessThan(1e-6);
-          expect(waterContains(water, { x: p.x + sign * dx * 0.05, y: p.y + sign * dy * 0.05 })).toBe(false);
-          expect(streets.some((s, i) => i !== own && s.path.some((q, j) => j > 0 && distToSeg(p, s.path[j - 1], q) < 0.05))).toBe(true);
-        }
-      }
+      checkRegionalWater(w);
+      checkBridgeBanks(w);
       // a real main river (not a brook) is bridged only a few times, all near the crossing
       const mr = w.terrain.rivers.find((rv) => rv.main);
       if (!mr || Math.max(...mr.width) < 9) continue;
       const mainBridges = w.bridges!.filter((br) => w.terrain.rivers.some((rv) => rv.main && distToPolyline({ x: (br.a.x + br.b.x) / 2, y: (br.a.y + br.b.y) / 2 }, rv.path) < 40));
       expect(mainBridges.length).toBeLessThanOrEqual(4);
     }
-    expect(urbanBanks).toBeGreaterThan(0); // the existing seed11 case must retain its connected plank crossing
+  });
+
+  it('keeps the Chinese city approach dry outside bridges or fordable brooks', () => {
+    // This shared positive urban-bridge fixture also exposes an unbridged
+    // regional approach. Keep that independent safety requirement visible.
+    checkRegionalWater(chineseCrossings());
+  });
+});
+
+describe('urban bridge banks', () => {
+  it('connects real city decks to dry vector banks and their approach streets', () => {
+    // The five regional fixtures no longer contain urban decks. This city has
+    // six; its regional-water regression above is checked independently.
+    const urbanBanks = checkBridgeBanks(chineseCrossings());
+    expect(urbanBanks).toBeGreaterThan(0);
   });
 });
 

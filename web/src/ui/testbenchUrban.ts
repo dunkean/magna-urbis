@@ -23,7 +23,7 @@ export interface WorkshopRequest {
   options: BenchOptions; seed: string; context: WorkshopContext; layouts?: Layout[];
 }
 export interface WorkshopResult {
-  layouts: Layout[]; partitions?: Partition[]; water: Shape[]; contours: { x: number; y: number }[][]; shapeNames?: string[];
+  roads?: import('../../../rust/bridge/urban').Street[]; layouts: Layout[]; partitions?: Partition[]; water: Shape[]; contours: { x: number; y: number }[][]; shapeNames?: string[];
   layoutConfig?: LayoutConfig; parcelConfig?: ParcelConfig;
 }
 export function workshopOptions(config: LayoutConfig | ParcelConfig, previous: BenchOptions): BenchOptions {

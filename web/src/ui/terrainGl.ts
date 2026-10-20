@@ -3,6 +3,7 @@ import { terrainLights, type TerrainLayers, type TerrainLighting } from '../rend
 import { coastDistances, hasCoastalSea, SEA_BAND_WIDTH, SEA_SHADE_LIMIT, SEA_SHADE_STRENGTH } from '../render/terrainSea';
 import { resampleTerrainSurface } from '../render/raster';
 import { LAKE_GLSL } from './lakeGeometry';
+import { lakeDistances } from '../render/terrainWater';
 /**
  * WebGL2 renderer of the terrain bench. Everything is drawn by the GPU from
  * retained grids, so panning and zooming only change a few uniforms:
@@ -288,7 +289,15 @@ void main() {
     if (uHasLake > 0) {
       float m = lakeShore(world, uHasLake == 1);
       float w = max(fwidth(m), 1e-4);
-      color = mix(color, uLakeColor, clamp(m / w + 0.5, 0.0, 1.0));
+      vec3 lakeColor = uLakeColor;
+      if (uMode == 2) {
+        vec2 g = clamp(world * uLakeN / uMapW - 0.5, vec2(0.), vec2(uLakeN - 1.));
+        ivec2 p = ivec2(floor(g)), q = min(p + 1, ivec2(int(uLakeN) - 1));
+        vec2 f = fract(g);
+        float distance = mix(mix(texelFetch(uLake,p,0).g,texelFetch(uLake,ivec2(q.x,p.y),0).g,f.x),mix(texelFetch(uLake,ivec2(p.x,q.y),0).g,texelFetch(uLake,q,0).g,f.x),f.y);
+        lakeColor = surfaceWater(max(distance, 0.) * 120. / (uMapW * ${SEA_BAND_WIDTH}), 0.);
+      }
+      color = mix(color, lakeColor, clamp(m / w + 0.5, 0.0, 1.0));
     }
     if (uFrame == 1 && uBase == 1) {
       vec2 e = min(world, vec2(uMapW) - world) / uPx;
@@ -323,14 +332,22 @@ void main() {
 }`;
 
 const RIVER_FS = `#version 300 es
-precision highp float;
+precision highp float; precision highp int; precision highp sampler2D;
 in vec2 vP; flat in vec4 vSeg; flat in vec2 vHalf; flat in vec3 vColor;
 out vec4 outColor;
+uniform vec2 uOrigin; uniform float uPx; uniform float uMapW;
+uniform sampler2D uLake; uniform int uHasLake; uniform float uLakeN;
+vec4 bw(float t) { float t2=t*t,t3=t2*t,u=1.-t; return vec4(u*u*u,3.*t3-6.*t2+4.,-3.*t3+3.*t2+3.*t+1.,t3)/6.; }
+${LAKE_GLSL}
 void main() {
   vec2 a = vSeg.xy, b = vSeg.zw, pa = vP - a, ba = b - a;
   float h = clamp(dot(pa, ba) / max(dot(ba, ba), 1e-9), 0.0, 1.0);
   float d = length(pa - ba * h);
   float alpha = clamp(mix(vHalf.x, vHalf.y, h) + 0.5 - d, 0.0, 1.0);
+  if (uHasLake > 0) {
+    float m = lakeShore(uOrigin + vP * uPx, uHasLake == 1);
+    alpha *= 1. - clamp(m / max(fwidth(m), 1e-4) + .5, 0., 1.);
+  }
   if (alpha <= 0.0) discard;
   // Premultiplied; blended with MAX so overlapping capsules cover like one stroke.
   outColor = vec4(vColor * alpha, alpha);
@@ -496,7 +513,10 @@ export class TerrainGl {
     if (this.lake) gl.deleteTexture(this.lake);
     this.lake = undefined;
     if (water?.lake) {
-      this.lake = this.texture(water.n, water.n, gl.R32F, gl.RED, gl.FLOAT, water.lake, gl.NEAREST);
+      const distances = this.look?.style === 'render' ? lakeDistances(water.lake, water.n, this.look.mapWidth) : undefined;
+      const values = new Float32Array(water.n * water.n * 2);
+      for (let i = 0; i < water.lake.length; i++) { values[i * 2] = water.lake[i]; values[i * 2 + 1] = distances?.[i] ?? 0; }
+      this.lake = this.texture(water.n, water.n, gl.RG32F, gl.RG, gl.FLOAT, values, gl.NEAREST);
       this.lakeMode = water.shore === 'exact' ? 2 : 1; this.lakeN = water.n; this.lakeColor = hex(water.lakeColor);
     }
     const rivers = water?.rivers ?? new Float32Array();
@@ -638,6 +658,9 @@ export class TerrainGl {
       const r = (name: string): WebGLUniformLocation | null => this.riverUniform(name);
       gl.uniform2f(r('uCanvas'), width, height); gl.uniform2f(r('uOrigin'), origin[0], origin[1]);
       gl.uniform1f(r('uPx'), px); gl.uniform1f(r('uDpr'), dpr);
+      gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, this.lake ?? this.empty);
+      gl.uniform1i(r('uLake'), 2); gl.uniform1f(r('uMapW'), look.mapWidth);
+      gl.uniform1i(r('uHasLake'), look.style === 'render' && this.lake ? this.lakeMode : 0); gl.uniform1f(r('uLakeN'), this.lakeN);
       gl.enable(gl.BLEND); gl.blendEquation(gl.MAX); gl.blendFunc(gl.ONE, gl.ONE);
       gl.bindVertexArray(this.riverVao);
       gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, this.riverCount);

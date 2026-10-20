@@ -49,7 +49,12 @@ export class Streets {
       const a = st.path[ref.i], b = st.path[ref.i + 1];
       const dx = b.x - a.x, dy = b.y - a.y, l2 = dx * dx + dy * dy;
       const t = l2 === 0 ? 0 : Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / l2));
-      const d = Math.hypot(p.x - a.x - t * dx, p.y - a.y - t * dy);
+      const ex = p.x - a.x - t * dx, ey = p.y - a.y - t * dy;
+      // Most entries in the coarse index cell miss the current search radius.
+      // Reject by either component before hypot, keeping the exact distance and
+      // original tie order for every segment that can still win.
+      if (Math.abs(ex) > bd || Math.abs(ey) > bd) return;
+      const d = Math.hypot(ex, ey);
       if (d < bd || (d === bd && bs >= 0 && ref.s < bs)) { bd = d; bs = ref.s; bseg = ref.i; bt = t; }
     });
     if (bs < 0) return null;

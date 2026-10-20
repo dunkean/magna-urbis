@@ -23,7 +23,7 @@ import { HOUSE_VARIATION_ENABLED } from './morphology';
 import type { Plot } from './plots';
 import { clipHalfPlaneConvex, isConvex, polyInside } from '../geo/split';
 import { intersection, intersectionS, difference, differenceS, unionS } from '../geo/bool';
-import { area, cleanRing, isSimple, obb, orientPos, bboxOf, segSegT, pointInRing, distToRing } from '../geo/poly';
+import { area, cleanRing, isSimple, obb, orientPos, bboxOf, segSegT, pointInRing, distToRing, minNeck } from '../geo/poly';
 import { ribbon } from '../geo/offset';
 import { stitchUnion } from '../geo/stitch';
 import { truncateAcute } from './blocks';
@@ -339,7 +339,44 @@ export function buildPlot(pl: Plot, cov: number, P: MorphologyParams, rng: Rng, 
   const gardens = raw.filter((b) => b.kind === 'garden');
   const rawB = raw.filter((b) => b.kind !== 'garden');
   const norm = normalizeFootprints(rawB);
-  const fin = trimOverlaps(norm);
+  let fin = trimOverlaps(norm);
+  // Sparse suburbs keep real yard space even on shallow or widening lots.
+  // Cap only programmes that overshoot their owner-area budget; established
+  // sparse corner houses keep their complete original geometry.
+  if (pl.zone === 'faubourg' && P.faubFade !== false) {
+    const roofs = fin, budget = Math.min(0.45, Math.max(0.35, cov)) * area(pl.poly);
+    const built = roofs.reduce((sum, b) => sum + area(b.poly), 0);
+    const retainedWing = roofs.some((b) => !isConvex(b.poly, 1e-3) && (minNeck(b.poly)?.w ?? Infinity) < 3.59);
+    if (built > budget && !retainedWing) {
+      const origin = pl.front[0], u = { x: pl.nrm.y, y: -pl.nrm.x }, v = pl.nrm;
+      const depths = roofs.flatMap((b) => b.poly.map((p) => (p.x - origin.x) * v.x + (p.y - origin.y) * v.y));
+      const cut = (limit: number, axis: Vec2): Bldg[] => roofs.flatMap((b) => clipPlot(b.poly,
+        [{ p: { x: origin.x + axis.x * limit, y: origin.y + axis.y * limit }, n: { x: -axis.x, y: -axis.y } }], isConvex(b.poly, 1e-3))
+        .map((poly) => ({ ...b, poly })));
+      const search = (axis: Vec2, lo: number, hi: number): number => {
+        for (let i = 0; i < 16; i++) {
+          const mid = (lo + hi) / 2;
+          if (cut(mid, axis).reduce((sum, b) => sum + area(b.poly), 0) > budget) hi = mid;
+          else lo = mid;
+        }
+        return lo;
+      };
+      const depth = search(v, Math.min(...depths), Math.max(...depths));
+      let kept = cut(depth, v);
+      if (depth - Math.min(...depths) < MIN_BW || kept.some((b) => shapeOf(b.poly).w < MIN_BW || shapeOf(b.poly).asp > MAX_ASPECT)) {
+        const positions = roofs.flatMap((b) => b.poly.map((p) => (p.x - origin.x) * u.x + (p.y - origin.y) * u.y));
+        kept = cut(search(u, Math.min(...positions), Math.max(...positions)), u);
+      }
+      kept = kept.filter((b) => shapeOf(b.poly).w >= MIN_BW && shapeOf(b.poly).asp <= MAX_ASPECT);
+      // Density alone cannot justify replacing the front dwelling with a
+      // matchstick or leaving only its rear shed. Keep that programme intact.
+      if (!kept.some((b) => b.kind === 'house' || b.kind === 'hall')) kept = roofs;
+      const freed = roofs.flatMap((b) => difference(b.poly, ...kept.map((b) => b.poly))
+        .flatMap((p) => p.holes.length ? [] : [{ poly: p.outer, kind: 'garden' as const }]));
+      fin = kept; gardens.push(...freed);
+    }
+  }
+
   if (BLD_STATS.on && pl.zone === BLD_STATS.zone) {
     BLD_STATS.plot += area(pl.poly);
     BLD_STATS.raw += rawB.reduce((s2, b) => s2 + area(b.poly), 0);

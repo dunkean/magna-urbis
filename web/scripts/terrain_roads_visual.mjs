@@ -27,6 +27,7 @@ url.search = new URLSearchParams({ width: '30000', motif: '4000', relief, seed, 
 const spec = { key: 'main', population: 20000, name: '', culture: 'european-organic', kind: 'settlement', siteType: 'auto', sitePrefs: {} };
 url.searchParams.set('settlements', JSON.stringify({ config: { mode: 'auto', distribution: 'zipf', main: spec } }));
 url.searchParams.set('roads', JSON.stringify({ config: JSON.parse(process.env.ROADS ?? '{}') }));
+url.searchParams.set('pipeline', 'legacy');
 mkdirSync('out/terrain-roads', { recursive: true });
 try {
   await page.goto(url.href);

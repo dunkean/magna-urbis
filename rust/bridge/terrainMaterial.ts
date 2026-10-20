@@ -1,3 +1,5 @@
+import { WATER_MATERIAL_GLSL } from '../../web/src/render/terrainWater';
+
 // Material compositor ported from Neural Earth web/terrain_renderer.js (GPL-3.0).
 // Original blending, noise, coverage and palettes; local climate/substrate adapter below.
 export const NEURAL_EARTH_MATERIAL_GLSL = `
@@ -50,11 +52,7 @@ vec3 surfaceMix(vec3 a,vec3 b,float t){return a*(1.-t)+b*t;}
       float ts=clamp(ts0,-45.,45.);float tw=clamp(tw0,-45.,45.);float now=tw+(ts-tw)*surfaceSeason();
       return clamp(sstep(-1.5,-6.,now+.4*m1)*1.,0.,1.)*.9;
     }
-    vec3 surfaceWater(float depth,float ice){
-      vec3 water=surfaceMix(vec3(.10,.30,.36),vec3(.045,.16,.27),sstep(5.,120.,depth));
-      water=surfaceMix(water,vec3(.018,.065,.15),sstep(150.,3000.,depth));
-      return surfaceMix(water,vec3(.80,.84,.88),ice);
-    }
+    ${WATER_MATERIAL_GLSL}
     vec3 surfaceOcean(float height,vec3 color,float now,float m1,float variation){
       if(height>=0.){return clamp(color,vec3(0.),vec3(1.));}
       float ice=clamp(sstep(-1.5,-6.,now+.4*m1)*1.,0.,1.)*.9;

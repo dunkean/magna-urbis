@@ -36,6 +36,7 @@ import type { DisplayOpts, GDone, GResponse, SettlementMeta } from './protocol';
 import { FrameHandoff } from './frameHandoff';
 import { canWorkerExport, legacyGenerationResponse } from './generationMessages';
 import { exportPng } from './pngExport';
+import { chooseExportCrop } from './exportCrop';
 import { exportSnapshot, type ExportSnapshot } from './exportSnapshot';
 import { createExportLayerControls } from './exportLayers';
 import { initSettlementsUI, showSettlementWarnings } from './settlementsPanel';
@@ -1076,13 +1077,17 @@ const exportPngBtn = $<HTMLButtonElement>('exportPng');
 const exportJsonBtn = $<HTMLButtonElement>('exportJson');
 const exportFullBtn = $<HTMLButtonElement>('exportSvgFull');
 exportFullBtn.addEventListener('click', () => {
-  void withProgress(exportFullBtn, 'Detailing all quarters...', async (snapshot) => {
-    await exportFile(snapshot.name + '-full.svg', await buildExport(snapshot, 'svg', true), 'image/svg+xml');
+  void withProgress(exportFullBtn, 'Detailing all quarters...', async (snapshot, progress) => {
+    const cropped = await chooseExportCrop(await buildExport(snapshot, 'svg', true), 3000);
+    if (!cropped) { progress('Export cancelled.'); return; }
+    await exportFile(snapshot.name + '-full.svg', cropped.blob, 'image/svg+xml');
   });
 });
 exportSvgBtn.addEventListener('click', () => {
-  void withProgress(exportSvgBtn, 'Building SVG...', async (snapshot) => {
-    await exportFile(snapshot.name + '.svg', await buildExport(snapshot, 'svg'), 'image/svg+xml');
+  void withProgress(exportSvgBtn, 'Building SVG...', async (snapshot, progress) => {
+    const cropped = await chooseExportCrop(await buildExport(snapshot, 'svg'), 3000);
+    if (!cropped) { progress('Export cancelled.'); return; }
+    await exportFile(snapshot.name + '.svg', cropped.blob, 'image/svg+xml');
   });
 });
 exportJsonBtn.addEventListener('click', () => {
@@ -1095,7 +1100,9 @@ exportPngBtn.addEventListener('click', () => {
     const tP = pnow();
     const svgBlob = await buildExport(snapshot, 'svg', false, 3000);
     rec('pngSvg', pnow() - tP);
-    const png = await exportPng(svgBlob, 3000, (phase) => progress(phase === 'decode' ? 'Decoding SVG...' : phase === 'raster' ? 'Drawing SVG...' : phase === 'snapshot' ? 'Preparing PNG pixels...' : 'Encoding PNG...'));
+    const cropped = await chooseExportCrop(svgBlob, 3000);
+    if (!cropped) { progress('Export cancelled.'); return; }
+    const png = await exportPng(cropped.blob, cropped, (phase) => progress(phase === 'decode' ? 'Decoding SVG...' : phase === 'raster' ? 'Drawing SVG...' : phase === 'snapshot' ? 'Preparing PNG pixels...' : 'Encoding PNG...'));
     rec('exportPng', pnow() - tP);
     progress('Saving PNG...');
     await exportFile(snapshot.name + '.png', png, 'image/png');

@@ -1,3 +1,6 @@
+import { urbanOptionSync } from './urbanOptionSync';
+import { createUrbanLanduse } from './urbanLanduse';
+import type { Relief } from '../gen/options';
 import SettlementWorker from './settlementWorker?worker&inline';
 import { defaultSettlementConfig, defaultSettlementSpec, settlementRaster, runSettlementRequest, type Point, type RoadSite, type SettlementConfig, type SettlementOutput, type SettlementRequest, type SettlementResponse, type SettlementSpec } from '../../../rust/bridge/settlements';
 import type { TerrainData, TerrainSettings } from '../../../rust/bridge/terrain';
@@ -8,11 +11,20 @@ import { SETTLEMENT_KINDS } from './settlementKinds';
 import { createTerrainRoads } from './terrainRoads';
 import { createTerrainUrban } from './terrainUrban';
 import { captureDecor, downloadBytes } from './decorCapture';
-import { decorEntry, type DecorEntry } from './decor';
-import './terrainSettlements.css';
+import { decorEntry, encodeDecor, type Decor, type DecorEntry } from './decor';
 import type { UrbanPaintingContext } from '../../../rust/bridge/urbanPaintingMask';
 
 const ns = 'http://www.w3.org/2000/svg';
+// Small cartographic silhouettes, centred on the settlement's actual position.
+const settlementSymbols: Record<ReturnType<typeof classOfPop>, string> = {
+  farmstead: 'M-11-2 0-12 11-2H8V9H-8V-2ZM-2 9H2V2H-2Z',
+  hamlet: 'M-14 0-8-6-2 0H-4V9H-12V0ZM1-4 8-11 15-4H13V9H3V-4Z',
+  village: 'M-15 2-10-3-5 2H-6V9H-14V2ZM-6-5 0-12 6-5H4V9H-4V-5ZM5 2 10-3 15 2H14V9H6V2Z',
+  town: 'M-14 9V-9H-10V-5H-6V-9H-2V-2H2V-9H6V-5H10V-9H14V9ZM-3 9H3V3Q3-1 0-1T-3 3Z',
+  city: 'M-15 9V-4L-10-9-5-4V-1H-4V-9L0-16 4-9V-1H5V-4L10-9 15-4V9ZM-3 9H3V3Q3 0 0 0T-3 3Z',
+  metropolis: 'M-15 9V-4H-10V-11H-4V9ZM-1 9V-15H5V9ZM8 9V-7H14V9Z',
+  megacity: 'M-16 9V-7H-11V9ZM-8 9V-15H-2V9ZM1 9V-19H6V9ZM9 9V-11H15V9Z',
+};
 const clone = <T>(value: T): T => structuredClone(value);
 const esc = (text: string): string => text.replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch]!);
 function prefs(spec: SettlementSpec): SettlementSpec {
@@ -30,9 +42,11 @@ const sites = (output: SettlementOutput): RoadSite[] => output.settlements.map(s
 
 export function createTerrainSettlements(options: {
   map: SVGSVGElement; viewport: HTMLElement; getTerrain(): TerrainData | undefined; getSettings(): TerrainSettings;
+  active?: boolean; parcelDefault?: boolean; getRaster?(): import('../../../rust/bridge/settlements').SettlementRaster | undefined; getDecor?(): Decor | undefined;
   getView(): View; getAuto?(): boolean; getQuery?(): string; onChange(): void; onPlanChange?(): void; onPicking(): void; onFocus?(center: Point, radius: number): void;
 }) {
   const { map, viewport } = options;
+  let restoringDecor = false;
   let config = defaultSettlementConfig(), enabled = true, showPoints = true;
   let selection = '', picking: 'new' | string | undefined, output: SettlementOutput | undefined;
   let cachedTerrain: TerrainData | undefined, worker: Worker | undefined, id = 0, timer: ReturnType<typeof setTimeout> | undefined;
@@ -93,7 +107,29 @@ export function createTerrainSettlements(options: {
     onDisplayChange: options.onChange,
   });
   const urban = createTerrainUrban({ map, before: backend, getTerrain: options.getTerrain,
-    getSeed: () => options.getSettings().seed, getAuto: options.getAuto, onChange: options.onChange, onPlanChange: options.onPlanChange, onFocus: options.onFocus });
+    getRaster: options.getRaster,
+    parcelDefault: options.parcelDefault ?? false,
+    getSeed: () => options.getSettings().seed, getAuto: options.getAuto, onChange: () => { if (!restoringDecor) publishOptions(urban.workshopDraft() ?? urban.workshopState()); options.onChange(); }, onPlanChange: () => { if (!restoringDecor) publishOptions(urban.workshopDraft() ?? urban.workshopState()); syncLanduse(); options.onPlanChange?.(); }, onFocus: options.onFocus });
+  const publishOptions = urbanOptionSync(() => { const d = options.getDecor?.(); return d && urban.target !== 'all' ? `${d.meta.pipeline?.syncSource ?? d.meta.id}:${urban.target}` : undefined; }, state => urban.applyWorkshopDraft(state));
+  if (options.active !== false && !document.getElementById('showLanduse')) {
+    const label = document.createElement('label'); label.innerHTML = '<input id="showLanduse" type="checkbox" checked>Occupation du territoire';
+    document.querySelector('#lightingControls .lighting-fields')!.append(label);
+  }
+  map.addEventListener('urban:settings', event => publishOptions((event as CustomEvent).detail));
+  const landuse = options.active === false ? undefined : createUrbanLanduse({ map, before: backend ?? panel,
+    onChange: options.onChange,
+    getView: () => ({ view: options.getView(), width: viewport.clientWidth, height: viewport.clientHeight }),
+    getBackground: () => ({ opacity: 0 }),
+    getDisplayStyle: () => { const style = (document.getElementById('style') as HTMLSelectElement)?.value; return style?.startsWith('fantasy-') ? style : undefined; },
+  });
+  function syncLanduse(): void {
+    const t = options.getTerrain(), raster = options.getRaster?.() ?? (t ? settlementRaster(t) : undefined);
+    if (!raster || !output || !enabled) { landuse?.set(); return; }
+    const city = output.settlements.find(s => s.key === urban.target) ?? output.settlements.find(s => s.key === selection) ?? output.settlements[0];
+    const relief = options.getSettings().relief;
+    landuse?.set({ raster, seed: options.getSettings().seed, relief: (['flat', 'hills', 'valley'].includes(relief) ? relief : 'mountains') as Relief,
+      city, neighbours: output.settlements.filter(s => s.key !== city?.key), roads: roads.output, layouts: urban.layouts }, urban.layoutPending);
+  }
   let paintingContext: UrbanPaintingContext | undefined;
   if (legacyRoads === false && !new URLSearchParams(location.search).has('roads')) {
     const box = document.getElementById('roadEnabled') as HTMLInputElement; box.checked = false; box.dispatchEvent(new Event('change'));
@@ -134,7 +170,7 @@ export function createTerrainSettlements(options: {
   function schedule(): void { clearTimeout(timer); timer = setTimeout(recalculate, 180); }
   function recalculate(): void {
     clearTimeout(timer);
-    const t = options.getTerrain(); if (!t || !complete) return;
+    const t = options.getTerrain(); if (!t || !complete || options.active === false) return;
     if (!enabled) { ++id; output = undefined; draw(); list(); roads.set(undefined); urban.setSettlements(undefined); el('setStatus').textContent = 'Settlement generation disabled.'; el('setState').textContent = ''; return; }
     config.relief = options.getSettings().relief;
     const place = needsPlacement || !output;
@@ -149,7 +185,8 @@ export function createTerrainSettlements(options: {
       } catch { useFallback(); return; }
     }
     if (cachedTerrain !== t) {
-      request.raster = settlementRaster(t); cachedTerrain = t;
+      const retained = options.getRaster?.();
+      request.raster = retained ? { ...retained, height: retained.height.slice(), water: retained.water.slice(), waterLevel: retained.waterLevel.slice(), riverWidth: retained.riverWidth.slice(), riverIds: retained.riverIds.slice() } : settlementRaster(t); cachedTerrain = t;
       validation = { width: request.raster.width, n: request.raster.n, water: request.raster.water.slice() };
     }
     if (place) { el('setGenerate').setAttribute('aria-busy', 'true'); el('setStatus').textContent = 'Placing settlements in Rust…'; }
@@ -181,7 +218,7 @@ export function createTerrainSettlements(options: {
     roads.set(response.roads ?? undefined);
     urban.setSettlements(output, response.roads ?? undefined);
     draw(); list(); editor(); options.onChange();
-    options.onPlanChange?.();
+    syncLanduse(); options.onPlanChange?.();
   }
   function list(): void {
     const entries = config.mode === 'list' ? config.list : output?.settlements ?? [];
@@ -191,7 +228,7 @@ export function createTerrainSettlements(options: {
       button.className = 'terrain-place'; button.setAttribute('aria-pressed', String(selection === s.key));
       const result = output?.settlements.find(p => p.key === s.key);
       button.innerHTML = `<b>${esc(s.name || s.key)}</b><small>${classOfPop(s.population)} · ${s.population.toLocaleString()} · ${result ? `${esc(result.archetype)} · score ${result.scores.total.toFixed(2)}` : 'awaiting placement'}</small>`;
-      button.onclick = () => { selection = s.key; setPicking(); list(); editor(); draw(); };
+      button.onclick = () => { selection = s.key; urban.selectCity(s.key); setPicking(); list(); editor(); draw(); };
       return button;
     }));
   }
@@ -263,13 +300,16 @@ export function createTerrainSettlements(options: {
     drawnLayer = layer; drawnOutput = output; drawnState = state;
     layer.replaceChildren(); if (!enabled || !output || !showPoints) return;
     const scale = options.getView().scale;
-    for (const s of output.settlements) {
+    for (const [index, s] of output.settlements.entries()) {
       const marker = document.createElementNS(ns, 'g'); marker.dataset.settlement = s.key; marker.classList.add('settlement-marker'); marker.setAttribute('transform', `translate(${s.center.x} ${s.center.y}) scale(${1 / scale})`);
       marker.dataset.x = String(s.center.x); marker.dataset.y = String(s.center.y);
-      const dot = document.createElementNS(ns, 'circle'); dot.setAttribute('r', String(s.population >= 1000 ? 6 : s.population >= 150 ? 4.5 : 3.5)); dot.setAttribute('fill', selection === s.key ? '#1b765a' : '#693b2c'); dot.setAttribute('stroke', '#fffdf0'); dot.setAttribute('stroke-width', '1.5');
-      const text = document.createElementNS(ns, 'text'); text.setAttribute('x', '9'); text.setAttribute('y', '4'); text.textContent = `${s.name} · ${s.population.toLocaleString()}`;
+      marker.style.color = selection === s.key ? '#176348' : '#252b29';
+      const hit = document.createElementNS(ns, 'rect'); hit.setAttribute('x', '-19'); hit.setAttribute('y', '-22'); hit.setAttribute('width', '54'); hit.setAttribute('height', '54'); hit.setAttribute('fill', 'transparent');
+      const symbol = document.createElementNS(ns, 'path'); symbol.classList.add('settlement-symbol'); symbol.setAttribute('d', settlementSymbols[classOfPop(s.population)]);
+      const number = document.createElementNS(ns, 'text'); number.classList.add('settlement-number'); number.setAttribute('x', '21'); number.setAttribute('y', '5'); number.textContent = String(index + 1);
+      const population = document.createElementNS(ns, 'text'); population.classList.add('settlement-population'); population.setAttribute('x', '5'); population.setAttribute('y', '27'); population.setAttribute('text-anchor', 'middle'); population.textContent = s.population.toLocaleString();
       const title = document.createElementNS(ns, 'title'); title.textContent = `${s.cls} · ${s.culture} · ${s.archetype}\n${s.population} inhabitants · score ${s.scores.total.toFixed(3)}\nClick to edit; drag to move`;
-      marker.append(title, dot, text); layer.append(marker);
+      marker.append(title, hit, symbol, number, population); layer.append(marker);
     }
   }
   function world(event: MouseEvent): Point {
@@ -279,7 +319,7 @@ export function createTerrainSettlements(options: {
   function placeAt(p: Point): boolean {
     const t = options.getTerrain(); if (!t || !complete || p.x < 0 || p.y < 0 || p.x >= t.width || p.y >= t.width) return false;
     // Validate against the same adapted raster as Rust before committing the editable list.
-    const raster = validation ?? settlementRaster(t), i = Math.floor(p.y / raster.width * raster.n) * raster.n + Math.floor(p.x / raster.width * raster.n);
+    const raster = validation ?? options.getRaster?.() ?? settlementRaster(t), i = Math.floor(p.y / raster.width * raster.n) * raster.n + Math.floor(p.x / raster.width * raster.n);
     if (raster.water[i]) { el('setPickHint').textContent = 'Choose dry land: this point is on water or solid rock.'; return false; }
     adopt();
     if (picking === 'new') {
@@ -303,7 +343,7 @@ export function createTerrainSettlements(options: {
   map.addEventListener('pointerup', event => {
     if (!drag || drag.pointer !== event.pointerId) return;
     event.stopImmediatePropagation(); if (map.hasPointerCapture(event.pointerId)) map.releasePointerCapture(event.pointerId);
-    if (drag.moved) { setPicking(drag.key); placeAt(drag.point); suppressClick = true; } else { selection = drag.key; list(); editor(); draw(); }
+    if (drag.moved) { setPicking(drag.key); placeAt(drag.point); suppressClick = true; } else { selection = drag.key; urban.selectCity(drag.key); list(); editor(); draw(); }
     drag = undefined; draw();
   }, true);
   map.addEventListener('pointercancel', () => { drag = undefined; draw(); }, true);
@@ -332,6 +372,14 @@ export function createTerrainSettlements(options: {
   const decor = (extra?: Parameters<typeof captureDecor>[5]): ReturnType<typeof captureDecor> => {
     const t = options.getTerrain();
     if (!t || !decorReady()) throw new Error('Wait for the settlements and roads of the completed map.');
+    const retained = options.getDecor?.();
+    if (retained) {
+      const snapshot: Decor = { raster: retained.raster, meta: { ...retained.meta, ...extra, query: options.getQuery?.() ?? retained.meta.query,
+        settlements: clone(output!.settlements), roads: roads.output ?? null, roadConfig: roads.enabled ? clone(roads.config) : null,
+        stats: { ...retained.meta.stats, roadKm: (roads.output?.segments.reduce((s, r) => s + r.length, 0) ?? 0) / 1000 },
+        pipeline: { ...retained.meta.pipeline, stage: 'settlements', parent: retained.meta.id, urban: urban.workshopState(), urbanDraft: urban.workshopDraft() } } };
+      return { bytes: encodeDecor(snapshot), meta: snapshot.meta };
+    }
     return captureDecor(t, options.getSettings(), output!, roads.output, roads.enabled ? clone(roads.config) : null,
       { ...extra, query: extra?.query ?? options.getQuery?.() });
   };
@@ -350,6 +398,28 @@ export function createTerrainSettlements(options: {
   };
   controls(); list();
   return {
+    urban,
+    contextReady: () => complete && (!enabled || answered === id) && !urban.layoutPending && !urban.generationPending,
+    captureContext: () => ({ selection, urban: urban.captureContext() }),
+    restoreContext(saved: { selection?: string; urban?: ReturnType<typeof urban.captureContext> }): void {
+      if (saved?.selection && output?.settlements.some(s => s.key === saved.selection)) selection = saved.selection;
+      if (saved?.urban) urban.restoreContext(saved.urban);
+      list(); editor(); draw();
+    },
+    ready: decorReady,
+    capture: decor,
+    restoreDecor(d: Decor): void {
+      clearTimeout(timer); ++id; answered = id; complete = true; cachedTerrain = undefined;
+      if (!d.meta.settlements.length) { needsPlacement = true; recalculate(); return; }
+      enabled = true; output = { settlements: clone(d.meta.settlements), requested: d.meta.settlements.length, usableKm2: 0, warnings: [], ms: 0 }; needsPlacement = false;
+      config.mode = 'auto'; adopt(); selection = d.meta.pipeline?.city ?? ''; controls(); list(); editor();
+      if (d.meta.roadConfig) roads.setConfig(d.meta.roadConfig);
+      restoringDecor = true; roads.set(d.meta.roads ?? undefined); urban.setSettlements(output, d.meta.roads ?? undefined);
+      if (d.meta.pipeline?.urban?.layouts?.length) urban.restoreSnapshot(d.meta.pipeline.urban);
+      if (d.meta.pipeline?.urbanDraft) urban.applyWorkshopDraft(d.meta.pipeline.urbanDraft);
+      restoringDecor = false; publishOptions(urban.workshopDraft() ?? urban.workshopState());
+      syncLanduse(); draw(); options.onChange();
+    },
     get paintingContext(): UrbanPaintingContext {
       const cities = enabled ? output?.settlements : undefined, roadOutput = roads.enabled ? roads.output : undefined;
       if (!paintingContext || paintingContext.layouts !== urban.layouts || paintingContext.roads !== roadOutput || paintingContext.cities !== cities) {
@@ -368,13 +438,13 @@ export function createTerrainSettlements(options: {
       urban.terrainFailed(message);
     },
     terrainPending(): void { complete = false; ++id; output = undefined; cachedTerrain = undefined; validation = undefined; roads.set(undefined); urban.terrainPending(); draw(); el('setStatus').textContent = 'Waiting for the completed map…'; },
-    updateView(): void { draw(); roads.draw(); urban.updateView(); },
+    updateView(): void { draw(); roads.draw(); urban.updateView(); landuse?.updateView(); },
     isPicking: (): boolean => !!picking,
     click(event: MouseEvent): boolean { if (!picking) return false; placeAt(world(event)); return true; },
     share(params: URLSearchParams): void {
       params.set('settlements', JSON.stringify({ config, enabled, showPoints }));
       params.set('roads', roads.share());
-      urban.share(params);
+      urban.share(params); landuse?.share(params);
     },
   };
 }

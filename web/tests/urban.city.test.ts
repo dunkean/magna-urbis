@@ -12,6 +12,14 @@ describe('urban invariants — city', () => {
   for (const culture of cultures) for (const seed of ['1', '2', '3', '4', '5', '6']) {
     it(`${culture} seed ${seed}`, () => {
       const w = generate(makeOptions({ seed, size: 'city', culture }));
+      if (PERF) {
+        const ms = Number(w.stats['ms.urban']);
+        console.info('[MAGNA_URBIS_PERF] ' + JSON.stringify({ file: 'tests/urban.city.test.ts',
+          fullName: `urban invariants — ${SIZE} ${culture} seed ${seed}`, metric: 'ms.urban',
+          value: ms, operator: '<', limit: 5000 }));
+        // Record the budget independently; geometric failures must remain visible too.
+        expect.soft(ms, 'city urban stages < 5 s').toBeLessThan(5000);
+      }
       const r = checkWorld(w);
       const msg = r.details.slice(0, 8).join('\n');
       expect(r.blocks, 'has blocks').toBeGreaterThan(0);
@@ -25,8 +33,6 @@ describe('urban invariants — city', () => {
       // known weak spot: rare acute tips / slivers (≤ 1 % of all shapes)
       expect(r.acute + r.thin, 'acute (<12°) or thin (<2 m) shapes\n' + msg).toBeLessThanOrEqual(Math.max(2, Math.ceil(0.01 * (r.plots + r.buildings))));
       expect(r.orphanMain, 'main streets connect to the radials').toBe(0);
-      if (PERF && SIZE === 'town') expect(Number(w.stats['ms.urban']), 'town urban stages < 1.5 s').toBeLessThan(1500);
-      if (PERF && SIZE === 'city') expect(Number(w.stats['ms.urban']), 'city urban stages < 5 s').toBeLessThan(5000);
     });
   }
 });

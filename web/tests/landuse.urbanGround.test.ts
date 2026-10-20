@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { urbanNaturalGround } from '../src/gen/landuse/urbanGround';
 import type { UrbanLayer, World, Polygon, PolyH } from '../src/gen/types';
 import { polygonContains, bbox } from '../src/gen/core/geom';
-import { differenceS, intersectionS, mpArea } from '../src/gen/geo/bool';
+import { differenceS, intersectionS, mpArea, tryDifference } from '../src/gen/geo/bool';
+import { area, inscribed } from '../src/gen/geo/poly';
 import { generate } from '../src/gen/pipeline';
 import { makeOptions } from '../src/gen/options';
 import '../src/gen/urban/cultures';
@@ -99,15 +100,51 @@ describe('shared natural ground permission', () => {
     expect(urbanNaturalGround(world)).toEqual(urbanNaturalGround(fixture()));
   });
 
-  it('restores the reported Indian empty plot using real natural cover, with no agricultural encroachment', () => {
+  it('covers an actual Indian cadastral vacancy naturally while preserving the historical forest and excluding agriculture', () => {
+    let owner: UrbanLayer['parcels'][number] | undefined;
     const world = generate(makeOptions({ seed: 'g5fo4o', size: 'city', river: 'major', walls: 'none', culture: 'indian-temple',
-      center: { x: 1549, y: 2492 } }));
-    const pin = { x: 1144.3, y: 2033.8 }, mask = urbanNaturalGround(world);
-    expect(world.landuse!.naturalGround).toEqual(mask);
+      center: { x: 1549, y: 2492 } }), (stage, current) => {
+      if (stage !== 'fields & woods' || !current?.urban) return;
+      const u = current.urban;
+      // The corrected cadastral frame's deep residential plot has a 17.47 m
+      // inscribed radius and 2,950 m² of owner land, clear of protected sites.
+      const selected = { p: u.parcels[943], i: 943 };
+      expect(selected.p.use).toBe('plot');
+      expect(inscribed(selected.p.poly, [], 0.5).r).toBeGreaterThan(17);
+      expect(selected).toBeDefined(); owner = selected.p;
+      // Density repairs can legitimately occupy the former vacant pin. Keep
+      // the real cadastral frame and create one explicit vacancy before rural
+      // cover is produced, without changing any other building or owner.
+      u.buildings = u.buildings.filter((b) => b.parcel !== selected.i);
+      const trim = (pieces: PolyH[]) => pieces.flatMap((p) => {
+        const left = tryDifference([p], selected.p.poly);
+        expect(left.failed).toBe(false); return left.pieces;
+      });
+      u.masses = trim(u.masses); u.backLand = trim(u.backLand);
+    });
+    const historicalPin = { x: 1144.3, y: 2033.8 }, permission = urbanNaturalGround(world);
+    const mask = intersectionS(permission, owner!.poly);
+    expect(owner).toBeDefined(); expect(mask.length).toBeGreaterThan(0);
+    const largest = mask.reduce((a, b) => mpArea([a]) >= mpArea([b]) ? a : b);
+    const pin = inscribed(largest.outer, largest.holes, 0.1).c;
+    expect(world.landuse!.naturalGround).toEqual(permission);
+    // The former pin is now outside the cadastral partition. Its forest remains
+    // rural; the current natural permission covers a real vacant part of a plot.
+    expect(world.urban!.parcels.some((p) => polygonContains(p.poly, historicalPin))).toBe(false);
+    expect(contains(mask, historicalPin.x, historicalPin.y)).toBe(false);
+    expect(polygonContains(owner!.poly, pin)).toBe(true);
     expect(contains(mask, pin.x, pin.y)).toBe(true);
+    expect(mpArea(mask)).toBeGreaterThanOrEqual(1200);
+    expect(mpArea(differenceS(mask, owner!.poly))).toBeLessThan(0.01);
     const areas = world.landuse!.areas;
+    const atHistoricalPin = areas.filter((a) => polygonContains(a.poly, historicalPin)
+      && !(a.holes ?? []).some((hole) => polygonContains(hole, historicalPin)));
+    expect(atHistoricalPin.some((a) => a.kind === 'forest')).toBe(true);
     const atPin = areas.filter((a) => polygonContains(a.poly, pin) && !(a.holes ?? []).some((hole) => polygonContains(hole, pin)));
-    expect(atPin.some((a) => a.kind === 'forest')).toBe(true);
+    // The rural generator extends neighbouring natural cover, including open
+    // pasture. This is distinct from enclosed agricultural pasture or fields.
+    expect(atPin.some((a) => ['forest', 'meadow', 'pasture', 'marsh', 'commons'].includes(a.kind)
+      && !('enclosed' in a && a.enclosed === true))).toBe(true);
     const boxes = mask.map((piece) => ({ piece, box: bbox(piece.outer) }));
     const nearby = (poly: Polygon) => {
       const b = bbox(poly);

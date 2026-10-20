@@ -15,13 +15,15 @@ export type DensityRepairPartition = Pick<EdgeRoofPartition,
   'ctx' | 'parcels' | 'buildings' | 'gardens' | 'streets' | 'protectedLand' | 'eligible'> & {
   blocks: CarvedBlock[];
   morphology: (block: number) => MorphologyParams;
+  allowInfill?: boolean;
+  releasedLand?: MultiPoly;
 };
 export interface DensityGroup {
   phase: number; zone: string; morphology: string; floor: number;
   area: number; before: number; after: number; shortfall: number;
 }
 export interface DensityRepairResult {
-  enlarged: number; addedArea: number; changedBlocks: Set<number>; groups: DensityGroup[];
+  enlarged: number; addedRooms: number; addedArea: number; changedBlocks: Set<number>; groups: DensityGroup[];
 }
 
 const meets = (a: Polygon, b: Polygon): boolean => {
@@ -93,12 +95,13 @@ function courtyardAccess(polys: { poly: Polygon; courtyards?: Polygon[] }[]): { 
 
 /**
  * This is a whole-block floor, not the higher target passed to each plot's burgage producer. The existing
- * mature middle-block contract is 0.70â€“0.85 (urban.densityhealth.test.ts); cap its lower limit by the culture's
+ * mature middle-block contract is 0.70â€“0.85 (urban.densityhealth.test.ts), with a 0.78 floor in the core.
+ * Cap each lower limit by the culture's
  * configured producer lower bound so intentional sparse cultures are never normalised to European density.
  * Young edge, faubourg and village fabric retains its configured garden gaps and distance fading.
  */
 export function repairResidentialDensity(input: DensityRepairPartition): DensityRepairResult {
-  const changedBlocks = new Set<number>(), result: DensityRepairResult = { enlarged: 0, addedArea: 0, changedBlocks, groups: [] };
+  const changedBlocks = new Set<number>(), result: DensityRepairResult = { enlarged: 0, addedRooms: 0, addedArea: 0, changedBlocks, groups: [] };
   const originalRoofs = input.buildings.map((b) => b.poly.map((p) => ({ ...p })));
   const originalAreas = originalRoofs.map(area), changedBuildings = new Set<number>();
   const groups = new Map<string, { report: DensityGroup; blocks: Set<number> }>();
@@ -113,7 +116,7 @@ export function repairResidentialDensity(input: DensityRepairPartition): Density
   const baselines = new Map<number, { reach: boolean[]; court: ReturnType<typeof courtyardAccess>; courts: boolean[] }>();
   input.blocks.forEach((b, bi) => {
     if (b.kind !== 'block' || (b.zone !== 'core' && b.zone !== 'middle')) return;
-    const m = input.morphology(bi), floor = Math.min(0.70, m.coverage[b.zone][0]);
+    const m = input.morphology(bi), floor = Math.min(b.zone === 'core' ? 0.78 : 0.70, m.coverage[b.zone][0]);
     const key = `${b.phase}:${b.zone}:${m.id}:${floor}`;
     const group = groups.get(key) ?? { blocks: new Set<number>(), report: {
       phase: b.phase, zone: b.zone, morphology: m.id, floor, area: 0, before: 0, after: 0, shortfall: 0,
@@ -283,6 +286,69 @@ export function repairResidentialDensity(input: DensityRepairPartition): Density
       b.poly = best; roofs.set(index, best); baselines.delete(bi); input.gardens.splice(0, input.gardens.length, ...gardens);
       if (!changedBuildings.has(index)) { changedBuildings.add(index); result.enlarged++; }
       result.addedArea += gain; report.after += gain; changedBlocks.add(bi);
+    }
+    // Enlargement cannot use every irregular garden pocket. Mature row fabric
+    // can also complete a small rear room on unused owner land, provided the
+    // whole block (including the new room) retains public access.
+    if (input.allowInfill && report.after < target) for (const [pi, parcel] of input.parcels.entries()) {
+      if (report.after >= target || !blocks.has(parcel.block) || !input.eligible(pi)
+        || input.morphology(parcel.block).buildingOp !== 'streetFrontRow') continue;
+      const bi = parcel.block, peers = byBlock.get(bi) ?? [];
+      const template = peers.find((p) => p.b.parcel === pi && !p.b.ring && !p.b.courtyards?.length
+        && ['house', 'rear', 'back', 'barn', 'shed'].includes(p.b.kind)
+        && ['gable', 'hip', 'flat'].includes(p.b.roof ?? '') && !/courtyard|souk|ring/.test(p.b.arch ?? ''))?.b;
+      if (!template) continue;
+      for (let pass = 0; pass < 12 && report.after < target; pass++) {
+        const obstacles = [...peers.map((p) => ({ outer: p.b.poly, holes: p.b.courtyards ?? [] })),
+          ...protectedLand.query(parcel.poly).map((i) => input.protectedLand[i])];
+        const free = tryDifference(parcel.poly, obstacles);
+        if (free.failed) break;
+        let accepted = false;
+        for (const part of free.pieces.sort((a, b) => mpArea([b]) - mpArea([a]))) {
+          const circle = inscribed(part.outer, part.holes, 0.1);
+          const half = Math.min(3.4, circle.r / Math.SQRT2 - 0.02);
+          if (half < 1.8) continue;
+          const frame = obb(template.poly), u = frame.u, v = { x: -u.y, y: u.x }, c = circle.c;
+          const candidate = [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([a, b]) => ({
+            x: c.x + half * (a * u.x + b * v.x), y: c.y + half * (a * u.y + b * v.y),
+          }));
+          const dry = (p: Vec2) => p.x >= 3 && p.y >= 3 && p.x <= input.ctx.mapSize - 3 && p.y <= input.ctx.mapSize - 3
+            && !input.ctx.isWater(p) && input.ctx.slopeAt(p) <= 0.28;
+          if (contained(candidate, parcel.poly) !== 'proved' || contained(candidate, input.blocks[bi].poly) !== 'proved'
+            || clear(candidate, candidate, obstacles) !== 'proved' || !candidate.every(dry)) continue;
+          const bounds = bboxOf(candidate);
+          let terrainClear = true;
+          for (let y = bounds.y0; y <= bounds.y1 && terrainClear; y += 2) for (let x = bounds.x0; x <= bounds.x1; x += 2) {
+            if (pointInRing(candidate, { x, y }) && !dry({ x, y })) { terrainClear = false; break; }
+          }
+          if (!terrainClear) continue;
+          const before = blockReach(input.blocks[bi].poly, peers.map((p) => p.b.poly), streetAt);
+          const reached = blockReach(input.blocks[bi].poly, [...peers.map((p) => p.b.poly), candidate], streetAt);
+          if (!reached.at(-1) || !before.every((ok, i) => !ok || reached[i])) continue;
+          const courts = courtyardAccess(peers.map((p) => p.b));
+          if (!courts) continue;
+          if (courts.probes.length) {
+            const beforeCourts = blockReach(input.blocks[bi].poly, [...courts.pieces, ...courts.probes], streetAt).slice(courts.pieces.length);
+            const afterCourts = blockReach(input.blocks[bi].poly, [...courts.pieces, candidate, ...courts.probes], streetAt).slice(courts.pieces.length + 1);
+            if (!beforeCourts.every((ok, i) => !ok || afterCourts[i])) continue;
+          }
+          const remainingGardens = input.gardens.map((g) => tryDifference(g, candidate));
+          if (remainingGardens.some((g) => g.failed)) continue;
+          const remainingReleased = input.releasedLand?.map((p) => tryDifference([p], candidate));
+          if (remainingReleased?.some((p) => p.failed)) continue;
+          const gardens = remainingGardens.flatMap((g) => g.pieces.flatMap((p) => openHoles(p, 0, true).map((p) => p.outer)));
+          if (Math.abs(gardens.reduce((sum, p) => sum + area(p), 0) - remainingGardens.reduce((sum, g) => sum + mpArea(g.pieces), 0)) > 1e-5) continue;
+          const room = { ...template, poly: candidate, kind: 'back', parcel: pi, courtyards: undefined };
+          const index = input.buildings.length;
+          input.buildings.push(room); peers.push({ b: room, index }); byBlock.set(bi, peers);
+          roofs.set(index, candidate); baselines.delete(bi);
+          input.gardens.splice(0, input.gardens.length, ...gardens);
+          if (input.releasedLand && remainingReleased) input.releasedLand.splice(0, input.releasedLand.length, ...remainingReleased.flatMap((p) => p.pieces));
+          const gain = area(candidate); report.after += gain; result.addedArea += gain; result.addedRooms++; changedBlocks.add(bi);
+          accepted = true; break;
+        }
+        if (!accepted) break;
+      }
     }
     report.shortfall = Math.max(0, target - report.after); result.groups.push(report);
   }

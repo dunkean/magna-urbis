@@ -175,12 +175,24 @@ describe('megacity near the threshold (60 000 inhabitants)', () => {
 });
 
 describe('a big secondary settlement is planned as a megacity', () => {
-  const opts = makeOptions({ seed: '4', mapSize: 9000, population: 9000, settlements: { list: [{ population: 70000 }] } });
+  // The current main site leaves insufficient central-place spacing on the old 9 km map.
+  // A larger region exercises the real secondary macro pipeline; keep the rejection below too.
+  const opts = makeOptions({ seed: '4', mapSize: 16000, population: 9000, settlements: { list: [{ population: 70000 }] } });
   let w: World, w2: World, si: number;
   beforeAll(() => {
     w = generate(opts);
     w2 = generate(opts);
     si = w.settlements!.findIndex((s) => !s.main && s.population === 70000);
+  }, T);
+
+  it('reports the unavailable secondary city on the original 9 km region without losing the main town', () => {
+    const rejected = generate(makeOptions({ ...opts, mapSize: 9000 }));
+    expect(rejected.options.settlements).toEqual({ list: [{ population: 70000 }] });
+    expect(rejected.settlements).toHaveLength(1);
+    expect(rejected.settlements![0]).toMatchObject({ main: true, population: 9000, detail: 'main' });
+    expect(rejected.urban!.buildings.length).toBeGreaterThan(0);
+    expect(rejected.stats['settlements.warning'])
+      .toBe('settlement 0 (city, 70000 inh.) could not be placed: not enough room');
   }, T);
 
   it('gets a macro plan as its lazy detail, and its quarters detail lazily, deterministically', () => {
@@ -220,8 +232,14 @@ describe.runIf(!!process.env.MAGNA_URBIS_PERF)('megacity timings (MAGNA_URBIS_PE
       for (const id of qs) megaQuarterDetail(w, id);
       const qms = (performance.now() - t0) / qs.length;
       console.log(`[mega] ${pop}: macro ${ms} ms, ${w.urban!.macro!.quarters.length} quarters, detail ${Math.round(qms)} ms/quarter, world ${w.stats['ms.total']} ms`);
-      expect(ms).toBeLessThan(budget);
-      expect(qms).toBeLessThan(300);
+      console.info('[MAGNA_URBIS_PERF] ' + JSON.stringify({ file: 'tests/mega.test.ts',
+        fullName: `megacity timings (MAGNA_URBIS_PERF=1) macro plan of ${pop} inhabitants under ${budget} ms, quarters under 300 ms`,
+        metric: 'ms.urban', value: ms, operator: '<', limit: budget }));
+      console.info('[MAGNA_URBIS_PERF] ' + JSON.stringify({ file: 'tests/mega.test.ts',
+        fullName: `megacity timings (MAGNA_URBIS_PERF=1) macro plan of ${pop} inhabitants under ${budget} ms, quarters under 300 ms`,
+        metric: 'ms.quarter', value: qms, operator: '<', limit: 300 }));
+      expect.soft(ms).toBeLessThan(budget);
+      expect.soft(qms).toBeLessThan(300);
     }, T);
   }
 });

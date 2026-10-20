@@ -131,7 +131,11 @@ export function checkWorld(w: World): Report {
     if (inscribed(p, [], 0.1).r * 2 < 2) { r.thin++; if (r.thin < 8) det.push(`${what} thinner than 2 m (area ${area(p).toFixed(1)})`); }
   };
   ub.blocks.forEach((b) => shapeCheck(b, 'block'));
-  ub.parcels.forEach((p) => shapeCheck(p.poly, p.use));
+  // Shore reed residue is deliberately too small or narrow for a dwelling.
+  // It still participates in every partition/overlap check above; an occupied
+  // parcel never receives this exemption, even if it is mislabeled as reeds.
+  const occupiedParcels = new Set(ub.buildings.map((b) => b.parcel));
+  ub.parcels.forEach((p, i) => { if (p.use !== 'reed' || occupiedParcels.has(i)) shapeCheck(p.poly, p.use); });
   ub.buildings.forEach((b) => shapeCheck(b.poly, 'building'));
   // 6. connectivity of the street graph
   const g = new StreetGraph();

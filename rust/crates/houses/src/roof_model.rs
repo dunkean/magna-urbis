@@ -191,6 +191,10 @@ impl Default for RoofSpec {
 /// Transverse y = [-axis[1], axis[0]], matching x-right/y-down coordinates.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct RoofArm {
+    /// Polygon index in the CURRENT feature Attachment.domain; legacy only.
+    /// None preserves the historical whole-domain path. Never valid on Body arms.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_component: Option<u32>,
     pub origin: Point,
     pub axis: [f64; 2],
     pub length_m: f64,

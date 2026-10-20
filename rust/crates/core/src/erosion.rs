@@ -529,6 +529,7 @@ fn sample(h: &[f32], n: usize, fx: f64, fy: f64, cubic: bool) -> f64 {
 }
 
 pub(crate) struct MountainCfg<'a> {
+    pub zoning: Option<(&'a crate::TerrainZones, crate::Relief)>,
     pub n: usize,
     pub width: f64,
     pub amp: f64,
@@ -549,6 +550,44 @@ pub(crate) struct MountainCfg<'a> {
 }
 
 pub(crate) fn mountain(cfg: &MountainCfg<'_>) -> Vec<f32> {
+    let profiles = cfg.zoning.map(|(_, fallback)| {
+        [
+            fallback,
+            crate::Relief::Flat,
+            crate::Relief::Flat,
+            crate::Relief::Hills,
+            crate::Relief::Mountains,
+            crate::Relief::HighMountains,
+        ]
+        .map(|kind| {
+            let p = crate::mountain_parameters(kind, cfg.width, cfg.k * 2400.0, cfg.mountain_mix);
+            (
+                p.amp / cfg.amp,
+                if kind == crate::Relief::Flat {
+                    0.0
+                } else {
+                    p.mountain_mix
+                },
+                p.crest,
+                p.detail,
+            )
+        })
+    });
+    let local = |x: f64, y: f64| -> (f64, f64, f64, f64) {
+        if let (Some((zones, _)), Some(profiles)) = (cfg.zoning, &profiles) {
+            let weights = zones.sample(x / cfg.width, y / cfg.width);
+            let mut out = (0.0, 0.0, 0.0, 0.0);
+            for (i, w) in weights.into_iter().enumerate() {
+                out.0 += w * profiles[i].0;
+                out.1 += w * profiles[i].1;
+                out.2 += w * profiles[i].2;
+                out.3 += w * profiles[i].3;
+            }
+            out
+        } else {
+            (1.0, cfg.mountain_mix, cfg.crest, cfg.detail)
+        }
+    };
     let n = cfg.n;
     let nc = cfg.coarse;
     let count = nc * nc;
@@ -563,6 +602,7 @@ pub(crate) fn mountain(cfg: &MountainCfg<'_>) -> Vec<f32> {
         for x in 0..nc {
             let px = x0 + (x as f64 + 0.5) * cc;
             let py = x0 + (y as f64 + 0.5) * cc;
+            let (amplitude, mix, crest, _) = local(px, py);
             let env_wavelength = (1900.0 * cfg.k).max(cc * 4.0);
             let initial_wavelength = (415.0 * cfg.k).max(cc * 4.0);
             let coarse_noise = cfg.generation_noise.filter(|v| !v.coarse.is_empty());
@@ -584,9 +624,9 @@ pub(crate) fn mountain(cfg: &MountainCfg<'_>) -> Vec<f32> {
                 },
                 |v| v.coarse[(y * nc + x) * 4 + 1] as f64,
             );
-            let mountains = smooth((distribution + (cfg.mountain_mix - 0.5) * 1.4 + 0.28) / 0.56);
+            let mountains = smooth((distribution + (mix - 0.5) * 1.4 + 0.28) / 0.56);
             let regional_amp = 0.20 + 0.80 * mountains;
-            let ridge = if cfg.crest > 0.0 {
+            let ridge = if crest > 0.0 {
                 coarse_noise.map_or_else(
                     || {
                         cfg.noise2
@@ -599,10 +639,11 @@ pub(crate) fn mountain(cfg: &MountainCfg<'_>) -> Vec<f32> {
             };
             // Ridge skeleton belongs to the main uplift, not a texture painted
             // after erosion. Hills and canyon uplands keep their smoother forms.
-            let skeleton = 1.0 + cfg.crest * mountains * ((0.24 + 1.8 * ridge * ridge) - 1.0);
-            let u = (0.7 + 0.5 * env - 0.25 * q).max(0.12) * regional_amp * skeleton;
+            let skeleton = 1.0 + crest * mountains * ((0.24 + 1.8 * ridge * ridge) - 1.0);
+            let u = (0.7 + 0.5 * env - 0.25 * q).max(0.12) * regional_amp * skeleton * amplitude;
             let mut corridor = 1.0;
-            if let Some((width, offset, noise_offset)) = cfg.valley {
+            if let Some((width, offset, noise_offset)) = cfg.valley.filter(|_| cfg.zoning.is_none())
+            {
                 let along = q * cfg.width;
                 let across =
                     -(px - cfg.width * 0.5) * cfg.down.1 + (py - cfg.width * 0.5) * cfg.down.0;
@@ -624,6 +665,7 @@ pub(crate) fn mountain(cfg: &MountainCfg<'_>) -> Vec<f32> {
             h[y * nc + x] = (corridor
                 * (2.5 * u
                     + 0.6
+                        * amplitude
                         * coarse_noise.map_or_else(
                             || {
                                 cfg.noise2
@@ -772,10 +814,40 @@ pub(crate) fn mountain(cfg: &MountainCfg<'_>) -> Vec<f32> {
             }
         }
     }
+    // Normalize within the strongest occupied regime. A tiny mountain mask must
+    // not be amplified against the 99th percentile of a mostly flat map.
+    let mut occupied_amplitude = 1.0_f64;
+    if cfg.zoning.is_some() {
+        let candidates: Vec<(f32, f64)> = output
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| (i % n + i / n * 7) & 15 == 0)
+            .map(|(i, &h)| {
+                (
+                    h,
+                    local(
+                        (i % n) as f64 * cell + cell * 0.5,
+                        (i / n) as f64 * cell + cell * 0.5,
+                    )
+                    .0,
+                )
+            })
+            .collect();
+        occupied_amplitude = candidates
+            .iter()
+            .map(|v| v.1)
+            .fold(0.0_f64, f64::max)
+            .max(1e-6);
+        samples = candidates
+            .into_iter()
+            .filter(|v| v.1 >= occupied_amplitude * 0.5)
+            .map(|v| v.0)
+            .collect();
+    }
     samples.sort_unstable_by(f32::total_cmp);
     let p99 = samples[(samples.len() as f64 * 0.99).floor() as usize].max(0.0001) as f64;
     // Keep a legible relief at the endpoint instead of erasing it with runaway incision.
-    let worn_amplitude = cfg.amp * (1.0 - 0.2 * strength);
+    let worn_amplitude = cfg.amp * occupied_amplitude * (1.0 - 0.2 * strength);
     let scale = worn_amplitude / p99;
     let slopes = output.clone();
     let wavelength = (cell * 6.0).max(260.0 * cfg.k);
@@ -795,7 +867,10 @@ pub(crate) fn mountain(cfg: &MountainCfg<'_>) -> Vec<f32> {
                 || cfg.noise2.ridged(px / wavelength, py / wavelength, octaves),
                 |v| v.fine[i * 4 + 2] as f64,
             ) - 0.5)
-                * cfg.detail
+                * {
+                    let (amplitude, _, _, detail_strength) = local(px, py);
+                    detail_strength * amplitude
+                }
                 * worn_amplitude
                 * factor;
             output[i] = (output[i] as f64 * scale + detail).max(0.3) as f32;

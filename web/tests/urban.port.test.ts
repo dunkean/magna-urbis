@@ -294,15 +294,19 @@ describe('plausible served port frontage', () => {
 });
 
 describe('automatic coastal town regression', () => {
-  for (const options of [
-    { seed: '1', size: 'town' as const, coast: 'S' as const },
-    { seed: '1', size: 'town' as const, coast: 'S' as const, walls: 'single' as const },
-    { seed: '1', size: 'town' as const, coast: 'S' as const, walls: 'double' as const },
-    { seed: '42', size: 'town' as const, coast: 'S' as const, siteType: 'harbor' as const },
-  ]) {
-    it(`keeps ${options.seed}/${'walls' in options ? options.walls : 'default'} coastal frontage connected, dry and exactly partitioned`, () => {
+  // A requested coast/site is a preference: only a local navigable shore with a proved dry,
+  // gated approach becomes a port. Keep both the rejection and the two physical water kinds.
+  for (const { options, expectedPort } of [
+    { options: { seed: '1', size: 'town', coast: 'S' }, expectedPort: null },
+    { options: { seed: '1', size: 'town', coast: 'S', walls: 'single' }, expectedPort: null },
+    { options: { seed: '1', size: 'town', coast: 'S', walls: 'double' }, expectedPort: 'harbour' },
+    { options: { seed: '42', size: 'town', coast: 'S', siteType: 'harbor' }, expectedPort: 'river-port' },
+  ] as const) {
+    it(`keeps ${options.seed}/${'walls' in options ? options.walls : 'default'} ${expectedPort ?? 'no-port'} outcome dry, served and exactly partitioned`, () => {
       const w = generate(makeOptions({ ...options, settlements: 'none' }));
-      expect(w.urban!.sites!.some((s) => s.kind === 'harbour')).toBe(true);
+      const port = w.urban!.sites!.find((s) => s.id === 'port');
+      expect(port?.kind ?? null).toBe(expectedPort);
+      expect(w.urban!.sites!.filter((s) => s.kind === 'harbour' || s.kind === 'river-port')).toHaveLength(expectedPort ? 1 : 0);
       const m = checkM4(w), r = checkWorld(w);
       expect(m.noAccess).toEqual([]);
       expect(m.wetBuildings).toEqual([]);
@@ -318,16 +322,23 @@ describe('automatic coastal town regression', () => {
       expect(r.bldgOutside).toBe(0);
       expect(r.orphanMain).toBe(0);
       const ctx = makeCtx(w, resolveMorph('european-organic'), w.mapSize);
-      for (const quay of w.urban!.quays!) for (let i = 1; i < quay.length; i++) expect(Math.hypot(quay[i].x - quay[i - 1].x, quay[i].y - quay[i - 1].y)).toBeGreaterThanOrEqual(12);
+      for (const quay of w.urban!.quays ?? []) for (let i = 1; i < quay.length; i++) expect(Math.hypot(quay[i].x - quay[i - 1].x, quay[i].y - quay[i - 1].y)).toBeGreaterThanOrEqual(12);
       for (const street of w.urban!.streets.filter((st) => st.role === 'quay')) expect(mpArea(intersectionS(ribbon(street.path, street.width), ctx.water))).toBeLessThanOrEqual(0.05);
       for (const parcel of w.urban!.parcels.filter((p) => p.use === 'pier')) expect(mpArea(intersectionS(parcel.poly, ctx.water))).toBeGreaterThanOrEqual(area(parcel.poly) - 0.5);
-      const port = w.urban!.sites!.find((s) => s.id === 'port')!;
-      expect(port.entrance).toBeDefined();
-      expect(w.urban!.streets.some((st) => st.path.slice(1).some((p, i) => distToSeg(port.entrance!, st.path[i], p) <= st.width / 2 + 0.1))).toBe(true);
+      if (expectedPort === null) {
+        expect(w.urban!.sites!.filter((s) => s.role === 'port')).toEqual([]);
+        expect(w.urban!.quays ?? []).toEqual([]);
+        expect(w.urban!.streets.filter((s) => s.role === 'quay')).toEqual([]);
+        expect(w.urban!.parcels.filter((p) => ['quay', 'pier', 'slipway'].includes(String(p.use)))).toEqual([]);
+      } else {
+        expect(w.urban!.quays!.length).toBeGreaterThan(0);
+        expect(port!.entrance).toBeDefined();
+        expect(w.urban!.streets.some((st) => st.path.slice(1).some((p, i) => distToSeg(port!.entrance!, st.path[i], p) <= st.width / 2 + 0.1))).toBe(true);
+      }
       if (options.seed === '1') {
         const wall = w.urban!.walls!.find((wall) => wall.role === 'town')!;
-        const radialEnd = { x: 1175.5, y: 1659.69 };
-        if ('walls' in options && options.walls === 'double') {
+        const curtains = w.urban!.walls!.filter((w) => w.role === 'town' || w.role === 'outer');
+        if (expectedPort === 'harbour') {
           // Double-curtain radial planning has its own real terminal contact; retain the same rounding bound.
           const radial = w.urban!.streets.filter((street) => street.role === 'radial').map((street) => ({ street, end: street.path[street.path.length - 1] }))
             .filter(({ end }) => distToRing(wall.path, end) <= Math.SQRT2 / (2 * SNAP)).sort((a, b) => b.end.y - a.end.y)[0];
@@ -336,33 +347,33 @@ describe('automatic coastal town regression', () => {
           expect(gate).toBeDefined();
           expect(distToRing(wall.path, gate!.p)).toBeLessThan(1e-8);
           expect(gate!.width).toBe(radial.street.widths![radial.street.widths!.length - 1]);
-        } else expect(wall.gates.some((gate) => Math.hypot(gate.x - radialEnd.x, gate.y - radialEnd.y) < 0.01)).toBe(true);
-        const quays = w.urban!.streets.filter((street) => street.role === 'quay');
-        const approaches = w.urban!.streets.filter((street) => street.role === 'street' && street.path.some((p) =>
-          quays.some((quay) => quay.path.slice(1).some((b, i) => distToSeg(p, quay.path[i], b) < 0.01))));
-        expect(approaches.length).toBeGreaterThan(0);
-        const curtains = w.urban!.walls!.filter((w) => w.role === 'town' || w.role === 'outer');
-        if ('walls' in options && options.walls === 'double') expect(curtains.some((w) => w.role === 'outer')).toBe(true);
-        // The former seed1 centreline used this real gate, but its shallow 4.6m pavement struck masonry.
-        const shallow = ribbon([{ x: 1287.4878351750979, y: 1732.306116679254 }, radialEnd], 4.6);
-        expect(wall.pieces!.reduce((sum, piece) => sum + mpArea(intersectionS(shallow, ribbon(piece, wall.thickness))), 0)).toBeGreaterThan(14);
-        for (const street of [...quays, ...approaches]) {
-          expect(street.width).toBeGreaterThanOrEqual(street.role === 'quay' ? 6.2 : 4.6);
-          const pavement = ribbon(street.path, street.widths ?? street.width);
-          const dry = booleans.tryIntersection(pavement, ctx.water);
-          expect(dry.failed).toBe(false);
-          expect(mpArea(dry.pieces)).toBeLessThanOrEqual(0.05);
-          for (const curtain of curtains) for (const piece of curtain.pieces!) {
-            for (let i = 1; i < street.path.length; i++) for (let j = 1; j < piece.length; j++) {
-              expect(segSegT(street.path[i - 1], street.path[i], piece[j - 1], piece[j])).toBeNull();
+          const quays = w.urban!.streets.filter((street) => street.role === 'quay');
+          const approaches = w.urban!.streets.filter((street) => street.role === 'street' && street.path.some((p) =>
+            quays.some((quay) => quay.path.slice(1).some((b, i) => distToSeg(p, quay.path[i], b) < 0.01))));
+          expect(approaches.length).toBeGreaterThan(0);
+          expect(curtains.some((w) => w.role === 'outer')).toBe(true);
+          // The former seed1 centreline used this real gate, but its shallow 4.6m pavement struck masonry.
+          const radialEnd = { x: 1175.5, y: 1659.69 };
+          const shallow = ribbon([{ x: 1287.4878351750979, y: 1732.306116679254 }, radialEnd], 4.6);
+          expect(wall.pieces!.reduce((sum, piece) => sum + mpArea(intersectionS(shallow, ribbon(piece, wall.thickness))), 0)).toBeGreaterThan(14);
+          for (const street of [...quays, ...approaches]) {
+            expect(street.width).toBeGreaterThanOrEqual(street.role === 'quay' ? 6.2 : 4.6);
+            const pavement = ribbon(street.path, street.widths ?? street.width);
+            const dry = booleans.tryIntersection(pavement, ctx.water);
+            expect(dry.failed).toBe(false);
+            expect(mpArea(dry.pieces)).toBeLessThanOrEqual(0.05);
+            for (const curtain of curtains) for (const piece of curtain.pieces!) {
+              for (let i = 1; i < street.path.length; i++) for (let j = 1; j < piece.length; j++) {
+                expect(segSegT(street.path[i - 1], street.path[i], piece[j - 1], piece[j])).toBeNull();
+              }
+              const clear = booleans.tryIntersection(pavement, ribbon(piece, curtain.thickness));
+              expect(clear.failed).toBe(false);
+              expect(mpArea(clear.pieces)).toBeLessThanOrEqual(0.05);
             }
-            const clear = booleans.tryIntersection(pavement, ribbon(piece, curtain.thickness));
-            expect(clear.failed).toBe(false);
-            expect(mpArea(clear.pieces)).toBeLessThanOrEqual(0.05);
           }
+          // A safe access road must not leave its ordinary harbour row standing across the outer curtain.
+          expect(w.urban!.buildings.filter((building) => building.arch === 'warehouse').length).toBeGreaterThan(0);
         }
-        // A safe access road must not leave its ordinary harbour row standing across the outer curtain.
-        expect(w.urban!.buildings.filter((building) => building.arch === 'warehouse').length).toBeGreaterThan(0);
         for (const building of w.urban!.buildings.filter((building) => ['house', 'rear', 'back', 'barn', 'shed'].includes(building.kind))) for (const curtain of curtains) for (const piece of curtain.pieces!) {
           const clear = booleans.tryIntersection(building.poly, ribbon(piece, curtain.thickness));
           expect(clear.failed).toBe(false);
@@ -373,8 +384,9 @@ describe('automatic coastal town regression', () => {
   }
 
   it('retains determinism, the port=no override and absence of an inland coast port', () => {
-    const options = makeOptions({ seed: '1', size: 'town', coast: 'S', settlements: 'none' });
+    const options = makeOptions({ seed: '1', size: 'town', coast: 'S', walls: 'double', settlements: 'none' });
     const a = generate(options), b = generate(options);
+    expect(a.urban!.sites!.some((s) => s.kind === 'harbour')).toBe(true);
     expect(b.urban).toEqual(a.urban);
     const off = generate(makeOptions({ ...options, port: 'no' }));
     expect(off.urban!.quays ?? []).toEqual([]);

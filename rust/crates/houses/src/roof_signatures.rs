@@ -132,6 +132,7 @@ pub(super) fn estimate_curved_patches(
     for original in arms_for(source, level)? {
         let arm = if source.roof_spec.axis == RoofAxis::Transverse {
             RoofArm {
+                source_component: None,
                 origin: local(&original, original.length_m, 0.0),
                 axis: [-original.axis[1], original.axis[0]],
                 length_m: original.width_m,
@@ -418,6 +419,7 @@ mod tests {
 
     fn arm(length_m: f64, width_m: f64) -> RoofArm {
         RoofArm {
+            source_component: None,
             origin: Point { x: 0.0, y: 0.0 },
             axis: [1.0, 0.0],
             length_m,

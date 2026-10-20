@@ -91,6 +91,7 @@ fn parameters(fp: &str, rf: &str) -> Parameters {
             pitch_deg: 10.0,
             max_span_m: 3.0,
             support_spacing_m: 1.5,
+            facade_mode: None,
         },
         detail_spec: None,
         court_program: None,

@@ -25,3 +25,8 @@
 .seed-handle circle { fill: #b2452f; stroke: #fffdf0; stroke-width: 2px; }
 .seed-handle path { stroke: #b2452f; stroke-width: 1.5px; }
 #status { margin: 4px 0 0; border: 0; background: transparent; padding: 0 2px; }
+.workshop-navigation button[aria-pressed=true] { background:#344c3e; color:#fffdf0; border-color:#344c3e; }
+#urbanWorkshop { flex:1; min-height:0; background:#f3efdf; }
+#urbanWorkshop > .control-group { background:#f7f3e7; border-bottom:1px solid #d3cfbe; }
+#urbanWorkshop > .control-group button, #urbanWorkshop > .control-group a { color:#344c3e; border:1px solid #c3c6b5; background:#fffdf7; border-radius:3px; padding:5px 8px; font:11px system-ui,sans-serif; text-decoration:none; }
+#urbanWorkshop [data-workshop-status] { color:#717466; font-size:11px; }

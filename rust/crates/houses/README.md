@@ -16,10 +16,12 @@ les configurations. Une recette peut encore être rejetée par les contraintes
 physiques ou les budgets du moteur ; le banc affiche cette erreur.
 
 Ce checkpoint reste un prototype en cours de validation. Les accès publics
-GreatHouse et Himalayan Compound, certains lots variés MED2/Tulou et la QA
-finale native/WASM/navigateur restent à terminer. Les correspondances
-fonctionnelles relient les usages du catalogue compagnon aux morphotypes
-disponibles.
+GreatHouse et Himalayan Compound et la QA finale native/WASM/navigateur après
+leur correction restent à terminer. Les appentis médiévaux ont été vérifiés
+dans les lots variés et le banc web. Certains ensembles
+complexes dépassent le budget géométrique d'un lot ; ce refus est affiché
+explicitement. Les correspondances fonctionnelles relient les usages du
+catalogue compagnon aux morphotypes disponibles.
 
 ## Ouvrir le banc
 

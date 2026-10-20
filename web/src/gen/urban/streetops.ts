@@ -165,8 +165,16 @@ export function approachGates(
     for (let j = 0; j <= nSteps; j++) walk.push(atS(se + (d * j) / nSteps));
     const g = gates[gi].p;
     const path = [...pl.slice(0, k), entry, ...walk.slice(1), g, center];
-    for (let j = k; j < path.length - 2; j++) if (isWater(path[j])) return pl;
-    return simplify(path, 0.3);
+    const candidate = path;
+    // Check every new segment, including the gate-to-centre approach. Checking
+    // only perimeter vertices allowed that final chord to cross a river.
+    for (let j = Math.max(1, k); j < candidate.length; j++) {
+      const a = candidate[j - 1], b = candidate[j], steps = Math.max(1, Math.ceil(dist(a, b) / 1.5));
+      for (let t = 0; t <= steps; t++) {
+        if (isWater({ x: a.x + (b.x - a.x) * t / steps, y: a.y + (b.y - a.y) * t / steps })) return pl;
+      }
+    }
+    return simplify(candidate, 0.3);
   });
 }
 

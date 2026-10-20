@@ -1,10 +1,9 @@
 use super::*;
 
 fn captured() -> HouseUnit {
-    let value: serde_json::Value = serde_json::from_str(include_str!(
+    let value: serde_json::Value = super::super::super::fixture_json_exact::value(include_bytes!(
         "../../../../fixtures/houses/parapet-him2.json"
-    ))
-    .unwrap();
+    ));
     let mut unit: HouseUnit = serde_json::from_value(value["unit"].clone()).unwrap();
     // serde_json lacks float_roundtrip. Rebuild the exact native detail
     // surfaces for this fixture, as roof tests rebuild the native roof mesh.
@@ -53,7 +52,7 @@ fn proposal(unit: &HouseUnit, shift: f64) -> (AccessNode, AccessNode, Feature) {
     (base, target, flight)
 }
 
-fn linked() -> HouseUnit {
+pub(super) fn linked() -> HouseUnit {
     let mut unit = captured();
     let (base, target, flight) = proposal(&unit, -0.13);
     install(&mut unit, &base, &target, flight).unwrap();
@@ -68,18 +67,8 @@ fn linked() -> HouseUnit {
 }
 
 fn check(unit: &HouseUnit, roofs: bool) -> Result<(), String> {
-    let f = unit
-        .features
-        .iter()
-        .find(|f| f.id.contains(":link:"))
-        .unwrap();
-    let p = unit
-        .access
-        .portals
-        .iter()
-        .find(|p| p.feature_ids.contains(&f.id))
-        .unwrap();
-    validate(unit, f, p, roofs)
+    // Band provenance is now checked once by the complete access validator.
+    super::validate_geometry(unit, roofs)
 }
 
 #[test]
@@ -141,7 +130,13 @@ fn real_corner_link_has_two_supported_bands_and_material_apertures() {
         );
     }
     crate::roofs::build_roofs(&mut unit).unwrap();
-    check(&unit, true).unwrap();
+    let feature = unit
+        .features
+        .iter()
+        .find(|f| f.id.contains(":link:"))
+        .unwrap();
+    let portal = unit.access.portals.last().unwrap();
+    validate(&unit, feature, portal, true).unwrap();
 }
 
 #[test]
@@ -381,4 +376,15 @@ fn a_private_pair_and_a_rise_outside_the_upper_assise_are_refused() {
         }
     }
     assert!(install(&mut unit, &base, &target, flight).is_err());
+}
+
+#[test]
+fn historical_link_fixture_still_rejects_its_inherited_legacy_obstruction() {
+    let mut unit = linked();
+    crate::roofs::build_roofs(&mut unit).unwrap();
+    let inherited = check(&unit, true).unwrap_err();
+    assert!(
+        inherited.contains("unit-2:public-roof:47") && inherited.contains("landing:1"),
+        "{inherited}"
+    );
 }

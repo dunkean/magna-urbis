@@ -124,15 +124,27 @@ describe('safe junction fallback', () => {
 });
 
 describe('real estuary regressions from the full suite', () => {
-  for (const [seed, id, minimum] of [['2', 1, 3], ['3', 1, 3], ['4', 2, 4]] as const) {
-    it(`valley seed ${seed} preserves the drowned confluence as a real sea outlet`, () => {
+  for (const seed of ['2', '3', '4'] as const) {
+    it(`valley seed ${seed} preserves its receiving network and real sea outlets`, () => {
       const o = makeOptions({ seed, size: 'town', relief: 'valley', coast: 'random', river: 'river' });
       const { terrain: t } = generateTerrain(o, new Rng('magna-urbis:' + seed));
-      expect(t.rivers.length).toBeGreaterThanOrEqual(minimum);
-      const r = t.rivers.find((r) => r.id === id)!;
-      expect(r).toBeDefined(); expect(r.mouth).toBe('sea'); expect(r.host).toBeUndefined();
-      const distance = Math.min(...t.coastline.map((p) => distToPolyline(r.path.at(-1)!, p.concat([p[0]]))));
-      expect(distance).toBeLessThan(0.01);
+      expect(t.rivers.length).toBeGreaterThanOrEqual(3);
+      // Pin the actual retained network, including tributaries: a removed river
+      // cannot be hidden by checking only whichever sea outlets happen to remain.
+      if (seed === '2') expect(t.rivers.map(({ id, mouth, host }) => ({ id, mouth, host }))).toEqual([
+        { id: 0, mouth: 'sea', host: undefined }, { id: 2, mouth: 'river', host: 0 }, { id: 3, mouth: 'river', host: 2 },
+      ]);
+      if (seed === '4') expect(t.rivers.map(({ id, mouth, host }) => ({ id, mouth, host }))).toEqual([
+        { id: 0, mouth: 'sea', host: undefined }, { id: 1, mouth: 'sea', host: undefined }, { id: 2, mouth: 'sea', host: undefined },
+      ]);
+      if (seed === '3') expect(t.rivers.find((r) => r.id === 1)?.mouth).toBe('sea');
+      const outlets = t.rivers.filter((r) => r.mouth === 'sea');
+      expect(outlets.length).toBeGreaterThan(0);
+      for (const r of outlets) {
+        expect(r.host).toBeUndefined();
+        const distance = Math.min(...t.coastline.map((p) => distToPolyline(r.path.at(-1)!, p.concat([p[0]]))));
+        expect(distance).toBeLessThan(0.01);
+      }
       expect(checkRivers(t, { mapSize: 2400, river: o.river, widthK: 1 })).toEqual([]);
     }, 120000);
   }

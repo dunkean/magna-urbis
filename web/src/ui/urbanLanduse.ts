@@ -57,7 +57,9 @@ export function createUrbanLanduse(options: { map: SVGSVGElement; before: Elemen
   const opacity = q<HTMLInputElement>('landuseOpacity'), visible = q<HTMLInputElement>('showLanduse');
   const enabled = q<HTMLInputElement>('landuseEnabled');
   const button = q<HTMLButtonElement>('landuseGenerate'), status = q<HTMLElement>('landuseStatus');
-  const layer = options.map.querySelector<SVGGElement>('#landuseLayer')!;
+  let layer = options.map.querySelector<SVGGElement>('#landuseLayer');
+  if (!layer) { layer = document.createElementNS('http://www.w3.org/2000/svg', 'g'); layer.id = 'landuseLayer'; options.map.querySelector('#fantasyPainting')?.before(layer); if (!layer.parentNode) options.map.prepend(layer); }
+  const landuseLayer = layer;
   biome.replaceChildren(...BIOME_NAMES.map((id, i) => new Option(biomeLabels[i], id)));
   style.replaceChildren(...STYLE_LIST.map(s => new Option(s.label, s.id)));
   seed.value = settings.seed; biome.value = settings.biome; style.value = settings.style;
@@ -75,15 +77,15 @@ export function createUrbanLanduse(options: { map: SVGSVGElement; before: Elemen
     status.textContent = text; button.setAttribute('aria-busy', String(busy));
   }
   function visibility(): void {
-    layer.style.display = settings.enabled && settings.visible && !options.getDisplayStyle?.() ? '' : 'none'; layer.setAttribute('opacity', String(settings.opacity));
+    landuseLayer.style.display = settings.enabled && settings.visible && !options.getDisplayStyle?.() ? '' : 'none'; landuseLayer.setAttribute('opacity', String(settings.opacity));
   }
   function draw(): void {
     visibility();
     renderer?.dispose(); renderer = undefined; cancelAnimationFrame(frame);
-    if (!settings.enabled || !scene || !context || options.getDisplayStyle?.()) { layer.replaceChildren(); canvas = undefined; host = undefined; renderWorld = undefined; renderScene = undefined; return; }
+    if (!settings.enabled || !scene || !context || options.getDisplayStyle?.()) { landuseLayer.replaceChildren(); canvas = undefined; host = undefined; renderWorld = undefined; renderScene = undefined; return; }
     if (!canvas) {
-      layer.innerHTML = `<defs><clipPath id="urban-landuse-clip"><rect width="${scene.mapSize}" height="${scene.mapSize}"/></clipPath></defs><g clip-path="url(#urban-landuse-clip)"><foreignObject/></g>`;
-      host = layer.querySelector('foreignObject')!;
+      landuseLayer.innerHTML = `<defs><clipPath id="urban-landuse-clip"><rect width="${scene.mapSize}" height="${scene.mapSize}"/></clipPath></defs><g clip-path="url(#urban-landuse-clip)"><foreignObject/></g>`;
+      host = landuseLayer.querySelector('foreignObject')!;
       canvas = document.createElement('canvas'); canvas.id = 'landuseCanvas'; canvas.style.display = 'block'; host.append(canvas);
     }
     renderWorld ??= urbanLanduseRenderWorld(scene, context.raster);

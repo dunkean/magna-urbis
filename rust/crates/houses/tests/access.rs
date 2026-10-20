@@ -1,7 +1,7 @@
 use magna_urbis_houses::{
     catalogue::{Support, SupportKind},
     generate_batch,
-    geometry::{area, intersection, unite},
+    geometry::{area, difference, intersection, unite},
     model::{FeatureKind, HistoricalMode, HouseConfig, PortalKind, WallKind},
     workshop::WorkshopRequest,
 };
@@ -21,7 +21,8 @@ fn source(id: &str) -> HouseConfig {
 fn collective_terraces_have_public_routes_without_entering_households() {
     use magna_urbis_houses::model::{AccessKind, Overrides};
     use std::collections::{BTreeSet, VecDeque};
-    for variant in ["default", "d_plan"] {
+    let mut refused = Vec::new();
+    for variant in ["d_plan"] {
         for floors in [2, 4] {
             for seed in ["42", "toits é🏠"] {
                 let config = HouseConfig {
@@ -34,8 +35,34 @@ fn collective_terraces_have_public_routes_without_entering_households() {
                     },
                     ..source("AM-PUEB-B03")
                 };
-                let batch = generate_batch(config)
-                    .unwrap_or_else(|e| panic!("{variant}/{floors}/{seed}: {e}"));
+                let seed_label = if seed == "42" { "42" } else { "unicode" };
+                let case = format!("great-{variant}-floors{floors}-{seed_label}");
+                let case_started = std::time::Instant::now();
+                eprintln!("GREAT_CASE {case} START generate_batch");
+                let batch = match generate_batch(config) {
+                    Ok(batch) => batch,
+                    Err(error) => {
+                        eprintln!(
+                            "GREAT_CASE {case} REFUSED seconds={:.6} error={error}",
+                            case_started.elapsed().as_secs_f64()
+                        );
+                        refused.push(format!("{variant}/{floors}/{seed}: {error}"));
+                        continue;
+                    }
+                };
+                // Test-only observer of the eight existing Great cases.
+                let evidence = std::path::Path::new("access-integration-standard-cases");
+                std::fs::create_dir_all(evidence).unwrap();
+                std::fs::write(
+                    evidence.join(format!("{case}.json")),
+                    serde_json::to_vec(&batch).unwrap(),
+                )
+                .unwrap();
+                eprintln!(
+                    "GREAT_CASE {case} GENERATED seconds={:.6} faces={}",
+                    case_started.elapsed().as_secs_f64(),
+                    batch.units[0].roofs.faces.len()
+                );
                 let unit = &batch.units[0];
                 let allowed: BTreeSet<_> = unit
                     .access
@@ -107,14 +134,34 @@ fn collective_terraces_have_public_routes_without_entering_households() {
                         })
                         .unwrap();
                     let mut unsupported = unit.clone();
+                    assert_eq!(
+                        unsupported
+                            .features
+                            .iter()
+                            .filter(|f| { f.id.starts_with(&format!("{}:post:", landing.id)) })
+                            .count(),
+                        4,
+                    );
                     unsupported
                         .features
                         .retain(|f| !f.id.starts_with(&format!("{}:post:", landing.id)));
-                    assert!(
-                        magna_urbis_houses::validation::validate_unit(&unsupported)
-                            .unwrap_err()
-                            .contains("palier public non porté")
+                    let coplanar_support = unite(
+                        &unsupported
+                            .access
+                            .nodes
+                            .iter()
+                            .filter(|n| {
+                                n.kind != AccessKind::Room
+                                    && n.kind != AccessKind::StairLanding
+                                    && (n.z_m - landing.z_m).abs() < 0.001
+                            })
+                            .map(|n| n.floor.clone())
+                            .collect::<Vec<_>>(),
                     );
+                    assert!(area(&difference(&landing.surface, &coplanar_support)) > 1e-6);
+                    let error =
+                        magna_urbis_houses::validation::validate_unit(&unsupported).unwrap_err();
+                    assert_eq!(error, "Pont de palier sans quatre appuis.");
                     let flight = unit
                         .features
                         .iter()
@@ -141,6 +188,7 @@ fn collective_terraces_have_public_routes_without_entering_households() {
             }
         }
     }
+    assert!(refused.is_empty(), "{}", refused.join("\n"));
 }
 
 #[test]

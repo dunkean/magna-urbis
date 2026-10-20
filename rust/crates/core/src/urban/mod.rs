@@ -196,6 +196,12 @@ pub struct FootprintConfig {
     pub anisotropy: f64,
     pub separation: f64,
     pub epochs: usize,
+    /// Infill preference; one preserves the original continuous growth.
+    pub cohesion: f64,
+    pub satellites: f64,
+    pub branch_depth: f64,
+    /// Correlated open-space scale, in metres.
+    pub gap_size: f64,
 }
 impl Default for FootprintConfig {
     fn default() -> Self {
@@ -211,6 +217,10 @@ impl Default for FootprintConfig {
             anisotropy: 0.65,
             separation: 1.3,
             epochs: 3,
+            cohesion: 1.0,
+            satellites: 0.0,
+            branch_depth: 0.0,
+            gap_size: 60.0,
         }
     }
 }
@@ -690,6 +700,11 @@ pub fn generate_quarters(
         || !(0.0..=1.0).contains(&f.anisotropy)
         || !f.separation.is_finite()
         || !(0.4..=3.0).contains(&f.separation)
+        || [f.cohesion, f.satellites, f.branch_depth]
+            .iter()
+            .any(|v| !v.is_finite() || !(0.0..=1.0).contains(v))
+        || !f.gap_size.is_finite()
+        || !(10.0..=500.0).contains(&f.gap_size)
         || ![
             "culture",
             "grid",

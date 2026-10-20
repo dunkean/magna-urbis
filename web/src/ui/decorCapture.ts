@@ -2,8 +2,8 @@ import { terrainGeography } from '../../../rust/bridge/urbanGeography';
 import { settlementRaster, type RoadConfig, type RoadOutput, type SettlementOutput } from '../../../rust/bridge/settlements';
 import { COAST_DIRECTIONS, type TerrainData, type TerrainSettings } from '../../../rust/bridge/terrain';
 import { DEFAULT_HYDROLOGY, riverAreaFor } from '../../../rust/bridge/hydrology';
-import { renderHydrology } from '../../../rust/bridge/hydrologyRender';
-import { vectorWaterSvg } from './vectorWaterRender';
+import { hydrologyLakeMaterial, renderHydrology } from '../../../rust/bridge/hydrologyRender';
+import { vectorLakeMaterial, vectorWaterSvg } from './vectorWaterRender';
 import { encodeDecor, rasterStats, type Decor, type DecorMeta } from './decor';
 
 /** Default classification of a Terrain Bench map; the batch exporter adds its own tags. */
@@ -43,6 +43,9 @@ export function captureDecor(t: TerrainData, settings: TerrainSettings, output: 
       tags: { ...tagsOf(settings, output, roadConfig), ...extra.tags, source: settings.source ?? 'procedural', hydrology: h.engine },
       seed: settings.seed, width: t.width, query: extra.query ?? location.search.replace(/^\?/, ''), created: new Date().toISOString(),
       settlements: output.settlements, roadConfig, roads: roads ?? null, waterSvg,
+      waterMaterialSvg: t.water ? vectorLakeMaterial(t.water) : t.hydrology ? hydrologyLakeMaterial(t.hydrology) : '',
+      terrainDisplay: { floor: t.field?.floor ?? 0, sourceCell: settings.width / 1024, refine: !!settings.refine,
+        globalMinHeight: t.globalMinHeight, globalMaxHeight: t.globalMaxHeight, motifSize: t.motifSize },
       stats: { ...rasterStats(raster), riverKm: t.water?.rivers?.lengthKm ?? riverKm(t), roadKm: (roads?.segments.reduce((s, r) => s + r.length, 0) ?? 0) / 1000 },
     },
     raster,

@@ -259,10 +259,28 @@ function shopRow(pl: Plot, P: MorphologyParams, rng: Rng): ArchBldg[] {
  * - deep lots: several courts in file (2–4 jin), a rear range (houzhaofang) closing the last one.
  */
 function pavilionCompound(pl: Plot, P: MorphologyParams, rng: Rng): ArchBldg[] {
-  const f = frame(pl);
+  let f = frame(pl);
   if (!f) return [];
   // lateral bounds valid over the usable depth (orthogonal halls); a tapering lot back stays garden
-  const us = usable(pl, f, true);
+  let us = usable(pl, f, true);
+  // A merged courtyard lot can have a small neck at its recorded entrance
+  // and another real public facade along the main lobe. Use that facade when
+  // the first entrance cannot support a hall, never an unserved rear edge.
+  if (!us || us.D < MIN_BW + 0.6 || us.u1 - us.u0 < MIN_BW + 0.1) {
+    let bestArea = 0;
+    for (const front of pl.streetSides ?? []) {
+      const length = dist(front[0], front[1]);
+      if (length < MIN_BW) continue;
+      let nrm = { x: -(front[1].y - front[0].y) / length, y: (front[1].x - front[0].x) / length };
+      const mid = { x: (front[0].x + front[1].x) / 2, y: (front[0].y + front[1].y) / 2 };
+      if (!pointInRing(pl.poly, { x: mid.x + nrm.x * 0.1, y: mid.y + nrm.y * 0.1 })) nrm = { x: -nrm.x, y: -nrm.y };
+      const alternativeFrame = frame({ ...pl, front, nrm });
+      const alternative = alternativeFrame && usable(pl, alternativeFrame, true);
+      if (!alternative || alternative.D < MIN_BW + 0.6 || alternative.u1 - alternative.u0 < MIN_BW + 0.1) continue;
+      const capacity = alternative.D * (alternative.u1 - alternative.u0);
+      if (capacity > bestArea) { f = alternativeFrame!; us = alternative; bestArea = capacity; }
+    }
+  }
   if (!us) return [];
   const D = us.D;
   const u0 = us.u0 + 0.05, u1 = us.u1 - 0.05;

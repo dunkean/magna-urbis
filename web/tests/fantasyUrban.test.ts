@@ -4,7 +4,7 @@ import { createBrushLibrary, FAMILY_NAMES, type Atlas, type BrushFamily } from '
 import type { Layout } from '../../rust/bridge/urban';
 import type { RoadOutput, SettlementRaster } from '../../rust/bridge/settlements';
 describe('fantasy urban landscape', () => {
-  it('keeps water, urban quarters and road axes clear without changing physical inputs', () => {
+  it('keeps water anchors and urban quarters clear, allowing brush overhang across routes without changing physical inputs', () => {
     const n = 64, width = 10000, count = n * n;
     const raster: SettlementRaster = { n, width, height: new Float32Array(count).fill(300), water: new Uint8Array(count), waterLevel: new Float32Array(count), riverWidth: new Float32Array(count), riverIds: new Int32Array(count).fill(-1) };
     for (let y = 0; y < n; y++) for (let x = 0; x < 7; x++) raster.water[y * n + x] = 2;
@@ -16,7 +16,8 @@ describe('fantasy urban landscape', () => {
     const scene = paintFantasyDecor({ raster, seed: 'urban-42', temperature: 18, rain: 1800, layouts, roads }, createBrushLibrary('fantasy-color', families), { density: 1, size: 1, spacing: 1 });
     const anchors = [...scene.matchAll(/transform="translate\(([-\d.]+) ([-\d.]+)\)/g)].map(match => ({x:Number(match[1]),y:Number(match[2])}));
     expect(anchors.length).toBeGreaterThan(100);
-    expect(anchors.every(p => p.x > 1000 && Math.abs(p.x - 2000) > 100 && !(p.x > 4000 && p.x < 7000 && p.y > 4000 && p.y < 7000))).toBe(true);
+    expect(anchors.every(p => p.x > 1000 && !(p.x > 4000 && p.x < 7000 && p.y > 4000 && p.y < 7000))).toBe(true);
+    expect(anchors.some(p => Math.abs(p.x - 2000) < 50)).toBe(true);
     expect(raster.height).toEqual(heights); expect(raster.water).toEqual(water); expect(JSON.stringify(layouts)).toBe(geometry);
   });
 });

@@ -74,7 +74,7 @@ pub fn to_geo(surface: &Surface) -> MultiPolygon<f64> {
     )
 }
 
-fn canonical_ring(line: &LineString<f64>, positive: bool) -> Vec<Point> {
+pub(crate) fn canonical_ring(line: &LineString<f64>, positive: bool) -> Vec<Point> {
     let mut ring: Vec<_> = line.0.iter().map(|c| Point { x: c.x, y: c.y }).collect();
     if ring.len() > 1 && ring.first() == ring.last() {
         ring.pop();

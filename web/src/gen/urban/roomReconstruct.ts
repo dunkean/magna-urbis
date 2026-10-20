@@ -3,7 +3,7 @@ import type { Polygon, Vec2 } from '../core/geom';
 import { polygonCentroid } from '../core/geom';
 import { area, bboxOf, cleanRing, convexHull, distToRing, inscribed, isSimple, obb, pointInRing } from '../geo/poly';
 import { polyInside } from '../geo/split';
-import { mpArea, tryDifference, tryIntersection } from '../geo/bool';
+import { mpArea, tryDifference, tryIntersection, prepareIntersection } from '../geo/bool';
 
 export type RoomClearance = Polygon[] | ((candidate: Polygon) => boolean);
 export type RoomValidator = (candidate: Polygon) => boolean;
@@ -19,7 +19,9 @@ export function reconstructRoom(poly: Polygon, owner: Polygon, occupied: Polygon
   if (poly.length < 3 || owner.length < 3 || !poly.every((p) => Number.isFinite(p.x) && Number.isFinite(p.y))) return null;
   const oldArea = area(poly), originalCenter = polygonCentroid(poly);
   if (!Number.isFinite(oldArea) || oldArea < 12) return null;
-  const oldContact = occupied.map((other) => tryIntersection(poly, other));
+  // Occupied roofs stay unchanged until this synchronous search returns.
+  const occupiedIntersections = occupied.map(other => prepareIntersection(other));
+  const oldContact = occupiedIntersections.map(intersect => intersect(poly));
   if (oldContact.some((hit) => hit.failed)) return null;
 
   const accept = (candidate0: Polygon): Polygon | null => {
@@ -32,8 +34,8 @@ export function reconstructRoom(poly: Polygon, owner: Polygon, occupied: Polygon
     const escaped = tryDifference(candidate, owner), added = tryDifference(candidate, poly);
     if (escaped.failed || added.failed || mpArea(escaped.pieces) > 1e-6) return null;
     for (let i = 0; i < occupied.length; i++) {
-      const contact = tryIntersection(candidate, occupied[i]);
-      const newContact = added.pieces.length ? tryIntersection(added.pieces, occupied[i]) : { pieces: [], failed: false };
+      const contact = occupiedIntersections[i](candidate);
+      const newContact = added.pieces.length ? occupiedIntersections[i](added.pieces) : { pieces: [], failed: false };
       if (contact.failed || newContact.failed || mpArea(newContact.pieces) > 1e-6
         || mpArea(contact.pieces) > mpArea(oldContact[i].pieces) + 1e-6) return null;
     }
@@ -110,6 +112,8 @@ export function replanWholeRoom(poly: Polygon, owner: Polygon, front: [Vec2, Vec
   validate: (candidate: Polygon) => boolean): Polygon | null {
   const oldArea = area(poly), oldCenter = polygonCentroid(poly);
   if (oldArea < 12 || !Number.isFinite(oldArea) || owner.length < 3) return null;
+  // Occupied roofs stay unchanged until this synchronous search returns.
+  const occupiedIntersections = occupied.map(other => prepareIntersection(other));
   const free = tryDifference(owner, occupied.map((outer) => ({ outer, holes: [] })));
   if (free.failed || !free.pieces.length) return null;
   const axes: Vec2[] = [];
@@ -159,8 +163,8 @@ export function replanWholeRoom(poly: Polygon, owner: Polygon, front: [Vec2, Vec
       const outside = tryDifference(candidate, owner);
       if (outside.failed || mpArea(outside.pieces) > 1e-6) continue;
       let occupiedClear = true;
-      for (const other of occupied) {
-        const hit = tryIntersection(candidate, other);
+      for (const intersect of occupiedIntersections) {
+        const hit = intersect(candidate);
         if (hit.failed || mpArea(hit.pieces) > 1e-6) { occupiedClear = false; break; }
       }
       if (occupiedClear && clear(candidate) && validate(candidate)) return candidate;

@@ -31,8 +31,12 @@ for (const sc of scales) {
   console.log('shot', f, await p.evaluate(() => document.getElementById('hud')?.textContent));
 }
 if (a.includes('--exports')) {
+  await p.locator('#quickShare > summary').click();
   for (const id of ['exportSvg', 'exportPng']) {
-    const [dl] = await Promise.all([p.waitForEvent('download', { timeout: 60000 }).catch(() => null), p.click('#' + id)]);
+    const [dl] = await Promise.all([p.waitForEvent('download', { timeout: 60000 }).catch(() => null), (async () => {
+      await p.click('#' + id);
+      await p.locator('.export-crop [data-action="export"]').click();
+    })()]);
     if (dl) { const f = `${outDir}/${tag}_${dl.suggestedFilename()}`; await dl.saveAs(f); console.log(id, 'download', f, fs.statSync(f).size, 'bytes'); }
     else console.log(id, 'NO DOWNLOAD');
   }

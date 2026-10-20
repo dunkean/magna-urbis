@@ -52,7 +52,7 @@ M['medina-souk'] = morph('medina-souk', M['medina'], {
 
 M['chinese'] = morph('chinese', MORPHOLOGIES['bastide'], {
   // Deep wards gain hutongs; oversized frontage lots are refined into accessible courtyard compounds.
-  streets: ['axis', 'grid', 'wardWalls'], closeOp: 'hutong', accessDepth: 27, plotOp: 'siheyuan', buildingOp: 'pavilionCompound', orientation: 'cardinal', deepFill: true,
+  streets: ['axis', 'grid', 'wardWalls'], closeOp: 'hutong', accessDepth: 22, plotOp: 'siheyuan', buildingOp: 'pavilionCompound', orientation: 'cardinal', deepFill: true,
   gridSpacing: [240, 240], laneSpacing: [58, 125], wardArea: 26000, gridSkew: 0, fieldNoise: 0,
   blockSize: { core: [9000, 16000], middle: [9000, 16000], edge: [9000, 16000], faubourg: [4500, 14000] },
   minBlock: 1500, minWidth: 22, widthByRank: [14, 10, 7, 4.5, 3],

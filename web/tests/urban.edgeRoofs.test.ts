@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { describe, expect, it, vi } from 'vitest';
 import type { Polygon } from '../src/gen/core/geom';
 import type { UrbanCtx } from '../src/gen/urban/context';
@@ -353,27 +354,32 @@ describe('settlement edge roofs', () => {
 
   it('preserves the current seeded hamlet programme and all owner geometry', () => {
     const originalFinish = edgeRoofFunctions.finishEdgeRoofs;
-    let snapshot: { before: Polygon[]; owners: string; afterOwners: string; constrained: number } | undefined;
+    let snapshot: { before: Polygon[]; after: Polygon[]; owners: string; afterOwners: string; constrained: number } | undefined;
     const owners = (input: EdgeRoofPartition) => JSON.stringify([input.quarters, input.blocks, input.parcels,
       input.streetSpace, input.footprint, input.phases]);
     const spy = vi.spyOn(edgeRoofFunctions, 'finishEdgeRoofs').mockImplementation((input) => {
       const before = structuredClone(input.buildings.map((b) => b.poly)), initialOwners = owners(input);
       const result = originalFinish(input);
-      snapshot = { before, owners: initialOwners, afterOwners: owners(input), constrained: result.constrained };
+      snapshot = { before, after: structuredClone(input.buildings.map((b) => b.poly)), owners: initialOwners,
+        afterOwners: owners(input), constrained: result.constrained };
       return result;
     });
     try {
       const w = generate(makeOptions({ seed: '42', size: 'hamlet', walls: 'none', culture: 'european-organic', settlements: 'none' }));
       const u = w.urban!;
       expect(snapshot).toBeDefined();
-      // The old 12-roof fixture was generated before the upstream quarter partition changed.
-      // Both old and current finishers now receive 14 already-sound roofs for these options.
-      expect(u.buildings).toHaveLength(14);
+      // The current road/quarter foundation produces eight roofs; the finisher
+      // must preserve every one and its owners.
+      expect(u.buildings).toHaveLength(8);
       expect(snapshot!.before).toHaveLength(u.buildings.length);
       expect(snapshot!.afterOwners).toBe(snapshot!.owners);
       expect(snapshot!.constrained).toBe(0);
-      u.buildings.forEach((b, i) => {
-        expect(b.poly).toEqual(snapshot!.before[i]);
+      expect(snapshot!.after).toEqual(snapshot!.before);
+      // Subsequent footprint finalization can normalize roof geometry.
+      // Pin that final output separately from the finisher's immediate transaction.
+      expect(createHash('sha256').update(JSON.stringify(u)).digest('hex'))
+        .toBe('5d4904e2ff2b04f768ab9a91a4d8a1036f20c30c1954bcee5b0d2c30ff6f0039');
+      u.buildings.forEach((b) => {
         expect(outside(b.poly, u.parcels[b.parcel!].poly)).toBeLessThanOrEqual(1e-6);
       });
       const report = checkWorld(w);

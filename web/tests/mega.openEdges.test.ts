@@ -3,7 +3,7 @@ import { generate } from '../src/gen/pipeline';
 import { makeOptions } from '../src/gen/options';
 import { megaQuarterDetail } from '../src/gen/urban/mega/detail';
 import { quarterRoofCollar } from '../src/gen/urban/edgeFinish';
-import { bboxOf } from '../src/gen/geo/poly';
+import { area, bboxOf } from '../src/gen/geo/poly';
 import { tryDifference, tryIntersection, mpArea } from '../src/gen/geo/bool';
 import { LAB_OPEN } from '../src/gen/urban/streets';
 
@@ -49,11 +49,14 @@ it('preserves a whole free faubourg roof when the host also has a walled core', 
     mapSize: 4000, walls: 'single', suburbs: 'some', settlements: 'none', river: 'none', coast: 'none' }));
   expect(world.urban!.walls!.length).toBeGreaterThan(0);
   const host = JSON.stringify(world.urban), q = world.urban!.macro!.quarters.find(q => q.id === 2)!;
+  expect(q.zone).toBe('faubourg');
   expect(q.lab).toContain(LAB_OPEN);
   const detail = megaQuarterDetail(world, q.id)!;
-  const extensions = detail.buildings.map(b => tryDifference(b.poly, q.pts));
-  expect(extensions.every(r => !r.failed)).toBe(true);
-  expect(extensions.reduce((n, r) => n + mpArea(r.pieces), 0)).toBeGreaterThan(1);
+  // area(roof \ quarter) = area(roof) - area(roof ∩ quarter). Checked intersections
+  // avoid an empty-difference ring-stitching failure on an interior roof in this fixture.
+  const interiors = detail.buildings.map(b => tryIntersection(b.poly, q.pts));
+  expect(interiors.every(r => !r.failed)).toBe(true);
+  expect(interiors.reduce((n, r, i) => n + area(detail.buildings[i].poly) - mpArea(r.pieces), 0)).toBeGreaterThan(1);
   const limit = quarterRoofCollar(q.pts, 16);
   for (const b of detail.buildings) {
     const escaped = tryDifference(b.poly, limit);

@@ -17,12 +17,25 @@ export interface DecorMeta {
   /** Terrain Bench query string that regenerates this decor. */
   query: string;
   created: string;
+  /** Optional recipe for reconstructing a retained raster without sharing its binary samples. */
+  regeneration?: { query: string; crops: { x: number; y: number; width: number }[] };
   settlements: Settlement[];
   roadConfig: RoadConfig | null;
   roads: RoadOutput | null;
   /** Vector water (lakes and rivers at their physical widths) as Terrain Bench draws it, in metres. */
   waterSvg: string;
+  /** Render's lake material, produced by the same renderer as the live terrain. */
+  waterMaterialSvg?: string;
+  terrainDisplay?: { floor: number; sourceCell: number; refine: boolean; globalMinHeight: number; globalMaxHeight: number; motifSize: number };
   stats: { land: number; minHeight: number; maxHeight: number; riverKm: number; roadKm: number };
+  /** Optional staged-bench snapshot. Old .decor files remain readable. Coordinates are local metres. */
+  pipeline?: {
+    stage: 'terrain' | 'settlements' | 'urban'; parent?: string; syncSource?: string;
+    crop?: { x: number; y: number; width: number; sourceWidth: number };
+    urban?: import('./testbenchUrban').WorkshopState;
+    urbanDraft?: Omit<import('./testbenchUrban').WorkshopState, 'layouts' | 'partitions'>;
+    city?: string;
+  };
 }
 export interface Decor { meta: DecorMeta; raster: SettlementRaster }
 /** Index entry of a decor directory (`index.json`). */
@@ -55,7 +68,7 @@ export function encodeDecor(decor: Decor): Uint8Array {
   out.set(header, 12);
   let offset = 12 + header.length;
   for (const p of parts) { out.set(p, offset); offset += p.length; }
-  return gzipSync(out, { level: 6 });
+  return gzipSync(out, { level: 6, mtime: 0 });
 }
 
 export function decodeDecor(data: Uint8Array): Decor {

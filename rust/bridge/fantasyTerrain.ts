@@ -2,6 +2,7 @@ import { isFantasyStyle, planPainting, paintingSvg, DEFAULT_FANTASY_OPTIONS, typ
 import type { TerrainData, TerrainSettings } from './terrain';
 import { climateOf } from './terrain';
 import { urbanPaintingMask, type UrbanPaintingContext } from './urbanPaintingMask';
+import { paintingRelief } from './paintingRelief';
 export { isFantasyStyle, DEFAULT_FANTASY_OPTIONS };
 export type { FantasyOptions };
 let libraries: Record<FantasyStyle, BrushLibrary> | undefined;
@@ -18,20 +19,18 @@ export function renderFantasyTerrain(terrain: TerrainData, style: FantasyStyle, 
   const cache = entry.variants;
   const cached = cache.get(key); if (cached !== undefined) return cached;
   const n = terrain.resolution, climate = climateOf(settings as TerrainSettings), hydro = terrain.hydrology;
-  const occupied = urban && urbanPaintingMask(settings.width, n, urban);
+  const occupied = urban && urbanPaintingMask(settings.width, n, { layouts: urban.layouts, cities: urban.cities });
+  const relief = paintingRelief(terrain.height, n, terrain.width, settings.width / 65 * 3);
   const sample = (x: number, y: number): PaintSample | undefined => {
     const u = (x - terrain.x) / terrain.width, v = (y - terrain.y) / terrain.width;
     if (u < 0 || v < 0 || u >= 1 || v >= 1) return;
-    const ix = Math.min(n - 1, Math.floor(u * n)), iy = Math.min(n - 1, Math.floor(v * n)), i = iy * n + ix;
     const vector = terrain.water;
     const vectorN = vector?.hydro.n ?? 0;
     const vectorWater = vector && vector.lake[Math.min(vectorN - 1, Math.floor(v * vectorN)) * vectorN + Math.min(vectorN - 1, Math.floor(u * vectorN))] !== 0;
     const water = hydro && hydro.waterField[Math.min(hydro.resolution - 1, Math.floor(v * hydro.resolution)) * hydro.resolution + Math.min(hydro.resolution - 1, Math.floor(u * hydro.resolution))] > 0;
-    const h = terrain.height[i], dx = (terrain.height[iy * n + Math.min(n - 1, ix + 1)] - terrain.height[iy * n + Math.max(0, ix - 1)]) / (2 * terrain.width / n);
-    const dy = (terrain.height[Math.min(n - 1, iy + 1) * n + ix] - terrain.height[Math.max(0, iy - 1) * n + ix]) / (2 * terrain.width / n);
-    return { height: h, slope: Math.hypot(dx, dy), temperature: climate.temperature, rain: climate.precipitation, water: !!water || !!vectorWater, occupied: occupied?.(x, y) };
+    return { ...relief(x - terrain.x, y - terrain.y), temperature: climate.temperature, rain: climate.precipitation, water: !!water || !!vectorWater, occupied: occupied?.(x, y) };
   };
-  const paint: PaintOptions = { seed: settings.seed, pitch: settings.width / 65 * options.spacing, density: options.density, size: options.size };
+  const paint: PaintOptions = { seed: settings.seed, pitch: settings.width / 65 * options.spacing, brushPitch: settings.width / 65, density: options.density, size: options.size };
   const stamps = planPainting({ x: terrain.x, y: terrain.y, width: terrain.width, height: terrain.width }, sample, paint);
   if (!libraries) throw new Error('Fantasy brush sheets have not been registered by the page.');
   const scene = paintingSvg(stamps, libraries[style], `fantasy-${style}-${terrain.x}-${terrain.y}`);

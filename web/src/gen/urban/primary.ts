@@ -808,7 +808,10 @@ export function buildPrimary(ctx: UrbanCtx, inp: PrimaryInput, streets: Streets,
       for (let i = 1; i < h.length; i++) if (h[i].x > h[ri].x) ri = i;
       const far = { x: h[ri].x + 1e4, y: h[ri].y + 0.37 };
       const pcs = insidePieces(ph.outer, [h[ri], far]);
-      const line = pcs.length ? [h[ri], pcs[0].pts[pcs[0].pts.length - 1]] : [h[ri], far];
+      // A failed clip is not a licence to publish the unbounded ray as a
+      // street. The exact open-hole partition below handles this component.
+      if (!pcs.length) break;
+      const line = [h[ri], pcs[0].pts[pcs[0].pts.length - 1]];
       const id = streets.add(line, P.widthByRank[2] * P.widthScale, 2, 'street', b.phase);
       src.insertSeg(line[0], line[1], { a: line[0], b: line[1], lab: id });
       const rb = ribbon(line, 0.04);

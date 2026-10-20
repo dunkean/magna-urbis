@@ -3,32 +3,36 @@ export type FantasyStyle = 'fantasy-ink' | 'fantasy-color';
 export interface FantasyOptions { density: number; size: number; spacing: number }
 export const DEFAULT_FANTASY_OPTIONS: FantasyOptions = { density: 1, size: 1, spacing: 1 };
 export const isFantasyStyle = (style: string): style is FantasyStyle => style === 'fantasy-ink' || style === 'fantasy-color';
-export interface PaintSample { height: number; slope: number; temperature: number; rain: number; water?: boolean; occupied?: boolean }
-export interface PaintOptions { seed: string; pitch: number; density?: number; size?: number; maxStamps?: number }
-export interface Stamp { x: number; y: number; width: number; height: number; brush: number; variant?: number; flip: boolean; opacity: number }
+export interface PaintSample { height: number; slope: number; temperature: number; rain: number; water?: boolean; occupied?: boolean; /** Signed local prominence / sampling radius, as in Render. */ tpi?: number; relief?: number }
+export interface PaintOptions { seed: string; pitch: number; density?: number; size?: number; maxStamps?: number; /** Size stays independent of spacing. */ brushPitch?: number }
+export interface Stamp { x: number; y: number; width: number; height: number; brush: number; variant?: number; flip: boolean; opacity: number; heightScale?: number }
 export interface PaintBounds { x: number; y: number; width: number; height: number }
-export interface Atlas { url: string; width: number; height: number; rows: number[]; rects?: [number, number, number, number][] }
+export interface Atlas { url: string; width: number; height: number; rows: number[]; rects?: [number, number, number, number][]; variantsPerStyle?: number }
 export const FAMILY_NAMES = ['pines', 'broadleaf', 'tropical', 'cypress', 'hills', 'mountains', 'snow-mountains', 'rocks', 'dunes', 'wetlands', 'crops', 'orchards', 'grasses'] as const;
 export type BrushFamily = typeof FAMILY_NAMES[number];
 const BRUSH_FAMILY: BrushFamily[] = ['pines', 'broadleaf', 'tropical', 'cypress', 'hills', 'mountains', 'snow-mountains', 'rocks', 'dunes', 'wetlands', 'crops', 'orchards', 'pines', 'broadleaf', 'tropical', 'grasses'];
 export interface BrushFrame { atlas: Atlas; family: BrushFamily; index: number; token: string; rect: [number, number, number, number]; aspect: number }
-export interface BrushLibrary { kind: 'families'; style: FantasyStyle; families: Record<BrushFamily, Atlas>; frames: BrushFrame[] }
+export interface BrushLibrary { kind: 'families'; style: FantasyStyle; families: Record<BrushFamily, Atlas>; frames: BrushFrame[]; variants: number; offsets: number[] }
 export function createBrushLibrary(style: FantasyStyle, families: Record<BrushFamily, Atlas>): BrushLibrary {
-  const frames: BrushFrame[] = [];
-  for (let brush = 0; brush < 16; brush++) for (let v = 0; v < 8; v++) {
+  const frames: BrushFrame[] = [], offsets: number[] = [];
+  const variants = Math.max(...Object.values(families).map(a => a.variantsPerStyle ?? 8));
+  for (let brush = 0; brush < 16; brush++) {
+    offsets.push(frames.length);
     const family = BRUSH_FAMILY[brush], atlas = families[family];
     if (!atlas) throw new Error(`Missing fantasy brush sheet: ${family}`);
-    let variant = v;
-    if (brush === 0 || brush === 1) variant %= 6;
-    if (brush === 12 || brush === 13) variant = 6 + v % 2;
-    if (brush === 2) variant = [0, 1, 2, 5][v % 4];
-    if (brush === 14) variant = [3, 4, 6, 7][v % 4];
-    const index = variant + (style === 'fantasy-color' ? 8 : 0), rect = atlasRect(atlas, index);
-    frames.push({ atlas, family, index, token: `${family}-${index}`, rect, aspect: Math.max(.4, Math.min(1.8, rect[3] / rect[2])) });
+    const count = atlas.variantsPerStyle ?? 8;
+    for (let v = 0; v < variants; v++) {
+      // Five to eight tree silhouettes; never mix individual trees and giant clumps.
+      const variant = v % (brush < 4 || brush >= 12 && brush <= 14 ? Math.min(6, count) : count);
+      const index = variant + (style === 'fantasy-color' ? count : 0), rect = atlasRect(atlas, index);
+      frames.push({ atlas, family, index, token: `${family}-${index}`, rect, aspect: rect[3] / rect[2] });
+    }
   }
-  return { kind: 'families', style, families, frames };
+  return { kind: 'families', style, families, frames, variants, offsets };
 }
-export function brushFrame(library: BrushLibrary, stamp: Stamp): BrushFrame { return library.frames[stamp.brush * 8 + (stamp.variant ?? 0) % 8]; }
+export function brushFrame(library: BrushLibrary, stamp: Stamp): BrushFrame {
+  return library.frames[library.offsets[stamp.brush] + (stamp.variant ?? 0) % library.variants];
+}
 // Per-subject source bounds exclude neighbouring silhouettes on the generated sheets.
 export const ATLAS_GEOMETRY: Record<FantasyStyle, Omit<Atlas, 'url'>> = {
   'fantasy-ink': { width: 1254, height: 1254, rows: [0,.28,.52,.735,1], rects: [
@@ -60,76 +64,91 @@ function noise(x: number, y: number, seed: number): number {
   const a = hash(ix, iy, seed), b = hash(ix + 1, iy, seed), c = hash(ix, iy + 1, seed), d = hash(ix + 1, iy + 1, seed);
   return (a + (b - a) * u) * (1 - v) + (c + (d - c) * u) * v;
 }
-/** World-anchored jittered lattice with two scales of correlated coverage.
- * Iterate only a padded visible region. Constant seed/pitch gives identical overlapping crops. */
+const clamp = (v: number) => Math.max(0, Math.min(1, v));
+function smooth(a: number, b: number, v: number): number {
+  const t = clamp((v - a) / (b - a)); return t * t * (3 - 2 * t);
+}
+/** Same climate, lapse, valley moisture and exposure controls as Render's material.
+ * Biomes provide continuous coverage, never an exclusive choice of one icon. */
+export function paintingCover(s: PaintSample): { woods: number; mountain: number; hill: number; dry: number; wet: number; snow: number; temperature: number } {
+  const t = s.temperature - .0065 * s.height, hot = t + 6, cold = t - 6;
+  const valley = smooth(0, -.12, s.tpi ?? 0), ridge = smooth(0, .12, s.tpi ?? 0);
+  const humid = s.rain / Math.max(20 * t + 280, 120) * (1 + .7 * valley - .18 * ridge);
+  const rockTan = Math.tan(40 * Math.PI / 180), rockEff = rockTan * (.55 + .45 * smooth(.3, 1.3, humid));
+  const exposure = clamp(smooth(rockEff * .5, rockEff * 1.3, s.slope) + .35 * ridge - .3 * valley);
+  const woods = clamp((smooth(.65, 2.1, humid) * smooth(5.5, 13.5, hot + .8 * valley)
+    * (1 - smooth(rockTan * .9, rockTan * 1.6, s.slope)) * (1 - .22 * ridge)
+    + .14 * valley * smooth(2, 10, hot) * smooth(.4, 1.2, humid)) * (1 - exposure));
+  const high = smooth(850, 2600, s.height), rugged = smooth(100, 850, s.relief ?? s.slope * 1800);
+  const mountain = clamp(Math.max(high * (.45 + .55 * rugged), smooth(.20, .65, s.slope) * rugged) * (1 - .94 * valley));
+  const hill = clamp(Math.max(smooth(.07, .28, s.slope), smooth(70, 350, s.relief ?? 0)) * (1 - mountain) * (1 - .95 * valley) * smooth(-.035, .065, s.tpi ?? .065));
+  return { woods, mountain, hill, dry: 1 - smooth(.35, 1, humid),
+    wet: smooth(1.8, 3.5, humid) * (1 - smooth(.015, .08, s.slope)) * (1 - smooth(50, 250, s.height)),
+    snow: smooth(2.5, -2.5, hot) * smooth(60, 400, s.rain), temperature: cold };
+}
+/** World anchored, tightly overlapping stamps. Noise cuts clearings into continuous
+ * coverage; boundary thinning never changes tree width. No summit exclusion radius. */
 export function planPainting(bounds: PaintBounds, sample: (x: number, y: number) => PaintSample | undefined, options: PaintOptions): Stamp[] {
   const pitch = options.pitch, density = Math.max(0, Math.min(2, options.density ?? 1)), size = Math.max(.3, Math.min(2, options.size ?? 1));
-  if (!Number.isFinite(pitch) || pitch <= 0 || ![bounds.x, bounds.y, bounds.width, bounds.height, density, size].every(Number.isFinite) || bounds.width <= 0 || bounds.height <= 0) return [];
+  const brushPitch = options.brushPitch ?? pitch;
+  if (![pitch, brushPitch, bounds.x, bounds.y, bounds.width, bounds.height, density, size].every(Number.isFinite) || pitch <= 0 || brushPitch <= 0 || bounds.width <= 0 || bounds.height <= 0 || density === 0) return [];
   const seed = paintSeed(options.seed), result: Stamp[] = [], budget = Number.isFinite(options.maxStamps ?? 80000) ? Math.max(0, Math.min(80000, Math.floor(options.maxStamps ?? 80000))) : 80000;
-  // Separate scales: prominent summits, ordinary ground marks, fine dense woodland.
-  // Coverage noise remains at the map scale so finer trees still form whole forests.
-  for (const pass of ['summits', 'ground', 'forest'] as const) {
-    const pad = pitch * (pass === 'summits' ? 12 : pass === 'forest' ? 2 : 4) * size;
-    const step = pitch * (pass === 'summits' ? 2 : pass === 'forest' ? 1 / 4 : 1);
+  for (const pass of ['relief', 'ground', 'forest'] as const) {
+    const pad = brushPitch * (pass === 'relief' ? 8 : 2) * size;
+    const step = pitch * (pass === 'relief' ? .85 : pass === 'forest' ? .24 : .9);
     const x0 = Math.floor((bounds.x - pad) / step), x1 = Math.ceil((bounds.x + bounds.width + pad) / step);
     const y0 = Math.floor((bounds.y - pad) / step), y1 = Math.ceil((bounds.y + bounds.height + pad) / step);
-    // A bounded stride protects tools from accidentally painting a planetary extent at metre pitch.
-    const stride = Math.max(1, Math.ceil(Math.sqrt((x1 - x0 + 1) * (y1 - y0 + 1) / 240000)));
+    const stride = Math.max(1, Math.ceil(Math.sqrt((x1 - x0 + 1) * (y1 - y0 + 1) / 280000)));
     if (![x0, x1, y0, y1, stride].every(Number.isSafeInteger)) return [];
-    for (let gy = y0; gy <= y1; gy += stride) for (let gx = x0; gx <= x1; gx += stride) {
-      const r = hash(gx, gy, seed), x = (gx + .18 + hash(gx, gy, seed ^ 71) * .64) * step;
-      const y = (gy + .18 + hash(gx, gy, seed ^ 191) * .64) * step, s = sample(x, y);
+    // Align coarse safety sampling to the world, including when cropping.
+    for (let gy = Math.ceil(y0 / stride) * stride; gy <= y1; gy += stride) for (let gx = Math.ceil(x0 / stride) * stride; gx <= x1; gx += stride) {
+      const salt = seed ^ (pass === 'relief' ? 181 : pass === 'forest' ? 719 : 1231);
+      const x = (gx + .1 + hash(gx, gy, salt ^ 71) * .8) * step;
+      const y = (gy + .1 + hash(gx, gy, salt ^ 191) * .8) * step, s = sample(x, y);
       if (!s || ![s.height, s.slope, s.temperature, s.rain].every(Number.isFinite) || s.height <= 0 || s.water || s.occupied) continue;
-      const patch = noise(x / (pitch * 11), y / (pitch * 11), seed ^ 891);
-      const detail = noise(x / (pitch * 3), y / (pitch * 3), seed ^ 421);
-      const temp = s.temperature - s.height * .006, arid = s.rain < 350;
-      let brush: number, cover: number, scale = 1;
-      if (s.height > 1850 || s.slope > .48) { brush = temp < 0 || s.height > 2900 ? 6 : 5; cover = .46 + .25 * detail; scale = 5.6; }
-      else if (s.slope > .22) { brush = s.slope > .36 ? 7 : 4; cover = .32 + .32 * patch; scale = 2.1; }
-      else if (arid) { brush = 8; cover = .16 + .48 * patch; scale = 1.35; }
-      else if (s.height < 70 && s.rain > 1600 && s.slope < .04 && patch > .66) { brush = 9; cover = .22 + patch * .36; }
-      else {
-        // Rain and correlated noise create stands and clearings, not independent confetti.
-        cover = Math.max(0, Math.min(1, (s.rain - 250) / 1300)) * Math.max(0, Math.min(1, (patch * .75 + detail * .25 - .40) * 4.5));
-        const conifer = temp < 9 || s.height > 1000, tropical = temp > 22 && s.rain > 1100;
-        brush = tropical ? (r < .18 ? 2 : 14) : conifer ? (r < .22 ? 12 : 0) : (r < .22 ? 13 : 1);
-        if (!tropical && !conifer && temp > 14 && s.rain < 850 && r < .14) brush = 3;
+      const c = paintingCover(s), patch = noise(x / (brushPitch * 7), y / (brushPitch * 7), seed ^ 891);
+      const detail = noise(x / (brushPitch * 1.8), y / (brushPitch * 1.8), seed ^ 421);
+      let brush: number, cover: number, scale: number;
+      if (pass === 'relief') {
+        const mountain = c.mountain > .16;
+        if (!mountain && c.hill < .12) continue;
+        if (mountain) {
+          let support = 0;
+          for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) {
+            const neighbour = sample(x + dx * step, y + dy * step);
+            if (neighbour && !neighbour.water && neighbour.height > 0 && paintingCover(neighbour).mountain > .16) support++;
+          }
+          if (support < 2) continue;
+        }
+        brush = mountain ? (c.snow > .45 ? 6 : 5) : 4;
+        // A continuous factor of three from foothills to the highest ridges.
+        scale = mountain ? 2.2 + 4.4 * smooth(650, 2800, s.height) * (.65 + .35 * smooth(0, .12, s.tpi ?? .12)) : .9 + 1.8 * c.hill;
+        cover = smooth(.12, .65, mountain ? c.mountain : c.hill) * (.88 + .12 * detail);
+      } else if (pass === 'forest') {
+        if (c.woods < .015) continue;
+        const tropical = c.temperature > 13 && s.rain > 1100, conifer = c.temperature < 3 || s.height > 1100;
+        brush = tropical ? 2 : conifer ? 0 : c.temperature > 8 && s.rain < 850 ? 3 : 1;
+        // Thresholded masks carve groves and holes, with soft, sparse edges.
+        const mask = smooth(.24, .43, .72 * patch + .28 * detail + .16 * c.woods);
+        cover = c.woods * mask * (1 - .45 * c.wet);
         scale = .48;
-        if (cover < .16) {
-          // Small cultivated patches remain separated by broad quiet ground.
-          brush = patch > .18 && patch < .28 && s.slope < .05 && temp > 5 && temp < 24 ? (detail > .6 ? 11 : 10) : 15;
-          cover = brush === 15 ? .035 : .13; scale = brush === 15 ? .65 : 1.05;
-        }
+      } else {
+        if (c.dry > .2) { brush = 8; cover = c.dry * .16 * smooth(.2, .65, patch); scale = 1.25; }
+        else if (c.wet > .3) { brush = 9; cover = c.wet * .16 * smooth(.3, .7, detail); scale = .85; }
+        else if (c.woods < .35 && s.slope < .05 && c.temperature > -1 && c.temperature < 18 && patch > .20 && patch < .33) { brush = detail > .6 ? 11 : 10; cover = .13; scale = 1.05; }
+        else { brush = 15; cover = (1 - c.woods) * (1 - c.mountain) * .025; scale = .55; }
       }
-      const tree = brush < 4 || brush >= 12 && brush <= 14;
-      if (pass !== (brush === 5 || brush === 6 ? 'summits' : tree ? 'forest' : 'ground')) continue;
-      if (hash(gx, gy, seed ^ 9811) > cover * density) continue;
-      if (brush === 5 || brush === 6 || brush === 7) {
-        // Stable local priority suppresses competing summits; large overlapping
-        // silhouettes form chains instead of a carpet of identical mountain icons.
-        let crowded = false;
-        for (let oy = -1; oy <= 1 && !crowded; oy++) for (let ox = -1; ox <= 1; ox++) {
-          if ((!ox && !oy) || hash(gx + ox, gy + oy, seed) >= r) continue;
-          const neighbour = sample(x + ox * step, y + oy * step);
-          if (neighbour && !neighbour.water && (neighbour.height > 1850 || neighbour.slope > .36)) { crowded = true; break; }
-        }
-        if (crowded) continue;
-      }
-      const w = pitch * scale * size * (.85 + .3 * hash(gx, gy, seed ^ 319));
-      // Peaks are exaggerated cartographically; their physical anchor footprint
-      // stays local so a large silhouette does not erase coastal mountain ranges.
-      const margin = (brush === 5 || brush === 6 ? Math.min(w, pitch * 2.8 * size) : w) * .36;
-      if ([-1, 1].some(d => [-1, 1].some(e => { const edge = sample(x + d * margin, y + e * margin * .25); return !edge || edge.height <= 0 || edge.water || edge.occupied; }))) continue;
-      result.push({ x, y, width: w, height: w * (brush >= 4 && brush <= 11 ? .78 : 1.15), brush, variant: Math.floor(hash(gx, gy, seed ^ 6317) * 8), flip: hash(gx, gy, seed ^ 97) > .5, opacity: brush === 15 ? .65 : 1 });
+      if (hash(gx, gy, salt ^ 9811) > clamp(cover * density)) continue;
+      const tree = pass === 'forest', variation = tree ? 1 : .95 + .1 * hash(gx, gy, salt ^ 319);
+      const w = brushPitch * scale * size * variation;
+      // Land anchors stay on land; silhouettes intentionally overhang lakes/roads.
+      result.push({ x, y, width: w, height: w * (tree ? 1.15 : .78), heightScale: tree ? .95 + .1 * hash(gx, gy, salt ^ 519) : .95 + .1 * hash(gx, gy, salt ^ 619),
+        brush, variant: Math.floor(hash(gx, gy, salt ^ 6317) * 32), flip: hash(gx, gy, salt ^ 97) > .5, opacity: brush === 15 ? .65 : 1 });
     }
   }
-  // Ground anchors determine occlusion; mountains behind trees, rear stands behind front stands.
   result.sort((a, b) => a.y - b.y || a.x - b.x);
   if (result.length > budget) {
-    // Uniform thinning within each category, never truncation to the north.
-    // Preserve the relief hierarchy when woodland reaches the draw-call budget.
-    const relief = result.filter(s => s.brush >= 4 && s.brush <= 8);
-    const ground = result.filter(s => s.brush < 4 || s.brush > 8);
+    const relief = result.filter(s => s.brush >= 4 && s.brush <= 8), ground = result.filter(s => s.brush < 4 || s.brush > 8);
     const thin = (items: Stamp[], count: number) => items.filter((_, i) => Math.floor(i * count / items.length) !== Math.floor((i - 1) * count / items.length)).slice(0, count);
     const reliefBudget = Math.min(relief.length, budget);
     return [...thin(relief, reliefBudget), ...thin(ground, budget - reliefBudget)].sort((a, b) => a.y - b.y || a.x - b.x);
@@ -171,6 +190,11 @@ export function paintingCanvas(ctx: CanvasRenderingContext2D, stamps: Stamp[], i
   }
   ctx.restore();
 }
+function stampHeight(stamp: Stamp, frame: BrushFrame): number {
+  const tree = stamp.brush < 4 || stamp.brush >= 12 && stamp.brush <= 14;
+  const aspect = tree ? (frame.family === 'pines' || frame.family === 'cypress' ? 1.8 : 1.25) : frame.aspect;
+  return stamp.width * aspect * (stamp.heightScale ?? 1);
+}
 function familyPaintingSvg(stamps: Stamp[], library: BrushLibrary, id: string): string {
   const frames = new Map<string, BrushFrame>(), families = new Map<string, Atlas>();
   for (const stamp of stamps) { const f = brushFrame(library, stamp); frames.set(f.token, f); families.set(f.family, f.atlas); }
@@ -183,8 +207,8 @@ function familyPaintingSvg(stamps: Stamp[], library: BrushLibrary, id: string): 
   svg += '</defs><g class="fantasy-brushes">';
   const f = (n: number) => n.toFixed(2);
   for (const s of stamps) {
-    const frame = brushFrame(library, s), h = s.width * frame.aspect;
-    svg += `<use class="${s.brush >= 4 && s.brush <= 8 ? 'fantasy-relief' : 'fantasy-landuse'}" data-brush="${frame.family}" data-variant="${frame.index % 8}" href="#${id}-${frame.token}" x="${f(-s.width / 2)}" y="${f(-h * .95)}" width="${f(s.width)}" height="${f(h)}" opacity="${s.opacity}" transform="translate(${f(s.x)} ${f(s.y)}) scale(${s.flip ? -1 : 1} 1)"/>`;
+    const frame = brushFrame(library, s), h = stampHeight(s, frame);
+    svg += `<use class="${s.brush >= 4 && s.brush <= 8 ? 'fantasy-relief' : 'fantasy-landuse'}" data-brush="${frame.family}" data-variant="${frame.index % (frame.atlas.variantsPerStyle ?? 8)}" href="#${id}-${frame.token}" x="${f(-s.width / 2)}" y="${f(-h * .95)}" width="${f(s.width)}" height="${f(h)}" opacity="${s.opacity}" transform="translate(${f(s.x)} ${f(s.y)}) scale(${s.flip ? -1 : 1} 1)"/>`;
   }
   return svg + '</g>';
 }
@@ -192,7 +216,7 @@ function familyPaintingCanvas(ctx: CanvasRenderingContext2D, stamps: Stamp[], im
   ctx.save();
   for (const s of stamps) {
     const frame = brushFrame(library, s), image = images.get(frame.family); if (!image) continue;
-    const [sx, sy, sw, sh] = frame.rect, w = s.width * camera.scale, h = w * frame.aspect;
+    const [sx, sy, sw, sh] = frame.rect, w = s.width * camera.scale, h = stampHeight(s, frame) * camera.scale;
     const x = (s.x - camera.x) * camera.scale, y = (s.y - camera.y) * camera.scale; ctx.globalAlpha = s.opacity;
     if (s.flip) { ctx.save(); ctx.translate(x, y); ctx.scale(-1, 1); ctx.drawImage(image, sx, sy, sw, sh, -w / 2, -h * .95, w, h); ctx.restore(); }
     else ctx.drawImage(image, sx, sy, sw, sh, x - w / 2, y - h * .95, w, h);

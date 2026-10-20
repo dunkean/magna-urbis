@@ -16,3 +16,5 @@ pub use engine::{generate_batch, preflight};
 
 pub const SCHEMA_VERSION: &str = "2";
 pub const GENERATOR_VERSION: &str = "houses-2";
+
+mod gallery_components;

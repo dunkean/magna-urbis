@@ -11,6 +11,44 @@ fn building_id(id: &str) -> bool {
 }
 
 #[test]
+fn source_facade_modes_are_narrow_and_omitted_from_other_bundles() {
+    use magna_urbis_houses::catalogue::FacadeCoverMode;
+    let data = catalogue().unwrap();
+    let mut modes = vec![];
+    for recipe in &data.recipes {
+        for p in
+            std::iter::once(&recipe.parameters).chain(recipe.variants.iter().map(|v| &v.parameters))
+        {
+            let json = serde_json::to_value(&p.gallery_cover).unwrap();
+            if let Some(mode) = p.gallery_cover.facade_mode {
+                assert!(p.gallery_cover.enabled);
+                assert_eq!(p.gallery_cover.rf, "RF-SHED");
+                assert_eq!(
+                    mode,
+                    if recipe.id == "AS-JAP-B01" {
+                        FacadeCoverMode::Residential
+                    } else {
+                        FacadeCoverMode::WallBearing
+                    }
+                );
+                modes.push((recipe.id.as_str(), p.variant_id.as_str()));
+            } else {
+                assert!(json.get("facade_mode").is_none());
+            }
+        }
+    }
+    assert_eq!(
+        modes,
+        vec![
+            ("EUR-MED-B04", "default"),
+            ("EUR-MED-B04", "slate_cladding"),
+            ("AS-JAP-B01", "default"),
+            ("AS-JAP-B01", "gable_thatch")
+        ]
+    );
+}
+
+#[test]
 fn coverage_matches_both_current_sources_and_all_atlas_ids() {
     let source = source_inventory().unwrap();
     let catalogue = catalogue().unwrap();

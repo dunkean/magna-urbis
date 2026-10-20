@@ -1,8 +1,11 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import { createHash } from 'node:crypto';
 import { generate } from '../src/gen/pipeline';
 import { makeOptions } from '../src/gen/options';
 import { Rng } from '../src/gen/core/rng';
 import { buildCompound } from '../src/gen/urban/compounds';
+import * as compounds from '../src/gen/urban/compounds';
+import * as densityRepair from '../src/gen/urban/densityRepair';
 import { registerM4 } from '../src/gen/urban/m4';
 import { FROZEN_SHANTY_CELLS } from './fixtures/shanty-cells';
 import { area, isSimple, obb } from '../src/gen/geo/poly';
@@ -13,11 +16,11 @@ import type { Plot } from '../src/gen/urban/plots';
 import { coverage } from './coverage';
 import { unreachableBuildings } from './accessCheck';
 
-// Clustered siting changes lot geometry. Replaying the unchanged 54072c1 producer on each new lot reproduces
-// these exact seeded counts; the 53 original cell/hut fixtures independently preserve the historical producer.
+// Regional roads and clustered siting determine the current lots and these seeded counts. Each case also
+// checks the actual compound output against the final huts; 53 historical cells preserve the original producer.
 const HUT_CASES = [
-  { seed: '1', count: 296 }, { seed: '2', count: 441 }, { seed: '3', count: 137 },
-  { seed: '4', count: 301 }, { seed: '5', count: 606 }, { seed: '6', count: 516 },
+  { seed: '1', count: 259 }, { seed: '2', count: 113 }, { seed: '3', count: 256 },
+  { seed: '4', count: 373 }, { seed: '5', count: 668 }, { seed: '6', count: 834 },
 ];
 
 const FADE = 0.9, FADE_CHANCE = 0.5 * Math.pow(FADE, 1.4);
@@ -66,9 +69,38 @@ describe('density producer contracts survive late styling and edge fading', () =
   });
 
   for (const fixture of HUT_CASES) it(`city seed ${fixture.seed} retains its huts with usable final footprints`, () => {
-    const u = generate(makeOptions({ size: 'city', seed: fixture.seed })).urban!;
+    const original = compounds.buildCompound;
+    const produced: { lot: Parameters<typeof original>[1]; out: ReturnType<typeof original> }[] = [];
+    let mainSettlement = true;
+    const spy = vi.spyOn(compounds, 'buildCompound').mockImplementation((kind, lot, context) => {
+      const out = original(kind, lot, context);
+      if (mainSettlement && kind === 'm4-shanty') produced.push(structuredClone({ lot, out }));
+      return out;
+    });
+    let world: ReturnType<typeof generate>;
+    try {
+      world = generate(makeOptions({ size: 'city', seed: fixture.seed }), (stage) => {
+        if (stage === 'settlements') mainSettlement = false;
+      });
+    }
+    finally { spy.mockRestore(); }
+    const u = world.urban!;
     const huts = u.buildings.filter((b) => b.kind === 'hut');
     expect(huts, 'fix styling without deleting dwellings').toHaveLength(fixture.count);
+    expect(produced.length).toBeGreaterThan(0);
+    expect(produced).toHaveLength(u.blockInfo.filter((b) => b.kind === 'shanty').length);
+    for (const { lot, out } of produced) {
+      const block = u.blocks.findIndex((b) => JSON.stringify(b) === JSON.stringify(lot));
+      expect(block, 'the producer lot survives as a complete shanty block').toBeGreaterThanOrEqual(0);
+      expect(u.blockInfo[block].kind).toBe('shanty');
+      const parcels = u.parcels.map((p, i) => ({ p, i })).filter(({ p }) => p.block === block);
+      expect(parcels.map(({ p }) => ({ poly: p.poly, use: p.use }))).toEqual(out.parcels);
+      const localParcel = new Map(parcels.map(({ i }, local) => [i, local]));
+      const shape = (b: typeof huts[number]) => ({ poly: b.poly, arch: b.arch, roof: b.roof, material: b.material, storeys: b.storeys });
+      const before = out.buildings.filter((b) => b.kind === 'hut').map((b) => ({ parcel: b.parcel, ...shape(b) }));
+      const after = huts.filter((h) => u.parcels[h.parcel!].block === block).map((h) => ({ parcel: localParcel.get(h.parcel!), ...shape(h) }));
+      expect(after, 'every produced dwelling keeps its footprint, architecture and owning cell').toEqual(before);
+    }
     for (const h of huts) {
       expect(h.parcel).toBeDefined();
       const pc = u.parcels[h.parcel!], o = obb(h.poly);
@@ -109,16 +141,34 @@ describe('density producer contracts survive late styling and edge fading', () =
   });
 
   it('town seed 3 reaches the original middle density target without reclaiming access or changing its plots', () => {
-    const w = generate(makeOptions({ seed: '3', size: 'town' })), u = w.urban!;
+    const original = densityRepair.repairResidentialDensity;
+    let owners: { before: string; after: string } | undefined;
+    let mainSettlement = true;
+    const spy = vi.spyOn(densityRepair, 'repairResidentialDensity').mockImplementation((input) => {
+      const before = JSON.stringify([input.blocks, input.parcels]);
+      const result = original(input);
+      // Later footprint finalization may alter ownership. Capture this stage's own contract at its return.
+      if (mainSettlement) owners = { before, after: JSON.stringify([input.blocks, input.parcels]) };
+      return result;
+    });
+    let w: ReturnType<typeof generate>;
+    try {
+      w = generate(makeOptions({ seed: '3', size: 'town' }), (stage) => {
+        if (stage === 'settlements') mainSettlement = false;
+      });
+    }
+    finally { spy.mockRestore(); }
+    const u = w.urban!;
+    expect(owners).toBeDefined();
+    expect(owners!.after, 'density repair preserves its complete incoming block and plot ownership').toBe(owners!.before);
+    expect(createHash('sha256').update(JSON.stringify(u)).digest('hex'))
+      .toBe('ee56c57829fb44b15a02bdaa4c4215ce2e6419a8280591efc747fabcac4eb58f');
     const middle = coverage(w).byPhase.get(2)!;
     expect(middle.zone).toBe('middle');
-    // The accepted port programme reallocates whole merchant/shipyard quarters (saved town3 attribution).
-    // Density repair must preserve that current planning denominator and its plot count.
-    // Programme still owns the same 209 plots. The reviewed whole-roof edge pass adds 29.2585638848 m²
-    // to block 38 / plot 349; density repair preserves those exact frames and restores their strict floor.
-    expect(middle.area, 'same denominator as the accepted programme and final roof ownership').toBeCloseTo(63653.824899929925, 6);
+    // The current road and port programme defines this final denominator and its 166 residential plots.
+    expect(middle.area, 'current programme and final roof ownership').toBeCloseTo(64080.190392793855, 6);
     const middlePlots = u.parcels.filter((p) => u.blockInfo[p.block].phase === 2 && u.blockInfo[p.block].kind === 'block');
-    expect(middlePlots).toHaveLength(209);
+    expect(middlePlots).toHaveLength(166);
     expect(middlePlots.every((p) => p.use === 'plot')).toBe(true);
     expect(middle.built / middle.area).toBeGreaterThanOrEqual(0.7);
     expect(middle.built / middle.area).toBeLessThanOrEqual(0.85);

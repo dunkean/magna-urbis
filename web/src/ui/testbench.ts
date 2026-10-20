@@ -8,7 +8,7 @@ import { waterContains } from '../gen/urban/waterland';
 import { createWorkshopClient, WORKSHOP_CHANNEL, normalizeWorkshopContext, workshopConfig, workshopOptions, workshopView, workshopStreetSvg, workshopEnclosureSvg, type WorkshopCatalogue, type WorkshopContext, type WorkshopResult, type WorkshopState } from './testbenchUrban';
 import type { LayoutConfig, ParcelConfig } from '../../../rust/bridge/urban';
 import { normalizeLayoutConfig, normalizeParcelConfig } from '../../../rust/bridge/urbanConfig';
-import './testbench.css';
+import { installWorkshopSkin } from './testbenchWorkshop';
 
 const el = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T;
 const input = (id: string) => el<HTMLInputElement>(id);
@@ -24,6 +24,8 @@ interface State {
 }
 const query = new URLSearchParams(location.search);
 const hosted = window.parent !== window && query.get('embedded') === '1';
+if (hosted || query.get('engine') === 'rust') installWorkshopSkin();
+if (hosted) { el('copy').textContent = 'Copier code'; el('copy').title = 'Copier le code unique de cette carte'; }
 let rustMode = query.get('engine') === 'rust';
 if (rustMode && !hosted) {
   const params = new URLSearchParams({ space: 'workshop' });
@@ -324,8 +326,23 @@ function refreshAdvanced(): void {
   el('effectiveParams').textContent = JSON.stringify(Object.fromEntries(BENCH_FIELDS[stage].filter(key => P[key] !== undefined).map(key => [key, P[key]])), null, 2);
 }
 function changed(): void {
+  if (hosted && rustMode && state.urban?.source === 'map') {
+    const options = controls(), context = normalizeWorkshopContext(state.urban);
+    const native: Record<string, unknown> = {};
+    for (const control of Array.from(nativeControls.querySelectorAll<HTMLInputElement | HTMLSelectElement>('[data-native]'))) {
+      if (!control.checkValidity()) return;
+      native[control.dataset.native!] = control instanceof HTMLInputElement ? control.type === 'checkbox' ? control.checked : Number(control.value) : control.value;
+    }
+    const quarterZone = native.autoQuarterZones ? 'auto' : options.zone, parcelZone = native.autoParcelZones ? 'auto' : options.zone;
+    delete native.autoQuarterZones; delete native.autoParcelZones;
+    context.layoutConfig = { ...context.layoutConfig, ...native, zone: quarterZone } as LayoutConfig;
+    context.parcelConfig = { ...context.parcelConfig, zone: parcelZone } as ParcelConfig;
+    const shared = { layoutConfig: state.stage < 2 ? workshopConfig(options, context, 'quarters') : context.layoutConfig!, parcelConfig: state.stage >= 2 ? workshopConfig(options, context, 'parcels') : context.parcelConfig!, quarterSeed: input('layoutSeed').value, parcelSeed: input('plotSeed').value };
+    window.parent.postMessage({ channel: WORKSHOP_CHANNEL, type: 'settings', state: shared }, location.protocol === 'file:' ? '*' : location.origin);
+  }
   status('Réglages modifiés : appliquer l’étape concernée (les graines sont conservées).');
 }
+for (const id of ['layoutSeed', 'plotSeed']) input(id).addEventListener('change', changed);
 select('advancedStage').onchange = () => refreshAdvanced();
 el('applyParams').onclick = () => {
   const stage = select('advancedStage').value as BenchStage;
@@ -364,9 +381,11 @@ function render(): void {
   const nativeParcels = nativeResult?.partitions?.flatMap(p => p.parcels);
   const quarterPath = (i: number): string => path(layout.quarters[i].lp.pts) + (nativeQuarters?.[i]?.shape.holes.map(path).join(' ') ?? '');
   const quarterPaths = layout.quarters.map((_, i) => `<path d="${quarterPath(i)}" fill-rule="evenodd" clip-rule="evenodd"/>`).join('');
-  let svg = `<defs><clipPath id="landClip">${quarterPaths}</clipPath><clipPath id="waterClip">${layout.water.map(w => `<path d="${path(w.outer)}"/>`).join('')}</clipPath></defs>`;
+  const waterPath = (water: BenchLayout['water'][number]): string => path(water.outer) + (water.holes ?? []).map(path).join('');
+  let svg = `<defs><clipPath id="landClip">${quarterPaths}</clipPath><clipPath id="waterClip">${layout.water.map(w => `<path d="${waterPath(w)}" fill-rule="evenodd" clip-rule="evenodd"/>`).join('')}</clipPath></defs>`;
+  for (const road of nativeResult?.roads ?? []) svg += `<path data-overlay="regional-roads" d="M${road.path.map(p => `${p.x},${p.y}`).join('L')}" fill="none" stroke="#b39a78" stroke-width="${road.widths[0] ?? 4}"/>`;
   for (const contour of layout.contours) svg += `<path data-overlay="relief" d="M${contour.map(p => `${p.x},${p.y}`).join('L')}" fill="none" stroke="#9c8a5c" stroke-opacity=".45" stroke-dasharray="3 4" stroke-width="1"/>`;
-  for (const water of layout.water) svg += `<path data-overlay="river" d="${path(water.outer)}" fill="#8ac4d6"/>`;
+  for (const water of layout.water) svg += `<path data-overlay="river" d="${waterPath(water)}" fill="#8ac4d6" fill-rule="evenodd"/>`;
   layout.quarters.forEach((q, i) => {
     svg += `<path data-quarter="${i}" d="${quarterPath(i)}" fill-rule="evenodd" fill="${realPlan ? streetColor : `hsl(${i * 137.5 % 360} 60% 75%)`}" fill-opacity="${realPlan ? 1 : .35}" stroke="${realPlan ? 'none' : '#888'}" stroke-width=".5"/>`;
     const c = polygonCentroid(q.lp.pts);
@@ -682,6 +701,17 @@ try {
   }
 } catch { status('URL invalide, paramètres par défaut.'); }
 function receiveWorkshop(event: MessageEvent): void {
+  if (event.source === window.parent && event.origin === (location.protocol === 'file:' ? 'null' : location.origin) && event.data?.channel === WORKSHOP_CHANNEL && event.data.type === 'sync-settings') {
+    const incoming = event.data.state as WorkshopState;
+    state.urban = normalizeWorkshopContext({ ...state.urban, source: 'map', layoutConfig: incoming.layoutConfig, parcelConfig: incoming.parcelConfig });
+    state.options = workshopOptions(incoming.layoutConfig, state.options);
+    state.plotOptions = workshopOptions(incoming.parcelConfig, state.plotOptions);
+    state.settings = structuredClone(state.stage >= 2 ? state.plotOptions : state.options);
+    state.layoutSeed = incoming.quarterSeed; state.plotSeed = incoming.parcelSeed;
+    restoreControls(); status('Réglages synchronisés · appliquer l’étape pour recalculer.');
+    return;
+  }
+
   if (event.source !== window.parent || event.origin !== (location.protocol === 'file:' ? 'null' : location.origin) || event.data?.channel !== WORKSHOP_CHANNEL || !['import', 'fixture'].includes(event.data.type)) return;
   if (busy) { pendingWorkshopMessage = event; return; }
   if (event.source === window.parent && event.origin === (location.protocol === 'file:' ? 'null' : location.origin) && event.data?.channel === WORKSHOP_CHANNEL && event.data.type === 'fixture') {
@@ -702,7 +732,7 @@ function receiveWorkshop(event: MessageEvent): void {
   state.layoutSeed = imported.quarterSeed; state.plotSeed = imported.parcelSeed;
   state.urban = { source: 'map', siteCulture: first.culture, layoutConfig: imported.layoutConfig, parcelConfig: imported.parcelConfig, radius: base.radius };
   state.stage = imported.partitions ? 2 : 1; state.pins = [];
-  nativeResult = { layouts: imported.layouts, partitions: imported.partitions, water: [], contours: [], layoutConfig: imported.layoutConfig, parcelConfig: imported.parcelConfig };
+  nativeResult = { layouts: imported.layouts, partitions: imported.partitions, water: event.data.water ?? [], contours: event.data.contours ?? [], roads: event.data.roads ?? [], layoutConfig: imported.layoutConfig, parcelConfig: imported.parcelConfig };
   const adapted = workshopView(nativeResult, state.options, editorMorph(state.options, 'streets')); layout = adapted.layout; partition = adapted.partition;
   houses = { parcels: partition.parcels, buildings: [] };
   restoreControls(); fit(); render(); save(); counts();

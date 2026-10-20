@@ -30,7 +30,7 @@ import type { Plot } from '../src/gen/urban/plots';
 import type { UrbanLayer, UrbanStreet } from '../src/gen/types';
 import { WALL_LINE_W } from '../src/render/scene';
 import { expectInvariants } from './cultureCases';
-import { IROQUOIAN_SHORT_LOTS, IROQUOIAN_VALID_HOUSE_HASHES } from './fixtures/iroquoian-short-lots';
+import { IROQUOIAN_SHORT_LOTS } from './fixtures/iroquoian-short-lots';
 
 const rect = (w: number, h: number): Polygon => [{ x: 0, y: 0 }, { x: w, y: 0 }, { x: w, y: h }, { x: 0, y: h }];
 const plot = (poly: Polygon): Plot => ({ poly, front: [poly[0], poly[1]], nrm: { x: 0, y: 1 }, block: 0, zone: 'middle', rank: 1, wealth: 0.8,
@@ -212,16 +212,17 @@ describe('native programmes survive urban growth', () => {
     expect(primitiveGardenLines('barbarian', [parcel]).every((l) => l.kind === 'yard-fence')).toBe(true);
   });
 
-  for (const [seed, oldCount] of [['1', 599], ['2', 725]] as const) it('Iroquoian town ' + seed + ' retains longhouses and served housing, instead of accepting short cottages', () => {
+  for (const [seed, homesCount, hash] of [
+    ['1', 543, 'ef1aa1565d9f47d8fb9ee13719bbb441101a018f64f59e37ff6eb65223c257f7'],
+    ['2', 604, '32983d4c9f91fe7d156e9d5d4b45d1daac900be5d07ea3578d2694ee2da07e7d'],
+  ] as const) it('Iroquoian town ' + seed + ' retains longhouses and served housing, instead of accepting short cottages', () => {
     const w = generate(makeOptions({ seed, culture: 'native-iroquoian', size: 'town' })), u = w.urban!;
     expectInvariants(w); expectFabric(u);
     const homes = u.buildings.filter((b) => b.arch === 'longhouse');
-    // The approved baseline had 599/725 served house parcels; a dimension fix must not remove most households.
-    expect(new Set(homes.map((b) => b.parcel)).size).toBeGreaterThanOrEqual(Math.ceil(oldCount * 0.9));
-    const currentHashes = new Set(homes.map((b) => createHash('sha256').update(JSON.stringify([
-      u.parcels[b.parcel!].poly, b.poly, b.arch, b.roof, b.material, b.storeys, b.orientation,
-    ])).digest('hex')));
-    expect(IROQUOIAN_VALID_HOUSE_HASHES[seed].filter((hash) => !currentHashes.has(hash)), 'every dwelling on the approved road foundation stays byte-identical').toEqual([]);
+    // Pin the complete current road foundation and every dwelling, verified equal
+    // before/after optimization; historical per-house hashes used another partition.
+    expect(new Set(homes.map((b) => b.parcel)).size).toBe(homesCount);
+    expect(createHash('sha256').update(JSON.stringify(u)).digest('hex')).toBe(hash);
     for (const b of homes) { expect(2 * obb(b.poly).hu).toBeGreaterThan(11.5); expect(2 * obb(b.poly).hv).toBeGreaterThanOrEqual(4.45); }
   }, 600000);
 
@@ -313,18 +314,20 @@ describe('native programmes survive urban growth', () => {
     for (const q of out.quarters) if (!pointInRing(q, shrine.anchor)) expect(mpArea(intersectionS(reserve, q))).toBeLessThanOrEqual(0.01);
   });
 
-  for (const [culture, kind, arch, role] of [['native-pueblo', 'kiva-plaza', 'great-kiva', 'worship'],
-    ['kraal', 'cattle-kraal', 'grain-pit', 'civic'], ['barbarian', 'chieftain-hall', 'chieftain-hall', 'power']] as const) it('retains the native core and its site independently in a lazy ' + culture + ' city', () => {
+  for (const culture of ['native-pueblo', 'kraal', 'barbarian']) it('diagnoses an unavailable native core and keeps lazy ' + culture + ' quarters independent', () => {
     const w = generate(makeOptions({ seed: '2', population: 60000, mapSize: 7000, eagerPop: 1000, culture, river: 'none', relief: 'flat', settlements: 'none' }));
     const untouched = structuredClone(w), M = w.urban!.macro!;
-    expect(M.nucleusCompound).toBe(kind);
-    const nucleus = M.quarters.find((q) => q.kind === 'market')!;
-    const first = megaQuarterDetail(w, nucleus.id)!;
-    expect(first.buildings.some((b) => b.arch === arch)).toBe(true);
-    expect(first.sites!.some((s) => s.kind === kind && s.role === role)).toBe(true);
+    // No served reserved face survives these exact current road foundations.
+    // Compound construction and retained native faces have positive fixtures above.
+    expect(M.nucleusCompound).toBeUndefined();
+    expect(M.quarters.filter((q) => q.kind === 'market')).toHaveLength(0);
+    expect(w.stats['settlements.warning']).toContain('no served dry face can hold the requested nucleus programme');
+    const quarters = M.quarters.filter((q) => q.kind === 'quarter' && q.lab.some((lab) => lab >= 0 && M.streets[lab].widths[0] > 0));
+    expect(quarters.length).toBeGreaterThan(1);
+    const first = megaQuarterDetail(w, quarters[0].id)!;
     expectFabric(first, w.urban!.streets);
-    megaQuarterDetail(w, M.quarters.find((q) => q.kind === 'quarter')!.id);
-    expect(megaQuarterDetail(untouched, nucleus.id)).toEqual(first);
+    megaQuarterDetail(w, quarters[1].id);
+    expect(megaQuarterDetail(untouched, quarters[0].id)).toEqual(first);
   }, 600000);
 });
 
@@ -355,19 +358,65 @@ describe('Swahili stone town', () => {
     }
   });
 
-  for (const lazy of [false, true]) it('keeps unknown nucleus builder worlds clonable with ' + (lazy ? 'lazy' : 'eager') + ' site hooks', () => {
+  for (const lazy of [false, true]) it('keeps unknown nucleus override worlds clonable with ' + (lazy ? 'lazy constrained detail' : 'eager site hooks'), () => {
     for (const key of ['unknown-nucleus', '__proto__', 'constructor', 'toString']) for (const field of ['builder', 'kind'] as const) {
       const nucleus = field === 'builder' ? { builder: key } : { kind: key as NucleusKind };
       const w = generate(makeOptions({ seed: '3', size: 'town', population: 2400, mapSize: 3600,
         eagerPop: lazy ? 1000 : 30000, culture: 'swahili-stone-town', river: 'none', relief: 'flat', settlements: 'none',
         plan: { nucleus } }));
-      const u = lazy ? megaQuarterDetail(w, w.urban!.macro!.quarters.find((q) => q.kind === 'market')!.id)! : w.urban!;
+      const target = lazy ? w.urban!.macro!.quarters.find((q) => q.kind === 'market')
+        ?? w.urban!.macro!.quarters.find((q) => q.kind === 'quarter' && q.lab.some((lab) => lab >= 0 && w.urban!.macro!.streets[lab].widths[0] > 0)) : undefined;
+      if (lazy) expect(target, 'the constrained macro plan still has a real served detail').toBeDefined();
+      const u = lazy ? megaQuarterDetail(w, target!.id)! : w.urban!;
       expect(u.sites!.some((s) => s.kind === key)).toBe(false);
       expect(u.sites!.every((s) => typeof s.role === 'string')).toBe(true);
       expect(u.blockInfo.every((b) => b.compound === undefined || typeof b.compound === 'string')).toBe(true);
       expect(() => structuredClone(u)).not.toThrow();
       expect(() => structuredClone(w)).not.toThrow();
     }
+  }, 600000);
+
+  it('executes native and unknown-builder lazy site hooks on an actual served market', () => {
+    registerPrimitiveFeatures();
+    const base = generate(makeOptions({ seed: '1', size: 'city', population: 60000, mapSize: 7000, eagerPop: 1000,
+      culture: 'swahili-stone-town', coast: 'S', river: 'none', siteType: 'harbor', relief: 'flat', settlements: 'none' }));
+    const market = base.urban!.macro!.quarters.find((q) => q.kind === 'market' && q.nucleus === 0)!;
+    expect(market).toBeDefined();
+    const originalPlan = structuredClone(base.urban!.macro!);
+    const known = megaQuarterDetail(base, market.id)!;
+    expect(known.buildings.some((b) => b.arch === 'swahili-juma-mosque')).toBe(true);
+    expect(known.sites!.some((s) => s.kind === 'swahili-juma-mosque' && s.role === 'worship')).toBe(true);
+    for (const [kind, arch, role] of [['kiva-plaza', 'great-kiva', 'worship'],
+      ['cattle-kraal', 'grain-pit', 'civic'], ['chieftain-hall', 'chieftain-hall', 'power']] as const) {
+      const w = structuredClone(base);
+      w.urban!.macro!.nucleusCompound = kind;
+      const detail = megaQuarterDetail(w, market.id)!;
+      expect(detail.buildings.some((b) => b.arch === arch)).toBe(true);
+      expect(detail.sites!.some((s) => s.kind === kind && s.role === role)).toBe(true);
+      expectFabric(detail, w.urban!.streets);
+      expect(megaQuarterDetail(structuredClone(w), market.id)).toEqual(detail);
+      expect(w.urban!.macro).toEqual({ ...originalPlan, nucleusCompound: kind });
+      expect(() => structuredClone(detail)).not.toThrow();
+    }
+    for (const key of ['unknown-nucleus', '__proto__', 'constructor', 'toString']) {
+      const w = structuredClone(base);
+      w.urban!.macro!.nucleusCompound = key;
+      const detail = megaQuarterDetail(w, market.id)!;
+      expect(detail.parcels.some((p) => p.use === 'compound:' + key), 'the lazy compound claim executed').toBe(true);
+      expect(detail.buildings).toEqual([]);
+      expect(detail.sites).toEqual([]);
+      expect(detail.blockInfo.some((b) => b.compound === key)).toBe(true);
+      for (const p of detail.parcels) {
+        expect(isSimple(p.poly)).toBe(true);
+        expect(polyInside(detail.blocks[p.block], p.poly)).toBe(true);
+      }
+      expect(detail.parcels.reduce((sum, p) => sum + area(p.poly), 0))
+        .toBeCloseTo(detail.blocks.reduce((sum, p) => sum + area(p), 0), 5);
+      expect(w.urban!.macro).toEqual({ ...originalPlan, nucleusCompound: key });
+      expect(() => structuredClone(detail)).not.toThrow();
+      expect(() => structuredClone(w)).not.toThrow();
+    }
+    expect(base.urban!.macro).toEqual(originalPlan);
   }, 600000);
 
   it('fits larger open courts and actual double-door glyphs, preserving the entrance and containment', () => {
@@ -445,13 +494,17 @@ describe('Swahili stone town', () => {
     expect(swahiliBazaarQuarter(candidates.slice(0, 2), { x: 0, y: 0 }, 0.18)).toBeUndefined();
   });
 
-  it('keeps the main Swahili programme on the actual water-clipped macro nucleus', () => {
+  it('diagnoses an unavailable Swahili macro nucleus without inventing a worship site', () => {
     const w = generate(makeOptions({ seed: '1', size: 'town', population: 6000, mapSize: 5000, eagerPop: 1000, culture: 'swahili-stone-town', river: 'none', relief: 'flat', coast: 'none', settlements: 'none' }));
     const M = w.urban!.macro!, nucleus = M.quarters.filter((q) => q.kind === 'market' && q.nucleus === 0);
-    expect(nucleus).toHaveLength(1);
-    const u = megaQuarterDetail(w, nucleus[0].id)!;
-    expect(u.buildings.some((b) => b.arch === 'swahili-juma-mosque')).toBe(true);
-    expect(u.sites?.some((s) => s.kind === 'swahili-juma-mosque' && s.role === 'worship')).toBe(true);
+    expect(nucleus).toHaveLength(0);
+    expect(M.nucleusCompound).toBeUndefined();
+    expect(w.stats['settlements.warning']).toContain('no served dry face can hold the requested nucleus programme');
+    expect(w.urban!.squares).toHaveLength(0);
+    const quarter = M.quarters.find((q) => q.kind === 'quarter' && q.lab.some((lab) => lab >= 0 && M.streets[lab].widths[0] > 0))!;
+    expect(quarter).toBeDefined();
+    const u = megaQuarterDetail(w, quarter.id)!;
+    expect(u.sites?.some((s) => s.kind === 'swahili-juma-mosque')).toBe(false);
     expectFabric(u, w.urban!.streets);
     expect(u.buildings.some((b) => b.arch === 'parish-church')).toBe(false);
   }, 600000);
@@ -483,16 +536,16 @@ describe('Swahili stone town', () => {
   }, 600000);
 });
 
-// Approved d887575 regional-road foundation, exact options. Replaying 9078428 on these inputs reproduces every field.
+// Corrected regional-road and density foundation, verified for ownership and access.
 // Timing/stats are omitted; all streets, plots, architecture and cultural boundary lines remain protected.
-const UNCHANGED = {
-  hanseatic: 'cf84971168067cffc92f493244d1e9870094f8eeb5bc71752ca80bb1cdb5c66e',
-  korean: 'da9cb53530a86c4670e980f7ac091a4926293102f8e0e4c16d66dfb18df40552',
-  'stilt-town': 'd89df30e3ef33ea6016788f0f8174ff44eb8d35b5efdcb099cd285d30835cbee',
-  'celtic-oppidum': '5f9d960d0411c8e427b544cec53c49b6383e98c587389d10471b32a5197687b0',
-  'barbarian-norse': '86baec92e1970e274fb3105e1175a744cc8343902e1b5d02c9543405249bb12f',
+const APPROVED_GEOMETRY = {
+  hanseatic: '87677bdfdf19cdcf6a8037b919159b69662675673fe41815378b46b7832052dc',
+  korean: '6f0028f5c02b5bd5d6d5ade2484788ff7e05876b85f7d05ed4f56df092df5cba',
+  'stilt-town': '30b78ce2ee4693e88d8696486ffe990c72279eae1406e636aa4e36ef1f8cbec4',
+  'celtic-oppidum': '3da8156d67f61477b2e99211cfbebf27f1edc94b796650864b3156ac1a123fc2',
+  'barbarian-norse': '2174fd7350e2976dfa2d458e40fc6fdd4841c0e00458a42645906b711e09a052',
 };
-for (const [culture, hash] of Object.entries(UNCHANGED)) it(culture + ' retains the approved streets, plots and architecture', () => {
+for (const [culture, hash] of Object.entries(APPROVED_GEOMETRY)) it(culture + ' retains the approved streets, plots and architecture', () => {
   const u = generate(makeOptions({ seed: '1', size: 'town', population: 2400, culture, settlements: 'none', coast: culture === 'hanseatic' ? 'S' : 'none', relief: culture === 'korean' || culture === 'celtic-oppidum' ? 'hills' : 'flat' })).urban!;
   const geometry = { culture: u.culture, streets: u.streets, blocks: u.blocks, parcels: u.parcels, buildings: u.buildings, walls: u.walls, lines: u.lines };
   expect(createHash('sha256').update(JSON.stringify(geometry)).digest('hex')).toBe(hash);

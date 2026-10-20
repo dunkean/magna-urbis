@@ -2,25 +2,42 @@ import { describe, it, expect } from 'vitest';
 import { generate } from '../src/gen/pipeline';
 import { makeOptions, toQuery, fromQuery, Options } from '../src/gen/options';
 import { checkWorld } from './urbanCheck';
-import { checkM4 } from './m4Check';
+import { boundaryDistance, checkM4 } from './m4Check';
 import { renderSvg } from '../src/render/svg';
 import { distToRing } from '../src/gen/geo/poly';
 
 // M4 invariants (URBAN_LANDMARKS.md §4) on cases that exercise every landmark: a walled city on a river (castle,
-// cathedral close, palace, monasteries, river port, mills, trades, shanty towns), a harbour town, a city with many
-// suburbs and shanty towns, a medina (kasbah, madrasas, mellah), a Roman-core town with its arena, a village motte.
-interface Case { name: string; o: Partial<Options>; expect: string[] }
+// cathedral close, palace, monasteries, mills, trades, shanty towns), a harbour town, a city with many
+// suburbs and shanty towns, a medina (kasbah, madrasas, mellah, river port), a Roman-core town with its arena, a village motte.
+interface Case { name: string; o: Partial<Options>; expect: string[]; rejectedPort?: boolean }
 const CASES: Case[] = [
-  { name: 'city on a river', o: { seed: '2', size: 'city' }, expect: ['castle', 'cathedral-close', 'palace', 'monastery', 'river-port', 'watermill', 'windmill', 'tannery', 'shanty'] },
+  { name: 'city on a river', o: { seed: '2', size: 'city' }, expect: ['castle', 'cathedral-close', 'palace', 'monastery', 'watermill', 'windmill', 'tannery', 'shanty'], rejectedPort: true },
   { name: 'harbour town', o: { seed: '3', size: 'town', coast: 'S', siteType: 'harbor' }, expect: ['castle'] },
   { name: 'coastal city', o: { seed: '5', size: 'city', coast: 'E', siteType: 'harbor' }, expect: ['castle', 'harbour', 'shipyard', 'cathedral-close'] },
   { name: 'city with suburbs and shanty towns', o: { seed: '1', size: 'city', suburbs: 'many', shantytowns: 'many' }, expect: ['absorbed-village', 'shanty'] },
-  { name: 'medina', o: { seed: '2', size: 'city', culture: 'medina' }, expect: ['kasbah', 'madrasa', 'mellah'] },
+  { name: 'medina', o: { seed: '2', size: 'city', culture: 'medina' }, expect: ['kasbah', 'madrasa', 'mellah', 'river-port'] },
   { name: 'roman-core town with arena', o: { seed: '4', size: 'town', culture: 'roman-core', arena: 'yes' }, expect: ['arena'] },
   { name: 'village motte', o: { seed: '3', size: 'village', castle: 'yes' }, expect: ['motte'] },
 ];
 
 describe('M4 landmarks, port, suburbs, shanty towns', () => {
+  it('measures castle contact along complete curtains while rejecting detached enclosures', () => {
+    const box = (x0: number, y0: number, x1: number, y1: number) => [
+      { x: x0, y: y0 }, { x: x1, y: y0 }, { x: x1, y: y1 }, { x: x0, y: y1 },
+    ];
+    const castle = box(0, 0, 20, 20), contact = box(9, -2, 11, 0), crossing = box(9, -10, 11, 30);
+    // Neither case has a nearby castle vertex: the old one-way vertex oracle
+    // missed the shared curtain in the first and proper intersections in the second.
+    for (const enclosure of [contact, crossing]) {
+      expect(Math.min(...castle.map((p) => distToRing(enclosure, p)))).toBeGreaterThan(5);
+      expect(boundaryDistance(castle, [enclosure])).toBe(0);
+      expect(boundaryDistance(enclosure, [castle])).toBe(0);
+    }
+    const detached = box(9, -8, 11, -6);
+    expect(boundaryDistance(castle, [detached])).toBe(6);
+    expect(boundaryDistance(detached, [castle])).toBe(6);
+  });
+
   for (const c of CASES) {
     it(c.name, () => {
       const w = generate(makeOptions(c.o));
@@ -39,6 +56,16 @@ describe('M4 landmarks, port, suburbs, shanty towns', () => {
       const m = checkM4(w);
       const kinds = new Set(m.sites.map((s) => s.kind));
       for (const k of c.expect) expect(kinds.has(k), `${c.name}: has a ${k} (sites: ${[...kinds].join(', ')})`).toBe(true);
+      if (c.rejectedPort) {
+        // Auto ports require a valid dry quay and access. This shore is rejected
+        // without committing any port geometry; the medina above exercises acceptance.
+        const u = w.urban!;
+        expect(w.options.port).toBe('auto');
+        expect(m.sites.filter((s) => s.role === 'port')).toEqual([]);
+        expect(u.quays ?? []).toEqual([]);
+        expect(u.streets.filter((s) => s.role === 'quay')).toEqual([]);
+        expect(u.parcels.filter((p) => ['quay', 'pier', 'slipway'].includes(String(p.use)))).toEqual([]);
+      }
       // landmark lots are pieces of the partition: they never overlap
       expect(m.lotOverlap, 'landmark lots do not overlap').toBeLessThan(0.5);
       // every landmark has street access at its entrance (a street, or a track to the road outside the walls)

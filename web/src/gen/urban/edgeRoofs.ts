@@ -551,6 +551,22 @@ export function finishEdgeRoofs(input: EdgeRoofPartition): { grown: number; fitt
     const owned = byParcel.get(b.parcel) ?? [];
     owned.push({ b, index }); byParcel.set(b.parcel, owned);
   });
+  const fringeBudget = (index: number, roof: Polygon, block: Polygon): boolean => {
+    const b = input.buildings[index], parcel = b.parcel === undefined ? undefined : input.parcels[b.parcel];
+    if (!parcel || parcel.zone !== 'faubourg') return true;
+    if (!isConvex(b.poly, 1e-3) && (minNeck(b.poly)?.w ?? Infinity) < 3.59
+      && area(roof) <= 1.1 * area(b.poly) + 1e-6) return true;
+    const bi = parcel.block, qi = input.quarterOf?.(bi) ?? input.blocks[bi].quarter;
+    if (input.quarters[qi].morph?.faubFade === false) return true;
+    const peers = (byBlock.get(bi) ?? []).filter((p) => !['church', 'cathedral', 'landmark'].includes(p.b.kind));
+    const before = peers.reduce((sum, p) => sum + area(p.b.poly), 0);
+    const after = before - area(b.poly) + area(roof);
+    // Roof finishing must not turn sparse suburb fabric into a mature core.
+    // Keep an inherited dense block stable while allowing genuinely sparse
+    // native corner houses to complete their free exterior wings.
+    const ceiling = Math.max(0.59, before / area(input.blocks[bi].poly));
+    return after <= ceiling * area(block) + 1e-6;
+  };
   const reachByBlock = new Map<number, boolean[]>();
   // Other roofs are replaced atomically, never edited during a proposal search. Snapshot each
   // encountered polygon once; replacement polygons naturally receive a fresh prepared proof.
@@ -668,7 +684,14 @@ export function finishEdgeRoofs(input: EdgeRoofPartition): { grown: number; fitt
           const gardens = input.gardens.map((p) => meets(env, p) ? tryDifference(p, env) : { pieces: [{ outer: p, holes: [] }], failed: false });
           const phases = (input.phases ?? []).map((p) => ({ p, region: p.id >= quarter.phase ? mergeLand(p.region, env) : p.region, band: p.id === quarter.phase ? mergeLand(p.band, env) : p.band }));
           const otherBands = (input.phases ?? []).filter((p) => p.id !== quarter.phase).flatMap((p) => p.band);
-          if (newPlot && newBlock && newQuarter && newFootprint && !space.failed && !extra.failed && clear(extra.pieces, otherBands) && phases.every((p) => p.region && p.band) && gardens.every((g) => !g.failed) && accessible(env, newBlock)) {
+          const parcelAdded = newPlot && tryDifference(newPlot, parcel.poly);
+          // The merged owner's actual boundary is the transaction, not just
+          // the proposed roof. Snapped unions can otherwise claim a neighbour
+          // beyond the roof's previously checked envelope.
+          if (newPlot && newBlock && fringeBudget(index, env, newBlock) && newQuarter && newFootprint && parcelAdded && !parcelAdded.failed
+            && clear(parcelAdded.pieces, parcels.query(newPlot, true).filter((j) => j !== b.parcel)
+              .map((j) => ({ outer: input.parcels[j].poly, holes: [] })))
+            && !space.failed && !extra.failed && clear(extra.pieces, otherBands) && phases.every((p) => p.region && p.band) && gardens.every((g) => !g.failed) && accessible(env, newBlock)) {
             parcel.poly = newPlot; input.blocks[bi].poly = newBlock;
             quarter.lp = { pts: newQuarter, lab: newQuarter.map((a, i) => {
               const z = newQuarter[(i + 1) % newQuarter.length], m = { x: (a.x + z.x) / 2, y: (a.y + z.y) / 2 };
@@ -919,7 +942,7 @@ export function finishEdgeRoofs(input: EdgeRoofPartition): { grown: number; fitt
         const peers = byBlock.get(bi)!;
         const beforeReach = reachByBlock.get(bi) ?? blockReach(input.blocks[bi].poly, peers.map((p) => p.b.poly), streetAt);
         const afterReach = newBlock && blockReach(newBlock, peers.map((p) => p.index === index ? roof : p.b.poly), streetAt);
-        if (newOwner && newBlock && newQuarter && footprint && ownerLand && blockLand && quarterLand
+        if (newOwner && newBlock && fringeBudget(index, roof, newBlock) && newQuarter && footprint && ownerLand && blockLand && quarterLand
           && preservesFront(parcel, newOwner) && retained && !retained.failed && mpArea(retained.pieces) <= 1e-6
           && ownersUnchanged && !space.failed && opened
           && conservesRoofUnion(parcel.poly, roof, ownerLand) && conservesRoofUnion(input.blocks[bi].poly, roof, blockLand)
@@ -1019,7 +1042,7 @@ export function finishEdgeRoofs(input: EdgeRoofPartition): { grown: number; fitt
         const phases = (input.phases ?? []).map((p) => ({ p,
           region: p.id >= quarter.phase ? mergeTransferLand(p.region, roof) : p.region,
           band: p.id === quarter.phase ? mergeTransferLand(p.band, roof) : p.band }));
-        if (!newBlock || !newQuarter || !footprint || space.failed || phases.some((p) => !p.region || !p.band)) continue;
+        if (!newBlock || !fringeBudget(index, roof, newBlock) || !newQuarter || !footprint || space.failed || phases.some((p) => !p.region || !p.band)) continue;
         // A geometrically valid translation is not accepted until access and the complete garden
         // transaction pass too. A rejected candidate leaves every subsequent translation available.
         for (const moved of shifts) {

@@ -5,6 +5,8 @@ use std::cmp::Ordering;
 #[path = "boundary_exact.rs"]
 mod exact;
 use exact::{P, Q, R, cross, rational, sign};
+#[path = "boundary_chains.rs"]
+mod chains;
 #[path = "boundary_offsets.rs"]
 mod generated;
 
@@ -17,6 +19,7 @@ struct Segment {
     equality: bool,
     nodes: BTreeSet<usize>,
     bbox: [f64; 4],
+    rounded_endpoints: [Point; 2],
 }
 #[derive(Clone)]
 struct Node {
@@ -338,6 +341,7 @@ fn add_segment(
     let y = node(nodes, index, b.clone(), id, !equality)?;
     let one = nodes[x].point;
     let two = nodes[y].point;
+    debug_assert!(nodes[x].q == a && nodes[y].q == b);
     segments.push(Segment {
         line: P::edge(&a, &b),
         a,
@@ -350,6 +354,7 @@ fn add_segment(
             one.x.max(two.x),
             one.y.max(two.y),
         ],
+        rounded_endpoints: [one, two],
     });
     Ok(())
 }
@@ -522,7 +527,11 @@ fn halfedges(
                 if j == support || !inside_box(point, other.bbox) {
                     continue;
                 }
-                if other.line.value(&m).is_zero()
+                if !exact::non_incident(
+                    other.rounded_endpoints[0],
+                    other.rounded_endpoints[1],
+                    point,
+                ) && other.line.value(&m).is_zero()
                     && between(&m, other)
                     && !cross(&s.b.sub(&s.a), &other.b.sub(&other.a)).is_zero()
                 {
@@ -768,54 +777,7 @@ fn export_guards(edges: &[Directed], nodes: &[Node]) -> Result<(), String> {
 /// Contract only a global, exactly collinear degree-two subdivision with
 /// unchanged labels. Material corners and all positive cycles stay distinct.
 fn contract_chains(edges: Vec<Directed>, nodes: &[Node]) -> Result<(Vec<Directed>, usize), String> {
-    let mut all: BTreeSet<_> = edges.into_iter().map(|e| (e.a, e.b, e.left)).collect();
-    let mut contracted = 0;
-    loop {
-        let mut neighbors = BTreeMap::<usize, BTreeSet<usize>>::new();
-        for &(a, b, _) in &all {
-            neighbors.entry(a).or_default().insert(b);
-            neighbors.entry(b).or_default().insert(a);
-        }
-        let mut change = None;
-        for (&q, adjacent) in &neighbors {
-            if nodes[q].native || adjacent.len() != 2 {
-                continue;
-            }
-            let mut adjacent = adjacent.iter();
-            let a = *adjacent.next().unwrap();
-            let b = *adjacent.next().unwrap();
-            if !cross(&nodes[q].q.sub(&nodes[a].q), &nodes[b].q.sub(&nodes[q].q)).is_zero() {
-                continue;
-            }
-            let incoming: Vec<_> = all.iter().copied().filter(|e| e.1 == q).collect();
-            let outgoing: Vec<_> = all.iter().copied().filter(|e| e.0 == q).collect();
-            let mut replacements = vec![];
-            for &(a, _, label) in &incoming {
-                let matching: Vec<_> = outgoing.iter().filter(|e| e.2 == label).collect();
-                if matching.len() != 1 || matching[0].1 == a {
-                    replacements.clear();
-                    break;
-                }
-                replacements.push((a, matching[0].1, label));
-            }
-            if !replacements.is_empty() && replacements.len() == outgoing.len() {
-                change = Some((q, replacements));
-                break;
-            }
-        }
-        let Some((q, replacements)) = change else {
-            break;
-        };
-        all.retain(|e| e.0 != q && e.1 != q);
-        all.extend(replacements);
-        contracted += 1;
-    }
-    Ok((
-        all.into_iter()
-            .map(|(a, b, left)| Directed { a, b, left })
-            .collect(),
-        contracted,
-    ))
+    Ok(chains::reduce(edges, nodes, |_, _| {}))
 }
 fn layer(candidates: &[Candidate]) -> Result<NativeResult, String> {
     let labels = Labels::new(candidates)?;

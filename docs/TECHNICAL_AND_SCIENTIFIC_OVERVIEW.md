@@ -10,7 +10,7 @@ Les liens de code permettent de distinguer une méthode effectivement utilisée 
 | --- | --- | --- |
 | Application de référence | Graine, environnement et cultures → paysage, villes, bâtiments et exports | TypeScript dans `web/`, sans serveur de génération |
 | Relief procédural | Bruits, formes de relief, côtes et érosion → champ d'altitude | Rust `crates/core`, WASM ; accélération WebGPU de certaines passes |
-| Relief neuronal optionnel | Esquisse, climat et graine → champ d'altitude appris | Service Rust natif `crates/neural`, avec Burn et poids Terrain Diffusion |
+| Relief neuronal optionnel | Esquisse, climat et graine → champ d'altitude appris | WASM/WebGPU dans le navigateur ou service Python/CUDA ; Rust natif conservé pour les anciens liens |
 | Hydrologie | Altitudes → drainage, lacs, graphe de rivières et lits | Rust ; préparation du drainage possible sur GPU, finalisation vectorielle CPU/WASM |
 | Implantations et routes | Terrain et eau → lieux habités et réseau régional | Rust, étapes distinctes dans Terrain Bench |
 | Plans urbains | Site, accès, population et culture → quartiers, rues, îlots et parcelles | Rust/WASM dans Terrain Bench et Urban Bench ; intégration en cours |
@@ -169,8 +169,9 @@ Le moteur de maisons Rust assemble des recettes de corps bâtis, cours, matéria
 | TypeScript | JavaScript du navigateur, avec workers | Application statique ; développement et build indépendants de Rust |
 | Rust → WASM | CPU du navigateur | Même cœur natif exposé par `wasm-bindgen`, appels par étapes et tableaux numériques |
 | Compute WebGPU | GPU du navigateur, shaders WGSL | Accélère certaines passes de terrain et de drainage ; demande un navigateur et un adaptateur compatibles |
-| Rust neuronal natif | Service local, GPU via Burn/wgpu | Poids résidents et requêtes HTTP ; source neuronale utilisée par Terrain Bench |
-| Rust neuronal WASM | Prototype WebGPU distinct | Crate présente, mais non branchée au banc Magna Urbis ; validation et fiabilité encore insuffisantes |
+| Rust neuronal natif | Service local, GPU via Burn/wgpu | Référence conservée pour les anciens liens `source=neural` |
+| Neuronal WASM | Rust/WASM et moteur WebGPU direct de Neural Earth, dans un worker | Branché à Monde ; base NF4 B75, poids externes vérifiés et cache navigateur |
+| Neuronal Python | Service local PyTorch/CUDA | Branché à Monde ; base originale en une passe, même conditionnement régional préparé en Rust/WASM |
 
 WebAssembly est un format d'exécution portable ; il n'active pas automatiquement le GPU. WebGPU expose les ressources et commandes GPU ; WGSL décrit les shaders. `wgpu` propose une abstraction utilisable en natif et sur le Web, tandis que Burn organise tenseurs, réseaux et backends de calcul. Les performances dépendent des transferts, des noyaux et des capacités du matériel. [Objectifs WASM](https://webassembly.org/docs/high-level-goals/), [spécification WGSL](https://www.w3.org/TR/WGSL/), [wgpu](https://docs.rs/wgpu/latest/wgpu/), [backends Burn](https://burn.dev/books/burn/building-blocks/backend.html).
 
@@ -178,7 +179,7 @@ Les frontières du dépôt sont explicites : `crates/core` ignore le navigateur 
 
 Le service natif conserve les poids sur son GPU et fournit notamment `/status` et `/generate`. La réponse de relief contient des hauteurs FP32 en mètres, avec résolution et étendue définies. Depuis `web/`, `npm run neural:serve` lance ce chemin optionnel. Il nécessite les poids et un GPU compatible ; les poids et modules générés ne sont pas inclus dans Git. [Service](../rust/crates/neural/src/server.rs) ; [commandes](../web/package.json).
 
-La crate [neural-wasm](../rust/crates/neural-wasm/src/lib.rs) documente ses essais et problèmes de noyaux autotunés. Il faut distinguer compilation, première exécution réussie et fonctionnement répété fiable. Les autres projets, dont Neural Earth, peuvent avoir des modèles distillés et des chemins navigateur différents : leur avancement n'est pas celui du banc Magna Urbis.
+La crate [neural-wasm](../rust/crates/neural-wasm/src/lib.rs) remplace l'ancien essai Burn/autotune par le moteur WebGPU direct partagé avec Neural Earth. Le rejeu navigateur 42 → 43 → 42 retrouve le même raster pour la même graine dans les cas contrôlés. Le [service Python](../web/scripts/neural_python.py) exécute les réseaux sur CUDA, avec des hooks qui vérifient le périphérique des entrées. Les deux modes utilisent des bases et des précisions différentes : leurs sorties ne sont pas interchangeables numériquement. Ces vérifications ciblées ne certifient ni toutes les graines, ni tous les GPU.
 
 ## 8. Reproductibilité, rendu et limites
 

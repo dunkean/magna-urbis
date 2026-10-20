@@ -1,0 +1,23 @@
+.export-crop {
+  box-sizing: border-box; width: min(760px, calc(100vw - 24px)); max-height: calc(100dvh - 24px);
+  padding: 18px; border: 1px solid #b9b6ab; border-radius: 10px; background: #f9f8f3;
+  color: #252a28; box-shadow: 0 12px 60px #0005; font: 14px/1.4 system-ui, sans-serif; overflow: auto;
+}
+.export-crop::backdrop { background: #17201bd0; }
+.export-crop h2 { margin: 0 0 4px; font-size: 19px; }
+.export-crop p { margin: 0 0 12px; }
+.export-crop .export-crop-preview {
+  position: relative; margin: auto; max-width: 100%;
+  background: repeating-conic-gradient(#e2e2dc 0% 25%, #f7f7f2 0% 50%) 0 0 / 16px 16px;
+}
+.export-crop-preview img { display: block; width: 100%; height: 100%; pointer-events: none; }
+.export-crop-preview svg { position: absolute; inset: 0; width: 100%; height: 100%; cursor: crosshair; touch-action: none; }
+.export-crop-preview rect { cursor: move; }
+.export-crop .export-crop-fields { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-top: 12px; }
+.export-crop label { display: flex; flex-direction: column; gap: 3px; font-size: 12px; }
+.export-crop input { box-sizing: border-box; width: 100%; min-width: 0; padding: 6px; border: 1px solid #b9b6ab; border-radius: 4px; background: white; color: #252a28; font: inherit; }
+.export-crop .export-crop-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 12px; }
+.export-crop button { width: auto; padding: 7px 12px; border: 1px solid #b9b6ab; border-radius: 5px; background: white; color: #252a28; font: inherit; cursor: pointer; }
+.export-crop button[data-action="export"] { background: #315b49; border-color: #315b49; color: white; }
+.export-crop output { flex: 1; font-size: 12px; }
+@media (max-width: 480px) { .export-crop .export-crop-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); } }

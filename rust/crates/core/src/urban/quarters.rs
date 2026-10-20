@@ -5,7 +5,9 @@ use super::{
     macroplan, network, profiles, routing,
 };
 use crate::{noise::Noise, rng::Rng};
+use geo::BooleanOps;
 use std::f64::consts::{FRAC_PI_2, PI, TAU};
+use std::sync::OnceLock;
 
 #[derive(Clone, Copy)]
 struct Frame {
@@ -209,24 +211,41 @@ impl Field<'_> {
         let mut cx = (1.0 - w) * (4.0 * angle).cos() + w * (4.0 * contour).cos();
         let mut cy = (1.0 - w) * (4.0 * angle).sin() + w * (4.0 * contour).sin();
         let (mut wx, mut wy, mut weight) = (0.0, 0.0, 0.0);
-        for radius in [15.0, 35.0, 70.0] {
-            for i in 0..16 {
-                let a = i as f64 * TAU / 16.0;
-                let q = Point {
-                    x: p.x + radius * a.cos(),
-                    y: p.y + radius * a.sin(),
-                };
-                if q.x >= 0.0
-                    && q.y >= 0.0
-                    && q.x < self.surface.width
-                    && q.y < self.surface.width
-                    && self.surface.wet(q)
-                {
-                    let v = (-radius / 35.0_f64).exp();
-                    wx += a.cos() * v;
-                    wy += a.sin() * v;
-                    weight += v;
-                }
+        // The physical sampling stencil is identical at every integration
+        // step. Compute its trigonometry once, retaining the accumulation order.
+        static PROBES: OnceLock<[(Point, Point, f64); 48]> = OnceLock::new();
+        let probes = PROBES.get_or_init(|| {
+            std::array::from_fn(|j| {
+                let radius = [15.0, 35.0, 70.0][j / 16];
+                let a = (j % 16) as f64 * TAU / 16.0;
+                let v = (-radius / 35.0_f64).exp();
+                (
+                    Point {
+                        x: radius * a.cos(),
+                        y: radius * a.sin(),
+                    },
+                    Point {
+                        x: a.cos() * v,
+                        y: a.sin() * v,
+                    },
+                    v,
+                )
+            })
+        });
+        for &(offset, contribution, v) in probes {
+            let q = Point {
+                x: p.x + offset.x,
+                y: p.y + offset.y,
+            };
+            if q.x >= 0.0
+                && q.y >= 0.0
+                && q.x < self.surface.width
+                && q.y < self.surface.width
+                && self.surface.wet(q)
+            {
+                wx += contribution.x;
+                wy += contribution.y;
+                weight += v;
             }
         }
         if weight > 0.0 && wx.hypot(wy) > 0.1 {
@@ -613,9 +632,12 @@ fn split_quarter(
                 } else {
                     cfg.max_lane_grade
                 };
-                if routing::path_clear(field.surface, &snapped, allowed)
-                    && g::split(&pc.shape, &snapped).is_some()
-                {
+                let snapped_split = if routing::path_clear(field.surface, &snapped, allowed) {
+                    g::split(&pc.shape, &snapped)
+                } else {
+                    None
+                };
+                if snapped_split.is_some() {
                     back = snapped;
                 }
                 // Every recursive street must connect to the existing primary or recursive network.
@@ -632,7 +654,8 @@ fn split_quarter(
                 {
                     continue;
                 }
-                let Some((a, b)) = g::split(&pc.shape, &back) else {
+                // The snap validation already computed these exact children.
+                let Some((a, b)) = snapped_split.or_else(|| g::split(&pc.shape, &back)) else {
                     continue;
                 };
                 let aa = g::area(&a);
@@ -1683,7 +1706,7 @@ pub(super) fn generate(
         )
         .map(|p| {
             let bb = g::bbox(&p);
-            (p, bb)
+            (g::polygon(&p), bb)
         })
         .collect();
     let mut blocks = vec![];
@@ -1698,7 +1721,7 @@ pub(super) fn generate(
                 }
                 polys = polys
                     .into_iter()
-                    .flat_map(|p| g::difference(&p, r))
+                    .flat_map(|p| g::shapes(g::polygon(&p).difference(r)))
                     .collect();
                 if polys.is_empty() {
                     break;
@@ -1730,23 +1753,18 @@ pub(super) fn generate(
                         kind = "reserve".into();
                     }
                 }
+                let phase = if phases.is_empty() {
+                    None
+                } else {
+                    let interior = g::interior_point(&shape);
+                    phases
+                        .iter()
+                        .position(|p| p.shapes.iter().any(|s| g::contains(s, interior)))
+                };
                 blocks.push(Block {
-                    phase: (!phases.is_empty())
-                        .then(|| {
-                            phases.iter().position(|p| {
-                                p.shapes
-                                    .iter()
-                                    .any(|s| g::contains(s, g::interior_point(&shape)))
-                            })
-                        })
-                        .flatten(),
-                    zone: if !phases.is_empty()
-                        && let Some(p) = phases.iter().find(|p| {
-                            p.shapes
-                                .iter()
-                                .any(|s| g::contains(s, g::interior_point(&shape)))
-                        }) {
-                        p.zone.clone()
+                    phase,
+                    zone: if let Some(i) = phase {
+                        phases[i].zone.clone()
                     } else if !phases.is_empty() {
                         quarters[qi].zone.clone()
                     } else if cfg.zone == "auto" {

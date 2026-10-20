@@ -201,6 +201,13 @@ pub struct Component {
 }
 
 /// Declared graphical defaults for auxiliary covers; domains/supports are resolved by layout.
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum FacadeCoverMode {
+    Residential,
+    WallBearing,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct GalleryCover {
     pub enabled: bool,
@@ -211,6 +218,8 @@ pub struct GalleryCover {
     pub pitch_deg: f64,
     pub max_span_m: f64,
     pub support_spacing_m: f64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub facade_mode: Option<FacadeCoverMode>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -1246,6 +1255,9 @@ impl Catalogue {
         }
         if p.gallery_cover.rf != "RF-SHED" {
             return Err("Couverture de galerie hors opérateur déclaré RF-SHED.".into());
+        }
+        if p.gallery_cover.facade_mode.is_some() && !p.gallery_cover.enabled {
+            return Err("Mode de façade sans couverture activée.".into());
         }
         for (name, value, minimum, maximum) in [
             ("hauteur galerie", p.gallery_cover.height_m, 2.0, 6.0),

@@ -23,5 +23,8 @@
 #setScore td:last-child { text-align: right; }
 .settlement-marker { cursor: pointer; }
 #roadOverlay [data-road] { cursor: help; }
-.settlement-marker text { font-size: 11px; font-weight: 600; fill: #452f25; stroke: #fffdf0; stroke-width: 3px; paint-order: stroke; stroke-linejoin: round; }
+.settlement-marker text { font-size: 12px; font-weight: 600; fill: #252b29; stroke: #fffdf0; stroke-width: 3px; paint-order: stroke; stroke-linejoin: round; font-variant-numeric: tabular-nums; }
+.settlement-marker .settlement-symbol { fill: currentColor; fill-rule: evenodd; stroke: #fffdf0; stroke-width: 2px; paint-order: stroke fill; stroke-linejoin: round; }
+.settlement-marker .settlement-number { fill: currentColor; font-size: 13px; font-weight: 700; }
+.settlement-marker .settlement-population { font-weight: 600; }
 #viewport.settlement-picking #map { cursor: crosshair; }

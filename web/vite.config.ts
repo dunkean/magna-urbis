@@ -66,24 +66,38 @@ function housesWasmReload(): Plugin {
   };
 }
 
+function neuralServe(): Plugin {
+  const dir = fileURLToPath(new URL('../rust/pkg/neural-web/', import.meta.url));
+  return { name: 'neural-web-assets', apply: 'serve', configureServer(server) {
+    server.middlewares.use('/neural', (req, res, next) => {
+      const name = (req.url ?? '').split('?')[0].replace(/^\/+/, '');
+      if (!/^(?:models\/)?[\w.-]+$/.test(name)) { next(); return; }
+      const file = dir + name;
+      if (!existsSync(file) || !statSync(file).isFile()) { next(); return; }
+      res.setHeader('Content-Type', name.endsWith('.js') ? 'text/javascript' : name.endsWith('.wasm') ? 'application/wasm' : name.endsWith('.json') ? 'application/json' : 'application/octet-stream');
+      createReadStream(file).pipe(res);
+    });
+  } };
+}
+
 export default defineConfig(({ mode }) => ({
   root: 'src/ui',
-  plugins: [viteSingleFile(), ...(mode === 'terrainbench' ? [terrainWasmReload(), decorServe()] : []), ...(mode === 'housebench' ? [housesWasmReload()] : [])],
+  plugins: [viteSingleFile(), neuralServe(), ...(['terrainbench', 'rustbench'].includes(mode) ? [terrainWasmReload(), decorServe()] : []), ...(['housebench', 'rustbench'].includes(mode) ? [housesWasmReload()] : [])],
   // Keep third-party notices inside the self-contained offline bundle.
   esbuild: { legalComments: 'inline' },
-  optimizeDeps: mode === 'housebench' ? { entries: ['housebench.html'] } : undefined,
-  server: mode === 'terrainbench' || mode === 'housebench' ? { fs: { allow: [fileURLToPath(new URL('..', import.meta.url))] } } : undefined,
+  optimizeDeps: mode === 'housebench' ? { entries: ['housebench.html'] } : mode === 'rustbench' ? { entries: ['rustbench.html', 'terrainbench.html', 'urbanbench.html', 'housebench.html'] } : undefined,
+  server: ['terrainbench', 'housebench', 'rustbench'].includes(mode) ? { fs: { allow: [fileURLToPath(new URL('..', import.meta.url))] } } : undefined,
   build: {
     target: 'es2022',
-    outDir: mode === 'housebench' ? fileURLToPath(new URL('../rust/out/houses', import.meta.url)) : mode === 'terrainbench' || mode === 'neuralbench' || mode === 'urbanbench' || mode === 'urbaneditor' ? fileURLToPath(new URL('../rust/out/browser', import.meta.url)) : '../../dist',
-    emptyOutDir: mode !== 'testbench' && mode !== 'neuralbench' && mode !== 'urbanbench' && mode !== 'urbaneditor',
+    outDir: mode === 'rustbench' ? fileURLToPath(new URL('../rust/out/benches', import.meta.url)) : mode === 'housebench' ? fileURLToPath(new URL('../rust/out/houses', import.meta.url)) : mode === 'terrainbench' || mode === 'urbanbench' || mode === 'urbaneditor' ? fileURLToPath(new URL('../rust/out/browser', import.meta.url)) : '../../dist',
+    emptyOutDir: !['testbench', 'urbanbench', 'urbaneditor', 'rustbench'].includes(mode),
     chunkSizeWarningLimit: 6000,
     rollupOptions: {
       ...(mode === 'testbench' || mode === 'urbaneditor' ? { input: 'src/ui/testbench.html' } : {}),
       ...(mode === 'terrainbench' ? { input: 'src/ui/terrainbench.html' } : {}),
-      ...(mode === 'neuralbench' ? { input: 'src/ui/neuralbench.html' } : {}),
       ...(mode === 'urbanbench' ? { input: 'src/ui/urbanbench.html' } : {}),
       ...(mode === 'housebench' ? { input: 'src/ui/housebench.html' } : {}),
+      ...(mode === 'rustbench' ? { input: 'src/ui/rustbench.html' } : {}),
       output: { banner: vendorNotice },
     },
   },

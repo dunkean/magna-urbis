@@ -20,6 +20,10 @@ export interface HydrologySettings {
   resolution: 256 | 512 | 1024; compute: 'auto' | 'cpu' | 'gpu';
   /** Water chain: the vector chain (priority-flood, water budget, vector rivers) or the Rust hydrology. */
   engine: 'vector' | 'rust';
+  /** Compute water on conditioned relief; false keeps the upstream relief and disables river incision/breaches. */
+  erosionEnabled: boolean;
+  /** Display hydrology's terrain changes; false overlays the same water on the upstream relief. */
+  showErosion: boolean;
   /** Pre-hydrology conditioning of the relief, shared by both chains. */
   condMode: 'none' | 'erosion' | 'breach' | 'both'; condStrength: number; condDepth: number; condLength: number;
   /** Vector chain: river threshold (km², 0 = from the map size), lakes (m, ha), tracing and channel styles. */
@@ -35,7 +39,7 @@ export const DEFAULT_HYDROLOGY: HydrologySettings = {
   incision: 1, minLakeArea: 100000, minLakeDepth: 1, resolution: 512, compute: 'auto',
   lakeAbundance: 0.5, lakeCoverage: 0.05, maxLakeArea: 0.02,
   depressionPolicy: 'auto', maxBreachDepth: 12, maxBreachLength: 1000,
-  engine: 'rust', condMode: 'both', condStrength: 2, condDepth: 30, condLength: 3000,
+  engine: 'rust', erosionEnabled: true, showErosion: true, condMode: 'both', condStrength: 2, condDepth: 30, condLength: 3000,
   riverArea: 0, lakeDepth: 1, lakeArea: 10, riverMode: 'vector', flatSlope: 1, sinuosity: 1.8, vectorWidth: 3, vectorResolution: 1024,
   balance: true, braiding: 1, anabranching: true, terrainInfluence: true, avulsions: true, confluence: 'climate', deltas: true,
 };

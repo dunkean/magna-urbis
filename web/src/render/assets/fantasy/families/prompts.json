@@ -29,10 +29,25 @@
   },
   {
     "family": "mountains",
-    "file": "mountains.png",
-    "prompt": "Use case: stylized-concept. Production game asset: ONE fantasy RPG cartographic brush atlas devoted ONLY to mountains. Genuinely transparent background. EXACT regular square 4 columns x 4 rows, 16 equally sized cells, each illustration fits INSIDE THE MIDDLE 70 percent of its cell with at least 15 percent blank transparent padding on ALL sides. Absolutely NO illustration crosses cell boundary. No labels, lines, borders, text or backgrounds. Top two rows: EIGHT DIFFERENT isolated black ink engravings with opaque white interior, no beige or color, fine hand-drawn pen lines and delicate cross-hatching. Bottom two rows: matching EIGHT variations in exquisite fine dark ink and restrained watercolor color. All 16 in same gently plunging oblique view looking down about 40 degrees, visible upright silhouettes, NEVER directly top down. Upper-left lighting. Each subject sits on a small unobtrusive footprint, grounded at bottom center of its cell. The eight variations in row order are: rock mountains: slender sharp peak, wide asymmetric peak, twin peaks with saddle, serrated three-peak ridge, massive craggy mountain, long mountain crest, steep cliff-sided peak, worn irregular high mountain. Repeat those eight subjects in the bottom half in color, moss/sage vegetation, slate and warm-grey rock, ochre sand, ivory highlights as appropriate. Elegant refined premium fantasy RPG atlas, crisp readable silhouettes at map size. Natural asymmetry and visibly distinct outlines among variants, NOT copies or mere horizontal flips. Truly transparent exterior with opaque illustrated interiors so overlapping sprites occlude. Strictly even 4x4 grid, every symbol safely contained, no background shadows.",
+    "file": "mountain-ridges-v2.png",
+    "prompt": "32 distinct connected mountain ridge silhouettes, oblique fine ink with opaque ivory faces; same 32 in muted taupe and sage watercolor. 8 columns x 8 rows, transparent exterior and gutters, no text. Repair pass: remove colored fringes and preserve exact paired shapes.",
     "tool": "ImageGen",
-    "layout": "4x4, ink indices 0-7, color indices 8-15"
+    "layout": "8x8, ink indices 0-31, color indices 32-63",
+    "columns": 8,
+    "variantsPerStyle": 32,
+    "sourceRows": [
+      0,
+      200,
+      365,
+      515,
+      660,
+      815,
+      970,
+      1120,
+      1254
+    ],
+    "runtimeFile": "mountain-ridges-v2.webp",
+    "repairPrompt": "Repair this 8 by 8 fantasy mountain sprite atlas. Preserve the 64 separate mountain shapes and exact grid structure with first 32 ink sprites and lower 32 watercolor ones. Remove ALL colored red and yellow pixels/fringes around silhouettes. Exterior is entirely transparent and clean. Increase transparent margins inside every cell: each mountain fully centered in its own equally sized cell, no sprite touching any cell edge, at least 12% clear padding on all four sides. Mountains should be fully opaque internally in warm ivory, with fine dark charcoal pen outlines and hatching. Upper four rows pure monochrome charcoal/ivory. Lower four rows corresponding shapes with muted grey, taupe and sage watercolor. No colored fringes, no glitch artifacts, no background, no labels. This must be a usable production sprite sheet."
   },
   {
     "family": "hills",

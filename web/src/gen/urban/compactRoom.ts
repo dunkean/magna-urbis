@@ -3,7 +3,7 @@ import type { Polygon, Vec2 } from '../core/geom';
 import { polygonCentroid } from '../core/geom';
 import { area, bboxOf, inscribed, isSimple, obb } from '../geo/poly';
 import { polyInside } from '../geo/split';
-import { mpArea, tryDifference, tryIntersection } from '../geo/bool';
+import { mpArea, tryDifference, prepareIntersection } from '../geo/bool';
 
 const distance = (a: Vec2, b: Vec2): number => Math.hypot(a.x - b.x, a.y - b.y);
 
@@ -14,7 +14,9 @@ export function reconstructCompactRoom(poly: Polygon, owner: Polygon, occupied: 
   if (poly.length < 3 || owner.length < 3) return null;
   const oldArea = area(poly), oldCenter = polygonCentroid(poly);
   if (oldArea < 12 || !Number.isFinite(oldArea)) return null;
-  const oldContacts = occupied.map((other) => tryIntersection(poly, other));
+  // Occupied roofs stay unchanged until this synchronous search returns.
+  const occupiedIntersections = occupied.map(other => prepareIntersection(other));
+  const oldContacts = occupiedIntersections.map(intersect => intersect(poly));
   if (oldContacts.some((hit) => hit.failed)) return null;
   const bounds = bboxOf(owner), box = obb(poly);
   const axes: Vec2[] = [];
@@ -49,7 +51,7 @@ export function reconstructCompactRoom(poly: Polygon, owner: Polygon, occupied: 
     const escaped = tryDifference(candidate, owner), added = tryDifference(candidate, poly);
     if (escaped.failed || mpArea(escaped.pieces) > 1e-6 || added.failed) return false;
     for (let i = 0; i < occupied.length; i++) {
-      const newContact = added.pieces.length ? tryIntersection(added.pieces, occupied[i]) : { pieces: [], failed: false };
+      const newContact = added.pieces.length ? occupiedIntersections[i](added.pieces) : { pieces: [], failed: false };
       if (newContact.failed || mpArea(newContact.pieces) > 1e-6) return false;
     }
     return clear(candidate) && validate(candidate);

@@ -92,6 +92,8 @@ The build produces `web/dist/index.html`, a self-contained page that can run off
 
 In **Share & export**, choose the SVG / PNG layers independently: relief, water, vegetation and fields, buildings and town grounds, town streets, regional roads, names, and decoration. Presets export the complete map, town only, relief only, or roads and streets only. Disable **Paper background** for transparent overlays; the relief image itself remains opaque. These choices affect downloads without regenerating the map. JSON exports retain all world data.
 
+SVG and PNG exports open a crop preview: draw a rectangle, drag it to move it, or enter its position and dimensions in meters. Choose **Carte entière** to reset the selection, then **Exporter** to download it. Rectangular exports keep their proportions, with a longest edge of 3000 px (4096 px for Fantasy exports in Terrain Bench and Urban Bench).
+
 ## Develop the Rust engine
 
 Install the toolchain pinned in `rust/rust-toolchain.toml`, the `wasm32-unknown-unknown` target and `wasm-pack`. On Windows, install the Visual Studio C++ build tools and Windows SDK.

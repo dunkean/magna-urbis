@@ -18,14 +18,16 @@ try {
       console.log(backend,style,await page.locator('.fantasy-brushes > use').count());
     }
     const before = await page.locator('.fantasy-brushes > use').count();
-    await page.locator('#lightingControls > summary').click();
+    await page.locator('#brush_density').evaluate(input => { for (let node = input.parentElement; node; node = node.parentElement) if (node.tagName === 'DETAILS') node.open = true; });
     await page.locator('#brush_density').evaluate(input => { input.value = '.4'; input.dispatchEvent(new Event('input')); });
     const count = await page.locator('.fantasy-brushes > use').count();
     assert(count > 0 && count < before, 'density changes display without replacing the terrain');
     if (backend === 'gl') {
       for (const format of ['svg','png']) {
-        const download = page.waitForEvent('download');
+        const download = page.waitForEvent('download', { timeout: 180000 }); download.catch(() => {});
+        await page.locator(`#fantasyExport_${format}`).evaluate(button => { for (let node = button.parentElement; node; node = node.parentElement) if (node.tagName === 'DETAILS') node.open = true; });
         await page.locator(`#fantasyExport_${format}`).click();
+        await page.locator('.export-crop [data-action="export"]').click();
         const result = await download;
         assert(result.suggestedFilename().endsWith(`.${format}`));
         await result.saveAs(`out/fantasy/export.${format}`);
@@ -34,7 +36,7 @@ try {
         else { assert.equal(content.readUInt32BE(16),4096); assert.equal(content.readUInt32BE(20),4096); }
       }
     }
-    await page.locator('#lightingControls > summary').click();
+    await page.locator('#brush_density').evaluate(input => { for (let node = input.parentElement; node; node = node.parentElement) if (node.tagName === 'DETAILS') node.open = true; });
     await page.selectOption('#style','parchment');
     assert.equal(await page.locator('#fantasyPainting').count(),0);
   }

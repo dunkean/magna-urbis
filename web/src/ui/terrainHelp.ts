@@ -1,0 +1,70 @@
+/** Short, keyboard-accessible explanations next to the controls they describe. */
+export function installTerrainHelp(): void {
+  const explanations: Record<string, () => string> = {
+    terrainSource: () => {
+      const value = (document.getElementById('terrainSource') as HTMLSelectElement).value;
+      return value === 'procedural' ? 'Procédural : les zones modulent les propriétés locales des bruits, du soulèvement et des crêtes avant l’érosion. Les montagnes sont générées dans leur masque, avec leur géographie interne. La génération zonée utilise Rust ; l’échantillonnage peut rester GPU.'
+        : value === 'neural-wasm' ? 'Neuronal WASM : Terrain Diffusion sur le GPU du navigateur. Les zones produisent le conditionnement régional et les contraintes locales de relief ; les réseaux génèrent les détails. Environ 162 Mo de modèles au premier chargement, puis cache. Le réseau produit 40 × 40 km avant découpe ou mise à l’échelle.'
+        : 'Neuronal Python : Terrain Diffusion via le service local PyTorch/CUDA. Même entrée régionale que WASM, avec un modèle et une précision différents. Le résultat n’est donc pas identique. Le service doit être démarré.';
+    },
+    relief: () => 'Relief de fond dans les parties non peintes. Les zones remplacent localement ses paramètres de génération : plaine, collines, montagnes ou hautes montagnes. La gomme rend la main à ce relief de fond. Une heightmap importée conserve ses altitudes ; les cavernes utilisent un autre modèle.',
+    width: () => 'Largeur de la carte carrée, en mètres. Une heightmap couvre toujours toute cette surface. Changer la largeur étire son relief horizontalement, sans changer les altitudes.',
+    seed: () => 'La graine reproduit les choix aléatoires avec les mêmes paramètres et le même moteur. Elle ne remplace pas une heightmap importée.',
+    auto: () => 'Recalcule quand un paramètre change ou à la fin d’un trait de zones. Désactivez Auto pour préparer plusieurs régions, puis utilisez « Générer le relief ».',
+    motifSize: () => 'Taille physique des formes, indépendante de la largeur de carte. Une chaîne de 3 km garde cette taille sur une carte plus grande.',
+    erosion: () => 'Dose d’érosion du relief procédural ou de la heightmap : 0 % pour observer l’entrée sans érosion, 100 % pour la dose normale, jusqu’à 200 %. La génération neuronale utilise son propre modèle ; reprenez son résultat en Heightmap → éroder pour lui appliquer l’érosion Rust.',
+    generationCompute: () => 'CPU : référence Rust. GPU fine noise : petits bruits sur GPU. GPU all noise : tous les bruits sur GPU. GPU erosion : relief et érosion compatibles sur GPU. Les masques de zones pilotent la simulation Rust, avec échantillonnage GPU possible. Les sources neuronales utilisent leur runtime propre.',
+    compute: () => 'Moteur d’échantillonnage du relief pour la vue. WASM calcule sur CPU ; WebGPU utilise le GPU avec repli CPU. Ce choix est distinct du calcul initial de génération et du style de rendu.',
+    hydroEngine: () => 'Moteur de calcul des lacs et rivières à partir du relief résultant. Rust utilise le réseau natif ; Vector conserve l’ancien pipeline. Recalculer l’eau préserve l’entrée terrain et les côtes déjà appliquées.',
+    hydroCompute: () => 'Calcule le drainage sur CPU/WASM ou GPU lorsque disponible. Le réseau final suit le relief, les dépressions et les sorties de carte.',
+    hydroCondMode: () => 'Modification physique du relief avant le drainage : érosion fluviale, ouverture des seuils, ou les deux. Choisir None pour conserver le terrain avant calcul de l’eau.',
+    climate: () => 'Le climat conditionne la génération neuronale et le bilan d’eau des lacs. Pour le relief procédural, il agit sur l’eau, pas sur les formes du relief.',
+    fidelity: () => 'Bruit de conditionnement neuronal : une valeur faible suit plus étroitement l’esquisse. Le réseau voit de grandes cellules (~7,7 km), les petites côtes peintes ne sont donc pas garanties. Heightmap → conserver garde les formes exactes.',
+    neuralFit: () => 'Le réseau génère 40 × 40 km. Crop prélève une fenêtre à la taille de la carte ; Scale ajuste l’ensemble des 40 km à la carte.',
+    neuralSlopes: () => 'En mode Scale, multiplie aussi les altitudes par le facteur horizontal afin de conserver les pentes.',
+    refine: () => 'Ajoute des détails fractals sous la taille des cellules pendant le zoom. Ce sont des détails d’affichage ; les exports heightmap contiennent les altitudes physiques, sans ce détail de zoom.',
+    islandMode: () => 'Quand tous les côtés sont marins, choisit une île, plusieurs îles ou un choix seedé. En mode heightmap, les altitudes négatives définissent directement la mer.',
+    environment: () => 'Relief entourant les formes locales comme plateau, volcan ou caldeira, utilisé dans la génération procédurale.',
+    mountainMix: () => 'Proportion de montagnes dans le relief mixte. L’esquisse peut ensuite imposer leur emplacement général.',
+    style: () => 'Change la représentation de la carte, sans régénérer le relief ni modifier la heightmap.',
+  };
+  const tip = document.createElement('div'); tip.id = 'terrainHelpText'; tip.className = 'terrain-help-text'; tip.setAttribute('popover', 'auto'); tip.setAttribute('role', 'note'); document.body.append(tip);
+  let current: HTMLButtonElement | undefined;
+  tip.addEventListener('toggle', () => { if (!tip.matches(':popover-open')) { current?.setAttribute('aria-expanded', 'false'); current = undefined; } });
+  function attach(control: Element, explain: () => string): void {
+    const label = control.closest('label') ?? control;
+    const row = document.createElement('div'); row.className = 'terrain-help-row'; label.before(row); row.append(label);
+    const button = document.createElement('button'); button.type = 'button'; button.className = 'terrain-help'; button.textContent = '?';
+    const title = Array.from(label.childNodes).filter(n => n.nodeType === Node.TEXT_NODE).map(n => n.textContent).join('').trim();
+    button.setAttribute('aria-label', `Aide : ${title || 'terrain'}`); button.setAttribute('aria-controls', tip.id); button.setAttribute('aria-expanded', 'false');
+    row.append(button);
+    const show = (): void => {
+      current?.setAttribute('aria-expanded', 'false'); current = button; tip.textContent = explain();
+      tip.showPopover(); button.setAttribute('aria-expanded', 'true');
+      const b = button.getBoundingClientRect(); tip.style.left = `${Math.min(b.left, Math.max(8, innerWidth - Math.min(340, innerWidth - 16) - 8))}px`;
+      tip.style.top = `${Math.max(8, Math.min(b.bottom + 6, innerHeight - tip.offsetHeight - 8))}px`;
+    };
+    const hide = (): void => {
+      if (current !== button) return;
+      tip.hidePopover(); button.setAttribute('aria-expanded', 'false'); current = undefined;
+    };
+    button.addEventListener('mouseenter', show);
+    button.addEventListener('mouseleave', hide);
+    button.addEventListener('focus', () => { if (button.matches(':focus-visible')) show(); });
+    button.addEventListener('blur', hide);
+    control.addEventListener('input', () => { if (current === button) tip.textContent = explain(); });
+  }
+  for (const [id, explain] of Object.entries(explanations)) { const control = document.getElementById(id); if (control) attach(control, explain); }
+  const input = document.querySelector('#terrainSketchEditor [data-id=input]');
+  if (input) attach(input, () => 'Relief automatique : la famille choisie définit la carte. Zones peintes : vous dessinez des masques d’opération ; le moteur génère leurs reliefs. Les zones ne contiennent aucune altitude. Heightmap : import/export d’un raster existant, conservé ou érodé séparément.');
+  for (const [id, explanation] of Object.entries({
+    tool: 'Choisit l’opération locale : mer, plaine, collines, montagnes ou hautes montagnes. Le moteur produit ses propres formes dans chaque zone. La gomme retire les opérations et retrouve le relief de fond.',
+    radius: 'Rayon du pinceau en pourcentage de la largeur de carte. Le cercle montre la zone touchée. Avec le neuronal, préférez de larges régions correspondant à ses cellules de conditionnement.',
+    feather: 'Partie extérieure du rayon où le poids du masque décroît progressivement. Une transition large raccorde les régimes de relief ; une transition courte crée des limites plus marquées.',
+  })) {
+    const control = document.querySelector(`#terrainSketchEditor [data-id=${id}]`);
+    if (control) attach(control, () => explanation);
+  }
+  const coasts = document.getElementById('coastControl');
+  if (coasts) attach(coasts, () => 'Ces directions définissent les côtes automatiques. Le masque Mer ajoute des régions marines à la génération et le moteur construit leur littoral. La gomme retire une zone manuelle ; elle ne retire pas les côtes automatiques.');
+}

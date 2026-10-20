@@ -67,7 +67,7 @@ export function regionalStreets(roads?: RoadOutput): Street[] {
     });
   }) ?? [];
 }
-export interface UrbanRequest { id: number; seed: string; kind: 'quarters' | 'parcels'; raster?: SettlementRaster; sites?: RoadSite[]; roads?: Street[]; layoutConfig?: LayoutConfig; parcelConfig?: ParcelConfig; layouts?: Layout[] }
+export interface UrbanRequest { id: number; seed: string; kind: 'quarters' | 'parcels'; raster?: SettlementRaster; sites?: RoadSite[]; roads?: Street[]; layoutConfig?: LayoutConfig; parcelConfig?: ParcelConfig; layouts?: Layout[]; layoutsId?: number }
 export interface UrbanResponse { id: number; layouts?: Layout[]; partitions?: Partition[]; ms?: number; error?: string }
 export interface UrbanEngine { run(request: UrbanRequest): UrbanResponse }
 
@@ -75,21 +75,34 @@ export interface UrbanEngine { run(request: UrbanRequest): UrbanResponse }
 export async function createUrbanEngine(): Promise<UrbanEngine> {
   await init({ module_or_path: await (await fetch(wasmUrl)).arrayBuffer() });
   let terrain: SettlementTerrain | undefined;
+  let retainedLayouts: { id: number; json: string } | undefined;
   return { run(request) {
     try {
       if (request.raster) {
         const r = request.raster;
+        retainedLayouts = undefined;
         terrain?.free();
-        terrain = new SettlementTerrain(r.width, r.n, r.height, r.water, r.waterLevel, r.riverWidth, r.riverIds);
-        if (r.geometry) terrain.set_urban_geometry(JSON.stringify(r.geometry));
+        terrain = undefined;
+        const next = new SettlementTerrain(r.width, r.n, r.height, r.water, r.waterLevel, r.riverWidth, r.riverIds);
+        try { if (r.geometry) next.set_urban_geometry(JSON.stringify(r.geometry)); }
+        catch (error) { next.free(); throw error; }
+        terrain = next;
       }
       if (!terrain) throw new Error('Générez le terrain avant les quartiers.');
       const start = performance.now();
       if (request.kind === 'quarters') {
+        retainedLayouts = undefined;
         const layouts = JSON.parse(terrain.urban_quarters(request.seed, JSON.stringify(request.sites ?? []), JSON.stringify(normalizeLayoutConfig(request.layoutConfig, true)), JSON.stringify(request.roads ?? []))) as Layout[];
+        // Preserve the existing JS number roundtrip before Rust parses parcels.
+        // Keeping native f64 layouts instead can subtly change polygon cuts.
+        retainedLayouts = { id: request.id, json: JSON.stringify(layouts) };
         return { id: request.id, layouts, ms: performance.now() - start };
       }
-      const partitions = JSON.parse(terrain.urban_parcels(request.seed, JSON.stringify(request.layouts ?? []), JSON.stringify(normalizeParcelConfig(request.parcelConfig)))) as Partition[];
+      const layoutsJson = request.layouts ? JSON.stringify(request.layouts)
+        : request.layoutsId === undefined ? '[]'
+        : retainedLayouts?.id === request.layoutsId ? retainedLayouts.json : undefined;
+      if (layoutsJson === undefined) throw new Error('Le plan des quartiers a changé. Régénérez les quartiers avant les parcelles.');
+      const partitions = JSON.parse(terrain.urban_parcels(request.seed, layoutsJson, JSON.stringify(normalizeParcelConfig(request.parcelConfig)))) as Partition[];
       return { id: request.id, partitions, ms: performance.now() - start };
     } catch (error) { return { id: request.id, error: String(error) }; }
   } };

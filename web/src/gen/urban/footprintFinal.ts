@@ -47,13 +47,13 @@ export interface FootprintFinalResult { changed: Set<number>;
 
 function proper(p: Polygon, partOfCompound = false): boolean {
   if (p.length < 3 || !isSimple(p) || area(p) < 12) return false;
-  if (p.length === 3) return 2 * inscribed(p, [], 0.02).r >= 3.2 && minAngle(p) >= 20 * Math.PI / 180;
+  if (p.length === 3) return 2 * inscribed(p, [], 0.02, 1.6).r >= 3.2 && minAngle(p) >= 20 * Math.PI / 180;
   const compactQuad = p.length === 4 && minAngle(p) >= 20 * Math.PI / 180;
   if (area(p) <= 50 && p.length <= 6 && isConvex(p, 1e-3)
     && (compactQuad || minAngle(p) >= Math.PI / 3)) {
     const box = obb(p), short = Math.min(box.hu, box.hv), long = Math.max(box.hu, box.hv);
     if (2 * short >= 3.2 && long / Math.max(short, 1e-6) <= (compactQuad ? 2.5 : 2.2)
-      && 2 * inscribed(p, [], 0.05).r >= 3.2 && (minNeck(p)?.w ?? Infinity) >= 3.2) return true;
+      && 2 * inscribed(p, [], 0.05, 1.6).r >= 3.2 && (minNeck(p)?.w ?? Infinity) >= 3.2) return true;
   }
   if (!shapeOkObb(p)) return false;
   if (2 * inscribed(p, [], 0.05, 1.8).r < 3.6) return false;
@@ -77,7 +77,7 @@ function plausibleWorkshopCompound(p: Polygon, arch: string | undefined): boolea
     && rooms.every((room) => {
       const poly = room.pts, box = obb(poly), short = Math.min(box.hu, box.hv), long = Math.max(box.hu, box.hv);
       return area(poly) >= 15 && minAngle(poly) >= 20 * Math.PI / 180
-        && 2 * inscribed(poly, [], 0.05).r >= 3.2 && 2 * short >= 3.2
+        && 2 * inscribed(poly, [], 0.05, 1.6).r >= 3.2 && 2 * short >= 3.2
         && long / Math.max(short, 1e-6) <= 5;
     });
 }
@@ -90,7 +90,7 @@ function plausibleCappedTriangle(p: Polygon): boolean {
   if (shortest > 0.2) return false;
   const box = obb(p), short = Math.min(box.hu, box.hv), long = Math.max(box.hu, box.hv);
   return 2 * short >= 3 && long / Math.max(short, 1e-6) <= 2.2
-    && 2 * inscribed(p, [], 0.05).r >= 3;
+    && 2 * inscribed(p, [], 0.05, 1.5).r >= 3;
 }
 
 function normalize(p: Polygon): Polygon | null {
@@ -812,7 +812,7 @@ export function finalizeFootprints(u: FootprintFinalInput): FootprintFinalResult
       // Record only the morphological candidate here. The removal decision
       // follows all roof repairs, so its 3% budget includes every prior loss.
       const neck = minNeck(b.poly)?.w ?? Infinity;
-      const noHabitableCore = 2 * inscribed(b.poly, [], 0.05).r < 3.2 || neck <= 0.02;
+      const noHabitableCore = 2 * inscribed(b.poly, [], 0.05, 1.6).r < 3.2 || neck <= 0.02;
       if (u.allowFillRemoval && u.validateRemoval && area(b.poly) <= 60
         && noHabitableCore && owner.use === 'plot' && b.parcel !== undefined) removalCandidates.push(i);
       invalid.push(i);
@@ -876,6 +876,24 @@ export function finalizeFootprints(u: FootprintFinalInput): FootprintFinalResult
     const block = b.parcel === undefined ? undefined : u.parcels[b.parcel]?.block;
     if (block !== undefined) changed.add(block);
     invalid.splice(invalid.indexOf(i), 1);
+  }
+  // Millimetre cleanup may leave a small completed room just across its owner
+  // edge. Restore exact ownership rather than accepting a tolerant vertex test.
+  for (const [i, b] of u.buildings.entries()) {
+    const owner = b.parcel === undefined ? undefined : u.parcels[b.parcel];
+    if (!owner || b.ring || b.courtyards?.length || area(b.poly) > 50 || shapeOkObb(b.poly)
+      || /courtyard|souk|ring|(?:^|-)longhouse(?:-|$)|^pueblo-room$|^roundhouse$|^wigwam$|^hogan$|^tipi$|^yurt$|^tree-(house|pod)$|^fungal-/.test(b.arch ?? '')
+      || !['house', 'rear', 'back', 'barn', 'shed'].includes(b.kind)) continue;
+    const outside = tryDifference(b.poly, owner.poly);
+    if (outside.failed || mpArea(outside.pieces) <= 1e-6 || mpArea(outside.pieces) > 0.01) continue;
+    const clipped = tryIntersection(b.poly, owner.poly);
+    if (clipped.failed || clipped.pieces.length !== 1 || clipped.pieces[0].holes.length) continue;
+    const room = clipped.pieces[0].outer, retained = tryDifference(room, owner.poly);
+    if (!retained.failed && mpArea(retained.pieces) <= 1e-6 && proper(room)
+      && (!u.validateParts || u.validateParts(i, [room]))) {
+      releasedArea += area(b.poly) - area(room);
+      b.poly = room; changed.add(owner.block); cleaned++;
+    }
   }
   for (const i of [...removed].reverse()) u.buildings.splice(i, 1);
   const finalInvalid = invalid.map((i) => i - removed.filter((j) => j < i).length);

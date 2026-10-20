@@ -3,12 +3,10 @@
 use super::*;
 use geo::{Intersects, LineString};
 use std::collections::BTreeMap;
-#[path = "public_roof_bands.rs"]
-mod timber;
 
 const TERMINAL_AREA: f64 = 0.85 * WIDTH * 0.35;
 
-fn bands(f: &Feature) -> (Surface, Surface) {
+pub(super) fn bands(f: &Feature) -> (Surface, Surface) {
     let v = &f.vertices3d;
     let low = [point(v[0].x, v[0].y), point(v[1].x, v[1].y)];
     let high = [point(v[3].x, v[3].y), point(v[2].x, v[2].y)];
@@ -17,6 +15,145 @@ fn bands(f: &Feature) -> (Surface, Surface) {
 
 pub(super) fn low_band(f: &Feature) -> Option<Surface> {
     (f.kind == FeatureKind::Ladder && f.vertices3d.len() == 4).then(|| bands(f).0)
+}
+
+/// The low slab remains structural; only this native flight occupies its node.
+pub(super) fn occupation(unit: &HouseUnit, node: &AccessNode) -> Result<Surface, String> {
+    let mut occupied = vec![];
+    let mut low_bands = vec![];
+    for p in unit
+        .access
+        .portals
+        .iter()
+        .filter(|p| p.from == node.id && p.feature_ids.iter().any(|id| id.ends_with(":link:0")))
+    {
+        let prefix = format!("{}:portal:", unit.id);
+        let serial =
+            p.id.strip_prefix(&prefix)
+                .and_then(|s| s.parse::<usize>().ok())
+                .ok_or("Occupation sans portail natif exact.")?;
+        let id = format!("{}:public-roof:{serial}:link:0", unit.id);
+        let features: Vec<_> = unit.features.iter().filter(|f| f.id == id).collect();
+        let targets: Vec<_> = unit.access.nodes.iter().filter(|n| n.id == p.to).collect();
+        if p.kind != PortalKind::Ladder
+            || p.feature_ids != [id.clone()]
+            || unit
+                .access
+                .portals
+                .iter()
+                .filter(|other| other.id == p.id)
+                .count()
+                != 1
+            || features.len() != 1
+            || targets.len() != 1
+            || unit
+                .access
+                .portals
+                .iter()
+                .filter(|other| other.feature_ids.contains(&id))
+                .count()
+                != 1
+            || features[0].kind != FeatureKind::Ladder
+            || features[0].vertices3d.len() != 4
+            || (p.from_z_m - node.z_m).abs() > 1e-9
+            || (p.to_z_m - targets[0].z_m).abs() > 1e-9
+        {
+            return Err("Occupation sans liaison Ladder native unique.".into());
+        }
+        let f = features[0];
+        let mut expected =
+            planned_flight(f.surface.clone(), &node.floor, node.z_m, targets[0].z_m)?;
+        expected.id = id;
+        let opening = [
+            point(f.vertices3d[0].x, f.vertices3d[0].y),
+            point(f.vertices3d[1].x, f.vertices3d[1].y),
+        ];
+        let clear = flight_clear(f);
+        let (low, _) = bands(f);
+        if f != &expected
+            || p.opening != opening
+            || p.passage != f.surface
+            || p.opening_surface != clear
+            || (p.width_m - WIDTH).abs() > 1e-9
+            || area(&intersection(&low, &clear)) > AREA_EPS
+            || area(&intersection(&low, &node.floor)) < TERMINAL_AREA
+        {
+            return Err("Occupation sans géométrie complète de liaison native.".into());
+        }
+        validate_occupation_sources(unit, node, &clear, &low)?;
+        validate(unit, f, p, true)?;
+        low_bands.push(low);
+        occupied = union(&occupied, &clear);
+    }
+    if low_bands
+        .iter()
+        .any(|low| area(&intersection(low, &occupied)) > AREA_EPS)
+    {
+        return Err("Occupation empiétant sur une bande basse native.".into());
+    }
+    Ok(occupied)
+}
+
+fn validate_occupation_sources(
+    unit: &HouseUnit,
+    node: &AccessNode,
+    occupation: &Surface,
+    low: &Surface,
+) -> Result<(), String> {
+    let key = libm::round(node.z_m * 1000.0) as i64;
+    let mut sources = BTreeSet::new();
+    for body in &unit.bodies {
+        if unit.bodies.iter().filter(|b| b.id == body.id).count() != 1
+            || body
+                .levels
+                .iter()
+                .enumerate()
+                .any(|(p, l)| l.index != p as u32)
+        {
+            return Err("Occupation sans niveaux natifs uniques dans leur ordre.".into());
+        }
+        for (p, level) in body.levels.iter().enumerate() {
+            let Some(slab) = &level.roof_slab else {
+                continue;
+            };
+            if !slab.walkable || libm::round(slab.z_m * 1000.0) as i64 != key {
+                continue;
+            }
+            let upper = body
+                .levels
+                .get(p + 1)
+                .map(|l| l.footprint.clone())
+                .unwrap_or_default();
+            let exposed = crate::engine::exposed_roof_domain(&level.footprint, &upper);
+            let q = intersection(&exposed, occupation);
+            if area(&q) <= AREA_EPS {
+                continue;
+            }
+            let id = format!("terrace:{}:{p}", body.id);
+            let terraces: Vec<_> = unit.features.iter().filter(|f| f.id == id).collect();
+            if libm::round(slab.z_m * 1000.0) as i64
+                != libm::round(snap(level.z_m + level.height_m) * 1000.0) as i64
+                || terraces.len() != 1
+                || terraces[0].kind != FeatureKind::Terrace
+                || (terraces[0].z_m - slab.z_m).abs() > 1e-9
+                || (terraces[0].height_m - 0.15).abs() > 1e-9
+                || terraces[0].material != level.materials.cladding
+                || area(&difference(&slab.surface, &exposed)) > AREA_EPS
+                || area(&difference(&terraces[0].surface, &exposed)) > AREA_EPS
+                || area(&difference(&q, &slab.surface)) > AREA_EPS
+                || area(&difference(&q, &terraces[0].surface)) > AREA_EPS
+            {
+                return Err(
+                    "Occupation sans toiture porteuse native intacte sous la liaison.".into(),
+                );
+            }
+            sources.insert(body.id.clone());
+        }
+    }
+    if !sources.is_empty() && !bodies_at(unit, node.z_m, low).is_subset(&sources) {
+        return Err("Occupation sans ses sources natives de bande basse.".into());
+    }
+    Ok(())
 }
 
 fn interior(ring: &[Point], i: usize) -> Option<Point> {
@@ -354,7 +491,7 @@ fn wall_range(w: &Wall, f: &Feature, clear: &Surface) -> Result<(f64, f64), Stri
     Ok(range_delta(f, &vertices))
 }
 
-fn recorded_cuts(
+pub(super) fn recorded_cuts(
     unit: &HouseUnit,
     f: &Feature,
     p: &Portal,
@@ -721,7 +858,6 @@ pub(super) fn validate(
     p: &Portal,
     check_roofs: bool,
 ) -> Result<(), String> {
-    timber::validate(unit)?;
     validate_impl(unit, f, p, check_roofs, &BTreeSet::new())
 }
 
@@ -792,3 +928,31 @@ fn validate_impl(
 #[cfg(test)]
 #[path = "public_roof_links_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+pub(super) fn install_fixture_link(
+    unit: &mut HouseUnit,
+    base: &AccessNode,
+    target: &AccessNode,
+    corner: Point,
+    tangent: Point,
+) -> Result<(), String> {
+    let n = Point {
+        x: -tangent.y,
+        y: tangent.x,
+    };
+    let f = planned_flight(
+        footprint(corner, tangent, n, 0.0),
+        &base.floor,
+        base.z_m,
+        target.z_m,
+    )?;
+    install(unit, base, target, f)
+}
+
+#[cfg(test)]
+pub(super) fn occupation_fixture() -> HouseUnit {
+    let mut unit = tests::linked();
+    crate::roofs::build_roofs(&mut unit).unwrap();
+    unit
+}

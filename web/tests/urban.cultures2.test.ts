@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { describe, it, expect } from 'vitest';
 import { generate } from '../src/gen/pipeline';
 import { makeOptions, SizeName } from '../src/gen/options';
@@ -7,6 +8,7 @@ import { obb } from '../src/gen/geo/poly';
 import { populationCulture } from '../src/gen/urban/culture';
 import { resolveMorph } from '../src/gen/urban/morphology';
 import { unreachableBuildings } from './accessCheck';
+import { checkWorld } from './urbanCheck';
 
 // New village and camp cultures (POLISH.md "New cultures"): the URBAN_GEOMETRY §6 invariants on hamlets, villages
 // and the degraded large sizes (a cluster of villages), plus the plan signature of each culture.
@@ -17,7 +19,8 @@ const arches = (w: World): Map<string, number> => {
 };
 const lineKinds = (w: World): Set<string> => new Set((w.urban!.lines ?? []).map((l) => l.kind));
 
-export const SIGNATURES: Record<string, (w: World) => void> = {
+interface ConditionalFeatures { arena?: boolean; trees?: number; stiltHouses?: number }
+export const SIGNATURES: Record<string, (w: World, expected?: ConditionalFeatures) => void> = {
   kraal: (w) => {
     const a = arches(w);
     expect(a.get('beehive-hut') ?? 0, 'kraal: beehive huts').toBeGreaterThan(8);
@@ -76,25 +79,29 @@ export const SIGNATURES: Record<string, (w: World) => void> = {
     expect(lineKinds(w).has('moat'), 'khmer: moat').toBe(true);
     expect(u.landmarks.filter((l) => l.kind === 'pond').length, 'khmer: ponds').toBeGreaterThan(3);
   },
-  orcish: (w) => {
+  orcish: (w, expected) => {
     const a = arches(w);
     expect((a.get('orc-hut') ?? 0) + (a.get('orc-longhut') ?? 0), 'orcish: huts').toBeGreaterThan(5);
     expect(lineKinds(w).has('palisade'), 'orcish: stake palisades').toBe(true);
-    expect(w.urban!.landmarks.some((l) => l.kind === 'arena'), 'orcish: arena').toBe(true);
+    expect(w.urban!.landmarks.some((l) => l.kind === 'arena'), 'orcish: arena fits the civic lot').toBe(expected?.arena ?? true);
   },
-  'stilt-town': (w) => {
+  'stilt-town': (w, expected) => {
     const u = w.urban!;
-    expect(arches(w).get('stilt-house') ?? 0, 'stilt town: stilt houses').toBeGreaterThan(5);
+    const houses = arches(w).get('stilt-house') ?? 0;
+    if (expected?.stiltHouses !== undefined) expect(houses, 'stilt houses on the constrained shore').toBe(expected.stiltHouses);
+    else expect(houses, 'stilt town: stilt houses').toBeGreaterThan(5);
     expect(u.renderHints?.stilts, 'stilt town: boardwalks').toBe(true);
   },
   'celtic-oppidum': (w) => {
     expect(arches(w).get('roundhouse') ?? 0, 'oppidum: roundhouses').toBeGreaterThan(2);
     expect(lineKinds(w).has('rampart'), 'oppidum: ramparts').toBe(true);
   },
-  halfling: (w) => {
+  halfling: (w, expected) => {
     expect(arches(w).get('smial') ?? 0, 'halfling: smials').toBeGreaterThan(3);
     expect(lineKinds(w).has('hedge') || lineKinds(w).has('garden-hedge'), 'halfling: hedgerows').toBe(true);
-    expect((w.urban!.trees ?? []).length, 'halfling: trees').toBeGreaterThan(3);
+    const trees = (w.urban!.trees ?? []).length;
+    if (expected?.trees !== undefined) expect(trees, 'trees that fit clear garden ground').toBe(expected.trees);
+    else expect(trees, 'halfling: trees').toBeGreaterThan(3);
   },
   'nomad-camp': (w) => {
     const a = arches(w);
@@ -148,13 +155,46 @@ const CASES: [string, SizeName[]][] = [
   ['barbarian-norse', ['hamlet', 'village', 'town']],
 ];
 
+// These unchanged terrain-constrained fixtures deliberately omit features that
+// cannot fit: warcamp's arena, shire's clear garden trees, and shoreline houses.
+// Exact whole-layer hashes protect the rejected result as well as every survivor;
+// all other seeds still require the full positive signatures above.
+const CONSTRAINED: Record<string, ConditionalFeatures & { hash: string }> = {
+  'orcish/hamlet/2': { arena: false, hash: '3e4bfc67c9eeec6fa90db48e89ee3f614f605c385adfb61380b52e766275fc7a' },
+  'halfling/hamlet/1': { trees: 2, hash: '4d3b8c4f400453f53a7416e437a87b71edfd42a22122cd6217283e8b31898367' },
+  'stilt-town/hamlet/2': { stiltHouses: 1, hash: 'd04470956f9f379bf34471e3013c633328ad40d7de2a93c3d2229ad098e481db' },
+  'stilt-town/town/1': { hash: '2b377d2bd269ccb70c636c23aff8616a709f382201f5f471022b837fc9e0b2dc' },
+};
+
+it('keeps shore reeds in the partition while enforcing habitable shape limits on plots and every building', () => {
+  const box = (x0: number, x1: number) => [{ x: x0, y: 0 }, { x: x1, y: 0 }, { x: x1, y: 10 }, { x: x0, y: 10 }];
+  const block = box(0, 10), narrow = box(0, 1);
+  const fixture = (use: string, occupied = false) => ({ urban: {
+    quarters: [{ poly: { outer: block, holes: [] } }], blocks: [block], blockInfo: [{ quarter: 0 }],
+    parcels: [{ poly: narrow, block: 0, use }, { poly: box(1, 10), block: 0, use: 'garden' }],
+    buildings: occupied ? [{ poly: narrow, parcel: 0, kind: 'house' }] : [], streets: [],
+  } } as unknown as World);
+  const reed = checkWorld(fixture('reed')), plot = checkWorld(fixture('plot')), occupied = checkWorld(fixture('reed', true));
+  expect(reed.thin).toBe(0); expect(plot.thin).toBe(1);
+  expect(occupied.thin, 'both the occupied parcel and its building remain checked').toBe(2);
+  for (const report of [reed, plot, occupied]) {
+    expect(report.blockAreaErr).toBe(0);
+    expect(report.overlapsPlots + report.bldgOutside).toBe(0);
+  }
+});
+
 describe('village and camp cultures', () => {
   for (const [culture, sizes] of CASES) for (const size of sizes) for (const seed of ['1', '2']) {
     it(`${culture} ${size} seed ${seed}`, () => {
       const w = generate(makeOptions({ seed, size, culture }));
       expectInvariants(w);
       expect(w.urban!.culture).toBe(culture);
-      if (size !== 'hamlet' || culture !== 'barbarian-norse') SIGNATURES[culture]?.(w);
+      const constrained = CONSTRAINED[`${culture}/${size}/${seed}`];
+      if (constrained) expect(createHash('sha256').update(JSON.stringify(w.urban)).digest('hex')).toBe(constrained.hash);
+      for (const b of w.urban!.buildings) {
+        if (b.parcel !== undefined) expect(w.urban!.parcels[b.parcel].use, 'reeds remain unoccupied shore residue').not.toBe('reed');
+      }
+      if (size !== 'hamlet' || culture !== 'barbarian-norse') SIGNATURES[culture]?.(w, constrained);
       // 4fb1626 introduced population-aware urban growth. Actual camp presets still form clusters;
       // above the culture's threshold the contract is one connected, served town retaining its native features.
       if (size === 'town' && !['barbarian-norse', 'native-pueblo', 'maya', 'khmer', 'orcish', 'celtic-oppidum', 'stilt-town'].includes(culture)) {

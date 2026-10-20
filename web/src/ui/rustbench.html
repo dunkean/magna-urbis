@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ateliers Rust · Magna Urbis</title>
+  <link rel="icon" type="image/png" href="./assets/logo-magna-urbis.png?inline">
+  <link rel="stylesheet" href="./rustbench.css">
+  <link rel="stylesheet" href="./recipeSharing.css">
+</head>
+<body>
+  <header class="shell-header">
+    <a class="wordmark" href="#home" aria-label="Magna Urbis — accueil des ateliers">MAGNA URBIS <span>ATELIERS RUST</span></a>
+    <nav aria-label="Bancs de génération">
+      <a href="#terrain" data-bench="terrain">1 · Terrain</a>
+      <a href="#settlements" data-bench="settlements">2 · Settlements</a>
+      <a href="#urban" data-bench="urban">Urbanisme</a>
+      <a href="#houses" data-bench="houses">Maisons</a>
+    </nav>
+    <div class="shell-actions" hidden>
+      <button id="share" type="button" title="Copier le code unique de la carte">Copier code</button>
+      <a id="standalone" href="./terrainbench.html" target="_blank" rel="noopener" title="Ouvrir le banc seul dans un nouvel onglet">Ouvrir ↗</a>
+    </div>
+  </header>
+  <main id="workspace">
+    <section id="home" aria-labelledby="home-title">
+      <div class="intro">
+        <p class="eyebrow">LE LABORATOIRE CARTOGRAPHIQUE</p>
+        <h1 id="home-title">Du relief à la maison.</h1>
+        <p>Un parcours par étapes : conserve un terrain, développe ses villes, puis ouvre une ville dans l’atelier quartiers et parcelles.</p>
+      </div>
+      <div class="bench-grid">
+        <a class="bench-card" href="#terrain">
+          <span class="card-number">01 / PAYSAGE</span><span class="card-symbol" aria-hidden="true">△</span>
+          <h2>Terrain</h2><p>Étapes 1, 2 et 3 : relief, côtes et eau. Transmets toute la carte ou une portion aux settlements.</p>
+          <span class="card-footer">Terrain conservé et partage .decor <span aria-hidden="true">↗</span></span>
+        </a>
+        <a class="bench-card" href="#settlements">
+          <span class="card-number">02 / IMPLANTATIONS</span><span class="card-symbol" aria-hidden="true">♧</span>
+          <h2>Settlements</h2><p>Charge un terrain prégénéré ou conservé, place les villes, trace les routes et génère les quartiers et l’occupation du territoire. Les parcelles sont optionnelles.</p>
+          <span class="card-footer">Choisis une ville pour l’atelier <span aria-hidden="true">↗</span></span>
+        </a>
+        <a class="bench-card" href="#urban">
+          <span class="card-number">03 / TISSU URBAIN</span><span class="card-symbol" aria-hidden="true">▦</span>
+          <h2>Urbanisme</h2><p>Travaille une ville dans l’atelier quartiers et parcelles avec son relief, ses rivières et ses accès. Les options partagées suivent les échanges avec Settlements.</p>
+          <span class="card-footer">Atelier quartiers et parcelles <span aria-hidden="true">↗</span></span>
+        </a>
+        <a class="bench-card" href="#houses">
+          <span class="card-number">04 / ARCHITECTURE</span><span class="card-symbol" aria-hidden="true">⌂</span>
+          <h2>Maisons</h2><p>Parcours les traditions architecturales ou l’atelier libre. Examine les toitures, les niveaux et les accès.</p>
+          <span class="card-footer">Atlas et atelier libre <span aria-hidden="true">↗</span></span>
+        </a>
+      </div>
+      <p class="home-note">Chaque atelier garde sa carte, ses réglages et ses brouillons quand tu y reviens, même après rechargement de cet onglet. Les exports restent conservés dans ce navigateur ; partage le fichier .decor pour les ouvrir sur une autre machine.</p>
+    </section>
+    <div id="frames" hidden></div>
+  </main>
+  <span id="announcement" class="sr-only" role="status"></span>
+  <script type="module" src="./rustbench.ts"></script>
+</body>
+</html>

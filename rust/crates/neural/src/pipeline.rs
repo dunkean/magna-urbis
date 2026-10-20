@@ -360,7 +360,13 @@ impl Networks {
                 coarse.update(y, x, |v| {
                     let mean = square(v[0]);
                     let relief = mean - square(v[1]);
-                    let used = tuning.relief_fixed.unwrap_or(relief * tuning.relief_scale);
+                    let baseline = tuning.relief_fixed.unwrap_or(relief * tuning.relief_scale);
+                    let used = request
+                        .sketch
+                        .relief_mask_at(cx, cy)
+                        .map_or(baseline, |(weight, target)| {
+                            baseline * (1.0 - weight) + target * weight
+                        });
                     if used != relief {
                         v[1] = root(mean - used);
                     }

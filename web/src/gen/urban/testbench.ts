@@ -277,12 +277,31 @@ export function benchBuildings(layout: BenchLayout, partition: BenchParcels, see
   const streetAt = makeStreetAt(layout.streets.list.filter(s => s.ribbon).map(s => ({
     path: s.path, widths: s.widths, width: s.widths[0],
   })), partition.parcels.filter(p => p.use === 'place').map(p => p.poly));
+  const plotsByBlock = layout.blocks.map(() => [] as BenchParcels['plots']);
+  const plotByParcel = new Map<number, BenchParcels['plots'][number]>();
+  for (const entry of partition.plots) {
+    plotsByBlock[entry.plot.block]?.push(entry);
+    if (!plotByParcel.has(entry.parcel)) plotByParcel.set(entry.parcel, entry);
+  }
+  const buildingsByBlock = layout.blocks.map(() => [] as UrbanBuilding[]);
+  // The previous remove/append pass left gardens first, followed by the retained
+  // buildings of each block. Assemble that same order without rescanning and
+  // splicing the entire settlement for every block.
+  const retained: UrbanBuilding[] = [];
+  for (const building of buildings) {
+    if (building.kind === 'garden') retained.push(building);
+    else {
+      const group = buildingsByBlock[partition.parcels[building.parcel!].block];
+      if (group) group.push(building);
+      else retained.push(building);
+    }
+  }
   for (const [bi, block] of layout.blocks.entries()) {
-    let peers = buildings.filter(b => b.kind !== 'garden' && partition.parcels[b.parcel!].block === bi);
+    let peers = buildingsByBlock[bi];
     let reached = blockReach(block.poly, peers.map(b => b.poly), streetAt);
     const need = new Set(peers.filter((_, i) => !reached[i]).map(b => b.parcel));
     for (const parcel of need) {
-      const entry = partition.plots.find(p => p.parcel === parcel);
+      const entry = parcel === undefined ? undefined : plotByParcel.get(parcel);
       if (!entry) continue;
       const original = peers.filter(b => b.parcel === parcel);
       const beforeArea = original.reduce((sum, b) => sum + area(b.poly), 0);
@@ -319,7 +338,7 @@ export function benchBuildings(layout: BenchLayout, partition: BenchParcels, see
       for (const side of sides) {
         const endpoint = entry.plot.front[side === 'A' ? 0 : 1];
         const n = housePlotNormal(entry.plot), opposite = side === 'A' ? 'B' : 'A';
-        const neighbour = partition.plots.find(p => p.parcel !== parcel && p.plot.block === bi
+        const neighbour = plotsByBlock[bi].find(p => p.parcel !== parcel
           && Math.hypot(p.plot.front[opposite === 'A' ? 0 : 1].x - endpoint.x, p.plot.front[opposite === 'A' ? 0 : 1].y - endpoint.y) < 0.05
           && n.x * housePlotNormal(p.plot).x + n.y * housePlotNormal(p.plot).y > 0.99999);
         if (!neighbour || !['streetFrontRowExperimental'].includes(P.buildingOp)) continue;
@@ -345,15 +364,10 @@ export function benchBuildings(layout: BenchLayout, partition: BenchParcels, see
       if (best) { peers = best; reached = blockReach(block.poly, peers.map(b => b.poly), streetAt); }
     }
     // Match the native final guard: never display a house with no entrance.
-    const kept = peers.filter((_, i) => reached[i]);
-    for (let i = buildings.length - 1; i >= 0; i--) {
-      const b = buildings[i];
-      if (b.kind !== 'garden' && partition.parcels[b.parcel!].block === bi) buildings.splice(i, 1);
-    }
-    buildings.push(...kept);
+    retained.push(...peers.filter((_, i) => reached[i]));
   }
   const parcels = partition.parcels;
-  return { parcels, buildings };
+  return { parcels, buildings: retained };
 }
 
 export function benchHouses(layout: BenchLayout, seed: string, cultureId = layout.options.culture, density = layout.options.density): BenchHouses {

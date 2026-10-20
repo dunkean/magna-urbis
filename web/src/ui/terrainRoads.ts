@@ -1,6 +1,6 @@
 import { ROAD_CLASSES, ROAD_LEVELS, ROAD_PROFILES, ROAD_SURFACES, defaultRoadConfig, type Point, type RoadClass, type RoadConfig, type RoadOutput, type RoadSegment, type RoadSurface } from '../../../rust/bridge/settlements';
 import type { Layout } from '../../../rust/bridge/urban';
-import { outsideUrbanStreets } from '../../../rust/bridge/urbanNetwork';
+import { prepareUrbanRoadClip } from '../../../rust/bridge/urbanNetwork';
 
 const ns = 'http://www.w3.org/2000/svg';
 const CLASS_LABEL: Record<RoadClass, string> = { highway: 'Highway', main: 'Main road', local: 'Local road', track: 'Track', trail: 'Trail' };
@@ -98,6 +98,9 @@ export function createTerrainRoads(options: { map: SVGSVGElement; before: Elemen
   let config = defaultRoadConfig(), style = defaultRoadStyle(), enabled = true, show = true, output: RoadOutput | undefined;
   let drawnLayer: SVGGElement | undefined, drawnState = '', drawn: RoadOutput | undefined;
   let urbanOwnership: Layout[] | undefined, drawnOwnership: Layout[] | undefined;
+  let preparedOwnership: Layout[] | undefined, preparedOutput: RoadOutput | undefined;
+  let clipUrban: ReturnType<typeof prepareUrbanRoadClip> | undefined;
+  let pathCache = new WeakMap<Point[], Map<number, { paths: Point[][]; straight?: string; curved?: string }>>();
   const saved = new URLSearchParams(location.search).get('roads');
   if (saved) try {
     const s = JSON.parse(saved);
@@ -110,6 +113,7 @@ export function createTerrainRoads(options: { map: SVGSVGElement; before: Elemen
   const number = (key: keyof RoadConfig, label: string, min: number, max: number, step: number, title = ''): string =>
     `<label title="${esc(title)}">${label}<input data-road="${key}" type="number" min="${min}" max="${max}" step="${step}"></label>`;
   panel.innerHTML = `<summary>5 · Roads <span id="roadState"></span></summary><div class="stage-controls">
+    <button id="roadRecalculate" type="button">Recalculer les routes</button>
     <label><input id="roadEnabled" type="checkbox">Generate roads</label>
     <label title="Sets the road classes and their surfaces">Development <select id="roadLevel">${ROAD_LEVELS.map(l => `<option value="${l.id}">${esc(l.label)}</option>`).join('')}</select></label>
     <label title="Force one surface on the whole network">Surfaces <select id="roadSurface"><option value="auto">By level &amp; culture</option>${ROAD_SURFACES.map(s => `<option value="${s}">${SURFACE_LABEL[s]} only</option>`).join('')}</select></label>
@@ -155,9 +159,10 @@ export function createTerrainRoads(options: { map: SVGSVGElement; before: Elemen
     }
     q('#roadWidthValue').textContent = `${style.width.toFixed(1)}`;
     q('#roadOpacityValue').textContent = `${Math.round(style.opacity * 100)} %`;
-    panel.querySelectorAll<HTMLElement>('.stage-controls > :not(:first-child)').forEach(e => { if (e.id !== 'roadStatus') e.toggleAttribute('inert', !enabled); });
+    panel.querySelectorAll<HTMLElement>('.stage-controls input:not(#roadEnabled), .stage-controls select, .stage-controls button').forEach(e => e.toggleAttribute('inert', !enabled));
   }
   function changed(): void { controls(); options.onConfigChange(); }
+  q<HTMLButtonElement>('#roadRecalculate').onclick = changed;
   input('roadEnabled').onchange = () => { enabled = input('roadEnabled').checked; changed(); };
   input('roadShow').onchange = () => { show = input('roadShow').checked; draw(); options.onDisplayChange(); };
   /** Rendering settings redraw only; the URL follows on release of a slider. */
@@ -206,7 +211,7 @@ export function createTerrainRoads(options: { map: SVGSVGElement; before: Elemen
     let layer = options.map.querySelector<SVGGElement>('#roadOverlay');
     if (!layer) {
       layer = document.createElementNS(ns, 'g'); layer.id = 'roadOverlay';
-      const markers = options.map.querySelector('#settlementOverlay');
+      const markers = options.map.querySelector('#fantasyPainting, #settlementOverlay');
       if (markers) options.map.insertBefore(layer, markers); else options.map.append(layer);
     }
     const state = `${enabled}|${show}|${JSON.stringify(style)}`;
@@ -225,13 +230,30 @@ export function createTerrainRoads(options: { map: SVGSVGElement; before: Elemen
     // One group opacity, so casings and overlapping roads do not show through each other.
     const painted = document.createElementNS(ns, 'g');
     if (style.opacity < 1) painted.setAttribute('opacity', String(style.opacity));
-    const outsidePaths = (path: Point[], width: number): Point[][] => urbanOwnership?.length
-      ? outsideUrbanStreets([{ path, widths: path.map(() => width), rank: 1, role: 'regional' }], urbanOwnership).map(street => street.path)
-      : [path];
+    // Generation replaces these snapshots. Styling and replacing the SVG layer
+    // retain the same clipping and curve geometry without repeating preparation.
+    if (preparedOwnership !== urbanOwnership || preparedOutput !== output) {
+      if (preparedOwnership !== urbanOwnership) clipUrban = urbanOwnership?.length ? prepareUrbanRoadClip(urbanOwnership) : undefined;
+      preparedOwnership = urbanOwnership; preparedOutput = output;
+      pathCache = new WeakMap();
+    }
+    const outsidePath = (path: Point[], width: number, curves: boolean): string => {
+      let widths = pathCache.get(path);
+      if (!widths) { widths = new Map(); pathCache.set(path, widths); }
+      let entry = widths.get(width);
+      if (!entry) {
+        const paths = clipUrban
+          ? clipUrban([{ path, widths: path.map(() => width), rank: 1, role: 'regional' }]).map(street => street.path)
+          : [path];
+        entry = { paths }; widths.set(width, entry);
+      }
+      if (curves) return entry.curved ??= entry.paths.map(curveData).join(' ');
+      return entry.straight ??= entry.paths.map(pathData).join(' ');
+    };
     for (const s of order) {
       // Cut the physical polyline first: smoothing each remainder preserves its
       // exact attachment to the native street instead of moving it along a curve.
-      const d = outsidePaths(s.path, s.width).map(style.curves ? curveData : pathData).join(' ');
+      const d = outsidePath(s.path, s.width, style.curves);
       const { fill, casing, width: w, dash } = paintOf(style, s.class, s.surface);
       const extra: Record<string, string> = dash ? { 'stroke-dasharray': dash } : {};
       if (d) {
@@ -241,7 +263,7 @@ export function createTerrainRoads(options: { map: SVGSVGElement; before: Elemen
       // A crossing can extend beyond the main segment's visible pieces. Clip it
       // independently once, including its casing, rather than repeating its art.
       if (style.crossings) for (const c of s.crossings) {
-        const cd = outsidePaths(c.path, s.width).map(pathData).join(' ');
+        const cd = outsidePath(c.path, s.width, false);
         if (!cd) continue;
         if (c.kind === 'bridge') { crossings.append(line(cd, '#4f3c2a', w + 3.4, { 'stroke-linecap': 'butt' }), line(cd, '#e8d8b8', w + 1.2, { 'stroke-linecap': 'butt' })); }
         else if (c.kind === 'causeway') { crossings.append(line(cd, '#5d5446', w + 2.6), line(cd, '#cfc3a5', w + 0.8)); }

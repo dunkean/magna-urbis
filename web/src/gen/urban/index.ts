@@ -843,7 +843,9 @@ export function generateUrban(world: World, root: Rng): UrbanResult {
     const mature = pl.zone === 'core' || pl.zone === 'middle';
     // Preserve the phase's configured burgage programme in mature quarters. The edge still changes setbacks;
     // lowering the infill as well can turn an established middle quarter into young house-and-garden fabric.
-    const cov = Math.max(0, Math.min(1, (blockInfill[pl.block] + pr.range(-0.03, 0.03)) * (mature ? 1 : 1 - 0.4 * (pl.fade ?? 0))));
+    const phaseAllowance = mature && plotMorph[pi].buildingOp === 'streetFrontRow'
+      && plotMorph[pi].coverage[pl.zone][0] >= 0.7 ? 0.05 : 0;
+    const cov = Math.max(0, Math.min(1, (blockInfill[pl.block] + phaseAllowance + pr.range(-0.03, 0.03)) * (mature ? 1 : 1 - 0.4 * (pl.fade ?? 0))));
     let first = smithies.has(pl);
     const fm = { x: (pl.front[0].x + pl.front[1].x) / 2, y: (pl.front[0].y + pl.front[1].y) / 2 };
     const onQuay = quays.length > 0 && !!streets.nearest(fm, 10, (st) => st.role === 'quay');
@@ -1109,7 +1111,6 @@ export function generateUrban(world: World, root: Rng): UrbanResult {
   const edgeRoofs = finishEdgeRoofs(edgePartition);
   // Dedicated programmes can change the remaining mature residential inputs. Restore the whole-block floor
   // inside existing plots after roof styling, preserving every planning frame and the seeded dwelling counts.
-  const densityRepair = repairResidentialDensity({ ...edgePartition, morphology: (bi: number) => blockMorph[bi] });
   const releasedFootprintLand: PolyH[] = [];
   const privatePassages: PrivatePassage[] = [];
   const placementClear = footprintPlacementGuard(edgePartition.protectedLand, p => ctx.isWater(p) || ctx.slopeAt(p) > 0.28);
@@ -1128,14 +1129,20 @@ export function generateUrban(world: World, root: Rng): UrbanResult {
     streets.list[id].private = true;
     streets.connected.add(id);
   }
+  // Measure and repair the actual completed roofs. Running this earlier let
+  // footprint cleanup consume the density restored by the repair.
+  const densityRepair = repairResidentialDensity({ ...edgePartition,
+    protectedLand: [...edgePartition.protectedLand, ...privatePassages.flatMap((p) => streetStrips(p.path, p.width))],
+    morphology: (bi: number) => blockMorph[bi], allowInfill: true, releasedLand: releasedFootprintLand });
   stats['footprint.cleaned'] = footprintFinal.cleaned;
   stats['footprint.invalid'] = footprintFinal.invalid.length;
   stats['footprint.releasedArea'] = footprintFinal.releasedArea;
   if (footprintFinal.removed.length) stats['footprint.rejectedFill'] = footprintFinal.removed.length;
-  if (densityRepair.enlarged) {
+  if (densityRepair.enlarged || densityRepair.addedRooms) {
     stats['densityRepair.enlarged'] = densityRepair.enlarged;
     stats['densityRepair.addedArea'] = densityRepair.addedArea;
   }
+  if (densityRepair.addedRooms) stats['densityRepair.rooms'] = densityRepair.addedRooms;
   const densityShortfall = densityRepair.groups.reduce((sum, group) => sum + group.shortfall, 0);
   if (densityShortfall > 1e-6) stats['densityRepair.shortfall'] = densityShortfall;
   if (edgeRoofs.constrained) stats['edgeRoofs.constrained'] = edgeRoofs.constrained;

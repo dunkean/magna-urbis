@@ -726,7 +726,12 @@ fn generate_modern(
         &cfg.tissue,
     );
     let mut footprint = footprint::generate(seed, site, cfg, &morph, surface, roads, radius);
-    let growth_roads = [roads, footprint.guides.as_slice()].concat();
+    let growth_roads = [
+        roads,
+        footprint.guides.as_slice(),
+        footprint.links.as_slice(),
+    ]
+    .concat();
     let domains = footprint.structure.allocated.clone();
     let total_area = domains.iter().map(g::area).sum::<f64>().max(1.0);
     let bounds = footprint
@@ -803,6 +808,9 @@ fn generate_modern(
         plan.enclosures.append(&mut part.enclosures);
         plan.warnings.append(&mut part.warnings);
     }
+    // Keep the access through unoccupied gaps, not just its clips inside each
+    // neighbourhood. These paths do not enlarge attributed land.
+    plan.streets.append(&mut footprint.links);
     // Crossing spans belong to the regional network. Preserve their complete
     // connection between allocated components, including the intervening water.
     for road in roads

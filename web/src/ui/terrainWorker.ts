@@ -22,6 +22,8 @@ async function drain(): Promise<void> {
       try {
         const terrain = await sampleRustTerrain(request, relief => {
           if (generation === latestGeneration) self.postMessage({ id, generation, kind, terrain: relief, partial: true } satisfies TerrainResponse, { transfer: transfers(relief) });
+        }, progress => {
+          if (generation === latestGeneration) self.postMessage({ id, generation, kind, progress } satisfies TerrainResponse);
         });
         const waiting = pending as TerrainRequest | undefined;
         // A newer camera region replaces a region; nothing but a new generation replaces an overview.

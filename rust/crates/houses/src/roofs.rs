@@ -19,6 +19,8 @@ mod ogival;
 mod parapets;
 #[path = "roof_signatures.rs"]
 mod signatures;
+#[path = "support_intervals.rs"]
+mod support_intervals;
 pub(crate) use parapets::parapet_jamb_edges;
 #[path = "roof_traits.rs"]
 mod traits;
@@ -26,6 +28,10 @@ pub use traits::{RoofTrait, inspect_roof_trait};
 
 pub const MAX_ROOF_FACES: usize = 20_000;
 const EPS: f64 = 1.0e-8;
+
+pub(crate) fn support_line_intervals(a: Point, b: Point, domain: &Surface) -> Vec<(f64, f64)> {
+    support_intervals::line_intervals(a, b, domain)
+}
 
 /// Common finite cover input. A feature never creates a fictitious Body or room.
 #[derive(Clone)]
@@ -196,6 +202,9 @@ fn attachment_source(
     }
     valid_surface(&feature.surface).map_err(|e| format!("{e} Feature {}.", feature.id))?;
     valid_surface(&roof.domain).map_err(|e| format!("{e} Couverture {}.", feature.id))?;
+    crate::gallery_components::validate(roof)
+        .map_err(|e| format!("{e} Feature {}.", feature.id))?;
+    crate::gallery_components::owner(unit, roof)?;
     if area(&feature.surface) <= EPS
         || area(&roof.domain) <= EPS
         || area(&difference(&feature.surface, &roof.domain)) > g::area_tolerance(&feature.surface)
@@ -913,6 +922,9 @@ fn validate_spec(body: &RoofSource) -> Result<(), String> {
     }
     for (index, arm) in body.roof_arms.iter().enumerate() {
         valid_surface(&arm.domain).map_err(|e| format!("{e} Bras{index} de {}.", body.group))?;
+        if body.feature_id.is_none() && arm.source_component.is_some() {
+            return Err("Sélecteur de composante interdit sur un bras de Body.".into());
+        }
         if !arm.origin.x.is_finite()
             || !arm.origin.y.is_finite()
             || !arm.length_m.is_finite()
@@ -1948,6 +1960,7 @@ fn shifted_arm(arm: &RoofArm, inset: f64) -> RoofArm {
     let length = arm.length_m * (1.0 - 2.0 * inset);
     let width = arm.width_m * (1.0 - 2.0 * inset);
     let mut out = RoofArm {
+        source_component: None,
         origin,
         axis: arm.axis,
         length_m: length,
@@ -2912,6 +2925,7 @@ fn make_roofs(unit: &HouseUnit) -> Result<(RoofMesh, Vec<Feature>, Vec<String>),
             }
             let arm = if s.axis == RoofAxis::Transverse {
                 RoofArm {
+                    source_component: None,
                     origin: local(original, original.length_m, 0.0),
                     axis: [-original.axis[1], original.axis[0]],
                     length_m: original.width_m,
@@ -2924,7 +2938,17 @@ fn make_roofs(unit: &HouseUnit) -> Result<(RoofMesh, Vec<Feature>, Vec<String>),
             // The supplied arm is prolonged at joints; overhang only expands its finite domain.
             let mut extended = arm.clone();
             extended.domain = if body.feature_id.is_some() {
-                intersection(&domain, &arm.domain)
+                if original.source_component.is_some() {
+                    crate::gallery_components::portion(
+                        body.declared_domain
+                            .as_ref()
+                            .ok_or("Attachment indexée sans domaine déclaré.")?,
+                        original,
+                        &domain,
+                    )?
+                } else {
+                    intersection(&domain, &arm.domain)
+                }
             } else {
                 roof_domain(
                     unit,
@@ -2936,6 +2960,17 @@ fn make_roofs(unit: &HouseUnit) -> Result<(RoofMesh, Vec<Feature>, Vec<String>),
                 )
             };
             let d = intersection(&domain, &extended.domain);
+            if original.source_component.is_some() {
+                let component = crate::gallery_components::selected(
+                    body.declared_domain
+                        .as_ref()
+                        .ok_or("Attachment indexée sans domaine déclaré.")?,
+                    original,
+                )?;
+                if area(&difference(&d, &component)) > g::area_tolerance(&component) {
+                    return Err("Pan legacy dans une composante sœur.".into());
+                }
+            }
             if d.is_empty() {
                 continue;
             }
@@ -3387,6 +3422,7 @@ fn make_roofs(unit: &HouseUnit) -> Result<(RoofMesh, Vec<Feature>, Vec<String>),
                     let mut pavs = vec![shifted_arm(&arm, 0.16)];
                     for side in 0..2 {
                         let mut pav = RoofArm {
+                            source_component: None,
                             origin: local(
                                 &arm,
                                 arm.length_m * (0.25 + side as f64 * 0.3),
@@ -4207,6 +4243,7 @@ mod budget_tests {
         body.overhang_m = 0.0;
         body.roof_spec = RoofSpec::default();
         body.roof_arms = vec![RoofArm {
+            source_component: None,
             origin: point(0.0, 0.0),
             axis: [1.0, 0.0],
             length_m: 12.0,

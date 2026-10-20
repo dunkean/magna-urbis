@@ -31,6 +31,22 @@ function nativeCanvas(encodeFail = false) {
 }
 
 describe('native SVG raster with PNG encoding off the interactive thread', () => {
+  it.each([false, true])('preserves rectangular crop dimensions with worker encoding disabled: %s', async (fallback) => {
+    const worker = new FakeWorker(), b = bitmap(), f = nativeCanvas();
+    await exportPng(new Blob(['svg']), { width: 3000, height: 1500 }, () => {}, {
+      ...f, worker: () => { if (fallback) throw new Error('blocked'); return worker as unknown as Worker; },
+      decode: async () => image, bitmap: async source => { expect(source.height).toBe(1500); return b; },
+    });
+    expect(f.drawImage).toHaveBeenCalledWith(image, 0, 0, 3000, 1500);
+    if (!fallback) expect(worker.sent).toEqual([{ bitmap: b, width: 3000, height: 1500 }, [b]]);
+  });
+  it('creates a rectangular worker canvas for the selected crop', async () => {
+    const b = bitmap(), drawImage = vi.fn();
+    const makeCanvas = vi.fn((width: number, height: number) => ({ width, height, getContext: () => ({ drawImage }), convertToBlob: async () => new Blob(['png']) }) as unknown as OffscreenCanvas);
+    await encodeBitmap({ bitmap: b, width: 1500, height: 3000 }, () => {}, makeCanvas);
+    expect(makeCanvas).toHaveBeenCalledWith(1500, 3000);
+    expect(drawImage).toHaveBeenCalledWith(b, 0, 0, 1500, 3000);
+  });
   it('snapshots the whole native canvas, yielding before draw and snapshot, then transfers these exact pixels', async () => {
     const worker = new FakeWorker(), b = bitmap(), f = nativeCanvas(), flow: string[] = [];
     f.drawImage.mockImplementation(() => { flow.push('draw'); });
@@ -40,7 +56,7 @@ describe('native SVG raster with PNG encoding off the interactive thread', () =>
       flow.push('bitmap'); return b;
     });
     const result = await exportPng(new Blob(['svg']), 3000, (p) => flow.push(p), { ...f, worker: () => worker as unknown as Worker, decode: async () => image, bitmap: snapshot });
-    expect(await result.text()).toBe('worker png'); expect(worker.sent).toEqual([{ bitmap: b, width: 3000 }, [b]]);
+    expect(await result.text()).toBe('worker png'); expect(worker.sent).toEqual([{ bitmap: b, width: 3000, height: 3000 }, [b]]);
     expect(flow).toEqual(['decode', 'raster', 'yield', 'draw', 'snapshot', 'yield', 'bitmap', 'encode']);
     expect(f.drawImage).toHaveBeenCalledOnce(); expect(f.drawImage).toHaveBeenCalledWith(image, 0, 0, 3000, 3000);
     expect(f.canvas).toHaveBeenCalledOnce(); expect(snapshot).toHaveBeenCalledOnce(); expect(f.toBlob).not.toHaveBeenCalled();

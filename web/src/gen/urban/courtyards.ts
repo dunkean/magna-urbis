@@ -105,8 +105,24 @@ export function cutCourtyards(block: Polygon, bi: number, zone: Zone, P: Morphol
     const ob = plotBounds(Q, axis);
     const fraction = rng.fork('split-position:' + guard).range(0.42, 0.58);
     let best: [Polygon, Polygon] | null = null, bs = Infinity;
-    for (const [axis, half, pen] of [[ob.u, ob.hu, 0], [ob.v, ob.hv, 0.35]] as [Vec2, number, number][]) {
-      for (const t of [fraction, 0.5, 0.43, 0.57, 0.36, 0.64]) {
+    const directions: [Vec2, number, number][] = [[ob.u, ob.hu, 0], [ob.v, ob.hv, 0.35]];
+    if (P.plotOp === 'machiya' && A > 15000) for (const f of F) {
+      const length = dist(f.a, f.b);
+      if (length < 7) continue;
+      const axis = { x: (f.b.x - f.a.x) / length, y: (f.b.y - f.a.y) / length };
+      if (directions.some(([u]) => Math.abs(u.x * axis.y - u.y * axis.x) < 1e-5)) continue;
+      const half = Math.max(...Q.map((p) => Math.abs((p.x - ob.c.x) * axis.x + (p.y - ob.c.y) * axis.y)));
+      directions.push([axis, half, 0.5]);
+    }
+    for (const [axis, half, pen] of directions) {
+      // An oversized merchant parcel may have its public access clustered at
+      // one end of the bounding box. Split through real facade positions too;
+      // centre-only cuts strand one half even when ample frontage is available.
+      const frontagePositions = P.plotOp === 'machiya' && A > 15000 ? F.flatMap((f) => [0.25, 0.5, 0.75].map((t) => {
+        const p = { x: f.a.x + (f.b.x - f.a.x) * t, y: f.a.y + (f.b.y - f.a.y) * t };
+        return 0.5 + ((p.x - ob.c.x) * axis.x + (p.y - ob.c.y) * axis.y) / (2 * half);
+      })).filter((t) => t > 0.001 && t < 0.999) : [];
+      for (const t of [fraction, 0.5, 0.43, 0.57, 0.36, 0.64, ...frontagePositions]) {
         const c = { x: ob.c.x + axis.x * (t - 0.5) * 2 * half, y: ob.c.y + axis.y * (t - 0.5) * 2 * half };
         // Both candidate directions belong to the same retained cadastral frame.
         const d = { x: -axis.y, y: axis.x };
@@ -121,7 +137,9 @@ export function cutCourtyards(block: Polygon, bi: number, zone: Zone, P: Morphol
           if (minAng(X) < angleFloor || minAng(Y) < angleFloor) continue;
           // courtyard lots are compact (inward-facing houses), not deep strips
           const sX = shapeOf(X), sY = shapeOf(Y);
-          if (Math.max(sX.asp, sY.asp) > 4.5) continue;
+          // Machiya frontage parcels remain deep strips. Their cadastral
+          // refinement must not inherit the compact courtyard-house rule.
+          if (P.plotOp !== 'machiya' && Math.max(sX.asp, sY.asp) > 4.5) continue;
           const sc = 0.3 * Math.abs(aX - aY) / A + pen + Math.abs(t - fraction) + 0.3 * (Math.max(0, sX.asp - 2) + Math.max(0, sY.asp - 2));
           if (sc < bs) { bs = sc; best = [X, Y]; }
         }
@@ -136,7 +154,7 @@ export function cutCourtyards(block: Polygon, bi: number, zone: Zone, P: Morphol
   let order = 0;
   for (const Q of done) {
     const fl = frontLen(Q, F);
-    if (!fl.best || fl.len < 3) { back.push(Q); continue; }
+    if (!fl.best || fl.len < 3 || P.plotOp === 'machiya' && dist(fl.best[0], fl.best[1]) < 3) { back.push(Q); continue; }
     const [fa, fb] = fl.best;
     const W = dist(fa, fb);
     const t = { x: (fb.x - fa.x) / W, y: (fb.y - fa.y) / W };
@@ -194,6 +212,7 @@ export function cutCourtyards(block: Polygon, bi: number, zone: Zone, P: Morphol
   for (const plot of final) {
     plot.axis = axis;
     plot.boundarySides = houseBoundarySides(B, plot.poly, plot.front);
+    plot.streetSides = frontageEdges(orientPos(plot.poly), streets).map((e) => [e.a, e.b]);
   }
   return { plots: final, back };
 }

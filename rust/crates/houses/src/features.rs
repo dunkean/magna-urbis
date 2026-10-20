@@ -1,15 +1,15 @@
 //! Explicit atlas details after bodies, before portals and roof meshes.
 //! No cultural labels or arbitrary prose are interpreted here.
 use crate::catalogue::{
-    DetailSpec, EnclosureFamily, Envelope, Layout, Parameters, Placement, Recipe, SupportKind,
-    VerticalAccess, catalogue,
+    DetailSpec, EnclosureFamily, Envelope, FacadeCoverMode, Layout, Parameters, Placement, Recipe,
+    SupportKind, VerticalAccess, catalogue,
 };
 use crate::geometry::{
     area, bounds, center, difference, ellipse, intersection, offset, point, rectangle,
     segment_strip, unite,
 };
 use crate::model::{
-    Body, Feature, FeatureKind, HouseConfig, HouseUnit, Point, Polygon, Role, RoofArm,
+    Body, Feature, FeatureKind, HouseConfig, HouseUnit, Level, Point, Polygon, Role, RoofArm,
     RoofAttachment, RoomUsage, Surface, Vertex3, Wall, WallKind,
 };
 #[path = "frame_details.rs"]
@@ -17,7 +17,7 @@ mod frame_details;
 #[path = "gallery_partition.rs"]
 mod gallery_partition;
 
-fn feature(
+pub(crate) fn feature(
     id: String,
     kind: FeatureKind,
     surface: Surface,
@@ -350,6 +350,35 @@ fn wall_marks(
 }
 
 pub(crate) const BEAM_SPACING_M: f64 = 2.4;
+
+/// The closed recipe/variant bundle is the shared material authority for the
+/// Viga generator and its later exact aperture certificate.
+pub(crate) fn viga_bundle(unit: &HouseUnit) -> Option<&'static Parameters> {
+    let data = catalogue().ok()?;
+    let recipes = data
+        .recipes
+        .iter()
+        .filter(|r| r.id == unit.recipe_id)
+        .collect::<Vec<_>>();
+    if recipes.len() != 1 {
+        return None;
+    }
+    let recipe = recipes[0];
+    if unit.variant_id == "default" {
+        return Some(&recipe.parameters);
+    }
+    let variants = recipe
+        .variants
+        .iter()
+        .filter(|v| v.id == unit.variant_id)
+        .collect::<Vec<_>>();
+    (variants.len() == 1).then(|| &variants[0].parameters)
+}
+
+pub(crate) fn viga_material(unit: &HouseUnit) -> Option<&'static str> {
+    let material = &viga_bundle(unit)?.materials.roof_frame;
+    (!material.is_empty()).then_some(material.as_str())
+}
 
 /// Exact native strips shared by the detail generator and access certificates.
 pub(crate) fn beam_surfaces(body: &Body, spacing: f64) -> Vec<Surface> {
@@ -764,7 +793,13 @@ fn arcs(unit: &mut HouseUnit, trait_: &str, material: &str) {
     }
 }
 
-fn gallery(unit: &mut HouseUnit, trait_: &str, material: &str, columns: bool) {
+fn gallery(
+    unit: &mut HouseUnit,
+    trait_: &str,
+    material: &str,
+    columns: bool,
+    mode: Option<FacadeCoverMode>,
+) -> Result<(), String> {
     let existing: Vec<_> = unit
         .features
         .iter()
@@ -785,12 +820,11 @@ fn gallery(unit: &mut HouseUnit, trait_: &str, material: &str, columns: bool) {
                 );
             }
         }
-        return;
+        return Ok(());
     }
     let courts = unit.partition.courtyards.clone();
     if courts.is_empty() {
-        front_gallery(unit, trait_, material, columns);
-        return;
+        return front_gallery(unit, trait_, material, columns, mode);
     }
     let ring = difference(&courts, &offset(&courts, -0.85));
     // The gallery itself is a circulation surface; only portal voids cut its cover.
@@ -846,24 +880,108 @@ fn gallery(unit: &mut HouseUnit, trait_: &str, material: &str, columns: bool) {
             }
         }
     }
+    Ok(())
 }
 
-fn front_gallery(unit: &mut HouseUnit, trait_: &str, material: &str, columns: bool) {
+fn same_point_bits(a: &Point, b: &Point) -> bool {
+    a.x.to_bits() == b.x.to_bits() && a.y.to_bits() == b.y.to_bits()
+}
+
+fn same_rectangle_bits(a: &Surface, b: &Surface) -> bool {
+    a.len() == 1
+        && b.len() == 1
+        && a[0].holes.is_empty()
+        && b[0].holes.is_empty()
+        && a[0].outer.len() == 4
+        && b[0].outer.len() == 4
+        && a[0]
+            .outer
+            .iter()
+            .zip(&b[0].outer)
+            .all(|(a, b)| same_point_bits(a, b))
+}
+
+/// Raw owner coordinates keep the shared bearing geometry; no second boolean clip.
+fn wall_bearing_bands(body: &Body, level: &Level) -> Result<(Surface, Surface), String> {
+    let b = bounds(&level.footprint);
+    let corners = [
+        Point { x: b[0], y: b[1] },
+        Point { x: b[2], y: b[1] },
+        Point { x: b[2], y: b[3] },
+        Point { x: b[0], y: b[3] },
+    ];
+    if level.footprint.len() != 1
+        || !level.footprint[0].holes.is_empty()
+        || level.footprint[0].outer.len() != 4
+        || !corners.iter().all(|q| {
+            level.footprint[0]
+                .outer
+                .iter()
+                .any(|p| same_point_bits(p, q))
+        })
+        || !body.wall_thickness_m.is_finite()
+        || body.wall_thickness_m <= 0.0
+    {
+        return Err(
+            "Appentis sans propriétaire rectangulaire et épaisseur native positive.".into(),
+        );
+    }
+    let inset = body.wall_thickness_m * 0.5;
+    let xa = b[0] + inset;
+    let xb = b[2] - inset;
+    if xa >= xb {
+        return Err("Appentis sans portée entière entre les appuis muraux.".into());
+    }
+    let raw = |ya: f64, yb: f64| {
+        vec![Polygon {
+            outer: vec![
+                Point { x: xa, y: ya },
+                Point { x: xb, y: ya },
+                Point { x: xb, y: yb },
+                Point { x: xa, y: yb },
+            ],
+            holes: vec![],
+        }]
+    };
+    Ok((raw(b[3], b[3] + 0.85), raw(b[3] - inset, b[3] + 0.85)))
+}
+
+fn front_gallery(
+    unit: &mut HouseUnit,
+    trait_: &str,
+    material: &str,
+    columns: bool,
+    mode: Option<FacadeCoverMode>,
+) -> Result<(), String> {
     let lateral = matches!(trait_, "continuous_veranda" | "side_corridor");
+    if mode == Some(FacadeCoverMode::WallBearing) && lateral {
+        return Err(format!(
+            "Appentis : trait latéral {trait_} hors façade déclarée."
+        ));
+    }
     let bodies = unit.bodies.clone();
     let mut count = 0;
     for body in bodies {
+        if mode.is_some() && !body.role.residential() {
+            continue;
+        }
         let Some(level) = body.levels.first() else {
             continue;
         };
         let b = bounds(&level.footprint);
         let width = 0.85;
-        let surface = if lateral {
+        let surface = if mode == Some(FacadeCoverMode::WallBearing) {
+            wall_bearing_bands(&body, level)?.0
+        } else if lateral {
             rectangle(b[2], b[1], width, b[3] - b[1])
         } else {
             rectangle(b[0], b[3], b[2] - b[0], width)
         };
-        let surface = intersection(&surface, &unit.lot);
+        let surface = if mode == Some(FacadeCoverMode::WallBearing) {
+            surface
+        } else {
+            intersection(&surface, &unit.lot)
+        };
         if !push(
             unit,
             trait_,
@@ -887,19 +1005,21 @@ fn front_gallery(unit: &mut HouseUnit, trait_: &str, material: &str, columns: bo
             );
         }
         let g = bounds(&surface);
-        for q in [
-            point(g[0] + 0.13, g[1] + 0.13),
-            point(g[2] - 0.13, g[3] - 0.13),
-        ] {
-            push(
-                unit,
-                trait_,
-                FeatureKind::Post,
-                ellipse(q.x, q.y, 0.1, 0.1, 16),
-                level.z_m,
-                2.7,
-                material,
-            );
+        if mode != Some(FacadeCoverMode::WallBearing) {
+            for q in [
+                point(g[0] + 0.13, g[1] + 0.13),
+                point(g[2] - 0.13, g[3] - 0.13),
+            ] {
+                push(
+                    unit,
+                    trait_,
+                    FeatureKind::Post,
+                    ellipse(q.x, q.y, 0.1, 0.1, 16),
+                    level.z_m,
+                    2.7,
+                    material,
+                );
+            }
         }
         count += 1;
     }
@@ -910,6 +1030,7 @@ fn front_gallery(unit: &mut HouseUnit, trait_: &str, material: &str, columns: bo
             "aucun bord de corps n'a le dégagement d'une galerie de 0,85 m",
         );
     }
+    Ok(())
 }
 
 fn cover_arm(surface: Surface, mut axis: [f64; 2]) -> RoofArm {
@@ -938,6 +1059,7 @@ fn cover_arm(surface: Surface, mut axis: [f64; 2]) -> RoofArm {
         b = projections(axis);
     }
     RoofArm {
+        source_component: None,
         origin: point(
             b[0] * axis[0] - b[1] * axis[1],
             b[0] * axis[1] + b[1] * axis[0],
@@ -1111,8 +1233,51 @@ fn cover_galleries(unit: &mut HouseUnit, p: &Parameters) -> Result<(), String> {
         let owner_id = body.id.clone();
         let level_index = level.index;
         let mats = level.materials.clone();
-        let arms = gallery_arms(&gallery.surface, p.gallery_cover.spec.round_segments)
-            .map_err(|e| format!("{e} Galerie {}.", gallery.id))?;
+        let wall_bearing = p.gallery_cover.facade_mode == Some(FacadeCoverMode::WallBearing);
+        let arms = if wall_bearing {
+            use geo::Contains;
+            let (expected, domain) = wall_bearing_bands(body, level)?;
+            let lot = crate::geometry::to_geo(&unit.lot);
+            if !same_rectangle_bits(&gallery.surface, &expected)
+                || !lot.contains(&crate::geometry::to_geo(&expected).0[0])
+                || !lot.contains(&crate::geometry::to_geo(&domain).0[0])
+                || !lot.contains(&crate::geometry::to_geo(&level.footprint).0[0])
+            {
+                return Err(format!(
+                    "Appentis {} : bande de façade rectangulaire complète absente.",
+                    gallery.id
+                ));
+            }
+            let mut arm = cover_arm(domain, [1.0, 0.0]);
+            arm.origin = arm.domain[0].outer[0];
+            if arm.axis != [1.0, 0.0] || arm.length_m < arm.width_m {
+                return Err(format!("Appentis {} : axe de façade basculé.", gallery.id));
+            }
+            vec![arm]
+        } else {
+            let mixed = gallery.surface.len() > 1
+                && gallery.surface.iter().any(|p| {
+                    !p.holes.is_empty()
+                        && !(p.holes.len() == 1 && p.outer.len() == 4 && p.holes[0].len() == 4)
+                });
+            if mixed {
+                let mut arms = vec![];
+                for (component, polygon) in gallery.surface.iter().enumerate() {
+                    let mut part =
+                        gallery_arms(&vec![polygon.clone()], p.gallery_cover.spec.round_segments)
+                            .map_err(|e| format!("{e} Galerie {}.", gallery.id))?;
+                    for arm in &mut part {
+                        arm.source_component = Some(component as u32);
+                    }
+                    arms.extend(part);
+                }
+                crate::gallery_components::coverage(&gallery.surface, &arms)?;
+                arms
+            } else {
+                gallery_arms(&gallery.surface, p.gallery_cover.spec.round_segments)
+                    .map_err(|e| format!("{e} Galerie {}.", gallery.id))?
+            }
+        };
         let declared = unite(
             &arms
                 .iter()
@@ -1139,55 +1304,90 @@ fn cover_galleries(unit: &mut HouseUnit, p: &Parameters) -> Result<(), String> {
             };
         let mut supports = vec![];
         let mut sequence = 0;
-        for polygon in &gallery.surface {
-            for ring in std::iter::once(&polygon.outer).chain(&polygon.holes) {
-                for (a, b) in ring
-                    .iter()
-                    .zip(ring.iter().cycle().skip(1))
-                    .take(ring.len())
-                {
-                    let n = libm::ceil(
-                        libm::hypot(b.x - a.x, b.y - a.y) / p.gallery_cover.support_spacing_m,
-                    )
-                    .max(1.0) as usize;
-                    for i in 0..n {
-                        let t = i as f64 / n as f64;
-                        let id = format!("gallery-support:{}:{sequence}", gallery.id);
-                        sequence += 1;
-                        let post = intersection(
-                            &ellipse(
-                                a.x + (b.x - a.x) * t,
-                                a.y + (b.y - a.y) * t,
-                                post_radius,
-                                post_radius,
-                                12,
-                            ),
-                            &unit.lot,
-                        );
-                        if area(&post) < 0.002 {
-                            return Err(format!(
-                                "Galerie {} : appui de rive hors lot.",
-                                gallery.id
+        if wall_bearing {
+            let arm = &arms[0];
+            let n = libm::ceil(arm.length_m / p.gallery_cover.support_spacing_m).max(1.0) as usize;
+            for i in 0..=n {
+                let id = format!("gallery-support:{}:{sequence}", gallery.id);
+                sequence += 1;
+                let post = intersection(
+                    &ellipse(
+                        arm.origin.x + arm.length_m * i as f64 / n as f64,
+                        arm.origin.y + arm.width_m,
+                        post_radius,
+                        post_radius,
+                        12,
+                    ),
+                    &unit.lot,
+                );
+                if area(&post) < 0.002 {
+                    return Err(format!("Appentis {} : appui de rive hors lot.", gallery.id));
+                }
+                unit.features.push(feature(
+                    id.clone(),
+                    FeatureKind::Post,
+                    post,
+                    gallery.z_m,
+                    p.gallery_cover.height_m,
+                    &mats.roof_frame,
+                ));
+                supports.push(id);
+            }
+        } else {
+            for polygon in &gallery.surface {
+                for ring in std::iter::once(&polygon.outer).chain(&polygon.holes) {
+                    for (a, b) in ring
+                        .iter()
+                        .zip(ring.iter().cycle().skip(1))
+                        .take(ring.len())
+                    {
+                        let n = libm::ceil(
+                            libm::hypot(b.x - a.x, b.y - a.y) / p.gallery_cover.support_spacing_m,
+                        )
+                        .max(1.0) as usize;
+                        for i in 0..n {
+                            let t = i as f64 / n as f64;
+                            let id = format!("gallery-support:{}:{sequence}", gallery.id);
+                            sequence += 1;
+                            let post = intersection(
+                                &ellipse(
+                                    a.x + (b.x - a.x) * t,
+                                    a.y + (b.y - a.y) * t,
+                                    post_radius,
+                                    post_radius,
+                                    12,
+                                ),
+                                &unit.lot,
+                            );
+                            if area(&post) < 0.002 {
+                                return Err(format!(
+                                    "Galerie {} : appui de rive hors lot.",
+                                    gallery.id
+                                ));
+                            }
+                            unit.features.push(feature(
+                                id.clone(),
+                                FeatureKind::Post,
+                                post,
+                                gallery.z_m,
+                                p.gallery_cover.height_m,
+                                &mats.roof_frame,
                             ));
+                            supports.push(id);
                         }
-                        unit.features.push(feature(
-                            id.clone(),
-                            FeatureKind::Post,
-                            post,
-                            gallery.z_m,
-                            p.gallery_cover.height_m,
-                            &mats.roof_frame,
-                        ));
-                        supports.push(id);
                     }
                 }
             }
         }
-        let attachment = RoofAttachment {
+        let mut attachment = RoofAttachment {
             nested: false,
             owner_body_id: Some(owner_id),
             level: level_index,
-            domain: gallery.surface.clone(),
+            domain: if wall_bearing {
+                arms[0].domain.clone()
+            } else {
+                gallery.surface.clone()
+            },
             rf: p.gallery_cover.rf.clone(),
             spec: p.gallery_cover.spec.clone(),
             arms,
@@ -1199,12 +1399,136 @@ fn cover_galleries(unit: &mut HouseUnit, p: &Parameters) -> Result<(), String> {
             supports,
             max_span_m: p.gallery_cover.max_span_m,
         };
+        if wall_bearing {
+            attachment
+                .supports
+                .extend(wall_bearing_supports(unit, &attachment)?);
+        }
         unit.features
             .iter_mut()
             .find(|f| f.id == gallery.id)
             .unwrap()
             .roof = Some(attachment);
         unit.diagnostics.push(format!("Galerie {} : couverture graphique déclarée {} à +{:.2} m, pente {:.1}°, poteaux espacés ≤{:.2} m, portée ≤{:.2} m.",gallery.id,p.gallery_cover.rf,p.gallery_cover.height_m,p.gallery_cover.pitch_deg,p.gallery_cover.support_spacing_m,p.gallery_cover.max_span_m));
+    }
+    Ok(())
+}
+
+fn wall_bearing_supports(unit: &HouseUnit, roof: &RoofAttachment) -> Result<Vec<String>, String> {
+    let arm = roof
+        .arms
+        .first()
+        .filter(|_| roof.arms.len() == 1)
+        .ok_or("Appentis sans bras de façade unique.")?;
+    if arm.axis != [1.0, 0.0] {
+        return Err("Appentis sans pente sortante de façade.".into());
+    }
+    let a = arm.origin;
+    let b = Point {
+        x: a.x + arm.length_m,
+        y: a.y,
+    };
+    let high_z = roof.support_z_m + arm.width_m * libm::tan(roof.pitch_deg.to_radians());
+    let mut sections = vec![];
+    for wall in unit.walls.iter().filter(|w| {
+        w.body_id == roof.owner_body_id
+            && w.level == roof.level
+            && w.kind == WallKind::Exterior
+            && !w.shell_reference
+            && w.z_m <= roof.support_z_m
+            && w.z_m + w.height_m >= high_z
+    }) {
+        let section = crate::wall_geometry::wall_section(wall, high_z);
+        sections.push((&wall.id, section));
+    }
+    let raw: Surface = sections
+        .iter()
+        .flat_map(|(_, s)| s.iter().cloned())
+        .collect();
+    complete_bearing_line(crate::roofs::support_line_intervals(a, b, &raw))?;
+    let cited: Vec<_> = sections
+        .iter()
+        .filter(|(_, s)| !crate::roofs::support_line_intervals(a, b, s).is_empty())
+        .collect();
+    if cited.is_empty() {
+        return Err("Appentis : aucune pièce murale citée pour l'arête haute.".into());
+    }
+    let raw: Surface = cited.iter().flat_map(|(_, s)| s.iter().cloned()).collect();
+    complete_bearing_line(crate::roofs::support_line_intervals(a, b, &raw))?;
+    Ok(cited.iter().map(|(id, _)| (*id).clone()).collect())
+}
+
+fn complete_bearing_line(mut intervals: Vec<(f64, f64)>) -> Result<(), String> {
+    intervals.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.total_cmp(&b.1)));
+    let mut end = 0.0;
+    for (lo, hi) in intervals {
+        if lo > end {
+            return Err(format!(
+                "Appentis : arête haute sans mur porteur entre {end:.12} et {lo:.12}."
+            ));
+        }
+        end = end.max(hi);
+    }
+    if end < 1.0 {
+        return Err(format!(
+            "Appentis : arête haute sans mur porteur après {end:.12}."
+        ));
+    }
+    Ok(())
+}
+
+pub(crate) fn refresh_wall_bearing_supports(
+    unit: &mut HouseUnit,
+    p: &Parameters,
+) -> Result<(), String> {
+    if p.gallery_cover.facade_mode != Some(FacadeCoverMode::WallBearing) {
+        return Ok(());
+    }
+    let roofs: Vec<_> = unit
+        .features
+        .iter()
+        .enumerate()
+        .filter(|(_, f)| f.kind == FeatureKind::Gallery)
+        .filter_map(|(index, f)| f.roof.clone().map(|roof| (index, roof)))
+        .collect();
+    let passages = passages(unit);
+    for (index, roof) in roofs {
+        let wall_ids = wall_bearing_supports(unit, &roof)?;
+        let arm = &roof.arms[0];
+        let low_a = Point {
+            x: arm.origin.x,
+            y: arm.origin.y + arm.width_m,
+        };
+        let low_b = Point {
+            x: low_a.x + arm.length_m,
+            y: low_a.y,
+        };
+        let mut supports: Vec<_> = roof
+            .supports
+            .iter()
+            .filter(|id| unit.features.iter().any(|f| &f.id == *id))
+            .cloned()
+            .collect();
+        for id in &supports {
+            if let Some(post) = unit
+                .features
+                .iter()
+                .find(|f| &f.id == id && f.kind == FeatureKind::Post)
+            {
+                if post.z_m + post.height_m != roof.support_z_m
+                    || crate::roofs::support_line_intervals(low_a, low_b, &post.surface).is_empty()
+                {
+                    return Err(format!(
+                        "Appentis : cap du poteau {id} sans contact à la rive basse."
+                    ));
+                }
+                if area(&intersection(&post.surface, &passages)) > 0.0 {
+                    return Err(format!("Appentis : poteau {id} dans un passage natif."));
+                }
+            }
+        }
+        supports.extend(wall_ids);
+        unit.features[index].roof.as_mut().unwrap().supports = supports;
     }
     Ok(())
 }
@@ -1549,6 +1873,48 @@ fn roof_trait(unit: &mut HouseUnit, trait_: &str, p: &Parameters) {
     }
 }
 
+pub(crate) fn boat_plan_present(surface: &Surface) -> bool {
+    use geo::Validation;
+    if surface.len() != 1 || !surface[0].holes.is_empty() || surface[0].outer.len() < 16 {
+        return false;
+    }
+    let ring = &surface[0].outer;
+    if ring.iter().any(|p| !p.x.is_finite() || !p.y.is_finite())
+        || !crate::geometry::to_geo(surface).is_valid()
+    {
+        return false;
+    }
+    let b = bounds(surface);
+    let a = (b[2] - b[0]) * 0.5;
+    let c = (b[3] - b[1]) * 0.5;
+    if a <= 0.0 || c <= 0.0 || a.max(c) / a.min(c) < 3.0 {
+        return false;
+    }
+    let q = point(b[0] + a, b[1] + c);
+    let mut sign = 0.0_f64;
+    for i in 0..ring.len() {
+        let p = ring[i];
+        let next = ring[(i + 1) % ring.len()];
+        let after = ring[(i + 2) % ring.len()];
+        let turn = (next.x - p.x) * (after.y - next.y) - (next.y - p.y) * (after.x - next.x);
+        if !turn.is_finite() || turn == 0.0 || (sign != 0.0 && turn.signum() != sign) {
+            return false;
+        }
+        sign = turn.signum();
+        let x = p.x - q.x;
+        let y = p.y - q.y;
+        let residual = x * x / (a * a) + y * y / (c * c) - 1.0;
+        let gradient = libm::hypot(2.0 * x / (a * a), 2.0 * y / (c * c));
+        if !gradient.is_finite()
+            || gradient <= 0.0
+            || residual.abs() / gradient > crate::geometry::GRID_M
+        {
+            return false;
+        }
+    }
+    true
+}
+
 fn layout_trait(unit: &mut HouseUnit, trait_: &str, p: &Parameters) {
     let separate = unit.bodies.len() > 1;
     let courts = !unit.partition.courtyards.is_empty();
@@ -1564,8 +1930,8 @@ fn layout_trait(unit: &mut HouseUnit, trait_: &str, p: &Parameters) {
             "aucun composant kiva distinct du logement",
         ),
         "boat_plan" => (
-            p.footprint_family == "FP-APSIDAL",
-            "aucune terminaison absidiale dans le plan résolu",
+            unit.bodies.iter().any(|b| boat_plan_present(&b.footprint)),
+            "aucun plan natif simple, convexe, très allongé et arrondi aux extrémités",
         ),
         "castro_cells" => (
             separate && matches!(p.layout, Layout::Additive | Layout::HutCompound),
@@ -2094,6 +2460,7 @@ fn inner_tent(unit: &mut HouseUnit, p: &Parameters) -> Result<(), String> {
         rf: "RF-DOME".into(),
         spec: roof_spec,
         arms: vec![RoofArm {
+            source_component: None,
             origin: point(c.x - width * 0.5, c.y - depth * 0.5),
             axis: [1.0, 0.0],
             length_m: width,
@@ -2692,6 +3059,13 @@ pub(crate) fn add_details_for_role(
     config: &HouseConfig,
 ) -> Result<(), String> {
     let registry = catalogue()?;
+    if p.gallery_cover.facade_mode == Some(FacadeCoverMode::WallBearing)
+        && p.details
+            .iter()
+            .any(|t| matches!(t.as_str(), "continuous_veranda" | "side_corridor"))
+    {
+        return Err("Appentis : trait latéral hors façade déclarée.".into());
+    }
     open_iwans(unit, p)?;
     for room in &mut unit.rooms {
         if unit
@@ -2864,22 +3238,33 @@ pub(crate) fn add_details_for_role(
             "regional_corner_turrets" => corner_turrets(unit, trait_, p),
             "earth_buttresses" => buttresses(unit, trait_, &p.materials.frame),
             "street_balcony" => balcony(unit, trait_, &p.materials.roof_frame),
-            "arcade" | "columns" | "portico" | "low_portico" => {
-                gallery(unit, trait_, &p.materials.frame, true)
-            }
-            "gallery" | "covered_gallery" | "carved_gallery" | "wood_galleries" | "galleries"
-            | "veranda" | "continuous_veranda" => {
-                gallery(unit, trait_, &p.materials.roof_frame, false)
-            }
-            "dougong" => brackets(unit, trait_, p),
-            "bays" | "regular_bays" | "exposed_frame" | "large_frame" | "large_timber_span"
-            | "ligatures" | "timber_bands" | "vigas" => beams(
+            "arcade" | "columns" | "portico" | "low_portico" => gallery(
                 unit,
                 trait_,
-                FeatureKind::Frame,
-                BEAM_SPACING_M,
+                &p.materials.frame,
+                true,
+                p.gallery_cover.facade_mode,
+            )?,
+            "gallery" | "covered_gallery" | "carved_gallery" | "wood_galleries" | "galleries"
+            | "veranda" | "continuous_veranda" => gallery(
+                unit,
+                trait_,
                 &p.materials.roof_frame,
-            ),
+                false,
+                p.gallery_cover.facade_mode,
+            )?,
+            "dougong" => brackets(unit, trait_, p),
+            "bays" | "regular_bays" | "exposed_frame" | "large_frame" | "large_timber_span"
+            | "ligatures" | "timber_bands" | "vigas" => {
+                let material = if trait_ == "vigas" {
+                    viga_material(unit)
+                        .filter(|material| *material == p.materials.roof_frame)
+                        .unwrap_or(&p.materials.roof_frame)
+                } else {
+                    &p.materials.roof_frame
+                };
+                beams(unit, trait_, FeatureKind::Frame, BEAM_SPACING_M, material);
+            }
             "four_master_posts" => posts(unit, trait_, &p.materials.frame, true),
             "oblique_large_posts" => diagonal_posts(unit, trait_, p),
             "bone_posts" => posts(unit, trait_, "MAT-BONE", false),
@@ -3097,7 +3482,13 @@ pub(crate) fn add_details_for_role(
                         FeatureKind::Gallery | FeatureKind::Deck | FeatureKind::Landing
                     )
                 }) {
-                    front_gallery(unit, trait_, &p.materials.roof_frame, false);
+                    front_gallery(
+                        unit,
+                        trait_,
+                        &p.materials.roof_frame,
+                        false,
+                        p.gallery_cover.facade_mode,
+                    )?;
                 }
             }
             "single_door"
@@ -3443,6 +3834,7 @@ pub(crate) fn add_post_access_details(unit: &mut HouseUnit, p: &Parameters) -> R
             _ => {}
         }
     }
+    refresh_wall_bearing_supports(unit, p)?;
     Ok(())
 }
 
@@ -3716,6 +4108,7 @@ fn prove_four_horns(unit: &mut HouseUnit) -> Result<(), String> {
         let source = &body.roof_arms[0];
         let arm = if body.roof_spec.axis == crate::model::RoofAxis::Transverse {
             RoofArm {
+                source_component: None,
                 origin: point(
                     source.origin.x + source.axis[0] * source.length_m,
                     source.origin.y + source.axis[1] * source.length_m,

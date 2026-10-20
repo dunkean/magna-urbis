@@ -15,9 +15,9 @@ try {
       const image=new Image();image.src=source;await image.decode();const canvas=document.createElement('canvas');canvas.width=canvas.height=32;const ctx=canvas.getContext('2d');const hashes=[];
       for(const rect of meta.rects){ctx.clearRect(0,0,32,32);ctx.drawImage(image,...rect,0,0,32,32);const pixels=ctx.getImageData(0,0,32,32).data;let hash=2166136261;for(const byte of pixels)hash=Math.imul(hash^byte,16777619);hashes.push(hash>>>0);}
       const figure=document.createElement('figure'),caption=document.createElement('figcaption');caption.textContent=family;figure.append(image,caption);document.querySelector('.sheets').append(figure);
-      result.push({family,ink:new Set(hashes.slice(0,8)).size,color:new Set(hashes.slice(8)).size});
+      result.push({family,count:meta.variantsPerStyle||8,ink:new Set(hashes.slice(0,meta.variantsPerStyle||8)).size,color:new Set(hashes.slice(meta.variantsPerStyle||8)).size});
     }return result;
   },sheets);
-  for(const family of report){assert.equal(family.ink,8);assert.equal(family.color,8);}
+  for(const family of report){assert.equal(family.ink,family.count);assert.equal(family.color,family.count);}
   await page.screenshot({path:'out/fantasy/family-sheets.png',fullPage:true});console.log(JSON.stringify(report));
 }finally{await browser.close();}

@@ -1,5 +1,44 @@
 # Quartiers et parcelles dans Terrain Bench
 
+## Dispersion et coupures — 20 octobre 2026
+
+Dans **Quartiers → Agglomération complète → Dispersion et coupures**, quatre
+réglages complètent les formes naturelles, indépendamment du tissu de rues :
+
+| Réglage | Effet | Nouvelle scène |
+|---|---|---|
+| Cohésion | Baisser laisse davantage de terrain libre en périphérie ; 1 supprime ces coupures | 0,85 |
+| Propension aux satellites | Favorise jusqu'à trois noyaux secondaires sur des sites secs, peu pentus et accessibles | 0,15 |
+| Profondeur des branches | Allonge les corridors guides et renforce la croissance à leur proximité | 0,20 |
+| Taille des coupures | Échelle spatiale des espaces libres, en mètres (10–500) | 60 m |
+
+La propagation peut traverser une cellule sans l'attribuer à la ville. Les
+coupures suivent un champ spatial déterministe et le coût du relief ; le cœur
+reste plus continu et les petits trous sous la résolution utile sont évités.
+L'échelle des coupures est au minimum de trois cellules du champ de croissance.
+Les poches significatives sont conservées avec une liaison routée sur le sol,
+éventuellement par escalier si autorisé. Cette liaison traverse le terrain libre
+sans le convertir en quartier. Les miettes et poches nouvelles impossibles à
+desservir sont écartées ; leur surface manque au budget, avec le diagnostic
+habituel de déficit. Les noyaux explicites séparés par l'eau restent conservés,
+sans création automatique de pont.
+
+Les valeurs initiales restent modérées. Pour accentuer : cohésion 0,6,
+satellites 0,5, branches 0,6 et coupures 100 m. Les réglages sont conservés dans
+les liens, décors et ateliers ; les brouillons ne remplacent pas les valeurs
+appliquées. Les anciens liens sans ces champs gardent 1 / 0 / 0 et leur
+croissance antérieure. Les fondations géométriques et les rubans vectoriels
+explicitement imposés gardent leur comportement. Il s'agit d'une croissance
+procédurale bornée, pas d'une simulation économique ou d'une histoire urbaine
+complète ; les guides dendritiques restent des suggestions de forme.
+
+Contrôles ciblés : `cargo test -p magna-urbis-core --lib urban::footprint`,
+`npx vitest run --project fast tests/urbanRust.bridge.test.ts` et
+`node scripts/urban_sparse_ui_check.mjs` depuis `web/` pour les deux derniers.
+Validation : 57 tests urbains natifs et 7 tests du pont réussis ; contrôle
+navigateur sans erreur, replay exact et conservation du plan pendant le
+recalcul parcellaire. Clippy strict, compilation WASM, typecheck et builds passés.
+
 ## Refonte du 13 octobre 2026
 
 Les nouveaux plans utilisent une empreinte native indépendante du tissu de rues.
@@ -352,3 +391,34 @@ moteur urbain. Les nouveaux décors conservent ces contours et un relief jusqu�
 réutilisent leur eau vectorielle sauvegardée. Cela supprime les découpes par
 cellules, sans inventer les détails absents des anciens exports. Les rubans de
 rues se remplissent en `nonzero` pour éviter les trous aux raccords superposés.
+
+Les résultats reçus du worker sont des instantanés immuables : les caches de
+chemins SVG et de découpage des routes sont invalidés par remplacement du plan,
+pas par ses réglages d'affichage. Le worker conserve le JSON du dernier plan et
+accepte son identifiant de réponse pour les demandes de parcelles. Un changement
+de terrain ou une nouvelle génération invalide cet identifiant ; le repli sans
+worker fournit le plan complet. Le passage `JSON.parse`/`JSON.stringify` reste
+identique au chemin historique afin de conserver les mêmes nombres en entrée
+Rust et les mêmes découpes.
+
+Mesures reproductibles depuis `web/`, avec un serveur Vite actif et Chrome :
+
+```sh
+node scripts/generation_perf.mjs http://localhost:5173/urbanbench.html out/perf.json
+node scripts/generation_perf.mjs http://localhost:5173/urbanbench.html out/perf-after.json out/perf.json
+npx tsx scripts/ts_generation_perf.ts 3
+node scripts/ts_generation_browser_perf.mjs http://localhost:5173
+```
+
+Le premier contrôle mesure trois scènes natives dans le navigateur, le transfert
+worker, la fin du rendu et les changements de palette. Il compare les géométries
+complètes et le SVG (ordre des attributs normalisé). Comparer des builds WASM de
+même profil, sur la même machine ; les durées ne sont pas des seuils de tests.
+Le dernier script accepte aussi l'URL d'un module TypeScript de référence et un
+chemin de rapport pour alterner les mesures avant/après. Le corpus natif existant
+`urban_refonte --geometry` exporte les entrées et sorties complètes pour vérifier
+leur égalité à l'octet, y compris les côtes, rivières et reliefs.
+Avec `TS_PERF_APP=town` ou `city`, le script TypeScript navigateur mesure la
+génération de l'application entière ; le module de référence doit alors exporter
+`generate`. La comparaison de `World` exclut uniquement les diagnostics de durée.
+`TS_PERF_RUNS` règle le nombre de passages mesurés après un passage de chauffe.

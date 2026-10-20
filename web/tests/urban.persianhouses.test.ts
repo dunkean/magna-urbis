@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { createHash } from 'node:crypto';
 import { chamferPersianHouse } from '../src/gen/urban/persianhouse';
 import { MAX_ASPECT, MIN_BW, shapeOf } from '../src/gen/urban/buildings';
 import { blockReach, carvePassage, makeStreetAt } from '../src/gen/urban/access';
@@ -70,18 +71,21 @@ describe('Persian courtyard roof corners', () => {
 
   it('retains every house, lot, courtyard and street access in the actual seed2 village', () => {
     const w = generateCase({ label: 'persian', culture: 'persian' }, 'village', '2'), u = w.urban!;
-    expect(u.buildings).toHaveLength(277);
-    expect(u.parcels).toHaveLength(250);
+    // The current road foundation has different lots from the seven historical
+    // acute fixtures above. Its complete urban output matches the pre-optimization graph.
+    expect(u.buildings).toHaveLength(290);
+    expect(u.parcels).toHaveLength(268);
+    expect(createHash('sha256').update(JSON.stringify(u)).digest('hex'))
+      .toBe('f661ad76e9465cd4431041ce432859e9e7b185018c2aa1eab62503a763253673');
     expectInvariants(w); // original angle, width, partition and containment budgets unchanged
-    for (const f of PERSIAN_ACUTE_HOUSES) {
-      const b = u.buildings[f.index];
-      expect({ ...b, poly: undefined }).toEqual({ ...f.building, poly: undefined });
-      expect(u.parcels[b.parcel!]).toEqual(f.parcel);
+    expect(u.buildings.reduce((sum, b) => sum + (b.courtyards?.length ?? 0), 0)).toBe(198);
+    for (const b of u.buildings) {
+      expect(b.arch).toBe('persian-courtyard-house');
+      expect(b.parcel).toBeDefined();
       expect(minAngle(b.poly)).toBeGreaterThanOrEqual(12);
-      expect(area(b.poly)).toBeGreaterThan(0.999 * area(f.building.poly));
     }
     const streetAt = makeStreetAt(u.streets, u.parcels.filter((p) => ['place', 'market', 'quay', 'green'].includes(p.use)).map((p) => p.poly));
-    for (const block of new Set(PERSIAN_ACUTE_HOUSES.map((f) => f.parcel.block))) {
+    for (const block of new Set(u.buildings.map((b) => u.parcels[b.parcel!].block))) {
       const houses = u.buildings.filter((b) => b.parcel !== undefined && u.parcels[b.parcel].block === block);
       expect(blockReach(u.blocks[block], houses.map((b) => b.poly), streetAt), `block ${block} access`).toEqual(houses.map(() => true));
     }

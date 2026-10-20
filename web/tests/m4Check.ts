@@ -2,7 +2,7 @@
 import type { World, UrbanSite } from '../src/gen/types';
 import type { Vec2, Polygon } from '../src/gen/core/geom';
 import { dist, polygonCentroid } from '../src/gen/core/geom';
-import { area, pointInRing, distToRing, distToSeg, obb, bboxOf } from '../src/gen/geo/poly';
+import { area, pointInRing, distToRing, distToSeg, segSegT, obb, bboxOf } from '../src/gen/geo/poly';
 import { intersectionS, mpArea, MultiPoly } from '../src/gen/geo/bool';
 import { makeCtx } from '../src/gen/urban/context';
 import { resolveMorph } from '../src/gen/urban/morphology';
@@ -27,6 +27,20 @@ const LOT_KINDS = new Set(['castle', 'kasbah', 'motte', 'cathedral-close', 'pala
 const WATER_OK = new Set(['pier', 'slipway', 'quay', 'mill', 'mill-race', 'bridge']);
 
 const segDist = (p: Vec2, pl: Vec2[]) => { let d = Infinity; for (let i = 1; i < pl.length; i++) d = Math.min(d, distToSeg(p, pl[i - 1], pl[i])); return d; };
+
+/** Boundary separation includes contacts within a curtain, not just its vertices. */
+export function boundaryDistance(poly: Polygon, rings: Polygon[]): number {
+  let gap = Infinity;
+  for (let i = 0; i < poly.length; i++) {
+    const a = poly[i], b = poly[(i + 1) % poly.length];
+    for (const ring of rings) for (let j = 0; j < ring.length; j++) {
+      const c = ring[j], d = ring[(j + 1) % ring.length];
+      if (segSegT(a, b, c, d)) return 0;
+      gap = Math.min(gap, distToSeg(a, c, d), distToSeg(b, c, d), distToSeg(c, a, b), distToSeg(d, a, b));
+    }
+  }
+  return gap;
+}
 
 export function checkM4(w: World): M4Report {
   const u = w.urban!;
@@ -112,7 +126,7 @@ export function checkM4(w: World): M4Report {
     const enc = u.phases.filter((p) => p.zone !== 'faubourg').flatMap((p) => p.region.map((r) => r.outer));
     // (the enclosure line it was built on: a later outer enclosure may have taken the castle in)
     const rings = [...town.map((t) => t.path), ...enc];
-    const gapToWall = rings.length ? Math.min(...P.map((q) => Math.min(...rings.map((r) => distToRing(r, q))))) : 0;
+    const gapToWall = rings.length ? boundaryDistance(P, rings) : 0;
     castle = { verts: P.length, convex, minEdge, gapToWall };
   }
   // 7. shanty towns: coverage, hut sizes, no plots, on low-value land, outside the walls

@@ -3,7 +3,7 @@
 use super::geometry::{area, difference, intersection};
 use super::{Layout, Morph, Parcel, ParcelConfig, Partition, Point, Shape};
 use crate::rng::Rng;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
 #[derive(Clone, Copy)]
 struct Front {
@@ -127,20 +127,24 @@ impl FrontageIndex {
         }
         Self { cells }
     }
-    fn candidates(&self, a: Point, b: Point) -> BTreeSet<(usize, usize)> {
-        let mut out = BTreeSet::new();
+    fn candidates(&self, a: Point, b: Point, out: &mut Vec<(usize, usize)>) {
+        out.clear();
         for y in (a.y.min(b.y) / 64.0).floor() as i32..=(a.y.max(b.y) / 64.0).floor() as i32 {
             for x in (a.x.min(b.x) / 64.0).floor() as i32..=(a.x.max(b.x) / 64.0).floor() as i32 {
                 if let Some(v) = self.cells.get(&(x, y)) {
-                    out.extend(v);
+                    out.extend_from_slice(v);
                 }
             }
         }
-        out
+        // Preserve street/segment order, including the tie-break between
+        // equally ranked frontages, while reusing the allocation per edge.
+        out.sort_unstable();
+        out.dedup();
     }
 }
 fn frontages(shape: &Shape, layout: &Layout, index: &FrontageIndex) -> Vec<Front> {
     let mut out = Vec::new();
+    let mut candidates = Vec::new();
     for ring in std::iter::once(&shape.outer).chain(shape.holes.iter()) {
         for i in 0..ring.len() {
             let a = ring[i];
@@ -148,17 +152,22 @@ fn frontages(shape: &Shape, layout: &Layout, index: &FrontageIndex) -> Vec<Front
             if length(sub(b, a)) < 0.5 {
                 continue;
             }
+            let inward = normal(unit(sub(b, a)));
+            let samples: [_; 5] = std::array::from_fn(|j| add(a, scale(sub(b, a), j as f64 / 4.0)));
             let mut best: Option<(usize, usize)> = None;
-            for (si, k) in index.candidates(a, b) {
+            index.candidates(a, b, &mut candidates);
+            for &(si, k) in &candidates {
                 let street = &layout.streets[si];
+                if best.is_some_and(|(rank, _)| street.rank >= rank) {
+                    continue;
+                }
                 let segment = &street.path[k..=k + 1];
                 let p = segment[0];
                 let q = segment[1];
                 let d = sub(q, p);
                 let l2 = dot(d, d);
                 let mut contact = true;
-                for j in 0..=4 {
-                    let sample = add(a, scale(sub(b, a), f64::from(j) / 4.0));
+                for sample in samples {
                     let t = (dot(sub(sample, p), d) / l2.max(1e-12)).clamp(0.0, 1.0);
                     let hw = (street.widths.get(k).copied().unwrap_or(4.0) * (1.0 - t)
                         + street.widths.get(k + 1).copied().unwrap_or(4.0) * t)
@@ -171,7 +180,7 @@ fn frontages(shape: &Shape, layout: &Layout, index: &FrontageIndex) -> Vec<Front
                     // The centreline must be outside the block, not beyond an
                     // unrelated boundary which happens to be equally close.
                     let outside = sub(add(p, scale(d, t)), sample);
-                    if dot(outside, normal(unit(sub(b, a)))) > 0.15 {
+                    if dot(outside, inward) > 0.15 {
                         contact = false;
                         break;
                     }
@@ -1014,6 +1023,42 @@ mod tests {
     use super::super::{Block, Street};
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn frontage_keeps_rank_and_street_order_across_reused_spatial_bins() {
+        let shape = rectangle(-96.0, 0.0, 96.0, 64.0);
+        let mut layout: Layout = serde_json::from_value(json!({
+            "key": "frontage-ties", "culture": "european-organic",
+            "center": {"x": 0.0, "y": 32.0},
+            "quarters": [], "blocks": [], "warnings": [], "streets": []
+        }))
+        .unwrap();
+        // Each segment spans several bins. The first frontage loses to the
+        // next street's rank, and the equal-rank third street must not win.
+        layout.streets = [3, 1, 1]
+            .into_iter()
+            .map(|rank| Street {
+                path: vec![Point { x: -96.0, y: -3.0 }, Point { x: 96.0, y: -3.0 }],
+                widths: vec![6.0; 2],
+                rank,
+                role: "street".into(),
+            })
+            .collect();
+        let index = FrontageIndex::new(&layout);
+        let mut candidates = Vec::new();
+        index.candidates(shape.outer[0], shape.outer[1], &mut candidates);
+        assert_eq!(candidates, [(0, 0), (1, 0), (2, 0)]);
+        index.candidates(
+            Point { x: 500.0, y: 500.0 },
+            Point { x: 501.0, y: 500.0 },
+            &mut candidates,
+        );
+        assert!(candidates.is_empty());
+        let fronts = frontages(&shape, &layout, &index);
+        assert_eq!(fronts.len(), 1);
+        assert_eq!((fronts[0].rank, fronts[0].street), (1, 1));
+        assert_eq!((fronts[0].a, fronts[0].b), (shape.outer[0], shape.outer[1]));
+    }
 
     #[test]
     fn concave_territory_cannot_wrap_behind_its_residential_frontage() {

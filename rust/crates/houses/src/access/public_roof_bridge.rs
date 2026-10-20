@@ -110,9 +110,57 @@ pub(super) fn admissible_outboard(
     passage: &Surface,
     heads: &Surface,
 ) -> bool {
+    admissible_external(
+        unit,
+        target,
+        frame,
+        floor,
+        passage,
+        heads,
+        outboard::BearingMode::Outboard,
+    )
+}
+
+pub(super) fn admissible_eaves(
+    unit: &HouseUnit,
+    target: &AccessNode,
+    frame: Frame,
+    floor: &Surface,
+    passage: &Surface,
+    heads: &Surface,
+) -> bool {
+    admissible_external(
+        unit,
+        target,
+        frame,
+        floor,
+        passage,
+        heads,
+        outboard::BearingMode::OutboardEaves,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(super) fn admissible_external(
+    unit: &HouseUnit,
+    target: &AccessNode,
+    frame: Frame,
+    floor: &Surface,
+    passage: &Surface,
+    heads: &Surface,
+    mode: outboard::BearingMode,
+) -> bool {
+    let (distance_max, front_max) = if matches!(
+        mode,
+        outboard::BearingMode::OutboardEaves | outboard::BearingMode::OutboardTwoFlight
+    ) {
+        (TRANSVERSE_MAX + outboard::ROW_OFFSET, TRANSVERSE_MAX)
+    } else {
+        (outboard::DISTANCE_MAX, outboard::FRONT_MAX)
+    };
     floor.len() == 1
-        && frame.distance <= outboard::DISTANCE_MAX + 1e-9
-        && frame.distance - outboard::ROW_OFFSET <= outboard::FRONT_MAX + 1e-9
+        && frame.distance <= distance_max + 1e-9
+        && frame.distance - outboard::ROW_OFFSET <= front_max + 1e-9
         && area(&difference(floor, &unit.lot)) <= AREA_EPS
         && area(&difference(passage, &union(floor, &target.floor))) <= AREA_EPS
         && !unit
@@ -124,7 +172,18 @@ pub(super) fn admissible_outboard(
             .nodes
             .iter()
             .any(|n| n.household_id.is_some() && area(&intersection(heads, &n.floor)) > AREA_EPS)
-        && clear(unit, &additions(frame, true), target.z_m, None, None, None)
+        && clear(
+            unit,
+            &if mode == outboard::BearingMode::OutboardTwoFlight {
+                twoflight::additions(frame)
+            } else {
+                additions(frame, true)
+            },
+            target.z_m,
+            None,
+            None,
+            None,
+        )
         && clear(unit, heads, target.z_m, None, None, None)
         && clear(unit, passage, target.z_m, None, None, None)
 }
@@ -331,6 +390,7 @@ fn roof_clear(
     portal: &Portal,
     target_part: &Surface,
     z: f64,
+    native_target: Option<&AccessNode>,
 ) -> Result<(), String> {
     let passage = &portal.passage;
     let mut supports = vec![];
@@ -411,6 +471,11 @@ fn roof_clear(
             continue;
         }
         if face.kind == RoofFaceKind::Slab && overlap.iter().all(|p| (p.z - z).abs() <= 1e-9) {
+            if let Some(target) = native_target
+                && !route_roofs::terminal_slab(unit, face, target, &projection)?
+            {
+                return Err("Cadre outboard : dalle coplanaire sans terrasse native cible.".into());
+            }
             supports.push(projection);
             continue;
         }
@@ -430,12 +495,12 @@ fn roof_clear(
     Ok(())
 }
 
-fn bearings(
+pub(super) fn bearings(
     unit: &HouseUnit,
     slab: &Feature,
 ) -> Result<(Vec<Point>, Point, Point, outboard::BearingMode), String> {
     let mode = outboard::mode(unit, slab)?;
-    let spacing = if mode == outboard::BearingMode::Outboard {
+    let spacing = if outboard::external(mode) {
         outboard::ROW_SPAN
     } else {
         1.7
@@ -473,21 +538,28 @@ fn bearings(
         let transverse = (centres[0].x - p.x) * u.x + (centres[0].y - p.y) * u.y;
         let outer = (p.x - centres[0].x) * w.x + (p.y - centres[0].y) * w.y;
         let inner = (centres[1].x - p.x) * w.x + (centres[1].y - p.y) * w.y;
-        let forward_max = if mode == outboard::BearingMode::Outboard {
-            outboard::FRONT_MAX
+        let forward_max = if outboard::external(mode) {
+            if matches!(
+                mode,
+                outboard::BearingMode::OutboardEaves | outboard::BearingMode::OutboardTwoFlight
+            ) {
+                TRANSVERSE_MAX
+            } else {
+                outboard::FRONT_MAX
+            }
         } else {
             TRANSVERSE_MAX
         };
         let back = (p.x - centres[2].x) * u.x + (p.y - centres[2].y) * u.y;
         if transverse > forward_max + 1e-9
-            || (mode == outboard::BearingMode::Outboard && back > outboard::BACK_MAX + 1e-9)
+            || (outboard::external(mode) && back > outboard::BACK_MAX + 1e-9)
             || outer > LONGITUDINAL_MAX + 1e-9
             || inner > LONGITUDINAL_MAX + 1e-9
         {
             return Err("Pont de palier hors portée structurelle déclarée.".into());
         }
     }
-    if mode == outboard::BearingMode::Outboard {
+    if outboard::external(mode) {
         let node = landing_node(unit, slab).ok_or("Cadre outboard sans nœud final.")?;
         let portal = unit
             .access
@@ -510,14 +582,24 @@ fn bearings(
             .flatten()
             .map(|p| (front.x - p.x) * u.x + (front.y - p.y) * u.y)
             .fold(f64::INFINITY, f64::min);
-        if !distance.is_finite() || distance > outboard::DISTANCE_MAX + 1e-9 {
-            return Err("Cadre outboard au-delà de sa distance déclarée0.54m.".into());
+        if !distance.is_finite()
+            || distance
+                > (if matches!(
+                    mode,
+                    outboard::BearingMode::OutboardEaves | outboard::BearingMode::OutboardTwoFlight
+                ) {
+                    TRANSVERSE_MAX + outboard::ROW_OFFSET
+                } else {
+                    outboard::DISTANCE_MAX
+                }) + 1e-9
+        {
+            return Err("Cadre outboard au-delà de la distance déclarée de son mode.".into());
         }
     }
     Ok((centres, u, w, mode))
 }
 
-fn landing_node<'a>(unit: &'a HouseUnit, slab: &Feature) -> Option<&'a AccessNode> {
+pub(super) fn landing_node<'a>(unit: &'a HouseUnit, slab: &Feature) -> Option<&'a AccessNode> {
     let matches = |n: &&AccessNode| {
         n.kind == AccessKind::StairLanding
             && (n.z_m - slab.z_m).abs() < 1e-9
@@ -668,7 +750,7 @@ pub(super) fn validate(unit: &HouseUnit, portal: &Portal, check_roofs: bool) -> 
         return Err("Pont de palier non porté : dalle, nœud ou passage discontinus.".into());
     }
     let (centres, u, _, mode) = bearings(unit, slab)?;
-    let front_offset = if mode == outboard::BearingMode::Outboard {
+    let front_offset = if outboard::external(mode) {
         -outboard::ROW_OFFSET
     } else {
         0.1
@@ -704,7 +786,13 @@ pub(super) fn validate(unit: &HouseUnit, portal: &Portal, check_roofs: bool) -> 
     }
     if check_roofs {
         let target_part = intersection(&portal.passage, &target.floor);
-        roof_clear(unit, portal, &target_part, target.z_m)?;
+        roof_clear(
+            unit,
+            portal,
+            &target_part,
+            target.z_m,
+            (outboard::external(mode)).then_some(target),
+        )?;
     }
     Ok(())
 }

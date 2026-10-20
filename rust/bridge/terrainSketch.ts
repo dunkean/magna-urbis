@@ -1,5 +1,5 @@
 /** Portable coarse heightmap: cell centres, north-west origin, metres, sea at zero. */
-export interface TerrainSketch { version: 1; resolution: number; heights: number[] }
+export interface TerrainSketch { version: 1; resolution: number; heights: number[]; processing?: 'surface' | 'erosion' }
 
 /** Neural request placement; portable JSON sketches themselves always cover the user's map. */
 export interface NeuralSketchRegion { x: number; y: number; width: number; heightScale: number }
@@ -23,9 +23,10 @@ export function fitNeuralSketch(sketch: TerrainSketch, extent: number, window: N
 
 export function parseTerrainSketch(value: unknown): TerrainSketch {
   const s = value as TerrainSketch;
-  if (!s || s.version !== 1 || !Number.isInteger(s.resolution) || s.resolution < 8 || s.resolution > 128
+  if (!s || s.version !== 1 || (s.processing !== undefined && s.processing !== 'surface' && s.processing !== 'erosion')
+    || !Number.isInteger(s.resolution) || s.resolution < 8 || s.resolution > (s.processing ? 1024 : 128)
     || !Array.isArray(s.heights) || s.heights.length !== s.resolution ** 2) {
-    throw new Error('Esquisse invalide : grille 8–128², altitudes entre −12 000 et 12 000 m.');
+    throw new Error('Heightmap invalide : grille carrée 8–1024² (esquisse : 128² max.), altitudes entre −12 000 et 12 000 m.');
   }
   for (let i = 0; i < s.heights.length; i++) {
     const h = s.heights[i];
@@ -33,7 +34,13 @@ export function parseTerrainSketch(value: unknown): TerrainSketch {
       throw new Error(`Esquisse invalide : altitude de la cellule ${i + 1}.`);
     }
   }
-  return { version: 1, resolution: s.resolution, heights: [...s.heights] };
+  return { version: 1, resolution: s.resolution, heights: [...s.heights], ...(s.processing ? { processing: s.processing } : {}) };
+}
+
+/** Resample cell-centred metre elevations without introducing generated detail. */
+export function heightmapSurface(s: TerrainSketch, n = 1024): Float32Array {
+  if (s.resolution === n) return Float32Array.from(s.heights);
+  return Float32Array.from({ length: n * n }, (_, i) => sketchHeight(s, (i % n + 0.5) / n, (Math.floor(i / n) + 0.5) / n));
 }
 
 export function sketchHeight(s: TerrainSketch, u: number, v: number): number {

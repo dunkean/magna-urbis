@@ -19,6 +19,9 @@ pub mod server;
 pub mod sketch;
 pub mod student;
 pub mod weights;
+mod zone_profile;
+#[cfg(not(target_arch = "wasm32"))]
+mod zones;
 
 pub use pipeline::{Clock, Networks, Output, Request, Timings};
 pub use sketch::{Climate, Family, Regional, Sketch, Validation};

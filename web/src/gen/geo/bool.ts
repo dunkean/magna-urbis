@@ -134,9 +134,9 @@ function trimPolygon(pg: Ring[], sb: Box): Ring[] | null {
 
 interface PreparedOperand { geom: Geom; boxes: Box[]; valid: boolean; nearby: (box: Box) => Geom }
 
-function run(op: 'union' | 'intersection' | 'difference', a: Operand, rest: Operand[], snapped = false, failClosed = false, onFailure?: () => void, retryCoarse = true, preserveEdges = false, areaFloor = BOOL_AREA_EPS, prepared?: PreparedOperand[]): MultiPoly {
+function run(op: 'union' | 'intersection' | 'difference', a: Operand, rest: Operand[], snapped = false, failClosed = false, onFailure?: () => void, retryCoarse = true, preserveEdges = false, areaFloor = BOOL_AREA_EPS, prepared?: PreparedOperand[], subjectGeom?: Geom): MultiPoly {
   const result = (g: Geom) => fromGeom(g, preserveEdges ? areaFloor : 0.01, snapped, preserveEdges);
-  let ga = toGeom(a);
+  let ga = subjectGeom ?? toGeom(a);
   const ready = prepared?.filter((p) => p.geom.length);
   let gr = ready ? ready.map((p) => p.geom) : rest.map(toGeom).filter((g) => g.length);
   if (snapped) { ga = snapGeom(ga); gr = gr.map(snapGeom); }
@@ -249,10 +249,13 @@ export function prepareIntersection(...operands: Operand[]): (subject: Operand) 
   return (subject) => {
     // polygon-clipping may not terminate on NaN coordinates. Checked prepared proofs fail closed
     // before entering its sweep rather than interpreting malformed land as an empty intersection.
-    if (prepared.some((p) => !p.valid) || toGeom(subject).some((p) => p.some((ring) => ring.some(([x, y]) =>
+    if (prepared.some((p) => !p.valid)) return { pieces: [], failed: true };
+    // Reuse this checked conversion in run instead of allocating every ring twice.
+    const subjectGeom = toGeom(subject);
+    if (subjectGeom.some((p) => p.some((ring) => ring.some(([x, y]) =>
       !Number.isFinite(x) || !Number.isFinite(y))))) return { pieces: [], failed: true };
     let failed = false;
-    const pieces = run('intersection', subject, operands, false, true, () => { failed = true; }, false, true, Number.MIN_VALUE, prepared);
+    const pieces = run('intersection', subject, operands, false, true, () => { failed = true; }, false, true, Number.MIN_VALUE, prepared, subjectGeom);
     return { pieces, failed };
   };
 }

@@ -31,7 +31,7 @@ export interface VaultSpec { open_ends: ('start' | 'end')[]; bearing_ratio: numb
 export interface RoofShellSpec { profile: 'round' | 'ogival'; rib_width_m: number; rib_depth_m: number; rib_spacing_m: number; material: string }
 export interface RoofSpec { axis: 'longitudinal' | 'transverse'; tiers: number; tier_inset_ratio: number; tier_rise_m: number; drum_height_m: number; gambrel_break_ratio: number; gambrel_lower_pitch_deg: number; saddle_rise_ratio: number; step_count: number; shell_sections: number; parapet_height_m: number; drainage_side: number; dome_rise_ratio: number; oculus_ratio: number; curve_lift_ratio: number; tent_crown_ratio: number; shell_cross_rise_ratio: number; shell_long_rise_ratio: number; round_segments: number; curve_sections: number; corbel?: CorbelSpec | null; vault?: VaultSpec | null; drainage?: 'inward' | null; shell?: RoofShellSpec | null; triangulation?: 'boundary' | null; horns?: HornRoofSpec | null }
 export interface HornRoofSpec { layout: 'serial_tiers'; count: 'four'; central_span_ratio: number; rise_ratio: number; outer_rise_scale: number; confidence: 'stylized' }
-export interface RoofArm { origin: Point; axis: [number, number]; length_m: number; width_m: number; domain: Surface }
+export interface RoofArm { source_component?: number | null; origin: Point; axis: [number, number]; length_m: number; width_m: number; domain: Surface }
 export type EnvelopeKind = 'walled' | 'open' | 'shell' | 'rockcut' | 'membrane';
 export type VerticalAccess = 'none' | 'internal_stair' | 'exterior_stair' | 'ladder' | 'roof_hatch' | 'intramural_stair';
 export type Layout = 'single' | 'strip' | 'courtyard' | 'peristyle' | 'atrium' | 'iwan_court' | 'siheyuan' | 'kancha' | 'hut_compound' | 'kraal' | 'multiyard' | 'pueblo' | 'great_house' | 'ring' | 'cliff' | 'excavated' | 'platform' | 'parallel' | 'bridge' | 'additive' | 'broch' | 'shinden' | 'high_hall';
@@ -42,7 +42,7 @@ export interface LevelMaterial { from_level: number; to_level: number; materials
 export interface VerticalRoute { kind: VerticalAccess; from_level: number; to_level: number; placement: Placement; min_width_m: number }
 export interface EnclosureSpec { family: EnclosureFamily; placement: Placement; gate_width_m: number }
 export interface ShellSpec { outer_wall_m: number; gallery_m: number; inner_wall_m: number; inner_diameter_m: number }
-export interface GalleryCover { enabled: boolean; rf: string; spec: RoofSpec; height_m: number; width_m: number; pitch_deg: number; max_span_m: number; support_spacing_m: number }
+export interface GalleryCover { enabled: boolean; rf: string; spec: RoofSpec; height_m: number; width_m: number; pitch_deg: number; max_span_m: number; support_spacing_m: number; facade_mode?: 'residential' | 'wall_bearing' }
 export interface DetailSpec { confidence: string; floor_material: string; floor_thickness_m: number; flue_material: string; flue_width_m: number; flue_depth_m: number; rope_material: string | null; rope_diameter_m: number; rope_anchor_extension_ratio: number; diagonal_lean_ratio: number; window_sill_m: number; window_height_m: number; window_width_m: number; narrow_window_width_m: number }
 export interface CourtSpec { rank: number; ratio: number; aspect: number }
 export interface ThresholdSpec { width_m: number; wall_m: number; height_m: number; material: string }
@@ -240,7 +240,7 @@ export function validateHouseBatch(value: unknown): asserts value is HouseBatch 
       array(body.cells, `${path}.body.cells`).forEach(cell => { string(cell.id, `${path}.cell.id`); surface(cell.footprint, `${path}.cell.footprint`); integer(cell.floors, `${path}.cell.floors`); nullableString(cell.household_id, `${path}.cell.household_id`); });
       if (body.voids !== undefined) array(body.voids, `${path}.body.voids`).forEach(voidSurface => surface(voidSurface, `${path}.body.voids`));
       roofSpec(body.roof_spec, `${path}.body.roof_spec`);
-      array(body.roof_arms, `${path}.body.roof_arms`).forEach(arm => { point(arm.origin, `${path}.arm.origin`); surface(arm.domain, `${path}.arm.domain`); number(arm.length_m, `${path}.arm.length`); number(arm.width_m, `${path}.arm.width`); if (array(arm.axis, `${path}.arm.axis`).length !== 2) fail(`${path}.arm.axis`); arm.axis.forEach((n: unknown) => number(n, `${path}.arm.axis`)); });
+      array(body.roof_arms, `${path}.body.roof_arms`).forEach(arm => { if (arm.source_component !== undefined && arm.source_component !== null) fail(`${path}.body.arm.source_component`); point(arm.origin, `${path}.arm.origin`); surface(arm.domain, `${path}.arm.domain`); number(arm.length_m, `${path}.arm.length`); number(arm.width_m, `${path}.arm.width`); if (array(arm.axis, `${path}.arm.axis`).length !== 2) fail(`${path}.arm.axis`); arm.axis.forEach((n: unknown) => number(n, `${path}.arm.axis`)); });
       array(body.levels, `${path}.body.levels`).forEach(level => { integer(level.index, `${path}.level.index`); number(level.z_m, `${path}.level.z`); number(level.height_m, `${path}.level.height`); surface(level.footprint, `${path}.level.footprint`); surface(level.floor, `${path}.level.floor`); enumValue(level.intermediate_cover, ['none', 'terrace', 'shed', 'skirt'], `${path}.level.intermediate_cover`); if (level.roof_slab !== null) { const slab = object(level.roof_slab, `${path}.level.roof_slab`); surface(slab.surface, `${path}.slab.surface`); number(slab.z_m, `${path}.slab.z`); if (typeof slab.walkable !== 'boolean') fail(`${path}.slab.walkable`); nullableString(slab.access_node, `${path}.slab.access_node`); } materials(level.materials, `${path}.level.materials`); });
     });
     const features = [...array(u.features, `${path}.features`), ...array(u.site_context, `${path}.site_context`)];
@@ -258,7 +258,14 @@ export function validateHouseBatch(value: unknown): asserts value is HouseBatch 
       for (const key of ['rf', 'material', 'frame_material']) string(attachment[key], `${path}.attachment.${key}`);
       for (const key of ['support_z_m', 'pitch_deg', 'overhang_m', 'max_span_m']) number(attachment[key], `${path}.attachment.${key}`);
       roofSpec(attachment.spec, `${path}.attachment.spec`);
-      array(attachment.arms, `${path}.attachment.arms`).forEach(arm => { point(arm.origin, `${path}.attachment.arm.origin`); surface(arm.domain, `${path}.attachment.arm.domain`); number(arm.length_m, `${path}.attachment.arm.length`); number(arm.width_m, `${path}.attachment.arm.width`); if (array(arm.axis, `${path}.attachment.arm.axis`).length !== 2) fail(`${path}.attachment.arm.axis`); arm.axis.forEach((v: unknown) => number(v, `${path}.attachment.arm.axis`)); });
+      const arms = array(attachment.arms, `${path}.attachment.arms`);
+      if (arms.some(arm => arm.source_component !== undefined && arm.source_component !== null)) {
+        const count = array(attachment.domain, `${path}.attachment.domain`).length;
+        const indices = arms.map(arm => integer(arm.source_component, `${path}.attachment.arm.source_component`));
+        if (indices.some(index => index >= count) || new Set(indices).size !== count) fail(`${path}.attachment.arm.source_component`);
+        if (count > 1 && attachment.spec.triangulation === 'boundary') fail(`${path}.attachment.component_boundary`);
+      }
+      arms.forEach(arm => { point(arm.origin, `${path}.attachment.arm.origin`); surface(arm.domain, `${path}.attachment.arm.domain`); number(arm.length_m, `${path}.attachment.arm.length`); number(arm.width_m, `${path}.attachment.arm.width`); if (array(arm.axis, `${path}.attachment.arm.axis`).length !== 2) fail(`${path}.attachment.arm.axis`); arm.axis.forEach((v: unknown) => number(v, `${path}.attachment.arm.axis`)); });
       strings(attachment.supports, `${path}.attachment.supports`); attachment.supports.forEach((id: string) => { if (!supportIds.has(id)) fail(`${path}.attachment.support_reference`); });
     });
     const walls = array(u.walls, `${path}.walls`), wallIds = new Set(walls.map(wall => string(wall.id, `${path}.wall.id`)));

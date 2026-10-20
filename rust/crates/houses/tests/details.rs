@@ -1,12 +1,483 @@
-pub use magna_urbis_houses::{catalogue, geometry, model, roofs};
+pub use magna_urbis_houses::{catalogue, geometry, model};
+#[path = "../src/support_intervals.rs"]
+mod support_intervals;
+mod roofs {
+    pub use magna_urbis_houses::roofs::*;
+    pub(crate) fn support_line_intervals(
+        a: crate::model::Point,
+        b: crate::model::Point,
+        domain: &crate::model::Surface,
+    ) -> Vec<(f64, f64)> {
+        super::support_intervals::line_intervals(a, b, domain)
+    }
+}
 #[path = "../src/features.rs"]
 mod features;
+#[path = "../src/gallery_components.rs"]
+mod gallery_components;
 #[path = "../src/wall_geometry.rs"]
 mod wall_geometry;
 
 use catalogue::{EnclosureFamily, EnclosureSpec, Envelope, Placement, VerticalAccess};
 use geometry::{area, difference, intersection, rectangle};
 use model::*;
+
+#[test]
+fn source_boat_witness_reads_geometry_and_accepts_translation() {
+    let outline = geometry::ellipse(0.0, 0.0, 5.0, 25.0, 64);
+    assert!(features::boat_plan_present(&outline));
+    let mut translated = outline.clone();
+    for q in &mut translated[0].outer {
+        q.x += 1024.0;
+        q.y -= 2048.0;
+    }
+    assert!(features::boat_plan_present(&translated));
+    assert!(!features::boat_plan_present(&geometry::ellipse(
+        0.0, 0.0, 5.0, 7.0, 64
+    )));
+    assert!(!features::boat_plan_present(&geometry::ellipse(
+        0.0, 0.0, 5.0, 25.0, 8
+    )));
+    assert!(!features::boat_plan_present(&rectangle(
+        -5.0, -25.0, 10.0, 50.0
+    )));
+    let mut perturbed = outline.clone();
+    perturbed[0].outer[9].x += 0.2;
+    assert!(!features::boat_plan_present(&perturbed));
+    let mut star = outline.clone();
+    star[0].outer = (0..64).map(|i| outline[0].outer[i * 3 % 64]).collect();
+    assert!(!features::boat_plan_present(&star));
+    let mut holed = outline.clone();
+    holed[0]
+        .holes
+        .push(rectangle(-1.0, -1.0, 2.0, 2.0)[0].outer.clone());
+    assert!(!features::boat_plan_present(&holed));
+}
+
+#[test]
+fn source_lean_to_rejects_missing_cut_low_detached_walls_and_bad_post_caps() {
+    let data = catalogue::catalogue().unwrap();
+    let recipe = data.recipes.iter().find(|r| r.id == "EUR-MED-B04").unwrap();
+    let mut unit = magna_urbis_houses::generate_batch(HouseConfig {
+        seed: "42".into(),
+        pack: recipe.pack_id.clone(),
+        recipe: Some(recipe.id.clone()),
+        count: 1,
+        variation: 0.0,
+        ..Default::default()
+    })
+    .unwrap()
+    .units
+    .remove(0);
+    let roof_before = unit
+        .features
+        .iter()
+        .find(|f| f.kind == FeatureKind::Gallery)
+        .unwrap()
+        .roof
+        .clone();
+    features::refresh_wall_bearing_supports(&mut unit, &recipe.parameters).unwrap();
+    assert_eq!(
+        roof_before,
+        unit.features
+            .iter()
+            .find(|f| f.kind == FeatureKind::Gallery)
+            .unwrap()
+            .roof
+    );
+    let roof = roof_before.unwrap();
+    let high_z = roof.support_z_m + roof.arms[0].width_m * roof.pitch_deg.to_radians().tan();
+    let a = roof.arms[0].origin;
+    let b = geometry::point(a.x + roof.arms[0].length_m, a.y);
+    let sections = geometry::unite(
+        &roof
+            .supports
+            .iter()
+            .filter_map(|id| unit.walls.iter().find(|w| &w.id == id))
+            .map(|w| wall_geometry::wall_section(w, high_z))
+            .collect::<Vec<_>>(),
+    );
+    assert_eq!(
+        roofs::support_line_intervals(a, b, &sections),
+        vec![(0.0, 1.0)]
+    );
+
+    let mut missing = unit.clone();
+    missing.walls.clear();
+    assert!(
+        features::refresh_wall_bearing_supports(&mut missing, &recipe.parameters)
+            .unwrap_err()
+            .contains("arête haute")
+    );
+    let mut wrong_level = unit.clone();
+    for wall in &mut wrong_level.walls {
+        wall.level = 99;
+    }
+    assert!(
+        features::refresh_wall_bearing_supports(&mut wrong_level, &recipe.parameters)
+            .unwrap_err()
+            .contains("arête haute")
+    );
+    let mut wrong_owner = unit.clone();
+    for wall in &mut wrong_owner.walls {
+        wall.body_id = Some("unrelated-body".into());
+    }
+    assert!(
+        features::refresh_wall_bearing_supports(&mut wrong_owner, &recipe.parameters)
+            .unwrap_err()
+            .contains("arête haute")
+    );
+    let mut cut = unit.clone();
+    for wall in &mut cut.walls {
+        wall.footprint = difference(&wall.footprint, &rectangle(3.2, 9.0, 0.2, 1.0));
+    }
+    assert!(
+        features::refresh_wall_bearing_supports(&mut cut, &recipe.parameters)
+            .unwrap_err()
+            .contains("arête haute")
+    );
+    let mut low = unit.clone();
+    for wall in &mut low.walls {
+        wall.height_m = 1.0;
+    }
+    assert!(
+        features::refresh_wall_bearing_supports(&mut low, &recipe.parameters)
+            .unwrap_err()
+            .contains("arête haute")
+    );
+    let mut detached = unit.clone();
+    for wall in &mut detached.walls {
+        for poly in &mut wall.footprint {
+            for q in &mut poly.outer {
+                q.y += 2.0;
+            }
+        }
+    }
+    assert!(
+        features::refresh_wall_bearing_supports(&mut detached, &recipe.parameters)
+            .unwrap_err()
+            .contains("arête haute")
+    );
+    let mut no_lintel = unit.clone();
+    no_lintel.walls.retain(|w| !w.id.starts_with("lintel:"));
+    assert!(
+        features::refresh_wall_bearing_supports(&mut no_lintel, &recipe.parameters)
+            .unwrap_err()
+            .contains("arête haute")
+    );
+    for dy in [1.0, -0.8] {
+        let mut moved = unit.clone();
+        let post = moved
+            .features
+            .iter_mut()
+            .find(|f| f.id.starts_with("gallery-support:"))
+            .unwrap();
+        for poly in &mut post.surface {
+            for q in &mut poly.outer {
+                q.y += dy;
+            }
+        }
+        assert!(
+            features::refresh_wall_bearing_supports(&mut moved, &recipe.parameters)
+                .unwrap_err()
+                .contains("sans contact")
+        );
+    }
+    let mut short_post = unit.clone();
+    short_post
+        .features
+        .iter_mut()
+        .find(|f| f.id.starts_with("gallery-support:"))
+        .unwrap()
+        .height_m -= 0.1;
+    assert!(
+        features::refresh_wall_bearing_supports(&mut short_post, &recipe.parameters)
+            .unwrap_err()
+            .contains("sans contact")
+    );
+    let mut blocked = unit.clone();
+    let post_surface = blocked
+        .features
+        .iter()
+        .find(|f| f.id.starts_with("gallery-support:"))
+        .unwrap()
+        .surface
+        .clone();
+    blocked.partition.circulation = post_surface;
+    assert!(
+        features::refresh_wall_bearing_supports(&mut blocked, &recipe.parameters)
+            .unwrap_err()
+            .contains("passage natif")
+    );
+    let mut none = recipe.parameters.clone();
+    none.gallery_cover.facade_mode = None;
+    let before = serde_json::to_vec(&missing).unwrap();
+    features::refresh_wall_bearing_supports(&mut missing, &none).unwrap();
+    assert_eq!(serde_json::to_vec(&missing).unwrap(), before);
+}
+
+#[test]
+fn source_lean_to_refreshes_real_window_volumes_after_window_cuts() {
+    let data = catalogue::catalogue().unwrap();
+    let recipe = data.recipes.iter().find(|r| r.id == "EUR-MED-B04").unwrap();
+    let mut unit = magna_urbis_houses::generate_batch(HouseConfig {
+        seed: "42".into(),
+        pack: recipe.pack_id.clone(),
+        recipe: Some(recipe.id.clone()),
+        count: 1,
+        variation: 0.0,
+        ..Default::default()
+    })
+    .unwrap()
+    .units
+    .remove(0);
+    // A dyadic, ordinary facade isolates a real window opening from the
+    // measured sub-nanometre door seams of the source replay.
+    let mut facade = unit
+        .walls
+        .iter()
+        .find(|w| w.kind == WallKind::Exterior && w.level == 0)
+        .unwrap()
+        .clone();
+    facade.footprint = rectangle(0.0, 9.25, 7.0, 0.25);
+    facade.centerline = vec![geometry::point(0.0, 9.5), geometry::point(7.0, 9.5)];
+    facade.opening_ids.clear();
+    facade.solid = None;
+    unit.walls = vec![facade];
+    unit.bodies[0].wall_thickness_m = 0.2;
+    unit.access.portals.clear();
+    unit.partition.circulation.clear();
+    let mut p = recipe.parameters.clone();
+    p.details.push("narrow_windows".into());
+    p.detail_spec = data
+        .recipes
+        .iter()
+        .find(|r| r.parameters.details.iter().any(|t| t == "narrow_windows"))
+        .unwrap()
+        .parameters
+        .detail_spec
+        .clone();
+    p.detail_spec.as_mut().unwrap().window_sill_m = 0.8;
+    p.detail_spec.as_mut().unwrap().window_height_m = 1.0;
+    p.detail_spec.as_mut().unwrap().narrow_window_width_m = 0.5;
+    let mut covered = unit.clone();
+    features::add_post_access_details(&mut covered, &p).unwrap();
+    assert!(
+        covered
+            .features
+            .iter()
+            .any(|f| f.kind == FeatureKind::Window)
+    );
+    let roof = covered
+        .features
+        .iter()
+        .find(|f| f.kind == FeatureKind::Gallery)
+        .unwrap()
+        .roof
+        .as_ref()
+        .unwrap();
+    assert!(roof.supports.iter().any(|id| id.contains(":volume:")));
+    assert!(
+        roof.supports
+            .iter()
+            .filter(|id| !id.starts_with("gallery-support:"))
+            .all(|id| covered.walls.iter().any(|w| &w.id == id))
+    );
+    let mut cut = unit;
+    p.detail_spec.as_mut().unwrap().window_sill_m = 1.3;
+    p.detail_spec.as_mut().unwrap().window_height_m = 1.2;
+    let error = features::add_post_access_details(&mut cut, &p).unwrap_err();
+    let window = cut
+        .features
+        .iter()
+        .find(|f| f.kind == FeatureKind::Window)
+        .unwrap();
+    assert!(error.contains("arête haute"), "{error}");
+    let roof = cut
+        .features
+        .iter()
+        .find(|f| f.kind == FeatureKind::Gallery)
+        .unwrap()
+        .roof
+        .as_ref()
+        .unwrap();
+    let a = roof.arms[0].origin;
+    let b = geometry::point(a.x + roof.arms[0].length_m, a.y);
+    let high_z = roof.support_z_m + roof.arms[0].width_m * roof.pitch_deg.to_radians().tan();
+    assert!(window.z_m < high_z && window.z_m + window.height_m > high_z);
+    let sections = geometry::unite(
+        &cut.walls
+            .iter()
+            .map(|w| wall_geometry::wall_section(w, high_z))
+            .collect::<Vec<_>>(),
+    );
+    let intervals = roofs::support_line_intervals(a, b, &sections);
+    assert!(!intervals.iter().any(|(lo, hi)| *lo <= 0.5 && *hi >= 0.5));
+    assert!(geometry::bounds(&window.surface)[2] - geometry::bounds(&window.surface)[0] >= 0.499);
+}
+
+#[test]
+fn source_varied_lean_to_replays_all_ten_units_with_actual_cited_sections() {
+    let data = catalogue::catalogue().unwrap();
+    let recipe = data.recipes.iter().find(|r| r.id == "EUR-MED-B04").unwrap();
+    for variant in [None, Some("slate_cladding")] {
+        let batch = magna_urbis_houses::generate_batch(HouseConfig {
+            seed: "42".into(),
+            pack: recipe.pack_id.clone(),
+            recipe: Some(recipe.id.clone()),
+            count: 10,
+            variation: 0.65,
+            overrides: Overrides {
+                variant: variant.map(str::to_owned),
+                ..Default::default()
+            },
+            ..Default::default()
+        })
+        .unwrap();
+        assert_eq!(batch.units.len(), 10);
+        for mut unit in batch.units {
+            let before = unit
+                .features
+                .iter()
+                .find(|f| f.kind == FeatureKind::Gallery)
+                .unwrap()
+                .roof
+                .clone();
+            let p = variant.map_or(&recipe.parameters, |v| {
+                &recipe
+                    .variants
+                    .iter()
+                    .find(|b| b.id == v)
+                    .unwrap()
+                    .parameters
+            });
+            features::refresh_wall_bearing_supports(&mut unit, p).unwrap();
+            let roof = unit
+                .features
+                .iter()
+                .find(|f| f.kind == FeatureKind::Gallery)
+                .unwrap()
+                .roof
+                .as_ref()
+                .unwrap();
+            assert_eq!(before.as_ref(), Some(roof));
+            let a = roof.arms[0].origin;
+            let b = Point {
+                x: a.x + roof.arms[0].length_m,
+                y: a.y,
+            };
+            let z = roof.support_z_m + roof.arms[0].width_m * roof.pitch_deg.to_radians().tan();
+            let raw: Surface = roof
+                .supports
+                .iter()
+                .filter_map(|id| unit.walls.iter().find(|w| &w.id == id))
+                .flat_map(|w| wall_geometry::wall_section(w, z))
+                .collect();
+            let intervals = roofs::support_line_intervals(a, b, &raw);
+            assert_eq!(intervals.first().unwrap().0, 0.0);
+            assert_eq!(intervals.last().unwrap().1, 1.0);
+            assert!(intervals.windows(2).all(|v| v[0].1 == v[1].0));
+            if unit.id == "unit-6" {
+                assert!(
+                    roof.supports
+                        .iter()
+                        .any(|id| id == "wall:unit-6:body:0:0:0")
+                );
+                assert!(
+                    roof.supports
+                        .iter()
+                        .any(|id| id == "lintel:wall:unit-6:body:0:0:0:unit-6:portal:0")
+                );
+                assert!(
+                    !roof
+                        .supports
+                        .iter()
+                        .any(|id| id.ends_with("portal:1") || id.ends_with("portal:2"))
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn source_lean_to_rejects_lateral_nonrectangular_clipped_and_overwide_bearings() {
+    let data = catalogue::catalogue().unwrap();
+    let recipe = data.recipes.iter().find(|r| r.id == "EUR-MED-B04").unwrap();
+    let source = magna_urbis_houses::generate_batch(HouseConfig {
+        pack: recipe.pack_id.clone(),
+        recipe: Some(recipe.id.clone()),
+        count: 1,
+        variation: 0.0,
+        ..Default::default()
+    })
+    .unwrap()
+    .units
+    .remove(0);
+    for trait_ in ["continuous_veranda", "side_corridor"] {
+        let mut p = recipe.parameters.clone();
+        p.details.push(trait_.into());
+        let mut unit = source.clone();
+        assert!(
+            features::add_details(&mut unit, recipe, &p, &HouseConfig::default())
+                .unwrap_err()
+                .contains("latéral")
+        );
+    }
+    let clear = |unit: &mut HouseUnit| {
+        unit.features
+            .retain(|f| f.kind != FeatureKind::Gallery && !f.id.starts_with("gallery-support:"));
+        unit.roofs = RoofMesh::default();
+    };
+    let mut nonrect = source.clone();
+    clear(&mut nonrect);
+    nonrect.bodies[0].levels[0].footprint[0].outer[0].x += 0.1;
+    assert!(
+        features::add_details(
+            &mut nonrect,
+            recipe,
+            &recipe.parameters,
+            &HouseConfig::default()
+        )
+        .unwrap_err()
+        .contains("rectangulaire")
+    );
+    let mut clipped = source.clone();
+    clear(&mut clipped);
+    clipped.lot = rectangle(0.0, 0.0, 7.0, 9.6);
+    assert!(
+        features::add_details(
+            &mut clipped,
+            recipe,
+            &recipe.parameters,
+            &HouseConfig::default()
+        )
+        .unwrap_err()
+        .contains("bande de façade")
+    );
+    let mut wide = source;
+    clear(&mut wide);
+    wide.access.portals.clear();
+    wide.bodies[0].wall_thickness_m = 0.6;
+    for wall in &mut wide.walls {
+        if wall.kind == WallKind::Exterior && !wall.id.starts_with("lintel:") {
+            wall.footprint = difference(
+                &rectangle(0.0, 0.0, 7.0, 9.5),
+                &rectangle(0.6, 0.6, 5.8, 8.3),
+            );
+        }
+    }
+    wide.walls.retain(|w| !w.id.starts_with("lintel:"));
+    features::add_details(
+        &mut wide,
+        recipe,
+        &recipe.parameters,
+        &HouseConfig::default(),
+    )
+    .unwrap();
+    features::refresh_wall_bearing_supports(&mut wide, &recipe.parameters).unwrap();
+    let error = roofs::build_roofs(&mut wide).unwrap_err();
+    assert!(error.contains("Extrémité de rive sans appui"), "{error}");
+}
 
 #[test]
 fn four_horns_trait_requires_real_peaks_steps_and_frames() {

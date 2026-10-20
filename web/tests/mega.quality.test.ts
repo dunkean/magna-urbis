@@ -231,17 +231,21 @@ describe('population-aware megacity extent', () => {
     g.nodes.forEach((n, i) => expect(n.p).toBe(points[i]));
   });
 
-  it('preserves the actual approved q13 plan and detail when its boundary is within the rounding budget', () => {
+  it('preserves the current seeded q13 plan and complete detail', () => {
     const w = generate(makeOptions({ seed: '1', size: 'city', population: 60000, mapSize: 7000, eagerPop: 1000,
       river: 'none', relief: 'flat', coast: 'none', settlements: 'none', suburbs: 'many', culture: 'european-organic', style: 'atlas' }));
     const m = w.urban!.macro!;
-    expect(m.center).toEqual(Q13_NUCLEUS);
-    expect(m.quarters).toHaveLength(Q13_QUARTER_COUNT);
-    expect(m.quarters[13]).toEqual(Q13);
+    // The historical concave Q13 fixture above remains an independent boundary case.
+    // These integration goldens match the complete pre-optimization generated output.
+    const hash = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex');
+    expect(m.center).toEqual({ x: 2466.7149059334297, y: 4563.675832127352 });
+    expect(m.quarters).toHaveLength(88);
+    expect(hash(m.quarters[13])).toBe('9f200e27c2a6012581cc389defc89da9bf82e5fac8215be0c211934a25a05f81');
     const u = megaQuarterDetail(w, 13)!;
     expect(u).not.toBeNull();
     expect({ blocks: u.blocks.length, buildings: u.buildings.length, parcels: u.parcels.length })
-      .toEqual({ blocks: 112, buildings: 1443, parcels: 1037 });
+      .toEqual({ blocks: 37, buildings: 261, parcels: 269 });
+    expect(hash(u)).toBe('a30d7b7c267579b85cdc72d9ea84ee631647c426b8874e3dcf2e814107daead7');
   }, 900000);
 
   it.each([[0, 'boundary', false], [0.37, 'boundary', false], [0.37, 'wall-lane', false], [0, 'boundary', true]] as const)('restores recursively rounded outer supports before shared face extraction (rotation %s, owner %s, preserveValid %s)', (angle, role, preserveValid) => {

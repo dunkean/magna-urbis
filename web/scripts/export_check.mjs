@@ -17,6 +17,7 @@ async function open(init) {
   await p.goto(base + '?seed=7&size=village&legend=1&style=illuminated');
   await p.waitForFunction(() => /Generated in|failed/.test(document.getElementById('gentime')?.textContent ?? ''), null, { timeout: 120000 });
   await p.waitForTimeout(600);
+  await p.locator('#quickShare > summary').click();
   return { ctx, p, logs };
 }
 
@@ -24,7 +25,10 @@ async function open(init) {
 {
   const { ctx, p } = await open();
   for (const [id, ext] of [['exportSvg', '.svg'], ['exportJson', '.json'], ['exportPng', '.png']]) {
-    const [dl] = await Promise.all([p.waitForEvent('download', { timeout: 60000 }).catch(() => null), p.click('#' + id)]);
+    const [dl] = await Promise.all([p.waitForEvent('download', { timeout: 60000 }).catch(() => null), (async () => {
+      await p.click('#' + id);
+      if (id !== 'exportJson') await p.locator('.export-crop [data-action="export"]').click();
+    })()]);
     ok(!!dl && dl.suggestedFilename().endsWith(ext), `plain ${id} downloads ${dl?.suggestedFilename()}`);
     if (dl) { const f = `${outDir}/plain_${dl.suggestedFilename()}`; await dl.saveAs(f); console.log('    ', f, fs.statSync(f).size, 'bytes'); }
   }
@@ -40,7 +44,11 @@ for (const mode of ['granted', 'declined', 'unavailable', 'not_granted', 'nullca
   const { ctx, p, logs } = await open(init);
   let downloads = 0;
   p.on('download', () => downloads++);
-  for (const id of ['exportSvg', 'exportJson', 'exportPng']) { await p.click('#' + id); await p.waitForTimeout(id === 'exportPng' ? 4000 : 1200); }
+  for (const id of ['exportSvg', 'exportJson', 'exportPng']) {
+    await p.click('#' + id);
+    if (id !== 'exportJson') await p.locator('.export-crop [data-action="export"]').click();
+    await p.waitForTimeout(id === 'exportPng' ? 4000 : 1200);
+  }
   const saves = await p.evaluate(() => window.__saves);
   const expectFallback = mode === 'unavailable' || mode === 'not_granted' || mode === 'nullcap';
   console.log(mode, JSON.stringify(saves), 'anchor downloads:', downloads);

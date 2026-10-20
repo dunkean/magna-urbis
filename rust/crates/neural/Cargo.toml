@@ -6,6 +6,7 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
+magna-urbis-core = { path = "../core" }
 half = "2"
 serde_json = "1"
 

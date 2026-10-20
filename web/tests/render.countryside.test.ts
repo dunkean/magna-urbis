@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import polygonClipping from 'polygon-clipping';
+import localPolygonClipping from '../src/vendor/polygonClipping';
 import type { Polygon, PolyH, UrbanLayer } from '../src/gen/types';
 import { mpArea, intersectionS, differenceSafeS } from '../src/gen/geo/bool';
 import { countrysideFringe, FRINGE_ALPHA, FRINGE_PAINT, FRINGE_ORDER } from '../src/render/countryside';
@@ -355,9 +356,9 @@ describe('countryside ground at open settlement edges', () => {
     const w = world();
     expect(countrysideFringe(w).bands.every((band) => band.length > 0)).toBe(true);
     w.urban!.parcels = [{ poly: rect(220, 210, 40), use: 'market', block: -1 }];
-    const original = polygonClipping.intersection;
+    const original = localPolygonClipping.intersection;
     let bandCalls = 0;
-    const spy = vi.spyOn(polygonClipping, 'intersection').mockImplementation((...args) => {
+    const spy = vi.spyOn(localPolygonClipping, 'intersection').mockImplementation((...args) => {
       const inputs = args as unknown as number[][][][][];
       if (inputs[1]?.some((piece) => piece.some((ring) => ring.some(([x, y]) => x === 220 && y === 210)))) {
         bandCalls++;
@@ -390,14 +391,21 @@ describe('countryside ground at open settlement edges', () => {
     expect(countrysideFringe(w)).toEqual({ bands: FRINGE_ALPHA.map(() => []), ground: [], streets: [] });
   });
 
-  it('keeps the reported open city geometry unchanged while softening its ground', () => {
+  it('keeps the reported open city geometry unchanged with current ground and the legacy fringe fallback', () => {
     const w = generate(makeOptions({ seed: 'p4uefz', size: 'city', culture: 'european-organic', walls: 'none', settlements: 'none' }));
     const before = JSON.stringify(w.urban), f = countrysideFringe(w);
     expect(mpArea(all(f))).toBeGreaterThan(1000);
     expect(JSON.stringify(w.urban)).toBe(before);
-    const render = () => renderSvg(w, { style: 'parchment', raster: false, labels: false });
+    const current = renderSvg(w, { style: 'parchment', raster: false, labels: false });
+    expect(current).toContain('class="u-landscape-ground"');
+    expect(current).not.toContain('class="u-country-fringe"');
+    // Generated worlds now carry opaque landscape ground. Exercise the retained
+    // fringe renderer explicitly with the legacy World contract, without changing geometry.
+    const legacy = { ...w, landuse: { ...w.landuse!, landscapeGround: undefined } };
+    const render = () => renderSvg(legacy, { style: 'parchment', raster: false, labels: false });
     expect(render()).toContain('class="u-country-fringe"');
     expect(render()).toContain('id="p-country-ground"');
+    expect(JSON.stringify(w.urban)).toBe(before);
     w.urban!.walls = [{ path: w.urban!.footprint[0], closed: true, thickness: 3, gates: [], towers: [], role: 'town' }];
     expect(render()).not.toContain('class="u-country-fringe"');
     expect(render()).not.toContain('id="p-country-ground"');

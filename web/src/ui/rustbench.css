@@ -1,0 +1,47 @@
+:root { color-scheme: light; font-family: system-ui, sans-serif; color: #273d33; background: #f4f1e6; }
+* { box-sizing: border-box; }
+body { margin: 0; height: 100dvh; display: grid; grid-template-rows: auto minmax(0, 1fr); }
+[hidden] { display: none !important; }
+a { color: inherit; }
+a:focus-visible, button:focus-visible, input:focus-visible { outline: 2px solid #a86632; outline-offset: 4px; }
+.shell-header { min-height: 58px; display: flex; align-items: center; gap: 26px; padding: 8px 24px; background: #233e32; color: #f7f3e8; border-bottom: 1px solid #132f22; }
+.wordmark { flex-shrink: 0; text-decoration: none; font: 14px Georgia, serif; letter-spacing: .1em; }
+.wordmark span { display: block; margin-top: 4px; color: #bdcbbf; font: 8px system-ui, sans-serif; letter-spacing: .19em; }
+nav { display: flex; flex-wrap: wrap; gap: 4px; }
+nav a { text-decoration: none; white-space: nowrap; padding: 9px 12px; font-size: 12px; border-radius: 3px; color: #d0dbd1; }
+nav a:hover { background: #ffffff0d; color: white; }
+nav a[aria-current] { background: #f4f1e6; color: #233e32; }
+.shell-actions { margin-left: auto; display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+.shell-actions a, .shell-actions button { padding: 7px 10px; border: 1px solid #ffffff35; border-radius: 3px; text-decoration: none; background: transparent; color: inherit; cursor: pointer; font: 11px system-ui, sans-serif; }
+.shell-actions a:hover, .shell-actions button:hover { background: #ffffff12; }
+.shell-actions button:disabled { opacity: .5; cursor: default; }
+#workspace { min-height: 0; }
+#home { height: 100%; overflow-y: auto; padding: clamp(28px, 6vh, 72px) max(24px, calc((100% - 1152px) / 2)); background: radial-gradient(ellipse at top right, #d8dfcb66, transparent 60%); }
+.intro { max-width: 670px; }
+.eyebrow { color: #677d65; font-size: 10px; letter-spacing: .2em; margin: 0 0 17px; }
+h1 { font: normal clamp(32px, 4vw, 52px)/1.15 Georgia, serif; margin: 0 0 18px; }
+.intro > p:last-child { font: 15px/1.7 Georgia, serif; color: #627064; margin-bottom: 35px; }
+.bench-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+.bench-card { display: flex; flex-direction: column; min-height: 295px; padding: 22px; border: 1px solid #cdd0bf; border-radius: 4px; background: #fffdf680; text-decoration: none; transition: border-color .15s, background .15s; }
+.bench-card:hover { border-color: #73866b; background: #fffdf6; }
+.card-number { font-size: 9px; letter-spacing: .12em; color: #6f7a69; }
+.card-symbol { margin: 18px 0 8px; color: #6e8568; font: 45px/1 Georgia, serif; height: 45px; }
+.bench-card h2 { font: normal 24px Georgia, serif; margin: 7px 0 10px; }
+.bench-card p { font-size: 12px; line-height: 1.8; color: #637063; margin: 0 0 25px; }
+.card-footer { display: flex; align-items: center; justify-content: space-between; gap: 8px; border-top: 1px solid #daddcd; padding-top: 14px; margin-top: auto; font-size: 10px; line-height: 1.5; }
+.card-footer > span { font-size: 17px; }
+.home-note { max-width: 720px; font-size: 11px; line-height: 1.8; color: #74806e; margin-top: 27px; }
+#frames, #frames iframe { width: 100%; height: 100%; }
+#frames iframe { display: block; border: 0; background: #f4f1e6; }
+dialog { width: min(640px, calc(100% - 32px)); padding: 25px; border: 1px solid #b8c1aa; border-radius: 5px; background: #f7f3e8; color: #273d33; }
+dialog::backdrop { background: #1b3029a0; }
+dialog h2 { font: normal 25px Georgia, serif; margin-top: 0; }
+dialog p { font-size: 12px; line-height: 1.6; }
+dialog label { display: block; font-size: 11px; margin-bottom: 6px; }
+dialog input { width: 100%; padding: 10px; border: 1px solid #b8c1aa; border-radius: 3px; background: #fffdf7; color: inherit; }
+dialog form { margin-top: 18px; text-align: right; }
+dialog button { padding: 8px 16px; border: 0; border-radius: 3px; background: #233e32; color: white; cursor: pointer; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+@media (max-width: 1000px) { .bench-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .shell-header { gap: 15px; padding-inline: 16px; } nav a { padding-inline: 8px; } }
+@media (max-width: 680px) { .shell-header { flex-wrap: wrap; gap: 8px; } nav { order: 3; width: 100%; } nav a { flex: 1; text-align: center; font-size: 11px; padding: 7px 5px; } .shell-actions { margin-left: auto; } .bench-grid { grid-template-columns: 1fr; } .bench-card { min-height: 250px; } }
+@media (prefers-reduced-motion: reduce) { .bench-card { transition: none; } }

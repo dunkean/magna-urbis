@@ -9,6 +9,7 @@ mod hydrology;
 mod noise;
 mod rng;
 pub mod settlements;
+mod terrain_zones;
 pub mod urban;
 
 use erosion::{MountainCfg, erode_shape, erode_surface, mountain};
@@ -20,6 +21,7 @@ pub use engine::TerrainGenerator;
 pub use erosion::{EROSION_TUNING, set_erosion_tuning};
 pub use generation_noise::{GenerationNoise, GenerationNoisePlan};
 pub use hydrology::{HydrologyConfig, HydrologyEngine, HydrologyOutput};
+pub use terrain_zones::{TerrainZones, ZONE_CHANNELS};
 
 pub struct Terrain {
     pub x: f64,
@@ -152,6 +154,7 @@ fn generate_motif_base(
         motif,
         mountain_mix,
         None,
+        None,
     )
 }
 
@@ -165,6 +168,7 @@ fn generate_motif_base_with_noise(
     motif: f64,
     mountain_mix: f64,
     generation_noise: Option<&GenerationNoise<'_>>,
+    zoning: Option<&TerrainZones>,
 ) -> Result<PreparedTerrain, String> {
     if !width.is_finite() || !(250.0..=100000.0).contains(&width) {
         return Err("La surface préparée doit être comprise entre 250 et 100 000 mètres.".into());
@@ -205,15 +209,16 @@ fn generate_motif_base_with_noise(
     let valley_width = params.range(180.0, 320.0) * k;
     let valley_offset = params.range(-0.08, 0.08) * width;
     let amp = relief.mixed_amplitude(motif, mountain_mix);
-    let mut height = if matches!(
-        relief,
-        Relief::Hills
-            | Relief::Valley
-            | Relief::Canyon
-            | Relief::Mountains
-            | Relief::Mixed
-            | Relief::HighMountains
-    ) {
+    let mut height = if zoning.is_some()
+        || matches!(
+            relief,
+            Relief::Hills
+                | Relief::Valley
+                | Relief::Canyon
+                | Relief::Mountains
+                | Relief::Mixed
+                | Relief::HighMountains
+        ) {
         if let Some(values) = generation_noise {
             let nc = if width > motif * 3.0 { 640 } else { 320 };
             if (!values.coarse.is_empty() && values.coarse.len() != nc * nc * 4)
@@ -227,8 +232,14 @@ fn generate_motif_base_with_noise(
                 return Err("Champs de bruit de génération invalides.".into());
             }
         }
-        let settings = mountain_parameters(relief, width, motif, mountain_mix);
+        let settings = mountain_parameters(
+            zoning.map_or(relief, |z| z.strongest(relief)),
+            width,
+            motif,
+            mountain_mix,
+        );
         mountain(&MountainCfg {
+            zoning: zoning.map(|z| (z, relief)),
             generation_noise,
             n,
             width,
@@ -255,44 +266,48 @@ fn generate_motif_base_with_noise(
     };
     let volcano = VolcanoShape::new(width, root.fork("volcano"), relief == Relief::Caldera);
     let plateau = PlateauShape::new(width, root.fork("plateau"));
-    for y in 0..n {
-        for x in 0..n {
-            let i = y * n + x;
-            let px = (x as f64 + 0.5) * cell;
-            let py = (y as f64 + 0.5) * cell;
-            let along = (px - width * 0.5) * down.0 + (py - width * 0.5) * down.1;
-            let q = along / width + 0.5;
-            let rough = || noise.fbm((px + offset) / (720.0 * k), py / (720.0 * k), 4);
-            let h = match relief {
-                Relief::Flat => {
-                    9.0 + 5.5
-                        * (width / 2400.0).powf(0.6)
-                        * fbm_length(
-                            &noise,
-                            px + offset,
-                            py,
-                            1200.0 * k,
-                            (cell * 5.0).max(220.0 * k),
-                            0.42,
-                        )
-                        + 6.0 * (width / 2400.0).powf(0.6) * (0.5 - q)
-                }
-                Relief::Valley => height[i] as f64 + 44.0 * (amp / 110.0) * (0.5 - q),
-                Relief::Plateau => {
-                    amp * plateau.elevation(px, py, erosion, rough(), &noise, &noise2)
-                }
-                Relief::Volcano | Relief::Caldera => {
-                    amp * volcano.elevation(px, py, rough(), &noise, &noise2)
-                }
-                _ => height[i] as f64,
-            };
-            height[i] = h as f32;
+    if zoning.is_none() {
+        for y in 0..n {
+            for x in 0..n {
+                let i = y * n + x;
+                let px = (x as f64 + 0.5) * cell;
+                let py = (y as f64 + 0.5) * cell;
+                let along = (px - width * 0.5) * down.0 + (py - width * 0.5) * down.1;
+                let q = along / width + 0.5;
+                let rough = || noise.fbm((px + offset) / (720.0 * k), py / (720.0 * k), 4);
+                let h = match relief {
+                    Relief::Flat => {
+                        9.0 + 5.5
+                            * (width / 2400.0).powf(0.6)
+                            * fbm_length(
+                                &noise,
+                                px + offset,
+                                py,
+                                1200.0 * k,
+                                (cell * 5.0).max(220.0 * k),
+                                0.42,
+                            )
+                            + 6.0 * (width / 2400.0).powf(0.6) * (0.5 - q)
+                    }
+                    Relief::Valley => height[i] as f64 + 44.0 * (amp / 110.0) * (0.5 - q),
+                    Relief::Plateau => {
+                        amp * plateau.elevation(px, py, erosion, rough(), &noise, &noise2)
+                    }
+                    Relief::Volcano | Relief::Caldera => {
+                        amp * volcano.elevation(px, py, rough(), &noise, &noise2)
+                    }
+                    _ => height[i] as f64,
+                };
+                height[i] = h as f32;
+            }
         }
     }
-    if matches!(
-        relief,
-        Relief::Flat | Relief::Plateau | Relief::Volcano | Relief::Caldera
-    ) {
+    if zoning.is_none()
+        && matches!(
+            relief,
+            Relief::Flat | Relief::Plateau | Relief::Volcano | Relief::Caldera
+        )
+    {
         if matches!(relief, Relief::Volcano | Relief::Caldera | Relief::Plateau) {
             erode_surface(
                 &mut height,
@@ -317,7 +332,7 @@ fn generate_motif_base_with_noise(
             );
         }
     }
-    if relief == Relief::Canyon {
+    if zoning.is_none() && relief == Relief::Canyon {
         erosion::erode_canyon(
             &mut height,
             n,
@@ -327,10 +342,16 @@ fn generate_motif_base_with_noise(
             motif,
             mountain_parameters(relief, width, motif, mountain_mix).amp,
         );
-    } else if matches!(
-        relief,
-        Relief::Hills | Relief::Mountains | Relief::Mixed | Relief::HighMountains | Relief::Valley
-    ) {
+    } else if zoning.is_none()
+        && matches!(
+            relief,
+            Relief::Hills
+                | Relief::Mountains
+                | Relief::Mixed
+                | Relief::HighMountains
+                | Relief::Valley
+        )
+    {
         erode_surface(
             &mut height,
             n,

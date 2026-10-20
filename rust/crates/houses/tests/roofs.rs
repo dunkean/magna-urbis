@@ -17,6 +17,7 @@ fn materials() -> MaterialSlots {
 }
 fn arm(x: f64, y: f64, w: f64, d: f64) -> RoofArm {
     RoofArm {
+        source_component: None,
         origin: Point { x, y },
         axis: [1.0, 0.0],
         length_m: w,
@@ -2304,10 +2305,8 @@ fn a_canopy_above_a_walkable_roof_floor_preserves_both_stages() {
 fn captured_inward_unit_keeps_shed_rives_at_their_finite_raw_source_positions() {
     // MED-ANT-B02, seed42, variation0.65, unit4: the affine world
     // constant used to lift x=0 by one ULP and create an extra thin cell.
-    let mut unit: HouseUnit = serde_json::from_str(include_str!(
-        "fixtures/med32-unit4-before-roof.json"
-    ))
-    .unwrap();
+    let mut unit: HouseUnit =
+        serde_json::from_str(include_str!("fixtures/med32-unit4-before-roof.json")).unwrap();
     build_roofs(&mut unit).unwrap();
     assert_eq!(unit.bodies.len(), 4);
     assert_eq!(unit.roofs.groups.len(), 8);
@@ -2325,9 +2324,7 @@ fn captured_inward_unit_keeps_shed_rives_at_their_finite_raw_source_positions() 
         .iter()
         .find(|group| group.id == "unit-4:body:2:0:intermediate")
         .unwrap();
-    let z = geometry::snap(
-        unit.bodies[2].levels[0].z_m + unit.bodies[2].levels[0].height_m,
-    );
+    let z = geometry::snap(unit.bodies[2].levels[0].z_m + unit.bodies[2].levels[0].height_m);
     for y in [4.823_f64, 13.711] {
         let vertex = unit
             .roofs

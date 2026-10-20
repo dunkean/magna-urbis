@@ -1355,16 +1355,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "console_error_panic_hook"
-version = "0.1.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a06aeb73f470f66dcdbf7223caeebb85984942f22f1adb2a088cf9668146bbbc"
-dependencies = [
- "cfg-if",
- "wasm-bindgen",
-]
-
-[[package]]
 name = "const-random"
 version = "0.1.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4151,21 +4141,11 @@ dependencies = [
  "burn",
  "env_logger",
  "half",
+ "magna-urbis-core",
  "png 0.17.16",
  "pollster",
  "serde_json",
  "zip 2.4.2",
-]
-
-[[package]]
-name = "magna-urbis-neural-wasm"
-version = "0.1.0"
-dependencies = [
- "console_error_panic_hook",
- "js-sys",
- "magna-urbis-neural",
- "wasm-bindgen",
- "wasm-bindgen-futures",
 ]
 
 [[package]]

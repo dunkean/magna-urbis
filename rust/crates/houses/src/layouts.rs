@@ -100,6 +100,7 @@ fn axis_arm(s: &Surface, axis: [f64; 2]) -> RoofArm {
         b[3] = b[3].max(v);
     }
     RoofArm {
+        source_component: None,
         origin: point(
             b[0] * axis[0] - b[1] * axis[1],
             b[0] * axis[1] + b[1] * axis[0],
