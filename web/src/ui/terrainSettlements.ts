@@ -120,7 +120,6 @@ export function createTerrainSettlements(options: {
     onChange: options.onChange,
     getView: () => ({ view: options.getView(), width: viewport.clientWidth, height: viewport.clientHeight }),
     getBackground: () => ({ opacity: 0 }),
-    getDisplayStyle: () => { const style = (document.getElementById('style') as HTMLSelectElement)?.value; return style?.startsWith('fantasy-') ? style : undefined; },
   });
   function syncLanduse(): void {
     const t = options.getTerrain(), raster = options.getRaster?.() ?? (t ? settlementRaster(t) : undefined);
@@ -128,7 +127,7 @@ export function createTerrainSettlements(options: {
     const city = output.settlements.find(s => s.key === urban.target) ?? output.settlements.find(s => s.key === selection) ?? output.settlements[0];
     const relief = options.getSettings().relief;
     landuse?.set({ raster, seed: options.getSettings().seed, relief: (['flat', 'hills', 'valley'].includes(relief) ? relief : 'mountains') as Relief,
-      city, neighbours: output.settlements.filter(s => s.key !== city?.key), roads: roads.output, layouts: urban.layouts }, urban.layoutPending);
+      city, neighbours: output.settlements.filter(s => s.key !== city?.key), roads: roads.output, layouts: urban.layouts });
   }
   let paintingContext: UrbanPaintingContext | undefined;
   if (legacyRoads === false && !new URLSearchParams(location.search).has('roads')) {

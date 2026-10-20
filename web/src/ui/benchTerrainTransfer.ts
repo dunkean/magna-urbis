@@ -60,17 +60,18 @@ export function cropCityDecor(decor: Decor, key: string): Decor {
   const city = decor.meta.settlements.find(s => s.key === key), state = decor.meta.pipeline?.urban;
   if (!city || !state?.layouts?.length) throw new Error('Ville ou plan absent de cet export.');
   const layouts = state.layouts.filter(l => l.key === key), partitions = state.partitions?.filter(p => p.key === key);
-  const points: { x: number; y: number }[] = [city.center];
+  let minX = city.center.x, maxX = minX, minY = city.center.y, maxY = minY;
   function collect(value: unknown): void {
     if (!value || typeof value !== 'object') return;
     const p = value as { x?: number; y?: number };
-    if (typeof p.x === 'number' && typeof p.y === 'number') points.push(p as { x: number; y: number });
+    if (typeof p.x === 'number' && typeof p.y === 'number') {
+      minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x);
+      minY = Math.min(minY, p.y); maxY = Math.max(maxY, p.y);
+    }
     else for (const [key, child] of Object.entries(value)) if (key !== 'axis') collect(child);
   }
   collect(layouts); collect(partitions);
   const cell = decor.raster.width / decor.raster.n, margin = Math.max(city.radius * .5, cell * 4, 150);
-  const minX = Math.min(...points.map(p => p.x)), maxX = Math.max(...points.map(p => p.x));
-  const minY = Math.min(...points.map(p => p.y)), maxY = Math.max(...points.map(p => p.y));
   const width = Math.min(decor.raster.width, Math.ceil((Math.max(maxX - minX, maxY - minY) + margin * 2) / cell) * cell);
   const x = Math.max(0, Math.min(decor.raster.width - width, (minX + maxX - width) / 2));
   const y = Math.max(0, Math.min(decor.raster.width - width, (minY + maxY - width) / 2));

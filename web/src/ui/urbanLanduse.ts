@@ -19,7 +19,6 @@ const biomeLabels = ['Campagne tempérée', 'Forêt', 'Désert et oasis', 'Stepp
 export function createUrbanLanduse(options: { map: SVGSVGElement; before: Element; onChange(): void;
   getView(): { view: View; width: number; height: number };
   getBackground(): { image?: HTMLCanvasElement; opacity: number };
-  getDisplayStyle?(): string | undefined;
 }) {
   const settings: Settings = { seed: '', biome: 'temperate', style: 'parchment', vegetation: 'canopy', painted: false, opacity: 1, visible: true, enabled: true };
   try {
@@ -58,8 +57,9 @@ export function createUrbanLanduse(options: { map: SVGSVGElement; before: Elemen
   const enabled = q<HTMLInputElement>('landuseEnabled');
   const button = q<HTMLButtonElement>('landuseGenerate'), status = q<HTMLElement>('landuseStatus');
   let layer = options.map.querySelector<SVGGElement>('#landuseLayer');
-  if (!layer) { layer = document.createElementNS('http://www.w3.org/2000/svg', 'g'); layer.id = 'landuseLayer'; options.map.querySelector('#fantasyPainting')?.before(layer); if (!layer.parentNode) options.map.prepend(layer); }
+  if (!layer) { layer = document.createElementNS('http://www.w3.org/2000/svg', 'g'); layer.id = 'landuseLayer'; }
   const landuseLayer = layer;
+  landuseLayer.style.pointerEvents = 'none';
   biome.replaceChildren(...BIOME_NAMES.map((id, i) => new Option(biomeLabels[i], id)));
   style.replaceChildren(...STYLE_LIST.map(s => new Option(s.label, s.id)));
   seed.value = settings.seed; biome.value = settings.biome; style.value = settings.style;
@@ -77,12 +77,19 @@ export function createUrbanLanduse(options: { map: SVGSVGElement; before: Elemen
     status.textContent = text; button.setAttribute('aria-busy', String(busy));
   }
   function visibility(): void {
-    landuseLayer.style.display = settings.enabled && settings.visible && !options.getDisplayStyle?.() ? '' : 'none'; landuseLayer.setAttribute('opacity', String(settings.opacity));
+    // Terrain redraws replace the SVG children. Restore this retained overlay
+    // above the terrain painting and below water, streets and city markers.
+    const anchor = options.map.querySelector('#hydrologyOverlay, #urbanOverlay, #roadOverlay, #settlementOverlay');
+    if (landuseLayer.parentNode !== options.map || landuseLayer.nextSibling !== anchor) options.map.insertBefore(landuseLayer, anchor);
+    const painting = options.map.querySelector('#fantasyPainting');
+    // The painting is lazily appended by the terrain renderer.
+    if (painting && painting.nextSibling !== landuseLayer) options.map.insertBefore(painting, landuseLayer);
+    landuseLayer.style.display = settings.enabled && settings.visible ? '' : 'none'; landuseLayer.setAttribute('opacity', String(settings.opacity));
   }
   function draw(): void {
     visibility();
     renderer?.dispose(); renderer = undefined; cancelAnimationFrame(frame);
-    if (!settings.enabled || !scene || !context || options.getDisplayStyle?.()) { landuseLayer.replaceChildren(); canvas = undefined; host = undefined; renderWorld = undefined; renderScene = undefined; return; }
+    if (!settings.enabled || !scene || !context) { landuseLayer.replaceChildren(); canvas = undefined; host = undefined; renderWorld = undefined; renderScene = undefined; return; }
     if (!canvas) {
       landuseLayer.innerHTML = `<defs><clipPath id="urban-landuse-clip"><rect width="${scene.mapSize}" height="${scene.mapSize}"/></clipPath></defs><g clip-path="url(#urban-landuse-clip)"><foreignObject/></g>`;
       host = landuseLayer.querySelector('foreignObject')!;
@@ -93,7 +100,8 @@ export function createUrbanLanduse(options: { map: SVGSVGElement; before: Elemen
     const background = options.getBackground();
     rendererDpr = window.devicePixelRatio || 1;
     renderer = createCanvasRenderer(canvas, renderWorld, pal, {
-      dpr: rendererDpr, scene: renderScene, vegetation: settings.vegetation, brushes: settings.painted ? brushImages : undefined,
+      dpr: rendererDpr, scene: renderScene, transparentBackground: true, raster: false,
+      vegetation: settings.vegetation, brushes: settings.painted ? brushImages : undefined,
       furrowReferenceSize: SIZE_PRESETS[scene.options.size].mapSize,
       terrain: () => {
         if (!background.image || background.opacity <= 0) return null;
@@ -110,6 +118,7 @@ export function createUrbanLanduse(options: { map: SVGSVGElement; before: Elemen
     });
   }
   function updateView(): void {
+    visibility();
     cancelAnimationFrame(frame);
     if (!renderer || !canvas || !host || !settings.enabled || !settings.visible) return;
     if (rendererDpr !== (window.devicePixelRatio || 1)) { draw(); return; }

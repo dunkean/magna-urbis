@@ -51,6 +51,8 @@ export interface CanvasRendererDeps {
   createCanvas?: (w: number, h: number) => CanvasLike | null;
   /** Terrain bitmap provider (default: hillshade raster). Return null to skip terrain. */
   terrain?: (world: World, pal: Palette) => CanvasImageSource | null;
+  /** Keep the map background transparent when composing a separate overlay. */
+  transparentBackground?: boolean;
   dpr?: number;
   now?: () => number;
   tileSize?: number;
@@ -534,8 +536,11 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
     // background (device pixels)
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.globalAlpha = 1;
-    ctx.fillStyle = pal.paper;
-    ctx.fillRect(0, 0, target.width, target.height);
+    if (deps.transparentBackground) ctx.clearRect(0, 0, target.width, target.height);
+    else {
+      ctx.fillStyle = pal.paper;
+      ctx.fillRect(0, 0, target.width, target.height);
+    }
     // world -> device
     ctx.setTransform(dpr * sc, 0, 0, dpr * sc, dpr * (cssW / 2 - view.cx * sc), dpr * (cssH / 2 - view.cy * sc));
     ctx.lineJoin = 'round'; ctx.lineCap = 'round';
