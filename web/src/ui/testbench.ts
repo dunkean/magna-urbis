@@ -1,3 +1,6 @@
+import { TERRAIN_STYLE_LIST, terrainStyle, isTerrainStyle, waterShoreColor, type TerrainStyle } from '../render/terrainStyle';
+import { waterAppearanceSvg, type RetainedWaterMaterial } from './decorWater';
+import { DISPLAY_VOCABULARY } from '../render/displayLayers';
 import { CULTURES, getCulture } from '../gen/urban/culture';
 import { benchLayout, benchParcels, benchBuildings, type BenchOptions, type BenchLayout, type BenchHouses, type BenchParcels } from '../gen/urban/testbench';
 import { BENCH_STAGES, BENCH_PRESETS, BENCH_FIELDS, BENCH_OPERATORS, BENCH_METHODS, benchMethod, benchMethodFields, benchRecipes, benchMorph, validateBenchParams, type BenchStage, type BenchParams } from '../gen/urban/testbenchConfig';
@@ -15,11 +18,14 @@ const input = (id: string) => el<HTMLInputElement>(id);
 const select = (id: string) => el<HTMLSelectElement>(id);
 const map = document.getElementById('map') as unknown as SVGSVGElement;
 const culture = select('culture'), monument = select('monument');
+select('mapStyle').replaceChildren(...TERRAIN_STYLE_LIST.map(style => new Option(style.label, style.id)));
+select('mapStyle').title = DISPLAY_VOCABULARY.style; select('planDiagnostic').title = DISPLAY_VOCABULARY.diagnostic;
 interface Pin { x: number; y: number; note: string }
 interface State {
   v: 2; options: BenchOptions; settings: BenchOptions; plotOptions: BenchOptions; houseOptions: BenchOptions;
   layoutSeed: string; plotSeed: string; houseSeed: string; stage: 1 | 2 | 3;
   pins: Pin[]; view: number[]; showBlocks: boolean; showPlots: boolean; showHouses: boolean; showOrientation?: boolean; realPlan?: boolean;
+  mapStyle?: TerrainStyle;
   engine?: 'typescript' | 'rust'; urban?: WorkshopContext;
 }
 const query = new URLSearchParams(location.search);
@@ -75,6 +81,7 @@ function cultureMenus(): void {
   }
 }
 let nativeResult: WorkshopResult | undefined;
+let inheritedWater: { geometry: string; material: RetainedWaterMaterial } | undefined;
 const nativeControls = document.createElement('fieldset'); nativeControls.hidden = true;
 nativeControls.innerHTML = '<legend>Plan urbain · Rust</legend><label>Enceinte <select data-native="fortification"><option value="culture">Selon la culture</option><option value="none">Sans enceinte</option><option value="wall">Muraille</option><option value="palisade">Palissade</option></select></label><button data-remove-enclosure type="button">Retirer l’enceinte</button><label><input data-native="autoQuarterZones" type="checkbox">Progression des quartiers</label><label><input data-native="autoParcelZones" type="checkbox">Parcelles selon leur quartier</label><label>Pente maximale des rues <input data-native="maxStreetGrade" type="number" min="0.01" max="1" step="0.01"></label><label>Pente des ruelles <input data-native="maxLaneGrade" type="number" min="0.01" max="1" step="0.01"></label><label><input data-native="allowStairs" type="checkbox">Escaliers piétons</label><label>Pente des escaliers <input data-native="maxStairGrade" type="number" min="0.01" max="1" step="0.01"></label><small>0,12 = 12 %. La progression utilise les zones du plan ; décochez-la pour appliquer la zone sélectionnée partout.</small>';
 nativeControls.style.cssText = 'margin:8px 12px;gap:12px;flex-direction:row;flex-wrap:wrap;align-items:center';
@@ -182,6 +189,8 @@ function restoreControls(): void {
   input('showOrientation').checked = state.showOrientation ?? true;
   input('showHouses').checked = state.showHouses;
   input('realPlan').checked = state.realPlan ?? false;
+  select('planDiagnostic').value = input('realPlan').checked ? 'none' : 'quarters';
+  select('mapStyle').value = state.mapStyle ?? (isTerrainStyle(query.get('style')) ? query.get('style')! : 'parchment');
   syncMethods();
 }
 function syncMode(): void {
@@ -370,22 +379,26 @@ function save(): void {
     layoutConfig: workshopConfig(state.options, state.urban, 'quarters'),
     parcelConfig: workshopConfig(state.plotOptions, state.urban, 'parcels'),
     quarterSeed: state.layoutSeed, parcelSeed: state.plotSeed,
+    style: state.mapStyle ?? 'parchment',
   }, state.urban.source);
 }
 function path(poly: Polygon): string { return poly.length ? 'M' + poly.map(p => `${p.x},${p.y}`).join('L') + 'Z' : ''; }
 function escape(text: string): string { return text.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!)); }
 function render(): void {
   const realPlan = input('realPlan').checked;
-  const streetColor = '#fff';
+  const style = isTerrainStyle(select('mapStyle').value) ? select('mapStyle').value as TerrainStyle : 'parchment';
+  const palette = terrainStyle(style).palette, streetColor = palette.urban.street;
+  map.style.background = palette.paper;
   const nativeQuarters = nativeResult?.layouts.flatMap(l => l.quarters), nativeBlocks = nativeResult?.layouts.flatMap(l => l.blocks);
   const nativeParcels = nativeResult?.partitions?.flatMap(p => p.parcels);
   const quarterPath = (i: number): string => path(layout.quarters[i].lp.pts) + (nativeQuarters?.[i]?.shape.holes.map(path).join(' ') ?? '');
   const quarterPaths = layout.quarters.map((_, i) => `<path d="${quarterPath(i)}" fill-rule="evenodd" clip-rule="evenodd"/>`).join('');
   const waterPath = (water: BenchLayout['water'][number]): string => path(water.outer) + (water.holes ?? []).map(path).join('');
   let svg = `<defs><clipPath id="landClip">${quarterPaths}</clipPath><clipPath id="waterClip">${layout.water.map(w => `<path d="${waterPath(w)}" fill-rule="evenodd" clip-rule="evenodd"/>`).join('')}</clipPath></defs>`;
-  for (const road of nativeResult?.roads ?? []) svg += `<path data-overlay="regional-roads" d="M${road.path.map(p => `${p.x},${p.y}`).join('L')}" fill="none" stroke="#b39a78" stroke-width="${road.widths[0] ?? 4}"/>`;
-  for (const contour of layout.contours) svg += `<path data-overlay="relief" d="M${contour.map(p => `${p.x},${p.y}`).join('L')}" fill="none" stroke="#9c8a5c" stroke-opacity=".45" stroke-dasharray="3 4" stroke-width="1"/>`;
-  for (const water of layout.water) svg += `<path data-overlay="river" d="${waterPath(water)}" fill="#8ac4d6" fill-rule="evenodd"/>`;
+  for (const road of nativeResult?.roads ?? []) svg += `<path data-overlay="regional-roads" d="M${road.path.map(p => `${p.x},${p.y}`).join('L')}" fill="none" stroke="${palette.trackFill}" stroke-width="${road.widths[0] ?? 4}"/>`;
+  for (const contour of layout.contours) svg += `<path data-overlay="relief" d="M${contour.map(p => `${p.x},${p.y}`).join('L')}" fill="none" stroke="${palette.contour}" stroke-opacity=".45" stroke-dasharray="3 4" stroke-width="1"/>`;
+  if (inheritedWater) svg += waterAppearanceSvg(inheritedWater.geometry, inheritedWater.material, style);
+  else for (const water of layout.water) svg += `<path data-overlay="river" d="${waterPath(water)}" fill="${waterShoreColor(style)}" fill-rule="evenodd"/>`;
   layout.quarters.forEach((q, i) => {
     svg += `<path data-quarter="${i}" d="${quarterPath(i)}" fill-rule="evenodd" fill="${realPlan ? streetColor : `hsl(${i * 137.5 % 360} 60% 75%)`}" fill-opacity="${realPlan ? 1 : .35}" stroke="${realPlan ? 'none' : '#888'}" stroke-width=".5"/>`;
     const c = polygonCentroid(q.lp.pts);
@@ -406,7 +419,7 @@ function render(): void {
     svg += '</g>';
   }
   if (nativeResult) svg += workshopStreetSvg(nativeResult.layouts);
-  if (input('showHouses').checked) for (const b of houses.buildings) svg += `<path data-building="${b.parcel}" d="${path(b.poly)} ${b.courtyards?.map(path).join(' ') ?? ''}" fill="${b.kind === 'garden' ? '#a1b688' : b.kind === 'landmark' ? '#9b6450' : '#59646f'}" fill-rule="evenodd" stroke="#202b35" stroke-width=".45"><title>${escape(b.arch ?? b.kind)} · parcelle ${b.parcel}</title></path>`;
+  if (input('showHouses').checked) for (const b of houses.buildings) svg += `<path data-building="${b.parcel}" d="${path(b.poly)} ${b.courtyards?.map(path).join(' ') ?? ''}" fill="${b.kind === 'garden' ? palette.urban.garden : b.kind === 'landmark' ? palette.urban.landmark : palette.urban.mass}" fill-rule="evenodd" stroke="${palette.urban.massEdge}" stroke-width=".45"><title>${escape(b.arch ?? b.kind)} · parcelle ${b.parcel}</title></path>`;
   if (input('plots').checked) {
     svg += '<g data-overlay="plots" stroke-width="1" stroke-opacity=".8">';
     houses.parcels.forEach((p, i) => {
@@ -630,7 +643,9 @@ input('plots').onchange = () => { state.showPlots = input('plots').checked; rend
 input('showOrientation').onchange = () => { state.showOrientation = input('showOrientation').checked; render(); save(); };
 input('blocks').onchange = () => { state.showBlocks = input('blocks').checked; render(); save(); };
 input('showHouses').onchange = () => { state.showHouses = input('showHouses').checked; render(); save(); };
-input('realPlan').onchange = () => { state.realPlan = input('realPlan').checked; render(); save(); };
+input('realPlan').onchange = () => { state.realPlan = input('realPlan').checked; select('planDiagnostic').value = state.realPlan ? 'none' : 'quarters'; render(); save(); };
+select('mapStyle').onchange = () => { state.mapStyle = select('mapStyle').value as TerrainStyle; render(); save(); };
+select('planDiagnostic').onchange = () => { state.realPlan = select('planDiagnostic').value === 'none'; input('realPlan').checked = state.realPlan; render(); save(); };
 el('pinMode').onclick = () => { pinMode = !pinMode; el('pinMode').setAttribute('aria-pressed', String(pinMode)); map.style.cursor = pinMode ? 'crosshair' : 'grab'; };
 el('copy').onclick = async () => {
   save();
@@ -716,14 +731,16 @@ function receiveWorkshop(event: MessageEvent): void {
   if (busy) { pendingWorkshopMessage = event; return; }
   if (event.source === window.parent && event.origin === (location.protocol === 'file:' ? 'null' : location.origin) && event.data?.channel === WORKSHOP_CHANNEL && event.data.type === 'fixture') {
     if (busy) return;
-    rustMode = true; state.urban = { source: 'fixture' }; state.settings.radius = 160; state.settings.relief = 'flat'; state.settings.river = 'none';
+    inheritedWater = undefined; rustMode = true; state.urban = { source: 'fixture' }; state.settings.radius = 160; state.settings.relief = 'flat'; state.settings.river = 'none';
     restoreControls(); void generate('replay'); return;
   }
   if (event.source !== window.parent || event.origin !== (location.protocol === 'file:' ? 'null' : location.origin) || event.data?.channel !== WORKSHOP_CHANNEL || event.data.type !== 'import') return;
   const incoming = event.data.state as WorkshopState;
   const imported = { ...incoming, layoutConfig: normalizeLayoutConfig(incoming?.layoutConfig, true), parcelConfig: normalizeParcelConfig(incoming?.parcelConfig) };
   if (!imported?.layouts?.length) return;
+  inheritedWater = event.data.waterAppearance;
   rustMode = true; state.engine = 'rust';
+  if (isTerrainStyle(imported.style)) state.mapStyle = imported.style;
   const first = imported.layouts[0];
   const base = { ...initial, culture: first.culture, radius: event.data.radius ?? initial.radius };
   state.options = workshopOptions(imported.layoutConfig, base);

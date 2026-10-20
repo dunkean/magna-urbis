@@ -8,11 +8,11 @@ import { applyBenchConstraints } from '../gen/urban/testbenchConstraints';
 import type { World } from '../gen/types';
 import { WORKSHOP_CHANNEL, normalizeWorkshopContext, workshopConfig, type WorkshopRequest, type WorkshopResult, type WorkshopState } from './testbenchUrban';
 
-interface MapContext { raster: SettlementRaster; sites: RoadSite[]; roads?: RoadOutput; seed: string }
+interface MapContext { waterAppearance?: { geometry: string; material: import('./decorWater').RetainedWaterMaterial }; raster: SettlementRaster; sites: RoadSite[]; roads?: RoadOutput; seed: string }
 /** Two workspaces, one existing editor and the same native worker as the map. */
 export function createUrbanWorkshop(options: {
   urban: { workshopState(): WorkshopState; applyWorkshop(state: Partial<WorkshopState>): void };
-  getContext(): MapContext | undefined; onChange(): void; workshopOnly?: boolean; onReturn?(state: WorkshopState): Promise<void>;
+  getContext(): MapContext | undefined; getStyle?(): string; onChange(): void; workshopOnly?: boolean; onReturn?(state: WorkshopState): Promise<void>;
   onExport?(state: WorkshopState, download?: boolean): Promise<void>;
 }) {
   const query = new URLSearchParams(location.search), workspace = document.querySelector<HTMLElement>('.terrain-workspace')!;
@@ -58,7 +58,7 @@ export function createUrbanWorkshop(options: {
     for (const group of Array.from(document.querySelector('header')!.children)) if (group !== nav && !group.classList.contains('brand')) (group as HTMLElement).style.display = space === 'workshop' ? 'none' : '';
     mapButton.setAttribute('aria-pressed', String(space === 'map')); workshopButton.setAttribute('aria-pressed', String(space === 'workshop'));
     if (space === 'workshop' && !frame.hasAttribute('src')) {
-      const params = new URLSearchParams({ engine: 'rust', embedded: '1' }); if (caseState) params.set('case', caseState);
+      const params = new URLSearchParams({ engine: 'rust', embedded: '1', style: options.getStyle?.() ?? query.get('style') ?? 'parchment' }); if (caseState) params.set('case', caseState);
       frame.src = `testbench.html?${params}`;
     }
     const url = new URL(location.href); url.searchParams.set('space', 'workshop'); if (caseState) url.searchParams.set('workshop', caseState); else url.searchParams.delete('workshop');
@@ -74,7 +74,7 @@ export function createUrbanWorkshop(options: {
     pendingImport = { ...state, quarterSeed: state.quarterSeed || context.seed, parcelSeed: state.parcelSeed || context.seed };
     plans.map = { layouts: state.layouts, partitions: state.partitions };
     space = 'workshop'; display();
-    if (ready) { send({ type: 'import', state: pendingImport, radius: context.sites[0]?.radius, water: contextWater(context), contours: contextContours(context), roads: regionalStreets(context.roads) }); pendingImport = undefined; }
+    if (ready) { send({ type: 'import', state: pendingImport, waterAppearance: retainedContext?.waterAppearance, radius: context.sites[0]?.radius, water: contextWater(context), contours: contextContours(context), roads: regionalStreets(context.roads) }); pendingImport = undefined; }
     note.textContent = 'Plan conservé : les parcelles seront découpées dans ces mêmes îlots.';
     options.onChange();
   }
@@ -91,18 +91,18 @@ export function createUrbanWorkshop(options: {
   let fixtureCache: { key: string; value: ReturnType<typeof fixtureTerrain> } | undefined;
   const pending = new Map<number, { resolve(response: UrbanResponse): void; reject(error: Error): void; request: UrbanRequest }>();
   function runFallback(message: UrbanRequest): Promise<UrbanResponse> {
-    return fallback!.then(engine => {
-      const response = engine.run({ ...message, raster: message.raster === sentRaster ? undefined : message.raster });
+    return fallback!.then(async engine => {
+      const response = await engine.run({ ...message, raster: message.raster === sentRaster ? undefined : message.raster });
       sentRaster = response.error ? undefined : message.raster;
       return response;
     });
   }
   function useFallback(): void {
-    worker?.terminate(); worker = undefined; sentRaster = undefined; fallback ??= createUrbanEngine();
+    worker?.terminate(); worker = undefined; sentRaster = undefined; fallback ??= createUrbanEngine(executionRuntime);
     for (const [id, item] of pending) { pending.delete(id); void runFallback(item.request).then(item.resolve, item.reject); }
   }
   function native(request: Omit<UrbanRequest, 'id'>): Promise<UrbanResponse> {
-    const message = { ...request, id: ++requestId };
+    const message = { ...request, id: ++requestId, runtime: executionRuntime };
     if (!worker && !fallback) {
       try {
         worker = new UrbanWorker();
@@ -110,7 +110,7 @@ export function createUrbanWorkshop(options: {
         worker.onerror = event => {
           event.preventDefault(); useFallback();
         };
-      } catch { fallback = createUrbanEngine(); }
+      } catch { fallback = createUrbanEngine(executionRuntime); }
     }
     // Keep the original raster in pending requests for worker-failure recovery.
     // Normal parcel edits reuse the terrain already owned by this engine.
@@ -167,7 +167,7 @@ export function createUrbanWorkshop(options: {
     if (event.source !== frame.contentWindow || event.origin !== (location.protocol === 'file:' ? 'null' : location.origin) || event.data?.channel !== WORKSHOP_CHANNEL) return;
     const message = event.data;
     if (message.type === 'catalogue') { send({ type: 'catalogue', catalogue }); return; }
-    if (message.type === 'ready') { ready = true; if (pendingImport) { send({ type: 'import', state: pendingImport, radius: retainedContext?.sites[0]?.radius, water: contextWater(retainedContext), contours: contextContours(retainedContext), roads: regionalStreets(retainedContext?.roads) }); pendingImport = undefined; } }
+    if (message.type === 'ready') { ready = true; if (pendingImport) { send({ type: 'import', state: pendingImport, waterAppearance: retainedContext?.waterAppearance, radius: retainedContext?.sites[0]?.radius, water: contextWater(retainedContext), contours: contextContours(retainedContext), roads: regionalStreets(retainedContext?.roads) }); pendingImport = undefined; } }
     if (message.type === 'settings') { latestDraft = message.state; options.onChange(); }
     if (message.type === 'state') {
       if (invalidated) return;
@@ -248,3 +248,4 @@ function contextContours(context?: MapContext): { x: number; y: number }[][] {
   }
   return lines;
 }
+import { executionRuntime } from './executionProfile';

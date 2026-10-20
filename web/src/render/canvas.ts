@@ -27,6 +27,7 @@ import { CANVAS_MAP_STROKES as MAP_STROKES, mapStrokeWidth } from './strokes';
 import { NATURAL_LAND_KINDS, countryKind, FRINGE_ORDER, FRINGE_PAINT } from './countryside';
 import { TERRACE_STROKES as TS, terraceDetailAlpha } from './terraces';
 import { regionalBridgeSurface, regionalRoadSurface } from './roadSurfaces';
+import { worldWaterPixels } from './terrainWater';
 import { renderTerrainPixels } from './raster';
 import { RasterTileCache } from './rasterTiles';
 import { buildScene, Scene, PolyLayer, LineLayer, TextureLayer, textureMarks, pointInPoly, type Mark, LAND_ORDER, WALL_LINE_W, CAMP_FENCE_W, FENCE_STYLE } from './scene';
@@ -219,6 +220,7 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
   let legendPanel: Panel | null = null;
   let infoPanel: Panel | null = null;
   let terrainImg: CanvasImageSource | null | undefined;
+  let waterImg: CanvasImageSource | null | undefined;
   let cavernRockImg: CanvasImageSource | null | undefined;
   let densityImg: CanvasImageSource | null | undefined;
   const patterns = new Map<string, CanvasPattern | null>();
@@ -318,7 +320,7 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
     const terrainChanged = nextSource.terrain !== sourceWorld.terrain;
     if (nextSource.seed !== sourceWorld.seed) cavernRockImg = undefined;
     if (terrainChanged || nextScene.poly.get('sea') !== scene.poly.get('sea') || nextScene.poly.get('lakes') !== scene.poly.get('lakes')) landPath = undefined;
-    if (terrainChanged) { terrainImg = undefined; cache.clear(); rasterCache.clear(); }
+    if (terrainChanged) { terrainImg = waterImg = undefined; cache.clear(); rasterCache.clear(); }
     if (nextScene.density?.cov !== scene.density?.cov) densityImg = undefined;
     if (nextScene.furrows !== scene.furrows) furrowCache.clear();
     if (nextScene !== scene) treeMarks.clear();
@@ -364,6 +366,14 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
     if (typeof ImageData === 'undefined') return null;
     const r = cavernRockPixels(world.seed, S, pal);
     return (cavernRockImg = toBitmap(r.rgba, r.width, r.width));
+  }
+  function getWater(): CanvasImageSource | null {
+    if (waterImg !== undefined) return waterImg;
+    const material = worldWaterPixels(world, pal), rgba = new Uint8ClampedArray(material.n * material.n * 4);
+    for (let i = 0; i < material.n * material.n; i++) {
+      rgba.set(material.rgb.subarray(i * 3, i * 3 + 3), i * 4); rgba[i * 4 + 3] = 255;
+    }
+    return (waterImg = toBitmap(rgba, material.n, material.n));
   }
   function getTerrain(): CanvasImageSource | null {
     if (terrainImg !== undefined) return terrainImg;
@@ -733,6 +743,13 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
     }
     fillPolys('sea', pal.seaFill, 1, 'evenodd');
     fillPolys('lakes', pal.lakeFill, 1, 'nonzero');
+    const waterImage = getWater();
+    if (waterImage) for (const name of ['sea', 'lakes'] as const) {
+      const layer = polyL(name); if (!layer) continue;
+      for (const path of polyPaths(layer)) {
+        ctx.save(); ctx.clip(path, name === 'sea' ? 'evenodd' : 'nonzero'); ctx.drawImage(waterImage, 0, 0, S, S); ctx.restore();
+      }
+    }
     const wl = pal.waterLines;
     if (wl && sc >= 0.11) {
       const gap = wl.gap;
@@ -768,7 +785,7 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
       fillPolys('farm-yards', pal.farmYard, 0.9);
       fillPolys('farm-pens', pal.farmYard);
       strokePolys('farm-pens', pal.farmInk, lw(0.3, 0.3));
-      fillPolys('farm-ponds', pal.lakeFill);
+      fillPolys('farm-ponds', pal.water.stops[0][1]);
       strokePolys('farm-ponds', pal.waterEdge, lw(0.5, 0.4));
       strokeLines(linesOf((l) => l.name === 'farm-walls'), pal.farmInk, () => lw(0.9, 0.7), 1, [], 'butt');
       if (lod.band >= 2 && polyL('farm-trees')) {
@@ -1435,17 +1452,22 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
     const tex = getTerrain();
     if (tex) ctx.drawImage(tex, 0, 0, target.width, target.width);
     ctx.setTransform(k, 0, 0, k, 0, 0);
+    const waterImage = getWater();
     const water = (name: string, fill: string, rule: CanvasFillRule = 'nonzero'): void => {
       const l = polyL(name);
       if (!l) return;
       ctx.fillStyle = fill;
+      const paint = (path: Path2D): void => {
+        if (waterImage && name !== 'rivers') { ctx.save(); ctx.clip(path, rule); ctx.drawImage(waterImage, 0, 0, S, S); ctx.restore(); }
+        else ctx.fill(path, rule);
+      };
       for (const t of l.index.tilesInRect({ minX: 0, minY: 0, maxX: S, maxY: S })) {
         const p = cached(`${l.name}|0|t${t}`, () => polyPath(P, l, l.index.itemsOf(t), BAND_MIN_EDGE[0]));
-        if (p) ctx.fill(p, rule);
+        if (p) paint(p);
       }
       for (const i of l.index.big) {
         const p = cached(`${l.name}|0|b${i}`, () => polyPath(P, l, [i], BAND_MIN_EDGE[0]));
-        if (p) ctx.fill(p, rule);
+        if (p) paint(p);
       }
     };
     water('sea', pal.seaFill, 'evenodd'); water('lakes', pal.lakeFill); water('rivers', pal.riverFill);
@@ -1481,7 +1503,7 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
     drawMinimap,
     lastStats: () => stats,
     getMapInfo: () => ({ cartouche: infoPanel ??= cartoucheModel(world, pal, 1, false), legend: legendPanel ??= legendModel(world, pal), fontFamily: family }),
-    dispose() { canopy?.dispose(); brushes?.dispose(); treeMarks.clear(); patterns.clear(); cache.clear(); furrowCache.clear(); rasterCache.clear(); terrainImg = densityImg = cavernRockImg = undefined; },
+    dispose() { canopy?.dispose(); brushes?.dispose(); treeMarks.clear(); patterns.clear(); cache.clear(); furrowCache.clear(); rasterCache.clear(); terrainImg = waterImg = densityImg = cavernRockImg = undefined; },
   };
 }
 

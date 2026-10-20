@@ -7,7 +7,7 @@ export type RecipeStage = typeof RECIPE_STAGES[number];
 export interface RecipeTerrain {
   query: string;
   crops: { x: number; y: number; width: number }[];
-  meta: Omit<DecorMeta, 'waterSvg' | 'waterMaterialSvg' | 'regeneration'>;
+  meta: Omit<DecorMeta, 'waterSvg' | 'waterMaterialSvg' | 'waterMaterial' | 'regeneration'>;
 }
 export interface MapRecipe { stage: RecipeStage; query: string; decor?: Uint8Array; terrain?: RecipeTerrain }
 

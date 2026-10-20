@@ -33,12 +33,12 @@ describe.each(['parchment', 'atlas'] as const)('%s coastal sea', style => {
     }
   });
 
-  it('uses the seabed normals for faint lighting while preserving shore ink and heights', () => {
+  it('keeps water color independent of seabed lighting, like lakes', () => {
     const tilted = { x: new Float32Array(n * n).fill(0.6), y: normals.y, z: new Float32Array(n * n).fill(0.8) };
     const before = height.slice();
     const west = render(style, { normals: tilted, lighting: DEFAULT_TERRAIN_LIGHTING });
     const east = render(style, { normals: tilted, lighting: { ...DEFAULT_TERRAIN_LIGHTING, azimuth: 135 } });
-    expect(pixel(west, 4)).not.toEqual(pixel(east, 4));
+    expect(pixel(west, 4)).toEqual(pixel(east, 4));
     const sea = hexToRgb(PALETTES[style].seaFill);
     for (let channel = 0; channel < 3; channel++) expect(Math.abs(west[4 * 3 + channel] - sea[channel])).toBeLessThanOrEqual(9);
     expect(pixel(west, 0)).toEqual(hexToRgb(PALETTES[style].waterEdge));
@@ -57,11 +57,11 @@ describe.each(['parchment', 'atlas'] as const)('%s coastal sea', style => {
   });
 });
 
-it('keeps the coastal rendering opt-in and leaves the other styles unchanged', () => {
+it('keeps the coastal rendering opt-in for every palette', () => {
   for (const pal of [PALETTES.parchment, PALETTES.atlas, PALETTES.engraving]) {
     const options = { pixels: n, surface: height, normals, lighting };
     const rgb = renderTerrainPixels(world, pal, pal.name === 'engraving' ? { ...options, sea: { distance, bandWidth: 8 } } : options).rgb;
-    expect(pixel(rgb, 4)).toEqual(hexToRgb(pal.paper));
+    expect(pixel(rgb, 4)).toEqual(hexToRgb(pal.name === 'engraving' ? pal.seaFill : pal.paper));
   }
 });
 

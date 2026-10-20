@@ -26,5 +26,5 @@ export function terrainLights(lighting: TerrainLighting): { primary: number[]; s
   return { primary, secondary, flat: 0.7071 * vertical };
 }
 
-export interface TerrainLayers { relief: boolean; hypsometry: boolean; frame: boolean }
-export const DEFAULT_TERRAIN_LAYERS: TerrainLayers = { relief: true, hypsometry: true, frame: true };
+export interface TerrainLayers { relief: boolean; hypsometry: boolean; frame: boolean; water?: boolean }
+export const DEFAULT_TERRAIN_LAYERS: TerrainLayers = { relief: true, hypsometry: true, frame: true, water: true };

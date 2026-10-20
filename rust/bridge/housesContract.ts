@@ -1,3 +1,4 @@
+import type { ExecutionRuntime } from '../../web/src/ui/executionProfile';
 export const HOUSE_SCHEMA = '2';
 export const HOUSE_GENERATOR = 'houses-2';
 export const HOUSE_MAX_JSON_BYTES = 64 * 1024 * 1024;
@@ -110,7 +111,7 @@ export interface HouseError { code: string; field: string | null; message: strin
 export interface ResourceEstimate { bodies: number; rooms: number; faces: number }
 export interface Preflight { schema_version: string; settings: HouseConfig; admissible_recipes: string[]; rejected_recipes: {id: string; reason: string}[]; estimate: ResourceEstimate; budgets: ResourceEstimate }
 export type Envelope<T> = {ok: true; data: T} | {ok: false; error: HouseError};
-export type HouseRequest = {ticket: number; kind: 'catalogue'; module?: WebAssembly.Module} | {ticket: number; kind: 'preflight' | 'generate'; config: HouseConfig; module?: WebAssembly.Module};
+export type HouseRequest = ({ticket: number; kind: 'catalogue'; module?: WebAssembly.Module} | {ticket: number; kind: 'preflight' | 'generate'; config: HouseConfig; module?: WebAssembly.Module}) & {runtime?: ExecutionRuntime};
 export type HouseResponse = {ticket: number; kind: HouseRequest['kind']; json: string; elapsed_ms: number} | {ticket: number; kind: HouseRequest['kind']; error: HouseError; fatal: boolean};
 
 const roles = ['dwelling', 'residential_ensemble', 'communal_dwelling', 'mixed_residential', 'domestic_annex', 'spatial_component', 'non_domestic', 'landscape'];

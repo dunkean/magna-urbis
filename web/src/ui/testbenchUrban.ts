@@ -14,6 +14,8 @@ export interface WorkshopCatalogue {
   presets: Record<string, { label: string; params: MorphologyParams }>;
 }
 export interface WorkshopState {
+  /** Display preference transported with the plan; never an engine option. */
+  style?: import('../render/terrainStyle').TerrainStyle;
   layoutConfig: LayoutConfig; parcelConfig: ParcelConfig; quarterSeed: string; parcelSeed: string;
   layouts?: Layout[]; partitions?: Partition[];
 }

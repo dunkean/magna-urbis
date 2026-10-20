@@ -174,7 +174,7 @@ export function createTerrainSettlements(options: {
     if (!enabled) { ++id; output = undefined; draw(); list(); roads.set(undefined); urban.setSettlements(undefined); el('setStatus').textContent = 'Settlement generation disabled.'; el('setState').textContent = ''; return; }
     config.relief = options.getSettings().relief;
     const place = needsPlacement || !output;
-    const request: SettlementRequest = { id: ++id, seed: options.getSettings().seed, roads: roads.enabled ? clone(roads.config) : null };
+    const request: SettlementRequest = { id: ++id, seed: options.getSettings().seed, roads: roads.enabled ? clone(roads.config) : null, runtime: executionRuntime };
     if (place) request.place = { ...config, main: prefs(config.main), list: config.list.map(prefs) };
     else request.sites = sites(output!);
     if (!worker && !fallback) {
@@ -448,3 +448,4 @@ export function createTerrainSettlements(options: {
     },
   };
 }
+import { executionRuntime } from './executionProfile';

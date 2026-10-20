@@ -26,7 +26,9 @@ export function installTerrainHelp(): void {
     islandMode: () => 'Quand tous les côtés sont marins, choisit une île, plusieurs îles ou un choix seedé. En mode heightmap, les altitudes négatives définissent directement la mer.',
     environment: () => 'Relief entourant les formes locales comme plateau, volcan ou caldeira, utilisé dans la génération procédurale.',
     mountainMix: () => 'Proportion de montagnes dans le relief mixte. L’esquisse peut ensuite imposer leur emplacement général.',
-    style: () => 'Change la représentation de la carte, sans régénérer le relief ni modifier la heightmap.',
+    style: () => 'Le style définit les couleurs et matériaux de la carte, dont un même dégradé pour toutes les mers et tous les lacs. Les couches choisissent les éléments visibles. Les brushes restent une illustration indépendante.',
+    hydroOverlay: () => 'Un diagnostic visualise une donnée de calcul. Altitude remplace les couleurs du terrain ; les autres diagnostics se superposent à la carte. Ils ne modifient ni le style choisi ni les masques de génération.',
+    showWater: () => 'Affiche ou masque toute l’eau : mer, lacs et rivières. Lakes et Oxbows permettent de masquer séparément les lacs et les anciens chenaux.',
   };
   const tip = document.createElement('div'); tip.id = 'terrainHelpText'; tip.className = 'terrain-help-text'; tip.setAttribute('popover', 'auto'); tip.setAttribute('role', 'note'); document.body.append(tip);
   let current: HTMLButtonElement | undefined;

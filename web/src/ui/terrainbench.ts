@@ -1,6 +1,10 @@
-import { isFantasyStyle, renderFantasyTerrain, registerFantasyBrushes, DEFAULT_FANTASY_OPTIONS } from '../../../rust/bridge/fantasyTerrain';
+import { TERRAIN_LAYER_CONTROLS, DISPLAY_VOCABULARY } from '../render/displayLayers';
+import { seaDistanceSurface } from '../render/terrainWater';
+import { isFantasyStyle, prepareFantasyTerrain, renderFantasyTerrain, registerFantasyBrushes, DEFAULT_FANTASY_OPTIONS } from '../../../rust/bridge/fantasyTerrain';
+import { createFantasyTerrainLayer } from '../../../rust/bridge/fantasyTerrainLayer';
 import { fantasyLibraries } from '../render/fantasyBrushAssets';
-import { isMapStyle, STYLE_LIST } from '../render/styles';
+import { TERRAIN_STYLE_LIST, isTerrainStyle } from '../render/terrainStyle';
+import { DIAGNOSTICS, diagnosticAvailable, diagnosticDefinition } from '../render/displayDiagnostics';
 import { DEFAULT_TERRAIN_LAYERS, DEFAULT_TERRAIN_LIGHTING, type TerrainLayers, type TerrainLighting } from '../render/terrainLighting';
 import { createTerrainSketchEditor } from './terrainSketchEditor';
 import { installTerrainHelp } from './terrainHelp';
@@ -34,15 +38,21 @@ import { chooseExportCrop } from './exportCrop';
 import { exportPng } from './pngExport';
 import type {} from './benchContext';
 import { installRecipeSharing, portableRecipe } from './recipeSharing';
+import { executionRuntime, executionProfiles, applyExecutionProfile, installExecutionProfile } from './executionProfile';
 
 const el = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T;
+const profileDefaults = executionProfiles[executionRuntime.profile];
+installExecutionProfile(document.querySelector('header')!);
+if (executionRuntime.profile === 'local') el<HTMLSelectElement>('generationCompute').add(new Option('Rust natif', 'native'));
+const preferredNeural = el<HTMLSelectElement>('terrainSource').querySelector<HTMLOptionElement>(`option[value="${profileDefaults.neural}"]`);
+if (preferredNeural) preferredNeural.textContent += ' · profil';
 registerFantasyBrushes(fantasyLibraries);
 const input = (id: string): HTMLInputElement => el<HTMLInputElement>(id);
 const map = document.getElementById('map') as unknown as SVGSVGElement;
 const viewport = el('viewport');
 // GPU renderer; the SVG keeps the legacy Rust hydrology diagnostics and serves as the event surface.
 let gpu: TerrainGl | undefined;
-let fantasyScene = '';
+const fantasyTiles = createFantasyTerrainLayer(error => status(`Brushes: ${error instanceof Error ? error.message : error}`, true));
 const fantasyOptions = { ...DEFAULT_FANTASY_OPTIONS };
 for (const key of ['density', 'size', 'spacing'] as const) {
   const value = Number(new URLSearchParams(location.search).get(`brush_${key}`));
@@ -69,15 +79,32 @@ let retainedDecor: Decor | undefined, lastExport: Decor | undefined;
 let drawTransferSelection: (() => void) | undefined;
 const finite = (value: string | null, fallback: number): number => value !== null && value.trim() !== '' && Number.isFinite(Number(value)) ? Number(value) : fallback;
 const bounded = (value: number, min: number, max: number): number => Math.max(min, Math.min(max, value));
-el<HTMLSelectElement>('style').replaceChildren(...[...STYLE_LIST, { id: 'fantasy-ink', label: 'Fantasy · Encre N&B' }, { id: 'fantasy-color', label: 'Fantasy · Aquarelle' }, { id: 'render', label: 'Render · Neural Earth' }, { id: 'copernicus', label: 'DEM · Copernicus' }].map(style => {
+el<HTMLSelectElement>('style').replaceChildren(...TERRAIN_STYLE_LIST.map(style => {
   const option = document.createElement('option'); option.value = style.id; option.textContent = style.label; return option;
 }));
+for (const control of TERRAIN_LAYER_CONTROLS) {
+  const field = input(control.id), label = field.closest('label')!;
+  label.title = control.description; label.dataset.displayKind = 'layer';
+  for (const node of Array.from(label.childNodes)) if (node.nodeType === Node.TEXT_NODE) node.textContent = control.label;
+}
+el('style').title = DISPLAY_VOCABULARY.style; el('style').dataset.displayKind = 'style';
+const diagnosticSelect = el<HTMLSelectElement>('hydroOverlay');
+diagnosticSelect.title = DISPLAY_VOCABULARY.diagnostic; diagnosticSelect.dataset.displayKind = 'diagnostic';
+diagnosticSelect.replaceChildren();
+for (const definition of DIAGNOSTICS) {
+  let parent: HTMLSelectElement | HTMLOptGroupElement = diagnosticSelect;
+  if (definition.group) {
+    const group = Array.from(diagnosticSelect.querySelectorAll('optgroup')).find(group => group.label === definition.group) ?? document.createElement('optgroup');
+    group.label = definition.group; if (!group.parentElement) diagnosticSelect.append(group); parent = group;
+  }
+  const option = document.createElement('option'); option.value = definition.id; option.textContent = definition.label; option.title = definition.legend; parent.append(option);
+}
 const brushPanel = document.createElement('fieldset');
 brushPanel.innerHTML = '<legend>Fantasy · Brushes</legend>';
 for (const [key, label] of [['density', 'Densité'], ['size', 'Taille'], ['spacing', 'Espacement']] as const) {
   const row = document.createElement('label'), slider = document.createElement('input');
   row.textContent = label; slider.type = 'range'; slider.min = '.3'; slider.max = '2'; slider.step = '.05'; slider.value = String(fantasyOptions[key]); slider.id = `brush_${key}`;
-  slider.oninput = () => { fantasyOptions[key] = Number(slider.value); fantasyScene = ''; render(); deferSave(); };
+  slider.oninput = () => { fantasyOptions[key] = Number(slider.value); render(); deferSave(); };
   row.append(slider); brushPanel.append(row);
 }
 el('lightingControls').querySelector('.lighting-fields')!.append(brushPanel);
@@ -88,7 +115,7 @@ for (const format of ['svg', 'png'] as const) {
     if (!terrain || !isFantasyStyle(style)) return;
     button.disabled = true;
     try {
-      const scene = renderRustTerrain(terrain, style, true, settings, false, 'export', lighting, layers, fantasyOptions, false);
+      const scene = renderRustTerrain(terrain, style, true, settings, false, 'export', lighting, layers, fantasyOptions, false, baseStyle);
       const svg = map.cloneNode(true) as SVGSVGElement;
       for (const id of ['terrainOverview', 'terrainDetail', 'fantasyPainting']) svg.querySelector(`#${id}`)?.remove();
       svg.setAttribute('viewBox', `0 0 ${terrain.width} ${terrain.width}`); svg.setAttribute('width', '4096'); svg.setAttribute('height', '4096');
@@ -112,7 +139,7 @@ for (const format of ['svg', 'png'] as const) {
 const layerFields = { relief: 'showRelief', hypsometry: 'showHypsometry', frame: 'showFrame' } as const;
 let layers: TerrainLayers = { ...DEFAULT_TERRAIN_LAYERS };
 for (const [key, id] of Object.entries(layerFields)) {
-  layers[key as keyof TerrainLayers] = query.get(`layer_${key}`) !== '0'; input(id).checked = layers[key as keyof TerrainLayers];
+  layers[key as keyof TerrainLayers] = query.get(`layer_${key}`) !== '0'; input(id).checked = layers[key as keyof TerrainLayers] !== false;
 }
 input('showLegend').checked = query.get('legend') !== '0';
 const lightingFields = { azimuth: ['lightAzimuth', 0, 360], elevation: ['lightElevation', 5, 90], strength: ['lightStrength', 0, 3], exaggeration: ['lightExaggeration', 0, 10] } as const;
@@ -220,8 +247,8 @@ let settings: TerrainSettings = {
   islandMode: ISLAND_MODES.includes(query.get('islands') as IslandMode) ? query.get('islands') as IslandMode : 'island',
   mountainMix: bounded(finite(query.get('mix'), 0.5), 0, 1),
   erosion: bounded(finite(query.get('erosion'), 1), 0, 2), resolution: 512,
-  compute: COMPUTE_MODES.includes(query.get('compute') as TerrainCompute) ? query.get('compute') as TerrainCompute : 'gpu-f32',
-  generationCompute: query.get('generation') === 'cpu' ? 'cpu' : query.get('generation') === 'gpu-all' ? 'gpu-all' : query.get('generation') === 'gpu' ? 'gpu' : 'gpu-erosion',
+  compute: COMPUTE_MODES.includes(query.get('compute') as TerrainCompute) ? query.get('compute') as TerrainCompute : profileDefaults.compute as TerrainCompute,
+  generationCompute: ['cpu', 'gpu', 'gpu-all', 'gpu-erosion', ...(executionRuntime.profile === 'local' ? ['native'] : [])].includes(query.get('generation') ?? '') ? query.get('generation') as TerrainSettings['generationCompute'] : profileDefaults.generation as TerrainSettings['generationCompute'],
   source: initialSource,
   climate: NEURAL_CLIMATES.includes(query.get('climate') as NeuralClimate) ? query.get('climate') as NeuralClimate : 'temperate',
   climateValues: initialClimateValues,
@@ -296,12 +323,16 @@ if (query.get('v') === '3' || query.get('v') === '2') {
 Object.assign(initialHydrology, readHydrology());
 settings.hydrology = initialHydrology;
 const overlays: (HydrologyOverlay | VectorOverlay)[] = ['none', 'basins', 'accumulation', 'flow', 'depressions', 'lakes', 'channels', 'raw-basins', 'raw-accumulation', 'raw-flow', 'raw-depressions', 'flats', 'flat-rank', ...VECTOR_OVERLAYS];
-let hydroOverlay: HydrologyOverlay | VectorOverlay = overlays.includes(query.get('overlay') as HydrologyOverlay) ? query.get('overlay') as HydrologyOverlay : 'none';
+let hydroOverlay: HydrologyOverlay | VectorOverlay = overlays.includes((query.get('diagnostic') ?? query.get('overlay')) as HydrologyOverlay) ? (query.get('diagnostic') ?? query.get('overlay')) as HydrologyOverlay : 'none';
 const isVectorOverlay = (overlay: string): overlay is VectorOverlay => (VECTOR_OVERLAYS as string[]).includes(overlay);
 input('showLakes').checked = query.get('lakes') !== '0'; input('showOxbows').checked = query.get('oxbows') !== '0';
 el<HTMLSelectElement>('hydroOverlay').value = hydroOverlay;
-input('showWater').checked = query.get('water') !== '0';
-let style: TerrainStyle = isMapStyle(query.get('style')) || isFantasyStyle(query.get('style') ?? '') || query.get('style') === 'copernicus' || query.get('style') === 'render' ? query.get('style') as TerrainStyle : 'parchment';
+input('showWater').checked = query.get('water') !== '0'; layers.water = input('showWater').checked;
+let baseStyle: TerrainStyle = isTerrainStyle(query.get('style')) && query.get('style') !== 'copernicus' ? query.get('style') as TerrainStyle : 'parchment';
+let elevationDiagnostic = query.get('diagnostic') === 'elevation' || query.get('style') === 'copernicus';
+let style: TerrainStyle = elevationDiagnostic ? 'copernicus' : baseStyle;
+diagnosticSelect.value = elevationDiagnostic ? 'elevation' : hydroOverlay;
+
 let view: View = viewFromString(query.get('view')) || fitView(settings.width, viewport.clientWidth, viewport.clientHeight);
 let terrain: TerrainData | undefined;
 let sketchEditor: ReturnType<typeof createTerrainSketchEditor> | undefined;
@@ -377,7 +408,7 @@ function updateCoordinates(): void {
 input('width').value = String(settings.width); input('motifSize').value = String(settings.motifSize);
 input('mountainMix').value = String(settings.mountainMix);
 input('seed').value = settings.seed; input('erosion').value = String(settings.erosion);
-el<HTMLSelectElement>('relief').value = settings.relief; el<HTMLSelectElement>('style').value = style;
+el<HTMLSelectElement>('relief').value = settings.relief; el<HTMLSelectElement>('style').value = baseStyle;
 el<HTMLSelectElement>('environment').value = settings.environment!;
 el<HTMLSelectElement>('compute').value = settings.compute!;
 el<HTMLSelectElement>('generationCompute').value = settings.generationCompute!;
@@ -437,7 +468,7 @@ function updateHydrologyControl(): void {
     el<HTMLInputElement | HTMLSelectElement>(id).disabled ||= !input('hydroErosionEnabled').checked;
   }
   input('hydroCondStrength').disabled ||= !['erosion', 'both'].includes(el<HTMLSelectElement>('hydroCondMode').value);
-  for (const option of Array.from(el<HTMLSelectElement>('hydroOverlay').options)) option.disabled = option.value !== 'none' && isVectorOverlay(option.value) === rust;
+  for (const option of Array.from(el<HTMLSelectElement>('hydroOverlay').options)) option.disabled = !diagnosticAvailable(option.value, rust ? 'rust' : 'vector');
   el('hydroLakeAbundanceValue').textContent = `× ${Number(input('hydroLakeAbundance').value).toFixed(2)}`;
   el('hydroLakeAbundanceControl').hidden = el<HTMLSelectElement>('hydroLakes').value !== 'some';
 }
@@ -522,9 +553,10 @@ function status(message: string, error = false): void {
   el('status').textContent = message; el('status').dataset.error = String(error);
 }
 function shareQuery(): string {
-  const params = new URLSearchParams({ brush_density: String(fantasyOptions.density), brush_size: String(fantasyOptions.size), brush_spacing: String(fantasyOptions.spacing), engine: 'rust', v: '4', seed: settings.seed, width: String(settings.width), motif: String(settings.motifSize), relief: settings.relief, erosion: String(settings.erosion), style, auto: input('auto').checked ? '1' : '0' });
+  const params = new URLSearchParams({ brush_density: String(fantasyOptions.density), brush_size: String(fantasyOptions.size), brush_spacing: String(fantasyOptions.spacing), engine: 'rust', v: '4', seed: settings.seed, width: String(settings.width), motif: String(settings.motifSize), relief: settings.relief, erosion: String(settings.erosion), style: baseStyle, auto: input('auto').checked ? '1' : '0' });
+  if (!gpu) params.set('render', 'svg');
   for (const [key, value] of Object.entries(settings.hydrology ?? DEFAULT_HYDROLOGY)) params.set(`hydro_${key}`, typeof value === 'boolean' ? value ? '1' : '0' : String(value));
-  params.set('overlay', hydroOverlay); params.set('water', input('showWater').checked ? '1' : '0');
+  params.set('diagnostic', elevationDiagnostic ? 'elevation' : hydroOverlay); params.set('overlay', hydroOverlay); params.set('water', input('showWater').checked ? '1' : '0');
   params.set('contours', input('showContours').checked ? '1' : '0');
   for (const [key, value] of Object.entries(layers)) params.set(`layer_${key}`, value ? '1' : '0');
   params.set('legend', input('showLegend').checked ? '1' : '0');
@@ -566,7 +598,7 @@ function shareQuery(): string {
   settlements.share(params);
   if (pins.pins.length) params.set('pins', pinsToString(pins.pins));
   if (!input('showPins').checked) params.set('showPins', '0');
-  params.set('view', viewToString(view)); return params.toString();
+  params.set('view', viewToString(view)); return applyExecutionProfile(new URL(`?${params}`, location.href)).searchParams.toString();
 }
 function save(): void {
   clearTimeout(saveTimer);
@@ -606,10 +638,9 @@ const settlements = createTerrainSettlements({ map, viewport, getTerrain: () => 
 });
 
 function refreshUrbanPainting(): void {
-  const layer = map.querySelector('#fantasyPainting');
-  if (!terrain || !layer || !isFantasyStyle(style) || !layers.relief) return;
-  fantasyScene = renderFantasyTerrain(terrain, style, settings, fantasyOptions, settlements.paintingContext);
-  layer.innerHTML = fantasyScene;
+  const layer = map.querySelector<SVGGElement>('#fantasyPainting');
+  if (!terrain || !layer || !isFantasyStyle(style) || !layers.relief) { fantasyTiles.clear(); return; }
+  fantasyTiles.setScene(layer, prepareFantasyTerrain(terrain, style, settings, fantasyOptions, settlements.paintingContext));
 }
 
 function updateView(): void {
@@ -619,6 +650,7 @@ function updateView(): void {
   map.style.setProperty('--terrain-contour-width', `${contourWidths.thin}px`);
   map.style.setProperty('--terrain-contour-index-width', `${contourWidths.index}px`);
   map.setAttribute('viewBox', `${view.cx - w / (2 * view.scale)} ${view.cy - h / (2 * view.scale)} ${w / view.scale} ${h / view.scale}`);
+  fantasyTiles.setView(view, w, h);
   gpu?.setView(view, w, h);
   pins.update(view, w, h);
   ruler.update();
@@ -654,8 +686,8 @@ function renderedStatus(): void {
   const environment = geological(settings.relief) ? ` · surroundings ${el<HTMLSelectElement>('environment').querySelector<HTMLOptionElement>(`option[value="${settings.environment ?? 'mixed'}"]`)!.textContent}` : '';
   const detail = displayedDetail ? ` · detail ${displayedDetail.terrain.resolution}² (${(displayedDetail.terrain.width / displayedDetail.terrain.resolution).toFixed(2)} m) · sampling ${detailSamplingMs.toFixed(0)} ms` : '';
   const data = displayedDetail?.terrain ?? terrain;
-  const backend = data.backend === 'wasm' ? `CPU Rust${data.backendReason ? ` (${data.backendReason})` : ''}` : 'GPU FP32';
-  const generationBackend = terrain.generationBackend === 'gpu-erosion-f32' ? 'GPU FP32 erosion' : terrain.generationBackend === 'gpu-noise-all-f32' ? 'all GPU FP32 noise + CPU erosion' : terrain.generationBackend === 'gpu-noise-f32' ? 'fine GPU FP32 noise + CPU erosion' : 'CPU generation';
+  const backend = data.backend === 'native' ? 'Rust natif' : data.backend === 'wasm' ? `CPU Rust${data.backendReason ? ` (${data.backendReason})` : ''}` : 'GPU FP32';
+  const generationBackend = terrain.generationBackend === 'native' ? 'Rust natif' : terrain.generationBackend === 'gpu-erosion-f32' ? 'GPU FP32 erosion' : terrain.generationBackend === 'gpu-noise-all-f32' ? 'all GPU FP32 noise + CPU erosion' : terrain.generationBackend === 'gpu-noise-f32' ? 'fine GPU FP32 noise + CPU erosion' : 'CPU generation';
   const preparation = terrain.prepareMs === undefined ? '' : ` · preparation ${terrain.prepareMs.toFixed(0)} ms (${generationBackend}${terrain.gpuSimulationMs ? `, GPU simulation ${terrain.gpuSimulationMs.toFixed(0)} ms` : ''}${terrain.nativeEnvironmentMs ? `, CPU surroundings ${terrain.nativeEnvironmentMs.toFixed(0)} ms` : ''}${terrain.noiseMs ? `, noise ${terrain.noiseMs.toFixed(0)} ms, Rust remainder ${terrain.erosionMs!.toFixed(0)} ms` : ''})${terrain.generationReason ? ` · ${terrain.generationReason}` : ''}`;
   const setup = terrain.gpuSetupMs ? ` · GPU initialization ${terrain.gpuSetupMs.toFixed(0)} ms` : '';
   const coast = terrain.coastBackend ? ` · coast + erosion ${terrain.coastBackend === 'gpu-f32' ? 'GPU FP32' : 'Rust CPU'}${terrain.coastMs ? ` ${terrain.coastMs.toFixed(0)} ms` : ''}${terrain.coastReason ? ` (${terrain.coastReason})` : ''}` : '';
@@ -683,9 +715,15 @@ function renderedStatus(): void {
 }
 function renderWater(): void {
   const layer = document.getElementById('hydrologyOverlay');
+  const source = retainedDecor ? 'none' : terrain?.water ? 'vector' : terrain?.hydrology ? 'rust' : 'none';
+  for (const option of Array.from(diagnosticSelect.options)) option.disabled = !diagnosticAvailable(option.value, source);
+  if (!diagnosticAvailable(hydroOverlay, source)) { hydroOverlay = 'none'; diagnosticSelect.value = elevationDiagnostic ? 'elevation' : 'none'; }
+
   if (retainedDecor && layer) {
     gpu?.setWater(undefined); gpu?.setOverlay(undefined);
-    layer.innerHTML = input('showWater').checked ? decorWaterSvg(retainedDecor, style, input('showLakes').checked) : '';
+    layer.innerHTML = input('showWater').checked ? decorWaterSvg(retainedDecor, baseStyle, input('showLakes').checked) : '';
+    el('hydrologyLegend').hidden = !elevationDiagnostic || !input('showLegend').checked;
+    el('hydrologyLegend').textContent = diagnosticDefinition(elevationDiagnostic ? 'elevation' : 'none').legend;
     el('hydrologyLegend').hidden = true; report(); return;
   }
   if (!layer) return;
@@ -694,25 +732,26 @@ function renderWater(): void {
   if (gpu && !isFantasyStyle(style)) {
     const vectorOverlay = water && isVectorOverlay(hydroOverlay) ? hydroOverlay : 'none';
     const cond = terrain?.conditioning;
-    const display = { style, showLakes: input('showLakes').checked, showOxbows: input('showOxbows').checked, riverArea: riverAreaFor(settings.hydrology ?? DEFAULT_HYDROLOGY, settings.width), riverMode: settings.hydrology?.riverMode ?? 'vector', overlay: vectorOverlay };
+    const display = { style: baseStyle, showLakes: input('showLakes').checked, showOxbows: input('showOxbows').checked, riverArea: riverAreaFor(settings.hydrology ?? DEFAULT_HYDROLOGY, settings.width), riverMode: settings.hydrology?.riverMode ?? 'vector', overlay: vectorOverlay };
     const shown = input('showWater').checked, hydrology = !water && !terrain?.hydrologyError ? terrain?.hydrology : undefined;
-    if (water && shown) gpu.setWater({ lake: display.showLakes ? lakeField(water.lake, water.hydro.n).values : undefined, n: water.hydro.n, lakeColor: lakeColour(display), rivers: riverSegments(water, display) });
+    if (water && shown) gpu.setWater({ lake: display.showLakes ? lakeField(water.lake, water.hydro.n).values : undefined, n: water.hydro.n, rivers: riverSegments(water, display) });
     else if (hydrology && shown) {
       // The Rust network on the GPU: its lakes' shore field, as the SVG rings contour it.
-      const colour = hydrologyWaterColour(style);
-      gpu.setWater({ lake: display.showLakes ? hydrology.waterField : undefined, shore: 'exact', n: hydrology.resolution, lakeColor: colour, rivers: hydrologySegments(hydrology, colour) });
+      const colour = hydrologyWaterColour(baseStyle);
+      gpu.setWater({ lake: display.showLakes ? hydrology.waterField : undefined, shore: 'exact', n: hydrology.resolution, rivers: hydrologySegments(hydrology, colour) });
     } else gpu.setWater(undefined);
     gpu.setOverlay(water ? vectorOverlayPixels(water, vectorOverlay, cond ? { values: cond.delta, n: cond.n } : undefined) : undefined);
     layer.innerHTML = hydrology && !isVectorOverlay(hydroOverlay) ? renderHydrology(hydrology, hydroOverlay, false, style) : '';
   } else if (water) {
     const vectorOverlay = isVectorOverlay(hydroOverlay) ? hydroOverlay : 'none';
     const cond = terrain?.conditioning;
-    layer.innerHTML = vectorOverlaySvg(water, vectorOverlay, cond ? { values: cond.delta, n: cond.n } : undefined)
-      + (input('showWater').checked ? vectorWaterSvg(water, { style, showLakes: input('showLakes').checked, showOxbows: input('showOxbows').checked, riverArea: riverAreaFor(settings.hydrology ?? DEFAULT_HYDROLOGY, settings.width), riverMode: settings.hydrology?.riverMode ?? 'vector', overlay: vectorOverlay }) : '');
-  } else layer.innerHTML = terrain?.hydrology && !isVectorOverlay(hydroOverlay) ? renderHydrology(terrain.hydrology, hydroOverlay, input('showWater').checked, style) : '';
+    layer.innerHTML = (input('showWater').checked ? vectorWaterSvg(water, { style: baseStyle, showLakes: input('showLakes').checked, showOxbows: input('showOxbows').checked, riverArea: riverAreaFor(settings.hydrology ?? DEFAULT_HYDROLOGY, settings.width), riverMode: settings.hydrology?.riverMode ?? 'vector', overlay: vectorOverlay }) : '')
+      + vectorOverlaySvg(water, vectorOverlay, cond ? { values: cond.delta, n: cond.n } : undefined);
+  } else layer.innerHTML = terrain?.hydrology && !isVectorOverlay(hydroOverlay) ? renderHydrology(terrain.hydrology, hydroOverlay, input('showWater').checked, baseStyle) : '';
   const legend = el('hydrologyLegend');
-  legend.hidden = !input('showLegend').checked || hydroOverlay === 'none' || (isVectorOverlay(hydroOverlay) ? !water : !terrain?.hydrology);
-  legend.textContent = isVectorOverlay(hydroOverlay) ? VECTOR_LEGENDS[hydroOverlay] : HYDROLOGY_LEGENDS[hydroOverlay];
+  const diagnostic = diagnosticDefinition(elevationDiagnostic ? 'elevation' : hydroOverlay);
+  legend.hidden = !input('showLegend').checked || diagnostic.id === 'none' || (diagnostic.source === 'vector' ? !water : diagnostic.source === 'rust' ? !terrain?.hydrology : false);
+  legend.textContent = diagnostic.legend;
   report();
 }
 
@@ -759,15 +798,15 @@ function renderGpu(): void {
   if (uploaded !== terrain) {
     // A new landscape: its control grid replaces every layer.
     const base = field ?? { n: terrain.resolution, data: terrain.height, exact: false, floor: 0, cave: terrain.caveMask.length ? terrain.caveMask : undefined };
-    gpu.setBase({ x: 0, y: 0, width: terrain.width, n: base.n, data: base.data, cave: base.cave });
-    uploaded = terrain; displayedDetail = undefined; fantasyScene = '';
+    gpu.setBase({ x: 0, y: 0, width: terrain.width, n: base.n, data: base.data, cave: base.cave, waterSurface: terrain.waterSurface });
+    uploaded = terrain; displayedDetail = undefined;
     map.innerHTML = '<g id="hydrologyOverlay"></g>';
   }
   contourStep = contourInterval();
   const look: TerrainLook = {
-    style, lighting: isFantasyStyle(style) ? { ...lighting, strength: .12 } : lighting, layers: isFantasyStyle(style) ? { ...layers, hypsometry: false } : layers, climate: climateOf(settings), mapWidth: terrain.width, globalMin: terrain.globalMinHeight, globalMax: terrain.globalMaxHeight,
-    contours: !isFantasyStyle(style) && input('showContours').checked && contourStep > 0, contourStep, flatRelief: settings.relief === 'flat',
-    refine: !!settings.refine && !terrain.caveMask.length, sourceCell: settings.width / 1024, seed: seedHash(settings.seed),
+    style, waterStyle: baseStyle, lighting: isFantasyStyle(style) ? { ...lighting, strength: .12 } : lighting, layers: isFantasyStyle(style) ? { ...layers, hypsometry: false } : layers, climate: climateOf(settings), mapWidth: terrain.width, globalMin: terrain.globalMinHeight, globalMax: terrain.globalMaxHeight,
+    contours: layers.relief && !isFantasyStyle(style) && input('showContours').checked && contourStep > 0, contourStep, flatRelief: settings.relief === 'flat',
+    refine: !!settings.refine && !terrain.caveMask.length, sourceCell: retainedDecor?.meta.terrainDisplay?.sourceCell ?? settings.width / 1024, seed: seedHash(settings.seed),
     detail: settings.detailNoise ?? DEFAULT_FRACTAL_DETAIL,
     floor: field?.floor ?? 0, frame: layers.frame, background: '#f1f0e9',
   };
@@ -775,9 +814,8 @@ function renderGpu(): void {
   let fantasy: Element | null = document.getElementById('fantasyPainting');
   if (isFantasyStyle(style) && layers.relief) {
     if (!fantasy) { fantasy = document.createElementNS('http://www.w3.org/2000/svg', 'g'); fantasy.id = 'fantasyPainting'; fantasy.setAttribute('pointer-events', 'none'); map.append(fantasy); }
-    const scene = renderFantasyTerrain(terrain, style, settings, fantasyOptions, settlements.paintingContext);
-    if (scene !== fantasyScene) { fantasy.innerHTML = scene; fantasyScene = scene; }
-  } else { fantasy?.remove(); fantasyScene = ''; }
+  } else fantasy?.remove();
+  refreshUrbanPainting();
   renderWater();
   renderingMs = performance.now() - start;
   updateView(); renderedStatus();
@@ -787,8 +825,9 @@ function render(preparedScene?: TerrainScene, preparationMs = 0): void {
   if (!terrain) return;
   if (gpu) { updateContourControl(); renderGpu(); return; }
   updateContourControl();
-  const start = performance.now(), scene = (!isFantasyStyle(style) ? preparedScene : undefined) ?? renderRustTerrain(terrain, style, true, settings, input('showContours').checked, 'main', lighting, layers, fantasyOptions, false);
-  map.innerHTML = `<g id="terrainOverview">${scene.svg}</g><g id="terrainDetail"></g><g id="hydrologyOverlay"></g>${isFantasyStyle(style) && layers.relief ? `<g id="fantasyPainting" pointer-events="none">${renderFantasyTerrain(terrain, style, settings, fantasyOptions, settlements.paintingContext)}</g>` : ''}`;
+  const start = performance.now(), scene = (!isFantasyStyle(style) ? preparedScene : undefined) ?? renderRustTerrain(terrain, style, true, settings, input('showContours').checked, 'main', lighting, layers, fantasyOptions, false, baseStyle);
+  map.innerHTML = `<g id="terrainOverview">${scene.svg}</g><g id="terrainDetail"></g><g id="hydrologyOverlay"></g>${isFantasyStyle(style) && layers.relief ? '<g id="fantasyPainting" pointer-events="none"></g>' : ''}`;
+  refreshUrbanPainting();
   renderWater();
   contourStep = scene.contourStep; renderingMs = preparationMs + performance.now() - start;
   displayedDetail = undefined;
@@ -898,8 +937,9 @@ function receive(response: TerrainResponse): void {
     try {
       const start = performance.now();
       const data = response.terrain;
-      const prepared = request.scene?.style === style && request.scene.showContours === input('showContours').checked && JSON.stringify(request.scene.lighting) === JSON.stringify(lighting) && JSON.stringify(request.scene.layers) === JSON.stringify(layers);
-      const scene = prepared && response.scene ? response.scene : renderRustTerrain(data, style, false, settings, input('showContours').checked, 'detail', lighting, layers), image = new Image();
+      const prepared = request.scene?.style === style && request.scene.waterStyle === baseStyle && request.scene.showContours === input('showContours').checked && JSON.stringify(request.scene.lighting) === JSON.stringify(lighting) && JSON.stringify(request.scene.layers) === JSON.stringify(layers);
+      if (terrain) data.waterSurface = seaDistanceSurface(terrain, settings.width);
+      const scene = prepared && response.scene ? response.scene : renderRustTerrain(data, style, false, settings, input('showContours').checked, 'detail', lighting, layers, fantasyOptions, false, baseStyle), image = new Image();
       image.src = scene.imageUrl;
       const tile: DetailTile = {
         terrain: { x: data.x, y: data.y, width: data.width, resolution: data.resolution, height: data.height, caveMask: data.caveMask, generationMs: data.generationMs, backend: data.backend, backendReason: data.backendReason, prepareMs: data.prepareMs, samplingMs: data.samplingMs, gpuSetupMs: data.gpuSetupMs },
@@ -934,7 +974,7 @@ function receive(response: TerrainResponse): void {
   if (terrain.erosionDefaults) showErosionDefaults(terrain.erosionDefaults);
   settlements.terrainReady();
   updateStageStates();
-  const prepared = overviewRequest.scene?.style === style && overviewRequest.scene.showContours === input('showContours').checked && JSON.stringify(overviewRequest.scene.lighting) === JSON.stringify(lighting) && JSON.stringify(overviewRequest.scene.layers) === JSON.stringify(layers);
+  const prepared = overviewRequest.scene?.style === style && overviewRequest.scene.waterStyle === baseStyle && overviewRequest.scene.showContours === input('showContours').checked && JSON.stringify(overviewRequest.scene.lighting) === JSON.stringify(lighting) && JSON.stringify(overviewRequest.scene.layers) === JSON.stringify(layers);
   try { render(prepared ? response.scene : undefined, prepared ? response.scenePreparationMs : 0); save(); } catch (error) { status(`Rendering error: ${error instanceof Error ? error.message : error}`, true); }
 }
 let worker: Worker | undefined;
@@ -944,8 +984,9 @@ async function runOnMain(request: TerrainRequest): Promise<void> {
   catch (error) { receive({ ...meta, error: error instanceof Error ? error.message : String(error) }); }
 }
 function dispatch(request: TerrainRequest): void {
+  request.runtime = executionRuntime;
   if (gpu) request.display = 'gl';
-  else if (!isFantasyStyle(style)) request.scene = { style, lighting, layers, showContours: input('showContours').checked };
+  else if (!isFantasyStyle(style)) request.scene = { style, waterStyle: baseStyle, lighting, layers, showContours: input('showContours').checked };
   if (worker) worker.postMessage(request); else void runOnMain(request);
 }
 try {
@@ -1089,7 +1130,7 @@ el<HTMLSelectElement>('generationCompute').onchange = parameterChanged;
 input('auto').onchange = () => { clearTimeout(generationTimer); save(); if (input('auto').checked) generate(); };
 el('randomSeed').onclick = () => { input('seed').value = crypto.getRandomValues(new Uint32Array(1))[0].toString(36); generate(); };
 el<HTMLSelectElement>('style').onchange = () => {
-  style = el<HTMLSelectElement>('style').value as TerrainStyle; brushPanel.hidden = !isFantasyStyle(style);
+  baseStyle = el<HTMLSelectElement>('style').value as TerrainStyle; style = elevationDiagnostic ? 'copernicus' : baseStyle; brushPanel.hidden = !isFantasyStyle(style);
   detailRequest = undefined; render(); save();
 };
 el('fit').onclick = fit;
@@ -1115,10 +1156,15 @@ el('resetLighting').onclick = () => {
   for (const [key, [id]] of Object.entries(lightingFields)) input(id).value = String(lighting[key as keyof typeof lightingFields]);
   changeLighting();
 };
-input('showWater').onchange = () => { renderWater(); save(); };
+input('showWater').onchange = () => { layers = { ...layers, water: input('showWater').checked }; detailRequest = undefined; render(); save(); };
 input('showLakes').onchange = () => { renderWater(); save(); };
 input('showOxbows').onchange = () => { renderWater(); save(); };
-el<HTMLSelectElement>('hydroOverlay').onchange = () => { hydroOverlay = el<HTMLSelectElement>('hydroOverlay').value as HydrologyOverlay | VectorOverlay; renderWater(); updateCoordinates(); save(); };
+diagnosticSelect.onchange = () => {
+  elevationDiagnostic = diagnosticSelect.value === 'elevation';
+  hydroOverlay = elevationDiagnostic ? 'none' : diagnosticSelect.value as HydrologyOverlay | VectorOverlay;
+  style = elevationDiagnostic ? 'copernicus' : baseStyle;
+  detailRequest = undefined; render(); updateCoordinates(); save();
+};
 input('showContours').onchange = () => {
   updateContourControl();
   if (gpu) render();

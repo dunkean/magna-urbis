@@ -1,3 +1,4 @@
+import { retainedWaterMaterial } from './decorWater';
 import { urbanOptionSync } from './urbanOptionSync';
 import { createTerrainUrban } from './terrainUrban';
 import { createUrbanWorkshop } from './urbanWorkshop';
@@ -7,6 +8,9 @@ import { downloadBytes } from './decorCapture';
 import type { WorkshopState } from './testbenchUrban';
 import { installRecipeSharing, portableRecipe } from './recipeSharing';
 import type {} from './benchContext';
+import { applyExecutionProfile, installExecutionProfile } from './executionProfile';
+
+installExecutionProfile(document.querySelector('header')!);
 
 const query = new URLSearchParams(location.search);
 let decor: Decor | undefined, ready = false;
@@ -14,16 +18,18 @@ const urban = createTerrainUrban({ map: document.getElementById('map') as unknow
   getTerrain: () => undefined, getRaster: () => decor?.raster, getSeed: () => decor?.meta.seed ?? '', getAuto: () => false, onChange: () => {} });
 function share(): string {
   const params = new URLSearchParams(); if (decor) params.set('artifact', decor.meta.id);
-  workshop.share(params); return params.toString();
+  workshop.share(params); return applyExecutionProfile(new URL(`?${params}`, location.href)).searchParams.toString();
 }
 const publishOptions = urbanOptionSync(() => decor?.meta.pipeline?.parent && decor.meta.pipeline.city ? `${decor.meta.pipeline.syncSource ?? decor.meta.pipeline.parent}:${decor.meta.pipeline.city}` : undefined, state => workshop.applySettings(state));
 function save(): void { const state = workshop.currentState(); if (state) publishOptions(state); const url = new URL(location.href); url.search = share(); history.replaceState(null, '', url); syncBenchUrl(); }
 async function snapshot(state: WorkshopState): Promise<Decor> {
   if (!decor) throw new Error('Chargez une ville depuis Settlements avant de la renvoyer.');
-  return saveHistory({ ...decor, meta: { ...decor.meta, pipeline: { ...decor.meta.pipeline, stage: 'urban', urban: state, urbanDraft: workshop.draftSettings() } } });
+  const displayQuery = new URLSearchParams(decor.meta.query); if (state.style) displayQuery.set('style', state.style);
+  return saveHistory({ ...decor, meta: { ...decor.meta, query: displayQuery.toString(), pipeline: { ...decor.meta.pipeline, stage: 'urban', urban: state, urbanDraft: workshop.draftSettings() } } });
 }
 const workshop = createUrbanWorkshop({ urban, workshopOnly: true,
-  getContext: () => decor && { raster: decor.raster, sites: decor.meta.settlements, roads: decor.meta.roads ?? undefined, seed: decor.meta.seed },
+  getStyle: () => new URLSearchParams(decor?.meta.query ?? location.search).get('style') ?? 'parchment',
+  getContext: () => decor && { waterAppearance: { geometry: decor.meta.waterSvg, material: retainedWaterMaterial(decor) }, raster: decor.raster, sites: decor.meta.settlements, roads: decor.meta.roads ?? undefined, seed: decor.meta.seed },
   onChange: save,
   onReturn: async state => {
     let saved: Decor;
@@ -43,6 +49,7 @@ const workshop = createUrbanWorkshop({ urban, workshopOnly: true,
         partitions: state.partitions ? [...(previous?.partitions ?? []).filter(p => p.key !== key), ...move(state.partitions)] : undefined } } } });
     } else saved = await snapshot(state);
     const params = new URLSearchParams(saved.meta.query);
+    if (state.style) params.set('style', state.style);
     params.set('artifact', saved.meta.id); params.set('stage', 'settlements'); params.delete('space'); params.delete('workshop');
     // Applied settings travel with the exact raster and plan in either direction.
     const { layouts: _layouts, partitions: _partitions, ...settings } = state;

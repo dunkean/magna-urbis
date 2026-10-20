@@ -1,0 +1,13 @@
+{
+  "web": {
+    "compute": "gpu-f32",
+    "generation": "gpu-erosion",
+    "neural": "neural-wasm"
+  },
+  "local": {
+    "server": "http://127.0.0.1:8791",
+    "compute": "gpu-f32",
+    "generation": "native",
+    "neural": "neural-python"
+  }
+}

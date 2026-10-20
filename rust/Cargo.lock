@@ -4135,6 +4135,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "magna-urbis-local"
+version = "0.1.0"
+dependencies = [
+ "magna-urbis-core",
+ "magna-urbis-houses",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "magna-urbis-neural"
 version = "0.1.0"
 dependencies = [

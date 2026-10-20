@@ -1,8 +1,9 @@
+import { decodeWaterField } from '../render/terrainWater';
 import { intersection } from '../gen/geo/bool';
 import type { VectorGeography } from '../../../rust/bridge/urbanGeography';
 import type { TerrainData } from '../../../rust/bridge/terrain';
 import { rasterStats, type Decor } from './decor';
-import { cropWaterSvg } from './decorWater';
+import { cropWaterSvg, retainedWaterMaterial } from './decorWater';
 
 /** Crop on cell boundaries: FP32 elevations and every hydrological cell remain bit-identical. */
 export function cropTerrain(decor: Decor, x: number, y: number, width: number): Decor {
@@ -22,10 +23,13 @@ export function cropTerrain(decor: Decor, x: number, y: number, width: number): 
     return intersection({ outer: rings[0], holes: rings.slice(1) }, box).map(poly => [poly.outer, ...poly.holes].map(ring => ring.map(p => ({ x: p.x - x, y: p.y - y }))));
   };
   const geometry: VectorGeography | undefined = r.geometry ? { land: r.geometry.land.flatMap(ring => clip([ring]).flat()), water: r.geometry.water.flatMap(clip) } : undefined;
+  const material = retainedWaterMaterial(decor);
   const raster = { width, n, height: crop(r.height), water: crop(r.water), waterLevel: crop(r.waterLevel), riverWidth: crop(r.riverWidth), riverIds: crop(r.riverIds), geometry };
   return { raster, meta: { ...decor.meta, width, label: `${decor.meta.label} · portion ${(width / 1000).toFixed(2)} km`,
     regeneration: decor.meta.regeneration && { ...decor.meta.regeneration, crops: [...decor.meta.regeneration.crops, { x, y, width }] },
     settlements: [], roads: null, roadConfig: null,
+    terrainDisplay: decor.meta.terrainDisplay && { ...decor.meta.terrainDisplay, referenceWidth: decor.meta.terrainDisplay.referenceWidth ?? r.width },
+    waterMaterial: { ...material, x: (material.x ?? 0) + x, y: (material.y ?? 0) + y, extent: width },
     waterSvg: cropWaterSvg(decor.meta.waterSvg, x, y, width),
     waterMaterialSvg: decor.meta.waterMaterialSvg === undefined ? undefined : cropWaterSvg(decor.meta.waterMaterialSvg, x, y, width),
     stats: { ...decor.meta.stats, ...rasterStats(raster), roadKm: 0 },
@@ -43,7 +47,9 @@ export function terrainFromDecor(decor: Decor): TerrainData {
     const norm = Math.hypot(dx, dy, 1); normalX[i] = -dx / norm; normalY[i] = -dy / norm; normalZ[i] = 1 / norm;
   }
   const caveMask = decor.meta.tags.relief === 'cavern' ? Uint8Array.from(r.water, value => value === 2 ? 1 : 0) : new Uint8Array();
-  return { x: 0, y: 0, width: r.width, resolution: r.n, height: r.height, caveMask, normalX, normalY, normalZ,
+  const material = decor.meta.waterMaterial;
+  const waterSurface = material?.sea ? { distance: decodeWaterField(material.sea.distance), n: material.sea.n, width: material.width, x: -(material.x ?? 0), y: -(material.y ?? 0), referenceWidth: material.referenceWidth } : undefined;
+  return { waterSurface, x: 0, y: 0, width: r.width, resolution: r.n, height: r.height, caveMask, normalX, normalY, normalZ,
     minHeight: decor.meta.stats.minHeight, maxHeight: decor.meta.stats.maxHeight,
     globalMinHeight: decor.meta.terrainDisplay?.globalMinHeight ?? decor.meta.stats.minHeight, globalMaxHeight: decor.meta.terrainDisplay?.globalMaxHeight ?? decor.meta.stats.maxHeight,
     motifSize: decor.meta.terrainDisplay?.motifSize ?? r.width, generationMs: 0, field: { n: r.n, data: r.height, exact: true, floor: decor.meta.terrainDisplay?.floor ?? 0, cave: caveMask.length ? caveMask : undefined } };

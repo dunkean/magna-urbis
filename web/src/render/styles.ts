@@ -7,6 +7,7 @@
  * `StyleName` (gen/options.ts) only knows the first two styles; `MapStyle` is the full list used by the UI.
  */
 import type { StyleName } from '../gen/options';
+import { waterRamp, type WaterStyle } from './waterStyle';
 
 export type MapStyle = StyleName | 'watabou' | 'engraving' | 'cadastre' | 'blueprint' | 'illuminated' | 'topographic' | 'night';
 export type LandKindKey = 'field' | 'meadow' | 'pasture' | 'forest' | 'orchard' | 'garden' | 'marsh' | 'commons';
@@ -26,6 +27,8 @@ export interface Palette {
   hatch: number;
   grain: number;
   seaFill: string;
+  /** Single material for seas, lakes and their shallow river connections. */
+  water: WaterStyle;
   lakeFill: string;
   waterEdge: string;
   ripple: string;
@@ -114,11 +117,12 @@ const PARCHMENT: Palette = {
   hatch: 0,
   grain: 0.022,
   seaFill: '#bccbc8',
+  water: waterRamp('#5f7a7d', '#bccbc8'),
   lakeFill: '#bccbc8',
   waterEdge: '#5f7a7d',
   ripple: '#5d7e82',
   rippleOpacity: [0.9, 0.75, 0.6, 0.45],
-  riverFill: '#bccbc8',
+  riverFill: '#5f7a7d',
   riverEdge: '#5f7a7d',
   waterLines: null,
   contour: '#8a6b47',
@@ -159,8 +163,10 @@ const PARCHMENT: Palette = {
 
 function derive(name: MapStyle, label: string, o: Override, base: Palette = PARCHMENT): Palette {
   const { urban, lab, cart, land, tex, ...rest } = o;
+  const water = o.water ?? waterRamp(o.waterEdge ?? base.waterEdge, o.seaFill ?? base.seaFill);
   return {
     ...base, ...(rest as Partial<Palette>), name, label,
+    water, seaFill: water.stops[water.stops.length - 1][1], lakeFill: water.stops[water.stops.length - 1][1], riverFill: water.stops[0][1],
     land: { ...base.land, ...land },
     tex: { ...base.tex, ...tex },
     urban: { ...base.urban, ...urban },

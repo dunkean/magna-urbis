@@ -2,8 +2,11 @@ import { terrainGeography } from '../../../rust/bridge/urbanGeography';
 import { settlementRaster, type RoadConfig, type RoadOutput, type SettlementOutput } from '../../../rust/bridge/settlements';
 import { COAST_DIRECTIONS, type TerrainData, type TerrainSettings } from '../../../rust/bridge/terrain';
 import { DEFAULT_HYDROLOGY, riverAreaFor } from '../../../rust/bridge/hydrology';
-import { hydrologyLakeMaterial, renderHydrology } from '../../../rust/bridge/hydrologyRender';
-import { vectorLakeMaterial, vectorWaterSvg } from './vectorWaterRender';
+import { renderHydrology } from '../../../rust/bridge/hydrologyRender';
+import { vectorWaterSvg, lakeShores } from './vectorWaterRender';
+import { lakeField } from './lakeGeometry';
+import { encodeWaterField, seaDistanceSurface } from '../render/terrainWater';
+import { hydrologyLakePath } from '../../../rust/bridge/hydrologyRender';
 import { encodeDecor, rasterStats, type Decor, type DecorMeta } from './decor';
 
 /** Default classification of a Terrain Bench map; the batch exporter adds its own tags. */
@@ -34,8 +37,10 @@ export function captureDecor(t: TerrainData, settings: TerrainSettings, output: 
   if (t.hydrologyError) throw new Error(`Cannot export decor: ${t.hydrologyError}`);
   const raster = { ...settlementRaster(t, 1024), geometry: terrainGeography(t) }, h = settings.hydrology ?? DEFAULT_HYDROLOGY;
   const waterSvg = t.water
-    ? vectorWaterSvg(t.water, { style: 'atlas', showLakes: true, showOxbows: true, riverArea: riverAreaFor(h, settings.width), riverMode: h.riverMode ?? 'vector', overlay: 'none' })
-    : t.hydrology ? renderHydrology(t.hydrology, 'none', true, 'atlas') : '';
+    ? vectorWaterSvg(t.water, { style: 'atlas', showLakes: true, showOxbows: true, riverArea: riverAreaFor(h, settings.width), riverMode: h.riverMode ?? 'vector', overlay: 'none' }, false)
+    : t.hydrology ? renderHydrology(t.hydrology, 'none', true, 'atlas', false) : '';
+  const sea = seaDistanceSurface(t, settings.width);
+  const retainedSea = { distance: encodeWaterField(sea.distance), n: sea.n };
   const relief = settings.relief, id = extra.id ?? `${relief}-${settings.seed}`.replace(/[^\w.-]+/g, '_');
   const decor: Decor = {
     meta: {
@@ -43,8 +48,9 @@ export function captureDecor(t: TerrainData, settings: TerrainSettings, output: 
       tags: { ...tagsOf(settings, output, roadConfig), ...extra.tags, source: settings.source ?? 'procedural', hydrology: h.engine },
       seed: settings.seed, width: t.width, query: extra.query ?? location.search.replace(/^\?/, ''), created: new Date().toISOString(),
       settlements: output.settlements, roadConfig, roads: roads ?? null, waterSvg,
-      waterMaterialSvg: t.water ? vectorLakeMaterial(t.water) : t.hydrology ? hydrologyLakeMaterial(t.hydrology) : '',
-      terrainDisplay: { floor: t.field?.floor ?? 0, sourceCell: settings.width / 1024, refine: !!settings.refine,
+      waterMaterial: t.water ? { field: encodeWaterField(lakeField(t.water.lake, t.water.hydro.n).values), n: t.water.hydro.n, width: t.width, referenceWidth: t.width, sea: retainedSea, path: lakeShores(t.water) }
+        : t.hydrology ? { field: encodeWaterField(t.hydrology.waterField), n: t.hydrology.resolution, width: t.width, referenceWidth: t.width, sea: retainedSea, path: hydrologyLakePath(t.hydrology) } : { field: '', n: 0, width: t.width, referenceWidth: t.width, sea: retainedSea, path: '' },
+      terrainDisplay: { referenceWidth: t.width, floor: t.field?.floor ?? 0, sourceCell: settings.width / 1024, refine: !!settings.refine,
         globalMinHeight: t.globalMinHeight, globalMaxHeight: t.globalMaxHeight, motifSize: t.motifSize },
       stats: { ...rasterStats(raster), riverKm: t.water?.rivers?.lengthKm ?? riverKm(t), roadKm: (roads?.segments.reduce((s, r) => s + r.length, 0) ?? 0) / 1000 },
     },

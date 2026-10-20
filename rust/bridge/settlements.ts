@@ -2,6 +2,7 @@ import type { TerrainData } from './terrain';
 import { lakeField, lakeSample } from '../../web/src/ui/lakeGeometry';
 import { riverWidths } from '../../web/src/ui/vectorWaterRender';
 import { createSettlementEngine, type SettlementEngine } from './settlementEngine';
+import type { ExecutionRuntime } from '../../web/src/ui/executionProfile';
 
 export interface Point { x: number; y: number }
 export interface SitePrefs { mountainFace?: number; woodland?: number; weights?: Record<string, number> }
@@ -72,13 +73,13 @@ export interface SettlementRaster { geometry?: import('./urbanGeography').Vector
  * One worker request. `place` reruns placement (then routes the new places); without it the
  * roads are rerouted between `sites`. `roads: null` skips routing.
  */
-export interface SettlementRequest { id: number; seed: string; raster?: SettlementRaster; place?: SettlementConfig; sites?: RoadSite[]; roads: RoadConfig | null }
+export interface SettlementRequest { id: number; seed: string; raster?: SettlementRaster; place?: SettlementConfig; sites?: RoadSite[]; roads: RoadConfig | null; runtime?: ExecutionRuntime }
 export type SettlementResponse = { id: number; settlements?: SettlementOutput; roads: RoadOutput | null } | { id: number; error: string };
 
 /** Fallback for browsers that refuse the inline worker in a standalone file. */
 let fallbackEngine: SettlementEngine | undefined;
 export async function runSettlementRequest(request: SettlementRequest): Promise<SettlementResponse> {
-  fallbackEngine ??= await createSettlementEngine();
+  fallbackEngine ??= await createSettlementEngine(request.runtime);
   return fallbackEngine.run(request);
 }
 

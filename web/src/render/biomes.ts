@@ -1,3 +1,4 @@
+import { waterRamp } from './waterStyle';
 import { isUnderdarkBiome, biomeName, type BiomeName } from '../gen/biomes';
 import { PALETTES, type MapStyle, type Palette } from './styles';
 
@@ -41,6 +42,7 @@ export function biomePalette(style: MapStyle | Palette, value?: string): Palette
           place: stone, placeInk: ink, landmark: night ? '#afa2c5' : '#9384a7', landmarkEdge: ink },
       } : {}),
     };
+    pal.water = waterRamp(pal.waterEdge, pal.seaFill);
     if (key) CACHE.set(key, pal);
     return pal;
   }

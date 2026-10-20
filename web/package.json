@@ -6,6 +6,11 @@
   "scripts": {
     "dev": "vite",
     "dev:benches": "vite --mode rustbench --host 127.0.0.1",
+    "dev:local": "node scripts/local.mjs dev",
+    "start:local": "node scripts/local.mjs dev",
+    "build:local": "node scripts/local.mjs build",
+    "app:dev": "node scripts/local.mjs desktop-dev",
+    "app:build": "node scripts/local.mjs desktop-build",
     "start:benches": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/benches.ps1 start",
     "stop:benches": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/benches.ps1 stop",
     "build:benches": "node scripts/rust_benches.mjs",

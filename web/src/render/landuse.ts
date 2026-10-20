@@ -219,7 +219,7 @@ function farmSvg(f: Farmstead, pal: Palette, brushes?: SvgBrushes, fungal = f.cu
   o += `<path d="${pathD(f.lot!, true)}" fill="none" stroke="${pal.hedge}" stroke-width="0.9" stroke-opacity="0.85"/>`;
   o += `<path d="${pathD(f.yard, true)}" fill="${pal.farmYard}" fill-opacity="0.9"/>`;
   o += fill('pen', pal.farmYard, ` stroke="${pal.farmInk}" stroke-width="0.3"`) + fill('threshing-floor', pal.farmYard, ` stroke="${pal.farmInk}" stroke-width="0.4"`);
-  o += fill('pond', pal.lakeFill, ` stroke="${pal.waterEdge}" stroke-width="0.5"`);
+  o += fill('pond', pal.water.stops[0][1], ` stroke="${pal.waterEdge}" stroke-width="0.5"`);
   if (f.walls?.length) o += `<path d="${f.walls.map((w) => pathD(w, false)).join('')}" fill="none" stroke="${pal.farmInk}" stroke-width="0.9" stroke-linecap="butt"/>`;
   if (f.trees?.length) o += `<g fill="${pal.treeFill}" stroke="${pal.treeInk}" stroke-width="0.3">${f.trees.map((t) => brushes ? brushes.tree(t.x, t.y, 2.2, true) : `<circle cx="${f1(t.x)}" cy="${f1(t.y)}" r="2.2"/>`).join('')}</g>`;
   o += `<g fill="${pal.farmRoof}" stroke="${pal.farmInk}" stroke-width="0.5">${f.buildings.map((b) => `<path d="${pathD(b, true)}"/>`).join('')}</g>`;

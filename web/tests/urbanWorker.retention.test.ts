@@ -23,7 +23,7 @@ async function setup() {
   native.quarters.mockReturnValue(JSON.stringify([layout]));
   native.parcels.mockReturnValue('[]');
   const engine = await createUrbanEngine();
-  engine.run({ id: 1, kind: 'quarters', seed: '42', raster: raster() });
+  await engine.run({ id: 1, kind: 'quarters', seed: '42', raster: raster() });
   return engine;
 }
 afterEach(() => { vi.unstubAllGlobals(); vi.clearAllMocks(); });
@@ -31,21 +31,21 @@ afterEach(() => { vi.unstubAllGlobals(); vi.clearAllMocks(); });
 describe('urban worker retained quarter boundary', () => {
   it('reuses exactly the old JS-number JSON boundary for every parcel edit', async () => {
     const engine = await setup();
-    const explicit = engine.run({ id: 2, kind: 'parcels', seed: 'parcels', layouts: [layout] });
+    const explicit = await engine.run({ id: 2, kind: 'parcels', seed: 'parcels', layouts: [layout] });
     const original = native.parcels.mock.calls.at(-1);
-    const retained = engine.run({ id: 3, kind: 'parcels', seed: 'parcels', layoutsId: 1 });
+    const retained = await engine.run({ id: 3, kind: 'parcels', seed: 'parcels', layoutsId: 1 });
     expect(retained.partitions).toEqual(explicit.partitions);
     expect(native.parcels.mock.calls.at(-1)).toEqual(original);
-    engine.run({ id: 4, kind: 'parcels', seed: 'another-seed', layoutsId: 1 });
+    await engine.run({ id: 4, kind: 'parcels', seed: 'another-seed', layoutsId: 1 });
     expect(native.parcels.mock.calls.at(-1)?.slice(0, 2)).toEqual(['another-seed', original?.[1]]);
   });
 
   it('rejects stale revisions after new quarters or a terrain replacement', async () => {
     const engine = await setup();
-    engine.run({ id: 5, kind: 'quarters', seed: 'new' });
-    expect(engine.run({ id: 6, kind: 'parcels', seed: '42', layoutsId: 1 }).error).toBeDefined();
+    await engine.run({ id: 5, kind: 'quarters', seed: 'new' });
+    expect((await engine.run({ id: 6, kind: 'parcels', seed: '42', layoutsId: 1 })).error).toBeDefined();
     expect(native.parcels).not.toHaveBeenCalled();
-    expect(engine.run({ id: 7, kind: 'parcels', seed: '42', layoutsId: 5, raster: raster() }).error).toBeDefined();
+    expect((await engine.run({ id: 7, kind: 'parcels', seed: '42', layoutsId: 5, raster: raster() })).error).toBeDefined();
     expect(native.parcels).not.toHaveBeenCalled();
     expect(native.free).toHaveBeenCalledOnce();
   });
@@ -53,7 +53,7 @@ describe('urban worker retained quarter boundary', () => {
   it('accepts explicit imported/fallback layouts without a matching revision', async () => {
     const engine = await setup();
     const imported = [{ ...layout, key: 'imported' }];
-    const response = engine.run({ id: 8, kind: 'parcels', seed: '42', layouts: imported, layoutsId: 999, raster: raster() });
+    const response = await engine.run({ id: 8, kind: 'parcels', seed: '42', layouts: imported, layoutsId: 999, raster: raster() });
     expect(response.error).toBeUndefined();
     expect(native.parcels.mock.calls.at(-1)?.[1]).toBe(JSON.stringify(imported));
     expect(imported[0].key).toBe('imported');
@@ -62,8 +62,8 @@ describe('urban worker retained quarter boundary', () => {
   it('cannot reuse the previous layout after a failed quarter generation', async () => {
     const engine = await setup();
     native.quarters.mockImplementationOnce(() => { throw new Error('invalid config'); });
-    expect(engine.run({ id: 9, kind: 'quarters', seed: '42' }).error).toContain('invalid config');
-    expect(engine.run({ id: 10, kind: 'parcels', seed: '42', layoutsId: 1 }).error).toBeDefined();
+    expect((await engine.run({ id: 9, kind: 'quarters', seed: '42' })).error).toContain('invalid config');
+    expect((await engine.run({ id: 10, kind: 'parcels', seed: '42', layoutsId: 1 })).error).toBeDefined();
     expect(native.parcels).not.toHaveBeenCalled();
   });
 
@@ -71,10 +71,10 @@ describe('urban worker retained quarter boundary', () => {
     const engine = await setup();
     native.geometry.mockImplementationOnce(() => { throw new Error('invalid geography'); });
     const input = { ...raster(), geometry: { land: [], water: [], rivers: [] } } as SettlementRaster;
-    expect(engine.run({ id: 11, kind: 'quarters', seed: '42', raster: input }).error).toContain('invalid geography');
+    expect((await engine.run({ id: 11, kind: 'quarters', seed: '42', raster: input })).error).toContain('invalid geography');
     expect(native.free).toHaveBeenCalledTimes(2);
-    expect(engine.run({ id: 12, kind: 'parcels', seed: '42', layouts: [layout] }).error).toContain('terrain');
+    expect((await engine.run({ id: 12, kind: 'parcels', seed: '42', layouts: [layout] })).error).toContain('terrain');
     expect(native.parcels).not.toHaveBeenCalled();
-    expect(engine.run({ id: 13, kind: 'quarters', seed: '42', raster: raster() }).layouts).toEqual([layout]);
+    expect((await engine.run({ id: 13, kind: 'quarters', seed: '42', raster: raster() })).layouts).toEqual([layout]);
   });
 });

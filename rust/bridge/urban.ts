@@ -3,6 +3,8 @@ export * from './urbanConfig';
 import init, { SettlementTerrain } from '../pkg/wasm/magna_urbis_wasm.js';
 import wasmUrl from '../pkg/wasm/magna_urbis_wasm_bg.wasm?url&inline';
 import type { Point, RoadOutput, RoadSite, SettlementRaster } from './settlements';
+import type { ExecutionRuntime } from '../../web/src/ui/executionProfile';
+import { nativeRasterClient } from './nativeEngine';
 export type { Point } from './settlements';
 
 export interface Shape { outer: Point[]; holes: Point[][] }
@@ -67,16 +69,23 @@ export function regionalStreets(roads?: RoadOutput): Street[] {
     });
   }) ?? [];
 }
-export interface UrbanRequest { id: number; seed: string; kind: 'quarters' | 'parcels'; raster?: SettlementRaster; sites?: RoadSite[]; roads?: Street[]; layoutConfig?: LayoutConfig; parcelConfig?: ParcelConfig; layouts?: Layout[]; layoutsId?: number }
+export interface UrbanRequest { id: number; seed: string; kind: 'quarters' | 'parcels'; raster?: SettlementRaster; sites?: RoadSite[]; roads?: Street[]; layoutConfig?: LayoutConfig; parcelConfig?: ParcelConfig; layouts?: Layout[]; layoutsId?: number; runtime?: ExecutionRuntime }
 export interface UrbanResponse { id: number; layouts?: Layout[]; partitions?: Partition[]; ms?: number; error?: string }
-export interface UrbanEngine { run(request: UrbanRequest): UrbanResponse }
+export interface UrbanEngine { run(request: UrbanRequest): UrbanResponse | Promise<UrbanResponse> }
 
 /** Both calls run exclusively in Rust and keep their own immutable terrain handle. */
-export async function createUrbanEngine(): Promise<UrbanEngine> {
-  await init({ module_or_path: await (await fetch(wasmUrl)).arrayBuffer() });
+export async function createUrbanEngine(runtime?: ExecutionRuntime): Promise<UrbanEngine> {
+  if (runtime?.profile !== 'local') await init({ module_or_path: await (await fetch(wasmUrl)).arrayBuffer() });
   let terrain: SettlementTerrain | undefined;
   let retainedLayouts: { id: number; json: string } | undefined;
+  const native = nativeRasterClient();
   return { run(request) {
+    if (request.runtime?.profile === 'local') {
+      return native<UrbanResponse>('/urban', { ...request, runtime: request.runtime,
+        ...(request.kind === 'quarters' ? { layoutConfig: normalizeLayoutConfig(request.layoutConfig, true) }
+          : { parcelConfig: normalizeParcelConfig(request.parcelConfig) }),
+      }).catch(error => ({ id: request.id, error: String(error) }));
+    }
     try {
       if (request.raster) {
         const r = request.raster;
@@ -109,6 +118,6 @@ export async function createUrbanEngine(): Promise<UrbanEngine> {
 }
 let fallback: Promise<UrbanEngine> | undefined;
 export async function runUrbanRequest(request: UrbanRequest): Promise<UrbanResponse> {
-  fallback ??= createUrbanEngine();
+  fallback ??= createUrbanEngine(request.runtime);
   return (await fallback).run(request);
 }

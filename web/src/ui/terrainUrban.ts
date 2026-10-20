@@ -277,7 +277,7 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
       catch { fallback = true; }
     }
     const selected = settlements.settlements.filter(s => target === 'all' || s.key === target);
-    const message: UrbanRequest = { id: ++id, kind, seed: kind === 'quarters' ? appliedQuarterSeed || options.getSeed() : appliedParcelSeed || options.getSeed() };
+    const message: UrbanRequest = { id: ++id, kind, seed: kind === 'quarters' ? appliedQuarterSeed || options.getSeed() : appliedParcelSeed || options.getSeed(), runtime: executionRuntime };
     if (cachedTerrain !== source) {
       // The worker takes ownership of the buffers: a retained raster is copied.
       const r = 'n' in source ? source : { ...settlementRaster(source, 1024), geometry: terrainGeography(source) };
@@ -623,3 +623,4 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
     share(params: URLSearchParams): void { params.set('urban', JSON.stringify({ enabled, parcelEnabled, target, quarterSeed: appliedQuarterSeed, parcelSeed: appliedParcelSeed, layoutConfig: appliedLayout, parcelConfig: appliedParcel, render })); },
   };
 }
+import { executionRuntime } from './executionProfile';

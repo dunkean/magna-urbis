@@ -1,9 +1,10 @@
+import { seaDistanceSurface, type WaterSurface } from '../render/terrainWater';
 import { sampleRustTerrain, type TerrainData, type TerrainRequest, type TerrainResponse } from '../../../rust/bridge/terrain';
 import { renderRustTerrain } from '../../../rust/bridge/terrainRender';
 
 let latestGeneration = 0;
-const transfers = (t: TerrainData): ArrayBuffer[] => [t.height.buffer, t.caveMask.buffer, t.normalX.buffer, t.normalY.buffer, t.normalZ.buffer,
-  ...(t.field ? [t.field.data.buffer, ...(t.field.cave ? [t.field.cave.buffer] : [])] : [])] as ArrayBuffer[];
+const transfers = (t: TerrainData): ArrayBuffer[] => [...new Set([t.height.buffer, t.caveMask.buffer, t.normalX.buffer, t.normalY.buffer, t.normalZ.buffer,
+  ...(t.field ? [t.field.data.buffer, ...(t.field.cave ? [t.field.cave.buffer] : [])] : [])])] as ArrayBuffer[];
 let pending: TerrainRequest | undefined;
 let running = false;
 self.onmessage = (event: MessageEvent<TerrainRequest>) => {
@@ -13,6 +14,7 @@ self.onmessage = (event: MessageEvent<TerrainRequest>) => {
   pending = event.data;
   if (!running) void drain();
 };
+let materialSurface: WaterSurface | undefined;
 async function drain(): Promise<void> {
   running = true;
   try {
@@ -29,7 +31,9 @@ async function drain(): Promise<void> {
         // A newer camera region replaces a region; nothing but a new generation replaces an overview.
         if (generation !== latestGeneration || (waiting && waiting.id > id && waiting.kind === kind)) continue;
         const started = performance.now();
-        const scene = request.scene ? renderRustTerrain(terrain, request.scene.style, kind === 'overview', request.settings, request.scene.showContours, `worker-${generation}-${id}`, request.scene.lighting, request.scene.layers) : undefined;
+        if (kind === 'overview') materialSurface = seaDistanceSurface(terrain, request.settings.width);
+        const displayTerrain = { ...terrain, waterSurface: materialSurface };
+        const scene = request.scene ? renderRustTerrain(displayTerrain, request.scene.style, kind === 'overview', request.settings, request.scene.showContours, `worker-${generation}-${id}`, request.scene.lighting, request.scene.layers, undefined, true, request.scene.waterStyle) : undefined;
         const scenePreparationMs = scene ? performance.now() - started : undefined;
         self.postMessage({ id, generation, kind, terrain, scene, scenePreparationMs } satisfies TerrainResponse, { transfer: transfers(terrain) });
       } catch (error) {

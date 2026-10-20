@@ -1,9 +1,9 @@
 import { NEURAL_EARTH_MATERIAL_GLSL } from '../../../rust/bridge/terrainMaterial';
 import { terrainLights, type TerrainLayers, type TerrainLighting } from '../render/terrainLighting';
-import { coastDistances, hasCoastalSea, SEA_BAND_WIDTH, SEA_SHADE_LIMIT, SEA_SHADE_STRENGTH } from '../render/terrainSea';
+import { SEA_BAND_WIDTH } from '../render/terrainSea';
 import { resampleTerrainSurface } from '../render/raster';
 import { LAKE_GLSL } from './lakeGeometry';
-import { lakeDistances } from '../render/terrainWater';
+import { lakeDistances, seaDistanceSurface, type WaterSurface } from '../render/terrainWater';
 /**
  * WebGL2 renderer of the terrain bench. Everything is drawn by the GPU from
  * retained grids, so panning and zooming only change a few uniforms:
@@ -16,15 +16,17 @@ import { lakeDistances } from '../render/terrainWater';
  *   with hydraulic widths interpolated in world metres.
  * Heights in metres, coordinates in metres from the map's north-west corner.
  */
-import { PALETTES, type MapStyle } from '../render/styles';
+import { terrainStyle, type TerrainStyle } from '../render/terrainStyle';
+import { WATER_STYLE_GLSL, waterUniforms } from '../render/waterStyle';
 import { CANVAS_MAP_STROKES, mapStrokeWidth } from '../render/strokes';
 import type { View } from '../render/view';
 import { FRACTAL_ROTATIONS, type FractalDetail } from '../../../rust/bridge/terrainAdjust';
 
-export type GlStyle = MapStyle | 'copernicus' | 'render' | 'fantasy-ink' | 'fantasy-color';
+export type GlStyle = TerrainStyle;
 
 /** Control points of a height layer: `n²` values at cell centres of the square `[x, x + width]²`. */
 export interface HeightLayer {
+  waterSurface?: WaterSurface;
   x: number; y: number; width: number; n: number; data: Float32Array;
   /** 1 where cavern rock (same grid), optional. */
   cave?: Uint8Array;
@@ -32,7 +34,7 @@ export interface HeightLayer {
 
 export interface TerrainLook {
   climate?: { temperature: number; precipitation: number };
-  style: GlStyle; mapWidth: number; lighting: TerrainLighting; layers: TerrainLayers;
+  style: GlStyle; waterStyle?: TerrainStyle; mapWidth: number; lighting: TerrainLighting; layers: TerrainLayers;
   globalMin: number; globalMax: number;
   contours: boolean; contourStep: number; flatRelief: boolean;
   /** Fractal refinement below `sourceCell` (metres), seeded. */
@@ -44,7 +46,7 @@ export interface TerrainLook {
 
 export interface WaterLayer {
   /** Prefiltered signed shore coefficients over the map (`n²`, drainage cells). */
-  lake?: Float32Array; n: number; lakeColor: string;
+  lake?: Float32Array; n: number;
   /** `procedural` (default) adds sub-cell shore detail; `exact` draws the B-spline's zero as is. */
   shore?: 'procedural' | 'exact';
   /** Instances: x0, y0, x1, y1, upstream/downstream width (m), r, g, b. */
@@ -80,12 +82,12 @@ uniform float uMapW;
 uniform sampler2D uField; uniform int uFieldN; uniform vec2 uFieldOrigin; uniform float uFieldCell; uniform int uMaxLod;
 uniform float uAlpha; uniform int uBase;
 uniform sampler2D uCave; uniform int uHasCave;
-uniform sampler2D uLake; uniform int uHasLake; uniform float uLakeN; uniform vec3 uLakeColor; // uHasLake: 1 procedural shore, 2 exact shore
+uniform sampler2D uLake; uniform int uHasLake; uniform float uLakeN; // uHasLake: 1 procedural shore, 2 exact shore
 uniform sampler2D uOverlay; uniform int uHasOverlay;
-uniform int uRelief; uniform int uMode;             // 0 shaded, 1 elevation colours
+uniform int uWaterVisible; uniform int uRelief; uniform int uMode;             // 0 shaded, 1 elevation colours
 uniform vec3 uPaper, uSea, uBackground, uFrameColor, uContourColor;
 uniform vec3 uShore; uniform int uCoastalSea;
-uniform sampler2D uCoastDistance; uniform float uSeaBand;
+uniform sampler2D uCoastDistance; uniform float uSeaBand; uniform vec2 uCoastOrigin; uniform float uCoastWidth; uniform int uCoastN;
 uniform vec3 uStops[8]; uniform float uStopT[8]; uniform int uStopCount;
 uniform vec3 uLight, uLight2; uniform float uExaggeration, uFlatLight, uRockStrength;
 uniform float uShade, uMinH, uMaxH, uGlobalMin, uFloor;
@@ -199,6 +201,7 @@ float hillshade(vec2 gradient) {
 }
 
 ${NEURAL_EARTH_MATERIAL_GLSL}
+${WATER_STYLE_GLSL}
 vec3 naturalMaterial(vec3 s, vec2 world) {
   float r=max(300.,uFieldCell*2.);
   float mean=(surface(world+vec2(r,0.)).x+surface(world-vec2(r,0.)).x+surface(world+vec2(0.,r)).x+surface(world-vec2(0.,r)).x)*.25;
@@ -226,17 +229,14 @@ vec3 land(vec3 s, vec2 world) {
   return hypso(pow(t, 0.85)) * f;
 }
 
-vec3 sea(vec3 s, vec2 world) {
-  float h = s.x;
-  if(uMode==2) return surfaceWater(max(-s.x,0.),surfaceSeaIce(vec3(world,0.),uMaterialClimate.x+6.,uMaterialClimate.x-6.,max(uPx,1.)));
-  if (uMode == 1) { float d = clamp(h / min(-1e-6, uGlobalMin), 0.0, 1.0); return vec3(35.0 - 27.0 * d, 125.0 - 85.0 * d, 175.0 - 79.0 * d) / 255.0; }
-  if (uCoastal == 1 && uCoastalSea == 1) {
-    float distance = (texture(uCoastDistance, world / uMapW).r * 2.0 - 1.0) * uSeaBand;
-    float blend = smoothstep(0.0, uSeaBand, distance);
-    float shade = 1.0 + clamp((hillshade(s.yz) - 1.0) * ${SEA_SHADE_STRENGTH}, -${SEA_SHADE_LIMIT}, ${SEA_SHADE_LIMIT}) * blend;
-    return mix(uShore, uSea, blend) * shade;
+vec3 sea(vec2 world) {
+  float distance = uSeaBand;
+  if (uCoastalSea == 1) {
+    vec2 g = clamp((world - uCoastOrigin) / uCoastWidth * float(uCoastN) - .5, vec2(0.), vec2(float(uCoastN - 1)));
+    ivec2 p = ivec2(floor(g)), q = min(p + 1, ivec2(uCoastN - 1)); vec2 f = fract(g);
+    distance = mix(mix(texelFetch(uCoastDistance,p,0).r,texelFetch(uCoastDistance,ivec2(q.x,p.y),0).r,f.x),mix(texelFetch(uCoastDistance,ivec2(p.x,q.y),0).r,texelFetch(uCoastDistance,q,0).r,f.x),f.y);
   }
-  return uCoastal == 1 ? uSea : uPaper;
+  return uWaterVisible == 1 ? styledWater(max(0., distance) / uSeaBand) : uPaper;
 }
 
 void main() {
@@ -256,8 +256,8 @@ void main() {
     // Antialiased coast at the zero level (screen-space width of the height ramp).
     float ramp = max(grad * uPx, 1e-4);
     float landCover = uCoastal == 1 ? clamp(s.x / ramp + 0.5, 0.0, 1.0) : (s.x > 0.0 ? 1.0 : 0.0);
-    vec3 color = mix(sea(s, world), land(vec3(max(s.x, 1e-3), s.yz), world), landCover);
-    if (uRelief == 0) color = uPaper;
+    vec3 color = mix(sea(world), land(vec3(max(s.x, 1e-3), s.yz), world), landCover);
+    if (uRelief == 0) color = mix(sea(world), uPaper, landCover);
     if (uHasCave == 1 && uRelief == 1) {
       vec2 uv = (world - uFieldOrigin) / (uFieldCell * float(uFieldN));
       float rock = smoothstep(0.35, 0.65, texture(uCave, uv).r);
@@ -282,22 +282,22 @@ void main() {
       a *= smoothstep(0.25 * uFlatSlope, 0.5 * uFlatSlope, slope);
       color = mix(color, uContourColor, a);
     }
-    if (uHasOverlay == 1) {
-      vec4 o = texture(uOverlay, world / uMapW);
-      color = mix(color, o.rgb, o.a);
-    }
-    if (uHasLake > 0) {
+    if (uWaterVisible == 1 && uHasLake > 0) {
       float m = lakeShore(world, uHasLake == 1);
       float w = max(fwidth(m), 1e-4);
-      vec3 lakeColor = uLakeColor;
-      if (uMode == 2) {
+      vec3 lakeColor;
+      {
         vec2 g = clamp(world * uLakeN / uMapW - 0.5, vec2(0.), vec2(uLakeN - 1.));
         ivec2 p = ivec2(floor(g)), q = min(p + 1, ivec2(int(uLakeN) - 1));
         vec2 f = fract(g);
         float distance = mix(mix(texelFetch(uLake,p,0).g,texelFetch(uLake,ivec2(q.x,p.y),0).g,f.x),mix(texelFetch(uLake,ivec2(p.x,q.y),0).g,texelFetch(uLake,q,0).g,f.x),f.y);
-        lakeColor = surfaceWater(max(distance, 0.) * 120. / (uMapW * ${SEA_BAND_WIDTH}), 0.);
+        lakeColor = styledWater(max(distance, 0.) / uSeaBand);
       }
       color = mix(color, lakeColor, clamp(m / w + 0.5, 0.0, 1.0));
+    }
+    if (uHasOverlay == 1) {
+      vec4 o = texture(uOverlay, world / uMapW);
+      color = mix(color, o.rgb, o.a);
     }
     if (uFrame == 1 && uBase == 1) {
       vec2 e = min(world, vec2(uMapW) - world) / uPx;
@@ -336,6 +336,7 @@ precision highp float; precision highp int; precision highp sampler2D;
 in vec2 vP; flat in vec4 vSeg; flat in vec2 vHalf; flat in vec3 vColor;
 out vec4 outColor;
 uniform vec2 uOrigin; uniform float uPx; uniform float uMapW;
+uniform sampler2D uOverlay; uniform int uHasOverlay;
 uniform sampler2D uLake; uniform int uHasLake; uniform float uLakeN;
 vec4 bw(float t) { float t2=t*t,t3=t2*t,u=1.-t; return vec4(u*u*u,3.*t3-6.*t2+4.,-3.*t3+3.*t2+3.*t+1.,t3)/6.; }
 ${LAKE_GLSL}
@@ -350,7 +351,9 @@ void main() {
   }
   if (alpha <= 0.0) discard;
   // Premultiplied; blended with MAX so overlapping capsules cover like one stroke.
-  outColor = vec4(vColor * alpha, alpha);
+  vec3 color = vColor;
+  if (uHasOverlay == 1) { vec4 overlay = texture(uOverlay, (uOrigin + vP * uPx) / uMapW); color = mix(color, overlay.rgb, overlay.a); }
+  outColor = vec4(color * alpha, alpha);
 }`;
 
 const COMPOSITE_VS = `#version 300 es
@@ -399,9 +402,12 @@ export class TerrainGl {
   private riverLocations = new Map<string, WebGLUniformLocation | null>();
   private base?: GpuLayer; private details: GpuLayer[] = [];
   private look?: TerrainLook;
-  private lake?: WebGLTexture; private lakeMode = 0; private lakeN = 0; private lakeColor: [number, number, number] = [0, 0, 0];
+  private lake?: WebGLTexture; private lakeMode = 0; private lakeN = 0;
   private overlay?: WebGLTexture;
   private coastDistance?: WebGLTexture;
+  private lakeInput?: Float32Array;
+  private lakeWidth = 0;
+  private seaSurface?: WaterSurface;
   private riverBuffer: WebGLBuffer; private riverVao: WebGLVertexArrayObject; private riverCount = 0;
   private view?: { view: View; width: number; height: number };
   private frame = 0;
@@ -478,20 +484,12 @@ export class TerrainGl {
     this.base = this.upload(layer, true);
     if (this.coastDistance) this.gl.deleteTexture(this.coastDistance);
     this.coastDistance = undefined;
-    if (layer.data.some(h => h <= 0) && layer.data.some(h => h > 0) && !layer.cave?.length) {
-      // Sample the same B-spline as the shader. Retain the global distance field
-      // across camera details so the narrow band keeps its world-space width.
-      const n = Math.min(1024, Math.max(512, layer.n));
-      const surface = resampleTerrainSurface({ w: layer.n, data: layer.data }, n);
-      const distance = coastDistances(surface, n, layer.width / n, layer.width * SEA_BAND_WIDTH);
-      // R32F linear filtering is optional on WebGL2; normalized distances in
-      // RGBA8 give portable bilinear sampling with sub-pixel precision.
-      const encoded = new Uint8Array(n * n * 4);
-      for (let i = 0; i < distance.length; i++) {
-        const value = Math.round(127.5 * (1 + distance[i] / (layer.width * SEA_BAND_WIDTH)));
-        encoded[i * 4] = value; encoded[i * 4 + 3] = 255;
-      }
-      this.coastDistance = this.texture(n, n, this.gl.RGBA8, this.gl.RGBA, this.gl.UNSIGNED_BYTE, encoded, this.gl.LINEAR);
+    this.seaSurface = layer.waterSurface ?? seaDistanceSurface({ height: layer.data, resolution: layer.n, width: layer.width, x: layer.x, y: layer.y });
+    if (!layer.cave?.length) {
+      const surface = this.seaSurface;
+      // Portable FP32 storage with explicit bilinear sampling; no 8-bit distance
+      // quantization and no dependency on optional float linear filtering.
+      this.coastDistance = this.texture(surface.n, surface.n, this.gl.R32F, this.gl.RED, this.gl.FLOAT, surface.distance, this.gl.NEAREST);
     }
     this.request();
   }
@@ -510,15 +508,18 @@ export class TerrainGl {
 
   setWater(water: WaterLayer | undefined): void {
     const gl = this.gl;
-    if (this.lake) gl.deleteTexture(this.lake);
-    this.lake = undefined;
-    if (water?.lake) {
-      const distances = this.look?.style === 'render' ? lakeDistances(water.lake, water.n, this.look.mapWidth) : undefined;
-      const values = new Float32Array(water.n * water.n * 2);
-      for (let i = 0; i < water.lake.length; i++) { values[i * 2] = water.lake[i]; values[i * 2 + 1] = distances?.[i] ?? 0; }
-      this.lake = this.texture(water.n, water.n, gl.RG32F, gl.RG, gl.FLOAT, values, gl.NEAREST);
-      this.lakeMode = water.shore === 'exact' ? 2 : 1; this.lakeN = water.n; this.lakeColor = hex(water.lakeColor);
+    const width = this.look?.mapWidth ?? this.base?.layer.width ?? 0;
+    if (water?.lake !== this.lakeInput || (water?.lake && (this.lakeN !== water.n || this.lakeWidth !== width))) {
+      if (this.lake) gl.deleteTexture(this.lake);
+      this.lake = undefined; this.lakeInput = water?.lake; this.lakeWidth = width;
+      if (water?.lake) {
+        const distances = lakeDistances(water.lake, water.n, width), values = new Float32Array(water.n * water.n * 2);
+        for (let i = 0; i < water.lake.length; i++) { values[i * 2] = water.lake[i]; values[i * 2 + 1] = distances[i]; }
+        this.lake = this.texture(water.n, water.n, gl.RG32F, gl.RG, gl.FLOAT, values, gl.NEAREST);
+        this.lakeN = water.n;
+      }
     }
+    this.lakeMode = water?.shore === 'exact' ? 2 : 1;
     const rivers = water?.rivers ?? new Float32Array();
     gl.bindBuffer(gl.ARRAY_BUFFER, this.riverBuffer);
     gl.bufferData(gl.ARRAY_BUFFER, rivers.byteLength ? rivers : new Float32Array(9), gl.STATIC_DRAW);
@@ -570,21 +571,24 @@ export class TerrainGl {
     gl.viewport(0, 0, width, height);
     const { view } = state, px = 1 / (view.scale * dpr);
     const origin: [number, number] = [view.cx - state.width / (2 * view.scale), view.cy - state.height / (2 * view.scale)];
-    const basePalette = PALETTES[look.style === 'copernicus' || look.style === 'render' || (look.style === 'fantasy-ink' || look.style === 'fantasy-color') ? 'parchment' : look.style];
-    const pal = look.style === 'fantasy-ink' ? { ...basePalette, paper: '#faf9f4', seaFill: '#e5e7e6', waterEdge: '#666968' } : look.style === 'fantasy-color' ? { ...basePalette, paper: '#eee6ce', seaFill: '#b9ccd0', waterEdge: '#648f99' } : basePalette;
+    const definition = terrainStyle(look.style), pal = definition.palette, water = terrainStyle(look.waterStyle ?? look.style).water;
     const u = (name: string): WebGLUniformLocation | null => this.uniform(name);
     gl.useProgram(this.terrain);
     gl.uniform2f(u('uCanvas'), width, height);
     gl.uniform2f(u('uOrigin'), origin[0], origin[1]);
     gl.uniform1f(u('uPx'), px); gl.uniform1f(u('uDpr'), dpr);
     gl.uniform1f(u('uMapW'), look.mapWidth);
-    gl.uniform1i(u('uRelief'), look.layers.relief ? 1 : 0);
+    gl.uniform1i(u('uRelief'), look.layers.relief ? 1 : 0); gl.uniform1i(u('uWaterVisible'), look.layers.water !== false ? 1 : 0);
     gl.uniform1ui(u('uMaterialSeed'), look.seed >>> 0);
     gl.uniform2f(u('uMaterialClimate'), look.climate?.temperature ?? 18, look.climate?.precipitation ?? 1000);
     gl.uniform1i(u('uMode'), look.style === 'copernicus' ? 1 : look.style === 'render' && look.layers.hypsometry ? 2 : 0);
     gl.uniform3fv(u('uPaper'), hex(pal.paper)); gl.uniform3fv(u('uSea'), hex(pal.seaFill));
-    gl.uniform3fv(u('uShore'), hex(pal.waterEdge)); gl.uniform1i(u('uCoastalSea'), hasCoastalSea(look.style) && this.coastDistance ? 1 : 0);
-    gl.uniform1f(u('uSeaBand'), look.mapWidth * SEA_BAND_WIDTH);
+    gl.uniform3fv(u('uShore'), hex(water.stops[0][1])); gl.uniform1i(u('uCoastalSea'), this.coastDistance ? 1 : 0);
+    const waterPalette = waterUniforms(water);
+    gl.uniform3fv(u('uWaterStops'), waterPalette.colors); gl.uniform1fv(u('uWaterStopT'), waterPalette.positions);
+    gl.uniform1i(u('uWaterStopCount'), water.stops.length);
+    gl.uniform1f(u('uSeaBand'), (this.seaSurface?.referenceWidth ?? look.mapWidth) * water.bandFraction);
+    gl.uniform2f(u('uCoastOrigin'), this.seaSurface?.x ?? 0, this.seaSurface?.y ?? 0); gl.uniform1f(u('uCoastWidth'), this.seaSurface?.width ?? look.mapWidth); gl.uniform1i(u('uCoastN'), this.seaSurface?.n ?? 1);
     gl.uniform3fv(u('uBackground'), hex(look.background)); gl.uniform3fv(u('uFrameColor'), hex(look.style === 'copernicus' ? '#333333' : pal.frame));
     gl.uniform3fv(u('uContourColor'), hex(pal.contour));
     const stops = look.layers.hypsometry || look.style === 'copernicus' ? pal.hypso.slice(0, 8) : [[0, pal.paper], [1, pal.paper]] as [number, string][];
@@ -617,7 +621,7 @@ export class TerrainGl {
     gl.uniform1i(u('uCoastDistance'), 4);
     gl.activeTexture(gl.TEXTURE4); gl.bindTexture(gl.TEXTURE_2D, this.coastDistance ?? this.empty);
     gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, this.lake ?? this.empty);
-    gl.uniform1i(u('uHasLake'), this.lake ? this.lakeMode : 0); gl.uniform1f(u('uLakeN'), this.lakeN); gl.uniform3fv(u('uLakeColor'), this.lakeColor);
+    gl.uniform1i(u('uHasLake'), this.lake ? this.lakeMode : 0); gl.uniform1f(u('uLakeN'), this.lakeN);
     gl.activeTexture(gl.TEXTURE3); gl.bindTexture(gl.TEXTURE_2D, this.overlay ?? this.empty);
     gl.uniform1i(u('uHasOverlay'), this.overlay ? 1 : 0);
     let animating = false;
@@ -650,7 +654,7 @@ export class TerrainGl {
     let opaque = -1;
     this.details.forEach((d, i) => { if (now - d.fadeStart >= 240) opaque = i; });
     if (opaque > 0) { this.details.slice(0, opaque).forEach(d => this.release(d)); this.details = this.details.slice(opaque); }
-    if (this.riverCount) {
+    if (this.riverCount && look.layers.water !== false) {
       const target = this.target(width, height);
       gl.bindFramebuffer(gl.FRAMEBUFFER, target.framebuffer);
       gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT);
@@ -660,7 +664,9 @@ export class TerrainGl {
       gl.uniform1f(r('uPx'), px); gl.uniform1f(r('uDpr'), dpr);
       gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, this.lake ?? this.empty);
       gl.uniform1i(r('uLake'), 2); gl.uniform1f(r('uMapW'), look.mapWidth);
-      gl.uniform1i(r('uHasLake'), look.style === 'render' && this.lake ? this.lakeMode : 0); gl.uniform1f(r('uLakeN'), this.lakeN);
+      gl.activeTexture(gl.TEXTURE3); gl.bindTexture(gl.TEXTURE_2D, this.overlay ?? this.empty);
+      gl.uniform1i(r('uOverlay'), 3); gl.uniform1i(r('uHasOverlay'), this.overlay ? 1 : 0);
+      gl.uniform1i(r('uHasLake'), this.lake ? this.lakeMode : 0); gl.uniform1f(r('uLakeN'), this.lakeN);
       gl.enable(gl.BLEND); gl.blendEquation(gl.MAX); gl.blendFunc(gl.ONE, gl.ONE);
       gl.bindVertexArray(this.riverVao);
       gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, this.riverCount);

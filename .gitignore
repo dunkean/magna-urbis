@@ -37,3 +37,7 @@ web/scripts/perf*
 
 # Urban Bench decors (regenerate with web/scripts/export_decors.mjs)
 web/decors/
+
+# Generated house-access observer output (not regression fixtures).
+rust/crates/houses/access-integration-cases/
+rust/crates/houses/access-integration-standard-cases/

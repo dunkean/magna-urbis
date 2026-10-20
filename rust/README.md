@@ -17,6 +17,13 @@ npm run check:terrain  # Check rustfmt, Clippy and WASM compilation
 
 Generated modules are placed in `rust/pkg/wasm/`, which Git ignores. The TypeScript application keeps its own development and build commands without depending on Rust.
 
+Two execution profiles are available: **web** uses WASM/WebGPU, while **local**
+uses the optimized native Rust service with browser GPU stages. From `web/`, run
+`npm run start:local` on Windows or Linux. `npm run app:dev` opens the same
+workshops in a desktop window; `npm run app:build` packages an application for
+the current OS. Shared defaults are in `../config/execution.json`. See the
+[desktop/local instructions](desktop/README.md) for dependencies and options.
+
 `crates/core/` contains the engine without browser dependencies; `crates/wasm/` exposes bindings; `bridge/` temporarily adapts output to the existing interface and renderer. The current renderer is provisional, and the TypeScript model is not imposed as the permanent Rust engine model.
 
 ## Shared benches page
@@ -104,13 +111,18 @@ container links using `#neural` enter the same World session.
 Choose **Render · Neural Earth** in the terrain bench's style menu (`style=render`
 in shared links). The material compositor is copied from Infinite Map's Neural
 Earth and translated from WGSL to GLSL: continuous grass and forest coverage,
-exposed rock, snow, beaches and depth-coloured sea. It works with both terrain
+exposed rock, snow and beaches. Water uses a shared shore-distance palette for seas and lakes. It works with both terrain
 sources and the existing lighting, water, contours and exports. Display and SVG
 raster preparation share the material shader and require WebGL2.
 
 The bench supplies its regional temperature and rainfall. Material settings use
 Neural Earth's defaults (summer); the soil and seasonal climate inputs are local
 approximations because its geographic pedology/climate atlases are absent here.
+Styles, visible layers, diagnostics and generation masks have separate roles.
+Altitude is a diagnostic; selecting it retains the chosen style. Water appearance
+and its original map scale travel with retained decors and city workshops.
+See [the shared rendering contract](../docs/RENDERING.md).
+
 Terrain generation is unchanged. The port lives in `bridge/terrainMaterial.ts`
 and remains part of the temporary renderer, outside the Rust engine.
 

@@ -21,7 +21,7 @@ function selector(element: Element): string {
 }
 export function captureBenchUi(doc: Document): BenchUiContext {
   const fields = Array.from(doc.querySelectorAll<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>('input,select,textarea'))
-    .filter(field => !field.matches('[type=file],[type=password]'))
+    .filter(field => !field.matches('[type=file],[type=password]') && !field.closest('[data-execution-profile]'))
     .map(field => ({ selector: selector(field), value: field.value, ...(field.localName === 'input' ? { checked: (field as HTMLInputElement).checked } : {}) }));
   const panels = Array.from(doc.querySelectorAll<HTMLDetailsElement | HTMLDialogElement>('details,dialog')).map(panel => ({ selector: selector(panel), open: panel.open }));
   const scroll = Array.from(doc.querySelectorAll<HTMLElement>('body,main,aside,section,form,dialog,details,div')).filter(element => element.scrollTop || element.scrollLeft)
@@ -32,7 +32,7 @@ export function restoreBenchUi(doc: Document, context: BenchUiContext): void {
   doc.defaultView?.magnaBenchContext?.restore?.(context.extra);
   for (const saved of context.fields) {
     const field = doc.querySelector<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>(saved.selector);
-    if (!field || field.matches('[type=file],[type=password]')) continue;
+    if (!field || field.matches('[type=file],[type=password]') || field.closest('[data-execution-profile]')) continue;
     if (field.localName !== 'select' || Array.from((field as HTMLSelectElement).options).some(option => option.value === saved.value)) field.value = saved.value;
     if (saved.checked !== undefined) (field as HTMLInputElement).checked = saved.checked;
   }

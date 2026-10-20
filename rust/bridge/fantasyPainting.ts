@@ -190,7 +190,7 @@ export function paintingCanvas(ctx: CanvasRenderingContext2D, stamps: Stamp[], i
   }
   ctx.restore();
 }
-function stampHeight(stamp: Stamp, frame: BrushFrame): number {
+export function stampHeight(stamp: Stamp, frame: BrushFrame): number {
   const tree = stamp.brush < 4 || stamp.brush >= 12 && stamp.brush <= 14;
   const aspect = tree ? (frame.family === 'pines' || frame.family === 'cypress' ? 1.8 : 1.25) : frame.aspect;
   return stamp.width * aspect * (stamp.heightScale ?? 1);

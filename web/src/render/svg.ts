@@ -2,8 +2,7 @@ import { cavernDisplayWorld } from './cavernDisplay';
 import { cavernPathD, cavernWallsSvg, cavernFungalRoomsSvg } from './caverns';
 import type { World } from '../gen/types';
 import { renderView } from '../gen/settlements/merge';
-import { Vec2, chaikin, simplify, offsetRibbon } from '../gen/core/geom';
-import { marchingSquares } from '../gen/terrain/contour';
+import { Vec2, offsetRibbon } from '../gen/core/geom';
 import { contourSet, ContourSet } from './contours';
 import { MAP_STROKES, svgMapStroke } from './strokes';
 import { countrysideFringe } from './countryside';
@@ -14,7 +13,8 @@ import { worldForestClearings } from './forestClearings';
 import { orientPos } from '../gen/geo/poly';
 import { Palette, MapStyle } from './styles';
 import { biomePalette } from './biomes';
-import { renderTerrainRaster, pngDataUrl } from './raster';
+import { worldWaterPixels } from './terrainWater';
+import { renderTerrainRaster, pngDataUrl, encodePng } from './raster';
 import { f1, pathD, seaWithIslands } from './util';
 import { landuseLayer, roadsLayer, siteLayer } from './landuse';
 import { urbanLayer } from './urban';
@@ -53,30 +53,6 @@ function contourLayer(world: World, pal: Palette, u: number, scale: number): str
     (thin ? `<path d="${thin}" ${svgMapStroke(MAP_STROKES.contour, scale)} opacity="${pal.contourOpacity * 0.7}"/>` : '') +
     (index ? `<path d="${index}" ${svgMapStroke(MAP_STROKES.contourIndex, scale, pal.contourIndexW / 1.6)} opacity="${pal.contourOpacity}"/>` : '') +
     '</g>';
-}
-
-function rippleLayer(world: World, pal: Palette, u: number): string {
-  const hg = world.terrain.height;
-  if (!world.terrain.seaSide) return '';
-  const levels = [-2.5, -5.5, -9, -13];
-  let out = '';
-  levels.forEach((lv, i) => {
-    // contour where height crosses lv (inside = deeper than lv => use negated field)
-    const neg = new Float32Array(hg.data.length);
-    for (let k = 0; k < neg.length; k++) neg[k] = -hg.data[k];
-    const paths = marchingSquares(neg, hg.w, hg.h, -lv, hg.cell, hg.cell / 2, hg.cell / 2);
-    let d = '';
-    for (const p of paths) {
-      if (p.pts.length < 4) continue;
-      let pts = chaikin(p.pts, 2, p.closed);
-      pts = simplify(pts, 0.4 * u);
-      d += pathD(pts, p.closed);
-    }
-    if (!d) return;
-    const dash = i >= 2 ? ` stroke-dasharray="${f1((i === 2 ? 9 : 5) * u)} ${f1((i === 2 ? 4 : 6) * u)}"` : '';
-    out += `<path d="${d}" stroke-width="${f1((1.3 - i * 0.2) * u)}" opacity="${pal.rippleOpacity[i]}"${dash}/>`;
-  });
-  return `<g class="ripples" fill="none" stroke="${pal.ripple}" stroke-linecap="round">${out}</g>`;
 }
 
 function decor(world: World, pal: Palette, u: number): string {
@@ -141,11 +117,12 @@ export function renderSvg(world0: World, opts: RenderOptions = {}): string {
   // islands are holes of the sea polygon they lie in (evenodd), so the land shows through
   const swi = seaWithIslands(t.coastline, t.islands);
   const seaD = swi.sea.map((poly, i) => pathD(poly, true) + swi.holes[i].map((h) => pathD(h, true)).join(''));
-  for (const d of seaD) water += `<path d="${d}" fill="${pal.seaFill}" fill-rule="evenodd"/>`;
-  water += rippleLayer(world, pal, u);
-  for (const d of seaD) water += `<path d="${d}" fill="none" stroke="${pal.waterEdge}" stroke-width="${f1(1.5 * u)}" stroke-linejoin="round"/>`;
-  for (const poly of t.lakes) {
-    water += `<path d="${pathD(poly, true)}" fill="${pal.lakeFill}" stroke="${pal.waterEdge}" stroke-width="${f1(1.3 * u)}" stroke-linejoin="round"/>`;
+  const lakeDWater = t.lakes.map(poly => pathD(poly, true)).join('');
+  if (layers.water !== false && (seaD.length || lakeDWater)) {
+    const material = worldWaterPixels(world, pal), url = pngDataUrl(encodePng(material.rgb, material.n, material.n));
+    water += `<defs><clipPath id="styled-water-clip"><path d="${seaD.join('') + lakeDWater}" clip-rule="evenodd"/></clipPath></defs><image width="${S}" height="${S}" href="${url}" clip-path="url(#styled-water-clip)"/>`;
+    for (const d of seaD) water += `<path d="${d}" fill="none" stroke="${pal.waterEdge}" stroke-width="${f1(1.5 * u)}" stroke-linejoin="round"/>`;
+    for (const poly of t.lakes) water += `<path d="${pathD(poly, true)}" fill="none" stroke="${pal.waterEdge}" stroke-width="${f1(1.3 * u)}" stroke-linejoin="round"/>`;
   }
   water += waterLinesSvg(world, pal);
   water += '</g>';

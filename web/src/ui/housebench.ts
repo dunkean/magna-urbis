@@ -1,4 +1,5 @@
 import './housebench.css';
+import { executionRuntime, applyExecutionProfile, installExecutionProfile } from './executionProfile';
 import { installRecipeSharing, portableRecipe } from './recipeSharing';
 import HouseWorker from './houseWorker?worker&inline';
 import { callHouses, compileHousesModule, defaultHouseConfig, decodeHouseReplay, encodeHouseReplay, parseHouseBatch, parseHouseCatalogue, parseHouseEnvelope, ROLE_LABELS, validateHouseConfig, wellFormedSeed, type CatalogueBundle, type HouseBatch, type HouseConfig, type HouseRequest, type HouseResponse, type HouseUnit, type HouseView, type Preflight, type Point } from '../../../rust/bridge/houses';
@@ -13,6 +14,7 @@ const input = (id: string) => $<HTMLInputElement>(id);
 const select = (id: string) => $<HTMLSelectElement>(id);
 const button = (id: string) => $<HTMLButtonElement>(id);
 const form = $<HTMLFormElement>('controls');
+installExecutionProfile(document.querySelector('header') ?? form);
 const status = $('status'), errorBox = $('error');
 const view: HouseView = {mode: 'roof', level: 0, graph: false, dimensions: false};
 let bundle: CatalogueBundle | undefined, batch: HouseBatch | undefined, selected: HouseUnit | undefined;
@@ -83,9 +85,9 @@ async function request(kind: HouseRequest['kind'], config?: HouseConfig): Promis
   const id = ++ticket;
   if (noWorker) {
     if (syncFatal) throw new Error('Le module WASM a rencontré une erreur fatale. Rechargez la page pour le réinitialiser.');
-    if (config && config.count > 10) throw new Error('Le mode sans worker est limité à dix unités.');
+    if (executionRuntime.profile === 'web' && config && config.count > 10) throw new Error('Le mode sans worker est limité à dix unités.');
     const started = performance.now();
-    const message = kind === 'catalogue' ? {ticket: id, kind, module} : {ticket: id, kind, config: config!, module};
+    const message = kind === 'catalogue' ? {ticket: id, kind, module, runtime: executionRuntime} : {ticket: id, kind, config: config!, module, runtime: executionRuntime};
     let json: string;
     try { json = await callHouses(message as HouseRequest); }
     catch (error) { if (error instanceof WebAssembly.RuntimeError) syncFatal = true; throw error; }
@@ -104,7 +106,7 @@ async function request(kind: HouseRequest['kind'], config?: HouseConfig): Promis
     // Browsers may refuse Module cloning between opaque file:// origins.
     // The offline worker compiles its own embedded bytes in that case.
     const sharedModule = location.protocol === 'file:' ? undefined : module;
-    const payload = kind === 'catalogue' ? {ticket: id, kind, module: sharedModule} : {ticket: id, kind, config, module: sharedModule};
+    const payload = kind === 'catalogue' ? {ticket: id, kind, module: sharedModule, runtime: executionRuntime} : {ticket: id, kind, config, module: sharedModule, runtime: executionRuntime};
     try { worker!.postMessage(payload); }
     catch (error) {
       if (error instanceof DOMException && error.name === 'DataCloneError') {
@@ -298,7 +300,7 @@ function renderBatch(): void {
 }
 function commitBatch(next: HouseBatch, elapsed: number): void {
   batch = next; renderBatch();
-  message(`${next.units.length} unités générées en ${elapsed.toFixed(0)} ms${noWorker ? ' · WASM synchrone, sans worker' : ' · moteur Rust/WASM'}.${next.diagnostics.length ? ` ${next.diagnostics.join(' ')}` : ''}`);
+  message(`${next.units.length} unités générées en ${elapsed.toFixed(0)} ms${executionRuntime.profile === 'local' ? ' · moteur Rust natif' : noWorker ? ' · WASM synchrone, sans worker' : ' · moteur Rust/WASM'}.${next.diagnostics.length ? ` ${next.diagnostics.join(' ')}` : ''}`);
   if (!tourRunning) {
     try { if (JSON.stringify(readConfig()) !== JSON.stringify(next.settings)) message(`${status.textContent} Paramètres modifiés pendant le calcul · la planche conserve les réglages de ce lot.`); }
     catch { message(`${status.textContent} Les contrôles diffèrent du lot affiché.`); }
@@ -448,7 +450,7 @@ $('detail-map').addEventListener('pointerup', () => { drag = undefined; }); $('d
 
 async function start(): Promise<void> {
   try {
-    module = await compileHousesModule();
+    if (executionRuntime.profile === 'web') module = await compileHousesModule();
     bundle = parseHouseCatalogue((await request('catalogue')).json); populateCatalogueControls();
     let config = defaultHouseConfig();
     const url = new URL(location.href);

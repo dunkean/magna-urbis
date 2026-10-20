@@ -8,17 +8,9 @@ import { lakeField, lakeSample } from './lakeGeometry';
 import { hydrologyWaterColour, riverBank } from '../../../rust/bridge/hydrologyRender';
 import { lakeMaterialSvg } from '../render/terrainWater';
 
-export type VectorOverlay = 'none' | 'v-accumulation' | 'v-basins' | 'v-depth' | 'v-conditioning' | 'v-lakes' | 'v-styles';
-export const VECTOR_OVERLAYS: VectorOverlay[] = ['v-accumulation', 'v-basins', 'v-depth', 'v-conditioning', 'v-lakes', 'v-styles'];
-export const VECTOR_LEGENDS: Record<VectorOverlay, string> = {
-  none: '',
-  'v-accumulation': 'Drained area (weighted by runoff), logarithmic scale.',
-  'v-basins': 'One color per outlet: sea, map edge or closed lake.',
-  'v-depth': 'Depression filling: water height if every depression spilled, orange → red.',
-  'v-conditioning': 'Pre-hydrology conditioning: blue = lowered terrain (sills, valleys), brown = filled terrain (sediment).',
-  'v-lakes': 'Water balance: blue = spilling lake, purple = closed lake (evaporation equals inflow).',
-  'v-styles': 'Channel styles: blue straight, red meandering, purple confluence links, orange braided, magenta anabranching, green delta.',
-};
+export { VECTOR_OVERLAYS, VECTOR_LEGENDS } from '../render/displayDiagnostics';
+import type { VectorOverlay } from '../render/displayDiagnostics';
+export type { VectorOverlay } from '../render/displayDiagnostics';
 
 const format = (v: number): string => v.toFixed(1);
 
@@ -30,7 +22,7 @@ const shores = new WeakMap<VectorWater, string>();
 /**
  * Contour the same continuous shore field as the GPU. Islands are holes.
  */
-function lakeShores(water: VectorWater): string {
+export function lakeShores(water: VectorWater): string {
   const cached = shores.get(water);
   if (cached !== undefined) return cached;
   const { n, width } = water.hydro, cell = width / n, step = cell / 4;
@@ -165,7 +157,7 @@ export function riverWidths(water: VectorWater, line: RiverLine, thinner = 0): n
   return widths;
 }
 
-export function vectorWaterSvg(water: VectorWater, display: WaterDisplay): string {
+export function vectorWaterSvg(water: VectorWater, display: WaterDisplay, material = true): string {
   const { edge, colourOf } = waterInk(display);
   let svg = `<g class="water">${display.showLakes ? `<path class="water-lakes" d="${lakeShores(water)}" fill="${edge}" fill-rule="evenodd" stroke="none"/>` : ''}`;
   const network = water.rivers;
@@ -214,14 +206,14 @@ export function vectorWaterSvg(water: VectorWater, display: WaterDisplay): strin
       svg += `<path d="${d}" fill="none" stroke="${edge}" stroke-width="${width}" stroke-linecap="round"/>`;
     }
   }
-  if (display.style === 'render' && display.showLakes) svg += vectorLakeMaterial(water);
+  if (material && display.showLakes) svg += vectorLakeMaterial(water, display.style);
   return svg + '</g>';
 }
 
 /** Shared lake material for live rendering and retained terrain exports. */
-export function vectorLakeMaterial(water: VectorWater): string {
+export function vectorLakeMaterial(water: VectorWater, style: TerrainStyle = 'render'): string {
   const path = lakeShores(water);
-  return path ? lakeMaterialSvg(lakeField(water.lake, water.hydro.n).values, water.hydro.n, water.hydro.width, path, 'vector-lake-material') : '';
+  return path ? lakeMaterialSvg(lakeField(water.lake, water.hydro.n).values, water.hydro.n, water.hydro.width, path, 'vector-lake-material', style) : '';
 }
 
 /** Raster diagnostics over the hydrology grid; `delta` is the conditioning's height change on its own grid. */

@@ -33,7 +33,7 @@ export async function portableRecipe(stage: RecipeStage, query: string, decor?: 
     const source = await portableQuery(decor.meta.regeneration.query);
     for (const key of ['artifact', 'stage', 'pipeline', 'pins', 'view', 'showPins', 'settlements', 'roads', 'urban']) source.delete(key);
     source.set('auto', '0');
-    const { waterSvg: _water, waterMaterialSvg: _waterMaterial, regeneration, ...meta } = decor.meta;
+    const { waterSvg: _water, waterMaterialSvg: _waterMaterial, waterMaterial: _neutralWater, regeneration, ...meta } = decor.meta;
     meta.query = (await portableQuery(meta.query)).toString();
     return { stage, query: params.toString(), terrain: { query: source.toString(), crops: regeneration.crops, meta } };
   }
@@ -82,6 +82,7 @@ export async function restoreRecipe(recipe: MapRecipe, signal?: AbortSignal): Pr
 export function recipeUrl(recipe: MapRecipe): URL {
   const page = recipe.stage === 'urban' ? 'urbanbench.html' : recipe.stage === 'houses' ? 'housebench.html' : 'terrainbench.html';
   const url = new URL(page, location.href); url.search = recipe.query;
+  if (executionRuntime.profile === 'local' && url.searchParams.get('profile') === 'local') applyExecutionProfile(url);
   if (recipe.stage === 'settlements') url.searchParams.set('stage', 'settlements');
   return placeSketchInFragment(url);
 }
@@ -172,3 +173,4 @@ export function installRecipeSharing(options: {
     finally { load.disabled = false; }
   };
 }
+import { executionRuntime, applyExecutionProfile } from './executionProfile';

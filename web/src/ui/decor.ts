@@ -1,5 +1,6 @@
 import { decorGeography, type VectorGeography } from '../../../rust/bridge/urbanGeography';
 import { gunzipSync, gzipSync } from 'fflate';
+import type { RetainedWaterMaterial } from './decorWater';
 import type { RoadConfig, RoadOutput, Settlement, SettlementRaster } from '../../../rust/bridge/settlements';
 
 /**
@@ -26,7 +27,9 @@ export interface DecorMeta {
   waterSvg: string;
   /** Render's lake material, produced by the same renderer as the live terrain. */
   waterMaterialSvg?: string;
-  terrainDisplay?: { floor: number; sourceCell: number; refine: boolean; globalMinHeight: number; globalMaxHeight: number; motifSize: number };
+  /** Neutral world-space lake field and outline; appearance is evaluated on display. */
+  waterMaterial?: RetainedWaterMaterial;
+  terrainDisplay?: { referenceWidth?: number; floor: number; sourceCell: number; refine: boolean; globalMinHeight: number; globalMaxHeight: number; motifSize: number };
   stats: { land: number; minHeight: number; maxHeight: number; riverKm: number; roadKm: number };
   /** Optional staged-bench snapshot. Old .decor files remain readable. Coordinates are local metres. */
   pipeline?: {

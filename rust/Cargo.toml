@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/core", "crates/wasm", "crates/neural", "crates/random", "crates/houses", "crates/houses-wasm"]
+members = ["crates/core", "crates/wasm", "crates/neural", "crates/random", "crates/houses", "crates/houses-wasm", "crates/local"]
 # The optional browser neural adapter uses Neural Earth's shared GPU runtime.
 # Keep that build dependency out of ordinary terrain/houses builds.
 exclude = ["crates/neural-wasm"]

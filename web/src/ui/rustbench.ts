@@ -1,6 +1,9 @@
 import { sketchQuery, placeSketchInFragment } from './terrainSketchSharing';
 import { captureBenchUi, restoreBenchUi, type BenchUiContext } from './benchContext';
 import { installRecipeSharing } from './recipeSharing';
+import { executionRuntime, applyExecutionProfile, installExecutionProfile } from './executionProfile';
+
+installExecutionProfile(document.querySelector('.shell-header')!);
 
 const benches = {
   terrain: { title: 'Terrain · 1–3', path: 'terrainbench.html', query: '' },
@@ -17,7 +20,7 @@ const share = document.querySelector<HTMLButtonElement>('#share')!;
 const announcement = document.querySelector<HTMLElement>('#announcement')!;
 const loaded = new Map<Bench, HTMLIFrameElement>();
 const loading = new Set<Bench>();
-const sessionKey = 'magna-bench-context-v1';
+const sessionKey = `magna-bench-context-v1${executionRuntime.profile === 'local' ? '-local' : ''}`;
 const contexts = new Map<Bench, string>();
 const uiKey = `${sessionKey}-ui`;
 const uiContexts = new Map<Bench, BenchUiContext>();
@@ -139,6 +142,7 @@ function navigate(): void {
   const url = new URL(definition.path, location.href);
   url.hash = '';
   url.search = separator < 0 ? contexts.get(bench) ?? definition.query : route.slice(separator + 1);
+  applyExecutionProfile(url);
   if (bench === 'settlements') url.searchParams.set('stage', 'settlements');
   if (definition.path === 'terrainbench.html') placeSketchInFragment(url);
   let frame = loaded.get(bench);

@@ -1,6 +1,7 @@
 import init, { catalogue_json, preflight_json, generate_houses_json } from '../pkg/houses/magna_urbis_houses_wasm.js';
 import wasmUrl from '../pkg/houses/magna_urbis_houses_wasm_bg.wasm?url&inline';
 import { HOUSE_SCHEMA, HOUSE_MAX_JSON_BYTES, type HouseRole, type HouseConfig, type HouseRequest, type Envelope, type CatalogueBundle } from './housesContract';
+import { nativeRequest } from './nativeEngine';
 export * from './housesContract';
 
 export const ROLE_LABELS: Record<HouseRole, string> = {dwelling: 'habitation', residential_ensemble: 'ensemble résidentiel', communal_dwelling: 'habitat collectif', mixed_residential: 'habitat mixte', domestic_annex: 'annexe domestique', spatial_component: 'composant spatial', non_domestic: 'non résidentiel', landscape: 'paysage'};
@@ -17,6 +18,10 @@ export function compileHousesModule(): Promise<WebAssembly.Module> {
   }).then(bytes => WebAssembly.compile(bytes));
 }
 export async function callHouses(request: HouseRequest): Promise<string> {
+  if (request.runtime?.profile === 'local') {
+    const response = await nativeRequest(request.runtime, `/houses/${request.kind}`, JSON.stringify(request.kind === 'catalogue' ? {} : request.config));
+    return response.text();
+  }
   ready ??= (async () => init({module_or_path: request.module ?? await compileHousesModule()}))();
   await ready;
   const json = request.kind === 'catalogue' ? catalogue_json() : request.kind === 'preflight' ? preflight_json(JSON.stringify(request.config)) : generate_houses_json(JSON.stringify(request.config));

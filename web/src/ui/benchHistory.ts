@@ -46,6 +46,8 @@ export async function saveHistory(decor: Decor, fresh = true): Promise<Decor> {
 
 /** Links identify an immutable local export; the .decor file is the portable payload. */
 export function openBench(stage: 'terrain' | 'settlements' | 'urban', params: URLSearchParams): void {
+  const runtimeUrl = applyExecutionProfile(new URL(`?${params}`, location.href));
+  params = runtimeUrl.searchParams;
   if (window.parent !== window) {
     window.parent.postMessage({ channel: 'magna-bench-pipeline', stage, query: params.toString() }, location.protocol === 'file:' ? '*' : location.origin);
   } else {
@@ -93,3 +95,4 @@ export function createHistoryPanel(options: { before: Element; onOpen(decor: Dec
   void refresh();
   return { refresh, note: (text: string): void => { note.textContent = text; } };
 }
+import { applyExecutionProfile } from './executionProfile';
