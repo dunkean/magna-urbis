@@ -29,13 +29,16 @@ import terrain_app
 from terrain_app import load_pipeline
 from terrain_diffusion.inference.world_pipeline import WorldPipeline
 from terrain_inference import configure_world
-from distill.student import load_student
 from distill.inference import install
+import neural_model_catalog as model_catalog
+import neural_refinement as refinement
 
 LOCK = threading.Lock()
 STATE = {'state': 'ready', 'message': 'Python/CUDA pret ; poids charges au premier calcul',
-         'backend': 'python-cuda', 'generated': 0, 'loaded': False, 'resolution': 1024, 'extent': 40000, 'zoneConditioning': 1}
+         'backend': 'python-cuda', 'generated': 0, 'loaded': False, 'resolution': 1024, 'extent': 40000,
+         'zoneConditioning': 1, 'modelCatalog': 1}
 MODELS = None
+MODELS_KEY = None
 
 
 def number(params, name, default, low, high):
@@ -45,15 +48,18 @@ def number(params, name, default, low, high):
     return value
 
 
-def models(seed):
-    global MODELS
-    if MODELS is None:
+def models(seed, params):
+    global MODELS, MODELS_KEY
+    selected = model_catalog.selection(params)
+    key = tuple(selected.items())
+    if MODELS is None or MODELS_KEY != key:
         STATE.update(state='loading', message='Python : chargement des modeles PyTorch sur CUDA')
         loaded = load_pipeline(seed)
         config = {k: v for k, v in dict(loaded.config).items() if not k.startswith('_')}
-        coarse, _ = load_student(EARTH / 'distill/weights/coarse4.pt', 'cuda')
-        decoder, _ = load_student(EARTH / 'distill/weights/decoder.pt', 'cuda')
-        MODELS = loaded, config, coarse, decoder
+        coarse = model_catalog.load_student(selected['coarseModel'], 'cuda')[0] if selected['coarseModel'] != 'original' else None
+        decoder = model_catalog.load_student(selected['decoderModel'], 'cuda')[0] if selected['decoderModel'] != 'original' else None
+        MODELS = loaded, config, coarse, decoder, selected
+        MODELS_KEY = key
         STATE['loaded'] = True
     return MODELS
 
@@ -83,9 +89,14 @@ def generate(body):
     detail = number(params, 'detail', 1, 0, 5)
     relief_scale = number(params, 'reliefScale', 1, 0, 5)
     relief_fixed = number(params, 'reliefFixed', 0, 0, 5000) if 'reliefFixed' in params else None
-    loaded, config, coarse, decoder = models(seed)
-    coarse.solver.steps = steps
-    coarse.config = replace(coarse.config, solver_steps=steps)
+    selected = model_catalog.selection(params)
+    if selected['baseModel'] == 'residual8k':
+        STATE.update(state='generating', message='Python : Coarse2 -> flow résiduel 8k -> décodeur')
+        return model_catalog.generate_finite(condition | {'edited': bool(body.get('edited'))}, params, seed)
+    loaded, config, coarse, decoder, selected = models(seed, params)
+    if coarse is not None:
+        coarse.solver.steps = steps
+        coarse.config = replace(coarse.config, solver_steps=steps)
     world = WorldPipeline(**(config | dict(seed=seed, dtype='bf16', T=2, latents_batch_size=16,
                           torch_compile=False, onestep_latent=True, cache_limit=512 * 1024**2, log_mode='silent')))
     world.coarse_model, world.base_model, world.decoder_model = loaded.coarse_model, loaded.base_model, loaded.decoder_model
@@ -105,7 +116,7 @@ def generate(body):
         self.synthetic_map_factory = factory
 
     world._init_conditioning = MethodType(init_conditioning, world)
-    install(world, {'coarse': coarse, 'decoder': decoder})
+    install(world, {key: value for key, value in {'coarse': coarse, 'decoder': decoder}.items() if value is not None})
     original_build = world._build_coarse_stage
 
     def build_coarse(self):
@@ -137,7 +148,8 @@ def generate(body):
 
     world._build_coarse_stage = MethodType(build_coarse, world)
     counts, timings, hooks = [0, 0, 0], [0.0, 0.0, 0.0], []
-    for i, model in enumerate((coarse.solver.net, loaded.base_model, decoder)):
+    for i, model in enumerate((coarse.solver.net if coarse is not None else loaded.coarse_model,
+                               loaded.base_model, decoder if decoder is not None else loaded.decoder_model)):
         events = []
 
         def before(module, args, i=i, events=events):
@@ -156,6 +168,7 @@ def generate(body):
             timings[i].append((events.pop(), event))
 
         hooks += [model.register_forward_pre_hook(before), model.register_forward_hook(after)]
+    retained_world = False
     try:
         world.bind()
         STATE.update(state='generating', message='Python : coarse -> base -> decoder sur CUDA')
@@ -172,15 +185,21 @@ def generate(body):
             raise RuntimeError('Python produced non-finite heights')
         stage_ms = [sum(a.elapsed_time(b) for a, b in pairs) if isinstance(pairs, list) else 0 for pairs in timings]
         total_ms = (time.perf_counter() - began) * 1000
-        meta = dict(backend='python-cuda', precision='bf16', profile='coarse4-original-base-t1-decoder',
+        profile = 'coarse4-original-base-t1-decoder' if selected == model_catalog.catalog()['defaults'] else '-'.join(selected.values())
+        meta = dict(backend='python-cuda', precision='bf16', profile=profile,
                     totalMs=total_ms, coarseMs=stage_ms[0], baseMs=stage_ms[1], decoderMs=stage_ms[2],
                     reconstructionMs=max(0, total_ms - sum(stage_ms)), evaluations=counts,
-                    land=float(np.mean(heights > 0)), edited=bool(body.get('edited')), sketchRegion=True, zoneConditioning=1)
+                    land=float(np.mean(heights > 0)), edited=bool(body.get('edited')), sketchRegion=True, zoneConditioning=1,
+                    **model_catalog.model_info(selected))
+        meta['neuralSeed'] = str(seed)
+        meta['neuralToken'] = refinement.retain_world(world, origin)
+        retained_world = True
         return heights.tobytes(), meta
     finally:
         for hook in hooks:
             hook.remove()
-        world.close()
+        if not retained_world:
+            world.close()
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -203,15 +222,20 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         if urlparse(self.path).path == '/status':
-            self.reply(200, json.dumps(STATE).encode())
+            self.reply(200, json.dumps(dict(STATE, refinement=refinement.status())).encode())
+        elif urlparse(self.path).path == '/models':
+            self.reply(200, json.dumps(model_catalog.catalog()).encode())
         else:
             self.reply(404, b'{"error":"Not found"}')
 
     def do_POST(self):
-        global MODELS
+        global MODELS, MODELS_KEY
         if urlparse(self.path).path == '/release':
             with LOCK:
+                refinement.release()
                 MODELS = None
+                MODELS_KEY = None
+                model_catalog.release()
                 for device in list(terrain_app.pipelines):
                     terrain_app.release_pipeline(device)
                 gc.collect()
@@ -219,7 +243,8 @@ class Handler(BaseHTTPRequestHandler):
                 STATE.update(state='ready', loaded=False, message='Python/CUDA pret ; GPU libere')
             self.reply(200, b'{"released":true}')
             return
-        if urlparse(self.path).path != '/generate':
+        path = urlparse(self.path).path
+        if path not in ('/generate', '/refinement/register', '/refinement/tile', '/refinement/release'):
             self.reply(404, b'{"error":"Not found"}')
             return
         try:
@@ -228,9 +253,17 @@ class Handler(BaseHTTPRequestHandler):
                 raise ValueError('Invalid request size')
             body = json.loads(self.rfile.read(length))
             with LOCK:
-                data, meta = generate(body)
-                STATE.update(state='ready', message='Python/CUDA pret', generated=STATE['generated'] + 1)
-            self.reply(200, data, 'application/octet-stream', meta)
+                if path == '/refinement/register':
+                    self.reply(200, json.dumps(refinement.register(body)).encode())
+                elif path == '/refinement/release':
+                    self.reply(200, json.dumps(refinement.release(body)).encode())
+                elif path == '/refinement/tile':
+                    data, meta = refinement.tile(body)
+                    self.reply(200, data, 'application/octet-stream', meta)
+                else:
+                    data, meta = generate(body)
+                    STATE.update(state='ready', message='Python/CUDA pret', generated=STATE['generated'] + 1)
+                    self.reply(200, data, 'application/octet-stream', meta)
         except Exception as exc:
             import traceback
             traceback.print_exc()

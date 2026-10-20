@@ -1,0 +1,28 @@
+{
+  "schema": 1,
+  "sourceRepository": "https://github.com/dunkean/neural-earth",
+  "sourceRevision": "919550498b3fd7c9d4c53e575f6a2d5475f9be2d",
+  "byteLimit": 100000000,
+  "defaults": { "coarseModel": "coarse4", "baseModel": "original", "decoderModel": "decoder64" },
+  "coarse": [
+    { "id": "coarse4", "label": "Coarse 4 · EMA 50k · 11,22 Mo", "bytes": 11218177, "steps": 4 },
+    { "id": "coarse2", "label": "Coarse 2 · EMA 200k · 11,22 Mo", "bytes": 11216897, "steps": 2 },
+    { "id": "coarse8", "label": "Coarse 8 · EMA 25k · 11,21 Mo", "bytes": 11213057, "steps": 8 },
+    { "id": "coarse1", "label": "Coarse 1 · EMA 200k · 11,22 Mo", "bytes": 11216897, "steps": 1 },
+    { "id": "coarse8_legacy", "label": "Coarse 8 · EMA 22,5k · 11,22 Mo", "bytes": 11218177, "steps": 8 },
+    { "id": "original", "label": "Coarse original · 11,20 Mo", "bytes": 11200936, "steps": 20 }
+  ],
+  "base": [
+    { "id": "original", "label": "Base originale · externe · 1 014,77 Mo", "bytes": 1014772076, "bundled": false },
+    { "id": "residual8k", "label": "Base résiduelle 48 · brut 8k · 18,28 Mo", "bytes": 18284418, "bundled": true, "requiresCoarse": "coarse2", "decoders": ["decoder64", "decoder16"], "experimental": true, "refinementDecoder": false }
+  ],
+  "decoder": [
+    { "id": "decoder64", "label": "Décodeur 64 · EMA 200k · 13,35 Mo", "bytes": 13354360 },
+    { "id": "decoder16", "label": "Décodeur 16 · EMA 10k · 0,86 Mo", "bytes": 860920 },
+    { "id": "original", "label": "Décodeur original · externe · 111,71 Mo", "bytes": 111709108, "bundled": false }
+  ],
+  "browserProfile": { "coarseModel": "coarse4", "baseModel": "nf4_b75", "decoderModel": "decoder64", "fixed": true },
+  "unavailable": [
+    { "id": "native3_base99m", "bytes": 99221916, "reason": "Experimental 99.22 MB delivery documented upstream; its weights are outside Git and no release download is published. Not selectable until an authenticated complete artifact is installed." }
+  ]
+}

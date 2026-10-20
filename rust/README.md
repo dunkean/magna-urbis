@@ -98,6 +98,15 @@ precisions mean the two neural modes are not numerically interchangeable;
 the delivered metadata reports backend, profile, precision and stage timings.
 Both deliver signed metre elevations over 40 km in a 1024-square raster.
 
+Neuronal Python now offers independent **Coarse**, **Base** and **Décodeur**
+choices in **Neural networks**. Nine complete checkpoints, each below 100 MB,
+are retained with SHA-256 identities in [`models/neural-earth`](models/neural-earth/README.md).
+They include coarse 1/2/4/8 variants, the experimental 18.28 MB residual base,
+and the 13.35 MB / 0.86 MB decoders. The residual base uses its actual finite
+Tile40 flow and requires Coarse2; incompatible combinations are disabled.
+The original large base remains external. Browser inference retains its pinned
+coarse4/NF4 B75/decoder profile; these Python choices do not relabel that runtime.
+
 The neural controls live in `terrainbench.html`, including sketch, climate,
 conditioning noise, coarse steps, local relief passed to base, histogram and
 decoder detail. The obsolete standalone neural bench has been removed;
@@ -125,6 +134,53 @@ See [the shared rendering contract](../docs/RENDERING.md).
 
 Terrain generation is unchanged. The port lives in `bridge/terrainMaterial.ts`
 and remains part of the temporary renderer, outside the Rust engine.
+
+### Terrain flyover
+
+In the Terrain workshop only, **3D** projects the selected map style, water,
+contours and Fantasy illustrations onto a perspective mesh of the retained
+Rust/WASM elevations. Drag to move, right-drag or Shift-drag to rotate and
+tilt, and use the wheel to approach the ground. Arrow keys move the view;
+Shift-arrow keys orient it. **N ↑** faces north, **Fit** frames the map,
+and **Relief ×** adjusts the vertical exaggeration without changing elevations.
+The camera and 2D/3D mode travel with shared links and workshop sessions.
+
+The view requires WebGL2. Sea and lake surfaces use their water elevations;
+changing the style or moving the camera preserves generation. Editing zones,
+placing pins, measuring and choosing a crop return to 2D. SVG/PNG exports keep
+their cartographic view. The perspective mesh and material refine in quadtree
+tiles around the camera, using retained world-space height and material grids.
+Close zoom reaches the map's limit of 8 CSS pixels per metre;
+device pixel ratio is preserved up to 2. Tile caches and background loading
+keep memory bounded. Fantasy illustrations remain projected map brushwork.
+The original 2D views and **Render** keep their existing surface and material.
+The separate **Render3D · Multiscale** style extends Render with world-space
+material detail and is also selectable in 2D. Enhanced mesh residuals are isolated
+to 3D and this explicit style: their physical wavelengths adapt to the source
+cell size, keep plains smooth and retain the underlying slopes. The sampled
+surface is independent of the camera; continuous geometry morphs and material
+crossfades handle LOD changes without replacing the landscape at each level.
+The implementation follows established continuous terrain LOD and derivative-
+conditioned noise techniques; it does not claim to simulate physical erosion.
+This viewer is presentation code in `web/src/ui/terrain3d.ts`, independent of
+the engine and the future permanent renderer.
+
+**Raffinement** selects **Source**, **Noise multiscale** or **Neural Earth · CUDA**
+for 3D and the explicit Render3D style, including Render3D in 2D. This selection
+is saved in links as `refinement3d`. Source retains the original raster; Noise
+uses a world-anchored derivative-conditioned surface. Neural Earth requires
+the local Python service (`npm run neural:python`) and reuses the updated
+upstream `decoder-v12-nyquist-notch` refiner directly: one decoder band at 15 m,
+then sparse-convolution detail down to 0.46875 m in the native 40 km coordinate
+system. Scaling the map scales these physical spacings. A generated Python
+WorldPipeline retains its appearance latents for that decoder band. Procedural,
+browser and finite residual-base sources use the same sparse-convolution
+method with native terrain roughness, without claiming a second neural decode.
+The status reports which path actually ran. Only fine residuals are added to
+Magna's retained relief; water generation is preserved. The mesh and material
+consume the same haloed, spline-prefiltered tile, and the parent stays visible
+until both are ready. Ordinary 2D styles, including Render, keep their original
+surface, palette and refinement behavior.
 
 ## Painted terrain operations
 

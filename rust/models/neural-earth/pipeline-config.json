@@ -1,0 +1,43 @@
+{
+  "_class_name": "WorldPipeline",
+  "_diffusers_version": "0.30.3",
+  "coarse_means": [
+    -37.70000792952155,
+    1.1403065255556186,
+    18.102486588653473,
+    332.8342598198454,
+    1332.2078969994473,
+    52.660088206981435
+  ],
+  "coarse_pooling": 1,
+  "coarse_stds": [
+    39.741999742263,
+    1.7681844104569366,
+    8.92146918789914,
+    321.7660336396054,
+    842.9293648884745,
+    31.079985318715785
+  ],
+  "cond_snr": [
+    0.5,
+    0.5,
+    0.5,
+    0.5,
+    0.5
+  ],
+  "drop_water_pct": 0.5,
+  "elev_coarse_pool_mode": "avg",
+  "frequency_mult": [
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0
+  ],
+  "histogram_raw": null,
+  "latent_compression": 8,
+  "native_resolution": 30,
+  "p5_coarse_pool_mode": "avg",
+  "residual_mean": 0.0,
+  "residual_std": 0.7
+}

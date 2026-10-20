@@ -1,0 +1,183 @@
+{
+  "sourceRepository": "https://github.com/dunkean/neural-earth",
+  "sourceRevision": "919550498b3fd7c9d4c53e575f6a2d5475f9be2d",
+  "teacherModel": "xandergos/terrain-diffusion-30m",
+  "teacherRevision": "9ef8030cb805b433b98ec25c5dddefbac07a9e26",
+  "models": {
+    "coarse1": {
+      "file": "coarse1.pt",
+      "bytes": 11216897,
+      "sha256": "d0914416c8877421061445a979d63cf04331fdc3970972cc70d7cc8a0b109af8",
+      "source": "distill/weights/coarse1.pt",
+      "sourceRevision": "73d80e7e0551ebd93fdb9fad3173793d7baf6820",
+      "config": {
+        "stage": "coarse",
+        "width": 128,
+        "depth": 3,
+        "dilations": [
+          1,
+          2,
+          4
+        ],
+        "solver_steps": 1,
+        "norm_eps": 1e-06
+      },
+      "trainingStep": 200000,
+      "selectedWeights": "ema"
+    },
+    "coarse2": {
+      "file": "coarse2.pt",
+      "bytes": 11216897,
+      "sha256": "143f8f9d7808a242492e6e6a966e968a7b618d2950ac35cf5ac3a2e4fcaef157",
+      "source": "distill/weights/coarse2.pt",
+      "sourceRevision": "919550498b3fd7c9d4c53e575f6a2d5475f9be2d",
+      "config": {
+        "stage": "coarse",
+        "width": 128,
+        "depth": 3,
+        "dilations": [
+          1,
+          2,
+          4
+        ],
+        "solver_steps": 2,
+        "norm_eps": 1e-06
+      },
+      "trainingStep": 200000,
+      "selectedWeights": "ema"
+    },
+    "coarse4": {
+      "file": "coarse4.pt",
+      "bytes": 11218177,
+      "sha256": "a9288d7266cdde292e04b15619054476c04bcd17b06d646ba475381179547436",
+      "source": "distill/weights/coarse4.pt",
+      "sourceRevision": "73d80e7e0551ebd93fdb9fad3173793d7baf6820",
+      "config": {
+        "stage": "coarse",
+        "width": 128,
+        "depth": 3,
+        "dilations": [
+          1,
+          2,
+          4
+        ],
+        "solver_steps": 4,
+        "norm_eps": 1e-06
+      },
+      "trainingStep": 50000,
+      "selectedWeights": "ema"
+    },
+    "coarse8": {
+      "file": "coarse8.pt",
+      "bytes": 11213057,
+      "sha256": "a52c4e32295f251e671b4236dc72c6ee4f35fecc85ec9201db8c371c43f76f6b",
+      "source": "distill/weights/coarse8.pt",
+      "sourceRevision": "919550498b3fd7c9d4c53e575f6a2d5475f9be2d",
+      "config": {
+        "stage": "coarse",
+        "width": 128,
+        "depth": 3,
+        "dilations": [
+          1,
+          2,
+          4
+        ],
+        "solver_steps": 8,
+        "norm_eps": 1e-06
+      },
+      "trainingStep": 25000,
+      "selectedWeights": "ema"
+    },
+    "coarse8_legacy": {
+      "file": "coarse8_legacy.pt",
+      "bytes": 11218177,
+      "sha256": "17d7c752c8d4f9693c6b5aa210418f79ab4749bd0b0c3e2c06ebe058efc7458f",
+      "source": "distill/weights/coarse8.pt",
+      "sourceRevision": "73d80e7e0551ebd93fdb9fad3173793d7baf6820",
+      "config": {
+        "stage": "coarse",
+        "width": 128,
+        "depth": 3,
+        "dilations": [
+          1,
+          2,
+          4
+        ],
+        "solver_steps": 8,
+        "norm_eps": 1e-06
+      },
+      "trainingStep": 22500,
+      "selectedWeights": "ema"
+    },
+    "residual8k": {
+      "file": "residual8k.pt",
+      "bytes": 18284418,
+      "sha256": "5034c3c580c42e4ee3ab8a29c2bf39a7d9ae9efe11b009193109b0b988e3edde",
+      "source": "distill/weights/base-residual8k.pt",
+      "sourceRevision": "919550498b3fd7c9d4c53e575f6a2d5475f9be2d",
+      "config": {
+        "stage": "base",
+        "width": 48,
+        "depth": 4,
+        "dilations": [
+          1,
+          2,
+          4
+        ],
+        "solver_steps": 0,
+        "norm_eps": 1e-06
+      },
+      "trainingStep": 8000,
+      "selectedWeights": "raw"
+    },
+    "decoder64": {
+      "file": "decoder64.pt",
+      "bytes": 13354360,
+      "sha256": "ab2d35209656fb367e896d72d0d1642bfeaf0401bad92e42fe2d3f90d0ea3cf2",
+      "source": "distill/weights/decoder.pt",
+      "sourceRevision": "919550498b3fd7c9d4c53e575f6a2d5475f9be2d",
+      "config": {
+        "stage": "decoder",
+        "width": 64,
+        "depth": 4,
+        "dilations": [
+          1,
+          2,
+          4
+        ],
+        "solver_steps": 0,
+        "norm_eps": 1e-06
+      },
+      "trainingStep": 200000,
+      "selectedWeights": "ema"
+    },
+    "decoder16": {
+      "file": "decoder16.pt",
+      "bytes": 860920,
+      "sha256": "3f4333ed1f03bcfa29935a30beef735b16021163522ac41d5ff09fbbba19d880",
+      "source": "distill/weights/decoder16-10k.pt",
+      "sourceRevision": "919550498b3fd7c9d4c53e575f6a2d5475f9be2d",
+      "config": {
+        "stage": "decoder",
+        "width": 16,
+        "depth": 4,
+        "dilations": [
+          1,
+          2,
+          4
+        ],
+        "solver_steps": 0,
+        "norm_eps": 1e-06
+      },
+      "trainingStep": 10000,
+      "selectedWeights": "ema"
+    },
+    "coarse_original": {
+      "file": "coarse-original.safetensors",
+      "bytes": 11200936,
+      "sha256": "f88cdc26c70a2c73ee4c91088b8cec3f45202fc452682ac759554b099c5c2f33",
+      "source": "coarse_model/diffusion_pytorch_model.safetensors",
+      "sourceRevision": "9ef8030cb805b433b98ec25c5dddefbac07a9e26"
+    }
+  }
+}

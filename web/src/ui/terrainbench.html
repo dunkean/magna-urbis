@@ -28,6 +28,11 @@
 <label>Relief exaggeration × <input id="lightExaggeration" type="number" min="0" max="10" step="0.1" value="2"></label>
 <button id="resetLighting" type="button">Reset lighting</button>
 </div></details>
+<div id="terrain3dControls" class="control-group" role="group" aria-label="Vue du terrain" hidden>
+  <button id="projection3d" type="button" aria-pressed="false" title="Survoler le relief en 3D">3D</button>
+  <label id="refinement3dControl" hidden>Raffinement <select id="refinement3d"><option value="source">Source</option><option value="noise">Noise multiscale</option><option value="neural-earth">Neural Earth · CUDA</option></select></label><small id="refinement3dStatus" role="status" hidden></small><button id="retryRefinement" type="button" hidden>Réessayer</button>
+  <span id="perspectiveControls" hidden><button id="north3d" type="button" title="Orienter la vue vers le nord" aria-label="Orienter vers le nord">N ↑</button><label title="Exagération verticale de la vue, sans modifier les altitudes">Relief × <input id="exaggeration3d" type="range" min="1" max="5" step="0.1" value="1"><output id="exaggeration3dValue">1</output></label></span>
+</div>
 <div class="control-group" role="group" aria-label="Navigation"><button id="fit" title="Fit to view" aria-label="Fit to view"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5"/><circle cx="12" cy="12" r="3"/></svg></button></div>
     <div class="control-group" role="group" aria-label="Pins"><button id="pinMode" title="Place pins" aria-label="Place pins" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 10c0 5-7 11-7 11S5 15 5 10a7 7 0 0 1 14 0Z"/><circle cx="12" cy="10" r="2"/></svg></button><label title="Show pins"><input id="showPins" type="checkbox" checked>Pins</label></div>
     <div class="control-group share-actions" role="group" aria-label="Share"><button id="copy" title="Copy URL" aria-label="Copy URL"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m10 13 4-4m-5 6-2 2a4 4 0 0 1-6-6l4-4a4 4 0 0 1 6 0m2 2 2-2a4 4 0 0 1 6 6l-4 4a4 4 0 0 1-6 0"/></svg></button><button id="copyReport" title="Copy report" aria-label="Copy report"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="5" width="14" height="16" rx="2"/><path d="M16 5V3H4v14m6-8h6m-6 4h6m-6 4h4"/></svg></button></div>
@@ -70,6 +75,7 @@
 <label title="Precipitation coefficient of variation (neural network)">Rain CV % <input id="climPrecipitationCv" type="number" min="0" max="200" step="1" value="35"></label>
 </div></details>
 <details id="neuralAdvanced" class="advanced" hidden><summary>Neural networks</summary><div class="control-group">
+<span id="neuralModelControls" class="control-group"><label>Coarse <select id="coarseModel"></select></label><label>Base <select id="baseModel"></select></label><label>Décodeur <select id="decoderModel"></select></label></span><small id="neuralModelNote"></small>
 <label title="Multiplies land elevations in the sketch (not sea depth)">Elevation × <input id="nLandScale" type="number" min="0" max="5" step="0.05" value="1"></label>
 <label title="DPM-Solver++ steps; coarse4 weights are distilled for 4">Coarse steps <input id="nSteps" type="number" min="1" max="32" step="1" value="4"></label>
 <span class="section-label">Noise / signal</span>
@@ -159,7 +165,9 @@
   <main>
     <div id="viewport" tabindex="0" aria-label="Terrain map. Use the wheel to zoom and drag to pan.">
       <canvas id="gl" aria-hidden="true"></canvas>
+      <canvas id="terrain3d" tabindex="0" aria-label="Terrain 3D. Glisser pour se déplacer, clic droit ou Maj et glisser pour orienter, molette pour zoomer." aria-describedby="terrain3dHint"></canvas>
       <svg id="map" xmlns="http://www.w3.org/2000/svg" aria-label="Generated terrain"></svg>
+      <div id="terrain3dHint"><span>Glisser : déplacer · Clic droit ou Maj : orienter · Molette : zoomer</span><output id="terrain3dInfo" aria-live="off"></output></div>
       <div id="pinLayer"></div><div id="pinPopover" hidden></div>
       <output id="hydrologyLegend" hidden></output><output id="coordinates"></output><output id="scale"></output>
     </div>

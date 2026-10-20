@@ -1,12 +1,15 @@
 import { NEURAL_EARTH_MATERIAL_GLSL } from './terrainMaterial';
+import { RENDER_3D_MATERIAL_GLSL } from './terrainMaterial3d';
 import { seedHash } from './terrainAdjust';
 import type { TerrainData, TerrainSettings } from './terrain';
 import { CLIMATE_VALUES } from './terrain';
 
 let renderer: { gl: WebGL2RenderingContext; canvas: OffscreenCanvas; program: WebGLProgram; texture: WebGLTexture } | undefined;
+let renderer3d: typeof renderer;
 /** Same material shader as the live view, for worker SVG rasters and exports. */
-export function renderMaterialPixels(terrain: TerrainData, settings: Pick<TerrainSettings, 'seed' | 'climate' | 'climateValues'>): Uint8Array {
-  if (!renderer) {
+export function renderMaterialPixels(terrain: TerrainData, settings: Pick<TerrainSettings, 'seed' | 'climate' | 'climateValues'>, enhanced3d = false): Uint8Array {
+  let active = enhanced3d ? renderer3d : renderer;
+  if (!active) {
     const canvas = new OffscreenCanvas(1, 1);
     const gl = canvas.getContext('webgl2', { alpha: false, antialias: false });
     if (!gl) throw new Error('Le style Render nécessite WebGL2 pour composer ses matériaux.');
@@ -23,6 +26,7 @@ export function renderMaterialPixels(terrain: TerrainData, settings: Pick<Terrai
       uniform sampler2D heights;uniform int n;uniform float cell;uniform vec2 origin;
       out vec4 color;
       ${NEURAL_EARTH_MATERIAL_GLSL}
+      ${enhanced3d ? RENDER_3D_MATERIAL_GLSL : ''}
       float h(ivec2 p){return texelFetch(heights,clamp(p,ivec2(0),ivec2(n-1)),0).r;}
       void main(){
         ivec2 p=ivec2(int(gl_FragCoord.x),n-1-int(gl_FragCoord.y));
@@ -35,15 +39,16 @@ export function renderMaterialPixels(terrain: TerrainData, settings: Pick<Terrai
           if(h(p+ivec2(round(d*float(r)*.5)))<0.)shore=min(shore,radius*.5);
         }
         shore=min(shore,max(height,0.)/max(length(gradient),.0001));
-        color=vec4(earthMaterial(vec3(height,gradient),origin+(vec2(p)+.5)*cell,cell,(height-mean)/(6.*radius),shore,openness),1.);
+        color=vec4(${enhanced3d ? 'terrain3dMaterial' : 'earthMaterial'}(vec3(height,gradient),origin+(vec2(p)+.5)*cell,cell,(height-mean)/(6.*radius),shore,openness),1.);
       }`);
     const program = gl.createProgram()!;
     gl.attachShader(program, vertex); gl.attachShader(program, fragment); gl.linkProgram(program);
     gl.deleteShader(vertex); gl.deleteShader(fragment);
     if (!gl.getProgramParameter(program, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(program) ?? 'Material program');
-    renderer = { canvas, gl, program, texture: gl.createTexture()! };
+    active = { canvas, gl, program, texture: gl.createTexture()! };
+    if (enhanced3d) renderer3d = active; else renderer = active;
   }
-  const { canvas, gl, program, texture } = renderer, n = terrain.resolution;
+  const { canvas, gl, program, texture } = active, n = terrain.resolution;
   canvas.width = n; canvas.height = n;
   gl.viewport(0, 0, n, n); gl.useProgram(program);
   gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, texture);

@@ -95,6 +95,8 @@ export interface TerrainSettings {
   /** Climate values (preset or custom): neural sketch and water budget. */
   climateValues?: ClimateValues;
   neuralTuning?: NeuralTuning;
+  /** Selectable Python checkpoints; browser inference retains its pinned profile. */
+  coarseModel?: string; baseModel?: string; decoderModel?: string;
   /** Neural surface on the map: a window of its size (crop) or the whole 40 km stretched (scale, heights too with `neuralSlopes`). */
   neuralFit?: 'crop' | 'scale'; neuralSlopes?: boolean;
   /** Fractal refinement below the source raster's cell when zooming in. */
@@ -104,7 +106,7 @@ export interface TerrainSettings {
   erosionTuning?: ErosionTuning;
 }
 export const climateOf = (settings: TerrainSettings): ClimateValues => settings.climateValues ?? CLIMATE_VALUES[settings.climate ?? 'temperate'];
-export interface NeuralInfo { totalMs: number; coarseMs: number; baseMs: number; decoderMs: number; reconstructionMs: number; requestMs: number; evaluations: [number, number, number]; profile: string; land: number; backend?: string; precision?: string; modelIdentity?: string }
+export interface NeuralInfo { totalMs: number; coarseMs: number; baseMs: number; decoderMs: number; reconstructionMs: number; requestMs: number; evaluations: [number, number, number]; profile: string; land: number; backend?: string; precision?: string; modelIdentity?: string; neuralToken?: string; neuralSeed?: string }
 export interface TerrainRegion { x: number; y: number; extent: number; resolution: number }
 export interface TerrainData {
   /** Display-only source material coordinates, independent of generation. */
@@ -184,6 +186,7 @@ async function fetchNeuralRelief(settings: TerrainSettings, coastMask: number, i
   const climate = climateOf(settings), tuning = settings.neuralTuning ?? DEFAULT_NEURAL_TUNING;
   for (const [key, value] of Object.entries(climate)) params.set(key, String(value));
   params.set('landScale', String(tuning.landScale)); params.set('steps', String(tuning.steps)); params.set('detail', String(tuning.detail));
+  for (const key of ['coarseModel', 'baseModel', 'decoderModel'] as const) if (settings[key]) params.set(key, settings[key]!);
   for (const key of ['noiseTemperature', 'noiseTemperatureStd', 'noisePrecipitation', 'noisePrecipitationCv'] as const) params.set(key, String(tuning[key]));
   params.set('histogram', tuning.histogram.join(','));
   const familyRelief = NEURAL_RELIEF_DEFAULTS[settings.relief];
@@ -265,7 +268,7 @@ async function sampleTerrain(request: TerrainRequest, onRelief?: (relief: Terrai
   const neural = !surfaceInput && isNeuralSource(settings.source);
   if (!neural) { await releaseNeuralBrowser(); await releasePythonNeural(); }
   const key = JSON.stringify([settings.zones, nativeGeneration ? [runtime!.server, coastMask, islandMode] : null]) + '|' + (neural
-    ? JSON.stringify([settings.source, settings.seed, settings.relief, settings.relief === 'mixed' ? settings.mountainMix : 0.5, coastMask, coastMask === 255 ? islandMode : 'island', climateOf(settings), settings.fidelity ?? 0.05, settings.neuralServer ?? '', settings.sketch, settings.neuralTuning ?? DEFAULT_NEURAL_TUNING, settings.width, settings.neuralFit ?? 'crop', settings.neuralSlopes ?? true])
+    ? JSON.stringify([settings.source, settings.seed, settings.relief, settings.relief === 'mixed' ? settings.mountainMix : 0.5, coastMask, coastMask === 255 ? islandMode : 'island', climateOf(settings), settings.fidelity ?? 0.05, settings.neuralServer ?? '', settings.sketch, settings.neuralTuning ?? DEFAULT_NEURAL_TUNING, settings.width, settings.neuralFit ?? 'crop', settings.neuralSlopes ?? true, settings.coarseModel, settings.baseModel, settings.decoderModel])
     : JSON.stringify([settings.seed, settings.width, settings.relief, settings.relief === 'cavern' ? 0 : settings.erosion, settings.motifSize, settings.relief === 'mixed' ? settings.mountainMix : 0.5, nativeGeneration ? 'native' : requestedGpuGeneration ? generationMode : 'cpu', environment, settings.sketch, settings.erosionTuning ?? {}]));
   let prepareMs = 0, noiseMs = 0, erosionMs = 0, gpuSimulationMs = 0, nativeEnvironmentMs = 0;
   let erosionProfile: ErosionProfile[] | undefined;

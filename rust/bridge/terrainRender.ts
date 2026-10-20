@@ -131,8 +131,8 @@ export function renderRustTerrain(terrain: TerrainData, style: TerrainStyle, fra
     heightRange: { min: Math.max(0, terrain.globalMinHeight), max: terrain.globalMaxHeight }, exaggeration: 2,
     grainCoordinates: { x: terrain.x, y: terrain.y, cell: terrain.motifSize / 512 },
   });
-  if (style === 'render' && layers.hypsometry) {
-    const material = renderMaterialPixels(terrain, { seed: settings.seed ?? '42', climate: settings.climate, climateValues: settings.climateValues });
+  if ((style === 'render' || style === 'render3d') && layers.hypsometry) {
+    const material = renderMaterialPixels(terrain, { seed: settings.seed ?? '42', climate: settings.climate, climateValues: settings.climateValues }, style === 'render3d');
     const neutral = renderTerrainPixels(legacyRasterInput, { ...pal, hypso: [[0, '#ffffff'], [1, '#ffffff']] }, {
       pixels: n, surface: terrain.height, normals: { x: terrain.normalX, y: terrain.normalY, z: terrain.normalZ }, lighting,
       heightRange: { min: Math.max(0, terrain.globalMinHeight), max: terrain.globalMaxHeight }, exaggeration: 2,

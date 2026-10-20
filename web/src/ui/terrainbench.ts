@@ -19,8 +19,12 @@ import { CLIMATE_VALUES, DEFAULT_NEURAL_TUNING, NEURAL_RELIEF_DEFAULTS, climateO
 import { lakeColour, riverSegments, vectorOverlayPixels, vectorOverlaySvg, vectorWaterSvg, VECTOR_LEGENDS, VECTOR_OVERLAYS, type VectorOverlay } from './vectorWaterRender';
 import { lakeField } from './lakeGeometry';
 import { TerrainGl, type TerrainLook } from './terrainGl';
+import { Terrain3d, TERRAIN_3D_FOV, type Terrain3dCamera, type Terrain3dTile } from './terrain3d';
+import { terrain3dTexture } from './terrain3dTexture';
+import { TerrainRefinementSession, type TerrainRefinement } from './terrainRefinement';
+import neuralModels from '../../../rust/models/neural-earth/catalog.json';
 import { CONTOUR_INTERVAL } from '../render/contours';
-import { DEFAULT_FRACTAL_DETAIL, seedHash, type FractalDetail } from '../../../rust/bridge/terrainAdjust';
+import { DEFAULT_FRACTAL_DETAIL, neuralWindow, seedHash, type FractalDetail } from '../../../rust/bridge/terrainAdjust';
 import { renderHydrology, hydrologySegments, hydrologyWaterColour, HYDROLOGY_LEGENDS } from '../../../rust/bridge/hydrologyRender';
 import { createPins } from './pins';
 import { createRuler } from './ruler';
@@ -72,6 +76,16 @@ else {
   });
 }
 const query = sketchQuery(new URL(location.href));
+for (const [field, entries] of [['coarseModel', neuralModels.coarse], ['baseModel', neuralModels.base], ['decoderModel', neuralModels.decoder]] as const) {
+  const control = el<HTMLSelectElement>(field);
+  control.replaceChildren(...entries.map(entry => new Option(entry.label, entry.id)));
+  const selected = query.get(field) ?? neuralModels.defaults[field];
+  control.value = entries.some(entry => entry.id === selected) ? selected : neuralModels.defaults[field];
+}
+if (el<HTMLSelectElement>('baseModel').value === 'residual8k') {
+  el<HTMLSelectElement>('coarseModel').value = 'coarse2';
+  if (el<HTMLSelectElement>('decoderModel').value === 'original') el<HTMLSelectElement>('decoderModel').value = 'decoder64';
+}
 const pipelineStage = query.get('stage') === 'settlements' ? 'settlements' : 'terrain';
 // Compatibility for the offline catalogue exporter, which intentionally runs all upstream stages.
 const legacyPipeline = query.get('pipeline') === 'legacy';
@@ -209,6 +223,7 @@ const initialClimate = query.get('climate') ?? 'temperate';
 const initialClimateValues: ClimateValues = { ...CLIMATE_VALUES[(NEURAL_CLIMATES as readonly string[]).includes(initialClimate) ? initialClimate as NeuralClimate : 'temperate'] };
 if (initialClimate === 'custom') for (const key of Object.keys(climateFields) as (keyof ClimateValues)[]) initialClimateValues[key] = finite(query.get(key), initialClimateValues[key]);
 const initialTuning: NeuralTuning = { ...DEFAULT_NEURAL_TUNING, histogram: [...DEFAULT_NEURAL_TUNING.histogram] };
+if (initialSource === 'neural-python' && !query.has('n_steps')) initialTuning.steps = neuralModels.coarse.find(model => model.id === el<HTMLSelectElement>('coarseModel').value)?.steps ?? initialTuning.steps;
 for (const key of Object.keys(tuningFields) as (keyof typeof tuningFields)[]) initialTuning[key] = finite(query.get(`n_${key}`), initialTuning[key]);
 if (['auto', 'scale', 'fixed'].includes(query.get('n_reliefMode') ?? '')) initialTuning.reliefMode = query.get('n_reliefMode') as NeuralTuning['reliefMode'];
 if (query.get('n_histogram')) initialTuning.histogram = query.get('n_histogram')!.split(',').slice(0, 5).map(v => finite(v, 0));
@@ -255,6 +270,7 @@ let settings: TerrainSettings = {
   fidelity: initialFidelity,
   neuralServer: neuralServerFor(initialSource), neuralAssets,
   neuralTuning: initialTuning,
+  coarseModel: el<HTMLSelectElement>('coarseModel').value, baseModel: el<HTMLSelectElement>('baseModel').value, decoderModel: el<HTMLSelectElement>('decoderModel').value,
   neuralFit: query.get('fit') === 'scale' ? 'scale' : 'crop',
   neuralSlopes: query.get('slopes') !== '0',
   refine: query.get('refine') !== '0',
@@ -352,8 +368,192 @@ interface DetailTile {
 const detailCache = new Map<string, DetailTile>();
 let displayedDetail: DetailTile | undefined;
 let cursor: [number, number] | undefined;
+let perspective = false, terrain3d: Terrain3d | undefined;
+let refinement3d: TerrainRefinement = query.get('refinement3d') === 'source' ? 'source' : query.get('refinement3d') === 'neural-earth' ? 'neural-earth' : 'noise';
+let refinementTerrain: TerrainData | undefined, refinementReady: Promise<TerrainRefinementSession> | undefined;
+let refinementSession: TerrainRefinementSession | undefined, refinement2dTimer: ReturnType<typeof setTimeout> | undefined, refinement2dKey = '';
+let refinementEpoch = 0, refinement2dWanted = '';
+let refinementError = '';
+el<HTMLSelectElement>('refinement3d').value = refinement3d;
+let texture3dTimer: ReturnType<typeof setTimeout> | undefined, texture3dEpoch = 0;
+let surface3d: TerrainData | undefined, surface3dWater: unknown, surface3dVisibility = '';
+let camera3d: Terrain3dCamera | undefined;
+let selectingPortion = false;
+const cameraValues = (query.get('camera3d') ?? '').split(',').map(Number);
+if (cameraValues.length === 6 && cameraValues.every(Number.isFinite)) {
+  const [x, y, distance, yaw, pitch, exaggeration] = cameraValues;
+  camera3d = { x, y, distance, yaw, pitch, exaggeration };
+}
+
+function camera3dChanged(): void {
+  if (!terrain3d) return;
+  camera3d = terrain3d.getCamera();
+  input('exaggeration3d').value = String(camera3d.exaggeration);
+  el('exaggeration3dValue').textContent = camera3d.exaggeration.toFixed(1).replace('.0', '');
+  el('terrain3dInfo').textContent = `Distance ${(camera3d.distance / 1000).toLocaleString('fr-FR', { maximumFractionDigits: 2 })} km · inclinaison ${Math.round(camera3d.pitch * 180 / Math.PI)}°`;
+  if (perspective) scheduleDetail();
+  deferSave();
+}
+
+const perspectiveScale = (camera: Terrain3dCamera): number => viewport.clientHeight / (2 * Math.tan(TERRAIN_3D_FOV / 2) * camera.distance);
+
+function refinementStatus(message: string): void {
+  el('refinement3dStatus').textContent = message;
+  el('refinement3dStatus').hidden = refinement3d !== 'neural-earth' || !(perspective || style === 'render3d');
+  el('retryRefinement').hidden = !refinementError || refinement3d !== 'neural-earth' || !(perspective || style === 'render3d');
+}
+
+function reportRefinementError(error: unknown): void {
+  if ((error as Error)?.name === 'AbortError') return;
+  refinementError = error instanceof Error ? error.message : String(error);
+  refinementStatus(refinementError);
+}
+
+function ensureRefinement(): Promise<TerrainRefinementSession> {
+  if (!terrain) return Promise.reject(new Error('Terrain indisponible.'));
+  if (refinementTerrain !== terrain || !refinementReady) {
+    refinementSession?.dispose(); refinementSession = undefined; refinementTerrain = terrain; refinementError = '';
+    const epoch = ++refinementEpoch;
+    const retained = terrain, field = retained.field;
+    refinementStatus('Neural Earth · préparation…');
+    const server = settings.source === 'neural-python' ? settings.neuralServer ?? DEFAULT_PYTHON_SERVER : DEFAULT_PYTHON_SERVER;
+    refinementReady = TerrainRefinementSession.create(server, { x: 0, y: 0, width: retained.width, n: field?.n ?? retained.resolution, data: field?.data ?? retained.height }, {
+      seed: retained.neural?.neuralSeed ?? String(seedHash(settings.seed) >>> 0), source: settings.source, neuralToken: retained.neural?.neuralToken,
+      neuralWindow: isNeuralSource(settings.source) ? neuralWindow(NEURAL_EXTENT, retained.width, settings.neuralFit ?? 'crop', settings.neuralSlopes ?? true, settings.coastMask ?? 0) : undefined,
+    }).then(session => {
+      if (refinementTerrain !== retained || epoch !== refinementEpoch) { session.dispose(); throw new DOMException('Terrain remplacé', 'AbortError'); }
+      refinementSession = session;
+      refinementStatus(`Neural Earth · ${session.registration.decoderUsed ? 'décodeur + noise' : 'noise sur relief retenu'} · jusqu’à ${session.registration.minMpp.toLocaleString('fr-FR', { maximumFractionDigits: 3 })} m`);
+      return session;
+    }).catch(error => {
+      if (refinementTerrain === retained && epoch === refinementEpoch) { refinementError = error instanceof Error ? error.message : String(error); refinementStatus(refinementError); }
+      throw error;
+    });
+  }
+  return refinementReady;
+}
+
+function schedule2dRefinement(): void {
+  clearTimeout(refinement2dTimer);
+  if (perspective || style !== 'render3d' || refinement3d !== 'neural-earth' || !terrain || !gpu || (refinementError && refinementTerrain === terrain)) return;
+  const currentTerrain = terrain, extent = Math.max(viewport.clientWidth, viewport.clientHeight) / view.scale * 1.5;
+  const step = extent / 8, x = Math.floor((view.cx - extent / 2) / step) * step, y = Math.floor((view.cy - extent / 2) / step) * step;
+  const key = `${generation}:${x}:${y}:${extent}`;
+  refinement2dWanted = key;
+  if (key === refinement2dKey) return;
+  refinement2dTimer = setTimeout(() => {
+    void ensureRefinement().then(session => session.tile({ x, y, width: extent }, 768)).then(height => {
+      if (terrain !== currentTerrain || perspective || style !== 'render3d' || refinement3d !== 'neural-earth' || key !== refinement2dWanted) return;
+      refinement2dKey = key; gpu?.setEnhancedDetail(height);
+    }).catch(error => {
+      if (terrain === currentTerrain && !perspective && style === 'render3d' && refinement3d === 'neural-earth' && key === refinement2dWanted) reportRefinementError(error);
+    });
+  }, 160);
+}
+
+async function load3dTile(tile: Terrain3dTile) {
+  const epoch = texture3dEpoch;
+  // Leave input and rendering a frame between material tiles.
+  await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
+  if (!perspective || !terrain || !gpu || epoch !== texture3dEpoch) throw new DOMException('Tuile remplacée', 'AbortError');
+  // The map canvas is hidden during flyover; restore it when returning to 2D,
+  // rather than repainting the entire map after every small material tile.
+  let height;
+  try { height = refinement3d === 'neural-earth' ? await (await ensureRefinement()).tile(tile, tile.pixels) : undefined; }
+  catch (error) { if (epoch === texture3dEpoch) reportRefinementError(error); throw error; }
+  if (!perspective || epoch !== texture3dEpoch) throw new DOMException('Tuile remplacée', 'AbortError');
+  const canvas = gpu.captureRegion(tile, tile.pixels, true, false, height);
+  const result = await terrain3dTexture(canvas, terrain, style, settings, fantasyOptions, layers.relief, map.querySelector('#hydrologyOverlay')?.innerHTML ?? '', tile);
+  if (!perspective || epoch !== texture3dEpoch) throw new DOMException('Tuile remplacée', 'AbortError');
+  return height ? { texture: result, height } : result;
+}
+
+function setPerspective(active: boolean): void {
+  active &&= pipelineStage === 'terrain' && !legacyPipeline && !!gpu;
+  if (active && !terrain3d) {
+    try { terrain3d = new Terrain3d(el<HTMLCanvasElement>('terrain3d'), camera3dChanged); terrain3d.setTileLoader(load3dTile, refinement3d === 'neural-earth'); }
+    catch (error) { status(`Vue 3D : ${error instanceof Error ? error.message : error}`, true); active = false; }
+  }
+  if (active) {
+    if (!perspective) { gpu?.setDetail(undefined); displayedDetail = undefined; }
+    if (!perspective && surface3d && terrain3d) {
+      terrain3d.setCamera({ ...terrain3d.getCamera(), x: view.cx, y: view.cy, distance: viewport.clientHeight / (2 * Math.tan(TERRAIN_3D_FOV / 2) * view.scale) });
+      camera3dChanged();
+    }
+    selectingPortion = false; document.getElementById('transferPick')?.setAttribute('aria-pressed', 'false');
+    sketchEditor?.setEditing(false); ruler.setEnabled(false); settlements.cancelPicking();
+    pinMode = false; el('pinMode').setAttribute('aria-pressed', 'false'); viewport.classList.remove('pin-mode');
+  } else if (perspective && terrain3d) {
+    camera3d = terrain3d.getCamera();
+    view = { cx: camera3d.x, cy: camera3d.y, scale: perspectiveScale(camera3d) };
+  }
+  perspective = active;
+  viewport.classList.toggle('perspective', active);
+  el('projection3d').setAttribute('aria-pressed', String(active));
+  el('projection3d').textContent = active ? '2D' : '3D';
+  el('projection3d').title = active ? 'Revenir à la carte 2D' : 'Survoler le relief en 3D';
+  el('perspectiveControls').hidden = !active;
+  el('refinement3dControl').hidden = !active && style !== 'render3d';
+  el('refinement3dStatus').hidden = refinement3d !== 'neural-earth' || (!active && style !== 'render3d');
+  el('retryRefinement').hidden = !refinementError || refinement3d !== 'neural-earth' || (!active && style !== 'render3d');
+  el('terrain3d').setAttribute('aria-hidden', String(!active));
+  el('terrain3d').tabIndex = active ? 0 : -1;
+  terrain3d?.setActive(active);
+  if (active) { terrain3d?.resize(viewport.clientWidth, viewport.clientHeight); schedule3dTexture(); }
+  else { ++texture3dEpoch; clearTimeout(texture3dTimer); updateView(); }
+  deferSave();
+}
+
+function schedule3dTexture(): void {
+  // Only scene changes invalidate the LOD cache; camera motion selects reusable tiles.
+  ++texture3dEpoch;
+  clearTimeout(texture3dTimer);
+  if (!perspective || !terrain || !gpu || !terrain3d) return;
+  const epoch = texture3dEpoch;
+  texture3dTimer = setTimeout(() => { void refresh3dTexture(epoch); }, 60);
+}
+
+async function refresh3dTexture(epoch: number): Promise<void> {
+  if (!perspective || !terrain || !gpu || !terrain3d || epoch !== texture3dEpoch) return;
+  try {
+    const waterVisible = input('showWater').checked, lakesVisible = waterVisible && input('showLakes').checked;
+    const water = terrain.water, hydro = terrain.hydrology, retained = retainedDecor?.raster;
+    const waterSource = retained ?? water ?? hydro;
+    const visibility = `${waterVisible}:${lakesVisible}`;
+    if (surface3d !== terrain || surface3dWater !== waterSource || surface3dVisibility !== visibility) {
+      let lake: { n: number; mask: Float32Array; levels: Float32Array } | undefined;
+      if (lakesVisible && retained) lake = { n: retained.n, mask: Float32Array.from(retained.water, value => value === 2 ? 1 : -1), levels: retained.waterLevel };
+      else if (lakesVisible && water) lake = { n: water.hydro.n, mask: lakeField(water.lake, water.hydro.n).values, levels: water.lakeLevel ?? water.hydro.filled };
+      else if (lakesVisible && hydro) {
+        const levels = new Map<number, number>();
+        for (let i = 0; i < hydro.lakeMeta.length; i += 6) levels.set(hydro.lakeMeta[i], hydro.lakeMeta[i + 1]);
+        lake = { n: hydro.resolution, mask: hydro.waterField, levels: Float32Array.from(hydro.lakeLabels, label => levels.get(label) ?? NaN) };
+      }
+      const field = terrain.field;
+      terrain3d.setSurface({ x: 0, y: 0, width: terrain.width, n: field?.n ?? terrain.resolution, data: field?.data ?? terrain.height }, lake, waterVisible);
+      if (!surface3d) {
+        if (camera3d) terrain3d.setCamera(camera3d);
+        else terrain3d.fit(view.cx, view.cy, Math.max(viewport.clientWidth, viewport.clientHeight) / view.scale);
+      } else if (surface3d.width !== terrain.width) terrain3d.fit();
+      surface3d = terrain; surface3dWater = waterSource; surface3dVisibility = visibility;
+      camera3dChanged();
+    }
+    const canvas = gpu.captureMap(2048);
+    const texture = await terrain3dTexture(canvas, terrain, style, settings, fantasyOptions, layers.relief, map.querySelector('#hydrologyOverlay')?.innerHTML ?? '');
+    if (perspective && epoch === texture3dEpoch) {
+      terrain3d.setHeightSampler(gpu.createSurfaceSampler());
+      terrain3d.invalidateTiles();
+      terrain3d.setTexture(texture);
+    }
+  } catch (error) {
+    if (epoch !== texture3dEpoch) return;
+    setPerspective(false);
+    status(`Vue 3D : ${error instanceof Error ? error.message : error}`, true);
+  }
+}
 
 function updateCoordinates(): void {
+  if (perspective) return;
   if (!cursor) return;
   const [x, y] = screenToWorld(view, viewport.clientWidth, viewport.clientHeight, ...cursor);
   const contains = (data: DetailTile['terrain']): boolean => x >= data.x && y >= data.y && x <= data.x + data.width && y <= data.y + data.width;
@@ -488,6 +688,16 @@ function updateSourceControl(): void {
   el('neuralFitControl').hidden = !neural;
   el('neuralSlopesControl').hidden = !neural || el<HTMLSelectElement>('neuralFit').value !== 'scale';
   el('neuralAdvanced').hidden = !neural;
+  const pythonModels = el<HTMLSelectElement>('terrainSource').value === 'neural-python';
+  const compactBase = el<HTMLSelectElement>('baseModel').value === 'residual8k';
+  input('nSteps').disabled = pythonModels && compactBase;
+  for (const id of ['coarseModel', 'baseModel', 'decoderModel']) el<HTMLSelectElement>(id).disabled = !pythonModels;
+  if (pythonModels && compactBase) {
+    el<HTMLSelectElement>('coarseModel').value = 'coarse2'; el<HTMLSelectElement>('coarseModel').disabled = true;
+    if (el<HTMLSelectElement>('decoderModel').value === 'original') el<HTMLSelectElement>('decoderModel').value = 'decoder64';
+    for (const option of Array.from(el<HTMLSelectElement>('decoderModel').options)) option.disabled = option.value === 'original';
+  } else for (const option of Array.from(el<HTMLSelectElement>('decoderModel').options)) option.disabled = false;
+  el('neuralModelNote').textContent = !pythonModels ? 'Navigateur : profil fixe coarse4 → NF4 B75 → décodeur 64.' : compactBase ? 'Base compacte expérimentale : coarse2 requis, génération Tile40. Raffinement Neural Earth procédural sur cette sortie.' : 'Checkpoints complets sous 100 Mo conservés dans le dépôt ; base originale externe.';
   const mode = el<HTMLSelectElement>('nReliefMode').value;
   el('nReliefScaleControl').hidden = mode !== 'scale'; el('nReliefFixedControl').hidden = mode !== 'fixed';
   el('nReliefMode').title = `Auto: ${Object.entries(NEURAL_RELIEF_DEFAULTS).map(([k, v]) => `${k} ${v} m`).join(', ')} fixed; free elsewhere.`;
@@ -497,6 +707,7 @@ function updateSourceControl(): void {
   for (const button of coastButtons) button.disabled ||= !!inputProcessing;
   el<HTMLButtonElement>('coastAll').disabled ||= !!inputProcessing;
   el<HTMLButtonElement>('generateCoasts').disabled = !!inputProcessing || relief.value === 'cavern';
+  window.dispatchEvent(new Event('bench-source-change'));
 }
 let neuralPolling: TerrainSource | undefined;
 let neuralPollId = 0;
@@ -569,10 +780,12 @@ function shareQuery(): string {
   params.set('climate', custom ? 'custom' : settings.climate ?? 'temperate');
   if (custom) for (const [key, value] of Object.entries(climate)) params.set(key, String(value));
   params.set('refine', settings.refine ? '1' : '0');
+  params.set('refinement3d', refinement3d);
   for (const [key, value] of Object.entries(settings.detailNoise ?? DEFAULT_FRACTAL_DETAIL)) if (value !== DEFAULT_FRACTAL_DETAIL[key as keyof FractalDetail]) params.set(`d_${key}`, String(value));
   params.set('water', input('showWater').checked ? '1' : '0'); params.set('lakes', input('showLakes').checked ? '1' : '0'); params.set('oxbows', input('showOxbows').checked ? '1' : '0');
   if (!isNeuralSource(settings.source)) for (const [name, value] of Object.entries(settings.erosionTuning ?? {})) params.set(`e_${name}`, String(value));
   if (isNeuralSource(settings.source)) {
+    if (settings.source === 'neural-python') for (const key of ['coarseModel', 'baseModel', 'decoderModel'] as const) if (settings[key]) params.set(key, settings[key]!);
     params.set('source', settings.source!); params.set('fidelity', String(settings.fidelity ?? 0.05));
     params.set('fit', settings.neuralFit ?? 'crop'); params.set('slopes', settings.neuralSlopes ? '1' : '0');
     const tuning = settings.neuralTuning ?? DEFAULT_NEURAL_TUNING;
@@ -598,6 +811,11 @@ function shareQuery(): string {
   settlements.share(params);
   if (pins.pins.length) params.set('pins', pinsToString(pins.pins));
   if (!input('showPins').checked) params.set('showPins', '0');
+  if (pipelineStage === 'terrain' && !legacyPipeline) {
+    const camera = surface3d ? terrain3d?.getCamera() ?? camera3d : camera3d;
+    if (perspective) params.set('projection', '3d');
+    if (camera) params.set('camera3d', [camera.x, camera.y, camera.distance, camera.yaw, camera.pitch, camera.exaggeration].map(value => Number(value.toFixed(6))).join(','));
+  }
   params.set('view', viewToString(view)); return applyExecutionProfile(new URL(`?${params}`, location.href)).searchParams.toString();
 }
 function save(): void {
@@ -611,13 +829,14 @@ function deferSave(): void { clearTimeout(saveTimer); saveTimer = setTimeout(sav
 const pins = createPins({
   map: viewport, layer: el('pinLayer'), pop: el('pinPopover'), list: el('pins'),
   onChange: deferSave,
-  onFocus: pin => setView({ ...view, cx: pin.x, cy: pin.y }),
+  onFocus: pin => { setPerspective(false); setView({ ...view, cx: pin.x, cy: pin.y }); },
 });
 pins.set(pinsFromString(query.get('pins')));
 const pinInput = el('pinPopover').querySelector('input')!; pinInput.placeholder = 'Pin note'; pinInput.setAttribute('aria-label', 'Pin note');
 const pinDelete = el('pinPopover').querySelector('button')!; pinDelete.textContent = 'Delete'; pinDelete.title = 'Delete this pin';
 
 const ruler = createRuler({ container: viewport, surface: map, getView: () => view, onEnable: () => {
+  setPerspective(false);
   sketchEditor?.setEditing(false);
   settlements.cancelPicking();
   pinMode = false; el('pinMode').setAttribute('aria-pressed', 'false'); viewport.classList.remove('pin-mode');
@@ -652,6 +871,7 @@ function updateView(): void {
   map.setAttribute('viewBox', `${view.cx - w / (2 * view.scale)} ${view.cy - h / (2 * view.scale)} ${w / view.scale} ${h / view.scale}`);
   fantasyTiles.setView(view, w, h);
   gpu?.setView(view, w, h);
+  terrain3d?.resize(w, h);
   pins.update(view, w, h);
   ruler.update();
   settlements.updateView();
@@ -661,14 +881,19 @@ function updateView(): void {
   el('scale').textContent = `${(1 / view.scale).toFixed(1)} m / px · ${sampling}`;
   updateCoordinates();
   scheduleDetail();
+  schedule2dRefinement();
 }
 function setView(next: View): void { view = next; updateView(); deferSave(); }
-function fit(): void { setView(fitView(terrain?.width ?? settings.width, viewport.clientWidth, viewport.clientHeight)); }
+function fit(): void {
+  if (perspective && terrain3d) { terrain3d.fit(); camera3dChanged(); return; }
+  setView(fitView(terrain?.width ?? settings.width, viewport.clientWidth, viewport.clientHeight));
+}
 function local(event: MouseEvent | PointerEvent | WheelEvent): [number, number] {
   const bounds = viewport.getBoundingClientRect(); return [event.clientX - bounds.left, event.clientY - bounds.top];
 }
 function point(event: MouseEvent): [number, number] { const [x, y] = local(event); return screenToWorld(view, viewport.clientWidth, viewport.clientHeight, x, y); }
 function zoom(factor: number, x = viewport.clientWidth / 2, y = viewport.clientHeight / 2): void {
+  if (perspective && terrain3d) { terrain3d.zoom(factor); return; }
   const limited = bounded(view.scale * factor, Math.min(viewport.clientWidth, viewport.clientHeight) / (terrain?.width ?? settings.width) * 0.5, 8) / view.scale;
   setView(zoomAt(view, limited, x, y, viewport.clientWidth, viewport.clientHeight));
 }
@@ -714,6 +939,7 @@ function renderedStatus(): void {
   status(`${name}${environment} · ${backend} · map ${settings.width.toLocaleString('en-US')} m · landform scale ${settings.motifSize.toLocaleString('en-US')} m · overview ${terrain.resolution}² · ${contourStep && map.dataset.contours === 'true' ? `contours ${contourStep} m` : 'no contours'}${preparation}${coast}${setup} · generation + overview ${terrain.generationMs.toFixed(0)} ms${detail} · rendering ${renderingMs.toFixed(0)} ms`);
 }
 function renderWater(): void {
+  schedule3dTexture();
   const layer = document.getElementById('hydrologyOverlay');
   const source = retainedDecor ? 'none' : terrain?.water ? 'vector' : terrain?.hydrology ? 'rust' : 'none';
   for (const option of Array.from(diagnosticSelect.options)) option.disabled = !diagnosticAvailable(option.value, source);
@@ -796,6 +1022,7 @@ function renderGpu(): void {
   if (!terrain || !gpu) return;
   const start = performance.now(), field = terrain.field;
   if (uploaded !== terrain) {
+    refinement2dKey = ''; refinement2dWanted = '';
     // A new landscape: its control grid replaces every layer.
     const base = field ?? { n: terrain.resolution, data: terrain.height, exact: false, floor: 0, cave: terrain.caveMask.length ? terrain.caveMask : undefined };
     gpu.setBase({ x: 0, y: 0, width: terrain.width, n: base.n, data: base.data, cave: base.cave, waterSurface: terrain.waterSurface });
@@ -804,6 +1031,7 @@ function renderGpu(): void {
   }
   contourStep = contourInterval();
   const look: TerrainLook = {
+    refinement3d,
     style, waterStyle: baseStyle, lighting: isFantasyStyle(style) ? { ...lighting, strength: .12 } : lighting, layers: isFantasyStyle(style) ? { ...layers, hypsometry: false } : layers, climate: climateOf(settings), mapWidth: terrain.width, globalMin: terrain.globalMinHeight, globalMax: terrain.globalMaxHeight,
     contours: layers.relief && !isFantasyStyle(style) && input('showContours').checked && contourStep > 0, contourStep, flatRelief: settings.relief === 'flat',
     refine: !!settings.refine && !terrain.caveMask.length, sourceCell: retainedDecor?.meta.terrainDisplay?.sourceCell ?? settings.width / 1024, seed: seedHash(settings.seed),
@@ -836,17 +1064,22 @@ function render(preparedScene?: TerrainScene, preparationMs = 0): void {
 }
 function regionForView(): TerrainRegion {
   const width = settings.width;
-  const desired = Math.max(viewport.clientWidth, viewport.clientHeight) / view.scale * 1.3;
+  const camera = perspective ? terrain3d?.getCamera() : undefined;
+  const scale = camera ? perspectiveScale(camera) : view.scale;
+  const desired = Math.max(viewport.clientWidth, viewport.clientHeight) / scale * (camera ? 1.5 / Math.max(.4, Math.sin(camera.pitch)) : 1.3);
   // A small scale/position lattice reuses sampled regions during gentle pans.
   const extent = Math.min(width, Math.max(1, 2 ** (Math.ceil(Math.log2(Math.max(1, desired)) * 4) / 4)));
   const step = extent / 32;
-  const x = bounded(Math.round((view.cx - extent / 2) / step) * step, 0, width - extent);
-  const y = bounded(Math.round((view.cy - extent / 2) / step) * step, 0, width - extent);
+  const x = bounded(Math.round(((camera?.x ?? view.cx) - extent / 2) / step) * step, 0, width - extent);
+  const y = bounded(Math.round(((camera?.y ?? view.cy) - extent / 2) / step) * step, 0, width - extent);
   return { x, y, extent, resolution: 768 };
 }
 function detailKey(region: TerrainRegion): string { return `${generation}:${region.x}:${region.y}:${region.extent}:${region.resolution}${gpu ? '' : `:${style}:${input('showContours').checked ? 1 : 0}:${JSON.stringify(lighting)}:${JSON.stringify(layers)}`}`; }
 /** The GPU draws exact rasters at every zoom: no camera regions. */
 const needsDetail = (): boolean => {
+  // Enhanced views refine the immutable retained field in their own tile
+  // pipeline. Legacy camera samples must not replace that field mid-flight.
+  if (perspective || style === 'render3d') return false;
   if (retainedDecor || (gpu && terrain?.field?.exact)) return false;
   const region = regionForView();
   return !gpu || !terrain?.field || region.extent / region.resolution < terrain.width / terrain.field.n;
@@ -857,6 +1090,7 @@ async function applyDetail(tile: DetailTile): Promise<void> {
     const t = tile.terrain;
     gpu.setDetail({ x: t.x, y: t.y, width: t.width, n: t.resolution, data: t.height, cave: t.caveMask.length ? t.caveMask : undefined });
     displayedDetail = tile; detailSamplingMs = t.generationMs;
+    if (perspective) schedule3dTexture();
     updateCoordinates();
     el('scale').textContent = `${(1 / view.scale).toFixed(1)} m / px · ${(t.width / t.resolution).toFixed(2)} m / sample`;
     renderedStatus();
@@ -1015,7 +1249,7 @@ function readSettings(stage: GenerationStage = 'all', reportError = true): Terra
   const environment = el<HTMLSelectElement>('environment').value as TerrainEnvironment;
   if (!ENVIRONMENT_RELIEFS.includes(environment)) { if (reportError) status('Choose the surrounding terrain from the menu.', true); return; }
   return { zones: relief === 'cavern' ? undefined : sketchEditor?.zones(), sketch: relief === 'cavern' ? undefined : sketchEditor?.snapshot(), seed, width, motifSize, relief, environment, coastMask: relief === 'cavern' ? 0 : draftCoastMask, islandMode: el<HTMLSelectElement>('islandMode').value as IslandMode, erosion: Number(input('erosion').value), mountainMix: Number(input('mountainMix').value), resolution: 512, hydrology: readHydrology(), compute: el<HTMLSelectElement>('compute').value as TerrainCompute, generationCompute: el<HTMLSelectElement>('generationCompute').value as TerrainSettings['generationCompute'], source, climate: readClimate(), climateValues: readClimateValues(), fidelity: bounded(finite(input('fidelity').value, 0.05), 0.001, 2), neuralServer: neuralServerFor(source), neuralAssets,
-    neuralTuning: readTuning(), neuralFit: el<HTMLSelectElement>('neuralFit').value === 'scale' ? 'scale' : 'crop', neuralSlopes: input('neuralSlopes').checked, refine: input('refine').checked,
+    neuralTuning: readTuning(), coarseModel: el<HTMLSelectElement>('coarseModel').value, baseModel: el<HTMLSelectElement>('baseModel').value, decoderModel: el<HTMLSelectElement>('decoderModel').value, neuralFit: el<HTMLSelectElement>('neuralFit').value === 'scale' ? 'scale' : 'crop', neuralSlopes: input('neuralSlopes').checked, refine: input('refine').checked,
     detailNoise: readDetailNoise((_, id) => input(id).value), erosionTuning: readErosionTuning(name => input(`er_${name}`).value) };
 }
 function readClimate(): NeuralClimate {
@@ -1043,7 +1277,7 @@ function generate(stage: GenerationStage = 'all'): void {
   // The climate of a procedural relief only drives the water budget.
   const next = stage === 'hydrology' ? { ...settings, hydrology: draft.hydrology, ...(isNeuralSource(settings.source) ? {} : { climate: draft.climate, climateValues: draft.climateValues }) }
     : stage === 'coasts' ? { ...settings, coastMask: draft.coastMask, islandMode: draft.islandMode }
-    : stage === 'relief' ? { ...settings, seed: draft.seed, width: draft.width, motifSize: draft.motifSize, relief: draft.relief, environment: draft.environment, erosion: draft.erosion, mountainMix: draft.mountainMix, compute: draft.compute, generationCompute: draft.generationCompute, source: draft.source, climate: draft.climate, climateValues: draft.climateValues, fidelity: draft.fidelity, zones: draft.zones, sketch: draft.sketch, neuralTuning: draft.neuralTuning, neuralFit: draft.neuralFit, neuralSlopes: draft.neuralSlopes, refine: draft.refine, detailNoise: draft.detailNoise, erosionTuning: draft.erosionTuning }
+    : stage === 'relief' ? { ...settings, seed: draft.seed, width: draft.width, motifSize: draft.motifSize, relief: draft.relief, environment: draft.environment, erosion: draft.erosion, mountainMix: draft.mountainMix, compute: draft.compute, generationCompute: draft.generationCompute, source: draft.source, climate: draft.climate, climateValues: draft.climateValues, fidelity: draft.fidelity, zones: draft.zones, sketch: draft.sketch, neuralTuning: draft.neuralTuning, coarseModel: draft.coarseModel, baseModel: draft.baseModel, decoderModel: draft.decoderModel, neuralFit: draft.neuralFit, neuralSlopes: draft.neuralSlopes, refine: draft.refine, detailNoise: draft.detailNoise, erosionTuning: draft.erosionTuning }
     : draft;
   generation++; clearTimeout(detailTimer); detailRequest = undefined; detailCache.clear(); settlements.terrainPending();
   overviewPending = true; generationError = undefined;
@@ -1066,7 +1300,7 @@ function updateStageStates(): void {
   const climateChanged = JSON.stringify(draft.climateValues) !== JSON.stringify(settings.climateValues);
   const reliefChanged = JSON.stringify(draft.zones) !== JSON.stringify(settings.zones) || (draft.sketch !== settings.sketch && JSON.stringify(draft.sketch) !== JSON.stringify(settings.sketch)) || JSON.stringify(draft.detailNoise) !== JSON.stringify(settings.detailNoise) || (neural && (climateChanged || JSON.stringify(draft.neuralTuning) !== JSON.stringify(settings.neuralTuning)))
     || (!neural && JSON.stringify(draft.erosionTuning) !== JSON.stringify(settings.erosionTuning ?? {}))
-    || ['seed', 'width', 'motifSize', 'relief', 'environment', 'mountainMix', 'erosion', 'compute', 'generationCompute', 'source', 'fidelity', 'neuralFit', 'neuralSlopes', 'refine'].some(key => draft[key as keyof TerrainSettings] !== settings[key as keyof TerrainSettings]);
+    || ['seed', 'width', 'motifSize', 'relief', 'environment', 'mountainMix', 'erosion', 'compute', 'generationCompute', 'source', 'fidelity', 'neuralFit', 'neuralSlopes', 'refine', 'coarseModel', 'baseModel', 'decoderModel'].some(key => draft[key as keyof TerrainSettings] !== settings[key as keyof TerrainSettings]);
   const coastChanged = draft.coastMask !== settings.coastMask || draft.islandMode !== settings.islandMode;
   const hydroChanged = JSON.stringify(draft.hydrology) !== JSON.stringify(settings.hydrology) || (!neural && climateChanged);
   el('reliefState').textContent = reliefChanged ? 'changed' : '';
@@ -1093,6 +1327,12 @@ function showErosionDefaults(values: number[] | undefined): void {
   EROSION_SETTINGS.forEach((name, i) => { input(`er_${name}`).placeholder = values ? String(Math.round(values[i] * 1000) / 1000) : ''; });
 }
 for (const id of ['width', 'motifSize', 'relief', 'environment', 'mountainMix', 'erosion', 'seed', 'islandMode', 'terrainSource', 'fidelity', 'neuralFit', 'neuralSlopes', 'refine', 'nReliefMode', ...Object.values(tuningFields), 'nH0', 'nH1', 'nH2', 'nH3', 'nH4']) el(id).addEventListener('input', parameterChanged);
+for (const id of ['coarseModel', 'baseModel', 'decoderModel']) el(id).addEventListener('change', () => {
+  updateErosionControl();
+  const selected = neuralModels.coarse.find(model => model.id === el<HTMLSelectElement>('coarseModel').value);
+  if (selected) input('nSteps').value = String(selected.steps);
+  parameterChanged();
+});
 // The GL renderer applies the detail noise live; the SVG fallback bakes it into the relief.
 function detailNoiseChanged(): void {
   if (!gpu) { parameterChanged(); return; }
@@ -1131,10 +1371,35 @@ input('auto').onchange = () => { clearTimeout(generationTimer); save(); if (inpu
 el('randomSeed').onclick = () => { input('seed').value = crypto.getRandomValues(new Uint32Array(1))[0].toString(36); generate(); };
 el<HTMLSelectElement>('style').onchange = () => {
   baseStyle = el<HTMLSelectElement>('style').value as TerrainStyle; style = elevationDiagnostic ? 'copernicus' : baseStyle; brushPanel.hidden = !isFantasyStyle(style);
+  if (style === 'render3d') { gpu?.setDetail(undefined); displayedDetail = undefined; }
   detailRequest = undefined; render(); save();
+  el('refinement3dControl').hidden = !perspective && style !== 'render3d';
+  el('refinement3dStatus').hidden = refinement3d !== 'neural-earth' || (!perspective && style !== 'render3d');
+  el('retryRefinement').hidden = !refinementError || refinement3d !== 'neural-earth' || (!perspective && style !== 'render3d');
 };
+function changeRefinement(): void {
+  refinement3d = el<HTMLSelectElement>('refinement3d').value as TerrainRefinement;
+  ++refinementEpoch;
+  refinementSession?.dispose(); refinementSession = undefined; refinementReady = undefined; refinementTerrain = undefined; refinementError = ''; refinement2dKey = '';
+  gpu?.setEnhancedDetail(undefined); terrain3d?.setTileLoader(load3dTile, refinement3d === 'neural-earth');
+  render(); schedule3dTexture(); schedule2dRefinement(); deferSave();
+  el('refinement3dStatus').hidden = refinement3d !== 'neural-earth' || (!perspective && style !== 'render3d');
+  el('retryRefinement').hidden = true;
+}
+el<HTMLSelectElement>('refinement3d').onchange = changeRefinement;
+el('retryRefinement').onclick = changeRefinement;
 el('fit').onclick = fit;
-el('pinMode').onclick = () => { sketchEditor?.setEditing(false); pinMode = !pinMode; if (pinMode) { ruler.setEnabled(false); settlements.cancelPicking(); } el('pinMode').setAttribute('aria-pressed', String(pinMode)); viewport.classList.toggle('pin-mode', pinMode); };
+el('terrain3dControls').hidden = pipelineStage !== 'terrain' || legacyPipeline;
+el('refinement3dControl').hidden = !perspective && style !== 'render3d';
+el<HTMLButtonElement>('projection3d').disabled = !gpu;
+if (!gpu) el('projection3d').title = 'La vue 3D nécessite le rendu WebGL2.';
+el('projection3d').onclick = () => setPerspective(!perspective);
+el('north3d').onclick = () => terrain3d?.north();
+input('exaggeration3d').oninput = () => {
+  if (terrain3d) { terrain3d.setCamera({ ...terrain3d.getCamera(), exaggeration: Number(input('exaggeration3d').value) }); camera3dChanged(); }
+};
+el('terrain3d').addEventListener('webglcontextrestored', () => { surface3d = undefined; schedule3dTexture(); });
+el('pinMode').onclick = () => { setPerspective(false); sketchEditor?.setEditing(false); pinMode = !pinMode; if (pinMode) { ruler.setEnabled(false); settlements.cancelPicking(); } el('pinMode').setAttribute('aria-pressed', String(pinMode)); viewport.classList.toggle('pin-mode', pinMode); };
 input('showPins').onchange = () => { showPins(); save(); };
 for (const [key, id] of Object.entries(layerFields)) input(id).onchange = () => {
   layers = { ...layers, [key]: input(id).checked }; detailRequest = undefined; render(); save();
@@ -1238,11 +1503,12 @@ window.addEventListener('keydown', event => {
 new ResizeObserver(updateView).observe(viewport);
 // Camera hook for screenshot scripts: centre in metres, scale in px per metre.
 (window as unknown as { __setView: (cx: number, cy: number, scale: number) => void }).__setView = (cx, cy, scale) => setView({ cx, cy, scale });
+(window as unknown as { __terrain3dLod: () => unknown }).__terrain3dLod = () => terrain3d?.getLodInfo();
 sketchEditor = createTerrainSketchEditor(el('terrainSketchEditor'), settings.sketch, () => terrain?.field?.exact ? { height: terrain.field.data, resolution: terrain.field.n, width: terrain.width } : terrain, parameterChanged, sketchLinkError, () => clearTimeout(generationTimer), {
   viewport, surface: map,
   bounds: () => ({ left: viewport.clientWidth / 2 - view.cx * view.scale, top: viewport.clientHeight / 2 - view.cy * view.scale, size: Number(input('width').value) * view.scale }),
   width: () => Number(input('width').value), setWidth: width => { input('width').value = String(width); },
-  onEnable: () => { clearTimeout(generationTimer); ruler.setEnabled(false); settlements.cancelPicking(); pinMode = false; el('pinMode').setAttribute('aria-pressed', 'false'); viewport.classList.remove('pin-mode'); },
+  onEnable: () => { setPerspective(false); clearTimeout(generationTimer); ruler.setEnabled(false); settlements.cancelPicking(); pinMode = false; el('pinMode').setAttribute('aria-pressed', 'false'); viewport.classList.remove('pin-mode'); },
   apply: () => generate('relief'),
 }, initialZones);
 const editMapButton = document.createElement('button'); editMapButton.id = 'editTerrain'; editMapButton.textContent = 'Zones de relief'; editMapButton.style.width = 'auto'; editMapButton.style.flex = 'none';
@@ -1280,7 +1546,6 @@ document.querySelector('.stages')!.append(transfer);
 createTerrainDecorLibrary({ before: transfer, onOpen: d => { const params = new URLSearchParams(d.meta.query); params.set('artifact', d.meta.id); params.set('stage', 'settlements'); openBench('settlements', params); } });
 const historyPanel = createHistoryPanel({ before: transfer, current: () => lastExport ?? retainedDecor,
   onOpen: d => { const params = new URLSearchParams(d.meta.query); params.set('artifact', d.meta.id); if (pipelineStage === 'settlements') params.set('stage', pipelineStage); else params.delete('stage'); openBench(pipelineStage, params); } });
-let selectingPortion = false;
 if (pipelineStage === 'terrain') {
   const extent = el<HTMLSelectElement>('transferExtent');
   extent.onchange = () => { el('transferCrop').hidden = extent.value !== 'crop'; drawTransferSelection?.(); };
@@ -1292,7 +1557,7 @@ if (pipelineStage === 'terrain') {
     map.append(rect);
   };
   for (const id of ['transferX', 'transferY', 'transferWidth']) input(id).oninput = () => drawTransferSelection?.();
-  el('transferPick').onclick = () => { sketchEditor?.setEditing(false); selectingPortion = !selectingPortion; el('transferPick').setAttribute('aria-pressed', String(selectingPortion)); };
+  el('transferPick').onclick = () => { setPerspective(false); sketchEditor?.setEditing(false); selectingPortion = !selectingPortion; el('transferPick').setAttribute('aria-pressed', String(selectingPortion)); };
   map.addEventListener('pointerdown', event => { if (selectingPortion) event.stopImmediatePropagation(); }, true);
   map.addEventListener('click', event => {
     if (!selectingPortion || !terrain) return;
@@ -1374,10 +1639,12 @@ window.magnaBenchContext = {
   ready: () => !overviewPending && (!query.has('artifact') || !!retainedDecor) && (pipelineStage === 'terrain' || !retainedDecor || settlements.contextReady()),
   capture: () => {
     const editor = sketchEditor?.captureContext();
-    return { view: { ...view }, pins: pins.pins.map(pin => ({ ...pin })), coastMask: draftCoastMask, settlements: settlements.captureContext(), editor: editor && { ...editor, mask: encodeZones(editor.mask), heightmap: editor.heightmap && encodeSketch(editor.heightmap) } };
+    return { view: { ...view }, perspective, camera3d: surface3d ? terrain3d?.getCamera() ?? camera3d : camera3d, pins: pins.pins.map(pin => ({ ...pin })), coastMask: draftCoastMask, settlements: settlements.captureContext(), editor: editor && { ...editor, mask: encodeZones(editor.mask), heightmap: editor.heightmap && encodeSketch(editor.heightmap) } };
   },
   restore: saved => {
     if (!saved) return;
+    setPerspective(!!saved.perspective);
+    if (saved.camera3d) { camera3d = saved.camera3d; terrain3d?.setCamera(camera3d!); }
     if (saved.view) view = saved.view;
     if (saved.pins) pins.set(saved.pins);
     draftCoastMask = saved.coastMask;
@@ -1403,3 +1670,6 @@ installRecipeSharing({
     return portableRecipe(pipelineStage, shareQuery(), retainedDecor);
   },
 });
+
+if (query.get('projection') === '3d') setPerspective(true);
+else el('terrain3d').tabIndex = -1;
