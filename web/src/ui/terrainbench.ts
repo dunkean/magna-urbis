@@ -167,7 +167,10 @@ input('showShading').checked = lighting.enabled;
 const initialRelief = query.get('relief') as TerrainRelief;
 const geological = (relief: string): boolean => (GEOLOGICAL_RELIEFS as readonly string[]).includes(relief);
 const initialEnvironment = query.get('environment') as TerrainEnvironment;
-const initialSource: TerrainSource = TERRAIN_SOURCES.includes(query.get('source') as TerrainSource) ? query.get('source') as TerrainSource : 'procedural';
+// Bare legacy neural links follow Python/CUDA; an explicit endpoint retains native replay.
+const requestedSource = query.get('source');
+const initialSource: TerrainSource = requestedSource === 'neural' && !query.has('neural') ? 'neural-python'
+  : TERRAIN_SOURCES.includes(requestedSource as TerrainSource) ? requestedSource as TerrainSource : profileDefaults.neural as TerrainSource;
 const neuralRelief = (relief: string): boolean => (NEURAL_RELIEFS as readonly string[]).includes(relief);
 // A custom endpoint belongs to the backend selected by the link, not subsequent modes.
 const neuralServerFor = (source?: TerrainSource): string => neuralServerForSource(source, source === initialSource ? query.get('neural') : undefined);
@@ -277,9 +280,9 @@ let settings: TerrainSettings = {
   detailNoise: readDetailNoise(key => query.get(`d_${key}`)),
   erosionTuning: readErosionTuning(name => query.get(`e_${name}`)),
 };
-// Links without a source remain procedural. Version 3 neural links were fixed at 40 km.
+// Only old versioned neural links had a fixed 40 km extent; fresh maps stay small.
 if (isNeuralSource(settings.source)) {
-  if (query.get('v') !== '4') settings.width = NEURAL_EXTENT;
+  if (['2', '3'].includes(query.get('v') ?? '')) settings.width = NEURAL_EXTENT;
   if (!neuralRelief(settings.relief)) settings.relief = 'mixed';
 }
 const hydroFields = {

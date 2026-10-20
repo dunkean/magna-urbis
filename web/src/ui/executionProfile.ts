@@ -57,11 +57,16 @@ export function installExecutionProfile(parent: Element): void {
   parent.append(label);
   if (executionRuntime.profile === 'local') {
     const state = document.createElement('small'); state.setAttribute('role', 'status'); label.append(state);
-    void fetch(`${executionRuntime.server}/status`, { signal: AbortSignal.timeout(4000) }).then(async response => {
-      if (!response.ok) throw new Error();
-      const status = await response.json();
-      if (status.service !== 'magna-urbis-local') throw new Error();
-      state.textContent = '●'; state.title = 'Moteur Rust natif connecté';
-    }).catch(() => { state.textContent = 'hors ligne'; state.title = 'Lancez npm run start:local depuis web/.'; });
+    const check = (): void => {
+      void fetch(`${executionRuntime.server}/status`, { signal: AbortSignal.timeout(4000) }).then(async response => {
+        if (!response.ok) throw new Error();
+        const status = await response.json();
+        if (status.service !== 'magna-urbis-local') throw new Error();
+        state.textContent = '●'; state.title = 'Moteur Rust natif connecté';
+      }).catch(() => { state.textContent = 'hors ligne'; state.title = 'Lancez npm run start:local depuis web/.'; });
+    };
+    // Synchronous workshop startup can otherwise exhaust the timeout before JSON is read.
+    if (document.readyState === 'complete') check();
+    else window.addEventListener('load', check, { once: true });
   }
 }

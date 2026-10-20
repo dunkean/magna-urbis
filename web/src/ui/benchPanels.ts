@@ -1,3 +1,5 @@
+import { executionProfiles, executionRuntime } from './executionProfile';
+
 /** Presentation only: keep the engines, input identities and event handlers owned by each stage. */
 type PanelSpec = {
   main: string;
@@ -63,7 +65,7 @@ function terrainMethod(): void {
   source.closest('label')!.childNodes[0].textContent = 'Exécution ';
   const names: Record<string, string> = { procedural: 'Rust · CPU / WebGPU', 'neural-wasm': 'Navigateur · WASM / WebGPU', 'neural-python': 'Python · CUDA' };
   for (const option of Array.from(source.options)) option.textContent = names[option.value] ?? option.textContent;
-  let neuralSupport = 'neural-wasm';
+  let neuralSupport: string = executionProfiles[executionRuntime.profile].neural;
   const sync = (): void => {
     method.value = source.value === 'procedural' ? 'procedural' : 'neural'; method.disabled = source.disabled;
     if (method.value === 'neural') neuralSupport = source.value;
@@ -82,6 +84,7 @@ function terrainMethod(): void {
   });
   source.addEventListener('input', sync);
   source.addEventListener('change', sync);
+  window.addEventListener('bench-source-change', sync);
   new MutationObserver(sync).observe(source, { attributes: true, attributeFilter: ['disabled'], childList: true });
   sync();
 }

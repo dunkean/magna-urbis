@@ -30,13 +30,19 @@ the current OS. Shared defaults are in `../config/execution.json`. See the
 
 On Windows, run `start-terrainbench.bat` from the repository root (or
 `npm run start:benches` from `web/`). It stops existing project instances,
-starts the shared site on port 5173 and the Python/CUDA service on port 8793
-in the background, and waits for both services to respond. Re-running it
-restarts both services. Use `stop-terrainbench.bat` or `npm run stop:benches`
+starts the shared site on port 5173, the native Rust engine on port 8791 and
+the Python/CUDA service on port 8793 in the background, and waits for all three
+services to respond. Its launch link selects Local/Rust, neural Python and a
+2.4 km map. Fresh terrain maps use the profile's neural method and that small
+extent; explicit shared settings remain applied. Legacy `source=neural` links
+without an explicit endpoint now use Python/CUDA. To replay the native neural
+reference, retain `source=neural&neural=http://127.0.0.1:8792`.
+Re-running the launcher restarts the services. Use `stop-terrainbench.bat` or `npm run stop:benches`
 to stop them and their child processes. Logs are in
 `web/out/benches-runtime/`. An unrelated program occupying either port is
 reported without being killed. Existing WASM packages and npm dependencies
-are required. Python runs directly in Neural Earth's virtual environment;
+are required, along with the release engine (`npm run build:local` once).
+`MAGNA_LOCAL_BIN` overrides the engine executable. Python runs directly in Neural Earth's virtual environment;
 `MAGNA_NEURAL_PYTHON` overrides that executable. There is no Docker or compilation
 at startup; neural weights load on the first Python generation. To run just the
 site for procedural/browser inference, pass `-NeuralBackend none` to the launcher.
