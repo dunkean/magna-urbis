@@ -21,7 +21,7 @@ function share(): string {
   workshop.share(params); return applyExecutionProfile(new URL(`?${params}`, location.href)).searchParams.toString();
 }
 const publishOptions = urbanOptionSync(() => decor?.meta.pipeline?.parent && decor.meta.pipeline.city ? `${decor.meta.pipeline.syncSource ?? decor.meta.pipeline.parent}:${decor.meta.pipeline.city}` : undefined, state => workshop.applySettings(state));
-function save(): void { const state = workshop.currentState(); if (state) publishOptions(state); const url = new URL(location.href); url.search = share(); history.replaceState(null, '', url); syncBenchUrl(); }
+function save(): void { const state = workshop.currentState(); if (state) publishOptions(state); const url = new URL(location.href); url.search = share(); if (query.get('standalone') === '1') url.searchParams.set('standalone', '1'); history.replaceState(null, '', url); syncBenchUrl(); }
 async function snapshot(state: WorkshopState): Promise<Decor> {
   if (!decor) throw new Error('Chargez une ville depuis Settlements avant de la renvoyer.');
   const displayQuery = new URLSearchParams(decor.meta.query); if (state.style) displayQuery.set('style', state.style);

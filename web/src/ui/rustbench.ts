@@ -90,7 +90,9 @@ function currentUrl(bench: Bench): URL | undefined {
 function updateStandalone(): void {
   if (!active) return;
   const url = currentUrl(active);
-  standalone.href = url?.href ?? loaded.get(active)!.src;
+  const target = new URL(url?.href ?? loaded.get(active)!.src);
+  target.searchParams.set('standalone', '1');
+  standalone.href = target.href;
   share.disabled = !url;
   share.title = 'Copier le code unique de la carte affichée';
 }

@@ -2,6 +2,12 @@
 
 Le conteneur `/rustbench.html` propose des sessions séparées et successives :
 
+Les adresses HTTP directes des ateliers (`/terrainbench.html`, `/urbanbench.html`,
+`/housebench.html`) rejoignent ce conteneur en conservant leurs paramètres,
+y compris la caméra 3D et les zones dessinées. La barre d’onglets reste disponible
+en 2D comme en 3D. « Ouvrir ↗ » utilise `standalone=1` pour ouvrir volontairement
+un atelier isolé. Les fichiers HTML ouverts hors serveur restent autonomes.
+
 1. **Terrain** (`#terrain`, `/terrainbench.html`) : relief, côtes et eau, étapes 1–3.
    « Envoyer aux settlements » conserve la carte affichée, entière ou découpée.
    La portion est carrée, avec saisie X/Y/côté ou placement sur la carte.

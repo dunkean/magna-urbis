@@ -827,7 +827,7 @@ function save(): void {
   if (settings.sketch && appliedSketchRef?.sketch !== settings.sketch && encodeSketch(settings.sketch).length > INLINE_SKETCH_LIMIT) {
     void retainAppliedSketch().then(save).catch(error => status(String(error), true)); return;
   }
-  try { const url = new URL(location.href); url.search = shareQuery(); url.hash = ''; history.replaceState(null, '', placeSketchInFragment(url)); syncBenchUrl(); } catch { /* file:// may reject replaceState; copied links still carry all inputs. */ }
+  try { const url = new URL(location.href); url.search = shareQuery(); if (query.get('standalone') === '1') url.searchParams.set('standalone', '1'); url.hash = ''; history.replaceState(null, '', placeSketchInFragment(url)); syncBenchUrl(); } catch { /* file:// may reject replaceState; copied links still carry all inputs. */ }
 }
 function deferSave(): void { clearTimeout(saveTimer); saveTimer = setTimeout(save, 150); }
 const pins = createPins({
