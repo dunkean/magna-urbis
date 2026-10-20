@@ -28,7 +28,9 @@ export function installTerrainHelp(): void {
     islandMode: () => 'Quand tous les côtés sont marins, choisit une île, plusieurs îles ou un choix seedé. En mode heightmap, les altitudes négatives définissent directement la mer.',
     environment: () => 'Relief entourant les formes locales comme plateau, volcan ou caldeira, utilisé dans la génération procédurale.',
     mountainMix: () => 'Proportion de montagnes dans le relief mixte. L’esquisse peut ensuite imposer leur emplacement général.',
-    style: () => 'Le style définit les couleurs et matériaux de la carte, dont un même dégradé pour toutes les mers et tous les lacs. Les couches choisissent les éléments visibles. Les brushes restent une illustration indépendante.',
+    style: () => 'Le style définit les couleurs et matériaux de la carte, dont un même dégradé pour toutes les mers et tous les lacs. Les couches choisissent les éléments visibles. Les brushes peuvent suivre l’occupation du territoire en option.',
+    brush_landuse: () => 'Les arbres suivent les forêts générées et évitent les montagnes. Champs, vergers et marais reçoivent leurs motifs. Masquer l’occupation ne désactive pas son influence. Sans occupation générée, seuls les motifs de relief restent.',
+    brush_size: () => 'Multiplie la taille des motifs, indépendamment de leur densité et de leur espacement. La taille de base est réduite de 45 % ; le curseur permet de descendre jusqu’à ×0,1.',
     hydroOverlay: () => 'Un diagnostic visualise une donnée de calcul. Altitude remplace les couleurs du terrain ; les autres diagnostics se superposent à la carte. Ils ne modifient ni le style choisi ni les masques de génération.',
     showWater: () => 'Affiche ou masque toute l’eau : mer, lacs et rivières. Lakes et Oxbows permettent de masquer séparément les lacs et les anciens chenaux.',
     projection3d: () => 'Survol du relief avec raffinement progressif du maillage. Render3D utilise un matériau de sol en coordonnées monde, partagé avec la vue 2D.',
@@ -45,7 +47,7 @@ export function installTerrainHelp(): void {
     const title = Array.from(label.childNodes).filter(n => n.nodeType === Node.TEXT_NODE).map(n => n.textContent).join('').trim();
     button.setAttribute('aria-label', `Aide : ${title || 'terrain'}`); button.setAttribute('aria-controls', tip.id); button.setAttribute('aria-expanded', 'false');
     row.append(button);
-    const method = (): MethodNoteId | undefined => ['projection3d', 'refinement3d', 'tileBounds3d'].includes(control.id)
+    const method = (): MethodNoteId | undefined => ['brush_landuse', 'brush_size'].includes(control.id) ? 'fantasy-landuse' : ['projection3d', 'refinement3d', 'tileBounds3d'].includes(control.id)
       || control.id === 'style' && (control as HTMLSelectElement).value === 'render3d' ? 'render3d-ground' : undefined;
     const show = (): void => {
       current?.setAttribute('aria-expanded', 'false'); current = button; tip.textContent = explain();

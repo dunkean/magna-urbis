@@ -1,10 +1,11 @@
 /** Shared display-only painter. Coordinates and pitch are world metres; no engine rules. */
 export type FantasyStyle = 'fantasy-ink' | 'fantasy-color';
-export interface FantasyOptions { density: number; size: number; spacing: number }
+export interface FantasyOptions { density: number; size: number; spacing: number; followLanduse?: boolean }
 export const DEFAULT_FANTASY_OPTIONS: FantasyOptions = { density: 1, size: 1, spacing: 1 };
 export const isFantasyStyle = (style: string): style is FantasyStyle => style === 'fantasy-ink' || style === 'fantasy-color';
-export interface PaintSample { height: number; slope: number; temperature: number; rain: number; water?: boolean; occupied?: boolean; /** Signed local prominence / sampling radius, as in Render. */ tpi?: number; relief?: number }
-export interface PaintOptions { seed: string; pitch: number; density?: number; size?: number; maxStamps?: number; /** Size stays independent of spacing. */ brushPitch?: number }
+export type PaintLanduse = 'forest' | 'orchard' | 'field' | 'garden' | 'marsh' | 'meadow' | 'pasture' | 'commons';
+export interface PaintSample { height: number; slope: number; temperature: number; rain: number; water?: boolean; occupied?: boolean; landuse?: PaintLanduse; /** Signed local prominence / sampling radius, as in Render. */ tpi?: number; relief?: number }
+export interface PaintOptions { seed: string; pitch: number; density?: number; size?: number; maxStamps?: number; followLanduse?: boolean; /** Size stays independent of spacing. */ brushPitch?: number }
 export interface Stamp { x: number; y: number; width: number; height: number; brush: number; variant?: number; flip: boolean; opacity: number; heightScale?: number }
 export interface PaintBounds { x: number; y: number; width: number; height: number }
 export interface Atlas { url: string; width: number; height: number; rows: number[]; rects?: [number, number, number, number][]; variantsPerStyle?: number }
@@ -87,12 +88,15 @@ export function paintingCover(s: PaintSample): { woods: number; mountain: number
     snow: smooth(2.5, -2.5, hot) * smooth(60, 400, s.rain), temperature: cold };
 }
 /** World anchored, tightly overlapping stamps. Noise cuts clearings into continuous
- * coverage; boundary thinning never changes tree width. No summit exclusion radius. */
+ * coverage; boundary thinning never changes tree width. */
 export function planPainting(bounds: PaintBounds, sample: (x: number, y: number) => PaintSample | undefined, options: PaintOptions): Stamp[] {
-  const pitch = options.pitch, density = Math.max(0, Math.min(2, options.density ?? 1)), size = Math.max(.3, Math.min(2, options.size ?? 1));
+  const pitch = options.pitch, density = Math.max(0, Math.min(2, options.density ?? 1)), size = Math.max(.1, Math.min(2, options.size ?? 1));
   const brushPitch = options.brushPitch ?? pitch;
   if (![pitch, brushPitch, bounds.x, bounds.y, bounds.width, bounds.height, density, size].every(Number.isFinite) || pitch <= 0 || brushPitch <= 0 || bounds.width <= 0 || bounds.height <= 0 || density === 0) return [];
   const seed = paintSeed(options.seed), result: Stamp[] = [], budget = Number.isFinite(options.maxStamps ?? 80000) ? Math.max(0, Math.min(80000, Math.floor(options.maxStamps ?? 80000))) : 80000;
+  // Index summit silhouettes, rather than repeatedly scanning all relief stamps.
+  const mountains = new Map<string, Stamp[]>(), mountainCell = brushPitch * 4;
+  const mountainKey = (x: number, y: number) => `${Math.floor(x / mountainCell)},${Math.floor(y / mountainCell)}`;
   for (const pass of ['relief', 'ground', 'forest'] as const) {
     const pad = brushPitch * (pass === 'relief' ? 8 : 2) * size;
     const step = pitch * (pass === 'relief' ? .85 : pass === 'forest' ? .24 : .9);
@@ -125,25 +129,48 @@ export function planPainting(bounds: PaintBounds, sample: (x: number, y: number)
         scale = mountain ? 2.2 + 4.4 * smooth(650, 2800, s.height) * (.65 + .35 * smooth(0, .12, s.tpi ?? .12)) : .9 + 1.8 * c.hill;
         cover = smooth(.12, .65, mountain ? c.mountain : c.hill) * (.88 + .12 * detail);
       } else if (pass === 'forest') {
-        if (c.woods < .015) continue;
+        if (options.followLanduse ? s.landuse !== 'forest' : c.woods < .015) continue;
+        if (c.mountain > .16) continue;
         const tropical = c.temperature > 13 && s.rain > 1100, conifer = c.temperature < 3 || s.height > 1100;
         brush = tropical ? 2 : conifer ? 0 : c.temperature > 8 && s.rain < 850 ? 3 : 1;
         // Thresholded masks carve groves and holes, with soft, sparse edges.
         const mask = smooth(.24, .43, .72 * patch + .28 * detail + .16 * c.woods);
-        cover = c.woods * mask * (1 - .45 * c.wet);
+        cover = options.followLanduse ? .85 * (.8 + .2 * detail) : c.woods * mask * (1 - .45 * c.wet);
         scale = .48;
       } else {
-        if (c.dry > .2) { brush = 8; cover = c.dry * .16 * smooth(.2, .65, patch); scale = 1.25; }
+        if (options.followLanduse) {
+          if (!s.landuse || s.landuse === 'forest') continue;
+          if (s.landuse === 'orchard') { brush = 11; cover = .75; scale = 1.05; }
+          else if (s.landuse === 'field' || s.landuse === 'garden') { brush = 10; cover = .7; scale = 1.05; }
+          else if (s.landuse === 'marsh') { brush = 9; cover = .65; scale = .85; }
+          else { brush = 15; cover = .12; scale = .55; }
+        }
+        else if (c.dry > .2) { brush = 8; cover = c.dry * .16 * smooth(.2, .65, patch); scale = 1.25; }
         else if (c.wet > .3) { brush = 9; cover = c.wet * .16 * smooth(.3, .7, detail); scale = .85; }
         else if (c.woods < .35 && s.slope < .05 && c.temperature > -1 && c.temperature < 18 && patch > .20 && patch < .33) { brush = detail > .6 ? 11 : 10; cover = .13; scale = 1.05; }
         else { brush = 15; cover = (1 - c.woods) * (1 - c.mountain) * .025; scale = .55; }
       }
       if (hash(gx, gy, salt ^ 9811) > clamp(cover * density)) continue;
       const tree = pass === 'forest', variation = tree ? 1 : .95 + .1 * hash(gx, gy, salt ^ 319);
-      const w = brushPitch * scale * size * variation;
+      // Smaller cartographic motifs at the same world anchors and density.
+      const w = brushPitch * scale * size * variation * .55;
+      const wooded = tree || brush === 11;
+      if (wooded && c.mountain > .16) continue;
+      if (wooded && mountains.get(mountainKey(x, y))?.some(m => Math.abs(x - m.x) < (m.width + w) / 2
+        && y > m.y - m.width * 1.1 && y - w * 1.9 < m.y + m.width * .1)) continue;
       // Land anchors stay on land; silhouettes intentionally overhang lakes/roads.
-      result.push({ x, y, width: w, height: w * (tree ? 1.15 : .78), heightScale: tree ? .95 + .1 * hash(gx, gy, salt ^ 519) : .95 + .1 * hash(gx, gy, salt ^ 619),
-        brush, variant: Math.floor(hash(gx, gy, salt ^ 6317) * 32), flip: hash(gx, gy, salt ^ 97) > .5, opacity: brush === 15 ? .65 : 1 });
+      const stamp = { x, y, width: w, height: w * (tree ? 1.15 : .78), heightScale: tree ? .95 + .1 * hash(gx, gy, salt ^ 519) : .95 + .1 * hash(gx, gy, salt ^ 619),
+        brush, variant: Math.floor(hash(gx, gy, salt ^ 6317) * 32), flip: hash(gx, gy, salt ^ 97) > .5, opacity: brush === 15 ? .65 : 1 };
+      result.push(stamp);
+      if (brush === 5 || brush === 6) {
+        const margin = brushPitch * size;
+        for (let my = Math.floor((y - w * 1.1 - margin) / mountainCell); my <= Math.floor((y + w * .1 + margin * 2) / mountainCell); my++) {
+          for (let mx = Math.floor((x - w / 2 - margin) / mountainCell); mx <= Math.floor((x + w / 2 + margin) / mountainCell); mx++) {
+            const key = `${mx},${my}`, list = mountains.get(key);
+            if (list) list.push(stamp); else mountains.set(key, [stamp]);
+          }
+        }
+      }
     }
   }
   result.sort((a, b) => a.y - b.y || a.x - b.x);

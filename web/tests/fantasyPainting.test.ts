@@ -10,8 +10,8 @@ describe('fantasy cartographic placement', () => {
     const summits = stamps.filter(s => s.brush === 5 || s.brush === 6);
     const trees = stamps.filter(s => s.brush < 4 || s.brush >= 12 && s.brush <= 14);
     expect(summits.length).toBeGreaterThan(40);
-    expect(summits.every(s => s.width >= options.pitch * 2.2 * .95 && s.width <= options.pitch * 6.6 * 1.05)).toBe(true);
-    expect(new Set(trees.map(s => s.width))).toEqual(new Set([options.pitch * .48]));
+    expect(summits.every(s => s.width >= options.pitch * 2.2 * .95 * .55 && s.width <= options.pitch * 6.6 * 1.05 * .55)).toBe(true);
+    expect(new Set(trees.map(s => s.width))).toEqual(new Set([options.pitch * .48 * .55]));
     expect(trees.every(s => s.heightScale! >= .95 && s.heightScale! <= 1.05)).toBe(true);
     // Half the map alone contains several times the former whole-map forest count.
     expect(trees.length).toBeGreaterThan(5000);
@@ -71,6 +71,31 @@ describe('fantasy cartographic placement', () => {
     const low = mountains(900), high = mountains(3000);
     expect(low.length).toBeGreaterThan(10);
     expect(Math.min(...high.map(s => s.width))).toBeGreaterThan(Math.max(...low.map(s => s.width)) * 1.8);
+  });
+
+  it('follows actual occupation optionally, with no invented woodland, crops or orchards', () => {
+    const bounds = { x: 0, y: 0, width: 3000, height: 3000 };
+    const occupied = (x: number): PaintSample => ({ height: 300, slope: .01, temperature: 18, rain: 1800,
+      landuse: x < 1000 ? 'forest' : x < 2000 ? 'field' : x < 2500 ? 'orchard' : undefined });
+    const followed = planPainting(bounds, occupied, { ...options, followLanduse: true });
+    const trees = followed.filter(s => s.brush < 4);
+    expect(trees.length).toBeGreaterThan(100);
+    expect(trees.every(s => s.x < 1000)).toBe(true);
+    expect(followed.filter(s => s.brush === 10).every(s => s.x >= 1000 && s.x < 2000)).toBe(true);
+    expect(followed.some(s => s.brush === 11)).toBe(true);
+    expect(followed.filter(s => s.brush === 11).every(s => s.x >= 2000 && s.x < 2500)).toBe(true);
+    expect(planPainting(bounds, occupied, options).some(s => s.brush < 4 && s.x > 2500)).toBe(true);
+    expect(planPainting(bounds, () => ({ ...occupied(0), landuse: undefined }), { ...options, followLanduse: true })).toEqual([]);
+  });
+
+  it('keeps tree silhouettes clear of mountains, including low forest anchors next to a ridge', () => {
+    const landscape = (x: number): PaintSample => ({ height: x < 1400 ? 2000 : 300, slope: x < 1400 ? .4 : .01,
+      relief: x < 1400 ? 900 : 0, temperature: 28, rain: 1800, landuse: 'forest' });
+    const stamps = planPainting({ x: 0, y: 0, width: 3000, height: 3000 }, landscape, { ...options, followLanduse: true });
+    const mountains = stamps.filter(s => s.brush === 5 || s.brush === 6), trees = stamps.filter(s => s.brush < 4);
+    expect(mountains.length).toBeGreaterThan(10); expect(trees.length).toBeGreaterThan(100);
+    expect(trees.every(t => t.x >= 1400 && !mountains.some(m => Math.abs(t.x - m.x) < (m.width + t.width) / 2
+      && t.y > m.y - m.width * 1.1 && t.y - t.width * 1.9 < m.y + m.width * .1))).toBe(true);
   });
 
 });

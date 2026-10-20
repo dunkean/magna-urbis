@@ -60,8 +60,9 @@ const fantasyTiles = createFantasyTerrainLayer(error => status(`Brushes: ${error
 const fantasyOptions = { ...DEFAULT_FANTASY_OPTIONS };
 for (const key of ['density', 'size', 'spacing'] as const) {
   const value = Number(new URLSearchParams(location.search).get(`brush_${key}`));
-  if (value > 0 && Number.isFinite(value)) fantasyOptions[key] = Math.max(.3, Math.min(2, value));
+  if (value > 0 && Number.isFinite(value)) fantasyOptions[key] = Math.max(key === 'size' ? .1 : .3, Math.min(2, value));
 }
+fantasyOptions.followLanduse = new URLSearchParams(location.search).get('brush_landuse') === '1';
 if (new URLSearchParams(location.search).get('render') !== 'svg') {
   try { gpu = new TerrainGl(el<HTMLCanvasElement>('gl')); viewport.classList.add('gl'); }
   catch (error) { console.warn('WebGL2 rendering unavailable, falling back to SVG:', error); }
@@ -117,11 +118,18 @@ const brushPanel = document.createElement('fieldset');
 brushPanel.innerHTML = '<legend>Fantasy · Brushes</legend>';
 for (const [key, label] of [['density', 'Densité'], ['size', 'Taille'], ['spacing', 'Espacement']] as const) {
   const row = document.createElement('label'), slider = document.createElement('input');
-  row.textContent = label; slider.type = 'range'; slider.min = '.3'; slider.max = '2'; slider.step = '.05'; slider.value = String(fantasyOptions[key]); slider.id = `brush_${key}`;
+  row.textContent = label; slider.type = 'range'; slider.min = key === 'size' ? '.1' : '.3'; slider.max = '2'; slider.step = '.05'; slider.value = String(fantasyOptions[key]); slider.id = `brush_${key}`;
   slider.oninput = () => { fantasyOptions[key] = Number(slider.value); render(); deferSave(); };
   row.append(slider); brushPanel.append(row);
 }
 el('lightingControls').querySelector('.lighting-fields')!.append(brushPanel);
+const followLanduseRow = document.createElement('label');
+followLanduseRow.innerHTML = '<input id="brush_landuse" type="checkbox">Suivre l’occupation du territoire';
+const followLanduse = followLanduseRow.querySelector('input')!;
+followLanduse.checked = !!fantasyOptions.followLanduse;
+followLanduse.onchange = () => { fantasyOptions.followLanduse = followLanduse.checked; render(); deferSave(); };
+followLanduseRow.title = 'Utilise les zones générées à l’étape Settlements, même masquées. Arbres en forêt, cultures dans les champs, vergers et marais dans leurs zones. Sans occupation générée, seuls les motifs de relief restent.';
+brushPanel.append(followLanduseRow);
 for (const format of ['svg', 'png'] as const) {
   const button = document.createElement('button'); button.id = `fantasyExport_${format}`; button.textContent = format === 'svg' ? 'Exporter SVG' : 'Exporter PNG · 4K';
   button.type = 'button'; button.style.width = 'auto'; button.style.flex = '0 0 auto'; button.style.padding = '2px 8px';
@@ -136,8 +144,17 @@ for (const format of ['svg', 'png'] as const) {
       const ground = document.createElementNS('http://www.w3.org/2000/svg', 'g'); ground.innerHTML = scene.svg; svg.prepend(ground);
       if (layers.relief) {
         const painting = document.createElementNS('http://www.w3.org/2000/svg', 'g'); painting.innerHTML = renderFantasyTerrain(terrain, style, settings, fantasyOptions, settlements.paintingContext);
-        svg.insertBefore(painting, svg.querySelector('#settlementOverlay'));
+        svg.insertBefore(painting, svg.querySelector('#landuseLayer, #hydrologyOverlay, #settlementOverlay'));
       }
+      // Canvas children do not survive SVG serialization; embed the displayed overlay.
+      const sources = map.querySelectorAll('foreignObject');
+      svg.querySelectorAll('foreignObject').forEach((host, i) => {
+        const canvas = sources[i]?.querySelector('canvas');
+        if (!canvas) return;
+        const image = document.createElementNS('http://www.w3.org/2000/svg', 'image');
+        for (const key of ['x', 'y', 'width', 'height']) image.setAttribute(key, host.getAttribute(key) ?? '0');
+        image.setAttribute('href', canvas.toDataURL('image/png')); host.replaceWith(image);
+      });
       const blob = new Blob([new XMLSerializer().serializeToString(svg)], { type: 'image/svg+xml' });
       const cropped = await chooseExportCrop(blob, 4096);
       if (!cropped) return;
@@ -470,7 +487,7 @@ async function load3dTile(tile: Terrain3dTile) {
   const gutter = 2, pad = tile.width / tile.pixels * gutter;
   const region = { x: tile.x - pad, y: tile.y - pad, width: tile.width + 2 * pad };
   const canvas = gpu.captureRegion(region, tile.pixels + 2 * gutter, true, false, height, ground3dEnabled());
-  const result = await terrain3dTexture(canvas, terrain, style, settings, fantasyOptions, layers.relief, map.querySelector('#hydrologyOverlay')?.innerHTML ?? '', region);
+  const result = await terrain3dTexture(canvas, terrain, style, settings, fantasyOptions, layers.relief, map.querySelector('#hydrologyOverlay')?.innerHTML ?? '', region, settlements.paintingContext);
   if (!perspective || epoch !== texture3dEpoch) throw new DOMException('Tuile remplacée', 'AbortError');
   return { texture: result, height, gutter };
 }
@@ -556,7 +573,7 @@ async function refresh3dTexture(epoch: number): Promise<void> {
       camera3dChanged();
     }
     const canvas = gpu.captureMap(2048, ground);
-    const texture = await terrain3dTexture(canvas, terrain, style, settings, fantasyOptions, layers.relief, map.querySelector('#hydrologyOverlay')?.innerHTML ?? '');
+    const texture = await terrain3dTexture(canvas, terrain, style, settings, fantasyOptions, layers.relief, map.querySelector('#hydrologyOverlay')?.innerHTML ?? '', undefined, settlements.paintingContext);
     if (perspective && epoch === texture3dEpoch) {
       terrain3d.setTileBoundaries(input('tileBounds3d').checked);
       terrain3d.setHeightSampler(gpu.createSurfaceSampler());
@@ -784,6 +801,7 @@ function status(message: string, error = false): void {
 function shareQuery(): string {
   const params = new URLSearchParams({ brush_density: String(fantasyOptions.density), brush_size: String(fantasyOptions.size), brush_spacing: String(fantasyOptions.spacing), engine: 'rust', v: '4', seed: settings.seed, width: String(settings.width), motif: String(settings.motifSize), relief: settings.relief, erosion: String(settings.erosion), style: baseStyle, auto: input('auto').checked ? '1' : '0' });
   if (!gpu) params.set('render', 'svg');
+  params.set('brush_landuse', fantasyOptions.followLanduse ? '1' : '0');
   for (const [key, value] of Object.entries(settings.hydrology ?? DEFAULT_HYDROLOGY)) params.set(`hydro_${key}`, typeof value === 'boolean' ? value ? '1' : '0' : String(value));
   params.set('diagnostic', elevationDiagnostic ? 'elevation' : hydroOverlay); params.set('overlay', hydroOverlay); params.set('water', input('showWater').checked ? '1' : '0');
   params.set('contours', input('showContours').checked ? '1' : '0');

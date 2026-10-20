@@ -29,16 +29,22 @@ library. Source prompts are preserved in `families/prompts.json`.
 The shared planner is `rust/bridge/fantasyPainting.ts`. It is pure TypeScript,
 independent of DOM, engine and host application. The renderer belongs to the
 temporary bridge, not the Rust terrain core. A seed and three world-anchored grids own all
-placements. Summits use a two-pitch grid with silhouettes 5.6 pitches wide; hills are
-2.1 pitches wide with denser coverage. Woodland uses a one-quarter-pitch grid
-with trees 0.48 pitches wide. This retains small trees while loading forests
-more densely.
+placements. Relief uses a 0.85-pitch grid, with continuous height-dependent
+summit sizing; woodland uses a 0.24-pitch grid. All motif widths are now scaled
+by 0.55 relative to the previous display size, retaining their candidate density
+and world positions. The size slider can reduce this further down to 0.1.
 Coverage noise retains its original map-scale wavelengths, preserving broad
 forests and clearings. Relief is protected when the stamp budget is reached. Two smooth noise scales modulate stands and clearings; actual
 height, slope, temperature and annual rain determine brush families. Local
-summit priority suppresses competing mountain stamps. Ground footprints reject
+mountain suitability and conservative summit silhouette bounds exclude trees.
+Ground anchors reject
 water; geographic north to south ordering gives silhouette overlap. Cultivation
-and wetlands are decorative suitability estimates, not a land-use simulation.
+and wetlands use decorative suitability estimates by default. The optional
+**Suivre l’occupation du territoire** setting instead uses generated occupation
+polygons, including holes: trees in forests, crops in fields and gardens,
+orchards and marshes in their corresponding areas. Without generated occupation,
+this option leaves only relief motifs. See the bundled
+[method note](methods/fantasy-landuse.md), available from the control's help.
 
 Magna Urbis **Terrain Bench and Urban Bench** retain whole-map stamp geometry across camera refinement, caches
 six style/settings variants per terrain and invalidates on water replacement.
@@ -46,9 +52,11 @@ SVG embeds one atlas and sixteen reusable symbols. Changing density, size or
 spacing redraws without regenerating terrain or urban geometry. Urban Bench
 has a visible **Rendu** selector in the top toolbar, with sliders and exports
 in **Fantasy Ã‚Â· Brushes et export**. Brushes avoid actual quarter footprints,
-roads and retained water. The normal land-use renderer is paused while the
-fantasy painter supplies the landscape and restored on return to Relief. The parameters travel in URLs as
-`brush_density`, `brush_size`, `brush_spacing`. Exports: self-contained SVG and
+roads and retained water. The occupation overlay has global visibility and
+opacity controls, plus independent visibility by occupation type and for farm
+objects. These display filters do not change the polygons used by the painter.
+The parameters travel in URLs as `brush_density`, `brush_size`, `brush_spacing`,
+`brush_landuse`, and the `landuse` display settings. Exports: self-contained SVG and
 4096Ã‚Â² PNG, including displayed water and settlement overlays. Brush sliders
 and export buttons are in the **Layers** panel.
 

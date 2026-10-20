@@ -118,6 +118,7 @@ export function createTerrainSettlements(options: {
   map.addEventListener('urban:settings', event => publishOptions((event as CustomEvent).detail));
   const landuse = options.active === false ? undefined : createUrbanLanduse({ map, before: backend ?? panel,
     onChange: options.onChange,
+    onPlanChange: () => options.onPlanChange?.(),
     getView: () => ({ view: options.getView(), width: viewport.clientWidth, height: viewport.clientHeight }),
     getBackground: () => ({ opacity: 0 }),
   });
@@ -420,9 +421,9 @@ export function createTerrainSettlements(options: {
       syncLanduse(); draw(); options.onChange();
     },
     get paintingContext(): UrbanPaintingContext {
-      const cities = enabled ? output?.settlements : undefined, roadOutput = roads.enabled ? roads.output : undefined;
-      if (!paintingContext || paintingContext.layouts !== urban.layouts || paintingContext.roads !== roadOutput || paintingContext.cities !== cities) {
-        paintingContext = { layouts: urban.layouts, roads: roadOutput, cities };
+      const cities = enabled ? output?.settlements : undefined, roadOutput = roads.enabled ? roads.output : undefined, landuseSample = landuse?.sample;
+      if (!paintingContext || paintingContext.layouts !== urban.layouts || paintingContext.roads !== roadOutput || paintingContext.cities !== cities || paintingContext.landuse !== landuseSample) {
+        paintingContext = { layouts: urban.layouts, roads: roadOutput, cities, landuse: landuseSample };
       }
       return paintingContext;
     },

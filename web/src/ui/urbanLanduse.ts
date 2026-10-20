@@ -5,7 +5,8 @@ import { createCanvasRenderer, type CanvasRenderer } from '../render/canvas';
 import type { VegetationStyle } from '../render/canopy';
 import type { View } from '../render/view';
 import type { Scene } from '../render/scene';
-import type { World } from '../gen/types';
+import type { World, LandKind } from '../gen/types';
+import { fantasyLanduseSample } from './fantasyLanduse';
 import { biomePalette } from '../render/biomes';
 import { STYLE_LIST, isMapStyle, type MapStyle } from '../render/styles';
 import { decodeBrushes, type BrushImages } from '../render/brushes';
@@ -13,14 +14,15 @@ import { BRUSH_SOURCES } from '../render/assets/brushAssets';
 import { generateUrbanLanduse, urbanLanduseRenderWorld, type UrbanLanduseInput, type UrbanLanduseResponse, type UrbanLanduseScene } from './urbanLanduseData';
 
 type Context = Omit<UrbanLanduseInput, 'biome'>;
-interface Settings { seed: string; biome: BiomeName; style: MapStyle; vegetation: VegetationStyle; painted: boolean; opacity: number; visible: boolean; enabled: boolean }
+interface Settings { seed: string; biome: BiomeName; style: MapStyle; vegetation: VegetationStyle; painted: boolean; opacity: number; visible: boolean; enabled: boolean; hiddenKinds: LandKind[]; showFarms: boolean }
 const biomeLabels = ['Campagne tempérée', 'Forêt', 'Désert et oasis', 'Steppe', 'Forêt tropicale', 'Toundra', 'Outreterre', 'Cavernes'];
+const landKinds: [LandKind, string][] = [['forest', 'Forêts'], ['orchard', 'Vergers'], ['field', 'Champs et sillons'], ['garden', 'Jardins'], ['meadow', 'Prairies'], ['pasture', 'Pâturages'], ['marsh', 'Marais'], ['commons', 'Terrains communaux']];
 
-export function createUrbanLanduse(options: { map: SVGSVGElement; before: Element; onChange(): void;
+export function createUrbanLanduse(options: { map: SVGSVGElement; before: Element; onChange(): void; onPlanChange?(): void;
   getView(): { view: View; width: number; height: number };
   getBackground(): { image?: HTMLCanvasElement; opacity: number };
 }) {
-  const settings: Settings = { seed: '', biome: 'temperate', style: 'parchment', vegetation: 'canopy', painted: false, opacity: 1, visible: true, enabled: true };
+  const settings: Settings = { seed: '', biome: 'temperate', style: 'parchment', vegetation: 'canopy', painted: false, opacity: 1, visible: true, enabled: true, hiddenKinds: [], showFarms: true };
   try {
     const saved = JSON.parse(new URLSearchParams(location.search).get('landuse') ?? 'null');
     if (saved) {
@@ -31,6 +33,8 @@ export function createUrbanLanduse(options: { map: SVGSVGElement; before: Elemen
       if (typeof saved.painted === 'boolean') settings.painted = saved.painted;
       if (typeof saved.visible === 'boolean') settings.visible = saved.visible;
       if (typeof saved.enabled === 'boolean') settings.enabled = saved.enabled;
+      if (Array.isArray(saved.hiddenKinds)) settings.hiddenKinds = landKinds.map(([kind]) => kind).filter(kind => saved.hiddenKinds.includes(kind));
+      if (typeof saved.showFarms === 'boolean') settings.showFarms = saved.showFarms;
       if (Number.isFinite(saved.opacity)) settings.opacity = Math.max(0, Math.min(1, saved.opacity));
     }
   } catch { /* Broken optional settings retain the defaults. */ }
@@ -41,10 +45,16 @@ export function createUrbanLanduse(options: { map: SVGSVGElement; before: Elemen
     <label>Biome<select id="landuseBiome"></select></label>
     <button id="landuseGenerate" type="button">Générer l’occupation du territoire</button>
     <details class="advanced" open><summary>Affichage</summary>
+      <label><input id="landuseVisible" type="checkbox">Afficher tous les objets d’occupation</label>
       <label>Style<select id="landuseStyle"></select></label>
       <label>Végétation<select id="landuseVegetation"><option value="canopy">Feuillages et canopée</option><option value="classic">Symboles classiques</option></select></label>
       <label><input id="landusePainted" type="checkbox">Textures peintes</label>
-      <label>Opacité<input id="landuseOpacity" type="range" min="0" max="1" step="0.05"></label>
+      <label>Opacité de tous les objets<input id="landuseOpacity" type="range" min="0" max="1" step="0.05"></label>
+      <details><summary>Visibilité par type d’objet</summary>
+        ${landKinds.map(([kind, label]) => `<label><input type="checkbox" data-land-kind="${kind}">${label}</label>`).join('')}
+        <label><input id="landuseFarms" type="checkbox">Fermes et dépendances</label>
+      </details>
+      <small>Ces réglages masquent le dessin uniquement. Les brushes peuvent continuer à suivre les zones générées.</small>
     </details>
     <small>Champs, sillons, haies, chemins agricoles, vergers, jardins et végétation. Les quartiers réservent leur emprise avant l’ajout des maisons.</small>
     <small id="landuseStatus" role="status">En attente du décor…</small></div>`;
@@ -54,6 +64,7 @@ export function createUrbanLanduse(options: { map: SVGSVGElement; before: Elemen
   const style = q<HTMLSelectElement>('landuseStyle'), painted = q<HTMLInputElement>('landusePainted');
   const vegetation = q<HTMLSelectElement>('landuseVegetation');
   const opacity = q<HTMLInputElement>('landuseOpacity'), visible = q<HTMLInputElement>('showLanduse');
+  const panelVisible = q<HTMLInputElement>('landuseVisible'), farms = q<HTMLInputElement>('landuseFarms');
   const enabled = q<HTMLInputElement>('landuseEnabled');
   const button = q<HTMLButtonElement>('landuseGenerate'), status = q<HTMLElement>('landuseStatus');
   let layer = options.map.querySelector<SVGGElement>('#landuseLayer');
@@ -65,8 +76,17 @@ export function createUrbanLanduse(options: { map: SVGSVGElement; before: Elemen
   seed.value = settings.seed; biome.value = settings.biome; style.value = settings.style;
   painted.checked = settings.painted; opacity.value = String(settings.opacity); visible.checked = settings.visible;
   enabled.checked = settings.enabled;
+  panelVisible.checked = settings.visible; farms.checked = settings.showFarms;
+  for (const box of Array.from(panel.querySelectorAll<HTMLInputElement>('[data-land-kind]'))) {
+    box.checked = !settings.hiddenKinds.includes(box.dataset.landKind as LandKind);
+    box.onchange = () => {
+      settings.hiddenKinds = Array.from(panel.querySelectorAll<HTMLInputElement>('[data-land-kind]')).filter(b => !b.checked).map(b => b.dataset.landKind as LandKind);
+      renderWorld = undefined; renderScene = undefined; draw(); options.onChange();
+    };
+  }
   vegetation.value = settings.vegetation; vegetation.disabled = settings.painted;
   let context: Context | undefined, waiting = false, scene: UrbanLanduseScene | undefined;
+  let sample: ReturnType<typeof fantasyLanduseSample> | undefined;
   let worker: Worker | undefined, fallback = false, id = 0, timer: ReturnType<typeof setTimeout> | undefined;
   let previous: Context | undefined, previousKey = '', previousWaiting = false;
   let renderer: CanvasRenderer | undefined, renderWorld: World | undefined, renderScene: Scene | undefined;
@@ -95,7 +115,9 @@ export function createUrbanLanduse(options: { map: SVGSVGElement; before: Elemen
       host = landuseLayer.querySelector('foreignObject')!;
       canvas = document.createElement('canvas'); canvas.id = 'landuseCanvas'; canvas.style.display = 'block'; host.append(canvas);
     }
-    renderWorld ??= urbanLanduseRenderWorld(scene, context.raster);
+    renderWorld ??= urbanLanduseRenderWorld({ ...scene, landuse: scene.landuse && { ...scene.landuse,
+      areas: scene.landuse.areas.filter(a => !settings.hiddenKinds.includes(a.kind)),
+      farmsteads: settings.showFarms ? scene.landuse.farmsteads : [] } }, context.raster);
     const pal = { ...biomePalette(settings.style, scene.options.biome), frameKind: 'none' as const };
     const background = options.getBackground();
     rendererDpr = window.devicePixelRatio || 1;
@@ -138,7 +160,7 @@ export function createUrbanLanduse(options: { map: SVGSVGElement; before: Elemen
     if (response.id !== id) return;
     worker?.terminate(); worker = undefined;
     if ('error' in response) { state(`Occupation du territoire : ${response.error}`); return; }
-    scene = response.scene; renderWorld = undefined; renderScene = undefined; draw();
+    scene = response.scene; renderWorld = undefined; renderScene = undefined; draw(); notify();
     const stats = scene.stats;
     q('landuseState').textContent = `${stats.areas} zones`;
     state(`${stats.areas} zones · ${stats.fieldHa ?? 0} ha cultivés · ${stats.strips ?? 0} bandes · ${stats.ms} ms`);
@@ -147,6 +169,7 @@ export function createUrbanLanduse(options: { map: SVGSVGElement; before: Elemen
     cancel();
     if (!settings.enabled || !context || waiting) return;
     scene = undefined;
+    notify(); draw();
     const request = { id, input: { ...context, seed: settings.seed || context.seed, biome: settings.biome } };
     state('Génération des champs et de la végétation…', true);
     const runFallback = (): void => {
@@ -169,6 +192,7 @@ export function createUrbanLanduse(options: { map: SVGSVGElement; before: Elemen
   function schedule(): void {
     button.disabled = !settings.enabled || !context || waiting;
     visible.disabled = !settings.enabled;
+    panelVisible.disabled = !settings.enabled;
     if (!settings.enabled) { q('landuseState').textContent = 'désactivée'; state('Occupation du territoire désactivée.'); return; }
     q('landuseState').textContent = scene ? `${scene.stats.areas} zones` : '';
     if (!context || waiting) { state(context ? 'En attente des quartiers…' : 'En attente du décor…'); return; }
@@ -181,8 +205,12 @@ export function createUrbanLanduse(options: { map: SVGSVGElement; before: Elemen
     state('Préparation des paysages…', true);
     timer = setTimeout(generate, 120);
   }
+  function notify(): void {
+    sample = settings.enabled && scene?.landuse ? fantasyLanduseSample(scene.landuse, scene.mapSize) : undefined;
+    options.onPlanChange?.();
+  }
   enabled.onchange = () => {
-    settings.enabled = enabled.checked; cancel(); draw(); schedule(); options.onChange();
+    settings.enabled = enabled.checked; cancel(); draw(); notify(); schedule(); options.onChange();
   };
   button.onclick = () => {
     settings.seed = seed.value.trim(); settings.biome = biome.value as BiomeName;
@@ -192,9 +220,13 @@ export function createUrbanLanduse(options: { map: SVGSVGElement; before: Elemen
   vegetation.onchange = () => { settings.vegetation = vegetation.value as VegetationStyle; draw(); options.onChange(); };
   painted.onchange = () => { settings.painted = painted.checked; vegetation.disabled = settings.painted; draw(); options.onChange(); };
   opacity.oninput = () => { settings.opacity = Number(opacity.value); visibility(); options.onChange(); };
-  visible.onchange = () => { settings.visible = visible.checked; visibility(); updateView(); options.onChange(); };
+  const setVisible = (value: boolean): void => { settings.visible = value; visible.checked = value; panelVisible.checked = value; visibility(); updateView(); options.onChange(); };
+  visible.onchange = () => setVisible(visible.checked);
+  panelVisible.onchange = () => setVisible(panelVisible.checked);
+  farms.onchange = () => { settings.showFarms = farms.checked; renderWorld = undefined; renderScene = undefined; draw(); options.onChange(); };
   visibility(); schedule();
   return {
+    get sample() { return sample; },
     updateView,
     refreshBackground: draw,
     set(next?: Context, pending = false): void {
@@ -202,7 +234,7 @@ export function createUrbanLanduse(options: { map: SVGSVGElement; before: Elemen
       const key = next ? JSON.stringify({ seed: next.seed, city: next.city, neighbours: next.neighbours, relief: next.relief }) : '';
       if (next?.raster === previous?.raster && next?.layouts === previous?.layouts && next?.roads === previous?.roads && key === previousKey && pending === previousWaiting) return;
       previous = next; previousKey = key; previousWaiting = pending;
-      cancel(); scene = undefined; draw(); q('landuseState').textContent = '';
+      cancel(); scene = undefined; draw(); notify(); q('landuseState').textContent = '';
       schedule();
     },
     share(params: URLSearchParams): void { params.set('landuse', JSON.stringify(settings)); },

@@ -1,12 +1,14 @@
 import groundNote from '../../../docs/methods/render3d-ground.md?raw';
+import fantasyNote from '../../../docs/methods/fantasy-landuse.md?raw';
 
 const bundledFigures = import.meta.glob<string>('../../../docs/methods/images/*.webp', {
   eager: true, query: '?inline', import: 'default',
 });
 const figures = Object.fromEntries(Object.entries(bundledFigures).map(([path, image]) => [path.slice(path.indexOf('images/')), image]));
 
-export type MethodNoteId = 'render3d-ground';
+export type MethodNoteId = 'render3d-ground' | 'fantasy-landuse';
 const notes: Record<MethodNoteId, { title: string; markdown: string; images: Record<string, string> }> = {
+  'fantasy-landuse': { title: 'Fantasy brushes and territory occupation', markdown: fantasyNote, images: {} },
   'render3d-ground': {
     title: 'Multiscale terrain and ground material', markdown: groundNote,
     images: figures,

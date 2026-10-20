@@ -1,11 +1,13 @@
 import type { Layout, Shape } from './urban';
 import type { Point, RoadOutput } from './settlements';
 import { regionalOutsideUrban } from './urbanNetwork';
+import type { PaintLanduse } from './fantasyPainting';
 
 export interface UrbanPaintingContext {
   layouts?: Layout[];
   roads?: RoadOutput;
   cities?: { key?: string; center: Point; radius: number }[];
+  landuse?: (x: number, y: number) => PaintLanduse | undefined;
 }
 const masks = new WeakMap<UrbanPaintingContext, { width: number; n: number; contains(x: number, y: number): boolean }>();
 function inside(x: number, y: number, ring: Point[]): boolean {

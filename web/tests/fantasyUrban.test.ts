@@ -3,7 +3,17 @@ import { paintFantasyDecor } from '../src/ui/fantasyUrban';
 import { createBrushLibrary, FAMILY_NAMES, type Atlas, type BrushFamily } from '../../rust/bridge/fantasyPainting';
 import type { Layout } from '../../rust/bridge/urban';
 import type { RoadOutput, SettlementRaster } from '../../rust/bridge/settlements';
+import { fantasyLanduseSample } from '../src/ui/fantasyLanduse';
 describe('fantasy urban landscape', () => {
+  it('samples retained concave occupation polygons and their holes without painting gaps as forest', () => {
+    const sample = fantasyLanduseSample({ areas: [{ kind: 'forest', poly: [{x:0,y:0},{x:1000,y:0},{x:1000,y:300},{x:300,y:300},{x:300,y:1000},{x:0,y:1000}],
+      holes: [[{x:50,y:50},{x:150,y:50},{x:150,y:150},{x:50,y:150}]] }], farmsteads: [], reserve: [] }, 1000);
+    expect(sample(250, 500)).toBe('forest');
+    expect(sample(500, 250)).toBe('forest');
+    expect(sample(500, 500)).toBeUndefined();
+    expect(sample(100, 100)).toBeUndefined();
+    expect(sample(-10, 500)).toBeUndefined();
+  });
   it('keeps water anchors and urban quarters clear, allowing brush overhang across routes without changing physical inputs', () => {
     const n = 64, width = 10000, count = n * n;
     const raster: SettlementRaster = { n, width, height: new Float32Array(count).fill(300), water: new Uint8Array(count), waterLevel: new Float32Array(count), riverWidth: new Float32Array(count), riverIds: new Int32Array(count).fill(-1) };

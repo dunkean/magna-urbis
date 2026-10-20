@@ -20,3 +20,4 @@ text equations in fenced blocks so the offline reader needs no remote math
 service.
 
 - [Render3D: multiscale ground, material and mesh](render3d-ground.md)
+- [Fantasy brushes guided by territory occupation](fantasy-landuse.md)

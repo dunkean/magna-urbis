@@ -2,6 +2,7 @@ import type { TerrainData, TerrainSettings } from '../../../rust/bridge/terrain'
 import { isFantasyStyle, prepareFantasyTerrain, type FantasyOptions, type FantasyTerrainPainting } from '../../../rust/bridge/fantasyTerrain';
 import { brushFrame, paintingCanvas, stampHeight, type BrushLibrary, type Stamp } from '../../../rust/bridge/fantasyPainting';
 import type { TerrainStyle } from '../render/terrainStyle';
+import type { UrbanPaintingContext } from '../../../rust/bridge/urbanPaintingMask';
 
 const decodedLibraries = new WeakMap<BrushLibrary, Promise<Map<string, HTMLImageElement>>>();
 interface PaintBounds { bounds: Float64Array; up: number; down: number }
@@ -47,7 +48,7 @@ function decodeLibrary(library: BrushLibrary): Promise<Map<string, HTMLImageElem
 }
 
 /** Complete the whole-map material with the same water and brush layers as 2D. */
-export async function terrain3dTexture(base: HTMLCanvasElement, terrain: TerrainData, style: TerrainStyle, settings: TerrainSettings, options: FantasyOptions, drawBrushes: boolean, overlaySvg: string, region = { x: 0, y: 0, width: terrain.width }): Promise<HTMLCanvasElement> {
+export async function terrain3dTexture(base: HTMLCanvasElement, terrain: TerrainData, style: TerrainStyle, settings: TerrainSettings, options: FantasyOptions, drawBrushes: boolean, overlaySvg: string, region = { x: 0, y: 0, width: terrain.width }, urban?: UrbanPaintingContext): Promise<HTMLCanvasElement> {
   const context = base.getContext('2d');
   if (!context) throw new Error('Impossible de préparer le style 3D.');
   context.imageSmoothingQuality = 'high';
@@ -60,7 +61,7 @@ export async function terrain3dTexture(base: HTMLCanvasElement, terrain: Terrain
     } finally { URL.revokeObjectURL(url); }
   }
   if (drawBrushes && isFantasyStyle(style)) {
-    const painting = prepareFantasyTerrain(terrain, style, settings, options);
+    const painting = prepareFantasyTerrain(terrain, style, settings, options, urban);
     if (painting?.stamps.length) {
       const stamps = visibleStamps(painting, region, base.width);
       if (!stamps.length) return base;
