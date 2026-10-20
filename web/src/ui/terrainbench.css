@@ -54,7 +54,7 @@ summary { cursor: pointer; font-size: 12px; font-weight: 600; }
 #terrain3d:active { cursor: grabbing; }
 #viewport.perspective #terrain3d { display: block; }
 #viewport.perspective :is(#map, #gl) { visibility: hidden; pointer-events: none; }
-#viewport.perspective :is(#pinLayer, #pinPopover, #coordinates, #scale, .ruler-layer) { display: none !important; }
+#viewport.perspective :is(#pinLayer, #pinPopover, #coordinates, #scale) { display: none !important; }
 #projection3d, #north3d { width: 34px; flex-basis: 34px; }
 #perspectiveControls { display: inline-flex; align-items: center; gap: 8px; }
 #exaggeration3d { width: 68px; }

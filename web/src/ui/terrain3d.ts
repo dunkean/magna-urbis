@@ -1,4 +1,5 @@
 import type { HeightLayer } from './terrainGl';
+import { gridHeight, raycastGrid, type TerrainPickGrid } from './terrain3dPicking';
 
 /** Target and orbit distance in world metres; yaw/pitch in radians. */
 export interface Terrain3dCamera {
@@ -200,6 +201,7 @@ export class Terrain3d {
   private animating = false;
   private now = 0;
   private desired: Patch[] = [];
+  private displayedGrids: TerrainPickGrid[] = [];
   private protected = new Set<string>();
   private jobs = new Set<object>();
   private epoch = 0;
@@ -217,7 +219,7 @@ export class Terrain3d {
   private gesture?: { x: number; y: number; distance: number };
   private lod = { tiles: 0, ready: 0, pending: 0, level: 0, metresPerTexel: 0, metresPerVertex: 0, maxScale: TERRAIN_3D_MAX_SCALE, scale: 0 };
 
-  constructor(private canvas: HTMLCanvasElement, private onChange: () => void) {
+  constructor(private canvas: HTMLCanvasElement, private onChange: () => void, private onRender?: () => void) {
     const gl = canvas.getContext('webgl2', { alpha: false, antialias: true, depth: true, stencil: false, powerPreference: 'high-performance' });
     if (!gl) throw new Error('La vue 3D nécessite WebGL2.');
     this.gl = gl; this.initialize(); canvas.style.touchAction = 'none'; this.interactions();
@@ -328,6 +330,7 @@ export class Terrain3d {
     ++this.epoch;
     for (const patch of this.patches.values()) this.releasePatch(patch);
     this.patches.clear(); this.root = undefined; this.desired = []; this.protected.clear(); this.splits.clear();
+    this.displayedGrids = [];
   }
   private surface(x: number, y: number, metresPerPixel: number, detail = true): number {
     const layer = this.layer; if (!layer) return 0;
@@ -346,6 +349,34 @@ export class Terrain3d {
   heightAt(x: number, y: number): number | undefined {
     if (!this.layer) return undefined;
     return this.surface(x, y, 0);
+  }
+  /** Pick the nearest visible terrain triangle in CSS pixels, including LOD morphs and refined heights. */
+  screenToWorld(x: number, y: number): [number, number] | null {
+    if (!this.layer || !this.active) return null;
+    const frame = this.frameGeometry(), c = this.camera;
+    const u = (x - this.width / 2) / frame.focal, v = (this.height / 2 - y) / frame.focal;
+    const direction: Vec3 = [0, 1, 2].map(i => frame.forward[i] + u * frame.right[i] + v * frame.up[i]) as Vec3;
+    const origin: Vec3 = [c.x + frame.eye[0], frame.targetHeight + frame.eye[1], c.y + frame.eye[2]];
+    let nearest = Infinity;
+    for (const grid of this.displayedGrids) {
+      const hit = raycastGrid(grid, origin, direction);
+      if (hit !== null) nearest = Math.min(nearest, hit);
+    }
+    return Number.isFinite(nearest) ? [origin[0] + direction[0] * nearest, origin[2] + direction[2] * nearest] : null;
+  }
+  worldToScreen(x: number, y: number): [number, number] | null {
+    if (!this.layer || !this.active) return null;
+    let height: number | null = null;
+    for (const grid of this.displayedGrids) {
+      height = gridHeight(grid, x, y);
+      if (height !== null) break;
+    }
+    if (height === null) return null;
+    const frame = this.frameGeometry(), c = this.camera;
+    const relative: Vec3 = [x - c.x - frame.eye[0], height - frame.targetHeight - frame.eye[1], y - c.y - frame.eye[2]];
+    const dot = (axis: Vec3): number => relative[0] * axis[0] + relative[1] * axis[1] + relative[2] * axis[2];
+    const depth = dot(frame.forward);
+    return depth > 0 ? [this.width / 2 + frame.focal * dot(frame.right) / depth, this.height / 2 - frame.focal * dot(frame.up) / depth] : null;
   }
   private patch(level: number, ix: number, iy: number): Patch {
     const layer = this.layer!, key = `${level}/${ix}/${iy}`;
@@ -743,6 +774,14 @@ export class Terrain3d {
     if (!patch.vao) return;
     const gl = this.gl, material = this.materialFor(patch, incomingMorph), c = this.camera;
     this.protected.add(patch.tile.key); patch.used = this.clock; drawn.push(patch);
+    const tile = patch.tile, heights = this.grid(patch), step = tile.width / GRID;
+    const [level, ix, iy] = tile.key.split('/').map(Number);
+    const parent = level ? this.patch(level - 1, Math.floor(ix / 2), Math.floor(iy / 2)) : patch;
+    this.displayedGrids.push({ ...tile, clip, cells: GRID, height: (x, y) => {
+      const fine = heights[y * (GRID + 1) + x];
+      const coarse = incomingMorph === 1 ? fine : this.parentSample(parent, tile.x + x * step, tile.y + y * step)[0];
+      return (coarse + (fine - coarse) * incomingMorph) * c.exaggeration;
+    } });
     gl.uniform3f(gl.getUniformLocation(this.terrainProgram, 'patchOffset'), patch.tile.x - c.x, patch.heightOrigin * c.exaggeration - frame.targetHeight, patch.tile.y - c.y);
     gl.uniform1f(gl.getUniformLocation(this.terrainProgram, 'morph'), incomingMorph);
     gl.uniform4f(gl.getUniformLocation(this.terrainProgram, 'clipRect'), clip.x - c.x, clip.y - c.y, clip.x + clip.width - c.x, clip.y + clip.width - c.y);
@@ -842,6 +881,7 @@ export class Terrain3d {
     gl.activeTexture(gl.TEXTURE0); gl.uniform1i(gl.getUniformLocation(this.terrainProgram, 'material'), 0);
     gl.uniform1i(gl.getUniformLocation(this.terrainProgram, 'previousMaterial'), 1);
     const drawn: Patch[] = [];
+    this.displayedGrids = [];
     if (this.root) this.renderNode(this.root, frame, drawn);
     gl.bindVertexArray(null);
     let finest = this.layer.width, texel = this.layer.width / this.fallbackPixels, ready = 0, level = 0;
@@ -853,6 +893,7 @@ export class Terrain3d {
     this.lod = { tiles: drawn.length, ready, pending: this.jobs.size, level, metresPerTexel: texel, metresPerVertex: finest,
       maxScale: TERRAIN_3D_MAX_SCALE, scale: frame.focal / this.camera.distance };
     this.trim();
+    this.onRender?.();
     if (preparing || this.animating) this.request();
   }
   private pan(dx: number, dy: number): void {

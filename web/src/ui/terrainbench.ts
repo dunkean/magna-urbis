@@ -30,7 +30,7 @@ import { createPins } from './pins';
 import { createRuler } from './ruler';
 import { createTerrainSettlements } from './terrainSettlements';
 import { pinsFromString, pinsToString, viewFromString, viewToString } from './share';
-import { clampView, fitView, panBy, screenToWorld, zoomAt, type View } from '../render/view';
+import { clampView, fitView, panBy, screenToWorld, worldToScreen, zoomAt, type View } from '../render/view';
 import { COAST_DIRECTIONS, ISLAND_MODES, type IslandMode, TERRAIN_SOURCES, NEURAL_RELIEFS, NEURAL_CLIMATES, NEURAL_EXTENT, DEFAULT_NEURAL_SERVER, DEFAULT_PYTHON_SERVER, neuralServerForSource, isNeuralSource, type TerrainSource, type NeuralClimate } from '../../../rust/bridge/terrain';
 import { captureDecor, downloadBytes } from './decorCapture';
 import { decodeDecor, encodeDecor, type Decor } from './decor';
@@ -474,7 +474,7 @@ async function load3dTile(tile: Terrain3dTile) {
 function setPerspective(active: boolean): void {
   active &&= pipelineStage === 'terrain' && !legacyPipeline && !!gpu;
   if (active && !terrain3d) {
-    try { terrain3d = new Terrain3d(el<HTMLCanvasElement>('terrain3d'), camera3dChanged); terrain3d.setTileLoader(load3dTile, refinement3d === 'neural-earth'); }
+    try { terrain3d = new Terrain3d(el<HTMLCanvasElement>('terrain3d'), camera3dChanged, () => ruler.update()); terrain3d.setTileLoader(load3dTile, refinement3d === 'neural-earth'); }
     catch (error) { status(`Vue 3D : ${error instanceof Error ? error.message : error}`, true); active = false; }
   }
   if (active) {
@@ -484,7 +484,7 @@ function setPerspective(active: boolean): void {
       camera3dChanged();
     }
     selectingPortion = false; document.getElementById('transferPick')?.setAttribute('aria-pressed', 'false');
-    sketchEditor?.setEditing(false); ruler.setEnabled(false); settlements.cancelPicking();
+    sketchEditor?.setEditing(false); settlements.cancelPicking();
     pinMode = false; el('pinMode').setAttribute('aria-pressed', 'false'); viewport.classList.remove('pin-mode');
   } else if (perspective && terrain3d) {
     camera3d = terrain3d.getCamera();
@@ -504,6 +504,7 @@ function setPerspective(active: boolean): void {
   terrain3d?.setActive(active);
   if (active) { terrain3d?.resize(viewport.clientWidth, viewport.clientHeight); schedule3dTexture(); }
   else { ++texture3dEpoch; clearTimeout(texture3dTimer); updateView(); }
+  ruler.update();
   deferSave();
 }
 
@@ -838,8 +839,11 @@ pins.set(pinsFromString(query.get('pins')));
 const pinInput = el('pinPopover').querySelector('input')!; pinInput.placeholder = 'Pin note'; pinInput.setAttribute('aria-label', 'Pin note');
 const pinDelete = el('pinPopover').querySelector('button')!; pinDelete.textContent = 'Delete'; pinDelete.title = 'Delete this pin';
 
-const ruler = createRuler({ container: viewport, surface: map, getView: () => view, onEnable: () => {
-  setPerspective(false);
+const ruler = createRuler({ container: viewport, surface: map, getView: () => view,
+  getSurface: () => perspective ? el('terrain3d') : map,
+  screenToWorld: (x, y) => perspective ? terrain3d?.screenToWorld(x, y) ?? null : screenToWorld(view, viewport.clientWidth, viewport.clientHeight, x, y),
+  worldToScreen: (x, y) => perspective ? terrain3d?.worldToScreen(x, y) ?? null : worldToScreen(view, viewport.clientWidth, viewport.clientHeight, x, y),
+  onEnable: () => {
   sketchEditor?.setEditing(false);
   settlements.cancelPicking();
   pinMode = false; el('pinMode').setAttribute('aria-pressed', 'false'); viewport.classList.remove('pin-mode');
