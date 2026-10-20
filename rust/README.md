@@ -34,7 +34,10 @@ starts the shared site on port 5173, the native Rust engine on port 8791 and
 the Python/CUDA service on port 8793 in the background, and waits for all three
 services to respond. Its launch link selects Local/Rust, neural Python and a
 2.4 km map. Fresh terrain maps use the profile's neural method and that small
-extent; explicit shared settings remain applied. Legacy `source=neural` links
+extent. Loopback workshop URLs also default to Local/Rust and Python/CUDA;
+an old `profile=web` inside the map fragment cannot override that startup.
+The selector can still choose Web explicitly through `?profile=web` on the host.
+Explicit shared map settings remain applied. Legacy `source=neural` links
 without an explicit endpoint now use Python/CUDA. To replay the native neural
 reference, retain `source=neural&neural=http://127.0.0.1:8792`.
 Re-running the launcher restarts the services. Use `stop-terrainbench.bat` or `npm run stop:benches`
@@ -50,7 +53,7 @@ site for procedural/browser inference, pass `-NeuralBackend none` to the launche
 reference checks, with optional `-Warmup`. Use `npm run build:neural` to rebuild
 that reference binary explicitly.
 
-From `web/`, `npm run dev:benches` serves `/rustbench.html`, a shared container
+From `web/`, `npm run dev:benches` serves `/rustbench.html` (also reached from `/`), a shared container
 for Terrain (stages 1–3), Settlements (regional roads and quarters), Urban and Houses. Each bench loads on its first
 visit and retains its settings and results while switching tabs. **Lien** copies
 a container link with the active bench's shared settings; **Ouvrir** opens that

@@ -15,8 +15,10 @@ npm run app:build   # Build the app and native installer for this operating syst
 
 Use `-- --no-neural` to skip the optional Python/CUDA service, `-- --no-open`
 to leave the browser closed, or `-- --no-build` to reuse the current release
-engine. `npm run build:local` builds that engine explicitly. The existing
-`npm run dev:benches` remains the browser **web** profile with WASM/WebGPU.
+engine. `npm run build:local` builds that engine explicitly.
+`npm run dev:benches` serves the interface without starting its engine services;
+loopback workshop URLs default to **local**, with Python/CUDA for fresh neural
+maps. Choose **Web** explicitly in the selector to use WASM/WebGPU instead.
 
 The shared defaults live in [`config/execution.json`](../../config/execution.json).
 The **Exécution** selector switches profiles in the shell or standalone workshops.

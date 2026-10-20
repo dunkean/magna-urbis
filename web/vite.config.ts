@@ -80,9 +80,20 @@ function neuralServe(): Plugin {
   } };
 }
 
+function rustBenchEntry(): Plugin {
+  return { name: 'rust-bench-entry', apply: 'serve', configureServer(server) {
+    server.middlewares.use((req, res, next) => {
+      const url = new URL(req.url ?? '/', 'http://localhost');
+      if (url.pathname !== '/' && url.pathname !== '/index.html') { next(); return; }
+      res.writeHead(302, { Location: `/rustbench.html${url.search}` });
+      res.end();
+    });
+  } };
+}
+
 export default defineConfig(({ mode }) => ({
   root: 'src/ui',
-  plugins: [viteSingleFile(), neuralServe(), ...(['terrainbench', 'rustbench'].includes(mode) ? [terrainWasmReload(), decorServe()] : []), ...(['housebench', 'rustbench'].includes(mode) ? [housesWasmReload()] : [])],
+  plugins: [viteSingleFile(), neuralServe(), ...(mode === 'rustbench' ? [rustBenchEntry()] : []), ...(['terrainbench', 'rustbench'].includes(mode) ? [terrainWasmReload(), decorServe()] : []), ...(['housebench', 'rustbench'].includes(mode) ? [housesWasmReload()] : [])],
   // Keep third-party notices inside the self-contained offline bundle.
   esbuild: { legalComments: 'inline' },
   optimizeDeps: mode === 'housebench' ? { entries: ['housebench.html'] } : mode === 'rustbench' ? { entries: ['rustbench.html', 'terrainbench.html', 'urbanbench.html', 'housebench.html'] } : undefined,
