@@ -139,6 +139,23 @@ summary { cursor: pointer; font-size: 12px; font-weight: 600; }
 .terrain-help-row:has(> [hidden]) { display: none; }
 button.terrain-help { display: inline-flex; justify-content: center; align-items: center; flex: 0 0 17px; width: 17px; height: 17px; border-radius: 50%; padding: 0; font-size: 11px; color: #386a58; background: #f1f7f3; }
 .terrain-help-text { position: fixed; inset: auto; width: min(340px, calc(100vw - 16px)); margin: 0; padding: 12px; border: 1px solid #9aafa1; border-radius: 6px; background: #fff; color: #253b38; box-shadow: 0 4px 20px #18392d33; font-size: 12px; line-height: 1.6; }
+.method-note { width: min(850px, calc(100vw - 32px)); max-height: min(90dvh, 1000px); padding: 0; border: 1px solid #9aafa1; border-radius: 8px; background: #fbfcf9; color: #253b38; }
+.method-note::backdrop { background: #102e2866; }
+.method-note-bar { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; gap: 16px; padding: 12px 20px; background: #f1f6f1; border-bottom: 1px solid #d3ddd7; }
+.method-note-bar strong { flex: 1; }
+.method-note-bar button { border: 0; background: transparent; font-size: 24px; cursor: pointer; }
+.method-note article { padding: 10px 28px 24px; font-size: 14px; line-height: 1.7; overflow-wrap: anywhere; }
+.method-note :is(h1,h2,h3,h4) { line-height: 1.25; margin: 1.4em 0 .6em; }
+.method-note h1 { font-size: 25px; }
+.method-note h2 { font-size: 20px; }
+.method-note h3 { font-size: 16px; }
+.method-note a { color: #236448; text-decoration: underline; }
+.method-note img { display: block; width: 100%; height: auto; margin: 16px 0; border-radius: 4px; }
+.method-note pre { padding: 12px; overflow-x: auto; background: #edf2ed; border: 1px solid #d3ddd7; border-radius: 4px; font-size: 12px; line-height: 1.65; }
+.method-note .method-table { overflow-x: auto; }
+.method-note table { border-collapse: collapse; width: 100%; font-size: 12px; }
+.method-note :is(th,td) { border: 1px solid #d3ddd7; padding: 7px; text-align: left; vertical-align: top; }
+.method-note footer { padding: 12px 28px 20px; }
 .sketch-tools > details { border-top: 1px solid #dce3df; padding-top: 6px; }
 .zone-legend { display: flex; flex-wrap: wrap; gap: 4px 8px; font-size: 10px; color: #52645f; }
 .zone-legend span::before { content: ''; display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 3px; background: var(--zone-colour); }

@@ -1,3 +1,5 @@
+import { openMethodNote, type MethodNoteId } from './methodNotes';
+
 /** Short, keyboard-accessible explanations next to the controls they describe. */
 export function installTerrainHelp(): void {
   const explanations: Record<string, () => string> = {
@@ -29,6 +31,9 @@ export function installTerrainHelp(): void {
     style: () => 'Le style définit les couleurs et matériaux de la carte, dont un même dégradé pour toutes les mers et tous les lacs. Les couches choisissent les éléments visibles. Les brushes restent une illustration indépendante.',
     hydroOverlay: () => 'Un diagnostic visualise une donnée de calcul. Altitude remplace les couleurs du terrain ; les autres diagnostics se superposent à la carte. Ils ne modifient ni le style choisi ni les masques de génération.',
     showWater: () => 'Affiche ou masque toute l’eau : mer, lacs et rivières. Lakes et Oxbows permettent de masquer séparément les lacs et les anciens chenaux.',
+    projection3d: () => 'Survol du relief avec raffinement progressif du maillage. Render3D utilise un matériau de sol en coordonnées monde, partagé avec la vue 2D.',
+    refinement3d: () => 'Source conserve les altitudes retenues. Noise multiscale ajoute un détail procédural déterministe. Neural Earth raffine le relief via le service CUDA ; le matériau de sol de Render3D reste indépendant de cette source.',
+    tileBounds3d: () => 'Superpose les limites des tuiles affichées pour examiner leurs raccords. Cette option ne change ni le relief ni son niveau de détail.',
   };
   const tip = document.createElement('div'); tip.id = 'terrainHelpText'; tip.className = 'terrain-help-text'; tip.setAttribute('popover', 'auto'); tip.setAttribute('role', 'note'); document.body.append(tip);
   let current: HTMLButtonElement | undefined;
@@ -40,8 +45,11 @@ export function installTerrainHelp(): void {
     const title = Array.from(label.childNodes).filter(n => n.nodeType === Node.TEXT_NODE).map(n => n.textContent).join('').trim();
     button.setAttribute('aria-label', `Aide : ${title || 'terrain'}`); button.setAttribute('aria-controls', tip.id); button.setAttribute('aria-expanded', 'false');
     row.append(button);
+    const method = (): MethodNoteId | undefined => ['projection3d', 'refinement3d', 'tileBounds3d'].includes(control.id)
+      || control.id === 'style' && (control as HTMLSelectElement).value === 'render3d' ? 'render3d-ground' : undefined;
     const show = (): void => {
       current?.setAttribute('aria-expanded', 'false'); current = button; tip.textContent = explain();
+      if (method()) tip.append(' Cliquez sur ? pour lire la note scientifique en anglais.');
       tip.showPopover(); button.setAttribute('aria-expanded', 'true');
       const b = button.getBoundingClientRect(); tip.style.left = `${Math.min(b.left, Math.max(8, innerWidth - Math.min(340, innerWidth - 16) - 8))}px`;
       tip.style.top = `${Math.max(8, Math.min(b.bottom + 6, innerHeight - tip.offsetHeight - 8))}px`;
@@ -54,6 +62,11 @@ export function installTerrainHelp(): void {
     button.addEventListener('mouseleave', hide);
     button.addEventListener('focus', () => { if (button.matches(':focus-visible')) show(); });
     button.addEventListener('blur', hide);
+    button.addEventListener('click', () => {
+      const note = method();
+      if (note) { hide(); openMethodNote(note); }
+      else show();
+    });
     control.addEventListener('input', () => { if (current === button) tip.textContent = explain(); });
   }
   for (const [id, explain] of Object.entries(explanations)) { const control = document.getElementById(id); if (control) attach(control, explain); }

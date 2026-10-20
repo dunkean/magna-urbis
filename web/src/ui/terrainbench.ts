@@ -19,7 +19,7 @@ import { CLIMATE_VALUES, DEFAULT_NEURAL_TUNING, NEURAL_RELIEF_DEFAULTS, climateO
 import { lakeColour, riverSegments, vectorOverlayPixels, vectorOverlaySvg, vectorWaterSvg, VECTOR_LEGENDS, VECTOR_OVERLAYS, type VectorOverlay } from './vectorWaterRender';
 import { lakeField } from './lakeGeometry';
 import { TerrainGl, type TerrainLook } from './terrainGl';
-import { Terrain3d, TERRAIN_3D_FOV, type Terrain3dCamera, type Terrain3dTile } from './terrain3d';
+import { Terrain3d, TERRAIN_3D_FOV, TERRAIN_GROUND_MAX_SCALE, type Terrain3dCamera, type Terrain3dTile } from './terrain3d';
 import { terrain3dTexture } from './terrain3dTexture';
 import { TerrainRefinementSession, type TerrainRefinement } from './terrainRefinement';
 import neuralModels from '../../../rust/models/neural-earth/catalog.json';
@@ -69,9 +69,9 @@ if (new URLSearchParams(location.search).get('render') !== 'svg') {
 if (!gpu) el('gl').remove();
 else {
   // A lost context (driver reset, GPU switch) comes back empty: rebuild and re-upload.
-  el('gl').addEventListener('webglcontextlost', event => event.preventDefault());
+  el('gl').addEventListener('webglcontextlost', event => { event.preventDefault(); gpu?.dispose(); });
   el('gl').addEventListener('webglcontextrestored', () => {
-    try { gpu = new TerrainGl(el<HTMLCanvasElement>('gl')); uploaded = undefined; displayedDetail = undefined; render(); }
+    try { gpu?.dispose(); gpu = new TerrainGl(el<HTMLCanvasElement>('gl')); uploaded = undefined; displayedDetail = undefined; render(); }
     catch (error) { status(`WebGL2 rendering lost: ${error instanceof Error ? error.message : error}`, true); }
   });
 }
@@ -465,11 +465,17 @@ async function load3dTile(tile: Terrain3dTile) {
   try { height = refinement3d === 'neural-earth' ? await (await ensureRefinement()).tile(tile, tile.pixels) : undefined; }
   catch (error) { if (epoch === texture3dEpoch) reportRefinementError(error); throw error; }
   if (!perspective || epoch !== texture3dEpoch) throw new DOMException('Tuile remplacée', 'AbortError');
-  const canvas = gpu.captureRegion(tile, tile.pixels, true, false, height);
-  const result = await terrain3dTexture(canvas, terrain, style, settings, fantasyOptions, layers.relief, map.querySelector('#hydrologyOverlay')?.innerHTML ?? '', tile);
+  // Sample real neighbours into a gutter, rather than duplicating the edge
+  // texel. Adjacent tiles then interpolate the same world-space samples.
+  const gutter = 2, pad = tile.width / tile.pixels * gutter;
+  const region = { x: tile.x - pad, y: tile.y - pad, width: tile.width + 2 * pad };
+  const canvas = gpu.captureRegion(region, tile.pixels + 2 * gutter, true, false, height, ground3dEnabled());
+  const result = await terrain3dTexture(canvas, terrain, style, settings, fantasyOptions, layers.relief, map.querySelector('#hydrologyOverlay')?.innerHTML ?? '', region);
   if (!perspective || epoch !== texture3dEpoch) throw new DOMException('Tuile remplacée', 'AbortError');
-  return height ? { texture: result, height } : result;
+  return { texture: result, height, gutter };
 }
+
+function ground3dEnabled(): boolean { return style === 'render3d' && layers.relief && layers.hypsometry; }
 
 function setPerspective(active: boolean): void {
   active &&= pipelineStage === 'terrain' && !legacyPipeline && !!gpu;
@@ -520,6 +526,13 @@ function schedule3dTexture(): void {
 async function refresh3dTexture(epoch: number): Promise<void> {
   if (!perspective || !terrain || !gpu || !terrain3d || epoch !== texture3dEpoch) return;
   try {
+    const ground = ground3dEnabled();
+    // Establish the style's zoom range before restoring a shared camera.
+    terrain3d.setGroundMaterial(ground ? {
+      seed: seedHash(settings.seed), climate: climateOf(settings),
+      sourceCell: retainedDecor?.meta.terrainDisplay?.sourceCell ?? settings.width / 1024,
+      lighting, displacement: refinement3d !== 'source',
+    } : undefined);
     const waterVisible = input('showWater').checked, lakesVisible = waterVisible && input('showLakes').checked;
     const water = terrain.water, hydro = terrain.hydrology, retained = retainedDecor?.raster;
     const waterSource = retained ?? water ?? hydro;
@@ -542,9 +555,10 @@ async function refresh3dTexture(epoch: number): Promise<void> {
       surface3d = terrain; surface3dWater = waterSource; surface3dVisibility = visibility;
       camera3dChanged();
     }
-    const canvas = gpu.captureMap(2048);
+    const canvas = gpu.captureMap(2048, ground);
     const texture = await terrain3dTexture(canvas, terrain, style, settings, fantasyOptions, layers.relief, map.querySelector('#hydrologyOverlay')?.innerHTML ?? '');
     if (perspective && epoch === texture3dEpoch) {
+      terrain3d.setTileBoundaries(input('tileBounds3d').checked);
       terrain3d.setHeightSampler(gpu.createSurfaceSampler());
       terrain3d.invalidateTiles();
       terrain3d.setTexture(texture);
@@ -785,6 +799,7 @@ function shareQuery(): string {
   if (custom) for (const [key, value] of Object.entries(climate)) params.set(key, String(value));
   params.set('refine', settings.refine ? '1' : '0');
   params.set('refinement3d', refinement3d);
+  if (input('tileBounds3d').checked) params.set('tiles3d', '1');
   for (const [key, value] of Object.entries(settings.detailNoise ?? DEFAULT_FRACTAL_DETAIL)) if (value !== DEFAULT_FRACTAL_DETAIL[key as keyof FractalDetail]) params.set(`d_${key}`, String(value));
   params.set('water', input('showWater').checked ? '1' : '0'); params.set('lakes', input('showLakes').checked ? '1' : '0'); params.set('oxbows', input('showOxbows').checked ? '1' : '0');
   if (!isNeuralSource(settings.source)) for (const [name, value] of Object.entries(settings.erosionTuning ?? {})) params.set(`e_${name}`, String(value));
@@ -871,7 +886,7 @@ function refreshUrbanPainting(): void {
 
 function updateView(): void {
   const w = viewport.clientWidth, h = viewport.clientHeight;
-  view = clampView(view, terrain?.width ?? settings.width, w, h);
+  view = clampView(view, terrain?.width ?? settings.width, w, h, style === 'render3d' ? TERRAIN_GROUND_MAX_SCALE : 8);
   const contourWidths = terrainContourWidths(style, view.scale);
   map.style.setProperty('--terrain-contour-width', `${contourWidths.thin}px`);
   map.style.setProperty('--terrain-contour-index-width', `${contourWidths.index}px`);
@@ -901,7 +916,7 @@ function local(event: MouseEvent | PointerEvent | WheelEvent): [number, number] 
 function point(event: MouseEvent): [number, number] { const [x, y] = local(event); return screenToWorld(view, viewport.clientWidth, viewport.clientHeight, x, y); }
 function zoom(factor: number, x = viewport.clientWidth / 2, y = viewport.clientHeight / 2): void {
   if (perspective && terrain3d) { terrain3d.zoom(factor); return; }
-  const limited = bounded(view.scale * factor, Math.min(viewport.clientWidth, viewport.clientHeight) / (terrain?.width ?? settings.width) * 0.5, 8) / view.scale;
+  const limited = bounded(view.scale * factor, Math.min(viewport.clientWidth, viewport.clientHeight) / (terrain?.width ?? settings.width) * 0.5, style === 'render3d' ? TERRAIN_GROUND_MAX_SCALE : 8) / view.scale;
   setView(zoomAt(view, limited, x, y, viewport.clientWidth, viewport.clientHeight));
 }
 function showPins(): void {
@@ -1405,6 +1420,8 @@ el('north3d').onclick = () => terrain3d?.north();
 input('exaggeration3d').oninput = () => {
   if (terrain3d) { terrain3d.setCamera({ ...terrain3d.getCamera(), exaggeration: Number(input('exaggeration3d').value) }); camera3dChanged(); }
 };
+input('tileBounds3d').checked = query.get('tiles3d') === '1';
+input('tileBounds3d').onchange = () => { terrain3d?.setTileBoundaries(input('tileBounds3d').checked); deferSave(); };
 el('terrain3d').addEventListener('webglcontextrestored', () => { surface3d = undefined; schedule3dTexture(); });
 el('pinMode').onclick = () => { setPerspective(false); sketchEditor?.setEditing(false); pinMode = !pinMode; if (pinMode) { ruler.setEnabled(false); settlements.cancelPicking(); } el('pinMode').setAttribute('aria-pressed', String(pinMode)); viewport.classList.toggle('pin-mode', pinMode); };
 input('showPins').onchange = () => { showPins(); save(); };

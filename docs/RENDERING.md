@@ -65,6 +65,51 @@ Les liens utilisent `style` pour l'apparence et `diagnostic` pour la visualisati
 de calcul. Les anciens `overlay` et `style=copernicus` sont encore lus ; ce
 dernier devient le diagnostic Altitude avec le style Parchment.
 
+## Sol procédural Render3D
+
+La [note scientifique en anglais](methods/render3d-ground.md) décrit le champ,
+les équations, le filtrage, les références et les limites de cette intégration.
+
+`Render3D` possède un matériau de sol évalué dans le shader de perspective :
+albédo, normales et rugosité suivent des structures partagées en mètres. Le
+shader utilise la position physique, avant exagération verticale, et l'empreinte
+du pixel sur cette surface pour filtrer les détails. Les autres styles et le
+matériau `Render` conservent leur chemin cartographique.
+Le zoom maximal de `Render3D` est de 128 pixels CSS par mètre, en 2D et en 3D ;
+les autres styles conservent leur limite de 8 pixels CSS par mètre.
+
+La classification des matériaux utilise les coefficients B-spline du champ
+source global stocké en R32F, indépendamment de la résolution du maillage.
+Changer de niveau de détail ne redéfinit donc pas les zones de roche ou d'herbe.
+
+`rust/bridge/terrainGround.ts` définit le champ de détail CPU/GLSL commun. Le
+maillage échantillonne une hauteur canonique indépendante de la caméra ; les
+transitions parent/enfant interpolent ses approximations. Le matériau suit la
+normale physique canonique et conserve la variance des pentes non résolues.
+Des graviers elliptiques compacts complètent les bandes de bruit analytique.
+Les plaines restent lisses et les déplacements fins sont atténués
+près de l'eau. Ce détail de présentation ne recalcule ni relief Rust ni hydrologie.
+La réflectance emploie GGX, Smith et Schlick avec un albédo linéaire, selon le
+[modèle temps réel décrit par Filament](https://google.github.io/filament/main/filament.html).
+La variance non résolue élargit la distribution des pentes. Les gradients du
+détail sont analytiques ; les variations de son enveloppe pente/climat sont
+traitées comme des variations macroscopiques, sans en dériver tous les termes.
+
+Le matériau 3D reçoit une capture RGBA contenant uniquement eau, courbes et
+superpositions. Son alpha porte leur couverture explicite : la couleur du sol
+ne sert pas à reconnaître l'eau. Les captures conservent des voisins réels dans
+une bordure de deux texels et les textures sont composées avec alpha prémultiplié.
+Le diagnostic « Tuiles » superpose les limites sans changer les hauteurs.
+
+Les méthodes de référence sont [Wave Noise, SIGGRAPH 2025](https://pascalguehl.github.io/siggraph2025-wave-noise/),
+le [mélange laplacien, JCGT 2025](https://jcgt.org/published/0014/01/02/) et
+[LEADR, SIGGRAPH Asia 2013](https://perso.liris.cnrs.fr/victor.ostromoukhov/publications/pdf/SAsia2013-LEADR.pdf).
+L'implémentation locale utilise une synthèse spectrale bornée, un mélange par
+bandes et une approximation de variance des pentes ; elle ne constitue pas un
+port complet de ces trois travaux. Elle ne simule pas l'érosion, les ombres de
+chaque grain ou des surplombs. Un détail sous-pixel influence la réflectance,
+sans créer une silhouette que le maillage ne pourrait représenter.
+
 ## Vérification
 
 Depuis `web/`, `node scripts/styles_ui_check.mjs` vérifie les couleurs mer/lac

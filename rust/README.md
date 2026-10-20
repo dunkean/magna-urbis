@@ -143,6 +143,9 @@ and remains part of the temporary renderer, outside the Rust engine.
 
 ### Terrain flyover
 
+See the [scientific method note](../docs/methods/render3d-ground.md) for equations,
+units, the implemented approximations and their primary references.
+
 In the Terrain workshop only, **3D** projects the selected map style, water,
 contours and Fantasy illustrations onto a perspective mesh of the retained
 Rust/WASM elevations. Drag to move, right-drag or Shift-drag to rotate and
@@ -156,18 +159,34 @@ changing the style or moving the camera preserves generation. Editing zones,
 placing pins, measuring and choosing a crop return to 2D. SVG/PNG exports keep
 their cartographic view. The perspective mesh and material refine in quadtree
 tiles around the camera, using retained world-space height and material grids.
-Close zoom reaches the map's limit of 8 CSS pixels per metre;
-device pixel ratio is preserved up to 2. Tile caches and background loading
+Render3D reaches 128 CSS pixels per metre in both 2D and 3D; other styles
+retain their limit of 8 CSS pixels per metre. Device pixel ratio is preserved
+up to 2. Tile caches and background loading
 keep memory bounded. Fantasy illustrations remain projected map brushwork.
 The original 2D views and **Render** keep their existing surface and material.
 The separate **Render3D · Multiscale** style extends Render with world-space
-material detail and is also selectable in 2D. Enhanced mesh residuals are isolated
-to 3D and this explicit style: their physical wavelengths adapt to the source
-cell size, keep plains smooth and retain the underlying slopes. The sampled
-surface is independent of the camera; continuous geometry morphs and material
-crossfades handle LOD changes without replacing the landscape at each level.
-The implementation follows established continuous terrain LOD and derivative-
-conditioned noise techniques; it does not claim to simulate physical erosion.
+material detail and is also selectable in 2D. Its perspective ground material
+evaluates albedo, surface normals and roughness from shared physical structures,
+with lighting evaluated in the 3D view. A common CPU/GLSL displacement field
+keeps the mesh and material coherent, preserves smooth plains and limits fine
+height changes. Coordinates remain in metres before vertical exaggeration.
+Compact seeded elliptical clasts supply gravel alongside the analytic noise bands.
+The sampled surface is independent of the camera; continuous geometry morphs
+and material filtering handle changes in scale. Unresolved slope variation
+contributes to roughness instead of disappearing with the last visible octave.
+Water, contours and other projected layers arrive as an explicit RGBA overlay,
+with real two-texel gutters and premultiplied composition. **Tuiles** displays
+tile boundaries without modifying the surface.
+
+The local implementation draws on [Wave Noise (2025)](https://pascalguehl.github.io/siggraph2025-wave-noise/),
+[Laplacian texture blending (2025)](https://jcgt.org/published/0014/01/02/) and
+[LEADR (2013)](https://perso.liris.cnrs.fr/victor.ostromoukhov/publications/pdf/SAsia2013-LEADR.pdf).
+Its bounded spectral detail, band-aware blending and slope-variance filtering
+are practical approximations, not complete ports of those papers. It does not
+simulate erosion, per-grain shadows or overhangs; geometry remains a heightfield.
+The ground BRDF uses GGX, Smith visibility and Schlick Fresnel in linear colour,
+with unresolved slope variance broadening its roughness; see
+[Filament's shading reference](https://google.github.io/filament/main/filament.html).
 This viewer is presentation code in `web/src/ui/terrain3d.ts`, independent of
 the engine and the future permanent renderer.
 

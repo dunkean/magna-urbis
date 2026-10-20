@@ -1,5 +1,6 @@
 import { NEURAL_EARTH_MATERIAL_GLSL } from '../../../rust/bridge/terrainMaterial';
 import { RENDER_3D_MATERIAL_GLSL } from '../../../rust/bridge/terrainMaterial3d';
+import { createGroundDisplacementSampler } from '../../../rust/bridge/terrainGround';
 import { terrainLights, type TerrainLayers, type TerrainLighting } from '../render/terrainLighting';
 import { SEA_BAND_WIDTH } from '../render/terrainSea';
 import { resampleTerrainSurface } from '../render/raster';
@@ -40,6 +41,8 @@ export interface HeightLayer {
 export interface TerrainLook {
   /** Explicit opt-in for perspective captures; ordinary 2D styles retain their surface. */
   mesh3d?: boolean;
+  /** Internal premultiplied water/ink pass for the physically shaded flyover. */
+  groundCapture?: boolean;
   refinement3d?: TerrainRefinement;
   climate?: { temperature: number; precipitation: number };
   style: GlStyle; waterStyle?: TerrainStyle; mapWidth: number; lighting: TerrainLighting; layers: TerrainLayers;
@@ -103,6 +106,7 @@ uniform int uCoastal, uFrame;
 uniform int uContours; uniform float uStep, uThinW, uIndexW, uThinA, uIndexA, uFlatSlope;
 uniform int uRefine; uniform float uSourceCell; uniform uint uSeed;
 uniform int uEnhanced3d;
+uniform int uGroundCapture;
 uniform int uRefinementMode;
 uniform sampler2D uRefined, uPreviousRefined;
 uniform vec4 uRefinedRect, uPreviousRefinedRect;
@@ -228,11 +232,17 @@ vec3 naturalMaterial(vec3 s, vec2 world) {
     if(surface(world+d*r*.5).x<0.) shore=min(shore,r*.5);
   }
   shore=min(shore,max(s.x,0.)/max(length(s.yz),.0001));
-  if(uMode==3) return terrain3dMaterial(s,world,uPx,(s.x-mean)/(6.*r),shore,openness);
+  if(uMode==3) {
+    vec3 base=level(0,world);
+    vec3 macro=earthMaterial(base,world,max(uPx,1.),(base.x-mean)/(6.*r),shore,openness);
+    GroundMaterial m=terrainGroundMaterial(base,world,uPx,macro,uMaterialClimate,uMaterialSeed);
+    return shadeTerrainGround(m,vec3(0.,1.,0.),uLight.xzy,uLight2.xzy,uRockStrength);
+  }
   return earthMaterial(s,world,max(uPx,1.),(s.x-mean)/(6.*r),shore,openness);
 }
 vec3 land(vec3 s, vec2 world) {
-  if(uMode==2 || uMode==3) return naturalMaterial(s,world)*hillshade(s.yz);
+  if(uMode==3) return naturalMaterial(s,world);
+  if(uMode==2) return naturalMaterial(s,world)*hillshade(s.yz);
   if (uMode == 1) {
     float landMin = uCoastal == 1 ? 0.0 : uGlobalMin;
     float t = clamp((s.x - landMin) / max(1e-6, uMaxH - landMin), 0.0, 1.0);
@@ -276,7 +286,7 @@ void main() {
   bool inside = world.x >= 0.0 && world.y >= 0.0 && world.x <= uMapW && world.y <= uMapW;
   if (!inside) {
     if (uBase == 0) discard;
-    outColor = vec4(uBackground, 1.0);
+    outColor = uGroundCapture==1 ? vec4(0.) : vec4(uBackground, 1.0);
   } else {
     vec3 s = surface(world);
     if (uFloor > 0.0) s.x = max(s.x, uFloor);
@@ -296,7 +306,11 @@ void main() {
     // Antialiased coast at the zero level (screen-space width of the height ramp).
     float ramp = max(grad * uPx, 1e-4);
     float landCover = uCoastal == 1 ? clamp(s.x / ramp + 0.5, 0.0, 1.0) : (s.x > 0.0 ? 1.0 : 0.0);
-    vec3 color = mix(sea(world), land(vec3(max(s.x, 1e-3), s.yz), world), landCover);
+    // Hidden water keeps the cartographic paper over the submerged ground.
+    // Its explicit coverage also prevents the physical material recolouring it.
+    float coverage=1.-landCover;
+    vec3 landColor=uGroundCapture==1 ? vec3(0.) : land(vec3(max(s.x,1e-3),s.yz),world);
+    vec3 color = uGroundCapture==1 ? sea(world)*coverage : mix(sea(world),landColor,landCover);
     if (uRelief == 0) color = mix(sea(world), uPaper, landCover);
     if (uHasCave == 1 && uRelief == 1) {
       vec2 uv = (world - uFieldOrigin) / (uFieldCell * float(uFieldN));
@@ -304,6 +318,7 @@ void main() {
       vec3 nn = normalize(vec3(-s.yz * uExaggeration * 0.5, 1.0));
       float shade = clamp(uRockStrength * (length(nn.xy) * (36.0 + 84.0 * dot(nn.xy, uLight.xy)) + (1.0 - nn.z) * 12.0), 0.0, 72.0) / 255.0;
       color = mix(color, vec3(shade), rock);
+      coverage=rock+coverage*(1.-rock);
     }
     if (uContours == 1 && s.x > 0.0 && uMode != 1) {
       float v = raster.x / uStep;
@@ -321,6 +336,7 @@ void main() {
       // Near-flat ground draws wandering loops: keep contours on slopes.
       a *= smoothstep(0.25 * uFlatSlope, 0.5 * uFlatSlope, slope);
       color = mix(color, uContourColor, a);
+      coverage=a+coverage*(1.-a);
     }
     if (uWaterVisible == 1 && uHasLake > 0) {
       float m = lakeShore(world, uHasLake == 1);
@@ -333,18 +349,21 @@ void main() {
         float distance = mix(mix(texelFetch(uLake,p,0).g,texelFetch(uLake,ivec2(q.x,p.y),0).g,f.x),mix(texelFetch(uLake,ivec2(p.x,q.y),0).g,texelFetch(uLake,q,0).g,f.x),f.y);
         lakeColor = styledWater(max(distance, 0.) / uSeaBand);
       }
-      color = mix(color, lakeColor, clamp(m / w + 0.5, 0.0, 1.0));
+      float a=clamp(m/w+.5,0.,1.);
+      color = mix(color,lakeColor,a);
+      coverage=a+coverage*(1.-a);
     }
     if (uHasOverlay == 1) {
       vec4 o = texture(uOverlay, world / uMapW);
       color = mix(color, o.rgb, o.a);
+      coverage=o.a+coverage*(1.-o.a);
     }
     if (uFrame == 1 && uBase == 1) {
       vec2 e = min(world, vec2(uMapW) - world) / uPx;
       float d = min(e.x, e.y);
       color = mix(color, uFrameColor, clamp(1.2 * uDpr * 0.5 + 0.5 - d, 0.0, 1.0));
     }
-    outColor = vec4(color, uAlpha);
+    outColor = vec4(color, uGroundCapture==1 ? coverage : uAlpha);
   }
 }`;
 
@@ -423,6 +442,7 @@ export class TerrainGl {
   readonly gl: WebGL2RenderingContext;
   private terrain: WebGLProgram; private river: WebGLProgram; private composite: WebGLProgram;
   private riverTarget?: { framebuffer: WebGLFramebuffer; texture: WebGLTexture; width: number; height: number };
+  private captureTarget?: { framebuffer: WebGLFramebuffer; texture: WebGLTexture; width: number; height: number };
   private locations = new Map<string, WebGLUniformLocation | null>();
   private riverLocations = new Map<string, WebGLUniformLocation | null>();
   private base?: GpuLayer; private details: GpuLayer[] = [];
@@ -438,6 +458,7 @@ export class TerrainGl {
   private riverBuffer: WebGLBuffer; private riverVao: WebGLVertexArrayObject; private riverCount = 0;
   private view?: { view: View; width: number; height: number };
   private frame = 0;
+  private disposed = false;
   private empty: WebGLTexture;
   /** Last frame's GPU submission time, ms (CPU side). */
   drawMs = 0;
@@ -575,13 +596,13 @@ export class TerrainGl {
   setView(view: View, width: number, height: number): void { this.view = { view, width, height }; this.request(); }
 
   /** Reuse the map material for the perspective viewer without changing the 2D camera. */
-  captureMap(size = 2048): HTMLCanvasElement {
+  captureMap(size = 2048, groundOverlay = false): HTMLCanvasElement {
     if (!this.look) throw new Error('Le terrain est indisponible.');
-    return this.captureRegion({ x: 0, y: 0, width: this.look.mapWidth }, size, false);
+    return this.captureRegion({ x: 0, y: 0, width: this.look.mapWidth }, size, false, true, undefined, groundOverlay);
   }
 
   /** Render a world-space LOD tile with the same material and detail as the map. */
-  captureRegion(region: { x: number; y: number; width: number }, size = 512, includeDetails = true, restoreDisplay = true, height?: HeightLayer): HTMLCanvasElement {
+  captureRegion(region: { x: number; y: number; width: number }, size = 512, includeDetails = true, restoreDisplay = true, height?: HeightLayer, groundOverlay = false): HTMLCanvasElement {
     if (!this.base || !this.look || this.gl.isContextLost()) throw new Error('Le terrain est indisponible.');
     const previous = this.view, details = this.details, look = this.look, enhanced = this.enhanced;
     const capturedHeight = height ? this.upload(height, false) : undefined;
@@ -590,15 +611,32 @@ export class TerrainGl {
     if (!context) throw new Error('Impossible de préparer le style 3D.');
     try {
       // Freeze the current regional detail at its final opacity for reproducible tiles.
-      this.details = includeDetails && details.length ? [{ ...details[details.length - 1], fadeStart: -Infinity }] : [];
-      this.look = { ...look, frame: false, mesh3d: true };
+      this.details = !groundOverlay && includeDetails && details.length ? [{ ...details[details.length - 1], fadeStart: -Infinity }] : [];
+      this.look = { ...look, frame: false, mesh3d: true, groundCapture: groundOverlay };
       this.enhanced = capturedHeight ? [{ ...capturedHeight, fadeStart: -Infinity }] : [];
       this.view = { view: { cx: region.x + region.width / 2, cy: region.y + region.width / 2, scale: size / region.width }, width: size, height: size };
-      this.draw(1, includeDetails ? Math.min(2, window.devicePixelRatio || 1) : 1);
-      context.drawImage(this.canvas, 0, 0);
+      if (groundOverlay) {
+        this.captureTarget = this.renderTarget(size,size,this.captureTarget);
+        this.draw(1,includeDetails ? Math.min(2,window.devicePixelRatio||1) : 1,this.captureTarget.framebuffer);
+        const rgba=new Uint8Array(size*size*4), image=context.createImageData(size,size);
+        this.gl.bindFramebuffer(this.gl.FRAMEBUFFER,this.captureTarget.framebuffer);
+        this.gl.readPixels(0,0,size,size,this.gl.RGBA,this.gl.UNSIGNED_BYTE,rgba);
+        // The framebuffer and river compositor store premultiplied radiance.
+        // Canvas ImageData requires straight RGB; retain its explicit coverage.
+        for(let y=0;y<size;y++)for(let x=0;x<size;x++){
+          const a=(y*size+x)*4,b=((size-1-y)*size+x)*4,alpha=rgba[b+3];
+          for(let c=0;c<3;c++)image.data[a+c]=alpha ? Math.min(255,Math.round(rgba[b+c]*255/alpha)) : 0;
+          image.data[a+3]=alpha;
+        }
+        context.putImageData(image,0,0);
+      } else {
+        this.draw(1, includeDetails ? Math.min(2, window.devicePixelRatio || 1) : 1);
+        context.drawImage(this.canvas, 0, 0);
+      }
     } finally {
       this.view = previous; this.details = details; this.look = look; this.enhanced = enhanced;
       this.release(capturedHeight);
+      this.gl.bindFramebuffer(this.gl.FRAMEBUFFER,null);
       if (restoreDisplay) this.draw();
     }
     return output;
@@ -608,9 +646,12 @@ export class TerrainGl {
     if (!this.base || !this.look) return undefined;
     const base = this.base.layer, detail = this.details[this.details.length - 1]?.layer, look = this.look;
     const refine = (look.refinement3d ?? 'noise') === 'noise';
-    const key = JSON.stringify([refine, look.floor, look.sourceCell, look.seed, look.detail]);
+    const ground=look.style==='render3d' && (look.refinement3d??'noise')!=='source';
+    const key = JSON.stringify([refine,ground,look.climate,look.floor,look.sourceCell,look.seed,look.detail]);
     if (!this.surfaceCache || this.surfaceCache.base !== base || this.surfaceCache.detail !== detail || this.surfaceCache.key !== key) {
-      this.surfaceCache = { base, detail, key, sample: createTerrainSurfaceSampler(base, { ...look, refine }, detail ? [detail] : [], true) };
+      const sample=createTerrainSurfaceSampler(base,{...look,refine},detail?[detail]:[],true);
+      const macroSampler=ground ? createTerrainSurfaceSampler(base,{...look,refine:false},[],false) : undefined;
+      this.surfaceCache={base,detail,key,sample:ground ? createGroundDisplacementSampler(sample,{seed:look.seed,sourceCell:look.sourceCell,macroSampler,climate:look.climate ? [look.climate.temperature,look.climate.precipitation] : undefined}) : sample};
     }
     return this.surfaceCache.sample;
   }
@@ -635,13 +676,14 @@ export class TerrainGl {
   }
 
   private request(): void {
-    if (this.frame) return;
+    if (this.disposed || this.frame) return;
     this.frame = requestAnimationFrame(() => { this.frame = 0; this.draw(); });
   }
 
-  private draw(pixelRatio = Math.min(2, window.devicePixelRatio || 1), stylePixelRatio = pixelRatio): void {
+  private draw(pixelRatio = Math.min(2, window.devicePixelRatio || 1), stylePixelRatio = pixelRatio, framebuffer: WebGLFramebuffer | null = null): void {
     const gl = this.gl, look = this.look, state = this.view;
-    if (!look || !state || !this.base || gl.isContextLost()) return;
+    if (this.disposed || !look || !state || !this.base || gl.isContextLost()) return;
+    gl.bindFramebuffer(gl.FRAMEBUFFER,framebuffer);
     const started = performance.now();
     // Two device pixels per CSS pixel at most: 4K stays cheap on modest GPUs.
     const dpr = pixelRatio;
@@ -656,6 +698,7 @@ export class TerrainGl {
     gl.uniform2f(u('uCanvas'), width, height);
     gl.uniform2f(u('uOrigin'), origin[0], origin[1]);
     gl.uniform1f(u('uPx'), px); gl.uniform1f(u('uDpr'), stylePixelRatio);
+    gl.uniform1i(u('uGroundCapture'),look.groundCapture?1:0);
     gl.uniform1f(u('uMapW'), look.mapWidth);
     gl.uniform1i(u('uRelief'), look.layers.relief ? 1 : 0); gl.uniform1i(u('uWaterVisible'), look.layers.water !== false ? 1 : 0);
     gl.uniform1ui(u('uMaterialSeed'), look.seed >>> 0);
@@ -760,7 +803,7 @@ export class TerrainGl {
       gl.bindVertexArray(this.riverVao);
       gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, this.riverCount);
       gl.bindVertexArray(null);
-      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
       gl.blendEquation(gl.FUNC_ADD); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
       gl.useProgram(this.composite);
       gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, target.texture);
@@ -773,9 +816,13 @@ export class TerrainGl {
   }
 
   private target(width: number, height: number): { framebuffer: WebGLFramebuffer; texture: WebGLTexture; width: number; height: number } {
+    return this.riverTarget=this.renderTarget(width,height,this.riverTarget);
+  }
+
+  private renderTarget(width: number,height: number,previous?: {framebuffer:WebGLFramebuffer;texture:WebGLTexture;width:number;height:number}): {framebuffer:WebGLFramebuffer;texture:WebGLTexture;width:number;height:number} {
     const gl = this.gl;
-    if (this.riverTarget && this.riverTarget.width === width && this.riverTarget.height === height) return this.riverTarget;
-    if (this.riverTarget) { gl.deleteFramebuffer(this.riverTarget.framebuffer); gl.deleteTexture(this.riverTarget.texture); }
+    if(previous?.width===width && previous.height===height)return previous;
+    if(previous){gl.deleteFramebuffer(previous.framebuffer);gl.deleteTexture(previous.texture);}
     const texture = gl.createTexture()!;
     gl.bindTexture(gl.TEXTURE_2D, texture);
     gl.texStorage2D(gl.TEXTURE_2D, 1, gl.RGBA8, width, height);
@@ -784,10 +831,12 @@ export class TerrainGl {
     gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
     gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0);
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-    return this.riverTarget = { framebuffer, texture, width, height };
+    return { framebuffer, texture, width, height };
   }
 
   dispose(): void {
+    if (this.disposed) return;
+    this.disposed = true; cancelAnimationFrame(this.frame); this.frame = 0;
     const gl = this.gl;
     this.release(this.base); this.details.forEach(d => this.release(d));
     this.enhanced.forEach(d => this.release(d));
@@ -796,6 +845,7 @@ export class TerrainGl {
     gl.deleteBuffer(this.riverBuffer); gl.deleteVertexArray(this.riverVao);
     if (this.coastDistance) gl.deleteTexture(this.coastDistance);
     if (this.riverTarget) { gl.deleteFramebuffer(this.riverTarget.framebuffer); gl.deleteTexture(this.riverTarget.texture); }
+    if (this.captureTarget) { gl.deleteFramebuffer(this.captureTarget.framebuffer); gl.deleteTexture(this.captureTarget.texture); }
     gl.deleteProgram(this.terrain); gl.deleteProgram(this.river); gl.deleteProgram(this.composite);
   }
 }

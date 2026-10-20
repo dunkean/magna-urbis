@@ -20,8 +20,8 @@ export function fitView(mapSize: number, w: number, h: number): View {
   return { cx: mapSize / 2, cy: mapSize / 2, scale: fitScale(mapSize, w, h) };
 }
 /** Keep scale in range and the view center inside the map. */
-export function clampView(v: View, mapSize: number, w: number, h: number): View {
-  const scale = Math.max(fitScale(mapSize, w, h) * 0.5, Math.min(MAX_SCALE, v.scale));
+export function clampView(v: View, mapSize: number, w: number, h: number, maxScale = MAX_SCALE): View {
+  const scale = Math.max(fitScale(mapSize, w, h) * 0.5, Math.min(maxScale, v.scale));
   return { cx: Math.max(0, Math.min(mapSize, v.cx)), cy: Math.max(0, Math.min(mapSize, v.cy)), scale };
 }
 /** Zoom by `factor`, keeping the world point under screen (sx, sy) fixed. */
