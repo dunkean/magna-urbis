@@ -142,7 +142,12 @@ vec3 surfaceMix(vec3 a,vec3 b,float t){return a*(1.-t)+b*t;}
       float trees=sstep(.65,2.1,humid)*sstep(5.5,13.5,tHot+.8*valley)*forestAmount*(1.-sstep(rockTan*.9,rockTan*1.6,grade))*(1.-outcrop);
       // Valley stands come from relief; noise only adds gentle clearings.
       trees=trees*(1.-.22*ridge)+.14*valley*sstep(2.,10.,tHot)*sstep(.4,1.2,humid)*(1.-outcrop)*forestAmount;
+#ifdef RENDER3D_FOREST
+      // Render3D's canonical forest replaces this canopy (and its snow thinning).
+      float woods=uForest==0?surfaceCover(clamp(trees,0.,1.),grove,.65*variation):0.;
+#else
       float woods=surfaceCover(clamp(trees,0.,1.),grove,.65*variation);
+#endif
       color=surfaceMix(color,canopy,woods);
       float flats=(1.-sstep(1.5,6.,height))*(1.-sstep(.05,.2,grade));
       // Beaches: an intermittent strip along open water (none beside ponds), up to

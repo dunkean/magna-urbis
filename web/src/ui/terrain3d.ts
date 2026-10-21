@@ -1,4 +1,6 @@
-import type { HeightLayer } from './terrainGl';
+import { bindForest, forestTexture, RENDER_3D_FOREST_GLSL, type HeightLayer } from './terrainGl';
+import { FOREST_PRELUDE_GLSL, type ForestField, type ForestOccupation } from '../../../rust/bridge/terrainForest';
+import { bindForestBrushes, disposeForestBrushes } from '../render/forestBrushAtlas';
 import { NEURAL_EARTH_MATERIAL_GLSL } from '../../../rust/bridge/terrainMaterial';
 import { RENDER_3D_MATERIAL_GLSL } from '../../../rust/bridge/terrainMaterial3d';
 import { createGroundDisplacementSampler } from '../../../rust/bridge/terrainGround';
@@ -15,10 +17,14 @@ interface WaterSurface { n: number; levels: Float32Array; mask: Float32Array }
 /** A square material request in the terrain's metre coordinate system. */
 export interface Terrain3dTile { key: string; x: number; y: number; width: number; level: number; pixels: number }
 /** Final signed metre coefficients at cell centres, optionally including a halo. */
-export interface Terrain3dTileContent { texture: TexImageSource; height?: HeightLayer; gutter?: number }
+export interface Terrain3dTileContent {
+  texture: TexImageSource; height?: HeightLayer; gutter?: number;
+  water?: { x: number; y: number; width: number; n: number; alpha: Uint8Array };
+}
 export interface Terrain3dGroundSettings {
   seed: number; climate: { temperature: number; precipitation: number }; sourceCell: number;
-  lighting: TerrainLighting; displacement: boolean;
+  lighting: TerrainLighting; displacement: boolean; forestBrushes?: boolean;
+  contours?: { step: number; color: string; opacity: number; flat: boolean };
 }
 export const TERRAIN_3D_FOV = Math.PI / 3.7;
 export const TERRAIN_3D_MAX_SCALE = 8;
@@ -74,14 +80,31 @@ uniform float groundStrength;
 uniform sampler2D macroField;
 uniform vec3 macroRect;
 uniform int macroN;
+uniform vec3 patchRect;
+uniform int groundContours; uniform vec3 groundContourColor;
+uniform float groundContourStep,groundContourOpacity,groundFlatSlope;
+uniform sampler2D canopyWater,previousCanopyWater;
+uniform int hasCanopyWater,hasPreviousCanopyWater;
+uniform vec3 canopyWaterRect,previousCanopyWaterRect;
 in vec2 texcoord;
 in vec3 normal;
 in vec3 world;
 in vec3 physical;
 in vec2 physicalSlope;
 out vec4 color;
+${FOREST_PRELUDE_GLSL}
+float forestWaterCoverage(vec2 p){
+  vec2 current=(p-canopyWaterRect.xy)/canopyWaterRect.z;
+  if(hasCanopyWater==1 && all(greaterThanEqual(current,vec2(0.))) && all(lessThanEqual(current,vec2(1.))))return textureLod(canopyWater,current,0.).r;
+  vec2 previous=(p-previousCanopyWaterRect.xy)/previousCanopyWaterRect.z;
+  if(hasPreviousCanopyWater==1 && all(greaterThanEqual(previous,vec2(0.))) && all(lessThanEqual(previous,vec2(1.))))return textureLod(previousCanopyWater,previous,0.).r;
+  vec2 uv=(p-patchRect.xy)/patchRect.z;
+  return mix(textureLod(previousMaterial,previousRect.xy+uv*previousRect.zw,0.).a,
+    textureLod(material,textureRect.xy+uv*textureRect.zw,0.).a,textureBlend);
+}
 ${NEURAL_EARTH_MATERIAL_GLSL}
 ${RENDER_3D_MATERIAL_GLSL}
+${RENDER_3D_FOREST_GLSL}
 vec4 groundSpline(float t){float u=1.-t;return vec4(u*u*u,3.*t*t*t-6.*t*t+4.,-3.*t*t*t+3.*t*t+3.*t+1.,t*t*t)/6.;}
 vec4 groundSplineDerivative(float t){return vec4(-.5*(1.-t)*(1.-t),1.5*t*t-2.*t,-1.5*t*t+t+.5,.5*t*t);}
 vec3 groundMacroSurface(vec2 p){
@@ -107,8 +130,20 @@ void main() {
     // A canonical normal field avoids changing microdetail at coarse/fine
     // boundaries. Geometry approximates this field; it is not added twice.
     GroundMaterial m=terrainGroundMaterial(s,physical.xz,footprint,macro,uMaterialClimate,uMaterialSeed);
+    if(uForest==1) applyForest(m,physical.xz,footprint,groundLight);
     base=shadeTerrainGround(m,normalize(groundEye-physical),groundLight,groundLight2,groundStrength);
-    base=base*(1.-projected.a)+projected.rgb;
+    float under=1.-forestResolvedCover;
+    base=base*(1.-projected.a*under)+projected.rgb*under;
+    if(groundContours==1 && s.x>0.){
+      float v=s.x/groundContourStep,dv=max(fwidth(v),1e-6),k=floor(v+.5);
+      bool major=mod(k,5.)<.5;
+      float line=k<.5?0.:clamp((major?1.25:.7)*.5+.5-abs(v-k)/dv,0.,1.);
+      float thin=mix(major?0.:line*.5,min(1.,.8*dv*.7)*.5,smoothstep(.3,.7,dv));
+      float index=mix(major?line*.75:0.,min(1.,.2*dv*1.25)*.75,smoothstep(.3,.7,dv*5.));
+      float a=(1.-(1.-thin)*(1.-index))*groundContourOpacity;
+      a*=smoothstep(.25*groundFlatSlope,.5*groundFlatSlope,length(s.yz));
+      base=mix(base,groundContourColor,a);
+    }
   } else {
     float light=.89+.11*max(0.,dot(normalize(normal),normalize(vec3(-.4,.8,-.3))));
     base*=light;
@@ -253,6 +288,12 @@ export class Terrain3d {
   private clippedIndices = new Map<string, { buffer: WebGLBuffer; count: number }>();
   private material!: WebGLTexture;
   private macroTexture!: WebGLTexture;
+  private empty!: WebGLTexture;
+  private waterMasks = new Map<WebGLTexture, { texture: WebGLTexture; rect: readonly [number, number, number]; bytes: number }>();
+  private forestField?: ForestField;
+  private forestOccupation?: ForestOccupation;
+  private forest?: { field: ForestField; texture: WebGLTexture };
+  private occupation?: { data: ForestOccupation; texture: WebGLTexture };
   private indexCount = 0;
   private layer?: HeightLayer;
   private water?: WaterSurface;
@@ -330,6 +371,10 @@ export class Terrain3d {
     gl.bindBuffer(gl.ARRAY_BUFFER, this.seams); gl.bufferData(gl.ARRAY_BUFFER, (surfaceVertices + 4 * side) * 3 * 4, gl.DYNAMIC_DRAW);
     this.material = this.uploadTexture(new Uint8Array([203, 211, 182, 255]));
     this.macroTexture=this.uploadMacroField(this.layer);
+    this.empty = this.uploadMacroField();
+    // A restored context comes back empty: re-upload the retained forest rasters.
+    this.forest = this.occupation = undefined;
+    this.setForest(this.forestField, this.forestOccupation);
   }
   private uploadMacroField(layer?:HeightLayer):WebGLTexture {
     const gl=this.gl,texture=gl.createTexture()!;
@@ -441,6 +486,21 @@ export class Terrain3d {
     this.request();
   }
   setTileBoundaries(visible: boolean): void { this.tileBounds = visible; this.request(); }
+  /** Render3D forest: texture uploads only, no mesh or material tile rebuild. */
+  setForest(field: ForestField | undefined, occupation?: ForestOccupation): void {
+    const gl = this.gl;
+    occupation = field ? occupation : undefined;
+    this.forestField = field; this.forestOccupation = occupation;
+    if (field !== this.forest?.field) {
+      if (this.forest) gl.deleteTexture(this.forest.texture);
+      this.forest = field && { field, texture: forestTexture(gl, field, true) };
+    }
+    if (occupation !== this.occupation?.data) {
+      if (this.occupation) gl.deleteTexture(this.occupation.texture);
+      this.occupation = occupation && { data: occupation, texture: forestTexture(gl, occupation, false) };
+    }
+    this.request();
+  }
   setTileLoader(loader: ((tile: Terrain3dTile) => Promise<TexImageSource | Terrain3dTileContent>) | undefined, requireHeights = false): void {
     if (this.requireHeights !== requireHeights) { this.requireHeights = requireHeights; this.clearPatches(); }
     this.tileLoader = loader; this.invalidateTiles();
@@ -448,8 +508,8 @@ export class Terrain3d {
   invalidateTiles(): void {
     ++this.epoch;
     for (const patch of this.patches.values()) {
-      if (patch.texture) this.gl.deleteTexture(patch.texture);
-      if (patch.pendingTexture) this.gl.deleteTexture(patch.pendingTexture);
+      if (patch.texture) this.releaseMaterial(patch.texture);
+      if (patch.pendingTexture) this.releaseMaterial(patch.pendingTexture);
       patch.texture = undefined; patch.textureBytes = 0; patch.status = 'idle'; patch.textureFadeStart = 0; patch.textureProgress = 0; patch.materialParent = undefined;
       patch.pendingTexture = undefined; patch.pendingTextureBytes = 0; patch.pendingHeights = undefined;
     }
@@ -665,7 +725,7 @@ export class Terrain3d {
     }
     patch.heights = heights; patch.hasHeight = true; patch.pendingHeights = undefined;
     if (patch.pendingTexture) {
-      if (patch.texture) this.gl.deleteTexture(patch.texture);
+      if (patch.texture) this.releaseMaterial(patch.texture);
       patch.texture = patch.pendingTexture; patch.textureBytes = patch.pendingTextureBytes;
       patch.textureGutter=patch.pendingTextureGutter;
       patch.pendingTexture = undefined; patch.pendingTextureBytes = 0; patch.textureFadeStart = 0;
@@ -783,10 +843,20 @@ export class Terrain3d {
           }
         }
         const gutter=Math.max(0,Math.min(8,Math.round(content.gutter??0)));
-        const texture = this.uploadTexture(source), textureBytes = (TILE_PIXELS+2*gutter+2)**2*4*4/3;
+        const texture = this.uploadTexture(source);
+        let textureBytes = (TILE_PIXELS+2*gutter+2)**2*4*4/3;
+        if(content.water){
+          const water=content.water,gl=this.gl,mask=gl.createTexture()!;
+          gl.bindTexture(gl.TEXTURE_2D,mask);gl.pixelStorei(gl.UNPACK_ALIGNMENT,1);gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,false);
+          gl.texImage2D(gl.TEXTURE_2D,0,gl.R8,water.n,water.n,0,gl.RED,gl.UNSIGNED_BYTE,water.alpha);
+          gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
+          gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+          this.waterMasks.set(texture,{texture:mask,rect:[water.x,water.y,water.width],bytes:water.alpha.byteLength});
+          textureBytes+=water.alpha.byteLength;
+        }
         if (deferred) { patch.pendingTexture = texture; patch.pendingTextureBytes = textureBytes;patch.pendingTextureGutter=gutter; }
         else {
-          if (patch.texture) this.gl.deleteTexture(patch.texture);
+          if (patch.texture) this.releaseMaterial(patch.texture);
           patch.texture = texture; patch.textureBytes = textureBytes; patch.textureFadeStart = 0; patch.textureProgress = 0;
           patch.textureGutter=gutter;
         }
@@ -948,12 +1018,20 @@ export class Terrain3d {
     } });
     gl.uniform3f(gl.getUniformLocation(this.terrainProgram, 'patchOffset'), patch.tile.x - c.x, patch.heightOrigin * c.exaggeration - frame.targetHeight, patch.tile.y - c.y);
     gl.uniform3f(gl.getUniformLocation(this.terrainProgram,'physicalOrigin'),patch.tile.x,patch.heightOrigin,patch.tile.y);
+    gl.uniform3f(gl.getUniformLocation(this.terrainProgram,'patchRect'),patch.tile.x,patch.tile.y,patch.tile.width);
     gl.uniform1f(gl.getUniformLocation(this.terrainProgram, 'morph'), incomingMorph);
     gl.uniform4fv(gl.getUniformLocation(this.terrainProgram, 'textureRect'), this.textureRect(material.to, patch.tile));
     gl.uniform4fv(gl.getUniformLocation(this.terrainProgram, 'previousRect'), this.textureRect(material.from, patch.tile));
     gl.uniform1f(gl.getUniformLocation(this.terrainProgram, 'textureBlend'), material.blend);
     gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, material.to.texture);
     gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, material.from.texture);
+    for(const [ref,prefix,unit] of [[material.to,'',6],[material.from,'previous',7]] as const){
+      const mask=this.waterMasks.get(ref.texture),name=prefix?'previousCanopyWater':'canopyWater';
+      gl.activeTexture(gl.TEXTURE0+unit);gl.bindTexture(gl.TEXTURE_2D,mask?.texture??this.empty);
+      gl.uniform1i(gl.getUniformLocation(this.terrainProgram,name),unit);
+      gl.uniform1i(gl.getUniformLocation(this.terrainProgram,prefix?'hasPreviousCanopyWater':'hasCanopyWater'),mask?1:0);
+      gl.uniform3f(gl.getUniformLocation(this.terrainProgram,`${name}Rect`),mask?.rect[0]??0,mask?.rect[1]??0,mask?.rect[2]??1);
+    }
     const side = GRID + 1, count = side * side, correction = new Float32Array((count + 4 * side) * 3);
     correction.set(stitched.correction);
     for (let edge = 0; edge < 4; edge++) for (let i = 0; i < side; i++) {
@@ -965,11 +1043,16 @@ export class Terrain3d {
     gl.enableVertexAttribArray(5); gl.vertexAttribPointer(5, 3, gl.FLOAT, false, 12, 0);
     gl.drawElements(gl.TRIANGLES, geometry.count, gl.UNSIGNED_SHORT, 0);
   }
+  private releaseMaterial(texture: WebGLTexture): void {
+    const mask=this.waterMasks.get(texture);
+    if(mask){this.gl.deleteTexture(mask.texture);this.waterMasks.delete(texture);}
+    this.gl.deleteTexture(texture);
+  }
   private releasePatch(patch: Patch, preserveMesh = false): void {
     if (!preserveMesh && patch.vao) this.gl.deleteVertexArray(patch.vao);
     if (!preserveMesh && patch.vertices) this.gl.deleteBuffer(patch.vertices);
-    if (patch.texture) this.gl.deleteTexture(patch.texture);
-    if (patch.pendingTexture) this.gl.deleteTexture(patch.pendingTexture);
+    if (patch.texture) this.releaseMaterial(patch.texture);
+    if (patch.pendingTexture) this.releaseMaterial(patch.pendingTexture);
   }
   private trim(): void {
     let bytes = 0;
@@ -1068,7 +1151,16 @@ export class Terrain3d {
       gl.uniform1i(gl.getUniformLocation(this.terrainProgram,'macroN'),this.layer.n);
       gl.activeTexture(gl.TEXTURE2);gl.bindTexture(gl.TEXTURE_2D,this.macroTexture);
       gl.uniform1i(gl.getUniformLocation(this.terrainProgram,'macroField'),2);
+      const contours=settings.contours;
+      gl.uniform1i(gl.getUniformLocation(this.terrainProgram,'groundContours'),contours?1:0);
+      gl.uniform1f(gl.getUniformLocation(this.terrainProgram,'groundContourStep'),contours?.step??1);
+      gl.uniform1f(gl.getUniformLocation(this.terrainProgram,'groundContourOpacity'),contours?.opacity??0);
+      gl.uniform1f(gl.getUniformLocation(this.terrainProgram,'groundFlatSlope'),contours?.flat ? .004 : .012);
+      if(contours){const value=contours.color.replace('#','');gl.uniform3f(gl.getUniformLocation(this.terrainProgram,'groundContourColor'),parseInt(value.slice(0,2),16)/255,parseInt(value.slice(2,4),16)/255,parseInt(value.slice(4,6),16)/255);}
     }
+    // Textures 3 forest field, 4 occupation.
+    bindForest(gl, name => gl.getUniformLocation(this.terrainProgram, name), this.forest, this.occupation, this.empty, !!settings, 3, 4);
+    bindForestBrushes(gl, name => gl.getUniformLocation(this.terrainProgram, name), !!settings?.forestBrushes, 5);
     gl.activeTexture(gl.TEXTURE0); gl.uniform1i(gl.getUniformLocation(this.terrainProgram, 'material'), 0);
     gl.uniform1i(gl.getUniformLocation(this.terrainProgram, 'previousMaterial'), 1);
     const drawn: Patch[] = [];
@@ -1168,9 +1260,13 @@ export class Terrain3d {
   dispose(): void {
     this.disposed = true; this.active = false; cancelAnimationFrame(this.frame); this.events.abort(); this.clearPatches();
     const gl = this.gl;
-    gl.deleteBuffer(this.indices); gl.deleteBuffer(this.seams); gl.deleteTexture(this.material);gl.deleteTexture(this.macroTexture); gl.deleteProgram(this.terrainProgram); gl.deleteProgram(this.skyProgram);
+    gl.deleteBuffer(this.indices); gl.deleteBuffer(this.seams); gl.deleteTexture(this.material);gl.deleteTexture(this.macroTexture); gl.deleteTexture(this.empty); gl.deleteProgram(this.terrainProgram); gl.deleteProgram(this.skyProgram);
     for (const geometry of this.clippedIndices.values()) gl.deleteBuffer(geometry.buffer);
     this.clippedIndices.clear();
+    if (this.forest) gl.deleteTexture(this.forest.texture);
+    if (this.occupation) gl.deleteTexture(this.occupation.texture);
+    this.forest = this.occupation = this.forestField = this.forestOccupation = undefined;
+    disposeForestBrushes(gl);
     this.textureSource = undefined; this.layer = undefined; this.water = undefined; this.heightSampler = undefined; this.tileLoader = undefined; this.pointers.clear();
   }
 }

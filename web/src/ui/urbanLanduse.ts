@@ -21,6 +21,10 @@ const landKinds: [LandKind, string][] = [['forest', 'Forêts'], ['orchard', 'Ver
 export function createUrbanLanduse(options: { map: SVGSVGElement; before: Element; onChange(): void; onPlanChange?(): void;
   getView(): { view: View; width: number; height: number };
   getBackground(): { image?: HTMLCanvasElement; opacity: number };
+  /** Render3D forest owns woodland: hide the cartoon forest fill and canopy, keep farmland. */
+  forestMaterial?(): boolean;
+  /** The displayed scene; `applied` is false for the city-less natural cover. */
+  onScene?(scene: UrbanLanduseScene | undefined, applied: boolean): void;
 }) {
   const settings: Settings = { seed: '', biome: 'temperate', style: 'parchment', vegetation: 'canopy', painted: false, opacity: 1, visible: true, enabled: true, hiddenKinds: [], showFarms: true };
   try {
@@ -89,6 +93,7 @@ export function createUrbanLanduse(options: { map: SVGSVGElement; before: Elemen
   let sample: ReturnType<typeof fantasyLanduseSample> | undefined;
   let worker: Worker | undefined, fallback = false, id = 0, timer: ReturnType<typeof setTimeout> | undefined;
   let previous: Context | undefined, previousKey = '', previousWaiting = false;
+  let applied = false, requested = false, withoutForest = false;
   let renderer: CanvasRenderer | undefined, renderWorld: World | undefined, renderScene: Scene | undefined;
   let canvas: HTMLCanvasElement | undefined, host: SVGForeignObjectElement | undefined, frame = 0, rendererDpr = 1;
   let brushImages: BrushImages | undefined, brushPromise: Promise<void> | undefined;
@@ -115,8 +120,9 @@ export function createUrbanLanduse(options: { map: SVGSVGElement; before: Elemen
       host = landuseLayer.querySelector('foreignObject')!;
       canvas = document.createElement('canvas'); canvas.id = 'landuseCanvas'; canvas.style.display = 'block'; host.append(canvas);
     }
+    if (withoutForest !== !!options.forestMaterial?.()) { withoutForest = !withoutForest; renderWorld = undefined; renderScene = undefined; }
     renderWorld ??= urbanLanduseRenderWorld({ ...scene, landuse: scene.landuse && { ...scene.landuse,
-      areas: scene.landuse.areas.filter(a => !settings.hiddenKinds.includes(a.kind)),
+      areas: scene.landuse.areas.filter(a => !settings.hiddenKinds.includes(a.kind) && !(withoutForest && a.kind === 'forest')),
       farmsteads: settings.showFarms ? scene.landuse.farmsteads : [] } }, context.raster);
     const pal = { ...biomePalette(settings.style, scene.options.biome), frameKind: 'none' as const };
     const background = options.getBackground();
@@ -160,7 +166,7 @@ export function createUrbanLanduse(options: { map: SVGSVGElement; before: Elemen
     if (response.id !== id) return;
     worker?.terminate(); worker = undefined;
     if ('error' in response) { state(`Occupation du territoire : ${response.error}`); return; }
-    scene = response.scene; renderWorld = undefined; renderScene = undefined; draw(); notify();
+    scene = response.scene; applied = requested; renderWorld = undefined; renderScene = undefined; draw(); notify();
     const stats = scene.stats;
     q('landuseState').textContent = `${stats.areas} zones`;
     state(`${stats.areas} zones · ${stats.fieldHa ?? 0} ha cultivés · ${stats.strips ?? 0} bandes · ${stats.ms} ms`);
@@ -171,6 +177,7 @@ export function createUrbanLanduse(options: { map: SVGSVGElement; before: Elemen
     scene = undefined;
     notify(); draw();
     const request = { id, input: { ...context, seed: settings.seed || context.seed, biome: settings.biome } };
+    requested = !!request.input.city;
     state('Génération des champs et de la végétation…', true);
     const runFallback = (): void => {
       worker?.terminate(); worker = undefined; fallback = true;
@@ -208,6 +215,7 @@ export function createUrbanLanduse(options: { map: SVGSVGElement; before: Elemen
   function notify(): void {
     sample = settings.enabled && scene?.landuse ? fantasyLanduseSample(scene.landuse, scene.mapSize) : undefined;
     options.onPlanChange?.();
+    options.onScene?.(settings.enabled ? scene : undefined, applied);
   }
   enabled.onchange = () => {
     settings.enabled = enabled.checked; cancel(); draw(); notify(); schedule(); options.onChange();
@@ -229,6 +237,8 @@ export function createUrbanLanduse(options: { map: SVGSVGElement; before: Elemen
     get sample() { return sample; },
     updateView,
     refreshBackground: draw,
+    /** Re-evaluate the Render3D forest suppression after a style or forest change. */
+    refreshForest(): void { if (withoutForest !== !!options.forestMaterial?.()) draw(); },
     set(next?: Context, pending = false): void {
       context = next; waiting = pending;
       const key = next ? JSON.stringify({ seed: next.seed, city: next.city, neighbours: next.neighbours, relief: next.relief }) : '';

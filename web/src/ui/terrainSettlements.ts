@@ -13,6 +13,9 @@ import { createTerrainUrban } from './terrainUrban';
 import { captureDecor, downloadBytes } from './decorCapture';
 import { decorEntry, encodeDecor, type Decor, type DecorEntry } from './decor';
 import type { UrbanPaintingContext } from '../../../rust/bridge/urbanPaintingMask';
+import type { ForestOccupation } from '../../../rust/bridge/terrainForest';
+import type { UrbanLanduseScene } from './urbanLanduseData';
+import { forestOccupation } from './forestOccupation';
 
 const ns = 'http://www.w3.org/2000/svg';
 // Small cartographic silhouettes, centred on the settlement's actual position.
@@ -44,6 +47,10 @@ export function createTerrainSettlements(options: {
   map: SVGSVGElement; viewport: HTMLElement; getTerrain(): TerrainData | undefined; getSettings(): TerrainSettings;
   active?: boolean; parcelDefault?: boolean; getRaster?(): import('../../../rust/bridge/settlements').SettlementRaster | undefined; getDecor?(): Decor | undefined;
   getView(): View; getAuto?(): boolean; getQuery?(): string; onChange(): void; onPlanChange?(): void; onPicking(): void; onFocus?(center: Point, radius: number): void;
+  /** Render3D forest material is displayed: it replaces the cartoon landuse woods. */
+  useForestMaterial?(): boolean;
+  /** Applied rural occupation in the displayed terrain frame, or undefined. */
+  onForestOccupation?(occupation: ForestOccupation | undefined): void;
 }) {
   const { map, viewport } = options;
   let restoringDecor = false;
@@ -116,12 +123,27 @@ export function createTerrainSettlements(options: {
     document.querySelector('#lightingControls .lighting-fields')!.append(label);
   }
   map.addEventListener('urban:settings', event => publishOptions((event as CustomEvent).detail));
+  // Only an applied rural plan constrains the forest; natural cover never does.
+  let landuseScene: UrbanLanduseScene | undefined, occupationScene: UrbanLanduseScene | undefined;
+  let occupation: ForestOccupation | undefined, published: ForestOccupation | undefined;
   const landuse = options.active === false ? undefined : createUrbanLanduse({ map, before: backend ?? panel,
     onChange: options.onChange,
     onPlanChange: () => options.onPlanChange?.(),
     getView: () => ({ view: options.getView(), width: viewport.clientWidth, height: viewport.clientHeight }),
     getBackground: () => ({ opacity: 0 }),
+    forestMaterial: () => !!options.useForestMaterial?.(),
+    onScene: (scene, applied) => { landuseScene = applied ? scene : undefined; publishForest(false); },
   });
+  function publishForest(always: boolean): void {
+    let next: ForestOccupation | undefined;
+    const width = options.getTerrain()?.width;
+    // Landuse, retained decor and terrain share the frame rebased by cropTerrain: [0, width]².
+    if (options.useForestMaterial?.() && landuseScene?.landuse && width && Math.abs(landuseScene.mapSize - width) <= width * 1e-6) {
+      if (occupationScene !== landuseScene) { occupationScene = landuseScene; occupation = forestOccupation(landuseScene.landuse); }
+      next = occupation;
+    }
+    if (always || next !== published) { published = next; options.onForestOccupation?.(next); }
+  }
   function syncLanduse(): void {
     const t = options.getTerrain(), raster = options.getRaster?.() ?? (t ? settlementRaster(t) : undefined);
     if (!raster || !output || !enabled) { landuse?.set(); return; }
@@ -429,6 +451,8 @@ export function createTerrainSettlements(options: {
     },
     applyUrbanChanges: urban.applyPending,
     cancelPicking(): void { setPicking(); },
+    /** Style or forest settings changed: update the Canvas woods and republish the occupation. */
+    refreshForestMaterial(): void { landuse?.refreshForest(); publishForest(true); },
     terrainReady(): void { complete = true; needsPlacement = true; recalculate(); },
     terrainFailed(message: string): void {
       complete = false; ++id; clearTimeout(timer);

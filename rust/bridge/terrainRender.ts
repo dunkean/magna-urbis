@@ -1,5 +1,5 @@
 import { isFantasyStyle, renderFantasyTerrain, DEFAULT_FANTASY_OPTIONS, type FantasyOptions } from './fantasyTerrain';
-import { renderMaterialPixels } from './terrainMaterialRaster';
+import { renderMaterialRaster, type ForestRaster } from './terrainMaterialRaster';
 import { terrainLights, DEFAULT_TERRAIN_LAYERS, DEFAULT_TERRAIN_LIGHTING, type TerrainLayers, type TerrainLighting } from '../../web/src/render/terrainLighting';
 import type { World } from '../../web/src/gen/types';
 import { marchingSquares } from '../../web/src/gen/terrain/contour';
@@ -9,10 +9,15 @@ import { CANVAS_MAP_STROKES, mapStrokeWidth } from '../../web/src/render/strokes
 import { encodePng, pngDataUrl, renderTerrainPixels } from '../../web/src/render/raster';
 import type { TerrainData, TerrainSettings } from './terrain';
 
-import { terrainStyle, type TerrainStyle } from '../../web/src/render/terrainStyle';
+import { isRender3dStyle, terrainStyle, type TerrainStyle } from '../../web/src/render/terrainStyle';
 import { seaDistanceSurface, seaMaterialSvg } from '../../web/src/render/terrainWater';
 export type { TerrainStyle } from '../../web/src/render/terrainStyle';
-export interface TerrainScene { svg: string; imageUrl: string; contourStep: number; profile?: { pixelsMs: number; imageMs: number; contoursMs: number } }
+export interface TerrainScene {
+  svg: string; imageUrl: string; contourStep: number;
+  /** Local tile coordinates. Apply only to the river/lake group, before contours. */
+  waterMask?: { id: string; svg: string };
+  profile?: { pixelsMs: number; imageMs: number; contoursMs: number };
+}
 let coastClipId = 0;
 const contourPaths = new WeakMap<TerrainData, { relief: string; mapWidth: number; step: number; thin: string; index: string }>();
 
@@ -105,7 +110,8 @@ function renderElevation(terrain: TerrainData, frame: boolean, clipNamespace: st
 }
 
 /** Transitional renderer adapter. Rust never depends on the legacy World schema. */
-export function renderRustTerrain(terrain: TerrainData, style: TerrainStyle, frame = true, settings: Pick<TerrainSettings, 'relief' | 'width'> & Partial<Pick<TerrainSettings, 'seed' | 'climate' | 'climateValues'>> = { relief: 'mountains', width: terrain.width }, showContours = true, clipNamespace = 'main', lighting: TerrainLighting = DEFAULT_TERRAIN_LIGHTING, layers: TerrainLayers = DEFAULT_TERRAIN_LAYERS, fantasyOptions: FantasyOptions = DEFAULT_FANTASY_OPTIONS, paintBrushes = true, waterStyle: TerrainStyle = style): TerrainScene {
+/** settings.forest: display-only Render3D forest raster input (field, occupation); absent keeps the legacy canopy. */
+export function renderRustTerrain(terrain: TerrainData, style: TerrainStyle, frame = true, settings: Pick<TerrainSettings, 'relief' | 'width'> & Partial<Pick<TerrainSettings, 'seed' | 'climate' | 'climateValues'>> & { forest?: Omit<ForestRaster, 'light'> } = { relief: 'mountains', width: terrain.width }, showContours = true, clipNamespace = 'main', lighting: TerrainLighting = DEFAULT_TERRAIN_LIGHTING, layers: TerrainLayers = DEFAULT_TERRAIN_LAYERS, fantasyOptions: FantasyOptions = DEFAULT_FANTASY_OPTIONS, paintBrushes = true, waterStyle: TerrainStyle = style): TerrainScene {
   frame &&= layers.frame;
   if (style === 'copernicus') {
     const scene = renderElevation(terrain, frame, clipNamespace, waterStyle, layers.water !== false, settings.width, layers.relief);
@@ -131,14 +137,17 @@ export function renderRustTerrain(terrain: TerrainData, style: TerrainStyle, fra
     heightRange: { min: Math.max(0, terrain.globalMinHeight), max: terrain.globalMaxHeight }, exaggeration: 2,
     grainCoordinates: { x: terrain.x, y: terrain.y, cell: terrain.motifSize / 512 },
   });
-  if ((style === 'render' || style === 'render3d') && layers.hypsometry) {
-    const material = renderMaterialPixels(terrain, { seed: settings.seed ?? '42', climate: settings.climate, climateValues: settings.climateValues }, style === 'render3d');
+  let canopyAlpha: Uint8Array | undefined;
+  if ((style === 'render' || isRender3dStyle(style)) && layers.hypsometry) {
+    const material = renderMaterialRaster(terrain, { seed: settings.seed ?? '42', climate: settings.climate, climateValues: settings.climateValues }, isRender3dStyle(style),
+      settings.forest?.field && { ...settings.forest, brushes: style === 'render3d-brush', light: terrainLights(lighting).primary });
+    if (isRender3dStyle(style) && settings.forest?.field) canopyAlpha = material.canopyAlpha;
     const neutral = renderTerrainPixels(legacyRasterInput, { ...pal, hypso: [[0, '#ffffff'], [1, '#ffffff']] }, {
       pixels: n, surface: terrain.height, normals: { x: terrain.normalX, y: terrain.normalY, z: terrain.normalZ }, lighting,
       heightRange: { min: Math.max(0, terrain.globalMinHeight), max: terrain.globalMaxHeight }, exaggeration: 2,
     });
     for (let i = 0; i < n * n; i++) for (let c = 0; c < 3; c++) {
-      pixels.rgb[i * 3 + c] = Math.round(material[i * 3 + c] * (terrain.height[i] >= 0 ? neutral.rgb[i * 3 + c] / 255 : 1));
+      pixels.rgb[i * 3 + c] = Math.round(material.rgb[i * 3 + c] * (terrain.height[i] >= 0 ? neutral.rgb[i * 3 + c] / 255 : 1));
     }
   }
   let sea = '';
@@ -162,6 +171,14 @@ export function renderRustTerrain(terrain: TerrainData, style: TerrainStyle, fra
   // identical while avoiding export-grade compression on the UI thread.
   const pixelsMs = performance.now() - started, imageStarted = performance.now();
   const background = pngDataUrl(encodePng(pixels.rgb, pixels.w, pixels.h, 3, 1));
+  let waterMask: TerrainScene['waterMask'];
+  if (layers.relief && canopyAlpha?.some(value => value !== 0)) {
+    const inverse = new Uint8Array(n * n * 4).fill(255);
+    for (let i = 0; i < canopyAlpha.length; i++) inverse[i * 4 + 3] = 255 - canopyAlpha[i];
+    const id = `terrain-canopy-${clipNamespace}-${++coastClipId}`;
+    const image = pngDataUrl(encodePng(inverse, n, n, 4, 1));
+    waterMask = { id, svg: `<defs><mask id="${id}" maskUnits="userSpaceOnUse" maskContentUnits="userSpaceOnUse" x="0" y="0" width="${width}" height="${width}" style="mask-type:alpha"><image width="${width}" height="${width}" href="${image}"/></mask></defs>` };
+  }
   const imageMs = performance.now() - imageStarted, contourStarted = performance.now();
   // The engine samples a continuous physical surface for each camera region.
   // Contours use those same samples; their levels remain fixed across cameras.
@@ -179,10 +196,11 @@ export function renderRustTerrain(terrain: TerrainData, style: TerrainStyle, fra
   }
   const weights = terrainContourWidths(style, 1e-6);
   let svg = `<rect width="${width}" height="${width}" fill="${pal.paper}"/>`;
+  if (waterMask) svg += waterMask.svg;
   if (!layers.relief && coastal && layers.water !== false) svg += sea + `<path d="${terrainLandClip(terrain)}" fill="${pal.paper}" fill-rule="evenodd"/>`;
   if (layers.relief) svg += coastal ? coastImage(terrain, background, sea, clipNamespace) : `<image width="${width}" height="${width}" href="${background}"/>`;
   if (paintBrushes && clipNamespace !== 'detail' && isFantasyStyle(style) && layers.relief) svg += renderFantasyTerrain(terrain, style, { ...settings, seed: settings.seed ?? '42' }, fantasyOptions);
   if (!cavern && showContours && !isFantasyStyle(style)) svg += `<g class="layer-contours" fill="none" stroke="${pal.contour}" stroke-linejoin="round" stroke-linecap="round"><path d="${paths!.thin}" style="stroke-width:var(--terrain-contour-width,${weights.thin}px)" vector-effect="non-scaling-stroke" opacity="${pal.contourOpacity * 0.5}"/><path d="${paths!.index}" style="stroke-width:var(--terrain-contour-index-width,${weights.index}px)" vector-effect="non-scaling-stroke" opacity="${pal.contourOpacity * 0.75}"/></g>`;
   if (frame) svg += `<rect x="0" y="0" width="${width}" height="${width}" fill="none" stroke="${pal.frame}" stroke-width="1.2" vector-effect="non-scaling-stroke"/>`;
-  return { svg, imageUrl: background, contourStep: cavern || isFantasyStyle(style) ? 0 : step, profile: { pixelsMs, imageMs, contoursMs: performance.now() - contourStarted } };
+  return { svg, imageUrl: background, contourStep: cavern || isFantasyStyle(style) ? 0 : step, waterMask, profile: { pixelsMs, imageMs, contoursMs: performance.now() - contourStarted } };
 }

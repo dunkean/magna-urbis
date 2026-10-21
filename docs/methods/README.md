@@ -21,3 +21,5 @@ service.
 
 - [Render3D: multiscale ground, material and mesh](render3d-ground.md)
 - [Fantasy brushes guided by territory occupation](fantasy-landuse.md)
+- [Render3D: forest field, crowns and applied occupation](render3d-vegetation.md)
+- [Render3DBrush: biome brushes in the forest material](render3d-brush.md)

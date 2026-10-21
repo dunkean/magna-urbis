@@ -67,6 +67,12 @@ dernier devient le diagnostic Altitude avec le style Parchment.
 
 ## Sol procédural Render3D
 
+`Render3DBrush` conserve ce matériau et remplace les couronnes analytiques de
+la forêt par 32 motifs Fantasy teintés selon la palette Render3D. Même champ
+forestier et LOD en 2D, perspective et export raster ; voir la
+[note de méthode](methods/render3d-brush.md), aussi disponible depuis le `?`
+du sélecteur de style, hors ligne.
+
 La [note scientifique en anglais](methods/render3d-ground.md) décrit le champ,
 les équations, le filtrage, les références et les limites de cette intégration.
 
@@ -109,6 +115,43 @@ bandes et une approximation de variance des pentes ; elle ne constitue pas un
 port complet de ces trois travaux. Elle ne simule pas l'érosion, les ombres de
 chaque grain ou des surplombs. Un détail sous-pixel influence la réflectance,
 sans créer une silhouette que le maillage ne pourrait représenter.
+
+## Forêt Render3D et occupation appliquée
+
+La [note scientifique en anglais](methods/render3d-vegetation.md) décrit le
+champ forestier, les houppiers, le filtrage, la calibration empirique CHMv2 et
+leurs limites.
+
+**Principe**
+- Les commandes `forestEnabled`, `forestDensity` et `forestClearings` agissent
+  sur l'affichage seulement. Elles n'apparaissent qu'avec le style `Render3D`.
+- Elles restent hors de `TerrainSettings`. Les liens portent `forest=0|1`, puis
+  `forestDensity` et `forestClearings` lorsqu'ils diffèrent des valeurs par défaut.
+- Un champ canonique RGBA8 est calculé une fois sur le relief retenu.
+  - R : couvert ; G : hauteur 0–50 m ; B : part de résineux ; A : tonalité du peuplement.
+  - La carte 2D, la vue 3D et l'export raster l'échantillonnent en coordonnées monde.
+- « Canopée détaillée » décochée, `Render3D` retrouve son rendu antérieur, avec
+  la teinte forestière grossière d'origine. Le style `Render` ne compile pas ce chemin.
+
+**Occupation appliquée**
+- Dans l'étape Settlements, l'occupation du territoire appliquée devient une
+  texture de distances signées, produite par `web/src/ui/forestOccupation.ts`.
+  - Champs, prés, pâtures, vergers, jardins, communaux et emprises bâties ouvrent la forêt.
+  - Les bois du plan rural restent boisés.
+  - Les marais restent naturels.
+- La couverture naturelle produite sans ville (`generateNaturalCover`) ne
+  contraint jamais le matériau.
+- Les polygones, le raster du décor et le terrain affiché partagent le repère
+  `[0, largeur]²`, y compris après une portion alignée sur les cellules. Un
+  écart de largeur suspend la contrainte.
+- Lorsque la forêt Render3D est active, le calque Canvas d'occupation masque
+  ses forêts dessinées. Champs, sillons, haies, vergers, jardins et fermes
+  restent visibles. Les autres styles conservent le dessin complet.
+
+**Limite actuelle :** la perspective n'existe que dans l'étape Terrain, sans
+occupation. Les découpes agricoles se voient donc dans la carte 2D Render3D de
+l'étape Settlements. Les afficher en 3D demanderait d'ouvrir la perspective à
+cette étape, ce qui n'est pas prévu ici.
 
 ## Vérification
 

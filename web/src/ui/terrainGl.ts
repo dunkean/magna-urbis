@@ -1,5 +1,7 @@
 import { NEURAL_EARTH_MATERIAL_GLSL } from '../../../rust/bridge/terrainMaterial';
 import { RENDER_3D_MATERIAL_GLSL } from '../../../rust/bridge/terrainMaterial3d';
+import { FOREST_GLSL, FOREST_PRELUDE_GLSL, type ForestField, type ForestOccupation } from '../../../rust/bridge/terrainForest';
+import { bindForestBrushes, disposeForestBrushes } from '../render/forestBrushAtlas';
 import { createGroundDisplacementSampler } from '../../../rust/bridge/terrainGround';
 import { terrainLights, type TerrainLayers, type TerrainLighting } from '../render/terrainLighting';
 import { SEA_BAND_WIDTH } from '../render/terrainSea';
@@ -18,8 +20,9 @@ import { lakeDistances, seaDistanceSurface, type WaterSurface } from '../render/
  *   with hydraulic widths interpolated in world metres.
  * Heights in metres, coordinates in metres from the map's north-west corner.
  */
-import { terrainStyle, type TerrainStyle } from '../render/terrainStyle';
+import { isRender3dStyle, terrainStyle, type TerrainStyle } from '../render/terrainStyle';
 import { WATER_STYLE_GLSL, waterUniforms } from '../render/waterStyle';
+import { paintRetainedWater, retainedWaterPaths, type RetainedWaterPath } from '../render/retainedWaterGeometry';
 import { CANVAS_MAP_STROKES, mapStrokeWidth } from '../render/strokes';
 import type { View } from '../render/view';
 import { FRACTAL_ROTATIONS, type FractalDetail } from '../../../rust/bridge/terrainAdjust';
@@ -82,6 +85,9 @@ void main() {
   gl_Position = vec4(p.x / uCanvas.x * 2.0 - 1.0, 1.0 - p.y / uCanvas.y * 2.0, 0.0, 1.0);
 }`;
 
+/** The ground GLSL may already carry the forest functions; never declare them twice. */
+export const RENDER_3D_FOREST_GLSL = RENDER_3D_MATERIAL_GLSL.includes('applyForest(') ? '' : FOREST_GLSL;
+
 const TERRAIN_FS = `#version 300 es
 precision highp float; precision highp int; precision highp sampler2D;
 out vec4 outColor;
@@ -95,6 +101,7 @@ uniform float uAlpha; uniform int uBase;
 uniform sampler2D uCave; uniform int uHasCave;
 uniform sampler2D uLake; uniform int uHasLake; uniform float uLakeN; // uHasLake: 1 procedural shore, 2 exact shore
 uniform sampler2D uOverlay; uniform int uHasOverlay;
+uniform sampler2D uWaterLayer; uniform int uUseWaterLayer;
 uniform int uWaterVisible; uniform int uRelief; uniform int uMode;             // 0 shaded, 1 elevation colours
 uniform vec3 uPaper, uSea, uBackground, uFrameColor, uContourColor;
 uniform vec3 uShore; uniform int uCoastalSea;
@@ -219,8 +226,15 @@ float hillshade(vec2 gradient) {
   return clamp(1.0 + uShade * (dd > 0.0 ? 1.0 : 0.8) * dd * 1.15, 0.58, 1.25);
 }
 
+${FOREST_PRELUDE_GLSL}
+float forestWaterCoverage(vec2 world) {
+  if(uUseWaterLayer==0)return 0.;
+  vec2 uv=(world-uOrigin)/(uPx*uCanvas);
+  return textureLod(uWaterLayer,vec2(uv.x,1.-uv.y),0.).a;
+}
 ${NEURAL_EARTH_MATERIAL_GLSL}
 ${RENDER_3D_MATERIAL_GLSL}
+${RENDER_3D_FOREST_GLSL}
 ${WATER_STYLE_GLSL}
 vec3 naturalMaterial(vec3 s, vec2 world) {
   float r=max(300.,uFieldCell*2.);
@@ -236,6 +250,7 @@ vec3 naturalMaterial(vec3 s, vec2 world) {
     vec3 base=level(0,world);
     vec3 macro=earthMaterial(base,world,max(uPx,1.),(base.x-mean)/(6.*r),shore,openness);
     GroundMaterial m=terrainGroundMaterial(base,world,uPx,macro,uMaterialClimate,uMaterialSeed);
+    if(uForest==1) applyForest(m,world,uPx,uLight.xzy);
     return shadeTerrainGround(m,vec3(0.,1.,0.),uLight.xzy,uLight2.xzy,uRockStrength);
   }
   return earthMaterial(s,world,max(uPx,1.),(s.x-mean)/(6.*r),shore,openness);
@@ -292,7 +307,7 @@ void main() {
     if (uFloor > 0.0) s.x = max(s.x, uFloor);
     // Contours follow the raster surface: refinement adds relief, not ink.
     vec3 raster = s;
-    if(uEnhanced3d==1) {
+    if(uEnhanced3d==1 && uGroundCapture==0) {
       if(uRefinementMode==1 && s.x>0.) s+=terrain3dDetail(world,s);
       if(uRefinementMode==2) {
         float a=refinedCoverage(uPreviousRefinedRect,uPreviousRefinedN,world);
@@ -301,7 +316,7 @@ void main() {
         if(a>0.) s=mix(s,refinedSurface(uRefined,uRefinedRect,uRefinedN,world),a);
       }
       raster=s;
-    } else if (uRefine == 1 && s.x > 0.0 && uPx * 2.0 < uSourceCell * uDetailA.w) s += detail(world, s);
+    } else if (uGroundCapture==0 && uRefine == 1 && s.x > 0.0 && uPx * 2.0 < uSourceCell * uDetailA.w) s += detail(world, s);
     float grad = length(s.yz);
     // Antialiased coast at the zero level (screen-space width of the height ramp).
     float ramp = max(grad * uPx, 1e-4);
@@ -320,6 +335,25 @@ void main() {
       color = mix(color, vec3(shade), rock);
       coverage=rock+coverage*(1.-rock);
     }
+    if (uUseWaterLayer==1) {
+      vec4 water=texelFetch(uWaterLayer,ivec2(gl_FragCoord.xy),0);
+      float under=1.-forestResolvedCover;
+      color=color*(1.-water.a*under)+water.rgb*under;
+    } else if (uWaterVisible == 1 && uHasLake > 0) {
+      float m = lakeShore(world, uHasLake == 1);
+      float w = max(fwidth(m), 1e-4);
+      vec3 lakeColor;
+      {
+        vec2 g = clamp(world * uLakeN / uMapW - 0.5, vec2(0.), vec2(uLakeN - 1.));
+        ivec2 p = ivec2(floor(g)), q = min(p + 1, ivec2(int(uLakeN) - 1));
+        vec2 f = fract(g);
+        float distance = mix(mix(texelFetch(uLake,p,0).g,texelFetch(uLake,ivec2(q.x,p.y),0).g,f.x),mix(texelFetch(uLake,ivec2(p.x,q.y),0).g,texelFetch(uLake,q,0).g,f.x),f.y);
+        lakeColor = styledWater(max(distance, 0.) / uSeaBand);
+      }
+      float a=clamp(m/w+.5,0.,1.);
+      color = mix(color,lakeColor,a);
+      coverage=a+coverage*(1.-a);
+    }
     if (uContours == 1 && s.x > 0.0 && uMode != 1) {
       float v = raster.x / uStep;
       float slope = length(raster.yz);
@@ -336,21 +370,6 @@ void main() {
       // Near-flat ground draws wandering loops: keep contours on slopes.
       a *= smoothstep(0.25 * uFlatSlope, 0.5 * uFlatSlope, slope);
       color = mix(color, uContourColor, a);
-      coverage=a+coverage*(1.-a);
-    }
-    if (uWaterVisible == 1 && uHasLake > 0) {
-      float m = lakeShore(world, uHasLake == 1);
-      float w = max(fwidth(m), 1e-4);
-      vec3 lakeColor;
-      {
-        vec2 g = clamp(world * uLakeN / uMapW - 0.5, vec2(0.), vec2(uLakeN - 1.));
-        ivec2 p = ivec2(floor(g)), q = min(p + 1, ivec2(int(uLakeN) - 1));
-        vec2 f = fract(g);
-        float distance = mix(mix(texelFetch(uLake,p,0).g,texelFetch(uLake,ivec2(q.x,p.y),0).g,f.x),mix(texelFetch(uLake,ivec2(p.x,q.y),0).g,texelFetch(uLake,q,0).g,f.x),f.y);
-        lakeColor = styledWater(max(distance, 0.) / uSeaBand);
-      }
-      float a=clamp(m/w+.5,0.,1.);
-      color = mix(color,lakeColor,a);
       coverage=a+coverage*(1.-a);
     }
     if (uHasOverlay == 1) {
@@ -442,6 +461,12 @@ export class TerrainGl {
   readonly gl: WebGL2RenderingContext;
   private terrain: WebGLProgram; private river: WebGLProgram; private composite: WebGLProgram;
   private riverTarget?: { framebuffer: WebGLFramebuffer; texture: WebGLTexture; width: number; height: number };
+  private waterTarget?: { framebuffer: WebGLFramebuffer; texture: WebGLTexture; width: number; height: number };
+  private retainedWaterKey = '';
+  private retainedWaterPaths: readonly RetainedWaterPath[] = [];
+  private retainedWaterCanvas?: HTMLCanvasElement;
+  private retainedWaterTexture?: WebGLTexture;
+  private retainedWaterViewKey = '';
   private captureTarget?: { framebuffer: WebGLFramebuffer; texture: WebGLTexture; width: number; height: number };
   private locations = new Map<string, WebGLUniformLocation | null>();
   private riverLocations = new Map<string, WebGLUniformLocation | null>();
@@ -452,6 +477,9 @@ export class TerrainGl {
   private lake?: WebGLTexture; private lakeMode = 0; private lakeN = 0;
   private overlay?: WebGLTexture;
   private coastDistance?: WebGLTexture;
+  /** Canonical Render3D forest field and applied occupation, sampled by world coordinates. */
+  private forest?: { field: ForestField; texture: WebGLTexture };
+  private occupation?: { data: ForestOccupation; texture: WebGLTexture };
   private lakeInput?: Float32Array;
   private lakeWidth = 0;
   private seaSurface?: WaterSurface;
@@ -565,6 +593,17 @@ export class TerrainGl {
     this.request();
   }
 
+  /** Retained exports keep exact SVG banks, including accumulated crop transforms.
+   * Cache vector paths once; rasterize only the visible viewport, without readback. */
+  setRetainedWater(svg: string | undefined, width = 1): void {
+    const key = svg ? `${width}:${svg}` : '';
+    if (key === this.retainedWaterKey) return;
+    this.retainedWaterKey = key;
+    this.retainedWaterViewKey = '';
+    this.retainedWaterPaths = svg ? retainedWaterPaths(svg, width) : [];
+    this.request();
+  }
+
   setWater(water: WaterLayer | undefined): void {
     const gl = this.gl;
     const width = this.look?.mapWidth ?? this.base?.layer.width ?? 0;
@@ -595,6 +634,21 @@ export class TerrainGl {
 
   setView(view: View, width: number, height: number): void { this.view = { view, width, height }; this.request(); }
 
+  /** Render3D forest: texture uploads only. `undefined` restores the legacy macro canopy exactly. */
+  setForest(field: ForestField | undefined, occupation?: ForestOccupation): void {
+    const gl = this.gl;
+    occupation = field ? occupation : undefined;
+    if (field !== this.forest?.field) {
+      if (this.forest) gl.deleteTexture(this.forest.texture);
+      this.forest = field && { field, texture: forestTexture(gl, field, true) };
+    }
+    if (occupation !== this.occupation?.data) {
+      if (this.occupation) gl.deleteTexture(this.occupation.texture);
+      this.occupation = occupation && { data: occupation, texture: forestTexture(gl, occupation, false) };
+    }
+    this.request();
+  }
+
   /** Reuse the map material for the perspective viewer without changing the 2D camera. */
   captureMap(size = 2048, groundOverlay = false): HTMLCanvasElement {
     if (!this.look) throw new Error('Le terrain est indisponible.');
@@ -602,7 +656,7 @@ export class TerrainGl {
   }
 
   /** Render a world-space LOD tile with the same material and detail as the map. */
-  captureRegion(region: { x: number; y: number; width: number }, size = 512, includeDetails = true, restoreDisplay = true, height?: HeightLayer, groundOverlay = false): HTMLCanvasElement {
+  captureRegion(region: { x: number; y: number; width: number }, size = 512, includeDetails = true, restoreDisplay = true, height?: HeightLayer, groundOverlay = false, alphaOnly?: Uint8Array): HTMLCanvasElement {
     if (!this.base || !this.look || this.gl.isContextLost()) throw new Error('Le terrain est indisponible.');
     const previous = this.view, details = this.details, look = this.look, enhanced = this.enhanced;
     const capturedHeight = height ? this.upload(height, false) : undefined;
@@ -612,23 +666,29 @@ export class TerrainGl {
     try {
       // Freeze the current regional detail at its final opacity for reproducible tiles.
       this.details = !groundOverlay && includeDetails && details.length ? [{ ...details[details.length - 1], fadeStart: -Infinity }] : [];
-      this.look = { ...look, frame: false, mesh3d: true, groundCapture: groundOverlay };
+      this.look = { ...look, frame: false, contours: groundOverlay ? false : look.contours, mesh3d: true, groundCapture: groundOverlay };
       this.enhanced = capturedHeight ? [{ ...capturedHeight, fadeStart: -Infinity }] : [];
       this.view = { view: { cx: region.x + region.width / 2, cy: region.y + region.width / 2, scale: size / region.width }, width: size, height: size };
       if (groundOverlay) {
         this.captureTarget = this.renderTarget(size,size,this.captureTarget);
         this.draw(1,includeDetails ? Math.min(2,window.devicePixelRatio||1) : 1,this.captureTarget.framebuffer);
-        const rgba=new Uint8Array(size*size*4), image=context.createImageData(size,size);
+        const rgba=new Uint8Array(size*size*4);
         this.gl.bindFramebuffer(this.gl.FRAMEBUFFER,this.captureTarget.framebuffer);
         this.gl.readPixels(0,0,size,size,this.gl.RGBA,this.gl.UNSIGNED_BYTE,rgba);
         // The framebuffer and river compositor store premultiplied radiance.
-        // Canvas ImageData requires straight RGB; retain its explicit coverage.
-        for(let y=0;y<size;y++)for(let x=0;x<size;x++){
-          const a=(y*size+x)*4,b=((size-1-y)*size+x)*4,alpha=rgba[b+3];
-          for(let c=0;c<3;c++)image.data[a+c]=alpha ? Math.min(255,Math.round(rgba[b+c]*255/alpha)) : 0;
-          image.data[a+3]=alpha;
+        // The centre mask needs alpha only, avoiding RGB conversion and another
+        // Canvas readback for its larger world-space bank halo.
+        if(alphaOnly){
+          for(let y=0;y<size;y++)for(let x=0;x<size;x++)alphaOnly[y*size+x]=rgba[((size-1-y)*size+x)*4+3];
+        } else {
+          const image=context.createImageData(size,size);
+          for(let y=0;y<size;y++)for(let x=0;x<size;x++){
+            const a=(y*size+x)*4,b=((size-1-y)*size+x)*4,alpha=rgba[b+3];
+            for(let c=0;c<3;c++)image.data[a+c]=alpha ? Math.min(255,Math.round(rgba[b+c]*255/alpha)) : 0;
+            image.data[a+3]=alpha;
+          }
+          context.putImageData(image,0,0);
         }
-        context.putImageData(image,0,0);
       } else {
         this.draw(1, includeDetails ? Math.min(2, window.devicePixelRatio || 1) : 1);
         context.drawImage(this.canvas, 0, 0);
@@ -642,11 +702,18 @@ export class TerrainGl {
     return output;
   }
 
+  /** Canonical 1 m water samples with a caller-supplied world-space halo. */
+  captureWaterMask(region: { x: number; y: number; width: number }): Uint8Array {
+    const n = Math.round(region.width), alpha = new Uint8Array(n * n);
+    this.captureRegion(region, n, false, false, undefined, true, alpha);
+    return alpha;
+  }
+
   createSurfaceSampler(): ((x: number, y: number, metresPerPixel?: number) => number) | undefined {
     if (!this.base || !this.look) return undefined;
     const base = this.base.layer, detail = this.details[this.details.length - 1]?.layer, look = this.look;
     const refine = (look.refinement3d ?? 'noise') === 'noise';
-    const ground=look.style==='render3d' && (look.refinement3d??'noise')!=='source';
+    const ground=isRender3dStyle(look.style) && (look.refinement3d??'noise')!=='source';
     const key = JSON.stringify([refine,ground,look.climate,look.floor,look.sourceCell,look.seed,look.detail]);
     if (!this.surfaceCache || this.surfaceCache.base !== base || this.surfaceCache.detail !== detail || this.surfaceCache.key !== key) {
       const sample=createTerrainSurfaceSampler(base,{...look,refine},detail?[detail]:[],true);
@@ -703,8 +770,12 @@ export class TerrainGl {
     gl.uniform1i(u('uRelief'), look.layers.relief ? 1 : 0); gl.uniform1i(u('uWaterVisible'), look.layers.water !== false ? 1 : 0);
     gl.uniform1ui(u('uMaterialSeed'), look.seed >>> 0);
     gl.uniform2f(u('uMaterialClimate'), look.climate?.temperature ?? 18, look.climate?.precipitation ?? 1000);
-    gl.uniform1i(u('uMode'), look.style === 'copernicus' ? 1 : look.layers.hypsometry && look.style === 'render3d' ? 3 : look.style === 'render' && look.layers.hypsometry ? 2 : 0);
-    gl.uniform1i(u('uEnhanced3d'), look.mesh3d || look.style === 'render3d' ? 1 : 0);
+    const mode = look.style === 'copernicus' ? 1 : look.layers.hypsometry && isRender3dStyle(look.style) ? 3 : look.style === 'render' && look.layers.hypsometry ? 2 : 0;
+    gl.uniform1i(u('uMode'), mode);
+    // Textures 7 forest field, 8 occupation. Other modes keep the legacy earth material.
+    bindForest(gl, u, this.forest, this.occupation, this.empty, mode === 3, 7, 8);
+    bindForestBrushes(gl, u, look.style === 'render3d-brush' && mode === 3, 9);
+    gl.uniform1i(u('uEnhanced3d'), look.mesh3d || isRender3dStyle(look.style) ? 1 : 0);
     gl.uniform1i(u('uRefinementMode'), look.refinement3d === 'source' ? 0 : look.refinement3d === 'neural-earth' ? 2 : 1);
     const refined = this.enhanced.at(-1), previousRefined = this.enhanced.at(-2);
     for (const [layer, name, unit] of [[refined, 'Refined', 5], [previousRefined, 'PreviousRefined', 6]] as const) {
@@ -780,13 +851,8 @@ export class TerrainGl {
       }
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
     };
-    drawLayer(this.base, true);
-    for (const detail of this.details) drawLayer(detail, false);
-    // A detail fully faded in hides the older ones beneath it.
-    let opaque = -1;
-    this.details.forEach((d, i) => { if (now - d.fadeStart >= 240) opaque = i; });
-    if (opaque > 0) { this.details.slice(0, opaque).forEach(d => this.release(d)); this.details = this.details.slice(opaque); }
-    if (this.riverCount && look.layers.water !== false) {
+    const renderRivers = (destination: WebGLFramebuffer | null): void => {
+      if (!this.riverCount || look.layers.water === false) return;
       const target = this.target(width, height);
       gl.bindFramebuffer(gl.FRAMEBUFFER, target.framebuffer);
       gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT);
@@ -803,13 +869,64 @@ export class TerrainGl {
       gl.bindVertexArray(this.riverVao);
       gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, this.riverCount);
       gl.bindVertexArray(null);
-      gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, destination);
       gl.blendEquation(gl.FUNC_ADD); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
       gl.useProgram(this.composite);
       gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, target.texture);
       gl.uniform1i(gl.getUniformLocation(this.composite, 'uLayer'), 0);
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    };
+    const renderRetainedWater = (destination: WebGLFramebuffer | null): void => {
+      if (!this.retainedWaterPaths.length || look.layers.water === false) return;
+      const canvas = this.retainedWaterCanvas ??= document.createElement('canvas');
+      this.retainedWaterTexture ??= gl.createTexture()!;
+      gl.activeTexture(gl.TEXTURE11); gl.bindTexture(gl.TEXTURE_2D, this.retainedWaterTexture);
+      const key = `${origin[0]},${origin[1]},${px},${width},${height},${water.stops[0][1]}`;
+      if (key !== this.retainedWaterViewKey) {
+        if (canvas.width !== width) canvas.width = width;
+        if (canvas.height !== height) canvas.height = height;
+        paintRetainedWater(canvas.getContext('2d')!, this.retainedWaterPaths,
+          { x: origin[0], y: origin[1], width: width * px, height: height * px }, { width, height }, water.stops[0][1]);
+        gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true); gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, canvas);
+        gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false); gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+        this.retainedWaterViewKey = key;
+      }
+      gl.bindFramebuffer(gl.FRAMEBUFFER, destination); gl.useProgram(this.composite);
+      gl.uniform1i(gl.getUniformLocation(this.composite, 'uLayer'), 11);
+      gl.enable(gl.BLEND); gl.blendEquation(gl.FUNC_ADD); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+      gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    };
+    const separateWater = isRender3dStyle(look.style) && look.layers.relief && look.layers.hypsometry && look.layers.water !== false && !look.groundCapture;
+    gl.uniform1i(u('uWaterLayer'), 10); gl.uniform1i(u('uUseWaterLayer'), 0);
+    gl.activeTexture(gl.TEXTURE10); gl.bindTexture(gl.TEXTURE_2D, this.empty);
+    if (separateWater) {
+      this.waterTarget = this.renderTarget(width, height, this.waterTarget);
+      gl.activeTexture(gl.TEXTURE10); gl.bindTexture(gl.TEXTURE_2D, this.waterTarget.texture);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      gl.bindTexture(gl.TEXTURE_2D, this.empty);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, this.waterTarget.framebuffer);
+      gl.uniform1i(u('uGroundCapture'), 1); gl.uniform1i(u('uContours'), 0);
+      gl.uniform1i(u('uHasOverlay'), 0); gl.uniform1i(u('uFrame'), 0);
+      drawLayer(this.base, true);
+      renderRivers(this.waterTarget.framebuffer);
+      renderRetainedWater(this.waterTarget.framebuffer);
+      gl.useProgram(this.terrain); gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
+      gl.uniform1i(u('uGroundCapture'), 0);
+      gl.uniform1i(u('uContours'), look.contours && look.contourStep > 0 ? 1 : 0);
+      gl.uniform1i(u('uHasOverlay'), this.overlay ? 1 : 0); gl.uniform1i(u('uFrame'), look.frame ? 1 : 0);
+      gl.activeTexture(gl.TEXTURE10); gl.bindTexture(gl.TEXTURE_2D, this.waterTarget.texture);
+      gl.uniform1i(u('uUseWaterLayer'), 1);
     }
+    drawLayer(this.base, true);
+    for (const detail of this.details) drawLayer(detail, false);
+    // A detail fully faded in hides the older ones beneath it.
+    let opaque = -1;
+    this.details.forEach((d, i) => { if (now - d.fadeStart >= 240) opaque = i; });
+    if (opaque > 0) { this.details.slice(0, opaque).forEach(d => this.release(d)); this.details = this.details.slice(opaque); }
+    if (!separateWater) { renderRivers(framebuffer); renderRetainedWater(framebuffer); }
     gl.disable(gl.BLEND);
     this.drawMs = performance.now() - started;
     if (animating) this.request();
@@ -842,10 +959,44 @@ export class TerrainGl {
     this.enhanced.forEach(d => this.release(d));
     if (this.lake) gl.deleteTexture(this.lake);
     if (this.overlay) gl.deleteTexture(this.overlay);
+    if (this.forest) gl.deleteTexture(this.forest.texture);
+    if (this.occupation) gl.deleteTexture(this.occupation.texture);
+    this.forest = this.occupation = undefined;
+    disposeForestBrushes(gl);
     gl.deleteBuffer(this.riverBuffer); gl.deleteVertexArray(this.riverVao);
     if (this.coastDistance) gl.deleteTexture(this.coastDistance);
     if (this.riverTarget) { gl.deleteFramebuffer(this.riverTarget.framebuffer); gl.deleteTexture(this.riverTarget.texture); }
+    if (this.waterTarget) { gl.deleteFramebuffer(this.waterTarget.framebuffer); gl.deleteTexture(this.waterTarget.texture); }
+    if (this.retainedWaterTexture) gl.deleteTexture(this.retainedWaterTexture);
     if (this.captureTarget) { gl.deleteFramebuffer(this.captureTarget.framebuffer); gl.deleteTexture(this.captureTarget.texture); }
     gl.deleteProgram(this.terrain); gl.deleteProgram(this.river); gl.deleteProgram(this.composite);
   }
+}
+
+/** RGBA8 world raster, clamped to its edges. Box mipmaps keep the field's mean cover at coarse footprints. */
+export function forestTexture(gl: WebGL2RenderingContext, raster: { n: number; rgba: Uint8Array }, mipmaps: boolean): WebGLTexture {
+  const texture = gl.createTexture()!;
+  gl.bindTexture(gl.TEXTURE_2D, texture);
+  gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1); gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false); gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, raster.n, raster.n, 0, gl.RGBA, gl.UNSIGNED_BYTE, raster.rgba);
+  if (mipmaps) gl.generateMipmap(gl.TEXTURE_2D);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, mipmaps ? gl.LINEAR_MIPMAP_LINEAR : gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  return texture;
+}
+
+/** Forest uniforms shared by the map and perspective programs; units are owned by each caller. */
+export function bindForest(gl: WebGL2RenderingContext, u: (name: string) => WebGLUniformLocation | null,
+  forest: { field: ForestField; texture: WebGLTexture } | undefined, occupation: { data: ForestOccupation; texture: WebGLTexture } | undefined,
+  empty: WebGLTexture, enabled: boolean, fieldUnit: number, occupationUnit: number): void {
+  const field = enabled ? forest : undefined, applied = field ? occupation : undefined;
+  gl.uniform1i(u('uForest'), field ? 1 : 0);
+  gl.activeTexture(gl.TEXTURE0 + fieldUnit); gl.bindTexture(gl.TEXTURE_2D, field?.texture ?? empty);
+  gl.uniform1i(u('uForestField'), fieldUnit);
+  gl.uniform3f(u('uForestRect'), field?.field.x ?? 0, field?.field.y ?? 0, field?.field.width ?? 1);
+  gl.activeTexture(gl.TEXTURE0 + occupationUnit); gl.bindTexture(gl.TEXTURE_2D, applied?.texture ?? empty);
+  gl.uniform1i(u('uOccupation'), occupationUnit); gl.uniform1i(u('uHasOccupation'), applied ? 1 : 0);
+  gl.uniform3f(u('uOccupationRect'), applied?.data.x ?? 0, applied?.data.y ?? 0, applied?.data.width ?? 1);
+  gl.uniform1f(u('uOccupationN'), applied?.data.n ?? 1);
 }

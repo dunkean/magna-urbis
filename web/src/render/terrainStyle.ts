@@ -1,7 +1,8 @@
 import { PALETTES, STYLE_LIST, isMapStyle, type MapStyle, type Palette } from './styles';
 import { waterRamp, type WaterStyle } from './waterStyle';
 
-export type TerrainStyle = MapStyle | 'render' | 'render3d' | 'fantasy-ink' | 'fantasy-color' | 'copernicus';
+export type TerrainStyle = MapStyle | 'render' | 'render3d' | 'render3d-brush' | 'fantasy-ink' | 'fantasy-color' | 'copernicus';
+export const isRender3dStyle = (style: TerrainStyle): boolean => style === 'render3d' || style === 'render3d-brush';
 export interface TerrainStyleDefinition {
   id: TerrainStyle; label: string; palette: Palette; water: WaterStyle;
   kind: 'palette' | 'material' | 'brush' | 'diagnostic';
@@ -13,6 +14,7 @@ const definitions = new Map<TerrainStyle, TerrainStyleDefinition>([
   ...STYLE_LIST.map(({ id, label }) => [id, definition(id, label, PALETTES[id])] as const),
   ['render', definition('render', 'Render · Neural Earth', PALETTES.parchment, 'material', { stops: [[0, '#1a4d5c'], [.4, '#0b2945'], [1, '#051126']], bandFraction: .016 })],
   ['render3d', definition('render3d', 'Render3D · Multiscale', PALETTES.parchment, 'material', { stops: [[0, '#1a4d5c'], [.4, '#0b2945'], [1, '#051126']], bandFraction: .016 })],
+  ['render3d-brush', definition('render3d-brush', 'Render3DBrush', PALETTES.parchment, 'material', { stops: [[0, '#1a4d5c'], [.4, '#0b2945'], [1, '#051126']], bandFraction: .016 })],
   ['fantasy-ink', definition('fantasy-ink', 'Fantasy · Encre N&B', ink, 'brush', waterRamp(ink.waterEdge, ink.seaFill))],
   ['fantasy-color', definition('fantasy-color', 'Fantasy · Aquarelle', color, 'brush', waterRamp(color.waterEdge, color.seaFill))],
   // Legacy URL/render adapter. Elevation is exposed as a diagnostic in the UI.

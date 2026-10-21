@@ -28,13 +28,18 @@ export function installTerrainHelp(): void {
     islandMode: () => 'Quand tous les côtés sont marins, choisit une île, plusieurs îles ou un choix seedé. En mode heightmap, les altitudes négatives définissent directement la mer.',
     environment: () => 'Relief entourant les formes locales comme plateau, volcan ou caldeira, utilisé dans la génération procédurale.',
     mountainMix: () => 'Proportion de montagnes dans le relief mixte. L’esquisse peut ensuite imposer leur emplacement général.',
-    style: () => 'Le style définit les couleurs et matériaux de la carte, dont un même dégradé pour toutes les mers et tous les lacs. Les couches choisissent les éléments visibles. Les brushes peuvent suivre l’occupation du territoire en option.',
+    style: () => (document.getElementById('style') as HTMLSelectElement).value === 'render3d-brush'
+      ? 'Render3DBrush utilise les silhouettes Fantasy adaptées au biome dans le matériau forestier de Render3D : mêmes teintes, densité, clairières et niveaux de détail. Les couronnes débordent sur les rivières et les courbes de niveau restent au-dessus. Cliquez pour lire la méthode.'
+      : 'Le style définit les couleurs et matériaux de la carte, dont un même dégradé pour toutes les mers et tous les lacs. Les couches choisissent les éléments visibles. Les brushes peuvent suivre l’occupation du territoire en option.',
     brush_landuse: () => 'Les arbres suivent les forêts générées et évitent les montagnes. Champs, vergers et marais reçoivent leurs motifs. Masquer l’occupation ne désactive pas son influence. Sans occupation générée, seuls les motifs de relief restent.',
     brush_size: () => 'Multiplie la taille des motifs, indépendamment de leur densité et de leur espacement. La taille de base est réduite de 45 % ; le curseur permet de descendre jusqu’à ×0,1.',
     hydroOverlay: () => 'Un diagnostic visualise une donnée de calcul. Altitude remplace les couleurs du terrain ; les autres diagnostics se superposent à la carte. Ils ne modifient ni le style choisi ni les masques de génération.',
     showWater: () => 'Affiche ou masque toute l’eau : mer, lacs et rivières. Lakes et Oxbows permettent de masquer séparément les lacs et les anciens chenaux.',
     projection3d: () => 'Survol du relief avec raffinement progressif du maillage. Render3D utilise un matériau de sol en coordonnées monde, partagé avec la vue 2D.',
     refinement3d: () => 'Source conserve les altitudes retenues. Noise multiscale ajoute un détail procédural déterministe. Neural Earth raffine le relief via le service CUDA ; le matériau de sol de Render3D reste indépendant de cette source.',
+    forestEnabled: () => 'Forêt procédurale de Render3D, calculée une fois sur le relief retenu : couvert, hauteur, mélange feuillus/résineux, houppiers et ombres de lisière. La carte 2D, la vue 3D et l’export raster lisent le même champ. Décochée, Render3D retrouve exactement son ancien rendu, avec la teinte forestière grossière d’origine. L’occupation agricole appliquée découpe la forêt dans l’étape Settlements, où la vue 3D n’est pas disponible.',
+    forestDensity: () => 'Ajuste le couvert issu du climat et du relief, c → 1 − (1 − c)^densité : 100 % le conserve, 0 % retire la forêt naturelle, 200 % le densifie sans dépasser le couvert complet. Les bois de l’occupation appliquée restent boisés. Aucun terrain n’est régénéré.',
+    forestClearings: () => 'Clairières d’environ 100 à 400 m : environ 40 % de la surface boisée à 100 % (18 % par défaut ; 85 % de moins en climat tropical humide, soit environ 3 % par défaut), ouvertes d’abord sur les terrains doux et les crêtes ; les pentes raides restent boisées. 0 % : massifs continus. Les champs, prés et bourgs appliqués restent ouverts quel que soit ce réglage.',
     tileBounds3d: () => 'Superpose les limites des tuiles affichées pour examiner leurs raccords. Cette option ne change ni le relief ni son niveau de détail.',
   };
   const tip = document.createElement('div'); tip.id = 'terrainHelpText'; tip.className = 'terrain-help-text'; tip.setAttribute('popover', 'auto'); tip.setAttribute('role', 'note'); document.body.append(tip);
@@ -47,7 +52,9 @@ export function installTerrainHelp(): void {
     const title = Array.from(label.childNodes).filter(n => n.nodeType === Node.TEXT_NODE).map(n => n.textContent).join('').trim();
     button.setAttribute('aria-label', `Aide : ${title || 'terrain'}`); button.setAttribute('aria-controls', tip.id); button.setAttribute('aria-expanded', 'false');
     row.append(button);
-    const method = (): MethodNoteId | undefined => ['brush_landuse', 'brush_size'].includes(control.id) ? 'fantasy-landuse' : ['projection3d', 'refinement3d', 'tileBounds3d'].includes(control.id)
+    const method = (): MethodNoteId | undefined => control.id === 'style' && (control as HTMLSelectElement).value === 'render3d-brush' ? 'render3d-brush'
+      : ['brush_landuse', 'brush_size'].includes(control.id) ? 'fantasy-landuse'
+      : ['forestEnabled', 'forestDensity', 'forestClearings'].includes(control.id) ? 'render3d-vegetation' : ['projection3d', 'refinement3d', 'tileBounds3d'].includes(control.id)
       || control.id === 'style' && (control as HTMLSelectElement).value === 'render3d' ? 'render3d-ground' : undefined;
     const show = (): void => {
       current?.setAttribute('aria-expanded', 'false'); current = button; tip.textContent = explain();

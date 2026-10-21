@@ -59,6 +59,8 @@ summary { cursor: pointer; font-size: 12px; font-weight: 600; }
 #perspectiveControls { display: inline-flex; align-items: center; gap: 8px; }
 #exaggeration3d { width: 68px; }
 #exaggeration3dValue { min-width: 20px; font-variant-numeric: tabular-nums; }
+#forestControls3d input[type=range] { width: 68px; }
+#forestControls3d output { min-width: 38px; font-variant-numeric: tabular-nums; }
 #terrain3dHint { display: none; position: absolute; left: 10px; bottom: 10px; max-width: calc(100% - 20px); padding: 6px 9px; background: #fffffff0; border: 1px solid #d3ddd7; border-radius: 4px; color: #253b38; pointer-events: none; font-size: 11px; line-height: 1.6; }
 #terrain3dInfo { display: block; color: #52645f; font-variant-numeric: tabular-nums; }
 #viewport.perspective #terrain3dHint { display: block; }

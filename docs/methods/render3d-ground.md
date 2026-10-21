@@ -115,10 +115,20 @@ Parent/child morphs and shared boundary constraints join the displayed triangle
 surfaces. Material evaluation stays in the same world reference throughout.
 The optional **Tuiles** overlay displays patch boundaries without moving vertices.
 
-Only water, contours and other projected overlays enter the ground's RGBA texture.
-Alpha is their explicit coverage; RGB never identifies water. Real neighbour
-samples form a two-texel gutter around each tile. Texture upload and composition
-use premultiplied alpha, avoiding dark fringes at partially covered shores.
+Water and diagnostic overlays enter the ground's RGBA texture. Alpha is their
+explicit coverage; RGB never identifies water. Real neighbour samples form a
+two-texel gutter around each fine colour tile. Resolved forest crowns occlude
+the projected water; procedural contour ink is applied after those crowns.
+Texture upload and composition use premultiplied alpha, avoiding dark fringes
+at partially covered shores.
+
+To classify crown centres outside a near material patch, tiles up to 2048 m
+wide also retain an R8 water mask on a globally aligned 1 m grid, with a 64 m
+halo. Neighbour masks sample the same world positions, so the bank decision
+does not stop at a colour-tile edge. These masks share the texture cache and
+its memory accounting. Coarser patches use their projected water coverage;
+individual crowns are normally unresolved at those distances. The bank colour
+keeps the fine tile resolution independently of this centre-classification mask.
 Sea and lake geometry retains its hydraulic surface elevations.
 
 ## Neural Earth boundary
