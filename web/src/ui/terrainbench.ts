@@ -31,7 +31,8 @@ import { createRuler } from './ruler';
 import { createTerrainSettlements } from './terrainSettlements';
 import { settlementRaster } from '../../../rust/bridge/settlements';
 import { buildForestField, DEFAULT_FOREST_SETTINGS, type ForestField, type ForestFieldInput, type ForestOccupation, type ForestSettings } from '../../../rust/bridge/terrainForest';
-import { forestDisplayWater, forestRetainedWater } from '../../../rust/bridge/terrainForestWater';
+import { forestDisplayWater, forestRetainedWater, forestRiverSegments } from '../../../rust/bridge/terrainForestWater';
+import { forestRetainedRiverSegments } from '../../../rust/bridge/terrainForestRiparian';
 import type { ForestRaster } from '../../../rust/bridge/terrainMaterialRaster';
 import ForestWorker from './forestWorker?worker&inline';
 import type { ForestReply, ForestRequest } from './forestWorker';
@@ -583,6 +584,12 @@ function forestWater(data: TerrainData, n: number): Uint8Array | undefined {
   }
   return water;
 }
+/** Displayed river geometry for the narrow gallery envelope: retained bank paths, else live water. */
+function forestRivers(data: TerrainData): Float32Array | undefined {
+  if (retainedDecor) return forestRetainedRiverSegments(retainedDecor.meta.waterSvg, data.width);
+  return forestRiverSegments(data, { showLakes: input('showLakes').checked, showOxbows: input('showOxbows').checked,
+    riverArea: riverAreaFor(settings.hydrology ?? DEFAULT_HYDROLOGY, settings.width), riverMode: settings.hydrology?.riverMode ?? 'vector' });
+}
 /** Runs the latest queued build, one at a time; stale results are cached but not shown. */
 function runForest(): void {
   const job = forestQueued;
@@ -626,7 +633,8 @@ function scheduleForest(delay = 0): void {
   const data = terrain, field = data.field, n = field?.n ?? data.resolution;
   const height = { x: 0, y: 0, width: data.width, n, data: field?.data ?? data.height };
   const climate = climateOf(settings), seed = seedHash(settings.seed), occupation = forestOccupation, chosen = { ...forest };
-  const key = [forestId(height.data), forestId(data), n, data.width, seed, climate.temperature, climate.precipitation, forestId(retainedDecor?.raster), chosen.density, chosen.clearings, occupation?.key ?? ''].join(':');
+  const riverSegments = forestRivers(data);
+  const key = [forestId(height.data), forestId(data), n, data.width, seed, climate.temperature, climate.precipitation, forestId(retainedDecor?.raster), forestId(riverSegments), chosen.density, chosen.clearings, occupation?.key ?? ''].join(':');
   forestWanted = key;
   const cached = forestCache.get(key);
   if (cached) { forestCache.delete(key); forestCache.set(key, cached); showForest(cached); return; }
@@ -634,7 +642,7 @@ function scheduleForest(delay = 0): void {
   showForest(forestShown?.source === height.data ? forestShown : undefined);
   forestTimer = setTimeout(() => {
     if (forestWanted !== key || terrain !== data || !forestActive()) return;
-    forestQueued = { key, data, input: { seed, climate: [climate.temperature, climate.precipitation], height, water: forestWater(data, n), occupation }, settings: chosen };
+    forestQueued = { key, data, input: { seed, climate: [climate.temperature, climate.precipitation], height, water: forestWater(data, n), riverSegments, occupation }, settings: chosen };
     runForest();
   }, delay);
 }
@@ -1659,8 +1667,8 @@ el('resetLighting').onclick = () => {
   changeLighting();
 };
 input('showWater').onchange = () => { layers = { ...layers, water: input('showWater').checked }; detailRequest = undefined; render(); save(); };
-input('showLakes').onchange = () => { renderWater(); save(); };
-input('showOxbows').onchange = () => { renderWater(); save(); };
+input('showLakes').onchange = () => { renderWater(); scheduleForest(); save(); };
+input('showOxbows').onchange = () => { renderWater(); scheduleForest(); save(); };
 diagnosticSelect.onchange = () => {
   elevationDiagnostic = diagnosticSelect.value === 'elevation';
   hydroOverlay = elevationDiagnostic ? 'none' : diagnosticSelect.value as HydrologyOverlay | VectorOverlay;

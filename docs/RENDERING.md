@@ -68,7 +68,11 @@ dernier devient le diagnostic Altitude avec le style Parchment.
 ## Sol procédural Render3D
 
 `Render3DBrush` conserve ce matériau et remplace les couronnes analytiques de
-la forêt par 32 motifs Fantasy teintés selon la palette Render3D. Même champ
+la forêt par 48 motifs aquarellés teintés selon la palette Render3D : couronnes
+vues presque à la verticale (pins, feuillus, tropicaux, arbres secs) et vrais
+arbustes bas, choisis selon la hauteur physique (≤ 3 m) et non la taille à
+l'écran. Les rives portent une bande étroite (quelques mètres à quelques
+dizaines de mètres) mesurée sur la géométrie affichée des rivières. Même champ
 forestier et LOD en 2D, perspective et export raster ; voir la
 [note de méthode](methods/render3d-brush.md), aussi disponible depuis le `?`
 du sélecteur de style, hors ligne.
@@ -129,9 +133,19 @@ leurs limites.
   `forestDensity` et `forestClearings` lorsqu'ils diffèrent des valeurs par défaut.
 - Un champ canonique RGBA8 est calculé une fois sur le relief retenu.
   - R : couvert ; G : hauteur 0–50 m ; B : part de résineux ; A : tonalité du peuplement.
+  - R et G portent l'éligibilité arborée de `Render` (affleurements rocheux,
+    pente, neige pérenne, limite des arbres), évaluée sur le CPU avec la
+    sémantique de son matériau : pas d'arbres sur les pentes rocheuses de
+    `Render`, ni bois appliqué ni verger au-delà.
   - La carte 2D, la vue 3D et l'export raster l'échantillonnent en coordonnées monde.
+- Le rendu `Render` (bois macroscopiques compris) reste la référence non
+  résolue. Au-delà d'environ 32 m par pixel, `Render3D` et `Render3DBrush`
+  affichent exactement son sol ; vers 8 m par pixel, clairières et peuplements
+  apparaissent atténués et adoucis ; en dessous de 2 m par pixel, houppiers,
+  litière et clairières canoniques sont entiers. Les couleurs des houppiers et
+  du sol ouvert dérivent de celles de `Render`.
 - « Canopée détaillée » décochée, `Render3D` retrouve son rendu antérieur, avec
-  la teinte forestière grossière d'origine. Le style `Render` ne compile pas ce chemin.
+  la teinte forestière grossière d'origine. Le style `Render` est inchangé.
 
 **Occupation appliquée**
 - Dans l'étape Settlements, l'occupation du territoire appliquée devient une

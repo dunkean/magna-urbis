@@ -1,4 +1,4 @@
-import { bindForest, forestTexture, RENDER_3D_FOREST_GLSL, type HeightLayer } from './terrainGl';
+import { bindForest, deleteForestTextures, forestTexture, forestTextures, RENDER_3D_FOREST_GLSL, type ForestTextures, type HeightLayer } from './terrainGl';
 import { FOREST_PRELUDE_GLSL, type ForestField, type ForestOccupation } from '../../../rust/bridge/terrainForest';
 import { bindForestBrushes, disposeForestBrushes } from '../render/forestBrushAtlas';
 import { NEURAL_EARTH_MATERIAL_GLSL } from '../../../rust/bridge/terrainMaterial';
@@ -292,7 +292,7 @@ export class Terrain3d {
   private waterMasks = new Map<WebGLTexture, { texture: WebGLTexture; rect: readonly [number, number, number]; bytes: number }>();
   private forestField?: ForestField;
   private forestOccupation?: ForestOccupation;
-  private forest?: { field: ForestField; texture: WebGLTexture };
+  private forest?: ForestTextures;
   private occupation?: { data: ForestOccupation; texture: WebGLTexture };
   private indexCount = 0;
   private layer?: HeightLayer;
@@ -492,8 +492,8 @@ export class Terrain3d {
     occupation = field ? occupation : undefined;
     this.forestField = field; this.forestOccupation = occupation;
     if (field !== this.forest?.field) {
-      if (this.forest) gl.deleteTexture(this.forest.texture);
-      this.forest = field && { field, texture: forestTexture(gl, field, true) };
+      deleteForestTextures(gl, this.forest);
+      this.forest = field && forestTextures(gl, field);
     }
     if (occupation !== this.occupation?.data) {
       if (this.occupation) gl.deleteTexture(this.occupation.texture);
@@ -1158,8 +1158,8 @@ export class Terrain3d {
       gl.uniform1f(gl.getUniformLocation(this.terrainProgram,'groundFlatSlope'),contours?.flat ? .004 : .012);
       if(contours){const value=contours.color.replace('#','');gl.uniform3f(gl.getUniformLocation(this.terrainProgram,'groundContourColor'),parseInt(value.slice(0,2),16)/255,parseInt(value.slice(2,4),16)/255,parseInt(value.slice(4,6),16)/255);}
     }
-    // Textures 3 forest field, 4 occupation.
-    bindForest(gl, name => gl.getUniformLocation(this.terrainProgram, name), this.forest, this.occupation, this.empty, !!settings, 3, 4);
+    // Textures 3 forest field, 4 occupation, 8 bank envelope.
+    bindForest(gl, name => gl.getUniformLocation(this.terrainProgram, name), this.forest, this.occupation, this.empty, !!settings, 3, 4, 8);
     bindForestBrushes(gl, name => gl.getUniformLocation(this.terrainProgram, name), !!settings?.forestBrushes, 5);
     gl.activeTexture(gl.TEXTURE0); gl.uniform1i(gl.getUniformLocation(this.terrainProgram, 'material'), 0);
     gl.uniform1i(gl.getUniformLocation(this.terrainProgram, 'previousMaterial'), 1);
@@ -1263,7 +1263,7 @@ export class Terrain3d {
     gl.deleteBuffer(this.indices); gl.deleteBuffer(this.seams); gl.deleteTexture(this.material);gl.deleteTexture(this.macroTexture); gl.deleteTexture(this.empty); gl.deleteProgram(this.terrainProgram); gl.deleteProgram(this.skyProgram);
     for (const geometry of this.clippedIndices.values()) gl.deleteBuffer(geometry.buffer);
     this.clippedIndices.clear();
-    if (this.forest) gl.deleteTexture(this.forest.texture);
+    deleteForestTextures(gl, this.forest);
     if (this.occupation) gl.deleteTexture(this.occupation.texture);
     this.forest = this.occupation = this.forestField = this.forestOccupation = undefined;
     disposeForestBrushes(gl);

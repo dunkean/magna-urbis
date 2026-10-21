@@ -43,6 +43,26 @@ export function forestRetainedWater(svg: string, mapWidth: number, region: Pick<
   return raster;
 }
 
+const riverCaches = new WeakMap<object, Map<string, Float32Array>>();
+/** Displayed river centrelines and widths (nine floats per segment, as the
+ * water renderer) for the forest's narrow bank envelope. Stable identity per
+ * water source and display options, so the field key and worker copy stay cheap. */
+export function forestRiverSegments(source: TerrainData, display: ForestWaterDisplay): Float32Array | undefined {
+  const vector = source.water, hydro = !vector && !source.hydrologyError ? source.hydrology : undefined;
+  const identity = vector ?? hydro;
+  if (!identity) return undefined;
+  const key = [display.showLakes, display.showOxbows, display.riverArea, display.riverMode].join(':');
+  let cache = riverCaches.get(identity);
+  if (!cache) { cache = new Map(); riverCaches.set(identity, cache); }
+  let segments = cache.get(key);
+  if (!segments) {
+    segments = vector ? riverSegments(vector, { ...display, style: 'render3d', overlay: 'none' }) : hydrologySegments(hydro!, '#ffffff');
+    cache.set(key, segments);
+    while (cache.size > 3) cache.delete(cache.keys().next().value!);
+  }
+  return segments;
+}
+
 /** Actual visible water, without the settlement routing buffer. Coverage is only
  * used to reject tree centres: crowns remain free to overhang the river banks.
  * The 64 m gutter keeps those decisions independent of a camera crop's edge. */
@@ -90,7 +110,7 @@ export function forestDisplayWater(source: TerrainData, display: ForestWaterDisp
       }
     }
   }
-  const segments = vector ? riverSegments(vector, { ...display, style: 'render3d', overlay: 'none' }) : hydrologySegments(hydro!, '#ffffff');
+  const segments = forestRiverSegments(source, display)!;
   for (let k = 0; k < segments.length; k += 9) {
     const ax = segments[k], ay = segments[k + 1], bx = segments[k + 2], by = segments[k + 3];
     const ar = segments[k + 4] * .5, br = segments[k + 5] * .5, radius = Math.max(ar, br) + cell * .5;

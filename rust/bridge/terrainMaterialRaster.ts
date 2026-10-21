@@ -12,7 +12,7 @@ export interface ForestWaterRaster { x: number; y: number; width: number; n: num
 export interface ForestRaster { field?: ForestField; occupation?: ForestOccupation; water?: ForestWaterRaster; light?: readonly number[]; brushes?: boolean }
 export interface MaterialRaster { rgb: Uint8Array; canopyAlpha: Uint8Array }
 interface Uploaded { key: string; texture: WebGLTexture }
-let renderer: { gl: WebGL2RenderingContext; canvas: OffscreenCanvas; program: WebGLProgram; texture: WebGLTexture; field?: Uploaded; occupation?: Uploaded; water?: Uploaded } | undefined;
+let renderer: { gl: WebGL2RenderingContext; canvas: OffscreenCanvas; program: WebGLProgram; texture: WebGLTexture; field?: Uploaded; bank?: Uploaded; occupation?: Uploaded; water?: Uploaded } | undefined;
 let renderer3d: typeof renderer;
 /** Upload a forest raster once per key; clamp-to-edge, field with box mipmaps. */
 function forestTexture(gl: WebGL2RenderingContext, previous: Uploaded | undefined, raster: { n: number; rgba: Uint8Array; key: string }, mipmaps: boolean): Uploaded {
@@ -89,10 +89,11 @@ export function renderMaterialRaster(terrain: TerrainData, settings: Pick<Terrai
   const climate = settings.climateValues ?? CLIMATE_VALUES[settings.climate ?? 'temperate'];
   gl.uniform2f(u('uMaterialClimate'), climate.temperature, climate.precipitation); gl.uniform1ui(u('uMaterialSeed'), seedHash(settings.seed));
   if (enhanced3d) {
-    // Units 1 field, 2 occupation; undefined keeps the legacy macro canopy exactly.
+    // Units 1 field, 2 occupation, 4 water, 5 bank envelope; undefined keeps the legacy macro canopy exactly.
     const field = forest?.field, occupation = field ? forest?.occupation : undefined, water = field ? forest?.water : undefined, light = forest?.light ?? [-.5, -.5, .7071];
     gl.activeTexture(gl.TEXTURE3); // upload unit: keep the heights bound on unit 0
     if (field) active.field = forestTexture(gl, active.field, field, true);
+    if (field?.bank) active.bank = forestTexture(gl, active.bank, { n: field.n, rgba: field.bank, key: `${field.key}:bank` }, true);
     if (occupation) active.occupation = forestTexture(gl, active.occupation, occupation, false);
     if (water && active.water?.key !== water.key) {
       if (active.water) gl.deleteTexture(active.water.texture);
@@ -113,6 +114,9 @@ export function renderMaterialRaster(terrain: TerrainData, settings: Pick<Terrai
     gl.activeTexture(gl.TEXTURE4); gl.bindTexture(gl.TEXTURE_2D, water ? active.water!.texture : texture);
     gl.uniform1i(u('uForestWater'), 4); gl.uniform1i(u('uHasForestWater'), water ? 1 : 0);
     gl.uniform3f(u('uForestWaterRect'), water?.x ?? 0, water?.y ?? 0, water?.width ?? 1);
+    gl.activeTexture(gl.TEXTURE5); gl.bindTexture(gl.TEXTURE_2D, field?.bank ? active.bank!.texture : texture);
+    gl.uniform1i(u('uForestBank'), 5); gl.uniform1i(u('uHasForestBank'), field?.bank ? 1 : 0);
+    gl.uniform1f(u('uForestBankDensity'), field?.bankDensity ?? 1);
     bindForestBrushes(gl, u, !!forest?.brushes, 3);
     gl.activeTexture(gl.TEXTURE0);
   }

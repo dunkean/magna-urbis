@@ -142,11 +142,12 @@ vec3 surfaceMix(vec3 a,vec3 b,float t){return a*(1.-t)+b*t;}
       float trees=sstep(.65,2.1,humid)*sstep(5.5,13.5,tHot+.8*valley)*forestAmount*(1.-sstep(rockTan*.9,rockTan*1.6,grade))*(1.-outcrop);
       // Valley stands come from relief; noise only adds gentle clearings.
       trees=trees*(1.-.22*ridge)+.14*valley*sstep(2.,10.,tHot)*sstep(.4,1.2,humid)*(1.-outcrop)*forestAmount;
-#ifdef RENDER3D_FOREST
-      // Render3D's canonical forest replaces this canopy (and its snow thinning).
-      float woods=uForest==0?surfaceCover(clamp(trees,0.,1.),grove,.65*variation):0.;
-#else
       float woods=surfaceCover(clamp(trees,0.,1.),grove,.65*variation);
+#ifdef RENDER3D_FOREST
+      // Render3D keeps this macro canopy as its unresolved reference and
+      // exports a guide: the same surface without canopy (every later step)
+      // and fully canopied (snow and valley only: crowns stand above sediment).
+      vec3 guideOpen=color;
 #endif
       color=surfaceMix(color,canopy,woods);
       float flats=(1.-sstep(1.5,6.,height))*(1.-sstep(.05,.2,grade));
@@ -168,6 +169,9 @@ vec3 surfaceMix(vec3 a,vec3 b,float t){return a*(1.-t)+b*t;}
       sediment=surfaceMix(sediment,vec3(.27,.26,.25),sstep(1.25,1.75,m1+.35*shingle)*.9);
       color=surfaceMix(color,sediment*.9,flats*(1.-sstep(240.,960.,fp))*.8);
       color=surfaceMix(color,sediment,beach*.8);
+#ifdef RENDER3D_FOREST
+      guideOpen=surfaceMix(surfaceMix(guideOpen,sediment*.9,flats*(1.-sstep(240.,960.,fp))*.8),sediment,beach*.8);
+#endif
       // Snow: seasonal and perennial, exposure-aware, sheds from steep ridges.
       float hemisphere=point.y/max(sqrt(point.y*point.y+.0064*dot(point,point)),1.);
       float aspect=dot(gradient,north)/max(length(gradient),.00001)*hemisphere;
@@ -183,7 +187,16 @@ vec3 surfaceMix(vec3 a,vec3 b,float t){return a*(1.-t)+b*t;}
       snow=snow*(1.-(.88-.18*perennial)*slip)*(1.-.3*woods*(1.-perennial)*(1.-.7*leafless));
       color=surfaceMix(color,vec3(.94,.96,.97),surfaceCover(snow,crag,.35*variation));
       color=color*(1.-.06*valley);
+#ifdef RENDER3D_FOREST
+      vec3 result=surfaceOcean(height,color,now,m1,variation);
+      float guideSnow=surfaceCover(snow,crag,.35*variation);
+      renderGuideColor=result;renderGuideWoods=height>=0.?woods:0.;
+      renderGuideOpen=height>=0.?clamp(surfaceMix(guideOpen,vec3(.94,.96,.97),guideSnow)*(1.-.06*valley),0.,1.):result;
+      renderGuideClosed=height>=0.?clamp(surfaceMix(canopy,vec3(.94,.96,.97),guideSnow)*(1.-.06*valley),0.,1.):result;
+      return result;
+#else
       return surfaceOcean(height,color,now,m1,variation);
+#endif
     }
 
 vec3 earthMaterial(vec3 s,vec2 world,float fp,float tpi,float shore,float openness){

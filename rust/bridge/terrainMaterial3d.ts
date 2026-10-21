@@ -5,7 +5,8 @@ import { FOREST_GLSL } from './terrainForest';
  * This compatibility wrapper returns unlit display RGB for retained rasters.
  * Interactive 2D/3D use terrainGroundMaterial + shadeTerrainGround directly.
  * Includes FOREST_GLSL: programs must emit FOREST_PRELUDE_GLSL before
- * NEURAL_EARTH_MATERIAL_GLSL and call applyForest before shading.
+ * NEURAL_EARTH_MATERIAL_GLSL and call applyForest before shading, after the
+ * same fragment's earthMaterial call (it reads that call's Render guide).
  */
 export const RENDER_3D_MATERIAL_GLSL = `${GROUND_FIELD_GLSL}
 ${FOREST_GLSL}
