@@ -179,6 +179,29 @@ comme hauteur. Les dimensions et emprises initiales utilisent une grille au
 millimètre ; les intersections dérivées et les jonctions de toiture conservent
 leur précision pour partager exactement leurs arêtes.
 
+### Implantation urbaine externe
+
+`placement::admissibility_profiles()` expose les enveloppes des recettes sans
+intérieurs. `placement::place_batch(PlacementBatchRequest)` reçoit cadastre,
+domaine constructible, trous/réserves, droits de toiture, accès, voisinage,
+culture/fonction, terrain physique et graines. Il renvoie des volumes et toits
+natifs ou des refus inspectables ; les espaces ouverts restent libres.
+`resolve_architecture` conserve les mêmes paramètres et `LayoutPlan` que le
+générateur autonome. `placement::enrich_placement` détaille cette copie retenue
+sans nouveaux tirages, ou refuse explicitement une incompatibilité.
+Les volumes non domestiques portent leur fonction et ne revendiquent pas
+d'intérieur domestique. Voir la [méthode et ses limites](../../../docs/methods/urban-architecture-placement.md)
+et le [contrat TypeScript](../../bridge/urbanArchitecture.ts).
+
+`data/urban-admission.json` est produit sans intérieurs par le chemin natif
+minimal (plan, cour, clôture, toit et circulation) ; il distingue minima
+constructibles et refus. Depuis `rust/`, régénérer avec
+`cargo run -p magna-urbis-houses --example admission -- crates/houses/data/urban-admission.json`.
+Le test `admission::tests` contrôle son empreinte de catalogue et ses profils.
+Pour rejouer un lot d'implantations JSON, utiliser
+`cargo run -p magna-urbis-houses --example place -- input.json`.
+Pour enrichir une copie placée retenue, ajouter `--enrich` au même exemple.
+
 Contrat natif : [model.rs](src/model.rs).
 Frontière web : [houses-wasm](../houses-wasm/README.md).
 Validateur de scène : [housesContract.ts](../../bridge/housesContract.ts).

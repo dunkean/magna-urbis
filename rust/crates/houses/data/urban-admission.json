@@ -1,0 +1,4608 @@
+{
+  "generator_version": "houses-2",
+  "profiles": [
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        1
+      ],
+      "layout": "single",
+      "min_access_width_m": 0.0,
+      "min_envelope_m": [
+        0.0,
+        0.0
+      ],
+      "pack": "AF-EAST",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AF-EAST-B01; metres; no interiors.",
+      "recipe_id": "AF-EAST-B01",
+      "refusal": "Socle de unit-0:body:0 sans murs réellement portés.",
+      "status": "refused"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        2
+      ],
+      "layout": "courtyard",
+      "min_access_width_m": 1.5,
+      "min_envelope_m": [
+        29.62000000476837,
+        30.670000002384185
+      ],
+      "pack": "AF-EAST",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AF-EAST-B02; metres; no interiors.",
+      "recipe_id": "AF-EAST-B02",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        1
+      ],
+      "layout": "single",
+      "min_access_width_m": 0.85,
+      "min_envelope_m": [
+        6.6,
+        8.649999994039536
+      ],
+      "pack": "AF-EAST",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AF-EAST-B03; metres; no interiors.",
+      "recipe_id": "AF-EAST-B03",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        1
+      ],
+      "layout": "single",
+      "min_access_width_m": 0.85,
+      "min_envelope_m": [
+        4.5,
+        4.922
+      ],
+      "pack": "AF-EAST",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AF-EAST-B04; metres; no interiors.",
+      "recipe_id": "AF-EAST-B04",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        2
+      ],
+      "layout": "single",
+      "min_access_width_m": 0.85,
+      "min_envelope_m": [
+        5.5,
+        7.9
+      ],
+      "pack": "AF-EAST",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AF-EAST-B06; metres; no interiors.",
+      "recipe_id": "AF-EAST-B06",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        2,
+        3
+      ],
+      "layout": "additive",
+      "min_access_width_m": 0.0,
+      "min_envelope_m": [
+        0.0,
+        0.0
+      ],
+      "pack": "AF-EAST",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AF-EAST-B08; metres; no interiors.",
+      "recipe_id": "AF-EAST-B08",
+      "refusal": "Bande native manquante.",
+      "status": "refused"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        1
+      ],
+      "layout": "single",
+      "min_access_width_m": 0.85,
+      "min_envelope_m": [
+        5.5,
+        8.732999999999999
+      ],
+      "pack": "AF-EAST",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AF-EAST-B10; metres; no interiors.",
+      "recipe_id": "AF-EAST-B10",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        2
+      ],
+      "layout": "single",
+      "min_access_width_m": 0.85,
+      "min_envelope_m": [
+        5.0,
+        7.65
+      ],
+      "pack": "AF-MAG",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AF-MAG-B01; metres; no interiors.",
+      "recipe_id": "AF-MAG-B01",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        2
+      ],
+      "layout": "courtyard",
+      "min_access_width_m": 1.5,
+      "min_envelope_m": [
+        29.62000000476837,
+        30.670000002384185
+      ],
+      "pack": "AF-MAG",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AF-MAG-B02; metres; no interiors.",
+      "recipe_id": "AF-MAG-B02",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        2
+      ],
+      "layout": "peristyle",
+      "min_access_width_m": 1.5,
+      "min_envelope_m": [
+        33.5,
+        36.55
+      ],
+      "pack": "AF-MAG",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AF-MAG-B03; metres; no interiors.",
+      "recipe_id": "AF-MAG-B03",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        2
+      ],
+      "layout": "single",
+      "min_access_width_m": 0.85,
+      "min_envelope_m": [
+        5.5,
+        8.099999994039536
+      ],
+      "pack": "AF-MAG",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AF-MAG-B04; metres; no interiors.",
+      "recipe_id": "AF-MAG-B04",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        2,
+        4
+      ],
+      "layout": "single",
+      "min_access_width_m": 0.85,
+      "min_envelope_m": [
+        5.5,
+        6.25
+      ],
+      "pack": "AF-MAG",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AF-MAG-B05; metres; no interiors.",
+      "recipe_id": "AF-MAG-B05",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        2
+      ],
+      "layout": "courtyard",
+      "min_access_width_m": 1.5,
+      "min_envelope_m": [
+        29.62000000476837,
+        30.670000002384185
+      ],
+      "pack": "AF-MAG",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AF-MAG-B09; metres; no interiors.",
+      "recipe_id": "AF-MAG-B09",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        1
+      ],
+      "layout": "single",
+      "min_access_width_m": 0.85,
+      "min_envelope_m": [
+        4.499794,
+        4.721922
+      ],
+      "pack": "AF-MAG",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AF-MAG-B10; metres; no interiors.",
+      "recipe_id": "AF-MAG-B10",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        2
+      ],
+      "layout": "excavated",
+      "min_access_width_m": 0.0,
+      "min_envelope_m": [
+        0.0,
+        0.0
+      ],
+      "pack": "AF-MAG",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AF-MAG-B11; metres; no interiors.",
+      "recipe_id": "AF-MAG-B11",
+      "refusal": "No native structural access path reaches a body.",
+      "status": "refused"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        2
+      ],
+      "layout": "courtyard",
+      "min_access_width_m": 1.5,
+      "min_envelope_m": [
+        22.76399999856949,
+        22.100000005960467
+      ],
+      "pack": "AF-NILE",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AF-NILE-B01; metres; no interiors.",
+      "recipe_id": "AF-NILE-B01",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        2
+      ],
+      "layout": "courtyard",
+      "min_access_width_m": 1.5,
+      "min_envelope_m": [
+        29.62000000476837,
+        30.670000002384185
+      ],
+      "pack": "AF-NILE",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AF-NILE-B02; metres; no interiors.",
+      "recipe_id": "AF-NILE-B02",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A"
+      ],
+      "floors": [
+        1,
+        3
+      ],
+      "layout": "additive",
+      "min_access_width_m": 0.85,
+      "min_envelope_m": [
+        24.0,
+        16.450000002980232
+      ],
+      "pack": "AF-NILE",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AF-NILE-B03; metres; no interiors.",
+      "recipe_id": "AF-NILE-B03",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        2
+      ],
+      "layout": "single",
+      "min_access_width_m": 0.85,
+      "min_envelope_m": [
+        5.5,
+        8.25
+      ],
+      "pack": "AF-NILE",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AF-NILE-B06; metres; no interiors.",
+      "recipe_id": "AF-NILE-B06",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        2,
+        3
+      ],
+      "layout": "high_hall",
+      "min_access_width_m": 0.85,
+      "min_envelope_m": [
+        26.0,
+        24.650000000000002
+      ],
+      "pack": "AF-NILE",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AF-NILE-B08; metres; no interiors.",
+      "recipe_id": "AF-NILE-B08",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        1
+      ],
+      "layout": "single",
+      "min_access_width_m": 0.85,
+      "min_envelope_m": [
+        4.5,
+        4.722
+      ],
+      "pack": "AF-SAHEL",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AF-SAHEL-B01; metres; no interiors.",
+      "recipe_id": "AF-SAHEL-B01",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        2
+      ],
+      "layout": "courtyard",
+      "min_access_width_m": 1.5,
+      "min_envelope_m": [
+        29.62000000476837,
+        30.670000002384185
+      ],
+      "pack": "AF-SAHEL",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AF-SAHEL-B02; metres; no interiors.",
+      "recipe_id": "AF-SAHEL-B02",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        2
+      ],
+      "layout": "hut_compound",
+      "min_access_width_m": 1.5,
+      "min_envelope_m": [
+        33.223999977111816,
+        33.223999977111816
+      ],
+      "pack": "AF-SAHEL",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AF-SAHEL-B03; metres; no interiors.",
+      "recipe_id": "AF-SAHEL-B03",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        2
+      ],
+      "layout": "single",
+      "min_access_width_m": 0.85,
+      "min_envelope_m": [
+        5.0,
+        7.65
+      ],
+      "pack": "AF-SAHEL",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AF-SAHEL-B04; metres; no interiors.",
+      "recipe_id": "AF-SAHEL-B04",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        2
+      ],
+      "layout": "courtyard",
+      "min_access_width_m": 1.5,
+      "min_envelope_m": [
+        18.12000000476837,
+        18.77
+      ],
+      "pack": "AF-SAHEL",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AF-SAHEL-B05; metres; no interiors.",
+      "recipe_id": "AF-SAHEL-B05",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        3
+      ],
+      "layout": "pueblo",
+      "min_access_width_m": 0.85,
+      "min_envelope_m": [
+        14.403,
+        15.659999999792316
+      ],
+      "pack": "AF-SAHEL",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AF-SAHEL-B08; metres; no interiors.",
+      "recipe_id": "AF-SAHEL-B08",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        2
+      ],
+      "layout": "multiyard",
+      "min_access_width_m": 1.5,
+      "min_envelope_m": [
+        33.50199997425079,
+        52.503000020980835
+      ],
+      "pack": "AF-SAHEL",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AF-SAHEL-B09; metres; no interiors.",
+      "recipe_id": "AF-SAHEL-B09",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        1
+      ],
+      "layout": "hut_compound",
+      "min_access_width_m": 1.5,
+      "min_envelope_m": [
+        35.194000005722046,
+        38.364000022411346
+      ],
+      "pack": "AF-SAHEL",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AF-SAHEL-B10; metres; no interiors.",
+      "recipe_id": "AF-SAHEL-B10",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        1
+      ],
+      "layout": "single",
+      "min_access_width_m": 0.85,
+      "min_envelope_m": [
+        6.125102999999999,
+        6.556005
+      ],
+      "pack": "AF-SAHEL",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AF-SAHEL-B11; metres; no interiors.",
+      "recipe_id": "AF-SAHEL-B11",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        1
+      ],
+      "layout": "single",
+      "min_access_width_m": 0.85,
+      "min_envelope_m": [
+        4.5,
+        4.722
+      ],
+      "pack": "AF-SOUTH",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AF-SOUTH-B01; metres; no interiors.",
+      "recipe_id": "AF-SOUTH-B01",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        1
+      ],
+      "layout": "single",
+      "min_access_width_m": 0.85,
+      "min_envelope_m": [
+        4.5,
+        4.922
+      ],
+      "pack": "AF-SOUTH",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AF-SOUTH-B03; metres; no interiors.",
+      "recipe_id": "AF-SOUTH-B03",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        1
+      ],
+      "layout": "single",
+      "min_access_width_m": 0.85,
+      "min_envelope_m": [
+        4.5,
+        4.722
+      ],
+      "pack": "AF-SOUTH",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AF-SOUTH-B04; metres; no interiors.",
+      "recipe_id": "AF-SOUTH-B04",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        1
+      ],
+      "layout": "hut_compound",
+      "min_access_width_m": 1.5,
+      "min_envelope_m": [
+        27.5,
+        29.1700000166893
+      ],
+      "pack": "AF-SOUTH",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AF-SOUTH-B05; metres; no interiors.",
+      "recipe_id": "AF-SOUTH-B05",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        1
+      ],
+      "layout": "additive",
+      "min_access_width_m": 0.85,
+      "min_envelope_m": [
+        10.5,
+        12.700000000000001
+      ],
+      "pack": "AF-SOUTH",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AF-SOUTH-B06; metres; no interiors.",
+      "recipe_id": "AF-SOUTH-B06",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        1
+      ],
+      "layout": "single",
+      "min_access_width_m": 0.85,
+      "min_envelope_m": [
+        6.6,
+        8.649999994039536
+      ],
+      "pack": "AF-SOUTH",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AF-SOUTH-B08; metres; no interiors.",
+      "recipe_id": "AF-SOUTH-B08",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        2
+      ],
+      "layout": "courtyard",
+      "min_access_width_m": 1.5,
+      "min_envelope_m": [
+        27.66100001335144,
+        25.411000000715255
+      ],
+      "pack": "AF-WEST",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AF-WEST-B01; metres; no interiors.",
+      "recipe_id": "AF-WEST-B01",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        2
+      ],
+      "layout": "courtyard",
+      "min_access_width_m": 1.5,
+      "min_envelope_m": [
+        27.66100001335144,
+        28.71100000667572
+      ],
+      "pack": "AF-WEST",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AF-WEST-B02; metres; no interiors.",
+      "recipe_id": "AF-WEST-B02",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        1
+      ],
+      "layout": "single",
+      "min_access_width_m": 0.85,
+      "min_envelope_m": [
+        6.6,
+        8.649999994039536
+      ],
+      "pack": "AF-WEST",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AF-WEST-B04; metres; no interiors.",
+      "recipe_id": "AF-WEST-B04",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        2
+      ],
+      "layout": "multiyard",
+      "min_access_width_m": 1.5,
+      "min_envelope_m": [
+        49.502,
+        68.55300001049042
+      ],
+      "pack": "AF-WEST",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AF-WEST-B05; metres; no interiors.",
+      "recipe_id": "AF-WEST-B05",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        1
+      ],
+      "layout": "single",
+      "min_access_width_m": 0.85,
+      "min_envelope_m": [
+        5.5,
+        8.099999994039536
+      ],
+      "pack": "AF-WEST",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AF-WEST-B06; metres; no interiors.",
+      "recipe_id": "AF-WEST-B06",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        2
+      ],
+      "layout": "kancha",
+      "min_access_width_m": 1.5,
+      "min_envelope_m": [
+        27.501999974250793,
+        46.50199997425079
+      ],
+      "pack": "AF-WEST",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AF-WEST-B07; metres; no interiors.",
+      "recipe_id": "AF-WEST-B07",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        2
+      ],
+      "layout": "courtyard",
+      "min_access_width_m": 1.5,
+      "min_envelope_m": [
+        27.66100001335144,
+        27.66100001335144
+      ],
+      "pack": "AF-WEST",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AF-WEST-B09; metres; no interiors.",
+      "recipe_id": "AF-WEST-B09",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        2
+      ],
+      "layout": "multiyard",
+      "min_access_width_m": 1.5,
+      "min_envelope_m": [
+        49.50199997425079,
+        67.5019999742508
+      ],
+      "pack": "AF-WEST",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AF-WEST-B10; metres; no interiors.",
+      "recipe_id": "AF-WEST-B10",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        2
+      ],
+      "layout": "single",
+      "min_access_width_m": 0.0,
+      "min_envelope_m": [
+        0.0,
+        0.0
+      ],
+      "pack": "AM-AND",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AM-AND-B01; metres; no interiors.",
+      "recipe_id": "AM-AND-B01",
+      "refusal": "Socle de unit-0:body:0 sans murs réellement portés.",
+      "status": "refused"
+    },
+    {
+      "eras": [
+        "M"
+      ],
+      "floors": [
+        1,
+        2
+      ],
+      "layout": "kancha",
+      "min_access_width_m": 1.5,
+      "min_envelope_m": [
+        33.50199997425079,
+        28.74099999666214
+      ],
+      "pack": "AM-AND",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AM-AND-B02; metres; no interiors.",
+      "recipe_id": "AM-AND-B02",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "M"
+      ],
+      "floors": [
+        1,
+        2
+      ],
+      "layout": "single",
+      "min_access_width_m": 0.85,
+      "min_envelope_m": [
+        5.5,
+        7.7
+      ],
+      "pack": "AM-AND",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AM-AND-B03; metres; no interiors.",
+      "recipe_id": "AM-AND-B03",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "M"
+      ],
+      "floors": [
+        1,
+        2
+      ],
+      "layout": "multiyard",
+      "min_access_width_m": 1.5,
+      "min_envelope_m": [
+        59.50199997425079,
+        83.50300002098083
+      ],
+      "pack": "AM-AND",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AM-AND-B07; metres; no interiors.",
+      "recipe_id": "AM-AND-B07",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        1
+      ],
+      "layout": "single",
+      "min_access_width_m": 0.85,
+      "min_envelope_m": [
+        4.5,
+        4.722
+      ],
+      "pack": "AM-ARC",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AM-ARC-B01; metres; no interiors.",
+      "recipe_id": "AM-ARC-B01",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        1
+      ],
+      "layout": "single",
+      "min_access_width_m": 0.0,
+      "min_envelope_m": [
+        0.0,
+        0.0
+      ],
+      "pack": "AM-ARC",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AM-ARC-B02; metres; no interiors.",
+      "recipe_id": "AM-ARC-B02",
+      "refusal": "No native structural access path reaches a body.",
+      "status": "refused"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        1
+      ],
+      "layout": "single",
+      "min_access_width_m": 0.0,
+      "min_envelope_m": [
+        0.0,
+        0.0
+      ],
+      "pack": "AM-ARC",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AM-ARC-B03; metres; no interiors.",
+      "recipe_id": "AM-ARC-B03",
+      "refusal": "No native structural access path reaches a body.",
+      "status": "refused"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        1
+      ],
+      "layout": "single",
+      "min_access_width_m": 0.0,
+      "min_envelope_m": [
+        0.0,
+        0.0
+      ],
+      "pack": "AM-ARC",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AM-ARC-B04; metres; no interiors.",
+      "recipe_id": "AM-ARC-B04",
+      "refusal": "No native structural access path reaches a body.",
+      "status": "refused"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        1
+      ],
+      "layout": "single",
+      "min_access_width_m": 0.85,
+      "min_envelope_m": [
+        3.5,
+        3.72
+      ],
+      "pack": "AM-ARC",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AM-ARC-B05; metres; no interiors.",
+      "recipe_id": "AM-ARC-B05",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        1
+      ],
+      "layout": "single",
+      "min_access_width_m": 0.0,
+      "min_envelope_m": [
+        0.0,
+        0.0
+      ],
+      "pack": "AM-ARC",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AM-ARC-B06; metres; no interiors.",
+      "recipe_id": "AM-ARC-B06",
+      "refusal": "No native structural access path reaches a body.",
+      "status": "refused"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        1
+      ],
+      "layout": "single",
+      "min_access_width_m": 0.85,
+      "min_envelope_m": [
+        5.5,
+        7.73
+      ],
+      "pack": "AM-ARC",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AM-ARC-B07; metres; no interiors.",
+      "recipe_id": "AM-ARC-B07",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        1
+      ],
+      "layout": "single",
+      "min_access_width_m": 0.0,
+      "min_envelope_m": [
+        0.0,
+        0.0
+      ],
+      "pack": "AM-ARC",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AM-ARC-B10; metres; no interiors.",
+      "recipe_id": "AM-ARC-B10",
+      "refusal": "No native structural access path reaches a body.",
+      "status": "refused"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        1
+      ],
+      "layout": "single",
+      "min_access_width_m": 0.85,
+      "min_envelope_m": [
+        5.5,
+        8.732999999999999
+      ],
+      "pack": "AM-MESO",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AM-MESO-B01; metres; no interiors.",
+      "recipe_id": "AM-MESO-B01",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        1
+      ],
+      "layout": "single",
+      "min_access_width_m": 0.0,
+      "min_envelope_m": [
+        0.0,
+        0.0
+      ],
+      "pack": "AM-MESO",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AM-MESO-B02; metres; no interiors.",
+      "recipe_id": "AM-MESO-B02",
+      "refusal": "Socle de unit-0:body:0 sans murs réellement portés.",
+      "status": "refused"
+    },
+    {
+      "eras": [
+        "A"
+      ],
+      "floors": [
+        1,
+        2
+      ],
+      "layout": "multiyard",
+      "min_access_width_m": 1.5,
+      "min_envelope_m": [
+        47.50199997425079,
+        61.55299997329712
+      ],
+      "pack": "AM-MESO",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AM-MESO-B03; metres; no interiors.",
+      "recipe_id": "AM-MESO-B03",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        2
+      ],
+      "layout": "courtyard",
+      "min_access_width_m": 1.5,
+      "min_envelope_m": [
+        23.5,
+        23.69099998641014
+      ],
+      "pack": "AM-MESO",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AM-MESO-B04; metres; no interiors.",
+      "recipe_id": "AM-MESO-B04",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        1
+      ],
+      "layout": "multiyard",
+      "min_access_width_m": 0.0,
+      "min_envelope_m": [
+        0.0,
+        0.0
+      ],
+      "pack": "AM-MESO",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AM-MESO-B07; metres; no interiors.",
+      "recipe_id": "AM-MESO-B07",
+      "refusal": "Encorbellement unit-0:body:0 : aucune pièce pour la voûte.",
+      "status": "refused"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        1
+      ],
+      "layout": "single",
+      "min_access_width_m": 0.0,
+      "min_envelope_m": [
+        0.0,
+        0.0
+      ],
+      "pack": "AM-MESO",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AM-MESO-B10; metres; no interiors.",
+      "recipe_id": "AM-MESO-B10",
+      "refusal": "Socle de unit-0:body:0 sans murs réellement portés.",
+      "status": "refused"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        2
+      ],
+      "layout": "multiyard",
+      "min_access_width_m": 1.5,
+      "min_envelope_m": [
+        33.5,
+        47.5
+      ],
+      "pack": "AM-MESO",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AM-MESO-B12; metres; no interiors.",
+      "recipe_id": "AM-MESO-B12",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        1
+      ],
+      "layout": "kancha",
+      "min_access_width_m": 0.9,
+      "min_envelope_m": [
+        32.00199997425079,
+        28.001999981686474
+      ],
+      "pack": "AM-MESO",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AM-MESO-B13; metres; no interiors.",
+      "recipe_id": "AM-MESO-B13",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "M"
+      ],
+      "floors": [
+        1,
+        1
+      ],
+      "layout": "single",
+      "min_access_width_m": 0.85,
+      "min_envelope_m": [
+        5.5,
+        7.7
+      ],
+      "pack": "AM-MISS",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AM-MISS-B01; metres; no interiors.",
+      "recipe_id": "AM-MISS-B01",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "M"
+      ],
+      "floors": [
+        1,
+        1
+      ],
+      "layout": "single",
+      "min_access_width_m": 0.85,
+      "min_envelope_m": [
+        5.5,
+        7.7
+      ],
+      "pack": "AM-MISS",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AM-MISS-B02; metres; no interiors.",
+      "recipe_id": "AM-MISS-B02",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "M"
+      ],
+      "floors": [
+        1,
+        1
+      ],
+      "layout": "single",
+      "min_access_width_m": 0.85,
+      "min_envelope_m": [
+        6.5,
+        19.099999994039536
+      ],
+      "pack": "AM-MISS",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AM-MISS-B03; metres; no interiors.",
+      "recipe_id": "AM-MISS-B03",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        1
+      ],
+      "layout": "single",
+      "min_access_width_m": 0.85,
+      "min_envelope_m": [
+        10.5,
+        23.099999994039536
+      ],
+      "pack": "AM-PNW",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AM-PNW-B01; metres; no interiors.",
+      "recipe_id": "AM-PNW-B01",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        1
+      ],
+      "layout": "single",
+      "min_access_width_m": 0.85,
+      "min_envelope_m": [
+        10.5,
+        23.099999994039536
+      ],
+      "pack": "AM-PNW",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AM-PNW-B02; metres; no interiors.",
+      "recipe_id": "AM-PNW-B02",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        1
+      ],
+      "layout": "single",
+      "min_access_width_m": 0.0,
+      "min_envelope_m": [
+        0.0,
+        0.0
+      ],
+      "pack": "AM-PNW",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AM-PNW-B03; metres; no interiors.",
+      "recipe_id": "AM-PNW-B03",
+      "refusal": "No native structural access path reaches a body.",
+      "status": "refused"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        1
+      ],
+      "layout": "single",
+      "min_access_width_m": 0.85,
+      "min_envelope_m": [
+        10.5,
+        23.099999994039536
+      ],
+      "pack": "AM-PNW",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AM-PNW-B06; metres; no interiors.",
+      "recipe_id": "AM-PNW-B06",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        1
+      ],
+      "layout": "additive",
+      "min_access_width_m": 0.85,
+      "min_envelope_m": [
+        10.5,
+        22.7
+      ],
+      "pack": "AM-PNW",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AM-PNW-B08; metres; no interiors.",
+      "recipe_id": "AM-PNW-B08",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        2
+      ],
+      "layout": "single",
+      "min_access_width_m": 0.85,
+      "min_envelope_m": [
+        5.0,
+        7.65
+      ],
+      "pack": "AM-PUEB",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AM-PUEB-B01; metres; no interiors.",
+      "recipe_id": "AM-PUEB-B01",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        3
+      ],
+      "layout": "pueblo",
+      "min_access_width_m": 0.85,
+      "min_envelope_m": [
+        18.0000000002794,
+        14.65
+      ],
+      "pack": "AM-PUEB",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AM-PUEB-B02; metres; no interiors.",
+      "recipe_id": "AM-PUEB-B02",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "M"
+      ],
+      "floors": [
+        2,
+        4
+      ],
+      "layout": "great_house",
+      "min_access_width_m": 0.85,
+      "min_envelope_m": [
+        70.00000003338397,
+        60.65000000536442
+      ],
+      "pack": "AM-PUEB",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AM-PUEB-B03; metres; no interiors.",
+      "recipe_id": "AM-PUEB-B03",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "M"
+      ],
+      "floors": [
+        1,
+        2
+      ],
+      "layout": "cliff",
+      "min_access_width_m": 0.85,
+      "min_envelope_m": [
+        24.0,
+        7.399999988079071
+      ],
+      "pack": "AM-PUEB",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AM-PUEB-B05; metres; no interiors.",
+      "recipe_id": "AM-PUEB-B05",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        1
+      ],
+      "layout": "single",
+      "min_access_width_m": 0.0,
+      "min_envelope_m": [
+        0.0,
+        0.0
+      ],
+      "pack": "AM-PUEB",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AM-PUEB-B06; metres; no interiors.",
+      "recipe_id": "AM-PUEB-B06",
+      "refusal": "No native structural access path reaches a body.",
+      "status": "refused"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        2,
+        3
+      ],
+      "layout": "single",
+      "min_access_width_m": 0.85,
+      "min_envelope_m": [
+        5.5,
+        5.7
+      ],
+      "pack": "AM-PUEB",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AM-PUEB-B08; metres; no interiors.",
+      "recipe_id": "AM-PUEB-B08",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        3
+      ],
+      "layout": "pueblo",
+      "min_access_width_m": 0.85,
+      "min_envelope_m": [
+        17.1,
+        14.010000005848706
+      ],
+      "pack": "AM-PUEB",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AM-PUEB-B10; metres; no interiors.",
+      "recipe_id": "AM-PUEB-B10",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        1
+      ],
+      "layout": "single",
+      "min_access_width_m": 0.85,
+      "min_envelope_m": [
+        5.5,
+        8.732999999999999
+      ],
+      "pack": "AM-SOUTH",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AM-SOUTH-B01; metres; no interiors.",
+      "recipe_id": "AM-SOUTH-B01",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        1
+      ],
+      "layout": "single",
+      "min_access_width_m": 0.85,
+      "min_envelope_m": [
+        8.5,
+        16.741841
+      ],
+      "pack": "AM-SOUTH",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AM-SOUTH-B02; metres; no interiors.",
+      "recipe_id": "AM-SOUTH-B02",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        1
+      ],
+      "layout": "single",
+      "min_access_width_m": 0.85,
+      "min_envelope_m": [
+        6.5,
+        18.7
+      ],
+      "pack": "AM-SOUTH",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AM-SOUTH-B03; metres; no interiors.",
+      "recipe_id": "AM-SOUTH-B03",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        1
+      ],
+      "layout": "single",
+      "min_access_width_m": 0.85,
+      "min_envelope_m": [
+        4.5,
+        4.722
+      ],
+      "pack": "AM-SOUTH",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AM-SOUTH-B04; metres; no interiors.",
+      "recipe_id": "AM-SOUTH-B04",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        1
+      ],
+      "layout": "single",
+      "min_access_width_m": 0.85,
+      "min_envelope_m": [
+        4.5,
+        4.722
+      ],
+      "pack": "AM-SOUTH",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AM-SOUTH-B05; metres; no interiors.",
+      "recipe_id": "AM-SOUTH-B05",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        1
+      ],
+      "layout": "single",
+      "min_access_width_m": 0.85,
+      "min_envelope_m": [
+        5.5,
+        7.73
+      ],
+      "pack": "AM-SOUTH",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AM-SOUTH-B07; metres; no interiors.",
+      "recipe_id": "AM-SOUTH-B07",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        1
+      ],
+      "layout": "single",
+      "min_access_width_m": 0.85,
+      "min_envelope_m": [
+        6.6,
+        8.649999994039536
+      ],
+      "pack": "AM-TROP",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AM-TROP-B01; metres; no interiors.",
+      "recipe_id": "AM-TROP-B01",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        1
+      ],
+      "layout": "single",
+      "min_access_width_m": 0.85,
+      "min_envelope_m": [
+        12.586,
+        24.742
+      ],
+      "pack": "AM-TROP",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AM-TROP-B02; metres; no interiors.",
+      "recipe_id": "AM-TROP-B02",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        1
+      ],
+      "layout": "single",
+      "min_access_width_m": 0.85,
+      "min_envelope_m": [
+        4.5,
+        4.722
+      ],
+      "pack": "AM-TROP",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AM-TROP-B03; metres; no interiors.",
+      "recipe_id": "AM-TROP-B03",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        1
+      ],
+      "layout": "single",
+      "min_access_width_m": 0.85,
+      "min_envelope_m": [
+        5.5,
+        8.732999999999999
+      ],
+      "pack": "AM-TROP",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AM-TROP-B04; metres; no interiors.",
+      "recipe_id": "AM-TROP-B04",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        1
+      ],
+      "layout": "platform",
+      "min_access_width_m": 0.9,
+      "min_envelope_m": [
+        6.6,
+        10.9
+      ],
+      "pack": "AM-TROP",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AM-TROP-B05; metres; no interiors.",
+      "recipe_id": "AM-TROP-B05",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        1
+      ],
+      "layout": "single",
+      "min_access_width_m": 0.85,
+      "min_envelope_m": [
+        6.5,
+        14.750000000000002
+      ],
+      "pack": "AM-TROP",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AM-TROP-B06; metres; no interiors.",
+      "recipe_id": "AM-TROP-B06",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        1
+      ],
+      "layout": "single",
+      "min_access_width_m": 0.85,
+      "min_envelope_m": [
+        5.5,
+        8.732999999999999
+      ],
+      "pack": "AM-TROP",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AM-TROP-B08; metres; no interiors.",
+      "recipe_id": "AM-TROP-B08",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        1
+      ],
+      "layout": "single",
+      "min_access_width_m": 0.85,
+      "min_envelope_m": [
+        4.5,
+        4.722
+      ],
+      "pack": "AM-WOODS",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AM-WOODS-B01; metres; no interiors.",
+      "recipe_id": "AM-WOODS-B01",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        1
+      ],
+      "layout": "single",
+      "min_access_width_m": 0.85,
+      "min_envelope_m": [
+        6.5,
+        18.7
+      ],
+      "pack": "AM-WOODS",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AM-WOODS-B02; metres; no interiors.",
+      "recipe_id": "AM-WOODS-B02",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        1
+      ],
+      "layout": "single",
+      "min_access_width_m": 0.85,
+      "min_envelope_m": [
+        4.5,
+        4.722
+      ],
+      "pack": "AM-WOODS",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AM-WOODS-B03; metres; no interiors.",
+      "recipe_id": "AM-WOODS-B03",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        1
+      ],
+      "layout": "single",
+      "min_access_width_m": 0.9,
+      "min_envelope_m": [
+        8.5,
+        11.35
+      ],
+      "pack": "AM-WOODS",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AM-WOODS-B04; metres; no interiors.",
+      "recipe_id": "AM-WOODS-B04",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        1
+      ],
+      "layout": "single",
+      "min_access_width_m": 0.85,
+      "min_envelope_m": [
+        6.5,
+        19.099999994039536
+      ],
+      "pack": "AM-WOODS",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AM-WOODS-B05; metres; no interiors.",
+      "recipe_id": "AM-WOODS-B05",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        1
+      ],
+      "layout": "single",
+      "min_access_width_m": 0.85,
+      "min_envelope_m": [
+        4.5,
+        4.722
+      ],
+      "pack": "AM-WOODS",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AM-WOODS-B07; metres; no interiors.",
+      "recipe_id": "AM-WOODS-B07",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        1
+      ],
+      "layout": "single",
+      "min_access_width_m": 0.85,
+      "min_envelope_m": [
+        5.5,
+        7.7
+      ],
+      "pack": "AS-CHI",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AS-CHI-B01; metres; no interiors.",
+      "recipe_id": "AS-CHI-B01",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        1
+      ],
+      "layout": "siheyuan",
+      "min_access_width_m": 1.5,
+      "min_envelope_m": [
+        23.60099995136261,
+        71.73599994182587
+      ],
+      "pack": "AS-CHI",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AS-CHI-B02; metres; no interiors.",
+      "recipe_id": "AS-CHI-B02",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        1
+      ],
+      "layout": "single",
+      "min_access_width_m": 0.85,
+      "min_envelope_m": [
+        5.5,
+        7.7
+      ],
+      "pack": "AS-CHI",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AS-CHI-B03; metres; no interiors.",
+      "recipe_id": "AS-CHI-B03",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        3
+      ],
+      "layout": "strip",
+      "min_access_width_m": 0.85,
+      "min_envelope_m": [
+        4.25,
+        10.450000000000001
+      ],
+      "pack": "AS-CHI",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AS-CHI-B04; metres; no interiors.",
+      "recipe_id": "AS-CHI-B04",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        2
+      ],
+      "layout": "courtyard",
+      "min_access_width_m": 1.5,
+      "min_envelope_m": [
+        29.5,
+        25.824000000953674
+      ],
+      "pack": "AS-CHI",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AS-CHI-B05; metres; no interiors.",
+      "recipe_id": "AS-CHI-B05",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        1
+      ],
+      "layout": "platform",
+      "min_access_width_m": 0.9,
+      "min_envelope_m": [
+        6.6,
+        10.9
+      ],
+      "pack": "AS-CHI",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AS-CHI-B08; metres; no interiors.",
+      "recipe_id": "AS-CHI-B08",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        2
+      ],
+      "layout": "cliff",
+      "min_access_width_m": 0.9,
+      "min_envelope_m": [
+        24.000000001862645,
+        9.1
+      ],
+      "pack": "AS-CHI",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AS-CHI-B10; metres; no interiors.",
+      "recipe_id": "AS-CHI-B10",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        1
+      ],
+      "layout": "multiyard",
+      "min_access_width_m": 1.5,
+      "min_envelope_m": [
+        40.552,
+        61.45299994945526
+      ],
+      "pack": "AS-CHI",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AS-CHI-B11; metres; no interiors.",
+      "recipe_id": "AS-CHI-B11",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        3,
+        5
+      ],
+      "layout": "ring",
+      "min_access_width_m": 1.6,
+      "min_envelope_m": [
+        36.5000589735436,
+        37.35203062194312
+      ],
+      "pack": "AS-CHI",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AS-CHI-B13; metres; no interiors.",
+      "recipe_id": "AS-CHI-B13",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        2,
+        3
+      ],
+      "layout": "additive",
+      "min_access_width_m": 0.85,
+      "min_envelope_m": [
+        30.5,
+        21.099999994039536
+      ],
+      "pack": "AS-CHI",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AS-CHI-B14; metres; no interiors.",
+      "recipe_id": "AS-CHI-B14",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        2,
+        3
+      ],
+      "layout": "courtyard",
+      "min_access_width_m": 0.0,
+      "min_envelope_m": [
+        0.0,
+        0.0
+      ],
+      "pack": "AS-HIM",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AS-HIM-B01; metres; no interiors.",
+      "recipe_id": "AS-HIM-B01",
+      "refusal": "Bande native manquante.",
+      "status": "refused"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        3
+      ],
+      "layout": "pueblo",
+      "min_access_width_m": 0.0,
+      "min_envelope_m": [
+        0.0,
+        0.0
+      ],
+      "pack": "AS-HIM",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AS-HIM-B02; metres; no interiors.",
+      "recipe_id": "AS-HIM-B02",
+      "refusal": "Bande native manquante.",
+      "status": "refused"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        2,
+        4
+      ],
+      "layout": "strip",
+      "min_access_width_m": 0.85,
+      "min_envelope_m": [
+        4.25,
+        10.450000000000001
+      ],
+      "pack": "AS-HIM",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AS-HIM-B03; metres; no interiors.",
+      "recipe_id": "AS-HIM-B03",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        2,
+        2
+      ],
+      "layout": "single",
+      "min_access_width_m": 0.85,
+      "min_envelope_m": [
+        9.6,
+        11.649999994039536
+      ],
+      "pack": "AS-HIM",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AS-HIM-B04; metres; no interiors.",
+      "recipe_id": "AS-HIM-B04",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        3,
+        6
+      ],
+      "layout": "single",
+      "min_access_width_m": 0.0,
+      "min_envelope_m": [
+        0.0,
+        0.0
+      ],
+      "pack": "AS-HIM",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AS-HIM-B08; metres; no interiors.",
+      "recipe_id": "AS-HIM-B08",
+      "refusal": "Bande native manquante.",
+      "status": "refused"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        2,
+        3
+      ],
+      "layout": "courtyard",
+      "min_access_width_m": 1.5,
+      "min_envelope_m": [
+        24.72299998998642,
+        29.712000012397766
+      ],
+      "pack": "AS-HIM",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AS-HIM-B09; metres; no interiors.",
+      "recipe_id": "AS-HIM-B09",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        2
+      ],
+      "layout": "cliff",
+      "min_access_width_m": 0.9,
+      "min_envelope_m": [
+        24.000000001862645,
+        9.1
+      ],
+      "pack": "AS-HIM",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AS-HIM-B10; metres; no interiors.",
+      "recipe_id": "AS-HIM-B10",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        2
+      ],
+      "layout": "single",
+      "min_access_width_m": 0.85,
+      "min_envelope_m": [
+        5.5,
+        7.7
+      ],
+      "pack": "AS-IND",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AS-IND-B01; metres; no interiors.",
+      "recipe_id": "AS-IND-B01",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A"
+      ],
+      "floors": [
+        1,
+        2
+      ],
+      "layout": "courtyard",
+      "min_access_width_m": 1.5,
+      "min_envelope_m": [
+        29.62000000476837,
+        30.670000002384185
+      ],
+      "pack": "AS-IND",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AS-IND-B02; metres; no interiors.",
+      "recipe_id": "AS-IND-B02",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        2
+      ],
+      "layout": "courtyard",
+      "min_access_width_m": 1.5,
+      "min_envelope_m": [
+        27.66100001335144,
+        28.71100000667572
+      ],
+      "pack": "AS-IND",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AS-IND-B03; metres; no interiors.",
+      "recipe_id": "AS-IND-B03",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        1
+      ],
+      "layout": "platform",
+      "min_access_width_m": 0.9,
+      "min_envelope_m": [
+        6.6,
+        10.9
+      ],
+      "pack": "AS-IND",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AS-IND-B04; metres; no interiors.",
+      "recipe_id": "AS-IND-B04",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        1
+      ],
+      "layout": "single",
+      "min_access_width_m": 0.85,
+      "min_envelope_m": [
+        4.5,
+        4.722
+      ],
+      "pack": "AS-IND",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AS-IND-B05; metres; no interiors.",
+      "recipe_id": "AS-IND-B05",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        3
+      ],
+      "layout": "courtyard",
+      "min_access_width_m": 1.5,
+      "min_envelope_m": [
+        23.5,
+        24.232999980449677
+      ],
+      "pack": "AS-IND",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AS-IND-B10; metres; no interiors.",
+      "recipe_id": "AS-IND-B10",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        2
+      ],
+      "layout": "courtyard",
+      "min_access_width_m": 1.5,
+      "min_envelope_m": [
+        27.66100001335144,
+        27.66100001335144
+      ],
+      "pack": "AS-IND",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AS-IND-B12; metres; no interiors.",
+      "recipe_id": "AS-IND-B12",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        2
+      ],
+      "layout": "multiyard",
+      "min_access_width_m": 1.5,
+      "min_envelope_m": [
+        75.8,
+        141.83599996566772
+      ],
+      "pack": "AS-IND",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AS-IND-B13; metres; no interiors.",
+      "recipe_id": "AS-IND-B13",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        1
+      ],
+      "layout": "platform",
+      "min_access_width_m": 0.9,
+      "min_envelope_m": [
+        6.6,
+        10.9
+      ],
+      "pack": "AS-ISL",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AS-ISL-B01; metres; no interiors.",
+      "recipe_id": "AS-ISL-B01",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        1
+      ],
+      "layout": "platform",
+      "min_access_width_m": 0.9,
+      "min_envelope_m": [
+        11.9,
+        33.599999999999994
+      ],
+      "pack": "AS-ISL",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AS-ISL-B02; metres; no interiors.",
+      "recipe_id": "AS-ISL-B02",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        1
+      ],
+      "layout": "platform",
+      "min_access_width_m": 0.0,
+      "min_envelope_m": [
+        0.0,
+        0.0
+      ],
+      "pack": "AS-ISL",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AS-ISL-B03; metres; no interiors.",
+      "recipe_id": "AS-ISL-B03",
+      "refusal": "No native structural access path reaches a body.",
+      "status": "refused"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        1
+      ],
+      "layout": "kancha",
+      "min_access_width_m": 1.5,
+      "min_envelope_m": [
+        31.501999974250793,
+        46.50199997425079
+      ],
+      "pack": "AS-ISL",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AS-ISL-B05; metres; no interiors.",
+      "recipe_id": "AS-ISL-B05",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        1
+      ],
+      "layout": "single",
+      "min_access_width_m": 0.85,
+      "min_envelope_m": [
+        14.5,
+        14.700000000000001
+      ],
+      "pack": "AS-ISL",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AS-ISL-B06; metres; no interiors.",
+      "recipe_id": "AS-ISL-B06",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        1
+      ],
+      "layout": "platform",
+      "min_access_width_m": 0.9,
+      "min_envelope_m": [
+        6.6,
+        10.9
+      ],
+      "pack": "AS-ISL",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AS-ISL-B07; metres; no interiors.",
+      "recipe_id": "AS-ISL-B07",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        1
+      ],
+      "layout": "platform",
+      "min_access_width_m": 0.0,
+      "min_envelope_m": [
+        0.0,
+        0.0
+      ],
+      "pack": "AS-ISL",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AS-ISL-B09; metres; no interiors.",
+      "recipe_id": "AS-ISL-B09",
+      "refusal": "No native structural access path reaches a body.",
+      "status": "refused"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        1
+      ],
+      "layout": "platform",
+      "min_access_width_m": 0.0,
+      "min_envelope_m": [
+        0.0,
+        0.0
+      ],
+      "pack": "AS-ISL",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AS-ISL-B10; metres; no interiors.",
+      "recipe_id": "AS-ISL-B10",
+      "refusal": "Quatre cornes : pied de ferme sans mur porteur à (10.000, 4.800, 4.000) : unit-0:body:0.",
+      "status": "refused"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        1
+      ],
+      "layout": "platform",
+      "min_access_width_m": 0.0,
+      "min_envelope_m": [
+        0.0,
+        0.0
+      ],
+      "pack": "AS-ISL",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AS-ISL-B11; metres; no interiors.",
+      "recipe_id": "AS-ISL-B11",
+      "refusal": "No native structural access path reaches a body.",
+      "status": "refused"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        1
+      ],
+      "layout": "single",
+      "min_access_width_m": 0.85,
+      "min_envelope_m": [
+        6.6,
+        12.151000011444092
+      ],
+      "pack": "AS-JAP",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AS-JAP-B01; metres; no interiors.",
+      "recipe_id": "AS-JAP-B01",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        1
+      ],
+      "layout": "single",
+      "min_access_width_m": 0.85,
+      "min_envelope_m": [
+        6.6,
+        8.649999994039536
+      ],
+      "pack": "AS-JAP",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AS-JAP-B02; metres; no interiors.",
+      "recipe_id": "AS-JAP-B02",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "M"
+      ],
+      "floors": [
+        1,
+        1
+      ],
+      "layout": "shinden",
+      "min_access_width_m": 0.9,
+      "min_envelope_m": [
+        15.381999969482422,
+        48.879999999999995
+      ],
+      "pack": "AS-JAP",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AS-JAP-B03; metres; no interiors.",
+      "recipe_id": "AS-JAP-B03",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        3
+      ],
+      "layout": "strip",
+      "min_access_width_m": 0.85,
+      "min_envelope_m": [
+        4.25,
+        10.849999994039536
+      ],
+      "pack": "AS-JAP",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AS-JAP-B04; metres; no interiors.",
+      "recipe_id": "AS-JAP-B04",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        1
+      ],
+      "layout": "kancha",
+      "min_access_width_m": 1.5,
+      "min_envelope_m": [
+        33.50199997425079,
+        28.74099999666214
+      ],
+      "pack": "AS-JAP",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AS-JAP-B09; metres; no interiors.",
+      "recipe_id": "AS-JAP-B09",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        2,
+        3
+      ],
+      "layout": "single",
+      "min_access_width_m": 0.85,
+      "min_envelope_m": [
+        5.5,
+        7.7
+      ],
+      "pack": "AS-JAP",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AS-JAP-B10; metres; no interiors.",
+      "recipe_id": "AS-JAP-B10",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        3
+      ],
+      "layout": "strip",
+      "min_access_width_m": 0.85,
+      "min_envelope_m": [
+        4.25,
+        10.450000000000001
+      ],
+      "pack": "AS-JAP",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AS-JAP-B11; metres; no interiors.",
+      "recipe_id": "AS-JAP-B11",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        1
+      ],
+      "layout": "single",
+      "min_access_width_m": 0.85,
+      "min_envelope_m": [
+        6.6,
+        8.649999994039536
+      ],
+      "pack": "AS-KOR",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AS-KOR-B01; metres; no interiors.",
+      "recipe_id": "AS-KOR-B01",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        1
+      ],
+      "layout": "courtyard",
+      "min_access_width_m": 0.0,
+      "min_envelope_m": [
+        0.0,
+        0.0
+      ],
+      "pack": "AS-KOR",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AS-KOR-B02; metres; no interiors.",
+      "recipe_id": "AS-KOR-B02",
+      "refusal": "Socle de unit-0:body:0 sans murs réellement portés.",
+      "status": "refused"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        1
+      ],
+      "layout": "single",
+      "min_access_width_m": 0.85,
+      "min_envelope_m": [
+        5.5,
+        7.7
+      ],
+      "pack": "AS-KOR",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AS-KOR-B05; metres; no interiors.",
+      "recipe_id": "AS-KOR-B05",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        1
+      ],
+      "layout": "multiyard",
+      "min_access_width_m": 1.5,
+      "min_envelope_m": [
+        39.50199997425079,
+        59.50100004673004
+      ],
+      "pack": "AS-KOR",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AS-KOR-B08; metres; no interiors.",
+      "recipe_id": "AS-KOR-B08",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        2
+      ],
+      "layout": "courtyard",
+      "min_access_width_m": 1.5,
+      "min_envelope_m": [
+        29.62000000476837,
+        30.670000002384185
+      ],
+      "pack": "AS-MIDE",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AS-MIDE-B01; metres; no interiors.",
+      "recipe_id": "AS-MIDE-B01",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A"
+      ],
+      "floors": [
+        1,
+        2
+      ],
+      "layout": "courtyard",
+      "min_access_width_m": 1.5,
+      "min_envelope_m": [
+        29.62000000476837,
+        30.670000002384185
+      ],
+      "pack": "AS-MIDE",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AS-MIDE-B02; metres; no interiors.",
+      "recipe_id": "AS-MIDE-B02",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        2
+      ],
+      "layout": "iwan_court",
+      "min_access_width_m": 0.0,
+      "min_envelope_m": [
+        0.0,
+        0.0
+      ],
+      "pack": "AS-MIDE",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AS-MIDE-B03; metres; no interiors.",
+      "recipe_id": "AS-MIDE-B03",
+      "refusal": "Retombées de voûte sans masse d'appui continue : unit-0:body:0 ; épaisseur/hauteur requises 0.536m.",
+      "status": "refused"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        2
+      ],
+      "layout": "courtyard",
+      "min_access_width_m": 1.5,
+      "min_envelope_m": [
+        29.62000000476837,
+        30.670000002384185
+      ],
+      "pack": "AS-MIDE",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AS-MIDE-B04; metres; no interiors.",
+      "recipe_id": "AS-MIDE-B04",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        2
+      ],
+      "layout": "single",
+      "min_access_width_m": 0.85,
+      "min_envelope_m": [
+        5.5,
+        8.25
+      ],
+      "pack": "AS-MIDE",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AS-MIDE-B06; metres; no interiors.",
+      "recipe_id": "AS-MIDE-B06",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        1
+      ],
+      "layout": "courtyard",
+      "min_access_width_m": 1.5,
+      "min_envelope_m": [
+        29.62000000476837,
+        30.670000002384185
+      ],
+      "pack": "AS-MIDE",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AS-MIDE-B09; metres; no interiors.",
+      "recipe_id": "AS-MIDE-B09",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        3
+      ],
+      "layout": "strip",
+      "min_access_width_m": 0.85,
+      "min_envelope_m": [
+        4.38,
+        10.580000000000002
+      ],
+      "pack": "AS-MIDE",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AS-MIDE-B10; metres; no interiors.",
+      "recipe_id": "AS-MIDE-B10",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        3,
+        5
+      ],
+      "layout": "single",
+      "min_access_width_m": 0.85,
+      "min_envelope_m": [
+        5.5,
+        5.7
+      ],
+      "pack": "AS-MIDE",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AS-MIDE-B12; metres; no interiors.",
+      "recipe_id": "AS-MIDE-B12",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        4,
+        7
+      ],
+      "layout": "single",
+      "min_access_width_m": 0.85,
+      "min_envelope_m": [
+        5.5,
+        8.7
+      ],
+      "pack": "AS-MIDE",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AS-MIDE-B13; metres; no interiors.",
+      "recipe_id": "AS-MIDE-B13",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        1
+      ],
+      "layout": "platform",
+      "min_access_width_m": 0.9,
+      "min_envelope_m": [
+        6.6,
+        10.9
+      ],
+      "pack": "AS-SEA",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AS-SEA-B01; metres; no interiors.",
+      "recipe_id": "AS-SEA-B01",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        1
+      ],
+      "layout": "single",
+      "min_access_width_m": 0.85,
+      "min_envelope_m": [
+        6.6,
+        8.649999994039536
+      ],
+      "pack": "AS-SEA",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AS-SEA-B02; metres; no interiors.",
+      "recipe_id": "AS-SEA-B02",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        1
+      ],
+      "layout": "kancha",
+      "min_access_width_m": 1.5,
+      "min_envelope_m": [
+        25.597000002861023,
+        27.300999999046326
+      ],
+      "pack": "AS-SEA",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AS-SEA-B03; metres; no interiors.",
+      "recipe_id": "AS-SEA-B03",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        2
+      ],
+      "layout": "kancha",
+      "min_access_width_m": 1.5,
+      "min_envelope_m": [
+        24.70200002193451,
+        35.7540000154674
+      ],
+      "pack": "AS-SEA",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AS-SEA-B04; metres; no interiors.",
+      "recipe_id": "AS-SEA-B04",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        1
+      ],
+      "layout": "platform",
+      "min_access_width_m": 0.0,
+      "min_envelope_m": [
+        0.0,
+        0.0
+      ],
+      "pack": "AS-SEA",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AS-SEA-B05; metres; no interiors.",
+      "recipe_id": "AS-SEA-B05",
+      "refusal": "No native structural access path reaches a body.",
+      "status": "refused"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        1
+      ],
+      "layout": "single",
+      "min_access_width_m": 0.85,
+      "min_envelope_m": [
+        4.5,
+        4.722
+      ],
+      "pack": "AS-SIB",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AS-SIB-B01; metres; no interiors.",
+      "recipe_id": "AS-SIB-B01",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        1
+      ],
+      "layout": "single",
+      "min_access_width_m": 0.85,
+      "min_envelope_m": [
+        4.5,
+        4.722
+      ],
+      "pack": "AS-SIB",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AS-SIB-B02; metres; no interiors.",
+      "recipe_id": "AS-SIB-B02",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        2
+      ],
+      "layout": "single",
+      "min_access_width_m": 0.85,
+      "min_envelope_m": [
+        5.5,
+        7.7
+      ],
+      "pack": "AS-SIB",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AS-SIB-B03; metres; no interiors.",
+      "recipe_id": "AS-SIB-B03",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        1
+      ],
+      "layout": "single",
+      "min_access_width_m": 0.0,
+      "min_envelope_m": [
+        0.0,
+        0.0
+      ],
+      "pack": "AS-SIB",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AS-SIB-B04; metres; no interiors.",
+      "recipe_id": "AS-SIB-B04",
+      "refusal": "No native structural access path reaches a body.",
+      "status": "refused"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        1
+      ],
+      "layout": "single",
+      "min_access_width_m": 0.85,
+      "min_envelope_m": [
+        4.499794,
+        4.721922
+      ],
+      "pack": "AS-SIB",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AS-SIB-B06; metres; no interiors.",
+      "recipe_id": "AS-SIB-B06",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        2
+      ],
+      "layout": "single",
+      "min_access_width_m": 0.85,
+      "min_envelope_m": [
+        5.5,
+        8.099999994039536
+      ],
+      "pack": "AS-SIB",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AS-SIB-B07; metres; no interiors.",
+      "recipe_id": "AS-SIB-B07",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        1
+      ],
+      "layout": "parallel",
+      "min_access_width_m": 0.9,
+      "min_envelope_m": [
+        16.00000000308454,
+        14.080000002980233
+      ],
+      "pack": "AS-SIB",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AS-SIB-B08; metres; no interiors.",
+      "recipe_id": "AS-SIB-B08",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        1
+      ],
+      "layout": "single",
+      "min_access_width_m": 0.85,
+      "min_envelope_m": [
+        4.0,
+        4.472
+      ],
+      "pack": "AS-STEP",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AS-STEP-B01; metres; no interiors.",
+      "recipe_id": "AS-STEP-B01",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        1
+      ],
+      "layout": "single",
+      "min_access_width_m": 0.85,
+      "min_envelope_m": [
+        4.499794,
+        4.721922
+      ],
+      "pack": "AS-STEP",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AS-STEP-B02; metres; no interiors.",
+      "recipe_id": "AS-STEP-B02",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        2
+      ],
+      "layout": "single",
+      "min_access_width_m": 0.85,
+      "min_envelope_m": [
+        5.0,
+        7.65
+      ],
+      "pack": "AS-STEP",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AS-STEP-B03; metres; no interiors.",
+      "recipe_id": "AS-STEP-B03",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        2
+      ],
+      "layout": "courtyard",
+      "min_access_width_m": 1.5,
+      "min_envelope_m": [
+        29.62000000476837,
+        30.670000002384185
+      ],
+      "pack": "AS-STEP",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AS-STEP-B04; metres; no interiors.",
+      "recipe_id": "AS-STEP-B04",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        1
+      ],
+      "layout": "single",
+      "min_access_width_m": 0.85,
+      "min_envelope_m": [
+        9.5,
+        9.721
+      ],
+      "pack": "AS-STEP",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AS-STEP-B08; metres; no interiors.",
+      "recipe_id": "AS-STEP-B08",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        2
+      ],
+      "layout": "courtyard",
+      "min_access_width_m": 1.5,
+      "min_envelope_m": [
+        29.5,
+        25.824000000953674
+      ],
+      "pack": "AS-STEP",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:AS-STEP-B09; metres; no interiors.",
+      "recipe_id": "AS-STEP-B09",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        1
+      ],
+      "layout": "single",
+      "min_access_width_m": 0.85,
+      "min_envelope_m": [
+        4.5,
+        4.722
+      ],
+      "pack": "ATL-CEL",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:ATL-CEL-B01; metres; no interiors.",
+      "recipe_id": "ATL-CEL-B01",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        1
+      ],
+      "layout": "single",
+      "min_access_width_m": 0.85,
+      "min_envelope_m": [
+        4.5,
+        4.922
+      ],
+      "pack": "ATL-CEL",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:ATL-CEL-B02; metres; no interiors.",
+      "recipe_id": "ATL-CEL-B02",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        1
+      ],
+      "layout": "single",
+      "min_access_width_m": 0.85,
+      "min_envelope_m": [
+        6.5,
+        18.7
+      ],
+      "pack": "ATL-CEL",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:ATL-CEL-B03; metres; no interiors.",
+      "recipe_id": "ATL-CEL-B03",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        1
+      ],
+      "layout": "additive",
+      "min_access_width_m": 0.85,
+      "min_envelope_m": [
+        16.5,
+        14.9
+      ],
+      "pack": "ATL-CEL",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:ATL-CEL-B04; metres; no interiors.",
+      "recipe_id": "ATL-CEL-B04",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        3
+      ],
+      "layout": "strip",
+      "min_access_width_m": 0.85,
+      "min_envelope_m": [
+        4.25,
+        10.450000000000001
+      ],
+      "pack": "ATL-CEL",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:ATL-CEL-B06; metres; no interiors.",
+      "recipe_id": "ATL-CEL-B06",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        1
+      ],
+      "layout": "single",
+      "min_access_width_m": 0.85,
+      "min_envelope_m": [
+        6.5,
+        14.750000000000002
+      ],
+      "pack": "ATL-CEL",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:ATL-CEL-B07; metres; no interiors.",
+      "recipe_id": "ATL-CEL-B07",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        2,
+        3
+      ],
+      "layout": "broch",
+      "min_access_width_m": 1.5,
+      "min_envelope_m": [
+        17.40554440021515,
+        20.01277220249176
+      ],
+      "pack": "ATL-CEL",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:ATL-CEL-B08; metres; no interiors.",
+      "recipe_id": "ATL-CEL-B08",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        2
+      ],
+      "layout": "single",
+      "min_access_width_m": 0.85,
+      "min_envelope_m": [
+        5.5,
+        8.099999994039536
+      ],
+      "pack": "EUR-EAST",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:EUR-EAST-B01; metres; no interiors.",
+      "recipe_id": "EUR-EAST-B01",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        1
+      ],
+      "layout": "single",
+      "min_access_width_m": 0.85,
+      "min_envelope_m": [
+        5.5,
+        7.7
+      ],
+      "pack": "EUR-EAST",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:EUR-EAST-B02; metres; no interiors.",
+      "recipe_id": "EUR-EAST-B02",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        2
+      ],
+      "layout": "single",
+      "min_access_width_m": 0.85,
+      "min_envelope_m": [
+        5.0,
+        8.0
+      ],
+      "pack": "EUR-EAST",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:EUR-EAST-B03; metres; no interiors.",
+      "recipe_id": "EUR-EAST-B03",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        3,
+        6
+      ],
+      "layout": "single",
+      "min_access_width_m": 0.85,
+      "min_envelope_m": [
+        5.5,
+        5.7
+      ],
+      "pack": "EUR-EAST",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:EUR-EAST-B04; metres; no interiors.",
+      "recipe_id": "EUR-EAST-B04",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        2
+      ],
+      "layout": "courtyard",
+      "min_access_width_m": 1.5,
+      "min_envelope_m": [
+        27.66100001335144,
+        28.71100000667572
+      ],
+      "pack": "EUR-EAST",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:EUR-EAST-B06; metres; no interiors.",
+      "recipe_id": "EUR-EAST-B06",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        2
+      ],
+      "layout": "cliff",
+      "min_access_width_m": 0.0,
+      "min_envelope_m": [
+        0.0,
+        0.0
+      ],
+      "pack": "EUR-EAST",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:EUR-EAST-B09; metres; no interiors.",
+      "recipe_id": "EUR-EAST-B09",
+      "refusal": "No native structural access path reaches a body.",
+      "status": "refused"
+    },
+    {
+      "eras": [
+        "M"
+      ],
+      "floors": [
+        1,
+        1
+      ],
+      "layout": "single",
+      "min_access_width_m": 0.85,
+      "min_envelope_m": [
+        5.5,
+        7.7
+      ],
+      "pack": "EUR-MED",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:EUR-MED-B01; metres; no interiors.",
+      "recipe_id": "EUR-MED-B01",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "M"
+      ],
+      "floors": [
+        1,
+        3
+      ],
+      "layout": "strip",
+      "min_access_width_m": 0.85,
+      "min_envelope_m": [
+        4.25,
+        10.450000000000001
+      ],
+      "pack": "EUR-MED",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:EUR-MED-B02; metres; no interiors.",
+      "recipe_id": "EUR-MED-B02",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "M"
+      ],
+      "floors": [
+        2,
+        3
+      ],
+      "layout": "strip",
+      "min_access_width_m": 0.85,
+      "min_envelope_m": [
+        4.25,
+        10.6
+      ],
+      "pack": "EUR-MED",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:EUR-MED-B03; metres; no interiors.",
+      "recipe_id": "EUR-MED-B03",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "M"
+      ],
+      "floors": [
+        1,
+        2
+      ],
+      "layout": "single",
+      "min_access_width_m": 0.85,
+      "min_envelope_m": [
+        5.0,
+        7.89
+      ],
+      "pack": "EUR-MED",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:EUR-MED-B04; metres; no interiors.",
+      "recipe_id": "EUR-MED-B04",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "M"
+      ],
+      "floors": [
+        1,
+        3
+      ],
+      "layout": "strip",
+      "min_access_width_m": 0.85,
+      "min_envelope_m": [
+        4.38,
+        10.580000000000002
+      ],
+      "pack": "EUR-MED",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:EUR-MED-B05; metres; no interiors.",
+      "recipe_id": "EUR-MED-B05",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "M"
+      ],
+      "floors": [
+        1,
+        2
+      ],
+      "layout": "courtyard",
+      "min_access_width_m": 1.5,
+      "min_envelope_m": [
+        29.5,
+        25.824000000953674
+      ],
+      "pack": "EUR-MED",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:EUR-MED-B06; metres; no interiors.",
+      "recipe_id": "EUR-MED-B06",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "M"
+      ],
+      "floors": [
+        2,
+        3
+      ],
+      "layout": "additive",
+      "min_access_width_m": 0.85,
+      "min_envelope_m": [
+        9.431,
+        5.26
+      ],
+      "pack": "EUR-MED",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:EUR-MED-B07; metres; no interiors.",
+      "recipe_id": "EUR-MED-B07",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "M"
+      ],
+      "floors": [
+        3,
+        6
+      ],
+      "layout": "single",
+      "min_access_width_m": 0.85,
+      "min_envelope_m": [
+        5.5,
+        5.7
+      ],
+      "pack": "EUR-MED",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:EUR-MED-B08; metres; no interiors.",
+      "recipe_id": "EUR-MED-B08",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "M"
+      ],
+      "floors": [
+        2,
+        3
+      ],
+      "layout": "strip",
+      "min_access_width_m": 0.85,
+      "min_envelope_m": [
+        6.38,
+        12.580000000000002
+      ],
+      "pack": "EUR-MED",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:EUR-MED-B09; metres; no interiors.",
+      "recipe_id": "EUR-MED-B09",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "M"
+      ],
+      "floors": [
+        2,
+        2
+      ],
+      "layout": "single",
+      "min_access_width_m": 0.85,
+      "min_envelope_m": [
+        9.6,
+        11.649999994039536
+      ],
+      "pack": "EUR-MED",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:EUR-MED-B10; metres; no interiors.",
+      "recipe_id": "EUR-MED-B10",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "M"
+      ],
+      "floors": [
+        2,
+        3
+      ],
+      "layout": "single",
+      "min_access_width_m": 0.85,
+      "min_envelope_m": [
+        5.5,
+        7.7
+      ],
+      "pack": "EUR-MED",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:EUR-MED-B11; metres; no interiors.",
+      "recipe_id": "EUR-MED-B11",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "M"
+      ],
+      "floors": [
+        1,
+        1
+      ],
+      "layout": "single",
+      "min_access_width_m": 0.85,
+      "min_envelope_m": [
+        6.5,
+        18.7
+      ],
+      "pack": "EUR-MED",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:EUR-MED-B12; metres; no interiors.",
+      "recipe_id": "EUR-MED-B12",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "M"
+      ],
+      "floors": [
+        1,
+        2
+      ],
+      "layout": "bridge",
+      "min_access_width_m": 0.9,
+      "min_envelope_m": [
+        7.5,
+        18.5
+      ],
+      "pack": "EUR-MED",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:EUR-MED-B13; metres; no interiors.",
+      "recipe_id": "EUR-MED-B13",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "M"
+      ],
+      "floors": [
+        1,
+        1
+      ],
+      "layout": "single",
+      "min_access_width_m": 0.85,
+      "min_envelope_m": [
+        6.5,
+        18.7
+      ],
+      "pack": "EUR-NOR",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:EUR-NOR-B01; metres; no interiors.",
+      "recipe_id": "EUR-NOR-B01",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "M"
+      ],
+      "floors": [
+        1,
+        2
+      ],
+      "layout": "single",
+      "min_access_width_m": 0.85,
+      "min_envelope_m": [
+        5.5,
+        8.099999994039536
+      ],
+      "pack": "EUR-NOR",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:EUR-NOR-B02; metres; no interiors.",
+      "recipe_id": "EUR-NOR-B02",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "M"
+      ],
+      "floors": [
+        1,
+        1
+      ],
+      "layout": "parallel",
+      "min_access_width_m": 0.9,
+      "min_envelope_m": [
+        16.25,
+        14.250000002980233
+      ],
+      "pack": "EUR-NOR",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:EUR-NOR-B03; metres; no interiors.",
+      "recipe_id": "EUR-NOR-B03",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "M"
+      ],
+      "floors": [
+        1,
+        1
+      ],
+      "layout": "single",
+      "min_access_width_m": 0.85,
+      "min_envelope_m": [
+        4.5,
+        4.722
+      ],
+      "pack": "EUR-NOR",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:EUR-NOR-B07; metres; no interiors.",
+      "recipe_id": "EUR-NOR-B07",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "M"
+      ],
+      "floors": [
+        1,
+        1
+      ],
+      "layout": "single",
+      "min_access_width_m": 0.85,
+      "min_envelope_m": [
+        4.5,
+        4.722
+      ],
+      "pack": "EUR-NOR",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:EUR-NOR-B08; metres; no interiors.",
+      "recipe_id": "EUR-NOR-B08",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "M"
+      ],
+      "floors": [
+        1,
+        2
+      ],
+      "layout": "courtyard",
+      "min_access_width_m": 1.5,
+      "min_envelope_m": [
+        29.5,
+        25.824000000953674
+      ],
+      "pack": "EUR-NOR",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:EUR-NOR-B09; metres; no interiors.",
+      "recipe_id": "EUR-NOR-B09",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "M"
+      ],
+      "floors": [
+        1,
+        1
+      ],
+      "layout": "parallel",
+      "min_access_width_m": 0.9,
+      "min_envelope_m": [
+        16.25,
+        14.250000002980233
+      ],
+      "pack": "EUR-NOR",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:EUR-NOR-B10; metres; no interiors.",
+      "recipe_id": "EUR-NOR-B10",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A"
+      ],
+      "floors": [
+        1,
+        2
+      ],
+      "layout": "single",
+      "min_access_width_m": 0.85,
+      "min_envelope_m": [
+        5.5,
+        7.7
+      ],
+      "pack": "MED-ANT",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:MED-ANT-B01; metres; no interiors.",
+      "recipe_id": "MED-ANT-B01",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A"
+      ],
+      "floors": [
+        1,
+        2
+      ],
+      "layout": "atrium",
+      "min_access_width_m": 1.5,
+      "min_envelope_m": [
+        27.5,
+        28.55
+      ],
+      "pack": "MED-ANT",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:MED-ANT-B02; metres; no interiors.",
+      "recipe_id": "MED-ANT-B02",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A"
+      ],
+      "floors": [
+        1,
+        2
+      ],
+      "layout": "peristyle",
+      "min_access_width_m": 1.5,
+      "min_envelope_m": [
+        33.5,
+        36.55
+      ],
+      "pack": "MED-ANT",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:MED-ANT-B03; metres; no interiors.",
+      "recipe_id": "MED-ANT-B03",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A"
+      ],
+      "floors": [
+        3,
+        5
+      ],
+      "layout": "courtyard",
+      "min_access_width_m": 1.5,
+      "min_envelope_m": [
+        33.5,
+        38.55
+      ],
+      "pack": "MED-ANT",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:MED-ANT-B04; metres; no interiors.",
+      "recipe_id": "MED-ANT-B04",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A"
+      ],
+      "floors": [
+        1,
+        2
+      ],
+      "layout": "courtyard",
+      "min_access_width_m": 1.5,
+      "min_envelope_m": [
+        27.66100001335144,
+        28.71100000667572
+      ],
+      "pack": "MED-ANT",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:MED-ANT-B05; metres; no interiors.",
+      "recipe_id": "MED-ANT-B05",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A"
+      ],
+      "floors": [
+        1,
+        2
+      ],
+      "layout": "courtyard",
+      "min_access_width_m": 1.5,
+      "min_envelope_m": [
+        29.62000000476837,
+        30.670000002384185
+      ],
+      "pack": "MED-ANT",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:MED-ANT-B08; metres; no interiors.",
+      "recipe_id": "MED-ANT-B08",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A"
+      ],
+      "floors": [
+        1,
+        2
+      ],
+      "layout": "courtyard",
+      "min_access_width_m": 1.5,
+      "min_envelope_m": [
+        33.5,
+        31.55000004172325
+      ],
+      "pack": "MED-ANT",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:MED-ANT-B11; metres; no interiors.",
+      "recipe_id": "MED-ANT-B11",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        1
+      ],
+      "layout": "single",
+      "min_access_width_m": 0.85,
+      "min_envelope_m": [
+        5.5,
+        7.73
+      ],
+      "pack": "OC-AUS",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:OC-AUS-B01; metres; no interiors.",
+      "recipe_id": "OC-AUS-B01",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        1
+      ],
+      "layout": "single",
+      "min_access_width_m": 0.85,
+      "min_envelope_m": [
+        4.5,
+        4.722
+      ],
+      "pack": "OC-AUS",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:OC-AUS-B02; metres; no interiors.",
+      "recipe_id": "OC-AUS-B02",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        1
+      ],
+      "layout": "single",
+      "min_access_width_m": 0.85,
+      "min_envelope_m": [
+        4.5,
+        4.922
+      ],
+      "pack": "OC-AUS",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:OC-AUS-B03; metres; no interiors.",
+      "recipe_id": "OC-AUS-B03",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        1
+      ],
+      "layout": "single",
+      "min_access_width_m": 0.85,
+      "min_envelope_m": [
+        5.5,
+        8.099999994039536
+      ],
+      "pack": "OC-AUS",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:OC-AUS-B06; metres; no interiors.",
+      "recipe_id": "OC-AUS-B06",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        1
+      ],
+      "layout": "single",
+      "min_access_width_m": 0.85,
+      "min_envelope_m": [
+        6.5,
+        14.750000000000002
+      ],
+      "pack": "OC-AUS",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:OC-AUS-B07; metres; no interiors.",
+      "recipe_id": "OC-AUS-B07",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        1
+      ],
+      "layout": "single",
+      "min_access_width_m": 0.85,
+      "min_envelope_m": [
+        5.5,
+        8.732999999999999
+      ],
+      "pack": "OC-PAC",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:OC-PAC-B01; metres; no interiors.",
+      "recipe_id": "OC-PAC-B01",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        1
+      ],
+      "layout": "single",
+      "min_access_width_m": 0.85,
+      "min_envelope_m": [
+        5.5,
+        8.732999999999999
+      ],
+      "pack": "OC-PAC",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:OC-PAC-B02; metres; no interiors.",
+      "recipe_id": "OC-PAC-B02",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        1
+      ],
+      "layout": "single",
+      "min_access_width_m": 0.85,
+      "min_envelope_m": [
+        4.5,
+        7.0999999940395355
+      ],
+      "pack": "OC-PAC",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:OC-PAC-B03; metres; no interiors.",
+      "recipe_id": "OC-PAC-B03",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        1
+      ],
+      "layout": "single",
+      "min_access_width_m": 0.85,
+      "min_envelope_m": [
+        10.5,
+        14.73
+      ],
+      "pack": "OC-PAC",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:OC-PAC-B05; metres; no interiors.",
+      "recipe_id": "OC-PAC-B05",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        1
+      ],
+      "layout": "platform",
+      "min_access_width_m": 0.9,
+      "min_envelope_m": [
+        6.6,
+        10.9
+      ],
+      "pack": "OC-PAC",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:OC-PAC-B08; metres; no interiors.",
+      "recipe_id": "OC-PAC-B08",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        1
+      ],
+      "layout": "single",
+      "min_access_width_m": 0.85,
+      "min_envelope_m": [
+        6.5,
+        14.750000000000002
+      ],
+      "pack": "OC-PAC",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:OC-PAC-B09; metres; no interiors.",
+      "recipe_id": "OC-PAC-B09",
+      "refusal": null,
+      "status": "supported"
+    },
+    {
+      "eras": [
+        "A",
+        "M"
+      ],
+      "floors": [
+        1,
+        1
+      ],
+      "layout": "single",
+      "min_access_width_m": 0.0,
+      "min_envelope_m": [
+        0.0,
+        0.0
+      ],
+      "pack": "OC-PAC",
+      "provenance": "Native minimum default-bundle layout, roof, enclosure and access skeleton; seed urban-admission-v1:OC-PAC-B10; metres; no interiors.",
+      "recipe_id": "OC-PAC-B10",
+      "refusal": "Socle de unit-0:body:0 sans murs réellement portés.",
+      "status": "refused"
+    }
+  ],
+  "schema_version": 1,
+  "source_sha256": "81ec9e11bfb56ba3e6be2aa92bffbcbdb346f267f797e05f83ebbe35e909b301"
+}

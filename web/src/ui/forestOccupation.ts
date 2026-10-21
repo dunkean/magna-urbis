@@ -1,10 +1,63 @@
 import type { ForestOccupation } from '../../../rust/bridge/terrainForest';
 import type { Polygon } from '../gen/core/geom';
 import type { LandKind, LandUseLayer } from '../gen/types';
+import type { PlacementBatch } from '../../../rust/bridge/urbanArchitecture';
 
-/** Occupation class ids of the shared Render3D forest interface (0 none, 7 built). */
+/** Shared classes: 7 is a general built reserve, 8 an occupied construction. */
 const CLASS: Partial<Record<LandKind, number>> = { field: 1, meadow: 2, pasture: 3, orchard: 4, garden: 5, commons: 6 };
-const BUILT = 7, RANGE = 8;
+const BUILT = 7, OCCUPIED = 8, RANGE = 8;
+
+/** Merge accepted footprints and authorized circulation into the same retained
+ * occupation contract, regardless of the building layer's visibility. */
+export function withBuildingOccupation(source: ForestOccupation | undefined, scene: PlacementBatch | undefined): ForestOccupation | undefined {
+  if (!scene?.buildings.length) return source;
+  const shapes = scene.buildings.flatMap(b => [...b.footprint, ...b.circulation, ...(b.structural_features ?? []).flatMap(feature => feature.surface ?? [])]);
+  let x0 = source?.x ?? Infinity, y0 = source?.y ?? Infinity, x1 = source ? source.x + source.width : -Infinity, y1 = source ? source.y + source.width : -Infinity;
+  for (const shape of shapes) for (const p of shape.outer) { x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y); x1 = Math.max(x1, p.x); y1 = Math.max(y1, p.y); }
+  const side = Math.max(x1 - x0, y1 - y0), cell = Math.max(.5, side / (1536 - RANGE * 2));
+  const n = Math.min(1536, Math.ceil(side / cell) + RANGE * 2), x = Math.floor(x0 / cell) * cell - RANGE * cell, y = Math.floor(y0 / cell) * cell - RANGE * cell;
+  const open = new Uint8Array(n * n), forest = new Uint8Array(n * n), cls = new Uint8Array(n * n);
+  if (source) for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) {
+    const sx = Math.floor((x + (i + .5) * cell - source.x) / source.width * source.n), sy = Math.floor((y + (j + .5) * cell - source.y) / source.width * source.n);
+    if (sx < 0 || sy < 0 || sx >= source.n || sy >= source.n) continue;
+    const at = (sy * source.n + sx) * 4, index = j * n + i;
+    if (!source.rgba[at + 3]) continue;
+    cls[index] = source.rgba[at + 2]; open[index] = source.rgba[at] > 128 ? 1 : 0; forest[index] = source.rgba[at + 1] > 128 ? 1 : 0;
+  }
+  const occupied = (from: number, to: number): void => { cls.fill(OCCUPIED, from, to); open.fill(1, from, to); forest.fill(0, from, to); };
+  for (const shape of shapes) {
+    const rings = [shape.outer, ...shape.holes];
+    fill(rings, x, y, cell, n, occupied);
+    // Conservative boundary cells preserve walls and supports thinner than one
+    // texel. Only the boundary rim is widened; courtyard interiors stay free.
+    const mark = (i: number, j: number): void => { if (i >= 0 && j >= 0 && i < n && j < n) occupied(j * n + i, j * n + i + 1); };
+    for (const ring of rings) for (let k = 0; k < ring.length; k++) {
+      const a = ring[k], b = ring[(k + 1) % ring.length];
+      const ax = (a.x - x) / cell, ay = (a.y - y) / cell, bx = (b.x - x) / cell, by = (b.y - y) / cell;
+      let i = Math.floor(ax), j = Math.floor(ay);
+      const endX = Math.floor(bx), endY = Math.floor(by), dx = bx - ax, dy = by - ay, sx = Math.sign(dx), sy = Math.sign(dy);
+      const tx = dx ? 1 / Math.abs(dx) : Infinity, ty = dy ? 1 / Math.abs(dy) : Infinity;
+      let nextX = dx ? (sx > 0 ? i + 1 - ax : ax - i) * tx : Infinity;
+      let nextY = dy ? (sy > 0 ? j + 1 - ay : ay - j) * ty : Infinity;
+      mark(i, j);
+      for (let step = 0; (i !== endX || j !== endY) && step < n * 2 + 4; step++) {
+        if (Math.abs(nextX - nextY) < 1e-12) { mark(i + sx, j); mark(i, j + sy); i += sx; j += sy; nextX += tx; nextY += ty; }
+        else if (nextX < nextY) { i += sx; nextX += tx; }
+        else { j += sy; nextY += ty; }
+        mark(i, j);
+      }
+    }
+  }
+  const dOpen = signedDistance(open, n), dForest = signedDistance(forest, n), rgba = new Uint8Array(n * n * 4);
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < n * n; i++) {
+    const at = i * 4;
+    rgba[at] = Math.max(0, Math.min(255, Math.round(128 + 16 * dOpen[i]))); rgba[at + 1] = Math.max(0, Math.min(255, Math.round(128 + 16 * dForest[i])));
+    rgba[at + 2] = cls[i]; rgba[at + 3] = open[i] || forest[i] ? 255 : 0;
+    hash = Math.imul(hash ^ cls[i] ^ rgba[at], 0x01000193);
+  }
+  return { x, y, width: n * cell, n, rgba, key: `built-occ:${source?.key ?? ''}:${x}:${y}:${n * cell}:${n}:${hash >>> 0}` };
+}
 
 /**
  * Rasterises applied rural land use into the shared occupation texture.

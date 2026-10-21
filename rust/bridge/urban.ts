@@ -20,9 +20,20 @@ export interface UrbanStructure {
   history: { epoch: number; kind: string; center: number; area: number }[];
   metrics: { targetArea: number; allocatedArea: number; streetArea: number; reservedArea: number; grossDensity: number; plannedPopulation: number; shortfallArea: number; components: number; accessAdded: number };
 }
-export interface Layout { key: string; culture: string; center: Point; quarters: Quarter[]; streets: Street[]; blocks: Block[]; enclosures?: Enclosure[]; phases?: GrowthPhase[]; archetype?: string; structure?: UrbanStructure; warnings: string[] }
-export interface Parcel { shape: Shape; block: number; use: 'plot' | 'garden' | 'place' | 'compound' | 'market' | 'reserve' | 'common'; front: [Point, Point] | null; axis: Point; rank: number; access?: { kind: 'public' | 'collective' | 'private' | 'unserved' | 'reserved'; street: number | null; frontLength: number } }
-export interface Partition { key: string; parcels: Parcel[]; warnings: string[]; diagnostics?: { coveredArea: number; residualArea: number; overlapArea: number; unservedArea: number } }
+export interface Layout { config?: LayoutConfig; programme?: UrbanProgramme; key: string; culture: string; center: Point; quarters: Quarter[]; streets: Street[]; blocks: Block[]; enclosures?: Enclosure[]; phases?: GrowthPhase[]; archetype?: string; structure?: UrbanStructure; warnings: string[] }
+export interface Parcel { pressure?: number; id?: string; parentIds?: string[]; provenance?: string[]; family?: string; reason?: string; contacts?: ParcelContact[]; envelope?: Shape; shape: Shape; block: number; use: 'plot' | 'garden' | 'place' | 'compound' | 'market' | 'reserve' | 'common' | 'residual' | 'court'; front: [Point, Point] | null; axis: Point; rank: number; access?: { kind: 'public' | 'collective' | 'private' | 'unserved' | 'reserved' | 'attached'; street: number | null; frontLength: number } }
+export interface Partition { config?: ParcelConfig; programme?: UrbanProgramme; key: string; parcels: Parcel[]; warnings: string[]; diagnostics?: { coveredArea: number; residualArea: number; overlapArea: number; unservedArea: number } }
+export interface ParcelContact { a: Point; b: Point; street: number; rank: number; length: number; kind: string }
+export interface UrbanAdmissibility { recipeId: string; nativeLayout: string; floors: [number, number]; eras: string[]; minFrontage: number; minAccessWidth: number; minArea: number; minDepth: number; maxSlope: number; sharedAccess: boolean; partyWalls: boolean }
+export interface CultureMapping { culture: string; family: string; functionalProfile: string; architectureFamily: string; architecturePack: string; coverage: string; borrowing: string; admissibility: UrbanAdmissibility }
+export interface UrbanDemand { id: string; function: string; unit: 'domesticUnits' | 'usefulAreaM2'; requested: number; targetArea: number; targetFrontage: number; provenance: string[]; requires: string[]; parcelCapacity: number; builtCapacity: number; openCapacity?: number; deficit: number; reasons: string[] }
+export interface UrbanAllocation { parcelId: string; demandId: string; function: string; culture: string; architecturePack: string; capacity: number; unit: 'domesticUnits' | 'usefulAreaM2'; score: number; reasons: string[] }
+export interface UrbanProgramme {
+  version: 1; population: number; context: import('./urbanConfig').ProgrammeContext; cultures: CultureMapping[]; demands: UrbanDemand[];
+  reservations: { id: string; demandId: string; block: number; shape: Shape; street: number; frontage: number }[];
+  allocations: UrbanAllocation[]; adjacency: { a: string; b: string; sharedLength: number }[];
+  environment: { block: number; slope: number; wet: boolean; waterfront: boolean; pressure?: number }[]; reconciliationPasses: number; warnings: string[];
+}
 /** Include outward growth when framing a completed settlement. */
 export function layoutExtent(layouts?: Layout[]): { center: Point; radius: number } | undefined {
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
@@ -69,9 +80,20 @@ export function regionalStreets(roads?: RoadOutput): Street[] {
     });
   }) ?? [];
 }
-export interface UrbanRequest { id: number; seed: string; kind: 'quarters' | 'parcels'; raster?: SettlementRaster; sites?: RoadSite[]; roads?: Street[]; layoutConfig?: LayoutConfig; parcelConfig?: ParcelConfig; layouts?: Layout[]; layoutsId?: number; runtime?: ExecutionRuntime }
-export interface UrbanResponse { id: number; layouts?: Layout[]; partitions?: Partition[]; ms?: number; error?: string }
+export interface UrbanRequest { id: number; seed: string; kind: 'quarters' | 'parcels' | 'programme' | 'buildingSites' | 'builtCapacity'; architectureCulture?: string; scene?: import('./urbanArchitecture').PlacementBatch; raster?: SettlementRaster; sites?: RoadSite[]; roads?: Street[]; layoutConfig?: LayoutConfig; parcelConfig?: ParcelConfig; layouts?: Layout[]; partitions?: Partition[]; layoutsId?: number; runtime?: ExecutionRuntime }
+export interface UrbanResponse { id: number; layouts?: Layout[]; partitions?: Partition[]; placementRequests?: import('./urbanArchitecture').PlacementRequest[]; ms?: number; error?: string }
 export interface UrbanEngine { run(request: UrbanRequest): UrbanResponse | Promise<UrbanResponse> }
+
+/** Reconciliation needs capacities, identities and open surfaces, never roof
+ * meshes or retained architectural plans. Keep those out of the native transfer. */
+function capacityInput(scene: UrbanRequest['scene']) {
+  if (!scene) return undefined;
+  return {
+    buildings: scene.buildings.map(({ parcel_id, function: fn, useful_area_m2, domestic_units }) => ({ parcel_id, function: fn, useful_area_m2, domestic_units })),
+    refusals: scene.refusals.map(({ parcel_id, message }) => ({ parcel_id, message })),
+    open_spaces: scene.open_spaces,
+  };
+}
 
 /** Both calls run exclusively in Rust and keep their own immutable terrain handle. */
 export async function createUrbanEngine(runtime?: ExecutionRuntime): Promise<UrbanEngine> {
@@ -82,6 +104,7 @@ export async function createUrbanEngine(runtime?: ExecutionRuntime): Promise<Urb
   return { run(request) {
     if (request.runtime?.profile === 'local') {
       return native<UrbanResponse>('/urban', { ...request, runtime: request.runtime,
+        ...(request.kind === 'builtCapacity' ? { scene: capacityInput(request.scene) } : {}),
         ...(request.kind === 'quarters' ? { layoutConfig: normalizeLayoutConfig(request.layoutConfig, true) }
           : { parcelConfig: normalizeParcelConfig(request.parcelConfig) }),
       }).catch(error => ({ id: request.id, error: String(error) }));
@@ -111,6 +134,18 @@ export async function createUrbanEngine(runtime?: ExecutionRuntime): Promise<Urb
         : request.layoutsId === undefined ? '[]'
         : retainedLayouts?.id === request.layoutsId ? retainedLayouts.json : undefined;
       if (layoutsJson === undefined) throw new Error('Le plan des quartiers a changé. Régénérez les quartiers avant les parcelles.');
+      if (request.kind === 'builtCapacity') {
+        const partitions = JSON.parse(terrain.urban_built_capacity(JSON.stringify(request.partitions ?? []), JSON.stringify(capacityInput(request.scene)))) as Partition[];
+        return { id: request.id, partitions, ms: performance.now() - start };
+      }
+      if (request.kind === 'programme') {
+        const partitions = JSON.parse(terrain.urban_programme(layoutsJson, JSON.stringify(request.partitions ?? []))) as Partition[];
+        return { id: request.id, partitions, ms: performance.now() - start };
+      }
+      if (request.kind === 'buildingSites') {
+        const placementRequests = JSON.parse(terrain.urban_building_sites(request.seed, layoutsJson, JSON.stringify(request.partitions ?? []), request.architectureCulture)) as import('./urbanArchitecture').PlacementRequest[];
+        return { id: request.id, placementRequests, ms: performance.now() - start };
+      }
       const partitions = JSON.parse(terrain.urban_parcels(request.seed, layoutsJson, JSON.stringify(normalizeParcelConfig(request.parcelConfig)))) as Partition[];
       return { id: request.id, partitions, ms: performance.now() - start };
     } catch (error) { return { id: request.id, error: String(error) }; }

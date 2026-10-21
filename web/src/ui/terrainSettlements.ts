@@ -10,8 +10,8 @@ import { SITE_ARCHETYPES, classOfPop } from '../gen/options';
 import { SETTLEMENT_KINDS } from './settlementKinds';
 import { createTerrainRoads } from './terrainRoads';
 import { createTerrainUrban } from './terrainUrban';
-import { captureDecor, downloadBytes } from './decorCapture';
-import { decorEntry, encodeDecor, type Decor, type DecorEntry } from './decor';
+import { captureDecorData, downloadBytes } from './decorCapture';
+import { decorEntry, encodeDecor, encodeDecorAsync, type Decor, type DecorEntry } from './decor';
 import type { UrbanPaintingContext } from '../../../rust/bridge/urbanPaintingMask';
 import type { ForestOccupation } from '../../../rust/bridge/terrainForest';
 import type { UrbanLanduseScene } from './urbanLanduseData';
@@ -46,7 +46,7 @@ const sites = (output: SettlementOutput): RoadSite[] => output.settlements.map(s
 export function createTerrainSettlements(options: {
   map: SVGSVGElement; viewport: HTMLElement; getTerrain(): TerrainData | undefined; getSettings(): TerrainSettings;
   active?: boolean; parcelDefault?: boolean; getRaster?(): import('../../../rust/bridge/settlements').SettlementRaster | undefined; getDecor?(): Decor | undefined;
-  getView(): View; getAuto?(): boolean; getQuery?(): string; onChange(): void; onPlanChange?(): void; onPicking(): void; onFocus?(center: Point, radius: number): void;
+  getView(): View; getAuto?(): boolean; getQuery?(): string; onChange(): void; onPlanChange?(): void; onPicking(): void; onFocus?(center: Point, radius: number): void; onProjection?(active: boolean, camera?: import('./terrain3d').Terrain3dCamera): boolean | void;
   /** Render3D forest material is displayed: it replaces the cartoon landuse woods. */
   useForestMaterial?(): boolean;
   /** Applied rural occupation in the displayed terrain frame, or undefined. */
@@ -116,7 +116,7 @@ export function createTerrainSettlements(options: {
   const urban = createTerrainUrban({ map, before: backend, getTerrain: options.getTerrain,
     getRaster: options.getRaster,
     parcelDefault: options.parcelDefault ?? false,
-    getSeed: () => options.getSettings().seed, getAuto: options.getAuto, onChange: () => { if (!restoringDecor) publishOptions(urban.workshopDraft() ?? urban.workshopState()); options.onChange(); }, onPlanChange: () => { if (!restoringDecor) publishOptions(urban.workshopDraft() ?? urban.workshopState()); syncLanduse(); options.onPlanChange?.(); }, onFocus: options.onFocus });
+    getSeed: () => options.getSettings().seed, getAuto: options.getAuto, onChange: () => { if (!restoringDecor) publishOptions(urban.workshopDraft() ?? urban.workshopSettings()); draw(); options.onChange(); }, onPlanChange: () => { if (!restoringDecor) publishOptions(urban.workshopDraft() ?? urban.workshopSettings()); syncLanduse(); options.onPlanChange?.(); }, onFocus: options.onFocus, onProjection: options.onProjection });
   const publishOptions = urbanOptionSync(() => { const d = options.getDecor?.(); return d && urban.target !== 'all' ? `${d.meta.pipeline?.syncSource ?? d.meta.id}:${urban.target}` : undefined; }, state => urban.applyWorkshopDraft(state));
   if (options.active !== false && !document.getElementById('showLanduse')) {
     const label = document.createElement('label'); label.innerHTML = '<input id="showLanduse" type="checkbox" checked>Occupation du territoire';
@@ -144,8 +144,11 @@ export function createTerrainSettlements(options: {
     }
     if (always || next !== published) { published = next; options.onForestOccupation?.(next); }
   }
+  let landuseTerrain: TerrainData | undefined, landuseRaster: ReturnType<typeof settlementRaster> | undefined;
   function syncLanduse(): void {
-    const t = options.getTerrain(), raster = options.getRaster?.() ?? (t ? settlementRaster(t) : undefined);
+    const t = options.getTerrain();
+    if (t !== landuseTerrain) { landuseTerrain = t; landuseRaster = undefined; }
+    const raster = options.getRaster?.() ?? (t ? landuseRaster ??= settlementRaster(t) : undefined);
     if (!raster || !output || !enabled) { landuse?.set(); return; }
     const city = output.settlements.find(s => s.key === urban.target) ?? output.settlements.find(s => s.key === selection) ?? output.settlements[0];
     const relief = options.getSettings().relief;
@@ -312,6 +315,7 @@ export function createTerrainSettlements(options: {
     let layer = map.querySelector<SVGGElement>('#settlementOverlay');
     if (!layer) { layer = document.createElementNS(ns, 'g'); layer.id = 'settlementOverlay'; map.append(layer); }
     roads.draw();
+    layer.style.pointerEvents = urban.buildingView ? 'none' : 'auto';
     const state = `${enabled}|${showPoints}|${selection}`;
     if (layer === drawnLayer && output === drawnOutput && state === drawnState) {
       for (const marker of Array.from(layer.querySelectorAll<SVGGElement>('[data-settlement]'))) {
@@ -352,6 +356,7 @@ export function createTerrainSettlements(options: {
     enabled = true; setPicking(); controls(); list(); editor(); changed(); return true;
   }
   map.addEventListener('pointerdown', event => {
+    if (urban.buildingView) return;
     const marker = (event.target as Element).closest<SVGGElement>('[data-settlement]'); if (!marker || event.button !== 0 || picking) return;
     event.stopImmediatePropagation(); options.onPicking();
     const p = world(event); drag = { key: marker.dataset.settlement!, pointer: event.pointerId, start: p, point: p, moved: false }; map.setPointerCapture(event.pointerId);
@@ -370,7 +375,7 @@ export function createTerrainSettlements(options: {
   }, true);
   map.addEventListener('pointercancel', () => { drag = undefined; draw(); }, true);
   map.addEventListener('click', event => {
-    if (suppressClick || (event.target as Element).closest('[data-settlement]')) { event.stopImmediatePropagation(); suppressClick = false; }
+    if (!urban.buildingView && (suppressClick || (event.target as Element).closest('[data-settlement]'))) { event.stopImmediatePropagation(); suppressClick = false; }
   }, true);
   window.addEventListener('keydown', event => { if (event.key === 'Escape') { setPicking(); drag = undefined; draw(); } });
   input('setEnabled').onchange = () => { enabled = input('setEnabled').checked; changed(); };
@@ -391,7 +396,7 @@ export function createTerrainSettlements(options: {
   el('setAdd').onclick = () => setPicking(picking === 'new' ? undefined : 'new');
   /** Decor of the current map, once placement and routing answered the latest request. */
   const decorReady = (): boolean => complete && enabled && !!output && answered === id && (!roads.enabled || !!roads.output);
-  const decor = (extra?: Parameters<typeof captureDecor>[5]): ReturnType<typeof captureDecor> => {
+  const decorData = (extra?: Parameters<typeof captureDecorData>[5]): Decor => {
     const t = options.getTerrain();
     if (!t || !decorReady()) throw new Error('Wait for the settlements and roads of the completed map.');
     const retained = options.getDecor?.();
@@ -400,19 +405,24 @@ export function createTerrainSettlements(options: {
         settlements: clone(output!.settlements), roads: roads.output ?? null, roadConfig: roads.enabled ? clone(roads.config) : null,
         stats: { ...retained.meta.stats, roadKm: (roads.output?.segments.reduce((s, r) => s + r.length, 0) ?? 0) / 1000 },
         pipeline: { ...retained.meta.pipeline, stage: 'settlements', parent: retained.meta.id, urban: urban.workshopState(), urbanDraft: urban.workshopDraft() } } };
-      return { bytes: encodeDecor(snapshot), meta: snapshot.meta };
+      return snapshot;
     }
-    return captureDecor(t, options.getSettings(), output!, roads.output, roads.enabled ? clone(roads.config) : null,
-      { ...extra, query: extra?.query ?? options.getQuery?.() });
+    return captureDecorData(t, options.getSettings(), output!, roads.output, roads.enabled ? clone(roads.config) : null,
+      { ...extra, query: extra?.query ?? options.getQuery?.(),
+        pipeline: { stage: 'settlements', urban: urban.workshopState(), urbanDraft: urban.workshopDraft() } });
   };
-  el('setExportDecor').onclick = () => {
-    try { const s = options.getSettings(); downloadBytes(decor().bytes, `${s.relief}-${s.seed}.decor`.replace(/[^\w.-]+/g, '_')); }
+  const decor = (extra?: Parameters<typeof captureDecorData>[5]): { bytes: Uint8Array; meta: Decor['meta'] } => {
+    const snapshot = decorData(extra);
+    return { bytes: encodeDecor(snapshot), meta: snapshot.meta };
+  };
+  el('setExportDecor').onclick = async () => {
+    try { const s = options.getSettings(); downloadBytes(await encodeDecorAsync(decorData()), `${s.relief}-${s.seed}.decor`.replace(/[^\w.-]+/g, '_')); }
     catch (error) { el('setStatus').textContent = String(error instanceof Error ? error.message : error); }
   };
   // Batch export (web/scripts/export_decors.mjs) drives the bench through this hook.
   (window as unknown as { magnaDecor: unknown }).magnaDecor = {
     ready: decorReady,
-    export(file: string, extra?: Parameters<typeof captureDecor>[5]): { base64: string; entry: DecorEntry } {
+    export(file: string, extra?: Parameters<typeof captureDecorData>[5]): { base64: string; entry: DecorEntry } {
       const { bytes, meta } = decor(extra); let text = '';
       for (let i = 0; i < bytes.length; i += 0x8000) text += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
       return { base64: btoa(text), entry: decorEntry(meta, file) };
@@ -430,6 +440,7 @@ export function createTerrainSettlements(options: {
     },
     ready: decorReady,
     capture: decor,
+    captureData: decorData,
     restoreDecor(d: Decor): void {
       clearTimeout(timer); ++id; answered = id; complete = true; cachedTerrain = undefined;
       if (!d.meta.settlements.length) { needsPlacement = true; recalculate(); return; }
@@ -439,7 +450,7 @@ export function createTerrainSettlements(options: {
       restoringDecor = true; roads.set(d.meta.roads ?? undefined); urban.setSettlements(output, d.meta.roads ?? undefined);
       if (d.meta.pipeline?.urban?.layouts?.length) urban.restoreSnapshot(d.meta.pipeline.urban);
       if (d.meta.pipeline?.urbanDraft) urban.applyWorkshopDraft(d.meta.pipeline.urbanDraft);
-      restoringDecor = false; publishOptions(urban.workshopDraft() ?? urban.workshopState());
+      restoringDecor = false; publishOptions(urban.workshopDraft() ?? urban.workshopSettings());
       syncLanduse(); draw(); options.onChange();
     },
     get paintingContext(): UrbanPaintingContext {

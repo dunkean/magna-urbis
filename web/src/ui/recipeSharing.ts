@@ -1,5 +1,5 @@
 import { encodeRecipe, decodeRecipe, type MapRecipe, type RecipeStage, type RecipeTerrain } from './recipe';
-import { encodeDecor, decodeDecor, type Decor } from './decor';
+import { encodeDecorAsync, decodeDecorAsync, type Decor } from './decor';
 import { saveHistory } from './benchHistory';
 import { encodeSketch, readStoredSketch, placeSketchInFragment } from './terrainSketchSharing';
 import { cropTerrain } from './benchTerrainTransfer';
@@ -19,17 +19,19 @@ async function portableQuery(query: string): Promise<URLSearchParams> {
 /** Resolve browser-local inputs so a code also works in another browser or machine. */
 export async function portableRecipe(stage: RecipeStage, query: string, decor?: Decor): Promise<MapRecipe> {
   const params = await portableQuery(query);
+  const retainUrban = (stage === 'urban' || stage === 'settlements') && !!decor?.meta.pipeline?.urban?.layouts?.length;
   if (decor) {
     params.set('artifact', decor.meta.id); if (stage === 'urban') params.set('decor', decor.meta.id);
-    // The retained raster is an input. Recompute downstream stages with the recipe's
-    // current settings instead of letting an older export override them on load.
+    if (stage === 'urban' && decor.meta.pipeline?.urban?.layouts) params.delete('workshop');
+    // Applied city plans require their exact sites, cadastre and native scene in
+    // either city view. Other states retain the existing procedural replay.
     decor = { ...decor, meta: { ...decor.meta,
-      ...(stage === 'settlements' ? { settlements: [], roads: null, roadConfig: null } : {}),
-      pipeline: decor.meta.pipeline && { ...decor.meta.pipeline, urban: undefined },
+      ...(stage === 'settlements' && !retainUrban ? { settlements: [], roads: null, roadConfig: null } : {}),
+      pipeline: decor.meta.pipeline && { ...decor.meta.pipeline, ...(stage === 'urban' || retainUrban ? {} : { urban: undefined }) },
     } };
   }
   if (params.has('artifact') && !decor) throw new Error('Attendez le chargement du terrain conservé.');
-  if (decor?.meta.regeneration) {
+  if (decor?.meta.regeneration && !retainUrban) {
     const source = await portableQuery(decor.meta.regeneration.query);
     for (const key of ['artifact', 'stage', 'pipeline', 'pins', 'view', 'showPins', 'settlements', 'roads', 'urban']) source.delete(key);
     source.set('auto', '0');
@@ -37,7 +39,7 @@ export async function portableRecipe(stage: RecipeStage, query: string, decor?: 
     meta.query = (await portableQuery(meta.query)).toString();
     return { stage, query: params.toString(), terrain: { query: source.toString(), crops: regeneration.crops, meta } };
   }
-  return { stage, query: params.toString(), ...(decor ? { decor: encodeDecor(decor) } : {}) };
+  return { stage, query: params.toString(), ...(decor ? { decor: await encodeDecorAsync(decor) } : {}) };
 }
 
 /** Run the existing terrain bench offscreen, then repeat cell-aligned crops in order. */
@@ -69,10 +71,10 @@ async function regenerateTerrain(source: RecipeTerrain, signal?: AbortSignal): P
 
 export async function restoreRecipe(recipe: MapRecipe, signal?: AbortSignal): Promise<MapRecipe> {
   if (recipe.decor || recipe.terrain) {
-    const decor = recipe.terrain ? await regenerateTerrain(recipe.terrain, signal) : decodeDecor(recipe.decor!), params = new URLSearchParams(recipe.query);
+    const decor = recipe.terrain ? await regenerateTerrain(recipe.terrain, signal) : await decodeDecorAsync(recipe.decor!), params = new URLSearchParams(recipe.query);
     signal?.throwIfAborted();
     if (params.get('artifact') !== decor.meta.id || (recipe.stage === 'urban' && params.get('decor') !== decor.meta.id)) throw new Error('Le terrain intégré ne correspond pas à la recette.');
-    const saved = await saveHistory(decor, false);
+    const saved = await saveHistory(decor, false, recipe.terrain ? undefined : recipe.decor);
     params.set('artifact', saved.meta.id); if (recipe.stage === 'urban') params.set('decor', saved.meta.id);
     return { ...recipe, query: params.toString() };
   } else if (new URLSearchParams(recipe.query).has('artifact')) throw new Error('Terrain conservé absent du code.');

@@ -1,0 +1,32 @@
+.urban-stage .stage-controls { padding: 8px; }
+.urban-stage label { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 6px 0; }
+.urban-stage label input:not([type=checkbox]), .urban-stage label select { min-width: 0; max-width: 65%; }
+.urban-stage .urban-actions { display: grid; gap: 5px; }
+.urban-stage button { cursor: pointer; }
+.urban-stage small { font-size: 11px; color: #59615a; }
+.urban-stage .advanced { margin: 8px 0; }
+.urban-stage .urban-inspection { font-size: 11px; margin: 8px 0; }
+.urban-inspection dt { margin-top: 6px; color: #62685d; }
+.urban-inspection dd { margin: 2px 0 0; overflow-wrap: anywhere; }
+.urban-programme { width: 100%; border-collapse: collapse; font-size: 10px; margin: 8px 0; }
+.urban-programme th, .urban-programme td { text-align: right; border-bottom: 1px solid #d9dfd3; padding: 5px 3px; font-variant-numeric: tabular-nums; }
+.urban-programme th:first-child { text-align: left; font-weight: 500; }
+.urban-programme small { display: block; font-size: 9px; font-weight: 400; }
+.urban-stage [data-building-refusals] { padding-left: 17px; max-height: 200px; overflow-y: auto; font-size: 11px; }
+.urban-stage [data-building-inspection] { margin-top: 10px; }
+.urban-view-tabs { display: flex; flex-wrap: wrap; gap: 4px; margin: 8px 0; }
+.urban-view-tabs button[aria-pressed=true] { background: #e0e8d6; }
+.urban-perspective-host { position: relative; }
+.urban-perspective-canvas { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; z-index: 2; }
+.urban-perspective-tools { position: absolute; z-index: 3; display: flex; align-items: center; flex-wrap: wrap; gap: 5px; padding: 5px; background: #f7f3e9e8; border: 1px solid #b8b3a6; border-radius: 5px; }
+.urban-perspective-tools label { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; }
+.urban-perspective-tools input { width: 80px; }
+.urban-perspective-tools[hidden] { display: none; }
+.urban-stage [hidden] { display: none !important; }
+[data-urban-building]:focus:not(:focus-visible) { outline: none; }
+.settlement-style-controls { display: grid; gap: 6px; padding-bottom: 12px; margin-bottom: 10px; border-bottom: 1px solid var(--line, #ccd2cf); }
+.settlement-style-controls > label { display: grid; gap: 4px; font-weight: 600; }
+.settlement-style-controls select { width: 100%; }
+.settlement-style-controls[hidden] { display: none; }
+.settlement-style-controls .urban-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.settlement-style-controls > small { line-height: 1.45; }

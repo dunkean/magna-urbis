@@ -85,7 +85,44 @@ fn floor_z(unit: &HouseUnit) -> f64 {
         .unwrap_or(0.0)
 }
 
-fn enclosures(unit: &mut HouseUnit, p: &Parameters) {
+/// The declared gate is also consumed by the urban connection certificate.
+/// Keep its geometry identical to the gap actually cut by `enclosures`.
+pub(crate) fn enclosure_geometry(
+    unit: &HouseUnit,
+    p: &Parameters,
+    spec: &crate::catalogue::EnclosureSpec,
+) -> (Surface, f64, Surface) {
+    let domain = if spec.placement == Placement::Central {
+        unit.partition.courtyards.clone()
+    } else {
+        offset(&unit.lot, -0.25)
+    };
+    let profile = p.structural_spec.as_ref().and_then(|s| {
+        s.walls
+            .iter()
+            .find(|w| w.role == crate::catalogue::StructureWallRole::Enclosure)
+    });
+    let thickness = profile.map_or_else(
+        || match spec.family {
+            EnclosureFamily::EarthWall | EnclosureFamily::StoneWall => 0.35,
+            _ => 0.2,
+        },
+        |w| w.min_thickness_m,
+    );
+    if domain.is_empty() {
+        return (domain, thickness, vec![]);
+    }
+    let b = bounds(&domain);
+    let gate = rectangle(
+        (b[0] + b[2] - spec.gate_width_m) * 0.5,
+        b[3] - thickness - 0.1,
+        spec.gate_width_m,
+        thickness + 0.2,
+    );
+    (domain, thickness, gate)
+}
+
+pub(crate) fn enclosures(unit: &mut HouseUnit, p: &Parameters) {
     for (index, spec) in p.enclosures.iter().enumerate() {
         if spec.family == EnclosureFamily::None {
             continue;
@@ -107,11 +144,7 @@ fn enclosures(unit: &mut HouseUnit, p: &Parameters) {
         {
             continue;
         }
-        let domain = if central {
-            unit.partition.courtyards.clone()
-        } else {
-            offset(&unit.lot, -0.25)
-        };
+        let (domain, thickness, gate) = enclosure_geometry(unit, p, spec);
         if domain.is_empty() {
             diagnose(
                 unit,
@@ -120,25 +153,11 @@ fn enclosures(unit: &mut HouseUnit, p: &Parameters) {
             );
             continue;
         }
-        let b = bounds(&domain);
         let profile = p.structural_spec.as_ref().and_then(|s| {
             s.walls
                 .iter()
                 .find(|w| w.role == crate::catalogue::StructureWallRole::Enclosure)
         });
-        let thickness = profile.map_or_else(
-            || match spec.family {
-                EnclosureFamily::EarthWall | EnclosureFamily::StoneWall => 0.35,
-                _ => 0.2,
-            },
-            |w| w.min_thickness_m,
-        );
-        let gate = rectangle(
-            (b[0] + b[2] - spec.gate_width_m) * 0.5,
-            b[3] - thickness - 0.1,
-            spec.gate_width_m,
-            thickness + 0.2,
-        );
         let ring = difference(&domain, &offset(&domain, -thickness));
         let ring = if p.site_gate_profile.is_some() && !central {
             ring
@@ -878,6 +897,62 @@ fn gallery(
                     );
                 }
             }
+        }
+    }
+    Ok(())
+}
+
+/// Structural circulation needed by the volume/access path, using the same
+/// gallery primitives as detailed generation, without domestic decoration.
+#[cfg_attr(test, allow(dead_code))] // details.rs also compiles this source as a fixture module.
+pub(crate) fn add_structural_circulation(
+    unit: &mut HouseUnit,
+    p: &Parameters,
+) -> Result<(), String> {
+    enclosures(unit, p);
+    authored_bases(unit, p)?;
+    for trait_ in &p.details {
+        match trait_.as_str() {
+            "arcade" | "columns" | "portico" | "low_portico" => gallery(
+                unit,
+                trait_,
+                &p.materials.frame,
+                true,
+                p.gallery_cover.facade_mode,
+            )?,
+            "gallery" | "covered_gallery" | "carved_gallery" | "wood_galleries" | "galleries"
+            | "veranda" | "continuous_veranda" => gallery(
+                unit,
+                trait_,
+                &p.materials.roof_frame,
+                false,
+                p.gallery_cover.facade_mode,
+            )?,
+            "porch"
+            | "front_porch"
+            | "front_shop_gallery"
+            | "connecting_galleries"
+            | "connecting_corridor"
+            | "entry_gallery"
+            | "inner_gallery"
+            | "side_corridor"
+            | "vestibule"
+                if !unit.features.iter().any(|f| {
+                    matches!(
+                        f.kind,
+                        FeatureKind::Gallery | FeatureKind::Deck | FeatureKind::Landing
+                    )
+                }) =>
+            {
+                front_gallery(
+                    unit,
+                    trait_,
+                    &p.materials.roof_frame,
+                    false,
+                    p.gallery_cover.facade_mode,
+                )?;
+            }
+            _ => {}
         }
     }
     Ok(())

@@ -11,7 +11,20 @@ import { waterContains } from '../gen/urban/waterland';
 import { createWorkshopClient, WORKSHOP_CHANNEL, normalizeWorkshopContext, workshopConfig, workshopOptions, workshopView, workshopStreetSvg, workshopEnclosureSvg, type WorkshopCatalogue, type WorkshopContext, type WorkshopResult, type WorkshopState } from './testbenchUrban';
 import type { LayoutConfig, ParcelConfig } from '../../../rust/bridge/urban';
 import { normalizeLayoutConfig, normalizeParcelConfig } from '../../../rust/bridge/urbanConfig';
+import { executionRuntime } from './executionProfile';
 import { installWorkshopSkin } from './testbenchWorkshop';
+import { appliedParcelAt, parcelInspectionHtml } from './urbanInspector';
+import { createUrbanBuildingsPanel, type UrbanBuildingState } from './urbanBuildingsPanel';
+import { urbanBuildingsSvg } from '../render/urbanBuildings';
+import { openUrbanHouseCase } from './urbanHouseTransfer';
+import { updateUrbanBuildingSelection } from './urbanBuildingSelection';
+import { UrbanPerspective } from './urbanPerspective';
+import { buildingSettings } from './urbanSnapshot';
+import { programmeSvg, refusalSvg } from '../render/urbanProgramme';
+import { installUrbanReferenceCases, type UrbanReferenceCase } from './urbanReferenceCases';
+import { openMethodNote } from './methodNotes';
+import { installUrbanMapExports } from './urbanMapExport';
+import { applySettlementStyle, installSettlementStyles } from './urbanSettlementStyles';
 
 const el = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T;
 const input = (id: string) => el<HTMLInputElement>(id);
@@ -26,6 +39,10 @@ interface State {
   layoutSeed: string; plotSeed: string; houseSeed: string; stage: 1 | 2 | 3;
   pins: Pin[]; view: number[]; showBlocks: boolean; showPlots: boolean; showHouses: boolean; showOrientation?: boolean; realPlan?: boolean;
   mapStyle?: TerrainStyle;
+  selectedParcel?: number;
+  selectedParcelId?: string;
+  buildingSettings?: Omit<UrbanBuildingState, 'scene'> & { generated?: boolean };
+  urbanView?: WorkshopState['view'];
   engine?: 'typescript' | 'rust'; urban?: WorkshopContext;
 }
 const query = new URLSearchParams(location.search);
@@ -83,18 +100,104 @@ function cultureMenus(): void {
 let nativeResult: WorkshopResult | undefined;
 let inheritedWater: { geometry: string; material: RetainedWaterMaterial } | undefined;
 const nativeControls = document.createElement('fieldset'); nativeControls.hidden = true;
-nativeControls.innerHTML = '<legend>Plan urbain · Rust</legend><label>Enceinte <select data-native="fortification"><option value="culture">Selon la culture</option><option value="none">Sans enceinte</option><option value="wall">Muraille</option><option value="palisade">Palissade</option></select></label><button data-remove-enclosure type="button">Retirer l’enceinte</button><label><input data-native="autoQuarterZones" type="checkbox">Progression des quartiers</label><label><input data-native="autoParcelZones" type="checkbox">Parcelles selon leur quartier</label><label>Pente maximale des rues <input data-native="maxStreetGrade" type="number" min="0.01" max="1" step="0.01"></label><label>Pente des ruelles <input data-native="maxLaneGrade" type="number" min="0.01" max="1" step="0.01"></label><label><input data-native="allowStairs" type="checkbox">Escaliers piétons</label><label>Pente des escaliers <input data-native="maxStairGrade" type="number" min="0.01" max="1" step="0.01"></label><small>0,12 = 12 %. La progression utilise les zones du plan ; décochez-la pour appliquer la zone sélectionnée partout.</small>';
+nativeControls.innerHTML = '<legend>Plan urbain · Rust</legend><label>Population <input id="urbanPopulation" type="number" min="1" max="5000000" step="1" title="Population de planification appliquée avec les quartiers"></label><label>Génération <select data-native="composition"><option value="settlement">Agglomération complète</option><option value="district">Secteur isolé</option></select></label><label>Enceinte <select data-native="fortification"><option value="culture">Selon la culture</option><option value="none">Sans enceinte</option><option value="wall">Muraille</option><option value="palisade">Palissade</option></select></label><button data-remove-enclosure type="button">Retirer l’enceinte</button><label><input data-native="autoQuarterZones" type="checkbox">Progression des quartiers</label><label><input data-native="autoParcelZones" type="checkbox">Parcelles selon leur quartier</label><label>Pente maximale des rues <input data-native="maxStreetGrade" type="number" min="0.01" max="1" step="0.01"></label><label>Pente des ruelles <input data-native="maxLaneGrade" type="number" min="0.01" max="1" step="0.01"></label><label><input data-native="allowStairs" type="checkbox">Escaliers piétons</label><label>Pente des escaliers <input data-native="maxStairGrade" type="number" min="0.01" max="1" step="0.01"></label><small>0,12 = 12 %. La progression utilise les zones du plan ; décochez-la pour appliquer la zone sélectionnée partout.</small>';
 nativeControls.style.cssText = 'margin:8px 12px;gap:12px;flex-direction:row;flex-wrap:wrap;align-items:center';
 document.querySelector('header')!.after(nativeControls);
 nativeControls.addEventListener('change', changed);
+const cityShapeControls = document.createElement('details'); cityShapeControls.className = 'advanced';
+cityShapeControls.innerHTML = '<summary>Forme, croissance et parcellaire</summary><label>Forme de l’agglomération<select data-city-footprint="family"></select></label><label>Croissance<select data-city-footprint="mechanism"><option value="auto">Selon le relief et les accès</option><option value="accessibility">Par accessibilité</option><option value="ribbon">Le long des voies</option><option value="fusion">Fusion de noyaux</option><option value="legacy">Composition historique</option></select></label><label>Faubourgs<select data-native="suburbs"><option value="auto">Selon le lieu</option><option value="none">Aucun</option><option value="few">Quelques faubourgs</option><option value="many">Étendus</option></select></label><label>Noyaux<input data-city-footprint="nuclei" type="number" min="1" max="6"></label><label>Époques de croissance<input data-city-footprint="epochs" type="number" min="1" max="5"></label><label>Cohésion<input data-city-footprint="cohesion" type="number" min="0" max="1" step="0.05"></label><label>Satellites<input data-city-footprint="satellites" type="number" min="0" max="1" step="0.05"></label><label>Profondeur des branches<input data-city-footprint="branchDepth" type="number" min="0" max="1" step="0.05"></label><label>Densité des parcelles<input id="urbanParcelDensity" type="number" min="0.1" max="10" step="0.1"></label><small>La densité des parcelles est indépendante de la forme de la ville. La culture des bâtiments se choisit dans l’étape Bâtiments.</small>';
+const cityFamilies = { auto: 'Selon la culture et le site', compact: 'Organique compacte', fingers: 'Tentaculaire / radiale à bras', dendritic: 'Ramifiée', lobed: 'Polynucléaire', composite: 'Composite', archipelago: 'Discontinue', elongated: 'Allongée', linear: 'Ville-rue', fan: 'Éventail', circle: 'Circulaire', rectangle: 'Rectangulaire', polygon: 'Polygonale' };
+for (const [id, label] of Object.entries(cityFamilies)) cityShapeControls.querySelector<HTMLSelectElement>('[data-city-footprint="family"]')!.add(new Option(label, id));
+nativeControls.append(cityShapeControls);
+const parcelOperatorLabel = document.createElement('label'); parcelOperatorLabel.textContent = 'Organisation des parcelles';
+const parcelOperatorControl = document.createElement('select'); parcelOperatorControl.id = 'urbanParcelOperator';
+for (const [id, label] of Object.entries({ culture: 'Selon la culture', frontage: 'Façades denses', strips: 'Lanières', compact: 'Lots compacts', courtyard: 'Cours', compound: 'Enclos', inherited: 'Parcellaire hérité', wholeBlock: 'Îlot entier', garden: 'Jardin' })) parcelOperatorControl.add(new Option(label, id));
+parcelOperatorLabel.append(parcelOperatorControl); cityShapeControls.append(parcelOperatorLabel);
+function cityFootprint(config: LayoutConfig): LayoutConfig['footprint'] {
+  const footprint = { ...config.footprint };
+  for (const control of Array.from(cityShapeControls.querySelectorAll<HTMLInputElement | HTMLSelectElement>('[data-city-footprint]'))) {
+    if (!control.reportValidity()) throw new Error('Corrigez la forme de l’agglomération.');
+    (footprint as unknown as Record<string, unknown>)[control.dataset.cityFootprint!] = control instanceof HTMLInputElement ? Number(control.value) : control.value;
+  }
+  return footprint;
+}
+// Population is a primary city control. The remaining native options stay in
+// the existing collapsible context panel.
+const populationLabel = input('urbanPopulation').closest('label')!;
+const compositionControl = nativeControls.querySelector<HTMLSelectElement>('[data-native="composition"]')!;
+const compositionLabel = compositionControl.closest('label')!;
+document.querySelector('.workshop-primary-controls')?.prepend(populationLabel, compositionLabel);
+input('urbanPopulation').addEventListener('change', () => { if (input('urbanPopulation').checkValidity()) compositionControl.value = 'settlement'; changed(); });
+compositionControl.addEventListener('change', changed);
 const initial: BenchOptions = { culture: 'european-organic', recipe: 'core', zone: 'core', placement: 'center', density: 1, count: 4, radius: 160, monument: 'none', stages: {} };
 let draft = structuredClone(initial);
 let state: State = { v: 2, options: structuredClone(initial), settings: structuredClone(initial), plotOptions: structuredClone(initial), houseOptions: structuredClone(initial), layoutSeed: '42', plotSeed: '42', houseSeed: '42', stage: 2, pins: [], view: [280, 280, 440, 440], showBlocks: true, showPlots: true, showHouses: true };
 let layout: BenchLayout, houses: BenchHouses = { parcels: [], buildings: [] };
 let partition: BenchParcels = { parcels: [], plots: [], compounds: [] };
 let pinMode = false, busy = false;
+let awaitingMapImport = query.get('awaitImport') === '1' && !query.has('case');
 let pendingWorkshopMessage: MessageEvent | undefined;
+let pendingProgramme: import('../../../rust/bridge/urbanConfig').ProgrammeContext | undefined;
+let pendingReference: UrbanReferenceCase | undefined;
+let synchronizedDraft: WorkshopState | undefined;
+let settlementDraft: { layoutConfig: LayoutConfig; parcelConfig: ParcelConfig; options: BenchOptions } | undefined;
+let completeCityGeneration = false;
+let resetBuildingDefaults = false;
 const status = (text: string) => { el('status').textContent = text; };
+let displayedBuildingAppearance = '';
+let displayedBuildingScene: UrbanBuildingState['scene'];
+const buildingPanel = createUrbanBuildingsPanel({ host: document.querySelector('.workshop-controls') ?? el('stages'),
+  getProgramme: () => normalizeLayoutConfig(state.urban?.layoutConfig).programme,
+  applyProgramme: programme => { pendingProgramme = programme; void generate('layout'); },
+  generate: async (seed, settings, onProgress) => {
+    if (!nativeResult?.partitions) throw new Error('Générez les parcelles avant les bâtiments.');
+    const inputPlan = nativeResult;
+    const result = await nativeClient.generate({ kind: 'buildings', options: state.plotOptions, seed: seed || state.plotSeed, buildingSettings: settings, context: state.urban!, layouts: nativeResult.layouts, partitions: nativeResult.partitions }, onProgress);
+    if (nativeResult !== inputPlan) throw new DOMException('Plan remplacé', 'AbortError');
+    if (!result.buildingState?.scene) throw new Error('La scène bâtie est absente.');
+    nativeResult = result; return { scene: result.buildingState.scene };
+  },
+  onChange: buildingState => {
+    const appearance = JSON.stringify({ visible: buildingState.visible, appearance: buildingState.appearance });
+    const onlySelection = displayedBuildingScene === buildingState.scene && displayedBuildingAppearance === appearance; displayedBuildingAppearance = appearance;
+    if (buildingState.scene && displayedBuildingScene !== buildingState.scene) state.urbanView = 'buildings';
+    displayedBuildingScene = buildingState.scene;
+    if (nativeResult) nativeResult.buildingState = buildingState;
+    const { scene: _scene, ...settings } = buildingState; state.buildingSettings = { ...settings, generated: !!buildingState.scene };
+    if (onlySelection) updateUrbanBuildingSelection(map, buildingState.scene, buildingState.selected); else render(); save();
+  }, onOpen: openUrbanHouseCase,
+  onProjection: active => { buildingPanel.state.projection = perspective.setActive(active, buildingPanel.state.camera); },
+});
+const perspective = new UrbanPerspective(map, camera => {
+  buildingPanel.state.camera = camera;
+  if (state.buildingSettings) state.buildingSettings.camera = camera;
+  save();
+}, id => buildingPanel.select(id), error => { buildingPanel.panel.querySelector('[data-buildings-status]')!.textContent = error; });
+installUrbanMapExports(buildingPanel.panel.querySelector('.stage-controls')!, map, status);
+const settlementStyleControls = installSettlementStyles(document.querySelector('.workshop-controls') ?? el('stages'), style => {
+  const current = normalizeLayoutConfig(settlementDraft?.layoutConfig ?? state.urban?.layoutConfig);
+  const next = applySettlementStyle(style, current, culture.value);
+  const options = workshopOptions(next.layout, controls());
+  options.stages = { streets: { preset: next.layout.preset, params: structuredClone(next.layout.params) }, plots: { preset: next.parcels.preset, params: structuredClone(next.parcels.params) } };
+  settlementDraft = { layoutConfig: next.layout, parcelConfig: next.parcels, options };
+  synchronizedDraft = undefined;
+  buildingPanel.setBuildingDraft({ ...buildingPanel.state, settings: undefined });
+  resetBuildingDefaults = true;
+  restoreStyleControls(); changed();
+}, () => { completeCityGeneration = true; void generate('replay'); });
+const urbanViews = document.createElement('nav'); urbanViews.className = 'urban-view-tabs'; urbanViews.setAttribute('aria-label', 'Vue du plan appliqué');
+for (const [view, label] of Object.entries({ tissue: 'Tissu', uses: 'Usages', parcels: 'Parcelles', buildings: 'Bâtiments' })) {
+  const button = document.createElement('button'); button.type = 'button'; button.textContent = label; button.dataset.urbanView = view;
+  button.onclick = () => { state.urbanView = view as WorkshopState['view']; render(); save(); }; urbanViews.append(button);
+}
+el('status').before(urbanViews);
+const references = installUrbanReferenceCases(document.querySelector('.workshop-controls') ?? el('stages'), async entry => {
+  if (busy) return;
+  pendingReference = entry;
+  await generate('replay');
+});
+const parcelHelp = document.createElement('button'); parcelHelp.type = 'button'; parcelHelp.textContent = '?'; parcelHelp.title = 'Méthode du cadastre et des familles parcellaires';
+parcelHelp.onclick = () => openMethodNote('urban-parcels'); el('parcelInspection').before(parcelHelp);
 cultureMenus();
 for (const stage of BENCH_STAGES) {
   const menu = select(stage + 'Preset');
@@ -135,6 +238,15 @@ function monuments(value = 'none'): void {
   monument.value = kinds.has(value) ? value : 'none';
 }
 culture.onchange = () => {
+  if (rustMode) {
+    settlementStyleControls.select.value = 'culture';
+    const current = normalizeLayoutConfig(settlementDraft?.layoutConfig ?? state.urban?.layoutConfig);
+    const next = applySettlementStyle('culture', current, culture.value);
+    settlementDraft = { layoutConfig: next.layout, parcelConfig: next.parcels, options: { ...controls(), recipe: 'auto', zone: 'core', density: 1, stages: {} } };
+    buildingPanel.setBuildingDraft({ ...buildingPanel.state, settings: undefined });
+    resetBuildingDefaults = true;
+    restoreStyleControls(); changed(); return;
+  }
   recipes(); monuments(); applyRecipe();
 };
 select('recipe').onchange = () => applyRecipe();
@@ -145,6 +257,11 @@ function applyRecipe(): void {
 }
 function controls(): BenchOptions {
   return { ...structuredClone(draft), mode: select('mode').value as BenchOptions['mode'], microScale: Math.max(1, Math.min(5, Number(input('microScale').value) || 1)), microFrontage: select('microFrontage').value as BenchOptions['microFrontage'], culture: culture.value, recipe: select('recipe').value, zone: select('zone').value as Zone, placement: select('placement').value as BenchOptions['placement'], rings: select('rings').value === '2' ? 2 : 1, density: Number(select('density').value), count: Math.max(3, Math.min(rustMode ? 64 : 8, Math.round(Number(input('count').value) || 4))), radius: Math.max(rustMode ? 0.1 : 80, Math.min(rustMode ? 25000 : 300, Number(input('radius').value) || 160)), monument: monument.value, relief: select('relief').value as BenchOptions['relief'], reliefSlope: Math.max(5, Math.min(60, Number(input('reliefSlope').value) || 18)), river: select('river').value as BenchOptions['river'], riverWidth: Math.max(4, Math.min(50, Number(input('riverWidth').value) || 14)) };
+}
+function restoreStyleControls(): void {
+  const kept = ['urbanPopulation', 'layoutSeed', 'plotSeed', 'houseSeed'].map(id => [id, input(id).value] as const);
+  restoreControls();
+  for (const [id, value] of kept) input(id).value = value;
 }
 function restoreControls(): void {
   select('engine').value = rustMode ? 'rust' : 'typescript';
@@ -158,14 +275,23 @@ function restoreControls(): void {
   input('showHouses').closest('label')!.hidden = rustMode;
   select('placement').querySelector<HTMLOptionElement>('option[value=center]')!.textContent = rustMode ? 'Plan culturel adapté au terrain' : 'Autour du centre';
   el('editorSource').textContent = rustMode ? state.urban?.source === 'map' ? 'Rust · plan de la carte' : 'Rust · atelier indépendant' : '';
+  populationLabel.hidden = !rustMode; compositionLabel.hidden = !rustMode;
   nativeControls.hidden = !rustMode; nativeControls.style.display = rustMode ? 'flex' : 'none';
-  const native = { fortification: 'culture', maxStreetGrade: 0.12, maxLaneGrade: 0.18, maxStairGrade: 0.65, allowStairs: true, ...state.urban?.layoutConfig,
-    autoQuarterZones: state.urban?.layoutConfig?.zone === 'auto', autoParcelZones: state.urban?.parcelConfig?.zone === 'auto' };
-  for (const control of Array.from(nativeControls.querySelectorAll<HTMLInputElement | HTMLSelectElement>('[data-native]'))) {
+  settlementStyleControls.element.hidden = !rustMode;
+  const engineBadge = document.querySelector('.workshop-engine'); if (engineBadge) engineBadge.textContent = rustMode ? (hosted ? window.parent.magnaExecutionRuntime ?? executionRuntime : executionRuntime).profile === 'local' ? 'RUST · LOCAL' : 'RUST · WASM' : 'TYPESCRIPT';
+  input('urbanPopulation').value = String(normalizeWorkshopContext(state.urban ?? { source: 'fixture' }).population);
+  const native = { composition: normalizeWorkshopContext(state.urban ?? { source: 'fixture' }).layoutConfig!.composition, fortification: 'culture', maxStreetGrade: 0.12, maxLaneGrade: 0.18, maxStairGrade: 0.65, allowStairs: true, ...state.urban?.layoutConfig,
+    ...settlementDraft?.layoutConfig,
+    autoQuarterZones: (settlementDraft?.layoutConfig ?? state.urban?.layoutConfig)?.zone === 'auto', autoParcelZones: (settlementDraft?.parcelConfig ?? state.urban?.parcelConfig)?.zone === 'auto' };
+  for (const control of Array.from(document.querySelectorAll<HTMLInputElement | HTMLSelectElement>('[data-native]'))) {
     const value = native[control.dataset.native! as keyof typeof native];
     if (control instanceof HTMLInputElement && control.type === 'checkbox') control.checked = Boolean(value); else control.value = String(value);
   }
-  draft = structuredClone(state.settings); draft.stages ??= {};
+  const footprint = normalizeLayoutConfig(settlementDraft?.layoutConfig ?? state.urban?.layoutConfig).footprint;
+  for (const control of Array.from(cityShapeControls.querySelectorAll<HTMLInputElement | HTMLSelectElement>('[data-city-footprint]'))) control.value = String(footprint[control.dataset.cityFootprint as keyof typeof footprint]);
+  input('urbanParcelDensity').value = String((settlementDraft?.parcelConfig ?? state.urban?.parcelConfig)?.density ?? 1);
+  parcelOperatorControl.value = (settlementDraft?.parcelConfig ?? state.urban?.parcelConfig)?.operator ?? 'culture';
+  draft = structuredClone(settlementDraft?.options ?? state.settings); draft.stages ??= {};
   culture.value = draft.culture; recipes(draft.recipe ?? (draft.zone === 'village' ? 'village' : 'core'));
   select('zone').value = draft.zone;
   select('mode').value = draft.mode ?? 'quarters';
@@ -336,17 +462,17 @@ function refreshAdvanced(): void {
 }
 function changed(): void {
   if (hosted && rustMode && state.urban?.source === 'map') {
-    const options = controls(), context = normalizeWorkshopContext(state.urban);
+    const options = controls(), context = normalizeWorkshopContext({ ...state.urban, layoutConfig: settlementDraft?.layoutConfig ?? state.urban.layoutConfig, parcelConfig: settlementDraft?.parcelConfig ?? state.urban.parcelConfig });
     const native: Record<string, unknown> = {};
-    for (const control of Array.from(nativeControls.querySelectorAll<HTMLInputElement | HTMLSelectElement>('[data-native]'))) {
+    for (const control of Array.from(document.querySelectorAll<HTMLInputElement | HTMLSelectElement>('[data-native]'))) {
       if (!control.checkValidity()) return;
       native[control.dataset.native!] = control instanceof HTMLInputElement ? control.type === 'checkbox' ? control.checked : Number(control.value) : control.value;
     }
     const quarterZone = native.autoQuarterZones ? 'auto' : options.zone, parcelZone = native.autoParcelZones ? 'auto' : options.zone;
     delete native.autoQuarterZones; delete native.autoParcelZones;
-    context.layoutConfig = { ...context.layoutConfig, ...native, zone: quarterZone } as LayoutConfig;
+    context.layoutConfig = { ...context.layoutConfig, ...native, footprint: cityFootprint(context.layoutConfig!), zone: quarterZone } as LayoutConfig;
     context.parcelConfig = { ...context.parcelConfig, zone: parcelZone } as ParcelConfig;
-    const shared = { layoutConfig: state.stage < 2 ? workshopConfig(options, context, 'quarters') : context.layoutConfig!, parcelConfig: state.stage >= 2 ? workshopConfig(options, context, 'parcels') : context.parcelConfig!, quarterSeed: input('layoutSeed').value, parcelSeed: input('plotSeed').value };
+    const shared = { population: Number(input('urbanPopulation').value), siteKey: context.siteKey, layoutConfig: workshopConfig(options, context, 'quarters'), parcelConfig: workshopConfig({ ...options, density: Number(input('urbanParcelDensity').value) }, context, 'parcels'), quarterSeed: input('layoutSeed').value, parcelSeed: input('plotSeed').value };
     window.parent.postMessage({ channel: WORKSHOP_CHANNEL, type: 'settings', state: shared }, location.protocol === 'file:' ? '*' : location.origin);
   }
   status('Réglages modifiés : appliquer l’étape concernée (les graines sont conservées).');
@@ -378,14 +504,20 @@ function save(): void {
   if (rustMode && state.urban?.layoutConfig && state.urban?.parcelConfig) nativeClient.state(payload, {
     layoutConfig: workshopConfig(state.options, state.urban, 'quarters'),
     parcelConfig: workshopConfig(state.plotOptions, state.urban, 'parcels'),
-    quarterSeed: state.layoutSeed, parcelSeed: state.plotSeed,
-    style: state.mapStyle ?? 'parchment',
+    population: state.urban.population, siteKey: state.urban.siteKey, quarterSeed: state.layoutSeed, parcelSeed: state.plotSeed,
+    style: state.mapStyle ?? 'parchment', view: state.urbanView, buildingState: buildingSettings(nativeResult?.buildingState),
   }, state.urban.source);
 }
 function path(poly: Polygon): string { return poly.length ? 'M' + poly.map(p => `${p.x},${p.y}`).join('L') + 'Z' : ''; }
 function escape(text: string): string { return text.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!)); }
 function render(): void {
-  const realPlan = input('realPlan').checked;
+  references.element.hidden = !rustMode;
+  buildingPanel.panel.hidden = !rustMode; buildingPanel.programme.hidden = !rustMode;
+  buildingPanel.updateProgrammes((nativeResult?.partitions ?? []).flatMap(p => p.programme ? [p.programme] : []));
+  urbanViews.hidden = !rustMode;
+  const urbanView = state.urbanView ?? (buildingPanel.state.scene ? 'buildings' : 'parcels');
+  for (const button of Array.from(urbanViews.querySelectorAll<HTMLButtonElement>('button'))) button.setAttribute('aria-pressed', String(button.dataset.urbanView === urbanView));
+  const realPlan = input('realPlan').checked || rustMode && ['uses', 'buildings'].includes(urbanView);
   const style = isTerrainStyle(select('mapStyle').value) ? select('mapStyle').value as TerrainStyle : 'parchment';
   const palette = terrainStyle(style).palette, streetColor = palette.urban.street;
   map.style.background = palette.paper;
@@ -404,7 +536,7 @@ function render(): void {
     const c = polygonCentroid(q.lp.pts);
     const name = layout.shapeNames?.[i];
     const y = name ? Math.min(...q.lp.pts.map(p => p.y)) - 5 : c.y;
-    svg += `<text data-shape-label="${i}" x="${c.x}" y="${y}" text-anchor="middle" fill="#777" font-size="${name ? 4 : 8}">${name ? escape(name) : 'Q' + (i + 1)}</text>`;
+    if (!realPlan || name) svg += `<text data-shape-label="${i}" x="${c.x}" y="${y}" text-anchor="middle" fill="#777" font-size="${name ? 4 : 8}">${name ? escape(name) : 'Q' + (i + 1)}</text>`;
   });
   svg += '<g clip-path="url(#landClip)">';
   for (const st of layout.streets.list) if (!nativeResult && st.ribbon) svg += `<path d="M${st.path.map(p => `${p.x},${p.y}`).join('L')}" fill="none" stroke="${streetColor}" stroke-width="${st.widths[0]}" stroke-linejoin="round"/>`;
@@ -420,11 +552,11 @@ function render(): void {
   }
   if (nativeResult) svg += workshopStreetSvg(nativeResult.layouts);
   if (input('showHouses').checked) for (const b of houses.buildings) svg += `<path data-building="${b.parcel}" d="${path(b.poly)} ${b.courtyards?.map(path).join(' ') ?? ''}" fill="${b.kind === 'garden' ? palette.urban.garden : b.kind === 'landmark' ? palette.urban.landmark : palette.urban.mass}" fill-rule="evenodd" stroke="${palette.urban.massEdge}" stroke-width=".45"><title>${escape(b.arch ?? b.kind)} · parcelle ${b.parcel}</title></path>`;
-  if (input('plots').checked) {
+  if (rustMode ? ['parcels', 'uses'].includes(urbanView) : input('plots').checked) {
     svg += '<g data-overlay="plots" stroke-width="1" stroke-opacity=".8">';
     houses.parcels.forEach((p, i) => {
       const color = ['garden', 'reserve'].includes(p.use) ? '#5f8d42' : p.use === 'place' ? '#9b6450' : '#d68634';
-      svg += `<path data-parcel="${i}" d="${path(p.poly)} ${nativeParcels?.[i]?.shape.holes.map(path).join(' ') ?? ''}" fill-rule="evenodd" fill="${color}" fill-opacity=".07" stroke="${color}" vector-effect="non-scaling-stroke"><title>Parcelle ${i} · ${escape(p.use)} · îlot ${p.block} · ${p.poly.length} sommets</title></path>`;
+      svg += `<path data-parcel="${i}" d="${path(p.poly)} ${nativeParcels?.[i]?.shape.holes.map(path).join(' ') ?? ''}" fill-rule="evenodd" fill="${color}" fill-opacity="${rustMode && urbanView === 'uses' ? '0' : '.07'}" stroke="${rustMode && urbanView === 'uses' ? 'none' : color}" pointer-events="all" vector-effect="non-scaling-stroke"><title>Parcelle ${i} · ${escape(p.use)} · îlot ${p.block} · ${p.poly.length} sommets</title></path>`;
     });
     svg += '</g>';
   }
@@ -433,7 +565,7 @@ function render(): void {
     for (const [i, b] of layout.blocks.entries()) svg += `<path data-block-kind="${nativeBlocks?.[i]?.kind ?? b.kind}" ${nativeBlocks?.[i]?.kind === 'reserve' ? 'stroke="#7e9569" fill="#b8c8a9" fill-opacity=".2"' : ''} d="${path(b.poly)} ${nativeBlocks?.[i]?.shape.holes.map(path).join(' ') ?? ''}" fill-rule="evenodd" vector-effect="non-scaling-stroke"/>`;
     svg += '</g>';
   }
-  if (input('showOrientation').checked) {
+  if (input('showOrientation').checked && (!rustMode || ['tissue', 'parcels'].includes(urbanView))) {
     svg += '<g data-overlay="block-y-axes" pointer-events="none">';
     for (const [index, block] of layout.blocks.entries()) {
       if (nativeBlocks?.[index]?.kind === 'reserve') continue;
@@ -455,10 +587,20 @@ function render(): void {
     svg += '</g>';
   }
   if (nativeResult) svg += workshopEnclosureSvg(nativeResult.layouts);
+  if (rustMode && urbanView === 'uses') svg += programmeSvg(nativeResult?.partitions);
+  if (rustMode && urbanView === 'buildings' && buildingPanel.state.visible) svg += urbanBuildingsSvg(buildingPanel.state.scene, buildingPanel.state.appearance);
+  if (rustMode && buildingPanel.state.appearance.diagnostic === 'access') svg += refusalSvg(nativeResult?.partitions, buildingPanel.state.scene);
   const pinSize = state.view[2] / 100;
   state.pins.forEach((p, i) => { svg += `<g data-pin="${i}" style="cursor:pointer"><circle cx="${p.x}" cy="${p.y}" r="${pinSize * 1.25}" fill="#bd2638" stroke="white" stroke-width="${pinSize * .2}"/><text x="${p.x}" y="${p.y}" text-anchor="middle" dominant-baseline="central" fill="white" font-size="${pinSize * 1.7}">${i + 1}</text><title>${escape(p.note)}</title></g>`; });
   map.innerHTML = svg;
+  updateUrbanBuildingSelection(map, buildingPanel.state.scene, buildingPanel.state.selected);
+  const selected = state.selectedParcelId ? nativeParcels?.findIndex(p => p.id === state.selectedParcelId) : state.selectedParcel;
+  const inspected = nativeResult && selected !== undefined ? appliedParcelAt(nativeResult.layouts, nativeResult.partitions ?? [], selected) : undefined;
+  el('parcelInspection').innerHTML = inspected ? parcelInspectionHtml(inspected.parcel, inspected.layout, selected!) : '<small>Cliquer sur une parcelle pour lire sa façade, sa desserte et sa recette.</small>';
+  if (selected !== undefined) map.querySelector(`[data-parcel="${selected}"]`)?.classList.add('selected-parcel');
   map.setAttribute('viewBox', state.view.join(' '));
+  perspective.update(nativeResult?.surface, buildingPanel.state.scene, buildingPanel.state.appearance, buildingPanel.state.visible && urbanView === 'buildings');
+  buildingPanel.state.projection = perspective.setActive(rustMode && !!buildingPanel.state.projection, buildingPanel.state.camera);
   const list = el<HTMLOListElement>('pins');
   list.replaceChildren();
   state.pins.forEach((p, i) => {
@@ -485,10 +627,11 @@ function fit(): void {
 function newSeed(): string { return crypto.getRandomValues(new Uint32Array(1))[0].toString(36); }
 function counts(ms?: number): void {
   el('pipeline').textContent = `${layout.options.mode === 'micro' ? 'Diversité · 10 micro formes' : layout.morph.streetOp + ' → ' + layout.morph.closeOp} → ${state.stage >= 2 ? benchMethod('plots', editorMorph(state.plotOptions, 'plots').plotOp) : '…'} → ${state.stage === 3 ? benchMethod('buildings', editorMorph(state.houseOptions, 'buildings').buildingOp) : '…'}`;
-  status(`${rustMode ? 'Rust · ' : ''}${layout.quarters.length} ${layout.options.mode === 'micro' ? 'micro formes' : 'quartiers'} · ${layout.blocks.length} îlots · ${houses.parcels.filter(p => p.use === 'plot').length} parcelles constructibles · ${houses.parcels.filter(p => p.use === 'garden').length} arrière-terrains${rustMode ? '' : ` · ${houses.buildings.filter(b => b.kind !== 'garden').length} bâtiments`}${ms === undefined ? '' : ` · ${Math.round(ms)} ms`}${nativeResult?.layouts.flatMap(l => l.warnings).length ? ' · ' + nativeResult.layouts.flatMap(l => l.warnings).join(' ') : ''}`);
+  status(`${rustMode ? `Rust · ${state.urban?.population?.toLocaleString() ?? '—'} hab. appliqués · ` : ''}${layout.quarters.length} ${layout.options.mode === 'micro' ? 'micro formes' : 'quartiers'} · ${layout.blocks.length} îlots · ${houses.parcels.filter(p => p.use === 'plot').length} parcelles constructibles · ${houses.parcels.filter(p => p.use === 'garden').length} arrière-terrains${rustMode ? '' : ` · ${houses.buildings.filter(b => b.kind !== 'garden').length} bâtiments`}${ms === undefined ? '' : ` · ${Math.round(ms)} ms`}${nativeResult?.layouts.flatMap(l => l.warnings).length ? ' · ' + nativeResult.layouts.flatMap(l => l.warnings).join(' ') : ''}`);
 }
 async function generate(action: 'layout' | 'parcels' | 'houses' | 'replay' | 'random' | 'load' | 'fortification'): Promise<void> {
   if (busy) return;
+  if (awaitingMapImport) { status('Chargement du plan appliqué de la carte…'); return; }
   if (action !== 'load' && action !== 'fortification') {
     const invalid = document.querySelector<HTMLInputElement>('.operator-params input:invalid');
     if (invalid) { invalid.reportValidity(); status('Corriger les paramètres invalides avant de générer.'); return; }
@@ -500,12 +643,35 @@ async function generate(action: 'layout' | 'parcels' | 'houses' | 'replay' | 'ra
   const start = performance.now();
   const previous = structuredClone(state);
   const previousLayout = layout, previousPartition = partition, previousHouses = houses, previousNative = nativeResult;
+  const reference = pendingReference; pendingReference = undefined;
+  if (reference) {
+    settlementDraft = undefined;
+    synchronizedDraft = undefined;
+    rustMode = true; inheritedWater = undefined;
+    state = { ...state, options: structuredClone(reference.options), plotOptions: structuredClone(reference.options), houseOptions: structuredClone(reference.options), settings: structuredClone(reference.options), layoutSeed: reference.quarterSeed, plotSeed: reference.parcelSeed, houseSeed: reference.buildingSeed, stage: 2, pins: [], selectedParcel: undefined, selectedParcelId: undefined, urban: { source: 'fixture', population: reference.population, layoutConfig: { ...normalizeLayoutConfig(undefined), composition: reference.composition ?? 'district', programme: reference.programme }, parcelConfig: normalizeParcelConfig(undefined) }, buildingSettings: { seed: reference.buildingSeed, visible: true, appearance: { style: 'cartographic', diagnostic: 'none' }, generated: true }, urbanView: 'buildings' };
+    restoreControls();
+  }
+  const programmeCandidate = pendingProgramme; pendingProgramme = undefined;
+  const fullCity = completeCityGeneration; completeCityGeneration = false;
+  if (settlementDraft) {
+    const context = normalizeWorkshopContext(state.urban ?? { source: 'fixture' });
+    if (['layout', 'replay', 'random'].includes(action)) context.layoutConfig = structuredClone(settlementDraft.layoutConfig);
+    if (['parcels', 'replay', 'random'].includes(action)) context.parcelConfig = structuredClone(settlementDraft.parcelConfig);
+    state.urban = context;
+  }
+  if (synchronizedDraft && !reference) {
+    const context = normalizeWorkshopContext(state.urban ?? { source: 'fixture' });
+    if (['layout', 'replay', 'random'].includes(action)) context.layoutConfig = normalizeLayoutConfig({ ...synchronizedDraft.layoutConfig, programme: context.layoutConfig!.programme }, true);
+    if (['parcels', 'replay', 'random'].includes(action)) context.parcelConfig = normalizeParcelConfig(synchronizedDraft.parcelConfig);
+    state.urban = context;
+  }
+  if (programmeCandidate) state.urban = { ...normalizeWorkshopContext(state.urban ?? { source: 'fixture' }), layoutConfig: { ...normalizeLayoutConfig(state.urban?.layoutConfig), programme: programmeCandidate } };
   try {
-    const settings = action === 'fortification' ? state.options : controls();
+    const settings = action === 'fortification' || programmeCandidate ? state.options : controls();
     for (const stage of BENCH_STAGES) if (!rustMode || stage !== 'buildings') editorMorph(settings, stage);
     if (action !== 'load' && action !== 'fortification') state.settings = settings;
     if (action === 'layout') {
-      state.options = settings; state.layoutSeed = input('layoutSeed').value || '42'; state.stage = 1; state.pins = [];
+      state.options = settings; if (!programmeCandidate) state.layoutSeed = input('layoutSeed').value || '42'; state.stage = 1; state.pins = [];
     }
     if (action === 'parcels') {
       state.plotOptions = settings; state.plotSeed = input('plotSeed').value || '42'; state.stage = 2;
@@ -522,19 +688,33 @@ async function generate(action: 'layout' | 'parcels' | 'houses' | 'replay' | 'ra
       state.options = settings; state.plotOptions = settings; state.houseOptions = settings;
       state.layoutSeed = input('layoutSeed').value || '42'; state.plotSeed = input('plotSeed').value || '42'; state.houseSeed = input('houseSeed').value || '42';
     }
+    if (fullCity) { state.stage = 2; state.buildingSettings = { ...buildingSettings(buildingPanel.state)!, generated: true }; }
     if (rustMode) {
       state.engine = 'rust'; state.urban = normalizeWorkshopContext(state.urban ?? { source: 'fixture' });
       if (action === 'fortification') {
         state.urban.layoutConfig = { ...state.urban.layoutConfig, fortification: 'none' } as LayoutConfig;
-      } else if (action !== 'load') {
+      } else if (action !== 'load' && !programmeCandidate) {
         const native: Record<string, unknown> = {};
-        for (const control of Array.from(nativeControls.querySelectorAll<HTMLInputElement | HTMLSelectElement>('[data-native]'))) {
+        for (const control of Array.from(document.querySelectorAll<HTMLInputElement | HTMLSelectElement>('[data-native]'))) {
           if (!control.checkValidity()) { control.reportValidity(); throw new Error('Corrigez les paramètres du plan urbain.'); }
           native[control.dataset.native!] = control instanceof HTMLInputElement ? control.type === 'checkbox' ? control.checked : Number(control.value) : control.value;
         }
         const quarterZone = native.autoQuarterZones ? 'auto' : settings.zone, parcelZone = native.autoParcelZones ? 'auto' : settings.zone; delete native.autoQuarterZones; delete native.autoParcelZones;
-        if (['layout', 'replay', 'random'].includes(action)) state.urban.layoutConfig = { ...state.urban.layoutConfig, ...native, zone: quarterZone } as LayoutConfig;
-        if (['parcels', 'replay', 'random'].includes(action)) state.urban.parcelConfig = { ...state.urban.parcelConfig, zone: parcelZone } as ParcelConfig;
+        if (['layout', 'replay', 'random'].includes(action)) {
+          if (!input('urbanPopulation').reportValidity()) throw new Error('Corrigez la population.');
+          const population = Math.round(Number(input('urbanPopulation').value));
+          if (population !== state.urban.population && native.composition === 'settlement') {
+            const config = state.urban.layoutConfig!;
+            state.urban.layoutConfig = { ...config, footprint: { ...config.footprint, budget: 'population', mechanism: config.footprint.mechanism === 'legacy' ? 'auto' : config.footprint.mechanism } };
+          }
+          state.urban.population = population;
+        }
+        if (['layout', 'replay', 'random'].includes(action)) state.urban.layoutConfig = { ...state.urban.layoutConfig, ...native, footprint: cityFootprint(state.urban.layoutConfig!), zone: quarterZone } as LayoutConfig;
+        if (['parcels', 'replay', 'random'].includes(action)) state.urban.parcelConfig = { ...state.urban.parcelConfig, zone: parcelZone, operator: parcelOperatorControl.value as ParcelConfig['operator'] } as ParcelConfig;
+      }
+      if (action !== 'load' && ['parcels', 'replay', 'random'].includes(action)) {
+        if (!input('urbanParcelDensity').reportValidity()) throw new Error('Corrigez la densité des parcelles.');
+        state.plotOptions = { ...state.plotOptions, density: Number(input('urbanParcelDensity').value) };
       }
       if (state.stage === 3) state.stage = 2;
       if (action === 'layout' || action === 'replay' || action === 'random' || action === 'load' || action === 'fortification') nativeResult = await nativeClient.generate({ kind: 'quarters', options: state.options, seed: state.layoutSeed, context: state.urban });
@@ -543,6 +723,13 @@ async function generate(action: 'layout' | 'parcels' | 'houses' | 'replay' | 'ra
       state.urban = { ...state.urban, layoutConfig: nativeResult.layoutConfig, parcelConfig: nativeResult.parcelConfig };
       const view = workshopView(nativeResult, state.options, editorMorph(state.options, 'streets')); layout = view.layout; partition = view.partition;
       houses = { parcels: partition.parcels, buildings: [] };
+      const buildingDraft = reference ? undefined : buildingPanel.captureDraft();
+      if (resetBuildingDefaults && ['layout', 'replay', 'random'].includes(action) && state.buildingSettings) state.buildingSettings = { ...state.buildingSettings, settings: undefined };
+      buildingPanel.restore(state.buildingSettings);
+      if (fullCity) buildingPanel.restoreDraft(buildingDraft);
+      if (state.stage >= 2 && state.buildingSettings?.generated) await buildingPanel.generate(fullCity ? undefined : { seed: buildingPanel.state.seed, settings: buildingPanel.state.settings });
+      if (synchronizedDraft?.buildingState) buildingPanel.setBuildingDraft(synchronizedDraft.buildingState);
+      buildingPanel.restoreDraft(buildingDraft);
     } else {
       nativeResult = undefined; state.engine = 'typescript';
       if (action === 'layout' || action === 'replay' || action === 'random' || action === 'load') layout = benchLayout(state.options, state.layoutSeed);
@@ -550,12 +737,18 @@ async function generate(action: 'layout' | 'parcels' | 'houses' | 'replay' | 'ra
       else if (action !== 'houses' || previous.stage === 1) partition = benchParcels(layout, state.plotSeed, state.plotOptions);
       houses = state.stage === 3 ? benchBuildings(layout, partition, state.houseSeed, state.houseOptions) : { parcels: partition.parcels, buildings: [] };
     }
+    if (['layout', 'replay', 'random'].includes(action)) { settlementDraft = undefined; synchronizedDraft = undefined; resetBuildingDefaults = false; }
     if (action === 'layout' || action === 'replay' || action === 'random') fit();
     if (action !== 'fortification') restoreControls();
     render(); save();
     counts(performance.now() - start);
   } catch (error) {
     state = previous; layout = previousLayout; partition = previousPartition; houses = previousHouses; nativeResult = previousNative;
+    const failedBuildingDraft = buildingPanel.captureDraft();
+    buildingPanel.restore(previousNative?.buildingState ?? previous.buildingSettings);
+    buildingPanel.restoreDraft(failedBuildingDraft);
+    if (synchronizedDraft?.buildingState) buildingPanel.setBuildingDraft(synchronizedDraft.buildingState);
+    if (programmeCandidate) buildingPanel.setProgrammeDraft(programmeCandidate);
     status(`Erreur : ${String(error)}`);
   }
   finally { busy = false; document.querySelectorAll<HTMLButtonElement>('button').forEach(b => { b.disabled = false; });
@@ -657,8 +850,11 @@ function point(event: MouseEvent): DOMPoint {
   return new DOMPoint(event.clientX, event.clientY).matrixTransform(map.getScreenCTM()!.inverse());
 }
 let drag: { x: number; y: number; view: number[]; moved: boolean } | undefined;
+let clickTarget: Element | undefined;
 map.onpointerdown = event => {
+  clickTarget = undefined;
   if (event.button !== 0 || pinMode || event.altKey || (event.target as Element).closest('[data-pin]')) return;
+  clickTarget = event.target as Element;
   drag = { x: event.clientX, y: event.clientY, view: [...state.view], moved: false }; map.setPointerCapture(event.pointerId);
 };
 map.onpointermove = event => {
@@ -671,15 +867,29 @@ map.onpointermove = event => {
 };
 let moved = false;
 map.onpointerup = () => { moved = drag?.moved ?? false; drag = undefined; save(); };
-map.onpointercancel = () => { drag = undefined; };
+map.onpointercancel = () => { drag = undefined; clickTarget = undefined; };
 map.onclick = event => {
+  // Pointer capture retargets the later click to the SVG root. Keep the actual
+  // pressed object for selection, while retaining drag capture over buildings.
+  const source = clickTarget ?? event.target as Element; clickTarget = undefined;
   if (moved) { moved = false; return; }
-  const target = (event.target as Element).closest('[data-pin]');
+  const target = source.closest('[data-pin]');
   if (target) { const i = Number(target.getAttribute('data-pin')); const note = window.prompt('Note du pin', state.pins[i].note); if (note !== null) state.pins[i].note = note; }
   else if (pinMode || event.altKey) { const p = point(event); const note = window.prompt('Note du pin', ''); if (note === null) return; state.pins.push({ x: Math.round(p.x * 100) / 100, y: Math.round(p.y * 100) / 100, note }); }
-  else return;
+  else {
+    const building = source.closest('[data-urban-building]');
+    if (building) { buildingPanel.select(building.getAttribute('data-urban-building')!); return; }
+    const parcel = source.closest('[data-parcel]');
+    if (!parcel || !nativeResult) return;
+    state.selectedParcel = Number(parcel.getAttribute('data-parcel'));
+    state.selectedParcelId = nativeResult.partitions?.flatMap(p => p.parcels)[state.selectedParcel]?.id;
+  }
   render(); save();
 };
+map.addEventListener('keydown', event => {
+  const building = (event.target as Element).closest('[data-urban-building]');
+  if (building && ['Enter', ' '].includes(event.key)) { event.preventDefault(); buildingPanel.select(building.getAttribute('data-urban-building')!); }
+});
 map.addEventListener('wheel', event => {
   event.preventDefault(); const p = point(event), [x, y, w, h] = state.view;
   const factor = Math.max(20 / w, Math.min(2000 / w, Math.exp(Math.sign(event.deltaY) * .15)));
@@ -718,12 +928,16 @@ try {
 function receiveWorkshop(event: MessageEvent): void {
   if (event.source === window.parent && event.origin === (location.protocol === 'file:' ? 'null' : location.origin) && event.data?.channel === WORKSHOP_CHANNEL && event.data.type === 'sync-settings') {
     const incoming = event.data.state as WorkshopState;
-    state.urban = normalizeWorkshopContext({ ...state.urban, source: 'map', layoutConfig: incoming.layoutConfig, parcelConfig: incoming.parcelConfig });
+    synchronizedDraft = incoming;
+    const applied = state;
+    state = structuredClone(state);
+    state.urban = normalizeWorkshopContext({ ...state.urban, source: state.urban?.source ?? 'map', population: incoming.population ?? state.urban?.population, siteKey: incoming.siteKey ?? state.urban?.siteKey, layoutConfig: incoming.layoutConfig, parcelConfig: incoming.parcelConfig });
     state.options = workshopOptions(incoming.layoutConfig, state.options);
     state.plotOptions = workshopOptions(incoming.parcelConfig, state.plotOptions);
     state.settings = structuredClone(state.stage >= 2 ? state.plotOptions : state.options);
     state.layoutSeed = incoming.quarterSeed; state.plotSeed = incoming.parcelSeed;
-    restoreControls(); status('Réglages synchronisés · appliquer l’étape pour recalculer.');
+    restoreControls(); state = applied;
+    buildingPanel.setProgrammeDraft(incoming.layoutConfig.programme); buildingPanel.setBuildingDraft(incoming.buildingState); status('Réglages synchronisés · appliquer l’étape pour recalculer.');
     return;
   }
 
@@ -731,13 +945,16 @@ function receiveWorkshop(event: MessageEvent): void {
   if (busy) { pendingWorkshopMessage = event; return; }
   if (event.source === window.parent && event.origin === (location.protocol === 'file:' ? 'null' : location.origin) && event.data?.channel === WORKSHOP_CHANNEL && event.data.type === 'fixture') {
     if (busy) return;
-    inheritedWater = undefined; rustMode = true; state.urban = { source: 'fixture' }; state.settings.radius = 160; state.settings.relief = 'flat'; state.settings.river = 'none';
+    awaitingMapImport = false;
+    synchronizedDraft = undefined; inheritedWater = undefined; rustMode = true; state.urban = { source: 'fixture' }; state.settings.radius = 160; state.settings.relief = 'flat'; state.settings.river = 'none';
     restoreControls(); void generate('replay'); return;
   }
   if (event.source !== window.parent || event.origin !== (location.protocol === 'file:' ? 'null' : location.origin) || event.data?.channel !== WORKSHOP_CHANNEL || event.data.type !== 'import') return;
   const incoming = event.data.state as WorkshopState;
+  synchronizedDraft = undefined;
   const imported = { ...incoming, layoutConfig: normalizeLayoutConfig(incoming?.layoutConfig, true), parcelConfig: normalizeParcelConfig(incoming?.parcelConfig) };
-  if (!imported?.layouts?.length) return;
+  if (!imported?.layouts?.length) { status('Import refusé : le décor ne contient pas de plan urbain appliqué.'); return; }
+  awaitingMapImport = false;
   inheritedWater = event.data.waterAppearance;
   rustMode = true; state.engine = 'rust';
   if (isTerrainStyle(imported.style)) state.mapStyle = imported.style;
@@ -747,9 +964,13 @@ function receiveWorkshop(event: MessageEvent): void {
   state.plotOptions = workshopOptions(imported.parcelConfig, state.options);
   state.settings = structuredClone(state.plotOptions); state.houseOptions = structuredClone(state.plotOptions);
   state.layoutSeed = imported.quarterSeed; state.plotSeed = imported.parcelSeed;
-  state.urban = { source: 'map', siteCulture: first.culture, layoutConfig: imported.layoutConfig, parcelConfig: imported.parcelConfig, radius: base.radius };
+  state.urban = { source: 'map', siteCulture: first.culture, layoutConfig: imported.layoutConfig, parcelConfig: imported.parcelConfig, radius: base.radius, population: imported.population ?? first.programme?.population ?? first.structure?.metrics.plannedPopulation, siteKey: imported.siteKey ?? first.key };
   state.stage = imported.partitions ? 2 : 1; state.pins = [];
-  nativeResult = { layouts: imported.layouts, partitions: imported.partitions, water: event.data.water ?? [], contours: event.data.contours ?? [], roads: event.data.roads ?? [], layoutConfig: imported.layoutConfig, parcelConfig: imported.parcelConfig };
+  nativeResult = { layouts: imported.layouts, partitions: imported.partitions, surface: event.data.surface, water: event.data.water ?? [], contours: event.data.contours ?? [], roads: event.data.roads ?? [], layoutConfig: imported.layoutConfig, parcelConfig: imported.parcelConfig, buildingState: imported.buildingState };
+  buildingPanel.restore(imported.buildingState);
+  state.buildingSettings = buildingSettings(imported.buildingState);
+  state.urbanView = imported.view ?? (imported.buildingState?.scene ? 'buildings' : 'parcels');
+  state.selectedParcel = undefined; state.selectedParcelId = undefined;
   const adapted = workshopView(nativeResult, state.options, editorMorph(state.options, 'streets')); layout = adapted.layout; partition = adapted.partition;
   houses = { parcels: partition.parcels, buildings: [] };
   restoreControls(); fit(); render(); save(); counts();
@@ -757,4 +978,4 @@ function receiveWorkshop(event: MessageEvent): void {
 window.addEventListener('message', receiveWorkshop);
 restoreControls();
 if (hosted) window.parent.postMessage({ channel: WORKSHOP_CHANNEL, type: 'ready' }, location.protocol === 'file:' || location.origin === 'null' ? '*' : location.origin);
-void generate('load');
+if (awaitingMapImport) status('Chargement du plan appliqué de la carte…'); else void generate('load');

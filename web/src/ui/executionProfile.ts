@@ -96,7 +96,9 @@ export function installExecutionProfile(parent: Element): void {
         if (!response.ok) throw new Error();
         const status = await response.json();
         if (status.service !== 'magna-urbis-local') throw new Error();
-        state.textContent = '●'; state.title = 'Moteur Rust natif connecté';
+        if (!Array.isArray(status.capabilities) || !status.capabilities.includes('houses.placement')) {
+          state.textContent = 'à actualiser'; state.title = 'Moteur Rust connecté mais ancien. Reconstruisez le moteur local puis relancez les bancs.';
+        } else { state.textContent = '●'; state.title = 'Moteur Rust natif connecté · villes et maisons disponibles'; }
       }).catch(() => { state.textContent = 'hors ligne'; state.title = 'Lancez npm run start:local depuis web/.'; });
     };
     // Synchronous workshop startup can otherwise exhaust the timeout before JSON is read.

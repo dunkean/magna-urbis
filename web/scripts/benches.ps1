@@ -144,7 +144,14 @@ try {
     $localReady = $false
     $neuralReady = $NeuralBackend -eq 'none'
     try { $siteReady = (Invoke-WebRequest -UseBasicParsing -Uri $SiteUrl -TimeoutSec 2).StatusCode -eq 200 } catch { }
-    try { $localReady = (Invoke-RestMethod -Uri "$LocalUrl/status" -TimeoutSec 2).service -eq 'magna-urbis-local' } catch { }
+    $localStatus = $null
+    try { $localStatus = Invoke-RestMethod -Uri "$LocalUrl/status" -TimeoutSec 2 } catch { }
+    if ($localStatus.service -eq 'magna-urbis-local') {
+      if ($localStatus.capabilities -notcontains 'houses.placement' -or $localStatus.capabilities -notcontains 'urban.programme') {
+        throw 'Moteur Rust ancien : reconstruire avec npm run build:local, puis relancer les bancs.'
+      }
+      $localReady = $true
+    }
     $serviceState = $null
     if ($NeuralProcess) { try {
       $response = Invoke-WebRequest -UseBasicParsing -Uri "$NeuralUrl/status" -TimeoutSec 2

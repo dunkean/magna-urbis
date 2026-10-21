@@ -182,7 +182,11 @@ async function main() {
   const nativeStatus = await status(new URL('/status', server));
   let native = null;
   if (nativeStatus) {
-    if ((await nativeStatus.json()).backend !== 'rust-native') throw new Error(`Un autre service utilise ${server.origin}.`);
+    const info = await nativeStatus.json();
+    if (info.backend !== 'rust-native') throw new Error(`Un autre service utilise ${server.origin}.`);
+    if (!info.capabilities?.includes('houses.placement') || !info.capabilities?.includes('urban.programme')) {
+      throw new Error(`Moteur Rust ancien sur ${server.origin}. Reconstruisez-le avec npm run build:local puis relancez les bancs avec npm run start:benches.`);
+    }
     console.log(`Moteur existant réutilisé : ${server.origin}`);
   } else {
     await freePort(port);
@@ -194,6 +198,7 @@ async function main() {
   const url = new URL('http://127.0.0.1:5173/rustbench.html');
   url.searchParams.set('profile', 'local');
   url.searchParams.set('localServer', server.origin);
+  url.hash = `terrain?source=${profiles.local.neural}&width=2400`;
   console.log(`\nMagna Urbis · profil local : ${url}\nCtrl+C arrête les services démarrés ici.`);
   open(url.href);
   const owned = [native, site, python].filter(Boolean);

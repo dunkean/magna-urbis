@@ -1,11 +1,23 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { defaultLayoutConfig, defaultParcelConfig, layoutExtent, normalizeLayoutConfig, normalizeParcelConfig, type Layout, type LayoutConfig, type Shape } from '../../rust/bridge/urban';
-import { normalizeWorkshopContext, workshopConfig, type WorkshopContext } from '../src/ui/testbenchUrban';
+import { createWorkshopClient, normalizeWorkshopContext, normalizeWorkshopPopulation, workshopFixtureFrame, workshopConfig, type WorkshopContext } from '../src/ui/testbenchUrban';
 import type { BenchOptions } from '../src/gen/urban/testbench';
 
 const box = (x: number, y: number, width: number): Shape => ({ outer: [{ x, y }, { x: x + width, y }, { x: x + width, y: y + width }, { x, y: y + width }], holes: [] });
 
 describe('Rust urban configuration and framing boundary', () => {
+  it('keeps the largest selectable planning populations inside the native 100 km terrain contract', () => {
+    const frame = workshopFixtureFrame(5_000_000, 25000, true);
+    expect(frame.width).toBe(100000);
+    expect(frame.center).toEqual({ x: 50000, y: 50000 });
+  });
+  it('inherits the applied culture and phase mix after changing a mapped settlement culture', () => {
+    const context: WorkshopContext = { source: 'map', siteCulture: 'european-organic',
+      layoutConfig: { ...defaultLayoutConfig(), culture: 'chinese', mixCulture: 'medina' }, parcelConfig: defaultParcelConfig() };
+    const options: BenchOptions = { culture: 'chinese', recipe: 'auto', zone: 'core', density: 1, count: 4, radius: 200, monument: 'none', stages: {} };
+    expect(workshopConfig(options, context, 'parcels').culture).toBe('site');
+    expect(workshopConfig({ ...options, culture: 'sahel' }, context, 'parcels').culture).toBe('sahel');
+  });
   it('lets old planned links grow organically while retaining explicit geometric forms', () => {
     for (const family of ['auto', 'compact', 'composite', 'rectangle', 'polygon'] as const) {
       const result = normalizeLayoutConfig({ footprint: { mechanism: 'planned', family } }, true);
@@ -92,6 +104,45 @@ describe('Rust urban configuration and framing boundary', () => {
     newContext.layoutConfig = { ...newContext.layoutConfig, fortification: 'none', zone: 'core' } as LayoutConfig;
     expect(workshopConfig(options, newContext, 'quarters').footprint.mechanism).toBe('auto');
     expect(context.layoutConfig).toHaveProperty('operator');
+  });
+
+  it('keeps small defaults and accepts metropolitan populations without substituting a map domain', () => {
+    expect(normalizeWorkshopContext({ source: 'fixture' }).population).toBe(1000);
+    for (const population of [1, 50_000, 300_000, 1_000_000, 5_000_000]) {
+      expect(normalizeWorkshopPopulation(population)).toBe(population);
+      const context = normalizeWorkshopContext({ source: 'fixture', population });
+      context.layoutConfig!.composition = 'settlement';
+      const options: BenchOptions = { culture: 'european-organic', recipe: 'auto', zone: 'core', density: 1, count: 4, radius: 160, monument: 'none', stages: {} };
+      expect(workshopConfig(options, context, 'quarters').composition).toBe('settlement');
+      expect(workshopConfig(options, context, 'quarters').footprint.budget).toBe('population');
+    }
+    expect(workshopFixtureFrame(1000, 160, false)).toEqual({ width: 2000, center: { x: 500, y: 500 } });
+    expect(workshopFixtureFrame(50_000, 160, true).width).toBeGreaterThan(2000);
+    expect(workshopFixtureFrame(300_000, 160, true).width).toBeGreaterThan(workshopFixtureFrame(50_000, 160, true).width);
+  });
+
+  it('forwards only the active workshop request progress and ignores updates after its result', async () => {
+    let receive: (event: { source: unknown; origin: string; data: unknown }) => void = () => {};
+    let sent: { id: number } | undefined;
+    const parent = { postMessage: (message: { id: number }) => { sent = message; } };
+    vi.stubGlobal('window', { parent, addEventListener: (_: string, listener: typeof receive) => { receive = listener; } });
+    vi.stubGlobal('location', { origin: 'http://bench', protocol: 'http:' });
+    try {
+      const client = createWorkshopClient(), progress = vi.fn();
+      const options: BenchOptions = { culture: 'european-organic', density: 1, count: 4, radius: 160, zone: 'core', monument: 'none', stages: {} };
+      const result = { layouts: [], water: [], contours: [] };
+      const pending = client.generate({ kind: 'buildings', options, seed: 'progress', context: { source: 'fixture' } }, progress);
+      const event = (data: object, source: unknown = parent) => receive({ source, origin: 'http://bench', data: { channel: 'magna-urban-workshop', id: sent!.id, ...data } });
+      event({ type: 'progress', completed: 3, total: 10 }, {});
+      event({ type: 'progress', id: sent!.id + 1, completed: 3, total: 10 });
+      expect(progress).not.toHaveBeenCalled();
+      event({ type: 'progress', completed: 3, total: 10 });
+      expect(progress).toHaveBeenCalledTimes(1); expect(progress).toHaveBeenCalledWith(3, 10);
+      event({ type: 'result', result });
+      expect(await pending).toBe(result);
+      event({ type: 'progress', completed: 10, total: 10 });
+      expect(progress).toHaveBeenCalledTimes(1);
+    } finally { vi.unstubAllGlobals(); }
   });
 
   it('frames all attributed disconnected components and falls back for legacy or micro scenes', () => {

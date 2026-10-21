@@ -9,6 +9,26 @@ use geometry::{area, bounds, difference, intersection, offset};
 use model::FeatureKind;
 
 #[test]
+fn urban_frontage_ranges_preserve_the_native_court_and_disjoint_bodies() {
+    let data = catalogue().unwrap();
+    let recipe = data.recipes.iter().find(|r| r.id == "EUR-MED-B02").unwrap();
+    let mut p = recipe.parameters.clone();
+    p.width_m = [6.; 2];
+    p.depth_m = [18.; 2];
+    let mut plan = layouts::build_layout(recipe, &p, "urban-ranges").unwrap();
+    let before = plan.bodies.iter().map(|b| area(&b.footprint)).sum::<f64>();
+    layouts::urban_frontage_infill(&mut plan, &p, 0.95, "urban-ranges");
+    assert!(plan.bodies.iter().map(|b| area(&b.footprint)).sum::<f64>() > before);
+    assert!(!plan.courts.is_empty());
+    for (i, body) in plan.bodies.iter().enumerate() {
+        assert!(area(&intersection(&body.footprint, &plan.courts)) < 1e-6);
+        for other in plan.bodies.iter().skip(i + 1) {
+            assert!(area(&intersection(&body.footprint, &other.footprint)) < 1e-6);
+        }
+    }
+}
+
+#[test]
 fn declared_dimensions_and_component_origins_keep_varied_batches_whole() {
     let data = catalogue().unwrap();
     for (id, index, bodies, floors, rooms) in [

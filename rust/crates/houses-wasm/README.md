@@ -12,6 +12,13 @@ Trois exports renvoient une chaîne JSON avec une enveloppe
   estime les budgets avant la géométrie.
 - `generate_houses_json(config_json)` effectue ce préflight puis génère un lot.
 
+Le parcours urbain ajoute `architecture_profiles_json()`,
+`place_buildings_json(batch_json)` et `enrich_placement_json(building_json)`.
+Ils utilisent la même enveloppe de résultat, avec un schéma de placement `1`
+indépendant du schéma autonome des maisons `2`. Les entrées urbaines ont une
+limite de 32 Mio ; les réponses conservent la limite de 64 Mio. Le cas retenu
+contient le plan résolu pour un enrichissement exact ou un refus explicite.
+
 La configuration et la scène utilisent `schema_version: "2"` ; l'inventaire
 des sources a son propre format versionné. Une erreur attendue utilise une
 catégorie explicite dans l'enveloppe. Un piège WASM reste une erreur fatale

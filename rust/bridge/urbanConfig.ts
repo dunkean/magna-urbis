@@ -1,5 +1,12 @@
+export interface ProgrammeContext {
+  role: 'auto' | 'isolated-farm' | 'roadside-temple' | 'agricultural' | 'crossroads' | 'artisan' | 'riverine' | 'port' | 'capital';
+  resources: string[]; period: string; mode: 'strict' | 'inspired' | 'fantasy';
+  /** Explicit navigable access, never derived from visible water. */
+  navigableAccess: boolean; lore: string[];
+}
+export const defaultProgrammeContext = (): ProgrammeContext => ({ role: 'auto', resources: [], period: '', mode: 'inspired', navigableAccess: false, lore: [] });
 /** Pure configuration boundary; the legacy web editor must not load Rust/WASM. */
-export interface ParcelConfig { preset: string; culture?: string; recipe: string; zone: string; density: number; params: Record<string, unknown>; operator: 'culture' | 'strips' | 'oriented' | 'frontage' | 'compound' | 'wholeBlock' | 'garden' }
+export interface ParcelConfig { preset: string; culture?: string; recipe: string; zone: string; density: number; params: Record<string, unknown>; operator: 'culture' | 'strips' | 'oriented' | 'compact' | 'inherited' | 'courtyard' | 'frontage' | 'compound' | 'wholeBlock' | 'garden' }
 export interface FootprintConfig {
   mechanism: 'auto' | 'legacy' | 'planned' | 'accessibility' | 'ribbon' | 'fusion';
   family: 'auto' | 'circle' | 'rectangle' | 'polygon' | 'compact' | 'elongated' | 'linear' | 'fan' | 'fingers' | 'dendritic' | 'lobed' | 'archipelago' | 'composite';
@@ -7,6 +14,7 @@ export interface FootprintConfig {
   cohesion: number; satellites: number; branchDepth: number; gapSize: number;
 }
 export interface LayoutConfig extends Omit<ParcelConfig, 'operator'> {
+  programme: ProgrammeContext;
   axisAlignment: 'regional' | 'culture'; mixCulture: string; mixMode: 'phases' | 'sectors'; mixShare: number; mixAngle: number; exitTreatment: 'legacy' | 'adaptive' | 'closed'; peripheralRoad: 'auto' | 'none' | 'partial' | 'full'; siteAdaptation: number;
   composition: 'settlement' | 'district'; settlementForm: 'auto' | 'nucleated' | 'ribbon'; suburbs: 'auto' | 'none' | 'few' | 'many'; phases: number;
   count: number; rings: number; radius: number; radiusScale: number; placement: 'center' | 'rectangle' | 'skew' | 'notched'; monument: string;
@@ -14,7 +22,7 @@ export interface LayoutConfig extends Omit<ParcelConfig, 'operator'> {
   footprint: FootprintConfig; tissue: 'culture' | 'grid' | 'organic' | 'radial' | 'terraces' | 'dendritic' | 'clusters'; accessMode: 'adaptive' | 'cultural' | 'none'; accessDepth: number; accessBudget: number;
 }
 export const defaultFootprintConfig = (): FootprintConfig => ({ mechanism: 'auto', family: 'auto', budget: 'population', grossDensity: 0, aspect: 1.4, orientation: 0, nuclei: 3, irregularity: 0.2, anisotropy: 0.65, separation: 1.3, epochs: 3, cohesion: 0.85, satellites: 0.15, branchDepth: 0.2, gapSize: 60 });
-export const defaultLayoutConfig = (): LayoutConfig => ({ axisAlignment: 'regional', mixCulture: '', mixMode: 'phases', mixShare: 0.5, mixAngle: 0, exitTreatment: 'adaptive', peripheralRoad: 'auto', siteAdaptation: 1, composition: 'settlement', settlementForm: 'auto', suburbs: 'auto', phases: 0, preset: 'culture', culture: 'site', recipe: 'auto', zone: 'auto', density: 1, count: 4, rings: 1, radius: 0, radiusScale: 1, placement: 'center', params: {}, monument: 'none', fortification: 'culture', maxStreetGrade: 0.12, maxLaneGrade: 0.18, maxStairGrade: 0.65, allowStairs: true, footprint: defaultFootprintConfig(), tissue: 'culture', accessMode: 'adaptive', accessDepth: 0, accessBudget: 4 });
+export const defaultLayoutConfig = (): LayoutConfig => ({ programme: defaultProgrammeContext(), axisAlignment: 'regional', mixCulture: '', mixMode: 'phases', mixShare: 0.5, mixAngle: 0, exitTreatment: 'adaptive', peripheralRoad: 'auto', siteAdaptation: 1, composition: 'settlement', settlementForm: 'auto', suburbs: 'auto', phases: 0, preset: 'culture', culture: 'site', recipe: 'auto', zone: 'auto', density: 1, count: 4, rings: 1, radius: 0, radiusScale: 1, placement: 'center', params: {}, monument: 'none', fortification: 'culture', maxStreetGrade: 0.12, maxLaneGrade: 0.18, maxStairGrade: 0.65, allowStairs: true, footprint: defaultFootprintConfig(), tissue: 'culture', accessMode: 'adaptive', accessDepth: 0, accessBudget: 4 });
 export const defaultParcelConfig = (): ParcelConfig => ({ preset: 'culture', culture: 'site', recipe: 'auto', zone: 'auto', density: 1, params: {}, operator: 'culture' });
 
 /** Keep the Rust contract strict while discarding fields leaked by older UI versions. */
@@ -28,6 +36,7 @@ function contractFields<T extends object>(defaults: T, saved?: Partial<T>): T {
 export function normalizeLayoutConfig(saved?: Partial<Omit<LayoutConfig, 'footprint'>> & { footprint?: Partial<FootprintConfig> }, legacy = false): LayoutConfig {
   const defaults = defaultLayoutConfig();
   const config = contractFields(defaults, saved as Partial<LayoutConfig>);
+  config.programme = contractFields(defaultProgrammeContext(), saved?.programme);
   config.footprint = contractFields(defaults.footprint, saved?.footprint);
   // Missing controls in an existing scene retain the former geometry.
   if (saved) {

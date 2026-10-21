@@ -13,20 +13,29 @@ export interface WorkshopCatalogue {
   cultures: Record<string, { label: string; recipes: { id: string; label: string; zone: Zone; preset: string }[]; nucleus?: { kind: string; builder?: string; compound?: boolean } }>;
   presets: Record<string, { label: string; params: MorphologyParams }>;
 }
+export interface UrbanCitySettings { layoutConfig: LayoutConfig; parcelConfig: ParcelConfig; quarterSeed: string; parcelSeed: string; building?: Pick<import('./urbanBuildingsPanel').UrbanBuildingState, 'seed' | 'settings' | 'generated'> }
 export interface WorkshopState {
+  citySettings?: Record<string, UrbanCitySettings>;
   /** Display preference transported with the plan; never an engine option. */
   style?: import('../render/terrainStyle').TerrainStyle;
+  /** Applied planning population of one identified site, independent of drafts. */
+  population?: number; siteKey?: string;
+  view?: 'tissue' | 'uses' | 'parcels' | 'buildings';
   layoutConfig: LayoutConfig; parcelConfig: ParcelConfig; quarterSeed: string; parcelSeed: string;
   layouts?: Layout[]; partitions?: Partition[];
+  buildingState?: import('./urbanBuildingsPanel').UrbanBuildingState;
 }
-export interface WorkshopContext { source: 'fixture' | 'map'; siteCulture?: string; layoutConfig?: LayoutConfig; parcelConfig?: ParcelConfig; radius?: number }
+export interface WorkshopContext { source: 'fixture' | 'map'; siteCulture?: string; layoutConfig?: LayoutConfig; parcelConfig?: ParcelConfig; radius?: number; population?: number; siteKey?: string }
 export interface WorkshopRequest {
-  channel: typeof WORKSHOP_CHANNEL; type: 'generate'; id: number; kind: 'quarters' | 'parcels';
-  options: BenchOptions; seed: string; context: WorkshopContext; layouts?: Layout[];
+  channel: typeof WORKSHOP_CHANNEL; type: 'generate'; id: number; kind: 'quarters' | 'parcels' | 'buildings';
+  options: BenchOptions; seed: string; context: WorkshopContext; layouts?: Layout[]; partitions?: Partition[];
+  buildingSettings?: import('../../../rust/bridge/urbanArchitecture').PlacementBatchSettings;
 }
 export interface WorkshopResult {
+  surface?: import('./urbanPerspective').UrbanSurface;
   roads?: import('../../../rust/bridge/urban').Street[]; layouts: Layout[]; partitions?: Partition[]; water: Shape[]; contours: { x: number; y: number }[][]; shapeNames?: string[];
   layoutConfig?: LayoutConfig; parcelConfig?: ParcelConfig;
+  buildingState?: import('./urbanBuildingsPanel').UrbanBuildingState;
 }
 export function workshopOptions(config: LayoutConfig | ParcelConfig, previous: BenchOptions): BenchOptions {
   return { ...previous, culture: config.culture && config.culture !== 'site' ? config.culture : previous.culture,
@@ -35,8 +44,19 @@ export function workshopOptions(config: LayoutConfig | ParcelConfig, previous: B
       placement: config.placement, monument: config.monument } as Partial<BenchOptions> : {}),
     stages: { ...previous.stages, ['count' in config ? 'streets' : 'plots']: { preset: config.preset, params: config.params } } };
 }
+/** Same population range as the existing Settlements editor; no metropolitan cap. */
+export function normalizeWorkshopPopulation(value?: number): number {
+  return Math.max(1, Math.min(5_000_000, Math.round(Number(value) || 1000)));
+}
+/** Only the isolated synthetic terrain can expand. Real map rasters remain exact. */
+export function workshopFixtureFrame(population: number, radius: number, fullSettlement: boolean): { width: number; center: { x: number; y: number } } {
+  const width = fullSettlement ? Math.min(100000, Math.max(2000, radius * 4, Math.ceil(Math.sqrt(normalizeWorkshopPopulation(population) * 1000) * 2.4 / 100) * 100)) : 2000;
+  return { width, center: width === 2000 ? { x: 500, y: 500 } : { x: width / 2, y: width / 2 } };
+}
 export function normalizeWorkshopContext(context: WorkshopContext): WorkshopContext {
-  return { ...context, layoutConfig: normalizeLayoutConfig(context.layoutConfig, true), parcelConfig: normalizeParcelConfig(context.parcelConfig) };
+  const layoutConfig = normalizeLayoutConfig(context.layoutConfig, true);
+  if (!context.layoutConfig && context.source === 'fixture') layoutConfig.composition = 'district';
+  return { ...context, population: normalizeWorkshopPopulation(context.population), layoutConfig, parcelConfig: normalizeParcelConfig(context.parcelConfig) };
 }
 export function workshopConfig(options: BenchOptions, context: WorkshopContext, kind: 'quarters'): LayoutConfig;
 export function workshopConfig(options: BenchOptions, context: WorkshopContext, kind: 'parcels'): ParcelConfig;
@@ -44,9 +64,11 @@ export function workshopConfig(options: BenchOptions, context: WorkshopContext, 
   context = normalizeWorkshopContext(context);
   const stage = options.stages?.[kind === 'quarters' ? 'streets' : 'plots'];
   const retained = kind === 'quarters' ? context.layoutConfig : context.parcelConfig;
-  const config = { ...retained, culture: context.source === 'map' && retained?.culture === 'site' && options.culture === context.siteCulture ? 'site' : options.culture, recipe: options.recipe ?? 'core', zone: retained?.zone === 'auto' ? 'auto' : options.zone,
+  const appliedCulture = context.layoutConfig?.culture === 'site' ? context.siteCulture : context.layoutConfig?.culture;
+  const inheritParcelCulture = kind === 'parcels' && retained?.culture === 'site' && options.culture === (appliedCulture ?? options.culture);
+  const config = { ...retained, culture: inheritParcelCulture || context.source === 'map' && retained?.culture === 'site' && options.culture === context.siteCulture ? 'site' : options.culture, recipe: options.recipe ?? 'core', zone: retained?.zone === 'auto' ? 'auto' : options.zone,
     density: options.density, preset: stage?.preset ?? 'culture', params: stage?.params ?? {},
-    ...(kind === 'quarters' ? { composition: context.source === 'fixture' ? 'district' : context.layoutConfig?.composition ?? 'settlement', count: options.count, rings: options.rings ?? 1, radius: context.source === 'map' && context.layoutConfig?.radius === 0 && options.radius === context.radius ? 0 : options.radius,
+    ...(kind === 'quarters' ? { composition: context.layoutConfig?.composition ?? (context.source === 'fixture' ? 'district' : 'settlement'), count: options.count, rings: options.rings ?? 1, radius: context.source === 'map' && context.layoutConfig?.radius === 0 && options.radius === context.radius ? 0 : options.radius,
       placement: options.placement === 'lateral' ? 'rectangle' : options.placement ?? 'center', monument: options.monument } : {}) };
   return kind === 'quarters' ? normalizeLayoutConfig(config) : normalizeParcelConfig(config);
 }
@@ -71,10 +93,11 @@ export function workshopView(result: WorkshopResult, options: BenchOptions, nati
 export function createWorkshopClient() {
   let nextId = 0;
   let catalogueReady: ((catalogue: WorkshopCatalogue) => void) | undefined;
-  const pending = new Map<number, { resolve(result: WorkshopResult): void; reject(error: Error): void }>();
+  const pending = new Map<number, { resolve(result: WorkshopResult): void; reject(error: Error): void; progress?(completed: number, total: number): void }>();
   window.addEventListener('message', event => {
     if (event.source !== window.parent || event.origin !== (location.protocol === 'file:' ? 'null' : location.origin) || event.data?.channel !== WORKSHOP_CHANNEL) return;
     if (event.data.type === 'catalogue') { catalogueReady?.(event.data.catalogue); return; }
+    if (event.data.type === 'progress') { pending.get(event.data.id)?.progress?.(event.data.completed, event.data.total); return; }
     if (event.data.type !== 'result') return;
     const item = pending.get(event.data.id); if (!item) return;
     pending.delete(event.data.id);
@@ -84,9 +107,9 @@ export function createWorkshopClient() {
     catalogue(): Promise<WorkshopCatalogue> {
       return new Promise(resolve => { catalogueReady = resolve; window.parent.postMessage({ channel: WORKSHOP_CHANNEL, type: 'catalogue' }, location.protocol === 'file:' || location.origin === 'null' ? '*' : location.origin); });
     },
-    generate(request: Omit<WorkshopRequest, 'channel' | 'type' | 'id'>): Promise<WorkshopResult> {
+    generate(request: Omit<WorkshopRequest, 'channel' | 'type' | 'id'>, progress?: (completed: number, total: number) => void): Promise<WorkshopResult> {
       const id = ++nextId;
-      return new Promise((resolve, reject) => { pending.set(id, { resolve, reject }); window.parent.postMessage({ ...request, channel: WORKSHOP_CHANNEL, type: 'generate', id }, location.protocol === 'file:' || location.origin === 'null' ? '*' : location.origin); });
+      return new Promise((resolve, reject) => { pending.set(id, { resolve, reject, progress }); window.parent.postMessage({ ...request, channel: WORKSHOP_CHANNEL, type: 'generate', id }, location.protocol === 'file:' || location.origin === 'null' ? '*' : location.origin); });
     },
     state(caseState: string, state: WorkshopState, source: WorkshopContext['source']): void { window.parent.postMessage({ channel: WORKSHOP_CHANNEL, type: 'state', caseState, state, source }, location.protocol === 'file:' || location.origin === 'null' ? '*' : location.origin); },
   };

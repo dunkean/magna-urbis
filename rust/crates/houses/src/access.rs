@@ -13,6 +13,243 @@ mod roof_apertures;
 mod roof_walk_components;
 pub(crate) use roof_walk_components::native_roof_walk_component;
 
+/// A native portal certificate retained before interior subdivision. It is
+/// produced by the same access builder, not a bounding-box entrance guess.
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub(crate) struct StructuralEntrance {
+    pub opening: [Point; 2],
+    pub passage: Surface,
+    pub width_m: f64,
+    pub from_z_m: f64,
+    pub to_z_m: f64,
+}
+
+pub(crate) fn structural_access(
+    unit: &mut HouseUnit,
+    paths: &Surface,
+    parameters: &crate::catalogue::Parameters,
+) -> Result<StructuralEntrance, String> {
+    let mut walks = vec![(0.0, paths.clone())];
+    for body in &unit.bodies {
+        let level = body
+            .levels
+            .first()
+            .ok_or("Body without structural level.")?;
+        let interior = if body.envelope == Envelope::Open {
+            level.footprint.clone()
+        } else {
+            offset(&level.footprint, -body.wall_thickness_m)
+        };
+        if area(&interior) > 0.45 {
+            walks.push((level.z_m, interior));
+        }
+    }
+    build_access(unit, &walks, parameters)?;
+    let reached = reachable(unit);
+    if !unit.access.nodes.iter().any(|n| {
+        reached.contains(&n.id)
+            && unit.bodies.iter().any(|b| {
+                (b.levels[0].z_m - n.z_m).abs() < 0.001
+                    && area(&intersection(&n.floor, &b.levels[0].footprint)) > 0.1
+            })
+    }) {
+        return Err("No native structural access path reaches a body.".into());
+    }
+    let portal = unit
+        .access
+        .portals
+        .iter()
+        .filter(|p| p.from == unit.access.root || p.to == unit.access.root)
+        .max_by(|a, b| {
+            let middle = |p: &Portal| (p.opening[0].y + p.opening[1].y) * 0.5;
+            middle(a).total_cmp(&middle(b))
+        })
+        .ok_or("No native entrance from the external access domain.")?;
+    Ok(StructuralEntrance {
+        opening: portal.opening,
+        passage: portal.passage.clone(),
+        width_m: portal.width_m,
+        from_z_m: portal.from_z_m,
+        to_z_m: portal.to_z_m,
+    })
+}
+
+/// Connect a public frontage to the native perimeter gate, while retaining the
+/// body portal separately for exact interior enrichment. The gate must belong
+/// to the existing connected exterior walk component: no path or wall cut is
+/// synthesized here.
+pub(crate) fn structural_site_entry(
+    unit: &HouseUnit,
+    parameters: &crate::catalogue::Parameters,
+    body_entry: &StructuralEntrance,
+) -> Result<StructuralEntrance, String> {
+    let perimeter = unite(
+        &unit
+            .features
+            .iter()
+            .filter(|f| matches!(f.kind, FeatureKind::Enclosure | FeatureKind::Fence))
+            .map(|f| f.surface.clone())
+            .collect::<Vec<_>>(),
+    );
+    if perimeter.is_empty() {
+        return Ok(body_entry.clone());
+    }
+    let root = unit
+        .access
+        .nodes
+        .iter()
+        .find(|n| n.id == unit.access.root)
+        .ok_or("Missing native exterior walk component.")?;
+    let solids = unite(
+        &unit
+            .walls
+            .iter()
+            .map(|w| wall_section(w, root.z_m + 0.01))
+            .collect::<Vec<_>>(),
+    );
+    let mut entries = vec![];
+    // Profiled gates are actual portals cut by the shared access builder.
+    entries.extend(
+        unit.access
+            .portals
+            .iter()
+            .filter(|portal| {
+                parameters.site_gate_profile.is_some()
+                    && (portal.from == root.id || portal.to == root.id)
+                    && area(&intersection(&portal.passage, &perimeter)) > 0.001
+            })
+            .map(|portal| StructuralEntrance {
+                opening: portal.opening,
+                passage: portal.passage.clone(),
+                width_m: portal.width_m,
+                from_z_m: portal.from_z_m,
+                to_z_m: portal.to_z_m,
+            }),
+    );
+    // Unprofiled perimeter enclosures already own a precut gate. Consume the
+    // exact same declared geometry, never a bounding-box doorway guess.
+    if parameters.site_gate_profile.is_none() {
+        for (index, spec) in parameters.enclosures.iter().enumerate() {
+            if spec.family == crate::catalogue::EnclosureFamily::None
+                || spec.placement == crate::catalogue::Placement::Central
+                // A layout may already supply its own enclosure. In that case
+                // the detail operator deliberately skipped this declared ring;
+                // its hypothetical gap must not be certified as a real gate.
+                || !unit.features.iter().any(|f| {
+                    f.id.starts_with(&format!("detail-enclosure-{index}-"))
+                })
+            {
+                continue;
+            }
+            let (_, _, passage) = crate::features::enclosure_geometry(unit, parameters, spec);
+            if passage.is_empty() {
+                continue;
+            }
+            let b = bounds(&passage);
+            let y = (b[1] + b[3]) * 0.5;
+            entries.push(StructuralEntrance {
+                opening: [point(b[0], y), point(b[2], y)],
+                passage,
+                width_m: spec.gate_width_m,
+                from_z_m: root.z_m,
+                to_z_m: root.z_m,
+            });
+        }
+    }
+    entries
+        .into_iter()
+        .find(|entry| {
+            entry.width_m >= 0.8
+                && area(&intersection(&entry.passage, &solids)) < 0.0001
+                && area(&intersection(&entry.passage, &root.floor)) > entry.width_m * 0.1
+                // For authored open gates the whole passage must lie in that
+                // connected component; a disconnected courtyard is insufficient.
+                && (parameters.site_gate_profile.is_some()
+                    || area(&difference(&entry.passage, &root.floor)) < 0.0001)
+        })
+        .ok_or_else(|| {
+            "No declared native perimeter gate connects the public exterior to the retained body entrance."
+                .into()
+        })
+}
+
+/// Restrict the existing native graph to the real allowed parcel surface.
+/// Split floor components stay separate; only retained native portals can join
+/// them. This certifies access without drawing or generating a replacement path.
+pub(crate) fn retained_connection_within(
+    unit: &HouseUnit,
+    allowed: &Surface,
+    public_connector: &Surface,
+) -> bool {
+    let parts = unit
+        .access
+        .nodes
+        .iter()
+        .flat_map(|node| {
+            intersection(&node.floor, allowed)
+                .into_iter()
+                .filter_map(move |polygon| {
+                    let floor = vec![polygon];
+                    (area(&floor) > 0.005).then_some((node, floor))
+                })
+        })
+        .collect::<Vec<_>>();
+    let mut edges = vec![vec![]; parts.len()];
+    for portal in &unit.access.portals {
+        if area(&difference(&portal.passage, allowed)) > 0.0001 {
+            continue;
+        }
+        let from = parts
+            .iter()
+            .enumerate()
+            .filter_map(|(i, (node, floor))| {
+                (node.id == portal.from && area(&intersection(floor, &portal.passage)) > 0.005)
+                    .then_some(i)
+            })
+            .collect::<Vec<_>>();
+        let to = parts
+            .iter()
+            .enumerate()
+            .filter_map(|(i, (node, floor))| {
+                (node.id == portal.to && area(&intersection(floor, &portal.passage)) > 0.005)
+                    .then_some(i)
+            })
+            .collect::<Vec<_>>();
+        for &a in &from {
+            for &b in &to {
+                edges[a].push(b);
+                edges[b].push(a);
+            }
+        }
+    }
+    let mut reached = vec![false; parts.len()];
+    let mut queue = VecDeque::new();
+    for (i, (node, floor)) in parts.iter().enumerate() {
+        if node.kind == AccessKind::Exterior && area(&intersection(floor, public_connector)) > 0.005
+        {
+            reached[i] = true;
+            queue.push_back(i);
+        }
+    }
+    while let Some(i) = queue.pop_front() {
+        let (node, floor) = &parts[i];
+        if unit.bodies.iter().any(|body| {
+            let level = &body.levels[0];
+            (node.z_m - level.z_m).abs() < 0.001
+                && area(&intersection(floor, &level.footprint)) > 0.1
+        }) {
+            return true;
+        }
+        for &j in &edges[i] {
+            if !reached[j] {
+                reached[j] = true;
+                queue.push_back(j);
+            }
+        }
+    }
+    false
+}
+
 pub(crate) fn reachable(unit: &HouseUnit) -> BTreeSet<String> {
     reachable_allowed(unit, |_| true)
 }
@@ -625,6 +862,15 @@ pub(crate) fn build_access(
     circulations: &[(f64, Surface)],
     parameters: &crate::catalogue::Parameters,
 ) -> Result<(), String> {
+    build_access_with_entry(unit, circulations, parameters, None)
+}
+
+pub(crate) fn build_access_with_entry(
+    unit: &mut HouseUnit,
+    circulations: &[(f64, Surface)],
+    parameters: &crate::catalogue::Parameters,
+    retained: Option<&StructuralEntrance>,
+) -> Result<(), String> {
     let ground_solids = unite(
         &unit
             .bodies
@@ -745,6 +991,44 @@ pub(crate) fn build_access(
     }
     add_vertical(unit)?;
     split_walk_nodes(unit)?;
+    if let Some(entry) = retained.filter(|e| (e.from_z_m - e.to_z_m).abs() < 0.001) {
+        let root = unit
+            .access
+            .nodes
+            .iter()
+            .find(|n| n.id == unit.access.root)
+            .cloned()
+            .ok_or("Missing retained exterior root.")?;
+        let target = unit
+            .access
+            .nodes
+            .iter()
+            .filter(|n| {
+                n.id != root.id
+                    && (n.z_m - entry.to_z_m).abs() < 0.001
+                    && area(&intersection(&n.floor, &entry.passage)) > entry.width_m * 0.1
+            })
+            .max_by(|a, b| {
+                area(&intersection(&a.floor, &entry.passage))
+                    .total_cmp(&area(&intersection(&b.floor, &entry.passage)))
+            })
+            .cloned()
+            .ok_or("Interior subdivision cannot preserve the retained native entrance.")?;
+        portal(
+            unit,
+            &root.id,
+            &target.id,
+            if target.kind == AccessKind::Room {
+                PortalKind::Door
+            } else {
+                PortalKind::Passage
+            },
+            entry.opening,
+            entry.passage.clone(),
+            entry.width_m,
+            vec![],
+        )?;
+    }
     connect_horizontal(unit, &BTreeSet::new(), parameters)?;
     public_roofs::add_routes(unit)?;
     let previous_nodes: BTreeSet<_> = unit.access.nodes.iter().map(|n| n.id.clone()).collect();

@@ -2,6 +2,7 @@
 <html lang="en">
 <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Magna Urbis — Rust terrain and water</title><link rel="icon" type="image/png" href="./assets/logo-magna-urbis.png?inline">
   <link rel="stylesheet" href="./terrainbench.css">
+  <link rel="stylesheet" href="./terrainStartup.css">
   <link rel="stylesheet" href="./terrainSettlements.css">
   <link rel="stylesheet" href="./terrainUrban.css">
   <link rel="stylesheet" href="./ruler.css">
@@ -9,7 +10,7 @@
   <link rel="stylesheet" href="./recipeSharing.css">
   <link rel="stylesheet" href="./benchPanels.css">
 </head>
-<body>
+<body data-terrain-startup="loading">
   <script type="module" src="./benchEntry.ts"></script>
   <header>
 <strong class="brand">Terrainbench <small>Rust · WASM</small></strong>
@@ -44,10 +45,10 @@
     <div class="control-group share-actions" role="group" aria-label="Share"><button id="copy" title="Copy URL" aria-label="Copy URL"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m10 13 4-4m-5 6-2 2a4 4 0 0 1-6-6l4-4a4 4 0 0 1 6 0m2 2 2-2a4 4 0 0 1 6 6l-4 4a4 4 0 0 1-6 0"/></svg></button><button id="copyReport" title="Copy report" aria-label="Copy report"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="5" width="14" height="16" rx="2"/><path d="M16 5V3H4v14m6-8h6m-6 4h6m-6 4h4"/></svg></button></div>
 <label>Diagnostic <select id="hydroOverlay"><option value="none">None</option><optgroup label="Vector pipeline"><option value="v-accumulation">Accumulation</option><option value="v-basins">Watersheds</option><option value="v-depth">Depression filling</option><option value="v-conditioning">Pre-hydrology conditioning</option><option value="v-lakes">Lake water balance</option><option value="v-styles">Channel styles</option></optgroup><optgroup label="Rust · final network"><option value="basins">Watersheds</option><option value="accumulation">Accumulation</option><option value="flow">Flow</option><option value="channels">Network</option></optgroup><optgroup label="Rust · terrain and processing"><option value="depressions">Depressions</option><option value="lakes">Lakes</option><option value="flats">Flat areas</option><option value="flat-rank">Flat-area ranks</option></optgroup><optgroup label="Rust · initial drainage"><option value="raw-basins">Raw watersheds</option><option value="raw-accumulation">Raw accumulation</option><option value="raw-flow">Raw flow</option><option value="raw-depressions">Raw depressions</option></optgroup></select></label>
 </nav>
-<div class="terrain-workspace">
+<div class="terrain-workspace" inert>
 <div class="terrain-left-panel">
 <section class="stages" aria-label="Generation stages">
-<details class="stage"><summary>1 · Terrain <span id="reliefState"></span></summary><div class="stage-controls">    <label title="Procédural : Rust/WebGPU local. Neuronal WASM : calcul sur le GPU du navigateur, poids téléchargés et mis en cache. Neuronal Python : PyTorch/CUDA via le service local.">Source <select id="terrainSource"><option value="procedural">Procédural</option><option value="neural-wasm">Neuronal WASM · navigateur</option><option value="neural-python">Neuronal Python · CUDA</option></select></label>
+<details class="stage"><summary>1 · Terrain <span id="reliefState"></span></summary><div class="stage-controls">    <label title="Procédural : Rust/WebGPU local. Neuronal WASM : calcul sur le GPU du navigateur, poids téléchargés et mis en cache. Neuronal Python : PyTorch/CUDA via le service local.">Source <select id="terrainSource"><option value="procedural">Procédural</option><option value="neural-wasm">Neuronal WASM · navigateur</option><option value="neural-python" selected>Neuronal Python · CUDA</option></select></label>
     <label id="motifControl" title="Physical size of landforms and mountain ranges, independent of the map; 10,000 m for features at a 10 km scale">Landform scale m <input id="motifSize" aria-label="Landform scale in metres" type="number" min="250" max="50000" step="250" value="3000"></label>
     <label>Relief de fond <select id="relief"><option value="flat">Plain</option><option value="hills">Hills</option><option value="valley">Valley</option><option value="canyon">Canyon</option><option value="mountains" title="Mountains with smoother peaks">Mountains</option><option value="mixed">Hills and mountains</option><option value="plateau">Plateau</option><option value="high-mountains" title="Mountain ranges">High mountains</option><option value="volcano">Volcano</option><option value="caldera">Caldera</option><option value="cavern">Cavern</option></select></label>
     <label id="neuralFitControl" hidden title="The network produces 40 × 40 km: crop keeps a map-sized window (shifted toward coasts); scale stretches the full 40 km over the map">Extent <select id="neuralFit"><option value="crop">Crop</option><option value="scale">Scale</option></select></label>
@@ -170,6 +171,10 @@
 
   <main>
     <div id="viewport" tabindex="0" aria-label="Terrain map. Use the wheel to zoom and drag to pan.">
+      <div id="terrainLoading" class="terrain-loading" data-phase="interface" role="status" aria-live="polite">
+        <div class="terrain-loading-card"><span class="terrain-loading-spinner" aria-hidden="true"></span><strong id="terrainLoadingTitle">Chargement de l’atelier</strong><p id="terrainLoadingMessage">Chargement de l’interface et du moteur…</p><small>L’affichage et les commandes peuvent rester figés pendant cette étape.</small><small id="terrainLoadingElapsed"></small></div>
+      </div>
+      <div id="terrainModelStatus" class="terrain-model-status" role="status" aria-live="polite">Vérification des modèles neuronaux…</div>
       <canvas id="gl" aria-hidden="true"></canvas>
       <canvas id="terrain3d" tabindex="0" aria-label="Terrain 3D. Glisser pour se déplacer, clic droit ou Maj et glisser pour orienter, molette pour zoomer." aria-describedby="terrain3dHint"></canvas>
       <svg id="map" xmlns="http://www.w3.org/2000/svg" aria-label="Generated terrain"></svg>
@@ -182,6 +187,7 @@
 <p id="hydrologyStatus" role="status" hidden></p>
 </div>
 </div>
+  <script type="module" src="./terrainStartup.ts"></script>
   <script type="module" src="./benchPanels.ts"></script>
   <script type="module" src="./terrainbench.ts"></script>
 </body>

@@ -1,9 +1,11 @@
 import type { WorkshopState } from './testbenchUrban';
+import { buildingSettings } from './urbanSnapshot';
 import { normalizeLayoutConfig, normalizeParcelConfig } from '../../../rust/bridge/urbanConfig';
 type Settings = Omit<WorkshopState, 'layouts' | 'partitions'>;
 const channel = 'magna-urban-options';
 function normalized(state: Settings): Settings {
-  return { layoutConfig: normalizeLayoutConfig(state.layoutConfig, true), parcelConfig: normalizeParcelConfig(state.parcelConfig), quarterSeed: state.quarterSeed, parcelSeed: state.parcelSeed };
+  const built = buildingSettings(state.buildingState);
+  return { population: state.population, siteKey: state.siteKey, layoutConfig: normalizeLayoutConfig(state.layoutConfig, true), parcelConfig: normalizeParcelConfig(state.parcelConfig), quarterSeed: state.quarterSeed, parcelSeed: state.parcelSeed, buildingState: built && { seed: built.seed, visible: built.visible, appearance: built.appearance, generated: built.generated, settings: built.settings } };
 }
 function canonical(value: unknown): string {
   return JSON.stringify(value, (_key, item) => item && typeof item === 'object' && !Array.isArray(item)

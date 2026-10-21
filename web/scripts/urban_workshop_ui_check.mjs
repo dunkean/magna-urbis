@@ -6,6 +6,7 @@ import { gunzipSync } from 'node:zlib';
 
 const url = new URL(process.argv[2] ?? 'http://127.0.0.1:5174/urbanbench.html');
 url.searchParams.set('space', 'workshop');
+url.searchParams.set('standalone', '1');
 const out = 'out/urban-workshop'; mkdirSync(out, { recursive: true });
 const browser = await chromium.launch({ channel: process.env.PLAYWRIGHT_CHANNEL ?? 'chrome', headless: true });
 const page = await browser.newPage({ viewport: { width: 1600, height: 1100 } });

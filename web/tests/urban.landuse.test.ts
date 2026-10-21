@@ -75,4 +75,41 @@ describe('Urban Bench countryside on retained plans', () => {
     expect(scene.landuse!.areas.length).toBeGreaterThan(0);
     expect(scene.landuse!.areas.every(a => a.kind === 'commons')).toBe(true);
   });
+  it('retains supplied site geography and known programme context', () => {
+    const input = fixture();
+    input.city = { ...input.city!, archetype: 'valley', offers: { valley: 0.8 }, resources: ['ore'],
+      profile: { role: 'artisan', resources: ['ore'], mode: 'inspired', period: 'medieval', lore: [], navigableAccess: false } };
+    const world = urbanLanduseWorld(input);
+    expect(world.site!.archetype).toBe('valley');
+    expect(world.site!.offers).toEqual({ valley: 0.8 });
+    expect(generateUrbanLanduse(input).context).toMatchObject({ archetype: 'valley', resources: ['ore'], profile: { role: 'artisan' } });
+  });
+
+  it('keeps modern functional reservations protected while allowing countryside in open reserves', () => {
+    const input = fixture(), layout = input.layouts![0];
+    const open = box(1020, 1100, 120, 250), functional = box(1160, 1100, 120, 250);
+    layout.blocks = [open, functional].map(shape => ({ shape, quarter: 0, kind: 'reserve', axis: { x: 1, y: 0 }, zone: 'edge' }));
+    layout.structure = { version: 1, mechanism: 'accessibility', family: 'compact', reserve: [], allocated: layout.quarters.map(q => q.shape),
+      centers: [], districts: [], history: [], metrics: { targetArea: 0, allocatedArea: 0, streetArea: 0, reservedArea: 0, grossDensity: 0,
+        plannedPopulation: 3000, shortfallArea: 0, components: 1, accessAdded: 0 } };
+    layout.programme = { version: 1, population: 3000, context: { role: 'crossroads', resources: [], period: '', mode: 'inspired', navigableAccess: false, lore: [] },
+      cultures: [], demands: [], allocations: [], adjacency: [], environment: [], reconciliationPasses: 0, warnings: [],
+      reservations: [{ id: 'market', demandId: 'market', block: 1, shape: functional, street: 0, frontage: 120 }] };
+    const scene = generateUrbanLanduse(input);
+    const cover = scene.landuse!.areas.map(a => ({ outer: a.poly, holes: a.holes ?? [] }));
+    expect(mpArea(intersectionS(cover, open))).toBeGreaterThan(1000);
+    expect(mpArea(intersectionS(cover, functional))).toBeLessThan(0.01);
+  });
+
+  it('keeps rural farmsteads outside retained urban land when agricultural use is explicit', () => {
+    const input = fixture();
+    input.layouts![0].streets = [{ path: [{ x: 150, y: 1150 }, { x: 2200, y: 1150 }], widths: [4, 4], rank: 1, role: 'regional' }];
+    input.city!.profile = { role: 'agricultural', resources: ['grain'], mode: 'inspired', period: '', lore: [], navigableAccess: false };
+    const scene = generateUrbanLanduse(input), quarters = input.layouts![0].quarters.map(q => q.shape);
+    expect(scene.landuse!.farmsteads.length).toBeGreaterThan(0);
+    for (const farm of scene.landuse!.farmsteads) for (const footprint of farm.buildings) {
+      expect(mpArea(intersectionS(footprint, quarters))).toBeLessThan(0.01);
+    }
+  });
+
 });

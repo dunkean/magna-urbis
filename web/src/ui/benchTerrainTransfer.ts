@@ -4,6 +4,7 @@ import type { VectorGeography } from '../../../rust/bridge/urbanGeography';
 import type { TerrainData } from '../../../rust/bridge/terrain';
 import { rasterStats, type Decor } from './decor';
 import { cropWaterSvg, retainedWaterMaterial } from './decorWater';
+import { cityWorkshopState, translateWorkshopState, workshopSettings } from './urbanSnapshot';
 
 /** Crop on cell boundaries: FP32 elevations and every hydrological cell remain bit-identical. */
 export function cropTerrain(decor: Decor, x: number, y: number, width: number): Decor {
@@ -59,7 +60,8 @@ export function terrainFromDecor(decor: Decor): TerrainData {
 export function cropCityDecor(decor: Decor, key: string): Decor {
   const city = decor.meta.settlements.find(s => s.key === key), state = decor.meta.pipeline?.urban;
   if (!city || !state?.layouts?.length) throw new Error('Ville ou plan absent de cet export.');
-  const layouts = state.layouts.filter(l => l.key === key), partitions = state.partitions?.filter(p => p.key === key);
+  const selected = { ...cityWorkshopState(state, key), siteKey: key, population: city.population }, layouts = selected.layouts, partitions = selected.partitions;
+  if (!layouts?.length) throw new Error('Le plan appliqué de cette ville est absent de cet export.');
   let minX = city.center.x, maxX = minX, minY = city.center.y, maxY = minY;
   function collect(value: unknown): void {
     if (!value || typeof value !== 'object') return;
@@ -68,11 +70,11 @@ export function cropCityDecor(decor: Decor, key: string): Decor {
       minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x);
       minY = Math.min(minY, p.y); maxY = Math.max(maxY, p.y);
     }
-    else for (const [key, child] of Object.entries(value)) if (key !== 'axis') collect(child);
+    else for (const [key, child] of Object.entries(value)) if (!['axis', 'resolved', 'normal', 'gradient', 'camera', 'materials', 'roof_spec'].includes(key)) collect(child);
   }
-  collect(layouts); collect(partitions);
+  collect(layouts); collect(partitions); collect(selected.buildingState?.scene);
   const cell = decor.raster.width / decor.raster.n, margin = Math.max(city.radius * .5, cell * 4, 150);
-  const width = Math.min(decor.raster.width, Math.ceil((Math.max(maxX - minX, maxY - minY) + margin * 2) / cell) * cell);
+  const width = Math.min(decor.raster.width, Math.max(16 * cell, Math.ceil((Math.max(maxX - minX, maxY - minY) + margin * 2) / cell) * cell));
   const x = Math.max(0, Math.min(decor.raster.width - width, (minX + maxX - width) / 2));
   const y = Math.max(0, Math.min(decor.raster.width - width, (minY + maxY - width) / 2));
   const cropped = cropTerrain(decor, x, y, width), origin = cropped.meta.pipeline!.crop!;
@@ -88,5 +90,5 @@ export function cropCityDecor(decor: Decor, key: string): Decor {
   const inside = (p: { x: number; y: number }): boolean => p.x >= origin.x && p.y >= origin.y && p.x <= origin.x + origin.width && p.y <= origin.y + origin.width;
   const roads = decor.meta.roads ? move({ ...decor.meta.roads, segments: decor.meta.roads.segments.filter(s => s.path.some(inside) || s.path.some((p, i) => i > 0 && Math.max(p.x, s.path[i - 1].x) >= origin.x && Math.min(p.x, s.path[i - 1].x) <= origin.x + origin.width && Math.max(p.y, s.path[i - 1].y) >= origin.y && Math.min(p.y, s.path[i - 1].y) <= origin.y + origin.width)) }) : null;
   return { ...cropped, meta: { ...cropped.meta, label: `${city.name || key} · atelier`, settlements: [move(city)], roads, roadConfig: decor.meta.roadConfig,
-    pipeline: { ...cropped.meta.pipeline, stage: 'urban', city: key, urbanDraft: decor.meta.pipeline?.urbanDraft, urban: { ...state, layouts: move(layouts), partitions: move(partitions) } } } };
+    pipeline: { ...cropped.meta.pipeline, stage: 'urban', city: key, urbanDraft: decor.meta.pipeline?.urbanDraft && workshopSettings(translateWorkshopState(decor.meta.pipeline.urbanDraft, -origin.x, -origin.y)), urban: translateWorkshopState(selected, -origin.x, -origin.y) } } };
 }

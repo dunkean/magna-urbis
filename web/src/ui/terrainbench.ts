@@ -21,6 +21,8 @@ import { lakeField } from './lakeGeometry';
 import { TerrainGl, type TerrainLook } from './terrainGl';
 import { Terrain3d, TERRAIN_3D_FOV, TERRAIN_GROUND_MAX_SCALE, type Terrain3dCamera, type Terrain3dTile } from './terrain3d';
 import { terrain3dTexture } from './terrain3dTexture';
+import { withBuildingOccupation } from './forestOccupation';
+import type { PlacementBatch } from '../../../rust/bridge/urbanArchitecture';
 import { TerrainRefinementSession, type TerrainRefinement } from './terrainRefinement';
 import neuralModels from '../../../rust/models/neural-earth/catalog.json';
 import { CONTOUR_INTERVAL } from '../render/contours';
@@ -39,9 +41,9 @@ import type { ForestReply, ForestRequest } from './forestWorker';
 import { pinsFromString, pinsToString, viewFromString, viewToString } from './share';
 import { clampView, fitView, panBy, screenToWorld, worldToScreen, zoomAt, type View } from '../render/view';
 import { COAST_DIRECTIONS, ISLAND_MODES, type IslandMode, TERRAIN_SOURCES, NEURAL_RELIEFS, NEURAL_CLIMATES, NEURAL_EXTENT, DEFAULT_NEURAL_SERVER, DEFAULT_PYTHON_SERVER, neuralServerForSource, isNeuralSource, type TerrainSource, type NeuralClimate } from '../../../rust/bridge/terrain';
-import { captureDecor, downloadBytes } from './decorCapture';
-import { decodeDecor, encodeDecor, type Decor } from './decor';
-import { createHistoryPanel, openBench, readHistory, saveHistory, syncBenchUrl } from './benchHistory';
+import { captureDecorData, downloadBytes } from './decorCapture';
+import type { Decor } from './decor';
+import { createHistoryPanel, downloadHistory, openBench, readHistory, saveHistory, syncBenchUrl } from './benchHistory';
 import { createTerrainDecorLibrary } from './terrainDecorLibrary';
 import { cropCityDecor, cropTerrain, terrainFromDecor } from './benchTerrainTransfer';
 import { decorWaterSvg } from './decorWater';
@@ -50,6 +52,8 @@ import { exportPng } from './pngExport';
 import type {} from './benchContext';
 import { installRecipeSharing, portableRecipe } from './recipeSharing';
 import { executionRuntime, executionProfiles, applyExecutionProfile, installExecutionProfile } from './executionProfile';
+import { initialTerrainSource } from './terrainStartupState';
+import { terrainLoading } from './terrainStartup';
 
 const el = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T;
 const profileDefaults = executionProfiles[executionRuntime.profile];
@@ -98,6 +102,7 @@ const pipelineStage = query.get('stage') === 'settlements' ? 'settlements' : 'te
 // Compatibility for the offline catalogue exporter, which intentionally runs all upstream stages.
 const legacyPipeline = query.get('pipeline') === 'legacy';
 let retainedDecor: Decor | undefined, lastExport: Decor | undefined;
+let lastExportState: ReturnType<typeof capturePipelineState> | undefined;
 let drawTransferSelection: (() => void) | undefined;
 const finite = (value: string | null, fallback: number): number => value !== null && value.trim() !== '' && Number.isFinite(Number(value)) ? Number(value) : fallback;
 const bounded = (value: number, min: number, max: number): number => Math.max(min, Math.min(max, value));
@@ -192,9 +197,7 @@ const initialRelief = query.get('relief') as TerrainRelief;
 const geological = (relief: string): boolean => (GEOLOGICAL_RELIEFS as readonly string[]).includes(relief);
 const initialEnvironment = query.get('environment') as TerrainEnvironment;
 // Bare legacy neural links follow Python/CUDA; an explicit endpoint retains native replay.
-const requestedSource = query.get('source');
-const initialSource: TerrainSource = requestedSource === 'neural' && !query.has('neural') ? 'neural-python'
-  : TERRAIN_SOURCES.includes(requestedSource as TerrainSource) ? requestedSource as TerrainSource : profileDefaults.neural as TerrainSource;
+const initialSource = initialTerrainSource(query, profileDefaults.neural);
 const neuralRelief = (relief: string): boolean => (NEURAL_RELIEFS as readonly string[]).includes(relief);
 // A custom endpoint belongs to the backend selected by the link, not subsequent modes.
 const neuralServerFor = (source?: TerrainSource): string => neuralServerForSource(source, source === initialSource ? query.get('neural') : undefined);
@@ -413,6 +416,16 @@ let forest: ForestSettings = {
 interface ForestEntry { field: ForestField; occupation?: ForestOccupation; source: Float32Array }
 interface ForestJob { key: string; data: TerrainData; input: ForestFieldInput; settings: ForestSettings }
 let forestOccupation: ForestOccupation | undefined, forestShown: ForestEntry | undefined, forestWanted = '';
+let appliedBuildingScene: PlacementBatch | undefined;
+let buildingOccupationSource: ForestOccupation | undefined, buildingOccupationScene: PlacementBatch | undefined, buildingOccupation: ForestOccupation | undefined;
+/** Accepted physical footprints clear the same canopy in 2D and exported rasters. */
+function displayedForestOccupation(source: ForestOccupation | undefined): ForestOccupation | undefined {
+  if (source !== buildingOccupationSource || appliedBuildingScene !== buildingOccupationScene) {
+    buildingOccupationSource = source; buildingOccupationScene = appliedBuildingScene;
+    buildingOccupation = withBuildingOccupation(source, appliedBuildingScene);
+  }
+  return buildingOccupation;
+}
 let forestTimer: ReturnType<typeof setTimeout> | undefined, forestQueued: ForestJob | undefined, forestRunning = false, forestRendering = false;
 // One reusable worker; without it (or after it fails) the field is built on the UI thread, with a notice.
 let forestWorker: Worker | undefined, forestReply: ((reply: ForestReply | undefined) => void) | undefined;
@@ -445,6 +458,7 @@ if (cameraValues.length === 6 && cameraValues.every(Number.isFinite)) {
 function camera3dChanged(): void {
   if (!terrain3d) return;
   camera3d = terrain3d.getCamera();
+  if (pipelineStage === 'settlements') { settlements.urban.buildingState.camera = camera3d; settlements.urban.buildingState.projection = perspective; }
   input('exaggeration3d').value = String(camera3d.exaggeration);
   el('exaggeration3dValue').textContent = camera3d.exaggeration.toFixed(1).replace('.0', '');
   el('terrain3dInfo').textContent = `Distance ${(camera3d.distance / 1000).toLocaleString('fr-FR', { maximumFractionDigits: 2 })} km · inclinaison ${Math.round(camera3d.pitch * 180 / Math.PI)}°`;
@@ -508,6 +522,27 @@ function schedule2dRefinement(): void {
   }, 160);
 }
 
+/** Keep the applied water, cadastral ground and roads in texture order. Buildings
+ * stay in their physical 3D pass, so roofs never become painted ground. */
+let groundOverlayEpoch = -1, groundOverlaySvg = '';
+function appliedGroundOverlay(): string {
+  if (groundOverlayEpoch === texture3dEpoch) return groundOverlaySvg;
+  // Omit the building subtree before cloning. A roof scene may contain hundreds
+  // of thousands of nodes and never contributes to a ground material texture.
+  const groundCopy = (node: Node): Node | undefined => {
+    if (node instanceof Element && node.matches('[data-urban-buildings], [data-urban-building]')) return undefined;
+    const copy = node.cloneNode(false);
+    for (const child of Array.from(node.childNodes)) {
+      const kept = groundCopy(child); if (kept) copy.appendChild(kept);
+    }
+    return copy;
+  };
+  groundOverlaySvg = Array.from(map.querySelectorAll<SVGGElement>('#hydrologyOverlay, #urbanOverlay, #roadOverlay'))
+    .map(layer => (groundCopy(layer) as SVGGElement).outerHTML).join('');
+  groundOverlayEpoch = texture3dEpoch;
+  return groundOverlaySvg;
+}
+
 async function load3dTile(tile: Terrain3dTile) {
   const epoch = texture3dEpoch;
   // Leave input and rendering a frame between material tiles.
@@ -524,7 +559,7 @@ async function load3dTile(tile: Terrain3dTile) {
   const gutter = 2, pad = tile.width / tile.pixels * gutter;
   const region = { x: tile.x - pad, y: tile.y - pad, width: tile.width + 2 * pad };
   const canvas = gpu.captureRegion(region, tile.pixels + 2 * gutter, true, false, height, ground3dEnabled());
-  const result = await terrain3dTexture(canvas, terrain, style, settings, fantasyOptions, layers.relief, map.querySelector('#hydrologyOverlay')?.innerHTML ?? '', region, settlements.paintingContext);
+  const result = await terrain3dTexture(canvas, terrain, style, settings, fantasyOptions, layers.relief, appliedGroundOverlay(), region, settlements.paintingContext);
   if (!perspective || epoch !== texture3dEpoch) throw new DOMException('Tuile remplacée', 'AbortError');
   // Crown centres can lie outside the displayed patch. A separate, globally
   // aligned 1 m mask retains a 64 m halo without enlarging the fine colour tile.
@@ -543,7 +578,7 @@ function forestActive(): boolean { return forest.enabled && ground3dEnabled(); }
 /** The shown canonical field for Render3D rasters (no TerrainGl); undefined keeps the legacy canopy. */
 function forestRaster(region = terrain): ForestRaster | undefined {
   if (!isRender3dStyle(style) || !forestShown || !terrain || !region) return undefined;
-  return { field: forestShown.field, occupation: forestShown.occupation, brushes: style === 'render3d-brush',
+  return { field: forestShown.field, occupation: displayedForestOccupation(forestShown.occupation), brushes: style === 'render3d-brush',
     water: !input('showWater').checked ? undefined : retainedDecor ? forestRetainedWater(retainedDecor.meta.waterSvg, terrain.width, region, input('showLakes').checked)
       : forestDisplayWater(terrain, { showLakes: input('showLakes').checked, showOxbows: input('showOxbows').checked,
         riverArea: riverAreaFor(settings.hydrology ?? DEFAULT_HYDROLOGY, settings.width), riverMode: settings.hydrology?.riverMode ?? 'vector' }, region) };
@@ -568,7 +603,9 @@ function updateForestControls(): void {
 function showForest(entry: ForestEntry | undefined): void {
   const changed = entry !== forestShown;
   forestShown = entry;
-  gpu?.setForest(entry?.field, entry?.occupation); terrain3d?.setForest(entry?.field, entry?.occupation);
+  gpu?.setForest(entry?.field, displayedForestOccupation(entry?.occupation));
+  // Terrain3d merges its applied building scene internally; pass the base only.
+  terrain3d?.setForest(entry?.field, entry?.occupation);
   // Without TerrainGl, the Render3D raster carries the field: redraw it once per change.
   if (changed && !gpu && !forestRendering && terrain && isRender3dStyle(style)) render();
 }
@@ -654,7 +691,7 @@ for (const id of ['forestEnabled', 'forestDensity', 'forestClearings']) input(id
 updateForestControls();
 
 function setPerspective(active: boolean): void {
-  active &&= pipelineStage === 'terrain' && !legacyPipeline && !!gpu;
+  active &&= !legacyPipeline && !!gpu;
   if (active && !terrain3d) {
     try { terrain3d = new Terrain3d(el<HTMLCanvasElement>('terrain3d'), camera3dChanged, () => ruler.update()); terrain3d.setTileLoader(load3dTile, refinement3d === 'neural-earth'); terrain3d.setForest(forestShown?.field, forestShown?.occupation); }
     catch (error) { status(`Vue 3D : ${error instanceof Error ? error.message : error}`, true); active = false; }
@@ -703,6 +740,8 @@ async function refresh3dTexture(epoch: number): Promise<void> {
   if (!perspective || !terrain || !gpu || !terrain3d || epoch !== texture3dEpoch) return;
   try {
     const ground = ground3dEnabled();
+    const buildings = settlements.urban.buildingState;
+    terrain3d.setBuildings(buildings.scene, buildings.appearance, settlements.urban.buildingVisible);
     // Establish the style's zoom range before restoring a shared camera.
     terrain3d.setGroundMaterial(ground ? {
       seed: seedHash(settings.seed), climate: climateOf(settings),
@@ -736,7 +775,7 @@ async function refresh3dTexture(epoch: number): Promise<void> {
       camera3dChanged();
     }
     const canvas = gpu.captureMap(2048, ground);
-    const texture = await terrain3dTexture(canvas, terrain, style, settings, fantasyOptions, layers.relief, map.querySelector('#hydrologyOverlay')?.innerHTML ?? '', undefined, settlements.paintingContext);
+    const texture = await terrain3dTexture(canvas, terrain, style, settings, fantasyOptions, layers.relief, appliedGroundOverlay(), undefined, settlements.paintingContext);
     if (perspective && epoch === texture3dEpoch) {
       terrain3d.setTileBoundaries(input('tileBounds3d').checked);
       terrain3d.setHeightSampler(gpu.createSurfaceSampler());
@@ -814,6 +853,7 @@ if (settings.source === 'neural') {
   const legacy = document.createElement('option'); legacy.value = 'neural'; legacy.textContent = 'Rust natif · ancien lien'; el('terrainSource').append(legacy);
 }
 el<HTMLSelectElement>('terrainSource').value = settings.source!;
+window.dispatchEvent(new Event('bench-source-change'));
 el<HTMLSelectElement>('climate').value = initialClimate === 'custom' ? 'custom' : settings.climate!;
 for (const [key, id] of Object.entries(climateFields)) input(id).value = String(initialClimateValues[key as keyof ClimateValues]);
 input('fidelity').value = String(settings.fidelity);
@@ -960,6 +1000,7 @@ updateErosionControl();
 
 function status(message: string, error = false): void {
   el('status').textContent = message; el('status').dataset.error = String(error);
+  if (error && (overviewPending || !terrain)) terrainLoading('error', message);
 }
 function shareQuery(): string {
   const params = new URLSearchParams({ brush_density: String(fantasyOptions.density), brush_size: String(fantasyOptions.size), brush_spacing: String(fantasyOptions.spacing), engine: 'rust', v: '4', seed: settings.seed, width: String(settings.width), motif: String(settings.motifSize), relief: settings.relief, erosion: String(settings.erosion), style: baseStyle, auto: input('auto').checked ? '1' : '0' });
@@ -1014,7 +1055,7 @@ function shareQuery(): string {
   settlements.share(params);
   if (pins.pins.length) params.set('pins', pinsToString(pins.pins));
   if (!input('showPins').checked) params.set('showPins', '0');
-  if (pipelineStage === 'terrain' && !legacyPipeline) {
+  if (!legacyPipeline) {
     const camera = surface3d ? terrain3d?.getCamera() ?? camera3d : camera3d;
     if (perspective) params.set('projection', '3d');
     if (camera) params.set('camera3d', [camera.x, camera.y, camera.distance, camera.yaw, camera.pitch, camera.exaggeration].map(value => Number(value.toFixed(6))).join(','));
@@ -1056,7 +1097,17 @@ const settlements = createTerrainSettlements({ map, viewport, getTerrain: () => 
   getView: () => view, getAuto: () => input('auto').checked, getQuery: shareQuery, onChange: deferSave,
   useForestMaterial: forestActive,
   onForestOccupation: occupation => { forestOccupation = occupation; scheduleForest(); },
-  onPlanChange: () => queueMicrotask(refreshUrbanPainting),
+  onPlanChange: () => queueMicrotask(() => {
+    // Initial settlement construction can call back before its binding exists.
+    const b = settlements.urban.buildingState;
+    appliedBuildingScene = b.scene;
+    gpu?.setForest(forestShown?.field, displayedForestOccupation(forestShown?.occupation));
+    terrain3d?.setBuildings(b.scene, b.appearance, settlements.urban.buildingVisible);
+    refreshUrbanPainting();
+    if (!gpu && terrain && isRender3dStyle(style)) render();
+    if (perspective) schedule3dTexture();
+  }),
+  onProjection: (active, camera) => { if (camera) camera3d = camera; setPerspective(active); if (camera) terrain3d?.setCamera(camera); return perspective; },
   onFocus: (center, radius) => setView({ cx: center.x, cy: center.y, scale: Math.min(viewport.clientWidth, viewport.clientHeight) / Math.max(100, radius * 2.6) }),
   onPicking: () => {
     sketchEditor?.setEditing(false);
@@ -1390,7 +1441,11 @@ function requestDetail(): void {
 }
 function receive(response: TerrainResponse): void {
   if (response.generation !== generation) return;
-  if ('progress' in response) { el('neuralState').textContent = response.progress; status(response.progress); return; }
+  if ('progress' in response) {
+    el('neuralState').textContent = response.progress; status(response.progress);
+    if (response.kind === 'overview' && overviewPending) terrainLoading('generation', response.progress);
+    return;
+  }
   if (response.kind === 'detail') {
     if (!detailRequest || response.id !== detailRequest.id) return;
     const request = detailRequest; detailRequest = undefined;
@@ -1433,11 +1488,11 @@ function receive(response: TerrainResponse): void {
     status(`Terrain displayed in ${terrain.generationMs.toFixed(0)} ms · computing water…`);
     return;
   }
-  el('generate').removeAttribute('aria-busy');
-  overviewPending = false;
   if ('error' in response) {
+    el('generate').removeAttribute('aria-busy'); overviewPending = false;
     generationError = response.error;
     settlements.terrainFailed(response.error);
+    terrainLoading('error', response.error);
     status(`Rust engine error: ${response.error}`, true);
     return;
   }
@@ -1449,7 +1504,18 @@ function receive(response: TerrainResponse): void {
   settlements.terrainReady();
   updateStageStates();
   const prepared = overviewRequest.scene?.style === style && overviewRequest.scene.waterStyle === baseStyle && overviewRequest.scene.showContours === input('showContours').checked && JSON.stringify(overviewRequest.scene.lighting) === JSON.stringify(lighting) && JSON.stringify(overviewRequest.scene.layers) === JSON.stringify(layers);
-  try { render(prepared ? response.scene : undefined, prepared ? response.scenePreparationMs : 0); save(); } catch (error) { status(`Rendering error: ${error instanceof Error ? error.message : error}`, true); }
+  terrainLoading('rendering', 'Le terrain est calculé. Préparation de la carte et des couches…');
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    if (response.generation !== generation) return;
+    overviewPending = false;
+    try {
+      render(prepared ? response.scene : undefined, prepared ? response.scenePreparationMs : 0); save();
+      terrainLoading('ready');
+    } catch (error) {
+      const message = `Rendering error: ${error instanceof Error ? error.message : error}`;
+      status(message, true); terrainLoading('error', message);
+    } finally { el('generate').removeAttribute('aria-busy'); }
+  }));
 }
 let worker: Worker | undefined;
 async function runOnMain(request: TerrainRequest): Promise<void> {
@@ -1526,8 +1592,10 @@ function generate(stage: GenerationStage = 'all'): void {
   el('generate').setAttribute('aria-busy', 'true');
   const neural = !next.sketch?.processing && isNeuralSource(next.source) && stage !== 'hydrology';
   status(neural ? 'Neural generation (coarse → base → decoder), then water…' : stage === 'hydrology' ? 'Recalculating water… terrain and coasts preserved.' : stage === 'coasts' ? 'Recalculating coasts and water… terrain preserved.' : 'Generating terrain and the water network in Rust…');
+  terrainLoading('generation', neural ? 'Vérification des modèles, puis calcul neuronal et réseau d’eau…' : 'Calcul du relief et du réseau d’eau…');
   if (neural) void pollNeural();
-  dispatch(overviewRequest);
+  const request = overviewRequest;
+  requestAnimationFrame(() => requestAnimationFrame(() => { if (request.generation === generation) dispatch(request); }));
 }
 function updateStageStates(): void {
   const draft = readSettings('all', false);
@@ -1631,11 +1699,35 @@ function changeRefinement(): void {
 el<HTMLSelectElement>('refinement3d').onchange = changeRefinement;
 el('retryRefinement').onclick = changeRefinement;
 el('fit').onclick = fit;
-el('terrain3dControls').hidden = pipelineStage !== 'terrain' || legacyPipeline;
+el('terrain3dControls').hidden = legacyPipeline;
 el('refinement3dControl').hidden = !perspective && !isRender3dStyle(style);
 el<HTMLButtonElement>('projection3d').disabled = !gpu;
 if (!gpu) el('projection3d').title = 'La vue 3D nécessite le rendu WebGL2.';
 el('projection3d').onclick = () => setPerspective(!perspective);
+const capture3d = document.createElement('button'); capture3d.id = 'capture3d'; capture3d.type = 'button'; capture3d.textContent = 'Capturer PNG';
+capture3d.style.width = 'auto'; capture3d.style.whiteSpace = 'nowrap';
+capture3d.title = 'Exporter la vue 3D affichée avec ses bâtiments';
+capture3d.onclick = async () => {
+  if (!terrain3d || !perspective || capture3d.disabled) return;
+  capture3d.disabled = true;
+  try {
+    const image = await terrain3d.capture(), url = URL.createObjectURL(image);
+    const link = document.createElement('a'); link.href = url; link.download = `magna-urbis-3d-${settings.seed.replace(/[^a-z0-9_-]/gi, '_')}.png`; link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    status('Capture 3D PNG exportée.');
+  } catch (error) { status(`Capture 3D : ${error instanceof Error ? error.message : error}`, true); }
+  finally { capture3d.disabled = false; }
+};
+el('perspectiveControls').append(capture3d);
+let buildingPickStart: [number, number] | undefined;
+el<HTMLCanvasElement>('terrain3d').addEventListener('pointerdown', event => { buildingPickStart = [event.clientX, event.clientY]; });
+el<HTMLCanvasElement>('terrain3d').addEventListener('pointerup', event => {
+  if (perspective && buildingPickStart && Math.hypot(event.clientX - buildingPickStart[0], event.clientY - buildingPickStart[1]) < 4) {
+    const rect = el('terrain3d').getBoundingClientRect(), id = terrain3d?.pickBuilding(event.clientX - rect.left, event.clientY - rect.top);
+    if (id) settlements.urban.selectBuilding(id);
+  }
+  buildingPickStart = undefined;
+});
 el('north3d').onclick = () => terrain3d?.north();
 input('exaggeration3d').oninput = () => {
   if (terrain3d) { terrain3d.setCamera({ ...terrain3d.getCamera(), exaggeration: Number(input('exaggeration3d').value) }); camera3dChanged(); }
@@ -1708,7 +1800,7 @@ const gesture = (): { mid: [number, number]; distance: number } => { const [a, b
 map.addEventListener('pointerdown', event => {
   if (event.button !== 0 || pinMode || event.altKey || settlements.isPicking()) return;
   if (!pointers.size) moved = false;
-  pointers.set(event.pointerId, local(event)); map.setPointerCapture(event.pointerId); dragging = true; map.classList.add('drag');
+  pointers.set(event.pointerId, local(event)); dragging = true; map.classList.add('drag');
 });
 map.addEventListener('pointermove', event => {
   cursor = local(event);
@@ -1717,6 +1809,8 @@ map.addEventListener('pointermove', event => {
   const current = local(event), oldGesture = pointers.size === 2 ? gesture() : undefined;
   const dx = current[0] - previous[0], dy = current[1] - previous[1];
   moved ||= Math.abs(dx) + Math.abs(dy) > 1;
+  // Preserve the original SVG target on a click; capture only an actual pan.
+  if (moved && !map.hasPointerCapture(event.pointerId)) map.setPointerCapture(event.pointerId);
   pointers.set(event.pointerId, current);
   if (oldGesture) {
     const next = gesture(); setView(panBy(view, next.mid[0] - oldGesture.mid[0], next.mid[1] - oldGesture.mid[1]));
@@ -1772,12 +1866,13 @@ updateErosionControl();
 document.querySelector('.brand')!.textContent = pipelineStage === 'terrain' ? 'Terrain · étapes 1–3' : 'Settlements · routes et quartiers';
 const stagePanels = Array.from(document.querySelectorAll<HTMLElement>('.stages > .stage'));
 for (const panel of stagePanels) {
-  const downstream = ['settlementStage', 'roadStage', 'urbanQuarterStage', 'urbanParcelStage', 'landuseStage'].includes(panel.id);
+  const downstream = ['settlementStage', 'roadStage', 'urbanQuarterStage', 'urbanParcelStage', 'urbanProgrammeStage', 'urbanBuildingStage', 'landuseStage'].includes(panel.id);
   panel.hidden = legacyPipeline ? false : pipelineStage === 'terrain' ? downstream : !downstream;
 }
 if (pipelineStage === 'settlements') {
   for (const control of Array.from(document.querySelectorAll<HTMLElement>('header > :not(.brand), .stages > .backend, #terrainSketchEditor'))) control.hidden = true;
   const display = document.getElementById('style')?.closest<HTMLElement>('.control-group'); if (display) display.hidden = false;
+  el('terrain3dControls').hidden = legacyPipeline;
   input('auto').checked = false;
   document.querySelector('#roadStage summary')!.childNodes[0].textContent = '4 · Routes régionales ';
   document.querySelector('#urbanQuarterStage summary')!.childNodes[0].textContent = '5 · Quartiers et îlots ';
@@ -1816,13 +1911,18 @@ if (pipelineStage === 'terrain') {
     selectingPortion = false; el('transferPick').setAttribute('aria-pressed', 'false'); drawTransferSelection?.();
   }, true);
 }
+/** Compare cheap applied inputs and immutable native result identities, never
+ * serialize the city to decide whether its persisted bytes can be reused. */
+function capturePipelineState() {
+  return { query: shareQuery(), workshop: JSON.stringify(settlements.urban.workshopSettings()), draft: JSON.stringify(settlements.urban.workshopDraft()), terrain, context: settlements.paintingContext, layouts: settlements.urban.layouts, scene: settlements.urban.buildingState.scene };
+}
 function pipelineCapture(): Decor {
   if (!terrain || overviewPending || generationError || terrain.hydrologyError) throw new Error('Attendez la fin de la génération du terrain et de l’eau.');
   if (pipelineStage === 'settlements') {
     if (settlements.urban.layoutPending || settlements.urban.generationPending) throw new Error('Attendez le calcul des quartiers et des parcelles activées.');
-    return decodeDecor(settlements.capture().bytes);
+    return settlements.captureData();
   }
-  let d = retainedDecor ? withForestQuery(retainedDecor) : decodeDecor(captureDecor(terrain, settings, { settlements: [], warnings: [], requested: 0, usableKm2: 0, ms: 0 }, undefined, null, { query: shareQuery() }).bytes);
+  let d = retainedDecor ? withForestQuery(retainedDecor) : captureDecorData(terrain, settings, { settlements: [], warnings: [], requested: 0, usableKm2: 0, ms: 0 }, undefined, null, { query: shareQuery() });
   if (!retainedDecor) d = { ...d, meta: { ...d.meta, regeneration: { query: shareQuery(), crops: [] } } };
   d = { ...d, meta: { ...d.meta, settlements: [], roads: null, roadConfig: null, pipeline: { stage: 'terrain', parent: retainedDecor?.meta.id } } };
   if (el<HTMLSelectElement>('transferExtent').value === 'crop') {
@@ -1837,11 +1937,22 @@ async function exportPipeline(action: 'save' | 'next' | 'download'): Promise<voi
   const buttons = Array.from(transfer.querySelectorAll<HTMLButtonElement>('button'));
   buttons.forEach(b => { b.disabled = true; });
   try {
+    const current = capturePipelineState(), saved = lastExportState;
+    if (action === 'download' && pipelineStage === 'settlements' && settlements.ready() && lastExport && saved && terrain && !overviewPending && !generationError && !terrain.hydrologyError
+      && !settlements.urban.layoutPending && !settlements.urban.generationPending
+      && current.query === saved.query && current.workshop === saved.workshop && current.draft === saved.draft
+      && current.terrain === saved.terrain && current.context === saved.context && current.layouts === saved.layouts && current.scene === saved.scene) {
+      await downloadHistory(lastExport.meta.id);
+      return;
+    }
+    el('pipelineStatus').textContent = 'Préparation de l’export…';
+    await new Promise<void>(resolve => setTimeout(resolve, 0));
     if (pipelineStage === 'settlements' && action === 'next') {
       el('pipelineStatus').textContent = 'Préparation du plan de la ville…';
       const deadline = Date.now() + 60000;
       while ((settlements.urban.layoutPending || settlements.urban.generationPending) && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 100));
     }
+    const capturedState = capturePipelineState();
     let d = pipelineCapture();
     if (action === 'next' && pipelineStage === 'settlements') {
       const target = settlements.urban.target, plan = d.meta.pipeline?.urban;
@@ -1852,9 +1963,9 @@ async function exportPipeline(action: 'save' | 'next' | 'download'): Promise<voi
       d = cropCityDecor(d, target);
       d.meta.pipeline!.syncSource = retainedDecor?.meta.pipeline?.syncSource ?? retainedDecor?.meta.id;
     }
-    d = await saveHistory(d); lastExport = d; await historyPanel.refresh(d.meta.id);
+    d = await saveHistory(d); lastExport = d; lastExportState = action === 'next' ? undefined : capturedState; await historyPanel.refresh(d.meta.id);
     el('pipelineStatus').textContent = `Export conservé · ${d.raster.n}² · ${(d.raster.width / d.raster.n).toFixed(2)} m/cellule.`;
-    if (action === 'download') downloadBytes(encodeDecor(d), `${d.meta.id}.decor`);
+    if (action === 'download') await downloadHistory(d.meta.id);
     if (action === 'next') {
       const params = new URLSearchParams(d.meta.query); params.delete('view'); params.set('artifact', d.meta.id);
       if (pipelineStage === 'terrain') { params.set('stage', 'settlements'); openBench('settlements', params); }
@@ -1867,6 +1978,7 @@ el('pipelineSave').onclick = () => void exportPipeline('save');
 el('pipelineNext').onclick = () => void exportPipeline('next');
 el('pipelineDownload').onclick = () => void exportPipeline('download');
 updateView();
+terrainLoading('ready');
 if (query.get('artifact')) void readHistory(query.get('artifact')!).then(d => {
   retainedDecor = d; lastExport = d; settings = { ...settings, seed: d.meta.seed, width: d.raster.width, refine: d.meta.terrainDisplay?.refine ?? false };
   input('refine').checked = !!settings.refine;
@@ -1909,11 +2021,13 @@ installRecipeSharing({
   host: el('copy').parentElement!, embedded: window.parent !== window,
   terrain: async () => {
     if (!terrain || overviewPending || generationError || terrain.hydrologyError) throw new Error('Attendez la fin de la génération du terrain.');
-    return retainedDecor ? withForestQuery(retainedDecor) : decodeDecor(captureDecor(terrain, settings, { settlements: [], warnings: [], requested: 0, usableKm2: 0, ms: 0 }, undefined, null, { query: shareQuery() }).bytes);
+    return retainedDecor ? withForestQuery(retainedDecor) : captureDecorData(terrain, settings, { settlements: [], warnings: [], requested: 0, usableKm2: 0, ms: 0 }, undefined, null, { query: shareQuery() });
   },
   capture: async () => {
     if (!terrain || overviewPending || generationError || terrain.hydrologyError || (pipelineStage === 'settlements' && !settlements.contextReady())) throw new Error('Attendez la fin de la génération avant d’exporter.');
-    return portableRecipe(pipelineStage, shareQuery(), retainedDecor);
+    const applied = pipelineStage === 'settlements' && settlements.urban.layouts?.length
+      ? settlements.captureData() : retainedDecor;
+    return portableRecipe(pipelineStage, shareQuery(), applied);
   },
 });
 

@@ -6,26 +6,37 @@ import { createGrid, slopeGrid, blurGrid, visitSegmentCells } from '../gen/core/
 import { distanceField } from '../gen/core/field';
 import { differenceS, unionS } from '../gen/geo/bool';
 import { dijkstra } from '../gen/site/site';
-import { DEFAULTS, classOfPop, sizeForPop } from '../gen/options';
-import type { Relief } from '../gen/options';
+import { DEFAULTS, SITE_ARCHETYPES, classOfPop, sizeForPop } from '../gen/options';
+import type { Relief, SiteArchetype } from '../gen/options';
 import type { BiomeName } from '../gen/biomes';
 import type { PolyH, SiteFields, TerrainLayer, World } from '../gen/types';
 import { generateRural } from '../gen/landuse/rural';
 import { generateNaturalCover } from '../gen/landuse/natural';
 
+export interface UrbanLanduseSite extends RoadSite {
+  archetype?: string; siteType?: string; offers?: Partial<Record<SiteArchetype, number>>;
+  resources?: string[]; profile?: import('../../../rust/bridge/urbanConfig').ProgrammeContext;
+}
 /** Temporary compatibility input; the retained Rust terrain and plans remain authoritative. */
 export interface UrbanLanduseInput {
   raster: SettlementRaster;
   seed: string;
   biome: BiomeName;
   relief: Relief;
-  city?: RoadSite;
-  neighbours: RoadSite[];
+  city?: UrbanLanduseSite;
+  neighbours: UrbanLanduseSite[];
   roads?: RoadOutput;
   /** undefined: urban generation disabled; []: an actual empty plan. */
   layouts?: Layout[];
 }
-export type UrbanLanduseScene = Pick<World, 'seed' | 'options' | 'mapSize' | 'landuse' | 'stats'>;
+export type UrbanLanduseScene = Pick<World, 'seed' | 'options' | 'mapSize' | 'landuse' | 'stats'> & {
+  /** Retained known programme inputs; rural cover currently consumes site geography and culture. */
+  context?: { archetype: SiteArchetype; offers: Partial<Record<SiteArchetype, number>>; resources: string[]; profile?: import('../../../rust/bridge/urbanConfig').ProgrammeContext };
+};
+function siteArchetype(site: UrbanLanduseSite): SiteArchetype {
+  const value = site.archetype ?? site.siteType;
+  return SITE_ARCHETYPES.includes(value as SiteArchetype) ? value as SiteArchetype : 'plain';
+}
 export interface UrbanLanduseRequest { id: number; input: UrbanLanduseInput }
 export type UrbanLanduseResponse = { id: number; scene: UrbanLanduseScene } | { id: number; error: string };
 
@@ -102,23 +113,29 @@ export function urbanLanduseWorld(input: UrbanLanduseInput): World {
     const grade = pt >= 2 || pass(from) >= 2 ? 0 : Math.abs(r.height[to] - r.height[from]) / (d * cell);
     return d * cell * (1 + 100 * grade * grade) * (pt === 1 ? 1 : pt === 2 ? 4 : 3);
   });
-  world.site = { center: city.center, archetype: 'plain', offers: {}, reserveRadius: city.radius,
+  world.site = { center: city.center, archetype: siteArchetype(city), offers: { ...city.offers }, reserveRadius: city.radius,
     cost: { w: n, h: n, cell, data: cost }, fields };
   world.settlements = input.neighbours.filter(s => s.key !== city.key).map((s, i) => ({
-    ...s, index: i + 1, cls: classOfPop(s.population), archetype: 'plain', extent: extent(s).outer, region: [], detail: 'lazy',
+    ...s, index: i + 1, cls: classOfPop(s.population), archetype: siteArchetype(s), extent: extent(s).outer, region: [], detail: 'lazy',
   }));
   return world;
 }
 
 export function generateUrbanLanduse(input: UrbanLanduseInput): UrbanLanduseScene {
   const start = performance.now(), world = urbanLanduseWorld(input), root = new Rng('magna-urbis:' + input.seed);
+  const profile = input.city?.profile ?? input.layouts?.find(layout => layout.key === input.city?.key)?.programme?.context;
   if (input.city) {
     const footprint = input.layouts === undefined ? [extent(input.city)]
       : unionS(input.layouts.flatMap(layout => layout.structure && layout.structure.mechanism !== 'legacy'
-        ? layout.structure.allocated
-        : differenceS(unionS(layout.quarters.map(q => q.shape)), unionS(layout.blocks.filter(b => b.kind === 'reserve').map(b => b.shape)))));
+        ? differenceS(layout.structure.allocated, unionS(layout.blocks.filter((b, block) => b.kind === 'reserve'
+          && !layout.programme?.reservations.some(reserve => reserve.block === block)).map(b => b.shape)))
+        : differenceS(unionS(layout.quarters.map(q => q.shape)), unionS(layout.blocks.filter((b, block) => b.kind === 'reserve'
+          && !layout.programme?.reservations.some(reserve => reserve.block === block)).map(b => b.shape)))));
     const generated = generateRural(world, root, undefined, undefined,
-      { footprint, population: input.city.population, farmsteads: false });
+      { footprint, population: input.city.population,
+        // Existing TS rural buildings remain opt-in through an explicit agricultural
+        // role; the retained urban footprint excludes their lots without cropping roofs.
+        farmsteads: profile?.role === 'agricultural' });
     world.landuse = generated.layer; world.stats = generated.stats;
   } else {
     world.landuse = generateNaturalCover(world.terrain, input.biome, root);
@@ -126,5 +143,8 @@ export function generateUrbanLanduse(input: UrbanLanduseInput): UrbanLanduseScen
   world.stats.ms = Math.round(performance.now() - start);
   world.stats.areas = world.landuse.areas.length;
   const { seed, options, mapSize, landuse, stats } = world;
-  return { seed, options, mapSize, landuse, stats };
+  return { seed, options, mapSize, landuse, stats, context: input.city && {
+    archetype: siteArchetype(input.city), offers: { ...input.city.offers },
+    resources: [...(input.city.resources ?? profile?.resources ?? [])], profile,
+  } };
 }

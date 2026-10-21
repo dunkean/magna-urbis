@@ -221,6 +221,38 @@ impl Terrain {
             roads,
         )
     }
+    /// Physical placement intents from retained parcel/programme outputs.
+    pub fn urban_building_sites(
+        &self,
+        seed: &str,
+        layouts: &[crate::urban::Layout],
+        partitions: &[crate::urban::Partition],
+    ) -> Result<Vec<serde_json::Value>, String> {
+        self.urban_building_sites_with_culture(seed, layouts, partitions, None)
+    }
+    pub fn urban_building_sites_with_culture(
+        &self,
+        seed: &str,
+        layouts: &[crate::urban::Layout],
+        partitions: &[crate::urban::Partition],
+        architecture_culture: Option<&str>,
+    ) -> Result<Vec<serde_json::Value>, String> {
+        let r = &self.fields.r;
+        crate::urban::building_sites::requests(
+            seed,
+            layouts,
+            partitions,
+            crate::urban::Surface {
+                geometry: self.urban_geometry.as_ref(),
+                width: r.width,
+                n: r.n,
+                height: &r.height,
+                water: &r.water,
+            },
+            &r.water_level,
+            architecture_culture,
+        )
+    }
     pub fn new(raster: Raster<'_>) -> Result<Self, String> {
         let size = raster.n.checked_mul(raster.n).ok_or("Invalid raster")?;
         if !(16..=1024).contains(&raster.n)

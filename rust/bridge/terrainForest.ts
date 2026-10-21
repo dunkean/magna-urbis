@@ -15,7 +15,7 @@ export interface ForestSettings { enabled: boolean; density: number; clearings: 
 export const DEFAULT_FOREST_SETTINGS: ForestSettings = { enabled: true, density: 1, clearings: .45 };
 /** Occupation RGBA8: R/G signed distance to open/forest land, encoded
  * clamp(128+16d) in native texels (positive inside); B class id (0 none,
- * 1 field, 2 meadow, 3 pasture, 4 orchard, 5 garden, 6 commons, 7 built);
+ * 1 field, 2 meadow, 3 pasture, 4 orchard, 5 garden, 6 commons, 7 built reserve, 8 occupied construction);
  * A 255 inside applied polygons. */
 export interface ForestOccupation { x: number; y: number; width: number; n: number; rgba: Uint8Array; key: string }
 /** RGBA8 world raster on the height layer's square: R canopy cover 0..1,
@@ -456,7 +456,7 @@ ForestCrown forestCrown(ivec2 cell,int level,float s,ForestStand st,ForestPatch 
   // probabilities/radii can otherwise switch half-way through a drawing,
   // leaving a sliced crown or only a thin strip of its painted foot.
   vec4 centre=forestField(k.c,0.);float cover=centre.r,height=centre.g*50.,needle=centre.b;
-  float open=-1e3,forced=-1e3,allow=0.,hedge=0.,openGallery=.5;
+  float open=-1e3,forced=-1e3,allow=0.,hedge=0.,openGallery=.5;bool occupied=false;
   if(uHasOccupation==1){
     vec2 ouv=(k.c-uOccupationRect.xy)/uOccupationRect.z;
     if(all(greaterThanEqual(ouv,vec2(0.)))&&all(lessThanEqual(ouv,vec2(1.)))){
@@ -465,7 +465,8 @@ ForestCrown forestCrown(ivec2 cell,int level,float s,ForestStand st,ForestPatch 
       int cls=int(texelFetch(uOccupation,clamp(ivec2(ouv*uOccupationN),ivec2(0),ivec2(int(uOccupationN)-1)),0).b*255.+.5);
       allow=(cls==4?.45:cls==5?.22:cls==6?.12:cls==3?.05:cls==2?.02:cls==7?.03:0.)*forestHeightGate(height);
       hedge=(cls>=1&&cls<=3?.6:0.)*groundSmooth(3.,8.,height)*(1.-st.dry);
-      if(cls==7)openGallery=0.;
+      if(cls==7||cls==8)openGallery=0.;
+      occupied=cls==8;
     }
   }
   if(forced>0.)cover=forestWoods(cover,height);
@@ -493,7 +494,7 @@ ForestCrown forestCrown(ivec2 cell,int level,float s,ForestStand st,ForestPatch 
     k.edge=1.-groundSmooth(0.,.1,share-threshold);
   }
   // A tree's centre stays on land; its complete crown can overhang the bank.
-  if(k.alive && forestWaterCoverage(k.c)>=.5)k.alive=false;
+  if(occupied||(k.alive && forestWaterCoverage(k.c)>=.5))k.alive=false;
   k.riparian=k.riparian&&k.alive;
   // Geometry only for live crowns. No early return: ANGLE/D3D11 miscompiled it here.
   k.needle=false;k.r=0.;k.h=0.;k.depth=0.;
@@ -620,7 +621,7 @@ void applyForest(inout GroundMaterial m,vec2 world,float footprint,vec3 light){
   // Wet tropical canopies stay continuous: their deficit shows as crown gaps, not stand holes.
   st.kappa=mix(.25,.78,groundSmooth(.9,1.8,humid))*mix(.55,1.,groundSmooth(3.,10.,st.height))*mix(1.,.6,st.needle)*(1.-.6*st.trop);
   st.open=-1e3;st.forced=-1e3;st.allow=0.;st.hedge=0.;
-  float openA=0.,forcedA=0.,hedgeA=0.;
+  float openA=0.,forcedA=0.,hedgeA=0.;bool occupied=false;
   if(uHasOccupation==1){
     vec2 ouv=(world-uOccupationRect.xy)/uOccupationRect.z;
     if(all(greaterThanEqual(ouv,vec2(0.)))&&all(lessThanEqual(ouv,vec2(1.)))){
@@ -630,7 +631,9 @@ void applyForest(inout GroundMaterial m,vec2 world,float footprint,vec3 light){
       vec2 dist=(o*255.-128.)/16.*texel;
       st.open=dist.x;st.forced=dist.y;
       int cls=int(texelFetch(uOccupation,clamp(ivec2(ouv*uOccupationN),ivec2(0),ivec2(int(uOccupationN)-1)),0).b*255.+.5);
-      // Trees kept in open classes: field, meadow, pasture, orchard, garden, commons, built.
+      // Construction class 8 forbids crowns, including overhang from neighbours.
+      occupied=cls==8;
+      // Trees retained in general open land and built reserves (class 7).
       st.allow=(cls==4?.45:cls==5?.22:cls==6?.12:cls==3?.05:cls==2?.02:cls==7?.03:0.)*forestHeightGate(st.height);
       st.hedge=(cls>=1&&cls<=3?.6:0.)*groundSmooth(3.,8.,st.height)*(1.-st.dry);
       float w=max(fp,.5*texel);openA=clamp(st.open/w+.5,0.,1.);forcedA=clamp(st.forced/w+.5,0.,1.)*(1.-openA);
@@ -644,6 +647,9 @@ void applyForest(inout GroundMaterial m,vec2 world,float footprint,vec3 light){
   vec3 k=clamp(ground/max(renderGuideColor,vec3(.02)),vec3(.25),vec3(4.));
   vec3 openGround=clamp(renderGuideOpen*k,0.,1.);
   vec3 refAlbedo=m.albedo;
+  // The same nearest-class mask applies in 2D, perspective and raster exports.
+  // Return before gallery, neighbouring crowns and shadows are evaluated.
+  if(occupied){m.albedo=groundToLinear(openGround);return;}
   // Applied occupation acts at every distance: open land replaces Render's
   // macro woods by its own tree share, applied woods add their weak prior.
   if(uHasOccupation==1&&openA+forcedA>0.){

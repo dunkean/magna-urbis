@@ -7,6 +7,12 @@ import { createGroundDisplacementSampler } from '../../../rust/bridge/terrainGro
 import { terrainLights, type TerrainLighting } from '../render/terrainLighting';
 import { gridHeight, raycastGrid, type TerrainPickGrid } from './terrain3dPicking';
 import { stitchTerrainPieces, type TerrainStitchedPiece, type TerrainStitchPiece } from './terrain3dStitch';
+import { UrbanBuildingPass } from './urbanBuilding3d';
+import type { PlacementBatch } from '../../../rust/bridge/urbanArchitecture';
+import type { UrbanBuildingAppearance } from '../render/urbanBuildingStyle';
+import type { BuildingVector } from '../render/urbanBuildingGeometry';
+import { withBuildingOccupation } from './forestOccupation';
+import { UrbanBuildingGround } from './urbanBuildingGround';
 
 /** Target and orbit distance in world metres; yaw/pitch in radians. */
 export interface Terrain3dCamera {
@@ -283,6 +289,14 @@ export class Terrain3d {
   private gl: WebGL2RenderingContext;
   private terrainProgram!: WebGLProgram;
   private skyProgram!: WebGLProgram;
+  private buildings!: UrbanBuildingPass;
+  private buildingScene?: PlacementBatch;
+  private buildingAppearance: UrbanBuildingAppearance = { style: 'geometric', diagnostic: 'none' };
+  private buildingsVisible = true;
+  private buildingGround = new UrbanBuildingGround();
+  private mergedOccupation?: ForestOccupation;
+  private mergedOccupationSource?: ForestOccupation;
+  private mergedOccupationScene?: PlacementBatch;
   private indices!: WebGLBuffer;
   private seams!: WebGLBuffer;
   private clippedIndices = new Map<string, { buffer: WebGLBuffer; count: number }>();
@@ -353,6 +367,8 @@ export class Terrain3d {
     const gl = this.gl;
     this.clippedIndices.clear();
     this.terrainProgram = program(gl, vertexShader, fragmentShader); this.skyProgram = program(gl, skyVertex, skyFragment);
+    this.buildings?.dispose(); this.buildings = new UrbanBuildingPass(gl);
+    this.buildings.setScene(this.buildingsVisible ? this.buildingScene : undefined, this.buildingAppearance);
     const side = GRID + 1, surfaceVertices = side * side, count = GRID * GRID * 6 + GRID * 4 * 6;
     const indices = new Uint16Array(count);
     let at = 0;
@@ -486,11 +502,23 @@ export class Terrain3d {
     this.request();
   }
   setTileBoundaries(visible: boolean): void { this.tileBounds = visible; this.request(); }
+  /** Presentation consumes the same immutable native scene as the map. */
+  setBuildings(scene: PlacementBatch | undefined, appearance: UrbanBuildingAppearance, visible = true): void {
+    const changed = this.buildingScene !== scene;
+    this.buildingScene = scene; this.buildingAppearance = appearance; this.buildingsVisible = visible;
+    if (changed) { this.buildingGround = new UrbanBuildingGround(scene); this.clearPatches(); this.setForest(this.forestField, this.forestOccupation); }
+    this.buildings.setScene(visible ? scene : undefined, appearance); this.request();
+  }
   /** Render3D forest: texture uploads only, no mesh or material tile rebuild. */
   setForest(field: ForestField | undefined, occupation?: ForestOccupation): void {
     const gl = this.gl;
     occupation = field ? occupation : undefined;
     this.forestField = field; this.forestOccupation = occupation;
+    if (this.mergedOccupationSource !== occupation || this.mergedOccupationScene !== this.buildingScene) {
+      this.mergedOccupationSource = occupation; this.mergedOccupationScene = this.buildingScene;
+      this.mergedOccupation = withBuildingOccupation(occupation, this.buildingScene);
+    }
+    occupation = field ? this.mergedOccupation : undefined;
     if (field !== this.forest?.field) {
       deleteForestTextures(gl, this.forest);
       this.forest = field && forestTextures(gl, field);
@@ -533,6 +561,7 @@ export class Terrain3d {
     const footprint = this.groundSettings?.displacement ? metresPerPixel : 0;
     let height = detail && this.heightSampler ? this.heightSampler(x, y, footprint) : spline(layer.data, layer.n, u, v);
     if (!Number.isFinite(height)) height = spline(layer.data, layer.n, u, v);
+    height = this.buildingGround.constrain(x, y, height);
     if (this.waterVisible) {
       height = Math.max(0, height);
       const lake = this.water && lakeHeight(this.water, u, v);
@@ -543,6 +572,21 @@ export class Terrain3d {
   heightAt(x: number, y: number): number | undefined {
     if (!this.layer) return undefined;
     return this.surface(x, y, 0);
+  }
+  /** Select the nearest actual building face using its physical native geometry. */
+  pickBuilding(x: number, y: number): string | undefined {
+    if (!this.layer || !this.active || !this.buildingScene || !this.buildingsVisible) return undefined;
+    const frame = this.frameGeometry(), c = this.camera;
+    const u = (x - this.width / 2) / frame.focal, v = (this.height / 2 - y) / frame.focal;
+    const ray: Vec3 = [0, 1, 2].map(i => frame.forward[i] + u * frame.right[i] + v * frame.up[i]) as Vec3;
+    const origin: BuildingVector = [c.x + frame.eye[0], c.y + frame.eye[2], (frame.targetHeight + frame.eye[1]) / c.exaggeration];
+    const direction: BuildingVector = [ray[0], ray[2], ray[1] / c.exaggeration];
+    const { distance: nearest, id } = this.buildings.pick(origin, direction);
+    // Ground occludes buildings behind hills, just as the depth buffer does.
+    const glOrigin: Vec3 = [origin[0], origin[2] * c.exaggeration, origin[1]];
+    let ground = Infinity;
+    for (const grid of this.displayedGrids) { const hit = raycastGrid(grid, glOrigin, ray); if (hit !== null) ground = Math.min(ground, hit); }
+    return nearest <= ground + .01 ? id : undefined;
   }
   /** Pick the nearest visible terrain triangle in CSS pixels, including LOD morphs and refined heights. */
   screenToWorld(x: number, y: number): [number, number] | null {
@@ -703,6 +747,7 @@ export class Terrain3d {
       const wx = tile.x + x * step, wy = tile.y + y * step;
       let height = sample(wx, wy, step);
       if (!Number.isFinite(height)) throw new Error('Altitude 3D non finie.');
+      height = this.buildingGround.constrain(wx, wy, height);
       if (this.waterVisible) {
         height = Math.max(0, height);
         const lake = this.water && lakeHeight(this.water, (wx - base.x) / base.width, (wy - base.y) / base.width);
@@ -1083,6 +1128,12 @@ export class Terrain3d {
   }
   setCamera(camera: Terrain3dCamera): void { this.camera = { ...camera }; this.limitCamera(); this.request(); }
   getCamera(): Terrain3dCamera { return { ...this.camera }; }
+  /** Draw and read in the same task: no permanent drawing-buffer retention. */
+  capture(): Promise<Blob> {
+    if (!this.active || !this.layer || this.gl.isContextLost()) return Promise.reject(new Error('Ouvrez la vue 3D avant de la capturer.'));
+    this.draw();
+    return new Promise((resolve, reject) => this.canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error('Capture 3D indisponible.')), 'image/png'));
+  }
   setActive(active: boolean): void {
     this.active = active;
     if (active) this.request();
@@ -1180,6 +1231,8 @@ export class Terrain3d {
     }
     gl.bindVertexArray(null);
     let finest = this.layer.width, texel = this.layer.width / this.fallbackPixels, ready = 0, level = 0;
+    const buildingPreparing = this.buildings.draw({ matrix: frame.matrix, cameraX: this.camera.x, cameraY: this.camera.y, targetHeight: frame.targetHeight,
+      exaggeration: this.camera.exaggeration, focal: frame.focal, distance: this.camera.distance });
     for (const patch of drawn) {
       const material = this.closestTexture(patch);
       finest = Math.min(finest, patch.tile.width / GRID); texel = Math.min(texel, material.texel);
@@ -1189,7 +1242,7 @@ export class Terrain3d {
       maxScale: this.maxScale(), scale: frame.focal / this.camera.distance };
     this.trim();
     this.onRender?.();
-    if (preparing || this.animating) this.request();
+    if (preparing || buildingPreparing || this.animating) this.request();
   }
   private pan(dx: number, dy: number): void {
     const c = this.camera, metres = 2 * c.distance * Math.tan(FOV / 2) / this.height;
@@ -1260,6 +1313,8 @@ export class Terrain3d {
   dispose(): void {
     this.disposed = true; this.active = false; cancelAnimationFrame(this.frame); this.events.abort(); this.clearPatches();
     const gl = this.gl;
+    this.buildings.dispose(); this.buildingScene = undefined;
+    this.buildingGround = new UrbanBuildingGround(); this.mergedOccupation = this.mergedOccupationSource = undefined; this.mergedOccupationScene = undefined;
     gl.deleteBuffer(this.indices); gl.deleteBuffer(this.seams); gl.deleteTexture(this.material);gl.deleteTexture(this.macroTexture); gl.deleteTexture(this.empty); gl.deleteProgram(this.terrainProgram); gl.deleteProgram(this.skyProgram);
     for (const geometry of this.clippedIndices.values()) gl.deleteBuffer(geometry.buffer);
     this.clippedIndices.clear();

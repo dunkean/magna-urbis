@@ -61,6 +61,7 @@ fn component_program(p: &Parameters) -> bool {
             .any(|c| c.role.residential() && c.placement != Placement::FacingMain)
 }
 
+#[derive(Clone, Copy)]
 enum UnitSource<'a> {
     Atlas(&'a Recipe),
     Workshop(&'a crate::workshop::WorkshopPreset),
@@ -450,6 +451,486 @@ pub fn generate_batch(config: HouseConfig) -> Result<HouseBatch, String> {
     Ok(batch)
 }
 
+/// The same recipe draws and LayoutPlan used by the detailed generator, retained
+/// before rooms, wall booleans, access graphs and roof meshes are constructed.
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+pub struct ResolvedArchitecture {
+    pub schema_version: String,
+    pub generator_version: String,
+    pub config: HouseConfig,
+    pub recipe_id: String,
+    pub(crate) parameters: Parameters,
+    pub(crate) plan: crate::layouts::LayoutPlan,
+    #[serde(default)]
+    pub(crate) entrance: Option<crate::access::StructuralEntrance>,
+}
+
+pub fn resolve_architecture(mut config: HouseConfig) -> Result<ResolvedArchitecture, String> {
+    resolve_architecture_for_site(&mut config, None, None, false, None, false)
+}
+
+pub(crate) fn resolve_urban_architecture(
+    mut config: HouseConfig,
+    function: crate::placement::ArchitectureFunction,
+    envelope_m: [f64; 2],
+    minimum: bool,
+    occupation_m: Option<[f64; 2]>,
+    coverage: Option<f64>,
+    parcel_fit: bool,
+) -> Result<ResolvedArchitecture, String> {
+    let mut resolved = resolve_architecture_for_site(
+        &mut config,
+        Some(function),
+        Some(envelope_m),
+        minimum,
+        occupation_m,
+        parcel_fit,
+    )?;
+    if !minimum
+        && matches!(
+            function,
+            crate::placement::ArchitectureFunction::Domestic
+                | crate::placement::ArchitectureFunction::Mixed
+        )
+        && config.mode != HistoricalMode::HistoricalStrict
+        && let Some(coverage) = coverage
+    {
+        crate::layouts::urban_frontage_infill(
+            &mut resolved.plan,
+            &resolved.parameters,
+            coverage,
+            &config.seed,
+        );
+    }
+    Ok(resolved)
+}
+
+fn resolve_architecture_for_site(
+    config: &mut HouseConfig,
+    function: Option<crate::placement::ArchitectureFunction>,
+    envelope_m: Option<[f64; 2]>,
+    minimum: bool,
+    occupation_m: Option<[f64; 2]>,
+    parcel_fit: bool,
+) -> Result<ResolvedArchitecture, String> {
+    config.count = 1;
+    let data = catalogue()?;
+    data.validate_config(config)?;
+    let (source, mut parameters, mut seed) = selected_draws(data, config)?
+        .into_iter()
+        .next()
+        .ok_or("No architecture selected.")?;
+    if let (UnitSource::Atlas(recipe), Some(envelope)) = (source, envelope_m) {
+        let bounds = recipe
+            .variants
+            .iter()
+            .find(|v| v.parameters.variant_id == parameters.variant_id)
+            .map(|v| &v.parameters)
+            .unwrap_or(&recipe.parameters);
+        if minimum {
+            seed = format!("urban-admission-v1:{}", recipe.id);
+            let coherent =
+                data.resolve_variant_parameters(recipe, config, &parameters.variant_id)?;
+            let mut compact = coherent.clone();
+            crate::admission::minimum(&mut compact);
+            // Explicit controls retain the source bounds checked by resolve_draws.
+            if config.overrides.floors.is_some() && component_program(&compact) {
+                for (c, b) in compact.components.iter_mut().zip(&coherent.components) {
+                    c.floors = b.floors;
+                }
+            }
+            if config.overrides.bodies.is_some() && component_program(&compact) {
+                for (c, b) in compact.components.iter_mut().zip(&coherent.components) {
+                    c.count = b.count;
+                }
+            }
+            if component_program(&compact)
+                && (config.overrides.floors.is_some() || config.overrides.bodies.is_some())
+            {
+                let unit_rng = Rng::new(&format!("houses:v2:{}", config.seed)).fork("unit:0");
+                parameters = resolve_draws(compact, config, &unit_rng)?;
+            } else {
+                // Exactly the source-minimum parameters used by admission,
+                // including unsnapped source ratios. Do not redraw/resnap a
+                // canonical construction certificate through amount().
+                compact.width_m.iter_mut().for_each(|v| *v *= config.size);
+                compact.depth_m.iter_mut().for_each(|v| *v *= config.size);
+                parameters = compact;
+            }
+        }
+        for (axis, (range, source_range, available)) in [
+            (&mut parameters.width_m, bounds.width_m, envelope[0]),
+            (&mut parameters.depth_m, bounds.depth_m, envelope[1]),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let min = source_range[0] * config.size;
+            let adaptable = parcel_fit
+                && !minimum
+                && config.mode != HistoricalMode::HistoricalStrict
+                && matches!(
+                    parameters.layout,
+                    Layout::Single | Layout::Strip | Layout::Courtyard | Layout::Siheyuan
+                );
+            let max = source_range[1] * config.size * if adaptable { 2.0 } else { 1.0 };
+            if available < min {
+                return Err(format!(
+                    "Declared minimum architectural envelope {min:.2} m exceeds available site span {available:.2} m."
+                ));
+            }
+            let requested = if minimum {
+                range[0]
+            } else {
+                occupation_m.map_or(range[0], |v| v[axis])
+            };
+            let fitted = requested.min(available).clamp(min, max);
+            range.fill(fitted);
+        }
+    }
+    let non_domestic = function.is_some_and(|f| {
+        matches!(
+            f,
+            crate::placement::ArchitectureFunction::Workshop
+                | crate::placement::ArchitectureFunction::Warehouse
+                | crate::placement::ArchitectureFunction::Collective
+        )
+    });
+    if non_domestic {
+        // Explicit programme adaptation of the existing recipe/primitive. Keep
+        // culture's actual materials/roof/support; no domestic rooms or annexes.
+        parameters.bodies = [1; 2];
+        parameters.cells = [1; 2];
+        parameters.rooms_per_body = [1; 2];
+        parameters.components.clear();
+        parameters.court_program = None;
+        parameters.enclosures.clear();
+        parameters
+            .details
+            .retain(|d| matches!(d.as_str(), "posts" | "piers" | "raft" | "party_walls"));
+        if !matches!(
+            parameters.layout,
+            Layout::Single | Layout::Strip | Layout::Platform
+        ) {
+            if config.mode == HistoricalMode::HistoricalStrict {
+                return Err(
+                    "No strict non-domestic adaptation is declared for this compound layout."
+                        .into(),
+                );
+            }
+            parameters.layout = Layout::Single;
+        }
+        match function.unwrap() {
+            crate::placement::ArchitectureFunction::Workshop => {
+                if config.overrides.floors.is_none() {
+                    parameters.floors = [1; 2];
+                }
+                if config.mode != HistoricalMode::HistoricalStrict {
+                    parameters.level_height_m = parameters.level_height_m.max(3.0);
+                }
+            }
+            crate::placement::ArchitectureFunction::Warehouse => {
+                if config.overrides.floors.is_none() {
+                    parameters.floors = [1; 2];
+                }
+                if config.mode != HistoricalMode::HistoricalStrict {
+                    parameters.level_height_m = (parameters.level_height_m * 1.25).min(4.5);
+                }
+            }
+            crate::placement::ArchitectureFunction::Collective => {
+                if let UnitSource::Atlas(recipe) = source
+                    && config.overrides.floors.is_none()
+                {
+                    parameters.floors = [recipe.parameters.floors[1].clamp(1, 3); 2];
+                }
+            }
+            _ => {}
+        }
+    }
+    let mut plan = match source {
+        UnitSource::Atlas(recipe) => build_layout(recipe, &parameters, &seed)?,
+        UnitSource::Workshop(_) => {
+            crate::layouts::build_workshop_layout(Role::Dwelling, &parameters, &seed)?
+        }
+    };
+    if parcel_fit && !minimum && config.mode != HistoricalMode::HistoricalStrict {
+        plan.diagnostics.push("Explicit urban lot fitting: eligible simple plans may extend width/depth to twice the source maxima; source minima, native layout, levels, roof and final site admission are retained. Artistic adaptation, not measured historical dimensions.".into());
+    }
+    if minimum {
+        plan.diagnostics.push("Canonical native minimum layout matching the versioned admission witness; accepted plan retained without reroll.".into());
+    }
+    if non_domestic {
+        for body in &mut plan.bodies {
+            body.role = Role::NonDomestic;
+        }
+        plan.diagnostics.push(format!("Explicit {:?} programme: open-span functional envelope, no domestic annexes or household interior.",function.unwrap()));
+    }
+    Ok(ResolvedArchitecture {
+        schema_version: crate::SCHEMA_VERSION.into(),
+        generator_version: crate::GENERATOR_VERSION.into(),
+        recipe_id: source.identity().0.into(),
+        parameters,
+        plan,
+        config: config.clone(),
+        entrance: None,
+    })
+}
+
+pub fn enrich_architecture(resolved: &ResolvedArchitecture) -> Result<HouseBatch, String> {
+    if resolved
+        .plan
+        .bodies
+        .iter()
+        .any(|b| b.role == Role::NonDomestic)
+    {
+        return Err(
+            "Retained non-domestic programme has no compatible detailed interior recipe.".into(),
+        );
+    }
+    if resolved.generator_version != crate::GENERATOR_VERSION
+        || resolved.schema_version != crate::SCHEMA_VERSION
+    {
+        return Err(
+            "Resolved architecture version is incompatible; retained geometry was not regenerated."
+                .into(),
+        );
+    }
+    let data = catalogue()?;
+    data.validate_config(&resolved.config)?;
+    let source = if resolved.config.workshop.is_some() {
+        UnitSource::Workshop(
+            data.workshop_presets
+                .iter()
+                .find(|p| p.id == resolved.recipe_id)
+                .ok_or("Unknown retained workshop preset.")?,
+        )
+    } else {
+        UnitSource::Atlas(
+            data.recipes
+                .iter()
+                .find(|r| r.id == resolved.recipe_id)
+                .ok_or("Unknown retained recipe.")?,
+        )
+    };
+    let mut unit = generate_unit_from_plan(
+        source,
+        &resolved.parameters,
+        &resolved.config,
+        0,
+        resolved.plan.clone(),
+        resolved.entrance.as_ref(),
+    )?;
+    roofs::build_roofs_with_budget(&mut unit, MAX_BATCH_FACES as usize)?;
+    crate::features::add_post_roof_details(&mut unit, &resolved.parameters)?;
+    // Enrichment must be an exact elaboration of the retained plan, not a reroll.
+    if unit.bodies.len() != resolved.plan.bodies.len() {
+        return Err(
+            "Enrichment adds structural bodies absent from the retained volume plan.".into(),
+        );
+    }
+    for (body, spec) in unit.bodies.iter().zip(&resolved.plan.bodies) {
+        if body.footprint != spec.footprint
+            || body.levels.len() != spec.levels.len()
+            || body
+                .levels
+                .iter()
+                .zip(&spec.levels)
+                .any(|(level, domain)| level.footprint != *domain)
+        {
+            return Err("Enrichment changes the retained structural footprint or levels.".into());
+        }
+    }
+    let detailed_roof = structural_roof_signature(&unit);
+    let retained_roof = structural_roof_signature(&volume_unit(resolved)?);
+    if detailed_roof != retained_roof {
+        return Err("Enrichment changes the retained native body roof surfaces; city volumes are preserved.".into());
+    }
+    crate::validation::validate_unit(&unit)?;
+    Ok(HouseBatch {
+        schema_version: crate::SCHEMA_VERSION.into(),
+        catalogue_version: data.catalogue_version.clone(),
+        generator_version: crate::GENERATOR_VERSION.into(),
+        settings: resolved.config.clone(),
+        units: vec![unit],
+        diagnostics: vec![
+            "Detailed enrichment of retained resolved architecture; no new draws.".into(),
+        ],
+    })
+}
+
+fn structural_roof_signature(unit: &HouseUnit) -> Vec<(String, String, Vec<[i64; 3]>)> {
+    // Structural roof surfaces must stay exact. Native detailed openings may
+    // subdivide/cut vertical gables and tympana, as they subdivide facade walls;
+    // these infill details do not change the retained roof envelope.
+    let mut faces: Vec<_> = unit
+        .roofs
+        .faces
+        .iter()
+        .filter(|f| {
+            f.feature_id.is_none()
+                && matches!(
+                    f.kind,
+                    RoofFaceKind::Pan
+                        | RoofFaceKind::Slab
+                        | RoofFaceKind::Skirt
+                        | RoofFaceKind::CorbelSoffit
+                )
+        })
+        .map(|f| {
+            let mut vertices: Vec<_> = f
+                .vertices
+                .iter()
+                .map(|i| {
+                    let v = &unit.roofs.vertices[*i as usize];
+                    [
+                        libm::round(v.x * 1e6) as i64,
+                        libm::round(v.y * 1e6) as i64,
+                        libm::round(v.z * 1e6) as i64,
+                    ]
+                })
+                .collect();
+            vertices.sort();
+            (f.body_id.clone(), f.material.clone(), vertices)
+        })
+        .collect();
+    faces.sort();
+    faces
+}
+
+pub(crate) fn body_level_height(spec: &BodySpec) -> f64 {
+    let p = &spec.parameters;
+    if matches!(p.envelope, Envelope::Shell | Envelope::Membrane) {
+        let b = bounds(&spec.footprint);
+        ((b[2] - b[0]).min(b[3] - b[1]) * 0.4).clamp(1.2, 2.8)
+    } else {
+        p.level_height_m
+    }
+}
+
+fn body_intermediate_cover(roof: &str) -> IntermediateCover {
+    match roof {
+        "RF-FLAT" | "RF-STEP" => IntermediateCover::Terrace,
+        "RF-CURVED" | "RF-TIERED" => IntermediateCover::Skirt,
+        _ => IntermediateCover::Shed,
+    }
+}
+
+/// Structural terrace domain shared by the lightweight and detailed paths.
+/// RF-FLAT/RF-STEP roofs consume this slab instead of inventing an eave domain.
+fn body_roof_slab(
+    domain: &Surface,
+    upper: &Surface,
+    roof_system: &str,
+    z_m: f64,
+    height_m: f64,
+) -> Option<RoofSlab> {
+    let exposed = exposed_roof_domain(domain, upper);
+    (matches!(roof_system, "RF-FLAT" | "RF-STEP") && !exposed.is_empty()).then_some(RoofSlab {
+        surface: exposed,
+        z_m: z_m + height_m,
+        walkable: true,
+        access_node: None,
+    })
+}
+
+/// Structural bodies and native roof geometry only. This consumes the retained
+/// layout and never invokes room subdivision, detail generation or recipe draws.
+pub(crate) fn volume_unit(resolved: &ResolvedArchitecture) -> Result<HouseUnit, String> {
+    let plan = &resolved.plan;
+    let mut unit = HouseUnit {
+        id: "unit-0".into(),
+        recipe_id: resolved.recipe_id.clone(),
+        variant_id: resolved.parameters.variant_id.clone(),
+        label: resolved.recipe_id.clone(),
+        role: Role::Dwelling,
+        transform: Transform {
+            origin: point(0., 0.),
+            orientation_deg: 0.,
+        },
+        lot: plan.lot.clone(),
+        partition: partition(
+            &plan.lot,
+            vec![],
+            plan.courts.clone(),
+            plan.paths.clone(),
+            PartitionService::Surface(vec![]),
+        ),
+        level_partitions: vec![],
+        levels: vec![],
+        bodies: vec![],
+        rooms: vec![],
+        features: plan.features.clone(),
+        site_context: vec![],
+        walls: vec![],
+        access: AccessGraph {
+            root: String::new(),
+            nodes: vec![],
+            portals: vec![],
+        },
+        roofs: RoofMesh::default(),
+        diagnostics: plan.diagnostics.clone(),
+    };
+    for (i, spec) in plan.bodies.iter().enumerate() {
+        let p = &spec.parameters;
+        let height = body_level_height(spec);
+        add_body_supports(
+            &mut unit,
+            &spec.footprint,
+            spec.z,
+            p,
+            &format!("unit-0:body:{i}"),
+            height,
+        );
+        let levels = spec
+            .levels
+            .iter()
+            .enumerate()
+            .map(|(index, footprint)| {
+                let z_m = snap(spec.z + index as f64 * height);
+                let upper = spec.levels.get(index + 1).cloned().unwrap_or_default();
+                Level {
+                    index: index as u32,
+                    z_m,
+                    height_m: height,
+                    footprint: footprint.clone(),
+                    floor: footprint.clone(),
+                    intermediate_cover: body_intermediate_cover(&p.roof_system),
+                    roof_slab: body_roof_slab(footprint, &upper, &p.roof_system, z_m, height),
+                    materials: p
+                        .level_materials
+                        .iter()
+                        .find(|m| m.from_level <= index as u32 && m.to_level >= index as u32)
+                        .map(|m| m.materials.clone())
+                        .unwrap_or_else(|| p.materials.clone()),
+                }
+            })
+            .collect();
+        unit.bodies.push(Body {
+            id: format!("unit-0:body:{i}"),
+            footprint: spec.footprint.clone(),
+            voids: spec.voids.clone(),
+            levels,
+            roof_system: p.roof_system.clone(),
+            roof_pitch_deg: p.roof_pitch_deg[0],
+            overhang_m: p.overhang_m[0],
+            details: p.details.clone(),
+            role: spec.role,
+            envelope: p.envelope,
+            vertical_access: p.vertical_access,
+            vertical_routes: p.vertical_routes.clone(),
+            wall_thickness_m: p.wall_thickness_m[0],
+            component_id: spec.component.clone(),
+            roof_spec: p.roof_spec.clone(),
+            roof_arms: spec.arms.clone(),
+            cells: spec.cells.clone(),
+        });
+    }
+    crate::features::add_structural_circulation(&mut unit, &resolved.parameters)?;
+    add_site_enclosures(&mut unit);
+    roofs::build_roofs_with_budget(&mut unit, MAX_BATCH_FACES as usize)?;
+    Ok(unit)
+}
+
 enum PartitionService {
     Surface(Surface),
     // Caller guarantees D = footprint_domain union (circulation intersect lot).
@@ -504,11 +985,24 @@ fn generate_unit(
     seed: &str,
     index: u32,
 ) -> Result<HouseUnit, String> {
-    let (id, label, role) = source.identity();
     let plan = match &source {
         UnitSource::Atlas(recipe) => build_layout(recipe, p, seed)?,
-        UnitSource::Workshop(_) => crate::layouts::build_workshop_layout(role, p, seed)?,
+        UnitSource::Workshop(_) => {
+            crate::layouts::build_workshop_layout(source.identity().2, p, seed)?
+        }
     };
+    generate_unit_from_plan(source, p, config, index, plan, None)
+}
+
+fn generate_unit_from_plan(
+    source: UnitSource<'_>,
+    p: &Parameters,
+    config: &HouseConfig,
+    index: u32,
+    plan: crate::layouts::LayoutPlan,
+    entrance: Option<&crate::access::StructuralEntrance>,
+) -> Result<HouseUnit, String> {
+    let (id, label, role) = source.identity();
     let mut unit = HouseUnit {
         id: format!("unit-{index}"),
         recipe_id: id.into(),
@@ -589,39 +1083,8 @@ fn generate_unit(
     } else {
         crate::features::add_details_for_role(&mut unit, role, p, config)?;
     }
-    for f in unit.features.iter().filter(|f| {
-        matches!(
-            f.kind,
-            FeatureKind::Enclosure | FeatureKind::Fence | FeatureKind::LivestockPen
-        )
-    }) {
-        if matches!(f.kind, FeatureKind::LivestockPen)
-            && f.surface.iter().all(|p| p.holes.is_empty())
-        {
-            continue;
-        }
-        unit.walls.push(Wall {
-            solid: None,
-            plan_section: None,
-            shell_reference: false,
-            id: format!("wall:{}", f.id),
-            kind: WallKind::Enclosure,
-            body_id: None,
-            level: 0,
-            z_m: f.z_m,
-            height_m: f.height_m,
-            footprint: f.surface.clone(),
-            centerline: f
-                .surface
-                .first()
-                .map(|s| s.outer.clone())
-                .unwrap_or_default(),
-            material: f.material.clone(),
-            party: false,
-            opening_ids: vec![],
-        });
-    }
-    access::build_access(&mut unit, &circulations, p)?;
+    add_site_enclosures(&mut unit);
+    access::build_access_with_entry(&mut unit, &circulations, p, entrance)?;
     crate::features::add_post_access_details(&mut unit, p)?;
     let base = unite(
         &unit
@@ -1058,6 +1521,97 @@ fn rooms(
     Ok(cells)
 }
 
+fn add_site_enclosures(unit: &mut HouseUnit) {
+    for f in unit.features.iter().filter(|f| {
+        matches!(
+            f.kind,
+            FeatureKind::Enclosure | FeatureKind::Fence | FeatureKind::LivestockPen
+        )
+    }) {
+        if matches!(f.kind, FeatureKind::LivestockPen)
+            && f.surface.iter().all(|p| p.holes.is_empty())
+        {
+            continue;
+        }
+        unit.walls.push(Wall {
+            solid: None,
+            plan_section: None,
+            shell_reference: false,
+            id: format!("wall:{}", f.id),
+            kind: WallKind::Enclosure,
+            body_id: None,
+            level: 0,
+            z_m: f.z_m,
+            height_m: f.height_m,
+            footprint: f.surface.clone(),
+            centerline: f
+                .surface
+                .first()
+                .map(|s| s.outer.clone())
+                .unwrap_or_default(),
+            material: f.material.clone(),
+            party: false,
+            opening_ids: vec![],
+        });
+    }
+}
+
+fn add_body_supports(
+    unit: &mut HouseUnit,
+    footprint: &Surface,
+    z: f64,
+    p: &Parameters,
+    id: &str,
+    height: f64,
+) {
+    if z > 0.0 || p.envelope == Envelope::Open {
+        let b = bounds(footprint);
+        let support = p.support.material.as_deref().unwrap_or(&p.materials.frame);
+        if p.support.kind == SupportKind::Raft {
+            unit.features.push(feature(
+                &format!("raft:{id}"),
+                FeatureKind::Raft,
+                footprint.clone(),
+                -0.2,
+                z + 0.2,
+                support,
+            ));
+        } else {
+            let nx = libm::ceil((b[2] - b[0]) / 4.0).max(1.0) as u32;
+            let ny = libm::ceil((b[3] - b[1]) / 4.0).max(1.0) as u32;
+            for iy in 0..=ny {
+                for ix in 0..=nx {
+                    let x = b[0] + 0.15 + (b[2] - b[0] - 0.3) * ix as f64 / nx as f64;
+                    let y = b[1] + 0.15 + (b[3] - b[1] - 0.3) * iy as f64 / ny as f64;
+                    let post = rectangle(x - 0.1, y - 0.1, 0.2, 0.2);
+                    if area(&difference(&post, footprint)) < 0.01 {
+                        unit.features.push(feature(
+                            &format!("support:{id}:{ix}:{iy}"),
+                            if p.support.kind == SupportKind::Piers {
+                                FeatureKind::Pier
+                            } else {
+                                FeatureKind::Post
+                            },
+                            post,
+                            0.0,
+                            if z > 0.0 { z } else { height },
+                            support,
+                        ));
+                    }
+                }
+            }
+        }
+        unit.features.push(feature(
+            &format!("floor:{id}"),
+            FeatureKind::FloorSlab,
+            footprint.clone(),
+            z,
+            0.18,
+            &p.materials.frame,
+        ));
+    }
+}
+
 fn build_body(
     unit: &mut HouseUnit,
     spec: BodySpec,
@@ -1066,12 +1620,7 @@ fn build_body(
 ) -> Result<(), String> {
     let p = &spec.parameters;
     let id = format!("{}:body:{bi}", unit.id);
-    let height = if matches!(p.envelope, Envelope::Shell | Envelope::Membrane) {
-        let b = bounds(&spec.footprint);
-        ((b[2] - b[0]).min(b[3] - b[1]) * 0.4).clamp(1.2, 2.8)
-    } else {
-        p.level_height_m
-    };
+    let height = body_level_height(&spec);
     if p.portal_profile.as_ref().is_some_and(|profile| {
         profile
             .entries
@@ -1113,18 +1662,7 @@ fn build_body(
             .map(|m| m.materials.clone())
             .unwrap_or_else(|| p.materials.clone());
         let upper = spec.levels.get(li + 1).cloned().unwrap_or_default();
-        let exposed = exposed_roof_domain(domain, &upper);
-        let walkable = p.roof_system == "RF-FLAT" || p.roof_system == "RF-STEP";
-        let slab = if walkable && !exposed.is_empty() {
-            Some(RoofSlab {
-                surface: exposed.clone(),
-                z_m: z + height,
-                walkable: true,
-                access_node: None,
-            })
-        } else {
-            None
-        };
+        let slab = body_roof_slab(domain, &upper, &p.roof_system, z, height);
         if let Some(s) = &slab {
             unit.features.push(feature(
                 &format!("terrace:{id}:{li}"),
@@ -1135,13 +1673,7 @@ fn build_body(
                 &materials.cladding,
             ));
         }
-        let cover = if walkable {
-            IntermediateCover::Terrace
-        } else if matches!(p.roof_system.as_str(), "RF-CURVED" | "RF-TIERED") {
-            IntermediateCover::Skirt
-        } else {
-            IntermediateCover::Shed
-        };
+        let cover = body_intermediate_cover(&p.roof_system);
         body.levels.push(Level {
             index: li as u32,
             z_m: z,
@@ -1342,52 +1874,7 @@ fn build_body(
             }
         }
     }
-    if spec.z > 0.0 || p.envelope == Envelope::Open {
-        let b = bounds(&spec.footprint);
-        let support = p.support.material.as_deref().unwrap_or(&p.materials.frame);
-        if p.support.kind == SupportKind::Raft {
-            unit.features.push(feature(
-                &format!("raft:{id}"),
-                FeatureKind::Raft,
-                spec.footprint.clone(),
-                -0.2,
-                spec.z + 0.2,
-                support,
-            ));
-        } else {
-            let nx = libm::ceil((b[2] - b[0]) / 4.0).max(1.0) as u32;
-            let ny = libm::ceil((b[3] - b[1]) / 4.0).max(1.0) as u32;
-            for iy in 0..=ny {
-                for ix in 0..=nx {
-                    let x = b[0] + 0.15 + (b[2] - b[0] - 0.3) * ix as f64 / nx as f64;
-                    let y = b[1] + 0.15 + (b[3] - b[1] - 0.3) * iy as f64 / ny as f64;
-                    let post = rectangle(x - 0.1, y - 0.1, 0.2, 0.2);
-                    if area(&difference(&post, &spec.footprint)) < 0.01 {
-                        unit.features.push(feature(
-                            &format!("support:{id}:{ix}:{iy}"),
-                            if p.support.kind == SupportKind::Piers {
-                                FeatureKind::Pier
-                            } else {
-                                FeatureKind::Post
-                            },
-                            post,
-                            0.0,
-                            if spec.z > 0.0 { spec.z } else { height },
-                            support,
-                        ));
-                    }
-                }
-            }
-        }
-        unit.features.push(feature(
-            &format!("floor:{id}"),
-            FeatureKind::FloorSlab,
-            spec.footprint.clone(),
-            spec.z,
-            0.18,
-            &p.materials.frame,
-        ));
-    }
+    add_body_supports(unit, &spec.footprint, spec.z, p, &id, height);
     // A reserved passage under an upper floor carries its own beam.
     if body.levels.len() > 1 {
         let overpass = difference(&body.levels[1].footprint, &body.levels[0].footprint);

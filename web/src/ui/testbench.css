@@ -55,3 +55,7 @@ li input:not([type]) { width: 135px; }
 }
 
 [hidden] { display: none !important; }
+.urban-inspection { margin: 8px 0 16px; font-size: 12px; }
+.urban-inspection dt { color: #60676b; margin-top: 7px; }
+.urban-inspection dd { margin: 1px 0 0; overflow-wrap: anywhere; }
+#map .selected-parcel { stroke: #146c99; stroke-width: 2.5; fill-opacity: .24; }

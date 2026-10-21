@@ -166,16 +166,85 @@ fn guides(family: &str, center: Point, radius: f64, angle: f64, rng: &Rng) -> Ve
 
 /// Population density is gross inhabitants/hectare. Domain reservations and
 /// streets are already included; they are not added to the budget a second time.
-fn budget(site: &Site, cfg: &LayoutConfig, morph: &Morph, radius: f64) -> (f64, f64) {
-    let zone = if site.population < 1200 {
-        "village"
+fn cadence_density(site: &Site, cfg: &LayoutConfig, morph: &Morph) -> (f64, f64) {
+    let culture = if cfg.culture == "site" {
+        &site.culture
     } else {
-        "core"
+        &cfg.culture
     };
+    let small = site.population < 1200;
+    let epochs = cfg.footprint.epochs.max(1);
+    let mut mean_area = 0.0;
+    // Accessible/planned growth takes equal cumulative area fractions per epoch;
+    // composition subsequently assigns population in proportion to that area.
+    for epoch in 0..epochs {
+        let zone = if cfg.zone != "auto" {
+            cfg.zone.as_str()
+        } else if small {
+            "village"
+        } else if epoch == 0 {
+            "core"
+        } else if epoch == 1 {
+            "middle"
+        } else {
+            "edge"
+        };
+        let recipe = super::composition::recipe(
+            culture,
+            site.population,
+            if small {
+                "village"
+            } else if epoch == 0 {
+                "core"
+            } else {
+                "ring"
+            },
+        );
+        let local = super::composition::phase_morph(
+            culture,
+            &recipe,
+            zone,
+            &cfg.preset,
+            &cfg.recipe,
+            cfg.density,
+            &cfg.params,
+            "quarters",
+        )
+        .unwrap_or_else(|_| morph.clone());
+        let average = |key| {
+            let r = local.range(key, zone);
+            (r[0] + r[1]) * 0.5
+        };
+        let profile = super::culture::contextual_mapping(
+            culture,
+            &cfg.programme.period,
+            zone,
+            local.text("plotOp"),
+            "domestic",
+        );
+        let (front, depth, minimum) = profile.map_or((0.0, 0.0, 0.0), |c| {
+            (
+                c.admissibility.min_frontage * 1.15,
+                c.admissibility.min_depth,
+                c.admissibility.min_area,
+            )
+        });
+        mean_area += (average("frontage").max(front) * average("plotDepth").max(depth))
+            .max(minimum)
+            / epochs as f64;
+    }
+    // Explicit prototype planning assumptions, never realized housing capacity:
+    // 4.5 persons/household; 65% usable residential land; 15% shape/repair margin.
+    let compatible = 4.5 * 10_000.0 * 0.65 / (1.15 * mean_area.max(1.0));
+    let zone = if small { "village" } else { "core" };
+    let catalogue_density = morph.value["density"][zone].as_f64().unwrap_or(60.0) * cfg.density;
+    (compatible.min(catalogue_density).max(0.001), mean_area)
+}
+fn budget(site: &Site, cfg: &LayoutConfig, morph: &Morph, radius: f64) -> (f64, f64) {
     let density = if cfg.footprint.gross_density > 0.0 {
         cfg.footprint.gross_density
     } else {
-        morph.value["density"][zone].as_f64().unwrap_or(60.0) * cfg.density
+        cadence_density(site, cfg, morph).0
     }
     .max(0.001);
     let target = if cfg.footprint.budget == "radius" {
@@ -1605,7 +1674,7 @@ pub(super) fn generate(
         && !(mechanism == "ribbon"
             && cfg.footprint.mechanism == "ribbon"
             && compatible_foundation(geography, radius));
-    if natural {
+    if natural && cfg.suburbs != "none" {
         sparse::satellites(
             &mut centers,
             cfg,
@@ -1806,6 +1875,9 @@ pub(super) fn generate(
             access_added: 0,
         },
     };
+    if cfg.footprint.budget == "population" && cfg.footprint.gross_density <= 0.0 {
+        warnings.push(format!("AUTO population land budget: {:.3} inhabitants/ha; catalogue cadence {:.2} m²/household; assumptions 4.5 persons/household, residential share 0.65, shape margin 1.15; not built capacity", density, cadence_density(site,cfg,morph).1));
+    }
     Footprint {
         structure,
         phases,
@@ -1845,6 +1917,25 @@ mod tests {
             )
             .unwrap(),
         )
+    }
+    #[test]
+    fn automatic_population_budget_follows_catalogue_cadence_without_overriding_manual_or_radius() {
+        let (mut site, morph) = input();
+        site.population = 50_000;
+        let mut cfg = LayoutConfig::default();
+        let (target, density) = budget(&site, &cfg, &morph, 250.0);
+        let (_, module) = cadence_density(&site, &cfg, &morph);
+        assert!(density < 100.0 && density > 0.0);
+        assert!((target - site.population as f64 / 4.5 * module * 1.15 / 0.65).abs() < 1e-5);
+        cfg.footprint.gross_density = 185.0;
+        let explicit = budget(&site, &cfg, &morph, 250.0);
+        assert_eq!(explicit.1, 185.0);
+        assert!((explicit.0 - 50_000.0 / 185.0 * 10_000.0).abs() < 1e-6);
+        cfg.footprint.budget = "radius".into();
+        let manual_radius = budget(&site, &cfg, &morph, 250.0);
+        cfg.footprint.gross_density = 0.0;
+        assert_eq!(manual_radius, budget(&site, &cfg, &morph, 250.0));
+        assert_eq!(manual_radius.0, PI * 250.0 * 250.0);
     }
     #[test]
     fn porous_growth_is_seeded_and_keeps_a_measured_population_budget() {

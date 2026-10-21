@@ -1,4 +1,5 @@
 import { executionProfiles, executionRuntime } from './executionProfile';
+import { initialTerrainSource } from './terrainStartupState';
 
 /** Presentation only: keep the engines, input identities and event handlers owned by each stage. */
 type PanelSpec = {
@@ -58,6 +59,10 @@ function take(root: ParentNode, selector: string | undefined, destination: Eleme
 function terrainMethod(): void {
   const source = document.querySelector<HTMLSelectElement>('#terrainSource');
   if (!source || document.getElementById('terrainMethod')) return;
+  if (!source.dataset.sourceInitialized) {
+    source.value = initialTerrainSource(new URLSearchParams(location.search), executionProfiles[executionRuntime.profile].neural);
+    source.dataset.sourceInitialized = 'true';
+  }
   const method = document.createElement('select'); method.id = 'terrainMethod';
   method.add(new Option('Procédurale', 'procedural')); method.add(new Option('Neuronale', 'neural'));
   const label = document.createElement('label'); label.append('Méthode ', method);

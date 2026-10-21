@@ -1396,6 +1396,8 @@ pub(super) fn generate(
     }
     if quarters.is_empty() {
         return Ok(Layout {
+            config: Some(cfg.clone()),
+            programme: None,
             key: site.key.clone(),
             culture: if cfg.culture == "site" {
                 site.culture.clone()
@@ -1789,6 +1791,8 @@ pub(super) fn generate(
         b.kind = format!("compound:{}", cfg.monument)
     }
     Ok(Layout {
+        config: Some(cfg.clone()),
+        programme: None,
         key: site.key.clone(),
         culture: if cfg.culture == "site" {
             site.culture.clone()

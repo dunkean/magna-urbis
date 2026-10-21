@@ -31,9 +31,9 @@ function riverKm(t: TerrainData): number {
   return m / 1000;
 }
 
-/** The base layers of the current Terrain Bench map, encoded as a decor file. */
-export function captureDecor(t: TerrainData, settings: TerrainSettings, output: SettlementOutput, roads: RoadOutput | undefined, roadConfig: RoadConfig | null,
-  extra: { id?: string; label?: string; tags?: Record<string, string>; query?: string } = {}): { bytes: Uint8Array; meta: DecorMeta } {
+/** Retained layers for an in-memory transfer; encoding belongs at the file boundary. */
+export function captureDecorData(t: TerrainData, settings: TerrainSettings, output: SettlementOutput, roads: RoadOutput | undefined, roadConfig: RoadConfig | null,
+  extra: { id?: string; label?: string; tags?: Record<string, string>; query?: string; pipeline?: DecorMeta['pipeline'] } = {}): Decor {
   if (t.hydrologyError) throw new Error(`Cannot export decor: ${t.hydrologyError}`);
   const raster = { ...settlementRaster(t, 1024), geometry: terrainGeography(t) }, h = settings.hydrology ?? DEFAULT_HYDROLOGY;
   const waterSvg = t.water
@@ -47,7 +47,7 @@ export function captureDecor(t: TerrainData, settings: TerrainSettings, output: 
       format: 'magna-decor', version: 1, id, label: extra.label ?? `${relief} · seed ${settings.seed}`,
       tags: { ...tagsOf(settings, output, roadConfig), ...extra.tags, source: settings.source ?? 'procedural', hydrology: h.engine },
       seed: settings.seed, width: t.width, query: extra.query ?? location.search.replace(/^\?/, ''), created: new Date().toISOString(),
-      settlements: output.settlements, roadConfig, roads: roads ?? null, waterSvg,
+      settlements: output.settlements, roadConfig, roads: roads ?? null, waterSvg, pipeline: extra.pipeline,
       waterMaterial: t.water ? { field: encodeWaterField(lakeField(t.water.lake, t.water.hydro.n).values), n: t.water.hydro.n, width: t.width, referenceWidth: t.width, sea: retainedSea, path: lakeShores(t.water) }
         : t.hydrology ? { field: encodeWaterField(t.hydrology.waterField), n: t.hydrology.resolution, width: t.width, referenceWidth: t.width, sea: retainedSea, path: hydrologyLakePath(t.hydrology) } : { field: '', n: 0, width: t.width, referenceWidth: t.width, sea: retainedSea, path: '' },
       terrainDisplay: { referenceWidth: t.width, floor: t.field?.floor ?? 0, sourceCell: settings.width / 1024, refine: !!settings.refine,
@@ -56,6 +56,12 @@ export function captureDecor(t: TerrainData, settings: TerrainSettings, output: 
     },
     raster,
   };
+  return decor;
+}
+
+/** The same retained layers encoded once for a portable decor file. */
+export function captureDecor(...args: Parameters<typeof captureDecorData>): { bytes: Uint8Array; meta: DecorMeta } {
+  const decor = captureDecorData(...args);
   return { bytes: encodeDecor(decor), meta: decor.meta };
 }
 

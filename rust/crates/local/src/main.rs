@@ -432,6 +432,30 @@ fn urban_reply(input: Value, state: &mut Session) -> ApiResult<Reply> {
         let config: urban::ParcelConfig = value(&input["parcelConfig"])?;
         let partitions = urban::generate_parcels(seed, layouts, &config)?;
         json_reply(json!({"id": input["id"], "partitions": partitions, "ms": millis(started)}))
+    } else if input["kind"] == "buildingSites" {
+        let layouts: Vec<urban::Layout> = value(&input["layouts"])?;
+        let partitions: Vec<urban::Partition> = value(&input["partitions"])?;
+        let terrain = state
+            .settlements
+            .as_ref()
+            .ok_or("Missing retained terrain for buildings")?;
+        let output = terrain.urban_building_sites_with_culture(
+            seed,
+            &layouts,
+            &partitions,
+            input["architectureCulture"].as_str(),
+        )?;
+        json_reply(json!({"id":input["id"],"placementRequests":output,"ms":millis(started)}))
+    } else if input["kind"] == "builtCapacity" {
+        let partitions: Vec<urban::Partition> = value(&input["partitions"])?;
+        let scene: urban::programme::BuiltScene = value(&input["scene"])?;
+        let output = urban::programme::reconcile_built(&partitions, &scene)?;
+        json_reply(json!({"id":input["id"],"partitions":output,"ms":millis(started)}))
+    } else if input["kind"] == "programme" {
+        let layouts: Vec<urban::Layout> = value(&input["layouts"])?;
+        let partitions: Vec<urban::Partition> = value(&input["partitions"])?;
+        let output = urban::programme::reallocate(&layouts, &partitions)?;
+        json_reply(json!({"id": input["id"], "partitions": output, "ms": millis(started)}))
     } else {
         Err("Étape urbaine inconnue.".into())
     }
@@ -446,6 +470,20 @@ fn houses_reply(path: &str, body: &[u8]) -> ApiResult<Reply> {
             "/houses/preflight" => {
                 let config: HouseConfig = decode(body)?;
                 serde_json::to_value(magna_urbis_houses::preflight(config)?)
+                    .map_err(|e| e.to_string())
+            }
+            "/houses/placement" => {
+                let input = decode(body)?;
+                serde_json::to_value(magna_urbis_houses::placement::place_batch(input)?)
+                    .map_err(|e| e.to_string())
+            }
+            "/houses/profiles" => {
+                serde_json::to_value(magna_urbis_houses::placement::admissibility_profiles()?)
+                    .map_err(|e| e.to_string())
+            }
+            "/houses/enrich" => {
+                let input = decode(body)?;
+                serde_json::to_value(magna_urbis_houses::placement::enrich_placement(input)?)
                     .map_err(|e| e.to_string())
             }
             "/houses/generate" => {
@@ -468,7 +506,9 @@ fn houses_reply(path: &str, body: &[u8]) -> ApiResult<Reply> {
 fn dispatch(path: &str, body: &[u8], sessions: &Mutex<Sessions>) -> ApiResult<Reply> {
     if path == "/status" {
         return json_reply(
-            json!({"ok": true, "service": "magna-urbis-local", "backend": "rust-native", "version": 1}),
+            json!({"ok": true, "service": "magna-urbis-local", "backend": "rust-native", "version": 1,
+                "capabilities": ["urban.programme", "urban.building-sites", "urban.built-capacity", "urban.architecture-culture",
+                    "houses.placement", "houses.profiles", "houses.enrich", "houses.config-template", "houses.workshop-template", "houses.parcel-fit"]}),
         );
     }
     if path == "/raster" {

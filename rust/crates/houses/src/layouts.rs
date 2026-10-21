@@ -7,6 +7,7 @@ use crate::model::*;
 use magna_urbis_random::Rng;
 use std::f64::consts::{PI, TAU};
 
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub(crate) struct BodySpec {
     pub footprint: Surface,
     pub voids: Vec<Surface>,
@@ -19,6 +20,7 @@ pub(crate) struct BodySpec {
     pub arms: Vec<RoofArm>,
 }
 
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub(crate) struct LayoutPlan {
     pub lot: Surface,
     pub courts: Surface,
@@ -27,6 +29,62 @@ pub(crate) struct LayoutPlan {
     pub features: Vec<Feature>,
     pub context: Vec<Feature>,
     pub diagnostics: Vec<String>,
+}
+
+/// Bounded burgage infill within the native row-house envelope. Separate native
+/// rectangular bodies keep roof construction exact; courts and access stay open.
+pub(crate) fn urban_frontage_infill(
+    plan: &mut LayoutPlan,
+    p: &Parameters,
+    coverage: f64,
+    seed: &str,
+) {
+    if p.layout != Layout::Strip
+        || coverage < 0.66
+        || plan.bodies.len() != 1
+        || p.details.iter().any(|detail| detail == "arcade")
+    {
+        return;
+    }
+    let w = p.width_m[0] - 1.25;
+    let d = p.depth_m[0];
+    let rear = d * 0.25;
+    let b = bounds(&plan.bodies[0].footprint);
+    if (b[0]).abs() > 0.001
+        || (b[1] - rear).abs() > 0.001
+        || (b[2] - w).abs() > 0.001
+        || (b[3] - d).abs() > 0.001
+    {
+        return;
+    }
+    let role = plan.bodies[0].role;
+    let mut rng = Rng::new(seed).fork("urban-burgage-infill");
+    let mut additions = vec![];
+    // A habitable side range is possible only if a real court remains beside it.
+    if w >= 4.0 && rear >= 2.2 {
+        let wing = snap((w * rng.range(0.44, 0.56)).clamp(2.2, w - 1.8));
+        additions.push(rectangle(0., 0., wing, rear));
+    }
+    // Retain at least a 1.8 m long court between front and rear ranges.
+    if coverage >= 0.84 && rear >= 4.0 && rng.chance(0.7) {
+        let depth = snap((rear * rng.range(0.4, 0.55)).clamp(2.2, rear - 1.8));
+        let used = unite(&additions);
+        let back = difference(&rectangle(0., 0., w, depth), &used);
+        if area(&back) >= 4.0 {
+            additions.push(back);
+        }
+    }
+    for surface in additions {
+        if surface.is_empty() {
+            continue;
+        }
+        plan.courts = difference(&plan.courts, &surface);
+        plan.paths = difference(&plan.paths, &surface);
+        plan.bodies.push(spec(surface, p, role));
+    }
+    if plan.bodies.len() > 1 {
+        plan.diagnostics.push("Seeded urban burgage infill: native side/rear ranges inside the source envelope, retaining a court and side access; artistic adaptation of the TypeScript frontage operator.".into());
+    }
 }
 
 pub(crate) fn feature(

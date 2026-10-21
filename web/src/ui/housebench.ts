@@ -4,6 +4,8 @@ import { installRecipeSharing, portableRecipe } from './recipeSharing';
 import HouseWorker from './houseWorker?worker&inline';
 import { callHouses, compileHousesModule, defaultHouseConfig, decodeHouseReplay, encodeHouseReplay, parseHouseBatch, parseHouseCatalogue, parseHouseEnvelope, ROLE_LABELS, validateHouseConfig, wellFormedSeed, type CatalogueBundle, type HouseBatch, type HouseConfig, type HouseRequest, type HouseResponse, type HouseUnit, type HouseView, type Preflight, type Point } from '../../../rust/bridge/houses';
 import { commonHouseExtent, renderHouseSheet, renderHouseSvg, surfaceArea, unitBounds, xml } from '../../../rust/bridge/houseRender';
+import { readUrbanHouseCase } from './urbanHouseTransfer';
+import { enrichUrbanBuilding } from '../../../rust/bridge/architecture';
 
 const $ = <T extends HTMLElement>(id: string): T => {
   const element = document.getElementById(id);
@@ -259,6 +261,7 @@ function updateReplay(): boolean {
   if (!batch) return false;
   try {
     const url = new URL(location.href);
+    if (url.searchParams.has('placement')) return true;
     url.searchParams.set('houses', 'v1'); url.searchParams.set('replay', encodeHouseReplay(batch.settings, view, batch.generator_version));
     history.replaceState(null, '', url);
     button('copy-link').disabled = false; $('link-warning').hidden = true;
@@ -320,6 +323,7 @@ async function generate(config?: HouseConfig): Promise<void> {
     displayPreflight(check); message(`Génération de ${settings.count} unités architecturales…`, true);
     const response = await request('generate', settings);
     if (currentAction !== action) return;
+    const forkUrl = new URL(location.href); forkUrl.searchParams.delete('placement'); history.replaceState(null, '', forkUrl);
     commitBatch(parseHouseBatch(response.json), response.elapsed_ms);
   } catch (error) {
     if (currentAction === action) { showError(error); message(batch ? 'Génération rejetée · le dernier lot réussi reste affiché.' : 'Génération rejetée. Corrigez les paramètres puis relancez.'); }
@@ -454,6 +458,14 @@ async function start(): Promise<void> {
     bundle = parseHouseCatalogue((await request('catalogue')).json); populateCatalogueControls();
     let config = defaultHouseConfig();
     const url = new URL(location.href);
+    if (url.searchParams.has('placement')) {
+      const building = await readUrbanHouseCase(url.searchParams.get('placement')!);
+      const started = performance.now();
+      const enriched = await enrichUrbanBuilding(building, executionRuntime);
+      setConfig(enriched.settings); commitBatch(enriched, performance.now() - started);
+      message(`Copie du bâtiment ${building.parcel_id} · altitude ${building.ground_z_m.toFixed(2)} m · plan, niveaux et placement conservés. Les essais restent dans le banc de maisons.`);
+      return;
+    }
     if (url.searchParams.has('replay')) {
       try {
         if (url.searchParams.get('houses') !== 'v1') throw new Error('Version du lien maisons inconnue.');

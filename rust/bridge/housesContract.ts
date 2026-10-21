@@ -1,4 +1,5 @@
 import type { ExecutionRuntime } from '../../web/src/ui/executionProfile';
+export type { AdmissibilityProfile, ArchitectureCulture, ArchitectureFunction, ArchitectureTerrain, ArchitectureTypology, ArchitectureVolume, ArchitectureWasm, PlacedBuilding, PlacementBatch, PlacementBatchRequest, PlacementBatchSettings, PlacementRefusal, PlacementRequest } from './urbanArchitecture';
 export const HOUSE_SCHEMA = '2';
 export const HOUSE_GENERATOR = 'houses-2';
 export const HOUSE_MAX_JSON_BYTES = 64 * 1024 * 1024;
@@ -85,6 +86,16 @@ export interface RoofFace { body_id: string; feature_id?: string | null; level: 
 export interface RoofEdge { kind: RoofEdgeKind; vertices: [number, number]; faces: [number | null, number | null] }
 export interface RoofGroup { id: string; rf: string; body_id: string; feature_id?: string | null; room_id?: string | null; level: number; domain: Surface }
 export interface RoofMesh { vertices: Vertex3[]; faces: RoofFace[]; edges: RoofEdge[]; groups: RoofGroup[] }
+/** Native exterior only. It deliberately has no rooms, wall interiors or access graph. */
+export interface HouseExterior {
+  roofs: {
+    vertices: Vertex3[];
+    faces: (Pick<RoofFace, 'vertices' | 'normal' | 'material' | 'kind'> & Partial<Omit<RoofFace, 'vertices' | 'normal' | 'material' | 'kind'>>)[];
+    edges?: RoofEdge[];
+    groups?: RoofGroup[];
+  };
+  features: Feature[];
+}
 export interface Partition { occupied: Surface; courtyards: Surface; circulation: Surface; service: Surface; residual: Surface }
 export interface LevelPartition { level: number; z_m: number; domain: Surface; partition: Partition }
 export interface HouseUnit { id: string; recipe_id: string; variant_id: string; label: string; role: HouseRole; transform: {origin: Point; orientation_deg: number}; lot: Surface; partition: Partition; level_partitions: LevelPartition[]; levels: UnitLevel[]; bodies: Body[]; rooms: Room[]; features: Feature[]; walls: Wall[]; site_context: Feature[]; access: AccessGraph; roofs: RoofMesh; diagnostics: string[] }

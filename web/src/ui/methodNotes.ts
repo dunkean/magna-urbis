@@ -2,14 +2,24 @@ import groundNote from '../../../docs/methods/render3d-ground.md?raw';
 import fantasyNote from '../../../docs/methods/fantasy-landuse.md?raw';
 import vegetationNote from '../../../docs/methods/render3d-vegetation.md?raw';
 import brushNote from '../../../docs/methods/render3d-brush.md?raw';
+import parcelNote from '../../../docs/methods/urban-parcels.md?raw';
+import programmeNote from '../../../docs/methods/urban-programme-allocation.md?raw';
+import architectureNote from '../../../docs/methods/urban-architecture-placement.md?raw';
+import urbanRenderingNote from '../../../docs/methods/urban-buildings-rendering.md?raw';
+import settlementStylesNote from '../../../docs/methods/urban-settlement-styles.md?raw';
 
 const bundledFigures = import.meta.glob<string>('../../../docs/methods/images/*.webp', {
   eager: true, query: '?inline', import: 'default',
 });
 const figures = Object.fromEntries(Object.entries(bundledFigures).map(([path, image]) => [path.slice(path.indexOf('images/')), image]));
 
-export type MethodNoteId = 'render3d-ground' | 'fantasy-landuse' | 'render3d-vegetation' | 'render3d-brush';
+export type MethodNoteId = 'render3d-ground' | 'fantasy-landuse' | 'render3d-vegetation' | 'render3d-brush' | 'urban-parcels' | 'urban-programme-allocation' | 'urban-architecture-placement' | 'urban-buildings-rendering' | 'urban-settlement-styles';
 const notes: Record<MethodNoteId, { title: string; markdown: string; images: Record<string, string> }> = {
+  'urban-settlement-styles': { title: 'Settlement styles and independent stages', markdown: settlementStylesNote, images: {} },
+  'urban-buildings-rendering': { title: 'Applied urban buildings in 2D and perspective', markdown: urbanRenderingNote, images: {} },
+  'urban-parcels': { title: 'Continuous frontage and cultural parcels', markdown: parcelNote, images: {} },
+  'urban-programme-allocation': { title: 'Urban programme and bounded allocation', markdown: programmeNote, images: {} },
+  'urban-architecture-placement': { title: 'External architectural placement', markdown: architectureNote, images: {} },
   'render3d-brush': { title: 'Render3DBrush: biome brushes in the forest material', markdown: brushNote, images: {} },
   'fantasy-landuse': { title: 'Fantasy brushes and territory occupation', markdown: fantasyNote, images: {} },
   'render3d-vegetation': { title: 'Render3D forest field, crowns and occupation', markdown: vegetationNote, images: figures },

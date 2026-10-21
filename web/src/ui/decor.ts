@@ -1,5 +1,5 @@
 import { decorGeography, type VectorGeography } from '../../../rust/bridge/urbanGeography';
-import { gunzipSync, gzipSync } from 'fflate';
+import { gunzip, gunzipSync, gzip, gzipSync } from 'fflate';
 import type { RetainedWaterMaterial } from './decorWater';
 import type { RoadConfig, RoadOutput, Settlement, SettlementRaster } from '../../../rust/bridge/settlements';
 
@@ -58,7 +58,7 @@ function unshuffle(bytes: Uint8Array, n: number): Float32Array {
   return out;
 }
 
-export function encodeDecor(decor: Decor): Uint8Array {
+function decorBytes(decor: Decor): Uint8Array {
   const r = decor.raster, size = r.n * r.n;
   // Land cells keep their own height as water level: store water levels only on water.
   const level = new Float32Array(size);
@@ -71,11 +71,24 @@ export function encodeDecor(decor: Decor): Uint8Array {
   out.set(header, 12);
   let offset = 12 + header.length;
   for (const p of parts) { out.set(p, offset); offset += p.length; }
-  return gzipSync(out, { level: 6, mtime: 0 });
+  return out;
 }
 
-export function decodeDecor(data: Uint8Array): Decor {
-  const raw = gunzipSync(data), view = new DataView(raw.buffer, raw.byteOffset, raw.byteLength);
+export function encodeDecor(decor: Decor): Uint8Array {
+  return gzipSync(decorBytes(decor), { level: 6, mtime: 0 });
+}
+
+/** The portable format is identical; compression runs in fflate's local worker.
+ * Only the newly allocated file buffer is transferred, never retained rasters. */
+export function encodeDecorAsync(decor: Decor): Promise<Uint8Array> {
+  const raw = decorBytes(decor);
+  return new Promise((resolve, reject) => {
+    gzip(raw, { level: 6, mtime: 0, consume: true }, (error, bytes) => error ? reject(error) : resolve(bytes));
+  });
+}
+
+function readDecorBytes(raw: Uint8Array): Decor {
+  const view = new DataView(raw.buffer, raw.byteOffset, raw.byteLength);
   if (view.getUint32(0, true) !== MAGIC) throw new Error('Not a Magna Urbis decor file');
   if (view.getUint32(4, true) !== 1) throw new Error(`Unsupported decor version ${view.getUint32(4, true)}`);
   const headerLength = view.getUint32(8, true);
@@ -89,6 +102,16 @@ export function decodeDecor(data: Uint8Array): Decor {
   const raster: SettlementRaster = { width: header.width, n, height, water, waterLevel, riverWidth, riverIds };
   raster.geometry = header.geometry ?? decorGeography(raster, header.meta.waterSvg);
   return { meta: header.meta, raster };
+}
+
+export function decodeDecor(data: Uint8Array): Decor { return readDecorBytes(gunzipSync(data)); }
+export function decodeDecorAsync(data: Uint8Array): Promise<Decor> {
+  return new Promise((resolve, reject) => {
+    gunzip(data, (error, raw) => {
+      if (error) { reject(error); return; }
+      try { resolve(readDecorBytes(raw)); } catch (failure) { reject(failure); }
+    });
+  });
 }
 
 export const decorEntry = (meta: DecorMeta, file: string): DecorEntry => ({

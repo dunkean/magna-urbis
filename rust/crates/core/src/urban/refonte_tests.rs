@@ -347,6 +347,8 @@ fn mixed_influences_share_land_exactly_and_reach_parcels() {
 fn deep_layout() -> Layout {
     let shape = g::rectangle(600.0, 600.0, 840.0, 900.0);
     Layout {
+        config: None,
+        programme: None,
         key: "deep".into(),
         culture: "european-organic".into(),
         center: Point { x: 720.0, y: 750.0 },
@@ -392,6 +394,28 @@ fn old_inputs_select_legacy_but_new_defaults_enable_the_refonte() {
     assert_eq!(old.access_mode, "cultural");
     assert_eq!(LayoutConfig::default().footprint.mechanism, "auto");
     assert!(serde_json::from_value::<LayoutConfig>(json!({"footprint":{"typo":1}})).is_err());
+}
+
+#[test]
+fn retained_stage_inputs_reach_building_occupation_without_reverting_to_density_one() {
+    let mut layout = deep_layout();
+    layout.config = Some(LayoutConfig {
+        density: 2.,
+        params: json!({"fieldNoise":0.4}),
+        ..LayoutConfig::default()
+    });
+    let (_, dense) = super::culture::block_morph(&layout, "european-organic", 0).unwrap();
+    assert!(dense.range("frontage", "core")[0] < morph().range("frontage", "core")[0]);
+    let partition: Partition = serde_json::from_value(json!({"key":"deep","parcels":[],"warnings":[],
+        "config":{"density":1.6,"zone":"core","recipe":"core","params":{"coverage":{"core":[0.82,0.88]}}}})).unwrap();
+    let (_, applied) =
+        super::culture::parcel_morph(&layout, &partition, "european-organic", 0).unwrap();
+    assert_eq!(applied.range("coverage", "core"), [0.82, 0.88]);
+    let restored: Partition =
+        serde_json::from_str(&serde_json::to_string(&partition).unwrap()).unwrap();
+    let (_, replay) =
+        super::culture::parcel_morph(&layout, &restored, "european-organic", 0).unwrap();
+    assert_eq!(applied.value, replay.value);
 }
 
 #[test]
@@ -487,7 +511,8 @@ fn adaptive_access_is_connected_and_the_partition_remains_covered() {
         assert!(
             p[0].parcels
                 .iter()
-                .any(|p| p.access.as_ref().is_some_and(|a| a.kind == "collective"))
+                .any(|p| p.access.as_ref().is_some_and(|a| a.kind == "collective")),
+            "{op}: adaptive shared street contacts were lost"
         );
     }
 }

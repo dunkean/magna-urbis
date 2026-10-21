@@ -6,7 +6,11 @@ import { benchLayout, type BenchOptions } from '../gen/urban/testbench';
 import { createGrid } from '../gen/core/grid';
 import { applyBenchConstraints } from '../gen/urban/testbenchConstraints';
 import type { World } from '../gen/types';
-import { WORKSHOP_CHANNEL, normalizeWorkshopContext, workshopConfig, type WorkshopRequest, type WorkshopResult, type WorkshopState } from './testbenchUrban';
+import { createUrbanSceneClient } from './urbanScene';
+import { openBench } from './benchHistory';
+import { urbanDisplaySurface } from './urbanPerspective';
+import { cityWorkshopState, workshopSettings } from './urbanSnapshot';
+import { WORKSHOP_CHANNEL, normalizeWorkshopContext, workshopConfig, workshopFixtureFrame, type WorkshopRequest, type WorkshopResult, type WorkshopState } from './testbenchUrban';
 
 interface MapContext { waterAppearance?: { geometry: string; material: import('./decorWater').RetainedWaterMaterial }; raster: SettlementRaster; sites: RoadSite[]; roads?: RoadOutput; seed: string }
 /** Two workspaces, one existing editor and the same native worker as the map. */
@@ -38,19 +42,26 @@ export function createUrbanWorkshop(options: {
   let space = options.workshopOnly || query.get('space') === 'workshop' ? 'workshop' : 'map', caseState = query.get('workshop') ?? '';
   let latestDraft: Partial<WorkshopState> | undefined;
   let latest: WorkshopState | undefined, pendingImport: WorkshopState | undefined, ready = false;
-  const plans: Partial<Record<'map' | 'fixture', Pick<WorkshopState, 'layouts' | 'partitions'>>> = {};
-  let workshopSource: 'fixture' | 'map' = 'fixture', retainedContext: MapContext | undefined, retainedSites = '';
+  const plans: Partial<Record<'map' | 'fixture', Pick<WorkshopState, 'layouts' | 'partitions' | 'buildingState'>>> = {};
+  const sceneClient = createUrbanSceneClient();
+  let generationEpoch = 0;
+  const awaitingMap = !caseState && (query.has('artifact') || query.has('decor'));
+  let workshopSource: 'fixture' | 'map' = awaitingMap ? 'map' : 'fixture', retainedContext: MapContext | undefined, retainedSites = '';
   let invalidated = false, acceptApplied = true;
+  let expectedSource: 'map' | 'fixture' | undefined = awaitingMap ? 'map' : undefined;
   function retainContext(): void { retainedContext = options.getContext(); retainedSites = JSON.stringify(retainedContext?.sites); }
   function verifyContext(): void {
     if (workshopSource !== 'map' || !retainedContext || invalidated) return;
     const current = options.getContext();
     if (current?.raster === retainedContext.raster && current.roads === retainedContext.roads && current.seed === retainedContext.seed && JSON.stringify(current.sites) === retainedSites) return;
+    ++generationEpoch; sceneClient.invalidate();
     invalidated = true; caseState = ''; latest = undefined; pendingImport = undefined; applyButton.disabled = true;
     frame.style.visibility = 'hidden'; note.textContent = 'Carte modifiée, rechargez le plan dans l’atelier.'; display();
   }
   const targetOrigin = location.protocol === 'file:' || location.origin === 'null' ? '*' : location.origin;
   const send = (data: object): void => frame.contentWindow?.postMessage({ channel: WORKSHOP_CHANNEL, ...data }, targetOrigin);
+  const mergeBuildingState = (incoming: WorkshopState['buildingState'], applied: WorkshopState['buildingState']): WorkshopState['buildingState'] => incoming
+    ? { ...applied, ...incoming, scene: incoming.scene ?? (incoming.generated === false ? undefined : applied?.scene) } : applied;
   function display(): void {
     workspace.hidden = space === 'workshop'; section.hidden = space !== 'workshop';
     // Existing workspace CSS uses display:flex, which otherwise overrides the hidden attribute.
@@ -58,7 +69,7 @@ export function createUrbanWorkshop(options: {
     for (const group of Array.from(document.querySelector('header')!.children)) if (group !== nav && !group.classList.contains('brand')) (group as HTMLElement).style.display = space === 'workshop' ? 'none' : '';
     mapButton.setAttribute('aria-pressed', String(space === 'map')); workshopButton.setAttribute('aria-pressed', String(space === 'workshop'));
     if (space === 'workshop' && !frame.hasAttribute('src')) {
-      const params = new URLSearchParams({ engine: 'rust', embedded: '1', style: options.getStyle?.() ?? query.get('style') ?? 'parchment' }); if (caseState) params.set('case', caseState);
+      const params = new URLSearchParams({ engine: 'rust', embedded: '1', style: options.getStyle?.() ?? query.get('style') ?? 'parchment' }); if (caseState) params.set('case', caseState); else if (workshopSource === 'map') params.set('awaitImport', '1');
       frame.src = `testbench.html?${params}`;
     }
     const url = new URL(location.href); url.searchParams.set('space', 'workshop'); if (caseState) url.searchParams.set('workshop', caseState); else url.searchParams.delete('workshop');
@@ -68,27 +79,32 @@ export function createUrbanWorkshop(options: {
   mapButton.onclick = () => { space = 'map'; display(); options.onChange(); };
   workshopButton.onclick = () => { openMap(); };
   function openMap(): void {
-    const context = options.getContext(), state = options.urban.workshopState();
+    ++generationEpoch; sceneClient.invalidate();
+    const context = options.getContext(), all = options.urban.workshopState();
+    const state = all.siteKey && all.layouts?.some(layout => layout.key === all.siteKey) ? cityWorkshopState(all, all.siteKey) : all;
     if (!context || !state.layouts?.length) { space = 'workshop'; display(); note.textContent = 'Générez d’abord les quartiers sur la carte.'; return; }
-    invalidated = false; acceptApplied = true; frame.style.visibility = ''; workshopSource = 'map'; retainContext();
-    pendingImport = { ...state, quarterSeed: state.quarterSeed || context.seed, parcelSeed: state.parcelSeed || context.seed };
-    plans.map = { layouts: state.layouts, partitions: state.partitions };
+    invalidated = false; acceptApplied = true; expectedSource = 'map'; frame.style.visibility = ''; workshopSource = 'map'; retainContext(); latestDraft = undefined; latest = state;
+    const site = context.sites.find(site => site.key === state.siteKey || site.key === state.layouts?.[0]?.key);
+    pendingImport = { ...state, population: site?.population ?? state.population, siteKey: site?.key ?? state.siteKey, quarterSeed: state.quarterSeed || context.seed, parcelSeed: state.parcelSeed || context.seed };
+    appliedContext = undefined;
+    plans.map = { layouts: state.layouts, partitions: state.partitions, buildingState: state.buildingState };
     space = 'workshop'; display();
-    if (ready) { send({ type: 'import', state: pendingImport, waterAppearance: retainedContext?.waterAppearance, radius: context.sites[0]?.radius, water: contextWater(context), contours: contextContours(context), roads: regionalStreets(context.roads) }); pendingImport = undefined; }
+    if (ready) { send({ type: 'import', state: pendingImport, surface: urbanDisplaySurface(context.raster), waterAppearance: retainedContext?.waterAppearance, radius: context.sites[0]?.radius, water: contextWater(context), contours: contextContours(context), roads: regionalStreets(context.roads) }); pendingImport = undefined; }
     note.textContent = 'Plan conservé : les parcelles seront découpées dans ces mêmes îlots.';
     options.onChange();
   }
   section.querySelector<HTMLButtonElement>('[data-from-map]')!.onclick = openMap;
   applyButton.onclick = () => {
-    if (!latest) return;
+    if (!latest || workshopSource !== 'map') return;
     if (options.onReturn) { void options.onReturn(latest).catch(e => { note.textContent = String(e); }); return; }
     const { layouts: _layouts, partitions: _partitions, ...settings } = latest;
     options.urban.applyWorkshop(settings); space = 'map'; display(); options.onChange();
   };
-  section.querySelector<HTMLButtonElement>('[data-fixture]')!.onclick = () => { invalidated = false; frame.style.visibility = ''; workshopSource = 'fixture'; retainedContext = undefined; send({ type: 'fixture' }); note.textContent = 'Scène isolée avec les mêmes opérateurs de quartiers et parcelles.'; };
+  section.querySelector<HTMLButtonElement>('[data-fixture]')!.onclick = () => { ++generationEpoch; sceneClient.invalidate(); invalidated = false; expectedSource = 'fixture'; latest = undefined; latestDraft = undefined; caseState = ''; applyButton.disabled = true; frame.style.visibility = ''; workshopSource = 'fixture'; retainedContext = undefined; send({ type: 'fixture' }); note.textContent = 'Scène isolée avec les mêmes opérateurs de quartiers et parcelles.'; };
   let worker: Worker | undefined, fallback: ReturnType<typeof createUrbanEngine> | undefined, requestId = 0;
   let sentRaster: SettlementRaster | undefined;
   let fixtureCache: { key: string; value: ReturnType<typeof fixtureTerrain> } | undefined;
+  let appliedContext: MapContext | undefined;
   const pending = new Map<number, { resolve(response: UrbanResponse): void; reject(error: Error): void; request: UrbanRequest }>();
   function runFallback(message: UrbanRequest): Promise<UrbanResponse> {
     return fallback!.then(async engine => {
@@ -123,7 +139,8 @@ export function createUrbanWorkshop(options: {
       } catch { useFallback(); }
     });
   }
-  async function generate(request: WorkshopRequest): Promise<WorkshopResult> {
+  async function generate(request: WorkshopRequest, progress?: (completed: number, total: number) => void): Promise<WorkshopResult> {
+    const ticket = ++generationEpoch;
     request = { ...request, context: normalizeWorkshopContext(request.context) };
     let context = retainedContext ?? options.getContext();
     if (request.context.source === 'map') {
@@ -134,61 +151,87 @@ export function createUrbanWorkshop(options: {
     if (request.context.source === 'fixture') {
       // These are the only inputs read by fixtureTerrain/applyBenchConstraints.
       // Parcel and building options must not rebuild the 256² terrain raster.
-      const o = request.options, key = JSON.stringify([o.radius, o.relief, o.reliefSlope, o.river, o.riverWidth]);
-      if (fixtureCache?.key !== key) fixtureCache = { key, value: fixtureTerrain(o) };
+      const o = request.options, frame = workshopFixtureFrame(request.context.population!, o.radius, request.context.layoutConfig?.composition === 'settlement'), key = JSON.stringify([frame.width, o.radius, o.relief, o.reliefSlope, o.river, o.riverWidth]);
+      if (fixtureCache?.key !== key) fixtureCache = { key, value: fixtureTerrain(o, frame) };
       fixture = fixtureCache.value;
     }
     const raster = fixture?.raster ?? context!.raster;
+    const frame = workshopFixtureFrame(request.context.population!, request.options.radius, request.context.layoutConfig?.composition === 'settlement');
+    const siteKey = request.context.siteKey ?? context?.sites[0]?.key;
+    const sites = fixture ? [{ key: 'workshop', population: request.context.population!, culture: request.options.culture, center: frame.center, radius: request.options.radius }] : context!.sites.filter(site => !request.context.siteKey || site.key === request.context.siteKey).map(site => site.key === siteKey ? { ...site, population: request.context.population! } : site);
     let layouts = request.layouts;
     if (request.kind === 'quarters') {
       if (request.options.mode === 'micro' && fixture) layouts = microLayouts(request.options, request.seed);
       else {
         const response = await native({ kind: 'quarters', seed: request.seed, raster,
-          sites: fixture ? [{ key: 'workshop', population: 1000, culture: request.options.culture, center: { x: 500, y: 500 }, radius: request.options.radius }] : context!.sites,
+          sites,
           roads: fixture ? [] : regionalStreets(context!.roads),
           layoutConfig: workshopConfig(request.options, request.context, 'quarters') });
         if (response.error) throw new Error(response.error); layouts = response.layouts!;
       }
     }
     if (!layouts) throw new Error('Générez les quartiers avant les parcelles.');
-    let partitions;
+    let partitions = request.kind === 'buildings' ? request.partitions : undefined;
+    let buildingState: WorkshopState['buildingState'];
     if (request.kind === 'parcels') {
       const response = await native({ kind: 'parcels', seed: request.seed, raster, layouts,
         parcelConfig: workshopConfig(request.options, request.context, 'parcels') });
       if (response.error) throw new Error(response.error); partitions = response.partitions;
     }
-    latestDraft = undefined; acceptApplied = true; plans[request.context.source] = { layouts, partitions };
-    return { layouts, partitions, water: fixture?.water ?? contextWater(context), contours: fixture?.contours ?? contextContours(context), roads: fixture ? [] : regionalStreets(context?.roads),
+    if (request.kind === 'buildings') {
+      if (!partitions) throw new Error('Générez les parcelles avant les bâtiments.');
+      const response = await sceneClient.run({ raster, layouts, partitions, seed: request.seed, settings: request.buildingSettings, runtime: executionRuntime }, (completed, total) => { if (ticket === generationEpoch) progress?.(completed, total); });
+      if (!response.scene) throw new Error('La scène bâtie est absente.');
+      partitions = response.partitions ?? partitions;
+      buildingState = { seed: request.seed, settings: request.buildingSettings, scene: response.scene, visible: true, appearance: { style: 'cartographic', diagnostic: 'none' } };
+    }
+    if (ticket !== generationEpoch) throw new DOMException('Plan remplacé', 'AbortError');
+    appliedContext = { ...context, raster, sites, seed: fixture ? request.seed : context!.seed };
+    if (request.kind !== 'buildings') latestDraft = undefined;
+    acceptApplied = true; plans[request.context.source] = { layouts, partitions, buildingState };
+    return { layouts, partitions, surface: urbanDisplaySurface(raster), water: fixture?.water ?? contextWater(context), contours: fixture?.contours ?? contextContours(context), roads: fixture ? [] : regionalStreets(context?.roads),
       layoutConfig: request.kind === 'quarters' ? workshopConfig(request.options, request.context, 'quarters') : normalizeLayoutConfig(request.context.layoutConfig, true),
-      parcelConfig: request.kind === 'parcels' ? workshopConfig(request.options, request.context, 'parcels') : normalizeParcelConfig(request.context.parcelConfig),
+      parcelConfig: request.kind === 'parcels' ? workshopConfig(request.options, request.context, 'parcels') : normalizeParcelConfig(request.context.parcelConfig), buildingState,
       shapeNames: request.options.mode === 'micro' && fixture ? benchLayout({ ...request.options, mode: 'micro', culture: 'european-organic', recipe: 'core', stages: {} }, request.seed).shapeNames : undefined };
   }
   window.addEventListener('message', event => {
     if (event.source !== frame.contentWindow || event.origin !== (location.protocol === 'file:' ? 'null' : location.origin) || event.data?.channel !== WORKSHOP_CHANNEL) return;
     const message = event.data;
+    if (message.type === 'open-house' && typeof message.id === 'string') { openBench('houses', new URLSearchParams({ placement: message.id })); return; }
     if (message.type === 'catalogue') { send({ type: 'catalogue', catalogue }); return; }
-    if (message.type === 'ready') { ready = true; if (pendingImport) { send({ type: 'import', state: pendingImport, waterAppearance: retainedContext?.waterAppearance, radius: retainedContext?.sites[0]?.radius, water: contextWater(retainedContext), contours: contextContours(retainedContext), roads: regionalStreets(retainedContext?.roads) }); pendingImport = undefined; } }
+    if (message.type === 'ready') { ready = true; if (pendingImport) { send({ type: 'import', state: pendingImport, surface: retainedContext && urbanDisplaySurface(retainedContext.raster), waterAppearance: retainedContext?.waterAppearance, radius: retainedContext?.sites[0]?.radius, water: contextWater(retainedContext), contours: contextContours(retainedContext), roads: regionalStreets(retainedContext?.roads) }); pendingImport = undefined; } }
     if (message.type === 'settings') { latestDraft = message.state; options.onChange(); }
     if (message.type === 'state') {
       if (invalidated) return;
+      if (expectedSource && message.source !== expectedSource) return;
+      expectedSource = undefined;
       const previousSource = workshopSource; workshopSource = message.source === 'map' ? 'map' : 'fixture';
       if (workshopSource === 'map' && !retainedContext) retainContext();
       if (workshopSource === 'fixture') retainedContext = undefined;
       const draft = latestDraft;
-      if (!draft) caseState = message.caseState;
-      if (acceptApplied || !latest || previousSource !== workshopSource) { latest = { ...message.state, ...plans[workshopSource], layoutConfig: normalizeLayoutConfig(message.state?.layoutConfig, true), parcelConfig: normalizeParcelConfig(message.state?.parcelConfig) }; acceptApplied = false; }
-      applyButton.disabled = false;
+      // The child serializes applied state. Draft controls travel separately,
+      // so camera/style changes remain shareable while a draft is pending.
+      caseState = message.caseState;
+      if (acceptApplied || !latest || previousSource !== workshopSource) { const previousCitySettings = latest?.citySettings; latest = { ...message.state, ...plans[workshopSource], buildingState: mergeBuildingState(message.state?.buildingState, plans[workshopSource]?.buildingState), layoutConfig: normalizeLayoutConfig(message.state?.layoutConfig, true), parcelConfig: normalizeParcelConfig(message.state?.parcelConfig) }; const key = latest!.siteKey ?? (latest!.layouts?.length === 1 ? latest!.layouts[0].key : undefined); latest!.citySettings = { ...previousCitySettings, ...latest!.citySettings }; if (key) latest!.citySettings[key] = { layoutConfig: latest!.layoutConfig, parcelConfig: latest!.parcelConfig, quarterSeed: latest!.quarterSeed, parcelSeed: latest!.parcelSeed, building: latest!.buildingState && { seed: latest!.buildingState.seed, settings: latest!.buildingState.settings, generated: latest!.buildingState.generated ?? !!latest!.buildingState.scene } }; acceptApplied = false; }
+      else {
+        latest.style = message.state?.style ?? latest.style;
+        latest.view = message.state?.view ?? latest.view;
+        if (message.state?.buildingState) latest.buildingState = mergeBuildingState(message.state.buildingState, latest.buildingState);
+      }
+      applyButton.disabled = workshopSource !== 'map';
       if (draft) { latestDraft = draft; send({ type: 'sync-settings', state: draft }); }
       display(); options.onChange();
     }
-    if (message.type === 'generate') void generate(message).then(result => send({ type: 'result', id: message.id, result }), error => send({ type: 'result', id: message.id, error: String(error) }));
+    if (message.type === 'generate') void generate(message, (completed, total) => send({ type: 'progress', id: message.id, completed, total })).then(result => send({ type: 'result', id: message.id, result }), error => send({ type: 'result', id: message.id, error: String(error) }));
     if (message.type === 'copy') document.querySelector<HTMLButtonElement>('[data-recipe-export]')?.click();
   });
   display();
   return {
     openMap,
-    currentState: (): WorkshopState | undefined => latest ? { ...latest, ...latestDraft } : undefined,
-    draftSettings: () => latestDraft as Omit<WorkshopState, 'layouts' | 'partitions'> | undefined,
+    currentState: (): WorkshopState | undefined => latest,
+    currentSource: (): 'map' | 'fixture' => workshopSource,
+    currentContext: (): MapContext | undefined => appliedContext ?? retainedContext,
+    draftSettings: () => latestDraft && latest ? workshopSettings({ ...latest, ...latestDraft }) : latestDraft as Omit<WorkshopState, 'layouts' | 'partitions'> | undefined,
     applySettings(state: Partial<WorkshopState>): void {
       latestDraft = state;
       if (ready) send({ type: 'sync-settings', state });
@@ -206,11 +249,11 @@ function contextWater(context?: MapContext): Shape[] {
   return context?.raster.geometry?.water.map(rings => ({ outer: rings[0], holes: rings.slice(1) })) ?? [];
 }
 
-function fixtureTerrain(options: BenchOptions): { raster: SettlementRaster; water: Shape[]; contours: { x: number; y: number }[][] } {
-  const n = 256, width = 2000, height = createGrid(n, n, width / n), mask = new Uint8Array(n * n);
+function fixtureTerrain(options: BenchOptions, frame: ReturnType<typeof workshopFixtureFrame>): { raster: SettlementRaster; water: Shape[]; contours: { x: number; y: number }[][] } {
+  const n = 256, { width, center } = frame, height = createGrid(n, n, width / n), mask = new Uint8Array(n * n);
   height.data.fill(20);
   const world = { terrain: { height, slope: createGrid(n, n, width / n), water: mask, rivers: [] } } as unknown as World;
-  const r = options.radius, bounds = [{ x: 500 - r, y: 500 - r }, { x: 500 + r, y: 500 + r }];
+  const r = options.radius, bounds = [{ x: center.x - r, y: center.y - r }, { x: center.x + r, y: center.y + r }];
   const { contours } = applyBenchConstraints(world, bounds, options);
   const riverWidth = new Float32Array(n * n), riverIds = new Int32Array(n * n).fill(-1);
   for (let i = 0; i < mask.length; i++) if (mask[i]) { mask[i] = 3; riverWidth[i] = options.riverWidth ?? 14; riverIds[i] = 0; }
@@ -219,7 +262,8 @@ function fixtureTerrain(options: BenchOptions): { raster: SettlementRaster; wate
     const x = (b.y - a.y) / length * w, y = -(b.x - a.x) / length * w;
     return { outer: [{ x: a.x + x, y: a.y + y }, { x: b.x + x, y: b.y + y }, { x: b.x - x, y: b.y - y }, { x: a.x - x, y: a.y - y }], holes: [] };
   });
-  return { raster: { n, width, height: height.data, water: mask, waterLevel: height.data.slice(), riverWidth, riverIds }, water, contours };
+  const land = [[{ x: 0, y: 0 }, { x: width, y: 0 }, { x: width, y: width }, { x: 0, y: width }]];
+  return { raster: { n, width, height: height.data, water: mask, waterLevel: height.data.slice(), riverWidth, riverIds, geometry: { land, water: water.map(s => [s.outer, ...s.holes]) } }, water, contours };
 }
 function microLayouts(options: BenchOptions, seed: string): Layout[] {
   const fixture = benchLayout({ ...options, mode: 'micro', culture: 'european-organic', recipe: 'core', stages: {} }, seed);

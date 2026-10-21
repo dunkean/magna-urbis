@@ -2,7 +2,12 @@
 //! parameter application and deterministic partitioning execute only in Rust.
 //! Layouts are retained inputs to the parcel stage; this is not the future World model.
 mod access;
+pub mod building_sites;
 mod composition;
+pub mod culture;
+pub mod programme;
+pub use culture::{CultureMapping, UrbanAdmissibility};
+pub use programme::{ProgrammeContext, UrbanProgramme};
 mod footprint;
 mod fringe;
 mod geography;
@@ -70,6 +75,11 @@ pub struct Block {
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Layout {
+    /// Applied inputs travel with retained geometry into programme and buildings.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub config: Option<LayoutConfig>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub programme: Option<UrbanProgramme>,
     pub key: String,
     pub culture: String,
     pub center: Point,
@@ -148,6 +158,23 @@ pub struct GrowthPhase {
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Parcel {
+    #[serde(default)]
+    pub pressure: f64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub envelope: Option<Shape>,
+    #[serde(default)]
+    pub id: String,
+    #[serde(default)]
+    #[serde(rename = "parentIds", alias = "parent_ids")]
+    pub parent_ids: Vec<String>,
+    #[serde(default)]
+    pub provenance: Vec<String>,
+    #[serde(default)]
+    pub family: String,
+    #[serde(default)]
+    pub reason: String,
+    #[serde(default)]
+    pub contacts: Vec<ParcelContact>,
     pub shape: Shape,
     pub block: usize,
     #[serde(rename = "use")]
@@ -160,6 +187,16 @@ pub struct Parcel {
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct ParcelContact {
+    pub a: Point,
+    pub b: Point,
+    pub street: usize,
+    pub rank: usize,
+    pub length: f64,
+    pub kind: String,
+}
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ParcelAccess {
     pub kind: String,
     pub street: Option<usize>,
@@ -167,6 +204,10 @@ pub struct ParcelAccess {
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Partition {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub config: Option<ParcelConfig>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub programme: Option<UrbanProgramme>,
     pub key: String,
     pub parcels: Vec<Parcel>,
     pub warnings: Vec<String>,
@@ -248,6 +289,7 @@ pub struct Site {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase", deny_unknown_fields)]
 pub struct LayoutConfig {
+    pub programme: ProgrammeContext,
     #[serde(default = "culture_axis")]
     pub axis_alignment: String,
     #[serde(default)]
@@ -293,6 +335,7 @@ pub struct LayoutConfig {
 impl Default for LayoutConfig {
     fn default() -> Self {
         Self {
+            programme: ProgrammeContext::default(),
             footprint: FootprintConfig::default(),
             axis_alignment: "regional".into(),
             site_adaptation: 1.0,
@@ -797,6 +840,7 @@ pub fn generate_quarters(
         let mut layout = quarters::generate(&key_seed, site, config, &morph, surface, roads)?;
         access::refine(&mut layout, config, &morph, surface);
         access::summarize(&mut layout, config);
+        programme::prepare(&mut layout, site.population, &config.programme, surface)?;
         out.push(layout);
     }
     Ok(out)
@@ -810,6 +854,9 @@ pub fn generate_parcels(
         "culture",
         "strips",
         "oriented",
+        "compact",
+        "inherited",
+        "courtyard",
         "frontage",
         "compound",
         "wholeBlock",
@@ -840,7 +887,9 @@ pub fn generate_parcels(
             "parcels",
         )?;
         let key_seed = format!("{seed}\u{1}settlement:{}", layout.key);
-        out.push(parcels::generate(&key_seed, layout, config, &morph)?);
+        let mut partition = parcels::generate(&key_seed, layout, config, &morph)?;
+        programme::allocate(layout, &mut partition);
+        out.push(partition);
     }
     Ok(out)
 }

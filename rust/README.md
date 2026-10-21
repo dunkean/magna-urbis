@@ -1,6 +1,6 @@
 # Magna Urbis - Rust / WASM engine
 
-**Alpha, under development.** This experimental engine is gradually catching up with the TypeScript implementation. Relief, erosion, coasts, hydrology, regional roads, urban footprints, street fabrics, blocks and parcels are available in the benches. Full application integration and buildings on these native city layouts remain separate work.
+**Alpha, under development.** This experimental engine is gradually catching up with the TypeScript implementation. Relief, erosion, coasts, hydrology, regional roads, urban footprints, street fabrics, blocks, parcels and buildings are available in the benches. Full application integration remains separate work.
 
 The [main README](../README.md) introduces the project and shows screenshots of the TypeScript application. The long-term goal is integration into [Neural Earth](https://github.com/dunkean/neural-earth), developed in Infinite Map.
 
@@ -65,6 +65,16 @@ default in Settlements. Urban contains the quarter/parcel workshop only. The exi
 terrain import and territory occupation options live in Settlements. City transfers
 include a local relief/water/road crop; shared settings synchronize between live
 sessions, and returning restores the full regional map. See [the staged workflow and portable format](../docs/RUST_BENCH_PIPELINE.md).
+
+In Settlements and Urban, **Style d’agglomération** prepares cultural defaults,
+a dense walled/open core, a growing town or an open village. **Générer la ville
+complète** applies streets, parcels and buildings together. Changing the main
+culture resets stale overrides across these stages; population and seeds remain
+editable. Afterwards shape/growth, parcel density/operator and building culture
+can be changed independently. For example: a tentacular settlement, no suburbs,
+dense frontage parcels and Chinese buildings. Building dimensions can optionally
+fit the lot in inspired/fantasy mode; exact Houses models retain their own plan.
+See the bundled [style and propagation method](../docs/methods/urban-settlement-styles.md).
 
 `npm run build:benches` assembles the container and all benches in
 `rust/out/benches/index.html`. It uses the existing terrain and houses WASM

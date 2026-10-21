@@ -1,4 +1,4 @@
-import type { HouseBatch, HouseCatalogue, HouseUnit, HouseView, Surface, Point, Vertex3, HouseMaterial, MaterialPattern, Feature, Wall } from './houses';
+import type { HouseBatch, HouseCatalogue, HouseUnit, HouseView, Surface, Point, Vertex3, HouseMaterial, MaterialPattern, Feature, Wall, HouseExterior } from './houses';
 
 export const PAPER = '#f4efdf';
 const INK = '#393a31';
@@ -27,9 +27,17 @@ export function unitBounds(unit: HouseUnit): ReturnType<typeof bounds> {
   return bounds(points.map(point => rotate(point, unit)));
 }
 export function commonHouseExtent(units: HouseUnit[]): number { return Math.max(8, ...units.map(unit => { const b = unitBounds(unit); return Math.max(b.width, b.height); })) * 1.16; }
-function material(catalogue: HouseCatalogue, id: string): HouseMaterial | undefined { return catalogue.materials.find(m => m.id === id); }
-function paint(catalogue: HouseCatalogue, id: string, prefix: string): string { const pattern = material(catalogue, id)?.pattern ?? 'plain'; return `url(#${prefix}-mat-${pattern})`; }
-function patterns(prefix: string): string {
+export type HouseMaterialCatalogue = Pick<HouseCatalogue, 'materials'>;
+export type { HouseExterior } from './housesContract';
+export function houseMaterialColor(catalogue: HouseMaterialCatalogue, id: string): string { return MATERIAL_COLORS[material(catalogue, id)?.pattern ?? 'plain']; }
+const materialIndices = new WeakMap<HouseMaterial[], Map<string, HouseMaterial>>();
+function material(catalogue: HouseMaterialCatalogue, id: string): HouseMaterial | undefined {
+  let index=materialIndices.get(catalogue.materials);
+  if (!index) {index=new Map(catalogue.materials.map(m=>[m.id,m]));materialIndices.set(catalogue.materials,index);}
+  return index.get(id);
+}
+function paint(catalogue: HouseMaterialCatalogue, id: string, prefix: string): string { const pattern = material(catalogue, id)?.pattern ?? 'plain'; return `url(#${prefix}-mat-${pattern})`; }
+export function houseMaterialPatterns(prefix: string): string {
   const marks: Record<MaterialPattern, string> = {
     tile: '<path d="M0 .4H.8M.4 0V.4M0 .4V.8M.8 .4V.8"/>',
     thatch: '<path d="M.12 .08L.28 .7M.4 .05L.5 .62M.63 .12L.77 .78"/>',
@@ -43,7 +51,7 @@ function patterns(prefix: string): string {
 }
 function drawSurface(surface: Surface, attributes: string): string { return surface.length ? `<path d="${surfacePath(surface)}" fill-rule="evenodd" ${attributes}/>` : ''; }
 function title(text: string): string { return `<title>${xml(text)}</title>`; }
-function featureDraw(feature: Feature, catalogue: HouseCatalogue, prefix: string, context = false): string {
+function featureDraw(feature: Feature, catalogue: HouseMaterialCatalogue, prefix: string, context = false): string {
   const fill = feature.kind === 'courtyard' ? PAPER : feature.kind === 'water' || feature.kind === 'impluvium' ? '#bdd0ca' : feature.kind === 'street' ? '#dbd3bc' : feature.kind === 'excavation' || feature.kind === 'rock_shelter' || feature.kind === 'rock_face' ? '#b2ada1' : paint(catalogue, feature.material, prefix);
   let axis = '';
   const vertices = feature.vertices3d;
@@ -66,7 +74,7 @@ function center(surface: Surface): Point {
   return {x: b.x + b.width / 2, y: b.y + b.height / 2};
 }
 // Depth comes from the exported triangles; no roof shape is reconstructed.
-function roofHeightAt(unit: HouseUnit, point: Point): number {
+function roofHeightAt(unit: HouseExterior, point: Point): number {
   let height = 0;
   for (const face of unit.roofs.faces) {
     if (face.normal[2] <= 0) continue;
@@ -82,6 +90,47 @@ function roofHeightAt(unit: HouseUnit, point: Point): number {
   }
   return height;
 }
+export function renderHouseExteriorSvg(unit: HouseExterior, catalogue: HouseMaterialCatalogue, prefix: string, orientationDeg = 0, groundZ = 0): string {
+  let drawing = '';
+  drawing += unit.features.filter(f => !['roof_gable', 'roof_tympanum', 'stepped_gable', 'roof_riser', 'roof_pavilion', 'roof_drum', 'portal_lintel', 'floor_slab'].includes(f.kind)).map(feature => featureDraw(feature, catalogue, prefix)).join('');
+    const mesh = unit.roofs;
+    const groups = (mesh.groups?.length ? mesh.groups : [{id: 'exterior', rf: '', body_id: '', level: 0, domain: []}]).map(group => ({group, faces: mesh.faces.filter(face => (face.roof_group ?? 'exterior') === group.id && face.normal[2] >= 0)})).sort((a, b) => {
+      const z = (faces: typeof mesh.faces) => Math.max(0, ...faces.flatMap(face => face.vertices.map(index => mesh.vertices[index].z)));
+      return z(a.faces) - z(b.faces);
+    });
+    for (const {group, faces} of groups) {
+      const topZ = Math.max(0, ...faces.flatMap(face => face.vertices.map(index => mesh.vertices[index].z-groundZ)));
+    drawing += `<g>${title(`${group.rf} · ${group.body_id}`)}${drawSurface(group.domain, `fill="#343831" opacity=".12" transform="translate(${n(Math.min(0.7, topZ * 0.035))} ${n(Math.min(0.9, topZ * 0.05))})"`)}`;
+      const fills = new Map<string, string[]>(), shades = new Map<string, string[]>();
+      for (const face of faces.sort((a, b) => a.vertices.reduce((sum, index) => sum + mesh.vertices[index].z, 0) / a.vertices.length - b.vertices.reduce((sum, index) => sum + mesh.vertices[index].z, 0) / b.vertices.length)) {
+        const points = face.vertices.map(index => mesh.vertices[index]);
+        const angle = orientationDeg * Math.PI / 180, [nx, ny, nz] = face.normal;
+        const rx = nx * Math.cos(angle) - ny * Math.sin(angle), ry = nx * Math.sin(angle) + ny * Math.cos(angle);
+        const darkness = Math.max(0, Math.min(0.3, 0.16 - 0.18 * (-rx * 0.48 - ry * 0.64 + nz * 0.6)));
+        const path = `M${points.map(point => `${n(point.x)},${n(point.y)}`).join('L')}Z`;
+        const fill = paint(catalogue, face.material, prefix), shade = n(darkness);
+        if (!fills.has(fill)) fills.set(fill, []);
+        fills.get(fill)!.push(path);
+        if (darkness > 0) { if (!shades.has(shade)) shades.set(shade, []); shades.get(shade)!.push(path); }
+      }
+      // A compound path keeps the native triangles and holes while avoiding
+      // antialias gaps along their shared edges. Only mesh.edges draws seams.
+      for (const [fill, paths] of fills) drawing += `<path d="${paths.join('')}" fill="${fill}"/>`;
+      for (const [shade, paths] of shades) drawing += `<path d="${paths.join('')}" fill="#29332d" opacity="${shade}"/>`;
+      for (const edge of mesh.edges ?? []) {
+        const related = edge.faces.filter((index): index is number => index !== null).map(index => mesh.faces[index]);
+        if (!related.some(face => (face.roof_group ?? 'exterior') === group.id && face.normal[2] >= 0)) continue;
+        const samePatch = related.length === 2 && related.every(face => (face.roof_group ?? 'exterior') === group.id && face.material === related[0].material && face.kind === related[0].kind);
+        const smoothCurve = CURVED_RF.includes(group.rf) && (edge.kind === 'crease' || edge.kind === 'hip') && samePatch && related[0].normal.reduce((dot, value, index) => dot + value * related[1].normal[index], 0) > 0.94;
+        const a = mesh.vertices[edge.vertices[0]], b = mesh.vertices[edge.vertices[1]];
+      drawing += `<path d="M${n(a.x)},${n(a.y)}L${n(b.x)},${n(b.y)}" fill="none" stroke="${edge.kind === 'valley' ? '#736e53' : INK}" stroke-width="${smoothCurve ? '.18' : edge.kind === 'ridge' ? '1.05' : edge.kind === 'eave' || edge.kind === 'verge' ? '.85' : '.65'}" opacity="${smoothCurve ? '.18' : '1'}" ${edge.kind === 'junction' ? 'stroke-dasharray="2 2"' : ''} vector-effect="non-scaling-stroke"/>`;
+      }
+    drawing += '</g>';
+    }
+  drawing += unit.features.filter(feature => (feature.kind === 'flue' || feature.kind === 'windcatcher') && feature.z_m + feature.height_m > roofHeightAt(unit, center(feature.surface)) + 0.01).map(feature => featureDraw(feature, catalogue, prefix)).join('');
+  return drawing;
+}
+
 export interface RenderOptions { width?: number; height?: number; extent?: number; prefix?: string; zoom?: number; pan?: Point; title?: boolean }
 export function renderHouseSvg(unit: HouseUnit, catalogue: HouseCatalogue, view: HouseView, options: RenderOptions = {}): string {
   const width = options.width ?? 340, height = options.height ?? 286;
@@ -128,42 +177,7 @@ export function renderHouseSvg(unit: HouseUnit, catalogue: HouseCatalogue, view:
   } else {
     drawing += unit.walls.filter(wall => !wall.solid && (wall.kind === 'enclosure' || wall.kind === 'retaining')).map(wall => drawSurface(wall.footprint, `fill="${paint(catalogue, wall.material, prefix)}" stroke="${INK}" stroke-width=".65" vector-effect="non-scaling-stroke"`)).join('');
     drawing += unit.walls.map(wall => wallSolidDraw(wall, catalogue, prefix)).join('');
-    drawing += unit.features.filter(f => !rawWallMarker(f) && !['roof_gable', 'roof_tympanum', 'stepped_gable', 'roof_riser', 'roof_pavilion', 'roof_drum', 'portal_lintel', 'floor_slab'].includes(f.kind)).map(feature => featureDraw(feature, catalogue, prefix)).join('');
-    const mesh = unit.roofs;
-    const groups = mesh.groups.map(group => ({group, faces: mesh.faces.filter(face => face.roof_group === group.id && face.normal[2] >= 0)})).sort((a, b) => {
-      const z = (faces: typeof mesh.faces) => Math.max(0, ...faces.flatMap(face => face.vertices.map(index => mesh.vertices[index].z)));
-      return z(a.faces) - z(b.faces);
-    });
-    for (const {group, faces} of groups) {
-      const topZ = Math.max(0, ...faces.flatMap(face => face.vertices.map(index => mesh.vertices[index].z)));
-      drawing += `<g>${title(`${group.rf} · ${group.body_id}`)}${drawSurface(group.domain, `fill="#343831" opacity=".12" transform="translate(${n(Math.min(0.7, topZ * 0.035))} ${n(Math.min(0.9, topZ * 0.05))})"`)}`;
-      const fills = new Map<string, string[]>(), shades = new Map<string, string[]>();
-      for (const face of faces.sort((a, b) => a.vertices.reduce((sum, index) => sum + mesh.vertices[index].z, 0) / a.vertices.length - b.vertices.reduce((sum, index) => sum + mesh.vertices[index].z, 0) / b.vertices.length)) {
-        const points = face.vertices.map(index => mesh.vertices[index]);
-        const angle = unit.transform.orientation_deg * Math.PI / 180, [nx, ny, nz] = face.normal;
-        const rx = nx * Math.cos(angle) - ny * Math.sin(angle), ry = nx * Math.sin(angle) + ny * Math.cos(angle);
-        const darkness = Math.max(0, Math.min(0.3, 0.16 - 0.18 * (-rx * 0.48 - ry * 0.64 + nz * 0.6)));
-        const path = `M${points.map(point => `${n(point.x)},${n(point.y)}`).join('L')}Z`;
-        const fill = paint(catalogue, face.material, prefix), shade = n(darkness);
-        if (!fills.has(fill)) fills.set(fill, []);
-        fills.get(fill)!.push(path);
-        if (darkness > 0) { if (!shades.has(shade)) shades.set(shade, []); shades.get(shade)!.push(path); }
-      }
-      // A compound path keeps the native triangles and holes while avoiding
-      // antialias gaps along their shared edges. Only mesh.edges draws seams.
-      for (const [fill, paths] of fills) drawing += `<path d="${paths.join('')}" fill="${fill}"/>`;
-      for (const [shade, paths] of shades) drawing += `<path d="${paths.join('')}" fill="#29332d" opacity="${shade}"/>`;
-      for (const edge of mesh.edges) {
-        const related = edge.faces.filter((index): index is number => index !== null).map(index => mesh.faces[index]);
-        if (!related.some(face => face.roof_group === group.id && face.normal[2] >= 0)) continue;
-        const samePatch = related.length === 2 && related.every(face => face.roof_group === group.id && face.material === related[0].material && face.kind === related[0].kind);
-        const smoothCurve = CURVED_RF.includes(group.rf) && (edge.kind === 'crease' || edge.kind === 'hip') && samePatch && related[0].normal.reduce((dot, value, index) => dot + value * related[1].normal[index], 0) > 0.94;
-        const a = mesh.vertices[edge.vertices[0]], b = mesh.vertices[edge.vertices[1]];
-        drawing += `<path d="M${n(a.x)},${n(a.y)}L${n(b.x)},${n(b.y)}" fill="none" stroke="${edge.kind === 'valley' ? '#736e53' : INK}" stroke-width="${smoothCurve ? '.18' : edge.kind === 'ridge' ? '1.05' : edge.kind === 'eave' || edge.kind === 'verge' ? '.85' : '.65'}" opacity="${smoothCurve ? '.18' : '1'}" ${edge.kind === 'junction' ? 'stroke-dasharray="2 2"' : ''} vector-effect="non-scaling-stroke"/>`;
-      }
-      drawing += '</g>';
-    }
-    drawing += unit.features.filter(feature => (feature.kind === 'flue' || feature.kind === 'windcatcher') && feature.z_m + feature.height_m > roofHeightAt(unit, center(feature.surface)) + 0.01).map(feature => featureDraw(feature, catalogue, prefix)).join('');
+    drawing += renderHouseExteriorSvg({roofs: unit.roofs, features: unit.features.filter(f => !rawWallMarker(f))}, catalogue, prefix, unit.transform.orientation_deg);
   }
   if (view.graph) {
     const centers = new Map(unit.access.nodes.map(node => [node.id, center(node.floor)]));
@@ -186,7 +200,7 @@ export function renderHouseSvg(unit: HouseUnit, catalogue: HouseCatalogue, view:
   const barWidth = barMeters * scale;
   const measured = bounds(surfacePoints(unit.partition.occupied.length ? unit.partition.occupied : unit.lot).map(point => rotate(point, unit)));
   const dimensions = view.dimensions ? `<text x="${width - 12}" y="${height - 10}" text-anchor="end" font-size="10" stroke="none">${unit.partition.occupied.length ? 'Emprise' : 'Parcelle'} ${n(measured.width)} × ${n(measured.height)} m</text>` : '';
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" role="img" aria-label="${xml(unit.label)}"><title>${xml(unit.label)} — ${view.mode === 'roof' ? 'toitures' : `plan niveau ${view.level}`}</title><defs>${patterns(prefix)}${roomStrokeMask}<clipPath id="${prefix}-map-clip"><rect x="8" y="8" width="${width - 16}" height="${height - 38}"/></clipPath></defs><rect width="100%" height="100%" fill="${PAPER}"/><g clip-path="url(#${prefix}-map-clip)"><g transform="${transform}">${drawing}</g></g><g fill="${INK}" stroke="${INK}" font-family="sans-serif"><path d="M15 ${height - 19}v-4M15 ${height - 21}h${n(barWidth)}M${n(15 + barWidth)} ${height - 19}v-4" fill="none" stroke-width="1"/><text x="15" y="${height - 6}" font-size="10" stroke="none">${n(barMeters)} m</text><path d="M${width - 19} 31V15m-3 5 3-5 3 5" fill="none" stroke-width="1"/><text x="${width - 19}" y="12" text-anchor="middle" font-size="9" stroke="none">N</text>${dimensions}</g></svg>`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" role="img" aria-label="${xml(unit.label)}"><title>${xml(unit.label)} — ${view.mode === 'roof' ? 'toitures' : `plan niveau ${view.level}`}</title><defs>${houseMaterialPatterns(prefix)}${roomStrokeMask}<clipPath id="${prefix}-map-clip"><rect x="8" y="8" width="${width - 16}" height="${height - 38}"/></clipPath></defs><rect width="100%" height="100%" fill="${PAPER}"/><g clip-path="url(#${prefix}-map-clip)"><g transform="${transform}">${drawing}</g></g><g fill="${INK}" stroke="${INK}" font-family="sans-serif"><path d="M15 ${height - 19}v-4M15 ${height - 21}h${n(barWidth)}M${n(15 + barWidth)} ${height - 19}v-4" fill="none" stroke-width="1"/><text x="15" y="${height - 6}" font-size="10" stroke="none">${n(barMeters)} m</text><path d="M${width - 19} 31V15m-3 5 3-5 3 5" fill="none" stroke-width="1"/><text x="${width - 19}" y="12" text-anchor="middle" font-size="9" stroke="none">N</text>${dimensions}</g></svg>`;
 }
 export function renderHouseSheet(batch: HouseBatch, catalogue: HouseCatalogue, view: HouseView): string {
   const columns = Math.min(5, batch.units.length), cellWidth = 340, cellHeight = 340, rows = Math.ceil(batch.units.length / columns);

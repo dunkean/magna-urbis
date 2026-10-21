@@ -54,6 +54,52 @@ impl SettlementTerrain {
             .map_err(|e| JsValue::from_str(&e))?;
         serde_json::to_string(&output).map_err(decode_error)
     }
+    /// Reconcile only allocation on retained blocks and parcels.
+    pub fn urban_programme(&self, layouts: &str, partitions: &str) -> Result<String, JsValue> {
+        let decode = |e: serde_json::Error| JsValue::from_str(&e.to_string());
+        let layouts: Vec<magna_urbis_core::urban::Layout> =
+            serde_json::from_str(layouts).map_err(decode)?;
+        let partitions: Vec<magna_urbis_core::urban::Partition> =
+            serde_json::from_str(partitions).map_err(decode)?;
+        let result = magna_urbis_core::urban::programme::reallocate(&layouts, &partitions)
+            .map_err(|e| JsValue::from_str(&e))?;
+        serde_json::to_string(&result).map_err(decode)
+    }
+    pub fn urban_building_sites(
+        &self,
+        seed: &str,
+        layouts: &str,
+        partitions: &str,
+        architecture_culture: Option<String>,
+    ) -> Result<String, JsValue> {
+        let decode = |e: serde_json::Error| JsValue::from_str(&e.to_string());
+        let layouts = serde_json::from_str::<Vec<magna_urbis_core::urban::Layout>>(layouts)
+            .map_err(decode)?;
+        let partitions =
+            serde_json::from_str::<Vec<magna_urbis_core::urban::Partition>>(partitions)
+                .map_err(decode)?;
+        let result = self
+            .inner
+            .urban_building_sites_with_culture(
+                seed,
+                &layouts,
+                &partitions,
+                architecture_culture.as_deref(),
+            )
+            .map_err(|e| JsValue::from_str(&e))?;
+        serde_json::to_string(&result).map_err(decode)
+    }
+    pub fn urban_built_capacity(&self, partitions: &str, scene: &str) -> Result<String, JsValue> {
+        let decode = |e: serde_json::Error| JsValue::from_str(&e.to_string());
+        let partitions =
+            serde_json::from_str::<Vec<magna_urbis_core::urban::Partition>>(partitions)
+                .map_err(decode)?;
+        let scene = serde_json::from_str::<magna_urbis_core::urban::programme::BuiltScene>(scene)
+            .map_err(decode)?;
+        let result = magna_urbis_core::urban::programme::reconcile_built(&partitions, &scene)
+            .map_err(|e| JsValue::from_str(&e))?;
+        serde_json::to_string(&result).map_err(decode)
+    }
     #[wasm_bindgen(constructor)]
     #[allow(clippy::too_many_arguments)]
     pub fn new(
