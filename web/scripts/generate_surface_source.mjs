@@ -14,6 +14,8 @@ import { finished } from 'node:stream/promises';
 import { decodeSurfaceBinary, encodeSurfaceBinary } from '../src/surface/binary.ts';
 import { compileSurfaceWorld } from '../src/surface/compiler.ts';
 import { hashString } from '../src/surface/model.ts';
+import { registrationFieldFingerprint } from '../src/surface/registrationBinding.ts';
+import { verifyMotionLiveDisplay } from './surface_navigation_evidence.ts';
 
 const args = process.argv.slice(2);
 const option = (name, fallback) => {
@@ -145,11 +147,22 @@ async function runNativeTour(sessionId) {
     sourceEpochs:[...new Set(packets.map(e=>e.sourceEpoch))],parentReconstructions:[...new Set(packets.map(e=>e.packet?.boundary?.parentReconstruction).filter(Boolean))]};
   const captures=events.filter(e=>e.event==='capture'),near=captures.find(e=>e.widthM===10);
   if(captures.length!==7||captures.some((e,i)=>e.widthM!==widths[i]||e.error!==0))throw new Error('Native tour did not record seven successful new captures in the required scale order');
+  const nativeAccepted=report.viewer.metrics.liveAcceptance??[],nativeRendered=report.viewer.metrics.renderEvents??[];
+  for(const capture of captures){
+    const display=capture.renderedSnapshot;
+    if(!display?.source?.sourceLODKnown||!nativeAccepted.some(e=>e.worldId===display.worldId&&e.requestSerial===display.liveSerial&&e.sourceEpoch===display.sourceEpoch&&e.sceneEpoch===display.sceneEpoch)
+      ||!nativeRendered.some(e=>e.worldId===display.worldId&&e.liveSerial===display.liveSerial&&e.appliedTickMs===display.appliedTickMs)
+      ||!packets.some(e=>e.packet?.worldId===display.worldId))throw new Error(`Native ${capture.widthM}m capture was not linked to a displayed live source packet`);
+  }
+  const loadedBinding=report.viewer.metrics.loadedLiveBinding;
+  if(loadedBinding?.fingerprint!==report.source.canonicalFieldFingerprint||loadedBinding.n!==report.source.grid.width
+    ||loadedBinding.widthM!==width||loadedBinding.error)throw new Error('Native loaded-world binding did not match the exported height content');
   report.viewer.nearMetresPerPixel=near?.metresPerPixel??10/Number(report.viewer.metrics.resolution?.[0]);
   if(nativeErrors.length)throw new Error('Native renderer or live transport reported errors; see native-tour/stderr.log and report.viewer.errors');
   if(requests.length<7||packets.length<7||report.viewer.endToEnd.acceptedBinaryReplies<7||!tiles.some(e=>e.meta?.decoderUsed===true))throw new Error('Native tour did not prove all seven levels through broker, browser worker and decoder-backed Python source');
   if(packets.some(e=>e.packet?.source.registrationBinding?.expectedSourceId!==e.packet?.terrain.source.id)||new Set(packets.map(e=>e.sourceEpoch)).size!==1
     ||new Set(packets.map(e=>e.environmentVersion)).size!==1||packets.some(e=>e.canonicalBuildCount!==1))throw new Error('Native live tour changed source lineage or recompiled camera-dependent canonical context');
+  if(packets.some(e=>e.packet?.source.registrationBinding?.canonicalFieldFingerprint!==report.source.canonicalFieldFingerprint))throw new Error('Native source registration differs from the exact loaded export heightfield');
   if(!report.viewer.metrics.source?.sourceLODKnown)throw new Error('Final native terrain still has unknown sourceLOD; a live patch was not applied');
   if(geologyScenario&&packets.some(e=>JSON.stringify(e.packet?.geologyScenario)!==JSON.stringify(report.source.geologyScenario)))throw new Error('Native zoom changed or lost the explicit fixed geological scenario descriptor');
   if(!(report.viewer.nearMetresPerPixel<=.005))throw new Error(`10m native capture did not reach 5mm/pixel: ${report.viewer.nearMetresPerPixel}`);
@@ -181,6 +194,8 @@ async function runNativeNavigation(sessionId) {
   phase.elapsedMs=Date.now()-began-phase.startedElapsedMs;
   if(existsSync(paths.report))phase.result=JSON.parse(await readFile(paths.report,'utf8'));
   if(existsSync(paths.metrics))phase.metrics=JSON.parse(await readFile(paths.metrics,'utf8'));
+  try{phase.displayEvidence=verifyMotionLiveDisplay(phase.result,phase.metrics);}catch(error){phase.displayEvidenceFailure=String(error);}
+  if(phase.metrics.loadedLiveBinding?.fingerprint!==report.source.canonicalFieldFingerprint||phase.metrics.loadedLiveBinding?.error)throw new Error('Native navigation loaded a different source heightfield');
   const relevant=browserEvents.filter(e=>e.elapsedMs>=phase.startedElapsedMs),packets=relevant.filter(e=>e.kind==='worker-compiled');
   phase.workerPackets=packets.length;phase.environmentVersions=[...new Set(packets.map(e=>e.environmentVersion))];
   phase.canonicalBuildCounts=[...new Set(packets.map(e=>e.canonicalBuildCount))];
@@ -192,8 +207,9 @@ async function runNativeNavigation(sessionId) {
   phase.workerErrors=relevant.filter(e=>e.kind==='worker-error'&&e.error?.name!=='AbortError'||e.kind==='worker-proof-error');
   await save();
   if(phase.timedOut||phase.code!==0||phase.result?.status!=='complete'||!phase.result?.sourceReplacedWhileMoving
-    ||logs.some(log=>/(?:SCRIPT|SHADER) ERROR|ERROR:/.test(log))||unavailable.some(line=>!/HTTP (409|499)\b/.test(line))||phase.workerErrors.length)throw new Error('Continuous native navigation did not make verified live progress while input continued; see native-navigation reports/logs');
+    ||phase.displayEvidenceFailure||logs.some(log=>/(?:SCRIPT|SHADER) ERROR|ERROR:/.test(log))||unavailable.some(line=>!/HTTP (409|499)\b/.test(line))||phase.workerErrors.length)throw new Error(`Continuous native navigation did not display verified live source during input: ${phase.displayEvidenceFailure??'see native-navigation reports/logs'}`);
   if(!packets.length||phase.environmentVersions.length!==1||packets.some(e=>e.canonicalBuildCount!==1)
+    ||packets.some(e=>e.packet?.source.registrationBinding?.canonicalFieldFingerprint!==report.source.canonicalFieldFingerprint)
     ||phase.environmentVersions[0]!==report.viewer.endToEnd.environmentVersions[0]
     ||geologyScenario&&packets.some(e=>JSON.stringify(e.packet?.geologyScenario)!==JSON.stringify(report.source.geologyScenario))
     ||network.some(e=>e.elapsedMs>=phase.startedElapsedMs&&e.url?.includes('/generate?')))throw new Error('Continuous native navigation changed canonical context or regenerated source');
@@ -361,12 +377,19 @@ try {
   const retainedWidth = packet.source.meta.width, sourceQuery = new URLSearchParams(packet.source.meta.query);
   if (retainedWidth !== width || packet.source.meta.seed !== seed || sourceQuery.get('source') !== 'neural-python') throw new Error('Exported source provenance does not match the requested fresh source');
   if(geologyScenario&&(sourceQuery.get('surface_geology')!==geologyScenario||packet.world.geology?.scenario?.id!==geologyScenario))throw new Error('Export lost or did not compile the explicitly requested geological scenario');
+  const exportedTerrain=packet.world.terrain;
+  if(exportedTerrain.width!==exportedTerrain.height||Math.abs(exportedTerrain.originX-exportedTerrain.spacingM/2)>1e-6||Math.abs(exportedTerrain.originZ-exportedTerrain.spacingM/2)>1e-6)throw new Error('Fresh E2E requires the full uncropped source frame');
+  const canonicalFieldFingerprint=registrationFieldFingerprint({width:exportedTerrain.spacingM*exportedTerrain.width,n:exportedTerrain.width,data:exportedTerrain.heights});
+  const retainedField=packet.source.retainedField;
+  if(retainedField?.format!=='surface-retained-field'||retainedField.version!==1||retainedField.fingerprint!==canonicalFieldFingerprint
+    ||retainedField.n!==exportedTerrain.width||retainedField.widthM!==width||packet.source.frame?.liveCompatible===false)throw new Error('Exported retained-field metadata or live frame did not match actual full-world height samples');
   let min = Infinity, max = -Infinity;
   for (const h of packet.world.terrain.heights) { if (!Number.isFinite(h)) throw new Error('Non-finite fresh source height'); min = Math.min(min, h); max = Math.max(max, h); }
   report.source = { id: packet.source.meta.id, created: packet.source.meta.created, query: packet.source.meta.query, bytes: sourceBytes.length,
     grid: { width: packet.world.terrain.width, height: packet.world.terrain.height, spacingM: packet.world.terrain.spacingM },
     sourceIdentity: packet.world.terrain.source, heightRangeM: { min, max }, diagnostics: packet.world.diagnostics,
-    climate: packet.world.climate,geologyScenario:packet.world.geology?.scenario, buildings: packet.urban?.buildings?.length ?? packet.urban?.buildingCount ?? 0 };
+    climate: packet.world.climate,canonicalFieldFingerprint,retainedField,frame:packet.source.frame,urbanId:packet.urbanId,
+    geologyScenario:packet.world.geology?.scenario, buildings: packet.urban?.buildings?.length ?? packet.urban?.buildingCount ?? 0 };
   report.status = 'source-exported'; await save();
   if (args.includes('--native-packet')) {
     if (!report.neuralOutput) throw new Error('Cannot export a native packet without the actual captured neural response');

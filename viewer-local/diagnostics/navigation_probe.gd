@@ -3,6 +3,7 @@ extends SceneTree
 # External continuous-input benchmark. Production main.gd is loaded unchanged.
 # Do not pass --frames/--tour: those intentionally suppress interactive input.
 var viewer: Node
+const Evidence = preload("res://diagnostics/navigation_evidence.gd")
 
 func _initialize() -> void:
 	call_deferred("run")
@@ -17,15 +18,19 @@ func options() -> Dictionary:
 func ready_for_input(require_live: bool) -> bool:
 	if viewer.get("terrain")==null or viewer.get("worker")!=null or viewer.get("packet_worker")!=null or bool(viewer.get("view_dirty")): return false
 	if require_live:
-		return not bool(viewer.get("live_busy")) and int(viewer.get("last_live_applied_serial"))==int(viewer.get("live_serial"))
+		var world: Dictionary = viewer.get("world")
+		return not bool(viewer.get("live_busy")) and int(viewer.get("last_live_applied_serial"))==int(viewer.get("live_serial")) and int(viewer.get("rendered_live_serial"))==int(viewer.get("live_serial")) and str(viewer.get("rendered_world_id"))==str(world.get("id",""))
 	return true
 
 func snapshot(elapsed: float) -> Dictionary:
 	var world: Dictionary = viewer.get("world")
 	var focus: Dictionary = viewer.get("focus")
+	var rendered: Dictionary = viewer.get("rendered_snapshot")
+	var discarded: Dictionary = viewer.get("discarded_preparations")
 	return {"elapsedSeconds":elapsed,"focus":focus.duplicate(),"widthM":float(viewer.get("width_m")),
 		"appliedGeneration":int(viewer.get("applied_generation")),"requestedGeneration":int(viewer.get("generation")),
 		"worldId":str(world.get("id","")),"source":world.get("terrain",{}).get("source",{}),
+		"rendered":rendered.duplicate(true),"discardedPreparations":discarded.duplicate(),
 		"liveSerial":int(viewer.get("live_serial")),"liveAppliedSerial":int(viewer.get("last_live_applied_serial")),
 		"liveBusy":bool(viewer.get("live_busy")),"geometryBusy":viewer.get("worker")!=null}
 
@@ -49,12 +54,14 @@ func run() -> void:
 	while not ready_for_input(require_live) and Time.get_ticks_msec()-began<180000:
 		await process_frame
 	if not ready_for_input(require_live): push_error("Navigation source did not reach initial applied ready state");quit(1);return
-	var report := {"format":"magna-native-navigation-proof","version":1,"profile":"zoom-pan-v1","continuousSeconds":duration,
+	var report := {"format":"magna-native-navigation-proof","version":2,"profile":"zoom-pan-v1","continuousSeconds":duration,
 		"warmupSeconds":(Time.get_ticks_msec()-began)/1000.0,"live":require_live,"inputHzRequested":20.0,
 		"initial":snapshot(0.0),"motionApplications":[],"inputSamples":[],"sourceReplacedWhileMoving":false,
 		"scope":"Real Input.parse_input_event wheel and held-left pan against the unmodified native scene; no FPS target is assumed."}
 	button(MOUSE_BUTTON_LEFT,true)
 	var motion_began := Time.get_ticks_msec();var next_input := 0.0
+	report.motionStartTickMs=motion_began
+	var initial_rendered_serial := int(viewer.get("rendered_live_serial"))
 	var minimum_width := float(viewer.get("width_m"));var maximum_pan_offset := 0.0
 	var last_generation := int(viewer.get("applied_generation"));var last_live := int(viewer.get("last_live_applied_serial"))
 	var last_apply := 0.0;var longest_gap := 0.0;var live_applies := 0
@@ -85,19 +92,33 @@ func run() -> void:
 			report.inputSamples.append({"elapsedSeconds":elapsed,"targetWidthM":target,"widthBeforeInputM":width,"wheel":wheel})
 		await process_frame
 	button(MOUSE_BUTTON_LEFT,false)
+	report.motionEndTickMs=mini(Time.get_ticks_msec(),motion_began+roundi(duration*1000.0))
+	report.motionActualWallSeconds=(Time.get_ticks_msec()-motion_began)/1000.0
+	var previous_input := 0.0;var input_max_gap := 0.0
+	for sample in report.inputSamples:
+		input_max_gap=maxf(input_max_gap,float(sample.elapsedSeconds)-previous_input);previous_input=float(sample.elapsedSeconds)
+	report.maximumInputGapSeconds=maxf(input_max_gap,duration-previous_input)
 	longest_gap=maxf(longest_gap,duration-last_apply)
 	report.motionApplicationCount=report.motionApplications.size();report.motionLiveApplicationCount=live_applies
 	report.longestMotionApplicationGapSeconds=longest_gap
-	report.sourceReplacedWhileMoving=live_applies>0
 	report.motionEnd=snapshot(duration)
 	report.minimumObservedWidthM=minimum_width;report.maximumObservedPanOffsetM=maximum_pan_offset
 	var drain_began := Time.get_ticks_msec()
+	await process_frame
 	while not ready_for_input(require_live) and Time.get_ticks_msec()-drain_began<120000:
 		await process_frame
 	report.drainSeconds=(Time.get_ticks_msec()-drain_began)/1000.0
 	report.finalReady=ready_for_input(require_live);report.final=snapshot(duration+report.drainSeconds)
+	var render_events: Array = viewer.get("render_events")
+	var accepted: Array = viewer.get("live_acceptance_events")
+	report.liveAcceptance=accepted.duplicate(true)
+	report.motionDisplayEvents=render_events.filter(func(event): return int(event.get("appliedTickMs",-1))>motion_began and int(event.get("appliedTickMs",-1))<=int(report.motionEndTickMs)).duplicate(true)
+	report.motionLiveDisplays=Evidence.qualifying_live_displays(report.motionDisplayEvents,accepted,motion_began,int(report.motionEndTickMs),initial_rendered_serial)
+	report.motionLiveDisplayCount=report.motionLiveDisplays.size()
+	report.sourceReplacedWhileMoving=report.motionLiveDisplayCount>0
+	report.discardedPreparations=viewer.get("discarded_preparations").duplicate()
 	report.status="complete" if bool(report.finalReady) and int(report.motionApplicationCount)>0 else "failed"
-	if require_live and live_applies==0: report.status="failed"
+	if require_live and report.motionLiveDisplayCount==0: report.status="failed"
 	if minimum_width>20.0 or maximum_pan_offset<=0.001: report.status="failed"
 	viewer.call("_write_metrics")
 	var path: String = str(args.get("--navigation-report","res://captures/navigation-report.json"))
@@ -106,5 +127,5 @@ func run() -> void:
 	if file==null: push_error("Cannot write navigation report");quit(1);return
 	file.store_string(JSON.stringify(report,"  "));file=null
 	print(JSON.stringify({"event":"navigation-proof","path":absolute,"status":report.status,
-		"motionApplicationCount":report.motionApplicationCount,"motionLiveApplicationCount":live_applies,"longestGapSeconds":longest_gap}))
+		"motionApplicationCount":report.motionApplicationCount,"motionLiveApplicationCount":live_applies,"motionLiveDisplayCount":report.motionLiveDisplayCount,"longestGapSeconds":longest_gap}))
 	quit(0 if report.status=="complete" else 1)

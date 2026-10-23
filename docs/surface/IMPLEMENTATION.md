@@ -2,8 +2,8 @@
 
 État documentaire du 23 octobre 2026, code intégré jusqu'à `7acaf90`. Le détail
 géométrique, le scénario géologique, les styles et l'hydrologie fixe sont raccordés.
-**La phase 6 et la campagne E2E finale ne sont pas
-déclarées terminées.** Les rapports de revue initiaux sont conservés sans modifier
+**La phase 6 n'est pas acceptée et la
+campagne E2E finale reste à réussir.** Les rapports de revue initiaux sont conservés sans modifier
 leur verdict. Ce document distingue le code disponible, les preuves exécutées et
 les qualifications qui restent à faire.
 
@@ -167,10 +167,27 @@ elles ne réécrivent pas un verdict en acceptation finale.
 | [Phase4](reviews/phase04.md) | Moyenne d'albédo fausse, doublecompte canopy/instances, noyau de hauteur incorrect ; normales et dérivées shader. | Textures/mips linéaires, normalisation centrée bornée, recette liée au catalogue, probes GPU de moyenne/normales ; atlas des vraies couronnes et résidu de transmittance commun aux instances ; contrôles B-spline exacts, parents et raccords de source, géométrie native bornée. Les probes isolés ne certifient pas encore la tournée complète ni les ombres en mouvement. |
 | [Phase5](reviews/phase05.md) | Ville/candidats dans un manifesteJSON trop gros ; schémas divergents ; cache détruit au superseding ; liaison source forcée vraie ; éditions et exportUI synchrones. | Colonnes candidates/urbaines, builder commun, handshake scène/contexte, coalescence durable, fingerprint exact des contrôles enregistrés et régions strictes, epochs scène/source, worker d'export annulable. Bornes mémoire harmonisées, métadonnées/packets validés, même origine pour eau/ville. Tests burst, vraie ville500 bâtiments et requêtesHTTP ont été exécutés séparément. La tournée native complète reste à exécuter. |
 
-Les chiffres historiques de remplacement de région de65–172 ms expliquent pourquoi
+Les chiffres historiques de remplacement de région de 65–172 ms expliquent pourquoi
 un affichage chaud proche de16,7 ms ne peut pas être présenté comme60 FPS durant les
 mises à jour. Le code réduit les travaux sur le thread de frame ; son coût actuel
 doit être mesuré après intégration, pendant une navigation continue.
+
+La revue 6 statique ultérieure a conservé **CHANGES REQUIRED**. Le premier vrai
+E2E 40 km a échoué avant sa première réponse native : réponse HTTP sans longueur
+explicite au-delà du chunk 16 MiB accepté par Godot, et upload navigateur observé
+par CDP trop volumineux pour une chaîne V8. Le parent et l'erreur ont été conservés,
+sans succès de repli revendiqué. Les corrections de transport emploient une
+longueur de réponse et une transaction de chunks 4 MiB acquittés. Les 4 tests client
+et un vrai transfert Playwright/HTTP1 de 96 MiB en 24 chunks sont passés : SHA256 exact,
+corps CDP maximal 4 MiB, 4,10 s sur ce probe. Ce sont des preuves de transport, pas
+une nouvelle qualification du renderer ou du générateur.
+
+Les autres corrections demandées par cette revue concernent la preuve d'affichage
+live pendant le mouvement, la liaison au contenu exact du monde chargé et le
+repère des exports crop. Le benchmark demande maintenant une application réelle
+`terrain-replaced` pendant les entrées, liée par worldId/serial/epochs à une
+acceptation fraîche, avec sourceLOD connu ; un paquet seulement accepté ne suffit
+plus. Une nouvelle campagne complète doit suivre l'intégration et le nouveau gel.
 
 ## Registre des preuves exécutées
 
@@ -213,7 +230,7 @@ le téléchargement est une préparation hors boucle de rendu. Les probes GPU du
 [README natif](../../viewer-local/README.md) se lancent avec le backend indiqué
 dans leur rapport ; `canopy_probe.gd` requiert un vrai renderer, sans `--headless`.
 
-La campagne fraîche finale ci-dessous est **préparée, pas déclarée exécutée**.
+La réexécution corrigée ci-dessous est **préparée, pas encore qualifiée**.
 Le serveurVite et le servicePython doivent déjà être actifs. Garder le même
 snapshot pendant la génération et le parcours évite les rechargements de code :
 
@@ -266,7 +283,7 @@ et les styles cartographiques choisis.
 | B14 | Partiel : couronnes calibrées, transmittance/residual commun, masque d'appui séparé. | Canopy/ombres/couleurs sur navigation réelle et couverts hétérogènes ; forêt photographique non livrée. |
 | B15 | Partiel : filtrage linéaire, moyenne PBRGPU, classes/poids communs et rebase. | Mesurer aliasing/popping/continuité lumineuse sur trajectoires, pas seulement probes. |
 | B16 | Partiel : scène linéaire et styles cartographiques distincts, eau source explicite. | Plusieurs éclairages, rives mobiles compatibles et ombres de toute la scène. |
-| B17 | En cours : captures et profils réels séparés, driverE2E prêt. | Campagne finale40 km →10 m, mouvement continu et revue 6 non encore exécutés. |
+| B17 | En cours : captures/profils réels séparés ; première tentative E2E échouée, revue 6 exigeant des corrections. | Réussir la campagne finale 40 km →10 m et le mouvement continu ; faire recontrôler les corrections. |
 | B18 | Prototype : vrai importOrogen/NeuralEarth métrique, unités/lapse/provenance ; géologie externe exigée. | Intégration d'un paquet géologique régional réel et confrontation aux scènes. |
 | B19 | Partiel : matériaux/coastmasks/eau et provenance de dépôt déclarés. | Deux côtes qualifiées, bancs/marais géométriques, fond/turbidité/flux. |
 | B20 | Partiel : occupation, exclusions, routes et ville native/style source conservés. | Scène rurale complète : champs/cours/haies et contacts d'appui validés. |
