@@ -111,6 +111,16 @@ static func raw_height_at(world: Dictionary, x: float, z: float) -> float:
 static func height_at(world: Dictionary, x: float, z: float) -> float:
 	var layers: Array = world.get("_heightLayers",[])
 	if layers.is_empty(): layers=prepare_height_layers(world)
+	# When the finest covering source has full weight, parent reconstruction
+	# cannot contribute. Preserve the original path for seams/outside/invalid data.
+	for layer in layers:
+		if not _contains(layer.bounds,x,z): continue
+		var edge := minf(minf(x-float(layer.bounds.minX),float(layer.bounds.maxX)-x),minf(z-float(layer.bounds.minZ),float(layer.bounds.maxZ)-z))
+		var band := maxf(float(layer.terrain.spacingM)*4.0,float(world.get("_displaySpacing",0))*2.0)
+		if edge>=maxf(band,0.0001):
+			var finest := sample_height(layer.terrain,x,z)
+			if is_finite(finest): return finest
+		break
 	var value := NAN
 	# Coarse to fine: every finer source approaches its supporting parent
 	# continuously at the boundary. This changes display only, never source arrays.
