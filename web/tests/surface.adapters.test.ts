@@ -46,8 +46,8 @@ describe('renderer independent Magna adapters', () => {
     const calls: { url: string; body: any; signal?: AbortSignal | null }[] = [];
     const transport = (async (url: string | URL | Request, options?: RequestInit) => {
       calls.push({ url: String(url), body: JSON.parse(String(options?.body)), signal: options?.signal });
-      if (String(url).endsWith('/register')) return Response.json({ id: 'retained', version: 'v1', minMpp: 1, nativeMpp: 30, decoderUsed: true });
-      return new Response(new Float32Array([120, 121, 122, 123, ...Array(60).fill(124)]).buffer, { headers: { 'X-Neural-Meta': JSON.stringify({ x: 100, y: 200, width: 4, n: 8,
+      if (String(url).endsWith('/register')) return Response.json({ id: 'retained', version: 'refined-v2', minMpp: 1, nativeMpp: 30, decoderUsed: true });
+      return new Response(new Float32Array([120, 121, 122, 123, ...Array(60).fill(124)]).buffer, { headers: { 'X-Neural-Meta': JSON.stringify({ id: 'retained', x: 100, y: 200, width: 4, n: 8,
         sourceCell: 2, lod: 7, version: 'refined-v2', decoderUsed: true }) } });
     }) as typeof fetch;
     const field = new Float32Array(64).fill(1);
