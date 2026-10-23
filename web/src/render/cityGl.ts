@@ -214,13 +214,12 @@ void main() {
       float verge = smoothstep(0.78, 0.98, u + 0.12 * (grain - 0.5)) * smoothstep(2.0, 4.0, vHw / uMpp);
       color = mix(color, vec3(0.56, 0.56, 0.37), 0.45 * verge);
     }
-    // Footways keep their kerb: only their outer tenth wears into the casing.
+    // Footways: only their outer tenth wears into the casing (flagstone kerb band) beneath.
     float wear = smoothstep(footway > 0.0 ? 0.9 : 0.72, 1.0, u + 0.1 * (vnoise(vec2(vAlong * 0.7, vLocal.y > 0.0 ? 3.0 : 9.0)) - 0.5));
     // Worn edges let the casing (drawn under every street) show through; where another street
     // passes below, its own surface shows instead, so junctions stay clean.
     cover = 1.0 - 0.5 * wear;
   }
-  if (vFoot > 0.0 && s >= 0.0 && s <= vLen && t > vHw - max(0.25, 0.9 * uMpp)) color *= 0.62;
 #endif
   // Stone deck (render background): light parapets, a dark kerb line inside them, a deck a
   // shade darker with transverse joints once they are at least 3 px apart.
@@ -235,13 +234,15 @@ void main() {
 #endif
   // Footways (casing pass, under every street): flagstones with transverse joints inside the
   // street's edge, the casing colour beyond it; the narrowed carriageways (pass 1) cover
-  // them, so footways are one union through bends and junctions. The kerb is the
-  // carriageway's own rim, along the segment body only (no ring at the joints).
+  // them, so footways are one union through bends and junctions. The kerb is a radial band at
+  // the footway's inner edge (caps included): the carriageways cover it where streets meet,
+  // so it stays continuous through bends and opens at junctions.
 #if VARIANT == 1
   if (vFoot > 0.0) {
     float r = s < 0.0 ? length(vec2(s, t)) : s > vLen ? length(vec2(s - vLen, t)) : t;
     vec3 flag = vec3(0.85, 0.79, 0.67) * (mod(vAlong, 1.3) < max(0.1, 0.6 * uMpp) ? 0.9 : 1.0);
-    if (r < vBase) color = flag;
+    float inner = vBase - vFoot;
+    if (r < vBase) color = r < inner + min(max(0.25, 0.9 * uMpp), 0.5 * vFoot) ? flag * 0.6 : flag;
   }
 #endif
   if (s < 0.0) d = (vMeta & 32u) != 0u ? max(t - vHw, -s) : length(vec2(s, t)) - vHw;
