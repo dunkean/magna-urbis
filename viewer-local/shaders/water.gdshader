@@ -39,13 +39,15 @@ vec3 display_color(vec3 linear_color) {
 void vertex() { local_position=(MODEL_MATRIX*vec4(VERTEX,1.0)).xyz; }
 void fragment() {
     float coverage=1.0;
+    vec2 cell=(local_position.xz-coverage_origin_local)/coverage_spacing;
+    // Derivatives precede every data-dependent discard and branch.
+    vec2 cell_dx=dFdx(cell); vec2 cell_dy=dFdy(cell);
     if(coverage_enabled) {
-        vec2 cell=(local_position.xz-coverage_origin_local)/coverage_spacing;
         if(any(lessThan(cell,vec2(-0.5))) || any(greaterThanEqual(cell,coverage_grid_size-0.5))) discard;
         // Near: exact categorical cells. Far: linear area mips, never any-wet.
-        vec2 footprint=max(abs(dFdx(cell)),abs(dFdy(cell)));
+        vec2 footprint=max(abs(cell_dx),abs(cell_dy));
         if(max(footprint.x,footprint.y)<=1.0) coverage=texelFetch(coverage_map,ivec2(floor(cell+0.5)),0).r;
-        else coverage=texture(coverage_map,(cell+0.5)/coverage_grid_size).r;
+        else coverage=textureGrad(coverage_map,(cell+0.5)/coverage_grid_size,cell_dx/coverage_grid_size,cell_dy/coverage_grid_size).r;
         if(coverage<=0.001) discard;
     }
     if(bed_clip_enabled && all(greaterThanEqual(local_position.xz,bed_bounds_local.xy)) && all(lessThanEqual(local_position.xz,bed_bounds_local.zw))) {
