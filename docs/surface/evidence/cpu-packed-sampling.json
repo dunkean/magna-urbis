@@ -1,0 +1,14 @@
+{
+  "GPUrun": false,
+  "displaySpacingM": 0.3125,
+  "failures": [],
+  "heightAndControlBytesIdentical": true,
+  "nativeSourceLOD": -6.0,
+  "nativeSourceSpacingM": 0.625,
+  "newPrepareMs": 2437.241,
+  "oldPrepareMs": 2667.258,
+  "packet": "D:/workspace/self/_worktrees/magna-urbis-surface-world-2026-10-23/web/out/surface/native-e2e-40km/live-refinement.surfacebin",
+  "settledImageSize": 512,
+  "settledRegions": 4,
+  "speedup": 1.09437597677045
+}
