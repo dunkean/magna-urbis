@@ -84,6 +84,7 @@ var canopy_info: Dictionary = {}
 var canopy_textures: Dictionary = {}
 var canopy_materials: Array[ShaderMaterial] = []
 var rendered_source: Dictionary = {}
+var water_metrics: Dictionary = {}
 var road_texture: ImageTexture
 var road_projector_count := 0
 var presentation_mode := "aerial"
@@ -337,6 +338,10 @@ func _build_scene_objects(prepared: Dictionary) -> void:
 	if prepared.has("waterGeometry"):
 		var data: Dictionary = prepared.waterGeometry
 		var entry := {"mesh":_mesh_from_arrays(prepared.waterArrays),"anchor":data.anchor,"quads":data.quads,"sourceStride":data.sourceStride,"buildMs":data.buildMs}
+		entry.diagnostics={}
+		for key in data:
+			var value=data[key]
+			if value is String or value is bool or value is int or value is float and is_finite(value): entry.diagnostics[key]=value
 		for key in ["coverageOrigin","coverageSpacingM","coverageSize","bedOrigin","bedSpacingM","bedSize","bedBounds","bedReconstruction"]:
 			if data.has(key): entry[key]=data[key]
 		if data.has("coverageImage"): entry.coverageTexture=ImageTexture.create_from_image(data.coverageImage)
@@ -348,6 +353,7 @@ func _build_scene_objects(prepared: Dictionary) -> void:
 	while scene_mesh_cache.size()>8: scene_mesh_cache.erase(scene_mesh_cache.keys()[0])
 	if scene_mesh_cache.has(request.waterKey):
 		var entry: Dictionary = scene_mesh_cache[request.waterKey]
+		water_metrics=entry.get("diagnostics",{}).duplicate()
 		if entry.mesh.get_surface_count()>0:
 			var water := MeshInstance3D.new()
 			water.name="ExplicitWater"
@@ -802,6 +808,7 @@ func _write_metrics() -> void:
 	metrics["liveAcceptance"]=live_acceptance_events
 	metrics["unsupportedTreeCount"]=unsupported_tree_count
 	metrics["cityMap"]=city_map_metrics
+	metrics["water"]=water_metrics
 	var path: String = options.get("--metrics","res://captures/metrics.json")
 	path = ProjectSettings.globalize_path(path)
 	DirAccess.make_dir_recursive_absolute(path.get_base_dir())
