@@ -35,12 +35,13 @@ export function verifyViewSatisfaction(value:unknown,display:unknown):Row {
     ||value.sourceBounds.minX>value.viewBounds.minX||value.sourceBounds.minZ>value.viewBounds.minZ
     ||value.sourceBounds.maxX<value.viewBounds.maxX||value.sourceBounds.maxZ<value.viewBounds.maxZ)
     throw new Error('Camera satisfaction lacks final source coverage or delivered density');
-  if(record(value.region)){
-    const region=value.region;
-    if(!Number.isFinite(region.extent)||region.extent<=0||region.preview!==false||region.resolution!==512
-      ||Math.abs(value.requiredSpacingM-Math.max(region.extent/512,display.source.nativeSpacingM))>1e-7)
-      throw new Error('Camera density target differs from the requested final quality or physical source cap');
-  }
+  const region=value.region;
+  if(!record(region)||!Number.isFinite(region.x)||!Number.isFinite(region.y)||!Number.isFinite(region.extent)||region.extent<=0||region.preview!==false||region.resolution!==512
+    ||Math.abs(value.requiredSpacingM-Math.max(region.extent/512,display.source.nativeSpacingM))>1e-7)
+    throw new Error('Camera density target differs from the requested final quality or physical source cap');
+  if(Math.abs(value.viewBounds.minX-region.x)>1e-7||Math.abs(value.viewBounds.minZ-region.y)>1e-7
+    ||Math.abs(value.viewBounds.maxX-region.x-region.extent)>1e-7||Math.abs(value.viewBounds.maxZ-region.y-region.extent)>1e-7)
+    throw new Error('Camera satisfaction bounds differ from the requested view region');
   return value;
 }
 

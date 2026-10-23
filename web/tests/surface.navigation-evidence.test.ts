@@ -39,6 +39,7 @@ describe('rendered live evidence during motion',()=>{
   it('requires actual settled final quality512 without changing the authoritative source output grid',()=>{
     const{proof,metrics}=fixture(),display={...proof.motionDisplayEvents[0],request:{x:0,y:0,extent:64,resolution:512,preview:false},deliveredGrid:{width:137,height:137,spacingM:64/137}};
     const viewSatisfaction={serial:9,worldId:display.worldId,requestSerial:display.liveSerial,preview:false,requiredSpacingM:.46875,deliveredSpacingM:.46875,
+      region:{x:20,y:20,extent:24,preview:false,resolution:512},
       sourceBounds:{minX:0,minZ:0,maxX:64,maxZ:64},viewBounds:{minX:20,minZ:20,maxX:44,maxZ:44}};
     const finalProof={...proof,finalReady:true,final:{rendered:display,viewSatisfiedSerial:9,liveSerial:9,viewSatisfaction}},finalMetrics={...metrics,renderedSnapshot:display,viewSatisfiedSerial:9,viewSatisfaction};
     expect(verifyFinalDisplay(finalProof,finalMetrics)).toBe(display);expect(isFinalQualityDisplay(display)).toBe(true);
@@ -49,16 +50,19 @@ describe('rendered live evidence during motion',()=>{
     const{proof}=fixture(),display={...proof.motionDisplayEvents[0],request:{x:0,y:0,extent:64,resolution:512,preview:false}};
     const captures=Array.from({length:7},(_,i)=>({renderedSnapshot:display,viewSatisfiedSerial:10+i,viewSatisfaction:{serial:10+i,worldId:display.worldId,
       requestSerial:display.liveSerial,preview:false,requiredSpacingM:.46875,deliveredSpacingM:.46875,
+      region:{x:20,y:20,extent:24-i,preview:false,resolution:512},
       sourceBounds:{minX:0,minZ:0,maxX:64,maxZ:64},viewBounds:{minX:20,minZ:20,maxX:44-i,maxZ:44-i}}}));
     expect(verifyTourQuality(captures)).toHaveLength(7);
     expect(verifyViewSatisfaction(captures[0].viewSatisfaction,display)).toBe(captures[0].viewSatisfaction);
-    const physicalCap={...captures[0].viewSatisfaction,region:{extent:64,preview:false,resolution:512}};
+    const physicalCap={...captures[0].viewSatisfaction};
     expect(verifyViewSatisfaction(physicalCap,display)).toBe(physicalCap);
     expect(()=>verifyViewSatisfaction({...physicalCap,requiredSpacingM:1},display)).toThrow(/density target/);
     for(const alter of [(v:any)=>v[1].viewSatisfaction.serial=10,(v:any)=>v[1].viewSatisfaction.worldId='other',
       (v:any)=>v[1].viewSatisfaction.deliveredSpacingM=.5,(v:any)=>v[1].viewSatisfaction.sourceBounds.maxX=40,
       (v:any)=>v[1].viewSatisfiedSerial=999,(v:any)=>v[1].viewSatisfaction.preview=true,
-      (v:any)=>v[1].viewSatisfaction.viewBounds.minX=NaN]){const copy=structuredClone(captures);alter(copy);expect(()=>verifyTourQuality(copy)).toThrow();}
+      (v:any)=>v[1].viewSatisfaction.viewBounds.minX=NaN,(v:any)=>delete v[1].viewSatisfaction.region,
+      (v:any)=>v[1].viewSatisfaction.viewBounds.minX=21,(v:any)=>{delete v[1].viewSatisfaction.region;v[1].viewSatisfaction.requiredSpacingM=1e10;},
+      (v:any)=>v[1].viewSatisfaction.region.x=19]){const copy=structuredClone(captures);alter(copy);expect(()=>verifyTourQuality(copy)).toThrow();}
     expect(()=>verifyTourQuality(captures.slice(1))).toThrow();
   });
 });
