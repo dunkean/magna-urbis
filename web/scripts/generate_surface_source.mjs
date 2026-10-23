@@ -4,6 +4,7 @@
  * --geology-scenario tilted-strata-v1 opts into an explicit fixed world-space scenario.
  * --viewer-navigation-first runs the same continuous-input test before the tour.
  * --viewer-layer-probe adds four same-source visibility captures and unlit bare ground.
+ * --viewer-layer-probe-widths 10000,160 also proves actual near-instance masking.
  * --viewer-water-mode source-map explicitly selects terrain-only retained-vector display.
  * --viewer-water-symbol-width-px 1.25 explicitly opts into nonphysical all-water map symbols.
  * --viewer-resolution 2048x1280. Browser/SSE/worker stay alive until the seven-level tour exits. */
@@ -23,6 +24,7 @@ import { isFinalQualityDisplay,sameDeliveredSpacing,verifyFinalDisplay,verifyMot
 import { verifyExplicitLayerCapture,verifyWaterCapture,verifyLayerIsolationProbe } from './surface_render_evidence.ts';
 import { hasExplicitSurfaceLayers } from '../src/surface/surfaceLayers.ts';
 import { captureSurfaceRepositorySnapshot,assertFrozenSurfaceSnapshots } from './surface_repository_snapshot.mjs';
+import { parseLayerProbeWidths,assertCompletedLayerProbeBatch } from './surface_layer_probe_batch.ts';
 
 const args = process.argv.slice(2);
 const option = (name, fallback) => {
@@ -46,6 +48,8 @@ const viewerWaterMode=option('--viewer-water-mode','source-map');
 const viewerWaterSymbolWidthPx=Number(option('--viewer-water-symbol-width-px',option('--water-symbol-width-px','0')));
 if(!Number.isFinite(viewerWaterSymbolWidthPx)||viewerWaterSymbolWidthPx<0||viewerWaterSymbolWidthPx>1.25||viewerWaterSymbolWidthPx>0&&viewerWaterMode!=='source-map')throw new Error('Water symbol width must be0..1.25 pixels and requires source-map mode');
 const layerProbe=args.includes('--viewer-layer-probe');
+const layerProbeWidths=parseLayerProbeWidths(option('--viewer-layer-probe-widths','10000'));
+if(args.includes('--viewer-layer-probe-widths')&&!layerProbe)throw new Error('--viewer-layer-probe-widths requires --viewer-layer-probe');
 if(layerProbe&&!viewerGodot)throw new Error('--viewer-layer-probe requires --viewer-godot');
 if(!['source-map','source-levels'].includes(viewerWaterMode))throw new Error('Viewer water mode must be source-map or source-levels');
 const navigationSeconds=Number(option('--viewer-navigation-seconds','0'));
@@ -62,7 +66,7 @@ const paths = { report: resolve(out, 'report.json'), progress: resolve(out, 'pro
 const report = { format: 'magna-fresh-source-proof', version: 1, startedAt: new Date(began).toISOString(), base, neural, widthM: width, seed,
   requestedSource: 'neural-python', freshGeneration: true, paths, errors, network, progress, status: 'starting' };
 report.browserEvents = browserEvents;
-report.requiredRenderContract={version:'surface-layers-1',waterMode:viewerWaterMode,waterSymbolWidthPx:viewerWaterSymbolWidthPx,physicalSourceChangesAllowed:false};
+report.requiredRenderContract={version:'surface-layers-1',waterMode:viewerWaterMode,waterSymbolWidthPx:viewerWaterSymbolWidthPx,layerProbeWidths:layerProbe?layerProbeWidths:[],physicalSourceChangesAllowed:false};
 report.nativePhaseOrder=viewerGodot?(navigationFirst?['navigation','tour']:['tour',...(navigationSeconds?['navigation']:[])]):[];
 if(layerProbe)report.nativePhaseOrder.push('layer-isolation');
 report.driverProcessId=process.pid;
@@ -243,16 +247,17 @@ async function runNativeNavigation(sessionId) {
     ||network.some(e=>e.elapsedMs>=phase.startedElapsedMs&&e.url?.includes('/generate?')))throw new Error('Continuous native navigation changed canonical context or regenerated source');
   phase.status='complete';await save();
 }
-async function runNativeLayerProbe(sessionId){
-  const directory=resolve(out,'native-layer-isolation');await mkdir(directory,{recursive:true});
+async function runNativeLayerProbe(sessionId,widthM){
+  const directory=resolve(out,'native-layer-isolation',...(layerProbeWidths.length===1&&widthM===10000?[]:[`${widthM}m`]));await mkdir(directory,{recursive:true});
   const project=resolve(dirname(viewerLauncher),'../../viewer-local');
   const paths={directory,stdout:resolve(directory,'stdout.log'),stderr:resolve(directory,'stderr.log'),metrics:resolve(directory,'metrics.json'),report:resolve(directory,'layer-report.json')};
   const command=['--path',project,'--script','res://diagnostics/layer_probe.gd','--','--world',report.paths.source,'--live-url',`${base}/surface-live/terrain`,
-    '--session-id',sessionId,'--width','10000','--resolution',viewerResolution,'--presentation','aerial','--water-mode',viewerWaterMode,'--water-symbol-width-px',String(viewerWaterSymbolWidthPx),'--layers','all',
+    '--session-id',sessionId,'--width',String(widthM),'--resolution',viewerResolution,'--presentation','aerial','--water-mode',viewerWaterMode,'--water-symbol-width-px',String(viewerWaterSymbolWidthPx),'--layers','all',
     '--metrics',paths.metrics,'--layer-report',paths.report,'--layer-captures',directory];
+  if(widthM<=160)command.push('--layer-require-instances');
   if(!args.includes('--viewer-oblique'))command.push('--top');if(viewerAssets)command.push('--assets',resolve(viewerAssets));
-  const phase={status:'running',startedElapsedMs:Date.now()-began,paths,command:[resolve(viewerGodot),...command],browserHeldOpen:true};
-  report.layerProbe=phase;report.status='native-layer-isolation';await save();
+  const phase={status:'running',widthM,requireInstances:widthM<=160,startedElapsedMs:Date.now()-began,paths,command:[resolve(viewerGodot),...command],browserHeldOpen:true};
+  report.layerProbes??=[];report.layerProbes.push(phase);report.layerProbe??=phase;report.layerProbeStatus='running';report.status='native-layer-isolation';await save();
   const stdout=createWriteStream(paths.stdout),stderr=createWriteStream(paths.stderr);let timeout;
   try{
     Object.assign(phase,await new Promise((done,fail)=>{
@@ -264,9 +269,12 @@ async function runNativeLayerProbe(sessionId){
   phase.elapsedMs=Date.now()-began-phase.startedElapsedMs;
   if(existsSync(paths.report))phase.result=JSON.parse(await readFile(paths.report,'utf8'));
   if(existsSync(paths.metrics))phase.metrics=JSON.parse(await readFile(paths.metrics,'utf8'));
-  verifyLayerIsolationProbe(phase.result);
+  verifyLayerIsolationProbe(phase.result,{requireInstances:widthM<=160,expectedWidthM:widthM});
   const bare=phase.result.bareGroundMean,first=phase.result.views[0];
-  if(!bare||bare.diagnostic!==7||['terrainVersion','canonicalContextId','groundFieldsVersion','inventoryFingerprint','geometryDetailId','groundSampleFingerprint'].some(key=>bare[key]!==first[key]))throw new Error('Unlit bare-ground diagnostic edited or omitted physical support');
+  if(!bare||bare.diagnostic!==7||Math.abs(bare.widthM-widthM)>1e-9*widthM||bare.focus?.x!==first.focus?.x||bare.focus?.y!==first.focus?.y||bare.oblique!==first.oblique
+    ||bare.layerUniforms?.ground!==true||bare.layerUniforms?.lowCover!==false||bare.layerUniforms?.trees!==false
+    ||['terrainVersion','canonicalContextId','groundFieldsVersion','inventoryFingerprint','geometryDetailId','groundSampleFingerprint','canonicalContextFingerprint','parentTerrainFingerprint','projectedGroundFieldsVersion','geometryDetailFingerprint','instanceBufferFingerprint'].some(key=>bare[key]!==first[key]))throw new Error('Unlit bare-ground diagnostic edited or omitted physical support');
+  if(first.canonicalContextId!==report.live.contextId)throw new Error('Layer probe changed the fresh canonical source context');
   const logs=await Promise.all([readFile(paths.stdout,'utf8'),readFile(paths.stderr,'utf8')]);
   const captures=logs[0].split(/\r?\n/).filter(line=>line.startsWith('{')).flatMap(line=>{try{const event=JSON.parse(line);return event.event==='capture'?[event]:[];}catch{return[];}});
   const packets=browserEvents.filter(e=>e.kind==='worker-compiled'&&e.elapsedMs>=phase.startedElapsedMs);
@@ -274,7 +282,7 @@ async function runNativeLayerProbe(sessionId){
   for(const view of [...phase.result.views,bare]){
     const event=captures.find(e=>e.path.replaceAll('\\','/')===view.capturePath.replaceAll('\\','/'));
     const packet=packets.find(e=>e.packet?.worldId===event?.renderedSnapshot?.worldId)?.packet;
-    const layer=verifyExplicitLayerCapture(event,packet,view.visibility),water=verifyWaterCapture(event,{requireSourceMap:viewerWaterMode==='source-map',waterSymbolWidthPx:viewerWaterSymbolWidthPx});
+    const layer=verifyExplicitLayerCapture(event,packet,view.visibility),water=verifyWaterCapture(event,{requireSourceMap:viewerWaterMode==='source-map',allowEmptySourceMap:widthM<2560,waterSymbolWidthPx:viewerWaterSymbolWidthPx});
     const png=await readFile(view.capturePath);if(png.subarray(0,8).toString('hex')!=='89504e470d0a1a0a'||png.readUInt32BE(16)!==Number(viewerResolution.split('x')[0])||png.readUInt32BE(20)!==Number(viewerResolution.split('x')[1]))throw new Error('Layer probe PNG dimensions differ');
     phase.captures.push({path:view.capturePath,sha256:createHash('sha256').update(png).digest('hex'),surfaceLayers:layer,water});
   }
@@ -505,8 +513,8 @@ try {
   if(navigationFirst)await runNativeNavigation(sessions.at(-1));
   if(viewerGodot)await runNativeTour(sessions.at(-1));
   if(navigationSeconds&&!navigationFirst)await runNativeNavigation(sessions.at(-1));
-  if(layerProbe)await runNativeLayerProbe(sessions.at(-1));
-  if(viewerGodot&&report.viewer?.status!=='complete'||navigationSeconds&&report.navigation?.status!=='complete'||layerProbe&&report.layerProbe?.status!=='complete')throw new Error('A requested native proof phase did not complete');
+  if(layerProbe){for(const probeWidth of layerProbeWidths)await runNativeLayerProbe(sessions.at(-1),probeWidth);assertCompletedLayerProbeBatch(report.layerProbes,layerProbeWidths);report.layerProbeStatus='complete';}
+  if(viewerGodot&&report.viewer?.status!=='complete'||navigationSeconds&&report.navigation?.status!=='complete'||layerProbe&&report.layerProbeStatus!=='complete')throw new Error('A requested native proof phase did not complete');
   report.code.finalRepository=await repositorySnapshot();
   if(viewerGodot)assertFrozenSurfaceSnapshots(report.code.selectedRepository,report.code.finalRepository);
   if(viewerAssets){report.assets.finalManifestSha256=createHash('sha256').update(await readFile(resolve(viewerAssets))).digest('hex');if(report.assets.finalManifestSha256!==report.assets.manifestSha256)throw new Error('Resolved asset manifest changed during the run');}
@@ -516,7 +524,8 @@ try {
     sourceBytes: report.source.bytes, neuralOutput: report.neuralOutput, live: report.live, paths, errors } }));
 } catch (error) {
   report.code.finalRepository??=await repositorySnapshot();
-  for(const phase of [report.viewer,report.navigation,report.layerProbe])if(phase?.status==='running')phase.status='failed';
+  for(const phase of [report.viewer,report.navigation,...(report.layerProbes??[])])if(phase?.status==='running')phase.status='failed';
+  if(layerProbe&&report.layerProbeStatus!=='complete')report.layerProbeStatus='failed';
   report.status = 'failed'; report.failure = String(error); report.finalService = await serviceStatus(); report.durationMs = Date.now() - began;
   await save(); throw error;
 } finally { stopViewer();await browser.close();process.removeListener('SIGINT',interrupted);process.removeListener('SIGTERM',interrupted);process.removeListener('uncaughtExceptionMonitor',unexpectedFailure); }

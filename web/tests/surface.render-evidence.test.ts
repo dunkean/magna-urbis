@@ -33,6 +33,15 @@ describe('new rendered layer and fixed source-map evidence',()=>{
     const{capture}=fixture();expect(verifyWaterCapture(capture,{requireSourceMap:true})).toBe(capture.water);
     expect(capture.water.vectorBedDiagnosticConflicts).toBeGreaterThan(0);expect(capture.water.physicalWaterSurfaceClaimed).toBe(false);
   });
+  it('keeps the regional nonempty-vector gate while allowing only an explicitly empty near projection',()=>{
+    const{capture}=fixture();const water:any=capture.water;
+    Object.assign(water,{empty:true,sourceVectorRequestedAreaM2:0,sourceVectorAreaM2:0,sourceVertices:0});
+    expect(()=>verifyWaterCapture(capture,{requireSourceMap:true})).toThrow(/Regional/);
+    expect(verifyWaterCapture(capture,{requireSourceMap:true,allowEmptySourceMap:true})).toBe(water);
+    for(const change of[{empty:false},{sourceVertices:3},{sourceVectorMissingAreaM2:1},{sourceVectorCoverageComplete:false},{waterPresentation:'physical-depth-tested'}]){
+      const bad=structuredClone(capture);Object.assign(bad.water,change);expect(()=>verifyWaterCapture(bad,{requireSourceMap:true,allowEmptySourceMap:true})).toThrow();
+    }
+  });
   it('accepts only explicitly requested symbolic coverage with separate source geometry/image evidence and honest screen scale',()=>{
     const{capture}=fixture();const water:any=capture.water;
     Object.assign(water,{waterSymbolVersion:'source-water-symbol-1',waterSymbolPolicy:'all-water-source-coverage-aa-disk',symbolWidthPx:1.25,

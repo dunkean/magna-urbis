@@ -31,7 +31,7 @@ export function verifyExplicitLayerCapture(capture:unknown,packet:unknown,visibi
 
 /** Source-map visibility is distinct from a physical water/bed consistency test.
  * A retained source can conflict with a refined bed without losing map authority. */
-export function verifyWaterCapture(capture:unknown,options:{requireSourceMap?:boolean;waterSymbolWidthPx?:number;screenMetresPerPixel?:number}={}):Row {
+export function verifyWaterCapture(capture:unknown,options:{requireSourceMap?:boolean;allowEmptySourceMap?:boolean;waterSymbolWidthPx?:number;screenMetresPerPixel?:number}={}):Row {
   if(!record(capture)||!record(capture.renderedSnapshot)||!record(capture.water))throw new Error('Missing per-view water authority/representation evidence');
   const water=capture.water;
   const expectedSymbol=options.waterSymbolWidthPx??0,actualSymbol=water.symbolWidthPx??0;
@@ -45,7 +45,8 @@ export function verifyWaterCapture(capture:unknown,options:{requireSourceMap?:bo
   for(const key of ['sourceVectorRequestedAreaM2','sourceVectorAreaM2','sourceVectorMissingAreaM2','missingLevelTriangles'])if(!nonnegative(water[key]))throw new Error('Malformed source water coverage '+key);
   if(water.sourceVectorCoverageComplete!==true||water.sourceVectorMissingAreaM2!==0||water.missingLevelTriangles!==0||water.budgetLimited!==false
     ||typeof water.fixedHydrologyFallbackReason==='string'&&!!water.fixedHydrologyFallbackReason.trim())throw new Error('Source vector omission, budget limit or mixed fallback');
-  if(options.requireSourceMap&&(water.sourceVectorRequestedAreaM2<=0||water.sourceVectorAreaM2<=0||!Number.isSafeInteger(water.sourceVertices)||water.sourceVertices<3||water.waterPresentation!=='source-map-terrain-projection'
+  const emptySourceMap=options.allowEmptySourceMap===true&&water.empty===true&&water.sourceVectorRequestedAreaM2===0&&water.sourceVectorAreaM2===0&&water.sourceVertices===0;
+  if(options.requireSourceMap&&((!emptySourceMap&&(water.sourceVectorRequestedAreaM2<=0||water.sourceVectorAreaM2<=0||!Number.isSafeInteger(water.sourceVertices)||water.sourceVertices<3))||water.waterPresentation!=='source-map-terrain-projection'
     ||water.projectionCullMask!==1||water.sourceLevelsUnchanged!==true||water.physicalWaterSurfaceClaimed!==false||water.minimumRiverStrokeApplied!==false))
     throw new Error('Regional water is not an unedited terrain-only source-map projection');
   if(water.waterPresentation==='source-map-terrain-projection'&&(water.projectionCullMask!==1||water.sourceLevelsUnchanged!==true
@@ -79,11 +80,15 @@ export function verifyWaterCapture(capture:unknown,options:{requireSourceMap?:bo
 
 /** Negative/single-variable diagnostic snapshots must retain the same physical
  * source and context while revealing bare ground beneath low cover and crowns. */
-export function verifyLayerIsolationProbe(proof:unknown):Row {
-  if(!record(proof)||proof.version!==1||!Array.isArray(proof.views)||proof.views.length!==4)throw new Error('Missing four-view layer-isolation proof');
+export function verifyLayerIsolationProbe(proof:unknown,options:{requireInstances?:boolean;expectedWidthM?:number}={}):Row {
+  if(!record(proof)||![1,2].includes(proof.version)||!Array.isArray(proof.views)||proof.views.length!==4)throw new Error('Missing four-view layer-isolation proof');
   const expected=[{ground:true,lowCover:true,trees:true},{ground:true,lowCover:false,trees:true},{ground:true,lowCover:true,trees:false},{ground:true,lowCover:false,trees:false}];
   const first=proof.views[0];
   const native=proof.format==='magna-layer-isolation-proof';
+  const requireInstances=options.requireInstances??proof.requireInstances??false;
+  const families=['tree','trunk','grass','shrub','debris','boulder'];
+  if(requireInstances&&(!native||proof.version!==2||proof.requireInstances!==true))throw new Error('Near layer probe did not require actual geometry instances');
+  if(options.expectedWidthM!==undefined&&(!finite(proof.widthM)||Math.abs(proof.widthM-options.expectedWidthM)>1e-9*options.expectedWidthM))throw new Error('Layer probe camera width differs from its requested view');
   for(let i=0;i<proof.views.length;i++){
     const view=proof.views[i];
     if(!record(view)||!record(view.visibility)||Object.entries(expected[i]).some(([key,value])=>view.visibility[key]!==value)
@@ -95,7 +100,35 @@ export function verifyLayerIsolationProbe(proof:unknown):Row {
     if(native&&(!finite(view.physicalLowCoverMean)||view.physicalLowCoverMean<=0||!finite(view.physicalTreeCoverMean)||view.physicalTreeCoverMean<=0
       ||Math.abs(view.physicalLowCoverMean-first.physicalLowCoverMean)>1e-9||Math.abs(view.physicalTreeCoverMean-first.physicalTreeCoverMean)>1e-9
       ||typeof view.centralPixelSha256!=='string'||!/^[a-f0-9]{64}$/.test(view.centralPixelSha256)))throw new Error('Native probe omitted visible cover/tree support or central image evidence');
+    if(proof.version===2){
+      if(!finite(proof.widthM)||proof.widthM<=0||!finite(view.widthM)||Math.abs(view.widthM-proof.widthM)>1e-9*proof.widthM||typeof view.worldId!=='string'||view.worldId!==first.worldId
+        ||!record(view.focus)||!finite(view.focus.x)||!finite(view.focus.y)||view.focus.x!==first.focus?.x||view.focus.y!==first.focus?.y||typeof view.oblique!=='boolean'||view.oblique!==first.oblique
+        ||['canonicalContextFingerprint','parentTerrainFingerprint','projectedGroundFieldsVersion','geometryDetailFingerprint','instanceBufferFingerprint'].some(k=>typeof view[k]!=='string'||!/^[a-f0-9]{64}$/.test(view[k])||view[k]!==first[k])
+        ||!record(view.layerUniforms)||Object.entries(expected[i]).some(([k,v])=>view.layerUniforms[k]!==v))throw new Error('Layer toggle changed actual context/source/geometry/buffers or did not bind shader visibility');
+      const instances=view.populationInstances,base=first.populationInstances;
+      if(requireInstances&&!record(instances?.families))throw new Error('Near layer probe omitted actual geometry counts');
+      if(record(instances?.families)){
+        if(!record(base?.families)||typeof instances.scope!=='string'||!instances.scope||typeof instances.treeResidualEnabled!=='boolean'||typeof instances.treeOpticalShadowEnabled!=='boolean'
+          ||!expected[i].trees&&(instances.treeResidualEnabled||instances.treeOpticalShadowEnabled))throw new Error('Disabled trees retain residual canopy or total optical shadow');
+        for(const family of families){
+          const c=instances.families[family],initial=base.families[family];
+          if(!record(c)||!record(initial)||['submitted','nodeVisible','alphaPositiveInFrustum'].some(k=>!Number.isSafeInteger(c[k])||c[k]<0)
+            ||c.alphaPositiveInFrustum>c.nodeVisible||c.nodeVisible>c.submitted||c.submitted!==initial.submitted)throw new Error('Actual instance allocation/count metadata changed or is malformed');
+          const enabled=family==='boulder'||(['tree','trunk'].includes(family)?expected[i].trees:expected[i].lowCover);
+          if(!enabled&&(c.nodeVisible!==0||c.alphaPositiveInFrustum!==0))throw new Error('Disabled tree/low-cover instance family remains visible');
+          if(enabled&&(c.nodeVisible!==initial.nodeVisible||c.alphaPositiveInFrustum!==initial.alphaPositiveInFrustum))throw new Error('Independent family visibility changed with another layer');
+        }
+      }
+    }
   }
   if(native&&new Set(proof.views.map((view:Row)=>view.centralPixelSha256)).size!==4)throw new Error('Native layer toggles did not produce four distinct central images');
+  if(requireInstances&&(first.populationInstances.families.tree.alphaPositiveInFrustum<=0
+    ||['grass','shrub','debris'].reduce((sum,f)=>sum+first.populationInstances.families[f].alphaPositiveInFrustum,0)<=0))throw new Error('Near view has no actual visible tree and low-cover geometry to qualify');
+  if(proof.version===2){
+    const restored=proof.restored;
+    if(!record(restored)||['worldId','terrainVersion','canonicalContextId','groundFieldsVersion','inventoryFingerprint','geometryDetailId','groundSampleFingerprint','canonicalContextFingerprint','parentTerrainFingerprint','projectedGroundFieldsVersion','geometryDetailFingerprint','instanceBufferFingerprint'].some(k=>restored[k]!==first[k])
+      ||!record(restored.layerUniforms)||['ground','lowCover','trees'].some(k=>restored.layerUniforms[k]!==true))throw new Error('Restoring layers changed physical data or failed shader restoration');
+    if(requireInstances&&families.some(f=>!record(restored.populationInstances?.families?.[f])||['submitted','nodeVisible','alphaPositiveInFrustum'].some(k=>restored.populationInstances.families[f][k]!==first.populationInstances.families[f][k])))throw new Error('Actual geometry was not restored after layer toggles');
+  }
   return proof;
 }
