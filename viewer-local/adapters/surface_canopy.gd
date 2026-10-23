@@ -9,6 +9,7 @@ const RESOLUTION := 1024
 static var _cached_packet: Dictionary = {}
 static var _cached_selection: Dictionary = {}
 static var _cached_atlas: Dictionary = {}
+static var _cached_unsupported: Dictionary = {}
 
 static func radius_class(radius: float) -> int:
 	var best := 0
@@ -26,7 +27,8 @@ static func instance_weight(bin: int,footprint: float) -> float:
 static func prepare(packet: Dictionary,selected: Dictionary) -> Dictionary:
 	# Packets are immutable snapshots. A sequential preparation worker may reuse
 	# the exact atlas while panning if neither packet identity nor selected ids changed.
-	if is_same(packet,_cached_packet) and selected==_cached_selection: return _cached_atlas
+	var unsupported: Dictionary = packet.get("_unsupportedTreeIDs",{})
+	if is_same(packet,_cached_packet) and selected==_cached_selection and unsupported==_cached_unsupported: return _cached_atlas
 	var bounds: Dictionary = packet.get("candidateBounds",{})
 	if bounds.is_empty(): return {"available":false,"reason":"No declared candidate query bounds"}
 	var extent := maxf(float(bounds.maxX)-float(bounds.minX),float(bounds.maxZ)-float(bounds.minZ))
@@ -42,7 +44,7 @@ static func prepare(packet: Dictionary,selected: Dictionary) -> Dictionary:
 	var candidates: Array = packet.get("candidates",packet.get("populations",[]))
 	var columns: Dictionary = packet.get("candidateColumns",{})
 	var count := int(columns.count) if not columns.is_empty() else candidates.size()
-	var trees := 0; var selected_trees := 0
+	var trees := 0; var selected_trees := 0;var unsupported_trees := 0
 	for i in range(count):
 		var family: String = str(columns.families[int(columns.family[i])]) if not columns.is_empty() else str(candidates[i].family)
 		if family!="tree": continue
@@ -51,6 +53,9 @@ static func prepare(packet: Dictionary,selected: Dictionary) -> Dictionary:
 		var radius: float = float(columns.crownRadiusM[i]) if not columns.is_empty() else float(candidates[i].get("crownRadiusM",float(candidates[i].size)*0.42))
 		if not is_finite(radius) or radius<=0.0: continue
 		var id: String = str(columns.ids[i]) if not columns.is_empty() else str(candidates[i].stableId)
+		if unsupported.has(id):
+			unsupported_trees+=1
+			continue
 		var is_selected := selected.has(id) and can_select(x,z,radius,bounds)
 		var bin := radius_class(radius)
 		trees+=1
@@ -67,9 +72,10 @@ static func prepare(packet: Dictionary,selected: Dictionary) -> Dictionary:
 	var counts_image := Image.create_from_data(width,height,false,Image.FORMAT_RGBAF,counts.to_byte_array())
 	var atlas := {"available":true,"version":"canopy-r1","coverageImage":coverage_image,"countsImage":counts_image,
 		"origin":origin,"spacingM":spacing,"gridSize":Vector2(width,height),"bounds":bounds,"fallbackBlendM":HALO_M,
-		"linearAlbedo":LINEAR_ALBEDO,"treeCount":trees,"selectedTreeCount":selected_trees,
-		"scope":"Only provided candidate query; analytic mean treeCover outside its C1 halo"}
+		"linearAlbedo":LINEAR_ALBEDO,"treeCount":trees,"selectedTreeCount":selected_trees,"unsupportedTreeCount":unsupported_trees,
+		"scope":"Supported visual subset of provided candidate query; analytic mean treeCover outside its C1 halo"}
 	_cached_packet=packet
 	_cached_selection=selected.duplicate()
+	_cached_unsupported=unsupported.duplicate()
 	_cached_atlas=atlas
 	return atlas

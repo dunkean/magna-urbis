@@ -29,6 +29,12 @@ func run() -> void:
 	assert(not is_same(changed.countsImage,atlas.countsImage) and changed.selectedTreeCount==1)
 	var copied: Dictionary = Canopy.prepare(packet.duplicate(true),{"a":true})
 	assert(not is_same(copied.countsImage,changed.countsImage))
+	var visual_packet := packet.duplicate(true);visual_packet["_unsupportedTreeIDs"]={"budget-excluded":true}
+	var supported: Dictionary = Canopy.prepare(visual_packet,{"a":true})
+	assert(supported.treeCount==2 and supported.unsupportedTreeCount==1 and packet.candidates.size()==3)
+	visual_packet._unsupportedTreeIDs.clear()
+	var restored: Dictionary = Canopy.prepare(visual_packet,{"a":true})
+	assert(restored.treeCount==3 and not is_same(restored.coverageImage,supported.coverageImage))
 	# Translation by planetary-scale coordinates must preserve every crown texel.
 	var translated := packet.duplicate(true)
 	translated.candidateBounds={"minX":20000000.0,"minZ":-10000000.0,"maxX":20000064.0,"maxZ":-9999936.0}

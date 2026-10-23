@@ -11,6 +11,7 @@ static func prepare(packet: Dictionary, focus: Dictionary, width_m: float, viewp
 	var families := {"tree":[],"shrub":[],"boulder":[],"grass":[],"debris":[]}
 	if not geometry_enabled: return {"families":families,"selectedCount":0,"candidateCount":count,"canopy":Canopy.prepare(packet,{}),"familyBudgets":FAMILY_BUDGETS}
 	var canopy_bounds: Dictionary = packet.get("candidateBounds",{})
+	var unsupported: Dictionary = packet.get("_unsupportedTreeIDs",{})
 	var radius := clampf(width_m*(1.5 if oblique else 1.0),40.0,5000.0)
 	var query_radius := radius+float(packet.get("_maximumCrownRadiusM",0.0))
 	var buckets: Dictionary = packet.get("_candidateBuckets",{})
@@ -29,6 +30,7 @@ static func prepare(packet: Dictionary, focus: Dictionary, width_m: float, viewp
 		if maxf(size,2.0*crown_radius)/width_m*viewport_width<1.25: continue
 		var candidate: Dictionary = candidates[i] if columns.is_empty() else {"stableId":columns.ids[i],"family":columns.families[int(columns.family[i])],"x":px,"y":columns.positions[i*3+1],"z":pz,"size":size,"orientation":columns.orientation[i],"rank":columns.rank[i],"variant":columns.variant[i],"crownRadiusM":crown_radius}
 		if str(candidate.family)=="tree":
+			if unsupported.has(str(candidate.stableId)): continue
 			if canopy_bounds.is_empty() or not Canopy.can_select(px,pz,crown_radius,canopy_bounds): continue
 			candidate=candidate.duplicate()
 			candidate["canopyClass"]=Canopy.radius_class(crown_radius)
