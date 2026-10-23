@@ -101,7 +101,7 @@ describe('interruptible surface compiler client', () => {
     const oldJob = workers[0].messages[1] as SurfaceWorkerJob;
     const second = client.compile(job(2)); expect(workers[0].terminated).toBe(true);
     const bytes = encodeSurfaceBinary({ stale: true });
-    staleMessage({ data: { ...oldJob, kind: 'compiled', binary: bytes.buffer as ArrayBuffer, contextId: 'stale', environmentVersion: 'stale', canonicalBuildCount: 1 } } as MessageEvent<SurfaceWorkerResponse>);
+    staleMessage({ data: { ...oldJob, kind: 'compiled', binary: bytes.buffer as ArrayBuffer, contextId: 'stale', environmentVersion: 'stale', canonicalBuildCount: 1 } } as unknown as MessageEvent<SurfaceWorkerResponse>);
     staleError({ message: 'old worker crash' } as ErrorEvent);
     workers[1].run(); expect((await second).contextId).not.toBe('stale'); expect(await first).toMatchObject({ name: 'AbortError' }); client.dispose();
   });
