@@ -39,6 +39,12 @@ locales : aucun tÃ©lÃ©chargement n'a lieu pendant le rendu hors ligne. Le catalo
 actuel contient quinze jeux PBR CC0 ; `recipeIds` est prioritaire sur le repli par
 famille. Sans catalogue, le matÃ©riau analytique de repli est explicite. Une carte
 de hauteur absente devient un relief de texture plat, avec avertissement.
+`SurfaceMaterialLibrary.asset_version` et `asset_digest` identifient les assets
+réellement chargés, leurs affectations, tailles physiques, amplitudes et SHA-256
+déclarés et constatés. Les chemins absolus et l’ordre des clés ne participent pas
+au digest. `loaded_asset_bindings` expose les couches et leurs moyennes linéaires.
+Cette provenance de rendu reste distincte de `World.versions.materialLibrary`,
+qui décrit les recettes du modèle canonique.
 
 ## Vues et styles de carte
 
@@ -91,6 +97,7 @@ ContrÃ´les indÃ©pendants, avec le mÃªme exÃ©cutable Godot et le rÃ©pertoire `vie
 & $env:GODOT --path viewer-local --rendering-method forward_plus --script diagnostics/normal_frame_probe.gd
 & $env:GODOT --path viewer-local --rendering-method forward_plus --script diagnostics/cartographic_decal_probe.gd -- C:/data/decal-probe
 & $env:GODOT --headless --path viewer-local --script diagnostics/presentation_probe.gd -- surface/presentation/palettes.json
+& $env:GODOT --headless --path viewer-local --script diagnostics/asset_provenance_probe.gd
 ```
 
 `material_mean_probe` emploie le sampler de production et trois empreintes par
