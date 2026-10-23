@@ -606,6 +606,7 @@ func _build_populations(populations: Dictionary) -> void:
 		instance.name = family+"_bounded_instances"
 		instance.set_meta("surfaceLayer","trees" if family=="tree" else "ground" if family=="boulder" else "lowCover")
 		instance.layers=2
+		if family=="tree":instance.cast_shadow=GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		instance.multimesh = multi
 		objects.add_child(instance)
 		if family=="tree":
@@ -632,6 +633,7 @@ func _build_populations(populations: Dictionary) -> void:
 			trunk_instance.name = "tree_trunks"
 			trunk_instance.set_meta("surfaceLayer","trees")
 			trunk_instance.layers=2
+			trunk_instance.cast_shadow=GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 			trunk_instance.multimesh = trunks
 			objects.add_child(trunk_instance)
 
@@ -974,7 +976,7 @@ func _write_metrics() -> void:
 	metrics["water"]=water_metrics
 	metrics["urban"]=rendered_urban_metrics
 	metrics["surfaceLayers"]=rendered_surface_layers
-	metrics["canopy"]={"representation":"exact-inventory-local / calibrated-approximate-meso-outside-page","approximatePositionsClaimedAsInventory":false,"paintedCrownShadow":"residual optical transfer, authored 8m crown centre, not geometric shadows","paintedShadowTransmittance":[.25,.34,.50],"canonicalSeed":rendered_world.get("seed"),"atlasVersion":canopy_info.get("version",""),"paintBlendM":canopy_info.get("fallbackBlendM"),"geometryBlendM":canopy_info.get("geometryBlendM")}
+	metrics["canopy"]={"representation":"exact-inventory-local / calibrated-approximate-meso-outside-page","approximatePositionsClaimedAsInventory":false,"paintedCrownShadow":"total-C optical transfer for the entire canopy; native canopy/trunk casting disabled; buildings and terrain retain physical shadows","physicalForestShadowClaimed":false,"opticalDetailPixels":[1.25,3.0],"geometryDetailPixels":[3.0,8.0],"referenceCrownDiameterM":preload("res://adapters/surface_canopy.gd").REFERENCE_CROWN_DIAMETER_M,"referenceCrownCentreHeightM":preload("res://adapters/surface_canopy.gd").REFERENCE_CROWN_CENTRE_HEIGHT_M,"mesoCellM":preload("res://adapters/surface_canopy.gd").MESO_CELL_M,"paintedShadowTransmittance":[.25,.34,.50],"canonicalSeed":rendered_world.get("seed"),"atlasVersion":canopy_info.get("version",""),"paintBlendM":canopy_info.get("fallbackBlendM"),"geometryBlendM":canopy_info.get("geometryBlendM")}
 	var path: String = options.get("--metrics","res://captures/metrics.json")
 	path = ProjectSettings.globalize_path(path)
 	DirAccess.make_dir_recursive_absolute(path.get_base_dir())
@@ -1007,10 +1009,10 @@ func _apply_canopy_parameters(material: Object) -> void:
 	var world:Dictionary=rendered_world if not rendered_world.is_empty() else self.world
 	var packet:Dictionary=rendered_packet if not rendered_packet.is_empty() else self.packet
 	var presentation_mode:String=rendered_presentation_mode
-	var values := {"canopy_enabled":canopy_info.get("available",false),"canopy_linear_albedo":Presentation.canopy_color(packet,presentation_mode),"canopy_reference_y":Data.height_at(world,focus.x,focus.y)-float(origin.y)}
+	var values := {"canopy_shadow_use_total":true,"canopy_enabled":canopy_info.get("available",false),"canopy_linear_albedo":Presentation.canopy_color(packet,presentation_mode),"canopy_reference_y":Data.height_at(world,focus.x,focus.y)-float(origin.y)}
 	values.merge(preload("res://adapters/surface_canopy.gd").meso_parameters(world,origin))
 	var to_light=sun.global_basis.z
-	values["canopy_shadow_offset"]=preload("res://adapters/surface_canopy.gd").shadow_offset(to_light)
+	values["canopy_shadow_offset"]=preload("res://adapters/surface_canopy.gd").shadow_offset(to_light,preload("res://adapters/surface_canopy.gd").REFERENCE_CROWN_CENTRE_HEIGHT_M)
 	if canopy_info.get("available",false):
 		var b: Dictionary = canopy_info.bounds
 		values["canopy_normals_enabled"]=canopy_textures.has("normals")

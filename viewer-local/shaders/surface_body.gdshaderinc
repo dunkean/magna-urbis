@@ -134,9 +134,10 @@
     ROUGHNESS=sqrt(mix(ROUGHNESS*ROUGHNESS,low_rough*low_rough,visible_low));
     composed_normal=mix(composed_normal,low_normal,visible_low);
     float crown_mask=show_trees?surface_canopy_residual(v_vertex.xz,canopy_main_pixel_footprint(v_vertex.xz,PROJECTION_MATRIX*VIEW_MATRIX,VIEWPORT_SIZE),state.r):0.0;
-    // Painted crowns cast an approximate optical shadow. The same residual
-    // removes the proxy where selected 3D crowns supply actual engine shadows.
-    float canopy_shadow=(show_trees && presentation_mode==0)?surface_canopy_residual(v_vertex.xz-canopy_shadow_offset,canopy_main_pixel_footprint(v_vertex.xz,PROJECTION_MATRIX*VIEW_MATRIX,VIEWPORT_SIZE),texture(surface_state,source_uv-canopy_shadow_offset/source_spacing_m/source_grid_size).r):0.0;
+    // Mapper policy: the full optical canopy casts the same approximate shadow
+    // inside and outside the inventory page. Tree geometry never casts engine
+    // shadows; terrain and buildings retain their physical shadow settings.
+    float canopy_shadow=(show_trees && presentation_mode==0)?(canopy_shadow_use_total?surface_canopy_target(v_vertex.xz-canopy_shadow_offset,canopy_main_pixel_footprint(v_vertex.xz,PROJECTION_MATRIX*VIEW_MATRIX,VIEWPORT_SIZE),texture(surface_state,source_uv-canopy_shadow_offset/source_spacing_m/source_grid_size).r):surface_canopy_residual(v_vertex.xz-canopy_shadow_offset,canopy_main_pixel_footprint(v_vertex.xz,PROJECTION_MATRIX*VIEW_MATRIX,VIEWPORT_SIZE),texture(surface_state,source_uv-canopy_shadow_offset/source_spacing_m/source_grid_size).r)):0.0;
     ground*=mix(vec3(1.0),canopy_shadow_transmittance,canopy_shadow);
     ground=mix(ground,canopy_linear_albedo,crown_mask);
     if(presentation_mode==0 && crown_mask>.00001) {
@@ -147,7 +148,7 @@
     }
     ALBEDO=display_color(clamp(ground,vec3(0.0),vec3(0.95)));
     NORMAL_MAP=composed_normal;
-    NORMAL_MAP_DEPTH=0.75;
+    NORMAL_MAP_DEPTH=mix(.75,1.0,crown_mask);
     AO=1.0;
     if(presentation_mode==1) {
         vec3 light_direction=normalize(vec3(-0.5,1.0,-0.5));

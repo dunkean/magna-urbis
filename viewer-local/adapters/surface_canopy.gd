@@ -6,6 +6,9 @@ const LINEAR_ALBEDO := Color(0.055,0.105,0.036,1.0)
 const RADII := [2.5,4.0,5.5,7.0]
 const HALO_M := 16.0
 const RESOLUTION := 1024
+const MESO_CELL_M:=16.0
+const REFERENCE_CROWN_DIAMETER_M:=11.4378640776699
+const REFERENCE_CROWN_CENTRE_HEIGHT_M:=9.80388349514563
 static var _cached_packet: Dictionary = {}
 static var _cached_selection: Dictionary = {}
 static var _cached_atlas: Dictionary = {}
@@ -82,7 +85,7 @@ static func prepare(packet: Dictionary,selected: Dictionary) -> Dictionary:
 				coverage[index]=1.0
 				var dx=float(origin.x)+float(ix)*spacing-x
 				var top=sqrt(maxf(0.0,1.0-(dx*dx+dz*dz)/(radius*radius)))
-				var vertical_radius=tree_size*.363
+				var vertical_radius=tree_size*.33
 				var crown_height=tree_y-height_origin+tree_size*.72+top*vertical_radius
 				if crown_height>crown_heights[index]:
 					crown_heights[index]=crown_height
@@ -93,7 +96,7 @@ static func prepare(packet: Dictionary,selected: Dictionary) -> Dictionary:
 	coverage_image.generate_mipmaps() # Linear coverage, not sRGB and not overlap counts.
 	var normal_image:=Image.create_from_data(width,height,false,Image.FORMAT_RGBAF,normal_values.to_byte_array());normal_image.generate_mipmaps()
 	var counts_image := Image.create_from_data(width,height,false,Image.FORMAT_RGBAF,counts.to_byte_array())
-	var atlas := {"available":true,"version":"canopy-r3-normal-shadow-maincamera","coverageImage":coverage_image,"countsImage":counts_image,"normalImage":normal_image,
+	var atlas := {"available":true,"version":"canopy-r4-physical-lod-spectrum","coverageImage":coverage_image,"countsImage":counts_image,"normalImage":normal_image,
 		"origin":origin,"spacingM":spacing,"gridSize":Vector2(width,height),"bounds":bounds,"fallbackBlendM":transition_widths(bounds).paint,"geometryBlendM":transition_widths(bounds).geometry,
 		"linearAlbedo":LINEAR_ALBEDO,"treeCount":trees,"selectedTreeCount":selected_trees,"unsupportedTreeCount":unsupported_trees,
 		"scope":"Exact provided crown inventory inside its page; renderer-only calibrated approximate canopy outside, never candidate IDs"}
@@ -106,7 +109,7 @@ static func prepare(packet: Dictionary,selected: Dictionary) -> Dictionary:
 # Stable renderer phase depends only on canonical seed and absolute double origin.
 # Tile IDs, source versions and levels never enter the approximate crown layout.
 static func meso_parameters(world:Dictionary,origin:Dictionary)->Dictionary:
-	return {"canopy_meso_phase":Vector4(fposmod(float(origin.x)/16.0,1.0),fposmod(float(origin.z)/16.0,1.0),posmod(floori(float(origin.x)/16.0),1048576),posmod(floori(float(origin.z)/16.0),1048576)),"canopy_meso_seed":int(str(world.get("seed",0)).hash()&0x7fffffff)}
+	return {"canopy_meso_phase":Vector4(fposmod(float(origin.x)/MESO_CELL_M,1.0),fposmod(float(origin.z)/MESO_CELL_M,1.0),posmod(floori(float(origin.x)/MESO_CELL_M),1048576),posmod(floori(float(origin.z)/MESO_CELL_M),1048576)),"canopy_meso_seed":int(str(world.get("seed",0)).hash()&0x7fffffff)}
 
 static func shadow_offset(to_light:Vector3,height_m:float=8.0)->Vector2:
 	return -Vector2(to_light.x,to_light.z)*clampf(height_m,0.0,32.0)/maxf(to_light.y,.1)

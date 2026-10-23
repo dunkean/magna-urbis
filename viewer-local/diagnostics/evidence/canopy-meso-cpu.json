@@ -1,6 +1,6 @@
 {
   "kind": "CPU calibration and independent seed/grid validation; not GPU evidence",
-  "version": "canopy-meso-fullcell-jitter-cdf-1",
+  "version": "canopy-meso-fullcell-jitter-physical-spectrum-2",
   "cellMetres": 16,
   "siteCountPerCell": 1,
   "neighborhood": 25,
@@ -19,22 +19,22 @@
       "seed": 1,
       "cover": 0.03,
       "footprintM": 1.25,
-      "mean": 0.02980075098989924,
-      "errorPoints": -0.019924901010075907
+      "mean": 0.02973154328836337,
+      "errorPoints": -0.026845671163662835
     },
     {
       "seed": 1,
       "cover": 0.03,
       "footprintM": 4.0,
-      "mean": 0.030000000000000013,
-      "errorPoints": 1.3877787807814457e-15
+      "mean": 0.029782645947100513,
+      "errorPoints": -0.021735405289948634
     },
     {
       "seed": 1,
       "cover": 0.03,
       "footprintM": 8.0,
-      "mean": 0.030000000000000013,
-      "errorPoints": 1.3877787807814457e-15
+      "mean": 0.029975339205898163,
+      "errorPoints": -0.0024660794101835637
     },
     {
       "seed": 1,
@@ -61,15 +61,15 @@
       "seed": 1,
       "cover": 0.1,
       "footprintM": 4.0,
-      "mean": 0.10000000000000002,
-      "errorPoints": 1.3877787807814457e-15
+      "mean": 0.09970102881027704,
+      "errorPoints": -0.029897118972296854
     },
     {
       "seed": 1,
       "cover": 0.1,
       "footprintM": 8.0,
-      "mean": 0.10000000000000002,
-      "errorPoints": 1.3877787807814457e-15
+      "mean": 0.09996607899943075,
+      "errorPoints": -0.0033921000569259174
     },
     {
       "seed": 1,
@@ -96,15 +96,15 @@
       "seed": 1,
       "cover": 0.27,
       "footprintM": 4.0,
-      "mean": 0.26967041672826975,
-      "errorPoints": -0.03295832717302716
+      "mean": 0.269551355028652,
+      "errorPoints": -0.04486449713480001
     },
     {
       "seed": 1,
       "cover": 0.27,
       "footprintM": 8.0,
-      "mean": 0.27,
-      "errorPoints": 0.0
+      "mean": 0.26994699370448255,
+      "errorPoints": -0.005300629551746594
     },
     {
       "seed": 1,
@@ -131,15 +131,15 @@
       "seed": 1,
       "cover": 0.5,
       "footprintM": 4.0,
-      "mean": 0.49880506096258637,
-      "errorPoints": -0.11949390374136337
+      "mean": 0.49903252617091864,
+      "errorPoints": -0.09674738290813556
     },
     {
       "seed": 1,
       "cover": 0.5,
       "footprintM": 8.0,
-      "mean": 0.49998936121189785,
-      "errorPoints": -0.0010638788102146357
+      "mean": 0.4999165309488536,
+      "errorPoints": -0.008346905114642311
     },
     {
       "seed": 1,
@@ -166,15 +166,15 @@
       "seed": 1,
       "cover": 0.8,
       "footprintM": 4.0,
-      "mean": 0.7992153955689167,
-      "errorPoints": -0.07846044310833022
+      "mean": 0.799364750644604,
+      "errorPoints": -0.06352493553960503
     },
     {
       "seed": 1,
       "cover": 0.8,
       "footprintM": 8.0,
-      "mean": 0.7997835609776267,
-      "errorPoints": -0.021643902237333812
+      "mean": 0.7999279251831388,
+      "errorPoints": -0.007207481686122286
     },
     {
       "seed": 1,
@@ -201,15 +201,15 @@
       "seed": 1,
       "cover": 0.97,
       "footprintM": 4.0,
-      "mean": 0.9702202206634662,
-      "errorPoints": 0.02202206634662751
+      "mean": 0.9701783000821425,
+      "errorPoints": 0.01783000821424796
     },
     {
       "seed": 1,
       "cover": 0.97,
       "footprintM": 8.0,
-      "mean": 0.9701040897888746,
-      "errorPoints": 0.01040897888746617
+      "mean": 0.9700202297659297,
+      "errorPoints": 0.002022976592974679
     },
     {
       "seed": 1,
@@ -229,22 +229,22 @@
       "seed": 69,
       "cover": 0.03,
       "footprintM": 1.25,
-      "mean": 0.02969281018175312,
-      "errorPoints": -0.030718981824687935
+      "mean": 0.02958611002176067,
+      "errorPoints": -0.041388997823933044
     },
     {
       "seed": 69,
       "cover": 0.03,
       "footprintM": 4.0,
-      "mean": 0.030000000000000013,
-      "errorPoints": 1.3877787807814457e-15
+      "mean": 0.02966489694492508,
+      "errorPoints": -0.03351030550749201
     },
     {
       "seed": 69,
       "cover": 0.03,
       "footprintM": 8.0,
-      "mean": 0.030000000000000013,
-      "errorPoints": 1.3877787807814457e-15
+      "mean": 0.029961979510692995,
+      "errorPoints": -0.0038020489307004357
     },
     {
       "seed": 69,
@@ -271,15 +271,15 @@
       "seed": 69,
       "cover": 0.1,
       "footprintM": 4.0,
-      "mean": 0.10000000000000002,
-      "errorPoints": 1.3877787807814457e-15
+      "mean": 0.09955978920024035,
+      "errorPoints": -0.04402107997596577
     },
     {
       "seed": 69,
       "cover": 0.1,
       "footprintM": 8.0,
-      "mean": 0.10000000000000002,
-      "errorPoints": 1.3877787807814457e-15
+      "mean": 0.0999500540811204,
+      "errorPoints": -0.004994591887960698
     },
     {
       "seed": 69,
@@ -306,15 +306,15 @@
       "seed": 69,
       "cover": 0.27,
       "footprintM": 4.0,
-      "mean": 0.2698866755807262,
-      "errorPoints": -0.01133244192738081
+      "mean": 0.2698457372227321,
+      "errorPoints": -0.01542627772679328
     },
     {
       "seed": 69,
       "cover": 0.27,
       "footprintM": 8.0,
-      "mean": 0.27,
-      "errorPoints": 0.0
+      "mean": 0.2699832135195117,
+      "errorPoints": -0.0016786480488306665
     },
     {
       "seed": 69,
@@ -341,15 +341,15 @@
       "seed": 69,
       "cover": 0.5,
       "footprintM": 4.0,
-      "mean": 0.5004918762477737,
-      "errorPoints": 0.049187624777369265
+      "mean": 0.5003982440793782,
+      "errorPoints": 0.039824407937816275
     },
     {
       "seed": 69,
       "cover": 0.5,
       "footprintM": 8.0,
-      "mean": 0.5000023623383676,
-      "errorPoints": 0.00023623383675897003
+      "mean": 0.5000185342672621,
+      "errorPoints": 0.001853426726206031
     },
     {
       "seed": 69,
@@ -376,15 +376,15 @@
       "seed": 69,
       "cover": 0.8,
       "footprintM": 4.0,
-      "mean": 0.8000433460225798,
-      "errorPoints": 0.004334602257971554
+      "mean": 0.8000350947965774,
+      "errorPoints": 0.003509479657737291
     },
     {
       "seed": 69,
       "cover": 0.8,
       "footprintM": 8.0,
-      "mean": 0.8000119573257292,
-      "errorPoints": 0.001195732572911723
+      "mean": 0.8000039818238531,
+      "errorPoints": 0.00039818238530830996
     },
     {
       "seed": 69,
@@ -411,15 +411,15 @@
       "seed": 69,
       "cover": 0.97,
       "footprintM": 4.0,
-      "mean": 0.9695815736992439,
-      "errorPoints": -0.04184263007560585
+      "mean": 0.9696612241439049,
+      "errorPoints": -0.03387758560950971
     },
     {
       "seed": 69,
       "cover": 0.97,
       "footprintM": 8.0,
-      "mean": 0.9698022260735232,
-      "errorPoints": -0.019777392647679637
+      "mean": 0.9699615627980136,
+      "errorPoints": -0.0038437201986374347
     },
     {
       "seed": 69,
@@ -439,22 +439,22 @@
       "seed": 2026,
       "cover": 0.03,
       "footprintM": 1.25,
-      "mean": 0.029647376315003904,
-      "errorPoints": -0.03526236849960944
+      "mean": 0.029524895030236926,
+      "errorPoints": -0.04751049697630724
     },
     {
       "seed": 2026,
       "cover": 0.03,
       "footprintM": 4.0,
-      "mean": 0.030000000000000013,
-      "errorPoints": 1.3877787807814457e-15
+      "mean": 0.02961533466568543,
+      "errorPoints": -0.03846653343145684
     },
     {
       "seed": 2026,
       "cover": 0.03,
       "footprintM": 8.0,
-      "mean": 0.030000000000000013,
-      "errorPoints": 1.3877787807814457e-15
+      "mean": 0.029956356219352245,
+      "errorPoints": -0.004364378064775423
     },
     {
       "seed": 2026,
@@ -481,15 +481,15 @@
       "seed": 2026,
       "cover": 0.1,
       "footprintM": 4.0,
-      "mean": 0.10000000000000002,
-      "errorPoints": 1.3877787807814457e-15
+      "mean": 0.09938701292051391,
+      "errorPoints": -0.061298707948609366
     },
     {
       "seed": 2026,
       "cover": 0.1,
       "footprintM": 8.0,
-      "mean": 0.10000000000000002,
-      "errorPoints": 1.3877787807814457e-15
+      "mean": 0.09993045104081276,
+      "errorPoints": -0.006954895918724613
     },
     {
       "seed": 2026,
@@ -516,15 +516,15 @@
       "seed": 2026,
       "cover": 0.27,
       "footprintM": 4.0,
-      "mean": 0.2695510694839186,
-      "errorPoints": -0.04489305160814139
+      "mean": 0.26938889368544955,
+      "errorPoints": -0.061110631455046915
     },
     {
       "seed": 2026,
       "cover": 0.27,
       "footprintM": 8.0,
-      "mean": 0.27,
-      "errorPoints": 0.0
+      "mean": 0.26993192314442827,
+      "errorPoints": -0.006807685557175258
     },
     {
       "seed": 2026,
@@ -551,15 +551,15 @@
       "seed": 2026,
       "cover": 0.5,
       "footprintM": 4.0,
-      "mean": 0.5000939055350407,
-      "errorPoints": 0.009390553504073917
+      "mean": 0.500076029943548,
+      "errorPoints": 0.007602994354805048
     },
     {
       "seed": 2026,
       "cover": 0.5,
       "footprintM": 8.0,
-      "mean": 0.5000044214906264,
-      "errorPoints": 0.0004421490626405067
+      "mean": 0.5000346898183974,
+      "errorPoints": 0.0034689818397382055
     },
     {
       "seed": 2026,
@@ -586,15 +586,15 @@
       "seed": 2026,
       "cover": 0.8,
       "footprintM": 4.0,
-      "mean": 0.8022286728122088,
-      "errorPoints": 0.22286728122087318
+      "mean": 0.80180442897243,
+      "errorPoints": 0.1804428972429939
     },
     {
       "seed": 2026,
       "cover": 0.8,
       "footprintM": 8.0,
-      "mean": 0.80061479612599,
-      "errorPoints": 0.06147961259899137
+      "mean": 0.8002047288779155,
+      "errorPoints": 0.02047288779154499
     },
     {
       "seed": 2026,
@@ -621,15 +621,15 @@
       "seed": 2026,
       "cover": 0.97,
       "footprintM": 4.0,
-      "mean": 0.97128152259413,
-      "errorPoints": 0.1281522594130058
+      "mean": 0.9710375755853456,
+      "errorPoints": 0.10375755853456736
     },
     {
       "seed": 2026,
       "cover": 0.97,
       "footprintM": 8.0,
-      "mean": 0.9706057261573963,
-      "errorPoints": 0.06057261573962913
+      "mean": 0.9701177223867415,
+      "errorPoints": 0.011772238674156998
     },
     {
       "seed": 2026,

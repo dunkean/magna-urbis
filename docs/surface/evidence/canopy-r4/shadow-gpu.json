@@ -1,0 +1,30 @@
+{
+  "adapter": "NVIDIA GeForce RTX 4090",
+  "authoredCrownCentreHeightM": 8,
+  "backend": "forward_plus",
+  "canopyIncludeSha256": "41ae0255ea87ffe054071586d78a584400e10b82daca54f0bbaf3fbcac92a51b",
+  "mainCameraShadowTest": {
+    "controlVisibleCasterChangedSamples": 11626,
+    "mainCameraWidthM": 20000,
+    "mainViewportWidth": 1024,
+    "maximumHiddenCasterByteError": 0,
+    "observerWidthM": 60,
+    "scope": "Production canopy shader, common main-camera uniforms in colour and real shadow pass; close observer resolves hidden geometry/shadow versus absent-caster image"
+  },
+  "nativeProxyDirectionCosine": 1.0,
+  "nativeShadowCentroid": [
+    4.629225730896,
+    -7.40782499313354
+  ],
+  "passed": true,
+  "proxyShadowCentroid": [
+    4.32090091705322,
+    -6.91204690933228
+  ],
+  "scope": "Orientation only: actual Godot sphere caster versus renderer-only shifted optical disc on a flat receiver; not height/energy/penumbra equivalence",
+  "sourceShaderSha256": "c612f3aac287dec22be23ca32847811213b68edd726e0e3d50cb57915b779453",
+  "sourceShadowOffsetM": [
+    3.81713175773621,
+    -6.10868787765503
+  ]
+}

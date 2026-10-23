@@ -1,0 +1,32 @@
+{
+  "adapter": "NVIDIA GeForce RTX 4090",
+  "backend": "forward_plus",
+  "meshVsMultiMeshMaximumByteError": 0.0,
+  "meshVsMultiMeshMeanByteError": 0.0,
+  "normalTransform": "explicit inverse transpose of full MODEL_MATRIX for nonuniform instance scale",
+  "passed": true,
+  "results": [
+    {
+      "comparedChannels": 113352,
+      "maximumByteError": 25.0000019073486,
+      "meanByteError": 3.70312839080713,
+      "nativeRenderer": "MeshInstance3D",
+      "normalMapDepth": 0.75
+    },
+    {
+      "comparedChannels": 113352,
+      "maximumByteError": 6.00000333786011,
+      "meanByteError": 0.587197426877187,
+      "nativeRenderer": "MeshInstance3D",
+      "normalMapDepth": 1.0
+    },
+    {
+      "comparedChannels": 113352,
+      "maximumByteError": 6.00000333786011,
+      "meanByteError": 0.587197426877187,
+      "nativeRenderer": "MultiMeshInstance3D",
+      "normalMapDepth": 1.0
+    }
+  ],
+  "scope": "Independent actual production SphereMesh radius.42 height1 scale(12,7.92,12), versus production exact crown-normal atlas on a flat receiver. Same footprint, tint, BRDF and lighting; shadows disabled to isolate normals/illumination. Core radius85percent excludes silhouette tessellation."
+}
