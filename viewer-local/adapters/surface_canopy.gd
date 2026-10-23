@@ -6,6 +6,9 @@ const LINEAR_ALBEDO := Color(0.055,0.105,0.036,1.0)
 const RADII := [2.5,4.0,5.5,7.0]
 const HALO_M := 16.0
 const RESOLUTION := 1024
+static var _cached_packet: Dictionary = {}
+static var _cached_selection: Dictionary = {}
+static var _cached_atlas: Dictionary = {}
 
 static func radius_class(radius: float) -> int:
 	var best := 0
@@ -21,6 +24,9 @@ static func instance_weight(bin: int,footprint: float) -> float:
 
 # Called on the population preparation worker; GPU texture creation stays on UI.
 static func prepare(packet: Dictionary,selected: Dictionary) -> Dictionary:
+	# Packets are immutable snapshots. A sequential preparation worker may reuse
+	# the exact atlas while panning if neither packet identity nor selected ids changed.
+	if is_same(packet,_cached_packet) and selected==_cached_selection: return _cached_atlas
 	var bounds: Dictionary = packet.get("candidateBounds",{})
 	if bounds.is_empty(): return {"available":false,"reason":"No declared candidate query bounds"}
 	var extent := maxf(float(bounds.maxX)-float(bounds.minX),float(bounds.maxZ)-float(bounds.minZ))
@@ -59,7 +65,11 @@ static func prepare(packet: Dictionary,selected: Dictionary) -> Dictionary:
 	var coverage_image := Image.create_from_data(width,height,false,Image.FORMAT_RF,coverage.to_byte_array())
 	coverage_image.generate_mipmaps() # Linear coverage, not sRGB and not overlap counts.
 	var counts_image := Image.create_from_data(width,height,false,Image.FORMAT_RGBAF,counts.to_byte_array())
-	return {"available":true,"version":"canopy-r1","coverageImage":coverage_image,"countsImage":counts_image,
+	var atlas := {"available":true,"version":"canopy-r1","coverageImage":coverage_image,"countsImage":counts_image,
 		"origin":origin,"spacingM":spacing,"gridSize":Vector2(width,height),"bounds":bounds,"fallbackBlendM":HALO_M,
 		"linearAlbedo":LINEAR_ALBEDO,"treeCount":trees,"selectedTreeCount":selected_trees,
 		"scope":"Only provided candidate query; analytic mean treeCover outside its C1 halo"}
+	_cached_packet=packet
+	_cached_selection=selected.duplicate()
+	_cached_atlas=atlas
+	return atlas

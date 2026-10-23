@@ -23,6 +23,12 @@ func run() -> void:
 	assert(atlas.available and atlas.treeCount==3 and atlas.selectedTreeCount==2)
 	assert(atlas.coverageImage.get_format()==Image.FORMAT_RF and atlas.coverageImage.has_mipmaps())
 	assert(atlas.countsImage.get_format()==Image.FORMAT_RGBAF and not atlas.countsImage.has_mipmaps())
+	var cached: Dictionary = Canopy.prepare(packet,{"b":true,"a":true})
+	assert(is_same(cached.coverageImage,atlas.coverageImage) and is_same(cached.countsImage,atlas.countsImage))
+	var changed: Dictionary = Canopy.prepare(packet,{"a":true})
+	assert(not is_same(changed.countsImage,atlas.countsImage) and changed.selectedTreeCount==1)
+	var copied: Dictionary = Canopy.prepare(packet.duplicate(true),{"a":true})
+	assert(not is_same(copied.countsImage,changed.countsImage))
 	# Translation by planetary-scale coordinates must preserve every crown texel.
 	var translated := packet.duplicate(true)
 	translated.candidateBounds={"minX":20000000.0,"minZ":-10000000.0,"maxX":20000064.0,"maxZ":-9999936.0}
