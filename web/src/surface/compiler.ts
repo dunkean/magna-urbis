@@ -7,26 +7,10 @@ import {
 import { DEFAULT_ROCK_UNITS, SURFACE_MATERIALS, createMaterialIndex, dominantMaterialPair, materialColor, packMaterialMean, unpackMaterialMean, type MaterialComposition } from './materials';
 import { sampleTerrainHeight, type ReconstructedTerrain } from './heightSampling';
 
-/** Hash includes content and shape, not merely source labels (edit-safe cache invalidation). */
-export function fingerprint(value: unknown): string {
-  // Four independently seeded lanes: cache identities carry 128 bits rather than
-  // the former 32-bit key. This is a content identity, not an authentication hash.
-  const hashes = [2166136261, 3335557771, 1597334677, 3812015801];
-  const feedByte = (byte: number) => { for (let lane = 0; lane < 4; lane++) hashes[lane] = Math.imul(hashes[lane] ^ byte, 16777619 + lane * 2); };
-  const feed = (text: string) => { for (let j = 0; j < text.length; j++) { const c = text.charCodeAt(j); feedByte(c & 255); feedByte(c >>> 8); } };
-  const walk = (v: unknown): void => {
-    if (ArrayBuffer.isView(v)) {
-      feed(v.constructor.name + ':' + v.byteLength + ':');
-      const bytes = new Uint8Array(v.buffer, v.byteOffset, v.byteLength);
-      for (let j = 0; j < bytes.length; j++) feedByte(bytes[j]);
-    } else if (Array.isArray(v)) { feed('['); for (const x of v) walk(x); feed(']'); }
-    else if (v && typeof v === 'object') {
-      feed('{'); for (const key of Object.keys(v).filter(key => (v as Record<string, unknown>)[key] !== undefined).sort()) { feed(key + ':'); walk((v as Record<string, unknown>)[key]); } feed('}');
-    } else feed(typeof v + ':' + String(v) + ';');
-  };
-  walk(value);
-  return hashes.map(hash => (hash >>> 0).toString(16).padStart(8, '0')).join('');
-}
+import { fingerprint } from './hash';
+export { fingerprint } from './hash';
+import { deriveSurfaceGeometryDetail, sampleSurfaceGeometryDetail, hydrateSurfaceGeometryDetail } from './geometryDetail';
+import { SURFACE_MEMORY_BUDGET_BYTES } from './limits';
 
 /** Read-only identity verification for packets made before the 128-bit cache keys.
  * New compilations and geometry retargets always use the current algorithm. */
@@ -78,7 +62,7 @@ function createFields(n: number, radii: number, units: number): SurfaceFields {
 /** Conservative owned payload + compiler temporaries; excludes the caller's existing input buffers. */
 export function estimateSurfaceCompileBytes(grid: SurfaceGridGeometry, units: number, radii: number): number {
   const n = grid.width * grid.height;
-  return n * (FLOAT_FIELDS.length * 4 + BYTE_FIELDS.length + SHORT_FIELDS.length * 2 + INT_FIELDS.length * 4 + 4 + (radii + units * 2) * 4 + 4 + 2 + 80)
+  return n * (FLOAT_FIELDS.length * 4 + BYTE_FIELDS.length + SHORT_FIELDS.length * 2 + INT_FIELDS.length * 4 + 4 + (radii + units * 2) * 4 + 4 + 2 + 80 + 39)
     + (grid.width + 1) * (grid.height + 1) * 8;
 }
 function assertMemoryBudget(required: number, requested = 512 * 1024 * 1024): void {
@@ -435,12 +419,14 @@ export function compileSurfaceWorld(input: SurfaceCompileInput, options: Compile
   for (const v of Object.values(f)) estimatedBytes += Array.isArray(v) ? v.reduce((s, a) => s + a.byteLength, 0) : v.byteLength;
   assertNotAborted(options.signal);
   validateFieldFiniteness(f);
-  return { schemaVersion: SURFACE_SCHEMA_VERSION, compilerVersion: SURFACE_COMPILER_VERSION,
+  const world: SurfaceWorld = { schemaVersion: SURFACE_SCHEMA_VERSION, compilerVersion: SURFACE_COMPILER_VERSION,
     id: fingerprint([environment, occupationVersion, population, materialLibrary, surfaceState, input.seed].join(':')),
     seed: input.seed, units: 'metres', crs: 'local-xz', bounds: terrainBounds(t),
     versions: { terrain: terrainVersion, hydrology: hydrologyVersion, geology: geologyVersion, environment, occupation: occupationVersion, population, materialLibrary, surfaceState },
     terrain: t, geology, climate, state, fields: f, materials: materials.map(m => ({ ...m, colorLinear: [...m.colorLinear], compatibleSubstrates: [...m.compatibleSubstrates], compatibleProcesses: [...m.compatibleProcesses] })), topographicRadiiM: [...radii],
     diagnostics: { warnings, assumptions, hydrologyBoundary: boundary, estimatedBytes } };
+  attachGeometryDetail(world,options);
+  return world;
 }
 
 /** Continuous fields bilinear; categorical fields nearest. Soil fractions preserve their simplex under interpolation. */
@@ -452,7 +438,7 @@ export function sampleSurface(world: SurfaceWorld, x: number, z: number): Surfac
   const bilinear = sampler.continuous;
   const composition = sampleMaterialComposition(f, sampler.indices, sampler.weights);
   const rock = world.geology.units.find(r => r.id === f.bedrock[i])!;
-  return { x, z, heightM: sampleTerrainHeight(world.terrain, x, z), slope: bilinear(f.slope), aspect: f.aspect[i], curvature: bilinear(f.curvature),
+  return { x, z, localGeometry: world.geometryDetail ? sampleSurfaceGeometryDetail(world.geometryDetail,x,z) : undefined, heightM: sampleTerrainHeight(world.terrain, x, z), slope: bilinear(f.slope), aspect: f.aspect[i], curvature: bilinear(f.curvature),
     landform: f.landform[i], bedrock: rock, sourceRock: world.geology.units.find(r => r.id === f.sourceRock[i])!, depositOrigin: f.depositOrigin[i],
     depositDepthM: bilinear(f.depositDepthM), sand: bilinear(f.sand), silt: bilinear(f.silt), clay: bilinear(f.clay), organic: bilinear(f.organic),
     stoniness: bilinear(f.stoniness), soilDepthM: bilinear(f.soilDepthM), moisture: bilinear(f.moisture), contributingAreaM2: bilinear(f.contributingAreaM2),
@@ -519,7 +505,7 @@ export function hydrateSurfaceWorld(value: unknown, options: SurfaceHydrationOpt
   const contentHash = legacy ? legacyFingerprint : fingerprint, identityHash = legacy ? hashString : fingerprint;
   if (contentHash(w.terrain) !== w.versions.terrain) throw new Error('Terrain version mismatch: data was edited without invalidation');
   const expectedId = w.canonicalContextRef
-    ? identityHash([w.canonicalContextRef.id, w.versions.terrain, contentHash(w.bounds), 'geometry-retarget-1'].join(':'))
+    ? w.geometryDetail ? refinedWorldIdentity(w) : identityHash([w.canonicalContextRef.id, w.versions.terrain, contentHash(w.bounds), 'geometry-retarget-1'].join(':'))
     : identityHash([w.versions.environment, w.versions.occupation, w.versions.population, w.versions.materialLibrary, w.versions.surfaceState, w.seed].join(':'));
   if (w.id !== expectedId) throw new Error('SurfaceWorld id/version mismatch');
   restoreFields(w.fields, w.terrain.heights.length, w);
@@ -528,6 +514,11 @@ export function hydrateSurfaceWorld(value: unknown, options: SurfaceHydrationOpt
     restoreFields(w.canonicalContext.fields, w.canonicalContext.grid.width * w.canonicalContext.grid.height, w);
   } else if (w.canonicalContextRef && options.resolveCanonicalContext) w.canonicalContext = options.resolveCanonicalContext(w.canonicalContextRef);
   if (w.canonicalContext) validateContextReference(w.canonicalContext, w.canonicalContextRef, w.versions);
+  if (w.geometryDetail) {
+    w.geometryDetail=hydrateSurfaceGeometryDetail(w.geometryDetail,w.terrain,w.canonicalContextRef?.id,options.memoryBudgetBytes);
+    if (w.geometryDetail.surfaceConditioning && w.geometryDetail.surfaceConditioning.canonicalEnvironmentVersion!==w.versions.environment) throw new Error('Geometry conditioning differs from the canonical environment version');
+    if(w.geometryDetail.surfaceConditioning)for(let i=0;i<n;i++)if(Math.abs(w.geometryDetail.surfaceConditioning.bedrockExposure[i]-conditionedExposure(w,w.geometryDetail,i))>2e-6)throw new Error('Geometry conditioning differs from canonical soils, water or occupation');
+  }
   return w;
 }
 
@@ -751,11 +742,42 @@ export function retargetSurfaceWorld(baseWorld: SurfaceWorld, fineTerrain: Terra
   if (fields.waterClass.some((water, i) => water !== WaterClass.Dry && terrain.heights[i] > fields.waterLevelM[i] + .001)) warnings.push('Refined bed rises above a canonical water level in some wet cells; canonical water is preserved and this support conflict requires source reconciliation.');
   if (fineBounds.minX < footprint.minX || fineBounds.maxX > footprint.maxX || fineBounds.minZ < footprint.minZ || fineBounds.maxZ > footprint.maxZ) warnings.push('Fine source contains padding outside canonical footprint; projected padding context is clamped and excluded from active bounds.');
   assertNotAborted(options.signal);
-  return { ...baseWorld, compilerVersion: SURFACE_COMPILER_VERSION, id: fingerprint([reference.id, terrainVersion, fingerprint(bounds), 'geometry-retarget-1'].join(':')),
+  const result: SurfaceWorld = { ...baseWorld, compilerVersion: SURFACE_COMPILER_VERSION, id: '', geometryDetail: undefined,
     bounds, terrain, fields, geology, climate, versions, canonicalContext: context, canonicalContextRef: reference,
     state: { ...baseWorld.state }, topographicRadiiM: [...baseWorld.topographicRadiiM],
     diagnostics: { ...baseWorld.diagnostics, warnings, assumptions: [...baseWorld.diagnostics.assumptions,
       'Geometry refined without recompiling canonical context. Projected fields are renderer samples; exact CPU context and population eligibility resolve canonicalContext.',
       'Projected downstream indices are patch-local references; -1 may mean an exterior target. Canonical graph and basin identities remain authoritative.',
       'estimatedBytes counts this projection and source heights, excluding the borrowed canonical context.'], estimatedBytes } };
+  attachGeometryDetail(result,options);
+  result.id=refinedWorldIdentity(result);
+  return result;
+}
+
+const GEOMETRY_CONDITIONING_VERSION = 'surface-conditioning-1' as const;
+function conditionedExposure(world:SurfaceWorld,detail:NonNullable<SurfaceWorld['geometryDetail']>,i:number):number {
+  const f=world.fields;
+  if(f.waterClass[i]!==WaterClass.Dry||f.occupation[i]>=Occupation.Crop)return 0;
+  const regolith=f.soilDepthM[i]+f.depositDepthM[i];
+  const susceptibility=clamp((0.2+f.stoniness[i]*0.8)/(1+regolith/0.5));
+  const t=clamp((detail.slopeRadians[i]-55*Math.PI/180)/(17*Math.PI/180)),cliff=t*t*(3-2*t);
+  return Math.max(detail.rockExposurePotential[i]*susceptibility,cliff)*detail.edgeConfidence[i];
+}
+function refinedWorldIdentity(world: SurfaceWorld): string {
+  const prefix=[world.canonicalContextRef!.id,world.versions.terrain,fingerprint(world.bounds)];
+  const detail=world.geometryDetail;
+  return fingerprint((detail ? [...prefix,detail.id,detail.surfaceConditioning?.version ?? '', 'geometry-retarget-2'] : [...prefix,'geometry-retarget-1']).join(':'));
+}
+function attachGeometryDetail(world: SurfaceWorld, options: {signal?: AbortSignal;memoryBudgetBytes?:number}): void {
+  const detail=deriveSurfaceGeometryDetail(world.terrain,{canonicalContextId:world.canonicalContextRef?.id,geologyScenario:world.geology.scenario,
+    signal:options.signal,memoryBudgetBytes:Math.max(1,(options.memoryBudgetBytes??SURFACE_MEMORY_BUDGET_BYTES)-world.diagnostics.estimatedBytes)});
+  const conditioned=new Float32Array(world.terrain.width*world.terrain.height);
+  for(let i=0;i<conditioned.length;i++) {
+    if(!(i%4096))assertNotAborted(options.signal);
+    // Geometric potential is not an observation of bare soil: retain the source
+    // regolith/deposits, hydrology and accepted occupation as conditioning data.
+    conditioned[i]=conditionedExposure(world,detail,i);
+  }
+  world.geometryDetail={...detail,surfaceConditioning:{version:GEOMETRY_CONDITIONING_VERSION,canonicalEnvironmentVersion:world.versions.environment,bedrockExposure:conditioned}};
+  world.diagnostics.estimatedBytes+=conditioned.byteLength+Object.values(detail).reduce((sum,v)=>sum+(ArrayBuffer.isView(v)?v.byteLength:0),0);
 }

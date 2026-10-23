@@ -21,7 +21,7 @@ function base() {
     hydrology: { version: 'water', provenance: 'source water network', waterClass, waterLevelM },
     climate: { version: 'humid', meanAnnualTempC: 12, annualPrecipMm: 1600, elevationCorrected: true } });
 }
-function withoutHeight<T extends { heightM: number }>(sample: T) { const { heightM: _, ...rest } = sample; return rest; }
+function canonicalSample(sample: ReturnType<typeof sampleSurface>) { const { heightM: _, localGeometry: _detail, ...rest } = sample; return rest; }
 
 describe('geometry-only surface retargeting', () => {
   it('preserves exact context at arbitrary fixed coordinates across zoom, shifted patches and repeated refinements', () => {
@@ -38,12 +38,14 @@ describe('geometry-only surface retargeting', () => {
     expect(narrow.terrain.source.sourceLOD).toBe(8);
     expect(narrow.terrain.source.nativeSpacingM).toBe(2);
     for (const [x, z] of [[-42.3, -11.7], [-9.999, 7.89], [.002, -12.5], [39.9, 24.333], [50.01, 0]]) {
-      const expected = withoutHeight(sampleSurface(canonical, x, z));
-      expect(withoutHeight(sampleSurface(wide, x, z))).toEqual(expected);
-      expect(withoutHeight(sampleSurface(narrow, x, z))).toEqual(expected);
+      const expected = canonicalSample(sampleSurface(canonical, x, z));
+      expect(canonicalSample(sampleSurface(wide, x, z))).toEqual(expected);
+      expect(canonicalSample(sampleSurface(narrow, x, z))).toEqual(expected);
     }
     expect(serializeSurfaceWorld(canonical)).toBe(snapshot);
     expect(sampleSurface(wide, -42.3, -11.7).heightM).not.toBe(sampleSurface(canonical, -42.3, -11.7).heightM);
+    expect(sampleSurface(wide,-42.3,-11.7).localGeometry?.normalXYZ).not.toEqual(sampleSurface(canonical,-42.3,-11.7).localGeometry?.normalXYZ);
+    expect(wide.geometryDetail?.supportDescriptor.source).toEqual(wide.terrain.source);
   });
 
   it('keeps candidate identity, acceptance, rank and dimensions exact while source support refines', () => {

@@ -31,6 +31,18 @@ export function validateSurfacePacket(value: unknown): asserts value is {
     for (const required of ['slope', 'material', 'waterClass', 'waterLevelM', 'occupation', 'sand', 'silt', 'clay', 'treeCover']) if (!f[required]) throw new Error('Missing packet field ' + required);
   };
   fields(w.fields, terrain(w.terrain));
+  if(w.geometryDetail){
+    const d=w.geometryDetail,g=d.grid,t=w.terrain,n=t.width*t.height;
+    if(d.format!=='surface-geometry-detail'||d.version!==1||typeof d.id!=='string'||!d.id||!g
+      ||g.width!==t.width||g.height!==t.height||g.originX!==t.originX||g.originZ!==t.originZ||g.spacingM!==t.spacingM
+      ||d.canonicalContextId!==w.canonicalContextRef?.id||!d.source||d.source.id!==t.source.id||d.source.version!==t.source.version)throw new Error('Packet geometry detail source/grid/context reference mismatch');
+    for(const key of ['slopeRadians','aspectRadians','normalXYZ','rockExposurePotential','edgeConfidence','bedrockExposure'] as const)
+      if(!(d[key] instanceof Float32Array)||d[key].length!==n*(key==='normalXYZ'?3:1))throw new Error('Invalid packet geometry detail '+key);
+    if(!(d.treeSupport instanceof Uint8Array)||d.treeSupport.length!==n)throw new Error('Invalid packet geometry tree support');
+    if(d.localBedrockUnitId!==undefined&&(!(d.localBedrockUnitId instanceof Uint16Array)||d.localBedrockUnitId.length!==n||!d.geologyScenario))throw new Error('Invalid packet local bedrock');
+    const c=d.surfaceConditioning;
+    if(c&&(c.version!=='surface-conditioning-1'||c.canonicalEnvironmentVersion!==w.versions.environment||!(c.bedrockExposure instanceof Float32Array)||c.bedrockExposure.length!==n))throw new Error('Invalid packet surface conditioning');
+  }
   const c = w.canonicalContext, r = w.canonicalContextRef;
   if (c) {
     fields(c.fields, grid(c.grid as TerrainGrid));

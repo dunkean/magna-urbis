@@ -1,4 +1,4 @@
-import { fingerprint } from './compiler';
+import { fingerprint } from './hash';
 import { sampleTerrainHeight, type ReconstructedTerrain } from './heightSampling';
 import { rockUnitAtScenario,validateGeologyScenario,type TiltedStrataScenario } from './geologyScenario';
 import { assertNotAborted, type Bounds, type SourceIdentity, type TerrainGrid } from './model';
@@ -126,7 +126,9 @@ export function sampleSurfaceGeometryDetail(detail:SurfaceGeometryDetail,x:numbe
   };
   const nx=value(detail.normalXYZ,3,0),ny=value(detail.normalXYZ,3,1),nz=value(detail.normalXYZ,3,2),length=Math.hypot(nx,ny,nz);
   const slopeRadians=Math.acos(Math.max(-1,Math.min(1,ny/length))),confidence=value(detail.edgeConfidence);
-  return {slopeRadians,aspectRadians:Math.atan2(nz,nx),normalXYZ:[nx/length,ny/length,nz/length] as const,
+  // Flat aspects have no physical direction. Normalize signed zero as JSON
+  // transports it as +0; otherwise atan2(-0,-0) invents a pi-sized change.
+  return {slopeRadians,aspectRadians:nx===0&&nz===0?0:Math.atan2(nz||0,nx||0),normalXYZ:[nx/length||0,ny/length,nz/length||0] as const,
     rockExposurePotential:value(detail.rockExposurePotential),edgeConfidence:confidence,bedrockExposure:value(detail.bedrockExposure),
     treeSupport:confidence<1||slopeRadians<=65*Math.PI/180,
     localBedrockUnitId:detail.localBedrockUnitId?.[Math.round(gz)*g.width+Math.round(gx)]};

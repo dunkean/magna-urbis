@@ -150,6 +150,8 @@ describe('canonical SurfaceWorld', () => {
     expect(restored.terrain.source.sourceLOD).toBe(3);
     expect(sampleSurface(restored, -42.5, 17.25)).toEqual(sampleSurface(world, -42.5, 17.25));
     expect(serializeSurfaceWorld(restored)).toBe(encoded);
+    const edited=JSON.parse(encoded);edited.geometryDetail.surfaceConditioning.bedrockExposure[0]=.8;
+    expect(()=>deserializeSurfaceWorld(JSON.stringify(edited))).toThrow(/conditioning differs/);
     raw.schemaVersion = 999;
     expect(() => deserializeSurfaceWorld(JSON.stringify(raw))).toThrow(/schema/);
   });
