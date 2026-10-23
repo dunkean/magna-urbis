@@ -1,0 +1,517 @@
+{
+  "format": "magna-surface-native-e2e-evidence",
+  "version": 1,
+  "campaign": "V8",
+  "status": "complete",
+  "scope": "Technical end-to-end prototype qualification on a fresh teacher40km source, plus separate retained-terrain current-native-city rendering evidence. Pixel/artistic acceptance remains an independent review.",
+  "originalReport": {
+    "path": "web/out/surface/native-e2e-40km-v8/report.json",
+    "sha256": "dd83041518eda8b12c67b78f595cd6ba4fc7df7f8a79127c9720f53a78f92910",
+    "bytes": 1944021,
+    "durationMs": 421845
+  },
+  "repository": {
+    "head": "984f488ea2b373e223960ec5e4ba80eba08b39e5",
+    "finalHead": "984f488ea2b373e223960ec5e4ba80eba08b39e5",
+    "initialStatus": "",
+    "finalStatus": "",
+    "trackedRuntimeFileCount": 542,
+    "sameRuntimeHashes": true,
+    "assetsManifestSha256": "c9f5beb9d4cdbdb7eb5a83340d72d882f36322c73272244408374a260b7e8e26"
+  },
+  "source": {
+    "seed": "surface-native-e2e-40km",
+    "widthM": 40000,
+    "rawSourceGrid": {
+      "width": 1024,
+      "height": 1024,
+      "spacingM": 39.0625
+    },
+    "rawHeightfieldSha256": "3c7c2f32e37844842f058208e21522543bcec69125348e115390f83d5b814159",
+    "exportedGrid": {
+      "width": 512,
+      "height": 512,
+      "spacingM": 78.125
+    },
+    "exportedBytes": 79679657,
+    "selectedModels": {
+      "coarseModel": "coarse4",
+      "baseModel": "original",
+      "decoderModel": "original"
+    },
+    "backend": "python-cuda",
+    "precision": "bf16",
+    "neuralToken": "3aabd4c106c74ddbbff0a6606b3ee075",
+    "sourceId": "infinite:2814899424497554030:a12b8cf77f3a7265d3c18a02dab36f94",
+    "sourceVersion": "decoder-v12-nyquist-notch:magna-retained-v1:e2bf5473c0ff:f21afa261ed7",
+    "smokeGrid": {
+      "width": 64,
+      "height": 64,
+      "spacingM": 0.625
+    },
+    "smokeNativeSpacingM": 0.46875,
+    "smokeDecoderUsed": true,
+    "canonicalContextId": "2970937aae85cc1474c8fda223fb066e",
+    "geology": "Explicit authored tilted-strata-v1; not measured geology",
+    "manualPacketSwaps": false,
+    "urbanBuildings": 0
+  },
+  "navigation": {
+    "status": "complete",
+    "motionRequestedSeconds": 20,
+    "motionActualWallSeconds": 20.016,
+    "motionStartTickMs": 77984,
+    "motionEndTickMs": 97984,
+    "warmupSeconds": 50.541,
+    "drainSeconds": 7.239,
+    "maximumInputGapSeconds": 0.235999999999999,
+    "longestMotionApplicationGapSeconds": 9.578,
+    "frameWallMs": {
+      "max": 528.975,
+      "p50": 31.155,
+      "p95": 38.156,
+      "p99": 60.133
+    },
+    "displayedFreshWorlds": [
+      {
+        "worldId": "1bfc08a07bb2ecdeb591d040fff699ec",
+        "liveSerial": 102,
+        "appliedTickMs": 90596,
+        "nativeSpacingM": 15,
+        "preview": true,
+        "requestedResolution": 128
+      },
+      {
+        "worldId": "a2b40cf1935ce96ff3ebe0f910099735",
+        "liveSerial": 197,
+        "appliedTickMs": 93673,
+        "nativeSpacingM": 0.9375,
+        "preview": true,
+        "requestedResolution": 128
+      },
+      {
+        "worldId": "5d2ea638a10486068d78a250dc11a59c",
+        "liveSerial": 230,
+        "appliedTickMs": 97463,
+        "nativeSpacingM": 0.46875,
+        "preview": true,
+        "requestedResolution": 128
+      }
+    ],
+    "finalReady": true,
+    "final": {
+      "worldId": "68daf48f47c8f411121d9b7f17c85cd3",
+      "requestPreview": false,
+      "requestResolution": 512,
+      "deliveredGrid": {
+        "height": 140,
+        "spacingM": 0.465668530859122,
+        "width": 140
+      },
+      "nativeSpacingM": 0.46875,
+      "sourceLODKnown": true
+    }
+  },
+  "tour": {
+    "status": "complete",
+    "resolution": [
+      2048,
+      1280
+    ],
+    "captures": [
+      {
+        "path": "web/out/surface/native-e2e-40km-v8/native-tour/00_40000m_top.png",
+        "sha256": "6901bdebc36e2e509239b5aed3ba037730e7e4289fd11392b83eb334254e1386",
+        "widthM": 40000,
+        "screenMetresPerPixel": 19.53125,
+        "deliveredSpacingM": 77.972412109375,
+        "nativeSpacingM": 30,
+        "sourceLODKnown": true,
+        "fineContributionWeight": 1,
+        "worldId": "bb6f1c855a4cd7db39c6d405436d58e9",
+        "requestSerial": 0,
+        "viewSatisfiedSerial": 0,
+        "threePhysicalLayers": true,
+        "water": {
+          "requestedAreaM2": 48038668.5275281,
+          "emittedAreaM2": 48038664.7425106,
+          "missingAreaM2": 0,
+          "missingLevelTriangles": 0,
+          "coverageComplete": true,
+          "budgetLimited": false,
+          "sourceLevelsUnchanged": true,
+          "boundaryQueriesResolved": 51,
+          "maximumBoundaryQueryRoundoffM": 0.0001220703125,
+          "bedConflicts": 2931,
+          "bedDiagnosticSamples": 4087
+        }
+      },
+      {
+        "path": "web/out/surface/native-e2e-40km-v8/native-tour/01_10000m_top.png",
+        "sha256": "c771fcb96f887c7124c81809f5d6f16d45ba50c4e6337332cce6012a0d0b8768",
+        "widthM": 10000,
+        "screenMetresPerPixel": 4.8828125,
+        "deliveredSpacingM": 23.5390625,
+        "nativeSpacingM": 15,
+        "sourceLODKnown": true,
+        "fineContributionWeight": 1,
+        "worldId": "4da3c7a55fc12ebbe97cf21da13d2d11",
+        "requestSerial": 1,
+        "viewSatisfiedSerial": 1,
+        "threePhysicalLayers": true,
+        "water": {
+          "requestedAreaM2": 48038668.5275281,
+          "emittedAreaM2": 48038663.8714227,
+          "missingAreaM2": 0,
+          "missingLevelTriangles": 0,
+          "coverageComplete": true,
+          "budgetLimited": false,
+          "sourceLevelsUnchanged": true,
+          "boundaryQueriesResolved": 0,
+          "maximumBoundaryQueryRoundoffM": 0,
+          "bedConflicts": 2929,
+          "bedDiagnosticSamples": 4087
+        }
+      },
+      {
+        "path": "web/out/surface/native-e2e-40km-v8/native-tour/02_2560m_top.png",
+        "sha256": "fe050c80fd66b02ca99a307f4845687194a95e5faa1eaf77882a3798f97901f2",
+        "widthM": 2560,
+        "screenMetresPerPixel": 1.25,
+        "deliveredSpacingM": 6.1015625,
+        "nativeSpacingM": 3.75,
+        "sourceLODKnown": true,
+        "fineContributionWeight": 1,
+        "worldId": "a39ed541d1934abfbfef1e518e7079bd",
+        "requestSerial": 2,
+        "viewSatisfiedSerial": 2,
+        "threePhysicalLayers": true,
+        "water": {
+          "requestedAreaM2": 720224.411397081,
+          "emittedAreaM2": 720224.489952497,
+          "missingAreaM2": 0,
+          "missingLevelTriangles": 0,
+          "coverageComplete": true,
+          "budgetLimited": false,
+          "sourceLevelsUnchanged": true,
+          "boundaryQueriesResolved": 0,
+          "maximumBoundaryQueryRoundoffM": 0,
+          "bedConflicts": 3882,
+          "bedDiagnosticSamples": 3961
+        }
+      },
+      {
+        "path": "web/out/surface/native-e2e-40km-v8/native-tour/03_640m_top.png",
+        "sha256": "19aaa25c5ba9f0245ece9e428b91bae5b4fb9d117bcc5509a5242cba7a202128",
+        "widthM": 640,
+        "screenMetresPerPixel": 0.3125,
+        "deliveredSpacingM": 1.6015625,
+        "nativeSpacingM": 0.9375,
+        "sourceLODKnown": true,
+        "fineContributionWeight": 1,
+        "worldId": "518526af890869b1c495f327f9146ceb",
+        "requestSerial": 3,
+        "viewSatisfiedSerial": 3,
+        "threePhysicalLayers": true,
+        "water": {
+          "requestedAreaM2": 3086.09714400111,
+          "emittedAreaM2": 3086.10043913126,
+          "missingAreaM2": 0,
+          "missingLevelTriangles": 0,
+          "coverageComplete": true,
+          "budgetLimited": false,
+          "sourceLevelsUnchanged": true,
+          "boundaryQueriesResolved": 0,
+          "maximumBoundaryQueryRoundoffM": 0,
+          "bedConflicts": 393,
+          "bedDiagnosticSamples": 393
+        }
+      },
+      {
+        "path": "web/out/surface/native-e2e-40km-v8/native-tour/04_160m_top.png",
+        "sha256": "46d11986910cbf9680a9f10b067d96103419610f152b0b3f669102e30dad3ea8",
+        "widthM": 160,
+        "screenMetresPerPixel": 0.078125,
+        "deliveredSpacingM": 0.4765625,
+        "nativeSpacingM": 0.46875,
+        "sourceLODKnown": true,
+        "fineContributionWeight": 1,
+        "worldId": "5b28c997c7d0ee89112acedfa91bd9d3",
+        "requestSerial": 4,
+        "viewSatisfiedSerial": 4,
+        "threePhysicalLayers": true,
+        "water": {
+          "requestedAreaM2": 0,
+          "emittedAreaM2": 0,
+          "missingAreaM2": 0,
+          "missingLevelTriangles": 0,
+          "coverageComplete": true,
+          "budgetLimited": false,
+          "sourceLevelsUnchanged": true,
+          "boundaryQueriesResolved": 0,
+          "maximumBoundaryQueryRoundoffM": 0,
+          "bedConflicts": 0,
+          "bedDiagnosticSamples": 0
+        }
+      },
+      {
+        "path": "web/out/surface/native-e2e-40km-v8/native-tour/05_40m_top.png",
+        "sha256": "c4d411b9125226f789f58400d4118c984cb639a892215337973b203a33173c60",
+        "widthM": 40,
+        "screenMetresPerPixel": 0.01953125,
+        "deliveredSpacingM": 0.467289719626168,
+        "nativeSpacingM": 0.46875,
+        "sourceLODKnown": true,
+        "fineContributionWeight": 1,
+        "worldId": "8375c84a4b546df4d57e9fda2ad2e3b6",
+        "requestSerial": 5,
+        "viewSatisfiedSerial": 5,
+        "threePhysicalLayers": true,
+        "water": {
+          "requestedAreaM2": 0,
+          "emittedAreaM2": 0,
+          "missingAreaM2": 0,
+          "missingLevelTriangles": 0,
+          "coverageComplete": true,
+          "budgetLimited": false,
+          "sourceLevelsUnchanged": true,
+          "boundaryQueriesResolved": 0,
+          "maximumBoundaryQueryRoundoffM": 0,
+          "bedConflicts": 0,
+          "bedDiagnosticSamples": 0
+        }
+      },
+      {
+        "path": "web/out/surface/native-e2e-40km-v8/native-tour/06_10m_top.png",
+        "sha256": "46a1e7c37f464550997a8def9cb77a0178b30852b1a1bf13007d2900a5429b4e",
+        "widthM": 10,
+        "screenMetresPerPixel": 0.0048828125,
+        "deliveredSpacingM": 0.467289719626168,
+        "nativeSpacingM": 0.46875,
+        "sourceLODKnown": true,
+        "fineContributionWeight": 1,
+        "worldId": "8375c84a4b546df4d57e9fda2ad2e3b6",
+        "requestSerial": 5,
+        "viewSatisfiedSerial": 6,
+        "threePhysicalLayers": true,
+        "water": {
+          "requestedAreaM2": 0,
+          "emittedAreaM2": 0,
+          "missingAreaM2": 0,
+          "missingLevelTriangles": 0,
+          "coverageComplete": true,
+          "budgetLimited": false,
+          "sourceLevelsUnchanged": true,
+          "boundaryQueriesResolved": 0,
+          "maximumBoundaryQueryRoundoffM": 0,
+          "bedConflicts": 0,
+          "bedDiagnosticSamples": 0
+        }
+      }
+    ]
+  },
+  "layerIsolation": {
+    "status": "complete",
+    "scope": "Four production visibility states, unchanged actual source/ground/inventory hashes and central pixel digests. Pixel appearance still needs inspection; sampled optical coverage is canonical potential times the actual visibility flag, not a GPU crown-area measurement.",
+    "worldId": "4da3c7a55fc12ebbe97cf21da13d2d11",
+    "sharedFingerprints": {
+      "terrainVersion": "17819891826ea351f9c60bb5ef9b0bb7:6c85b86b68b0165e82fcd97cf4e5f3afa23b5b4afda4ea044cc37a91f57b8d63",
+      "groundFieldsVersion": "38c9de0d6e98c906e63e37be85af5bb1292af89cd6b4d787a65e3df1cd77386f",
+      "groundSampleFingerprint": "de548b399198f5e4e441bd7bf3e52075bc4977e2aaa8d30b13c6ffe61490b490",
+      "inventoryFingerprint": "84d70218b9a200f038726a65ab88589b52ce2b23c68df4ee6c7eae2400f2eb94",
+      "canonicalContextId": "2970937aae85cc1474c8fda223fb066e",
+      "geometryDetailId": "geometry-detail:ca1856b5f25c2a6dca33c2014c1536ab"
+    },
+    "allPhysicalFingerprintsInvariant": true,
+    "views": [
+      {
+        "path": "web/out/surface/native-e2e-40km-v8/native-layer-isolation/all.png",
+        "sha256": "c771fcb96f887c7124c81809f5d6f16d45ba50c4e6337332cce6012a0d0b8768",
+        "name": "all",
+        "visibility": {
+          "ground": true,
+          "lowCover": true,
+          "trees": true
+        },
+        "centralPixelSha256": "a327dce179858149d905dfb8abe0ec98590e9e972978c084200f0cf766925e6a",
+        "lowCoverOpacity": 0.450081453373035,
+        "treeOpticalCoverage": 0.309882060388725
+      },
+      {
+        "path": "web/out/surface/native-e2e-40km-v8/native-layer-isolation/no-low-cover.png",
+        "sha256": "f102749f02f2d94db05e002382c57e30757d8b19cab9ac321f32651d099cd8e3",
+        "name": "no-low-cover",
+        "visibility": {
+          "ground": true,
+          "lowCover": false,
+          "trees": true
+        },
+        "centralPixelSha256": "9b0c756ccf9d1d82f052a50044fb933123ede8e80eb2f433c19d63913ceed085",
+        "lowCoverOpacity": 0,
+        "treeOpticalCoverage": 0.309882060388725
+      },
+      {
+        "path": "web/out/surface/native-e2e-40km-v8/native-layer-isolation/no-trees.png",
+        "sha256": "98c6ab5392dfb317e93dc6b0307b5a8efd2fab0877dfd5800f28ace144ae799a",
+        "name": "no-trees",
+        "visibility": {
+          "ground": true,
+          "lowCover": true,
+          "trees": false
+        },
+        "centralPixelSha256": "71b6f316ff3ae69cd5b373958aed8155d3218514008ae51f35a65d6439e203d9",
+        "lowCoverOpacity": 0.450081453373035,
+        "treeOpticalCoverage": 0
+      },
+      {
+        "path": "web/out/surface/native-e2e-40km-v8/native-layer-isolation/ground.png",
+        "sha256": "6eb0ebbeed120f338d7f8b320f288efc4a8b4effc8fc3dfbfe162fe815ba1ac0",
+        "name": "ground",
+        "visibility": {
+          "ground": true,
+          "lowCover": false,
+          "trees": false
+        },
+        "centralPixelSha256": "ac5b12cd082a2bba34af261364c9c4d630b8180a00672dfc3de2a3f1100458c5",
+        "lowCoverOpacity": 0,
+        "treeOpticalCoverage": 0
+      }
+    ],
+    "unlitBareGround": {
+      "path": "web/out/surface/native-e2e-40km-v8/native-layer-isolation/ground-mean-unlit.png",
+      "sha256": "a1ecdc8460b743cdde27b89d4eb7cea1cbf9ac004d471874e2f095f263e65680"
+    },
+    "physicalLowCoverMean": 0.450081453373035,
+    "physicalTreeCoverMean": 0.309882060388725
+  },
+  "separateCurrentNativeCity": {
+    "reportPath": "web/out/surface/native-current-419-final/qualification-report.json",
+    "reportSha256": "309203ed2446a681a812fb61b91ec76c5823a261c9c44b18fd7462e7744225b3",
+    "runtimeHead": "984f488ea2b373e223960ec5e4ba80eba08b39e5",
+    "sourceFixtureSha256": "3bc88b136930baa83d31b9ca3f41a05a768365a6fa8ad6719a93f204d430da81",
+    "nativeSource": {
+      "originalSiteRequests": 500,
+      "currentNativePlansAccepted": 419,
+      "nativePlanningRefusals": 81,
+      "currentNativeRealizationsAccepted": 419,
+      "occupancyRecordsRetained": 500,
+      "unrealizedLegacyPlotsExplicit": 81,
+      "nativeRoofFaces": 12526,
+      "rendererInventedRoofs": false,
+      "generation": "New current native planning and exterior realization from original site requests; not replay of legacy plans"
+    },
+    "terrainScope": "Retained source parent at all three camera foci; decoderUsed=false, no fresh neural terrain or active fine-child contribution. Parent LOD is unknown; spacing15.625m.",
+    "limits": [
+      "Urban metrics count prepared submitted mesh batches, not GPU-visible buildings or occlusion. CPU source frustum counts are geometric estimates.",
+      "Native exterior realization is proven for419 buildings;81 explicit planning refusals remain unrealized retained occupation plots.",
+      "Interiors, site/access/capacity certification and60FPS performance are outside this qualification.",
+      "Overall roads hit the256 projector cap; not a proof of complete regional road rendering.",
+      "Water is source contour projection on terrain only; physical bed conflicts remain separately reported and source levels are unchanged.",
+      "The earlier legacy500 roof-absent source and negative parent-binding capture remain separate evidence."
+    ],
+    "views": [
+      {
+        "path": "web/out/surface/native-current-419-final/blueprint-native-close-top.png",
+        "sha256": "bd5db555c81047ca454de1ab13e58ffca762ae4a273122cf81529bdbff881128",
+        "name": "blueprint-native-close-top",
+        "resolution": [
+          1280,
+          800
+        ],
+        "exitCode": 0,
+        "runtimeErrorCount": 0,
+        "sourceFrustumCPU": {
+          "name": "blueprint-native-close-top",
+          "widthM": 400,
+          "focus": {
+            "x": 6536.4762957318035,
+            "z": 8462.943018929407
+          },
+          "fullyContainedSourceBodyFootprints": 83,
+          "intersectingSourceTriangleProjectedBounds": 91,
+          "fullyContainedSourceTriangleProjectedBounds": 82,
+          "strictSubsetOf419": true,
+          "cameraWorld": null,
+          "scope": "CPU geometric source frustum query, not GPU per-building visibility/occlusion count"
+        },
+        "submittedNativeBuildings": 254
+      },
+      {
+        "path": "web/out/surface/native-current-419-final/aerial-native-close-oblique.png",
+        "sha256": "11622f8b1a8768f7d71c79bd22d252ffdba05a3f4d5f631e66e5709c5f281397",
+        "name": "aerial-native-close-oblique",
+        "resolution": [
+          1280,
+          800
+        ],
+        "exitCode": 0,
+        "runtimeErrorCount": 0,
+        "sourceFrustumCPU": {
+          "name": "aerial-native-close-oblique",
+          "widthM": 600,
+          "focus": {
+            "x": 6530.0539967287295,
+            "z": 8494.492978230568
+          },
+          "fullyContainedSourceBodyFootprints": null,
+          "intersectingSourceTriangleProjectedBounds": 139,
+          "fullyContainedSourceTriangleProjectedBounds": 134,
+          "strictSubsetOf419": true,
+          "cameraWorld": {
+            "x": 6530.0539967287295,
+            "y": 357.9636442060883,
+            "z": 8781.538017216193
+          },
+          "scope": "CPU geometric source frustum query, not GPU per-building visibility/occlusion count"
+        },
+        "submittedNativeBuildings": 335
+      },
+      {
+        "path": "web/out/surface/native-current-419-final/aerial-native-overall-top.png",
+        "sha256": "914f224d080f695f8b36a7ae1375d921249a84ce3477ea775f1dd8dbb2487b31",
+        "name": "aerial-native-overall-top",
+        "resolution": [
+          1280,
+          800
+        ],
+        "exitCode": 0,
+        "runtimeErrorCount": 0,
+        "sourceFrustumCPU": {
+          "name": "aerial-native-overall-top",
+          "widthM": 8400,
+          "focus": {
+            "x": 6846.66,
+            "z": 8024.22
+          },
+          "fullyContainedSourceBodyFootprints": 419,
+          "intersectingSourceTriangleProjectedBounds": 419,
+          "fullyContainedSourceTriangleProjectedBounds": 419,
+          "strictSubsetOf419": false,
+          "cameraWorld": null,
+          "scope": "CPU geometric source frustum query, not GPU per-building visibility/occlusion count"
+        },
+        "submittedNativeBuildings": 419
+      }
+    ]
+  },
+  "cleanup": {
+    "ownedPidsAbsent": [
+      175872,
+      176152,
+      175796,
+      175928
+    ],
+    "rootServicesUntouched": true
+  },
+  "limits": [
+    "This technical completion does not decide F1/F2/F3 artistic acceptance; inspect all actual PNGs independently.",
+    "Fresh40km source campaign contains zero buildings and does not qualify fresh fine neural city support.",
+    "419 newly planned and realized native exteriors are separate from the old retained500 source;81 explicit planning refusals remain unrealized occupation records.",
+    "The city419 camera terrain is retained parent15.625m with unknown original LOD; no active fine child or fresh decoder claim.",
+    "Four distinct central image hashes prove visibility changed, not correctness of every pixel. Optical mean diagnostics are potential times visibility flags, not measured GPU crown area.",
+    "Water is a terrain-only cartographic projection of retained contours. Nonzero source/bed conflicts remain disclosed; no physical water surface, survey topology, flow or minimum-width guarantee is claimed.",
+    "10m/2048px gives4.8828125mm per screen pixel, distinct from finest native source spacing0.46875m.",
+    "Warmup, multi-second source application gaps and p99/max frame costs remain. No continuous60FPS source updates, universal style parity, photorealism or full production acceptance is claimed.",
+    "V1/V2/V3/V4/V6/V7 failed campaigns are preserved; V5 technical completion does not qualify later1.5 layer changes."
+  ]
+}
