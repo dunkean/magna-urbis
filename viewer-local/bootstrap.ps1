@@ -7,8 +7,16 @@ $archive = Join-Path $project '.deps/terrain3d-1.0.2.zip'
 New-Item -ItemType Directory -Force (Join-Path $project '.deps') | Out-Null
 if (!(Test-Path -LiteralPath $archive)) { Invoke-WebRequest $url -OutFile $archive }
 if ((Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash -ne $sha) { throw 'Terrain3D archive checksum mismatch' }
-if (!(Test-Path -LiteralPath (Join-Path $project 'addons/terrain_3d/terrain.gdextension'))) {
+if (!(Test-Path -LiteralPath (Join-Path $project '.deps/terrain3d-1.0.2/addons/terrain_3d/terrain.gdextension'))) {
     Expand-Archive -LiteralPath $archive -DestinationPath (Join-Path $project '.deps/terrain3d-1.0.2') -Force
+}
+$copyAddon = $false
+foreach ($relative in @('terrain.gdextension', 'extras/shaders/minimum.gdshader', 'bin/libterrain.windows.debug.x86_64.dll')) {
+    $expected = Join-Path $project ('.deps/terrain3d-1.0.2/addons/terrain_3d/' + $relative)
+    $installed = Join-Path $project ('addons/terrain_3d/' + $relative)
+    if (!(Test-Path -LiteralPath $installed) -or (Get-FileHash -LiteralPath $expected).Hash -ne (Get-FileHash -LiteralPath $installed).Hash) { $copyAddon = $true }
+}
+if ($copyAddon) {
     Copy-Item -LiteralPath (Join-Path $project '.deps/terrain3d-1.0.2/addons') -Destination $project -Recurse -Force
 }
 if ($Godot) {
