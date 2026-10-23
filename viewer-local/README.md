@@ -1,11 +1,11 @@
 # PrÃ©visualisation locale SurfaceWorld
 
 Godot est un moteur de rendu candidat pour les cartes et plans JDR 2D/3D de
-Magna Urbis. Les contrats de données restent indépendants du moteur ; les palettes
-existantes, les vues orthographiques et les exports de cartes guident son évaluation.
-Les sorties SVG/Canvas conservent actuellement les étiquettes et la composition
-finale non reprises ici. Ce projet ne génère aucun relief et ne modifie ni les hauteurs
-source, ni les volumes urbains natifs, ni leurs identifiants de matériaux.
+Magna Urbis. Les contrats de donnÃ©es restent indÃ©pendants du moteur ; les palettes
+existantes, les vues orthographiques et les exports de cartes guident son Ã©valuation.
+Les sorties SVG/Canvas conservent actuellement les Ã©tiquettes et la composition
+finale non reprises ici. Ce projet ne gÃ©nÃ¨re aucun relief et ne modifie ni les hauteurs
+source, ni les volumes urbains natifs, ni leurs identifiants de matÃ©riaux.
 
 ## Installer et lancer
 
@@ -42,11 +42,11 @@ actuel contient quinze jeux PBR CC0 ; `recipeIds` est prioritaire sur le repli p
 famille. Sans catalogue, le matÃ©riau analytique de repli est explicite. Une carte
 de hauteur absente devient un relief de texture plat, avec avertissement.
 `SurfaceMaterialLibrary.asset_version` et `asset_digest` identifient les assets
-réellement chargés, leurs affectations, tailles physiques, amplitudes et SHA-256
-déclarés et constatés. Les chemins absolus et l’ordre des clés ne participent pas
-au digest. `loaded_asset_bindings` expose les couches et leurs moyennes linéaires.
+rÃ©ellement chargÃ©s, leurs affectations, tailles physiques, amplitudes et SHA-256
+dÃ©clarÃ©s et constatÃ©s. Les chemins absolus et lâ€™ordre des clÃ©s ne participent pas
+au digest. `loaded_asset_bindings` expose les couches et leurs moyennes linÃ©aires.
 Cette provenance de rendu reste distincte de `World.versions.materialLibrary`,
-qui décrit les recettes du modèle canonique.
+qui dÃ©crit les recettes du modÃ¨le canonique.
 
 ## Vues et styles de carte
 
