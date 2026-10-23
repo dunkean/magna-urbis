@@ -171,7 +171,7 @@ pub(super) fn courts(
     let u = unit(sub(f.b, f.a));
     let v = normal(u);
     let mid = scale(add(f.a, f.b), 0.5);
-    let cap = ray_limit(shape, add(mid, scale(v, 0.05)), v, fronts, f.rank);
+    let cap = ray_limit(shape, add(mid, scale(v, 0.05)), v, fronts, f.rank, f64::INFINITY);
     let depth = morph.range("plotDepth", zone)[0].max(8.0).min(cap * 0.6);
     let court_size = morph.range("houseArea", zone)[0].sqrt().clamp(6.0, 16.0);
     // Small domains remain one enclos rather than being hollowed into slivers.

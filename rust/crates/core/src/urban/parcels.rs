@@ -579,7 +579,7 @@ fn resolve_identity(parcel: &mut Parcel, block: usize, owner: &str) {
     parcel.parent_ids = parcel.parent_ids.iter().map(|id| map(id)).collect();
 }
 
-fn ray_limit(shape: &Shape, p: Point, d: Point, fronts: &[Front], rank: usize) -> f64 {
+fn ray_limit(shape: &Shape, p: Point, d: Point, fronts: &[Front], rank: usize, target: f64) -> f64 {
     let mut hit = f64::INFINITY;
     let mut far_rank = None;
     for ring in std::iter::once(&shape.outer).chain(shape.holes.iter()) {
@@ -604,18 +604,23 @@ fn ray_limit(shape: &Shape, p: Point, d: Point, fronts: &[Front], rank: usize) -
             }
         }
     }
-    far_rank.map_or(hit, |other| hit * depth_share(rank, other) + 1.2)
+    // Rank buys depth only up to the culture's wished lot depth: once half
+    // the block already holds it, the two rows back to back share it evenly
+    // instead of the main street taking an oversized lot.
+    far_rank.map_or(hit, |other| {
+        (hit * depth_share(rank, other)).min((0.5 * hit).max(target)) + 1.2
+    })
 }
 
 /// Invariant (back-to-back balance): the share of the depth between two
 /// opposite fronts that the higher-ranked one claims. Rank buys depth, but at
-/// most 60 % of it (it was 85 %, about 6:1), so two lots back to back differ in
-/// depth by at most 3:2 plus the 1.2 m allowance, and in area by less than 3x
-/// while their frontages differ by less than 1.5x (the audit's pair bound).
+/// most 55 % of it (85 % at first, about 6:1, then 60 %: main-street lots
+/// still read oversized beside their back-lane neighbours), so two lots back
+/// to back differ in depth by at most 11:9 plus the 1.2 m allowance.
 fn depth_share(rank: usize, other: usize) -> f64 {
     (0.5 + 0.17 * (other as f64 - rank as f64)).clamp(0.5, MAX_DEPTH_SHARE)
 }
-const MAX_DEPTH_SHARE: f64 = 0.6;
+const MAX_DEPTH_SHARE: f64 = 0.55;
 
 fn runs(fronts: &[Front]) -> Vec<Vec<Front>> {
     let mut result: Vec<Vec<Front>> = Vec::new();
@@ -856,7 +861,7 @@ fn strips(
             for p in [f.a, add(f.a, scale(sub(f.b, f.a), 0.5)), f.b] {
                 frontage_level = frontage_level.min(dot(p, inward));
                 let start = add(p, scale(inward, 0.05));
-                let cap = ray_limit(shape, start, inward, fronts, f.rank);
+                let cap = ray_limit(shape, start, inward, fronts, f.rank, target);
                 let cap = if cap.is_finite() { cap } else { target };
                 // Invariant (houses against the wall): a lot whose depth ray
                 // ends on the inner face of the town wall, within 1.25x the

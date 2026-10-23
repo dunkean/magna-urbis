@@ -779,6 +779,29 @@ fn back_to_back_lots_share_the_block_depth_within_the_rank_bound() {
     );
 }
 
+/// Invariant (back-to-back balance, deep blocks): rank buys depth only up to
+/// the culture's wished lot depth; when half the block already holds it, the
+/// main street and the back lane share the depth evenly.
+#[test]
+fn deep_blocks_split_back_to_back_lots_evenly() {
+    let shape = rectangle(0.0, 0.0, 60.0, 80.0);
+    let fronts = [
+        front((0.0, 0.0), (60.0, 0.0), 0, 0),
+        front((60.0, 80.0), (0.0, 80.0), 3, 1),
+    ];
+    let mut m = morph("burgage");
+    m.value["plotDepth"]["core"] = json!([30.0, 34.0]);
+    m.value["deepFill"] = json!(true);
+    let lots = strips(&shape, 0, Point { x: 1.0, y: 0.0 }, &fronts, &m, "core", &mut Rng::new("deep"));
+    let main = lots
+        .iter()
+        .filter(|p| p.use_kind == "plot" && p.front.is_some_and(|f| f[0].y.abs() < 0.5))
+        .map(|p| p.shape.outer.iter().map(|q| q.y).fold(0.0, f64::max))
+        .fold(0.0, f64::max);
+    assert!(main > 0.0, "main street is cut");
+    assert!(main <= 0.5 * 80.0 + 1.3, "main lots {main} m deep in an 80 m block");
+}
+
 /// Invariant (lot balance): sharing a residual strip never bloats a lot past
 /// 2.5x its smallest admitted neighbour; the strip becomes garden land.
 #[test]
