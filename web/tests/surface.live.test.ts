@@ -72,7 +72,34 @@ describe('Surface live transport', () => {
       'Content-Type': 'application/octet-stream', 'X-Surface-Session': browser.session }, body: binary.buffer as ArrayBuffer })).status).toBe(200);
     const result = await response;
     expect(result.headers.get('content-type')).toBe('application/octet-stream');
+    expect(Number(result.headers.get('content-length'))).toBe(binary.byteLength);
+    expect(result.headers.get('transfer-encoding')).toBeNull();
     const copy = decodeSurfaceBinary<{ world: { samples: Float32Array } }>(new Uint8Array(await result.arrayBuffer()));
     expect(copy.world.samples).toEqual(samples);
+  });
+  it('assembles only contiguous session-owned chunks and sends one fixed-length native response',async()=>{
+    const base=await start(),browser=await connect(base),pending=post(`${base}/surface-live/terrain`,{region});
+    const request=await browser.event(),url=`${base}/surface-live/reply/${request.data.id}`;
+    const binary=encodeSurfaceBinary({samples:new Float32Array(5*1024*1024).fill(1.25)});
+    const part=(offset:number,total:number,data:Uint8Array,session=browser.session)=>fetch(url,{method:'POST',headers:{'Content-Type':'application/octet-stream','X-Surface-Session':session,'X-Surface-Offset':String(offset),'X-Surface-Total':String(total)},body:data as Uint8Array<ArrayBuffer>});
+    expect((await part(4,binary.length,binary.subarray(0,4))).status).toBe(409);
+    expect((await part(0,binary.length,binary.subarray(0,16),'foreign')).status).toBe(409);
+    const chunk=4*1024*1024;
+    expect(await (await part(0,binary.length,binary.subarray(0,chunk))).json()).toEqual({accepted:false,received:chunk,total:binary.length});
+    expect((await part(0,binary.length,binary.subarray(0,16))).status).toBe(409);
+    expect((await part(chunk,binary.length+1,binary.subarray(chunk,chunk+16))).status).toBe(409);
+    for(let at=chunk;at<binary.length;at+=chunk){const end=Math.min(at+chunk,binary.length);const ack=await(await part(at,binary.length,binary.subarray(at,end))).json();expect(ack.accepted).toBe(end===binary.length);}
+    const result=await pending;expect(result.headers.get('content-length')).toBe(String(binary.length));expect(result.headers.get('transfer-encoding')).toBeNull();
+    const output=new Uint8Array(await result.arrayBuffer());expect(Buffer.from(output.buffer,output.byteOffset,output.byteLength).equals(Buffer.from(binary.buffer,binary.byteOffset,binary.byteLength))).toBe(true);
+    expect((await part(0,binary.length,binary.subarray(0,16))).status).toBe(410);
+  });
+  it('releases a partial upload when its native viewer cancels',async()=>{
+    const base=await start(),browser=await connect(base),controller=new AbortController();
+    const pending=fetch(`${base}/surface-live/terrain`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({region}),signal:controller.signal});
+    const aborted=expect(pending).rejects.toThrow(/abort/i),request=await browser.event();
+    const url=`${base}/surface-live/reply/${request.data.id}`,binary=encodeSurfaceBinary({height:new Float32Array(20)});
+    const chunk=(offset:number)=>fetch(url,{method:'POST',headers:{'Content-Type':'application/octet-stream','X-Surface-Session':browser.session,'X-Surface-Offset':String(offset),'X-Surface-Total':String(binary.length)},body:binary.subarray(offset,offset+16) as Uint8Array<ArrayBuffer>});
+    expect((await chunk(0)).status).toBe(200);controller.abort();await aborted;
+    expect((await browser.event()).name).toBe('cancel');expect((await chunk(16)).status).toBe(410);
   });
 });
