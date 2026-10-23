@@ -200,6 +200,12 @@ static func prepare(packet: Dictionary, world: Dictionary, origin: Dictionary, f
 	result.vertices=vertices; result.quads=int(ceil(vertices.size()/6.0)); result.sourceStride=1
 	result.representation="Magna retained vector lakes/rivers and original sea-cell union"
 	result.authority="magna-urbis-fixed-hydrology"; result.sourceVectorAreaM2=area
+	var source_classes:=PackedFloat32Array(); source_classes.resize(n*n)
+	for i in source_classes.size():
+		var kind:=int(water.classes[i]); source_classes[i]=3.0 if kind==1 else 1.0 if kind==3 else float(kind)
+	result.classImage=Image.create_from_data(n,n,false,Image.FORMAT_RF,source_classes.to_byte_array())
+	result.classOrigin={"x":float(water.originX),"z":float(water.originZ)}
+	result.classSpacingM=spacing; result.classSize=Vector2i(n,n)
 	result.missingLevelTriangles=missing; result.sourceVectorPoints=points
 	result.sourceVectorRequestedAreaM2=requested_area; result.sourceVectorMissingAreaM2=missing_area; result.sourceVectorCoverageComplete=missing==0
 	result.sourceGroups=geometry.water.size(); result.sourceDuplicateGroups=duplicate_groups; result.displayGroups=display_groups
