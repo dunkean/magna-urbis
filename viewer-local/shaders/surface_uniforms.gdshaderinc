@@ -1,6 +1,7 @@
 #include "res://shaders/color_space.gdshaderinc"
 #include "res://shaders/normal_frame.gdshaderinc"
 #include "res://shaders/canopy.gdshaderinc"
+#include "res://shaders/geometry_detail.gdshaderinc"
 // SurfaceWorld data. Values are linear; categorical texture uses nearest filtering.
 uniform sampler2D surface_ids : filter_nearest, repeat_disable;
 uniform sampler2D surface_state : filter_linear_mipmap, repeat_disable;

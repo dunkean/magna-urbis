@@ -46,6 +46,21 @@
     // The canonical mean already includes substrate and the full recipe mixture;
     // use it at every scale, including contacts where the compact pair loses a third recipe.
     vec3 base=texture(surface_average,source_uv).rgb;
+    float detail_exposure; vec3 detail_color; float detail_slope; float detail_confidence;
+    surface_geometry_detail(v_vertex.xz,base,detail_exposure,detail_color,detail_slope,detail_confidence);
+    // Refinement changes physical support, never the canonical environment or city style.
+    // All derivatives above remain unconditional; the optional source patch has no camera threshold.
+    if(presentation_mode==0 && detail_exposure>0.00001) {
+        int rock_id=clamp(detail_bedrock_recipe,0,31);
+        vec4 rock_ah; vec4 rock_nr;
+        sample_surface_material(v_vertex,surface_dx,surface_dy,w_normal,w_tangent,w_binormal,rock_id,rock_ah,rock_nr);
+        ah=mix(ah,rock_ah,detail_exposure);
+        nr=mix(nr,rock_nr,detail_exposure);
+        mean_palette=mix(mean_palette,palette[rock_id],detail_exposure);
+        source_mean=mix(source_mean,layer_mean[material_layers[rock_id]].rgb,detail_exposure);
+        fine=mix(fine,1.0-smoothstep(material_scales[rock_id]*0.2,material_scales[rock_id]*1.5,footprint),detail_exposure);
+        base=mix(base,detail_color,detail_exposure);
+    }
     // One shared contrast gain preserves a neutral pebble's chroma. Per-channel
     // division can turn bright fragments cyan under an authored green mean.
     vec3 lower_headroom=base/max(source_mean,vec3(0.0001));
@@ -83,3 +98,4 @@
     if(diagnostic==4) ALBEDO=vec3(state.b,wet,1.0-wet);
     if(diagnostic==5) { ALBEDO=vec3(0.0); EMISSION=normalize(w_normal)*0.5+0.5; NORMAL_MAP=vec3(0.5,0.5,1.0); }
 
+    if(diagnostic==6) { ALBEDO=vec3(0.0); EMISSION=display_color(vec3(clamp(detail_slope/1.570796327,0.0,1.0),detail_exposure,detail_confidence)); NORMAL_MAP=vec3(0.5,0.5,1.0); }
