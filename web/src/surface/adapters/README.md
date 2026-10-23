@@ -62,3 +62,19 @@ compiler D8 routing is a soil/HAND/TWI diagnostic and never the rendered source
 river network. `worldToSurfaceInput` reuses an existing World receiver/flow exactly;
 that legacy World contract does not supply per-cell lake/river levels. Render
 source water geometry rather than presenting such missing levels as measurements.
+
+
+Surface frame contract (version 1): UI crops retain local vector coordinates and
+record a cumulative physical source corner. CLI crops retain their input vector
+frame explicitly. Export restores the common full-source physical frame before
+compilation. `originX/Z` is a coordinate-frame translation, not a physical move:
+it shifts terrain, city/roads/water and geological anchors together. A crop alone
+does not shift the fixed full-source geological descriptor.
+
+`source.frame` records physical crop and vector origins, the common translation,
+full-source width/reference and `liveCompatible`. Cropped or translated exports
+are offline-only until full-source live requests support these frames explicitly.
+UI and live worker initialization refuse cropped input before registration;
+select the full source to reconnect. `source.retainedField` records the exact
+retained raster n/width and rf1 fingerprint, independently verified by native
+consumers. Neither source heights nor saved city coordinates are rewritten.

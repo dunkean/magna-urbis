@@ -29,12 +29,12 @@ describe('explicit shared source geology', () => {
     expect(world.geology.provenance).toContain('not inferred');
   });
   it('evaluates the same fixed descriptor only after source crop and common frame offsets', () => {
-    const scenario=createTiltedStrataScenario({ originX:1000,originZ:-2000,basalContactElevationM:15 });
+    const scenario=createTiltedStrataScenario({ originX:0,originZ:0,basalContactElevationM:15 });
     const d=decor(withSurfaceGeologyQuery('style=atlas',scenario)), original=structuredClone(d);
     const full=compileFromDecor(d,{originX:1000,originZ:-2000});
     const partial=compileFromDecor(crop(d,2,1,4),{terrainOriginX:20,terrainOriginZ:10,originX:1000,originZ:-2000});
     for(let z=0;z<4;z++)for(let x=0;x<4;x++)expect(partial.geology.bedrock[z*4+x]).toBe(full.geology.bedrock[(z+1)*8+x+2]);
-    for(let i=0;i<64;i++)expect(full.geology.bedrock[i]).toBe(rockUnitAtScenario(scenario,1005+i%8*10,-1995+Math.floor(i/8)*10,d.raster.height[i]));
+    for(let i=0;i<64;i++)expect(full.geology.bedrock[i]).toBe(rockUnitAtScenario(scenario,5+i%8*10,5+Math.floor(i/8)*10,d.raster.height[i]));
     expect(d).toEqual(original);
   });
   it('shares full descriptors and rejects malformed or ambiguous opt-ins', () => {

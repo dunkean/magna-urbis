@@ -151,7 +151,7 @@ static func prepare(packet: Dictionary, world: Dictionary, origin: Dictionary, f
 		for ring in group:
 			var translated: Array=[]
 			for point in ring:
-				if not point is Dictionary or not _finite(point.get("x")) or not _finite(point.get("y")): return fallback
+				if not point is Dictionary or not _finite(point.get("x")) or not _finite(point.get("y")): return _fallback(fallback,"invalid retained vector water point")
 				translated.append({"x":float(point.x)+tx,"y":float(point.y)+tz})
 			var clipped:=_clip(translated,window)
 			if clipped.size()>=3: rings.append(clipped)
