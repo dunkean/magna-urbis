@@ -20,6 +20,30 @@ static func _geometry(source: Dictionary):
 			return value if value is Dictionary else null
 	return null
 
+# Only restore the explicitly addressed recipe string. Native metadata remains
+# archived; a long query must not hide cavern class-2 ambiguity.
+static func _source_query(source: Dictionary) -> String:
+	var meta=source.get("meta",{})
+	if meta is Dictionary and meta.get("query") is String: return meta.query
+	var archive=source.get("$surfaceSourceArchive",{})
+	if not archive is Dictionary or archive.get("format")!="surface-source-archive-1": return ""
+	for item in archive.get("attachments",[]):
+		if item is Dictionary and item.get("path")==["meta","query"] and item.get("encoding")=="json-utf8" and item.get("bytes") is PackedByteArray and item.bytes.size()<=1024*1024:
+			var query=JSON.parse_string(item.bytes.get_string_from_utf8())
+			return query if query is String else ""
+	return ""
+
+static func _is_cavern(source: Dictionary) -> bool:
+	var meta=source.get("meta",{})
+	if meta is Dictionary and meta.get("tags") is Dictionary and meta.tags.get("relief")=="cavern": return true
+	for pair in _source_query(source).trim_prefix("?").split("&"):
+		var parts: PackedStringArray=pair.split("=",true,1)
+		if parts.size()==2 and parts[0].uri_decode()=="relief" and parts[1].uri_decode()=="cavern": return true
+	return false
+
+static func _sequence(value) -> bool:
+	return typeof(value) in [TYPE_ARRAY,TYPE_PACKED_BYTE_ARRAY,TYPE_PACKED_INT32_ARRAY,TYPE_PACKED_FLOAT32_ARRAY,TYPE_PACKED_FLOAT64_ARRAY]
+
 static func _finite(value) -> bool:
 	return (value is float or value is int) and is_finite(float(value))
 
@@ -75,30 +99,53 @@ static func _fallback(value: Dictionary, reason: String) -> Dictionary:
 
 static func prepare(packet: Dictionary, world: Dictionary, origin: Dictionary, focus: Dictionary, width: float, fallback: Dictionary) -> Dictionary:
 	var started:=Time.get_ticks_usec()
-	var source=packet.get("source",{}); var geometry=_geometry(source) if source is Dictionary else null
+	var source=packet.get("source",{})
+	if not source is Dictionary: return _fallback(fallback,"source record is not a dictionary")
+	var geometry=_geometry(source)
 	var water=source.get("water",{}) if source is Dictionary else {}
 	# Legacy cavern class 2 also denotes non-water voids. Its ambiguous raster
 	# cannot supply measured lake levels; retain the explicit contextual fallback.
-	if source.get("meta") is Dictionary and "relief=cavern" in str(source.meta.get("query","")): return fallback
-	if not geometry is Dictionary or not geometry.get("water") is Array or geometry.water.is_empty(): return fallback
-	if not water is Dictionary or not _finite(water.get("n")) or not _finite(water.get("width")) or float(water.width)<=0.0: return fallback
+	if _is_cavern(source): return _fallback(fallback,"cavern class 2 is ambiguous; retained physical contextual water only")
+	if not geometry is Dictionary or not geometry.get("water") is Array or geometry.water.is_empty(): return _fallback(fallback,"retained source vector water geometry unavailable")
+	if not water is Dictionary or not _finite(water.get("n")) or floorf(float(water.n))!=float(water.n) or not _finite(water.get("width")) or float(water.width)<=0.0: return _fallback(fallback,"invalid retained water grid shape")
 	var n:=int(water.n)
-	if n<2 or n>4096 or not water.get("classes") is PackedByteArray or water.classes.size()!=n*n or not water.has("levelM") or water.levelM.size()!=n*n: return fallback
-	if not _finite(water.get("originX")) or not _finite(water.get("originZ")): return fallback
+	if n<2 or n>4096 or not _sequence(water.get("classes")) or water.classes.size()!=n*n or not _sequence(water.get("levelM")) or water.levelM.size()!=n*n: return _fallback(fallback,"missing or mis-sized retained water columns")
+	for value in water.classes:
+		if not _finite(value) or floorf(float(value))!=float(value) or float(value)<0.0 or float(value)>3.0: return _fallback(fallback,"invalid retained Magna water class")
+	if not _finite(water.get("originX")) or not _finite(water.get("originZ")): return _fallback(fallback,"invalid retained first-sample water origin")
 	var window:=Geometry._window(focus,width)
-	if window.is_empty(): return fallback
+	if window.is_empty(): return _fallback(fallback,"invalid display window")
+	# A cropped export still retains full source contours. Clip to the measured
+	# source support before triangulation, rather than dropping entire triangles
+	# whose remote vertex lies outside the retained level raster.
+	var spacing := float(water.width)/n
+	window.minX=maxf(float(window.minX),float(water.originX)-spacing*0.5)
+	window.minZ=maxf(float(window.minZ),float(water.originZ)-spacing*0.5)
+	window.maxX=minf(float(window.maxX),float(water.originX)+(n-0.5)*spacing)
+	window.maxZ=minf(float(window.maxZ),float(water.originZ)+(n-0.5)*spacing)
+	if float(window.minX)>=float(window.maxX) or float(window.minZ)>=float(window.maxZ): return _fallback(fallback,"display window is outside retained source levels")
 	# Source vectors stay local to the retained decor; only its common scene
 	# translation applies. The terrain-only sampling offset is intentionally absent.
 	var translation: Dictionary=source.get("sourceToWorldTranslation",{})
 	var tx:=float(translation.get("x",0.0)); var tz:=float(translation.get("z",0.0))
 	var vertices:=PackedVector3Array(); var missing:=0; var points:=0; var area:=0.0; var work:=0
+	var missing_area:=0.0; var requested_area:=0.0; var duplicate_groups:=0; var display_groups:=0; var seen_groups: Dictionary={}
 	for group in geometry.water:
-		if not group is Array: return fallback
-		var rings: Array=[]
+		if not group is Array: return _fallback(fallback,"invalid source water group")
 		for ring in group:
-			if not ring is Array: return fallback
+			if not ring is Array: return _fallback(fallback,"invalid source water ring")
 			points+=ring.size()
 			if points>MAX_SOURCE_POINTS: return _fallback(fallback,"source vector point budget exceeded")
+		# Real retained captures may contain duplicate lake groups. Deduplicate
+		# display only, with exact equality after hash lookup (never fuzzy union).
+		var key:=hash(group); var identical:=false
+		for previous in seen_groups.get(key,[]):
+			if previous==group: identical=true; break
+		if identical: duplicate_groups+=1; continue
+		if not seen_groups.has(key): seen_groups[key]=[]
+		seen_groups[key].append(group)
+		var rings: Array=[]
+		for ring in group:
 			var translated: Array=[]
 			for point in ring:
 				if not point is Dictionary or not _finite(point.get("x")) or not _finite(point.get("y")): return fallback
@@ -114,6 +161,8 @@ static func prepare(packet: Dictionary, world: Dictionary, origin: Dictionary, f
 		if work>MAX_SCAN_WORK: return _fallback(fallback,"source vector scan work budget exceeded")
 		var mesh:=CityMap.triangulate([{"outer":rings[0],"holes":rings.slice(1)}],origin,float(origin.y),MAX_VERTICES-vertices.size())
 		if mesh.invalid or mesh.budgetLimited: return _fallback(fallback,"source vector triangulation invalid or over budget")
+		requested_area+=float(mesh.areaM2)
+		var before_group:=vertices.size()
 		var triangles: PackedVector3Array=mesh.vertices
 		for at in range(0,triangles.size(),3):
 			var triangle:=PackedVector3Array(); var valid:=true
@@ -125,7 +174,10 @@ static func prepare(packet: Dictionary, world: Dictionary, origin: Dictionary, f
 			if valid:
 				vertices.append_array(triangle)
 				area+=absf((triangle[1]-triangle[0]).cross(triangle[2]-triangle[0]).y)*0.5
-			else: missing+=1
+			else:
+				missing+=1
+				missing_area+=absf((triangles[at+1]-triangles[at]).cross(triangles[at+2]-triangles[at]).y)*0.5
+		if vertices.size()>before_group: display_groups+=1
 	# Sea remains the exact original sea-cell union. Lakes/rivers are drawn from
 	# the native polygons, avoiding the conservative safety-envelope raster width.
 	var sea_classes:=PackedByteArray(); sea_classes.resize(n*n)
@@ -144,6 +196,9 @@ static func prepare(packet: Dictionary, world: Dictionary, origin: Dictionary, f
 	result.representation="Magna retained vector lakes/rivers and original sea-cell union"
 	result.authority="magna-urbis-fixed-hydrology"; result.sourceVectorAreaM2=area
 	result.missingLevelTriangles=missing; result.sourceVectorPoints=points
+	result.sourceVectorRequestedAreaM2=requested_area; result.sourceVectorMissingAreaM2=missing_area; result.sourceVectorCoverageComplete=missing==0
+	result.sourceGroups=geometry.water.size(); result.sourceDuplicateGroups=duplicate_groups; result.displayGroups=display_groups
+	result.sourceVectorClipBounds={"minX":window.minX,"minZ":window.minZ,"maxX":window.maxX,"maxZ":window.maxZ}; result.sourceVectorScanWork=work
 	result.levelInterpolation="finite original wet source levels only; no channel generation or level editing"
 	result.buildMs=(Time.get_ticks_usec()-started)/1000.0
 	return result
