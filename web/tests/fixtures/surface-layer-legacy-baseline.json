@@ -1,0 +1,16 @@
+{
+  "sourceCommit": "f6a45af90468cd8247e58db7678c32d9c2619322",
+  "compilerVersion": "surface-1.4.0",
+  "fieldsFingerprint": "1840552df0bb05d30147302526d1fbc1",
+  "geometryId": "geometry-detail:6591227adc040f8c559b029236dc86d6",
+  "compileBytes": 86402,
+  "candidateFingerprint": "2a6337b19df0b68fc0004919dda225d5",
+  "candidateCount": 6422,
+  "candidateFamilies": {
+    "tree": 1610,
+    "grass": 3212,
+    "shrub": 68,
+    "boulder": 635,
+    "debris": 897
+  }
+}
