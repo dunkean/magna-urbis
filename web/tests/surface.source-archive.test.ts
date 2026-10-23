@@ -42,7 +42,7 @@ describe('bounded binary source metadata', () => {
     const n = 64, decor = { meta: { id: 'unit-only-source', seed: '47', created: '2026-10-23', query: '' }, raster: { n, width: 1000,
       height: new Float32Array(n ** 2), water: new Uint8Array(n ** 2), waterLevel: new Float32Array(n ** 2),
       riverIds: new Int32Array(n ** 2), riverWidth: new Float32Array(n ** 2) } } as Decor;
-    const packet = exportSurfacePacket(decor, undefined, { encoding: 'binary' });
+    const packet = exportSurfacePacket(decor, undefined, { encoding: 'binary', candidateBounds: { minX: 0, minZ: 0, maxX: 0, maxZ: 0 } });
     expect(packet.source.water.classes).toBeInstanceOf(Uint8Array);
     expect(packet.source.water.levelM).toBeInstanceOf(Float32Array);
     expect(packet.source.water.riverIds).toBeInstanceOf(Int32Array);

@@ -1,7 +1,7 @@
 /** Renderer-independent physical surface contract. Right-handed frame: +X east, +Y up, +Z south (map +Y), all metres. */
 export const SURFACE_SCHEMA_VERSION = 1 as const;
 export const SURFACE_COMPILER_VERSION = 'surface-1.2.0';
-export const SURFACE_POPULATION_VERSION = 'population-1.1.0';
+export const SURFACE_POPULATION_VERSION = 'population-1.2.0';
 export interface Bounds { minX: number; minZ: number; maxX: number; maxZ: number }
 export interface SourceIdentity {
   /** sourceLOD is an opaque provider-specific label (some providers use negative finer LODs). Compare nativeSpacingM, never LODs across providers. */
@@ -158,6 +158,8 @@ export interface SurfaceSample {
 export interface SurfaceCandidate {
   stableId: string; family: 'tree' | 'shrub' | 'grass' | 'boulder' | 'debris';
   x: number; y: number; z: number; size: number; orientation: number; variant: number;
+  /** Physical top-down crown disc radius, metres; stable independently of LOD. */
+  crownRadiusM?: number;
   /** Use this rank for nested representation thinning; never regenerate at another LOD. */
   rank: number;
 }

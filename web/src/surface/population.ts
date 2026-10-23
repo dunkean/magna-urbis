@@ -1,5 +1,6 @@
 import { sampleSurface } from './compiler';
 import { Occupation, WaterClass, assertNotAborted, clamp, hashString, type Bounds, type SurfaceCandidate, type SurfaceWorld } from './model';
+import { TREE_CELL_M, TREE_SLOTS_PER_CELL, TREE_CROWN_RADIUS_RATIO, treeAcceptanceForCover } from './treeCanopy';
 
 export interface PopulationOptions {
   families?: SurfaceCandidate['family'][];
@@ -13,7 +14,7 @@ export interface PopulationOptions {
   signal?: AbortSignal;
 }
 const FAMILIES: Array<{ family: SurfaceCandidate['family']; cellM: number; slots: number; minSize: number; maxSize: number }> = [
-  { family: 'tree', cellM: 20, slots: 3, minSize: 4, maxSize: 18 },
+  { family: 'tree', cellM: TREE_CELL_M, slots: TREE_SLOTS_PER_CELL, minSize: 4, maxSize: 18 },
   { family: 'shrub', cellM: 12, slots: 2, minSize: .5, maxSize: 2.5 },
   { family: 'boulder', cellM: 10, slots: 2, minSize: .15, maxSize: 2.8 },
   { family: 'grass', cellM: 4, slots: 2, minSize: .15, maxSize: .65 },
@@ -40,7 +41,7 @@ export function generateSurfaceCandidates(world: SurfaceWorld, bounds: Bounds, o
   let slotsToCheck = 0;
   for (const recipe of FAMILIES) {
     if (options.families && !options.families.includes(recipe.family)) continue;
-    const halo = options.includeOverhang ? recipe.maxSize : 0;
+    const halo = options.includeOverhang ? recipe.maxSize * (recipe.family === 'tree' ? TREE_CROWN_RADIUS_RATIO : 1) : 0;
     const minX = Math.max(world.bounds.minX, bounds.minX - halo), minZ = Math.max(world.bounds.minZ, bounds.minZ - halo);
     const maxX = Math.min(world.bounds.maxX, bounds.maxX + halo), maxZ = Math.min(world.bounds.maxZ, bounds.maxZ + halo);
     if (minX > maxX || minZ > maxZ) continue;
@@ -52,7 +53,7 @@ export function generateSurfaceCandidates(world: SurfaceWorld, bounds: Bounds, o
   for (const recipe of FAMILIES) {
     const { family, cellM, slots, minSize, maxSize } = recipe;
     if (options.families && !options.families.includes(family)) continue;
-    const halo = options.includeOverhang ? maxSize : 0;
+    const halo = options.includeOverhang ? maxSize * (family === 'tree' ? TREE_CROWN_RADIUS_RATIO : 1) : 0;
     const query = { minX: Math.max(world.bounds.minX, bounds.minX - halo), minZ: Math.max(world.bounds.minZ, bounds.minZ - halo),
       maxX: Math.min(world.bounds.maxX, bounds.maxX + halo), maxZ: Math.min(world.bounds.maxZ, bounds.maxZ + halo) };
     for (let cz = Math.floor(query.minZ / cellM); cz <= Math.floor(query.maxZ / cellM); cz++) {
@@ -68,19 +69,20 @@ export function generateSurfaceCandidates(world: SurfaceWorld, bounds: Bounds, o
         if (context.waterClass !== WaterClass.Dry || context.occupation >= Occupation.Road || context.slope > 1.25) continue;
         let density = 0;
         switch (family) {
-          case 'tree': density = context.treeCover * .8; break;
+          case 'tree': density = treeAcceptanceForCover(context.treeCover); break;
           case 'shrub': density = context.shrubCover * .7; break;
           case 'grass': density = context.grassCover * .8; break;
           case 'boulder': density = context.stoniness * .35 * (context.occupation === Occupation.Natural ? 1 : .15); break;
           case 'debris': density = context.litter * .6; break;
         }
-        if (random(stableId, 3) > density) continue;
+        if (random(stableId, 3) >= density) continue;
         if (context.occupation === Occupation.Crop && family !== 'grass') continue;
         const size = minSize + Math.pow(random(stableId, 4), family === 'boulder' ? 2.5 : 1) * (maxSize - minSize);
-        const radius = family === 'tree' ? size * .28 : size;
-        if (options.includeOverhang && (x + radius < bounds.minX || x - radius > bounds.maxX || z + radius < bounds.minZ || z - radius > bounds.maxZ)) continue;
+        const radius = family === 'tree' ? size * TREE_CROWN_RADIUS_RATIO : size;
+        const outsideX = Math.max(bounds.minX - x, 0, x - bounds.maxX), outsideZ = Math.max(bounds.minZ - z, 0, z - bounds.maxZ);
+        if (options.includeOverhang && outsideX ** 2 + outsideZ ** 2 > radius ** 2) continue;
         result.push({ stableId, family, x, y: context.heightM, z, size, orientation: random(stableId, 5) * Math.PI * 2,
-          variant: Math.floor(random(stableId, 6) * 8), rank });
+          variant: Math.floor(random(stableId, 6) * 8), rank, ...(family === 'tree' ? { crownRadiusM: radius } : {}) });
         if (result.length > maxCandidates) throw new Error('Population query exceeds budget; request smaller visible bounds or stable rank retention');
       }
     }
