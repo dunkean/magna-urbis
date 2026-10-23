@@ -15,7 +15,7 @@ import { decodeSurfaceBinary, encodeSurfaceBinary } from '../src/surface/binary.
 import { compileSurfaceWorld } from '../src/surface/compiler.ts';
 import { hashString } from '../src/surface/model.ts';
 import { registrationFieldFingerprint } from '../src/surface/registrationBinding.ts';
-import { isFinalQualityDisplay,verifyFinalDisplay,verifyMotionLiveDisplay,verifyTourQuality } from './surface_navigation_evidence.ts';
+import { isFinalQualityDisplay,sameDeliveredSpacing,verifyFinalDisplay,verifyMotionLiveDisplay,verifyTourQuality } from './surface_navigation_evidence.ts';
 
 const args = process.argv.slice(2);
 const option = (name, fallback) => {
@@ -155,7 +155,7 @@ async function runNativeTour(sessionId) {
     if(!isFinalQualityDisplay(display)||!nativeAccepted.some(e=>e.request?.preview===false&&e.request?.resolution===512&&e.worldId===display.worldId&&e.requestSerial===display.liveSerial&&e.sourceEpoch===display.sourceEpoch&&e.sceneEpoch===display.sceneEpoch)
       ||!nativeRendered.some(e=>isFinalQualityDisplay(e)&&e.worldId===display.worldId&&e.liveSerial===display.liveSerial&&e.appliedTickMs===display.appliedTickMs)
       ||!packets.some(e=>e.packet?.worldId===display.worldId))throw new Error(`Native ${capture.widthM}m capture was not linked to a displayed live source packet`);
-    if(capture.viewSatisfaction.deliveredSpacingM!==sourcePacket.terrain.spacingM)throw new Error(`Native ${capture.widthM}m cache density differed from the actual source grid`);
+    if(!sameDeliveredSpacing(capture.viewSatisfaction.deliveredSpacingM,sourcePacket.terrain.spacingM))throw new Error(`Native ${capture.widthM}m cache density differed from the actual source grid`);
   }
   const loadedBinding=report.viewer.metrics.loadedLiveBinding;
   if(loadedBinding?.fingerprint!==report.source.canonicalFieldFingerprint||loadedBinding.n!==report.source.grid.width

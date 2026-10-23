@@ -1,5 +1,9 @@
 type Row=Record<string,any>;
 const record=(v:unknown):v is Row=>!!v&&typeof v==='object'&&!Array.isArray(v);
+/** Godot's default JSON output rounds binary64 values to decimal text. Compare
+ * the actual grid spacing across that boundary without requiring bit identity. */
+export const sameDeliveredSpacing=(actual:unknown,expected:unknown):boolean=>typeof actual==='number'&&typeof expected==='number'
+  &&Number.isFinite(actual)&&Number.isFinite(expected)&&actual>0&&expected>0&&Math.abs(actual-expected)<=1e-12*Math.max(1,Math.abs(expected));
 const sourceMatches=(a:unknown,b:unknown):boolean=>record(a)&&record(b)&&['id','version','sourceLOD','nativeSpacingM','sourceLODKnown'].every(key=>a[key]===b[key]);
 export const isDominantFineDisplay=(v:unknown):v is Row=>record(v)&&typeof v.worldId==='string'&&!!v.worldId&&record(v.source)
   &&v.source.sourceLODKnown===true&&v.focusInsideSource===true&&typeof v.source.id==='string'&&!!v.source.id&&typeof v.source.version==='string'&&!!v.source.version
