@@ -1,0 +1,22 @@
+{
+  "adapter": "NVIDIA GeForce RTX 4090",
+  "backend": "forward_plus",
+  "missingLevelTriangles": 0,
+  "packet": "D:/workspace/self/_worktrees/magna-urbis-surface-world-2026-10-23/web/out/surface/native-e2e-40km-v5/fresh-source.surfacebin",
+  "scope": "real retained Magna contours and original measured levels; controlled palette and CPU source-bed mesh; overlay depth control and terrain-only Decal cull-mask control, not Terrain3D integration, source topology repair, final artistic style or physical water reconciliation",
+  "sourceAuthority": "magna-urbis-fixed-hydrology",
+  "sourceContourPixels": 6495,
+  "sourceLevelsDepthTestPixels": 263,
+  "sourceMapFootprintMismatchPixels": 0,
+  "sourceMapMaximumWaterColorError": 0.0,
+  "sourceMapWithTerrainPixels": 6495,
+  "sourceUnchanged": true,
+  "sourceVectorAreaM2": 48038663.7534668,
+  "terrainOnlyDecalFootprintMismatchPixels": 0,
+  "terrainOnlyDecalWaterPixels": 6495,
+  "terrainOnlyDecalWaterPixelsOverRoof": 0,
+  "unsafeOverlayWaterPixelsOverRoof": 52,
+  "vectorVertices": 719184,
+  "viewWidthM": 10000,
+  "viewportPx": 1024
+}
