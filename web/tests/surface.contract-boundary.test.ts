@@ -74,6 +74,19 @@ describe('reviewed physical contract boundaries', () => {
     expect(climateFromMagnaQuery('climate=custom&temperature=broken&precipitation=900').meanAnnualTempC).toBe(18);
     expect(climateFromMagnaQuery('climate=custom&temperature=  ').meanAnnualTempC).toBe(18);
   });
+  it('keeps source safety envelopes unchanged while refusing invented physical water above the source level', () => {
+    const d = decor(); d.raster.water[0] = 3; d.raster.waterLevel[0] = 2; d.raster.water[1] = 2; d.raster.waterLevel[1] = 3;
+    d.raster.water[2] = 3; d.raster.waterLevel[2] = 4; d.raster.riverIds[0] = 847;
+    const input = decorToSurfaceInput(d);
+    expect([...input.hydrology!.waterClass!].slice(0, 3)).toEqual([0, 0, 1]);
+    expect(Number.isNaN(input.hydrology!.waterLevelM![0])).toBe(true);
+    expect(input.sourceWaterValidation.aboveBedCells).toBe(1);
+    expect(input.sourceWaterValidation.zeroOrUnresolvedDepthCells).toBe(1);
+    const packet = exportSurfacePacket(d, undefined, { encoding: 'binary' });
+    expect(packet.source.water.classes[0]).toBe(3); expect(packet.source.water.levelM[0]).toBe(2);
+    expect(packet.source.water.riverIds[0]).toBe(847); expect(d.raster.height[0]).toBe(3);
+    expect(packet.world.diagnostics.warnings.some((w: string) => w.includes('safety mask'))).toBe(true);
+  });
   it('terminates an abandoned isolated terrain worker before the next page request', async () => {
     let terminated = 0, posted = 0;
     const provider = await createLiveInfiniteTerrainProvider({ seed: '47' } as TerrainSettings,

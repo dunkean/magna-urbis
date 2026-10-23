@@ -20,7 +20,9 @@ export function compileFromDecor(decor: Decor, options: DecorCompileOptions = {}
   const input = decorToSurfaceInput(decor);
   input.terrain.originX += (options.terrainOriginX ?? 0) + (options.originX ?? 0);
   input.terrain.originZ += (options.terrainOriginZ ?? 0) + (options.originZ ?? 0);
-  return compileSurfaceWorld(input, options);
+  const world = compileSurfaceWorld(input, options);
+  addWaterValidationWarning(world, input.sourceWaterValidation);
+  return world;
 }
 
 /** Runtime counterpart to the retained-decor export. The caller supplies the
@@ -38,6 +40,10 @@ function packetCandidates(world: SurfaceWorld, options: SurfacePacketOptions) {
   const candidateBounds = options.candidateBounds === 'all' ? b : options.candidateBounds ?? { minX: Math.max(b.minX, cx - 160), maxX: Math.min(b.maxX, cx + 160),
     minZ: Math.max(b.minZ, cz - 160), maxZ: Math.min(b.maxZ, cz + 160) };
   return { candidateBounds, candidates: generateSurfaceCandidates(world, candidateBounds, { maxCandidates: options.candidateLimit ?? 100000, signal: options.signal }) };
+}
+function addWaterValidationWarning(world: SurfaceWorld, validation: ReturnType<typeof decorToSurfaceInput>['sourceWaterValidation']) {
+  const removed = validation.sourceWetCells - validation.physicalWetCells;
+  if (removed) world.diagnostics.warnings.push(`Retained water safety mask: ${removed}/${validation.sourceWetCells} source cells lack resolved positive water depth and remain Dry in context (${validation.aboveBedCells} above-level beds, ${validation.zeroOrUnresolvedDepthCells} unresolved/zero depth, ${validation.invalidLevelCells} invalid levels, ${validation.ambiguousCaveCells} ambiguous cave labels). Original source raster and river geometry are preserved.`);
 }
 
 function translatedBuildings(scene: Building3dScene, dx: number, dz: number) {
@@ -68,7 +74,8 @@ export function exportSurfacePacket(decor: Decor, scene?: Building3dScene, optio
   input.occupation = occupationFromMagnaScene(input.terrain, buildings, roads, input.occupation);
   input.terrain.originX += dx; input.terrain.originZ += dz;
   const world = compileSurfaceWorld(input, options);
-  const source = { meta: decor.meta, geometry: decor.raster.geometry, sourceToWorldTranslation: { x: dx, z: dz },
+  addWaterValidationWarning(world, input.sourceWaterValidation);
+  const source = { meta: decor.meta, geometry: decor.raster.geometry, sourceToWorldTranslation: { x: dx, z: dz }, sourceWaterValidation: input.sourceWaterValidation,
     water: { n: decor.raster.n, width: decor.raster.width, originX: (options.terrainOriginX ?? 0) + dx, originZ: (options.terrainOriginZ ?? 0) + dz,
       classes: options.encoding === 'binary' ? decor.raster.water : Array.from(decor.raster.water),
       levelM: options.encoding === 'binary' ? decor.raster.waterLevel : Array.from(decor.raster.waterLevel),
