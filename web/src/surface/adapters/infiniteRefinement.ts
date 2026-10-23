@@ -29,6 +29,7 @@ export async function createInfiniteRefinementProvider(server: string, field: Re
   if (field.n < 8 || !/^[+]?\d+$/.test(options.seed) || BigInt(options.seed) >= 2n ** 64n) throw new Error('Refinement registration requires an 8–4096 grid and unsigned 64-bit seed');
   const retained: RegistrationField = { width: field.width, n: field.n, data: new Float32Array(field.data) };
   const fieldFingerprint = registrationFieldFingerprint(retained);
+  let canonicalField = retained;
   let canonical = { width: retained.width, n: retained.n, fingerprint: fieldFingerprint, derivation: 'identity' as SurfaceRegistrationBinding['canonicalDerivation'] };
   const sourceOptions = { seed: options.seed, source: options.source, neuralToken: options.neuralToken, neuralWindow: options.neuralWindow && { ...options.neuralWindow } };
   const bytes = new Uint8Array(retained.data.buffer, retained.data.byteOffset, retained.data.byteLength);
@@ -85,6 +86,7 @@ export async function createInfiniteRefinementProvider(server: string, field: Re
     get registrationBinding() { return Object.freeze(binding()); }, get parentComparison() { return comparison && Object.freeze({ ...comparison }); },
     bindCanonicalField(capture) {
       const verified = assertCanonicalRegistrationField(retained, capture);
+      canonicalField = { width: capture.width, n: capture.n, data: new Float32Array(capture.data) };
       canonical = { width: capture.width, n: capture.n, fingerprint: verified.fingerprint, derivation: verified.derivation };
       return Object.freeze(binding());
     },
@@ -109,6 +111,7 @@ export async function createInfiniteRefinementProvider(server: string, field: Re
           assertNotAborted(request.signal); tileRegistration = registration!; tileRevision = revision; resolution = resolutionFor(); response = await send();
         }
         assertNotAborted(request.signal);
+        if (disposed) throw new DOMException('Refinement provider disposed', 'AbortError');
         if (!response.ok) throw new Error(`Infinite refinement tile: ${await response.text()}`);
         const meta = JSON.parse(response.headers.get('X-Neural-Meta') ?? '{}') as {
           id: string; x: number; y: number; width: number; n: number; sourceCell: number; lod: number; version: string; decoderUsed: boolean;
@@ -124,7 +127,7 @@ export async function createInfiniteRefinementProvider(server: string, field: Re
           spacingM, heights, source: { id: `infinite:${sourceOptions.seed}:${tileRegistration.id}`, version: meta.version,
             sourceLOD: meta.lod, sourceLODKnown: true, nativeSpacingM: meta.sourceCell } };
         assertRefinementTerrainRegion(grid, b);
-        const measured = compareRefinementParent(retained, grid);
+        const measured = compareRefinementParent(retained, grid, canonicalField);
         if (tileRevision === revision) comparison = measured;
         grid.source.provenance = `Infinite retained refinement; seed=${sourceOptions.seed}; decoderUsed=${meta.decoderUsed}; registrationNativeMpp=${tileRegistration.nativeMpp}; fieldFingerprint=${fieldFingerprint}; parent=cell-centred cubic B-spline control reconstruction (not interpolation through control centres); parentComparison=${JSON.stringify(measured)}`;
         return grid;
