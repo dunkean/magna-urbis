@@ -9,7 +9,7 @@ func _initialize():call_deferred("run")
 func run():
 	var args=OS.get_cmdline_user_args()
 	if args.is_empty():push_error("Requires a real surface packet path");quit(2);return
-	var packet=Data.read_json(args[0]);var node=Harness.new();node.world=Data.unpack_world(packet);node.packet=packet;node.environment_settings=Environment.new()
+	var packet=Data.read_json(args[0]);var node=Harness.new();node.world=Data.unpack_world(packet);node.packet=packet;node.environment_settings=Environment.new();node.loaded_live_binding=node.LiveBinding.from_packet(packet,node.world)
 	var file=FileAccess.open(args[0],FileAccess.READ);var bytes=file.get_buffer(file.get_length())
 	node.live_serial=44;node.live_requested_serial=3;node.live_busy=true
 	node.live_request_context={"kind":"live","serial":3,"lineage":node._source_scene_lineage(),"baseWorldId":node.world.id}
