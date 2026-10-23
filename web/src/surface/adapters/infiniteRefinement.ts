@@ -13,6 +13,9 @@ export interface InfiniteRefinementProvider extends TerrainProvider {
   readonly registration: Readonly<InfiniteRefinementRegistration>;
   /** Always current after re-registration; do not retain a stale provider id/binding. */
   readonly registrationBinding: Readonly<SurfaceRegistrationBinding>;
+  /** Fresh independent copy of the exact retained controls, labelled with the current registration identity.
+   * Read once when initializing a consumer; getters deliberately never expose mutable provider storage. */
+  readonly registrationParent: TerrainGrid & { reconstruction: 'cubic-bspline-controls' };
   readonly parentComparison: Readonly<RefinementParentComparison> | undefined;
   bindCanonicalField(field: RegistrationField): Readonly<SurfaceRegistrationBinding>;
   dispose(): void;
@@ -84,6 +87,14 @@ export async function createInfiniteRefinementProvider(server: string, field: Re
   return {
     get id() { return binding().providerId; }, get registration() { return Object.freeze({ ...registration! }); },
     get registrationBinding() { return Object.freeze(binding()); }, get parentComparison() { return comparison && Object.freeze({ ...comparison }); },
+    get registrationParent() {
+      const current = binding(), spacingM = retained.width / retained.n;
+      return { width: retained.n, height: retained.n, originX: spacingM / 2, originZ: spacingM / 2, spacingM,
+        heights: new Float32Array(retained.data), reconstruction: 'cubic-bspline-controls' as const,
+        source: { id: current.expectedSourceId, version: current.sourceVersion, sourceLOD: 0, sourceLODKnown: false,
+          nativeSpacingM: registration!.retainedSourceCell ?? spacingM,
+          provenance: `Exact retained registration controls; fieldFingerprint=${fieldFingerprint}; reconstruction=cubic-bspline-controls; sourceLOD unknown` } };
+    },
     bindCanonicalField(capture) {
       const verified = assertCanonicalRegistrationField(retained, capture);
       canonicalField = { width: capture.width, n: capture.n, data: new Float32Array(capture.data) };
