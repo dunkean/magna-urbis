@@ -2,6 +2,7 @@ class_name SurfaceData
 extends RefCounted
 const Geometry = preload("res://adapters/surface_geometry.gd")
 const UrbanReader = preload("res://adapters/urban_reader.gd")
+const Detail=preload("res://adapters/surface_geometry_detail.gd")
 const MAX_PACKET_BYTES := 512*1024*1024
 
 static func read_json(path: String) -> Dictionary:
@@ -195,6 +196,9 @@ static func validate_world(world: Dictionary) -> bool:
 		if not canonical.get("source") is Dictionary or canonical.source.get("id")!=t.source.id or canonical.source.get("version")!=t.source.version: return false
 	elif n>1048576:
 		push_error("Context sample budget exceeded (1M); use a coarser canonical context")
+		return false
+	if world.has("geometryDetail") and not Detail.validate(world.geometryDetail,world):
+		push_error("Source geometry detail validation failed")
 		return false
 	world["_validated"]=true
 	return true
