@@ -75,6 +75,10 @@ var last_live_applied_serial := -1
 var failed_live_serial := -1
 var region_counts: Array[int] = []
 var preparation_snapshots: Array = []
+var canopy_info: Dictionary = {}
+var canopy_textures: Dictionary = {}
+var canopy_materials: Array[ShaderMaterial] = []
+var rendered_source: Dictionary = {}
 
 func _ready() -> void:
 	_parse_options()
@@ -133,6 +137,7 @@ func _ready() -> void:
 	hud.add_theme_color_override("font_shadow_color",Color.BLACK)
 	hud.add_theme_constant_override("shadow_outline_size",4)
 	canvas.add_child(hud)
+	hud.visible=options.has("--hud") or diagnostic>0
 	_begin_prepare()
 	_request_live()
 	print(JSON.stringify({"event":"surface-viewer-start","godot":Engine.get_version_info().string,"terrain3d":"1.0.2","backend":RenderingServer.get_current_rendering_method(),"adapter":RenderingServer.get_video_adapter_name(),"source":world.terrain.source,"worldId":world.id,"pbrAssets":library.loaded_assets}))
@@ -197,7 +202,7 @@ func _begin_prepare() -> void:
 	var canonical := Data.context(world)
 	water_world.id=prepared_context_key
 	water_world.versions=canonical.get("versions",world.get("versions",{}))
-	var water_key := Geometry.chunk_key(water_world,focus,width_m,"water")
+	var water_key := Geometry.chunk_key(world,focus,width_m,"water")
 	var urban_key := Geometry.chunk_key(world,focus,width_m,"urban")
 	var scene_request := {"waterKey":water_key,"urbanKey":urban_key,"buildWater":not options.has("--ground-only") and not scene_mesh_cache.has(water_key),"buildUrban":not options.has("--ground-only") and not scene_mesh_cache.has(urban_key),"focus":focus.duplicate()}
 	worker = Thread.new()
@@ -262,7 +267,10 @@ func _apply_prepared(prepared: Dictionary) -> void:
 	origin = next_origin
 	applied_generation = int(prepared.generation)
 	rendered_revision=world_revision
+	rendered_source=world.terrain.source.duplicate()
+	_update_canopy_textures(prepared.populations.get("canopy",{}))
 	_build_scene_objects(prepared)
+	_apply_canopy_parameters(mat)
 	_update_camera()
 	prepare_times.append(float(prepared.prepareMs))
 	upload_times.append((Time.get_ticks_usec()-begin)/1000.0)
@@ -291,8 +299,12 @@ func _update_camera() -> void:
 	camera.far = maxf(maxf(camera.near+100.0,distance_to_target+width_m*3.0),camera.position.y-lowest+width_m*0.1)
 	camera.look_at(target,Vector3.UP if oblique else Vector3.FORWARD)
 	sun.directional_shadow_max_distance = clampf(width_m*1.5,40.0,3000.0)
+	var reference_y := Data.height_at(world,focus.x,focus.y)-float(origin.y)
+	if terrain!=null: terrain.get("material").call("set_shader_param","canopy_reference_y",reference_y)
+	for material in canopy_materials: material.set_shader_parameter("canopy_reference_y",reference_y)
 
 func _build_scene_objects(prepared: Dictionary) -> void:
+	canopy_materials.clear()
 	for child in objects.get_children():
 		child.visible=false
 		child.queue_free()
@@ -300,7 +312,12 @@ func _build_scene_objects(prepared: Dictionary) -> void:
 	var request: Dictionary = prepared.sceneRequest
 	if prepared.has("waterGeometry"):
 		var data: Dictionary = prepared.waterGeometry
-		scene_mesh_cache[request.waterKey]={"mesh":_mesh_from_arrays(prepared.waterArrays),"anchor":data.anchor,"quads":data.quads,"sourceStride":data.sourceStride,"buildMs":data.buildMs}
+		var entry := {"mesh":_mesh_from_arrays(prepared.waterArrays),"anchor":data.anchor,"quads":data.quads,"sourceStride":data.sourceStride,"buildMs":data.buildMs}
+		for key in ["coverageOrigin","coverageSpacingM","coverageSize","bedOrigin","bedSpacingM","bedSize","bedBounds","bedReconstruction"]:
+			if data.has(key): entry[key]=data[key]
+		if data.has("coverageImage"): entry.coverageTexture=ImageTexture.create_from_image(data.coverageImage)
+		if data.has("bedImage"): entry.bedTexture=ImageTexture.create_from_image(data.bedImage)
+		scene_mesh_cache[request.waterKey]=entry
 	if prepared.has("urbanGeometry"):
 		var data: Dictionary = prepared.urbanGeometry
 		scene_mesh_cache[request.urbanKey]={"batches":_urban_batch_meshes(prepared.urbanBatches),"roads":_mesh_from_arrays(prepared.roadArrays),"anchor":data.anchor,"nativeBuildings":data.nativeBuildings,"proxyBuildings":data.proxyBuildings,"budgetLimited":data.budgetLimited,"buildMs":data.buildMs}
@@ -310,12 +327,29 @@ func _build_scene_objects(prepared: Dictionary) -> void:
 		if entry.mesh.get_surface_count()>0:
 			var water := MeshInstance3D.new()
 			water.name="ExplicitWater"
+			water.layers=2
 			water.mesh=entry.mesh
 			water.position=Vector3(entry.anchor.x-origin.x,entry.anchor.y-origin.y,entry.anchor.z-origin.z)
 			var material := ShaderMaterial.new()
 			material.shader=load("res://shaders/water.gdshader")
 			material.render_priority=1
-			material.set_shader_parameter("wave_phase",Vector2(fposmod(origin.x*2.1+origin.z*0.47,TAU),fposmod(origin.z*1.7-origin.x*0.65,TAU)))
+			material.set_shader_parameter("wave_phase",Vector2(fposmod(origin.x*0.32,TAU),fposmod(origin.z*0.27,TAU)))
+			material.set_shader_parameter("render_origin_y",float(origin.y))
+			material.set_shader_parameter("coverage_enabled",entry.has("coverageTexture"))
+			if entry.has("coverageTexture"):
+				material.set_shader_parameter("coverage_map",entry.coverageTexture)
+				material.set_shader_parameter("coverage_origin_local",Vector2(float(entry.coverageOrigin.x)-float(origin.x),float(entry.coverageOrigin.z)-float(origin.z)))
+				material.set_shader_parameter("coverage_spacing",entry.coverageSpacingM)
+				material.set_shader_parameter("coverage_grid_size",Vector2(entry.coverageSize))
+			material.set_shader_parameter("bed_clip_enabled",entry.has("bedTexture"))
+			if entry.has("bedTexture"):
+				var b: Dictionary = entry.bedBounds
+				material.set_shader_parameter("bed_map",entry.bedTexture)
+				material.set_shader_parameter("bed_origin_local",Vector2(float(entry.bedOrigin.x)-float(origin.x),float(entry.bedOrigin.z)-float(origin.z)))
+				material.set_shader_parameter("bed_spacing",entry.bedSpacingM)
+				material.set_shader_parameter("bed_grid_size",Vector2(entry.bedSize))
+				material.set_shader_parameter("bed_bounds_local",Vector4(float(b.minX)-float(origin.x),float(b.minZ)-float(origin.z),float(b.maxX)-float(origin.x),float(b.maxZ)-float(origin.z)))
+				material.set_shader_parameter("bed_cubic",entry.bedReconstruction=="cubic-bspline-controls")
 			water.material_override=material
 			objects.add_child(water)
 	if scene_mesh_cache.has(request.urbanKey):
@@ -325,6 +359,7 @@ func _build_scene_objects(prepared: Dictionary) -> void:
 			if batch.mesh.get_surface_count()==0: continue
 			var city := MeshInstance3D.new()
 			city.name="NativeBuildingMeshes_"+str(batch.materialId)
+			city.layers=2
 			city.mesh=batch.mesh
 			city.position=position
 			city.set_meta("nativeMaterialId",batch.materialId)
@@ -338,6 +373,7 @@ func _build_scene_objects(prepared: Dictionary) -> void:
 		if entry.roads.get_surface_count()>0:
 			var roads := MeshInstance3D.new()
 			roads.name="DrapedRoadBatch"
+			roads.layers=2
 			roads.mesh=entry.roads
 			roads.position=position
 			var material := ShaderMaterial.new()
@@ -374,8 +410,9 @@ func _build_populations(populations: Dictionary) -> void:
 		var mat := StandardMaterial3D.new()
 		if family == "tree" or family == "shrub":
 			var shape := SphereMesh.new()
-			shape.radial_segments = 8
-			shape.rings = 4
+			# 32 sides keep top-down crown-disc area within 0.7% of the coverage atlas.
+			shape.radial_segments = 32 if family=="tree" else 8
+			shape.rings = 6 if family=="tree" else 4
 			shape.radius = 0.42
 			shape.height = 1.0
 			mesh = shape
@@ -395,17 +432,22 @@ func _build_populations(populations: Dictionary) -> void:
 			mat.albedo_color = Color(0.33,0.32,0.29)
 		mat.roughness = 0.91
 		var fade_material := ShaderMaterial.new()
-		fade_material.shader = load("res://shaders/surface_object.gdshader")
-		fade_material.set_shader_parameter("linear_tint",Vector3(mat.albedo_color.r,mat.albedo_color.g,mat.albedo_color.b))
+		fade_material.shader = load("res://shaders/canopy_instance.gdshader") if family=="tree" else load("res://shaders/surface_object.gdshader")
+		fade_material.set_shader_parameter("linear_tint",Vector3(0.055,0.105,0.036) if family=="tree" else Vector3.ONE)
+		if family=="tree":
+			canopy_materials.append(fade_material)
+			_apply_canopy_parameters(fade_material)
 		mesh.surface_set_material(0,fade_material)
 		var multi := MultiMesh.new()
 		multi.transform_format = MultiMesh.TRANSFORM_3D
 		multi.use_custom_data = true
+		multi.use_colors = true
 		multi.mesh = mesh
 		multi.instance_count = visible.size()
 		multi.buffer=populations.buffers[family]
 		var instance := MultiMeshInstance3D.new()
 		instance.name = family+"_bounded_instances"
+		instance.layers=2
 		instance.multimesh = multi
 		objects.add_child(instance)
 		if family=="tree":
@@ -415,17 +457,21 @@ func _build_populations(populations: Dictionary) -> void:
 			trunk_mesh.height = 0.74
 			trunk_mesh.radial_segments = 5
 			var trunk_mat := ShaderMaterial.new()
-			trunk_mat.shader = load("res://shaders/surface_object.gdshader")
+			trunk_mat.shader = load("res://shaders/canopy_instance.gdshader")
+			canopy_materials.append(trunk_mat)
+			_apply_canopy_parameters(trunk_mat)
 			trunk_mat.set_shader_parameter("linear_tint",Vector3(0.16,0.105,0.067))
 			trunk_mesh.material = trunk_mat
 			var trunks := MultiMesh.new()
 			trunks.transform_format = MultiMesh.TRANSFORM_3D
 			trunks.use_custom_data = true
+			trunks.use_colors = true
 			trunks.mesh = trunk_mesh
 			trunks.instance_count = visible.size()
 			trunks.buffer=populations.trunkBuffer
 			var trunk_instance := MultiMeshInstance3D.new()
 			trunk_instance.name = "tree_trunks"
+			trunk_instance.layers=2
 			trunk_instance.multimesh = trunks
 			objects.add_child(trunk_instance)
 
@@ -483,7 +529,7 @@ func _process(delta: float) -> void:
 			live_serial+=1
 			_begin_prepare()
 			_request_live()
-	if options.has("--frames") and terrain != null and warm_frames>=int(options["--frames"]):
+	if options.has("--frames") and terrain != null and worker==null and packet_worker==null and not live_busy and not view_dirty and live_ready and warm_frames>=int(options["--frames"]):
 		if options.has("--capture") and not capture_pending:
 			capture_pending = true
 			_capture(options["--capture"])
@@ -521,6 +567,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		changed = true
 	if event is InputEventKey and event.pressed:
 		match event.keycode:
+			KEY_H: hud.visible=not hud.visible
 			KEY_O: oblique = not oblique; changed = true
 			KEY_D:
 				var previous := diagnostic
@@ -542,7 +589,7 @@ func _unhandled_input(event: InputEvent) -> void:
 
 func _request_live() -> void:
 	if not options.has("--live-url") or live_busy: return
-	var extent := width_m*1.2+2.0*maxf(10.0,float(packet.get("_maximumCrownRadiusM",0.0)))
+	var extent := width_m*1.2+2.0*(16.0+maxf(10.0,float(packet.get("_maximumCrownRadiusM",0.0))))
 	var footprint: Dictionary = Data.context(world).bounds
 	extent = minf(extent,minf(float(footprint.maxX)-float(footprint.minX),float(footprint.maxZ)-float(footprint.minZ)))
 	var request_x := clampf(focus.x-extent*0.5,float(footprint.minX),float(footprint.maxX)-extent)
@@ -723,3 +770,21 @@ func _exit_tree() -> void:
 
 
 
+
+func _update_canopy_textures(info: Dictionary) -> void:
+	canopy_info=info
+	if not info.get("available",false): return
+	if not is_same(canopy_textures.get("coverageImage"),info.coverageImage) or not is_same(canopy_textures.get("countsImage"),info.countsImage):
+		canopy_textures={"coverageImage":info.coverageImage,"countsImage":info.countsImage,"coverage":ImageTexture.create_from_image(info.coverageImage),"counts":ImageTexture.create_from_image(info.countsImage)}
+
+func _apply_canopy_parameters(material: Object) -> void:
+	var values := {"canopy_enabled":canopy_info.get("available",false),"canopy_linear_albedo":Vector3(0.055,0.105,0.036),"canopy_reference_y":Data.height_at(world,focus.x,focus.y)-float(origin.y)}
+	if canopy_info.get("available",false):
+		var b: Dictionary = canopy_info.bounds
+		values.merge({"canopy_coverage":canopy_textures.coverage,"canopy_counts":canopy_textures.counts,
+			"canopy_origin":Vector2(float(canopy_info.origin.x)-float(origin.x),float(canopy_info.origin.z)-float(origin.z)),
+			"canopy_grid_size":canopy_info.gridSize,"canopy_spacing_m":canopy_info.spacingM,"canopy_fallback_blend_m":canopy_info.fallbackBlendM,
+			"canopy_bounds":Vector4(float(b.minX)-float(origin.x),float(b.minZ)-float(origin.z),float(b.maxX)-float(origin.x),float(b.maxZ)-float(origin.z))})
+	for key in values:
+		if material is ShaderMaterial: material.set_shader_parameter(key,values[key])
+		else: material.call("set_shader_param",key,values[key])
