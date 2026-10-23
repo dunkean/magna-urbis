@@ -181,6 +181,21 @@ réponses et les objets de chaque étage. Les probes réels et les fixtures d'al
 0/1 qualifient l'absence de contamination du support ; ils ne remplacent pas une
 acceptation artistique de la scène. Voir [les preuves GPU](evidence/native-layers/README.md).
 
+Orogen expose un vrai graphe et des couches climatiques, mais aucun catalogue de
+lithologie dans les sorties auditées. L'importateur exige donc une géologie
+catégorielle indépendante. Les températures sont converties depuis la convention
+amont et ne reçoivent pas une seconde correction d'altitude ; les deux pluies
+demi-annuelles sont additionnées. Le système de coordonnées métrique procédural
+équirectangulaire conserve ses limites géographiques. Voir
+[l'audit et les commandes régionales](../SURFACE_REGIONAL_IMPORT.md).
+
+Les 15 familles ont des recettes exécutables et des conditions de source. Les motifs
+ne construisent aucune dune, falaise, vallée glaciaire, cheminée volcanique ou
+géométrie karstique absente du fournisseur. Les couverts et les variations
+saisonnières sont des couches distinctes. La réponse moyenne des matériaux et la
+couverture des couronnes ont des probes ; cela ne démontre ni photoréalisme,
+ni invariance photométrique des ombres, ni 60 FPS durant chaque remplacement.
+
 ## Ville, plans et réalisations natives
 
 Les [quatre vues des 500 plans conservés](evidence/native-city500-v152.json)
@@ -210,21 +225,6 @@ dépôt principal n'est reconstruit ni modifié. Les captures des nouveaux exté
 restent à qualifier sur le prochain gel de rendu. Ces scènes reposent sur un
 parent conservé ; elles ne prouvent pas une nouvelle ville sur un relief neural
 fraîchement raffiné.
-
-Orogen expose un vrai graphe et des couches climatiques, mais aucun catalogue de
-lithologie dans les sorties auditées. L'importateur exige donc une géologie
-catégorielle indépendante. Les températures sont converties depuis la convention
-amont et ne reçoivent pas une seconde correction d'altitude ; les deux pluies
-demi-annuelles sont additionnées. Le système de coordonnées métrique procédural
-équirectangulaire conserve ses limites géographiques. Voir
-[l'audit et les commandes régionales](../SURFACE_REGIONAL_IMPORT.md).
-
-Les15 familles ont des recettes exécutables et des conditions de source. Les motifs
-ne construisent aucune dune, falaise, vallée glaciaire, cheminée volcanique ou
-géométrie karstique absente du fournisseur. Les couverts et les variations
-saisonnières sont des couches distinctes. La réponse moyenne des matériaux et la
-couverture des couronnes ont des probes ; cela ne démontre ni photoréalisme,
-ni invariance photométrique des ombres, ni60 FPS durant chaque remplacement.
 
 ## Revues 1–5 : verdicts initiaux et corrections
 
