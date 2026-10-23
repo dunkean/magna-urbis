@@ -314,7 +314,8 @@ func _apply_prepared(prepared: Dictionary) -> void:
 	rendered_world=world
 	rendered_packet=packet
 	rendered_world_id=str(world.id)
-	rendered_source=world.terrain.source.duplicate()
+	var source_focus=_source_actual_at_focus(world,prepared.displaySource,focus)
+	rendered_source=source_focus.sourceActualAtFocus.duplicate()
 	rendered_live_serial=int(prepared.get("liveSerial",packet.get("_acceptedLiveSerial",-1)))
 	rendered_presentation_mode=str(prepared.get("presentationMode",presentation_mode))
 	Presentation.configure_environment(environment_settings,rendered_presentation_mode,packet)
@@ -333,7 +334,7 @@ func _apply_prepared(prepared: Dictionary) -> void:
 	region_counts.append(int(terrain.get("data").call("get_region_count")))
 	preparation_snapshots.append({"focus":requested_focus.duplicate(),"widthM":requested_width,"generation":prepared.generation,"sourceId":world.terrain.source.id})
 	rendered_tick_ms=Time.get_ticks_msec()
-	rendered_snapshot={"worldId":rendered_world_id,"source":rendered_source.duplicate(),"liveSerial":rendered_live_serial,"appliedTickMs":rendered_tick_ms,"sourceEpoch":packet.get("source",{}).get("sourceEpoch"),"sceneEpoch":packet.get("source",{}).get("sceneEpoch"),"worldRevision":rendered_revision}
+	rendered_snapshot={"worldId":rendered_world_id,"source":rendered_source.duplicate(),"tileSource":world.terrain.source.duplicate(),"sourceActualAtFocus":rendered_source.duplicate(),"focusInsideSource":source_focus.focusInsideSource,"fineContributionWeight":source_focus.fineContributionWeight,"seamWeight":source_focus.seamWeight,"sourceContributionsAtFocus":source_focus.contributions,"sourceBounds":world.bounds.duplicate(),"focusAtApply":focus.duplicate(),"liveSerial":rendered_live_serial,"appliedTickMs":rendered_tick_ms,"sourceEpoch":packet.get("source",{}).get("sourceEpoch"),"sceneEpoch":packet.get("source",{}).get("sceneEpoch"),"worldRevision":rendered_revision}
 	render_events.append(rendered_snapshot.duplicate(true))
 	while render_events.size()>128:render_events.pop_front()
 	print(JSON.stringify({"event":"terrain-replaced","worldId":rendered_world_id,"renderedSnapshot":rendered_snapshot,"requestedWorldId":self.world.id,"origin":[origin.x,origin.y,origin.z],"sourceLOD":world.terrain.source.sourceLOD,"nativeSpacingM":world.terrain.source.nativeSpacingM,"displaySpacingM":prepared.spacing,"regions":terrain.get("data").call("get_region_count"),"prepareMs":prepared.prepareMs,"uploadAndObjectsMs":upload_times.back()}))
@@ -994,3 +995,29 @@ func _record_live_binding_rejection(reason:String,serial:int)->void:
 	live_binding_rejections.append(event)
 	while live_binding_rejections.size()>128:live_binding_rejections.pop_front()
 	push_warning("Live source rejected; retaining the loaded map: "+reason)
+
+# Mirror Geometry.height_at's coarse-to-fine feather without inventing a source
+# level. A bundle's known fine tile can be completely outside the current view.
+func _source_actual_at_focus(value:Dictionary,display:Dictionary,position:Dictionary)->Dictionary:
+	var x=float(position.x);var z=float(position.y)
+	var layers=Geometry.prepare_height_layers(display)
+	var contributions:Array=[]
+	var seam_weight=0.0
+	for index in range(layers.size()-1,-1,-1):
+		var layer:Dictionary=layers[index]
+		if not Data.contains(layer.bounds,x,z):continue
+		var weight=1.0
+		if not contributions.is_empty():
+			var edge=minf(minf(x-float(layer.bounds.minX),float(layer.bounds.maxX)-x),minf(z-float(layer.bounds.minZ),float(layer.bounds.maxZ)-z))
+			var band=maxf(float(layer.terrain.spacingM)*4.0,float(display.get("_displaySpacing",0))*2.0)
+			weight=smoothstep(0.0,maxf(band,0.0001),edge)
+		for part in contributions:part.weight*=1.0-weight
+		var active=is_same(layer.terrain,display.terrain)
+		if active:seam_weight=weight
+		contributions.append({"source":layer.terrain.get("source",{}),"weight":weight,"activeChild":active})
+	var fine_weight=0.0;var actual:Dictionary={}
+	for part in contributions:
+		if part.activeChild:fine_weight+=float(part.weight)
+		if float(part.weight)>0.000001:actual=part.source
+	if fine_weight>0.000001:actual=value.terrain.source
+	return {"sourceActualAtFocus":actual,"focusInsideSource":Data.contains(value.bounds,x,z),"fineContributionWeight":fine_weight,"seamWeight":seam_weight,"contributions":contributions}
