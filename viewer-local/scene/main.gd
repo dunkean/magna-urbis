@@ -2,6 +2,9 @@ extends Node3D
 
 const Data = preload("res://adapters/surface_data.gd")
 const Library = preload("res://adapters/material_library.gd")
+const ShaderSource = preload("res://adapters/surface_shader.gd")
+const Geometry = preload("res://adapters/surface_geometry.gd")
+var surface_shader_code := ""
 var world: Dictionary = {}
 var packet: Dictionary = {}
 var options: Dictionary = {}
@@ -23,6 +26,23 @@ var applied_generation := 0
 var frames := 0
 var warm_frames := 0
 var frame_times: Array[float] = []
+var all_frame_times: Array[float] = []
+var process_times: Array[float] = []
+var previous_frame_tick := 0
+var packet_worker: Thread
+var packet_context: Dictionary = {}
+var canonical_contexts: Dictionary = {}
+var known_context_id := ""
+var context_textures: Dictionary = {}
+var prepared_context_key := ""
+var stream_requested_serial := -1
+var last_stream_tick := 0
+var last_stream_world_id := ""
+var height_source_cache: Dictionary = {}
+var prepared_height_key := ""
+var world_revision := 0
+var rendered_revision := -1
+var scene_mesh_cache: Dictionary = {}
 var upload_times: Array[float] = []
 var prepare_times: Array[float] = []
 var hud := Label.new()
@@ -49,26 +69,41 @@ var indexed_packet: Dictionary = {}
 
 func _ready() -> void:
 	_parse_options()
+	surface_shader_code = ShaderSource.build()
+	if options.has("--resolution"):
+		var dimensions: PackedStringArray = str(options["--resolution"]).split("x")
+		if dimensions.size()==2: get_window().size = Vector2i(int(dimensions[0]),int(dimensions[1]))
 	if not ClassDB.class_exists("Terrain3D"):
 		push_error("Terrain3D missing. Run viewer-local/bootstrap.ps1 first.")
 		get_tree().quit(2)
 		return
+	var addon = ClassDB.instantiate("Terrain3D")
+	assert(addon.get("version")=="1.0.2","Expected pinned Terrain3D 1.0.2")
+	addon.free()
 	world_path = options.get("--world", "")
 	if world_path.is_empty():
 		push_error("Required: -- --world <SurfaceWorld.json> [--assets resolved.json]")
 		get_tree().quit(2)
 		return
 	packet = Data.read_json(world_path)
+	packet["_showProxies"]=options.has("--show-proxies")
 	world = Data.unpack_world(packet)
 	if world.is_empty():
 		get_tree().quit(2)
 		return
+	if not _resolve_context(world):
+		get_tree().quit(2)
+		return
+	world["_cityIdentity"]=Geometry.city_identity(packet)
+	world["_showProxies"]=packet._showProxies
+	if packet.has("terrainParents"): world["_terrainParents"]=_external_parents(packet,world)
 	world_modified = FileAccess.get_modified_time(world_path)
 	var b: Dictionary = world.bounds
 	focus = {"x":(float(b.minX)+float(b.maxX))*0.5,"y":(float(b.minZ)+float(b.maxZ))*0.5}
 	if options.has("--x"): focus.x = float(options["--x"])
 	if options.has("--z"): focus.y = float(options["--z"])
 	width_m = float(options.get("--width",maxf(float(b.maxX)-float(b.minX),float(b.maxZ)-float(b.minZ))))
+	diagnostic = int(options.get("--diagnostic",0))
 	oblique = not options.has("--top")
 	stream_directory = options.get("--stream-dir", "")
 	library.load_manifest(options.get("--assets", ""))
@@ -136,15 +171,34 @@ func _begin_prepare() -> void:
 		return
 	requested_focus = focus.duplicate()
 	requested_width = width_m
-	var reference_height := Data.height_at(world,focus.x,focus.y)
-	var next_origin: Dictionary = {"x":focus.x,"y":reference_height,"z":focus.y}
+	var spacing := Data.display_spacing(world.terrain,width_m)
+	var snap_step := spacing*64.0
+	var snapped_x: float = float(world.terrain.originX)+round((float(focus.x)-float(world.terrain.originX))/snap_step)*snap_step
+	var snapped_z: float = float(world.terrain.originZ)+round((float(focus.y)-float(world.terrain.originZ))/snap_step)*snap_step
+	if options.has("--rebase-offset-m"): snapped_x+=round(float(options["--rebase-offset-m"])/spacing)*spacing
+	var reference_height := Data.height_at(world,snapped_x,snapped_z)
+	var next_origin: Dictionary = {"x":snapped_x,"y":reference_height,"z":snapped_z}
+	prepared_context_key = known_context_id if not known_context_id.is_empty() else str(world.id)
+	prepared_height_key = str(world.id)+"@"+str(spacing)
+	var reuse_height: bool = terrain!=null and rendered_revision==world_revision and absf(origin.x-snapped_x)<0.00001 and absf(origin.z-snapped_z)<0.00001 and absf(float(terrain.get("vertex_spacing"))-spacing)<0.00001
+	var water_world := world.duplicate(false)
+	var canonical := Data.context(world)
+	water_world.id=prepared_context_key
+	water_world.versions=canonical.get("versions",world.get("versions",{}))
+	var water_key := Geometry.chunk_key(water_world,focus,width_m,"water")
+	var urban_key := Geometry.chunk_key(world,focus,width_m,"urban")
+	var scene_request := {"waterKey":water_key,"urbanKey":urban_key,"buildWater":not options.has("--ground-only") and not scene_mesh_cache.has(water_key),"buildUrban":not options.has("--ground-only") and not scene_mesh_cache.has(urban_key),"focus":focus.duplicate()}
 	worker = Thread.new()
-	worker.start(Data.prepare.bind(world,next_origin,width_m))
+	worker.start(Data.prepare.bind(world,next_origin,width_m,generation,packet,context_textures.has(prepared_context_key),height_source_cache.get(prepared_height_key,{}),reuse_height,scene_request))
 	last_request_tick = Time.get_ticks_msec()
 
 func _apply_prepared(prepared: Dictionary) -> void:
-	if prepared.worldId != world.id:
+	if int(prepared.generation)!=generation or prepared.worldId != world.id:
 		return
+	var world: Dictionary = prepared.world
+	var packet: Dictionary = prepared.packet
+	height_source_cache[prepared_height_key]=prepared.displaySource
+	while height_source_cache.size()>3: height_source_cache.erase(height_source_cache.keys()[0])
 	var begin := Time.get_ticks_usec()
 	var next_terrain: Node3D = terrain
 	var recreate := terrain==null
@@ -163,34 +217,36 @@ func _apply_prepared(prepared: Dictionary) -> void:
 	elif absf(float(next_terrain.get("vertex_spacing"))-float(prepared.spacing))>0.001:
 		next_terrain.set("vertex_spacing",prepared.spacing)
 	var mat: Object = next_terrain.get("material")
-	var code := FileAccess.get_file_as_string("res://addons/terrain_3d/extras/shaders/minimum.gdshader").replace("\r", "")
-	code = code.replace("// Public Uniforms",FileAccess.get_file_as_string("res://shaders/surface_uniforms.gdshaderinc")+"\n// Public Uniforms")
-	code = code.replace("ALBEDO = vec3(.2);\n\tROUGHNESS = .7;",FileAccess.get_file_as_string("res://shaders/surface_body.gdshaderinc"))
 	if recreate:
 		var shader := Shader.new()
-		shader.code = code
+		shader.code = surface_shader_code
 		mat.set("shader_override",shader)
 		mat.set("shader_override_enabled",true)
 		mat.set("world_background",0)
 	var next_origin: Dictionary = prepared.origin
 	library.configure(mat,world,next_origin)
-	var t: Dictionary = world.terrain
-	mat.call("set_shader_param","surface_ids",ImageTexture.create_from_image(prepared.ids))
-	mat.call("set_shader_param","surface_state",ImageTexture.create_from_image(prepared.state))
-	mat.call("set_shader_param","surface_bedrock",ImageTexture.create_from_image(prepared.rock))
+	var t: Dictionary = prepared.contextGrid
+	if not context_textures.has(prepared_context_key):
+		context_textures[prepared_context_key] = {"surface_ids":ImageTexture.create_from_image(prepared.ids),"surface_state":ImageTexture.create_from_image(prepared.state),"surface_bedrock":ImageTexture.create_from_image(prepared.rock),"surface_average":ImageTexture.create_from_image(prepared.average)}
+		while context_textures.size()>2: context_textures.erase(context_textures.keys()[0])
+	for name in context_textures[prepared_context_key]: mat.call("set_shader_param",name,context_textures[prepared_context_key][name])
+	mat.call("set_shader_param","source_spacing_m",float(t.spacingM))
+	mat.call("set_shader_param","source_grid_size",Vector2(int(t.width),int(t.height)))
 	mat.call("set_shader_param","source_origin",Vector2(float(t.originX)-next_origin.x,float(t.originZ)-next_origin.z))
 	mat.call("set_shader_param","source_extent",Vector2((int(t.width)-1)*float(t.spacingM),(int(t.height)-1)*float(t.spacingM)))
 	mat.call("set_shader_param","diagnostic",diagnostic)
 	if packet.has("candidateBounds"):
 		var cb: Dictionary = packet.candidateBounds
 		mat.call("set_shader_param","candidate_bounds",Vector4(float(cb.minX)-next_origin.x,float(cb.minZ)-next_origin.z,float(cb.maxX)-next_origin.x,float(cb.maxZ)-next_origin.z))
-	var images: Array[Image] = [prepared.height,prepared.control,null]
-	next_terrain.get("data").call("import_images",images,prepared.localStart,0.0,1.0)
+	if prepared.height!=null:
+		var images: Array[Image] = [prepared.height,prepared.control,null]
+		next_terrain.get("data").call("import_images",images,prepared.localStart,0.0,1.0)
 	mat.set("show_checkered",false)
 	terrain = next_terrain
 	origin = next_origin
-	applied_generation = generation
-	_build_scene_objects()
+	applied_generation = int(prepared.generation)
+	rendered_revision=world_revision
+	_build_scene_objects(prepared)
 	_update_camera()
 	prepare_times.append(float(prepared.prepareMs))
 	upload_times.append((Time.get_ticks_usec()-begin)/1000.0)
@@ -203,127 +259,112 @@ func _update_camera() -> void:
 	if not oblique:
 		camera.projection = Camera3D.PROJECTION_ORTHOGONAL
 		camera.size = width_m/get_viewport().get_visible_rect().size.aspect()
-		camera.position = target+Vector3(0,maxf(width_m,20.0),0.0001)
+		var highest: float = float(world.get("_heightRange",Vector2(0,0)).y)-origin.y
+		camera.position = target+Vector3(0,maxf(maxf(width_m,20.0),highest-target.y+maxf(1.0,width_m*0.02)),0.0001)
 	else:
 		camera.projection = Camera3D.PROJECTION_PERSPECTIVE
 		var distance := width_m/(2.0*tan(deg_to_rad(camera.fov)*0.5)*get_viewport().get_visible_rect().size.aspect())
-		camera.position = target+Vector3(0,distance*0.73,distance*0.68)
-	camera.near = maxf(0.0005,width_m*0.000001)
-	camera.far = maxf(500.0,width_m*12.0)
+		camera.position = target+Vector3(0,0.73,0.68).normalized()*distance
+		var camera_ground: float = Data.height_at(world,float(camera.position.x)+origin.x,float(camera.position.z)+origin.z)-origin.y
+		camera.position.y=maxf(camera.position.y,camera_ground+maxf(0.05,width_m*0.003))
+	var distance_to_target := camera.position.distance_to(target)
+	camera.near = maxf(0.01,distance_to_target*0.01)
+	var lowest: float = float(world.get("_heightRange",Vector2(0,0)).x)-origin.y
+	camera.far = maxf(maxf(camera.near+100.0,distance_to_target+width_m*3.0),camera.position.y-lowest+width_m*0.1)
 	camera.look_at(target,Vector3.UP if oblique else Vector3.FORWARD)
 	sun.directional_shadow_max_distance = clampf(width_m*1.5,40.0,3000.0)
 
-func _build_scene_objects() -> void:
-	for child in objects.get_children(): child.queue_free()
-	_build_water()
-	_build_urban()
+func _build_scene_objects(prepared: Dictionary) -> void:
+	for child in objects.get_children():
+		child.visible=false
+		child.queue_free()
+	if options.has("--ground-only"): return
+	var request: Dictionary = prepared.sceneRequest
+	if prepared.has("waterGeometry"):
+		var data: Dictionary = prepared.waterGeometry
+		scene_mesh_cache[request.waterKey]={"mesh":Data.make_mesh(data.vertices),"anchor":data.anchor,"quads":data.quads,"sourceStride":data.sourceStride,"buildMs":data.buildMs}
+	if prepared.has("urbanGeometry"):
+		var data: Dictionary = prepared.urbanGeometry
+		scene_mesh_cache[request.urbanKey]={"mesh":Data.make_mesh(data.vertices,data.normals),"roads":Data.make_mesh(data.roadVertices),"anchor":data.anchor,"nativeBuildings":data.nativeBuildings,"proxyBuildings":data.proxyBuildings,"budgetLimited":data.budgetLimited,"buildMs":data.buildMs}
+	while scene_mesh_cache.size()>8: scene_mesh_cache.erase(scene_mesh_cache.keys()[0])
+	if scene_mesh_cache.has(request.waterKey):
+		var entry: Dictionary = scene_mesh_cache[request.waterKey]
+		if entry.mesh.get_surface_count()>0:
+			var water := MeshInstance3D.new()
+			water.name="ExplicitWater"
+			water.mesh=entry.mesh
+			water.position=Vector3(entry.anchor.x-origin.x,entry.anchor.y-origin.y,entry.anchor.z-origin.z)
+			var material := ShaderMaterial.new()
+			material.shader=load("res://shaders/water.gdshader")
+			material.render_priority=1
+			material.set_shader_parameter("wave_phase",Vector2(fposmod(origin.x*2.1+origin.z*0.47,TAU),fposmod(origin.z*1.7-origin.x*0.65,TAU)))
+			water.material_override=material
+			objects.add_child(water)
+	if scene_mesh_cache.has(request.urbanKey):
+		var entry: Dictionary = scene_mesh_cache[request.urbanKey]
+		var position := Vector3(entry.anchor.x-origin.x,entry.anchor.y-origin.y,entry.anchor.z-origin.z)
+		if entry.mesh.get_surface_count()>0:
+			var city := MeshInstance3D.new()
+			city.name="NativeBuildingMeshes"
+			city.mesh=entry.mesh
+			city.position=position
+			var material := StandardMaterial3D.new()
+			material.albedo_color=Color(0.63,0.56,0.44)
+			material.roughness=0.85
+			material.cull_mode=BaseMaterial3D.CULL_BACK
+			city.material_override=material
+			objects.add_child(city)
+		if entry.roads.get_surface_count()>0:
+			var roads := MeshInstance3D.new()
+			roads.name="DrapedRoadBatch"
+			roads.mesh=entry.roads
+			roads.position=position
+			var material := ShaderMaterial.new()
+			material.shader=load("res://shaders/road.gdshader")
+			material.render_priority=2
+			roads.material_override=material
+			objects.add_child(roads)
 	_build_populations()
-
-func _build_water() -> void:
-	var vertices := PackedVector3Array()
-	var t: Dictionary = world.terrain
-	var levels: Array = world.fields.waterLevelM
-	var classes: Array = world.fields.waterClass
-	# Water support uses supplied absolute water levels, never the ground palette.
-	for z in int(t.height)-1:
-		for x in int(t.width)-1:
-			var i: int = z*int(t.width)+x
-			if int(classes[i]) == 0 or levels[i] == null: continue
-			var px: float = float(t.originX)+x*float(t.spacingM)-origin.x
-			var pz: float = float(t.originZ)+z*float(t.spacingM)-origin.z
-			var h: float = float(levels[i])-origin.y+0.015
-			var s: float = t.spacingM
-			var a := Vector3(px,h,pz)
-			var b := Vector3(px+s,h,pz)
-			var c := Vector3(px+s,h,pz+s)
-			var d := Vector3(px,h,pz+s)
-			vertices.append_array(PackedVector3Array([a,c,b,a,d,c]))
-	if vertices.is_empty(): return
-	var mesh := MeshInstance3D.new()
-	mesh.name = "ExplicitWater"
-	mesh.mesh = Data.make_mesh(vertices)
-	var material := ShaderMaterial.new()
-	material.shader = load("res://shaders/water.gdshader")
-	material.set_shader_parameter("world_phase",Vector2(fposmod(origin.x,4096.0),fposmod(origin.z,4096.0)))
-	mesh.material_override = material
-	objects.add_child(mesh)
-
-func _build_urban() -> void:
-	var urban: Dictionary = packet.get("urban",{})
-	var buildings = urban.get("buildings",[])
-	if buildings is Dictionary: buildings = buildings.get("buildings",[])
-	var vertices := PackedVector3Array()
-	var normals := PackedVector3Array()
-	for building in buildings:
-		for triangle in building.get("triangles",[]):
-			var n: Array = triangle.normal
-			for point in triangle.points:
-				vertices.append(Vector3(float(point[0])-origin.x,float(point[1])-origin.y,float(point[2])-origin.z))
-				normals.append(Vector3(float(n[0]),float(n[1]),float(n[2])))
-	if not vertices.is_empty():
-		var instance := MeshInstance3D.new()
-		instance.name = "NativeBuildingMeshes"
-		instance.mesh = Data.make_mesh(vertices,normals)
-		var mat := StandardMaterial3D.new()
-		mat.albedo_color = Color(0.63,0.56,0.44)
-		mat.roughness = 0.85
-		mat.cull_mode = BaseMaterial3D.CULL_DISABLED
-		instance.material_override = mat
-		objects.add_child(instance)
-	for road in urban.get("roads",[]):
-		var points: Array = road.get("points",[])
-		if points.size()<2: continue
-		var road_vertices := PackedVector3Array()
-		var half_width := float(road.get("widthM",5.0))*0.5
-		for i in points.size()-1:
-			var a: Array = points[i]
-			var b: Array = points[i+1]
-			var bounds: Dictionary = world.bounds
-			if float(a[0])<float(bounds.minX) or float(a[0])>float(bounds.maxX) or float(a[1])<float(bounds.minZ) or float(a[1])>float(bounds.maxZ): continue
-			if float(b[0])<float(bounds.minX) or float(b[0])>float(bounds.maxX) or float(b[1])<float(bounds.minZ) or float(b[1])>float(bounds.maxZ): continue
-			var delta := Vector2(float(b[0])-float(a[0]),float(b[1])-float(a[1])).normalized()
-			var side := Vector2(-delta.y,delta.x)*half_width
-			var corners: Array[Vector3] = []
-			for pair in [[a,-side],[a,side],[b,side],[b,-side]]:
-				var x: float = float(pair[0][0])+pair[1].x
-				var z: float = float(pair[0][1])+pair[1].y
-				corners.append(Vector3(x-origin.x,Data.height_at(world,x,z)+0.06-origin.y,z-origin.z))
-			road_vertices.append_array(PackedVector3Array([corners[0],corners[2],corners[1],corners[0],corners[3],corners[2]]))
-		var instance := MeshInstance3D.new()
-		instance.mesh = Data.make_mesh(road_vertices)
-		var mat := StandardMaterial3D.new()
-		mat.albedo_color = Color(0.21,0.20,0.18)
-		mat.cull_mode = BaseMaterial3D.CULL_DISABLED
-		instance.material_override = mat
-		objects.add_child(instance)
-
+	if diagnostic==5:
+		var normals := ShaderMaterial.new()
+		normals.shader=load("res://shaders/normals.gdshader")
+		for child in objects.get_children():
+			if child is GeometryInstance3D: child.material_override=normals
 func _build_populations() -> void:
 	var candidates: Array = packet.get("candidates",packet.get("populations",[]))
-	candidate_count = candidates.size()
+	var columns: Dictionary = packet.get("candidateColumns",{})
+	candidate_count = int(columns.count) if not columns.is_empty() else candidates.size()
 	if not is_same(indexed_packet,packet):
-		candidate_buckets.clear()
-		for candidate in candidates:
-			var address := Vector2i(floori(float(candidate.x)/128.0),floori(float(candidate.z)/128.0))
-			if not candidate_buckets.has(address): candidate_buckets[address] = []
-			candidate_buckets[address].append(candidate)
+		candidate_buckets=packet.get("_candidateBuckets",{})
 		indexed_packet = packet
 	selected_candidates = 0
 	var families := {"tree":[],"shrub":[],"boulder":[],"grass":[],"debris":[]}
-	var radius := clampf(width_m*0.9,40.0,2500.0)
+	var radius := clampf(width_m*(1.5 if oblique else 1.0),40.0,5000.0)
+	var query_radius: float = radius+float(packet.get("_maximumCrownRadiusM",0.0))
 	var nearby: Array = []
-	for z in range(floori((focus.y-radius)/128.0),floori((focus.y+radius)/128.0)+1):
-		for x in range(floori((focus.x-radius)/128.0),floori((focus.x+radius)/128.0)+1):
+	for z in range(floori((focus.y-query_radius)/128.0),floori((focus.y+query_radius)/128.0)+1):
+		for x in range(floori((focus.x-query_radius)/128.0),floori((focus.x+query_radius)/128.0)+1):
 			nearby.append_array(candidate_buckets.get(Vector2i(x,z),[]))
-	for candidate in nearby:
+	var eligible: Array = []
+	for index in nearby:
+		var i := int(index)
+		var px: float = columns.positions[i*3] if not columns.is_empty() else float(candidates[i].x)
+		var pz: float = columns.positions[i*3+2] if not columns.is_empty() else float(candidates[i].z)
+		var size: float = columns.size[i] if not columns.is_empty() else float(candidates[i].size)
+		var crown_radius: float = columns.crownRadiusM[i] if not columns.is_empty() else float(candidates[i].get("crownRadiusM",size*0.42))
+		if not is_finite(crown_radius): crown_radius=size*0.42
+		var distance := Vector2(px-focus.x,pz-focus.y).length()
+		if distance>radius+crown_radius: continue
+		var projected := maxf(size,2.0*crown_radius)/width_m*get_viewport().get_visible_rect().size.x
+		if projected<1.25: continue
+		var candidate: Dictionary = candidates[i] if columns.is_empty() else {"stableId":columns.ids[i],"family":columns.families[int(columns.family[i])],"x":px,"y":columns.positions[i*3+1],"z":pz,"size":size,"orientation":columns.orientation[i],"rank":columns.rank[i],"variant":columns.variant[i],"crownRadiusM":crown_radius}
 		var family: String = candidate.family
 		if not families.has(family): continue
-		var distance := Vector2(float(candidate.x)-focus.x,float(candidate.z)-focus.y).length()
-		if distance > radius: continue
-		var projected := float(candidate.size)/width_m*get_viewport().get_visible_rect().size.x
-		if projected < 1.25: continue
-		if selected_candidates >= 16000: break
-		families[family].append(candidate)
-		selected_candidates += 1
+		eligible.append(candidate)
+	eligible.sort_custom(func(a,b): return float(a.get("rank",0.0))<float(b.get("rank",0.0)))
+	if eligible.size()>16000: eligible.resize(16000)
+	for candidate in eligible: families[candidate.family].append(candidate)
+	selected_candidates=eligible.size()
 	for family in families:
 		var visible: Array = families[family]
 		if visible.is_empty(): continue
@@ -351,18 +392,27 @@ func _build_populations() -> void:
 			mesh = shape
 			mat.albedo_color = Color(0.33,0.32,0.29)
 		mat.roughness = 0.91
-		mesh.surface_set_material(0,mat)
+		var fade_material := ShaderMaterial.new()
+		fade_material.shader = load("res://shaders/instance.gdshader")
+		fade_material.set_shader_parameter("tint",mat.albedo_color)
+		mesh.surface_set_material(0,fade_material)
 		var multi := MultiMesh.new()
 		multi.transform_format = MultiMesh.TRANSFORM_3D
+		multi.use_custom_data = true
 		multi.mesh = mesh
 		multi.instance_count = visible.size()
 		for i in visible.size():
 			var candidate: Dictionary = visible[i]
 			var size: float = candidate.size
 			var crown: bool = family=="tree"
+			var crown_radius := float(candidate.get("crownRadiusM",size*0.42))
+			if not is_finite(crown_radius): crown_radius=size*0.42
+			var horizontal := crown_radius/0.42 if crown else size
 			var position := Vector3(float(candidate.x)-origin.x,float(candidate.y)+size*(0.72 if crown else 0.5)-origin.y,float(candidate.z)-origin.z)
-			var basis := Basis(Vector3.UP,float(candidate.orientation)).scaled(Vector3(size,size*(0.66 if crown else 1.0),size))
+			var basis := Basis(Vector3.UP,float(candidate.orientation)).scaled(Vector3(horizontal,size*(0.66 if crown else 1.0),horizontal))
 			multi.set_instance_transform(i,Transform3D(basis,position))
+			var pixels := size/width_m*get_viewport().get_visible_rect().size.x
+			multi.set_instance_custom_data(i,Color(smoothstep(1.25,3.0,pixels),0,0,1))
 		var instance := MultiMeshInstance3D.new()
 		instance.name = family+"_bounded_instances"
 		instance.multimesh = multi
@@ -373,17 +423,20 @@ func _build_populations() -> void:
 			trunk_mesh.bottom_radius = 0.055
 			trunk_mesh.height = 0.74
 			trunk_mesh.radial_segments = 5
-			var trunk_mat := StandardMaterial3D.new()
-			trunk_mat.albedo_color = Color(0.16,0.105,0.067)
+			var trunk_mat := ShaderMaterial.new()
+			trunk_mat.shader = load("res://shaders/instance.gdshader")
+			trunk_mat.set_shader_parameter("tint",Color(0.16,0.105,0.067))
 			trunk_mesh.material = trunk_mat
 			var trunks := MultiMesh.new()
 			trunks.transform_format = MultiMesh.TRANSFORM_3D
+			trunks.use_custom_data = true
 			trunks.mesh = trunk_mesh
 			trunks.instance_count = visible.size()
 			for i in visible.size():
 				var c: Dictionary = visible[i]
 				var size: float = c.size
 				trunks.set_instance_transform(i,Transform3D(Basis.IDENTITY.scaled(Vector3(size,size,size)),Vector3(float(c.x)-origin.x,float(c.y)+size*0.37-origin.y,float(c.z)-origin.z)))
+				trunks.set_instance_custom_data(i,Color(smoothstep(1.25,3.0,size/width_m*get_viewport().get_visible_rect().size.x),0,0,1))
 			var trunk_instance := MultiMeshInstance3D.new()
 			trunk_instance.name = "tree_trunks"
 			trunk_instance.multimesh = trunks
@@ -391,21 +444,36 @@ func _build_populations() -> void:
 
 func _process(delta: float) -> void:
 	if world.is_empty(): return
+	var tick := Time.get_ticks_usec()
+	var wall_ms := (tick-previous_frame_tick)/1000.0 if previous_frame_tick>0 else delta*1000.0
+	previous_frame_tick = tick
+	if terrain!=null: all_frame_times.append(wall_ms)
 	frames += 1
+	if packet_worker!=null and not packet_worker.is_alive():
+		var received = packet_worker.wait_to_finish()
+		packet_worker = null
+		if received is Dictionary: _accept_packet(received,packet_context)
 	if worker != null and not worker.is_alive():
-		var prepared: Dictionary = worker.wait_to_finish()
+		var prepared = worker.wait_to_finish()
 		worker = null
-		_apply_prepared(prepared)
-		if prepared.worldId!=world.id or absf(requested_focus.x-focus.x)+absf(requested_focus.y-focus.y)>0.01 or absf(requested_width-width_m)>0.01:
-			_begin_prepare()
+		if prepared is Dictionary:
+			_apply_prepared(prepared)
+		else:
+			push_warning("Terrain preparation failed; retaining parent. Navigate or reload to retry.")
+			applied_generation=generation
+	if worker==null and applied_generation!=generation and Time.get_ticks_msec()-last_request_tick>160:
+		_begin_prepare()
 	if terrain != null:
 		warm_frames += 1
-		if warm_frames>30: frame_times.append(delta*1000.0)
+		if warm_frames>30:
+			frame_times.append(wall_ms)
 	if frames%15 == 0:
 		_poll_stream()
 		_update_hud()
 		if live_serial>live_requested_serial and not live_busy and Time.get_ticks_msec()-last_live_tick>400:
 			_request_live()
+		if not stream_directory.is_empty() and live_serial>stream_requested_serial and Time.get_ticks_msec()-last_stream_tick>400:
+			_request_source()
 	if options.has("--tour") and terrain != null and worker == null:
 		tour_settle += 1
 		if tour_settle == 60:
@@ -430,6 +498,7 @@ func _process(delta: float) -> void:
 		elif not options.has("--capture"):
 			_write_metrics()
 			get_tree().quit()
+	if warm_frames>30: process_times.append((Time.get_ticks_usec()-tick)/1000.0)
 
 func _update_hud() -> void:
 	var spacing: float = world.terrain.source.nativeSpacingM
@@ -459,8 +528,10 @@ func _unhandled_input(event: InputEvent) -> void:
 		match event.keycode:
 			KEY_O: oblique = not oblique; changed = true
 			KEY_D:
-				diagnostic = (diagnostic+1)%5
+				var previous := diagnostic
+				diagnostic = (diagnostic+1)%6
 				if terrain!=null: terrain.get("material").call("set_shader_param","diagnostic",diagnostic)
+				if previous==5 or diagnostic==5: _begin_prepare()
 			KEY_S: _capture("res://captures/surface-%d.png"%Time.get_unix_time_from_system())
 			KEY_F: print(JSON.stringify({"event":"inspect","x":focus.x,"z":focus.y,"heightM":Data.height_at(world,focus.x,focus.y),"material":Data.field_at(world,"material",focus.x,focus.y,true),"bedrock":Data.field_at(world,"bedrock",focus.x,focus.y,true),"sand":Data.field_at(world,"sand",focus.x,focus.y),"silt":Data.field_at(world,"silt",focus.x,focus.y),"clay":Data.field_at(world,"clay",focus.x,focus.y),"waterClass":Data.field_at(world,"waterClass",focus.x,focus.y,true),"source":world.terrain.source}))
 			KEY_ESCAPE: _write_metrics(); get_tree().quit()
@@ -469,20 +540,25 @@ func _unhandled_input(event: InputEvent) -> void:
 			changed = true
 	if changed:
 		_update_camera()
+		generation += 1
 		if worker==null and Time.get_ticks_msec()-last_request_tick>160:
 			_begin_prepare()
-		_request_source()
 		live_serial += 1
 
 func _request_live() -> void:
 	if not options.has("--live-url") or live_busy: return
 	var extent := width_m*1.2
-	var payload := {"region":{"x":focus.x-extent*0.5,"y":focus.y-extent*0.5,"extent":extent,"resolution":512}}
+	var footprint: Dictionary = Data.context(world).bounds
+	extent = minf(extent,minf(float(footprint.maxX)-float(footprint.minX),float(footprint.maxZ)-float(footprint.minZ)))
+	var request_x := clampf(focus.x-extent*0.5,float(footprint.minX),float(footprint.maxX)-extent)
+	var request_z := clampf(focus.y-extent*0.5,float(footprint.minZ),float(footprint.maxZ)-extent)
+	var payload := {"region":{"x":request_x,"y":request_z,"extent":extent,"resolution":512}}
+	if not known_context_id.is_empty() and canonical_contexts.has(known_context_id): payload.region.knownContextId = known_context_id
 	if options.has("--session-id"): payload.sessionId = options["--session-id"]
 	live_requested_serial = live_serial
 	live_busy = true
 	last_live_tick = Time.get_ticks_msec()
-	var error := live_request.request(options["--live-url"],PackedStringArray(["Content-Type: application/json"]),HTTPClient.METHOD_POST,JSON.stringify(payload))
+	var error := live_request.request(options["--live-url"],PackedStringArray(["Content-Type: application/json","Accept: application/octet-stream, application/json"]),HTTPClient.METHOD_POST,JSON.stringify(payload))
 	if error!=OK:
 		live_busy = false
 		push_warning("Live terrain request failed to start: "+str(error))
@@ -495,41 +571,125 @@ func _live_completed(result: int, code: int, _headers: PackedStringArray, body: 
 	if result!=HTTPRequest.RESULT_SUCCESS or code<200 or code>=300:
 		push_warning("Live terrain unavailable, retaining parent: HTTP "+str(code)+" "+body.get_string_from_utf8().left(240))
 		return
-	var next = JSON.parse_string(body.get_string_from_utf8())
-	if not next is Dictionary: return
-	var next_world := Data.unpack_world(next)
-	if next_world.is_empty(): return
-	world = next_world
-	packet = next
-	if worker==null: _begin_prepare()
+	if packet_worker!=null:
+		# A newer navigation will issue another request; the parent remains visible.
+		live_requested_serial = live_serial-1
+		return
+	packet_context = {"kind":"live","serial":live_requested_serial}
+	packet_worker = Thread.new()
+	packet_worker.start(Data.decode_packet.bind(body))
 
 func _request_source() -> void:
 	if stream_directory.is_empty(): return
 	request_id += 1
+	stream_requested_serial=live_serial
+	last_stream_tick=Time.get_ticks_msec()
+	last_stream_world_id=world.id
 	var requests := stream_directory.path_join("requests")
 	DirAccess.make_dir_recursive_absolute(requests)
 	var id := "%d-%d"%[Time.get_unix_time_from_system(),request_id]
 	var content := {"id":id,"worldId":world.id,"bounds":{"minX":focus.x-width_m*0.6,"minZ":focus.y-width_m*0.6,"maxX":focus.x+width_m*0.6,"maxZ":focus.y+width_m*0.6},"resolutionM":maxf(width_m/512.0,0.01),"sourceLOD":world.terrain.source.sourceLOD}
-	var file := FileAccess.open(requests.path_join(id+".json"),FileAccess.WRITE)
+	var temporary := requests.path_join(id+".json.tmp")
+	var file := FileAccess.open(temporary,FileAccess.WRITE)
 	file.store_string(JSON.stringify(content))
+	file=null
+	DirAccess.rename_absolute(temporary,requests.path_join(id+".json"))
 	last_stream_request = id
 
 func _poll_stream() -> void:
+	if packet_worker!=null: return
 	var path := world_path
 	if not stream_directory.is_empty() and not last_stream_request.is_empty():
 		var response := stream_directory.path_join("responses").path_join(last_stream_request+".json")
 		if FileAccess.file_exists(response): path = response
 	if path==world_path and FileAccess.get_modified_time(path)==world_modified: return
-	var next := Data.read_json(path)
-	if next.has("requestId") and str(next.requestId)!=last_stream_request: return
-	if next.has("baseWorldId") and next.baseWorldId!=world.id: return
+	packet_context = {"kind":"file","path":path,"requestId":last_stream_request,"baseWorldId":last_stream_world_id if path!=world_path else world.id,"modified":FileAccess.get_modified_time(path)}
+	packet_worker = Thread.new()
+	packet_worker.start(Data.read_json.bind(path))
+
+func _accept_packet(next: Dictionary, context: Dictionary) -> void:
+	if next.is_empty(): return
+	if context.kind=="live" and int(context.serial)!=live_serial: return
+	if context.kind=="file" and context.requestId!=last_stream_request: return
+	if next.has("requestId") and str(next.requestId)!=last_stream_request:
+		last_stream_request=""
+		return
+	if next.has("baseWorldId") and next.baseWorldId!=context.get("baseWorldId",world.id) and next.baseWorldId!=known_context_id: return
 	var next_world := Data.unpack_world(next)
 	if next_world.is_empty(): return
-	if path==world_path: world_modified = FileAccess.get_modified_time(path)
-	else: last_stream_request = ""
+	if next.has("source") and next.source.has("canonicalContextId") and next_world.has("canonicalContextRef") and next.source.canonicalContextId!=next_world.canonicalContextRef.id: return
+	if not _resolve_context(next_world): return
+	next["_showProxies"]=options.has("--show-proxies")
+	next_world["_cityIdentity"]=Geometry.city_identity(next)
+	next_world["_showProxies"]=next._showProxies
+	if context.kind=="file":
+		if context.path==world_path: world_modified = int(context.modified)
+		else: last_stream_request = ""
+	var parents := _external_parents(next,next_world)
+	if next_world.terrain.source.id==world.terrain.source.id and next_world.terrain.source.version==world.terrain.source.version:
+		parents.append({"terrain":world.terrain,"bounds":world.bounds})
+		parents.append_array(world.get("_terrainParents",[]))
+	if not parents.is_empty():
+		var unique: Array = []
+		var seen: Dictionary = {}
+		for parent in parents:
+			var grid: Dictionary = parent.terrain
+			if float(grid.spacingM)<float(next_world.terrain.spacingM): continue
+			var key := str(grid.originX)+":"+str(grid.originZ)+":"+str(grid.spacingM)+":"+str(grid.width)+":"+str(grid.height)
+			if seen.has(key): continue
+			seen[key] = true
+			unique.append(parent)
+		unique.sort_custom(func(a,b): return float(a.terrain.spacingM)<float(b.terrain.spacingM))
+		if unique.size()>6:
+			var coarsest: Dictionary = unique.back()
+			unique.resize(5)
+			unique.append(coarsest)
+		next_world["_terrainParents"] = unique
+	var repeated_identity: bool = next_world.id==world.id
+	world_revision+=1
 	world = next_world
 	packet = next
-	if worker==null: _begin_prepare()
+	if repeated_identity:
+		context_textures.erase(known_context_id)
+		height_source_cache.clear()
+		scene_mesh_cache.clear()
+	_begin_prepare()
+
+func _external_parents(packet_value: Dictionary, value: Dictionary) -> Array:
+	var parents: Array = []
+	for parent in packet_value.get("terrainParents",[]):
+		if parent.get("canonicalContextId",known_context_id)!=known_context_id: continue
+		if parent.terrain.source.id!=value.terrain.source.id or parent.terrain.source.version!=value.terrain.source.version: continue
+		parents.append(parent)
+	return parents
+
+func _resolve_context(value: Dictionary) -> bool:
+	if value.has("canonicalContextRef"):
+		var reference: Dictionary = value.canonicalContextRef
+		if not value.has("canonicalContext"):
+			if not canonical_contexts.has(reference.id):
+				push_warning("Canonical context unavailable; retaining previous world: "+str(reference.id))
+				return false
+			value.canonicalContext = canonical_contexts[reference.id]
+		var canonical: Dictionary = value.canonicalContext
+		if canonical.id!=reference.id: return false
+		if canonical.source.id!=value.terrain.source.id or canonical.source.version!=value.terrain.source.version:
+			push_warning("Canonical context terrain source identity mismatch")
+			return false
+		for key in ["environment","occupation","population","materialLibrary","surfaceState","hydrology","geology"]:
+			if canonical.versions.get(key)!=value.versions.get(key):
+				push_warning("Canonical context version mismatch: "+key)
+				return false
+		canonical_contexts[canonical.id] = canonical
+		known_context_id = canonical.id
+	elif value.has("versions"):
+		var hash := 2166136261
+		for byte in (str(value.id)+":canonical-context-1").to_utf8_buffer(): hash=((hash^byte)*16777619)&0xffffffff
+		var id := "%08x"%hash
+		canonical_contexts[id] = {"id":id,"grid":value.terrain,"fields":value.fields,"bounds":value.bounds,"source":value.terrain.source,"versions":value.versions}
+		known_context_id = id
+	while canonical_contexts.size()>2: canonical_contexts.erase(canonical_contexts.keys()[0])
+	return true
 
 func _capture(path: String) -> void:
 	await RenderingServer.frame_post_draw
@@ -545,7 +705,7 @@ func _quantile(values: Array[float], fraction: float) -> Variant:
 	return sorted[mini(int(fraction*(sorted.size()-1)),sorted.size()-1)]
 
 func _write_metrics() -> void:
-	var metrics := {"godot":Engine.get_version_info().string,"terrain3d":"1.0.2","backend":RenderingServer.get_current_rendering_method(),"adapter":RenderingServer.get_video_adapter_name(),"worldId":world.id,"source":world.terrain.source,"resolution":[get_viewport().get_visible_rect().size.x,get_viewport().get_visible_rect().size.y],"frames":frame_times.size(),"frameWallMs":{"p50":_quantile(frame_times,0.5),"p95":_quantile(frame_times,0.95),"p99":_quantile(frame_times,0.99)},"prepareMs":prepare_times,"uploadAndObjectsMs":upload_times,"videoMemoryBytes":Performance.get_monitor(Performance.RENDER_VIDEO_MEM_USED),"textureMemoryBytes":Performance.get_monitor(Performance.RENDER_TEXTURE_MEM_USED),"drawCalls":Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME),"objects":selected_candidates,"candidateCount":candidate_count,"gpuTimeMs":null,"gpuTimeNote":"GPU timestamps unavailable through this compatibility backend; frame wall time includes vsync and driver."}
+	var metrics := {"godot":Engine.get_version_info().string,"terrain3d":"1.0.2","backend":RenderingServer.get_current_rendering_method(),"adapter":RenderingServer.get_video_adapter_name(),"worldId":world.id,"source":world.terrain.source,"resolution":[get_viewport().get_visible_rect().size.x,get_viewport().get_visible_rect().size.y],"frames":frame_times.size(),"frameWallMs":{"p50":_quantile(frame_times,0.5),"p95":_quantile(frame_times,0.95),"p99":_quantile(frame_times,0.99)},"navigationFrameWallMs":{"p50":_quantile(all_frame_times,0.5),"p95":_quantile(all_frame_times,0.95),"p99":_quantile(all_frame_times,0.99),"max":_quantile(all_frame_times,1.0)},"cpuScriptMs":{"p50":_quantile(process_times,0.5),"p95":_quantile(process_times,0.95),"p99":_quantile(process_times,0.99)},"prepareMs":prepare_times,"uploadAndObjectsMs":upload_times,"videoMemoryBytes":Performance.get_monitor(Performance.RENDER_VIDEO_MEM_USED),"textureMemoryBytes":Performance.get_monitor(Performance.RENDER_TEXTURE_MEM_USED),"drawCalls":Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME),"objects":selected_candidates,"candidateCount":candidate_count,"cpuFrameMs":null,"cpuTimeNote":"cpuScriptMs measures this viewer script only; full engine CPU frame/pass timing is not available here.","gpuTimeMs":null,"gpuTimeNote":"GPU timestamps unavailable through this compatibility backend; frame wall time includes vsync and driver."}
 	var path: String = options.get("--metrics","res://captures/metrics.json")
 	path = ProjectSettings.globalize_path(path)
 	DirAccess.make_dir_recursive_absolute(path.get_base_dir())
@@ -555,6 +715,13 @@ func _write_metrics() -> void:
 
 func _exit_tree() -> void:
 	if worker!=null: worker.wait_to_finish()
+	if packet_worker!=null: packet_worker.wait_to_finish()
+
+
+
+
+
+
 
 
 
