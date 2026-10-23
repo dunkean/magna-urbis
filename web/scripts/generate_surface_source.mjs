@@ -1,30 +1,131 @@
-/** Fresh Infinite Generation proof. Run with node --import tsx; never substitutes a heightfield fixture or noise source. */
+/** Fresh Infinite Generation proof. Run with node --import tsx; no source substitution.
+ * Optional native E2E: --decoder-model original --viewer-godot C:/tools/Godot.exe
+ * --viewer-assets C:/data/resolved.json --viewer-launcher ROOT/web/scripts/surface_viewer.mjs
+ * --viewer-resolution 2048x1280. Browser/SSE/worker stay alive until the seven-level tour exits. */
 import { chromium } from 'playwright';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
-import { existsSync } from 'node:fs';
+import { mkdir, readFile, writeFile, readdir } from 'node:fs/promises';
+import { createWriteStream, existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { createHash } from 'node:crypto';
+import { spawn, spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+import { finished } from 'node:stream/promises';
 import { decodeSurfaceBinary, encodeSurfaceBinary } from '../src/surface/binary.ts';
 import { compileSurfaceWorld } from '../src/surface/compiler.ts';
 import { hashString } from '../src/surface/model.ts';
 
 const args = process.argv.slice(2);
-const option = (name, fallback) => args.includes(name) ? args[args.indexOf(name) + 1] : fallback;
+const option = (name, fallback) => {
+  const index = args.indexOf(name); if (index < 0) return fallback;
+  if (!args[index + 1] || args[index + 1].startsWith('--')) throw new Error(`${name} requires a value`);
+  return args[index + 1];
+};
 const base = option('--url', 'http://127.0.0.1:5197').replace(/\/$/, '');
 const neural = option('--neural', 'http://127.0.0.1:8893').replace(/\/$/, '');
 const width = Number(option('--width', '40000')), seed = option('--seed', 'surface-proof-40km');
 const decoderModel = option('--decoder-model', undefined);
 const timeoutMs = Number(option('--timeout-ms', '900000'));
 const out = resolve(option('--out', 'out/surface/real40km'));
+const viewerGodot = option('--viewer-godot', undefined), viewerAssets = option('--viewer-assets', undefined);
+const viewerLauncher = resolve(option('--viewer-launcher', fileURLToPath(new URL('./surface_viewer.mjs', import.meta.url))));
+const viewerTimeoutMs = Number(option('--viewer-timeout-ms', '900000'));
+const viewerResolution = option('--viewer-resolution', '2048x1280');
+if (viewerGodot && (!existsSync(viewerGodot) || !existsSync(viewerLauncher) || viewerAssets && !existsSync(viewerAssets)
+  || !/^\d+x\d+$/.test(viewerResolution) || Number(viewerResolution.split('x')[0]) < 2000 || !(viewerTimeoutMs > 0))) throw new Error('Invalid viewer executable/launcher/assets/resolution/timeout (width must be >=2000 pixels for the 10m/5mm proof)');
 if (!Number.isFinite(width) || width < 500 || width > 100000 || !(timeoutMs > 0)) throw new Error('Invalid source dimensions/timeout');
 await mkdir(out, { recursive: true });
-const began = Date.now(), errors = [], network = [], progress = [], sessions = [];
+const began = Date.now(), errors = [], network = [], progress = [], sessions = [], browserEvents = [];
 const paths = { report: resolve(out, 'report.json'), progress: resolve(out, 'progress.json'), screenshot: resolve(out, 'fresh-source.png'),
   source: resolve(out, 'fresh-source.surfacebin'), live: resolve(out, 'live-refinement.surfacebin'), neuralHeightfield: resolve(out, 'fresh-neural-heightfield.f32') };
 const report = { format: 'magna-fresh-source-proof', version: 1, startedAt: new Date(began).toISOString(), base, neural, widthM: width, seed,
   requestedSource: 'neural-python', freshGeneration: true, paths, errors, network, progress, status: 'starting' };
+report.browserEvents = browserEvents;
+if(viewerGodot)report.requestedViewer={godot:resolve(viewerGodot),assets:viewerAssets&&resolve(viewerAssets),launcher:viewerLauncher,
+  resolution:viewerResolution,mode:args.includes('--viewer-oblique')?'oblique':'top',timeoutMs:viewerTimeoutMs};
 if (decoderModel) report.requestedModels = { decoderModel };
-const save = async () => writeFile(paths.report, JSON.stringify(report, null, 2));
+let saveQueue = Promise.resolve();
+const save = () => { const snapshot=JSON.stringify(report,null,2);saveQueue=saveQueue.then(()=>writeFile(paths.report,snapshot));return saveQueue; };
+let viewerProcess;
+const stopViewer = () => {
+  if (!viewerProcess?.pid || viewerProcess.exitCode !== null || viewerProcess.signalCode !== null) return;
+  // The launcher owns a synchronous Godot child: stop this task's complete process
+  // tree on cancellation rather than abandoning a renderer after closing its browser.
+  if (process.platform === 'win32') spawnSync('taskkill.exe', ['/PID', String(viewerProcess.pid), '/T', '/F'], { windowsHide: true, stdio: 'ignore' });
+  else { try { process.kill(-viewerProcess.pid, 'SIGTERM'); } catch {} }
+};
+async function runNativeTour(sessionId) {
+  const directory=resolve(out,'native-tour');await mkdir(directory,{recursive:true});
+  const logPath=resolve(directory,'stdout.log'),errorPath=resolve(directory,'stderr.log'),metricsPath=resolve(directory,'metrics.json');
+  const widths=[40000,10000,2560,640,160,40,10],events=[],nativeErrors=[];
+  const command=[viewerLauncher,'--godot',resolve(viewerGodot),'--world',paths.source,'--live-url',`${base}/surface-live/terrain`,
+    '--session-id',sessionId,'--tour',directory,'--metrics',metricsPath,'--width','40000','--resolution',viewerResolution];
+  if(!args.includes('--viewer-oblique'))command.push('--top');
+  if(viewerAssets)command.push('--assets',resolve(viewerAssets));
+  report.viewer={status:'running',startedAt:new Date().toISOString(),startedElapsedMs:Date.now()-began,sessionId,
+    command:[process.execPath,...command],paths:{directory,stdout:logPath,stderr:errorPath,metrics:metricsPath},events,errors:nativeErrors,
+    browserHeldOpen:true,sourcePacket:paths.source,manualPacketSwaps:false};
+  report.status='native-tour';await save();
+  console.log(`Native live tour: ${JSON.stringify(report.viewer.command)}`);
+  const stdout=createWriteStream(logPath),stderr=createWriteStream(errorPath),buffers={stdout:'',stderr:''};
+  const capture=(kind,chunk)=>{
+    (kind==='stdout'?stdout:stderr).write(chunk);buffers[kind]+=chunk.toString();
+    const lines=buffers[kind].split(/\r?\n/);buffers[kind]=lines.pop();
+    for(const line of lines){
+      if(/(?:SCRIPT|SHADER) ERROR|ERROR:|Live terrain unavailable/.test(line))nativeErrors.push({stream:kind,line,elapsedMs:Date.now()-began});
+      try{const event=JSON.parse(line);if(event.event){events.push({...event,elapsedMs:Date.now()-began});console.log(JSON.stringify({native:event}));}}catch{}
+    }
+  };
+  let timeout,progressTimer;
+  try{
+    const completed=new Promise((done,fail)=>{
+      viewerProcess=spawn(process.execPath,command,{windowsHide:true,detached:process.platform!=='win32',stdio:['ignore','pipe','pipe']});
+      viewerProcess.stdout.on('data',chunk=>capture('stdout',chunk));viewerProcess.stderr.on('data',chunk=>capture('stderr',chunk));
+      viewerProcess.once('error',fail);
+      viewerProcess.once('close',(code,signal)=>done({code,signal}));
+      timeout=setTimeout(()=>{report.viewer.timedOut=true;stopViewer();},viewerTimeoutMs);
+      progressTimer=setInterval(()=>{void(async()=>{report.viewer.elapsedMs=Date.now()-began-report.viewer.startedElapsedMs;
+        report.viewer.latestService=await serviceStatus();await save();console.log(JSON.stringify({nativeProgress:{elapsedMs:report.viewer.elapsedMs,events:events.length,
+          workerPackets:browserEvents.filter(e=>e.kind==='worker-compiled'&&e.elapsedMs>=report.viewer.startedElapsedMs).length,service:report.viewer.latestService}}));})().catch(error=>console.error(String(error)));},10000);
+    });
+    const result=await completed;Object.assign(report.viewer,result);
+    if(report.viewer.timedOut)throw new Error(`Native tour exceeded ${viewerTimeoutMs}ms; its own process tree was stopped`);
+    if(result.code!==0)throw new Error(`Native tour exited ${result.code}, signal=${result.signal}`);
+  }finally{
+    clearTimeout(timeout);clearInterval(progressTimer);stopViewer();stdout.end();stderr.end();await Promise.all([finished(stdout),finished(stderr)]);
+    for(const kind of ['stdout','stderr'])if(buffers[kind]&&/(?:SCRIPT|SHADER) ERROR|ERROR:|Live terrain unavailable/.test(buffers[kind]))nativeErrors.push({stream:kind,line:buffers[kind]});
+    report.viewer.elapsedMs=Date.now()-began-report.viewer.startedElapsedMs;
+  }
+  report.viewer.metrics=JSON.parse(await readFile(metricsPath,'utf8'));
+  const names=await readdir(directory),mode=args.includes('--viewer-oblique')?'oblique':'top';
+  report.viewer.captures=[];
+  for(let i=0;i<widths.length;i++){
+    const name=`${String(i).padStart(2,'0')}_${widths[i]}m_${mode}.png`;
+    if(!names.includes(name))throw new Error(`Native live tour did not capture ${name}`);
+    const path=resolve(directory,name),bytes=await readFile(path);
+    if(bytes.subarray(0,8).toString('hex')!=='89504e470d0a1a0a')throw new Error(`Invalid PNG native capture ${name}`);
+    report.viewer.captures.push({path,widthM:widths[i],bytes:bytes.length,sha256:createHash('sha256').update(bytes).digest('hex')});
+  }
+  const relevant=browserEvents.filter(e=>e.elapsedMs>=report.viewer.startedElapsedMs),packets=relevant.filter(e=>e.kind==='worker-compiled');
+  const requests=relevant.filter(e=>e.kind==='broker-terrain'),replies=relevant.filter(e=>e.kind==='broker-reply');
+  const tiles=network.filter(e=>e.elapsedMs>=report.viewer.startedElapsedMs&&e.url?.includes('/refinement/tile'));
+  report.viewer.endToEnd={nativeCaptures:report.viewer.captures.length,brokerRequests:requests.length,browserWorkerPackets:packets.length,
+    acceptedBinaryReplies:replies.filter(e=>e.contentType?.startsWith('application/octet-stream')&&e.result?.accepted).length,pythonTiles:tiles.length,
+    decoderBackedPythonTiles:tiles.filter(e=>e.meta?.decoderUsed===true).length,environmentVersions:[...new Set(packets.map(e=>e.environmentVersion))],
+    canonicalBuildCounts:[...new Set(packets.map(e=>e.canonicalBuildCount))],sourceIds:[...new Set(packets.map(e=>e.packet?.terrain.source.id))],
+    sourceEpochs:[...new Set(packets.map(e=>e.sourceEpoch))],parentReconstructions:[...new Set(packets.map(e=>e.packet?.boundary?.parentReconstruction).filter(Boolean))]};
+  const captures=events.filter(e=>e.event==='capture'),near=captures.find(e=>e.widthM===10);
+  if(captures.length!==7||captures.some((e,i)=>e.widthM!==widths[i]||e.error!==0))throw new Error('Native tour did not record seven successful new captures in the required scale order');
+  report.viewer.nearMetresPerPixel=near?.metresPerPixel??10/Number(report.viewer.metrics.resolution?.[0]);
+  if(nativeErrors.length)throw new Error('Native renderer or live transport reported errors; see native-tour/stderr.log and report.viewer.errors');
+  if(requests.length<7||packets.length<7||report.viewer.endToEnd.acceptedBinaryReplies<7||!tiles.some(e=>e.meta?.decoderUsed===true))throw new Error('Native tour did not prove all seven levels through broker, browser worker and decoder-backed Python source');
+  if(packets.some(e=>e.packet?.source.registrationBinding?.expectedSourceId!==e.packet?.terrain.source.id)||new Set(packets.map(e=>e.sourceEpoch)).size!==1
+    ||new Set(packets.map(e=>e.environmentVersion)).size!==1||packets.some(e=>e.canonicalBuildCount!==1))throw new Error('Native live tour changed source lineage or recompiled camera-dependent canonical context');
+  if(!report.viewer.metrics.source?.sourceLODKnown)throw new Error('Final native terrain still has unknown sourceLOD; a live patch was not applied');
+  if(!(report.viewer.nearMetresPerPixel<=.005))throw new Error(`10m native capture did not reach 5mm/pixel: ${report.viewer.nearMetresPerPixel}`);
+  if(network.some(e=>e.elapsedMs>=report.viewer.startedElapsedMs&&e.url?.includes('/generate?')))throw new Error('Native navigation regenerated its parent source instead of refining the retained generation');
+  if(relevant.some(e=>e.kind==='worker-proof-error'||e.kind==='worker-error')||errors.some(e=>e.type==='pageerror'))throw new Error('Browser worker or source page failed during the native live tour');
+  report.viewer.status='complete';await save();
+}
 const serviceStatus = async () => {
   try { return await fetch(`${neural}/status`, { signal: AbortSignal.timeout(5000) }).then(r => r.json()); }
   catch (error) { return { error: String(error) }; }
@@ -38,7 +139,8 @@ report.initialService = await serviceStatus(); await save();
 const cachedBrowser = process.env.LOCALAPPDATA && resolve(process.env.LOCALAPPDATA, 'ms-playwright/chromium_headless_shell-1208/chrome-headless-shell-win64/chrome-headless-shell.exe');
 const browser = await chromium.launch({ ...(cachedBrowser && existsSync(cachedBrowser) ? { executablePath: cachedBrowser } : { channel: option('--channel', 'msedge') }),
   headless: true, args: ['--use-angle=swiftshader'] });
-process.once('SIGINT', () => { report.interrupted = true; void browser.close(); });
+const interrupted = () => { report.interrupted = true; stopViewer(); void browser.close(); };
+process.once('SIGINT', interrupted); process.once('SIGTERM', interrupted);
 try {
   const page = await browser.newPage({ viewport: { width: 1440, height: 1000 }, acceptDownloads: true });
   // Other agents may edit the dev checkout during this proof. Ignore development hot reloads in this isolated tab only.
@@ -52,12 +154,66 @@ try {
     });
   });
   await page.exposeFunction('recordFreshSurfaceSession', sessionId => { sessions.push(sessionId); console.log(`Live source session: ${sessionId}`); });
+  await page.exposeFunction('recordFreshSurfaceEvent', event => { browserEvents.push({ elapsedMs: Date.now() - began, ...event }); });
   await page.addInitScript(() => {
+    const emit = event => { void window.recordFreshSurfaceEvent(event).catch(() => {}); };
     const NativeEventSource = window.EventSource;
     window.EventSource = class extends NativeEventSource {
       constructor(...options) {
         super(...options);
         this.addEventListener('ready', event => { try { window.recordFreshSurfaceSession(JSON.parse(event.data).sessionId); } catch {} });
+        for (const kind of ['terrain', 'cancel']) this.addEventListener(kind, event => { try { emit({ kind: `broker-${kind}`, ...JSON.parse(event.data) }); } catch {} });
+      }
+    };
+    // Inspect only the small binary manifest and parent height controls, without
+    // cloning the large SurfaceWorld or interfering with transferred buffers.
+    let retainedParent;
+    const sampleHeight = (t, x, z) => {
+      const gx = Math.max(0, Math.min(t.width - 1, (x - t.originX) / t.spacingM)), gz = Math.max(0, Math.min(t.height - 1, (z - t.originZ) / t.spacingM));
+      const ix = Math.floor(gx), iz = Math.floor(gz), u = gx - ix, v = gz - iz;
+      const at = (a, b) => t.heights[Math.max(0, Math.min(t.height - 1, b)) * t.width + Math.max(0, Math.min(t.width - 1, a))];
+      if (t.reconstruction !== 'cubic-bspline-controls') return (at(ix, iz) * (1-u) + at(ix+1, iz) * u) * (1-v) + (at(ix, iz+1) * (1-u) + at(ix+1, iz+1) * u) * v;
+      const weights = f => [(1-f)**3/6, (3*f**3-6*f*f+4)/6, (-3*f**3+3*f*f+3*f+1)/6, f**3/6];
+      const wx = weights(u), wz = weights(v); let result = 0;
+      for (let b=0;b<4;b++) for(let a=0;a<4;a++) result += at(ix+a-1,iz+b-1)*wx[a]*wz[b];
+      return result;
+    };
+    const summarizeBinary = binary => {
+      if (!(binary instanceof ArrayBuffer) || binary.byteLength < 16) return undefined;
+      const view = new DataView(binary), length = view.getUint32(8, true), start = Math.ceil((16 + length) / 8) * 8;
+      const manifest = JSON.parse(new TextDecoder().decode(new Uint8Array(binary, 16, length))), packet = manifest.value, t = packet.world.terrain;
+      const values = path => { const d = manifest.arrays.find(a => a.path.join('.') === path); return d?.dtype === 'f32' ? new Float32Array(binary, start+d.offset, d.length) : undefined; };
+      const parent = packet.terrainParents?.[0]?.terrain, parentValues = values('terrainParents.0.terrain.heights');
+      if (parent && parentValues) retainedParent = { ...parent, heights: new Float32Array(parentValues) };
+      const heights = values('world.terrain.heights'); let boundary;
+      if (heights && retainedParent?.source.id === t.source.id && retainedParent.source.version === t.source.version) {
+        const fine = { ...t, heights }; let sum = 0, max = 0, count = 0;
+        for (let edge=0;edge<4;edge++) for(let i=0;i<17;i++) {
+          const u=i/16, x=t.originX+(edge<2?u*(t.width-1):(edge===2?0:t.width-1))*t.spacingM;
+          const z=t.originZ+(edge>=2?u*(t.height-1):(edge===0?0:t.height-1))*t.spacingM;
+          const delta=sampleHeight(fine,x,z)-sampleHeight(retainedParent,x,z);sum+=delta*delta;max=Math.max(max,Math.abs(delta));count++;
+        }
+        boundary={samples:count,rawFineVsParentMaxAbsM:max,rawFineVsParentRmsM:Math.sqrt(sum/count),parentReconstruction:retainedParent.reconstruction??'bilinear-samples',
+          note:'Raw source boundary before viewer feathering; residual differences do not measure a displayed seam.'};
+      }
+      return { bytes:binary.byteLength, worldId:packet.world.id, terrain:{width:t.width,height:t.height,originX:t.originX,originZ:t.originZ,spacingM:t.spacingM,reconstruction:t.reconstruction,source:t.source},
+        contextId:packet.world.canonicalContextRef?.id, includesCanonicalContext:!!packet.world.canonicalContext, parentTerrain:parent && {...parent,heights:undefined},
+        source:{live:packet.source?.live,provider:packet.source?.provider,originalSource:packet.source?.originalSource,
+          compilation:packet.source?.compilation,registrationBinding:packet.source?.registrationBinding,canonicalContextId:packet.source?.canonicalContextId,
+          sceneContextId:packet.source?.sceneContextId,sourceEpoch:packet.source?.sourceEpoch,sceneEpoch:packet.source?.sceneEpoch,request:packet.source?.request},versions:packet.world.versions,boundary };
+    };
+    const NativeWorker = window.Worker;
+    window.Worker = class extends NativeWorker {
+      constructor(...options) {
+        super(...options); const workerURL=String(options[0]);emit({kind:'worker-created',workerURL});
+        this.addEventListener('message', event => {
+          const message=event.data;
+          if (message?.kind==='compiled') {
+            try { emit({kind:'worker-compiled',workerURL,requestId:message.requestId,sourceEpoch:message.sourceEpoch,sceneEpoch:message.sceneEpoch,
+              environmentVersion:message.environmentVersion,canonicalBuildCount:message.canonicalBuildCount,packet:summarizeBinary(message.binary)}); }
+            catch(error) { emit({kind:'worker-proof-error',message:String(error)}); }
+          } else if(message?.kind==='error') emit({kind:'worker-error',workerURL,error:message.error});
+        });
       }
     };
   });
@@ -70,6 +226,12 @@ try {
     network.push(entry); console.error(`${entry.url}: ${entry.message}`);
   });
   page.on('response', async response => {
+    if (response.url().startsWith(`${base}/surface-live/reply/`)) {
+      const request=response.request();
+      browserEvents.push({kind:'broker-reply',elapsedMs:Date.now()-began,url:response.url(),status:response.status(),sessionId:request.headers()['x-surface-session'],
+        contentType:request.headers()['content-type'],result:await response.json().catch(()=>undefined)});
+      return;
+    }
     if (!response.url().startsWith(neural) || response.url().endsWith('/status')) return;
     const entry = { url: response.url(), status: response.status(), elapsedMs: Date.now() - began };
     network.push(entry);
@@ -129,7 +291,7 @@ try {
   report.source = { id: packet.source.meta.id, created: packet.source.meta.created, query: packet.source.meta.query, bytes: sourceBytes.length,
     grid: { width: packet.world.terrain.width, height: packet.world.terrain.height, spacingM: packet.world.terrain.spacingM },
     sourceIdentity: packet.world.terrain.source, heightRangeM: { min, max }, diagnostics: packet.world.diagnostics,
-    climate: packet.world.climate, buildings: packet.urban.buildings.length };
+    climate: packet.world.climate, buildings: packet.urban?.buildings?.length ?? packet.urban?.buildingCount ?? 0 };
   report.status = 'source-exported'; await save();
   if (args.includes('--native-packet')) {
     if (!report.neuralOutput) throw new Error('Cannot export a native packet without the actual captured neural response');
@@ -170,6 +332,7 @@ try {
     grid: { width: live.world.terrain.width, height: live.world.terrain.height, spacingM: live.world.terrain.spacingM },
     contextId: live.world.canonicalContextRef?.id, includesCanonicalContext: !!live.world.canonicalContext, decoderUsed, registrations };
   if (!live.world.terrain.source.sourceLODKnown || !live.world.canonicalContext || !decoderUsed) throw new Error('Fresh refinement did not prove a decoder-backed source level and canonical context');
+  if(viewerGodot)await runNativeTour(sessions.at(-1));
   report.finalService = await serviceStatus(); report.status = 'complete'; report.durationMs = Date.now() - began;
   await page.screenshot({ path: resolve(out, 'fresh-source-after-refinement.png') });
   await save(); console.log(JSON.stringify({ result: { status: report.status, durationMs: report.durationMs, widthM: width,
@@ -177,4 +340,4 @@ try {
 } catch (error) {
   report.status = 'failed'; report.failure = String(error); report.finalService = await serviceStatus(); report.durationMs = Date.now() - began;
   await save(); throw error;
-} finally { await browser.close(); }
+} finally { stopViewer();await browser.close();process.removeListener('SIGINT',interrupted);process.removeListener('SIGTERM',interrupted); }
