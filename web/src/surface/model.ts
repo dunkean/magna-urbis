@@ -1,6 +1,6 @@
 /** Renderer-independent physical surface contract. Right-handed frame: +X east, +Y up, +Z south (map +Y), all metres. */
 export const SURFACE_SCHEMA_VERSION = 1 as const;
-export const SURFACE_COMPILER_VERSION = 'surface-1.4.0';
+export const SURFACE_COMPILER_VERSION = 'surface-1.5.0';
 export const SURFACE_POPULATION_VERSION = 'population-1.2.0';
 export interface Bounds { minX: number; minZ: number; maxX: number; maxZ: number }
 export interface SourceIdentity {
@@ -86,6 +86,8 @@ export type SurfaceFamily = 'mineral-plains' | 'bedrock' | 'aeolian' | 'arid-ero
   'rocky-coast' | 'marine' | 'vegetation' | 'snow-ice';
 export interface MaterialRecipe {
   id: string; version: string; family: SurfaceFamily;
+  /** Authored vertical role; family and legacy synthesisMode do not define a physical layer. */
+  surfaceRole?: 'ground' | 'low-cover' | 'water' | 'seasonal';
   compatibleSubstrates: Lithology[]; compatibleProcesses: DepositOrigin[];
   colorLinear: [number, number, number]; roughness: number;
   physicalExtentMetres: number; heightAmplitudeMetres: number;
@@ -94,7 +96,32 @@ export interface MaterialRecipe {
   maps?: { baseColor: string; normal: string; roughness: string; height?: string; ao?: string };
   wetResponse: number; snowRetention: number;
 }
-export interface SurfaceFields {
+/** Additive fields: absent in legacy packets whose mixed top2 cannot reveal bare ground. */
+export interface ExplicitSurfaceLayerFields {
+  groundMaterial: Uint16Array; groundMaterialSecondary: Uint16Array; groundMaterialBlend: Float32Array; groundMaterialMeanColor: Uint32Array;
+  lowCoverMaterial: Uint16Array; lowCoverMaterialSecondary: Uint16Array; lowCoverMaterialBlend: Float32Array; lowCoverMaterialMeanColor: Uint32Array;
+  /** Local ground-plane overlay opacity; tree crown coverage is a separate vertical layer. */
+  lowCoverOpacity: Float32Array;
+}
+export interface SurfaceLayerMetadata {
+  version: 'surface-layers-1';
+  groundAvailability: 'explicit' | 'legacy-composite-unavailable';
+  lowCoverAvailability: 'explicit' | 'legacy-composite-unavailable';
+  /** Hash of the actual current-grid layer arrays; canonical version is versions.surfaceLayers. */
+  fieldsVersion?: string;
+}
+export interface SurfaceMaterialLayerSample {
+  material: MaterialRecipe; materialSecondary: MaterialRecipe; materialBlend: number; meanColorLinear: [number, number, number];
+}
+export interface SurfaceLayerSample {
+  version: 'surface-layers-1'; groundAvailability: SurfaceLayerMetadata['groundAvailability'];
+  ground?: SurfaceMaterialLayerSample;
+  lowCover?: SurfaceMaterialLayerSample & { opacity: number };
+  /** Physical canonical potentials, never renormalised with soil or tree cover. */
+  lowCoverPotential: { grass: number; shrub: number; deadLitter: number };
+  trees: { crownCover: number; populationFamily: 'tree' };
+}
+export interface SurfaceFields extends Partial<ExplicitSurfaceLayerFields> {
   slope: Float32Array; aspect: Float32Array; curvature: Float32Array;
   topographicPosition: Float32Array[]; landform: Uint8Array; bedrock: Uint16Array;
   downstream: Int32Array; contributingAreaM2: Float32Array; basin: Int32Array;
@@ -114,7 +141,7 @@ export interface SurfaceFields {
   temperatureC: Float32Array; precipitationMm: Float32Array;
   treeCover: Float32Array; grassCover: Float32Array; shrubCover: Float32Array; litter: Float32Array;
   occupation: Uint8Array; orientation: Float32Array; material: Uint16Array;
-  /** Compact ground mixture: primary*(1-materialBlend) + secondary*materialBlend. Snow is a separate overlay. */
+  /** Legacy composite of ground, litter and herbs; this is NOT a bare-ground layer. Snow/canopy are separate. */
   materialSecondary: Uint16Array; materialBlend: Float32Array;
   /** Linear mean encoded as packed sRGB8: R low byte, G bits8..15, B bits16..23. */
   materialMeanColor: Uint32Array;
@@ -123,6 +150,8 @@ export interface SurfaceFields {
 export interface SurfaceVersions {
   terrain: string; hydrology: string; geology: string; environment: string;
   occupation: string; population: string; materialLibrary: string; surfaceState: string;
+  /** Canonical explicit layers only; absent for legacy mixed-only packets. */
+  surfaceLayers?: string;
 }
 export type SurfaceGridGeometry = Pick<TerrainGrid, 'width' | 'height' | 'originX' | 'originZ' | 'spacingM'>;
 /** Borrowed immutable context: geometry refinements do not reclassify these canonical fields. */
@@ -133,12 +162,14 @@ export interface CanonicalSurfaceContext {
 export interface CanonicalSurfaceContextRef {
   id: string; environmentVersion: string; occupationVersion: string;
   materialLibraryVersion: string; surfaceStateVersion: string; populationVersion: string;
+  surfaceLayersVersion?: string;
 }
 export interface SurfaceWorld {
   schemaVersion: typeof SURFACE_SCHEMA_VERSION; compilerVersion: string; id: string; seed: number;
   units: 'metres'; crs: 'local-xz'; bounds: Bounds; versions: SurfaceVersions;
   terrain: TerrainGrid; geology: GeologyInput; climate: ClimateInput; state: SurfaceState;
   geometryDetail?: import('./geometryDetail').SurfaceGeometryDetail;
+  surfaceLayers?: SurfaceLayerMetadata;
   fields: SurfaceFields; materials: MaterialRecipe[]; topographicRadiiM: number[];
   /** Present on geometry-only refinements. May be omitted from runtime transfer with an explicit reference. */
   canonicalContext?: CanonicalSurfaceContext;
@@ -146,6 +177,7 @@ export interface SurfaceWorld {
   diagnostics: { warnings: string[]; assumptions: string[]; hydrologyBoundary: string; estimatedBytes: number };
 }
 export interface SurfaceSample {
+  surfaceLayers: SurfaceLayerSample;
   localGeometry?: ReturnType<typeof import('./geometryDetail').sampleSurfaceGeometryDetail>;
   x: number; z: number; heightM: number; slope: number; aspect: number; curvature: number;
   landform: Landform; bedrock: RockUnit; sourceRock: RockUnit; depositOrigin: DepositOrigin;
