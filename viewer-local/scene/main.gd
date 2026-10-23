@@ -5,6 +5,7 @@ const Library = preload("res://adapters/material_library.gd")
 const ShaderSource = preload("res://adapters/surface_shader.gd")
 const Geometry = preload("res://adapters/surface_geometry.gd")
 const ScenePrepare = preload("res://adapters/surface_scene_prepare.gd")
+const ViewQuality=preload("res://adapters/surface_view_quality.gd")
 const LiveBinding=preload("res://adapters/surface_live_binding.gd")
 const Presentation = preload("res://adapters/surface_presentation.gd")
 var surface_shader_code := ""
@@ -77,6 +78,14 @@ var last_live_tick := 0
 var candidate_buckets: Dictionary = {}
 var indexed_packet: Dictionary = {}
 var view_dirty := true
+var last_real_input_tick:=-1
+var quality_preview_active:=false
+var rendered_display_samples:=256
+var rendered_height_image_size:=0
+var view_satisfied_serial:=-1
+var view_satisfaction:Dictionary={}
+var view_satisfaction_events:Array=[]
+var final_quality_pending:=false
 var rejected_files: Dictionary = {}
 var last_live_applied_serial := -1
 var failed_live_serial := -1
@@ -229,7 +238,9 @@ func _begin_prepare() -> void:
 	generation += 1
 	requested_focus = focus.duplicate()
 	requested_width = width_m
-	var spacing := Data.display_spacing(world.terrain,width_m)
+	var display_samples=128 if _quality_preview() else 256
+	var spacing := Data.display_spacing(world.terrain,width_m,display_samples)
+	var expected_image_size=_expected_height_image_size(spacing,width_m)
 	var snap_step := spacing*64.0
 	var snapped_x: float = float(world.terrain.originX)+round((float(focus.x)-float(world.terrain.originX))/snap_step)*snap_step
 	var snapped_z: float = float(world.terrain.originZ)+round((float(focus.y)-float(world.terrain.originZ))/snap_step)*snap_step
@@ -238,16 +249,16 @@ func _begin_prepare() -> void:
 	var next_origin: Dictionary = {"x":snapped_x,"y":reference_height,"z":snapped_z}
 	prepared_context_key = known_context_id if not known_context_id.is_empty() else str(world.id)
 	prepared_height_key = str(world.id)+"@"+str(spacing)
-	var reuse_height: bool = terrain!=null and rendered_revision==world_revision and absf(origin.x-snapped_x)<0.00001 and absf(origin.z-snapped_z)<0.00001 and absf(float(terrain.get("vertex_spacing"))-spacing)<0.00001
+	var reuse_height: bool = terrain!=null and rendered_height_image_size==expected_image_size and rendered_revision==world_revision and absf(origin.x-snapped_x)<0.00001 and absf(origin.z-snapped_z)<0.00001 and absf(float(terrain.get("vertex_spacing"))-spacing)<0.00001
 	var water_world := world.duplicate(false)
 	var canonical := Data.context(world)
 	water_world.id=prepared_context_key
 	water_world.versions=canonical.get("versions",world.get("versions",{}))
 	var water_key := Geometry.chunk_key(world,focus,width_m,"water")
 	var urban_key := Geometry.chunk_key(world,focus,width_m,"urban")
-	var scene_request := {"waterKey":water_key,"urbanKey":urban_key,"buildWater":not options.has("--ground-only") and not scene_mesh_cache.has(water_key),"buildUrban":not options.has("--ground-only") and not scene_mesh_cache.has(urban_key),"focus":focus.duplicate()}
+	var scene_request := {"displaySamples":display_samples,"waterKey":water_key,"urbanKey":urban_key,"buildWater":not options.has("--ground-only") and not scene_mesh_cache.has(water_key),"buildUrban":not options.has("--ground-only") and not scene_mesh_cache.has(urban_key),"focus":focus.duplicate()}
 	worker = Thread.new()
-	worker.start(ScenePrepare.prepare.bind({"physicalLineage":_physical_lineage(world,packet),"contextKey":prepared_context_key,"heightKey":prepared_height_key,"liveSerial":int(packet.get("_acceptedLiveSerial",-1)),"worldRevision":world_revision,"world":world,"origin":next_origin,"width":width_m,"generation":generation,"packet":packet,"skipContext":context_textures.has(prepared_context_key),"displaySource":height_source_cache.get(prepared_height_key,{}),"skipHeight":reuse_height,"sceneRequest":scene_request,"focus":focus.duplicate(),"viewportWidth":get_viewport().get_visible_rect().size.x,"oblique":oblique,"groundOnly":options.has("--ground-only"),"presentationMode":presentation_mode,"projectRoads":RenderingServer.get_current_rendering_method()=="forward_plus"}))
+	worker.start(ScenePrepare.prepare.bind({"heightImageSize":expected_image_size,"displaySamples":display_samples,"physicalLineage":_physical_lineage(world,packet),"contextKey":prepared_context_key,"heightKey":prepared_height_key,"liveSerial":int(packet.get("_acceptedLiveSerial",-1)),"worldRevision":world_revision,"world":world,"origin":next_origin,"width":width_m,"generation":generation,"packet":packet,"skipContext":context_textures.has(prepared_context_key),"displaySource":height_source_cache.get(prepared_height_key,{}),"skipHeight":reuse_height,"sceneRequest":scene_request,"focus":focus.duplicate(),"viewportWidth":get_viewport().get_visible_rect().size.x,"oblique":oblique,"groundOnly":options.has("--ground-only"),"presentationMode":presentation_mode,"projectRoads":RenderingServer.get_current_rendering_method()=="forward_plus"}))
 	last_request_tick = Time.get_ticks_msec()
 
 func _apply_prepared(prepared: Dictionary) -> void:
@@ -258,6 +269,10 @@ func _apply_prepared(prepared: Dictionary) -> void:
 	if int(prepared.get("worldRevision",world_revision))<rendered_revision:
 		discarded_preparations.olderThanDisplayed+=1
 		return
+	if not _import_alignment_valid(prepared):
+		discarded_preparations["invalidImportAlignment"]=int(discarded_preparations.get("invalidImportAlignment",0))+1
+		push_error("Refusing unaligned Terrain3D import; previous rendered snapshot remains visible")
+		return
 	var world: Dictionary = prepared.world
 	var packet: Dictionary = prepared.packet
 	var context_key=str(prepared.get("contextKey",prepared_context_key))
@@ -266,6 +281,7 @@ func _apply_prepared(prepared: Dictionary) -> void:
 	while height_source_cache.size()>3: height_source_cache.erase(height_source_cache.keys()[0])
 	var begin := Time.get_ticks_usec()
 	var next_terrain: Node3D = terrain
+	var previous_native_spacing=float(terrain.get("vertex_spacing")) if terrain!=null else float(prepared.spacing)
 	var recreate := terrain==null
 	if recreate:
 		next_terrain = ClassDB.instantiate("Terrain3D")
@@ -281,6 +297,12 @@ func _apply_prepared(prepared: Dictionary) -> void:
 		next_terrain.call("set_camera",camera)
 	elif absf(float(next_terrain.get("vertex_spacing"))-float(prepared.spacing))>0.001:
 		next_terrain.set("vertex_spacing",prepared.spacing)
+	if not is_equal_approx(float(next_terrain.get("vertex_spacing")),float(prepared.spacing)):
+		discarded_preparations["unsupportedNativeSpacing"]=int(discarded_preparations.get("unsupportedNativeSpacing",0))+1
+		if recreate:next_terrain.queue_free()
+		else:next_terrain.set("vertex_spacing",previous_native_spacing)
+		push_error("Terrain3D vertex spacing differs from the prepared source scale")
+		return
 	var mat: Object = next_terrain.get("material")
 	if recreate:
 		var shader := Shader.new()
@@ -308,6 +330,7 @@ func _apply_prepared(prepared: Dictionary) -> void:
 		# Remove the previous active set before importing one coherent new window.
 		var terrain_data: Object = next_terrain.get("data")
 		for region in terrain_data.call("get_regions_active",true,false): terrain_data.call("remove_region",region,false)
+		rendered_height_image_size=prepared.height.get_width()
 		var images: Array[Image] = [prepared.height,prepared.control,null]
 		next_terrain.get("data").call("import_images",images,prepared.localStart,0.0,1.0)
 	mat.set("show_checkered",false)
@@ -316,6 +339,7 @@ func _apply_prepared(prepared: Dictionary) -> void:
 	applied_generation = int(prepared.generation)
 	# A complete same-lineage preparation is useful while the newest tile loads.
 	# Keep its actual revision so the next worker immediately targets the latest.
+	rendered_display_samples=int(prepared.get("displaySamples",256))
 	rendered_revision=int(prepared.get("worldRevision",world_revision))
 	rendered_world=world
 	rendered_packet=packet
@@ -340,7 +364,8 @@ func _apply_prepared(prepared: Dictionary) -> void:
 	region_counts.append(int(terrain.get("data").call("get_region_count")))
 	preparation_snapshots.append({"focus":requested_focus.duplicate(),"widthM":requested_width,"generation":prepared.generation,"sourceId":world.terrain.source.id})
 	rendered_tick_ms=Time.get_ticks_msec()
-	rendered_snapshot={"worldId":rendered_world_id,"source":rendered_source.duplicate(),"tileSource":world.terrain.source.duplicate(),"sourceActualAtFocus":rendered_source.duplicate(),"focusInsideSource":source_focus.focusInsideSource,"fineContributionWeight":source_focus.fineContributionWeight,"seamWeight":source_focus.seamWeight,"sourceContributionsAtFocus":source_focus.contributions,"sourceBounds":world.bounds.duplicate(),"focusAtApply":focus.duplicate(),"liveSerial":rendered_live_serial,"appliedTickMs":rendered_tick_ms,"sourceEpoch":packet.get("source",{}).get("sourceEpoch"),"sceneEpoch":packet.get("source",{}).get("sceneEpoch"),"worldRevision":rendered_revision}
+	rendered_snapshot={"worldId":rendered_world_id,"source":rendered_source.duplicate(),"tileSource":world.terrain.source.duplicate(),"sourceActualAtFocus":rendered_source.duplicate(),"focusInsideSource":source_focus.focusInsideSource,"fineContributionWeight":source_focus.fineContributionWeight,"seamWeight":source_focus.seamWeight,"sourceContributionsAtFocus":source_focus.contributions,"sourceBounds":world.bounds.duplicate(),"focusAtApply":focus.duplicate(),"request":packet.get("source",{}).get("request",{}).duplicate(true),"displaySamples":rendered_display_samples,"heightImageSize":rendered_height_image_size,"liveSerial":rendered_live_serial,"appliedTickMs":rendered_tick_ms,"sourceEpoch":packet.get("source",{}).get("sourceEpoch"),"sceneEpoch":packet.get("source",{}).get("sceneEpoch"),"worldRevision":rendered_revision}
+	_update_view_satisfaction("rendered-source")
 	render_events.append(rendered_snapshot.duplicate(true))
 	while render_events.size()>128:render_events.pop_front()
 	print(JSON.stringify({"event":"terrain-replaced","worldId":rendered_world_id,"renderedSnapshot":rendered_snapshot,"requestedWorldId":self.world.id,"origin":[origin.x,origin.y,origin.z],"sourceLOD":world.terrain.source.sourceLOD,"nativeSpacingM":world.terrain.source.nativeSpacingM,"displaySpacingM":prepared.spacing,"regions":terrain.get("data").call("get_region_count"),"prepareMs":prepared.prepareMs,"uploadAndObjectsMs":upload_times.back()}))
@@ -571,6 +596,7 @@ func _build_populations(populations: Dictionary) -> void:
 
 func _process(delta: float) -> void:
 	if world.is_empty(): return
+	_update_quality_state()
 	var tick := Time.get_ticks_usec()
 	var wall_ms := (tick-previous_frame_tick)/1000.0 if previous_frame_tick>0 else delta*1000.0
 	previous_frame_tick = tick
@@ -605,12 +631,12 @@ func _process(delta: float) -> void:
 	if frames%15 == 0:
 		_poll_stream()
 		_update_hud()
-		if live_serial>live_requested_serial and not live_busy and Time.get_ticks_msec()-last_live_tick>400:
+		if (live_serial>live_requested_serial or final_quality_pending) and not live_busy and Time.get_ticks_msec()-last_live_tick>400:
 			_request_live()
 		if not stream_directory.is_empty() and live_serial>stream_requested_serial and Time.get_ticks_msec()-last_stream_tick>400:
 			_request_source()
 	var scene_ready:bool=rendered_revision==world_revision
-	var live_ready: bool = not options.has("--live-url") or last_live_applied_serial==live_serial or failed_live_serial==live_serial
+	var live_ready: bool = not options.has("--live-url") or (view_satisfied_serial==live_serial and not _quality_preview()) or failed_live_serial==live_serial
 	if options.has("--tour") and scene_ready and terrain != null and worker == null and not view_dirty and packet_worker==null and not live_busy and live_ready:
 		tour_settle += 1
 		if tour_settle == 60:
@@ -680,6 +706,10 @@ func _unhandled_input(event: InputEvent) -> void:
 			width_m = tour_widths[event.keycode-KEY_1]
 			changed = true
 	if changed:
+		last_real_input_tick=Time.get_ticks_msec()
+		quality_preview_active=true
+		final_quality_pending=options.has("--live-url")
+		view_satisfied_serial=-1
 		_update_camera()
 		view_dirty = true
 		if worker==null and Time.get_ticks_msec()-last_request_tick>160:
@@ -693,16 +723,17 @@ func _request_live() -> void:
 		live_requested_serial=live_serial
 		_record_live_binding_rejection(str(loaded_live_binding.error),live_serial)
 		return
-	var extent := width_m*1.2+2.0*(16.0+maxf(10.0,float(packet.get("_maximumCrownRadiusM",0.0))))
-	var footprint: Dictionary = Data.context(world).bounds
-	extent = minf(extent,minf(float(footprint.maxX)-float(footprint.minX),float(footprint.maxZ)-float(footprint.minZ)))
-	var request_x := clampf(focus.x-extent*0.5,float(footprint.minX),float(footprint.maxX)-extent)
-	var request_z := clampf(focus.y-extent*0.5,float(footprint.minZ),float(footprint.maxZ)-extent)
-	var payload := {"region":{"x":request_x,"y":request_z,"extent":extent,"resolution":512}}
+	var region=ViewQuality.request_region(world,packet,focus,width_m,_quality_preview())
+	if _update_view_satisfaction("reuse-cached-source",region):
+		live_requested_serial=live_serial
+		if not bool(region.preview):final_quality_pending=false
+		return
+	var payload={"region":region}
 	if not known_context_id.is_empty() and canonical_contexts.has(known_context_id): payload.region.knownContextId = known_context_id
 	if not known_scene_context_id.is_empty() and scene_contexts.has(known_scene_context_id): payload.region.knownSceneContextId=known_scene_context_id
 	if options.has("--session-id"): payload.sessionId = options["--session-id"]
 	live_requested_serial = live_serial
+	if not bool(region.preview):final_quality_pending=false
 	live_request_context={"kind":"live","serial":live_requested_serial,"lineage":_source_scene_lineage(),"baseWorldId":world.id,"startedTickMs":Time.get_ticks_msec()}
 	live_busy = true
 	last_live_tick = Time.get_ticks_msec()
@@ -819,8 +850,9 @@ func _accept_packet(next: Dictionary, context: Dictionary) -> void:
 		next_world["_terrainParents"] = unique
 	if context.kind=="live":
 		last_live_applied_serial=int(context.serial)
+		failed_live_serial=-1
 		next["_acceptedLiveSerial"]=int(context.serial)
-		live_acceptance_events.append({"tickMs":Time.get_ticks_msec(),"requestSerial":context.serial,"cameraSerial":live_serial,"sourceEpoch":next.get("source",{}).get("sourceEpoch"),"sceneEpoch":next.get("source",{}).get("sceneEpoch"),"worldId":next_world.id})
+		live_acceptance_events.append({"tickMs":Time.get_ticks_msec(),"requestSerial":context.serial,"cameraSerial":live_serial,"sourceEpoch":next.get("source",{}).get("sourceEpoch"),"sceneEpoch":next.get("source",{}).get("sceneEpoch"),"request":next.get("source",{}).get("request",{}).duplicate(true),"worldId":next_world.id})
 		while live_acceptance_events.size()>128:live_acceptance_events.pop_front()
 		print(JSON.stringify({"event":"live-tile-applied","requestSerial":context.serial,"cameraSerial":live_serial,"worldId":next_world.id}))
 	var repeated_identity: bool = next_world.id==world.id
@@ -875,7 +907,7 @@ func _capture(path: String) -> void:
 	var absolute := ProjectSettings.globalize_path(path)
 	DirAccess.make_dir_recursive_absolute(absolute.get_base_dir())
 	var result := get_viewport().get_texture().get_image().save_png(absolute)
-	print(JSON.stringify({"event":"capture","renderedWorldId":rendered_world_id,"renderedSource":rendered_source,"renderedLiveSerial":rendered_live_serial,"renderedSnapshot":rendered_snapshot,"path":absolute,"error":result,"widthM":width_m,"metresPerPixel":width_m/get_viewport().get_visible_rect().size.x}))
+	print(JSON.stringify({"event":"capture","renderedWorldId":rendered_world_id,"renderedSource":rendered_source,"renderedLiveSerial":rendered_live_serial,"renderedSnapshot":rendered_snapshot,"viewSatisfiedSerial":view_satisfied_serial,"viewSatisfaction":view_satisfaction,"path":absolute,"error":result,"widthM":width_m,"metresPerPixel":width_m/get_viewport().get_visible_rect().size.x}))
 
 func _quantile(values: Array[float], fraction: float) -> Variant:
 	if values.is_empty(): return null
@@ -887,6 +919,9 @@ func _write_metrics() -> void:
 	var metrics := {"godot":Engine.get_version_info().string,"terrain3d":"1.0.2","backend":RenderingServer.get_current_rendering_method(),"adapter":RenderingServer.get_video_adapter_name(),"worldId":rendered_world_id,"source":rendered_source,"requestedWorldId":world.id,"requestedSource":world.terrain.source,"resolution":[get_viewport().get_visible_rect().size.x,get_viewport().get_visible_rect().size.y],"frames":frame_times.size(),"frameWallMs":{"p50":_quantile(frame_times,0.5),"p95":_quantile(frame_times,0.95),"p99":_quantile(frame_times,0.99)},"navigationFrameWallMs":{"p50":_quantile(all_frame_times,0.5),"p95":_quantile(all_frame_times,0.95),"p99":_quantile(all_frame_times,0.99),"max":_quantile(all_frame_times,1.0)},"cpuScriptMs":{"p50":_quantile(process_times,0.5),"p95":_quantile(process_times,0.95),"p99":_quantile(process_times,0.99)},"prepareMs":prepare_times,"uploadAndObjectsMs":upload_times,"regionCounts":region_counts,"preparationSnapshots":preparation_snapshots,"videoMemoryBytes":Performance.get_monitor(Performance.RENDER_VIDEO_MEM_USED),"textureMemoryBytes":Performance.get_monitor(Performance.RENDER_TEXTURE_MEM_USED),"drawCalls":Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME),"objects":selected_candidates,"roadProjectors":road_projector_count,"candidateCount":candidate_count,"cpuFrameMs":null,"cpuTimeNote":"cpuScriptMs measures this viewer script only; full engine CPU frame/pass timing is not available here.","gpuRenderMs":{"p50":_quantile(gpu_render_times,0.5),"p95":_quantile(gpu_render_times,0.95),"p99":_quantile(gpu_render_times,0.99)},"cpuRenderMs":{"p50":_quantile(cpu_render_times,0.5),"p95":_quantile(cpu_render_times,0.95)},"gpuTimeNote":"RenderingServer measured viewport render time; null when the backend returns no positive samples. Frame wall time separately includes vsync, uploads and driver stalls."}
 	metrics["renderSourceVersion"]={"assetVersion":library.asset_version,"assetDigest":library.asset_digest,"assetBindings":library.loaded_asset_bindings,"presentation":Presentation.profile(rendered_packet,rendered_presentation_mode),"geometryDetail":rendered_geometry_detail}
 	metrics["liveHttpEvents"]=live_http_events
+	metrics["viewSatisfiedSerial"]=view_satisfied_serial
+	metrics["viewSatisfaction"]=view_satisfaction
+	metrics["viewSatisfactionEvents"]=view_satisfaction_events
 	metrics["loadedLiveBinding"]=loaded_live_binding
 	metrics["liveBindingRejections"]=live_binding_rejections
 	metrics["renderedSnapshot"]=rendered_snapshot
@@ -1049,3 +1084,44 @@ func _cache_scene_top_y()->void:
 		if not child.visible or not (child is MeshInstance3D or child is MultiMeshInstance3D):continue
 		var bounds:AABB=child.transform*child.get_aabb()
 		if bounds.position.is_finite() and bounds.size.is_finite():scene_top_y=maxf(scene_top_y,bounds.end.y)
+
+func _quality_preview()->bool:
+	return ViewQuality.preview(last_real_input_tick,Time.get_ticks_msec())
+
+func _update_quality_state()->void:
+	var preview=_quality_preview()
+	if quality_preview_active and not preview:
+		quality_preview_active=false
+		view_dirty=true
+		final_quality_pending=options.has("--live-url")
+		view_satisfied_serial=-1
+		_update_view_satisfaction("input-settled")
+
+func _update_view_satisfaction(reason:String,region:Dictionary={})->bool:
+	if rendered_world.is_empty():return false
+	if region.is_empty():region=ViewQuality.request_region(world,packet,focus,width_m,_quality_preview())
+	var evidence=ViewQuality.cache_evidence(rendered_world,rendered_packet,region,_physical_lineage(rendered_world,rendered_packet)==_physical_lineage(world,packet))
+	if not evidence.get("covered",false):
+		view_satisfied_serial=-1
+		view_satisfaction={"serial":live_serial,"covered":false,"reason":evidence.get("reason","unknown"),"preview":bool(region.preview)}
+		return false
+	var changed=view_satisfied_serial!=live_serial or view_satisfaction.get("preview")!=bool(region.preview) or view_satisfaction.get("worldId")!=rendered_world_id
+	view_satisfied_serial=live_serial
+	view_satisfaction=evidence.duplicate(true)
+	view_satisfaction.merge({"serial":live_serial,"worldId":rendered_world_id,"requestSerial":rendered_live_serial,"reason":reason,"tickMs":Time.get_ticks_msec()})
+	if changed:
+		view_satisfaction_events.append(view_satisfaction.duplicate(true))
+		while view_satisfaction_events.size()>128:view_satisfaction_events.pop_front()
+		print(JSON.stringify({"event":"view-satisfied","viewSatisfaction":view_satisfaction}))
+	return true
+
+func _import_alignment_valid(prepared:Dictionary)->bool:
+	if not prepared.get("localStart") is Vector3 or not is_finite(float(prepared.get("spacing",0))) or float(prepared.spacing)<0.25 or float(prepared.spacing)>100.0:return false
+	var x=float(prepared.localStart.x)/float(prepared.spacing)/256.0
+	var z=float(prepared.localStart.z)/float(prepared.spacing)/256.0
+	return absf(x-roundf(x))<0.00001 and absf(z-roundf(z))<0.00001
+
+func _expected_height_image_size(spacing:float,view_width:float)->int:
+	var size=512
+	while size*spacing<view_width*2.0 and size<2048:size*=2
+	return size
