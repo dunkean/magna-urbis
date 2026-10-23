@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 import { decodeSurfaceBinary, encodeSurfaceBinary, isSurfaceBinary } from '../src/surface/binary';
 import { hydrateSurfaceWorld } from '../src/surface/compiler';
+import { unpackCandidateColumns } from '../src/surface/candidateColumns';
+import { validateSurfacePacket } from '../src/surface/packet';
 import type { TerrainGrid } from '../src/surface/model';
 import { SurfaceCompilerClient, type SurfaceCompilerWorker } from '../src/surface/workerClient';
 import { createSurfaceWorkerProcessor } from '../src/surface/workerProcessor';
@@ -39,6 +41,23 @@ class TestWorker implements SurfaceCompilerWorker {
 }
 
 describe('surface compiler worker protocol', () => {
+  it('publishes complete canonical tree pages outside a tiny fine source without extruding its edge height',()=>{
+    const retained=source();retained.input.terrain=terrain(51,80);
+    const processor=createSurfaceWorkerProcessor(value=>value as PreparedSurfaceWorkerSource);
+    expect(processor.handle({...initialize,payload:retained}).kind).toBe('initialized');
+    const request=job();request.region={x:1980,y:1980,extent:40,resolution:64};
+    request.terrain={...terrain(64,.625),originX:1980.3125,originZ:1980.3125,heights:new Float32Array(4096).fill(900)};
+    const result=processor.handle(request);expect(result.kind).toBe('compiled');if(result.kind!=='compiled')throw new Error(JSON.stringify(result));
+    const packet=decodeSurfaceBinary<SurfaceWorkerPacket>(new Uint8Array(result.binary));
+    expect(packet.candidatePages?.tree).toMatchObject({complete:true,limitedBy:'none',bounds:{minX:1760,minZ:1760,maxX:2240,maxZ:2240}});
+    expect(packet.candidateBounds).toEqual({minX:1980,minZ:1980,maxX:2020,maxZ:2020});
+    const trees=unpackCandidateColumns(packet.candidateColumns!).filter(c=>c.family==='tree');
+    const outside=trees.filter(c=>c.x<1980.3125||c.x>2019.6875||c.z<1980.3125||c.z>2019.6875);
+    expect(outside.length).toBeGreaterThan(100);expect(outside.every(c=>c.y===100)).toBe(true);
+    expect(packet.candidatePages?.support.parentSampleCount).toBeGreaterThan(100);
+    packet.candidatePages!.support.canonicalContextId='stale-context';
+    expect(()=>validateSurfacePacket(packet)).toThrow(/context\/source/);
+  });
   it('keeps canonical context cached between normal jobs and transfers binary context once', () => {
     const processor = createSurfaceWorkerProcessor(value => value as PreparedSurfaceWorkerSource);
     expect(processor.handle(initialize).kind).toBe('initialized');

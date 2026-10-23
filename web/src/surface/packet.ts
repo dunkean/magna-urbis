@@ -1,4 +1,5 @@
 import { validateCandidateColumns } from './candidateColumns';
+import { validateSurfaceCandidatePages } from './candidatePages';
 import { validateUrbanColumns } from './urbanColumns';
 import { SURFACE_SCHEMA_VERSION, type SurfaceWorld, type TerrainGrid } from './model';
 
@@ -53,6 +54,7 @@ export function validateSurfacePacket(value: unknown): asserts value is {
   if (p.urban?.format === 'magna-urban-columns') validateUrbanColumns(p.urban);
   if (p.candidates !== undefined && !Array.isArray(p.candidates)) throw new Error('Invalid packet candidates');
   if (p.candidates !== undefined && p.candidateColumns !== undefined) throw new Error('Ambiguous packet candidates');
+  if(p.candidatePages!==undefined)validateSurfaceCandidatePages(p.candidatePages,p.candidateColumns,p.candidates,w);
   if (p.terrainParents !== undefined) {
     if (!Array.isArray(p.terrainParents)) throw new Error('Invalid packet terrain parents');
     for (const parent of p.terrainParents) {

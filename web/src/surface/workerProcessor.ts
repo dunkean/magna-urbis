@@ -1,7 +1,7 @@
 import { encodeSurfaceBinary } from './binary';
 import { compileSurfaceWorld, retargetSurfaceWorld, fingerprint } from './compiler';
 import { assertRefinementTerrainRegion, registrationFieldFingerprint } from './registrationBinding';
-import { generateSurfaceCandidates } from './population';
+import { generateSurfaceCandidatePages } from './candidatePages';
 import { packCandidateColumns } from './candidateColumns';
 import { SURFACE_PACKET_MAX_BYTES } from './limits';
 import { validateSurfacePacket } from './packet';
@@ -38,17 +38,15 @@ export function createSurfaceWorkerProcessor(prepare: (payload: unknown) => Prep
       canonicalBuildCount++;
     }
     const world = retargetSurfaceWorld(canonical, job.terrain, { memoryBudgetBytes: job.memoryBudgetBytes });
-    const b = world.bounds, cx = (b.minX + b.maxX) / 2, cz = (b.minZ + b.maxZ) / 2, radius = Math.min(240, job.region.extent / 2);
-    const candidateBounds = { minX: Math.max(b.minX, cx - radius), maxX: Math.min(b.maxX, cx + radius), minZ: Math.max(b.minZ, cz - radius), maxZ: Math.min(b.maxZ, cz + radius) };
-    const candidates = generateSurfaceCandidates(world, candidateBounds, { maxCandidates: job.maxCandidates ?? 100000, maxCheckedSlots: job.maxCheckedSlots });
     const contextId = world.canonicalContextRef!.id;
     const parent = prepared.parentTerrain ? { ...prepared.parentTerrain, source: { ...prepared.parentTerrain.source, id: job.terrain.source.id, version: job.terrain.source.version } } : canonical.terrain;
+    const {candidates,candidatePages,candidateBounds}=generateSurfaceCandidatePages(canonical,bounds,{canonicalContextId:contextId,fineTerrain:job.terrain,parentTerrain:parent,maxCandidates:job.maxCandidates,maxCheckedSlots:job.maxCheckedSlots});
     return { format: 'magna-surface-packet', version: 1,
       presentation: job.presentation ?? prepared.sourceMetadata?.presentation as SurfaceWorkerPacket['presentation'],
       urbanId: prepared.urbanId,
       world: { ...world, canonicalContext: job.region.knownContextId === contextId ? undefined : world.canonicalContext },
       terrainParents: job.region.knownContextId === contextId ? undefined : [{ terrain: parent, bounds: canonical.bounds, canonicalContextId: contextId }],
-      urban: job.region.knownSceneContextId === sceneContextId ? undefined : prepared.urban ?? {}, candidateColumns: packCandidateColumns(candidates), candidateBounds,
+      urban: job.region.knownSceneContextId === sceneContextId ? undefined : prepared.urban ?? {}, candidateColumns: packCandidateColumns(candidates), candidateBounds,candidatePages,
       source: { ...(job.region.knownSceneContextId === sceneContextId ? {} : prepared.sourceMetadata), originalSource: input.terrain.source, live: true, provider: binding?.providerId ?? prepared.providerId,
         presentation: job.presentation ?? prepared.sourceMetadata?.presentation, compilation: { canonicalBuildCount }, registrationBinding: binding, canonicalContextId: contextId, sceneContextId, sourceEpoch: job.sourceEpoch, sceneEpoch: job.sceneEpoch, request: { ...job.region } } };
   };

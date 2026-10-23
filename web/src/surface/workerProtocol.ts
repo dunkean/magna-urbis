@@ -30,6 +30,7 @@ export interface SurfaceWorkerPacket {
   candidates?: import('./model').SurfaceCandidate[]; candidateColumns?: import('./candidateColumns').CandidateColumns;
   urbanId?: string; presentation?: import('./presentation').SurfacePresentation;
   candidateBounds: Bounds; source: Record<string, unknown>;
+  candidatePages?: import('./candidatePages').SurfaceCandidatePages;
 }
 
 export function assertSurfaceWorkerRouting(message: SurfaceWorkerRequest): void {
