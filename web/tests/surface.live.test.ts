@@ -42,6 +42,7 @@ describe('Surface live transport', () => {
     const base = await start();
     expect((await post(`${base}/surface-live/terrain`, { region })).status).toBe(503);
     expect((await post(`${base}/surface-live/terrain`, { region: { ...region, resolution: 3 } })).status).toBe(400);
+    expect((await post(`${base}/surface-live/terrain`, { region: { ...region, preview: 'yes' } })).status).toBe(400);
     expect((await fetch(`${base}/surface-live/sessions`).then(r => r.json())).sessions).toEqual([]);
   });
   it('routes source payload unchanged to the requesting viewer and rejects other sessions', async () => {
@@ -54,6 +55,13 @@ describe('Surface live transport', () => {
     expect((await post(route, { sessionId: browser.session, packet })).status).toBe(200);
     expect(await (await response).json()).toEqual(packet);
     expect((await post(route, { sessionId: browser.session, packet })).status).toBe(410);
+  });
+  it('preserves explicit interactive quality requests rather than claiming settled resolution',async()=>{
+    const base=await start(),browser=await connect(base),preview={...region,resolution:128,preview:true};
+    const pending=post(`${base}/surface-live/terrain`,{region:preview,sessionId:browser.session}),request=await browser.event();
+    expect(request.data.region).toEqual(preview);
+    await post(`${base}/surface-live/reply/${request.data.id}`,{sessionId:browser.session,packet:{source:{request:request.data.region}}});
+    expect(await(await pending).json()).toEqual({source:{request:preview}});
   });
   it('expires pending work and explicitly cancels browser generation', async () => {
     const base = await start(100), browser = await connect(base);

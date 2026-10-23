@@ -2,7 +2,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { randomUUID } from 'node:crypto';
 import type { Plugin } from 'vite';
 import { SURFACE_PACKET_MAX_BYTES, SURFACE_UPLOAD_CHUNK_BYTES } from '../src/surface/limits';
-export interface SurfaceLiveRegion { x: number; y: number; extent: number; resolution: number; knownContextId?: string; knownSceneContextId?: string }
+export interface SurfaceLiveRegion { x: number; y: number; extent: number; resolution: number; knownContextId?: string; knownSceneContextId?: string; preview?: boolean }
 interface Pending { client: string; response: ServerResponse; timer: ReturnType<typeof setTimeout>; upload?: { total:number; received:number; bytes:Buffer; receiving:boolean } }
 async function readBytes(request: IncomingMessage, limit: number): Promise<Buffer> {
   const chunks: Buffer[] = []; let length = 0;
@@ -53,7 +53,7 @@ export function createSurfaceLiveBroker(timeoutMs = 120000) {
         if (pending.size >= 4) { reply(response, 429, { error: 'Surface generation queue is full' }); return; }
         const body = await readJson(request, 65536), region = body.region as SurfaceLiveRegion;
         if (!region || ![region.x, region.y, region.extent, region.resolution].every(Number.isFinite)
-          || region.extent <= 0 || !Number.isInteger(region.resolution) || region.resolution < 4 || region.resolution > 1024
+          || region.extent <= 0 || !Number.isInteger(region.resolution) || region.resolution < 4 || region.resolution > 1024 || region.preview!==undefined&&typeof region.preview!=='boolean'
           || ['knownContextId', 'knownSceneContextId'].some(key => { const v = region[key as keyof SurfaceLiveRegion]; return v !== undefined && (typeof v !== 'string' || v.length > 256); })) {
           reply(response, 400, { error: 'Expected finite region x/y/extent and integer resolution 4..1024' }); return;
         }
