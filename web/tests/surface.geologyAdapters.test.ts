@@ -55,6 +55,10 @@ describe('explicit shared source geology', () => {
     const override=exportSurfaceInputPacket(decorToSurfaceInput(decor()),undefined,{meta:{query:'style=atlas'}},{encoding:'binary',candidateLimit:10000,geologyScenario:s});
     expect(override.world.geology.bedrock).toEqual(input.geology!.bedrock);
     expect(surfaceGeologyScenario((override.source.meta as any).query)).toEqual(s);
+    const original=decor('style=atlas'), snapshot=structuredClone(original);
+    const overridden=exportSurfacePacket(original,undefined,{encoding:'binary',candidateLimit:10000,geologyScenario:s});
+    expect(surfaceGeologyScenario(overridden.source.meta.query)).toEqual(s);
+    expect(original).toEqual(snapshot);
     expect(applySurfaceGeology(input,'')).toBe(input);
   });
   it('retains source 2D routing and flow exactly while allowing the same explicit scenario', () => {

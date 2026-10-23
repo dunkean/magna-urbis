@@ -63,6 +63,7 @@ function addWaterValidationWarning(world: SurfaceWorld, validation: ReturnType<t
 /** Source metadata/geometry stay separate from compiled fields, preserving river
  * IDs and retained native records that do not belong in a surface raster. */
 export function exportSurfacePacket(decor: Decor, scene?: Building3dScene, options: DecorCompileOptions = {}) {
+  if(options.geologyScenario)decor={...decor,meta:{...decor.meta,query:withSurfaceGeologyQuery(decor.meta.query,options.geologyScenario)}};
   const retained = decor.meta.pipeline?.urban?.buildingState;
   if (retained?.cold && !scene) throw new Error('Cold native buildings require their retained chunk scene before surface export.');
   if (options.geologyScenario) decor = { ...decor, meta: { ...decor.meta, query: withSurfaceGeologyQuery(decor.meta.query, options.geologyScenario) } };
