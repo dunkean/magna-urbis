@@ -220,6 +220,13 @@ static func build_water(world: Dictionary, origin: Dictionary, focus: Dictionary
 	var coverage := Image.create_from_data(width,height,false,Image.FORMAT_RF,mask.to_byte_array())
 	coverage.generate_mipmaps()
 	result.coverageImage=coverage
+	# Semantic water classes are separate from physical coverage: filtering
+	# coverage must never interpolate river/lake/ocean category IDs.
+	var classes := PackedFloat32Array(); classes.resize(width*height)
+	for i in classes.size(): classes[i]=float(fields.waterClass[i])
+	result.classImage=Image.create_from_data(width,height,false,Image.FORMAT_RF,classes.to_byte_array())
+	result.classOrigin={"x":float(grid.originX),"z":float(grid.originZ)}
+	result.classSpacingM=spacing; result.classSize=Vector2i(width,height)
 	result.coverageOrigin={"x":float(grid.originX),"z":float(grid.originZ)}
 	result.coverageSpacingM=spacing; result.coverageSize=Vector2i(width,height)
 	var bed: Dictionary = world.get("terrain",{})
