@@ -2,6 +2,13 @@
 
 Document de conception et backlog — 23 octobre 2026.
 
+Ce document décrit la conception initiale. L'état du code, les preuves réellement
+exécutées et les écarts encore ouverts sont tenus dans
+[SurfaceWorld — implémentation](surface/IMPLEMENTATION.md). La séparation
+**sol, couvert bas, arbres** est précisée par le
+[contrat de couches](SURFACE_RENDER_LAYERS.md) : un composite visuel historique
+ne remplace pas la matière du sol sous les herbes ou les couronnes.
+
 **Proposition : construire un monde de surfaces explicite, puis le rendre avec une combinaison de matériaux PBR existants, de motifs procéduraux et d'objets instanciés.** Le principal travail est de décider ce qui existe à chaque endroit et comment cette description traverse les échelles. Constituer une nouvelle bibliothèque de textures n'est pas le chantier central.
 
 La première tranche vise les **cartes et plans de JDR en 2D et 3D** produits par Magna Urbis : styles choisis, projection orthographique, vues en perspective et exports utilisables. Elle est éprouvée dans une application locale séparée sur un territoire d'environ **40 × 40 km**, observable jusqu'à **1–5 cm par pixel**, avec une extension expérimentale vers **5 mm/px**. Cette séparation facilite la qualification du moteur ; elle ne fixe pas son rôle final. Une intégration web et un transfert vers Neural Earth viennent après la validation de cette tranche complète.

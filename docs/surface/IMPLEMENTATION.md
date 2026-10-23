@@ -1,9 +1,11 @@
 # SurfaceWorld — état de l'implémentation
 
-État documentaire du 23 octobre 2026, code intégré jusqu'à `bdff00b`. Le détail
+État documentaire du 23 octobre 2026, code intégré jusqu'à `b4a52b0`. Le détail
 géométrique, le scénario géologique, les styles et l'hydrologie fixe sont raccordés.
-**La phase 6 n'est pas acceptée et la
-campagne E2E finale reste à réussir.** Les rapports de revue initiaux sont conservés sans modifier
+**La campagne technique V5 passe ; la phase 6 n'est pas acceptée visuellement.**
+Le contrat TS 1.5 sépare maintenant sol, couvert bas et arbres ; son raccordement
+natif est encore en cours à ce snapshot documentaire. V5 qualifie le code 1.4
+figé `f6a45af`, pas ces nouvelles couches. Les rapports de revue initiaux sont conservés sans modifier
 leur verdict. Ce document distingue le code disponible, les preuves exécutées et
 les qualifications qui restent à faire.
 
@@ -50,6 +52,7 @@ flowchart LR
 | --- | --- |
 | Monde physique indépendant du moteur | `web/src/surface/model.ts`, mètres, repère main droite +X est / +Y haut / +Z sud, grilles à centres de cellules. |
 | Compilation canonique | `compiler.ts` : morphologie multi-rayons, géologie explicite ou scénario granite déclaré, drainage source ou D8 déclaré, sols/dépôts/couverts, recettes matérielles et identités. |
+| Étages physiques | `surfaceLayers.ts`, compilateur `surface-1.5.0` : paires et moyennes du sol nu et du couvert bas, opacité basse, arbres/couronnes indépendants ; neuf arrays et 28 octets supplémentaires par échantillon, disponibilité legacy explicite. |
 | Raffinement | `retargetSurfaceWorld` conserve le contexte canonique et ses catégories ; il projette les continus sémantiquement, renormalise les fractions et conserve les métadonnées du vrai relief fin. |
 | Source | `provider.ts`, `adapters/infiniteRefinement.ts`, `registrationBinding.ts` : requête emprise/pas, annulation, snapshot des contrôles retenus, empreinte de contenu non cryptographique, versions et emprise strictes. |
 | Contexte régional | `adapters/neuralEarth.ts`, `regionalCompiler.ts`, `geologyScenario.ts` : géoréférence, unités et provenance explicites ; aucun substrat déduit du seul climat. |
@@ -136,6 +139,15 @@ seed. Les bords inconnus ne sont pas des falaises devinées. Les prochaines éta
 physiques exigent des contacts/rives/emprises canoniques plus précis et un réseau
 de bassin explicite, puis des recettes submaille stables ou une révision déclarée
 du contexte. Une nouvelle texture ne fournit pas cette information.
+
+La séparation demandée entre **sol, herbes et arbres** est une séparation de
+données et de représentation. Le sol inclut roche, dépôts et humus ; la litière
+morte et les plantes basses ont une couche propre ; les couronnes sont un étage
+superposé. Les fractions de ces trois étages ne forment pas une partition
+globale. Le composite `material*` historique est conservé pour compatibilité,
+mais n'est plus appelé « sol nu ». Un ancien paquet ne permet pas de récupérer
+ce sol par soustraction de son top2. Voir le
+[contrat, les invariants et les limites](../SURFACE_RENDER_LAYERS.md).
 
 Orogen expose un vrai graphe et des couches climatiques, mais aucun catalogue de
 lithologie dans les sorties auditées. L'importateur exige donc une géologie
