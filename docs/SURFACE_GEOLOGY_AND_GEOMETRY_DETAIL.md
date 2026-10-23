@@ -84,6 +84,21 @@ as a dictionary of IDs: population selection and canopy union omit those IDs
 without deleting or reseeding the canonical candidate inventory. Its atlas cache
 also compares that mask to prevent a stale support subset.
 
+`hydrateSurfaceGeometryDetail(value, terrain, canonicalContextId?, memoryBudgetBytes?)`
+restores plain JSON arrays as exact Float32/Uint8/Uint16 fields and retains already
+typed arrays without cloning. `validateSurfaceGeometryDetail` uses the same
+arguments but accepts typed fields only. Both check physical source-content ID,
+grid/kernel/native support, context binding, support descriptor, field shapes and
+values, source-derived normals/slopes/exposure/cliff decisions, local scenario IDs
+and coherent statistics. Budgets are checked before restoring arrays.
+
+An optional `surfaceConditioning` layer has version `surface-conditioning-1`, a
+`canonicalEnvironmentVersion` and its own typed `bedrockExposure` array. It never
+changes the raw geometry identity. The world compiler must verify that environment
+version against its own canonical environment and include the conditioning in its
+world identity; this standalone boundary only receives a canonical context ID.
+Explicit geological catalogues match the compiler limit:1–64 units, IDs1–65535.
+
 ## What remains necessary for “where / what”
 
 Fixed canonical context prevents camera-dependent climate, drainage, geology and
