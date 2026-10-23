@@ -69,6 +69,7 @@ var tour_widths: Array[float] = [40000,10000,2560,640,160,40,10]
 var live_request := HTTPRequest.new()
 var live_busy := false
 var live_request_context:Dictionary={}
+var live_http_events:Array=[]
 var live_acceptance_events:Array=[]
 var live_serial := 0
 var live_requested_serial := 0
@@ -160,7 +161,11 @@ func _ready() -> void:
 	add_child(camera)
 	add_child(objects)
 	add_child(live_request)
-	live_request.timeout = 120.0
+	# Large source packets must drain on the HTTP worker, independently of frame rate.
+	live_request.use_threads=true
+	live_request.download_chunk_size=1024*1024
+	live_request.body_size_limit=Data.MAX_PACKET_BYTES
+	live_request.timeout=300.0
 	live_request.request_completed.connect(_live_completed)
 	var canvas := CanvasLayer.new()
 	add_child(canvas)
@@ -568,6 +573,8 @@ func _process(delta: float) -> void:
 	if packet_worker!=null and not packet_worker.is_alive():
 		var received = packet_worker.wait_to_finish()
 		packet_worker = null
+		if packet_context.get("kind")=="live":
+			print(JSON.stringify({"event":"live-packet-decoded","requestSerial":packet_context.get("serial",-1),"decodeElapsedMs":Time.get_ticks_msec()-int(packet_context.get("decodeStartedTickMs",Time.get_ticks_msec())),"validPacket":received is Dictionary and not received.is_empty(),"tickMs":Time.get_ticks_msec()}))
 		if received is Dictionary: _accept_packet(received,packet_context)
 	if worker != null and not worker.is_alive():
 		var prepared = worker.wait_to_finish()
@@ -690,7 +697,7 @@ func _request_live() -> void:
 	if not known_scene_context_id.is_empty() and scene_contexts.has(known_scene_context_id): payload.region.knownSceneContextId=known_scene_context_id
 	if options.has("--session-id"): payload.sessionId = options["--session-id"]
 	live_requested_serial = live_serial
-	live_request_context={"kind":"live","serial":live_requested_serial,"lineage":_source_scene_lineage(),"baseWorldId":world.id}
+	live_request_context={"kind":"live","serial":live_requested_serial,"lineage":_source_scene_lineage(),"baseWorldId":world.id,"startedTickMs":Time.get_ticks_msec()}
 	live_busy = true
 	last_live_tick = Time.get_ticks_msec()
 	var error := live_request.request(options["--live-url"],PackedStringArray(["Content-Type: application/json","Accept: application/octet-stream, application/json"]),HTTPClient.METHOD_POST,JSON.stringify(payload))
@@ -700,6 +707,10 @@ func _request_live() -> void:
 		push_warning("Live terrain request failed to start: "+str(error))
 
 func _live_completed(result: int, code: int, _headers: PackedStringArray, body: PackedByteArray) -> void:
+	var http_event={"event":"live-http-completed","requestSerial":int(live_request_context.get("serial",live_requested_serial)),"resultCode":result,"httpCode":code,"bodyBytes":body.size(),"downloadedBytes":live_request.get_downloaded_bytes(),"expectedBodyBytes":live_request.get_body_size(),"requestElapsedMs":Time.get_ticks_msec()-int(live_request_context.get("startedTickMs",Time.get_ticks_msec())),"tickMs":Time.get_ticks_msec(),"useThreads":live_request.use_threads,"downloadChunkBytes":live_request.download_chunk_size,"timeoutSeconds":live_request.timeout}
+	live_http_events.append(http_event)
+	while live_http_events.size()>128:live_http_events.pop_front()
+	print(JSON.stringify(http_event))
 	live_busy = false
 	# Camera movement does not invalidate an immutable source request.
 	if live_request_context.get("lineage","")!=_source_scene_lineage():
@@ -717,6 +728,7 @@ func _live_completed(result: int, code: int, _headers: PackedStringArray, body: 
 	# A malformed decoded packet is an explicit failed request, not an endless tour wait.
 	failed_live_serial=live_requested_serial
 	packet_context = live_request_context.duplicate(true)
+	packet_context["decodeStartedTickMs"]=Time.get_ticks_msec()
 	packet_worker = Thread.new()
 	packet_worker.start(Data.decode_packet.bind(body))
 
@@ -868,6 +880,7 @@ func _quantile(values: Array[float], fraction: float) -> Variant:
 func _write_metrics() -> void:
 	var metrics := {"godot":Engine.get_version_info().string,"terrain3d":"1.0.2","backend":RenderingServer.get_current_rendering_method(),"adapter":RenderingServer.get_video_adapter_name(),"worldId":rendered_world_id,"source":rendered_source,"requestedWorldId":world.id,"requestedSource":world.terrain.source,"resolution":[get_viewport().get_visible_rect().size.x,get_viewport().get_visible_rect().size.y],"frames":frame_times.size(),"frameWallMs":{"p50":_quantile(frame_times,0.5),"p95":_quantile(frame_times,0.95),"p99":_quantile(frame_times,0.99)},"navigationFrameWallMs":{"p50":_quantile(all_frame_times,0.5),"p95":_quantile(all_frame_times,0.95),"p99":_quantile(all_frame_times,0.99),"max":_quantile(all_frame_times,1.0)},"cpuScriptMs":{"p50":_quantile(process_times,0.5),"p95":_quantile(process_times,0.95),"p99":_quantile(process_times,0.99)},"prepareMs":prepare_times,"uploadAndObjectsMs":upload_times,"regionCounts":region_counts,"preparationSnapshots":preparation_snapshots,"videoMemoryBytes":Performance.get_monitor(Performance.RENDER_VIDEO_MEM_USED),"textureMemoryBytes":Performance.get_monitor(Performance.RENDER_TEXTURE_MEM_USED),"drawCalls":Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME),"objects":selected_candidates,"roadProjectors":road_projector_count,"candidateCount":candidate_count,"cpuFrameMs":null,"cpuTimeNote":"cpuScriptMs measures this viewer script only; full engine CPU frame/pass timing is not available here.","gpuRenderMs":{"p50":_quantile(gpu_render_times,0.5),"p95":_quantile(gpu_render_times,0.95),"p99":_quantile(gpu_render_times,0.99)},"cpuRenderMs":{"p50":_quantile(cpu_render_times,0.5),"p95":_quantile(cpu_render_times,0.95)},"gpuTimeNote":"RenderingServer measured viewport render time; null when the backend returns no positive samples. Frame wall time separately includes vsync, uploads and driver stalls."}
 	metrics["renderSourceVersion"]={"assetVersion":library.asset_version,"assetDigest":library.asset_digest,"assetBindings":library.loaded_asset_bindings,"presentation":Presentation.profile(rendered_packet,rendered_presentation_mode),"geometryDetail":rendered_geometry_detail}
+	metrics["liveHttpEvents"]=live_http_events
 	metrics["loadedLiveBinding"]=loaded_live_binding
 	metrics["liveBindingRejections"]=live_binding_rejections
 	metrics["renderedSnapshot"]=rendered_snapshot
