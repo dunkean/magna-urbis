@@ -195,8 +195,15 @@ contexte change au zoom, si le renderer signale une erreur ou si10 m ne donne pa
 au plus5 mm/px. Les deltas bruts fin/parent sont enregistrés avant le feather du
 viewer : ce ne sont pas une mesure directe d'une couture affichée.
 
-La navigation continue fait l'objet d'un benchmark externe en préparation ; une
-tournée par paliers n'en tient pas lieu. Restent à mesurer : applications pendant
+La navigation continue dispose du benchmark externe
+`viewer-local/diagnostics/navigation_probe.gd`, prêt mais non exécuté en E2E à
+cette date. Ajouter `--viewer-navigation-seconds 20` au driver lance ce second
+processus après la tournée, en gardant le même navigateur/session ouverts. Il
+injecte de vrais événements molette et glisser à20Hz, mesure les applications de
+géométrie et de source pendant le mouvement, puis attend le drain final. Un
+résultat qui n'applique aucun détail live pendant les entrées est un échec, même
+si le parent reste affiché. Le rapport sépare les annulations attendues des erreurs.
+Une tournée par paliers n'en tient pas lieu. Restent à mesurer : applications pendant
 les entrées continues, âge des résultats, files d'attente/annulations, retour sur
 site après éviction, p95/p99 et pics d'upload/RAM/VRAM, avec routes/eau/ville/couvert
 et les styles cartographiques choisis.

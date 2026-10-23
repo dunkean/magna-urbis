@@ -6,7 +6,7 @@
 import { chromium } from 'playwright';
 import { mkdir, readFile, writeFile, readdir } from 'node:fs/promises';
 import { createWriteStream, existsSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { dirname,resolve } from 'node:path';
 import { createHash } from 'node:crypto';
 import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
@@ -33,6 +33,8 @@ const viewerGodot = option('--viewer-godot', undefined), viewerAssets = option('
 const viewerLauncher = resolve(option('--viewer-launcher', fileURLToPath(new URL('./surface_viewer.mjs', import.meta.url))));
 const viewerTimeoutMs = Number(option('--viewer-timeout-ms', '900000'));
 const viewerResolution = option('--viewer-resolution', '2048x1280');
+const navigationSeconds=Number(option('--viewer-navigation-seconds','0'));
+if(!Number.isFinite(navigationSeconds)||navigationSeconds!==0&&(navigationSeconds<5||navigationSeconds>120)||navigationSeconds&&!viewerGodot)throw new Error('Navigation requires --viewer-godot and duration5..120 seconds');
 if (viewerGodot && (!existsSync(viewerGodot) || !existsSync(viewerLauncher) || viewerAssets && !existsSync(viewerAssets)
   || !/^\d+x\d+$/.test(viewerResolution) || Number(viewerResolution.split('x')[0]) < 2000 || !(viewerTimeoutMs > 0))) throw new Error('Invalid viewer executable/launcher/assets/resolution/timeout (width must be >=2000 pixels for the 10m/5mm proof)');
 if (!Number.isFinite(width) || width < 500 || width > 100000 || !(timeoutMs > 0)) throw new Error('Invalid source dimensions/timeout');
@@ -130,6 +132,47 @@ async function runNativeTour(sessionId) {
   if(network.some(e=>e.elapsedMs>=report.viewer.startedElapsedMs&&e.url?.includes('/generate?')))throw new Error('Native navigation regenerated its parent source instead of refining the retained generation');
   if(relevant.some(e=>e.kind==='worker-proof-error'||e.kind==='worker-error')||errors.some(e=>e.type==='pageerror'))throw new Error('Browser worker or source page failed during the native live tour');
   report.viewer.status='complete';await save();
+}
+async function runNativeNavigation(sessionId) {
+  const directory=resolve(out,'native-navigation');await mkdir(directory,{recursive:true});
+  const project=resolve(dirname(viewerLauncher),'../../viewer-local'),probe=resolve(project,'diagnostics/navigation_probe.gd');
+  if(!existsSync(probe))throw new Error(`Continuous navigation probe missing from selected native snapshot: ${probe}`);
+  const paths={directory,stdout:resolve(directory,'stdout.log'),stderr:resolve(directory,'stderr.log'),metrics:resolve(directory,'metrics.json'),report:resolve(directory,'navigation-report.json')};
+  const command=['--path',project,'--script','res://diagnostics/navigation_probe.gd','--','--world',report.paths.source,
+    '--live-url',`${base}/surface-live/terrain`,'--session-id',sessionId,'--width','40000','--resolution',viewerResolution,
+    '--presentation','aerial','--metrics',paths.metrics,'--navigation-seconds',String(navigationSeconds),'--navigation-report',paths.report];
+  if(!args.includes('--viewer-oblique'))command.push('--top');if(viewerAssets)command.push('--assets',resolve(viewerAssets));
+  const phase={status:'running',startedElapsedMs:Date.now()-began,paths,command:[resolve(viewerGodot),...command],browserHeldOpen:true};report.navigation=phase;report.status='native-navigation';await save();
+  const stdout=createWriteStream(paths.stdout),stderr=createWriteStream(paths.stderr);let timeout;
+  try{
+    const completed=new Promise((done,fail)=>{
+      viewerProcess=spawn(resolve(viewerGodot),command,{windowsHide:true,detached:process.platform!=='win32',stdio:['ignore','pipe','pipe']});
+      viewerProcess.stdout.on('data',chunk=>stdout.write(chunk));viewerProcess.stderr.on('data',chunk=>stderr.write(chunk));
+      viewerProcess.once('error',fail);viewerProcess.once('close',(code,signal)=>done({code,signal}));
+      timeout=setTimeout(()=>{phase.timedOut=true;stopViewer();},viewerTimeoutMs);
+    });
+    Object.assign(phase,await completed);
+  }finally{clearTimeout(timeout);stopViewer();stdout.end();stderr.end();await Promise.all([finished(stdout),finished(stderr)]);}
+  phase.elapsedMs=Date.now()-began-phase.startedElapsedMs;
+  if(existsSync(paths.report))phase.result=JSON.parse(await readFile(paths.report,'utf8'));
+  if(existsSync(paths.metrics))phase.metrics=JSON.parse(await readFile(paths.metrics,'utf8'));
+  const relevant=browserEvents.filter(e=>e.elapsedMs>=phase.startedElapsedMs),packets=relevant.filter(e=>e.kind==='worker-compiled');
+  phase.workerPackets=packets.length;phase.environmentVersions=[...new Set(packets.map(e=>e.environmentVersion))];
+  phase.canonicalBuildCounts=[...new Set(packets.map(e=>e.canonicalBuildCount))];
+  phase.pythonTiles=network.filter(e=>e.elapsedMs>=phase.startedElapsedMs&&e.url?.includes('/refinement/tile')).length;
+  const logs=await Promise.all([readFile(paths.stdout,'utf8'),readFile(paths.stderr,'utf8')]);
+  const unavailable=logs.join('\n').split(/\r?\n/).filter(line=>line.includes('Live terrain unavailable'));
+  phase.expectedCancellationWarnings=unavailable.filter(line=>/HTTP (409|499)\b/.test(line)).length;
+  phase.discardedLiveReplies=(logs.join('\n').match(/Discarded superseded live terrain response/g)??[]).length;
+  phase.workerErrors=relevant.filter(e=>e.kind==='worker-error'&&e.error?.name!=='AbortError'||e.kind==='worker-proof-error');
+  await save();
+  if(phase.timedOut||phase.code!==0||phase.result?.status!=='complete'||!phase.result?.sourceReplacedWhileMoving
+    ||logs.some(log=>/(?:SCRIPT|SHADER) ERROR|ERROR:/.test(log))||unavailable.some(line=>!/HTTP (409|499)\b/.test(line))||phase.workerErrors.length)throw new Error('Continuous native navigation did not make verified live progress while input continued; see native-navigation reports/logs');
+  if(!packets.length||phase.environmentVersions.length!==1||packets.some(e=>e.canonicalBuildCount!==1)
+    ||phase.environmentVersions[0]!==report.viewer.endToEnd.environmentVersions[0]
+    ||geologyScenario&&packets.some(e=>JSON.stringify(e.packet?.geologyScenario)!==JSON.stringify(report.source.geologyScenario))
+    ||network.some(e=>e.elapsedMs>=phase.startedElapsedMs&&e.url?.includes('/generate?')))throw new Error('Continuous native navigation changed canonical context or regenerated source');
+  phase.status='complete';await save();
 }
 const serviceStatus = async () => {
   try { return await fetch(`${neural}/status`, { signal: AbortSignal.timeout(5000) }).then(r => r.json()); }
@@ -340,11 +383,13 @@ try {
     contextId: live.world.canonicalContextRef?.id, includesCanonicalContext: !!live.world.canonicalContext, decoderUsed, registrations };
   if (!live.world.terrain.source.sourceLODKnown || !live.world.canonicalContext || !decoderUsed) throw new Error('Fresh refinement did not prove a decoder-backed source level and canonical context');
   if(viewerGodot)await runNativeTour(sessions.at(-1));
+  if(navigationSeconds)await runNativeNavigation(sessions.at(-1));
   report.finalService = await serviceStatus(); report.status = 'complete'; report.durationMs = Date.now() - began;
   await page.screenshot({ path: resolve(out, 'fresh-source-after-refinement.png') });
   await save(); console.log(JSON.stringify({ result: { status: report.status, durationMs: report.durationMs, widthM: width,
     sourceBytes: report.source.bytes, neuralOutput: report.neuralOutput, live: report.live, paths, errors } }));
 } catch (error) {
+  for(const phase of [report.viewer,report.navigation])if(phase?.status==='running')phase.status='failed';
   report.status = 'failed'; report.failure = String(error); report.finalService = await serviceStatus(); report.durationMs = Date.now() - began;
   await save(); throw error;
 } finally { stopViewer();await browser.close();process.removeListener('SIGINT',interrupted);process.removeListener('SIGTERM',interrupted); }
