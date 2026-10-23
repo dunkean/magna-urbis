@@ -1,9 +1,10 @@
 import type { SurfaceCandidate } from './model';
+import { SURFACE_MAX_CANDIDATES } from './limits';
 
 export const CANDIDATE_COLUMN_FORMAT = 'surface-candidate-columns' as const;
 export const CANDIDATE_COLUMN_VERSION = 1 as const;
 export const CANDIDATE_FAMILIES: readonly SurfaceCandidate['family'][] = ['tree', 'shrub', 'boulder', 'grass', 'debris'];
-const MAX_COUNT = 1_000_000, MAX_IDS_JSON_BYTES = 8 * 1024 ** 2;
+const MAX_COUNT = SURFACE_MAX_CANDIDATES, MAX_IDS_JSON_BYTES = 8 * 1024 ** 2;
 const MAX_F32_RANK = 1 - 2 ** -24;
 export interface CandidateColumns {
   format: typeof CANDIDATE_COLUMN_FORMAT; version: typeof CANDIDATE_COLUMN_VERSION; count: number;

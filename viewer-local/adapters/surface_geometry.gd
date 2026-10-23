@@ -69,6 +69,41 @@ static func sample_grid_values(grid: Dictionary, values, x: float, z: float) -> 
 	var ix := int(floor(u))
 	var iz := int(floor(v))
 	var reconstruction: String = grid.get("reconstruction","bilinear-samples")
+	if reconstruction=="cubic-bspline-controls" and values is PackedFloat32Array:
+		# Validated packed source samples promote to float64 scalars. Keep the
+		# original weight expressions and row-major addition order exactly, without
+		# allocating two weight arrays or dispatching sixteen generic finite calls.
+		var tx:=u-ix;var tz:=v-iz
+		var wx0:=pow(1.0-tx,3.0)/6.0
+		var wx1:=(3.0*tx*tx*tx-6.0*tx*tx+4.0)/6.0
+		var wx2:=(-3.0*tx*tx*tx+3.0*tx*tx+3.0*tx+1.0)/6.0
+		var wx3:=tx*tx*tx/6.0
+		var wz0:=pow(1.0-tz,3.0)/6.0
+		var wz1:=(3.0*tz*tz*tz-6.0*tz*tz+4.0)/6.0
+		var wz2:=(-3.0*tz*tz*tz+3.0*tz*tz+3.0*tz+1.0)/6.0
+		var wz3:=tz*tz*tz/6.0
+		var x0:=clampi(ix-1,0,width-1);var x1:=clampi(ix,0,width-1)
+		var x2:=clampi(ix+1,0,width-1);var x3:=clampi(ix+2,0,width-1)
+		var z0:=clampi(iz-1,0,height-1)*width;var z1:=clampi(iz,0,height-1)*width
+		var z2:=clampi(iz+1,0,height-1)*width;var z3:=clampi(iz+2,0,height-1)*width
+		var value:=0.0
+		value+=float(values[z0+x0])*wx0*wz0
+		value+=float(values[z0+x1])*wx1*wz0
+		value+=float(values[z0+x2])*wx2*wz0
+		value+=float(values[z0+x3])*wx3*wz0
+		value+=float(values[z1+x0])*wx0*wz1
+		value+=float(values[z1+x1])*wx1*wz1
+		value+=float(values[z1+x2])*wx2*wz1
+		value+=float(values[z1+x3])*wx3*wz1
+		value+=float(values[z2+x0])*wx0*wz2
+		value+=float(values[z2+x1])*wx1*wz2
+		value+=float(values[z2+x2])*wx2*wz2
+		value+=float(values[z2+x3])*wx3*wz2
+		value+=float(values[z3+x0])*wx0*wz3
+		value+=float(values[z3+x1])*wx1*wz3
+		value+=float(values[z3+x2])*wx2*wz3
+		value+=float(values[z3+x3])*wx3*wz3
+		return value if is_finite(value) else NAN
 	if reconstruction=="cubic-bspline-controls":
 		var wx := _bspline_weights(u-ix)
 		var wz := _bspline_weights(v-iz)
@@ -111,6 +146,16 @@ static func raw_height_at(world: Dictionary, x: float, z: float) -> float:
 static func height_at(world: Dictionary, x: float, z: float) -> float:
 	var layers: Array = world.get("_heightLayers",[])
 	if layers.is_empty(): layers=prepare_height_layers(world)
+	# When the finest covering source has full weight, parent reconstruction
+	# cannot contribute. Preserve the original path for seams/outside/invalid data.
+	for layer in layers:
+		if not _contains(layer.bounds,x,z): continue
+		var edge := minf(minf(x-float(layer.bounds.minX),float(layer.bounds.maxX)-x),minf(z-float(layer.bounds.minZ),float(layer.bounds.maxZ)-z))
+		var band := maxf(float(layer.terrain.spacingM)*4.0,float(world.get("_displaySpacing",0))*2.0)
+		if edge>=maxf(band,0.0001):
+			var finest := sample_height(layer.terrain,x,z)
+			if is_finite(finest): return finest
+		break
 	var value := NAN
 	# Coarse to fine: every finer source approaches its supporting parent
 	# continuously at the boundary. This changes display only, never source arrays.
@@ -220,6 +265,13 @@ static func build_water(world: Dictionary, origin: Dictionary, focus: Dictionary
 	var coverage := Image.create_from_data(width,height,false,Image.FORMAT_RF,mask.to_byte_array())
 	coverage.generate_mipmaps()
 	result.coverageImage=coverage
+	# Semantic water classes are separate from physical coverage: filtering
+	# coverage must never interpolate river/lake/ocean category IDs.
+	var classes := PackedFloat32Array(); classes.resize(width*height)
+	for i in classes.size(): classes[i]=float(fields.waterClass[i])
+	result.classImage=Image.create_from_data(width,height,false,Image.FORMAT_RF,classes.to_byte_array())
+	result.classOrigin={"x":float(grid.originX),"z":float(grid.originZ)}
+	result.classSpacingM=spacing; result.classSize=Vector2i(width,height)
 	result.coverageOrigin={"x":float(grid.originX),"z":float(grid.originZ)}
 	result.coverageSpacingM=spacing; result.coverageSize=Vector2i(width,height)
 	var bed: Dictionary = world.get("terrain",{})

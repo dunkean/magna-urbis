@@ -64,4 +64,11 @@ describe('explicit tilted strata scenario',()=>{
     const controller=new AbortController();controller.abort();expect(()=>geologyFromScenario(t,s,{signal:controller.signal})).toThrow(/abort/i);
     t.heights[0]=NaN;expect(()=>geologyFromScenario(t,s)).toThrow(/Non-finite/);
   });
+  it('snapshots the retained descriptor and rejects a contradictory canonical rock map',()=>{
+    const t=realTerrain(),g=geologyFromScenario(t,scenario()),w=compileSurfaceWorld({seed:1,terrain:t,geology:g});
+    const descriptor=structuredClone(w.geology.scenario);(g.scenario as any).originX+=1000;
+    expect(w.geology.scenario).toEqual(descriptor);
+    const bad=geologyFromScenario(t,scenario());bad.bedrock[0]=bad.bedrock[0]===1?2:1;
+    expect(()=>compileSurfaceWorld({seed:1,terrain:t,geology:bad})).toThrow(/bedrock differs/);
+  });
 });

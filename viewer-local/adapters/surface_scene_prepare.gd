@@ -2,6 +2,9 @@ class_name SurfaceScenePrepare
 extends RefCounted
 const Data = preload("res://adapters/surface_data.gd")
 const Population = preload("res://adapters/surface_population.gd")
+const Detail=preload("res://adapters/surface_geometry_detail.gd")
+const CityMap=preload("res://adapters/surface_city_map.gd")
+const Presentation=preload("res://adapters/surface_presentation.gd")
 const Roads = preload("res://adapters/surface_roads.gd")
 
 # Prepare winding, normals and material batches without touching the scene tree.
@@ -22,9 +25,22 @@ static func mesh_arrays(vertices: PackedVector3Array, normals: PackedVector3Arra
 static func prepare(request: Dictionary) -> Dictionary:
 	var started := Time.get_ticks_usec()
 	var result := Data.prepare(request.world,request.origin,request.width,request.generation,request.packet,request.skipContext,request.displaySource,request.skipHeight,request.sceneRequest)
-	result.populations=Population.prepare(request.packet,request.focus,request.width,request.viewportWidth,request.oblique,not request.get("groundOnly",false))
+	result.worldRevision=request.get("worldRevision",0)
+	for key in ["heightImageSize","displaySamples","physicalLineage","contextKey","heightKey","liveSerial","presentationMode"]:
+		if request.has(key):result[key]=request[key]
+	result.geometryDetail=Detail.prepare(request.world)
+	var population_packet:Dictionary=Detail.population_packet(request.packet,request.world)
+	result.unsupportedTreeCount=population_packet._unsupportedTreeIDs.size()
+	result.populations=Population.prepare(population_packet,request.focus,request.width,request.viewportWidth,request.oblique,not request.get("groundOnly",false))
+	if request.get("presentationMode","")=="cartographic" and not request.get("groundOnly",false):
+		var palette:Dictionary=Presentation.profile(request.packet,"cartographic").palette.get("urban",{})
+		result.cityMap=CityMap.prepare(request.packet,request.origin,request.focus,request.width,maxf(0.0,float(palette.get("massEdgeW",0.04))))
+		result.cityMapArrays=mesh_arrays(result.cityMap.vertices,result.cityMap.normals)
+		result.cityMapOutlineArrays=mesh_arrays(result.cityMap.outlineVertices,result.cityMap.outlineNormals)
 	if request.get("projectRoads",false) and not request.get("groundOnly",false): result.roadProjectors=Roads.prepareRoadProjectors(request.packet,request.world,request.origin,request.focus,request.width)
 	result.populations.buffers={}
+	var cartographic:bool=request.get("presentationMode","")=="cartographic"
+	var map_palette:Dictionary=Presentation.profile(request.packet,"cartographic").palette if cartographic else {}
 	var rock_colors: Dictionary = {}
 	for rock in request.world.geology.units: rock_colors[int(rock.id)]=rock.colorLinear
 	for family in result.populations.families:
@@ -33,11 +49,21 @@ static func prepare(request: Dictionary) -> Dictionary:
 			var rgb: Array = [0.055,0.105,0.036] if family=="tree" else [0.10,0.20,0.065]
 			if family=="boulder": rgb=rock_colors.get(int(Data.field_at(request.world,"sourceRock",candidate.x,candidate.z,true)),[0.33,0.32,0.29])
 			elif family=="debris" or family=="grass": rgb=request.world.materials[int(Data.field_at(request.world,"material",candidate.x,candidate.z,true))].colorLinear
+			if cartographic:
+				var css=str(map_palette.get("treeFill" if family=="tree" or family=="shrub" else "grass" if family=="grass" else "inkSoft",""))
+				var color=Presentation.color_linear(css,Vector3(0.2,0.3,0.2));rgb=[color.x,color.y,color.z]
+			# Only the visible support is updated; candidate inventory and IDs stay immutable.
+			if request.world.has("geometryDetail") and Data.contains(request.world.bounds,float(candidate.x),float(candidate.z)):
+				candidate["y"]=Data.height_at(request.world,float(candidate.x),float(candidate.z))
 			candidate["_linearAlbedo"]=rgb
 			result.populations.families[family][i]=candidate
 		result.populations.buffers[family]=population_buffer(result.populations.families[family],family,request.origin)
 	result.populations.trunkBuffer=population_buffer(result.populations.families.tree,"trunk",request.origin)
-	if result.has("waterGeometry"): result.waterArrays=mesh_arrays(result.waterGeometry.vertices)
+	if result.has("waterGeometry"):
+		if ResourceLoader.exists("res://adapters/surface_hydrology.gd"):
+			var hydrology=load("res://adapters/surface_hydrology.gd")
+			result.waterGeometry=hydrology.prepare(request.packet,request.world,request.origin,request.focus,request.width,result.waterGeometry)
+		result.waterArrays=mesh_arrays(result.waterGeometry.vertices)
 	if result.has("urbanGeometry"):
 		var urban: Dictionary = result.urbanGeometry
 		result.roadArrays=mesh_arrays(urban.roadVertices)

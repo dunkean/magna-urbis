@@ -1,0 +1,28 @@
+{
+  "event": "normal-frame-probe",
+  "fixture": "single-sided analytic bump height plus NormalGL gradient; production rotation helper",
+  "maximumEncodedError": 0.0,
+  "passed": true,
+  "rotationsDegrees": [
+    0,
+    90,
+    180,
+    270
+  ],
+  "evidenceKind": "new explicitly authorized GPU probe; not a reconstructed historical report",
+  "capturedUtc": "2026-10-23T15:56:30.310574+00:00",
+  "stdoutLastWriteUtc": "2026-10-23T15:55:43.369929+00:00",
+  "rootHead": "e27e8310d67380c4d4f83fe1002c493bdb45a20a",
+  "rendererMethod": "forward_plus",
+  "renderingDriver": "vulkan",
+  "rendererInitialization": "Vulkan 1.4.325 - Forward+ - Using Device #0: NVIDIA - NVIDIA GeForce RTX 4090",
+  "probePath": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\viewer-local\\diagnostics\\normal_frame_probe.gd",
+  "sourceSha256": {
+    "diagnostics/normal_frame_probe.gd": "7699113ca81154e390482838eefc0cece8b8060b83f8f314d6d043876df13b36",
+    "shaders/normal_frame.gdshaderinc": "bbbdd7af06bbc462ac145b1ec4192f51b81a97f50186576be34afcc7dde30477"
+  },
+  "stdoutPath": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-adapters-2026-10-23\\web\\out\\surface\\evidence-collect\\normal-new-forward.stdout.log",
+  "stderrPath": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-adapters-2026-10-23\\web\\out\\surface\\evidence-collect\\normal-new-forward.stderr.log",
+  "stderrEmpty": true,
+  "scope": "Analytic one-sided bump/NormalGL rotation helper at 0/90/180/270 degrees. Not a photometric or all-material normal-map-frame validation."
+}

@@ -1,0 +1,152 @@
+{
+  "cases": [
+    {
+      "imageSize": 256,
+      "importStart": [
+        -128.0,
+        -128.0
+      ],
+      "maximumFiniteError": 96.0,
+      "mismatchingQueries": 5,
+      "nonfiniteQueries": 4,
+      "regionSize": 256,
+      "regions": 1,
+      "samples": [
+        {
+          "absoluteError": null,
+          "actual": null,
+          "actualFinite": false,
+          "expectedViewerSample": 1096.0,
+          "position": [
+            0.0,
+            0.0
+          ],
+          "sourcePlaneHeight": 1096.0
+        },
+        {
+          "absoluteError": 96.0,
+          "actual": 1096.75,
+          "actualFinite": true,
+          "expectedViewerSample": 1000.75,
+          "position": [
+            -127.0,
+            -127.0
+          ],
+          "sourcePlaneHeight": 1000.75
+        },
+        {
+          "absoluteError": null,
+          "actual": null,
+          "actualFinite": false,
+          "expectedViewerSample": 1064.0,
+          "position": [
+            126.0,
+            -127.0
+          ],
+          "sourcePlaneHeight": 1064.0
+        },
+        {
+          "absoluteError": null,
+          "actual": null,
+          "actualFinite": false,
+          "expectedViewerSample": 1127.25,
+          "position": [
+            -127.0,
+            126.0
+          ],
+          "sourcePlaneHeight": 1127.25
+        },
+        {
+          "absoluteError": null,
+          "actual": null,
+          "actualFinite": false,
+          "expectedViewerSample": 1190.5,
+          "position": [
+            126.0,
+            126.0
+          ],
+          "sourcePlaneHeight": 1190.5
+        }
+      ],
+      "spacingM": 1.0
+    },
+    {
+      "imageSize": 512,
+      "importStart": [
+        -256.0,
+        -256.0
+      ],
+      "maximumFiniteError": 0.0,
+      "mismatchingQueries": 0,
+      "nonfiniteQueries": 0,
+      "regionSize": 256,
+      "regions": 4,
+      "samples": [
+        {
+          "absoluteError": 0.0,
+          "actual": 1192.0,
+          "actualFinite": true,
+          "expectedViewerSample": 1192.0,
+          "position": [
+            0.0,
+            0.0
+          ],
+          "sourcePlaneHeight": 1192.0
+        },
+        {
+          "absoluteError": 0.0,
+          "actual": 1000.75,
+          "actualFinite": true,
+          "expectedViewerSample": 1000.75,
+          "position": [
+            -255.0,
+            -255.0
+          ],
+          "sourcePlaneHeight": 1000.75
+        },
+        {
+          "absoluteError": 0.0,
+          "actual": 1128.0,
+          "actualFinite": true,
+          "expectedViewerSample": 1128.0,
+          "position": [
+            254.0,
+            -255.0
+          ],
+          "sourcePlaneHeight": 1128.0
+        },
+        {
+          "absoluteError": 0.0,
+          "actual": 1255.25,
+          "actualFinite": true,
+          "expectedViewerSample": 1255.25,
+          "position": [
+            -255.0,
+            254.0
+          ],
+          "sourcePlaneHeight": 1255.25
+        },
+        {
+          "absoluteError": 0.0,
+          "actual": 1382.5,
+          "actualFinite": true,
+          "expectedViewerSample": 1382.5,
+          "position": [
+            254.0,
+            254.0
+          ],
+          "sourcePlaneHeight": 1382.5
+        }
+      ],
+      "spacingM": 1.0
+    }
+  ],
+  "claim": "256 half-region start is invalid; 512 region-aligned control must exactly match source ramp",
+  "failures": [],
+  "godot": "4.7.2-stable (official)",
+  "headless": true,
+  "passed": true,
+  "probe": "actual pinned Terrain3DData.import_images/get_height, CPU native storage",
+  "renderer": "forward_plus",
+  "terrain3d": "1.0.2"
+}

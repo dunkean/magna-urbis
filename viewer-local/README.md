@@ -1,9 +1,11 @@
 # Prévisualisation locale SurfaceWorld
 
-Godot est un consommateur optionnel des données Magna Urbis. Le générateur de
-ville, le mapper, les palettes et les sorties finales SVG/Canvas restent les
-références. Ce projet ne génère aucun relief et ne modifie ni les hauteurs source,
-ni les volumes urbains natifs, ni leurs identifiants de matériaux.
+Godot est un moteur de rendu candidat pour les cartes et plans JDR 2D/3D de
+Magna Urbis. Les contrats de données restent indépendants du moteur ; les palettes
+existantes, les vues orthographiques et les exports de cartes guident son évaluation.
+Les sorties SVG/Canvas conservent actuellement les étiquettes et la composition
+finale non reprises ici. Ce projet ne génère aucun relief et ne modifie ni les hauteurs
+source, ni les volumes urbains natifs, ni leurs identifiants de matériaux.
 
 ## Installer et lancer
 
@@ -39,6 +41,12 @@ locales : aucun téléchargement n'a lieu pendant le rendu hors ligne. Le catalo
 actuel contient quinze jeux PBR CC0 ; `recipeIds` est prioritaire sur le repli par
 famille. Sans catalogue, le matériau analytique de repli est explicite. Une carte
 de hauteur absente devient un relief de texture plat, avec avertissement.
+`SurfaceMaterialLibrary.asset_version` et `asset_digest` identifient les assets
+réellement chargés, leurs affectations, tailles physiques, amplitudes et SHA-256
+déclarés et constatés. Les chemins absolus et l’ordre des clés ne participent pas
+au digest. `loaded_asset_bindings` expose les couches et leurs moyennes linéaires.
+Cette provenance de rendu reste distincte de `World.versions.materialLibrary`,
+qui décrit les recettes du modèle canonique.
 
 ## Vues et styles de carte
 
@@ -91,6 +99,7 @@ Contrôles indépendants, avec le même exécutable Godot et le répertoire `vie
 & $env:GODOT --path viewer-local --rendering-method forward_plus --script diagnostics/normal_frame_probe.gd
 & $env:GODOT --path viewer-local --rendering-method forward_plus --script diagnostics/cartographic_decal_probe.gd -- C:/data/decal-probe
 & $env:GODOT --headless --path viewer-local --script diagnostics/presentation_probe.gd -- surface/presentation/palettes.json
+& $env:GODOT --headless --path viewer-local --script diagnostics/asset_provenance_probe.gd
 ```
 
 `material_mean_probe` emploie le sampler de production et trois empreintes par
@@ -142,7 +151,7 @@ certifiée. Un zoom à 1 cm/px n'ajoute aucune information à un DEM grossier.
 L'eau conserve les classes/niveaux fournis ; les rives dépendent de leur support.
 Les volumes urbains natifs sont conservés ; les proxies cartographiques restent
 identifiés comme tels et sont masqués par défaut. Les routes projetées ne terrassent
-pas le terrain. Le rendu optionnel Godot ne remplace pas les styles cartographiques
+pas le terrain. Le rendu Godot actuel ne remplace pas encore les styles cartographiques
 finis de Magna Urbis.
 
 Références : [Terrain3D 1.0.2](https://github.com/TokisanGames/Terrain3D/releases/tag/v1.0.2-stable),

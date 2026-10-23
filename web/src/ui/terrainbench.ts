@@ -39,6 +39,8 @@ import type { ForestRaster } from '../../../rust/bridge/terrainMaterialRaster';
 import ForestWorker from './forestWorker?worker&inline';
 import type { ForestReply, ForestRequest } from './forestWorker';
 import { pinsFromString, pinsToString, viewFromString, viewToString } from './share';
+import { copySurfaceGeologyQuery } from '../surface/adapters/geology';
+import { assertSurfaceLiveFrame } from '../surface/adapters/frame';
 import { clampView, fitView, panBy, screenToWorld, worldToScreen, zoomAt, type View } from '../render/view';
 import { COAST_DIRECTIONS, ISLAND_MODES, type IslandMode, TERRAIN_SOURCES, NEURAL_RELIEFS, NEURAL_CLIMATES, NEURAL_EXTENT, DEFAULT_NEURAL_SERVER, DEFAULT_PYTHON_SERVER, neuralServerForSource, isNeuralSource, type TerrainSource, type NeuralClimate } from '../../../rust/bridge/terrain';
 import { captureDecorData, downloadBytes } from './decorCapture';
@@ -588,6 +590,7 @@ function forestRaster(region = terrain): ForestRaster | undefined {
 /** Keep the applied terrain recipe while recording its displayed style and forest controls. */
 function withForestQuery(d: Decor): Decor {
   const params = new URLSearchParams(d.meta.query);
+  if (query.has('surface_geology') || query.has('surface_geology_descriptor')) copySurfaceGeologyQuery(params, query);
   params.set('style', baseStyle);
   params.set('forest', forest.enabled ? '1' : '0');
   for (const key of ['forestDensity', 'forestClearings'] as const) {
@@ -1006,6 +1009,7 @@ function status(message: string, error = false): void {
 }
 function shareQuery(): string {
   const params = new URLSearchParams({ brush_density: String(fantasyOptions.density), brush_size: String(fantasyOptions.size), brush_spacing: String(fantasyOptions.spacing), engine: 'rust', v: '4', seed: settings.seed, width: String(settings.width), motif: String(settings.motifSize), relief: settings.relief, erosion: String(settings.erosion), style: baseStyle, auto: input('auto').checked ? '1' : '0' });
+  copySurfaceGeologyQuery(params, query.has('surface_geology') || query.has('surface_geology_descriptor') ? query : retainedDecor?.meta.query ?? query);
   if (!gpu) params.set('render', 'svg');
   params.set('brush_landuse', fantasyOptions.followLanduse ? '1' : '0');
   for (const [key, value] of Object.entries(settings.hydrology ?? DEFAULT_HYDROLOGY)) params.set(`hydro_${key}`, typeof value === 'boolean' ? value ? '1' : '0' : String(value));
@@ -1939,7 +1943,7 @@ function pipelineCapture(): Decor {
   }
   let d = retainedDecor ? withForestQuery(retainedDecor) : captureDecorData(terrain, settings, { settlements: [], warnings: [], requested: 0, usableKm2: 0, ms: 0 }, undefined, null, { query: shareQuery() });
   if (!retainedDecor) d = { ...d, meta: { ...d.meta, regeneration: { query: shareQuery(), crops: [] } } };
-  d = { ...d, meta: { ...d.meta, settlements: [], roads: null, roadConfig: null, pipeline: { stage: 'terrain', parent: retainedDecor?.meta.id } } };
+  d = { ...d, meta: { ...d.meta, settlements: [], roads: null, roadConfig: null, pipeline: { stage: 'terrain', parent: retainedDecor?.meta.id, crop:retainedDecor?.meta.pipeline?.crop } } };
   if (el<HTMLSelectElement>('transferExtent').value === 'crop') {
     d = cropTerrain(d, Number(input('transferX').value), Number(input('transferY').value), Number(input('transferWidth').value));
     const crop = d.meta.pipeline!.crop!;
@@ -2021,6 +2025,7 @@ if (import.meta.env.DEV) {
   let liveHandler: Promise<ReturnType<typeof import('./surfaceLiveSession').createSurfaceLiveBinarySession>> | undefined;
   const disconnect = installSurfaceLive(async (region, signal) => {
     if (!terrain || overviewPending || generationError) throw new Error('Attendez un terrain conservé avant la connexion du visualiseur.');
+    if (el<HTMLSelectElement>('transferExtent').value === 'crop') throw new Error('Le mode live demande le monde source complet. La portion sélectionnée reste disponible pour un export surface hors ligne.');
     const scene = pipelineStage === 'settlements' ? settlements.urban.buildingState.scene : undefined;
     const revision = liveRevision();
     if (!liveHandler || appliedLiveRevision?.sourceEpoch !== revision.sourceEpoch || appliedLiveRevision?.sceneEpoch !== revision.sceneEpoch) {
@@ -2031,6 +2036,7 @@ if (import.meta.env.DEV) {
       const decor = pipelineStage === 'settlements' ? settlements.captureData()
         : retainedDecor ? withForestQuery(retainedDecor)
         : captureDecorData(retained, applied, { settlements: [], warnings: [], requested: 0, usableKm2: 0, ms: 0 }, undefined, null, { query: shareQuery() });
+      assertSurfaceLiveFrame(decor);
       if (decor.raster.width !== retained.width) throw new Error('Le contexte conservé ne correspond pas à la largeur du fournisseur de relief.');
       if (pipelineStage === 'settlements' && decor.meta.pipeline?.urban?.buildingState?.cold && !scene) throw new Error('Chargez les bâtiments conservés avant leur rendu local.');
       appliedLiveRevision = revision;

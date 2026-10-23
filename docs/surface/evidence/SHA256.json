@@ -1,0 +1,19 @@
+{
+  "format": "surface-evidence-report-checksums",
+  "version": 1,
+  "reports": [
+    {
+      "report": "native-city-6683-transport.json",
+      "originalPath": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-adapters-2026-10-23\\web\\out\\surface\\real-native-6683-stress.json",
+      "originalCopySha256": "6e03c806075abd34ff152bd7a2512daca43572ce9dcfbd535071fc2e4f3e25fc",
+      "lfNormalizedSha256": "6e03c806075abd34ff152bd7a2512daca43572ce9dcfbd535071fc2e4f3e25fc"
+    },
+    {
+      "report": "cpu-packed-sampling.json",
+      "originalPath": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-adapters-2026-10-23\\web\\out\\surface\\cpu-packed-perf\\report.json",
+      "originalCopySha256": "9f180784e0ec7eac045cbfaff9142d779c0ac7f569685bb92c8fbbe34b87f1be",
+      "lfNormalizedSha256": "9f180784e0ec7eac045cbfaff9142d779c0ac7f569685bb92c8fbbe34b87f1be"
+    }
+  ],
+  "normalization": "LF-normalized UTF-8 is the stable checkout-independent report checksum; originalCopySha256 identifies the original copied bytes."
+}

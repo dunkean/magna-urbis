@@ -21,4 +21,12 @@ describe('binary surface packet boundary', () => {
     p.terrainParents = [{ terrain: { ...terrain, source: { ...terrain.source, id: 'other' } }, canonicalContextId: p.world.canonicalContextRef!.id }];
     expect(() => validateSurfacePacket(p)).toThrow(/parent lineage/);
   });
+  it('rejects detached or malformed source-bound geometry detail without copying arrays',()=>{
+    const p=packet(),d=p.world.geometryDetail!;
+    validateSurfacePacket(p);expect(p.world.geometryDetail?.normalXYZ).toBe(d.normalXYZ);
+    const bad:any=structuredClone(p);bad.world.geometryDetail.normalXYZ=new Float32Array(16);
+    expect(()=>validateSurfacePacket(bad)).toThrow(/normalXYZ/);
+    bad.world.geometryDetail=structuredClone(d);bad.world.geometryDetail.surfaceConditioning.canonicalEnvironmentVersion='stale';
+    expect(()=>validateSurfacePacket(bad)).toThrow(/conditioning/);
+  });
 });

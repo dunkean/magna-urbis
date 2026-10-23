@@ -3,7 +3,7 @@ import type { SurfaceRegistrationBinding } from './registrationBinding';
 
 export const SURFACE_WORKER_PROTOCOL = 1 as const;
 export interface SurfaceWorkerEpochs { sourceEpoch: string; sceneEpoch: string }
-export interface SurfaceWorkerRegion { x: number; y: number; extent: number; resolution: number; knownContextId?: string; knownSceneContextId?: string }
+export interface SurfaceWorkerRegion { x: number; y: number; extent: number; resolution: number; knownContextId?: string; knownSceneContextId?: string; preview?: boolean }
 export interface SurfaceWorkerInitialization<Payload = unknown> extends SurfaceWorkerEpochs { payload: Payload }
 export interface PreparedSurfaceWorkerSource {
   input: SurfaceCompileInput; parentTerrain?: TerrainGrid; providerId: string; urban?: unknown; urbanId?: string; sourceMetadata?: Record<string, unknown>;
@@ -40,7 +40,7 @@ export function assertSurfaceWorkerRouting(message: SurfaceWorkerRequest): void 
 
 export function surfaceWorkerBounds(region: SurfaceWorkerRegion): Bounds {
   if (!region || ![region.x, region.y, region.extent, region.resolution].every(Number.isFinite)
-    || region.extent <= 0 || !Number.isInteger(region.resolution) || region.resolution < 4 || region.resolution > 1024
+    || region.extent <= 0 || !Number.isInteger(region.resolution) || region.resolution < 4 || region.resolution > 1024 || region.preview!==undefined&&typeof region.preview!=='boolean'
     || ['knownContextId', 'knownSceneContextId'].some(key => { const v = region[key as keyof SurfaceWorkerRegion]; return v !== undefined && (typeof v !== 'string' || v.length > 256); })) throw new Error('Invalid live surface region');
   return { minX: region.x, minZ: region.y, maxX: region.x + region.extent, maxZ: region.y + region.extent };
 }

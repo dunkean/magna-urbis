@@ -1,4 +1,4 @@
-import { fingerprint } from './compiler';
+import { fingerprint } from './hash';
 import { sampleTerrainHeight } from './heightSampling';
 import { DEFAULT_ROCK_UNITS } from './materials';
 import { assertNotAborted, type GeologyInput, type RockUnit, type TerrainGrid } from './model';

@@ -1,0 +1,18 @@
+{
+  "counterfactualFingerprintRejection": "live canonical height content/shape differs from the loaded map",
+  "failures": [],
+  "loaded": {
+    "computeMs": 670.71,
+    "fingerprint": "rf1-019b8aa8fc4b7a3a38e7adce2163d4ea",
+    "format": "surface-loaded-live-binding",
+    "initialUrbanId": "0833d2f47b08b76a01d8ee54891936b8",
+    "n": 512,
+    "seed": "surface-native-e2e-40km",
+    "sourceId": "mountains-surface-native-e2e-40km",
+    "version": 1,
+    "widthM": 40000.0
+  },
+  "realLiveHeaderRejection": "",
+  "scope": "CPU-only native from_packet on original real512 source; exact loaded heights recomputed, no header trusted",
+  "typeScriptFingerprint": "rf1-019b8aa8fc4b7a3a38e7adce2163d4ea"
+}

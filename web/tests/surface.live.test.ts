@@ -42,6 +42,7 @@ describe('Surface live transport', () => {
     const base = await start();
     expect((await post(`${base}/surface-live/terrain`, { region })).status).toBe(503);
     expect((await post(`${base}/surface-live/terrain`, { region: { ...region, resolution: 3 } })).status).toBe(400);
+    expect((await post(`${base}/surface-live/terrain`, { region: { ...region, preview: 'yes' } })).status).toBe(400);
     expect((await fetch(`${base}/surface-live/sessions`).then(r => r.json())).sessions).toEqual([]);
   });
   it('routes source payload unchanged to the requesting viewer and rejects other sessions', async () => {
@@ -54,6 +55,13 @@ describe('Surface live transport', () => {
     expect((await post(route, { sessionId: browser.session, packet })).status).toBe(200);
     expect(await (await response).json()).toEqual(packet);
     expect((await post(route, { sessionId: browser.session, packet })).status).toBe(410);
+  });
+  it('preserves explicit interactive quality requests rather than claiming settled resolution',async()=>{
+    const base=await start(),browser=await connect(base),preview={...region,resolution:128,preview:true};
+    const pending=post(`${base}/surface-live/terrain`,{region:preview,sessionId:browser.session}),request=await browser.event();
+    expect(request.data.region).toEqual(preview);
+    await post(`${base}/surface-live/reply/${request.data.id}`,{sessionId:browser.session,packet:{source:{request:request.data.region}}});
+    expect(await(await pending).json()).toEqual({source:{request:preview}});
   });
   it('expires pending work and explicitly cancels browser generation', async () => {
     const base = await start(100), browser = await connect(base);
@@ -72,7 +80,40 @@ describe('Surface live transport', () => {
       'Content-Type': 'application/octet-stream', 'X-Surface-Session': browser.session }, body: binary.buffer as ArrayBuffer })).status).toBe(200);
     const result = await response;
     expect(result.headers.get('content-type')).toBe('application/octet-stream');
+    expect(Number(result.headers.get('content-length'))).toBe(binary.byteLength);
+    expect(result.headers.get('transfer-encoding')).toBeNull();
     const copy = decodeSurfaceBinary<{ world: { samples: Float32Array } }>(new Uint8Array(await result.arrayBuffer()));
     expect(copy.world.samples).toEqual(samples);
+  });
+  it('assembles only contiguous session-owned chunks and sends one fixed-length native response',async()=>{
+    const base=await start(),browser=await connect(base),pending=post(`${base}/surface-live/terrain`,{region});
+    const request=await browser.event(),url=`${base}/surface-live/reply/${request.data.id}`;
+    const binary=encodeSurfaceBinary({samples:new Float32Array(5*1024*1024).fill(1.25)});
+    const part=(offset:number,total:number,data:Uint8Array,session=browser.session)=>fetch(url,{method:'POST',headers:{'Content-Type':'application/octet-stream','X-Surface-Session':session,'X-Surface-Offset':String(offset),'X-Surface-Total':String(total)},body:data as Uint8Array<ArrayBuffer>});
+    expect((await part(4,binary.length,binary.subarray(0,4))).status).toBe(409);
+    expect((await part(0,binary.length,binary.subarray(0,16),'foreign')).status).toBe(409);
+    const chunk=4*1024*1024;
+    expect(await (await part(0,binary.length,binary.subarray(0,chunk))).json()).toEqual({accepted:false,received:chunk,total:binary.length});
+    expect((await part(0,binary.length,binary.subarray(0,16))).status).toBe(409);
+    expect((await part(chunk,binary.length+1,binary.subarray(chunk,chunk+16))).status).toBe(409);
+    for(let at=chunk;at<binary.length;at+=chunk){const end=Math.min(at+chunk,binary.length);const ack=await(await part(at,binary.length,binary.subarray(at,end))).json();expect(ack.accepted).toBe(end===binary.length);}
+    const result=await pending;expect(result.headers.get('content-length')).toBe(String(binary.length));expect(result.headers.get('transfer-encoding')).toBeNull();
+    const output=new Uint8Array(await result.arrayBuffer());expect(Buffer.from(output.buffer,output.byteOffset,output.byteLength).equals(Buffer.from(binary.buffer,binary.byteOffset,binary.byteLength))).toBe(true);
+    expect((await part(0,binary.length,binary.subarray(0,16))).status).toBe(410);
+  });
+  it('releases a partial upload when its native viewer cancels',async()=>{
+    const base=await start(),browser=await connect(base),controller=new AbortController();
+    const pending=fetch(`${base}/surface-live/terrain`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({region}),signal:controller.signal});
+    const aborted=expect(pending).rejects.toThrow(/abort/i),request=await browser.event();
+    const url=`${base}/surface-live/reply/${request.data.id}`,binary=encodeSurfaceBinary({height:new Float32Array(20)});
+    const chunk=(offset:number)=>fetch(url,{method:'POST',headers:{'Content-Type':'application/octet-stream','X-Surface-Session':browser.session,'X-Surface-Offset':String(offset),'X-Surface-Total':String(binary.length)},body:binary.subarray(offset,offset+16) as Uint8Array<ArrayBuffer>});
+    expect((await chunk(0)).status).toBe(200);controller.abort();await aborted;
+    expect((await browser.event()).name).toBe('cancel');expect((await chunk(16)).status).toBe(410);
+  });
+  it('fails an invalid completed packet immediately instead of retaining its upload until timeout',async()=>{
+    const base=await start(),browser=await connect(base),pending=post(`${base}/surface-live/terrain`,{region});const request=await browser.event();
+    const url=`${base}/surface-live/reply/${request.data.id}`,send=()=>fetch(url,{method:'POST',headers:{'Content-Type':'application/octet-stream','X-Surface-Session':browser.session,'X-Surface-Offset':'0','X-Surface-Total':'16'},body:new Uint8Array(16)});
+    expect((await send()).status).toBe(400);expect((await pending).status).toBe(422);
+    expect((await browser.event()).name).toBe('cancel');expect((await send()).status).toBe(410);
   });
 });

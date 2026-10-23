@@ -5,6 +5,7 @@ extends RefCounted
 # source geometry, material IDs, environment fields, source palette or layout.
 static var _catalogues: Dictionary = {}
 static var _materials: Dictionary = {}
+static var _road_textures:Dictionary={}
 
 static func overrides(packet: Dictionary, style_name := "", catalogue_path := "") -> Dictionary:
 	var result := packet.duplicate(false)
@@ -13,9 +14,12 @@ static func overrides(packet: Dictionary, style_name := "", catalogue_path := ""
 	return result
 
 static func profile(packet: Dictionary, mode := "") -> Dictionary:
-	var source: Dictionary = packet.get("source",{})
-	var presentation: Dictionary = packet.get("presentation",source.get("presentation",{}))
-	var palette: Dictionary = presentation.get("palette",{})
+	var source_value=packet.get("source")
+	var source:Dictionary=source_value if source_value is Dictionary else {}
+	var presentation_value=packet.get("presentation",source.get("presentation"))
+	var presentation:Dictionary=presentation_value if presentation_value is Dictionary else {}
+	var palette_value=presentation.get("palette")
+	var palette:Dictionary=palette_value if palette_value is Dictionary else {}
 	var selected: String = packet.get("_presentation_style",packet.get("_style",""))
 	var catalogue_path: String = packet.get("_presentation_catalogue",packet.get("_styleCatalogue",""))
 	var terrain_style: Dictionary = {}
@@ -174,5 +178,38 @@ static func water_material(packet: Dictionary, mode: String, kind := "lake") -> 
 	var color := Vector3(0.018,0.095,0.125) if kind=="sea" else Vector3(0.028,0.10,0.115)
 	if resolved.cartographic: color=_token(resolved.palette,"seaFill" if kind=="sea" else "riverFill" if kind=="river" else "lakeFill",color)
 	material.set_shader_parameter("linear_tint",color)
+	for entry in [["river","riverFill",Vector3(0.035,0.17,0.20)],["lake","lakeFill",Vector3(0.028,0.10,0.115)],["sea","seaFill",Vector3(0.018,0.095,0.125)]]:
+		var tint:Vector3=_token(resolved.palette,entry[1],entry[2]) if resolved.cartographic else entry[2]
+		material.set_shader_parameter("linear_"+str(entry[0])+"_tint",tint)
 	material.set_shader_parameter("presentation_mode",1 if resolved.cartographic else 0)
 	return material
+
+static func city_map_material(packet:Dictionary,outline:=false)->Material:
+	var palette:Dictionary=profile(packet,"cartographic").palette.get("urban",{})
+	var color=_token(palette,"massEdge" if outline else "mass",Vector3(0.09,0.07,0.05) if outline else Vector3(0.35,0.26,0.17))
+	return _flat_shader_material(color,"source-city-map-outline" if outline else "source-city-map-fill")
+
+static func canopy_trunk_color(packet:Dictionary,mode:String)->Vector3:
+	var resolved=profile(packet,mode)
+	return _token(resolved.palette,"treeInk",Vector3(0.055,0.105,0.036)) if resolved.cartographic else Vector3(0.16,0.105,0.067)
+
+# Decal textures are authored sRGB pixels. White modulation avoids an implicit
+# second colour conversion; the border stays inside the declared source width.
+static func road_decal_style(packet:Dictionary,mode:String,road:Dictionary={})->Dictionary:
+	var resolved=profile(packet,mode)
+	if not resolved.cartographic:return {"cartographic":false}
+	var palette:Dictionary=resolved.palette
+	var road_class=str(road.get("class","")).to_lower()
+	var rural=road_class in ["track","path","way","headland","farm-track","rural-track"] or road.get("rural",false)==true
+	var fill_css=str(palette.get("trackFill" if rural else "roadFill","#bbbbbb"))
+	var edge_css=str(palette.get("roadEdge",fill_css))
+	var key=JSON.stringify([fill_css,edge_css,"border-inside-1of8-v1"])
+	if not _road_textures.has(key):
+		var image=Image.create(128,8,false,Image.FORMAT_RGBA8)
+		var fill=Color.from_string(fill_css,Color(0.73,0.73,0.73))
+		var edge=Color.from_string(edge_css,fill)
+		for y in 8:
+			for x in 128:image.set_pixel(x,y,edge if x<16 or x>=112 else fill)
+		if _road_textures.size()>=128:_road_textures.erase(_road_textures.keys()[0])
+		_road_textures[key]=ImageTexture.create_from_image(image)
+	return {"cartographic":true,"texture":_road_textures[key],"modulate":Color.WHITE,"albedoMix":1.0,"fillCSS":fill_css,"edgeCSS":edge_css,"borderFraction":0.125,"rural":rural}

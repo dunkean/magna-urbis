@@ -1,6 +1,6 @@
 /** Renderer-independent physical surface contract. Right-handed frame: +X east, +Y up, +Z south (map +Y), all metres. */
 export const SURFACE_SCHEMA_VERSION = 1 as const;
-export const SURFACE_COMPILER_VERSION = 'surface-1.3.0';
+export const SURFACE_COMPILER_VERSION = 'surface-1.4.0';
 export const SURFACE_POPULATION_VERSION = 'population-1.2.0';
 export interface Bounds { minX: number; minZ: number; maxX: number; maxZ: number }
 export interface SourceIdentity {
@@ -27,6 +27,7 @@ export interface RockUnit {
   strikeRadians: number;
 }
 export interface GeologyInput {
+  scenario?: import('./geologyScenario').TiltedStrataScenario;
   version: string; provenance: string; units: RockUnit[];
   /** Explicit ids at canonical terrain grid samples. */
   bedrock: Uint16Array;
@@ -137,6 +138,7 @@ export interface SurfaceWorld {
   schemaVersion: typeof SURFACE_SCHEMA_VERSION; compilerVersion: string; id: string; seed: number;
   units: 'metres'; crs: 'local-xz'; bounds: Bounds; versions: SurfaceVersions;
   terrain: TerrainGrid; geology: GeologyInput; climate: ClimateInput; state: SurfaceState;
+  geometryDetail?: import('./geometryDetail').SurfaceGeometryDetail;
   fields: SurfaceFields; materials: MaterialRecipe[]; topographicRadiiM: number[];
   /** Present on geometry-only refinements. May be omitted from runtime transfer with an explicit reference. */
   canonicalContext?: CanonicalSurfaceContext;
@@ -144,6 +146,7 @@ export interface SurfaceWorld {
   diagnostics: { warnings: string[]; assumptions: string[]; hydrologyBoundary: string; estimatedBytes: number };
 }
 export interface SurfaceSample {
+  localGeometry?: ReturnType<typeof import('./geometryDetail').sampleSurfaceGeometryDetail>;
   x: number; z: number; heightM: number; slope: number; aspect: number; curvature: number;
   landform: Landform; bedrock: RockUnit; sourceRock: RockUnit; depositOrigin: DepositOrigin;
   depositDepthM: number; sand: number; silt: number; clay: number; organic: number;

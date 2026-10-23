@@ -2,6 +2,7 @@ class_name SurfaceData
 extends RefCounted
 const Geometry = preload("res://adapters/surface_geometry.gd")
 const UrbanReader = preload("res://adapters/urban_reader.gd")
+const Detail=preload("res://adapters/surface_geometry_detail.gd")
 const MAX_PACKET_BYTES := 512*1024*1024
 
 static func read_json(path: String) -> Dictionary:
@@ -196,6 +197,9 @@ static func validate_world(world: Dictionary) -> bool:
 	elif n>1048576:
 		push_error("Context sample budget exceeded (1M); use a coarser canonical context")
 		return false
+	if world.has("geometryDetail") and not Detail.validate(world.geometryDetail,world):
+		push_error("Source geometry detail validation failed")
+		return false
 	world["_validated"]=true
 	return true
 
@@ -284,8 +288,10 @@ static func field_at(world: Dictionary, name: String, x: float, z: float, catego
 static func prepare(world: Dictionary, origin: Dictionary, view_width: float, serial := 0, packet: Dictionary = {}, skip_context := false, display_source: Dictionary = {}, skip_height := false, scene_request: Dictionary = {}) -> Dictionary:
 	var start := Time.get_ticks_usec()
 	var terrain: Dictionary = world.terrain
-	var spacing := display_spacing(terrain,view_width)
+	var spacing := display_spacing(terrain,view_width,int(scene_request.get("displaySamples",256)))
 	if display_source.is_empty(): display_source=build_display_source(world,spacing)
+	# Terrain3D 1.0.2 import_images floors to 256-sample region origins.
+	# The symmetric start must therefore remain a multiple of 256 samples.
 	var size := 512
 	while size*spacing<view_width*2.0 and size<2048: size*=2
 	# Region addresses stay local and exactly aligned to Terrain3D's region grid.
@@ -297,8 +303,12 @@ static func prepare(world: Dictionary, origin: Dictionary, view_width: float, se
 		for x in size:
 			var wx: float = origin.x+local_start.x+x*spacing
 			var wz: float = origin.z+local_start.z+z*spacing
-			height.set_pixel(x,z,Color(height_at(display_source,wx,wz)-origin.y,0,0,1))
-			if not covered(world,wx,wz):
+			var has_source:=covered(world,wx,wz)
+			# Off-domain filler follows the same clamped current-grid fallback as
+			# height_at, without scanning parent layers that cannot cover this point.
+			var altitude:=height_at(display_source,wx,wz) if has_source else Geometry.sample_height(display_source.terrain,wx,wz)
+			height.set_pixel(x,z,Color(altitude-origin.y,0,0,1))
+			if not has_source:
 				control.set_pixel(x,z,Color(hole_bits,0,0,1))
 	# Native context resolution remains independent of the representation mesh.
 	var canonical := context(world)
@@ -347,9 +357,13 @@ static func _append_scene(result: Dictionary, world: Dictionary, packet: Diction
 	if request.get("buildWater",false): result.waterGeometry=Geometry.build_water(geometry_world,origin,request.focus,view_width)
 	if request.get("buildUrban",false): result.urbanGeometry=Geometry.build_urban(packet,geometry_world,origin,request.focus,view_width)
 
-static func display_spacing(terrain: Dictionary, view_width: float) -> float:
+static func display_spacing(terrain: Dictionary, view_width: float, sampleBudget: int = 256) -> float:
 	var base := float(terrain.spacingM)
-	var exponent := floorf(log(clampf(view_width/256.0,0.25,100.0)/base)/log(2.0))
+	var budget:=clampi(sampleBudget,1,256)
+	# Pinned Terrain3D 1.0.2 clamps its actual vertex spacing to [0.25,100].
+	# Larger representation values would silently rescale imported source data.
+	var target:=clampf(view_width/float(budget),0.25,100.0)
+	var exponent := floorf(log(target/base)/log(2.0))
 	var spacing := base*pow(2.0,exponent)
 	if spacing<0.25: spacing*=2.0
 	return spacing
