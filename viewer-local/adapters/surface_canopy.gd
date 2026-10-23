@@ -17,8 +17,16 @@ static func radius_class(radius: float) -> int:
 		if absf(radius-float(RADII[i]))<absf(radius-float(RADII[best])): best=i
 	return best
 
-static func can_select(x: float,z: float,radius: float,bounds: Dictionary) -> bool:
-	return minf(minf(x-float(bounds.minX),float(bounds.maxX)-x),minf(z-float(bounds.minZ),float(bounds.maxZ)-z))>=HALO_M+radius
+static func transition_widths(bounds:Dictionary)->Dictionary:
+	var extent=minf(float(bounds.maxX)-float(bounds.minX),float(bounds.maxZ)-float(bounds.minZ))
+	return {"paint":maxf(0.1,minf(48.0,extent*.12)),"geometry":maxf(0.1,minf(64.0,extent*.15))}
+
+static func can_select(x: float,z: float,radius: float,bounds: Dictionary,rank:float=0.0) -> bool:
+	var widths=transition_widths(bounds)
+	var edge=minf(minf(x-float(bounds.minX),float(bounds.maxX)-x),minf(z-float(bounds.minZ),float(bounds.maxZ)-z))-radius-float(widths.paint)
+	# Geometry exists only where the exact painted atlas is fully authoritative.
+	# Stable rank thins an inner transition; counts contain these exact selected IDs.
+	return edge>0.0 and rank<smoothstep(0.0,float(widths.geometry),edge)
 
 static func instance_weight(bin: int,footprint: float) -> float:
 	return smoothstep(1.25,3.0,2.0*float(RADII[bin])/maxf(footprint,0.00001))
@@ -56,7 +64,7 @@ static func prepare(packet: Dictionary,selected: Dictionary) -> Dictionary:
 		if unsupported.has(id):
 			unsupported_trees+=1
 			continue
-		var is_selected := selected.has(id) and can_select(x,z,radius,bounds)
+		var is_selected := selected.has(id) and can_select(x,z,radius,bounds,float(columns.rank[i]) if not columns.is_empty() else float(candidates[i].get("rank",0.0)))
 		var bin := radius_class(radius)
 		trees+=1
 		if is_selected: selected_trees+=1
@@ -70,12 +78,17 @@ static func prepare(packet: Dictionary,selected: Dictionary) -> Dictionary:
 	var coverage_image := Image.create_from_data(width,height,false,Image.FORMAT_RF,coverage.to_byte_array())
 	coverage_image.generate_mipmaps() # Linear coverage, not sRGB and not overlap counts.
 	var counts_image := Image.create_from_data(width,height,false,Image.FORMAT_RGBAF,counts.to_byte_array())
-	var atlas := {"available":true,"version":"canopy-r1","coverageImage":coverage_image,"countsImage":counts_image,
-		"origin":origin,"spacingM":spacing,"gridSize":Vector2(width,height),"bounds":bounds,"fallbackBlendM":HALO_M,
+	var atlas := {"available":true,"version":"canopy-r2-meso","coverageImage":coverage_image,"countsImage":counts_image,
+		"origin":origin,"spacingM":spacing,"gridSize":Vector2(width,height),"bounds":bounds,"fallbackBlendM":transition_widths(bounds).paint,"geometryBlendM":transition_widths(bounds).geometry,
 		"linearAlbedo":LINEAR_ALBEDO,"treeCount":trees,"selectedTreeCount":selected_trees,"unsupportedTreeCount":unsupported_trees,
-		"scope":"Supported visual subset of provided candidate query; analytic mean treeCover outside its C1 halo"}
+		"scope":"Exact provided crown inventory inside its page; renderer-only calibrated approximate canopy outside, never candidate IDs"}
 	_cached_packet=packet
 	_cached_selection=selected.duplicate()
 	_cached_unsupported=unsupported.duplicate()
 	_cached_atlas=atlas
 	return atlas
+
+# Stable renderer phase depends only on canonical seed and absolute double origin.
+# Tile IDs, source versions and levels never enter the approximate crown layout.
+static func meso_parameters(world:Dictionary,origin:Dictionary)->Dictionary:
+	return {"canopy_meso_phase":Vector4(fposmod(float(origin.x)/16.0,1.0),fposmod(float(origin.z)/16.0,1.0),posmod(floori(float(origin.x)/16.0),1048576),posmod(floori(float(origin.z)/16.0),1048576)),"canopy_meso_seed":int(str(world.get("seed",0)).hash()&0x7fffffff)}

@@ -4,6 +4,14 @@
 #include "res://shaders/geometry_detail.gdshaderinc"
 // SurfaceWorld data. Values are linear; categorical texture uses nearest filtering.
 uniform sampler2D surface_ids : filter_nearest, repeat_disable;
+uniform bool surface_layers_explicit = false;
+uniform bool show_ground = true;
+uniform bool show_low_cover = true;
+uniform bool show_trees = true;
+uniform sampler2D low_cover_ids : filter_nearest, repeat_disable;
+// Premultiplied linear RGB, coverage alpha. Mips must preserve that convention.
+uniform sampler2D low_cover_average : filter_linear_mipmap, repeat_disable;
+uniform sampler2D low_cover_state : filter_linear_mipmap, repeat_disable;
 uniform sampler2D surface_state : filter_linear_mipmap, repeat_disable;
 uniform sampler2D surface_bedrock : filter_nearest, repeat_disable;
 uniform sampler2D surface_average : filter_linear_mipmap, repeat_disable;

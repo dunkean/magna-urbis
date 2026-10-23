@@ -7,6 +7,7 @@ const Geometry = preload("res://adapters/surface_geometry.gd")
 const ScenePrepare = preload("res://adapters/surface_scene_prepare.gd")
 const ViewQuality=preload("res://adapters/surface_view_quality.gd")
 const LiveBinding=preload("res://adapters/surface_live_binding.gd")
+const WaterProjection=preload("res://adapters/surface_water_projection.gd")
 const Presentation = preload("res://adapters/surface_presentation.gd")
 var surface_shader_code := ""
 var world: Dictionary = {}
@@ -22,6 +23,8 @@ var focus: Dictionary = {"x":0.0,"y":0.0}
 var width_m := 40000.0
 var oblique := true
 var diagnostic := 0
+var layer_visibility:Dictionary={"ground":true,"lowCover":true,"trees":true}
+var rendered_surface_layers:Dictionary={}
 var worker: Thread
 var requested_focus: Dictionary = {"x":0.0,"y":0.0}
 var requested_width := 40000.0
@@ -107,6 +110,8 @@ var live_binding_rejections:Array=[]
 var render_events:Array=[]
 var discarded_preparations:Dictionary={"obsoletePhysicalLineage":0,"olderThanDisplayed":0,"failed":0}
 var water_metrics: Dictionary = {}
+var water_projection_busy:=false
+var water_projection_cache:Dictionary={}
 var road_texture: ImageTexture
 var road_projector_count := 0
 var presentation_mode := "aerial"
@@ -161,6 +166,8 @@ func _ready() -> void:
 	if options.has("--z"): focus.y = float(options["--z"])
 	width_m = float(options.get("--width",maxf(float(b.maxX)-float(b.minX),float(b.maxZ)-float(b.minZ))))
 	diagnostic = int(options.get("--diagnostic",0))
+	var layers_mode=str(options.get("--layers","all"))
+	if layers_mode!="all": layer_visibility={"ground":layers_mode=="ground","lowCover":layers_mode=="low-cover","trees":layers_mode=="canopy"}
 	oblique = options.has("--oblique") or (not options.has("--top") and presentation_mode!="cartographic")
 	stream_directory = options.get("--stream-dir", "")
 	library.load_manifest(options.get("--assets", ""))
@@ -231,6 +238,9 @@ func _setup_lighting() -> void:
 	add_child(sun)
 
 func _begin_prepare() -> void:
+	if water_projection_busy:
+		view_dirty=true
+		return
 	if worker != null:
 		view_dirty = true
 		return
@@ -315,6 +325,10 @@ func _apply_prepared(prepared: Dictionary) -> void:
 	var t: Dictionary = prepared.contextGrid
 	if not context_textures.has(context_key):
 		context_textures[context_key] = {"surface_ids":ImageTexture.create_from_image(prepared.ids),"surface_state":ImageTexture.create_from_image(prepared.state),"surface_bedrock":ImageTexture.create_from_image(prepared.rock),"surface_average":ImageTexture.create_from_image(prepared.average)}
+		if prepared.get("surfaceLayers",{}).get("available",false):
+			for binding in {"low_cover_ids":"lowIds","low_cover_average":"lowAverage","low_cover_state":"lowState"}:
+				context_textures[context_key][binding]=ImageTexture.create_from_image(prepared.surfaceLayers[{"low_cover_ids":"lowIds","low_cover_average":"lowAverage","low_cover_state":"lowState"}[binding]])
+		context_textures[context_key]["surface_layers_explicit"]=prepared.get("surfaceLayers",{}).get("available",false)
 		while context_textures.size()>2: context_textures.erase(context_textures.keys()[0])
 	for name in context_textures[context_key]: mat.call("set_shader_param",name,context_textures[context_key][name])
 	mat.call("set_shader_param","source_spacing_m",float(t.spacingM))
@@ -357,6 +371,9 @@ func _apply_prepared(prepared: Dictionary) -> void:
 	_apply_geometry_detail(mat,prepared.get("geometryDetail",{}),next_origin)
 	unsupported_tree_count=int(prepared.get("unsupportedTreeCount",0))
 	Presentation.configure_terrain(mat,packet,rendered_presentation_mode)
+	set_layer_visibility(layer_visibility.ground,layer_visibility.lowCover,layer_visibility.trees)
+	rendered_surface_layers=prepared.get("surfaceLayersMetadata",{}).duplicate(true)
+	rendered_surface_layers.merge({"worldId":rendered_world_id,"visibility":layer_visibility.duplicate(),"renderMode":"three-physical-layers" if context_textures[context_key].get("surface_layers_explicit",false) else "legacy-composite-unavailable"})
 	_update_camera()
 	prepare_times.append(float(prepared.prepareMs))
 	upload_times.append((Time.get_ticks_usec()-begin)/1000.0)
@@ -364,7 +381,7 @@ func _apply_prepared(prepared: Dictionary) -> void:
 	region_counts.append(int(terrain.get("data").call("get_region_count")))
 	preparation_snapshots.append({"focus":requested_focus.duplicate(),"widthM":requested_width,"generation":prepared.generation,"sourceId":world.terrain.source.id})
 	rendered_tick_ms=Time.get_ticks_msec()
-	rendered_snapshot={"worldId":rendered_world_id,"source":rendered_source.duplicate(),"tileSource":world.terrain.source.duplicate(),"sourceActualAtFocus":rendered_source.duplicate(),"focusInsideSource":source_focus.focusInsideSource,"fineContributionWeight":source_focus.fineContributionWeight,"seamWeight":source_focus.seamWeight,"sourceContributionsAtFocus":source_focus.contributions,"sourceBounds":world.bounds.duplicate(),"focusAtApply":focus.duplicate(),"request":packet.get("source",{}).get("request",{}).duplicate(true),"displaySamples":rendered_display_samples,"heightImageSize":rendered_height_image_size,"liveSerial":rendered_live_serial,"appliedTickMs":rendered_tick_ms,"sourceEpoch":packet.get("source",{}).get("sourceEpoch"),"sceneEpoch":packet.get("source",{}).get("sceneEpoch"),"worldRevision":rendered_revision}
+	rendered_snapshot={"worldId":rendered_world_id,"source":rendered_source.duplicate(),"tileSource":world.terrain.source.duplicate(),"sourceActualAtFocus":rendered_source.duplicate(),"focusInsideSource":source_focus.focusInsideSource,"fineContributionWeight":source_focus.fineContributionWeight,"seamWeight":source_focus.seamWeight,"sourceContributionsAtFocus":source_focus.contributions,"sourceBounds":world.bounds.duplicate(),"focusAtApply":focus.duplicate(),"request":packet.get("source",{}).get("request",{}).duplicate(true),"deliveredGrid":{"width":int(world.terrain.width),"height":int(world.terrain.height),"spacingM":float(world.terrain.spacingM)},"displaySamples":rendered_display_samples,"heightImageSize":rendered_height_image_size,"liveSerial":rendered_live_serial,"appliedTickMs":rendered_tick_ms,"sourceEpoch":packet.get("source",{}).get("sourceEpoch"),"sceneEpoch":packet.get("source",{}).get("sceneEpoch"),"worldRevision":rendered_revision}
 	_update_view_satisfaction("rendered-source")
 	render_events.append(rendered_snapshot.duplicate(true))
 	while render_events.size()>128:render_events.pop_front()
@@ -413,6 +430,7 @@ func _build_scene_objects(prepared: Dictionary) -> void:
 		var data: Dictionary = prepared.waterGeometry
 		var entry := {"mesh":_mesh_from_arrays(prepared.waterArrays),"anchor":data.anchor,"quads":data.quads,"sourceStride":data.sourceStride,"buildMs":data.buildMs}
 		entry.diagnostics={}
+		entry.geometry=data
 		for key in data:
 			var value=data[key]
 			if value is String or value is bool or value is int or value is float and is_finite(value): entry.diagnostics[key]=value
@@ -429,7 +447,13 @@ func _build_scene_objects(prepared: Dictionary) -> void:
 	if scene_mesh_cache.has(request.waterKey):
 		var entry: Dictionary = scene_mesh_cache[request.waterKey]
 		water_metrics=entry.get("diagnostics",{}).duplicate()
-		if entry.mesh.get_surface_count()>0:
+		water_metrics.merge({"worldId":rendered_world_id,"waterPresentation":"source-levels","sourceLevelsUnchanged":true,"physicalWaterSurfaceClaimed":true})
+		if prepared.has("waterProjection"):
+			var projection:Dictionary=prepared.waterProjection
+			water_metrics.merge(projection.get("diagnostics",{}),true)
+			var decal=WaterProjection.create_decal(projection,origin)
+			if decal!=null:objects.add_child(decal)
+		elif entry.mesh.get_surface_count()>0:
 			var water := MeshInstance3D.new()
 			water.name="ExplicitWater"
 			water.layers=2
@@ -565,6 +589,7 @@ func _build_populations(populations: Dictionary) -> void:
 		multi.buffer=populations.buffers[family]
 		var instance := MultiMeshInstance3D.new()
 		instance.name = family+"_bounded_instances"
+		instance.set_meta("surfaceLayer","trees" if family=="tree" else "ground" if family=="boulder" else "lowCover")
 		instance.layers=2
 		instance.multimesh = multi
 		objects.add_child(instance)
@@ -590,6 +615,7 @@ func _build_populations(populations: Dictionary) -> void:
 			trunks.buffer=populations.trunkBuffer
 			var trunk_instance := MultiMeshInstance3D.new()
 			trunk_instance.name = "tree_trunks"
+			trunk_instance.set_meta("surfaceLayer","trees")
 			trunk_instance.layers=2
 			trunk_instance.multimesh = trunks
 			objects.add_child(trunk_instance)
@@ -612,12 +638,12 @@ func _process(delta: float) -> void:
 		var prepared = worker.wait_to_finish()
 		worker = null
 		if prepared is Dictionary:
-			_apply_prepared(prepared)
+			_complete_prepared(prepared)
 		else:
 			discarded_preparations.failed+=1
 			push_warning("Terrain preparation failed; retaining parent. Navigate or reload to retry.")
 			applied_generation=generation
-	if worker==null and (view_dirty or rendered_revision!=world_revision) and Time.get_ticks_msec()-last_request_tick>160:
+	if worker==null and not water_projection_busy and (view_dirty or rendered_revision!=world_revision) and Time.get_ticks_msec()-last_request_tick>160:
 		_begin_prepare()
 	if terrain != null:
 		warm_frames += 1
@@ -635,7 +661,7 @@ func _process(delta: float) -> void:
 			_request_live()
 		if not stream_directory.is_empty() and live_serial>stream_requested_serial and Time.get_ticks_msec()-last_stream_tick>400:
 			_request_source()
-	var scene_ready:bool=rendered_revision==world_revision
+	var scene_ready:bool=rendered_revision==world_revision and not water_projection_busy
 	var live_ready: bool = not options.has("--live-url") or (view_satisfied_serial==live_serial and not _quality_preview()) or failed_live_serial==live_serial
 	if options.has("--tour") and scene_ready and terrain != null and worker == null and not view_dirty and packet_worker==null and not live_busy and live_ready:
 		tour_settle += 1
@@ -696,7 +722,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			KEY_O: oblique = not oblique; changed = true
 			KEY_D:
 				var previous := diagnostic
-				diagnostic = (diagnostic+1)%7
+				diagnostic = (diagnostic+1)%13
 				if terrain!=null: terrain.get("material").call("set_shader_param","diagnostic",diagnostic)
 				if previous==5 or diagnostic==5: _begin_prepare()
 			KEY_S: _capture("res://captures/surface-%d.png"%Time.get_unix_time_from_system())
@@ -889,7 +915,7 @@ func _resolve_context(value: Dictionary) -> bool:
 		if canonical.source.id!=value.terrain.source.id or canonical.source.version!=value.terrain.source.version:
 			push_warning("Canonical context terrain source identity mismatch")
 			return false
-		for key in ["environment","occupation","population","materialLibrary","surfaceState","hydrology","geology"]:
+		for key in ["environment","occupation","population","materialLibrary","surfaceState","hydrology","geology","surfaceLayers"]:
 			if canonical.versions.get(key)!=value.versions.get(key):
 				push_warning("Canonical context version mismatch: "+key)
 				return false
@@ -907,7 +933,7 @@ func _capture(path: String) -> void:
 	var absolute := ProjectSettings.globalize_path(path)
 	DirAccess.make_dir_recursive_absolute(absolute.get_base_dir())
 	var result := get_viewport().get_texture().get_image().save_png(absolute)
-	print(JSON.stringify({"event":"capture","renderedWorldId":rendered_world_id,"renderedSource":rendered_source,"renderedLiveSerial":rendered_live_serial,"renderedSnapshot":rendered_snapshot,"viewSatisfiedSerial":view_satisfied_serial,"viewSatisfaction":view_satisfaction,"path":absolute,"error":result,"widthM":width_m,"metresPerPixel":width_m/get_viewport().get_visible_rect().size.x}))
+	print(JSON.stringify({"event":"capture","captureTickMs":Time.get_ticks_msec(),"surfaceLayers":rendered_surface_layers,"water":water_metrics,"renderedWorldId":rendered_world_id,"renderedSource":rendered_source,"renderedLiveSerial":rendered_live_serial,"renderedSnapshot":rendered_snapshot,"viewSatisfiedSerial":view_satisfied_serial,"viewSatisfaction":view_satisfaction,"path":absolute,"error":result,"widthM":width_m,"metresPerPixel":width_m/get_viewport().get_visible_rect().size.x}))
 
 func _quantile(values: Array[float], fraction: float) -> Variant:
 	if values.is_empty(): return null
@@ -931,6 +957,8 @@ func _write_metrics() -> void:
 	metrics["unsupportedTreeCount"]=unsupported_tree_count
 	metrics["cityMap"]=city_map_metrics
 	metrics["water"]=water_metrics
+	metrics["surfaceLayers"]=rendered_surface_layers
+	metrics["canopy"]={"representation":"exact-inventory-local / calibrated-approximate-meso-outside-page","approximatePositionsClaimedAsInventory":false,"canonicalSeed":rendered_world.get("seed"),"atlasVersion":canopy_info.get("version",""),"paintBlendM":canopy_info.get("fallbackBlendM"),"geometryBlendM":canopy_info.get("geometryBlendM")}
 	var path: String = options.get("--metrics","res://captures/metrics.json")
 	path = ProjectSettings.globalize_path(path)
 	DirAccess.make_dir_recursive_absolute(path.get_base_dir())
@@ -963,6 +991,7 @@ func _apply_canopy_parameters(material: Object) -> void:
 	var packet:Dictionary=rendered_packet if not rendered_packet.is_empty() else self.packet
 	var presentation_mode:String=rendered_presentation_mode
 	var values := {"canopy_enabled":canopy_info.get("available",false),"canopy_linear_albedo":Presentation.canopy_color(packet,presentation_mode),"canopy_reference_y":Data.height_at(world,focus.x,focus.y)-float(origin.y)}
+	values.merge(preload("res://adapters/surface_canopy.gd").meso_parameters(world,origin))
 	if canopy_info.get("available",false):
 		var b: Dictionary = canopy_info.bounds
 		values.merge({"canopy_coverage":canopy_textures.coverage,"canopy_counts":canopy_textures.counts,
@@ -1040,7 +1069,7 @@ func _physical_lineage(value:Dictionary,scene_packet:Dictionary)->String:
 	var identity:Dictionary=value.get("terrain",{}).get("source",{})
 	var versions:Dictionary=value.get("versions",{})
 	var canonical_versions=[]
-	for key in ["environment","occupation","population","materialLibrary","surfaceState","hydrology","geology"]:canonical_versions.append(versions.get(key))
+	for key in ["environment","occupation","population","materialLibrary","surfaceState","hydrology","geology","surfaceLayers"]:canonical_versions.append(versions.get(key))
 	var profile=Presentation.profile(scene_packet,str(options.get("--presentation","cartographic" if options.has("--style") else "")))
 	return JSON.stringify(Library._canonical([identity.get("id"),identity.get("version"),source.get("sourceEpoch"),source.get("sceneEpoch"),value.get("canonicalContextRef",{}).get("id"),source.get("sceneContextId"),Geometry.city_identity(scene_packet),canonical_versions,profile.mode,profile.palette]))
 
@@ -1069,11 +1098,11 @@ func _source_actual_at_focus(value:Dictionary,display:Dictionary,position:Dictio
 		var active=is_same(layer.terrain,display.terrain)
 		if active:seam_weight=weight
 		contributions.append({"source":layer.terrain.get("source",{}),"weight":weight,"activeChild":active})
-	var fine_weight=0.0;var actual:Dictionary={}
+	var fine_weight=0.0;var actual:Dictionary={};var dominant_weight=-1.0
 	for part in contributions:
 		if part.activeChild:fine_weight+=float(part.weight)
-		if float(part.weight)>0.000001:actual=part.source
-	if fine_weight>0.000001:actual=value.terrain.source
+		if float(part.weight)>dominant_weight:
+			dominant_weight=float(part.weight);actual=part.source
 	return {"sourceActualAtFocus":actual,"focusInsideSource":Data.contains(value.bounds,x,z),"fineContributionWeight":fine_weight,"seamWeight":seam_weight,"contributions":contributions}
 
 # Bound once per coherent object replacement, never once per camera input.
@@ -1125,3 +1154,58 @@ func _expected_height_image_size(spacing:float,view_width:float)->int:
 	var size=512
 	while size*spacing<view_width*2.0 and size<2048:size*=2
 	return size
+
+# Presentation switches affect the renderer only; the source arrays/inventory remain immutable.
+func set_layer_visibility(ground:bool,low_cover:bool,trees:bool)->void:
+	layer_visibility={"ground":ground,"lowCover":low_cover,"trees":trees}
+	if terrain!=null:
+		var material=terrain.get("material")
+		for binding in {"show_ground":ground,"show_low_cover":low_cover,"show_trees":trees}:
+			material.call("set_shader_param",binding,{"show_ground":ground,"show_low_cover":low_cover,"show_trees":trees}[binding])
+	for child in objects.get_children():
+		if child.has_meta("surfaceLayer"): child.visible=layer_visibility.get(str(child.get_meta("surfaceLayer")),true)
+	if not rendered_surface_layers.is_empty():rendered_surface_layers.visibility=layer_visibility.duplicate()
+
+# Finish the immutable snapshot BEFORE applying any textures, origin or mesh.
+# One active bake; camera updates coalesce in view_dirty and prepare afterwards.
+func _complete_prepared(prepared:Dictionary)->void:
+	var geometry:Dictionary=prepared.get("waterGeometry",{})
+	if geometry.is_empty():
+		geometry=scene_mesh_cache.get(prepared.sceneRequest.get("waterKey",""),{}).get("geometry",{})
+	var fixed=geometry.get("fixedVectorDisplayAvailable",false)
+	var requested_mode=str(options.get("--water-mode","source-map" if fixed else "source-levels"))
+	if requested_mode=="source-map" and fixed:
+		water_projection_busy=true
+		var snapshot_packet:Dictionary=prepared.packet
+		var mode=str(prepared.get("presentationMode",presentation_mode))
+		var physical=Presentation.water_material(snapshot_packet,mode)
+		var colors={}
+		for kind in ["river","lake","sea"]:colors[kind]=physical.get_shader_parameter("linear_"+kind+"_tint")
+		colors.fallback=colors.lake
+		var requested_focus:Dictionary=prepared.focus
+		var width=float(prepared.get("viewWidth",requested_width))
+		var coverage_width=width*(2.25 if prepared.get("oblique",oblique) else 1.0)
+		var source_key=str(prepared.sceneRequest.get("waterKey",""))
+		var style_key=JSON.stringify([mode,colors.river,colors.lake,colors.sea])
+		var projection:Dictionary={}
+		for cache_id in water_projection_cache:
+			var entry:Dictionary=water_projection_cache[cache_id]
+			var bounds:Dictionary=entry.bounds
+			if entry.get("binding","")==source_key+style_key and float(bounds.minX)<=float(requested_focus.x)-coverage_width*.5 and float(bounds.maxX)>=float(requested_focus.x)+coverage_width*.5 and float(bounds.minZ)<=float(requested_focus.y)-coverage_width*.5 and float(bounds.maxZ)>=float(requested_focus.y)+coverage_width*.5 and float(entry.diagnostics.get("metresPerTexel",INF))<=coverage_width/1024.0:
+				projection=entry.duplicate(false);projection.diagnostics=entry.diagnostics.duplicate();projection.diagnostics.cacheUsed=true;break
+		if projection.is_empty():
+			var projection_width=coverage_width*1.25
+			var bake_options={"sourceKey":source_key,"resolution":2048,"msaa":2,"minHeightM":-10000.0,"maxHeightM":10000.0}
+			projection=await WaterProjection.bake(self,geometry,prepared.origin,requested_focus,projection_width,colors,bake_options)
+			if not projection.has("error"):
+				projection.binding=source_key+style_key;projection.diagnostics.cacheUsed=false
+				water_projection_cache[projection.cacheKey]=projection
+				while water_projection_cache.size()>3:water_projection_cache.erase(water_projection_cache.keys()[0])
+		water_projection_busy=false
+		# Epoch/lineage is checked again after the await. No stale cache mutates source.
+		if projection.has("error"):
+			discarded_preparations["waterProjectionFailed"]=int(discarded_preparations.get("waterProjectionFailed",0))+1
+			push_error("Water source-map projection failed; retaining displayed snapshot: "+str(projection.error))
+			return
+		prepared.waterProjection=projection
+	_apply_prepared(prepared)

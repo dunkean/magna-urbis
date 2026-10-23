@@ -41,4 +41,6 @@ func run():
 	legacy.erase("surfaceLayers");legacy.versions.erase("surfaceLayers")
 	if not Layers.validate(legacy) or Layers.prepare(legacy).get("available",true) or not Layers.prepare(legacy).get("metadata",{}).get("legacyFallback",false):failures.append("legacy invented bare ground or failed explicit warning")
 	if Layers.expected_wire_dtype(["world","fields","groundMaterial"])!="u16" or Layers.expected_wire_dtype(["world","canonicalContext","fields","lowCoverOpacity"])!="f32" or Layers.expected_wire_dtype(["fields","lowCoverMaterialMeanColor"])!="u32" or Layers.expected_wire_dtype(["source","fields","groundMaterial"])!="":failures.append("wire dtype path schema mismatch")
+	for path in [["source","archive",0,"values"],["world","fields",1],["source",0,1],[1,2]]:
+		if Layers.expected_wire_dtype(path)!="":failures.append("numeric nested source path was misclassified")
 	print(JSON.stringify({"passed":failures.is_empty(),"failures":failures,"measured":measured,"scope":"TS/GD authored fixtures, typed hashes, independent layer image preparation and legacy/malformed rejection; no GPU claim"}));quit(0 if failures.is_empty() else 1)

@@ -12,7 +12,7 @@ static var _cached_version:String=""
 static var _cached_images:Dictionary={}
 
 static func expected_wire_dtype(path:Array)->String:
-	if path.size()<2 or path[-2]!="fields":return ""
+	if path.size()<2 or not path[-2] is String or not path[-1] is String or path[-2]!="fields":return ""
 	var prefix=path.slice(0,path.size()-2)
 	if prefix not in [[],["world"],["canonicalContext"],["world","canonicalContext"]]:return ""
 	var name=path[-1]
@@ -136,7 +136,7 @@ static func prepare(world:Dictionary,canonical_source:Dictionary={})->Dictionary
 	var texture_grid={}
 	for key in ["width","height","originX","originZ","spacingM"]:texture_grid[key]=grid[key]
 	var metadata={"version":VERSION,"groundAvailability":"explicit","lowCoverAvailability":"explicit","projectedFieldsVersion":str(validation.fieldsVersion),"canonicalFieldsVersion":str(validation.canonicalFieldsVersion),"textureFieldsVersion":texture_version,"textureSource":"canonical" if from_canonical else "world","textureGrid":texture_grid,"legacyFallback":false}
-	if is_same(source,_cached_source) and texture_version==_cached_version:
+	if is_same(fields,_cached_source.get("fields",{})) and is_same(grid,_cached_source.get("grid",{})) and texture_version==_cached_version:
 		var reused=_cached_images.duplicate(false);reused.metadata=metadata;return reused
 	var width=int(grid.width);var height=int(grid.height);var n=width*height
 	if n<4 or n>1048576 or _count(fields)!=9:return {"available":false,"error":"layer texture field shape is invalid"}
