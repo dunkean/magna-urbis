@@ -11,6 +11,8 @@ func run():
 		for style in catalogue.terrainStyles:
 			var value=Presentation.profile(Presentation.overrides(packet,style,path),"cartographic")
 			if value.mapStyle!=style or value.palette!=catalogue.terrainStyles[style].palette: failures.append("shared terrain style changed:"+style)
+	for legacy in [{"source":{"presentation":null}},{"presentation":null},{"presentation":{"palette":null}},{"source":null}]:
+		if Presentation.profile(legacy,"cartographic").mode!="cartographic":failures.append("nullable legacy presentation")
 	var env=Environment.new(); env.ssao_enabled=true; env.fog_enabled=true
 	Presentation.configure_environment(env,"cartographic",packet)
 	if env.ambient_light_source!=Environment.AMBIENT_SOURCE_COLOR or env.ambient_light_energy!=1.0 or env.tonemap_mode!=Environment.TONE_MAPPER_LINEAR or env.ssao_enabled: failures.append("cartographic ambient profile")

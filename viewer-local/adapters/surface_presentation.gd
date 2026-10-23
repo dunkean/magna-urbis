@@ -13,9 +13,12 @@ static func overrides(packet: Dictionary, style_name := "", catalogue_path := ""
 	return result
 
 static func profile(packet: Dictionary, mode := "") -> Dictionary:
-	var source: Dictionary = packet.get("source",{})
-	var presentation: Dictionary = packet.get("presentation",source.get("presentation",{}))
-	var palette: Dictionary = presentation.get("palette",{})
+	var source_value=packet.get("source")
+	var source:Dictionary=source_value if source_value is Dictionary else {}
+	var presentation_value=packet.get("presentation",source.get("presentation"))
+	var presentation:Dictionary=presentation_value if presentation_value is Dictionary else {}
+	var palette_value=presentation.get("palette")
+	var palette:Dictionary=palette_value if palette_value is Dictionary else {}
 	var selected: String = packet.get("_presentation_style",packet.get("_style",""))
 	var catalogue_path: String = packet.get("_presentation_catalogue",packet.get("_styleCatalogue",""))
 	var terrain_style: Dictionary = {}
