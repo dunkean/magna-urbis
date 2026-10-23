@@ -18,14 +18,20 @@ static func profile(packet: Dictionary, mode := "") -> Dictionary:
 	var palette: Dictionary = presentation.get("palette",{})
 	var selected: String = packet.get("_presentation_style",packet.get("_style",""))
 	var catalogue_path: String = packet.get("_presentation_catalogue",packet.get("_styleCatalogue",""))
+	var terrain_style: Dictionary = {}
 	if not selected.is_empty() and not catalogue_path.is_empty():
-		if not _catalogues.has(catalogue_path):
+		var stamp := FileAccess.get_modified_time(catalogue_path)
+		if not _catalogues.has(catalogue_path) or _catalogues[catalogue_path].stamp!=stamp:
 			var value=JSON.parse_string(FileAccess.get_file_as_string(catalogue_path))
-			if value is Dictionary and value.get("format","")=="magna-surface-palette-catalogue" and value.get("version",0)==1: _catalogues[catalogue_path]=value
+			if value is Dictionary and value.get("format","")=="magna-surface-palette-catalogue" and value.get("version",0)==1:
+				_catalogues[catalogue_path]={"stamp":stamp,"value":value}
 		if _catalogues.has(catalogue_path):
-			palette=_catalogues[catalogue_path].get("palettes",{}).get(selected,palette)
+			var catalogue: Dictionary = _catalogues[catalogue_path].value
+			terrain_style=catalogue.get("terrainStyles",{}).get(selected,{})
+			palette=terrain_style.get("palette",catalogue.get("palettes",{}).get(selected,palette))
 	var resolved := mode if not mode.is_empty() else str(presentation.get("defaultView","aerial"))
-	return {"mode":resolved,"cartographic":resolved=="cartographic","palette":palette,"mapStyle":palette.get("name",presentation.get("mapStyle","unspecified")),"source":presentation,"coverage":"native geometry, palette, material groups and orthographic preview; SVG/Canvas retain labels and final layout"}
+	var identity := selected if not selected.is_empty() else str(presentation.get("mapStyle",palette.get("name","unspecified")))
+	return {"mode":resolved,"cartographic":resolved=="cartographic","palette":palette,"mapStyle":identity,"terrainStyle":terrain_style,"source":presentation,"coverage":"native geometry, palette, material groups and orthographic preview; SVG/Canvas retain brush effects, labels and final layout"}
 
 static func color_linear(css: String, fallback := Vector3(0.3,0.3,0.3)) -> Vector3:
 	if css.is_empty(): return fallback
@@ -44,9 +50,29 @@ static func configure_environment(settings: Environment, mode: String, packet: D
 		settings.tonemap_mode=Environment.TONE_MAPPER_FILMIC
 		settings.tonemap_exposure=1.0
 	if resolved.cartographic:
+		if not settings.has_meta("surfaceAerialEnvironment"):
+			settings.set_meta("surfaceAerialEnvironment",{"ssao":settings.ssao_enabled,"ssil":settings.ssil_enabled,"fog":settings.fog_enabled})
+		# White ambient preserves CSS albedo and lets Forward+ Decals blend.
+		# The scene owner must also set direct-light energy to zero.
+		settings.ambient_light_source=Environment.AMBIENT_SOURCE_COLOR
+		settings.ambient_light_color=Color.WHITE
+		settings.ambient_light_energy=1.0
+		settings.reflected_light_source=Environment.REFLECTION_SOURCE_DISABLED
+		settings.ssao_enabled=false
+		settings.ssil_enabled=false
+		settings.fog_enabled=false
 		settings.background_mode=Environment.BG_COLOR
 		settings.background_color=Color.from_string(str(resolved.palette.get("paper","#eeeeee")),Color(0.93,0.93,0.93))
-	else: settings.background_mode=Environment.BG_SKY
+	else:
+		settings.background_mode=Environment.BG_SKY
+		settings.ambient_light_source=Environment.AMBIENT_SOURCE_SKY
+		settings.ambient_light_energy=0.55
+		settings.reflected_light_source=Environment.REFLECTION_SOURCE_BG
+		if settings.has_meta("surfaceAerialEnvironment"):
+			var previous: Dictionary = settings.get_meta("surfaceAerialEnvironment")
+			settings.ssao_enabled=previous.ssao
+			settings.ssil_enabled=previous.ssil
+			settings.fog_enabled=previous.fog
 
 static func configure_terrain(material: Object, packet: Dictionary, mode: String) -> void:
 	var resolved := profile(packet,mode)
@@ -98,7 +124,7 @@ static func building_material(material_id, slots: Dictionary, surface_name: Stri
 	var pattern := "plain"
 	for source_material in packet.get("urban",{}).get("materials",[]):
 		if str(source_material.get("id",""))==id: pattern=str(source_material.get("pattern","plain")); break
-	var key := str(resolved.mapStyle)+":"+mode+":"+id+":"+pattern+":"+surface_name
+	var key := JSON.stringify([resolved.mapStyle,resolved.mode,resolved.palette,id,pattern,surface_name,slots]).sha256_text()
 	if _materials.has(key): return _materials[key]
 	var material: Material
 	if resolved.cartographic:
@@ -127,6 +153,8 @@ static func building_material(material_id, slots: Dictionary, surface_name: Stri
 	material.set_meta("nativePattern",pattern)
 	material.set_meta("nativeSurface",surface_name)
 	material.set_meta("previewTintPolicy","shared cartographic palette or authored native pattern tint; source material IDs remain unchanged")
+	# Bound native preview cache even across many source palette epochs.
+	if _materials.size()>=512: _materials.erase(_materials.keys()[0])
 	_materials[key]=material
 	return material
 
