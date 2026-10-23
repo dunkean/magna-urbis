@@ -63,3 +63,32 @@ minimale éventuelle doit être déclarée comme largeur d'affichage, distincte 
 largeur physique. Les limites déjà documentées des contours source aplatis et
 des anneaux invalides demeurent ; aucune réparation topologique, conservation
 du débit ou équivalence à un relevé hydraulique n'est affirmée.
+
+## Module de projection pour le viewer
+
+`SurfaceWaterProjection.bake(parent, geometry, origin, focus, widthM, colors,
+options)` est une coroutine GPU à appeler sur le thread de scène. `geometry`
+est le résultat de `SurfaceHydrology.prepare` ; les couleurs `river`, `lake`,
+`sea`, `fallback` sont des **Vector3 linéaires**. `options.sourceKey` est requis.
+Les options bornent la résolution à 64–2048 (1024 par défaut) et déclarent les
+hauteurs canoniques `minHeightM`/`maxHeightM` du volume projeté. `msaa` peut valoir
+0, 2, 4 ou 8. Aucun trait minimal n'est appliqué.
+
+Le résultat contient `texture`, `bounds`, `worldCenter`, `position`, `size`,
+`cullMask=1`, `cacheKey`, `diagnostics`, ou un champ `error`. Le caller conserve
+son cache, rejette les réponses de générations périmées et crée le Decal avec
+`create_decal(result, currentRenderOrigin)` : le rebase s'applique ainsi aussi
+aux textures mises en cache. Le cache SHA-256 dépend des octets de géométrie,
+des classes, de la couverture, de la palette, de la fenêtre et de la résolution.
+Compatibility ne supportant pas les Decals, ce backend retourne une erreur
+explicite ; le caller doit conserver un fallback déclaré.
+
+Le contrôle GPU du module de production est distinct de la preuve régionale
+ci-dessus : c'est une **fixture synthétique déclarée**, avec eau à −20 m, terrain
+à 0 m, toit à 10 m et coordonnées canoniques de l'ordre de 10⁹ m. Il passe sur
+Forward+ / RTX 4090 : teinte décodée à moins d'un octet, alpha du contour,
+rebase exact avant Float32, toit rouge intact et source inchangée. Voir
+[projection-module-report.json](projection-module-report.json). Le contrôle CPU
+du cache vérifie séparément les changements de classe, couverture, identité
+source, échelle et position canonique. Le temps de bake de 137,7 ms porte sur la
+fixture 256² et ne mesure pas une performance régionale de production.

@@ -1,0 +1,26 @@
+{
+  "format": "surface-water-projection-module-evidence",
+  "version": 1,
+  "files": [
+    {
+      "path": "viewer-local/adapters/surface_water_projection.gd",
+      "sha256": "925d837ebb24f36aff9e025550c6239697d9e32d1197a0ece2e32d6919b3a5da"
+    },
+    {
+      "path": "viewer-local/tests/surface_water_projection_test.gd",
+      "sha256": "8bdaecb0c273e809d8ffefaaf0b215158d3dee7ed165aa664fc119db5c45172d"
+    },
+    {
+      "path": "viewer-local/tests/surface_water_projection_cache_test.gd",
+      "sha256": "3ce877bfeb43ae073611120c7d57387e274d79300ca1bb6758545b093d0d8887"
+    },
+    {
+      "path": "docs/surface/evidence/hydrology-f2/projection-module-report.json",
+      "sha256": "b0c9b0eeb16e53b570d4fc96a7ff093bded6ec08e5194247ae45b59e7dec5314"
+    },
+    {
+      "path": "docs/surface/evidence/hydrology-f2/projection-module-roof.png",
+      "sha256": "6e6151b2a8790c033eee8cabe4a19e9422caa1bffdca55950644fb9cc022831b"
+    }
+  ]
+}
