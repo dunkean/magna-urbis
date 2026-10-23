@@ -59,6 +59,8 @@ describe('renderer independent Magna adapters', () => {
     expect(calls[1].signal).toBe(controller.signal);
     expect([grid.originX, grid.originZ, grid.spacingM, grid.source.nativeSpacingM, grid.source.sourceLOD]).toEqual([101, 201, 2, 2, 7]);
     expect(grid.source.sourceLODKnown).toBe(true);
+    expect(grid.source.id).toBe('infinite:true-seed:retained');
+    expect(provider.registration.id).toBe('retained');
     expect([...grid.heights]).toEqual([120, 121, 122, 123]);
     expect([...field]).toEqual([1, 2, 3, 4]);
   });

@@ -5,6 +5,8 @@ import { eachBuildingTriangle, isBuildingProjection, type Building3dScene, type 
 import { assertNotAborted, hashString, type TerrainGrid, type SourceIdentity, type SurfaceCompileInput } from '../model';
 import type { TerrainProvider, TerrainRequest } from '../provider';
 import { climateFromMagnaQuery } from './climate';
+import { buildingOccupationSurfaces, buildingGroundConstraints } from '../../ui/urbanBuildingProjection';
+import { occupationFromMagnaWorld } from './occupation';
 
 /** Magna map XY, altitude Z -> metric horizontal XZ, altitude Y. */
 export const magnaToMetric = (x: number, y: number, altitude: number): [number, number, number] => [x, altitude, y];
@@ -51,12 +53,20 @@ export async function createLiveInfiniteTerrainProvider(settings: TerrainSetting
 
 export function exportMagnaBuildings(scene: Building3dScene) {
   return { schemaVersion: 'magna-building-meshes-1' as const, coordinateSystem: 'x-east,y-up,z-map-y' as const,
+    occupationBuildings: (scene.occupationBuildings ?? scene.buildings).map(building => ({ id: building.id, parcelId: building.parcel_id,
+      representation: isBuildingProjection(building) ? 'cartographic-proxy' as const : 'native' as const,
+      nativeRealization: !isBuildingProjection(building), groundHeightM: building.ground_z_m,
+      surfaces: structuredClone(buildingOccupationSurfaces(building)), groundConstraints: structuredClone(buildingGroundConstraints(building)) })),
     materials: structuredClone(scene.materials ?? []), buildings: scene.buildings.map(building => {
       const proxy = isBuildingProjection(building), triangles: BuildingTriangle[] = [];
       eachBuildingTriangle(building, t => {
         // Axis permutation changes handedness: reverse winding to retain outward normals.
-        triangles.push({ ...structuredClone(t), points: [t.points[0], t.points[2], t.points[1]].map(p => magnaToMetric(...p)) as BuildingTriangle['points'],
-          normal: magnaToMetric(...t.normal) });
+        const points = [t.points[0], t.points[2], t.points[1]].map(p => magnaToMetric(...p)) as BuildingTriangle['points'];
+        const normal = magnaToMetric(...t.normal), [a, b, c] = points;
+        const u = b.map((v, i) => v - a[i]), v = c.map((v, i) => v - a[i]);
+        const cross = [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]];
+        if (cross.reduce((sum, value, i) => sum + value * normal[i], 0) < 0) [points[1], points[2]] = [points[2], points[1]];
+        triangles.push({ ...structuredClone(t), points, normal });
       });
       return { id: building.id, parcelId: building.parcel_id, representation: proxy ? 'cartographic-proxy' as const : 'native' as const,
         nativeRealization: !proxy, groundHeightM: building.ground_z_m,
@@ -75,8 +85,9 @@ export function exportMagnaCity(world: World) {
 
 export function worldToSurfaceInput(world: World, source: SourceIdentity): SurfaceCompileInput {
   const grid = world.terrain.height;
-  return { seed: parseInt(hashString(world.seed), 16), terrain: { width: grid.w, height: grid.h,
-    originX: grid.cell / 2, originZ: grid.cell / 2, spacingM: grid.cell, heights: grid.data.slice(), source: { ...source } },
+  const terrain = { width: grid.w, height: grid.h, originX: grid.cell / 2, originZ: grid.cell / 2,
+    spacingM: grid.cell, heights: grid.data.slice(), source: { ...source } };
+  return { seed: parseInt(hashString(world.seed), 16), terrain, occupation: occupationFromMagnaWorld(terrain, world),
     hydrology: { version: source.version, provenance: 'Magna canonical terrain routing', boundary: 'truncated',
       downstream: world.terrain.receiver.slice(), contributingAreaM2: Float32Array.from(world.terrain.flow.data, a => a * grid.cell ** 2),
       waterClass: Uint8Array.from(world.terrain.water, c => c === 1 ? 3 : c === 3 ? 1 : c) } };

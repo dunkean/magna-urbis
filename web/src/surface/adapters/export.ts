@@ -3,9 +3,10 @@ import type { Building3dScene } from '../../render/urbanBuildingGeometry';
 import { compileSurfaceWorld, serializeSurfaceWorld } from '../compiler';
 import type { Bounds, CompileOptions, SurfaceCompileInput, SurfaceWorld } from '../model';
 import { generateSurfaceCandidates } from '../population';
+import { occupationFromMagnaScene, type SurfaceRoad } from './occupation';
 import { decorToSurfaceInput, exportMagnaBuildings } from './magna';
 
-export interface SurfacePacketOptions extends CompileOptions { candidateBounds?: Bounds }
+export interface SurfacePacketOptions extends CompileOptions { candidateBounds?: Bounds; roads?: readonly SurfaceRoad[] }
 export interface DecorCompileOptions extends SurfacePacketOptions { originX?: number; originZ?: number }
 export function compileFromDecor(decor: Decor, options: DecorCompileOptions = {}) {
   const input = decorToSurfaceInput(decor);
@@ -18,9 +19,10 @@ export function compileFromDecor(decor: Decor, options: DecorCompileOptions = {}
  * actual source grid/seed/context and preserved city/river metadata. */
 export function exportSurfaceInputPacket(input: SurfaceCompileInput, scene: Building3dScene = { buildings: [] },
   source: Record<string, unknown> = {}, options: SurfacePacketOptions = {}) {
-  const world = compileSurfaceWorld(input, options);
+  const occupation = occupationFromMagnaScene(input.terrain, scene, options.roads, input.occupation);
+  const world = compileSurfaceWorld({ ...input, occupation }, options);
   return { format: 'magna-surface-packet', version: 1, world: JSON.parse(serializeSurfaceWorld(world)),
-    urban: exportMagnaBuildings(scene), source: structuredClone(source), ...packetCandidates(world, options) };
+    urban: { ...exportMagnaBuildings(scene), roads: structuredClone(options.roads ?? []) }, source: structuredClone(source), ...packetCandidates(world, options) };
 }
 
 function packetCandidates(world: SurfaceWorld, options: SurfacePacketOptions) {
@@ -35,9 +37,14 @@ function packetCandidates(world: SurfaceWorld, options: SurfacePacketOptions) {
 export function exportSurfacePacket(decor: Decor, scene?: Building3dScene, options: DecorCompileOptions = {}) {
   const retained = decor.meta.pipeline?.urban?.buildingState;
   if (retained?.cold && !scene) throw new Error('Cold native buildings require their retained chunk scene before surface export.');
-  const world = compileFromDecor(decor, options);
+  const input = decorToSurfaceInput(decor);
+  input.terrain.originX += options.originX ?? 0; input.terrain.originZ += options.originZ ?? 0;
+  const buildings = scene ?? retained?.scene ?? { buildings: [] };
+  const roads: SurfaceRoad[] = options.roads ? [...options.roads] : (decor.meta.roads?.segments ?? []).map(road => ({ points: road.path.map(p => [p.x, p.y]), widthM: road.width }));
+  input.occupation = occupationFromMagnaScene(input.terrain, buildings, roads, input.occupation);
+  const world = compileSurfaceWorld(input, options);
   return { format: 'magna-surface-packet', version: 1,
-    world: JSON.parse(serializeSurfaceWorld(world)), urban: { ...exportMagnaBuildings(scene ?? retained?.scene ?? { buildings: [] }),
+    world: JSON.parse(serializeSurfaceWorld(world)), urban: { ...exportMagnaBuildings(buildings),
       roads: (decor.meta.roads?.segments ?? []).map((road, sourceIndex) => ({ sourceIndex, points: road.path.map(p => [p.x, p.y]),
         widthM: road.width, surface: road.surface, class: road.class })) }, ...packetCandidates(world, options),
     source: { meta: structuredClone(decor.meta), geometry: structuredClone(decor.raster.geometry),
