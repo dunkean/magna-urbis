@@ -1,7 +1,7 @@
 import type { Decor } from '../../ui/decor';
 import type { Building3dScene } from '../../render/urbanBuildingGeometry';
 import { compileSurfaceWorld, serializeSurfaceWorld } from '../compiler';
-import type { CompileOptions } from '../model';
+import type { CompileOptions, SurfaceCompileInput } from '../model';
 import { decorToSurfaceInput, exportMagnaBuildings } from './magna';
 
 export interface DecorCompileOptions extends CompileOptions { originX?: number; originZ?: number }
@@ -10,6 +10,15 @@ export function compileFromDecor(decor: Decor, options: DecorCompileOptions = {}
   input.terrain.originX += options.originX ?? 0;
   input.terrain.originZ += options.originZ ?? 0;
   return compileSurfaceWorld(input, options);
+}
+
+/** Runtime counterpart to the retained-decor export. The caller supplies the
+ * actual source grid/seed/context and preserved city/river metadata. */
+export function exportSurfaceInputPacket(input: SurfaceCompileInput, scene: Building3dScene = { buildings: [] },
+  source: Record<string, unknown> = {}, options: CompileOptions = {}) {
+  const world = compileSurfaceWorld(input, options);
+  return { format: 'magna-surface-packet', version: 1, world: JSON.parse(serializeSurfaceWorld(world)),
+    urban: exportMagnaBuildings(scene), source: structuredClone(source) };
 }
 
 /** Source metadata/geometry stay separate from compiled fields, preserving river
