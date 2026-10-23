@@ -13,7 +13,7 @@ function fixture(){
     layerFieldDescriptors:Object.fromEntries(Object.entries(types).map(([name,dtype])=>[name,{dtype,length:128*128}]))};
   const capture={renderedSnapshot:{worldId:packet.worldId},surfaceLayers:{...meta,projectedFieldsVersion:meta.fieldsVersion,worldId:packet.worldId,canonicalFieldsVersion:'canonical-fields',textureSource:'canonical',textureFieldsVersion:'canonical-fields',textureGrid:{...packet.canonicalGrid},legacyFallback:false,renderMode:'three-physical-layers',visibility:{ground:true,lowCover:true,trees:true}},
     water:{worldId:packet.worldId,authority:'magna-urbis-fixed-hydrology',fixedVectorDisplayAvailable:true,sourceVectorRequestedAreaM2:15000,sourceVectorAreaM2:15000,sourceVectorMissingAreaM2:0,sourceVectorCoverageComplete:true,missingLevelTriangles:0,budgetLimited:false,
-      waterPresentation:'source-map-terrain-projection',projectionCullMask:1,sourceLevelsUnchanged:true,physicalWaterSurfaceClaimed:false,minimumRiverStrokeApplied:false,subpixelPolicy:'original contour coverage only',
+      waterPresentation:'source-map-terrain-projection',sourceVertices:600,projectionCullMask:1,sourceLevelsUnchanged:true,physicalWaterSurfaceClaimed:false,minimumRiverStrokeApplied:false,subpixelPolicy:'original contour coverage only',
       vectorBedDiagnosticSamples:2048,vectorBedDiagnosticConflicts:1790,vectorBedDiagnosticMissing:0,vectorBedDiagnosticMaximumDeltaM:85}};
   return{packet,capture};
 }
@@ -35,7 +35,7 @@ describe('new rendered layer and fixed source-map evidence',()=>{
   });
   it('requires regional source vectors without omissions and refuses roof projection, level editing or hidden fallback',()=>{
     for(const alter of[(w:any)=>w.sourceVectorMissingAreaM2=1,(w:any)=>w.sourceVectorCoverageComplete=false,(w:any)=>w.missingLevelTriangles=1,(w:any)=>w.budgetLimited=true,
-      (w:any)=>w.waterPresentation='physical-depth-tested',(w:any)=>w.projectionCullMask=3,(w:any)=>w.sourceLevelsUnchanged=false,
+      (w:any)=>w.waterPresentation='physical-depth-tested',(w:any)=>w.sourceVertices=0,(w:any)=>w.sourceVectorAreaM2=0,(w:any)=>w.projectionCullMask=3,(w:any)=>w.sourceLevelsUnchanged=false,
       (w:any)=>w.physicalWaterSurfaceClaimed=true,(w:any)=>w.minimumRiverStrokeApplied=true,(w:any)=>w.worldId='other-world',
       (w:any)=>w.vectorBedDiagnosticConflicts=3000,(w:any)=>w.fixedHydrologyFallbackReason='hidden mixed fallback']){
       const{capture}=fixture();alter(capture.water);expect(()=>verifyWaterCapture(capture,{requireSourceMap:true})).toThrow();
