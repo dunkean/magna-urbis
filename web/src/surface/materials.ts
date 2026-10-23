@@ -35,7 +35,34 @@ export const SURFACE_MATERIALS: MaterialRecipe[] = [
   recipe('compacted-road', 'mineral-plains', [.23, .21, .17], 'ridges', .24, .004),
   recipe('cultivated-soil', 'mineral-plains', [.19, .12, .065], 'ridges', .65, .065),
   recipe('built-foundation', 'mineral-plains', [.30, .29, .27], 'fractures', .8, .006),
+  recipe('forest-litter', 'vegetation', [.105, .065, .026], 'patches', .45, .015),
 ];
+
+export interface MaterialComposition { primary: number; secondary: number; blend: number }
+
+/** Sparse reduction; no per-material world-sized weight maps. Ties have a deterministic id ordering. */
+export function dominantMaterialPair(weights: Iterable<readonly [number, number]>): MaterialComposition {
+  const combined = new Map<number, number>();
+  for (const [id, weight] of weights) if (Number.isFinite(weight) && weight > 0) combined.set(id, (combined.get(id) ?? 0) + weight);
+  const ranked = [...combined].sort((a, b) => b[1] - a[1] || a[0] - b[0]);
+  if (!ranked.length) return { primary: 0, secondary: 0, blend: 0 };
+  const [primary, a] = ranked[0], [secondary, b] = ranked[1] ?? [primary, 0];
+  return { primary, secondary, blend: b / (a + b) };
+}
+
+export function materialColor(recipe: MaterialRecipe, source: RockUnit): [number, number, number] {
+  return ['bedrock', 'gravity', 'karst', 'volcanic', 'rocky-coast'].includes(recipe.family) ? source.colorLinear : recipe.colorLinear;
+}
+
+export function packMaterialMean(color: readonly number[]): number {
+  const encode = (v: number) => Math.round(Math.max(0, Math.min(1, v <= .0031308 ? v * 12.92 : 1.055 * Math.pow(v, 1 / 2.4) - .055)) * 255);
+  return encode(color[0]) | encode(color[1]) << 8 | encode(color[2]) << 16;
+}
+
+export function unpackMaterialMean(packed: number): [number, number, number] {
+  const decode = (v: number) => { const s = v / 255; return s <= .04045 ? s / 12.92 : Math.pow((s + .055) / 1.055, 2.4); };
+  return [decode(packed & 255), decode(packed >>> 8 & 255), decode(packed >>> 16 & 255)];
+}
 
 /** Physical-coordinate CPU reference. Patterns organize material relief; they never change canonical DEM or hydrology. */
 export function evaluateMaterialPattern(sample: SurfaceSample, x: number, z: number): { heightM: number; roughness: number; colorLinear: [number, number, number] } {
@@ -55,8 +82,7 @@ export function evaluateMaterialPattern(sample: SurfaceSample, x: number, z: num
     case 'water': pattern = .5 + .25 * Math.sin(u * 6.28) + .25 * Math.sin(v * 4.8 + u); break;
     default: pattern = .5 + .5 * cellular;
   }
-  const rock = ['bedrock', 'gravity', 'karst', 'volcanic', 'rocky-coast'].includes(recipe.family);
-  const base = rock ? sample.sourceRock.colorLinear : recipe.colorLinear;
+  const base = materialColor(recipe, sample.sourceRock);
   const shade = (.86 + .22 * pattern) * (1 - sample.wetness * recipe.wetResponse);
   return { heightM: (pattern - .5) * recipe.heightAmplitudeMetres, roughness: recipe.roughness * (1 - .35 * sample.wetness), colorLinear: base.map(v => v * shade) as [number, number, number] };
 }

@@ -1,6 +1,6 @@
 /** Renderer-independent physical surface contract. X/Z horizontal, Y altitude, all in metres. */
 export const SURFACE_SCHEMA_VERSION = 1 as const;
-export const SURFACE_COMPILER_VERSION = 'surface-1.0.0';
+export const SURFACE_COMPILER_VERSION = 'surface-1.1.0';
 export const SURFACE_POPULATION_VERSION = 'population-1.1.0';
 export interface Bounds { minX: number; minZ: number; maxX: number; maxZ: number }
 export interface SourceIdentity {
@@ -96,6 +96,10 @@ export interface SurfaceFields {
   temperatureC: Float32Array; precipitationMm: Float32Array;
   treeCover: Float32Array; grassCover: Float32Array; shrubCover: Float32Array; litter: Float32Array;
   occupation: Uint8Array; orientation: Float32Array; material: Uint16Array;
+  /** Compact ground mixture: primary*(1-materialBlend) + secondary*materialBlend. Snow is a separate overlay. */
+  materialSecondary: Uint16Array; materialBlend: Float32Array;
+  /** Linear mean encoded as packed sRGB8: R low byte, G bits8..15, B bits16..23. */
+  materialMeanColor: Uint32Array;
   snow: Float32Array; wetness: Float32Array;
 }
 export interface SurfaceVersions {
@@ -130,7 +134,9 @@ export interface SurfaceSample {
   handM: number; distanceToWaterM: number; waterClass: WaterClass; waterLevelM: number;
   temperatureC: number; precipitationMm: number; treeCover: number; grassCover: number;
   shrubCover: number; litter: number; occupation: Occupation; orientation: number;
-  snow: number; wetness: number; material: MaterialRecipe;
+  snow: number; wetness: number; material: MaterialRecipe; materialSecondary: MaterialRecipe; materialBlend: number;
+  /** Canonical mean conserved independently of the local two-material approximation. Excludes seasonal snow. */
+  materialMeanColorLinear: [number, number, number];
   provenance: Array<{ unitId: number; fraction: number }>;
 }
 export interface SurfaceCandidate {
