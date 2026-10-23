@@ -39,10 +39,10 @@ export function validateGeologyScenario(value: unknown): asserts value is Tilted
   if(!s||s.format!=='surface-geology-scenario'||s.version!==1||s.id!=='tilted-strata-v1'
     ||![s.originX,s.originZ,s.basalContactElevationM,s.strikeRadians,s.dipRadians].every(Number.isFinite)
     ||s.dipRadians<0||s.dipRadians>=Math.PI/2||typeof s.provenance!=='string'||!s.provenance.trim()
-    ||!Array.isArray(s.units)||!s.units.length||s.units.length>65536||!Array.isArray(s.strata)||!s.strata.length)throw new Error('Invalid explicit tilted-strata scenario');
+    ||!Array.isArray(s.units)||!s.units.length||s.units.length>64||!Array.isArray(s.strata)||!s.strata.length)throw new Error('Invalid explicit tilted-strata scenario');
   const ids=new Set<number>(),lithologies=['granite','limestone','sandstone','mudstone','basalt'];
   for(const unit of s.units){
-    if(!unit||!Number.isInteger(unit.id)||unit.id<0||unit.id>65535||ids.has(unit.id)||!lithologies.includes(unit.lithology)
+    if(!unit||!Number.isInteger(unit.id)||unit.id<1||unit.id>65535||ids.has(unit.id)||!lithologies.includes(unit.lithology)
       ||typeof unit.name!=='string'||!unit.name.trim()||![unit.sand,unit.silt,unit.clay,unit.hardness,unit.weatherability].every(n=>Number.isFinite(n)&&n>=0&&n<=1)
       ||Math.abs(unit.sand+unit.silt+unit.clay-1)>1e-5||!Number.isFinite(unit.strikeRadians)||!Array.isArray(unit.colorLinear)||unit.colorLinear.length!==3
       ||unit.colorLinear.some((n:number)=>!Number.isFinite(n)||n<0||n>1))throw new Error('Invalid scenario rock catalogue');
