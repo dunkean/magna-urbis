@@ -148,11 +148,14 @@ async function runNativeTour(sessionId) {
   const captures=events.filter(e=>e.event==='capture'),near=captures.find(e=>e.widthM===10);
   if(captures.length!==7||captures.some((e,i)=>e.widthM!==widths[i]||e.error!==0))throw new Error('Native tour did not record seven successful new captures in the required scale order');
   const nativeAccepted=report.viewer.metrics.liveAcceptance??[],nativeRendered=report.viewer.metrics.renderEvents??[];
+  let previousCapturedLiveSerial=-1;
   for(const capture of captures){
     const display=capture.renderedSnapshot;
     if(!display?.source?.sourceLODKnown||!nativeAccepted.some(e=>e.worldId===display.worldId&&e.requestSerial===display.liveSerial&&e.sourceEpoch===display.sourceEpoch&&e.sceneEpoch===display.sceneEpoch)
       ||!nativeRendered.some(e=>e.worldId===display.worldId&&e.liveSerial===display.liveSerial&&e.appliedTickMs===display.appliedTickMs)
       ||!packets.some(e=>e.packet?.worldId===display.worldId))throw new Error(`Native ${capture.widthM}m capture was not linked to a displayed live source packet`);
+    if(!Number.isSafeInteger(display.liveSerial)||display.liveSerial<=previousCapturedLiveSerial)throw new Error(`Native ${capture.widthM}m capture reused an earlier scale's live request`);
+    previousCapturedLiveSerial=display.liveSerial;
   }
   const loadedBinding=report.viewer.metrics.loadedLiveBinding;
   if(loadedBinding?.fingerprint!==report.source.canonicalFieldFingerprint||loadedBinding.n!==report.source.grid.width
