@@ -1,0 +1,136 @@
+{
+  "passed": true,
+  "samples": [
+    {
+      "crownHeightEnvelopeM": 20.0,
+      "frustumBounds": {
+        "maxX": 320.0,
+        "maxZ": 320.000030517578,
+        "minX": -320.0,
+        "minZ": -319.999969482422
+      },
+      "haloM": 40.0,
+      "heightEnvelopeWorld": [
+        0.0,
+        20.0
+      ],
+      "marginM": 1639.99996948242,
+      "maximumPixelFootprintM": 0.640009765774014,
+      "pageBounds": {
+        "maxX": 2000.0,
+        "maxZ": 2000.0,
+        "minX": -2000.0,
+        "minZ": -2000.0
+      },
+      "reason": "complete-frustum-plus-halo",
+      "referenceY": 0.0,
+      "safePhase": 2.0,
+      "transitionM": 45.7514563106796
+    },
+    {
+      "crownHeightEnvelopeM": 20.0,
+      "frustumBounds": {
+        "maxX": 1910.0,
+        "maxZ": 320.000030517578,
+        "minX": 1270.0,
+        "minZ": -319.999969482422
+      },
+      "haloM": 40.0,
+      "heightEnvelopeWorld": [
+        0.0,
+        20.0
+      ],
+      "marginM": 50.0,
+      "maximumPixelFootprintM": 0.640009765774014,
+      "pageBounds": {
+        "maxX": 2000.0,
+        "maxZ": 2000.0,
+        "minX": -2000.0,
+        "minZ": -2000.0
+      },
+      "reason": "complete-frustum-plus-halo",
+      "referenceY": 0.0,
+      "safePhase": 2.0,
+      "transitionM": 45.7514563106796
+    },
+    {
+      "crownHeightEnvelopeM": 20.0,
+      "frustumBounds": {
+        "maxX": 1940.0,
+        "maxZ": 320.000030517578,
+        "minX": 1300.0,
+        "minZ": -319.999969482422
+      },
+      "haloM": 40.0,
+      "heightEnvelopeWorld": [
+        0.0,
+        20.0
+      ],
+      "marginM": 20.0,
+      "maximumPixelFootprintM": 0.640009765774014,
+      "pageBounds": {
+        "maxX": 2000.0,
+        "maxZ": 2000.0,
+        "minX": -2000.0,
+        "minZ": -2000.0
+      },
+      "reason": "complete-frustum-plus-halo",
+      "referenceY": 0.0,
+      "safePhase": 0.812426983304586,
+      "transitionM": 45.7514563106796
+    },
+    {
+      "crownHeightEnvelopeM": 20.0,
+      "frustumBounds": {
+        "maxX": 1960.0,
+        "maxZ": 320.000030517578,
+        "minX": 1320.0,
+        "minZ": -319.999969482422
+      },
+      "haloM": 40.0,
+      "heightEnvelopeWorld": [
+        0.0,
+        20.0
+      ],
+      "marginM": 0.0,
+      "maximumPixelFootprintM": 0.640009765774014,
+      "pageBounds": {
+        "maxX": 2000.0,
+        "maxZ": 2000.0,
+        "minX": -2000.0,
+        "minZ": -2000.0
+      },
+      "reason": "complete-frustum-plus-halo",
+      "referenceY": 0.0,
+      "safePhase": 0.0,
+      "transitionM": 45.7514563106796
+    },
+    {
+      "crownHeightEnvelopeM": 20.0,
+      "frustumBounds": {
+        "maxX": 2020.0,
+        "maxZ": 320.000030517578,
+        "minX": 1380.0,
+        "minZ": -319.999969482422
+      },
+      "haloM": 40.0,
+      "heightEnvelopeWorld": [
+        0.0,
+        20.0
+      ],
+      "marginM": -60.0,
+      "maximumPixelFootprintM": 0.640009765774014,
+      "pageBounds": {
+        "maxX": 2000.0,
+        "maxZ": 2000.0,
+        "minX": -2000.0,
+        "minZ": -2000.0
+      },
+      "reason": "tree-page-does-not-cover-frustum-plus-halo",
+      "referenceY": 0.0,
+      "safePhase": 0.0,
+      "transitionM": 45.7514563106796
+    }
+  ],
+  "scope": "CPU camera-ray safety, halo, global phase and candidate-page contract; no GPU appearance claim"
+}

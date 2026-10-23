@@ -1,0 +1,34 @@
+[
+  {
+    "fromFocus": 19680,
+    "toFocus": 19840,
+    "pixelShift": 256,
+    "meanByteError": 0.0026830037434895835,
+    "maximumByteError": 1,
+    "differentPixels": 2110
+  },
+  {
+    "fromFocus": 19840,
+    "toFocus": 20000,
+    "pixelShift": 256,
+    "meanByteError": 0.00333404541015625,
+    "maximumByteError": 1,
+    "differentPixels": 2622
+  },
+  {
+    "fromFocus": 20000,
+    "toFocus": 20160,
+    "pixelShift": 256,
+    "meanByteError": 0.0036366780598958335,
+    "maximumByteError": 2,
+    "differentPixels": 2859
+  },
+  {
+    "fromFocus": 20160,
+    "toFocus": 20320,
+    "pixelShift": 256,
+    "meanByteError": 0.0032526652018229165,
+    "maximumByteError": 1,
+    "differentPixels": 2558
+  }
+]
