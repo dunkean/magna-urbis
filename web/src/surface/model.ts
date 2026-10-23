@@ -1,6 +1,8 @@
 /** Renderer-independent physical surface contract. Right-handed frame: +X east, +Y up, +Z south (map +Y), all metres. */
 export const SURFACE_SCHEMA_VERSION = 1 as const;
-export const SURFACE_COMPILER_VERSION = 'surface-1.5.2';
+export const SURFACE_COMPILER_VERSION = 'surface-1.5.3';
+/** Physical analysis/acceptance is unchanged by derived ground support policy. */
+export const SURFACE_PHYSICAL_CONTEXT_VERSION = 'surface-1.5.2';
 export const SURFACE_POPULATION_VERSION = 'population-1.2.0';
 export interface Bounds { minX: number; minZ: number; maxX: number; maxZ: number }
 export interface SourceIdentity {

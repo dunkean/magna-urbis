@@ -1,0 +1,123 @@
+{
+  "format": "source-native419-ground-support-ab",
+  "sourceFixtureSha256": "3bc88b136930baa83d31b9ca3f41a05a768365a6fa8ad6719a93f204d430da81",
+  "scope": "CPU128x128 retained source crop A/B compilation from identical inputs, canonical physical water support and original levels; edge diagnostics rederived identically, not a fullworld requalification",
+  "sourceCrop": {
+    "x0": 360,
+    "z0": 480,
+    "width": 128,
+    "originX": 5632.8125,
+    "originZ": 7507.8125,
+    "spacingM": 15.625
+  },
+  "before": {
+    "0": {
+      "count": 15187,
+      "primaryRecipeCounts": {
+        "mineral-soil": 14119,
+        "alluvial-bars": 1068
+      },
+      "uniqueGroundMeans": 94,
+      "meanLinearLuminance": 0.19140226332007285,
+      "snowSum": 0
+    },
+    "5": {
+      "count": 423,
+      "primaryRecipeCounts": {
+        "compacted-road": 423
+      },
+      "uniqueGroundMeans": 1,
+      "meanLinearLuminance": 0.21065047131707157,
+      "snowSum": 0
+    },
+    "6": {
+      "count": 774,
+      "primaryRecipeCounts": {
+        "built-foundation": 774
+      },
+      "uniqueGroundMeans": 1,
+      "meanLinearLuminance": 0.292099919953442,
+      "snowSum": 0
+    },
+    "7": {
+      "count": 0,
+      "primaryRecipeCounts": {},
+      "uniqueGroundMeans": 0,
+      "meanLinearLuminance": null,
+      "snowSum": 0
+    }
+  },
+  "after": {
+    "0": {
+      "count": 15187,
+      "primaryRecipeCounts": {
+        "mineral-soil": 14119,
+        "alluvial-bars": 1068
+      },
+      "uniqueGroundMeans": 94,
+      "meanLinearLuminance": 0.19140226332007285,
+      "snowSum": 0
+    },
+    "5": {
+      "count": 423,
+      "primaryRecipeCounts": {
+        "mineral-soil": 398,
+        "alluvial-bars": 25
+      },
+      "uniqueGroundMeans": 42,
+      "meanLinearLuminance": 0.19079364550061134,
+      "snowSum": 0
+    },
+    "6": {
+      "count": 774,
+      "primaryRecipeCounts": {
+        "mineral-soil": 764,
+        "alluvial-bars": 10
+      },
+      "uniqueGroundMeans": 19,
+      "meanLinearLuminance": 0.18650022564092658,
+      "snowSum": 0
+    },
+    "7": {
+      "count": 0,
+      "primaryRecipeCounts": {},
+      "uniqueGroundMeans": 0,
+      "meanLinearLuminance": null,
+      "snowSum": 0
+    }
+  },
+  "checks": {
+    "physicalFieldsExact": true,
+    "legacyCompositeExact": true,
+    "lowCoverExact": true,
+    "heightExact": true,
+    "occupationVersionExact": true,
+    "environmentVersionExact": true,
+    "populationVersionExact": true,
+    "sourcePacketUnchanged": true,
+    "layerVersionChanged": true
+  },
+  "beforeCompiler": "surface-1.5.2",
+  "afterCompiler": "surface-1.5.3",
+  "sourceUrbanIdentity": "963cb15129efcccd7849a1adae4c81fb",
+  "sourceRoadsFingerprint": "b63c2e3e0211c61080462986ae8fcc4a",
+  "sourceRoadsUnchanged": true,
+  "baselineRepository": "9b8739268cc00a296b839b6446cc53451f075ea7",
+  "reproduction": "web/scripts/diagnose_surface_urban_ground.ts",
+  "validation": {
+    "surfaceTests": 187,
+    "surfaceTestFiles": 33,
+    "typecheck": "pass using read-only baseline generated wasm declarations via private worktree junction",
+    "gpuRun": false
+  },
+  "fullCanonicalOccupationCounts": {
+    "Natural": 1043864,
+    "Road": 3604,
+    "Built": 1108
+  },
+  "paletteCause": {
+    "producer": "compiler.ts formerly replaced bare ground by built-foundation/compacted-road for every raster occupied cell",
+    "consumer": "viewer-local/adapters/surface_presentation.gd material_palette remaps compacted-road to roadFill and built-foundation to urban.yard, extending clear cartographic material across the coarse occupation raster",
+    "physicalSnow": "zero in all three occupied source crop classes before and after"
+  }
+}

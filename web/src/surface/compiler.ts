@@ -1,5 +1,5 @@
 import {
-  SURFACE_COMPILER_VERSION, SURFACE_POPULATION_VERSION, SURFACE_SCHEMA_VERSION, DepositOrigin, Landform, Occupation, WaterClass,
+  SURFACE_COMPILER_VERSION, SURFACE_PHYSICAL_CONTEXT_VERSION, SURFACE_POPULATION_VERSION, SURFACE_SCHEMA_VERSION, DepositOrigin, Landform, Occupation, WaterClass,
   assertNotAborted, clamp, hashString, terrainBounds,
   type CompileOptions, type SurfaceCompileInput, type SurfaceFields, type SurfaceSample, type SurfaceWorld,
   type Bounds, type CanonicalSurfaceContext, type CanonicalSurfaceContextRef, type ClimateInput, type GeologyInput, type MaterialRecipe, type SurfaceGridGeometry, type TerrainGrid,
@@ -289,6 +289,7 @@ export function compileSurfaceWorld(input: SurfaceCompileInput, options: Compile
   if (!input.hydrology?.waterLevelM && f.waterClass.some(v => v !== WaterClass.Dry)) warnings.push('Wet-cell water levels fall back to bed elevation because source levels were not supplied; depth is unknown, not an observed zero-depth lake/ocean.');
   assumptions.push('Morphology uses finite differences and multi-radius square-window TPI, not a full geomorphon classifier.', 'Sediment depth, organic content, moisture, TWI/HAND interpretation and cover are synthesis potentials, not a calibrated mass-conserving sediment/pedology simulation.', 'Water proximity is a chamfer distance; HAND follows source drainage. Date alone does not predict discharge or flood levels.', 'Special landforms require declared process masks and existing terrain geometry; surface motifs do not generate dunes, karst, glaciers or volcanic landforms.');
   assumptions.push('surface-layers-1 separates substrate/soil/deposits, low living/dead cover and physical trees. Legacy material* remains the mixed ground/low-cover composite, not bare soil.',
+    'Ground support policy natural-under-infrastructure-1: coarse Built/Road/Yard occupation does not imply an artificial ground finish; source vector infrastructure owns its material.',
     'Low-cover opacity is a same-plane support budget: rock exclusion, dead litter, shrub proxy and herbs; canopy crown cover may overlap vertically. Shrubs currently use the authored low-vegetation recipe, not a dedicated foliage PBR asset.');
   if (t.spacingM < t.source.nativeSpacingM) warnings.push('Grid is finer than native source spacing; this is reconstruction, not new source terrain detail.');
   if (t.source.sourceLODKnown === false) warnings.push('Generator source LOD was not recorded by the legacy source; numeric sourceLOD is a compatibility placeholder.');
@@ -430,9 +431,10 @@ export function compileSurfaceWorld(input: SurfaceCompileInput, options: Compile
     const dryFraction=clamp((.65-aridity)/.4),humus=organicSoilFraction(moisture,s,f.organic[i]);
     const soilWeight=soilRest*(1-dryFraction);
     let groundWeights:Array<[number,number]>=[[supportRock,rockCover],[M['mineral-soil'],soilWeight*(1-humus)],[M['organic-soil'],soilWeight*humus],[M['arid-reg'],soilRest*dryFraction],...supportSediment.map(([id,v])=>[id,v/supportScale*(1-rockCover)] as [number,number])];
-    if(occupation===Occupation.Road||occupation===Occupation.Yard)groundWeights=[[M['compacted-road'],1]];
-    else if(occupation===Occupation.Crop)groundWeights=[[M['cultivated-soil'],1]];
-    else if(occupation===Occupation.Built)groundWeights=[[M['built-foundation'],1]];
+    // Coarse occupation is an exclusion/support constraint, not evidence of laid
+    // paving. Source roads/courts/buildings carry their own vector materials;
+    // preserve the local mineral/organic substrate beneath all three.
+    if(occupation===Occupation.Crop)groundWeights=[[M['cultivated-soil'],1]];
     const groundComposition=dominantMaterialPair(groundWeights);
     const blocked=water!==WaterClass.Dry||occupation===Occupation.Road||occupation===Occupation.Yard||occupation===Occupation.Built;
     const deadLitter=blocked?0:clamp(f.litter[i]*1.35)*(1-rockCover);
@@ -451,7 +453,7 @@ export function compileSurfaceWorld(input: SurfaceCompileInput, options: Compile
   }
   const terrainVersion = fingerprint(t), hydrologyVersion = fingerprint(['hydrology-2', terrainVersion, input.hydrology, f.downstream, f.waterClass, f.waterLevelM]);
   const geologyVersion = fingerprint(geology), occupationVersion = fingerprint(input.occupation ?? 'natural');
-  const environment = fingerprint([terrainVersion, hydrologyVersion, geologyVersion, climate, input.processes, radii, options.riverAreaThresholdM2 ?? 1_000_000, options.floodplainWidthM ?? 150, options.colluvialDecayLengthM ?? 100, materials.map(m => m.id), SURFACE_COMPILER_VERSION]);
+  const environment = fingerprint([terrainVersion, hydrologyVersion, geologyVersion, climate, input.processes, radii, options.riverAreaThresholdM2 ?? 1_000_000, options.floodplainWidthM ?? 150, options.colluvialDecayLengthM ?? 100, materials.map(m => m.id), SURFACE_PHYSICAL_CONTEXT_VERSION]);
   const population = fingerprint([environment, occupationVersion, input.seed, SURFACE_POPULATION_VERSION].join(':'));
   const materialLibrary = fingerprint(materials), surfaceState = fingerprint(state), surfaceLayers=surfaceLayerFieldsVersion(f)!;
   let estimatedBytes = t.heights.byteLength;
