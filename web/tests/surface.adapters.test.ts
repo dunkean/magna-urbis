@@ -6,8 +6,42 @@ import type { Building3dScene } from '../src/render/urbanBuildingGeometry';
 import { createInfiniteRefinementProvider } from '../src/surface/adapters/infiniteRefinement';
 import { createSurfaceStreamHandler } from '../src/surface/adapters/stream';
 import reference from '../../rust/fixtures/houses/batch-reference.json';
+import { exportSurfacePacket } from '../src/surface/adapters/export';
+import type { Decor } from '../src/ui/decor';
+import { climateFromMagnaQuery, MAGNA_CLIMATE_PRESETS } from '../src/surface/adapters/climate';
+import { readFileSync } from 'node:fs';
 
 describe('renderer independent Magna adapters', () => {
+  it('keeps offline climate presets exactly aligned with the existing source and converts units', () => {
+    const text = readFileSync(new URL('../../rust/bridge/terrain.ts', import.meta.url), 'utf8');
+    const literal = text.match(/export const CLIMATE_VALUES[^=]*=\s*(\{[\s\S]*?\n\});/)?.[1];
+    expect(literal).toBeDefined();
+    // Evaluate only the checked-in constant object, never import the browser runtime.
+    const original = Function(`return (${literal});`)();
+    expect(MAGNA_CLIMATE_PRESETS).toEqual(original);
+    const arid = climateFromMagnaQuery('climate=arid');
+    expect(arid.meanAnnualTempC).toBe(23);
+    expect(arid.annualPrecipMm).toBe(150);
+    expect(arid.seasonalAmplitudeC).toBeCloseTo(8 * Math.SQRT2);
+    const custom = climateFromMagnaQuery('?climate=arid&temperature=-4&temperatureStd=200&precipitation=999');
+    expect(custom.meanAnnualTempC).toBe(-4);
+    expect(custom.annualPrecipMm).toBe(999);
+    expect(custom.seasonalAmplitudeC).toBeCloseTo(2 * Math.SQRT2);
+  });
+  it('keeps retained water source IDs and source metadata separate from compiled context', () => {
+    const decor = { meta: { id: 'capture', seed: 'source-seed', created: '2026-10-22', query: '?source=neural-python',
+      terrainDisplay: { sourceCell: 40 } }, raster: { n: 3, width: 120,
+      height: new Float32Array([1, 2, 3, 2, 3, 4, 3, 4, 5]), water: new Uint8Array([0, 3, 0, 0, 3, 0, 0, 3, 0]),
+      waterLevel: new Float32Array(9).fill(3), riverWidth: new Float32Array(9).fill(2), riverIds: new Int32Array(9).fill(847) } } as Decor;
+    const packet = exportSurfacePacket(decor, undefined, { originX: 1000, originZ: 2000 });
+    expect(packet.source.water.riverIds).toEqual(Array(9).fill(847));
+    expect(packet.source.meta.seed).toBe('source-seed');
+    expect(packet.world.terrain.originX).toBe(1020);
+    expect(packet.world.terrain.originZ).toBe(2020);
+    expect(packet.world.terrain.source.nativeSpacingM).toBe(40);
+    expect(packet.world.terrain.source.sourceLODKnown).toBe(false);
+    expect([...decor.raster.riverIds]).toEqual(Array(9).fill(847));
+  });
   it('uses real refinement endpoints and trusts actual source metadata, never requested LOD', async () => {
     const calls: { url: string; body: any; signal?: AbortSignal | null }[] = [];
     const transport = (async (url: string | URL | Request, options?: RequestInit) => {
@@ -24,6 +58,7 @@ describe('renderer independent Magna adapters', () => {
     expect(calls[1].body.resolution).toBe(8);
     expect(calls[1].signal).toBe(controller.signal);
     expect([grid.originX, grid.originZ, grid.spacingM, grid.source.nativeSpacingM, grid.source.sourceLOD]).toEqual([101, 201, 2, 2, 7]);
+    expect(grid.source.sourceLODKnown).toBe(true);
     expect([...grid.heights]).toEqual([120, 121, 122, 123]);
     expect([...field]).toEqual([1, 2, 3, 4]);
   });

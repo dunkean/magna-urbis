@@ -50,7 +50,7 @@ export async function createInfiniteRefinementProvider(server: string,
     const spacingM = meta.width / meta.n;
     return { width: meta.n, height: meta.n, originX: meta.x + spacingM / 2, originZ: meta.y + spacingM / 2,
       spacingM, heights, source: { id: `infinite:${options.seed}`, version: meta.version,
-        sourceLOD: meta.lod, nativeSpacingM: meta.sourceCell,
+        sourceLOD: meta.lod, sourceLODKnown: true, nativeSpacingM: meta.sourceCell,
         provenance: `Infinite retained refinement; seed=${options.seed}; decoderUsed=${meta.decoderUsed}; registrationNativeMpp=${registration.nativeMpp}` } };
   } };
 }
