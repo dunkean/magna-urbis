@@ -1,0 +1,466 @@
+{
+  "format": "magna-surface-e2e-technical-evidence",
+  "version": 1,
+  "campaign": "native-e2e-40km-v5",
+  "technicalHarnessStatus": "complete",
+  "artisticAcceptance": false,
+  "fullUrbanSceneQualified": false,
+  "scope": "Fresh actual Infinite Generation source through browser worker, live broker and native Godot renderer; continuous-input progress and seven settled captures. This is technical evidence, not artistic approval.",
+  "date": "2026-10-23T16:56:14.639Z",
+  "snapshot": {
+    "initialHead": "f6a45af90468cd8247e58db7678c32d9c2619322",
+    "finalHead": "f6a45af90468cd8247e58db7678c32d9c2619322",
+    "initialStatus": "",
+    "finalStatus": "",
+    "driverSha256": "c091792b0e3bc122e09fa8a63f341eee1d12e546723b8a94ef488581db1c68ab",
+    "nativeSourceFilesUnchanged": true,
+    "serviceRevisionAttestation": "The selected viewer repository is expected to serve the supplied Vite URL; the endpoint does not independently attest its Git revision."
+  },
+  "reproduction": {
+    "cwd": "web",
+    "services": [
+      "http://127.0.0.1:5197",
+      "http://127.0.0.1:8893"
+    ],
+    "command": "node --import tsx scripts/generate_surface_source.mjs --url http://127.0.0.1:5197 --neural http://127.0.0.1:8893 --width 40000 --seed surface-native-e2e-40km --decoder-model original --geology-scenario tilted-strata-v1 --out out/surface/native-e2e-40km-v5 --viewer-godot PATH_TO_GODOT_4_7_2 --viewer-launcher scripts/surface_viewer.mjs --viewer-assets out/surface-assets/resolved.json --viewer-resolution 2048x1280 --viewer-navigation-seconds 20 --viewer-navigation-first"
+  },
+  "source": {
+    "freshGeneration": true,
+    "parentSourceRegeneratedDuringNative": false,
+    "seed": "surface-native-e2e-40km",
+    "extentM": 40000,
+    "backend": "python-cuda",
+    "precision": "bf16",
+    "profile": "coarse4-original-original",
+    "modelRevision": "919550498b3fd7c9d4c53e575f6a2d5475f9be2d",
+    "selectedModels": {
+      "coarseModel": "coarse4",
+      "baseModel": "original",
+      "decoderModel": "original"
+    },
+    "neuralSeed": "2814899424497554030",
+    "neuralToken": "9a27586cad5745d299b284133dfb3064",
+    "generationServiceMs": 2120.6532000069274,
+    "rawNeuralResponse": {
+      "grid": [
+        1024,
+        1024
+      ],
+      "spacingM": 39.0625,
+      "bytes": 4194304,
+      "sha256": "3c7c2f32e37844842f058208e21522543bcec69125348e115390f83d5b814159",
+      "stage": "raw Python neural response before Magna reconstruction/hydrology"
+    },
+    "retainedExport": {
+      "grid": {
+        "width": 512,
+        "height": 512,
+        "spacingM": 78.125
+      },
+      "canonicalFieldFingerprint": "rf1-019b8aa8fc4b7a3a38e7adce2163d4ea",
+      "bytes": 72336985,
+      "sha256": "689b019888cab0a46ad4f28ca7d01f7334cff62f267913ea4a184e80081a215e",
+      "frame": {
+        "format": "magna-surface-frame",
+        "version": 1,
+        "coordinateSystem": "metric-xz",
+        "terrainSourceOrigin": {
+          "x": 0,
+          "z": 0
+        },
+        "geometrySourceOrigin": {
+          "x": 0,
+          "z": 0
+        },
+        "frameTranslation": {
+          "x": 0,
+          "z": 0
+        },
+        "terrainWorldCorner": {
+          "x": 0,
+          "z": 0
+        },
+        "geometryToWorldTranslation": {
+          "x": 0,
+          "z": 0
+        },
+        "sourceCrop": null,
+        "fullSource": {
+          "id": "mountains-surface-native-e2e-40km",
+          "widthM": 40000,
+          "queryReference": "source.meta.query"
+        },
+        "liveCompatible": true
+      }
+    },
+    "buildings": 0,
+    "urbanId": "0833d2f47b08b76a01d8ee54891936b8",
+    "geologyScenario": {
+      "id": "tilted-strata-v1",
+      "originX": 0,
+      "originZ": 0,
+      "strikeRadians": 0.6108652381980153,
+      "dipRadians": 0.13962634015954636,
+      "descriptorSha256": "6edc44540a6092a6e710c8d7df417efec40fb0024bd20e54a5c5d2bff2eb3762",
+      "provenance": "Explicit authored tilted-strata-v1 demonstration: parallel physical beds over granite; no observed geology, climate inference or parent-colour noise claimed."
+    }
+  },
+  "renderer": {
+    "adapter": "NVIDIA GeForce RTX 4090",
+    "backend": "forward_plus",
+    "godot": "4.7.2-stable (official)",
+    "terrain3d": "1.0.2",
+    "resolution": [
+      2048,
+      1280
+    ]
+  },
+  "phases": {
+    "order": [
+      "navigation",
+      "tour"
+    ],
+    "totalMs": 314249,
+    "navigationMs": 88700,
+    "tourMs": 186348
+  },
+  "continuousNavigation": {
+    "status": "complete",
+    "nominalSeconds": 20,
+    "actualMotionWallSeconds": 20.005,
+    "motionStartTickMs": 59240,
+    "motionEndTickMs": 79240,
+    "warmupSeconds": 41.493,
+    "inputSamples": 314,
+    "requestedInputHz": 20,
+    "maximumInputGapSeconds": 0.15,
+    "geometryApplications": 5,
+    "qualifyingNewWorlds": [
+      {
+        "worldId": "37f8bf6484451fea7bbfeb843413dce8",
+        "requestSerial": 99,
+        "appliedTickMs": 72046,
+        "request": {
+          "extent": 1950.76436428711,
+          "knownContextId": "295512307ce622de2d7bfea037989e0c",
+          "knownSceneContextId": "cc91bee87ea3683c040874b48cbea5f2",
+          "preview": true,
+          "resolution": 128,
+          "x": 18641.3275802226,
+          "y": 18784.1756218779
+        },
+        "sourceId": "infinite:2814899424497554030:940677bdfca0c075c41cfb637a3c0ea6",
+        "sourceVersion": "decoder-v12-nyquist-notch:magna-retained-v1:e2bf5473c0ff:f21afa261ed7",
+        "sourceLOD": -1,
+        "sourceLODKnown": true,
+        "nativeSpacingM": 15,
+        "focusInsideSource": true,
+        "fineContributionWeight": 1
+      },
+      {
+        "worldId": "f98c42bb35ac33f583349f8373a1a5cf",
+        "requestSerial": 208,
+        "appliedTickMs": 76218,
+        "request": {
+          "extent": 110.586224305157,
+          "knownContextId": "295512307ce622de2d7bfea037989e0c",
+          "knownSceneContextId": "cc91bee87ea3683c040874b48cbea5f2",
+          "preview": true,
+          "resolution": 128,
+          "x": 19545.1698578981,
+          "y": 19688.6247774725
+        },
+        "sourceId": "infinite:2814899424497554030:940677bdfca0c075c41cfb637a3c0ea6",
+        "sourceVersion": "decoder-v12-nyquist-notch:magna-retained-v1:e2bf5473c0ff:f21afa261ed7",
+        "sourceLOD": -6,
+        "sourceLODKnown": true,
+        "nativeSpacingM": 0.46875,
+        "focusInsideSource": true,
+        "fineContributionWeight": 1
+      }
+    ],
+    "longestApplicationGapSeconds": 9.722,
+    "minimumObservedWidthM": 8.57583630817969,
+    "maximumObservedPanOffsetM": 613.481530481404,
+    "drainSeconds": 8.796,
+    "finalReady": true,
+    "finalDeliveredSource": {
+      "worldId": "dff4a875c7c8931bd1f53e6db637a061",
+      "preview": false,
+      "requestedResolution": 512,
+      "deliveredGrid": {
+        "width": 140,
+        "height": 140,
+        "spacingM": 0.46566853085912174
+      },
+      "nativeSpacingM": 0.46875
+    },
+    "discardedPreparations": {
+      "failed": 0,
+      "obsoletePhysicalLineage": 0,
+      "olderThanDisplayed": 0
+    },
+    "frameWallMs": {
+      "max": 392.495,
+      "p50": 31.133,
+      "p95": 38.84,
+      "p99": 42.941
+    },
+    "uploadAndObjectsMs": [
+      229.732,
+      206.435,
+      8.575,
+      9.388,
+      95.879,
+      79.856,
+      35.144,
+      46.156,
+      42.925,
+      39.532
+    ],
+    "frameTimeScope": "Observed wall-frame samples for this run, including renderer/vsync/driver effects. No continuous 60 Hz source-update claim.",
+    "textureMemoryBytes": 578615296,
+    "videoMemoryBytes": 635762656
+  },
+  "settledTour": {
+    "status": "complete",
+    "nativeCaptures": 7,
+    "brokerRequests": 6,
+    "browserWorkerPackets": 6,
+    "acceptedBinaryReplies": 6,
+    "pythonTiles": 6,
+    "decoderBackedPythonTiles": 5,
+    "environmentVersions": [
+      "333e3b5162fba6cf3a53d7b186276fdd"
+    ],
+    "canonicalBuildCounts": [
+      1
+    ],
+    "sourceIds": [
+      "infinite:2814899424497554030:940677bdfca0c075c41cfb637a3c0ea6"
+    ],
+    "sourceEpochs": [
+      "bench-source-1"
+    ],
+    "parentReconstructions": [
+      "cubic-bspline-controls"
+    ],
+    "loadedBinding": {
+      "computeMs": 723.263,
+      "fingerprint": "rf1-019b8aa8fc4b7a3a38e7adce2163d4ea",
+      "format": "surface-loaded-live-binding",
+      "initialUrbanId": "0833d2f47b08b76a01d8ee54891936b8",
+      "n": 512,
+      "seed": "surface-native-e2e-40km",
+      "sourceId": "mountains-surface-native-e2e-40km",
+      "version": 1,
+      "widthM": 40000
+    },
+    "cameraSatisfaction": [
+      {
+        "cameraSerial": 0,
+        "actualRequestSerial": 0,
+        "worldId": "72041dc77961a489f15424bfd505d773",
+        "requiredSpacingM": 77.972412109375,
+        "deliveredSpacingM": 77.972412109375,
+        "region": {
+          "extent": 39921.875,
+          "preview": false,
+          "resolution": 512,
+          "x": 39.0625,
+          "y": 39.0625
+        }
+      },
+      {
+        "cameraSerial": 1,
+        "actualRequestSerial": 1,
+        "worldId": "9228922b8fd390254dee4dfba424f717",
+        "requiredSpacingM": 23.5390625,
+        "deliveredSpacingM": 23.5390625,
+        "region": {
+          "extent": 12052,
+          "preview": false,
+          "resolution": 512,
+          "x": 13974,
+          "y": 13974
+        }
+      },
+      {
+        "cameraSerial": 2,
+        "actualRequestSerial": 2,
+        "worldId": "209bd18be29b6065df7023e3dc694cef",
+        "requiredSpacingM": 6.1015625,
+        "deliveredSpacingM": 6.1015625,
+        "region": {
+          "extent": 3124,
+          "preview": false,
+          "resolution": 512,
+          "x": 18438,
+          "y": 18438
+        }
+      },
+      {
+        "cameraSerial": 3,
+        "actualRequestSerial": 3,
+        "worldId": "ba1e17c6043f64687960e8ae6c537122",
+        "requiredSpacingM": 1.6015625,
+        "deliveredSpacingM": 1.6015625,
+        "region": {
+          "extent": 820,
+          "preview": false,
+          "resolution": 512,
+          "x": 19590,
+          "y": 19590
+        }
+      },
+      {
+        "cameraSerial": 4,
+        "actualRequestSerial": 4,
+        "worldId": "089d0f316f22ab5f6d07d0812d3175ed",
+        "requiredSpacingM": 0.4765625,
+        "deliveredSpacingM": 0.4765625,
+        "region": {
+          "extent": 244,
+          "preview": false,
+          "resolution": 512,
+          "x": 19878,
+          "y": 19878
+        }
+      },
+      {
+        "cameraSerial": 5,
+        "actualRequestSerial": 5,
+        "worldId": "7043df98e42c3b16c510da58ee770834",
+        "requiredSpacingM": 0.46875,
+        "deliveredSpacingM": 0.467289719626168,
+        "region": {
+          "extent": 100,
+          "preview": false,
+          "resolution": 512,
+          "x": 19950,
+          "y": 19950
+        }
+      },
+      {
+        "cameraSerial": 6,
+        "actualRequestSerial": 5,
+        "worldId": "7043df98e42c3b16c510da58ee770834",
+        "requiredSpacingM": 0.46875,
+        "deliveredSpacingM": 0.467289719626168,
+        "region": {
+          "extent": 64,
+          "preview": false,
+          "resolution": 512,
+          "x": 19968,
+          "y": 19968
+        }
+      }
+    ],
+    "lastCameraMetresPerPixel": 0.0048828125,
+    "finalPhysicalNativeSpacingM": 0.46875,
+    "deliveredSpacingM": 0.467289719626168,
+    "captures": [
+      {
+        "file": "00_40000m_top.png",
+        "widthM": 40000,
+        "pixels": [
+          2048,
+          1280
+        ],
+        "bytes": 1994884,
+        "sha256": "99a96b10af41a4f22abfe5f2a2e9db93158f6b3a6355fcdc7b079dcbe92c60d3"
+      },
+      {
+        "file": "01_10000m_top.png",
+        "widthM": 10000,
+        "pixels": [
+          2048,
+          1280
+        ],
+        "bytes": 1788255,
+        "sha256": "771f05674bed5fc3564c1fad8f18cee04d390ae7a9ed16b4d2f2dee2feac56e6"
+      },
+      {
+        "file": "02_2560m_top.png",
+        "widthM": 2560,
+        "pixels": [
+          2048,
+          1280
+        ],
+        "bytes": 1604625,
+        "sha256": "2af1c2e3fb161b9ebabb0f94f7282fdcdc13811d810f23abab68ef0b6e4b13b3"
+      },
+      {
+        "file": "03_640m_top.png",
+        "widthM": 640,
+        "pixels": [
+          2048,
+          1280
+        ],
+        "bytes": 2522756,
+        "sha256": "32719476db2a25d0e3b9c1fadbd0f88ef4ef84f0521eba6538798ddc8d906aef"
+      },
+      {
+        "file": "04_160m_top.png",
+        "widthM": 160,
+        "pixels": [
+          2048,
+          1280
+        ],
+        "bytes": 2164848,
+        "sha256": "5597b5f59ed445231e05abd13579367b891d24d47ff2b2418d5dc65c9b14a9b1"
+      },
+      {
+        "file": "05_40m_top.png",
+        "widthM": 40,
+        "pixels": [
+          2048,
+          1280
+        ],
+        "bytes": 2057909,
+        "sha256": "487adf38fdb282987ae3b8816273e251d917aacd40149bf64176b0e36f5cc705"
+      },
+      {
+        "file": "06_10m_top.png",
+        "widthM": 10,
+        "pixels": [
+          2048,
+          1280
+        ],
+        "bytes": 2027593,
+        "sha256": "54c8e3417c4b84d928c87922acdb768ba2eef80f6b888a290c9ae5b184e8d681"
+      }
+    ]
+  },
+  "preservedHistoricalFailures": [
+    "native-e2e-40km",
+    "native-e2e-40km-v2",
+    "native-e2e-40km-v3",
+    "native-e2e-40km-v4"
+  ],
+  "limitations": [
+    "Known square forest/canopy boundary is not visually qualified by this run; correction is pending separately.",
+    "The exported scene contains zero buildings. This run does not qualify a populated city, urban style parity or building support.",
+    "Only two fresh live worlds qualified during the 20-second motion. The longest application gap was 9.722 seconds and final drain 8.796 seconds; successful progress is not continuous low-latency detail.",
+    "Preview 128 and settled 512 are requested quality levels. Delivered grid and nativeSpacingM are authoritative; the final tour reused a 214 x 214 source over 100 m for the 40 m and 10 m camera views.",
+    "10 m / 2048 pixels equals 4.8828125 mm per pixel; physical source spacing remains 0.46875 m, not millimetric geometry.",
+    "This is one top-down aerial trajectory on RTX 4090. Oblique trajectories, exports, other styles, scenes and hardware require separate qualification.",
+    "The authored tilted-strata descriptor is a demonstration, not observed geology. Source hydrology and soil/process heuristics are not a scientific mass-balance simulation.",
+    "No photorealism, artistic acceptance, continuous 60 FPS uploads or final engine-selection decision is established.",
+    "The HTTP Python service reports model identity/revision but does not independently attest the Vite repository Git revision."
+  ],
+  "artifacts": {
+    "directory": "web/out/surface/native-e2e-40km-v5",
+    "historicalReportUnmodified": true,
+    "reportSha256": "bdf5af5202b50b9351b70eb45a73b65cbdbdc3d0c6af13b30669100df9f1511e",
+    "navigationProofSha256": "7cf494200299a76b8551cfacc452d80ef270a2fd3f0015bb2283ca366510a782",
+    "navigationMetricsSha256": "fe1d55b601fd5a406381e040ae529225d0915bf453625c48aeb89a61dc878a0e",
+    "tourMetricsSha256": "3309cd4d949409f5102d94b3d7348768554a90a66beda5af2d6adfd45172b684",
+    "ignoredArtifactsRetainedLocally": true
+  },
+  "cleanup": {
+    "driverExitCode": 0,
+    "ownedProcessesStopped": true,
+    "mainCheckoutModified": false
+  }
+}
