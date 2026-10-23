@@ -2,9 +2,9 @@ import {
   SURFACE_COMPILER_VERSION, SURFACE_POPULATION_VERSION, SURFACE_SCHEMA_VERSION, DepositOrigin, Landform, Occupation, WaterClass,
   assertNotAborted, clamp, hashString, terrainBounds,
   type CompileOptions, type SurfaceCompileInput, type SurfaceFields, type SurfaceSample, type SurfaceWorld,
-  type Bounds, type CanonicalSurfaceContext, type CanonicalSurfaceContextRef, type ClimateInput, type GeologyInput, type SurfaceGridGeometry, type TerrainGrid,
+  type Bounds, type CanonicalSurfaceContext, type CanonicalSurfaceContextRef, type ClimateInput, type GeologyInput, type MaterialRecipe, type SurfaceGridGeometry, type TerrainGrid,
 } from './model';
-import { DEFAULT_ROCK_UNITS, SURFACE_MATERIALS, dominantMaterialPair, materialColor, packMaterialMean, unpackMaterialMean, type MaterialComposition } from './materials';
+import { DEFAULT_ROCK_UNITS, SURFACE_MATERIALS, createMaterialIndex, dominantMaterialPair, materialColor, packMaterialMean, unpackMaterialMean, type MaterialComposition } from './materials';
 
 /** Hash includes content and shape, not merely source labels (edit-safe cache invalidation). */
 function fingerprint(value: unknown): string {
@@ -28,16 +28,17 @@ function validateGrid(t: TerrainGrid): void {
   if (!Number.isInteger(t.width) || !Number.isInteger(t.height) || t.width < 2 || t.height < 2 || t.width * t.height > 16_777_216) throw new Error('Terrain grid dimensions must be 2..16777216 samples');
   if (!Number.isFinite(t.spacingM) || t.spacingM <= 0 || !Number.isFinite(t.originX) || !Number.isFinite(t.originZ)) throw new Error('Terrain coordinates and spacing must be finite metres');
   if (t.heights.length !== t.width * t.height) throw new Error('Terrain heights length does not match grid');
-  if (!t.source.id || !t.source.version || !Number.isFinite(t.source.sourceLOD) || !(t.source.nativeSpacingM > 0)) throw new Error('Terrain source identity, sourceLOD and native spacing are required');
+  if (typeof t.source.id !== 'string' || !t.source.id || typeof t.source.version !== 'string' || !t.source.version || !Number.isFinite(t.source.sourceLOD) || !Number.isFinite(t.source.nativeSpacingM) || !(t.source.nativeSpacingM > 0)
+    || t.source.sourceLODKnown !== undefined && typeof t.source.sourceLODKnown !== 'boolean') throw new Error('Terrain source identity, sourceLOD and finite native spacing are required');
   for (const h of t.heights) if (!Number.isFinite(h)) throw new Error('Terrain height must be finite');
 }
 
 const FLOAT_FIELDS = ['slope', 'aspect', 'curvature', 'contributingAreaM2', 'waterLevelM', 'distanceToWaterM', 'handM', 'twi',
   'depositDepthM', 'sand', 'silt', 'clay', 'organic', 'stoniness', 'soilDepthM', 'moisture', 'temperatureC', 'precipitationMm',
-  'treeCover', 'grassCover', 'shrubCover', 'litter', 'orientation', 'snow', 'wetness', 'materialBlend'] as const;
+  'treeCover', 'grassCover', 'shrubCover', 'litter', 'orientation', 'snow', 'wetness', 'materialBlend', 'edgeConfidence'] as const;
 const BYTE_FIELDS = ['landform', 'waterClass', 'closedBasin', 'depositOrigin', 'occupation'] as const;
 const SHORT_FIELDS = ['bedrock', 'sourceRock', 'material', 'materialSecondary'] as const;
-const INT_FIELDS = ['downstream', 'basin'] as const;
+const INT_FIELDS = ['downstream', 'basin', 'drainageCell'] as const;
 function createFields(n: number, radii: number, units: number): SurfaceFields {
   const f = {} as SurfaceFields;
   for (const key of FLOAT_FIELDS) f[key] = new Float32Array(n);
@@ -47,8 +48,20 @@ function createFields(n: number, radii: number, units: number): SurfaceFields {
   f.materialMeanColor = new Uint32Array(n);
   f.topographicPosition = Array.from({ length: radii }, () => new Float32Array(n));
   f.provenance = Array.from({ length: units }, () => new Float32Array(n));
-  f.waterLevelM.fill(NaN); f.handM.fill(-1); f.distanceToWaterM.fill(Infinity); f.downstream.fill(-1);
+  f.transportedProvenance = Array.from({ length: units }, () => new Float32Array(n));
+  f.waterLevelM.fill(NaN); f.handM.fill(NaN); f.distanceToWaterM.fill(Infinity); f.downstream.fill(-1); f.drainageCell.fill(-1);
   return f;
+}
+
+/** Conservative owned payload + compiler temporaries; excludes the caller's existing input buffers. */
+export function estimateSurfaceCompileBytes(grid: SurfaceGridGeometry, units: number, radii: number): number {
+  const n = grid.width * grid.height;
+  return n * (FLOAT_FIELDS.length * 4 + BYTE_FIELDS.length + SHORT_FIELDS.length * 2 + INT_FIELDS.length * 4 + 4 + (radii + units * 2) * 4 + 4 + 2 + 80)
+    + (grid.width + 1) * (grid.height + 1) * 8;
+}
+function assertMemoryBudget(required: number, requested = 512 * 1024 * 1024): void {
+  if (!Number.isFinite(requested) || requested <= 0) throw new Error('memoryBudgetBytes must be finite and positive');
+  if (required > requested) throw new Error(`Surface compilation requires approximately ${required} bytes, exceeding memoryBudgetBytes=${requested}; reduce grid/fields or explicitly raise the budget`);
 }
 
 function validateAligned(input: SurfaceCompileInput, n: number): void {
@@ -61,6 +74,12 @@ function validateAligned(input: SurfaceCompileInput, n: number): void {
   for (const a of [input.hydrology?.contributingAreaM2, input.processes?.aeolianSupply, input.processes?.coastDistanceM, input.occupation?.orientationRadians, input.climate?.temperatureC, input.climate?.precipitationMm]) {
     for (const x of a ?? []) if (!Number.isFinite(x)) throw new Error('Context values must be finite');
   }
+  for (const x of input.climate?.precipitationMm ?? []) if (x < 0) throw new Error('Precipitation cannot be negative');
+  for (let i = 0; i < n; i++) {
+    const level = input.hydrology?.waterLevelM?.[i];
+    if (level !== undefined && !Number.isFinite(level) && !Number.isNaN(level)) throw new Error('Water levels must be finite or dry NaN');
+    if (input.hydrology?.waterClass?.[i] && input.hydrology.waterLevelM && (!Number.isFinite(level) || level! < input.terrain.heights[i] - .001)) throw new Error('Wet cell requires a finite water level at or above the bed');
+  }
 }
 
 function validateGeology(g: GeologyInput): Map<number, number> {
@@ -70,6 +89,7 @@ function validateGeology(g: GeologyInput): Map<number, number> {
     if (!Number.isInteger(r.id) || r.id < 1 || r.id > 65535 || ids.has(r.id)) throw new Error('Geology ids must be unique uint16 values');
     for (const fraction of [r.sand, r.silt, r.clay, r.hardness, r.weatherability]) if (!Number.isFinite(fraction) || fraction < 0 || fraction > 1) throw new Error('Invalid rock-unit fractions/properties');
     if (Math.abs(r.sand + r.silt + r.clay - 1) > .00001) throw new Error('Rock mineral sand+silt+clay must sum to one');
+    if (!Number.isFinite(r.strikeRadians) || r.colorLinear.length !== 3 || r.colorLinear.some(v => !Number.isFinite(v) || v < 0 || v > 1)) throw new Error('Invalid rock structural angle/color');
     ids.set(r.id, j);
   });
   for (const id of g.bedrock) if (!ids.has(id)) throw new Error('Bedrock references unknown unit id');
@@ -90,7 +110,15 @@ function morphology(t: TerrainGrid, f: SurfaceFields, radii: number[], signal?: 
       const dz = (at(x, z + 1) - at(x, z - 1)) / (d * (z === 0 || z === h - 1 ? 1 : 2));
       f.slope[i] = Math.atan(Math.hypot(dx, dz));
       f.aspect[i] = Math.atan2(-dz, -dx);
-      f.curvature[i] = (at(x - 1, z) + at(x + 1, z) + at(x, z - 1) + at(x, z + 1) - 4 * a[i]) / (d * d);
+      const second = (coordinate: number, size: number, axis: 'x' | 'z') => {
+        const read = (c: number) => axis === 'x' ? at(c, z) : at(x, c);
+        if (size === 2) return 0;
+        if (coordinate === 0) return read(0) - 2 * read(1) + read(2);
+        if (coordinate === size - 1) return read(size - 1) - 2 * read(size - 2) + read(size - 3);
+        return read(coordinate - 1) + read(coordinate + 1) - 2 * read(coordinate);
+      };
+      f.curvature[i] = (second(x, w, 'x') + second(z, h, 'z')) / (d * d);
+      f.edgeConfidence[i] = clamp(Math.min(x, z, w - 1 - x, h - 1 - z) * d / Math.max(...radii));
       sum += a[i]; integral[(z + 1) * stride + x + 1] = integral[z * stride + x + 1] + sum;
     }
   }
@@ -102,7 +130,10 @@ function morphology(t: TerrainGrid, f: SurfaceFields, radii: number[], signal?: 
         const x0 = Math.max(0, x - r), x1 = Math.min(w, x + r + 1);
         const z0 = Math.max(0, z - r), z1 = Math.min(h, z + r + 1);
         const sum = integral[z1 * stride + x1] - integral[z0 * stride + x1] - integral[z1 * stride + x0] + integral[z0 * stride + x0];
-        f.topographicPosition[layer][z * w + x] = a[z * w + x] - sum / ((x1 - x0) * (z1 - z0));
+        const i = z * w + x, gradient = Math.tan(f.slope[i]);
+        const dx = -gradient * Math.cos(f.aspect[i]), dz = -gradient * Math.sin(f.aspect[i]);
+        const planarEdgeBias = dx * ((x0 + x1 - 1) / 2 - x) * d + dz * ((z0 + z1 - 1) / 2 - z) * d;
+        f.topographicPosition[layer][i] = a[i] - sum / ((x1 - x0) * (z1 - z0)) + planarEdgeBias;
       }
     }
   });
@@ -115,7 +146,8 @@ function morphology(t: TerrainGrid, f: SurfaceFields, radii: number[], signal?: 
   }
 }
 
-function drainage(input: SurfaceCompileInput, f: SurfaceFields, ids: Map<number, number>, signal?: AbortSignal): Int32Array {
+function drainage(input: SurfaceCompileInput, f: SurfaceFields, ids: Map<number, number>, options: CompileOptions): Int32Array {
+  const signal = options.signal;
   const t = input.terrain, { width: w, height: h, spacingM: d } = t, n = w * h;
   if (input.hydrology?.downstream) f.downstream.set(input.hydrology.downstream);
   else {
@@ -135,7 +167,7 @@ function drainage(input: SurfaceCompileInput, f: SurfaceFields, ids: Map<number,
     if (j < -1 || j >= n || j === i) throw new Error('Hydrology downstream index is invalid');
     if (j >= 0) incoming[j]++;
     f.contributingAreaM2[i] = d * d;
-    f.provenance[ids.get(f.bedrock[i])!][i] = d * d;
+    f.transportedProvenance[ids.get(f.bedrock[i])!][i] = d * d;
   }
   for (const flow of input.hydrology?.inflows ?? []) {
     if (!Number.isInteger(flow.cell) || flow.cell < 0 || flow.cell >= n || !Number.isFinite(flow.contributingAreaM2) || flow.contributingAreaM2 < 0) throw new Error('Invalid external inflow');
@@ -144,7 +176,7 @@ function drainage(input: SurfaceCompileInput, f: SurfaceFields, ids: Map<number,
     for (const p of flow.provenance) {
       const u = ids.get(p.unitId);
       if (u === undefined || !Number.isFinite(p.fraction) || p.fraction < 0) throw new Error('Invalid inflow provenance');
-      f.provenance[u][flow.cell] += p.fraction * flow.contributingAreaM2;
+      f.transportedProvenance[u][flow.cell] += p.fraction * flow.contributingAreaM2;
     }
   }
   let head = 0, tail = 0;
@@ -154,13 +186,13 @@ function drainage(input: SurfaceCompileInput, f: SurfaceFields, ids: Map<number,
     const i = queue[head++], j = f.downstream[i];
     if (j >= 0) {
       f.contributingAreaM2[j] += f.contributingAreaM2[i];
-      for (const p of f.provenance) p[j] += p[i];
+      for (const p of f.transportedProvenance) p[j] += p[i];
       if (!--incoming[j]) queue[tail++] = j;
     }
   }
   if (tail !== n) throw new Error('Authoritative hydrology contains a cycle; export routed lake outlets explicitly');
   // Normalise transported mixtures before optional source-area override (which may include unexported upstream basins).
-  for (let i = 0; i < n; i++) for (const p of f.provenance) p[i] /= f.contributingAreaM2[i];
+  for (let i = 0; i < n; i++) for (const p of f.transportedProvenance) p[i] /= f.contributingAreaM2[i];
   if (input.hydrology?.contributingAreaM2) {
     for (let i = 0; i < n; i++) {
       const a = input.hydrology.contributingAreaM2[i];
@@ -170,7 +202,7 @@ function drainage(input: SurfaceCompileInput, f: SurfaceFields, ids: Map<number,
   }
   if (input.hydrology?.waterClass) f.waterClass.set(input.hydrology.waterClass);
   else {
-    const threshold = Math.max(12 * d * d, n * d * d * .004);
+    const threshold = options.riverAreaThresholdM2 ?? 1_000_000;
     for (let i = 0; i < n; i++) if (f.contributingAreaM2[i] >= threshold) f.waterClass[i] = WaterClass.River;
   }
   if (input.hydrology?.waterLevelM) f.waterLevelM.set(input.hydrology.waterLevelM);
@@ -180,8 +212,8 @@ function drainage(input: SurfaceCompileInput, f: SurfaceFields, ids: Map<number,
     const i = queue[k], j = f.downstream[i], x = i % w, z = Math.floor(i / w);
     f.basin[i] = j < 0 ? i : f.basin[j];
     f.closedBasin[i] = j < 0 ? Number(f.waterClass[i] !== WaterClass.Ocean && x > 0 && z > 0 && x < w - 1 && z < h - 1) : f.closedBasin[j];
-    if (f.waterClass[i]) drainageElevation[i] = t.heights[i];
-    else if (j >= 0) drainageElevation[i] = drainageElevation[j];
+    if (f.waterClass[i]) { drainageElevation[i] = f.waterLevelM[i]; f.drainageCell[i] = i; }
+    else if (j >= 0) { drainageElevation[i] = drainageElevation[j]; f.drainageCell[i] = f.drainageCell[j]; }
     if (Number.isFinite(drainageElevation[i])) f.handM[i] = Math.max(0, t.heights[i] - drainageElevation[i]);
     f.twi[i] = Math.log(Math.max(1, f.contributingAreaM2[i] / d) / Math.max(.005, Math.tan(f.slope[i])));
     if (f.waterClass[i]) f.distanceToWaterM[i] = 0;
@@ -203,7 +235,16 @@ function drainage(input: SurfaceCompileInput, f: SurfaceFields, ids: Map<number,
 
 export function compileSurfaceWorld(input: SurfaceCompileInput, options: CompileOptions = {}): SurfaceWorld {
   assertNotAborted(options.signal);
+  if (!Number.isSafeInteger(input.seed)) throw new Error('Surface seed must be a safe integer');
   validateGrid(input.terrain);
+  const rawRadii = options.topographicRadiiM ?? [Math.max(150, input.terrain.spacingM * 2), Math.max(600, input.terrain.spacingM * 4), Math.max(2000, input.terrain.spacingM * 8)];
+  if (!rawRadii.length || rawRadii.length > 16 || rawRadii.some((r, i) => !Number.isFinite(r) || r <= 0 || i > 0 && r <= rawRadii[i - 1])) throw new Error('Topographic radii must be 1..16 ascending positive metres');
+  const radii = rawRadii.map(r => Math.max(1, Math.round(r / input.terrain.spacingM)) * input.terrain.spacingM);
+  for (const [name, value] of Object.entries({ riverAreaThresholdM2: options.riverAreaThresholdM2 ?? 1_000_000, floodplainWidthM: options.floodplainWidthM ?? 150, colluvialDecayLengthM: options.colluvialDecayLengthM ?? 100 })) {
+    if (!Number.isFinite(value) || value <= 0) throw new Error(name + ' must be positive physical units');
+  }
+  const requiredBytes = estimateSurfaceCompileBytes(input.terrain, input.geology?.units.length ?? 1, radii.length);
+  assertMemoryBudget(requiredBytes, options.memoryBudgetBytes);
   // Snapshot mutable generator buffers: a later streaming update cannot silently edit a versioned world.
   const t: TerrainGrid = { ...input.terrain, source: { ...input.terrain.source }, heights: new Float32Array(input.terrain.heights) };
   input = { ...input, terrain: t };
@@ -219,18 +260,18 @@ export function compileSurfaceWorld(input: SurfaceCompileInput, options: Compile
   if (![climate.meanAnnualTempC, climate.annualPrecipMm, climate.seasonalAmplitudeC ?? 0, climate.lapseRateCPerKm ?? 6.5, climate.referenceElevationM ?? 0, climate.windRadians ?? 0].every(Number.isFinite) || climate.annualPrecipMm < 0) throw new Error('Climate must use finite physical degrees C and mm/year');
   const state = { ...(input.state ?? { version: 'summer-default-1', dayOfYear: 200, surfaceWetness: 0, snowWaterEquivalentM: 0 }) };
   if (!Number.isFinite(state.dayOfYear) || state.dayOfYear < 1 || state.dayOfYear > 366 || !Number.isFinite(state.surfaceWetness ?? 0) || !Number.isFinite(state.snowWaterEquivalentM ?? 0)) throw new Error('Invalid seasonal state');
-  const radii = options.topographicRadiiM ?? [Math.max(150, t.spacingM * 2), Math.max(600, t.spacingM * 4), Math.max(2000, t.spacingM * 8)];
-  if (!radii.length || radii.some(r => !Number.isFinite(r) || r <= 0)) throw new Error('Topographic radii must be positive metres');
+  const materials = options.materialLibrary ?? SURFACE_MATERIALS, M = createMaterialIndex(materials);
+  for (const required of SURFACE_MATERIALS) if (M[required.id] === undefined) throw new Error('Material catalogue missing required recipe ' + required.id);
   const f = createFields(n, radii.length, geology.units.length);
   f.bedrock.set(geology.bedrock);
   morphology(t, f, radii, options.signal);
-  const order = drainage(input, f, ids, options.signal);
+  const order = drainage(input, f, ids, options);
   const boundary = input.hydrology?.boundary ?? 'truncated';
   if (!input.hydrology?.downstream) warnings.push('Routing derived by strict downhill D8; flats and closed sinks are retained. Supply source routing for basin-faithful hydrology.');
   if (boundary === 'truncated') warnings.push('Upstream basin is truncated at export boundary; contributing area and provenance omit unknown exterior inputs.');
   if (input.hydrology?.contributingAreaM2 && !input.hydrology.inflows?.length) warnings.push('Source contributing area is preserved; exterior sediment provenance remains unknown without explicit inflows.');
-  const maxRadius = Math.max(...radii);
-  if (maxRadius > Math.min(t.width - 1, t.height - 1) * t.spacingM / 2) warnings.push('Morphology neighbourhoods reach export edges; clipped neighbourhoods require exterior context for independent tile compilation.');
+  warnings.push('Morphology windows are clipped within the largest-radius edge band; edgeConfidence marks reduced confidence. Planar edge bias is removed, but exterior context is still required for independent tile compilation.');
+  if (!input.hydrology?.waterLevelM && f.waterClass.some(v => v !== WaterClass.Dry)) warnings.push('Wet-cell water levels fall back to bed elevation because source levels were not supplied; depth is unknown, not an observed zero-depth lake/ocean.');
   assumptions.push('Morphology uses finite differences and multi-radius square-window TPI, not a full geomorphon classifier.', 'Sediment depth, organic content, moisture, TWI/HAND interpretation and cover are synthesis potentials, not a calibrated mass-conserving sediment/pedology simulation.', 'Water proximity is a chamfer distance; HAND follows source drainage. Date alone does not predict discharge or flood levels.', 'Special landforms require declared process masks and existing terrain geometry; surface motifs do not generate dunes, karst, glaciers or volcanic landforms.');
   if (t.spacingM < t.source.nativeSpacingM) warnings.push('Grid is finer than native source spacing; this is reconstruction, not new source terrain detail.');
   if (t.source.sourceLODKnown === false) warnings.push('Generator source LOD was not recorded by the legacy source; numeric sourceLOD is a compatibility placeholder.');
@@ -238,12 +279,14 @@ export function compileSurfaceWorld(input: SurfaceCompileInput, options: Compile
   // Route a source-connected gravity potential over the same downhill graph. Deposits have an actual upslope rock source.
   for (const i of order) {
     const rock = geology.units[ids.get(f.bedrock[i])!], steep = clamp((f.slope[i] - .38) / .6);
-    const local = steep * rock.hardness;
+    const local = steep * rock.hardness * t.spacingM / 20;
     if (local > colluvialBest[i]) { colluvialBest[i] = local; colluvialSource[i] = rock.id; }
     colluvium[i] += local;
     const j = f.downstream[i];
     if (j >= 0) {
-      const retained = t.heights[j] >= t.heights[i] ? 0 : f.slope[i] < .22 ? .16 : .82;
+      const stepM = Math.hypot(j % t.width - i % t.width, Math.floor(j / t.width) - Math.floor(i / t.width)) * t.spacingM;
+      const decayLength = (options.colluvialDecayLengthM ?? 100) * (f.slope[i] < .22 ? .2 : 1);
+      const retained = t.heights[j] >= t.heights[i] ? 0 : Math.exp(-stepM / decayLength);
       colluvium[j] += colluvium[i] * retained;
       if (colluvialBest[i] * retained > colluvialBest[j]) { colluvialBest[j] = colluvialBest[i] * retained; colluvialSource[j] = colluvialSource[i]; }
     }
@@ -255,7 +298,7 @@ export function compileSurfaceWorld(input: SurfaceCompileInput, options: Compile
     const bed = geology.units[ids.get(f.bedrock[i])!];
     const s = f.slope[i], flat = 1 - clamp(s / .7), water = f.waterClass[i];
     const hand = f.handM[i], distance = f.distanceToWaterM[i];
-    const alluvial = (hand >= 0 ? Math.exp(-hand / 7) : 0) * Math.exp(-distance / (t.spacingM * 4 + 30)) * flat;
+    const alluvial = (hand >= 0 ? Math.exp(-hand / 7) : 0) * Math.exp(-distance / (options.floodplainWidthM ?? 150)) * flat;
     const gravity = clamp(colluvium[i] * .35) * clamp((.8 - s) / .6);
     const wind = clamp(input.processes?.aeolianSupply?.[i] ?? 0) * flat;
     const coastDistance = input.processes?.coastDistanceM?.[i] ?? Infinity;
@@ -274,7 +317,9 @@ export function compileSurfaceWorld(input: SurfaceCompileInput, options: Compile
       sand = 0; silt = 0; clay = 0;
       let best = -1;
       for (let u = 0; u < geology.units.length; u++) {
-        const r = geology.units[u], p = f.provenance[u][i];
+        const sedimentCell = f.drainageCell[i] >= 0 ? f.drainageCell[i] : i;
+        const r = geology.units[u], p = f.transportedProvenance[u][sedimentCell];
+        f.provenance[u][i] = p;
         sand += r.sand * p; silt += r.silt * p; clay += r.clay * p;
         if (p > best) { best = p; source = r; }
       }
@@ -292,7 +337,7 @@ export function compileSurfaceWorld(input: SurfaceCompileInput, options: Compile
     f.soilDepthM[i] = clamp((.12 + bed.weatherability * .9 + Math.max(0, -f.topographicPosition[0][i]) * .012) * flat + f.depositDepthM[i] * .35, .015, 3);
     f.stoniness[i] = clamp(.08 + s * .75 + gravity * .65 - f.depositDepthM[i] * .2);
     const temp = (climate.temperatureC?.[i] ?? climate.meanAnnualTempC) - (climate.elevationCorrected ? 0 : (t.heights[i] - (climate.referenceElevationM ?? 0)) * (climate.lapseRateCPerKm ?? 6.5) / 1000);
-    const exposure = .5 + .5 * Math.cos(f.aspect[i] - (climate.windRadians ?? 0));
+    const exposure = .5 + .5 * Math.cos(f.aspect[i] - (climate.windRadians ?? 0)) * clamp(s / .1);
     f.temperatureC[i] = temp;
     f.precipitationMm[i] = climate.precipitationMm?.[i] ?? climate.annualPrecipMm * (.93 + .14 * exposure);
     if (f.precipitationMm[i] < 0) throw new Error('Precipitation cannot be negative');
@@ -322,22 +367,22 @@ export function compileSurfaceWorld(input: SurfaceCompileInput, options: Compile
     const explicitSnow = Math.max(0, state.snowWaterEquivalentM ?? 0);
     f.snow[i] = clamp((explicitSnow * 10 + Math.max(0, -seasonalTemp) * .07 * clamp(f.precipitationMm[i] / 700)) * (1 - clamp(s / 1.3) * .8));
     f.wetness[i] = clamp(moisture * .65 + (state.surfaceWetness ?? 0));
-    let material = 0;
-    if (f.treeCover[i] + f.grassCover[i] > .25) material = 13;
-    if (aridity < .45 && f.grassCover[i] < .2) material = 3;
-    if (f.stoniness[i] > .48 || s > .7) material = 1;
-    if (origin === DepositOrigin.Colluvial) material = 4;
-    if (origin === DepositOrigin.Alluvial) material = 7;
-    if (moisture > .8 && s < .12) material = 9;
-    if (origin === DepositOrigin.Aeolian) material = 2;
-    if (input.processes?.karst?.[i] && bed.lithology === 'limestone') material = 5;
-    if (input.processes?.volcanic?.[i] || input.processes?.geothermal?.[i]) material = 6;
-    if (Math.abs(coastDistance) < 40 && water === WaterClass.Dry) material = origin === DepositOrigin.Coastal ? 10 : 11;
-    if (occupation === Occupation.Road || occupation === Occupation.Yard) material = 15;
-    if (occupation === Occupation.Crop) material = 16;
-    if (occupation === Occupation.Built) material = 17;
-    if (water === WaterClass.River || water === WaterClass.Lake) material = 8;
-    if (water === WaterClass.Ocean) material = 12;
+    let material = M['mineral-soil'];
+    if (f.treeCover[i] + f.grassCover[i] > .25) material = M['vegetation-litter'];
+    if (aridity < .45 && f.grassCover[i] < .2) material = M['arid-reg'];
+    if (f.stoniness[i] > .48 || s > .7) material = M['fractured-bedrock'];
+    if (origin === DepositOrigin.Colluvial) material = M['angular-talus'];
+    if (origin === DepositOrigin.Alluvial) material = M['alluvial-bars'];
+    if (moisture > .8 && s < .12) material = M['wetland-organic'];
+    if (origin === DepositOrigin.Aeolian) material = M['wind-ripple-sand'];
+    if (input.processes?.karst?.[i] && bed.lithology === 'limestone') material = M['carbonate-karst'];
+    if (input.processes?.volcanic?.[i] || input.processes?.geothermal?.[i]) material = M['volcanic-crust'];
+    if (Math.abs(coastDistance) < 40 && water === WaterClass.Dry) material = origin === DepositOrigin.Coastal ? M['coastal-sediment'] : M['coastal-rock'];
+    if (occupation === Occupation.Road || occupation === Occupation.Yard) material = M['compacted-road'];
+    if (occupation === Occupation.Crop) material = M['cultivated-soil'];
+    if (occupation === Occupation.Built) material = M['built-foundation'];
+    if (water === WaterClass.River || water === WaterClass.Lake) material = M['inland-water'];
+    if (water === WaterClass.Ocean) material = M['marine-water'];
     let composition: MaterialComposition;
     if (water || occupation === Occupation.Road || occupation === Occupation.Yard || occupation === Occupation.Crop || occupation === Occupation.Built) {
       composition = { primary: material, secondary: material, blend: 0 };
@@ -347,30 +392,31 @@ export function compileSurfaceWorld(input: SurfaceCompileInput, options: Compile
       const litterCover = clamp(f.litter[i] * 1.35) * (1 - rockCover);
       const grassCover = clamp(f.grassCover[i]) * Math.max(0, 1 - rockCover - litterCover);
       const remaining = Math.max(0, 1 - rockCover - litterCover - grassCover);
-      const rockMaterial = material === 5 || material === 6 || material === 11 ? material : 1;
-      const sedimentWeights: Array<[number, number]> = [[7, alluvial], [4, gravity], [2, wind], [10, origin === DepositOrigin.Coastal ? coastal : 0]];
+      const rockMaterial = material === M['carbonate-karst'] || material === M['volcanic-crust'] || material === M['coastal-rock'] ? material : M['fractured-bedrock'];
+      const sedimentWeights: Array<[number, number]> = [[M['alluvial-bars'], alluvial], [M['angular-talus'], gravity], [M['wind-ripple-sand'], wind], [M['coastal-sediment'], origin === DepositOrigin.Coastal ? coastal : 0]];
       const processSum = sedimentWeights.reduce((sum, [, weight]) => sum + weight, 0), processScale = Math.max(1, processSum);
       const dryFraction = clamp((.65 - aridity) / .4), residual = remaining * (1 - Math.min(1, processSum));
-      composition = dominantMaterialPair([[rockMaterial, rockCover], [18, litterCover], [13, grassCover],
-        [0, residual * (1 - dryFraction)], [3, residual * dryFraction], ...sedimentWeights.map(([id, weight]) => [id, weight / processScale * remaining] as [number, number])]);
+      composition = dominantMaterialPair([[rockMaterial, rockCover], [M['forest-litter'], litterCover], [M['vegetation-litter'], grassCover],
+        [M['mineral-soil'], residual * (1 - dryFraction)], [M['arid-reg'], residual * dryFraction], ...sedimentWeights.map(([id, weight]) => [id, weight / processScale * remaining] as [number, number])]);
     }
     f.material[i] = composition.primary; f.materialSecondary[i] = composition.secondary; f.materialBlend[i] = composition.blend;
-    const primaryColor = materialColor(SURFACE_MATERIALS[composition.primary], source), secondaryColor = materialColor(SURFACE_MATERIALS[composition.secondary], source);
+    const primaryColor = materialColor(materials[composition.primary], source), secondaryColor = materialColor(materials[composition.secondary], source);
     f.materialMeanColor[i] = packMaterialMean(primaryColor.map((v, channel) => v * (1 - composition.blend) + secondaryColor[channel] * composition.blend));
   }
-  const terrainVersion = fingerprint(t), hydrologyVersion = fingerprint(input.hydrology ?? 'derived-d8-1');
+  const terrainVersion = fingerprint(t), hydrologyVersion = fingerprint(['hydrology-2', terrainVersion, input.hydrology, f.downstream, f.waterClass, f.waterLevelM]);
   const geologyVersion = fingerprint(geology), occupationVersion = fingerprint(input.occupation ?? 'natural');
-  const environment = fingerprint([terrainVersion, hydrologyVersion, geologyVersion, climate, input.processes, radii, SURFACE_COMPILER_VERSION]);
+  const environment = fingerprint([terrainVersion, hydrologyVersion, geologyVersion, climate, input.processes, radii, options.riverAreaThresholdM2 ?? 1_000_000, options.floodplainWidthM ?? 150, options.colluvialDecayLengthM ?? 100, materials.map(m => m.id), SURFACE_COMPILER_VERSION]);
   const population = hashString([environment, occupationVersion, input.seed, SURFACE_POPULATION_VERSION].join(':'));
-  const materialLibrary = fingerprint(SURFACE_MATERIALS), surfaceState = fingerprint(state);
+  const materialLibrary = fingerprint(materials), surfaceState = fingerprint(state);
   let estimatedBytes = t.heights.byteLength;
   for (const v of Object.values(f)) estimatedBytes += Array.isArray(v) ? v.reduce((s, a) => s + a.byteLength, 0) : v.byteLength;
   assertNotAborted(options.signal);
+  validateFieldFiniteness(f);
   return { schemaVersion: SURFACE_SCHEMA_VERSION, compilerVersion: SURFACE_COMPILER_VERSION,
     id: hashString([environment, occupationVersion, population, materialLibrary, surfaceState, input.seed].join(':')),
     seed: input.seed, units: 'metres', crs: 'local-xz', bounds: terrainBounds(t),
     versions: { terrain: terrainVersion, hydrology: hydrologyVersion, geology: geologyVersion, environment, occupation: occupationVersion, population, materialLibrary, surfaceState },
-    terrain: t, geology, climate, state, fields: f, materials: SURFACE_MATERIALS.map(m => ({ ...m, colorLinear: [...m.colorLinear], compatibleSubstrates: [...m.compatibleSubstrates], compatibleProcesses: [...m.compatibleProcesses] })), topographicRadiiM: [...radii],
+    terrain: t, geology, climate, state, fields: f, materials: materials.map(m => ({ ...m, colorLinear: [...m.colorLinear], compatibleSubstrates: [...m.compatibleSubstrates], compatibleProcesses: [...m.compatibleProcesses] })), topographicRadiiM: [...radii],
     diagnostics: { warnings, assumptions, hydrologyBoundary: boundary, estimatedBytes } };
 }
 
@@ -388,28 +434,69 @@ export function sampleSurface(world: SurfaceWorld, x: number, z: number): Surfac
     depositDepthM: bilinear(f.depositDepthM), sand: bilinear(f.sand), silt: bilinear(f.silt), clay: bilinear(f.clay), organic: bilinear(f.organic),
     stoniness: bilinear(f.stoniness), soilDepthM: bilinear(f.soilDepthM), moisture: bilinear(f.moisture), contributingAreaM2: bilinear(f.contributingAreaM2),
     handM: bilinear(f.handM), distanceToWaterM: bilinear(f.distanceToWaterM), waterClass: f.waterClass[i], waterLevelM: f.waterLevelM[i],
+    drainageCell: f.drainageCell[i], edgeConfidence: bilinear(f.edgeConfidence),
     temperatureC: bilinear(f.temperatureC), precipitationMm: bilinear(f.precipitationMm), treeCover: bilinear(f.treeCover), grassCover: bilinear(f.grassCover),
     shrubCover: bilinear(f.shrubCover), litter: bilinear(f.litter), occupation: f.occupation[i], orientation: f.orientation[i], snow: bilinear(f.snow),
     wetness: bilinear(f.wetness), material: world.materials[composition.primary], materialSecondary: world.materials[composition.secondary], materialBlend: composition.blend,
     materialMeanColorLinear: composition.mean,
-    provenance: world.geology.units.map((r, u) => ({ unitId: r.id, fraction: f.provenance[u][i] })) };
+    provenance: world.geology.units.map((r, u) => ({ unitId: r.id, fraction: f.provenance[u][i] })),
+    transportedProvenance: world.geology.units.map((r, u) => ({ unitId: r.id, fraction: f.transportedProvenance[u][i] })) };
 }
 
 /** Plain JSON arrays for neutral consumers. Non-finite water level/distance are represented by null. */
-export function serializeSurfaceWorld(world: SurfaceWorld, options: { includeCanonicalContext?: boolean } = {}): string {
+export function serializeSurfaceWorld(world: SurfaceWorld, options: { includeCanonicalContext?: boolean; maxJsonCharacters?: number } = {}): string {
+  const budget = options.maxJsonCharacters ?? 128 * 1024 * 1024;
+  if (!Number.isFinite(budget) || budget <= 0) throw new Error('maxJsonCharacters must be finite and positive');
+  let estimated = 0;
+  const count = (value: unknown, key = ''): void => {
+    if (key === 'canonicalContext' && options.includeCanonicalContext === false) return;
+    if (ArrayBuffer.isView(value)) estimated += (value as unknown as ArrayLike<number>).length * 24 + 2;
+    else if (Array.isArray(value)) for (const item of value) count(item);
+    else if (value && typeof value === 'object') for (const [name, item] of Object.entries(value)) { estimated += name.length + 4; count(item, name); }
+    else estimated += typeof value === 'string' ? value.length * 6 + 2 : 24;
+    if (estimated > budget) throw new Error('SurfaceWorld exceeds the safe JSON serialization budget; use the binary SurfaceWorld container instead');
+  };
+  count(world);
   return JSON.stringify(world, (key, value) => key === 'canonicalContext' && options.includeCanonicalContext === false ? undefined
     : ArrayBuffer.isView(value) ? Array.from(value as unknown as number[]) : value);
 }
 
-export function deserializeSurfaceWorld(json: string, options: { resolveCanonicalContext?: (reference: CanonicalSurfaceContextRef) => CanonicalSurfaceContext | undefined } = {}): SurfaceWorld {
-  const w = JSON.parse(json) as SurfaceWorld;
+export interface SurfaceHydrationOptions {
+  resolveCanonicalContext?: (reference: CanonicalSurfaceContextRef) => CanonicalSurfaceContext | undefined;
+  memoryBudgetBytes?: number;
+}
+export function deserializeSurfaceWorld(json: string, options: SurfaceHydrationOptions = {}): SurfaceWorld {
+  return hydrateSurfaceWorld(JSON.parse(json), options);
+}
+
+/** Validate JSON arrays or binary-decoded typed arrays directly; no stringify/parse intermediate. */
+export function hydrateSurfaceWorld(value: unknown, options: SurfaceHydrationOptions = {}): SurfaceWorld {
+  if (!value || typeof value !== 'object') throw new Error('Malformed SurfaceWorld object');
+  const w = value as SurfaceWorld;
   if (w.schemaVersion !== SURFACE_SCHEMA_VERSION || w.units !== 'metres' || w.crs !== 'local-xz') throw new Error('Unsupported SurfaceWorld schema or units');
+  if (!Number.isSafeInteger(w.seed) || !Array.isArray(w.topographicRadiiM) || !w.topographicRadiiM.length || w.topographicRadiiM.length > 16 || w.topographicRadiiM.some((r, i) => !Number.isFinite(r) || r <= 0 || i > 0 && r < w.topographicRadiiM[i - 1])) throw new Error('Invalid SurfaceWorld seed/radii');
+  validateGridGeometry(w.terrain);
+  if (w.canonicalContext) validateGridGeometry(w.canonicalContext.grid);
+  const canonicalBytes = w.canonicalContext ? estimateSurfaceCompileBytes(w.canonicalContext.grid, w.geology.units.length, w.topographicRadiiM.length) : 0;
+  assertMemoryBudget(estimateSurfaceCompileBytes(w.terrain, w.geology.units.length, w.topographicRadiiM.length) + canonicalBytes, options.memoryBudgetBytes);
+  assertNumericArray(w.terrain.heights, w.terrain.width * w.terrain.height, 'terrain heights', v => Number.isFinite(v), 'Float32Array');
   w.terrain.heights = new Float32Array(w.terrain.heights);
   validateGrid(w.terrain);
+  const n = w.terrain.heights.length;
+  assertNumericArray(w.geology.bedrock, n, 'geology.bedrock', v => Number.isInteger(v) && v >= 1 && v <= 65535, 'Uint16Array');
   w.geology.bedrock = new Uint16Array(w.geology.bedrock);
   validateGeology(w.geology);
-  if (w.climate.temperatureC) w.climate.temperatureC = new Float32Array(w.climate.temperatureC);
-  if (w.climate.precipitationMm) w.climate.precipitationMm = new Float32Array(w.climate.precipitationMm);
+  createMaterialIndex(w.materials);
+  for (const key of ['temperatureC', 'precipitationMm'] as const) if (w.climate[key]) {
+    assertNumericArray(w.climate[key]!, n, 'climate.' + key, v => Number.isFinite(v) && (key !== 'precipitationMm' || v >= 0), 'Float32Array');
+    w.climate[key] = new Float32Array(w.climate[key]!);
+  }
+  if (!w.versions || ['terrain', 'hydrology', 'geology', 'environment', 'occupation', 'population', 'materialLibrary', 'surfaceState'].some(key => typeof w.versions[key as keyof typeof w.versions] !== 'string' || !w.versions[key as keyof typeof w.versions])) throw new Error('Malformed SurfaceWorld versions');
+  if (fingerprint(w.terrain) !== w.versions.terrain) throw new Error('Terrain version mismatch: data was edited without invalidation');
+  const expectedId = w.canonicalContextRef
+    ? hashString([w.canonicalContextRef.id, w.versions.terrain, fingerprint(w.bounds), 'geometry-retarget-1'].join(':'))
+    : hashString([w.versions.environment, w.versions.occupation, w.versions.population, w.versions.materialLibrary, w.versions.surfaceState, w.seed].join(':'));
+  if (w.id !== expectedId) throw new Error('SurfaceWorld id/version mismatch');
   restoreFields(w.fields, w.terrain.heights.length, w);
   if (w.canonicalContext) {
     validateGridGeometry(w.canonicalContext.grid);
@@ -431,24 +518,84 @@ function restoreFields(fields: SurfaceFields, n: number, world: SurfaceWorld): v
       return packMaterialMean(materialColor(recipe, rock));
     }) as unknown as Uint32Array;
   }
-  for (const key of FLOAT_FIELDS) {
-    const source = fields[key] as unknown as Array<number | null>;
-    if (!Array.isArray(source) || source.length !== n) throw new Error('Malformed SurfaceWorld field ' + key);
-    fields[key] = Float32Array.from(source, v => v === null ? (key === 'waterLevelM' ? NaN : Infinity) : v);
+  const legacyTransport = fields.transportedProvenance === undefined;
+  if (legacyTransport) {
+    fields.transportedProvenance = fields.provenance.map(a => Array.from(a)) as unknown as Float32Array[];
+    fields.drainageCell = new Array(n).fill(-1) as unknown as Int32Array;
+    fields.edgeConfidence = new Array(n).fill(0) as unknown as Float32Array;
+    world.diagnostics.warnings.push('Legacy packet lacks preserved upstream provenance and edge confidence; transportedProvenance is an explicit legacy surface-provenance approximation.');
   }
-  for (const key of BYTE_FIELDS) fields[key] = new Uint8Array(fields[key]);
-  for (const key of SHORT_FIELDS) fields[key] = new Uint16Array(fields[key]);
-  for (const key of INT_FIELDS) fields[key] = new Int32Array(fields[key]);
-  if (!Array.isArray(fields.materialMeanColor) || fields.materialMeanColor.length !== n) throw new Error('Malformed SurfaceWorld field materialMeanColor');
+  for (const key of FLOAT_FIELDS) {
+    const source = fields[key] as unknown as Array<number | null> | Float32Array;
+    if ((!Array.isArray(source) && !(source instanceof Float32Array)) || source.length !== n) throw new Error('Malformed SurfaceWorld field ' + key);
+    for (const v of source) {
+      const sentinel = v === null ? ['waterLevelM', 'handM', 'distanceToWaterM'].includes(key)
+        : (key === 'waterLevelM' || key === 'handM') && Number.isNaN(v) || key === 'distanceToWaterM' && v === Infinity;
+      if (!sentinel && (typeof v !== 'number' || !Number.isFinite(v))) throw new Error('Malformed non-finite SurfaceWorld field ' + key);
+    }
+    fields[key] = Float32Array.from(source, v => v === null ? (key === 'distanceToWaterM' ? Infinity : NaN) : key === 'handM' && legacyTransport && v < 0 ? NaN : v);
+  }
+  const maxByte = { landform: Landform.Valley, waterClass: WaterClass.Ocean, closedBasin: 1, depositOrigin: DepositOrigin.Coastal, occupation: Occupation.Yard };
+  for (const key of BYTE_FIELDS) {
+    assertNumericArray(fields[key], n, key, v => Number.isInteger(v) && v >= 0 && v <= maxByte[key], 'Uint8Array');
+    fields[key] = new Uint8Array(fields[key]);
+  }
+  const unitIds = new Set(world.geology.units.map(u => u.id));
+  for (const key of SHORT_FIELDS) {
+    assertNumericArray(fields[key], n, key, v => Number.isInteger(v) && v >= 0 && (key === 'bedrock' || key === 'sourceRock' ? unitIds.has(v) : v < world.materials.length), 'Uint16Array');
+    fields[key] = new Uint16Array(fields[key]);
+  }
+  const canonicalN = world.canonicalContext ? world.canonicalContext.grid.width * world.canonicalContext.grid.height : world.canonicalContextRef ? 16_777_216 : n;
+  for (const key of INT_FIELDS) {
+    assertNumericArray(fields[key], n, key, v => Number.isInteger(v) && v >= (key === 'basin' ? 0 : -1) && v < (key === 'downstream' ? n : canonicalN), 'Int32Array');
+    fields[key] = new Int32Array(fields[key]);
+  }
+  assertNumericArray(fields.materialMeanColor, n, 'materialMeanColor', v => Number.isInteger(v) && v >= 0 && v <= 0xffffff, 'Uint32Array');
   fields.materialMeanColor = new Uint32Array(fields.materialMeanColor);
-  fields.topographicPosition = fields.topographicPosition.map(a => new Float32Array(a));
-  fields.provenance = fields.provenance.map(a => new Float32Array(a));
+  if (fields.topographicPosition.length !== world.topographicRadiiM.length || fields.provenance.length !== world.geology.units.length || fields.transportedProvenance.length !== world.geology.units.length) throw new Error('Malformed SurfaceWorld context layer count');
+  fields.topographicPosition = fields.topographicPosition.map(a => { assertNumericArray(a, n, 'topographicPosition', Number.isFinite, 'Float32Array'); return new Float32Array(a); });
+  for (const key of ['provenance', 'transportedProvenance'] as const) fields[key] = fields[key].map(a => {
+    assertNumericArray(a, n, key, v => Number.isFinite(v) && v >= 0 && v <= 1.000001, 'Float32Array'); return new Float32Array(a);
+  });
   for (const [key, a] of Object.entries(fields)) {
     if (Array.isArray(a) ? a.some(v => v.length !== n) : a.length !== n) throw new Error('Malformed SurfaceWorld field ' + key);
   }
   for (let i = 0; i < n; i++) {
     if (fields.material[i] >= world.materials.length || fields.materialSecondary[i] >= world.materials.length || !Number.isFinite(fields.materialBlend[i]) || fields.materialBlend[i] < 0 || fields.materialBlend[i] > 1) throw new Error('Invalid material composition');
+    for (const key of ['sand', 'silt', 'clay', 'organic', 'stoniness', 'moisture', 'treeCover', 'grassCover', 'shrubCover', 'litter', 'snow', 'wetness', 'edgeConfidence'] as const) if (fields[key][i] < 0 || fields[key][i] > 1) throw new Error('Invalid physical fraction ' + key);
+    if (Math.abs(fields.sand[i] + fields.silt[i] + fields.clay[i] - 1) > .00001) throw new Error('Invalid soil mineral simplex');
+    for (const key of ['provenance', 'transportedProvenance'] as const) if (Math.abs(fields[key].reduce((sum, a) => sum + a[i], 0) - 1) > .00001) throw new Error('Invalid provenance simplex');
+    if (Number.isFinite(fields.handM[i]) && fields.handM[i] < 0 || fields.distanceToWaterM[i] < 0 || fields.precipitationMm[i] < 0 || fields.contributingAreaM2[i] < 0 || fields.depositDepthM[i] < 0 || fields.soilDepthM[i] < 0) throw new Error('Invalid negative physical field');
+    if (fields.waterClass[i] && !Number.isFinite(fields.waterLevelM[i])) throw new Error('Wet cell requires finite water level');
   }
+  validateAcyclicRouting(fields.downstream);
+}
+
+function assertNumericArray(array: ArrayLike<number>, n: number, label: string, valid: (value: number) => boolean, typedName?: string): void {
+  if ((!Array.isArray(array) && !ArrayBuffer.isView(array)) || array.length !== n) throw new Error('Malformed SurfaceWorld field ' + label);
+  if (typedName && ArrayBuffer.isView(array) && array.constructor.name !== typedName) throw new Error('Wrong typed array for ' + label + ': expected ' + typedName);
+  for (let i = 0; i < n; i++) if (typeof array[i] !== 'number' || !valid(array[i])) throw new Error('Invalid SurfaceWorld ' + label);
+}
+
+function validateAcyclicRouting(downstream: Int32Array): void {
+  const n = downstream.length, incoming = new Uint32Array(n), queue = new Int32Array(n);
+  for (let i = 0; i < n; i++) if (downstream[i] >= 0) {
+    if (downstream[i] >= n || downstream[i] === i) throw new Error('Invalid downstream index');
+    incoming[downstream[i]]++;
+  }
+  let head = 0, tail = 0;
+  for (let i = 0; i < n; i++) if (!incoming[i]) queue[tail++] = i;
+  while (head < tail) { const j = downstream[queue[head++]]; if (j >= 0 && !--incoming[j]) queue[tail++] = j; }
+  if (tail !== n) throw new Error('SurfaceWorld downstream cycle');
+}
+
+function validateFieldFiniteness(fields: SurfaceFields): void {
+  for (const key of FLOAT_FIELDS) for (const value of fields[key]) {
+    if (Number.isFinite(value)) continue;
+    if ((key === 'waterLevelM' || key === 'handM') && Number.isNaN(value) || key === 'distanceToWaterM' && value === Infinity) continue;
+    throw new Error('Non-finite compiled physical field ' + key);
+  }
+  for (const layer of [...fields.topographicPosition, ...fields.provenance, ...fields.transportedProvenance]) for (const value of layer) if (!Number.isFinite(value)) throw new Error('Non-finite compiled context mixture');
 }
 
 function validateGridGeometry(grid: SurfaceGridGeometry): void {
@@ -508,6 +655,7 @@ export interface RetargetSurfaceOptions {
   bounds?: Bounds;
   expectedEnvironmentVersion?: string;
   expectedTerrainVersion?: string;
+  memoryBudgetBytes?: number;
 }
 
 function assertBounds(bounds: Bounds, within: Bounds, label: string): void {
@@ -521,6 +669,7 @@ export function retargetSurfaceWorld(baseWorld: SurfaceWorld, fineTerrain: Terra
   if (baseWorld.schemaVersion !== SURFACE_SCHEMA_VERSION || baseWorld.units !== 'metres' || baseWorld.crs !== 'local-xz') throw new Error('Unsupported base SurfaceWorld schema or units');
   validateGrid(fineTerrain);
   const context = getCanonicalSurfaceContext(baseWorld), source = context.source;
+  assertMemoryBudget(estimateSurfaceCompileBytes(fineTerrain, context.fields.provenance.length, context.fields.topographicPosition.length), options.memoryBudgetBytes);
   if (fineTerrain.source.id !== source.id || fineTerrain.source.version !== source.version) throw new Error('Terrain refinement source identity/version differs from canonical source; explicitly rebuild context after a source edit');
   if (options.expectedEnvironmentVersion !== undefined && options.expectedEnvironmentVersion !== baseWorld.versions.environment) throw new Error('Stale canonical environment version');
   if (options.expectedTerrainVersion !== undefined && options.expectedTerrainVersion !== baseWorld.versions.terrain) throw new Error('Stale base terrain version');
@@ -542,6 +691,7 @@ export function retargetSurfaceWorld(baseWorld: SurfaceWorld, fineTerrain: Terra
     fields.material[i] = composition.primary; fields.materialSecondary[i] = composition.secondary; fields.materialBlend[i] = composition.blend;
     fields.materialMeanColor[i] = packMaterialMean(composition.mean);
     fields.basin[i] = sourceFields.basin[j];
+    fields.drainageCell[i] = sourceFields.drainageCell[j];
     // Project graph addresses only when their canonical target is inside this patch. The authoritative graph stays in canonicalContext.
     const downstream = sourceFields.downstream[j];
     if (downstream >= 0) {
@@ -557,7 +707,10 @@ export function retargetSurfaceWorld(baseWorld: SurfaceWorld, fineTerrain: Terra
     fields.sand[i] /= mineralSum; fields.silt[i] /= mineralSum; fields.clay[i] /= mineralSum;
     for (let layer = 0; layer < fields.topographicPosition.length; layer++) fields.topographicPosition[layer][i] = sample.continuous(sourceFields.topographicPosition[layer]);
     let sum = 0;
-    for (let unit = 0; unit < fields.provenance.length; unit++) { fields.provenance[unit][i] = sourceFields.provenance[unit][j]; sum += fields.provenance[unit][i]; }
+    for (let unit = 0; unit < fields.provenance.length; unit++) {
+      fields.provenance[unit][i] = sourceFields.provenance[unit][j]; sum += fields.provenance[unit][i];
+      fields.transportedProvenance[unit][i] = sourceFields.transportedProvenance[unit][j];
+    }
     if (!(sum > 0)) throw new Error('Invalid canonical provenance fractions');
     for (const fractions of fields.provenance) fractions[i] /= sum;
   }
@@ -570,6 +723,7 @@ export function retargetSurfaceWorld(baseWorld: SurfaceWorld, fineTerrain: Terra
   let estimatedBytes = terrain.heights.byteLength;
   for (const array of Object.values(fields)) estimatedBytes += Array.isArray(array) ? array.reduce((sum, a) => sum + a.byteLength, 0) : array.byteLength;
   const warnings = [...baseWorld.diagnostics.warnings];
+  if (fields.waterClass.some((water, i) => water !== WaterClass.Dry && terrain.heights[i] > fields.waterLevelM[i] + .001)) warnings.push('Refined bed rises above a canonical water level in some wet cells; canonical water is preserved and this support conflict requires source reconciliation.');
   if (fineBounds.minX < footprint.minX || fineBounds.maxX > footprint.maxX || fineBounds.minZ < footprint.minZ || fineBounds.maxZ > footprint.maxZ) warnings.push('Fine source contains padding outside canonical footprint; projected padding context is clamped and excluded from active bounds.');
   assertNotAborted(options.signal);
   return { ...baseWorld, id: hashString([reference.id, terrainVersion, fingerprint(bounds), 'geometry-retarget-1'].join(':')),

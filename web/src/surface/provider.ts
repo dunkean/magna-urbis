@@ -35,6 +35,9 @@ export class SurfaceTerrainSession {
       assertNotAborted(controller.signal);
       if (requestId !== this.serial || worldVersion !== this.worldVersion) throw new DOMException('Stale surface result', 'AbortError');
       return { requestId, worldVersion, terrain };
+    } catch (error) {
+      if (controller.signal.aborted || requestId !== this.serial || worldVersion !== this.worldVersion) throw new DOMException('Stale or cancelled surface request', 'AbortError');
+      throw error;
     } finally {
       request.signal?.removeEventListener('abort', onAbort);
     }

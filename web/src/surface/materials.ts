@@ -38,6 +38,17 @@ export const SURFACE_MATERIALS: MaterialRecipe[] = [
   recipe('forest-litter', 'vegetation', [.105, .065, .026], 'patches', .45, .015),
 ];
 
+export function createMaterialIndex(materials: MaterialRecipe[]): Record<string, number> {
+  if (!materials.length || materials.length > 65536) throw new Error('Material catalogue requires 1..65536 entries');
+  const result: Record<string, number> = Object.create(null);
+  materials.forEach((m, i) => {
+    if (!m.id || !m.version || result[m.id] !== undefined) throw new Error('Material recipe ids must be unique and versioned');
+    if (m.colorLinear.length !== 3 || m.colorLinear.some(v => !Number.isFinite(v) || v < 0 || v > 1) || !Number.isFinite(m.roughness) || m.roughness < 0 || m.roughness > 1) throw new Error('Invalid material color/roughness');
+    result[m.id] = i;
+  });
+  return result;
+}
+
 export interface MaterialComposition { primary: number; secondary: number; blend: number }
 
 /** Sparse reduction; no per-material world-sized weight maps. Ties have a deterministic id ordering. */

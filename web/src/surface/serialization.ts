@@ -1,1 +1,1 @@
-export { serializeSurfaceWorld, deserializeSurfaceWorld } from './compiler';
+export { serializeSurfaceWorld, deserializeSurfaceWorld, hydrateSurfaceWorld, type SurfaceHydrationOptions } from './compiler';
