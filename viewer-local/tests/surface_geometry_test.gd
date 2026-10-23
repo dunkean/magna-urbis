@@ -30,7 +30,7 @@ func _initialize():
 	check(urban.skippedProxies==1 and urban.nativeBuildings==1,"native/proxy accounting")
 	check(urban.materialGroups[0].materialId=="source-roof","source material identity")
 	check(urban.buildingIds==["native-source-id"],"source building ID")
-	check(urban.supportConflicts.size()==1 and urban.vertices[0].y==30.0,"support conflicts reported without reseating native city")
+	check(urban.supportConflicts.is_empty() and urban.supportObservations.size()==1 and urban.vertices[0].y==30.0,"natural support variation observed without claiming violation or reseating native city")
 	check(urban.roadVertices.size()>0,"crossing road clipped instead of dropped")
 	check(urban.skippedDegenerates>=1,"zero length segment skipped")
 	check(absf(urban.vertices[0].x-9.001)<0.00001,"large-coordinate precision after origin subtraction")
