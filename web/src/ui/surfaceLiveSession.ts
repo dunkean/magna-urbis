@@ -7,11 +7,16 @@ import { compileSurfaceWorld, retargetSurfaceWorld } from '../surface/compiler';
 import { generateSurfaceCandidates } from '../surface/population';
 import { decorToSurfaceInput, exportMagnaBuildings } from '../surface/adapters/magna';
 import { occupationFromMagnaScene, type SurfaceRoad } from '../surface/adapters/occupation';
+import { SurfaceCompilerClient, type SurfaceCompilerWorker } from '../surface/workerClient';
+import { createSurfaceWorkerProcessor } from '../surface/workerProcessor';
+import { SURFACE_WORKER_PROTOCOL, surfaceWorkerBounds, type SurfaceWorkerInitialization } from '../surface/workerProtocol';
+import { prepareSurfaceDecorWorkerSource, type SurfaceDecorWorkerSource } from './surfaceWorkerSource';
 
-/** Retains a canonical context while actual Infinite Generation heights refine.
+/** Explicit synchronous Node/offline compatibility path. Browser callers use createSurfaceLiveBinarySession.
  * The provider must have been registered from this exact retained terrain. */
 export function createSurfaceLiveSession(decor: Decor, scene: Building3dScene | undefined,
   provider: TerrainProvider, isCurrent: () => boolean) {
+  if (typeof window !== 'undefined') throw new Error('Browser surface compilation requires createSurfaceLiveBinarySession and its dedicated worker');
   let canonical: SurfaceWorld | undefined;
   const sourceInput = decorToSurfaceInput(decor);
   const roads: SurfaceRoad[] = (decor.meta.roads?.segments ?? []).map(road => ({ points: road.path.map(p => [p.x, p.y]), widthM: road.width }));
@@ -59,4 +64,74 @@ export function createSurfaceLiveSession(decor: Decor, scene: Building3dScene | 
       source: { meta: decor.meta, originalSource: sourceInput.terrain.source, live: true,
         provider: provider.id, canonicalContextId: contextId, request: { ...region } } };
   };
+}
+
+export interface SurfaceLiveCompilerOptions {
+  sourceEpoch?: string; sceneEpoch?: string;
+  /** Browser production defaults to a real worker. The synchronous path must be explicitly requested by Node/offline tests. */
+  execution?: 'worker' | 'synchronous-node';
+  workerFactory?: () => SurfaceCompilerWorker;
+}
+
+/** Live browser path: asynchronous generation provider, interruptible compiler worker, transferred MUFSURF1 bytes. */
+export function createSurfaceLiveBinarySession(decor: Decor, scene: Building3dScene | undefined,
+  provider: TerrainProvider, isCurrent: () => boolean, options: SurfaceLiveCompilerOptions = {}) {
+  const initialization: SurfaceWorkerInitialization<SurfaceDecorWorkerSource> = {
+    sourceEpoch: options.sourceEpoch ?? decor.meta.id, sceneEpoch: options.sceneEpoch ?? 'retained-scene-1',
+    payload: { decor, scene, providerId: provider.id },
+  };
+  const synchronous = options.execution === 'synchronous-node';
+  if (synchronous && typeof window !== 'undefined') throw new Error('Synchronous surface compilation is restricted to explicit Node/offline use');
+  const factory = options.workerFactory ?? (() => {
+    if (typeof Worker === 'undefined') throw new Error('Surface compilation requires a Worker; Node tests may explicitly select synchronous-node');
+    return new Worker(new URL('./surfaceCompiler.worker.ts', import.meta.url), { type: 'module' }) as unknown as SurfaceCompilerWorker;
+  });
+  const compiler = synchronous ? undefined : new SurfaceCompilerClient(initialization, factory);
+  const processor = synchronous ? createSurfaceWorkerProcessor(prepareSurfaceDecorWorkerSource) : undefined;
+  let initialized = false, active: AbortController | undefined, serial = 0, disposed = false, environmentVersion: string | undefined;
+  const assertCurrent = (signal: AbortSignal, id: number) => {
+    if (disposed || signal.aborted || id !== serial || !isCurrent()) throw new DOMException('Terrain or city changed during surface generation', 'AbortError');
+  };
+  const handler = async (region: SurfaceLiveRegion, signal: AbortSignal): Promise<ArrayBuffer> => {
+    if (signal.aborted || disposed || !isCurrent()) throw new DOMException('Surface session is cancelled or stale', 'AbortError');
+    const bounds = surfaceWorkerBounds(region), width = decor.raster.width;
+    if (bounds.minX < 0 || bounds.minZ < 0 || bounds.maxX > width || bounds.maxZ > width) throw new RangeError('Live request extends outside the retained world context');
+    active?.abort(); compiler?.cancel();
+    const controller = new AbortController(), id = ++serial; active = controller;
+    const abort = () => controller.abort(); signal.addEventListener('abort', abort, { once: true });
+    // Existing callers supply an identity predicate rather than an invalidation event.
+    // Poll only during active work, so an edited source/scene terminates the worker promptly.
+    const currentTimer = setInterval(() => { if (!isCurrent()) controller.abort(); }, 25);
+    try {
+      const terrain = await provider.request({ bounds, spacingM: region.extent / region.resolution,
+        worldVersion: compiler?.environmentVersion ?? environmentVersion ?? decor.meta.id, signal: controller.signal });
+      assertCurrent(controller.signal, id);
+      if (compiler) {
+        const result = await compiler.compile({ terrain, region }, controller.signal);
+        assertCurrent(controller.signal, id);
+        return result.binary;
+      }
+      if (!initialized) {
+        const response = processor!.handle({ protocol: SURFACE_WORKER_PROTOCOL, kind: 'initialize', sessionId: 'explicit-node-sync', ...initialization });
+        if (response.kind === 'error') throw new Error(response.error.message);
+        initialized = true;
+      }
+      const response = processor!.handle({ protocol: SURFACE_WORKER_PROTOCOL, kind: 'compile', sessionId: 'explicit-node-sync',
+        sourceEpoch: initialization.sourceEpoch, sceneEpoch: initialization.sceneEpoch, requestId: id, terrain, region });
+      if (response.kind !== 'compiled') throw new Error(response.kind === 'error' ? response.error.message : 'No synchronous surface result');
+      environmentVersion = response.environmentVersion;
+      assertCurrent(controller.signal, id);
+      return response.binary;
+    } catch (error) {
+      if (controller.signal.aborted || id !== serial || !isCurrent()) throw new DOMException('Surface session cancelled or superseded', 'AbortError');
+      throw error;
+    } finally {
+      clearInterval(currentTimer); signal.removeEventListener('abort', abort);
+      if (active === controller) active = undefined;
+    }
+  };
+  return Object.assign(handler, {
+    execution: synchronous ? 'synchronous-node' as const : 'worker' as const,
+    dispose() { disposed = true; serial++; active?.abort(); compiler?.dispose(); },
+  });
 }

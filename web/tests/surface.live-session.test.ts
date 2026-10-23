@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import type { Decor } from '../src/ui/decor';
 import type { TerrainProvider } from '../src/surface/provider';
-import { createSurfaceLiveSession } from '../src/ui/surfaceLiveSession';
+import { createSurfaceLiveSession, createSurfaceLiveBinarySession } from '../src/ui/surfaceLiveSession';
+import { decodeSurfaceBinary } from '../src/surface/binary';
+import type { SurfaceWorkerPacket } from '../src/surface/workerProtocol';
 
 function fixture(): Decor {
   const n = 8, height = new Float32Array(n * n).fill(100);
@@ -20,6 +22,17 @@ function provider(): TerrainProvider {
   } };
 }
 describe('Live context handoff', () => {
+  it('exposes explicit Node binary fallback with the same context handshake as the browser worker', async () => {
+    const session = createSurfaceLiveBinarySession(fixture(), undefined, provider(), () => true, { execution: 'synchronous-node' });
+    expect(session.execution).toBe('synchronous-node');
+    const signal = new AbortController().signal;
+    const first = decodeSurfaceBinary<SurfaceWorkerPacket>(new Uint8Array(await session({ x: 20, y: 20, extent: 40, resolution: 16 }, signal)));
+    expect(first.world.canonicalContext).toBeDefined();
+    const second = decodeSurfaceBinary<SurfaceWorkerPacket>(new Uint8Array(await session({ x: 20, y: 20, extent: 40, resolution: 32, knownContextId: first.world.canonicalContextRef!.id }, signal)));
+    expect(second.world.canonicalContext).toBeUndefined(); expect(second.world.canonicalContextRef).toEqual(first.world.canonicalContextRef);
+    session.dispose();
+    await expect(session({ x: 20, y: 20, extent: 40, resolution: 16 }, signal)).rejects.toMatchObject({ name: 'AbortError' });
+  });
   it('delivers the canonical context once, then preserves its reference on finer source replies', async () => {
     const source = fixture(), original = source.raster.height.slice(), controller = new AbortController();
     const session = createSurfaceLiveSession(source, undefined, provider(), () => true);
