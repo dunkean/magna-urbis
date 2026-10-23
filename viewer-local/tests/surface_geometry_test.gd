@@ -41,6 +41,13 @@ func _initialize():
 	check(JSON.stringify(packet)==source_snapshot,"source packet immutable")
 	packet._showProxies=true
 	check(G.build_urban(packet,world,origin,focus,4.0).proxyBuildings==1,"proxy requires explicit display flag")
+	var over_budget := building.duplicate(false)
+	over_budget.id="oversized-native-shell"
+	var too_many: Array=[]; too_many.resize(200001); too_many.fill(triangle)
+	over_budget.triangles=too_many
+	var budget_packet={"urban":{"buildings":[over_budget,building]}}
+	var budget_result=G.build_urban(budget_packet,world,origin,focus,4.0)
+	check(budget_result.vertices.size()==3 and budget_result.omittedBuildingIds==["oversized-native-shell"],"budget never emits a partial native shell")
 	var key := G.chunk_key(world,focus,4.0,"urban")
 	world._cityIdentity="different-city"
 	check(G.chunk_key(world,focus,4.0,"urban")!=key,"cache invalidates city identity")
