@@ -1,0 +1,198 @@
+{
+  "format": "source-water-symbol-gpu-control",
+  "version": 1,
+  "status": "passed",
+  "scope": "Actual retained source40km contours and original levels through production bake/symbol/terrain-only projection; controlled flat receiver and blue palette. Not a fresh neural/Terrain3D/production-style/canopy/topology or constant-width perspective proof.",
+  "source": {
+    "packet": "D:/workspace/self/_worktrees/magna-urbis-surface-world-2026-10-23/web/out/surface/native-e2e-40km-v8/fresh-source.surfacebin",
+    "sha256": "c10d3c5ce4c05c82b1d9d3cd1aad647bb3a647a04f1e6dce4391066fcd4bf695",
+    "generation": "Retained V8 teacher source; not newly generated/refined for this control",
+    "geometrySha256": "2576f6e465355fab344ccec883e3e84515379d8e99c808733b159085c517101e",
+    "sourceUnchanged": true
+  },
+  "runtime": {
+    "backend": "forward_plus",
+    "adapter": "NVIDIA GeForce RTX 4090",
+    "godot": "4.7.2-stable",
+    "baseHead": "baa7fd6",
+    "sourceDigests": {
+      "viewer-local/adapters/surface_water_projection.gd": "98e7347eb28d896050e63ab05217a2b8361a9a7d297b37fc235baec98824ccc2",
+      "viewer-local/adapters/surface_water_symbols.gd": "8797e662d995e0c1ab27b0710c91f4a7f613bf5ac019e18a2dbf7f61a814ba97",
+      "viewer-local/shaders/water_source_map.gdshader": "e27f983e731f6e9012f0e9d615a29c2664c7d48ba169e87f7f3d0815784fa847",
+      "viewer-local/shaders/water_symbols.gdshader": "0e1faa01b2303390926ce9045d6b3e396f37311ad03ca5de27e80ca7ba94b82b",
+      "viewer-local/diagnostics/water_symbols_real_probe.gd": "715a20723406599966e263403eba84138f2ed773ef54267cfa5427e1c49742fa"
+    },
+    "sourceDigestScope": "Post-run digests; these production modules/shaders and GPU probe were not edited during or after this GPU run",
+    "gpuExitCode": 0,
+    "ownedProbeProcessExited": true
+  },
+  "display": {
+    "widthM": 40000,
+    "viewport": [
+      2048,
+      1280
+    ],
+    "screenMetresPerPixel": 19.53125,
+    "palette": "Controlled blue palette, all water kinds; flat grey layer1 receiver and red layer2 roof",
+    "sourceReferencePixels": 129421,
+    "originalContourPixels": 114995,
+    "symbolPixels": 141730,
+    "relativeIncrease": 0.2324883690595243,
+    "symbolRoofPixels": 0
+  },
+  "images": [
+    {
+      "name": "source-reference.png",
+      "sha256": "35a75832155e6d3bf8f59bb530045a9918e90a5f0cd011272067e1dc00ec21da"
+    },
+    {
+      "name": "contours-mode0.png",
+      "sha256": "f3a88dd3c5d8dd5d592e8e15cf76834c0953e22bf70fe0745958f173670721b9"
+    },
+    {
+      "name": "symbols-1_25.png",
+      "sha256": "c73640a68fc4a34b68ac1e411d666976360a6d55932d1e17666c879bec9e2ed6"
+    },
+    {
+      "name": "symbols-roof.png",
+      "sha256": "b48b72399edc228e9591a24f89adf8b98f6713b33bdaa604178f0ac5ee435a30"
+    }
+  ],
+  "original": {
+    "budgetLimited": false,
+    "buildMs": 344.453,
+    "metresPerTexel": 24.4140625,
+    "minimumRiverStrokeApplied": false,
+    "missingLevelTriangles": 0,
+    "paddingSymbolMetres": 0,
+    "physicalWaterSurfaceClaimed": false,
+    "projectionCullMask": 1,
+    "resolution": 2048,
+    "screenMetresPerPixel": 0,
+    "screenScalePolicy": "orthographic-map-ground-scale",
+    "sourceAuthority": "magna-urbis-fixed-hydrology",
+    "sourceCoverageImageSha256": "bb2b44d35be7c4dd53999752cf4290d708f461edd5d3a7652c37190189d7b5a7",
+    "sourceGeometrySha256": "2576f6e465355fab344ccec883e3e84515379d8e99c808733b159085c517101e",
+    "sourceGeometryUnchanged": true,
+    "sourceLevelBoundaryPolicy": "Only queries of float64-clipped vertices displaced outside source support by <= half an FP32 relative-coordinate ULP are clamped; source levels and mesh vertices stay unchanged",
+    "sourceLevelBoundaryQueriesResolved": 0,
+    "sourceLevelMaximumBoundaryQueryRoundoffM": 0,
+    "sourceLevelsUnchanged": true,
+    "sourceVectorAreaM2": 48038663.7534668,
+    "sourceVectorAreaScope": "input geometry clip window; projection camera may be narrower",
+    "sourceVectorClipBounds": {
+      "maxX": 40000,
+      "maxZ": 40000,
+      "minX": 0,
+      "minZ": 0
+    },
+    "sourceVectorCoverageComplete": true,
+    "sourceVectorMissingAreaM2": 0,
+    "sourceVectorRequestedAreaM2": 48038668.5275281,
+    "sourceVectorScanWork": 480887,
+    "sourceVertices": 719184,
+    "subpixelPolicy": "original contour coverage only; no minimum stroke or physical-width edits",
+    "symbolColorPolicy": "nearest contributing source coverage colour; no new hydrology classes",
+    "symbolCoverageEstimatedImageBytes": 55924054,
+    "symbolCoverageImageBudgetBytes": 268435456,
+    "symbolCoverageSeparateFromSourceArea": true,
+    "symbolKernelRadiusTexels": 0,
+    "symbolRasterLimit": "A segment absent from the initial AA source raster cannot be reconstructed by dilation",
+    "symbolWidthMeaning": "AA disk diameter around nonzero coverage samples; not a measured or edited physical water width",
+    "symbolWidthPx": 0,
+    "symbolicPhysicalWidthClaim": false,
+    "vectorBedDiagnosticBudget": 4096,
+    "vectorBedDiagnosticConflicts": 2670,
+    "vectorBedDiagnosticMaximumDeltaM": 46.0715800621301,
+    "vectorBedDiagnosticMissing": 0,
+    "vectorBedDiagnosticSamples": 4087,
+    "vectorBedDiagnosticToleranceM": 0.001,
+    "vertexBudget": 999996,
+    "waterPresentation": "source-map-terrain-projection",
+    "waterSymbolPolicy": "disabled-original-contours",
+    "waterSymbolVersion": "source-water-symbol-1"
+  },
+  "symbolic": {
+    "budgetLimited": false,
+    "buildMs": 722.626,
+    "metresPerTexel": 19.5255324209602,
+    "minimumRiverStrokeApplied": false,
+    "missingLevelTriangles": 0,
+    "paddingSymbolMetres": 12.20703125,
+    "physicalWaterSurfaceClaimed": false,
+    "projectionCullMask": 1,
+    "resolution": 2562,
+    "screenMetresPerPixel": 19.53125,
+    "screenScalePolicy": "orthographic-map-ground-scale",
+    "sourceAuthority": "magna-urbis-fixed-hydrology",
+    "sourceCoverageImageSha256": "c88e8e908ee5585ab50b4355544ed493b57cfa32160678940e3e904712794cf8",
+    "sourceGeometrySha256": "2576f6e465355fab344ccec883e3e84515379d8e99c808733b159085c517101e",
+    "sourceGeometryUnchanged": true,
+    "sourceLevelBoundaryPolicy": "Only queries of float64-clipped vertices displaced outside source support by <= half an FP32 relative-coordinate ULP are clamped; source levels and mesh vertices stay unchanged",
+    "sourceLevelBoundaryQueriesResolved": 0,
+    "sourceLevelMaximumBoundaryQueryRoundoffM": 0,
+    "sourceLevelsUnchanged": true,
+    "sourceVectorAreaM2": 48038663.7534668,
+    "sourceVectorAreaScope": "input geometry clip window; projection camera may be narrower",
+    "sourceVectorClipBounds": {
+      "maxX": 40000,
+      "maxZ": 40000,
+      "minX": 0,
+      "minZ": 0
+    },
+    "sourceVectorCoverageComplete": true,
+    "sourceVectorMissingAreaM2": 0,
+    "sourceVectorRequestedAreaM2": 48038668.5275281,
+    "sourceVectorScanWork": 480887,
+    "sourceVertices": 719184,
+    "subpixelPolicy": "declared all-water coverage symbol; original source contours, levels and physical area unchanged",
+    "symbolColorPolicy": "nearest contributing source coverage colour; no new hydrology classes",
+    "symbolCoverageEstimatedImageBytes": 87517920,
+    "symbolCoverageImageBudgetBytes": 268435456,
+    "symbolCoverageImageSha256": "a2b9ce73429729096fb531ab6dbd629bef5b0de49cf893cf3ec4af8151347d4d",
+    "symbolCoverageSeparateFromSourceArea": true,
+    "symbolKernelRadiusTexels": 0.625183016105417,
+    "symbolRasterLimit": "A segment absent from the initial AA source raster cannot be reconstructed by dilation",
+    "symbolWidthMeaning": "AA disk diameter around nonzero coverage samples; not a measured or edited physical water width",
+    "symbolWidthPx": 1.25,
+    "symbolicPhysicalWidthClaim": false,
+    "vectorBedDiagnosticBudget": 4096,
+    "vectorBedDiagnosticConflicts": 2670,
+    "vectorBedDiagnosticMaximumDeltaM": 46.0715800621301,
+    "vectorBedDiagnosticMissing": 0,
+    "vectorBedDiagnosticSamples": 4087,
+    "vectorBedDiagnosticToleranceM": 0.001,
+    "vertexBudget": 999996,
+    "waterPresentation": "source-map-terrain-projection",
+    "waterSymbolPolicy": "all-water-source-coverage-aa-disk",
+    "waterSymbolVersion": "source-water-symbol-1"
+  },
+  "roofImageControl": {
+    "CPUOnly": true,
+    "passed": true,
+    "roofRedBoundsPx": [
+      953,
+      613,
+      1003,
+      663
+    ],
+    "sameInteriorWaterAfterRoofPixels": 0,
+    "sameInteriorWaterBeforeRoofPixels": 32,
+    "scope": "Saved identical-camera GPU images, interior of the actual red roof bounds; confirms that terrain-only symbols are occluded by layer2 geometry. No additional GPU run."
+  },
+  "validation": {
+    "nativeFailures": [],
+    "actualGpuDiagnosticsPassedStrictTsGatesBothModes": true,
+    "tests": "6 TS evidence cases including negative matrices; native CPU plan/cache/empty contracts; headless probe parse; saved-image CPU roof control",
+    "noAdditionalGpuForSavedImageControl": true
+  },
+  "visualInspection": "Mode0 and1.25 captures opened: regional network becomes substantially easier to follow; some very thin branches still intermittent. No complete flow/topology/constant-width or artistic acceptance claimed.",
+  "limitations": [
+    "Actual retained contours/levels and production projection/symbol modules, but controlled receiver/palette; not a Terrain3D main scene or fresh E2E proof.",
+    "All-water AA disk symbology; no river-only classification, new centreline, source widening, level editing or rerouting.",
+    "Initial AA raster can miss a sufficiently thin segment entirely; post-process cannot recover absent coverage.",
+    "Estimated image workspace excludes engine-owned framebuffer/MSAA/depth attachments and rest of scene; cache and full-scene memory require separate measurement.",
+    "Uniform ground-scale symbols are exact-screen controls only for top orthographic mapping; oblique use is explicitly approximate.",
+    "Historical V8/other failed campaigns remain unchanged."
+  ]
+}

@@ -31,13 +31,15 @@ export function verifyExplicitLayerCapture(capture:unknown,packet:unknown,visibi
 
 /** Source-map visibility is distinct from a physical water/bed consistency test.
  * A retained source can conflict with a refined bed without losing map authority. */
-export function verifyWaterCapture(capture:unknown,options:{requireSourceMap?:boolean}={}):Row {
+export function verifyWaterCapture(capture:unknown,options:{requireSourceMap?:boolean;waterSymbolWidthPx?:number;screenMetresPerPixel?:number}={}):Row {
   if(!record(capture)||!record(capture.renderedSnapshot)||!record(capture.water))throw new Error('Missing per-view water authority/representation evidence');
   const water=capture.water;
+  const expectedSymbol=options.waterSymbolWidthPx??0,actualSymbol=water.symbolWidthPx??0;
+  if(!finite(expectedSymbol)||expectedSymbol<0||expectedSymbol>1.25||!finite(actualSymbol)||Math.abs(actualSymbol-expectedSymbol)>1e-12)throw new Error('Undeclared or unrequested water symbology');
   if(water.worldId!==capture.renderedSnapshot.worldId||typeof water.authority!=='string'||!water.authority)throw new Error('Water evidence differs from the displayed world');
   if(water.authority!=='magna-urbis-fixed-hydrology'||water.fixedVectorDisplayAvailable!==true){
     if(typeof water.fixedHydrologyFallbackReason!=='string'||!water.fixedHydrologyFallbackReason.trim())throw new Error('Silent water fallback');
-    if(options.requireSourceMap)throw new Error('Regional source-map water fell back: '+water.fixedHydrologyFallbackReason);
+    if(options.requireSourceMap||expectedSymbol>0)throw new Error('Regional source-map water fell back: '+water.fixedHydrologyFallbackReason);
     return water;
   }
   for(const key of ['sourceVectorRequestedAreaM2','sourceVectorAreaM2','sourceVectorMissingAreaM2','missingLevelTriangles'])if(!nonnegative(water[key]))throw new Error('Malformed source water coverage '+key);
@@ -49,6 +51,23 @@ export function verifyWaterCapture(capture:unknown,options:{requireSourceMap?:bo
   if(water.waterPresentation==='source-map-terrain-projection'&&(water.projectionCullMask!==1||water.sourceLevelsUnchanged!==true
     ||water.physicalWaterSurfaceClaimed!==false||water.minimumRiverStrokeApplied!==false||typeof water.subpixelPolicy!=='string'||!water.subpixelPolicy))
     throw new Error('Source-map projection hides physical edits, roof projection or subpixel stroke changes');
+  if(expectedSymbol>0){
+    if(water.waterPresentation!=='source-map-terrain-projection'||water.waterSymbolVersion!=='source-water-symbol-1'
+      ||water.waterSymbolPolicy!=='all-water-source-coverage-aa-disk'||water.sourceGeometryUnchanged!==true||water.symbolicPhysicalWidthClaim!==false||water.symbolCoverageSeparateFromSourceArea!==true
+      ||!finite(water.screenMetresPerPixel)||water.screenMetresPerPixel<=0||!finite(water.paddingSymbolMetres)
+      ||Math.abs(water.paddingSymbolMetres-expectedSymbol*water.screenMetresPerPixel*.5)>1e-9*Math.max(1,water.paddingSymbolMetres)
+      ||!['orthographic-map-ground-scale','oblique-ground-scale-approximation'].includes(water.screenScalePolicy)
+      ||!Number.isInteger(water.resolution)||water.resolution<64||water.resolution>4096||!finite(water.metresPerTexel)||water.metresPerTexel<=0||water.metresPerTexel>water.screenMetresPerPixel*(1+1e-12)
+      ||!nonnegative(water.symbolCoverageEstimatedImageBytes)||water.symbolCoverageEstimatedImageBytes<water.resolution**2*4||!finite(water.symbolCoverageImageBudgetBytes)||water.symbolCoverageImageBudgetBytes<=0||water.symbolCoverageImageBudgetBytes>256*1024*1024||water.symbolCoverageEstimatedImageBytes>water.symbolCoverageImageBudgetBytes
+      ||!finite(water.symbolKernelRadiusTexels)||water.symbolKernelRadiusTexels<0||water.symbolKernelRadiusTexels>4||Math.abs(water.symbolKernelRadiusTexels-water.paddingSymbolMetres/water.metresPerTexel)>1e-9
+      ||typeof water.symbolRasterLimit!=='string'||!water.symbolRasterLimit||!/^([a-f0-9]{64})$/.test(water.sourceGeometrySha256))throw new Error('Symbolic water hides its footprint, source invariance or image budget');
+    if(water.sourceVertices>0&&(!/^[a-f0-9]{64}$/.test(water.sourceCoverageImageSha256)||!/^[a-f0-9]{64}$/.test(water.symbolCoverageImageSha256)))throw new Error('Symbolic coverage image is not distinguished from source coverage');
+    const expectedMPP=options.screenMetresPerPixel??(water.screenScalePolicy==='orthographic-map-ground-scale'?capture.metresPerPixel:undefined);
+    if(expectedMPP!==undefined&&(!finite(expectedMPP)||expectedMPP<=0||Math.abs(water.screenMetresPerPixel-expectedMPP)>1e-9*expectedMPP))throw new Error('Water symbol uses a stale or dishonest screen scale');
+  }else if(water.sourceGeometryUnchanged===false||water.symbolicPhysicalWidthClaim===true
+    ||water.waterSymbolPolicy!==undefined&&water.waterSymbolPolicy!=='disabled-original-contours'
+    ||water.waterSymbolVersion!==undefined&&water.waterSymbolVersion!=='source-water-symbol-1'
+    ||water.paddingSymbolMetres!==undefined&&water.paddingSymbolMetres!==0||water.symbolCoverageImageSha256!==undefined)throw new Error('Original contour mode hides symbols or claims physical source edits');
   const samples=water.vectorBedDiagnosticSamples,conflicts=water.vectorBedDiagnosticConflicts;
   if(samples!==undefined||conflicts!==undefined){
     if(!Number.isSafeInteger(samples)||samples<0||!Number.isSafeInteger(conflicts)||conflicts<0||conflicts>samples

@@ -33,6 +33,24 @@ describe('new rendered layer and fixed source-map evidence',()=>{
     const{capture}=fixture();expect(verifyWaterCapture(capture,{requireSourceMap:true})).toBe(capture.water);
     expect(capture.water.vectorBedDiagnosticConflicts).toBeGreaterThan(0);expect(capture.water.physicalWaterSurfaceClaimed).toBe(false);
   });
+  it('accepts only explicitly requested symbolic coverage with separate source geometry/image evidence and honest screen scale',()=>{
+    const{capture}=fixture();const water:any=capture.water;
+    Object.assign(water,{waterSymbolVersion:'source-water-symbol-1',waterSymbolPolicy:'all-water-source-coverage-aa-disk',symbolWidthPx:1.25,
+      screenMetresPerPixel:20,paddingSymbolMetres:12.5,screenScalePolicy:'orthographic-map-ground-scale',sourceGeometryUnchanged:true,symbolicPhysicalWidthClaim:false,symbolCoverageSeparateFromSourceArea:true,
+      resolution:2562,metresPerTexel:19.6,symbolKernelRadiusTexels:12.5/19.6,symbolCoverageEstimatedImageBytes:87517920,symbolCoverageImageBudgetBytes:268435456,symbolRasterLimit:'Initial AA source raster is authoritative',sourceGeometrySha256:'1'.repeat(64),sourceCoverageImageSha256:'2'.repeat(64),symbolCoverageImageSha256:'3'.repeat(64)});
+    expect(()=>verifyWaterCapture(capture,{requireSourceMap:true})).toThrow(/unrequested/);
+    expect(verifyWaterCapture(capture,{requireSourceMap:true,waterSymbolWidthPx:1.25,screenMetresPerPixel:20})).toBe(water);
+    for(const alter of[(w:any)=>w.sourceVectorMissingAreaM2=1,(w:any)=>w.symbolicPhysicalWidthClaim=true,(w:any)=>w.sourceGeometryUnchanged=false,
+      (w:any)=>delete w.waterSymbolVersion,(w:any)=>w.waterSymbolPolicy='physical-river-widening',(w:any)=>w.paddingSymbolMetres=200,
+      (w:any)=>w.screenMetresPerPixel=30,(w:any)=>w.metresPerTexel=21,(w:any)=>w.resolution=8192,(w:any)=>w.symbolCoverageSeparateFromSourceArea=false,
+      (w:any)=>delete w.symbolCoverageImageSha256,(w:any)=>delete w.sourceGeometrySha256,(w:any)=>w.symbolCoverageEstimatedImageBytes=900000000]){
+      const bad=structuredClone(capture);alter(bad.water);expect(()=>verifyWaterCapture(bad,{requireSourceMap:true,waterSymbolWidthPx:1.25,screenMetresPerPixel:20})).toThrow();
+    }
+    expect(()=>verifyWaterCapture(fixture().capture,{waterSymbolWidthPx:1.25})).toThrow(/unrequested/);
+    for(const hidden of[{waterSymbolPolicy:'all-water-source-coverage-aa-disk'},{paddingSymbolMetres:1},{symbolCoverageImageSha256:'3'.repeat(64)}]){
+      const f=fixture();Object.assign(f.capture.water,hidden);expect(()=>verifyWaterCapture(f.capture)).toThrow(/hides symbols/);
+    }
+  });
   it('requires regional source vectors without omissions and refuses roof projection, level editing or hidden fallback',()=>{
     for(const alter of[(w:any)=>w.sourceVectorMissingAreaM2=1,(w:any)=>w.sourceVectorCoverageComplete=false,(w:any)=>w.missingLevelTriangles=1,(w:any)=>w.budgetLimited=true,
       (w:any)=>w.waterPresentation='physical-depth-tested',(w:any)=>w.sourceVertices=0,(w:any)=>w.sourceVectorAreaM2=0,(w:any)=>w.projectionCullMask=3,(w:any)=>w.sourceLevelsUnchanged=false,
