@@ -1,21 +1,31 @@
 import type { Decor } from './decor';
 import type { Building3dScene } from '../render/urbanBuildingGeometry';
-import { decorToSurfaceInput, exportMagnaBuildings } from '../surface/adapters/magna';
-import { occupationFromMagnaScene, type SurfaceRoad } from '../surface/adapters/occupation';
+import { decorToSurfaceInput } from '../surface/adapters/magna';
+import { occupationFromMagnaScene } from '../surface/adapters/occupation';
+import { magnaRoads, magnaUrbanIdentity, magnaUrbanPacket } from '../surface/adapters/magnaUrban';
 import type { PreparedSurfaceWorkerSource } from '../surface/workerProtocol';
 import { archiveSurfaceSource } from '../surface/adapters/sourceArchive';
+import { assertSurfaceRegistrationBinding, type SurfaceRegistrationBinding } from '../surface/registrationBinding';
+import { magnaSurfacePresentation } from '../surface/presentation';
 
-export interface SurfaceDecorWorkerSource { decor: Decor; scene?: Building3dScene; providerId: string }
+export interface SurfaceDecorWorkerSource { decor: Decor; scene?: Building3dScene; providerId: string; registrationBinding?: SurfaceRegistrationBinding }
 
 /** Runs inside the compiler worker: occupation rasters and urban geometry export do not block the UI. */
 export function prepareSurfaceDecorWorkerSource(value: unknown): PreparedSurfaceWorkerSource {
   const payload = value as SurfaceDecorWorkerSource;
   if (!payload?.decor?.raster || typeof payload.providerId !== 'string' || !payload.providerId.length) throw new Error('Invalid retained surface worker source');
   const { decor, scene } = payload;
+  const registrationBinding = payload.registrationBinding && { ...payload.registrationBinding };
+  if (registrationBinding) assertSurfaceRegistrationBinding(registrationBinding, { width: decor.raster.width, n: decor.raster.n, data: decor.raster.height });
   const input = decorToSurfaceInput(decor);
-  const roads: SurfaceRoad[] = (decor.meta.roads?.segments ?? []).map(road => ({ points: road.path.map(p => [p.x, p.y]), widthM: road.width }));
+  const roads = magnaRoads(decor);
   const buildings = scene ?? { buildings: [] };
   input.occupation = occupationFromMagnaScene(input.terrain, buildings, roads, input.occupation);
-  return { input, providerId: payload.providerId, registeredSourceBinding: true,
-    urban: { ...exportMagnaBuildings(buildings), roads }, sourceMetadata: archiveSurfaceSource({ meta: decor.meta }) };
+  const urban = magnaUrbanPacket(decor, buildings, 0, 0, undefined, 'binary');
+  const prepared: PreparedSurfaceWorkerSource & { registrationBinding?: SurfaceRegistrationBinding; urbanId: string } = {
+    input, providerId: registrationBinding?.providerId ?? payload.providerId, registrationBinding,
+    urban, urbanId: magnaUrbanIdentity(urban), sourceMetadata: archiveSurfaceSource({ meta: decor.meta, registrationBinding,
+      presentation: magnaSurfacePresentation(decor.meta.query) }),
+  };
+  return prepared;
 }

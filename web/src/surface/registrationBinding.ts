@@ -68,6 +68,16 @@ export function assertCanonicalRegistrationField(registered: RegistrationField, 
 }
 
 /** Cell footprints must match the requested region; half-cell shifts/transposition cannot hide behind a one-cell tolerance. */
+export function assertSurfaceRegistrationBinding(binding: SurfaceRegistrationBinding, canonical: RegistrationField): void {
+  if (!binding || ![binding.expectedSourceId, binding.providerId, binding.registrationId, binding.sourceVersion].every(v => typeof v === 'string' && !!v)
+    || !/^rf1-[0-9a-f]{32}$/.test(binding.fieldFingerprint) || binding.interpolation !== 'cell-centred-cubic-bspline-controls'
+    || !Number.isInteger(binding.n) || binding.n < 8 || binding.n > 4096 || !Number.isFinite(binding.width) || binding.width <= 0
+    || binding.canonicalN !== canonical.n || binding.canonicalWidth !== canonical.width || binding.width !== canonical.width
+    || binding.canonicalFieldFingerprint !== registrationFieldFingerprint(canonical)
+    || !['identity', 'bilinear-control-grid-at-centres'].includes(binding.canonicalDerivation)
+    || binding.canonicalDerivation === 'identity' && (binding.n !== canonical.n || binding.fieldFingerprint !== binding.canonicalFieldFingerprint)) throw new Error('Invalid source registration binding or canonical field fingerprint');
+}
+
 export function assertRefinementTerrainRegion(terrain: TerrainGrid, bounds: Bounds): void {
   if (!Number.isInteger(terrain.width) || !Number.isInteger(terrain.height) || terrain.width < 2 || terrain.height < 2 || terrain.heights.length !== terrain.width * terrain.height
     || !Number.isFinite(terrain.spacingM) || terrain.spacingM <= 0 || ![terrain.originX, terrain.originZ].every(Number.isFinite)) throw new Error('Invalid refinement terrain grid');
@@ -78,13 +88,13 @@ export function assertRefinementTerrainRegion(terrain: TerrainGrid, bounds: Boun
 }
 
 /** Quantifies the intentionally smoothed control-grid parent separately from decoder/procedural residuals. */
-export function compareRefinementParent(field: RegistrationField, terrain: TerrainGrid): RefinementParentComparison {
+export function compareRefinementParent(field: RegistrationField, terrain: TerrainGrid, canonical: RegistrationField = field): RefinementParentComparison {
   let count = 0, sy = 0, sp = 0, st = 0, sy2 = 0, sp2 = 0, st2 = 0, syp = 0, syt = 0, max = 0, square = 0, delta = 0, smoothing = 0, residual = 0;
   // Diagnostics are bounded independently of a 1024² delivery. All sampled coordinates are exact source centres.
   const stride = Math.max(1, Math.ceil(Math.sqrt(terrain.heights.length / 4096)));
   for (let z = 0; z < terrain.height; z += stride) for (let x = 0; x < terrain.width; x += stride) {
     const px = terrain.originX + x * terrain.spacingM, pz = terrain.originZ + z * terrain.spacingM;
-    const value = terrain.heights[z * terrain.width + x], parent = sampleRegistrationBilinear(field, px, pz), transposed = sampleRegistrationBilinear(field, pz, px), cubic = sampleRegistrationBSpline(field, px, pz), d = value - parent;
+    const value = terrain.heights[z * terrain.width + x], parent = sampleRegistrationBilinear(canonical, px, pz), transposed = sampleRegistrationBilinear(canonical, pz, px), cubic = sampleRegistrationBSpline(field, px, pz), d = value - parent;
     count++; sy += value; sp += parent; st += transposed; sy2 += value * value; sp2 += parent * parent; st2 += transposed * transposed; syp += value * parent; syt += value * transposed;
     max = Math.max(max, Math.abs(d)); square += d * d; delta += d; smoothing = Math.max(smoothing, Math.abs(cubic - parent)); residual = Math.max(residual, Math.abs(value - cubic));
   }

@@ -55,6 +55,7 @@ import { executionRuntime, executionProfiles, applyExecutionProfile, installExec
 import { initialTerrainSource } from './terrainStartupState';
 import { terrainLoading } from './terrainStartup';
 import { installSurfaceLive } from './surfaceLive';
+import { createSurfaceBenchRevisionReader } from './surfaceBenchRevision';
 
 const el = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T;
 const profileDefaults = executionProfiles[executionRuntime.profile];
@@ -1995,7 +1996,7 @@ el('pipelineSurface').onclick = async () => {
   const button = el<HTMLButtonElement>('pipelineSurface'); button.disabled = true;
   try {
     const { exportSurfacePacket } = await import('../surface/adapters/export');
-    const retained = pipelineCapture(), scene = settlements.urban.buildingState.scene;
+    const retained = pipelineCapture(), scene = pipelineStage === 'settlements' ? settlements.urban.buildingState.scene : undefined;
     el('pipelineStatus').textContent = 'Compilation des surfaces et conservation des bâtiments…';
     await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
     const packet = exportSurfacePacket(retained, scene, { encoding: 'binary' });
@@ -2010,12 +2011,16 @@ el('pipelineSurface').onclick = async () => {
 };
 
 if (import.meta.env.DEV) {
-  let liveTerrain: TerrainData | undefined, liveScene: typeof appliedBuildingScene;
+  const revisionFor = createSurfaceBenchRevisionReader();
+  const liveRevision = () => revisionFor(pipelineStage === 'settlements' ? { ...capturePipelineState(), stage: pipelineStage, settings }
+    : { query: shareQuery(), workshop: '', draft: '', terrain, stage: pipelineStage, settings });
+  let appliedLiveRevision: ReturnType<typeof liveRevision> | undefined;
   let liveHandler: Promise<ReturnType<typeof import('./surfaceLiveSession').createSurfaceLiveBinarySession>> | undefined;
   const disconnect = installSurfaceLive(async (region, signal) => {
     if (!terrain || overviewPending || generationError) throw new Error('Attendez un terrain conservé avant la connexion du visualiseur.');
-    const scene = settlements.urban.buildingState.scene;
-    if (!liveHandler || liveTerrain !== terrain || liveScene !== scene) {
+    const scene = pipelineStage === 'settlements' ? settlements.urban.buildingState.scene : undefined;
+    const revision = liveRevision();
+    if (!liveHandler || appliedLiveRevision?.sourceEpoch !== revision.sourceEpoch || appliedLiveRevision?.sceneEpoch !== revision.sceneEpoch) {
       if (liveHandler) void liveHandler.then(handler => handler.dispose()).catch(() => {});
       const retained = terrain, applied = settings;
       // Export-crop controls do not change the world currently being viewed.
@@ -2023,8 +2028,9 @@ if (import.meta.env.DEV) {
       const decor = pipelineStage === 'settlements' ? settlements.captureData()
         : retainedDecor ? withForestQuery(retainedDecor)
         : captureDecorData(retained, applied, { settlements: [], warnings: [], requested: 0, usableKm2: 0, ms: 0 }, undefined, null, { query: shareQuery() });
-      if (decor.meta.pipeline?.urban?.buildingState?.cold && !scene) throw new Error('Chargez les bâtiments conservés avant leur rendu local.');
-      liveTerrain = retained; liveScene = scene;
+      if (decor.raster.width !== retained.width) throw new Error('Le contexte conservé ne correspond pas à la largeur du fournisseur de relief.');
+      if (pipelineStage === 'settlements' && decor.meta.pipeline?.urban?.buildingState?.cold && !scene) throw new Error('Chargez les bâtiments conservés avant leur rendu local.');
+      appliedLiveRevision = revision;
       liveHandler = (async () => {
         const [{ createInfiniteRefinementProvider }, { createSurfaceLiveBinarySession }] = await Promise.all([
           import('../surface/adapters/infiniteRefinement'), import('./surfaceLiveSession'),
@@ -2036,9 +2042,13 @@ if (import.meta.env.DEV) {
           { seed: retained.neural?.neuralSeed ?? String(seedHash(applied.seed) >>> 0), source: applied.source,
             neuralToken: retained.neural?.neuralToken,
             neuralWindow: isNeuralSource(applied.source) ? neuralWindow(NEURAL_EXTENT, retained.width, applied.neuralFit ?? 'crop', applied.neuralSlopes ?? true, applied.coastMask ?? 0) : undefined });
-        return createSurfaceLiveBinarySession(decor, scene, provider,
-          () => terrain === retained && settings === applied && settlements.urban.buildingState.scene === scene && !overviewPending);
-      })().catch(error => { liveHandler = undefined; throw error; });
+        const registrationBinding = provider.bindCanonicalField({ width: decor.raster.width, n: decor.raster.n, data: decor.raster.height });
+        return createSurfaceLiveBinarySession(decor, scene, provider, () => {
+          const current = liveRevision();
+          return terrain === retained && settings === applied && current.sourceEpoch === revision.sourceEpoch
+            && current.sceneEpoch === revision.sceneEpoch && !overviewPending;
+        }, { ...revision, registrationBinding });
+      })().catch(error => { if (appliedLiveRevision === revision) liveHandler = undefined; throw error; });
     }
     return (await liveHandler)(region, signal);
   }, message => { el('pipelineStatus').textContent = message; });
