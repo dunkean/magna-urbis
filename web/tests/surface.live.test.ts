@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { createServer, type Server } from 'node:http';
 import { createSurfaceLiveBroker } from '../scripts/surface_live_plugin';
+import { encodeSurfaceBinary, decodeSurfaceBinary } from '../src/surface/binary';
 
 const cleanup: Array<() => void> = [];
 afterEach(() => { for (const close of cleanup.splice(0)) close(); });
@@ -49,5 +50,17 @@ describe('Surface live transport', () => {
     expect((await response).status).toBe(504);
     const cancellation = await browser.event(); expect(cancellation).toEqual({ name: 'cancel', data: { id: request.data.id } });
     expect((await post(`${base}/surface-live/reply/${request.data.id}`, { sessionId: browser.session, packet: {} })).status).toBe(410);
+  });
+  it('forwards binary typed fields without a JSON conversion', async () => {
+    const base = await start(), browser = await connect(base);
+    const response = post(`${base}/surface-live/terrain`, { region });
+    const request = await browser.event(), samples = new Float32Array([.1, 42, NaN]);
+    const binary = encodeSurfaceBinary({ world: { samples } });
+    expect((await fetch(`${base}/surface-live/reply/${request.data.id}`, { method: 'POST', headers: {
+      'Content-Type': 'application/octet-stream', 'X-Surface-Session': browser.session }, body: binary.buffer as ArrayBuffer })).status).toBe(200);
+    const result = await response;
+    expect(result.headers.get('content-type')).toBe('application/octet-stream');
+    const copy = decodeSurfaceBinary<{ world: { samples: Float32Array } }>(new Uint8Array(await result.arrayBuffer()));
+    expect(copy.world.samples).toEqual(samples);
   });
 });

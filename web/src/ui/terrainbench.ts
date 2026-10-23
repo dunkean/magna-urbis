@@ -1998,15 +1998,51 @@ el('pipelineSurface').onclick = async () => {
     const retained = pipelineCapture(), scene = settlements.urban.buildingState.scene;
     el('pipelineStatus').textContent = 'Compilation des surfaces et conservation des bâtiments…';
     await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
-    const packet = exportSurfacePacket(retained, scene);
-    const blob = new Blob([JSON.stringify(packet)], { type: 'application/json' });
+    const packet = exportSurfacePacket(retained, scene, { encoding: 'binary' });
+    const { encodeSurfaceBinary } = await import('../surface/binary');
+    const blob = new Blob([encodeSurfaceBinary(packet).buffer as ArrayBuffer], { type: 'application/octet-stream' });
     const url = URL.createObjectURL(blob), link = document.createElement('a');
-    link.href = url; link.download = `${retained.meta.id}.surface.json`; link.click();
+    link.href = url; link.download = `${retained.meta.id}.surfacebin`; link.click();
     setTimeout(() => URL.revokeObjectURL(url), 10000);
     el('pipelineStatus').textContent = 'Surface exportée pour le visualiseur local ; données de ville conservées.';
   } catch (error) { el('pipelineStatus').textContent = error instanceof Error ? error.message : String(error); }
   finally { button.disabled = false; }
 };
+
+if (import.meta.env.DEV) {
+  let liveTerrain: TerrainData | undefined, liveScene: typeof appliedBuildingScene;
+  let liveHandler: Promise<ReturnType<typeof import('./surfaceLiveSession').createSurfaceLiveSession>> | undefined;
+  const disconnect = installSurfaceLive(async (region, signal) => {
+    if (!terrain || overviewPending || generationError) throw new Error('Attendez un terrain conservé avant la connexion du visualiseur.');
+    const scene = settlements.urban.buildingState.scene;
+    if (!liveHandler || liveTerrain !== terrain || liveScene !== scene) {
+      const retained = terrain, applied = settings;
+      // Export-crop controls do not change the world currently being viewed.
+      // Live requests use the full retained world, never that optional crop.
+      const decor = pipelineStage === 'settlements' ? settlements.captureData()
+        : retainedDecor ? withForestQuery(retainedDecor)
+        : captureDecorData(retained, applied, { settlements: [], warnings: [], requested: 0, usableKm2: 0, ms: 0 }, undefined, null, { query: shareQuery() });
+      if (decor.meta.pipeline?.urban?.buildingState?.cold && !scene) throw new Error('Chargez les bâtiments conservés avant leur rendu local.');
+      liveTerrain = retained; liveScene = scene;
+      liveHandler = (async () => {
+        const [{ createInfiniteRefinementProvider }, { createSurfaceLiveSession }] = await Promise.all([
+          import('../surface/adapters/infiniteRefinement'), import('./surfaceLiveSession'),
+        ]);
+        const field = retained.field;
+        const provider = await createInfiniteRefinementProvider(
+          applied.source === 'neural-python' ? applied.neuralServer ?? DEFAULT_PYTHON_SERVER : DEFAULT_PYTHON_SERVER,
+          { width: retained.width, n: field?.n ?? retained.resolution, data: field?.data ?? retained.height },
+          { seed: retained.neural?.neuralSeed ?? String(seedHash(applied.seed) >>> 0), source: applied.source,
+            neuralToken: retained.neural?.neuralToken,
+            neuralWindow: isNeuralSource(applied.source) ? neuralWindow(NEURAL_EXTENT, retained.width, applied.neuralFit ?? 'crop', applied.neuralSlopes ?? true, applied.coastMask ?? 0) : undefined });
+        return createSurfaceLiveSession(decor, scene, provider,
+          () => terrain === retained && settings === applied && settlements.urban.buildingState.scene === scene && !overviewPending);
+      })().catch(error => { liveHandler = undefined; throw error; });
+    }
+    return (await liveHandler)(region, signal);
+  }, message => { el('pipelineStatus').textContent = message; });
+  window.addEventListener('pagehide', disconnect, { once: true });
+}
 updateView();
 terrainLoading('ready');
 if (query.get('artifact')) void readHistory(query.get('artifact')!).then(d => {

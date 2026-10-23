@@ -112,6 +112,8 @@ export default defineConfig(({ mode: requested, command }) => {
   const offline = requested.endsWith('-offline') || process.env.MAGNA_SINGLE_FILE === '1', mode = requested.replace(/-offline$/, '');
   const single = command === 'serve' || offline;
   return {
+  // Keep generated caches inside this checkout even when dependencies are shared.
+  cacheDir: fileURLToPath(new URL('./out/.vite-cache/', import.meta.url)),
   root: 'src/ui',
   base: single ? undefined : './',
   plugins: [surfaceLivePlugin(), ...(single ? [viteSingleFile()] : [externalAssets()]), neuralServe(), ...(mode === 'rustbench' ? [rustBenchEntry()] : []), ...(['terrainbench', 'citybench', 'rustbench'].includes(mode) ? [terrainWasmReload(), decorServe()] : []), ...(['housebench', 'rustbench'].includes(mode) ? [housesWasmReload()] : [])],

@@ -1,17 +1,18 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { randomUUID } from 'node:crypto';
 import type { Plugin } from 'vite';
-export interface SurfaceLiveRegion { x: number; y: number; extent: number; resolution: number }
+export interface SurfaceLiveRegion { x: number; y: number; extent: number; resolution: number; knownContextId?: string }
 interface Pending { client: string; response: ServerResponse; timer: ReturnType<typeof setTimeout> }
-async function readJson(request: IncomingMessage, limit: number): Promise<any> {
+async function readBytes(request: IncomingMessage, limit: number): Promise<Buffer> {
   const chunks: Buffer[] = []; let length = 0;
   for await (const chunk of request) {
     const bytes = Buffer.from(chunk); length += bytes.length;
     if (length > limit) throw new Error('Request body is too large');
     chunks.push(bytes);
   }
-  return JSON.parse(Buffer.concat(chunks).toString('utf8'));
+  return Buffer.concat(chunks);
 }
+async function readJson(request: IncomingMessage, limit: number): Promise<any> { return JSON.parse((await readBytes(request, limit)).toString('utf8')); }
 function reply(response: ServerResponse, status: number, value: unknown): void {
   if (response.writableEnded || response.destroyed) return;
   response.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
@@ -47,7 +48,8 @@ export function createSurfaceLiveBroker(timeoutMs = 120000) {
         if (pending.size >= 4) { reply(response, 429, { error: 'Surface generation queue is full' }); return; }
         const body = await readJson(request, 65536), region = body.region as SurfaceLiveRegion;
         if (!region || ![region.x, region.y, region.extent, region.resolution].every(Number.isFinite)
-          || region.extent <= 0 || !Number.isInteger(region.resolution) || region.resolution < 4 || region.resolution > 1024) {
+          || region.extent <= 0 || !Number.isInteger(region.resolution) || region.resolution < 4 || region.resolution > 1024
+          || (region.knownContextId !== undefined && (typeof region.knownContextId !== 'string' || region.knownContextId.length > 256))) {
           reply(response, 400, { error: 'Expected finite region x/y/extent and integer resolution 4..1024' }); return;
         }
         const client = body.sessionId ?? [...clients.keys()].at(-1);
@@ -60,6 +62,16 @@ export function createSurfaceLiveBroker(timeoutMs = 120000) {
       if (request.method === 'POST' && url.pathname.startsWith('/surface-live/reply/')) {
         const id = url.pathname.slice('/surface-live/reply/'.length), item = pending.get(id);
         if (!item) { reply(response, 410, { error: 'Request was cancelled or superseded' }); return; }
+        if (request.headers['content-type']?.startsWith('application/octet-stream')) {
+          if (request.headers['x-surface-session'] !== item.client) { reply(response, 409, { error: 'Wrong browser session' }); return; }
+          const bytes = await readBytes(request, 256 * 1024 * 1024);
+          if (bytes.length < 16 || bytes.subarray(0, 8).toString('ascii') !== 'MUFSURF1') { reply(response, 400, { error: 'Expected binary surface packet' }); return; }
+          pending.delete(id); clearTimeout(item.timer);
+          if (!item.response.destroyed && !item.response.writableEnded) {
+            item.response.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Cache-Control': 'no-store' }); item.response.end(bytes);
+          }
+          reply(response, 200, { accepted: true }); return;
+        }
         const body = await readJson(request, 256 * 1024 * 1024);
         if (body.sessionId !== item.client) { reply(response, 409, { error: 'Wrong browser session' }); return; }
         pending.delete(id); clearTimeout(item.timer);
