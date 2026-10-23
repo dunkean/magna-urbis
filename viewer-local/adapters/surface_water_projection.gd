@@ -7,7 +7,9 @@ const MAX_RESOLUTION := 2048
 const MAX_VERTICES := 999996
 
 static func _sha(bytes: PackedByteArray) -> String:
-	var context:=HashingContext.new();context.start(HashingContext.HASH_SHA256);context.update(bytes);return context.finish().hex_encode()
+	var context:=HashingContext.new();context.start(HashingContext.HASH_SHA256);
+	if not bytes.is_empty():context.update(bytes)
+	return context.finish().hex_encode()
 
 static func _color(colors: Dictionary, key: String, fallback: Vector3) -> Vector3:
 	var value=colors.get(key,fallback)
@@ -47,6 +49,7 @@ static func bake(parent: Node, geometry: Dictionary, origin: Dictionary, focus: 
 	for key in ["sourceVectorRequestedAreaM2","sourceVectorMissingAreaM2","sourceVectorCoverageComplete","missingLevelTriangles","sourceVectorScanWork","vertexBudget","budgetLimited","fixedHydrologyFallbackReason","vectorBedDiagnosticSamples","vectorBedDiagnosticConflicts","vectorBedDiagnosticMissing","vectorBedDiagnosticMaximumDeltaM","vectorBedDiagnosticBudget","vectorBedDiagnosticToleranceM"]:
 		if geometry.has(key):result.diagnostics[key]=geometry[key]
 	result.diagnostics["sourceVectorAreaScope"]="input geometry clip window; projection camera may be narrower"
+	result.diagnostics["subpixelPolicy"]="original contour coverage only; no minimum stroke or physical-width edits"
 	if vertices.is_empty(): result.diagnostics["empty"]=true;return result
 	var resolution:=clampi(int(options.get("resolution",1024)),64,MAX_RESOLUTION)
 	var viewport:=SubViewport.new();viewport.size=Vector2i(resolution,resolution);viewport.own_world_3d=true;viewport.transparent_bg=true;viewport.render_target_update_mode=SubViewport.UPDATE_ALWAYS
@@ -77,7 +80,6 @@ static func bake(parent: Node, geometry: Dictionary, origin: Dictionary, focus: 
 	if image==null or image.is_empty():return {"error":"source map texture readback unavailable"}
 	image.generate_mipmaps();result.texture=ImageTexture.create_from_image(image)
 	result.diagnostics["resolution"]=resolution;result.diagnostics["metresPerTexel"]=width_m/resolution;result.diagnostics["buildMs"]=(Time.get_ticks_usec()-started)/1000.0
-	result.diagnostics["subpixelPolicy"]="original contour coverage only; no minimum stroke or physical-width edits"
 	return result
 
 static func create_decal(projection: Dictionary, origin: Dictionary={}) -> Decal:
