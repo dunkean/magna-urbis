@@ -160,51 +160,51 @@ RÃ©fÃ©rences : [Terrain3D 1.0.2](https://github.com/TokisanGames/Terrain3D/relea
 La licence MIT du shader Terrain3D reste dans l'archive installÃ©e par le bootstrap.
 
 
-## Sol, couvert bas et canopée
+## Sol, couvert bas et canopÃ©e
 
 Les paquets modernes portent les neuf champs `ground*` / `lowCover*` : le sol
-physique (roche, dépôts, humus), le couvert bas (herbes, arbustes bas et litière)
-et les arbres restent trois couches indépendantes. La canopée ne renomme pas une
+physique (roche, dÃ©pÃ´ts, humus), le couvert bas (herbes, arbustes bas et litiÃ¨re)
+et les arbres restent trois couches indÃ©pendantes. La canopÃ©e ne renomme pas une
 texture de sol. `--layers all|ground|low-cover|canopy` et
-`set_layer_visibility(ground, low_cover, trees)` isolent ces représentations sans
+`set_layer_visibility(ground, low_cover, trees)` isolent ces reprÃ©sentations sans
 modifier les hauteurs, champs ni identifiants source. Un ancien paquet composite
-est annoncé `legacy-composite-unavailable` : son sol nu ne peut pas être reconstruit.
-Les moyennes du couvert bas sont prémultipliées par leur opacité avant filtrage ;
-les couleurs, normales et rugosités des texels transparents ne contribuent pas.
+est annoncÃ© `legacy-composite-unavailable` : son sol nu ne peut pas Ãªtre reconstruit.
+Les moyennes du couvert bas sont prÃ©multipliÃ©es par leur opacitÃ© avant filtrage ;
+les couleurs, normales et rugositÃ©s des texels transparents ne contribuent pas.
 
-Les diagnostics non éclairés 7, 8, 9 et 10 isolent respectivement la moyenne du
-sol, l'opacité du couvert bas, `treeCover` et la normale géométrique. 11 et 12
-montrent le couvert bas et le résidu optique de canopée ; 13 et 14 isolent la
-rugosité et la normale du sol ; 15 et 16 isolent le détail de roche raffiné.
-Les diagnostics 17–19 servent aux preuves du compositeur (moyenne, rugosité,
-normale), pas à l'export esthétique d'une carte.
+Les diagnostics non Ã©clairÃ©s 7, 8, 9 et 10 isolent respectivement la moyenne du
+sol, l'opacitÃ© du couvert bas, `treeCover` et la normale gÃ©omÃ©trique. 11 et 12
+montrent le couvert bas et le rÃ©sidu optique de canopÃ©e ; 13 et 14 isolent la
+rugositÃ© et la normale du sol ; 15 et 16 isolent le dÃ©tail de roche raffinÃ©.
+Les diagnostics 17â€“19 servent aux preuves du compositeur (moyenne, rugositÃ©,
+normale), pas Ã  l'export esthÃ©tique d'une carte.
 
-L'inventaire d'arbres fourni est exact dans sa page déclarée. Au-delà, une
-approximation optique de couronnes, calibrée en couverture, utilise uniquement
-la graine canonique et les coordonnées monde. Ces positions approximatives ne
+L'inventaire d'arbres fourni est exact dans sa page dÃ©clarÃ©e. Au-delÃ , une
+approximation optique de couronnes, calibrÃ©e en couverture, utilise uniquement
+la graine canonique et les coordonnÃ©es monde. Ces positions approximatives ne
 sont jamais des identifiants d'inventaire. Le motif rejoint la moyenne quand le
-diamètre statistique des couronnes devient sous-pixel ; la transition de page
-est C1 et les instances sont sélectionnées par rang dans une bande intérieure.
+diamÃ¨tre statistique des couronnes devient sous-pixel ; la transition de page
+est C1 et les instances sont sÃ©lectionnÃ©es par rang dans une bande intÃ©rieure.
 Les couronnes peintes ont une normale optique et un transfert d'ombre approximatif
 (centre de couronne authored 8 m, direction du soleil, transmission RGB
-[0.25, 0.34, 0.50]). Ce transfert ne prétend pas reproduire les ombres géométriques
-sur récepteurs en pente ni conserver exactement l'énergie lumineuse. Il est
-retiré avec la couche arbres et désactivé en cartographie. Les ombres et couleurs
-des vraies instances emploient le même LOD de la caméra principale, y compris
-pendant les passes d'ombre de la lumière.
+[0.25, 0.34, 0.50]). Ce transfert ne prÃ©tend pas reproduire les ombres gÃ©omÃ©triques
+sur rÃ©cepteurs en pente ni conserver exactement l'Ã©nergie lumineuse. Il est
+retirÃ© avec la couche arbres et dÃ©sactivÃ© en cartographie. Les ombres et couleurs
+des vraies instances emploient le mÃªme LOD de la camÃ©ra principale, y compris
+pendant les passes d'ombre de la lumiÃ¨re.
 
 ## Hydrologie des cartes fixes
 
-Pour une carte Magna fixe, le défaut `--water-mode source-map` projette les
+Pour une carte Magna fixe, le dÃ©faut `--water-mode source-map` projette les
 contours hydrologiques retenus uniquement sur le terrain (Decal, masque 1).
-Les bâtiments et arbres, sur le masque 2, restent des occluders. Cette eau est
-une représentation cartographique projetée, y compris dans la vue aérienne PBR ;
-elle ne constitue pas une surface d'eau physique ajustée au relief.
-`--water-mode source-levels` conserve la présentation des niveaux mesurés et
-leurs conflits éventuels avec le terrain. Aucun niveau, lit ou réseau source
-n'est remonté, creusé ou recalculé pour corriger la présentation.
+Les bÃ¢timents et arbres, sur le masque 2, restent des occluders. Cette eau est
+une reprÃ©sentation cartographique projetÃ©e, y compris dans la vue aÃ©rienne PBR ;
+elle ne constitue pas une surface d'eau physique ajustÃ©e au relief.
+`--water-mode source-levels` conserve la prÃ©sentation des niveaux mesurÃ©s et
+leurs conflits Ã©ventuels avec le terrain. Aucun niveau, lit ou rÃ©seau source
+n'est remontÃ©, creusÃ© ou recalculÃ© pour corriger la prÃ©sentation.
 La projection conserve les largeurs source et peut perdre un cours d'eau
-sous-pixel ; aucun trait minimum n'est ajouté. Ses budgets, omissions et conflits
-sont déclarés dans les métriques de chaque capture. Le bake GPU d'un snapshot
-immuable précède son application ; les captures attendent sa fin. Forward+ est
-nécessaire pour cette projection sur terrain seul.
+sous-pixel ; aucun trait minimum n'est ajoutÃ©. Ses budgets, omissions et conflits
+sont dÃ©clarÃ©s dans les mÃ©triques de chaque capture. Le bake GPU d'un snapshot
+immuable prÃ©cÃ¨de son application ; les captures attendent sa fin. Forward+ est
+nÃ©cessaire pour cette projection sur terrain seul.
