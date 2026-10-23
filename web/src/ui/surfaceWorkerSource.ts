@@ -18,6 +18,7 @@ export function prepareSurfaceDecorWorkerSource(value: unknown): PreparedSurface
   const { decor, scene } = payload;
   const registrationBinding = payload.registrationBinding && { ...payload.registrationBinding };
   if (registrationBinding) assertSurfaceRegistrationBinding(registrationBinding, { width: decor.raster.width, n: decor.raster.n, data: decor.raster.height });
+  // Query opt-in is evaluated once on the retained physical frame, before any live child retarget.
   const input = decorToSurfaceInput(decor);
   const roads = magnaRoads(decor);
   const buildings = scene ?? { buildings: [] };

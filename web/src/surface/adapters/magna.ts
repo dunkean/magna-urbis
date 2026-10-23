@@ -8,6 +8,7 @@ import { climateFromMagnaQuery, magnaClimateToSurface, MAGNA_CLIMATE_PRESETS } f
 import type { ClimateValues } from '../../../../rust/bridge/terrain';
 import { buildingOccupationSurfaces, buildingGroundConstraints } from '../../ui/urbanBuildingProjection';
 import { occupationFromMagnaWorld } from './occupation';
+import { applySurfaceGeology, type SurfaceGeologyOptions } from './geology';
 
 /** Magna map XY, altitude Z -> metric horizontal XZ, altitude Y. */
 export const magnaToMetric = (x: number, y: number, altitude: number): [number, number, number] => [x, altitude, y];
@@ -99,15 +100,16 @@ export function exportMagnaCity(world: World) {
       lakes: world.terrain.lakes, rivers: world.terrain.rivers } });
 }
 
-export function worldToSurfaceInput(world: World, source: SourceIdentity, climate: ClimateValues = MAGNA_CLIMATE_PRESETS.temperate): SurfaceCompileInput {
+export function worldToSurfaceInput(world: World, source: SourceIdentity, climate: ClimateValues = MAGNA_CLIMATE_PRESETS.temperate, options: SurfaceGeologyOptions & { query?: string } = {}): SurfaceCompileInput {
   const grid = world.terrain.height;
   const terrain = { width: grid.w, height: grid.h, originX: grid.cell / 2, originZ: grid.cell / 2,
     spacingM: grid.cell, heights: grid.data.slice(), source: { ...source }, reconstruction: 'bilinear-samples' as const };
-  return { seed: parseInt(hashString(world.seed), 16), terrain, occupation: occupationFromMagnaWorld(terrain, world),
+  const input = { seed: parseInt(hashString(world.seed), 16), terrain, occupation: occupationFromMagnaWorld(terrain, world),
     climate: magnaClimateToSurface(climate, `magna-world-climate:${JSON.stringify(climate)}`),
-    hydrology: { version: source.version, provenance: 'Magna canonical routing from depression-filled source; heights retain the source physical terrain', boundary: 'external-inflows',
+    hydrology: { version: source.version, provenance: 'Magna canonical routing from depression-filled source; heights retain the source physical terrain', boundary: 'external-inflows' as const,
       downstream: world.terrain.receiver.slice(), contributingAreaM2: Float32Array.from(world.terrain.flow.data, a => a * grid.cell ** 2),
       waterClass: Uint8Array.from(world.terrain.water, c => c === 1 ? 3 : c === 3 ? 1 : c) } };
+  return applySurfaceGeology(input, options.query ?? '', options);
 }
 
 export interface DecorWaterValidation {
@@ -115,7 +117,7 @@ export interface DecorWaterValidation {
   aboveBedCells: number; zeroOrUnresolvedDepthCells: number; invalidLevelCells: number; ambiguousCaveCells: number;
   assumption: string;
 }
-export function decorToSurfaceInput(decor: Decor): SurfaceCompileInput & { sourceWaterValidation: DecorWaterValidation } {
+export function decorToSurfaceInput(decor: Decor, options: { applyGeology?: boolean } = {}): SurfaceCompileInput & { sourceWaterValidation: DecorWaterValidation } {
   const r = decor.raster, cell = r.width / r.n, display = decor.meta.terrainDisplay;
   const waterClass = Uint8Array.from(r.water, c => c === 1 ? 3 : c === 3 ? 1 : c), waterLevelM = new Float32Array(r.height.length).fill(NaN);
   const cavern = new URLSearchParams(decor.meta.query).get('relief') === 'cavern' || decor.meta.tags?.relief === 'cavern';
@@ -133,13 +135,14 @@ export function decorToSurfaceInput(decor: Decor): SurfaceCompileInput & { sourc
     else { validation.physicalWetCells++; waterLevelM[i] = level; continue; }
     waterClass[i] = 0;
   }
-  return { seed: parseInt(hashString(decor.meta.seed), 16), terrain: { width: r.n, height: r.n,
-    originX: cell / 2, originZ: cell / 2, spacingM: cell, heights: r.height.slice(), reconstruction: 'bilinear-samples',
+  const input = { seed: parseInt(hashString(decor.meta.seed), 16), terrain: { width: r.n, height: r.n,
+    originX: cell / 2, originZ: cell / 2, spacingM: cell, heights: r.height.slice(), reconstruction: 'bilinear-samples' as const,
     source: { id: decor.meta.id, version: decor.meta.created, sourceLOD: 0, sourceLODKnown: false,
       nativeSpacingM: display?.sourceCell ?? cell,
       provenance: `Retained Magna settlement raster (may be sampled from the displayed B-spline control grid); seed=${decor.meta.seed}; query=${decor.meta.query}; crop=${JSON.stringify(decor.meta.pipeline?.crop ?? null)}; offline capture (source LOD unrecorded)` } },
     climate: climateFromMagnaQuery(decor.meta.query),
     sourceWaterValidation: validation,
-    hydrology: { version: decor.meta.created, provenance: `Retained decor water contextualized with ${validation.policy}: ${validation.physicalWetCells}/${validation.sourceWetCells} source envelope cells have resolved positive depth. Source IDs and original masks/levels remain in export metadata. ${validation.assumption}`,
-      boundary: 'truncated', waterClass, waterLevelM } };
+    hydrology: { version: decor.meta.created, provenance: `Retained decor water contextualized with ${validation.policy}: ${validation.physicalWetCells}/${validation.sourceWetCells} source envelope cells have resolved positive depth. Source IDs and original masks/levels remain in export metadata. Canonical wet cells follow this retained Magna mask, never a newly thresholded D8 river network. Any derived D8 routing is a soil/HAND/TWI diagnostic only and is not the rendered source water network. ${validation.assumption}`,
+      boundary: 'truncated' as const, waterClass, waterLevelM } };
+  return options.applyGeology === false ? input : applySurfaceGeology(input, decor.meta.query);
 }

@@ -11,8 +11,9 @@ import { packCandidateColumns } from '../candidateColumns';
 import { magnaUrbanPacket, magnaUrbanIdentity, magnaRoads } from './magnaUrban';
 import { magnaSurfacePresentation } from '../presentation';
 import { magnaSurfaceSource } from './magnaSource';
+import { applySurfaceGeology, withSurfaceGeologyQuery, type SurfaceGeologyOptions } from './geology';
 
-export interface SurfacePacketOptions extends CompileOptions { candidateBounds?: Bounds | 'all'; candidateLimit?: number; roads?: readonly SurfaceRoad[]; encoding?: 'json' | 'binary' }
+export interface SurfacePacketOptions extends CompileOptions, SurfaceGeologyOptions { candidateBounds?: Bounds | 'all'; candidateLimit?: number; roads?: readonly SurfaceRoad[]; encoding?: 'json' | 'binary' }
 export interface DecorCompileOptions extends SurfacePacketOptions {
   /** Common frame translation applied to terrain, visible/accepted buildings and roads. */
   originX?: number; originZ?: number;
@@ -20,9 +21,11 @@ export interface DecorCompileOptions extends SurfacePacketOptions {
   terrainOriginX?: number; terrainOriginZ?: number;
 }
 export function compileFromDecor(decor: Decor, options: DecorCompileOptions = {}) {
-  const input = decorToSurfaceInput(decor);
+  if (options.geologyScenario) decor = { ...decor, meta: { ...decor.meta, query: withSurfaceGeologyQuery(decor.meta.query, options.geologyScenario) } };
+  let input = decorToSurfaceInput(decor, { applyGeology: false });
   input.terrain.originX += (options.terrainOriginX ?? 0) + (options.originX ?? 0);
   input.terrain.originZ += (options.terrainOriginZ ?? 0) + (options.originZ ?? 0);
+  input = applySurfaceGeology(input, decor.meta.query, options);
   const world = compileSurfaceWorld(input, options);
   addWaterValidationWarning(world, input.sourceWaterValidation);
   return world;
@@ -32,6 +35,10 @@ export function compileFromDecor(decor: Decor, options: DecorCompileOptions = {}
  * actual source grid/seed/context and preserved city/river metadata. */
 export function exportSurfaceInputPacket(input: SurfaceCompileInput, scene: Building3dScene = { buildings: [] },
   source: Record<string, unknown> = {}, options: SurfacePacketOptions = {}) {
+  const originalMeta = source.meta && typeof source.meta === 'object' ? source.meta as Decor['meta'] : undefined;
+  if (options.geologyScenario) source = { ...source, meta: { ...originalMeta, query: withSurfaceGeologyQuery(originalMeta?.query ?? '', options.geologyScenario) } };
+  const sourceQuery = (source.meta as Decor['meta'] | undefined)?.query ?? '';
+  input = applySurfaceGeology(input, sourceQuery, options);
   const occupation = occupationFromMagnaScene(input.terrain, scene, options.roads, input.occupation);
   const world = compileSurfaceWorld({ ...input, occupation, climate: input.climate ?? magnaClimateToSurface(MAGNA_CLIMATE_PRESETS.temperate, 'magna-temperate-default-1') }, options);
   const meta = source.meta && typeof source.meta === 'object' ? source.meta as Decor['meta'] : undefined;
@@ -58,7 +65,8 @@ function addWaterValidationWarning(world: SurfaceWorld, validation: ReturnType<t
 export function exportSurfacePacket(decor: Decor, scene?: Building3dScene, options: DecorCompileOptions = {}) {
   const retained = decor.meta.pipeline?.urban?.buildingState;
   if (retained?.cold && !scene) throw new Error('Cold native buildings require their retained chunk scene before surface export.');
-  const input = decorToSurfaceInput(decor);
+  if (options.geologyScenario) decor = { ...decor, meta: { ...decor.meta, query: withSurfaceGeologyQuery(decor.meta.query, options.geologyScenario) } };
+  let input = decorToSurfaceInput(decor, { applyGeology: false });
   const dx = options.originX ?? 0, dz = options.originZ ?? 0;
   if (![dx, dz, options.terrainOriginX ?? 0, options.terrainOriginZ ?? 0].every(Number.isFinite)) throw new Error('Surface export offsets must be finite.');
   input.terrain.originX += options.terrainOriginX ?? 0; input.terrain.originZ += options.terrainOriginZ ?? 0;
@@ -66,6 +74,7 @@ export function exportSurfacePacket(decor: Decor, scene?: Building3dScene, optio
   const roads = magnaRoads(decor, options.roads);
   input.occupation = occupationFromMagnaScene(input.terrain, buildings, roads, input.occupation);
   input.terrain.originX += dx; input.terrain.originZ += dz;
+  input = applySurfaceGeology(input, decor.meta.query, options);
   const world = compileSurfaceWorld(input, options);
   addWaterValidationWarning(world, input.sourceWaterValidation);
   const source = magnaSurfaceSource(decor, { encoding: options.encoding, cornerX: (options.terrainOriginX ?? 0) + dx, cornerZ: (options.terrainOriginZ ?? 0) + dz,

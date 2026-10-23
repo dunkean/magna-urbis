@@ -12,7 +12,12 @@ export function magnaSurfaceSource(decor: Decor, options: {
   const binary = options.encoding === 'binary';
   const source = { meta: decor.meta, geometry: r.geometry,
     sourceToWorldTranslation: { x: options.translationX ?? 0, z: options.translationZ ?? 0 }, sourceWaterValidation: options.sourceWaterValidation,
-    water: { n: r.n, width: r.width, originX: x + cell / 2, originZ: z + cell / 2, cornerX: x, cornerZ: z, originConvention: 'first-sample-centre' as const,
+    hydrology: { authority: 'retained-magna-water-network', geometryReference: 'source.geometry', vectorSvgReference: 'source.meta.waterSvg',
+      originalRasterReference: 'source.water', rawClassEncoding: { dry: 0, ocean: 1, lake: 2, riverSafetyEnvelope: 3 },
+      compiledClassEncoding: { dry: 0, river: 1, lake: 2, ocean: 3 },
+      contextualWetPolicy: 'positive-depth-only-1mm', derivedRoutingRole: 'soil-HAND-TWI diagnostics only; never a replacement river network',
+      sourceReceiverAvailability: 'not retained in DECOR; no observed downstream topology asserted' },
+    water: { classEncoding: 'magna-0dry-1sea-2lake-3river-safety-envelope' as const, n: r.n, width: r.width, originX: x + cell / 2, originZ: z + cell / 2, cornerX: x, cornerZ: z, originConvention: 'first-sample-centre' as const,
       classes: binary ? r.water : Array.from(r.water), levelM: binary ? r.waterLevel : Array.from(r.waterLevel),
       riverIds: binary ? r.riverIds : Array.from(r.riverIds), riverWidthM: binary ? r.riverWidth : Array.from(r.riverWidth) }, ...options.extra };
   return binary ? archiveSurfaceSource(source) : structuredClone(source);

@@ -5,11 +5,25 @@ import { readDecorFile } from '../src/ui/decorFile';
 import { exportSurfacePacket } from '../src/surface/adapters/export';
 import type { Building3dScene } from '../src/render/urbanBuildingGeometry';
 import { encodeSurfaceBinary } from '../src/surface/binary';
+import { surfaceGeologyScenario, withSurfaceGeologyQuery } from '../src/surface/adapters/geology';
 
 const [input, output, ...args] = process.argv.slice(2);
-if (!input || !output) throw new Error('Usage: export_surface_world.ts INPUT.decor OUTPUT.json [--crop x,y,n] [--candidates all|centre] [--candidate-limit 100000] [--native-scene FILE.json]');
+if (!input || !output) throw new Error('Usage: export_surface_world.ts INPUT.decor OUTPUT.json [--crop x,y,n] [--candidates all|centre] [--candidate-limit 100000] [--native-scene FILE.json] [--surface-geology tilted-strata-v1] [--surface-geology-descriptor FILE.json]');
 const bytes = await readFile(input);
 let decor = await readDecorFile(new Blob([new Uint8Array(bytes)]));
+// Query opt-in remains part of the exported/shareable source recipe.
+if (args.includes('--surface-geology') || args.includes('--surface-geology-descriptor')) {
+  const params = new URLSearchParams(decor.meta.query);
+  if (args.includes('--surface-geology')) params.set('surface_geology', args[args.indexOf('--surface-geology') + 1] ?? '');
+  if (args.includes('--surface-geology-descriptor')) {
+    const path = args[args.indexOf('--surface-geology-descriptor') + 1];
+    if (!path) throw new Error('--surface-geology-descriptor requires a JSON file');
+    params.set('surface_geology_descriptor', await readFile(path, 'utf8'));
+  }
+  const scenario = surfaceGeologyScenario(params);
+  if (!scenario) throw new Error('Explicit CLI geology requires --surface-geology tilted-strata-v1');
+  decor = { ...decor, meta: { ...decor.meta, query: withSurfaceGeologyQuery(params.toString(), scenario) } };
+}
 let originX = 0, originZ = 0;
 const cropIndex = args.indexOf('--crop');
 if (cropIndex >= 0) {
