@@ -2,6 +2,7 @@
  * Optional native E2E: --decoder-model original --viewer-godot C:/tools/Godot.exe
  * --viewer-assets C:/data/resolved.json --viewer-launcher ROOT/web/scripts/surface_viewer.mjs
  * --geology-scenario tilted-strata-v1 opts into an explicit fixed world-space scenario.
+ * --viewer-navigation-first runs the same continuous-input test before the tour.
  * --viewer-resolution 2048x1280. Browser/SSE/worker stay alive until the seven-level tour exits. */
 import { chromium } from 'playwright';
 import { mkdir, readFile, writeFile, readdir } from 'node:fs/promises';
@@ -36,7 +37,9 @@ const viewerLauncher = resolve(option('--viewer-launcher', fileURLToPath(new URL
 const viewerTimeoutMs = Number(option('--viewer-timeout-ms', '900000'));
 const viewerResolution = option('--viewer-resolution', '2048x1280');
 const navigationSeconds=Number(option('--viewer-navigation-seconds','0'));
+const navigationFirst=args.includes('--viewer-navigation-first');
 if(!Number.isFinite(navigationSeconds)||navigationSeconds!==0&&(navigationSeconds<5||navigationSeconds>120)||navigationSeconds&&!viewerGodot)throw new Error('Navigation requires --viewer-godot and duration5..120 seconds');
+if(navigationFirst&&!navigationSeconds)throw new Error('--viewer-navigation-first requires --viewer-navigation-seconds');
 if (viewerGodot && (!existsSync(viewerGodot) || !existsSync(viewerLauncher) || viewerAssets && !existsSync(viewerAssets)
   || !/^\d+x\d+$/.test(viewerResolution) || Number(viewerResolution.split('x')[0]) < 2000 || !(viewerTimeoutMs > 0))) throw new Error('Invalid viewer executable/launcher/assets/resolution/timeout (width must be >=2000 pixels for the 10m/5mm proof)');
 if (!Number.isFinite(width) || width < 500 || width > 100000 || !(timeoutMs > 0)) throw new Error('Invalid source dimensions/timeout');
@@ -47,6 +50,7 @@ const paths = { report: resolve(out, 'report.json'), progress: resolve(out, 'pro
 const report = { format: 'magna-fresh-source-proof', version: 1, startedAt: new Date(began).toISOString(), base, neural, widthM: width, seed,
   requestedSource: 'neural-python', freshGeneration: true, paths, errors, network, progress, status: 'starting' };
 report.browserEvents = browserEvents;
+report.nativePhaseOrder=viewerGodot?(navigationFirst?['navigation','tour']:['tour',...(navigationSeconds?['navigation']:[])]):[];
 report.driverProcessId=process.pid;
 if(viewerGodot)report.requestedViewer={godot:resolve(viewerGodot),assets:viewerAssets&&resolve(viewerAssets),launcher:viewerLauncher,
   resolution:viewerResolution,mode:args.includes('--viewer-oblique')?'oblique':'top',presentation:'aerial',timeoutMs:viewerTimeoutMs};
@@ -164,7 +168,7 @@ async function runNativeTour(sessionId) {
   if(nativeErrors.length)throw new Error('Native renderer or live transport reported errors; see native-tour/stderr.log and report.viewer.errors');
   if(!requests.length||!packets.length||!report.viewer.endToEnd.acceptedBinaryReplies||!tiles.some(e=>e.meta?.decoderUsed===true))throw new Error('Native tour did not prove the live broker, browser worker and decoder-backed Python source');
   if(packets.some(e=>e.packet?.source.registrationBinding?.expectedSourceId!==e.packet?.terrain.source.id)||new Set(packets.map(e=>e.sourceEpoch)).size!==1
-    ||new Set(packets.map(e=>e.environmentVersion)).size!==1||packets.some(e=>e.canonicalBuildCount!==1))throw new Error('Native live tour changed source lineage or recompiled camera-dependent canonical context');
+    ||new Set(packets.map(e=>e.environmentVersion)).size!==1||packets.some(e=>e.canonicalBuildCount!==1||e.environmentVersion!==report.live.environmentVersion))throw new Error('Native live tour changed source lineage or recompiled camera-dependent canonical context');
   if(packets.some(e=>e.packet?.source.registrationBinding?.canonicalFieldFingerprint!==report.source.canonicalFieldFingerprint))throw new Error('Native source registration differs from the exact loaded export heightfield');
   if(!report.viewer.metrics.source?.sourceLODKnown)throw new Error('Final native terrain still has unknown sourceLOD; a live patch was not applied');
   if(geologyScenario&&packets.some(e=>JSON.stringify(e.packet?.geologyScenario)!==JSON.stringify(report.source.geologyScenario)))throw new Error('Native zoom changed or lost the explicit fixed geological scenario descriptor');
@@ -216,7 +220,7 @@ async function runNativeNavigation(sessionId) {
     ||phase.displayEvidenceFailure||logs.some(log=>/(?:SCRIPT|SHADER) ERROR|ERROR:/.test(log))||unavailable.some(line=>!/HTTP (409|499)\b/.test(line))||phase.workerErrors.length)throw new Error(`Continuous native navigation did not display verified live source during input: ${phase.displayEvidenceFailure??'see native-navigation reports/logs'}`);
   if(!packets.length||phase.environmentVersions.length!==1||packets.some(e=>e.canonicalBuildCount!==1)
     ||packets.some(e=>e.packet?.source.registrationBinding?.canonicalFieldFingerprint!==report.source.canonicalFieldFingerprint)
-    ||phase.environmentVersions[0]!==report.viewer.endToEnd.environmentVersions[0]
+    ||phase.environmentVersions[0]!==report.live.environmentVersion
     ||geologyScenario&&packets.some(e=>JSON.stringify(e.packet?.geologyScenario)!==JSON.stringify(report.source.geologyScenario))
     ||network.some(e=>e.elapsedMs>=phase.startedElapsedMs&&e.url?.includes('/generate?')))throw new Error('Continuous native navigation changed canonical context or regenerated source');
   phase.status='complete';await save();
@@ -433,11 +437,14 @@ try {
   const registrations = network.filter(entry => entry.registration).map(entry => entry.registration);
   const decoderUsed = registrations.some(registration => registration.decoderUsed === true) || live.world.terrain.source.provenance?.includes('decoderUsed=true');
   report.live = { region, bytes: liveBytes.length, durationMs: Date.now() - liveStarted, source: live.world.terrain.source,
+    environmentVersion:live.world.versions.environment,
     grid: { width: live.world.terrain.width, height: live.world.terrain.height, spacingM: live.world.terrain.spacingM },
     contextId: live.world.canonicalContextRef?.id, includesCanonicalContext: !!live.world.canonicalContext, decoderUsed, registrations };
   if (!live.world.terrain.source.sourceLODKnown || !live.world.canonicalContext || !decoderUsed) throw new Error('Fresh refinement did not prove a decoder-backed source level and canonical context');
+  if(navigationFirst)await runNativeNavigation(sessions.at(-1));
   if(viewerGodot)await runNativeTour(sessions.at(-1));
-  if(navigationSeconds)await runNativeNavigation(sessions.at(-1));
+  if(navigationSeconds&&!navigationFirst)await runNativeNavigation(sessions.at(-1));
+  if(viewerGodot&&report.viewer?.status!=='complete'||navigationSeconds&&report.navigation?.status!=='complete')throw new Error('A requested native proof phase did not complete');
   report.code.finalRepository=await repositorySnapshot();
   if(viewerGodot&&(report.code.finalRepository.head!==report.code.selectedRepository.head||JSON.stringify(report.code.finalRepository.files)!==JSON.stringify(report.code.selectedRepository.files)))throw new Error('Selected native/browser source snapshot changed during E2E; freeze the integration and rerun');
   report.finalService = await serviceStatus(); report.status = 'complete'; report.durationMs = Date.now() - began;
