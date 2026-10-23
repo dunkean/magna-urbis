@@ -1,6 +1,8 @@
 class_name SurfaceData
 extends RefCounted
 const Geometry = preload("res://adapters/surface_geometry.gd")
+const UrbanReader = preload("res://adapters/urban_reader.gd")
+const MAX_PACKET_BYTES := 512*1024*1024
 
 static func read_json(path: String) -> Dictionary:
 	var file := FileAccess.open(path, FileAccess.READ)
@@ -9,21 +11,51 @@ static func read_json(path: String) -> Dictionary:
 		return {}
 	return decode_packet(file.get_buffer(file.get_length()))
 
+static func _sequence(value) -> bool:
+	return typeof(value) in [TYPE_ARRAY,TYPE_PACKED_BYTE_ARRAY,TYPE_PACKED_INT32_ARRAY,TYPE_PACKED_INT64_ARRAY,TYPE_PACKED_FLOAT32_ARRAY,TYPE_PACKED_FLOAT64_ARRAY]
+
+static func _integer(value, minimum: int, maximum: int) -> bool:
+	return (value is float or value is int) and is_finite(float(value)) and floorf(float(value))==float(value) and float(value)>=minimum and float(value)<=maximum
+
 static func decode_packet(bytes: PackedByteArray) -> Dictionary:
+	if bytes.size()>MAX_PACKET_BYTES: return {}
 	if bytes.size()>=16 and bytes.slice(0,8).get_string_from_ascii()=="MUFSURF1":
 		var manifest_length := bytes.decode_u32(8)
 		var payload_length := bytes.decode_u32(12)
 		var payload_start := int(ceil(float(16+manifest_length)/8.0))*8
-		if manifest_length<=0 or payload_start+payload_length>bytes.size():
+		if manifest_length<=0 or manifest_length>16*1024*1024 or payload_start+payload_length!=bytes.size():
 			push_error("Surface binary length mismatch")
 			return {}
 		var manifest = JSON.parse_string(bytes.slice(16,16+manifest_length).get_string_from_utf8())
 		if not manifest is Dictionary or manifest.get("format","")!="magna-surface-binary" or manifest.get("version",0)!=1:
 			push_error("Unsupported surface binary manifest")
 			return {}
+		if not manifest.get("value") is Dictionary or not manifest.get("arrays") is Array or manifest.arrays.size()>4096: return {}
 		var packet: Dictionary = manifest.value
 		var strides := {"f32":4,"f64":8,"u8":1,"u16":2,"i32":4,"u32":4}
 		var decoded_blocks: Dictionary = {}
+		var paths := {}
+		# Validate every address before decoding any payload allocation.
+		for descriptor in manifest.arrays:
+			if not descriptor is Dictionary or not strides.has(descriptor.get("dtype","")): return {}
+			var stride: int = strides[descriptor.dtype]
+			if not _integer(descriptor.get("length"),0,MAX_PACKET_BYTES/stride) or not _integer(descriptor.get("offset"),0,payload_length): return {}
+			if int(descriptor.offset)%stride!=0 or int(descriptor.offset)+int(descriptor.length)*stride>payload_length: return {}
+			var path = descriptor.get("path")
+			if not path is Array or path.is_empty() or path.size()>32: return {}
+			var path_key := JSON.stringify(path)
+			if paths.has(path_key): return {}
+			paths[path_key]=true
+			var node = packet
+			for component in path:
+				if node is Dictionary:
+					if not component is String or not node.has(component): return {}
+					node=node[component]
+				elif node is Array:
+					if not _integer(component,0,node.size()-1): return {}
+					node=node[int(component)]
+				else: return {}
+			if node!=null: return {}
 		for descriptor in manifest.arrays:
 			var dtype: String = descriptor.dtype
 			var count := int(descriptor.length)
@@ -64,14 +96,16 @@ static func _validate_packet(packet: Dictionary) -> Dictionary:
 	if world is Dictionary and world.has("terrain"):
 		world.erase("_validated")
 		if not validate_world(world): return {}
-	if packet.has("urban"): packet["_cityIdentity"]=Geometry.city_identity(packet)
+	if packet.has("urban"):
+		if not packet.urban is Dictionary or not UrbanReader.validate(packet.urban): return {}
+		packet["_cityIdentity"]=Geometry.city_identity(packet)
 	if packet.has("terrainParents"):
 		if not packet.terrainParents is Array or packet.terrainParents.size()>6: return {}
 		for parent in packet.terrainParents:
 			if not parent is Dictionary or not parent.get("terrain") is Dictionary or not parent.get("bounds") is Dictionary: return {}
 			var grid: Dictionary = parent.terrain
 			var n := int(grid.get("width",0))*int(grid.get("height",0))
-			if n<4 or n>1048576 or not grid.has("heights") or grid.heights==null or grid.heights.size()!=n or float(grid.get("spacingM",0))<=0: return {}
+			if not _validate_grid(grid,1048576): return {}
 			if not grid.get("source") is Dictionary or not world is Dictionary or grid.source.id!=world.terrain.source.id or grid.source.version!=world.terrain.source.version: return {}
 			for height in grid.heights:
 				if height==null or not is_finite(float(height)): return {}
@@ -82,14 +116,15 @@ static func _index_candidates(packet: Dictionary) -> bool:
 	var columns: Dictionary = packet.get("candidateColumns",{})
 	var candidates: Array = packet.get("candidates",packet.get("populations",[]))
 	var count := candidates.size() if columns.is_empty() else int(columns.get("count",-1))
-	if count<0 or count>100000:
+	if count<0 or count>100000 or (not columns.is_empty() and not _integer(columns.get("count"),0,100000)):
 		push_error("Candidate budget exceeded (100000)")
 		return false
 	if not columns.is_empty():
 		if columns.get("format","")!="surface-candidate-columns" or columns.get("version",0)!=1: return false
 		for name in ["ids","family","size","orientation","rank","variant","crownRadiusM"]:
-			if not columns.has(name) or columns[name]==null or columns[name].size()!=count: return false
-		if not columns.has("positions") or columns.positions.size()!=count*3 or not columns.get("families") is Array: return false
+			if not _sequence(columns.get(name)) or columns[name].size()!=count: return false
+		if not _sequence(columns.get("positions")) or columns.positions.size()!=count*3 or not columns.get("families") is Array: return false
+	var candidate_ids := {}
 	var buckets: Dictionary = {}
 	var maximum_crown := 0.0
 	for i in count:
@@ -98,6 +133,12 @@ static func _index_candidates(packet: Dictionary) -> bool:
 		var size: float = columns.size[i] if not columns.is_empty() else float(candidates[i].size)
 		if not is_finite(x) or not is_finite(z) or not is_finite(size) or size<=0: return false
 		if not columns.is_empty() and (int(columns.family[i])<0 or int(columns.family[i])>=columns.families.size()): return false
+		if not columns.is_empty():
+			if not columns.ids[i] is String or columns.ids[i].is_empty() or candidate_ids.has(columns.ids[i]): return false
+			candidate_ids[columns.ids[i]]=true
+			for value in [columns.positions[i*3+1],columns.orientation[i],columns.rank[i]]:
+				if not (value is float or value is int) or not is_finite(float(value)): return false
+			if float(columns.rank[i])<0 or float(columns.rank[i])>=1 or (not is_nan(float(columns.crownRadiusM[i])) and (not is_finite(float(columns.crownRadiusM[i])) or float(columns.crownRadiusM[i])<=0)) or not _integer(columns.variant[i],0,255): return false
 		var crown: float = columns.crownRadiusM[i] if not columns.is_empty() else float(candidates[i].get("crownRadiusM",size*0.42))
 		if is_finite(crown): maximum_crown=maxf(maximum_crown,crown)
 		var address := Vector2i(floori(x/128.0),floori(z/128.0))
@@ -123,11 +164,8 @@ static func validate_world(world: Dictionary) -> bool:
 		return false
 	var t: Dictionary = world.terrain
 	var n := int(t.get("width",0))*int(t.get("height",0))
-	if int(t.get("width",0))<2 or int(t.get("height",0))<2 or n>4194304 or n<4 or not t.has("heights") or t.heights==null or t.heights.size()!=n or float(t.get("spacingM",0))<=0:
-		push_error("Invalid terrain grid or sample budget exceeded (4M)")
-		return false
 	if world.materials.is_empty() or world.materials.size()>32: return false
-	if not t.get("source") is Dictionary or not world.get("bounds") is Dictionary or not world.has("id"): return false
+	if not _validate_grid(t,4194304) or not world.get("bounds") is Dictionary or not world.get("id") is String or world.id.is_empty(): return false
 	for name in ["originX","originZ","spacingM"]:
 		if not t.has(name) or not is_finite(float(t[name])): return false
 	for name in ["id","version","sourceLOD","nativeSpacingM"]:
@@ -153,27 +191,54 @@ static func validate_world(world: Dictionary) -> bool:
 		var canonical: Dictionary = world.canonicalContext
 		if not canonical.get("grid") is Dictionary or not canonical.get("fields") is Dictionary: return false
 		var cn := int(canonical.grid.get("width",0))*int(canonical.grid.get("height",0))
-		if cn<4 or cn>1048576 or cn+n>2097152 or not _validate_fields(canonical.fields,cn,world.materials.size()): return false
+		if not _validate_geometry(canonical.grid,1048576) or cn+n>2097152 or not _validate_fields(canonical.fields,cn,world.materials.size()): return false
+		if not canonical.get("source") is Dictionary or canonical.source.get("id")!=t.source.id or canonical.source.get("version")!=t.source.version: return false
 	elif n>1048576:
 		push_error("Context sample budget exceeded (1M); use a coarser canonical context")
 		return false
 	world["_validated"]=true
 	return true
 
+static func _validate_geometry(grid: Dictionary, budget: int) -> bool:
+	if not _integer(grid.get("width"),2,budget) or not _integer(grid.get("height"),2,budget): return false
+	if int(grid.width)*int(grid.height)>budget: return false
+	for name in ["originX","originZ","spacingM"]:
+		if not (grid.get(name) is float or grid.get(name) is int) or not is_finite(float(grid[name])): return false
+	return float(grid.spacingM)>0
+
+static func _validate_grid(grid: Dictionary, budget: int) -> bool:
+	if not _validate_geometry(grid,budget): return false
+	var n := int(grid.width)*int(grid.height)
+	if not _sequence(grid.get("heights")) or grid.heights.size()!=n or not grid.get("source") is Dictionary: return false
+	if not ["bilinear-samples","cubic-bspline-controls"].has(grid.get("reconstruction","bilinear-samples")): return false
+	var source: Dictionary = grid.source
+	for name in ["id","version"]:
+		if not source.get(name) is String or source[name].is_empty(): return false
+	for name in ["sourceLOD","nativeSpacingM"]:
+		if not (source.get(name) is float or source.get(name) is int) or not is_finite(float(source[name])): return false
+	if float(source.nativeSpacingM)<=0: return false
+	for value in grid.heights:
+		if not (value is float or value is int) or not is_finite(float(value)): return false
+	return true
+
 static func _validate_fields(f: Dictionary, n: int, material_count: int) -> bool:
 	for name in ["material","treeCover","grassCover","wetness","snow","bedrock","waterClass","waterLevelM"]:
-		if not f.has(name) or f[name]==null or f[name].size()!=n:
+		if not _sequence(f.get(name)) or f[name].size()!=n:
 			push_error("Missing or mis-sized field: "+name)
 			return false
 	for i in n:
-		if f.material[i]==null or not is_finite(float(f.material[i])) or int(f.material[i])<0 or int(f.material[i])>=material_count: return false
-		if f.has("materialSecondary") and (f.materialSecondary==null or f.materialSecondary.size()!=n or int(f.materialSecondary[i])<0 or int(f.materialSecondary[i])>=material_count): return false
-		if f.has("materialBlend") and (f.materialBlend==null or f.materialBlend.size()!=n or not is_finite(float(f.materialBlend[i])) or float(f.materialBlend[i])<0 or float(f.materialBlend[i])>1): return false
+		if not _integer(f.material[i],0,material_count-1): return false
+		if f.has("materialSecondary") and (not _sequence(f.materialSecondary) or f.materialSecondary.size()!=n or int(f.materialSecondary[i])<0 or int(f.materialSecondary[i])>=material_count): return false
+		if f.has("materialBlend") and (not _sequence(f.materialBlend) or f.materialBlend.size()!=n or not is_finite(float(f.materialBlend[i])) or float(f.materialBlend[i])<0 or float(f.materialBlend[i])>1): return false
 		for name in ["treeCover","grassCover","wetness","snow"]:
-			if f[name][i]==null or not is_finite(float(f[name][i])): return false
+			if f[name][i]==null or not is_finite(float(f[name][i])) or float(f[name][i])<0 or float(f[name][i])>1: return false
+		if not _integer(f.waterClass[i],0,3) or not _integer(f.bedrock[i],0,65535): return false
+		if int(f.waterClass[i])>0 and (f.waterLevelM[i]==null or not is_finite(float(f.waterLevelM[i]))): return false
 	return true
 
 static func sample_grid(terrain: Dictionary, values, x: float, z: float, categorical := false) -> float:
+	if not categorical and terrain.get("reconstruction","bilinear-samples")=="cubic-bspline-controls":
+		return Geometry.sample_grid_values(terrain,values,x,z)
 	var width := int(terrain.width)
 	var height := int(terrain.height)
 	var u := clampf((x-float(terrain.originX))/float(terrain.spacingM), 0.0, width-1.0)
@@ -194,11 +259,7 @@ static func sample_grid(terrain: Dictionary, values, x: float, z: float, categor
 	return lerpf(lerpf(float(a),float(b),u-ix),lerpf(float(c),float(d),u-ix),v-iz)
 
 static func height_at(world: Dictionary, x: float, z: float) -> float:
-	if contains(world.bounds,x,z):
-		return sample_grid(world.terrain, world.terrain.heights, x, z)
-	for parent in world.get("_terrainParents",[]):
-		if contains(parent.bounds,x,z): return sample_grid(parent.terrain,parent.terrain.heights,x,z)
-	return sample_grid(world.terrain, world.terrain.heights, x, z)
+	return Geometry.height_at(world,x,z)
 
 static func contains(bounds: Dictionary, x: float, z: float) -> bool:
 	return x>=float(bounds.minX) and x<=float(bounds.maxX) and z>=float(bounds.minZ) and z<=float(bounds.maxZ)
@@ -279,8 +340,12 @@ static func prepare(world: Dictionary, origin: Dictionary, view_width: float, se
 
 static func _append_scene(result: Dictionary, world: Dictionary, packet: Dictionary, origin: Dictionary, view_width: float, request: Dictionary) -> void:
 	if request.is_empty(): return
-	if request.get("buildWater",false): result.waterGeometry=Geometry.build_water(world,origin,request.focus,view_width)
-	if request.get("buildUrban",false): result.urbanGeometry=Geometry.build_urban(packet,world,origin,request.focus,view_width)
+	var geometry_world := world.duplicate(false)
+	geometry_world["_displaySource"]=result.displaySource
+	geometry_world["_displaySpacing"]=result.spacing
+	geometry_world["_heightLayers"]=Geometry.prepare_height_layers(world)
+	if request.get("buildWater",false): result.waterGeometry=Geometry.build_water(geometry_world,origin,request.focus,view_width)
+	if request.get("buildUrban",false): result.urbanGeometry=Geometry.build_urban(packet,geometry_world,origin,request.focus,view_width)
 
 static func display_spacing(terrain: Dictionary, view_width: float) -> float:
 	var base := float(terrain.spacingM)
@@ -295,15 +360,20 @@ static func build_display_source(world: Dictionary, spacing: float) -> Dictionar
 	var parents: Array = []
 	for parent in world.get("_terrainParents",[]): parents.append({"bounds":parent.bounds,"terrain":_prefilter_grid(parent.terrain,spacing)})
 	display["_terrainParents"]=parents
+	display["_displaySpacing"]=spacing
+	display["_heightLayers"]=Geometry.prepare_height_layers(display)
 	return display
 
 static func _prefilter_grid(source: Dictionary, target_spacing: float) -> Dictionary:
 	var grid := source
 	var max_shift := 0.0
 	while float(grid.spacingM)*2.0<=target_spacing*1.000001 and int(grid.width)>2 and int(grid.height)>2:
-		var width := int(grid.width)/2+int(grid.width)%2
-		var height := int(grid.height)/2+int(grid.height)%2
-		var values := PackedFloat32Array()
+		var end_x := float(grid.get("lastSampleX",float(grid.originX)+(int(grid.width)-1)*float(grid.spacingM)))
+		var end_z := float(grid.get("lastSampleZ",float(grid.originZ)+(int(grid.height)-1)*float(grid.spacingM)))
+		var next_spacing := float(grid.spacingM)*2.0
+		var width := int(ceil((end_x-float(grid.originX))/next_spacing))+1
+		var height := int(ceil((end_z-float(grid.originZ))/next_spacing))+1
+		var values := PackedFloat64Array()
 		values.resize(width*height)
 		for z in height:
 			for x in width:
@@ -312,17 +382,18 @@ static func _prefilter_grid(source: Dictionary, target_spacing: float) -> Dictio
 				var high := -INF
 				for dz in range(-1,2):
 					for dx in range(-1,2):
-						var sx := clampi(x*2+dx,0,int(grid.width)-1)
-						var sz := clampi(z*2+dz,0,int(grid.height)-1)
-						var value := float(grid.heights[sz*int(grid.width)+sx])
+						var wx := minf(float(grid.originX)+x*next_spacing,end_x)+dx*float(grid.spacingM)
+						var wz := minf(float(grid.originZ)+z*next_spacing,end_z)+dz*float(grid.spacingM)
+						var value := Geometry.sample_height(grid,wx,wz)
 						var weight := (2.0 if dx==0 else 1.0)*(2.0 if dz==0 else 1.0)
 						sum+=value*weight
 						low=minf(low,value); high=maxf(high,value)
 				var mean := clampf(sum/16.0,low,high)
 				values[z*width+x]=mean
-				max_shift=maxf(max_shift,absf(mean-float(grid.heights[z*2*int(grid.width)+x*2])))
+				max_shift=maxf(max_shift,absf(mean-Geometry.sample_height(grid,minf(float(grid.originX)+x*next_spacing,end_x),minf(float(grid.originZ)+z*next_spacing,end_z))))
 		var next := grid.duplicate(false)
-		next.width=width; next.height=height; next.spacingM=float(grid.spacingM)*2.0; next.heights=values
+		next.width=width; next.height=height; next.spacingM=next_spacing; next.heights=values
+		next.reconstruction="bilinear-samples"; next.lastSampleX=end_x; next.lastSampleZ=end_z
 		grid=next
 	if not is_same(grid,source): grid["displayFilterMaxShiftM"]=max_shift
 	return grid
