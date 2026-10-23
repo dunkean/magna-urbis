@@ -34,7 +34,7 @@ func run():
 		for y in range(2,510,4):
 			for x in range(2,510,4):error=maxf(error,absf(snapshots[0].get_pixel(x,y).r-snapshots[1].get_pixel(x,y).r)*255)
 		rebase_error=maxf(rebase_error,error);identity_cases.append({"worldPositionM":target,"differentWorldIds":true,"differentSourceVersionsAndLOD":true,"sameCanonicalSeed":true,"originDeltaM":64,"maximumByteError":error})
-	var report={"version":"canopy-meso-halfcell-jitter-cdf-1","passed":maximum<2.0 and rebase_error<=2,"maximumCoverageErrorPoints":maximum,"maximumRebaseByteError":rebase_error,"samples":samples,"refinementIdentityCases":identity_cases,"godot":Engine.get_version_info().string,"backend":RenderingServer.get_current_rendering_method(),"adapter":RenderingServer.get_video_adapter_name(),"scope":"renderer-only approximate canopy, canonical mean coverage; no candidate identity claimed"}
+	var report={"version":"canopy-meso-fullcell-jitter-cdf-1","passed":maximum<2.0 and rebase_error<=2,"maximumCoverageErrorPoints":maximum,"maximumRebaseByteError":rebase_error,"samples":samples,"refinementIdentityCases":identity_cases,"godot":Engine.get_version_info().string,"backend":RenderingServer.get_current_rendering_method(),"adapter":RenderingServer.get_video_adapter_name(),"scope":"renderer-only approximate canopy, canonical mean coverage; no candidate identity claimed"}
 	var args=OS.get_cmdline_user_args()
 	if not args.is_empty():var file=FileAccess.open(args[0],FileAccess.WRITE);file.store_string(JSON.stringify(report,"  "))
 	print(JSON.stringify({"passed":report.passed,"maximumCoverageErrorPoints":maximum,"maximumRebaseByteError":rebase_error}));quit(0 if report.passed else 1)

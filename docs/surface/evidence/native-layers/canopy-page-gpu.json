@@ -1,0 +1,55 @@
+{
+  "adapter": "NVIDIA GeForce RTX 4090",
+  "backend": "forward_plus",
+  "exactTrees": 476,
+  "geometryBlendM": 48.0,
+  "maximumCoverageErrorPoints": 0.333875749458379,
+  "paintBlendM": 38.4,
+  "passed": true,
+  "results": [
+    {
+      "actualCombinedCoverage": 0.26550336405421,
+      "errorPoints": 0.00259848484347458,
+      "footprintM": 0.25,
+      "targetFilteredCoverage": 0.265529348902644
+    },
+    {
+      "actualCombinedCoverage": 0.268425528531365,
+      "errorPoints": 0.260802607504296,
+      "footprintM": 2.0,
+      "targetFilteredCoverage": 0.265817502456322
+    },
+    {
+      "actualCombinedCoverage": 0.268849846709207,
+      "errorPoints": 0.333875749458379,
+      "footprintM": 4.0,
+      "targetFilteredCoverage": 0.265511089214623
+    },
+    {
+      "actualCombinedCoverage": 0.265971037353916,
+      "errorPoints": 0.0301570517551752,
+      "footprintM": 6.0,
+      "targetFilteredCoverage": 0.265669466836364
+    },
+    {
+      "actualCombinedCoverage": 0.265661239042277,
+      "errorPoints": 0.0006836535135335,
+      "footprintM": 9.0,
+      "targetFilteredCoverage": 0.265654402507142
+    },
+    {
+      "actualCombinedCoverage": 0.265539722282226,
+      "errorPoints": 0.0,
+      "footprintM": 12.0,
+      "targetFilteredCoverage": 0.265539722282226
+    },
+    {
+      "actualCombinedCoverage": 0.264575875204969,
+      "errorPoints": 0.0,
+      "footprintM": 40.0,
+      "targetFilteredCoverage": 0.264575875204969
+    }
+  ],
+  "scope": "Real retained candidate page and canonical treeCover, exact selected discs composited over production residual and meso; flat canvas optical-area proof, no physical shadow or canopy architecture claim",
+  "selectedExactTrees": 175
+}

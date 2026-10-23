@@ -1,0 +1,37 @@
+{
+  "adapter": "NVIDIA GeForce RTX 4090",
+  "backend": "forward_plus",
+  "godot": "4.7.2-stable (official)",
+  "maximumMeanCompositorByteError": 0.586224943399429,
+  "passed": true,
+  "results": [
+    {
+      "diagnostic": 0,
+      "opacityOneGroundHasNoEffectByteError": 0.0,
+      "opacityZeroLowCoverHasNoEffectByteError": 0.0
+    },
+    {
+      "diagnostic": 17,
+      "opacityOneGroundHasNoEffectByteError": 0.0,
+      "opacityZeroLowCoverHasNoEffectByteError": 0.0
+    },
+    {
+      "diagnostic": 18,
+      "opacityOneGroundHasNoEffectByteError": 0.0,
+      "opacityZeroLowCoverHasNoEffectByteError": 0.0
+    },
+    {
+      "diagnostic": 19,
+      "opacityOneGroundHasNoEffectByteError": 0.0,
+      "opacityZeroLowCoverHasNoEffectByteError": 0.0
+    }
+  ],
+  "scope": "Authored non-IG 17x17 source using the NEW nine arrays through production Data/main/shader bindings; opacity0/1 in actual PBR beauty, roughness and normal, plus independent linear mean transition. Not a neural terrain fixture.",
+  "surfaceLayers": {
+    "fieldsVersion": "ead9bceea0a540bae8d5b452fbd4560c",
+    "groundAvailability": "explicit",
+    "lowCoverAvailability": "explicit",
+    "version": "surface-layers-1"
+  },
+  "worldId": "8db2d26a36ba330451a736bac25abad6"
+}

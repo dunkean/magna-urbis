@@ -110,6 +110,7 @@ var live_binding_rejections:Array=[]
 var render_events:Array=[]
 var discarded_preparations:Dictionary={"obsoletePhysicalLineage":0,"olderThanDisplayed":0,"failed":0}
 var water_metrics: Dictionary = {}
+var rendered_urban_metrics:Dictionary={}
 var water_projection_busy:=false
 var water_projection_cache:Dictionary={}
 var road_texture: ImageTexture
@@ -413,7 +414,12 @@ func _update_camera() -> void:
 	sun.directional_shadow_max_distance = clampf(width_m*1.5,40.0,3000.0)
 	var reference_y := Data.height_at(world,focus.x,focus.y)-float(origin.y)
 	if terrain!=null: terrain.get("material").call("set_shader_param","canopy_reference_y",reference_y)
-	for material in canopy_materials: material.set_shader_parameter("canopy_reference_y",reference_y)
+	var main_projection=camera.get_camera_projection()*Projection(camera.get_camera_transform().affine_inverse())
+	var main_size=get_viewport().get_visible_rect().size
+	if terrain!=null:_set_canopy_main_camera(terrain.get("material"),main_projection,main_size)
+	for material in canopy_materials:
+		material.set_shader_parameter("canopy_reference_y",reference_y)
+		_set_canopy_main_camera(material,main_projection,main_size)
 
 func _build_scene_objects(prepared: Dictionary) -> void:
 	var world:Dictionary=prepared.world
@@ -444,6 +450,14 @@ func _build_scene_objects(prepared: Dictionary) -> void:
 		var data: Dictionary = prepared.urbanGeometry
 		scene_mesh_cache[request.urbanKey]={"batches":_urban_batch_meshes(prepared.urbanBatches),"roads":_mesh_from_arrays(prepared.roadArrays),"anchor":data.anchor,"nativeBuildings":data.nativeBuildings,"proxyBuildings":data.proxyBuildings,"budgetLimited":data.budgetLimited,"buildMs":data.buildMs}
 	while scene_mesh_cache.size()>8: scene_mesh_cache.erase(scene_mesh_cache.keys()[0])
+	rendered_urban_metrics={"worldId":rendered_world_id,"nativeBuildings":0,"proxyBuildings":0,"materialBatches":0,"buildingIds":[],"scope":"prepared submitted mesh batches; not a GPU visibility or occlusion count"}
+	if scene_mesh_cache.has(request.urbanKey):
+		var urban_entry:Dictionary=scene_mesh_cache[request.urbanKey]
+		var native_ids:Dictionary={}
+		for batch in urban_entry.batches:
+			for id in batch.get("buildingIds",[]):native_ids[str(id)]=true
+		var ids=native_ids.keys();ids.sort()
+		rendered_urban_metrics.merge({"nativeBuildings":urban_entry.nativeBuildings,"proxyBuildings":urban_entry.proxyBuildings,"materialBatches":urban_entry.batches.size(),"buildingIds":ids,"budgetLimited":urban_entry.budgetLimited})
 	if scene_mesh_cache.has(request.waterKey):
 		var entry: Dictionary = scene_mesh_cache[request.waterKey]
 		water_metrics=entry.get("diagnostics",{}).duplicate()
@@ -722,7 +736,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			KEY_O: oblique = not oblique; changed = true
 			KEY_D:
 				var previous := diagnostic
-				diagnostic = (diagnostic+1)%13
+				diagnostic = (diagnostic+1)%20
 				if terrain!=null: terrain.get("material").call("set_shader_param","diagnostic",diagnostic)
 				if previous==5 or diagnostic==5: _begin_prepare()
 			KEY_S: _capture("res://captures/surface-%d.png"%Time.get_unix_time_from_system())
@@ -933,7 +947,7 @@ func _capture(path: String) -> void:
 	var absolute := ProjectSettings.globalize_path(path)
 	DirAccess.make_dir_recursive_absolute(absolute.get_base_dir())
 	var result := get_viewport().get_texture().get_image().save_png(absolute)
-	print(JSON.stringify({"event":"capture","captureTickMs":Time.get_ticks_msec(),"surfaceLayers":rendered_surface_layers,"water":water_metrics,"renderedWorldId":rendered_world_id,"renderedSource":rendered_source,"renderedLiveSerial":rendered_live_serial,"renderedSnapshot":rendered_snapshot,"viewSatisfiedSerial":view_satisfied_serial,"viewSatisfaction":view_satisfaction,"path":absolute,"error":result,"widthM":width_m,"metresPerPixel":width_m/get_viewport().get_visible_rect().size.x}))
+	print(JSON.stringify({"event":"capture","captureTickMs":Time.get_ticks_msec(),"surfaceLayers":rendered_surface_layers,"water":water_metrics,"urban":rendered_urban_metrics,"renderedWorldId":rendered_world_id,"renderedSource":rendered_source,"renderedLiveSerial":rendered_live_serial,"renderedSnapshot":rendered_snapshot,"viewSatisfiedSerial":view_satisfied_serial,"viewSatisfaction":view_satisfaction,"path":absolute,"error":result,"widthM":width_m,"metresPerPixel":width_m/get_viewport().get_visible_rect().size.x}))
 
 func _quantile(values: Array[float], fraction: float) -> Variant:
 	if values.is_empty(): return null
@@ -957,8 +971,9 @@ func _write_metrics() -> void:
 	metrics["unsupportedTreeCount"]=unsupported_tree_count
 	metrics["cityMap"]=city_map_metrics
 	metrics["water"]=water_metrics
+	metrics["urban"]=rendered_urban_metrics
 	metrics["surfaceLayers"]=rendered_surface_layers
-	metrics["canopy"]={"representation":"exact-inventory-local / calibrated-approximate-meso-outside-page","approximatePositionsClaimedAsInventory":false,"canonicalSeed":rendered_world.get("seed"),"atlasVersion":canopy_info.get("version",""),"paintBlendM":canopy_info.get("fallbackBlendM"),"geometryBlendM":canopy_info.get("geometryBlendM")}
+	metrics["canopy"]={"representation":"exact-inventory-local / calibrated-approximate-meso-outside-page","approximatePositionsClaimedAsInventory":false,"paintedCrownShadow":"residual optical transfer, authored 8m crown centre, not geometric shadows","paintedShadowTransmittance":[.25,.34,.50],"canonicalSeed":rendered_world.get("seed"),"atlasVersion":canopy_info.get("version",""),"paintBlendM":canopy_info.get("fallbackBlendM"),"geometryBlendM":canopy_info.get("geometryBlendM")}
 	var path: String = options.get("--metrics","res://captures/metrics.json")
 	path = ProjectSettings.globalize_path(path)
 	DirAccess.make_dir_recursive_absolute(path.get_base_dir())
@@ -985,6 +1000,7 @@ func _update_canopy_textures(info: Dictionary) -> void:
 	if not info.get("available",false): return
 	if not is_same(canopy_textures.get("coverageImage"),info.coverageImage) or not is_same(canopy_textures.get("countsImage"),info.countsImage):
 		canopy_textures={"coverageImage":info.coverageImage,"countsImage":info.countsImage,"coverage":ImageTexture.create_from_image(info.coverageImage),"counts":ImageTexture.create_from_image(info.countsImage)}
+		if info.has("normalImage"):canopy_textures["normals"]=ImageTexture.create_from_image(info.normalImage)
 
 func _apply_canopy_parameters(material: Object) -> void:
 	var world:Dictionary=rendered_world if not rendered_world.is_empty() else self.world
@@ -992,8 +1008,12 @@ func _apply_canopy_parameters(material: Object) -> void:
 	var presentation_mode:String=rendered_presentation_mode
 	var values := {"canopy_enabled":canopy_info.get("available",false),"canopy_linear_albedo":Presentation.canopy_color(packet,presentation_mode),"canopy_reference_y":Data.height_at(world,focus.x,focus.y)-float(origin.y)}
 	values.merge(preload("res://adapters/surface_canopy.gd").meso_parameters(world,origin))
+	var to_light=sun.global_basis.z
+	values["canopy_shadow_offset"]=preload("res://adapters/surface_canopy.gd").shadow_offset(to_light)
 	if canopy_info.get("available",false):
 		var b: Dictionary = canopy_info.bounds
+		values["canopy_normals_enabled"]=canopy_textures.has("normals")
+		if canopy_textures.has("normals"):values["canopy_normals"]=canopy_textures.normals
 		values.merge({"canopy_coverage":canopy_textures.coverage,"canopy_counts":canopy_textures.counts,
 			"canopy_origin":Vector2(float(canopy_info.origin.x)-float(origin.x),float(canopy_info.origin.z)-float(origin.z)),
 			"canopy_grid_size":canopy_info.gridSize,"canopy_spacing_m":canopy_info.spacingM,"canopy_fallback_blend_m":canopy_info.fallbackBlendM,
@@ -1209,3 +1229,9 @@ func _complete_prepared(prepared:Dictionary)->void:
 			return
 		prepared.waterProjection=projection
 	_apply_prepared(prepared)
+
+func _set_canopy_main_camera(material:Object,view_projection:Projection,viewport_size:Vector2)->void:
+	var bindings={"canopy_main_camera_enabled":true,"canopy_main_camera_vp":view_projection,"canopy_main_viewport_size":viewport_size}
+	for key in bindings:
+		if material is ShaderMaterial:material.set_shader_parameter(key,bindings[key])
+		else:material.call("set_shader_param",key,bindings[key])
