@@ -1,6 +1,7 @@
 /** Fresh Infinite Generation proof. Run with node --import tsx; no source substitution.
  * Optional native E2E: --decoder-model original --viewer-godot C:/tools/Godot.exe
  * --viewer-assets C:/data/resolved.json --viewer-launcher ROOT/web/scripts/surface_viewer.mjs
+ * --geology-scenario tilted-strata-v1 opts into an explicit fixed world-space scenario.
  * --viewer-resolution 2048x1280. Browser/SSE/worker stay alive until the seven-level tour exits. */
 import { chromium } from 'playwright';
 import { mkdir, readFile, writeFile, readdir } from 'node:fs/promises';
@@ -24,6 +25,8 @@ const base = option('--url', 'http://127.0.0.1:5197').replace(/\/$/, '');
 const neural = option('--neural', 'http://127.0.0.1:8893').replace(/\/$/, '');
 const width = Number(option('--width', '40000')), seed = option('--seed', 'surface-proof-40km');
 const decoderModel = option('--decoder-model', undefined);
+const geologyScenario = option('--geology-scenario', undefined);
+if(geologyScenario!==undefined&&geologyScenario!=='tilted-strata-v1')throw new Error('Only the explicit tilted-strata-v1 geological scenario is supported by this driver');
 const timeoutMs = Number(option('--timeout-ms', '900000'));
 const out = resolve(option('--out', 'out/surface/real40km'));
 const viewerGodot = option('--viewer-godot', undefined), viewerAssets = option('--viewer-assets', undefined);
@@ -41,7 +44,8 @@ const report = { format: 'magna-fresh-source-proof', version: 1, startedAt: new 
   requestedSource: 'neural-python', freshGeneration: true, paths, errors, network, progress, status: 'starting' };
 report.browserEvents = browserEvents;
 if(viewerGodot)report.requestedViewer={godot:resolve(viewerGodot),assets:viewerAssets&&resolve(viewerAssets),launcher:viewerLauncher,
-  resolution:viewerResolution,mode:args.includes('--viewer-oblique')?'oblique':'top',timeoutMs:viewerTimeoutMs};
+  resolution:viewerResolution,mode:args.includes('--viewer-oblique')?'oblique':'top',presentation:'aerial',timeoutMs:viewerTimeoutMs};
+if(geologyScenario)report.requestedGeology={id:geologyScenario,queryParameter:'surface_geology',provenance:'Explicit authored preset, fixed world frame; not observed geological data or a terrain-height modification.'};
 if (decoderModel) report.requestedModels = { decoderModel };
 let saveQueue = Promise.resolve();
 const save = () => { const snapshot=JSON.stringify(report,null,2);saveQueue=saveQueue.then(()=>writeFile(paths.report,snapshot));return saveQueue; };
@@ -58,7 +62,7 @@ async function runNativeTour(sessionId) {
   const logPath=resolve(directory,'stdout.log'),errorPath=resolve(directory,'stderr.log'),metricsPath=resolve(directory,'metrics.json');
   const widths=[40000,10000,2560,640,160,40,10],events=[],nativeErrors=[];
   const command=[viewerLauncher,'--godot',resolve(viewerGodot),'--world',paths.source,'--live-url',`${base}/surface-live/terrain`,
-    '--session-id',sessionId,'--tour',directory,'--metrics',metricsPath,'--width','40000','--resolution',viewerResolution];
+    '--session-id',sessionId,'--tour',directory,'--metrics',metricsPath,'--width','40000','--resolution',viewerResolution,'--presentation','aerial'];
   if(!args.includes('--viewer-oblique'))command.push('--top');
   if(viewerAssets)command.push('--assets',resolve(viewerAssets));
   report.viewer={status:'running',startedAt:new Date().toISOString(),startedElapsedMs:Date.now()-began,sessionId,
@@ -121,6 +125,7 @@ async function runNativeTour(sessionId) {
   if(packets.some(e=>e.packet?.source.registrationBinding?.expectedSourceId!==e.packet?.terrain.source.id)||new Set(packets.map(e=>e.sourceEpoch)).size!==1
     ||new Set(packets.map(e=>e.environmentVersion)).size!==1||packets.some(e=>e.canonicalBuildCount!==1))throw new Error('Native live tour changed source lineage or recompiled camera-dependent canonical context');
   if(!report.viewer.metrics.source?.sourceLODKnown)throw new Error('Final native terrain still has unknown sourceLOD; a live patch was not applied');
+  if(geologyScenario&&packets.some(e=>JSON.stringify(e.packet?.geologyScenario)!==JSON.stringify(report.source.geologyScenario)))throw new Error('Native zoom changed or lost the explicit fixed geological scenario descriptor');
   if(!(report.viewer.nearMetresPerPixel<=.005))throw new Error(`10m native capture did not reach 5mm/pixel: ${report.viewer.nearMetresPerPixel}`);
   if(network.some(e=>e.elapsedMs>=report.viewer.startedElapsedMs&&e.url?.includes('/generate?')))throw new Error('Native navigation regenerated its parent source instead of refining the retained generation');
   if(relevant.some(e=>e.kind==='worker-proof-error'||e.kind==='worker-error')||errors.some(e=>e.type==='pageerror'))throw new Error('Browser worker or source page failed during the native live tour');
@@ -197,7 +202,7 @@ try {
           note:'Raw source boundary before viewer feathering; residual differences do not measure a displayed seam.'};
       }
       return { bytes:binary.byteLength, worldId:packet.world.id, terrain:{width:t.width,height:t.height,originX:t.originX,originZ:t.originZ,spacingM:t.spacingM,reconstruction:t.reconstruction,source:t.source},
-        contextId:packet.world.canonicalContextRef?.id, includesCanonicalContext:!!packet.world.canonicalContext, parentTerrain:parent && {...parent,heights:undefined},
+        contextId:packet.world.canonicalContextRef?.id, includesCanonicalContext:!!packet.world.canonicalContext, parentTerrain:parent && {...parent,heights:undefined},geologyScenario:packet.world.geology?.scenario,
         source:{live:packet.source?.live,provider:packet.source?.provider,originalSource:packet.source?.originalSource,
           compilation:packet.source?.compilation,registrationBinding:packet.source?.registrationBinding,canonicalContextId:packet.source?.canonicalContextId,
           sceneContextId:packet.source?.sceneContextId,sourceEpoch:packet.source?.sourceEpoch,sceneEpoch:packet.source?.sceneEpoch,request:packet.source?.request},versions:packet.world.versions,boundary };
@@ -256,6 +261,7 @@ try {
   const query = new URLSearchParams({ standalone: '1', profile: 'web', source: 'neural-python', neural, width: String(width), seed,
     relief: 'mountains', climate: 'temperate', auto: '0', render: 'svg' });
   if (decoderModel) query.set('decoderModel', decoderModel);
+  if(geologyScenario)query.set('surface_geology',geologyScenario);
   report.url = `${base}/terrainbench.html?${query}`;
   console.log(`Generating fresh ${width / 1000} × ${width / 1000} km source ${seed}…`);
   await page.goto(report.url, { waitUntil: 'domcontentloaded', timeout: 120000 });
@@ -286,12 +292,13 @@ try {
   const sourceBytes = await readFile(paths.source), packet = decodeSurfaceBinary(sourceBytes);
   const retainedWidth = packet.source.meta.width, sourceQuery = new URLSearchParams(packet.source.meta.query);
   if (retainedWidth !== width || packet.source.meta.seed !== seed || sourceQuery.get('source') !== 'neural-python') throw new Error('Exported source provenance does not match the requested fresh source');
+  if(geologyScenario&&(sourceQuery.get('surface_geology')!==geologyScenario||packet.world.geology?.scenario?.id!==geologyScenario))throw new Error('Export lost or did not compile the explicitly requested geological scenario');
   let min = Infinity, max = -Infinity;
   for (const h of packet.world.terrain.heights) { if (!Number.isFinite(h)) throw new Error('Non-finite fresh source height'); min = Math.min(min, h); max = Math.max(max, h); }
   report.source = { id: packet.source.meta.id, created: packet.source.meta.created, query: packet.source.meta.query, bytes: sourceBytes.length,
     grid: { width: packet.world.terrain.width, height: packet.world.terrain.height, spacingM: packet.world.terrain.spacingM },
     sourceIdentity: packet.world.terrain.source, heightRangeM: { min, max }, diagnostics: packet.world.diagnostics,
-    climate: packet.world.climate, buildings: packet.urban?.buildings?.length ?? packet.urban?.buildingCount ?? 0 };
+    climate: packet.world.climate,geologyScenario:packet.world.geology?.scenario, buildings: packet.urban?.buildings?.length ?? packet.urban?.buildingCount ?? 0 };
   report.status = 'source-exported'; await save();
   if (args.includes('--native-packet')) {
     if (!report.neuralOutput) throw new Error('Cannot export a native packet without the actual captured neural response');
