@@ -49,6 +49,19 @@ struct Curtains {
     grid: BTreeMap<Key, Vec<usize>>,
     /// Outer lean-tos: a lane ending beside one serves it, it is no open edge.
     lean: Vec<super::Shape>,
+    /// Inner lane line of each circuit (`walls[i]`), and the gate passages.
+    lanes: Vec<Lane>,
+    passages: Vec<super::geometry::ContainmentIndex>,
+}
+/// The wall-lane line of a circuit: its curtain path moved inward by the
+/// ribbon half and half a lane, as closed rings (first vertex not repeated).
+struct Lane {
+    rings: Vec<Vec<Point>>,
+    /// Cumulative length at each ring vertex (one more than vertices).
+    stations: Vec<Vec<f64>>,
+    near: Vec<super::fortification::Near>,
+    /// Lane width (m).
+    width: f64,
 }
 const KEEP_CELL: f64 = 20.0;
 /// Margin between a re-routed ribbon and the reserve (m).
@@ -69,6 +82,8 @@ impl Curtains {
         let mut edges = vec![];
         let mut reserve = vec![];
         let mut lean = vec![];
+        let mut lanes = vec![];
+        let mut passages = vec![];
         let walls = enclosures
             .iter()
             .filter(|e| e.path.len() >= 4)
@@ -99,6 +114,40 @@ impl Curtains {
                         .filter(|a| a.side == "out")
                         .map(|a| a.shape.clone()),
                 );
+                let (shapes, width) = lane_line(e);
+                let rings: Vec<Vec<Point>> = shapes
+                    .into_iter()
+                    .map(|s| s.outer)
+                    .filter(|r| r.len() >= 3)
+                    .collect();
+                let closed = |r: &Vec<Point>| -> Vec<Point> {
+                    r.iter().chain(std::iter::once(&r[0])).copied().collect()
+                };
+                lanes.push(Lane {
+                    stations: rings
+                        .iter()
+                        .map(|r| {
+                            let c = closed(r);
+                            std::iter::once(0.0)
+                                .chain(c.windows(2).scan(0.0, |t, w| {
+                                    *t += distance(w[0], w[1]);
+                                    Some(*t)
+                                }))
+                                .collect()
+                        })
+                        .collect(),
+                    near: rings
+                        .iter()
+                        .map(|r| fortification::Near::new(&closed(r), 12.0))
+                        .collect(),
+                    rings,
+                    width,
+                });
+                passages.extend(
+                    e.gatehouses
+                        .iter()
+                        .map(|gh| g::ContainmentIndex::new(&gh.shape)),
+                );
                 let poly = g::normalized(super::Shape {
                     outer,
                     holes: vec![],
@@ -128,6 +177,8 @@ impl Curtains {
             edges,
             grid,
             lean,
+            lanes,
+            passages,
         }
     }
     /// Inside a circuit (the walled town, not the open fringe).
@@ -175,6 +226,116 @@ impl Curtains {
             let need = if c > 0.0 { c } else { hw + KEEP_MARGIN };
             super::geometry::distance(p, a, b).0 >= need
         })
+    }
+    /// A wall-lane centre point whose half ribbon `hw` leaves every reserve
+    /// tile (ditch, towers, works) and gate passage alone.
+    fn lane_clear_at(&self, p: Point, hw: f64) -> bool {
+        self.inside(p)
+            && !self.passages.iter().any(|g| g.contains(p))
+            && !self.reserve.iter().any(|((x0, y0, x1, y1), idx)| {
+                p.x >= *x0 && p.x <= *x1 && p.y >= *y0 && p.y <= *y1 && idx.contains(p)
+            })
+            && self
+                .near_edges(p, 1)
+                .filter(|e| e.2 == 0.0)
+                .all(|&(a, b, _)| super::geometry::distance(p, a, b).0 >= hw - 0.05)
+    }
+    fn lane_segment_clear(&self, a: Point, b: Point, hw: f64) -> bool {
+        let steps = distance(a, b).ceil().max(1.0) as usize;
+        !self.crosses(a, b)
+            && (0..=steps).all(|k| self.lane_clear_at(lerp(a, b, k as f64 / steps as f64), hw))
+    }
+    /// The wall-lane section along `path` (a stretch of the lane line): moved
+    /// inward past what blocks it (a tower, a ditch end), or `None` when it
+    /// cannot keep clear of the reserve and the gates.
+    fn lane_route(&self, path: &[Point], hw: f64) -> Option<Vec<Point>> {
+        // Dense enough to see a reserve tile the straight edge would clip.
+        let mut dense = vec![path[0]];
+        for w in path.windows(2) {
+            let n = (distance(w[0], w[1]) / 3.0).ceil().max(1.0) as usize;
+            dense.extend((1..=n).map(|k| lerp(w[0], w[1], k as f64 / n as f64)));
+        }
+        let last = dense.len() - 1;
+        // Inward direction (away from the nearest curtain point) at a point.
+        let inward = |p: Point| -> Option<Point> {
+            let (d, q) = self
+                .near_edges(p, 3)
+                .filter(|e| e.2 > 0.0)
+                .map(|&(a, b, _)| {
+                    let (d, _, q) = super::geometry::distance(p, a, b);
+                    (d, q)
+                })
+                .min_by(|x, y| x.0.total_cmp(&y.0))?;
+            let d = d.max(EPS);
+            Some(Point {
+                x: (p.x - q.x) / d,
+                y: (p.y - q.y) / d,
+            })
+        };
+        // Offset each blocked point needs, then spread along the lane at a
+        // gentle slope so the detour clears the corners of what blocks it.
+        let mut need = vec![0.0f64; dense.len()];
+        for (i, &p) in dense.iter().enumerate() {
+            if self.lane_clear_at(p, hw) {
+                continue;
+            }
+            // The two anchors are where they are.
+            if i == 0 || i == last {
+                return None;
+            }
+            let u = inward(p)?;
+            need[i] = (1..=KEEP_REACH as usize / 10).find(|&k| {
+                self.lane_clear_at(
+                    Point {
+                        x: p.x + u.x * k as f64,
+                        y: p.y + u.y * k as f64,
+                    },
+                    hw,
+                )
+            })? as f64;
+        }
+        let ok = |p: &[Point]| {
+            p.windows(2)
+                .all(|w| self.lane_segment_clear(w[0], w[1], hw))
+        };
+        // Gentler slopes (and a margin) until the detour clears the corners.
+        for (slope, margin) in [(0.5, 0.0), (0.3, 1.5), (0.15, 3.0)] {
+            let mut o: Vec<f64> = need
+                .iter()
+                .map(|&n| if n > 0.0 { n + margin } else { 0.0 })
+                .collect();
+            for pass in 0..2 {
+                for s in 0..o.len() {
+                    let i = if pass == 0 { s } else { last - s };
+                    let j = if pass == 0 { i.wrapping_sub(1) } else { i + 1 };
+                    if let Some(&prev) = o.get(j) {
+                        o[i] = o[i].max(prev - distance(dense[i], dense[j]) * slope);
+                    }
+                }
+            }
+            (o[0], o[last]) = (0.0, 0.0);
+            let out: Vec<Point> = dense
+                .iter()
+                .zip(&o)
+                .map(|(&p, &o)| match inward(p) {
+                    Some(u) if o > 0.0 => Point {
+                        x: p.x + u.x * o,
+                        y: p.y + u.y * o,
+                    },
+                    _ => p,
+                })
+                .collect();
+            let smooth = super::geometry::simplify(&out, 0.25, |_| false);
+            if ok(&smooth) {
+                return Some(smooth);
+            } else if ok(&out) {
+                return Some(out);
+            }
+            if need.iter().all(|&n| n == 0.0) {
+                break;
+            }
+        }
+        None
     }
     fn segment_clear(&self, a: Point, b: Point, hw: f64) -> bool {
         let steps = (distance(a, b) / 2.0).ceil().max(1.0) as usize;
@@ -360,6 +521,7 @@ pub(super) fn resolve_exits(
             .fold(f64::INFINITY, f64::min)
     };
     let mut leaves = vec![];
+    let mut inner_ends = vec![];
     for (i, s) in streets.iter().enumerate() {
         if private(s) || matches!(s.role.as_str(), "quay" | "bridge" | "ford" | "causeway") {
             continue;
@@ -376,6 +538,38 @@ pub(super) fn resolve_exits(
             {
                 leaves.push((i, end, p));
             }
+            // A street stopping at a curtain from inside: the wall-lane's.
+            if graph.degree(p) == 1
+                && boundary(p) < width(s, j).max(10.0)
+                && curtains.inside(p)
+                && !matches!(
+                    s.role.as_str(),
+                    "regional" | "approach" | "outbound" | "peripheral"
+                )
+            {
+                inner_ends.push((i, end));
+            }
+        }
+    }
+    // `URBAN_WALL_ROUTES=legacy|outer` (A/B measurement only): no inner ring.
+    if cfg.exit_treatment != "closed"
+        && cfg.peripheral_road != "none"
+        && !inner_ends.is_empty()
+        && !std::env::var("URBAN_WALL_ROUTES").is_ok_and(|v| v == "legacy" || v == "outer")
+    {
+        let (kept, dropped) = inner_ring(
+            streets,
+            &curtains,
+            &inner_ends,
+            surface,
+            cfg,
+            &mut rng.fork("inner-ring"),
+        );
+        if std::env::var("URBAN_RING_DEBUG").is_ok() {
+            eprintln!(
+                "INNER_RING ends={} kept={kept:.0} dropped={dropped:.0}",
+                inner_ends.len()
+            );
         }
     }
     let mut served = BTreeSet::new();
@@ -701,6 +895,215 @@ pub(super) fn cap_gate_passages(streets: &mut [Street], enclosures: &[super::Enc
         }
     }
 }
+/// How far from the lane line a street end still belongs to it (m).
+const LANE_REACH: f64 = 14.0;
+/// Invariant (inner ring roads): a street end inside a circuit that stops at
+/// the curtain (a dead end on the wall) is carried to the wall-lane line, and
+/// every consecutive pair of such ends along a circuit is joined by a
+/// `wall-lane` section following that line: the ring road inside the wall.
+/// A section is the lane line itself (what `enclosure_lanes` lays; stretches
+/// it already covers are left alone), moved inward past a tower or ditch end,
+/// always inside the circuit, off every reserve tile and gate passage; a
+/// section no clear route serves keeps its dead ends. Returns the kept and
+/// dropped section lengths (measurement).
+fn inner_ring(
+    streets: &mut Vec<Street>,
+    curtains: &Curtains,
+    ends: &[(usize, bool)],
+    surface: super::Surface<'_>,
+    cfg: &super::LayoutConfig,
+    rng: &mut crate::rng::Rng,
+) -> (f64, f64) {
+    use super::{geometry as g, routing};
+    struct Anchor {
+        street: usize,
+        end: bool,
+        /// Vertices of the street dropped at this end; the lane point
+        /// replaces them.
+        cut: usize,
+        at: Point,
+        station: f64,
+        edge: usize,
+    }
+    // (circuit, ring) -> street ends on that lane ring.
+    let mut groups: BTreeMap<(usize, usize), Vec<Anchor>> = BTreeMap::new();
+    for &(i, end) in ends {
+        let s = &streets[i];
+        let n = s.path.len();
+        let pts: Vec<Point> = if end {
+            s.path.clone()
+        } else {
+            s.path.iter().rev().copied().collect()
+        };
+        let p = pts[n - 1];
+        let Some(w) = curtains
+            .walls
+            .iter()
+            .position(|(_, idx, _)| idx.contains(p))
+        else {
+            continue;
+        };
+        let lane = &curtains.lanes[w];
+        // The street's own crossing of the lane line, nearest its end.
+        let mut found = None;
+        let mut arc = 0.0;
+        for m in (1..n).rev() {
+            let (a, b) = (pts[m - 1], pts[m]);
+            let mut best: Option<(f64, usize, usize, Point)> = None;
+            for (r, near) in lane.near.iter().enumerate() {
+                let ring = &lane.rings[r];
+                for k in near.crossed(a, b) {
+                    if let Some((t, x)) = g::segment_hit(a, b, ring[k], ring[(k + 1) % ring.len()])
+                        && best.is_none_or(|c| t > c.0)
+                    {
+                        best = Some((t, r, k, x));
+                    }
+                }
+            }
+            if let Some((_, r, k, x)) = best {
+                found = Some((r, k, x, n - m));
+                break;
+            }
+            arc += distance(a, b);
+            if arc > 30.0 {
+                break;
+            }
+        }
+        if found.is_none() {
+            // A street stopping short of the lane line is carried on to it.
+            found = lane
+                .rings
+                .iter()
+                .enumerate()
+                .flat_map(|(r, ring)| {
+                    (0..ring.len()).map(move |k| {
+                        let (d, _, q) = g::distance(p, ring[k], ring[(k + 1) % ring.len()]);
+                        (d, r, k, q)
+                    })
+                })
+                .filter(|c| c.0 <= LANE_REACH)
+                .min_by(|x, y| x.0.total_cmp(&y.0))
+                .filter(|&(_, _, _, q)| curtains.lane_segment_clear(p, q, lane.width * 0.5))
+                .map(|(_, r, k, q)| (r, k, q, 0));
+        }
+        let Some((r, k, x, cut)) = found else {
+            continue;
+        };
+        let ring = &lane.rings[r];
+        groups.entry((w, r)).or_default().push(Anchor {
+            street: i,
+            end,
+            cut,
+            at: x,
+            station: lane.stations[r][k] + distance(ring[k], x),
+            edge: k,
+        });
+    }
+    let (mut kept, mut dropped) = (0.0, 0.0);
+    let mut used: BTreeSet<(usize, bool)> = BTreeSet::new();
+    let mut anchored: Vec<Anchor> = vec![];
+    let auto = cfg.peripheral_road == "auto";
+    let wall_lanes: Vec<_> = streets
+        .iter()
+        .filter(|s| s.role == "wall-lane")
+        .map(|s| super::fortification::Near::new(&s.path, 8.0))
+        .collect();
+    let mut sections: Vec<Street> = vec![];
+    for ((w, r), mut group) in groups {
+        group.sort_by(|a, b| a.station.total_cmp(&b.station));
+        let n = group.len();
+        if n < 2 {
+            continue;
+        }
+        let lane = &curtains.lanes[w];
+        let (ring, total) = (&lane.rings[r], *lane.stations[r].last().unwrap());
+        let hw = lane.width * 0.5;
+        for k in 0..n {
+            let (a, b) = (&group[k], &group[(k + 1) % n]);
+            // Two ends make two arcs of the same ring; one is enough when
+            // they meet.
+            if distance(a.at, b.at) < if n == 2 { 2.0 * hw } else { 1.0 } {
+                continue;
+            }
+            if auto && !rng.chance(0.8) {
+                continue;
+            }
+            // Forward along the ring from `a` to `b`.
+            let wrap = b.station <= a.station;
+            let m = ring.len();
+            let last = if wrap { b.edge + m } else { b.edge };
+            let mut path = vec![a.at];
+            path.extend((a.edge + 1..=last).map(|j| ring[j % m]));
+            path.push(b.at);
+            path.dedup_by(|p, q| distance(*p, *q) < 0.05);
+            let length = if wrap {
+                total - a.station + b.station
+            } else {
+                b.station - a.station
+            };
+            if path.len() < 2 || length < 1.0 {
+                continue;
+            }
+            // Already served: every sample rides an existing wall-lane.
+            let covered = path.windows(2).all(|w| {
+                let steps = (distance(w[0], w[1]) / 4.0).ceil().max(1.0) as usize;
+                (0..=steps).all(|j| {
+                    let p = lerp(w[0], w[1], j as f64 / steps as f64);
+                    wall_lanes.iter().any(|n| n.distance(p, p) < 1.0)
+                })
+            });
+            let route = (!covered)
+                .then(|| curtains.lane_route(&path, hw))
+                .flatten()
+                .filter(|p| routing::path_clear(surface, p, cfg.max_street_grade));
+            match route {
+                Some(p) => {
+                    kept += length;
+                    used.extend([(a.street, a.end), (b.street, b.end)]);
+                    sections.push(Street {
+                        widths: vec![lane.width; p.len()],
+                        path: p,
+                        rank: 2,
+                        role: "wall-lane".into(),
+                    });
+                }
+                None if covered => used.extend([(a.street, a.end), (b.street, b.end)]),
+                None => dropped += length,
+            }
+        }
+        anchored.extend(group);
+    }
+    // The served street ends stop on the lane (a dead end past it, in the
+    // curtain ribbon, goes).
+    for a in anchored
+        .iter()
+        .filter(|a| used.contains(&(a.street, a.end)))
+    {
+        let s = &mut streets[a.street];
+        if s.widths.len() != s.path.len() {
+            let last = s.widths.last().copied().unwrap_or(4.0);
+            s.widths.resize(s.path.len(), last);
+        }
+        if s.path.len() <= a.cut {
+            continue;
+        }
+        let keep = s.path.len() - a.cut;
+        let w = s.widths[if a.end { keep - 1 } else { a.cut }];
+        if a.end {
+            s.path.truncate(keep);
+            s.widths.truncate(keep);
+            s.path.push(a.at);
+            s.widths.push(w);
+        } else {
+            s.path.drain(..a.cut);
+            s.widths.drain(..a.cut);
+            s.path.insert(0, a.at);
+            s.widths.insert(0, w);
+        }
+    }
+    streets.extend(sections);
+    (kept, dropped)
+}
 fn private(s: &Street) -> bool {
     matches!(
         s.role.as_str(),
@@ -708,6 +1111,26 @@ fn private(s: &Street) -> bool {
     )
 }
 
+/// The wall-lane line of a curtain: its path moved inward by the ribbon half
+/// and half a lane (closed rings), and the lane width.
+fn lane_line(e: &super::Enclosure) -> (Vec<super::Shape>, f64) {
+    use super::geometry as g;
+    use geo::Buffer;
+    let wall_half = super::fortification::ribbon_half(&e.kind);
+    let w = if e.kind == "wall" { 4.0 } else { 3.0 };
+    let mut outer = e.path.clone();
+    if outer.len() > 2 && distance(outer[0], *outer.last().unwrap()) < EPS {
+        outer.pop();
+    }
+    let shape = g::normalized(super::Shape {
+        outer,
+        holes: vec![],
+    });
+    (
+        g::shapes(g::polygon(&shape).buffer(-wall_half - w * 0.5)),
+        w,
+    )
+}
 /// A frequent intramural lane abuts the wall's inner face. Other seeds retain
 /// plots against the enclosure; unsupported hillside fragments are discarded by
 /// the shared network cleanup rather than inventing a dry crossing.
@@ -718,23 +1141,13 @@ pub(super) fn enclosure_lanes(
     cfg: &super::LayoutConfig,
     rng: &mut crate::rng::Rng,
 ) {
-    use super::{geometry as g, routing};
-    use geo::Buffer;
+    use super::routing;
     for enclosure in enclosures {
         if !rng.chance(0.8) {
             continue;
         }
-        let wall_half = if enclosure.kind == "wall" { 1.5 } else { 0.75 };
-        let w = if enclosure.kind == "wall" { 4.0 } else { 3.0 };
-        let mut outer = enclosure.path.clone();
-        if outer.len() > 2 && distance(outer[0], *outer.last().unwrap()) < EPS {
-            outer.pop();
-        }
-        let shape = g::normalized(super::Shape {
-            outer,
-            holes: vec![],
-        });
-        for shape in g::shapes(g::polygon(&shape).buffer(-wall_half - w * 0.5)) {
+        let (shapes, w) = lane_line(enclosure);
+        for shape in shapes {
             let mut path = vec![];
             for (&a, &b) in shape
                 .outer
@@ -2043,8 +2456,14 @@ mod tests {
                     assert!(s.path.windows(2).all(|w| near.distance(w[0], w[1]) > 5.0));
                 }
             }
-            // The walled street keeps its ends against the wall.
-            assert_eq!(streets[1].path, initial[1].path);
+            // The walled street stops where it was, but for its ends: those
+            // are carried on to the wall-lane line, never across the curtain.
+            assert!(
+                initial[1].path[1..2]
+                    .iter()
+                    .all(|v| streets[1].path.contains(v))
+            );
+            assert!(!crosses(&streets[1]));
             if road == "full" {
                 assert!(streets.iter().any(|s| s.role == "peripheral"));
             }
@@ -2141,6 +2560,118 @@ mod tests {
                 "along the outer face south: {x:?}"
             );
         }
+    }
+
+    /// Invariant (inner ring roads): two street ends stopping at the curtain
+    /// from inside are joined by a wall-lane section along the inner face; the
+    /// ends stop on it, it never crosses the curtain, never enters the
+    /// reserve (here a tower inside the lane line, which it goes round) and
+    /// never lies in a gate passage.
+    #[test]
+    fn inner_street_ends_at_the_wall_are_joined_by_the_wall_lane() {
+        use super::super::{Enclosure, Gatehouse, LayoutConfig, Quarter, Surface, geometry as g};
+        let height = vec![20.0; 64 * 64];
+        let water = vec![0; height.len()];
+        let surface = Surface {
+            geometry: None,
+            width: 1000.0,
+            n: 64,
+            height: &height,
+            water: &water,
+        };
+        let wall: Vec<Point> = [
+            (195.0, 195.0),
+            (400.0, 195.0),
+            (400.0, 605.0),
+            (195.0, 605.0),
+            (195.0, 195.0),
+        ]
+        .iter()
+        .map(|&(x, y)| Point { x, y })
+        .collect();
+        // Curtain body on the east face, a tower reaching 10 m inside it, and
+        // a gatehouse on the south end of the east face.
+        let reserve = vec![
+            g::rectangle(400.0, 195.0, 401.5, 605.0),
+            g::rectangle(390.0, 395.0, 400.0, 405.0),
+        ];
+        let gatehouse = Gatehouse {
+            gate: 0,
+            kind: "tower".into(),
+            shape: g::rectangle(390.0, 560.0, 410.0, 580.0),
+            masses: vec![],
+            passage: [Point { x: 400.0, y: 570.0 }, Point { x: 410.0, y: 570.0 }],
+            passage_width_m: 5.0,
+            height_m: 8.0,
+        };
+        let enclosure = Enclosure {
+            path: wall,
+            kind: "palisade".into(),
+            gates: vec![Point { x: 400.0, y: 570.0 }],
+            reserve,
+            gatehouses: vec![gatehouse.clone()],
+            ..Default::default()
+        };
+        let quarters = [Quarter {
+            shape: g::rectangle(195.0, 195.0, 400.0, 605.0),
+            phase: 1,
+            zone: "core".into(),
+        }];
+        // Two streets end on the east curtain, north and south of the tower;
+        // a spine joins them.
+        let mut streets = vec![
+            street(&[(300.0, 260.0), (399.9, 260.0)], "street"),
+            street(&[(300.0, 520.0), (399.9, 520.0)], "street"),
+            street(&[(300.0, 260.0), (300.0, 520.0)], "street"),
+        ];
+        let cfg = LayoutConfig {
+            peripheral_road: "full".into(),
+            ..Default::default()
+        };
+        resolve_exits(
+            &mut streets,
+            &quarters,
+            &[],
+            std::slice::from_ref(&enclosure),
+            surface,
+            &cfg,
+            &mut crate::rng::Rng::new("inner-ring"),
+        );
+        let curtains = Curtains::new(std::slice::from_ref(&enclosure));
+        let lanes: Vec<&Street> = streets.iter().filter(|s| s.role == "wall-lane").collect();
+        assert!(!lanes.is_empty(), "the inner ring road is laid");
+        let hw = lanes[0].widths[0] * 0.5;
+        let on_lane = |p: Point| {
+            lanes.iter().any(|l| {
+                l.path
+                    .windows(2)
+                    .any(|w| g::distance(p, w[0], w[1]).0 < 0.05)
+            })
+        };
+        // The street ends stop on the lane, short of the curtain ribbon.
+        for s in &streets[..2] {
+            let end = *s.path.last().unwrap();
+            assert!(on_lane(end), "{end:?} stops on the lane");
+            assert!(end.x < 399.0);
+        }
+        for l in &lanes {
+            for w in l.path.windows(2) {
+                let steps = (distance(w[0], w[1]) / 0.5).ceil().max(1.0) as usize;
+                assert!(!curtains.crosses(w[0], w[1]));
+                for k in 0..=steps {
+                    let p = lerp(w[0], w[1], k as f64 / steps as f64);
+                    assert!(curtains.lane_clear_at(p, hw), "{p:?} keeps off the reserve");
+                    assert!(!g::contains(&gatehouse.shape, p));
+                }
+            }
+        }
+        // The lane goes round the tower, inside it.
+        assert!(
+            lanes
+                .iter()
+                .flat_map(|l| l.path.iter())
+                .any(|p| (395.0..=405.0).contains(&p.y) && p.x < 388.0)
+        );
     }
 
     /// Invariant (gate passages): inside a land gatehouse a street is at most
