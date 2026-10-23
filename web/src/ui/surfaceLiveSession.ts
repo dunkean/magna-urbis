@@ -1,6 +1,7 @@
 import type { Decor } from './decor';
 import type { Building3dScene } from '../render/urbanBuildingGeometry';
 import type { TerrainProvider } from '../surface/provider';
+import type { TerrainGrid } from '../surface/model';
 import type { SurfaceRegistrationBinding } from '../surface/registrationBinding';
 import type { SurfaceLiveRegion } from '../../scripts/surface_live_plugin';
 import { SurfaceCompilerClient, type SurfaceCompilerWorker } from '../surface/workerClient';
@@ -13,9 +14,9 @@ import { prepareSurfaceDecorWorkerSource, type SurfaceDecorWorkerSource } from '
 export function createSurfaceLiveSession(decor: Decor, scene: Building3dScene | undefined,
   provider: TerrainProvider, isCurrent: () => boolean) {
   if (typeof window !== 'undefined') throw new Error('Browser surface compilation requires createSurfaceLiveBinarySession and its dedicated worker');
-  const bindingProvider = provider as TerrainProvider & { readonly registrationBinding?: Readonly<SurfaceRegistrationBinding> };
+  const bindingProvider = provider as TerrainProvider & { readonly registrationBinding?: Readonly<SurfaceRegistrationBinding>; readonly registrationParent?: TerrainGrid };
   const initialization = { protocol: SURFACE_WORKER_PROTOCOL, kind: 'initialize' as const, sessionId: 'explicit-node-object',
-    sourceEpoch: decor.meta.id, sceneEpoch: 'retained-scene-1', payload: { decor, scene, providerId: provider.id, registrationBinding: bindingProvider.registrationBinding } };
+    sourceEpoch: decor.meta.id, sceneEpoch: 'retained-scene-1', payload: { decor, scene, providerId: provider.id, registrationBinding: bindingProvider.registrationBinding, parentTerrain: bindingProvider.registrationParent } };
   const processor = createSurfaceWorkerProcessor(prepareSurfaceDecorWorkerSource);
   const ready = processor.handle(initialization);
   if (ready.kind === 'error') throw new Error(ready.error.message);
@@ -41,10 +42,10 @@ export interface SurfaceLiveCompilerOptions {
 /** Live browser path: asynchronous generation provider, interruptible compiler worker, transferred MUFSURF1 bytes. */
 export function createSurfaceLiveBinarySession(decor: Decor, scene: Building3dScene | undefined,
   provider: TerrainProvider, isCurrent: () => boolean, options: SurfaceLiveCompilerOptions = {}) {
-  const bindingProvider = provider as TerrainProvider & { readonly registrationBinding?: Readonly<SurfaceRegistrationBinding> };
+  const bindingProvider = provider as TerrainProvider & { readonly registrationBinding?: Readonly<SurfaceRegistrationBinding>; readonly registrationParent?: TerrainGrid };
   const initialization: SurfaceWorkerInitialization<SurfaceDecorWorkerSource> = {
     sourceEpoch: options.sourceEpoch ?? decor.meta.id, sceneEpoch: options.sceneEpoch ?? 'retained-scene-1',
-    payload: { decor, scene, providerId: provider.id, registrationBinding: options.registrationBinding ?? bindingProvider.registrationBinding },
+    payload: { decor, scene, providerId: provider.id, registrationBinding: options.registrationBinding ?? bindingProvider.registrationBinding, parentTerrain: bindingProvider.registrationParent },
   };
   const synchronous = options.execution === 'synchronous-node';
   if (synchronous && typeof window !== 'undefined') throw new Error('Synchronous surface compilation is restricted to explicit Node/offline use');

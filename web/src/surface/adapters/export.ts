@@ -10,6 +10,7 @@ import { archiveSurfaceSource } from './sourceArchive';
 import { packCandidateColumns } from '../candidateColumns';
 import { magnaUrbanPacket, magnaUrbanIdentity, magnaRoads } from './magnaUrban';
 import { magnaSurfacePresentation } from '../presentation';
+import { magnaSurfaceSource } from './magnaSource';
 
 export interface SurfacePacketOptions extends CompileOptions { candidateBounds?: Bounds | 'all'; candidateLimit?: number; roads?: readonly SurfaceRoad[]; encoding?: 'json' | 'binary' }
 export interface DecorCompileOptions extends SurfacePacketOptions {
@@ -67,16 +68,11 @@ export function exportSurfacePacket(decor: Decor, scene?: Building3dScene, optio
   input.terrain.originX += dx; input.terrain.originZ += dz;
   const world = compileSurfaceWorld(input, options);
   addWaterValidationWarning(world, input.sourceWaterValidation);
-  const source = { meta: decor.meta, geometry: decor.raster.geometry, sourceToWorldTranslation: { x: dx, z: dz }, sourceWaterValidation: input.sourceWaterValidation,
-    water: { n: decor.raster.n, width: decor.raster.width, originX: input.terrain.originX, originZ: input.terrain.originZ, originConvention: 'first-sample-centre' as const,
-      cornerX: (options.terrainOriginX ?? 0) + dx, cornerZ: (options.terrainOriginZ ?? 0) + dz,
-      classes: options.encoding === 'binary' ? decor.raster.water : Array.from(decor.raster.water),
-      levelM: options.encoding === 'binary' ? decor.raster.waterLevel : Array.from(decor.raster.waterLevel),
-      riverIds: options.encoding === 'binary' ? decor.raster.riverIds : Array.from(decor.raster.riverIds),
-      riverWidthM: options.encoding === 'binary' ? decor.raster.riverWidth : Array.from(decor.raster.riverWidth) } };
+  const source = magnaSurfaceSource(decor, { encoding: options.encoding, cornerX: (options.terrainOriginX ?? 0) + dx, cornerZ: (options.terrainOriginZ ?? 0) + dz,
+    translationX: dx, translationZ: dz, sourceWaterValidation: input.sourceWaterValidation });
   const urban = magnaUrbanPacket(decor, buildings, dx, dz, options.roads, options.encoding);
   return { format: 'magna-surface-packet', version: 1,
     presentation: magnaSurfacePresentation(decor.meta.query),
     world: options.encoding === 'binary' ? world : JSON.parse(serializeSurfaceWorld(world)), urban, urbanId: magnaUrbanIdentity(urban), ...packetCandidates(world, options),
-    source: options.encoding === 'binary' ? archiveSurfaceSource(source) : structuredClone(source) };
+    source };
 }

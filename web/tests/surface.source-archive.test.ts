@@ -16,6 +16,9 @@ describe('bounded binary source metadata', () => {
     expect(() => archiveSurfaceSource({ meta: { scene: { pad: 'x'.repeat(10000), invalid: NaN } } })).toThrow();
     expect(() => archiveSurfaceSource({ meta: { scene: { pad: 'x'.repeat(10000), opaque: new Date() } } })).toThrow();
     expect(() => archiveSurfaceSource({ meta: { scene: { toJSON() { return {}; }, pad: 'x'.repeat(10000) } } })).toThrow();
+    const optionalMetadata = { meta: { scene: { optional: undefined, longText: 'z'.repeat(10000),
+      ...Object.fromEntries(Array.from({length: 1000}, (_, i) => [`field-${i}`, i])) } } };
+    expect(restoreSurfaceSource(archiveSurfaceSource(optionalMetadata))).toStrictEqual(optionalMetadata);
   });
   it('rejects non-plain binary values rather than silently replacing them with empty records', () => {
     class Hidden { value = 3; }
