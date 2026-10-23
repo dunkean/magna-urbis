@@ -8,6 +8,7 @@ import { decorToSurfaceInput, exportMagnaBuildings } from './magna';
 import { magnaClimateToSurface, MAGNA_CLIMATE_PRESETS } from './climate';
 import type { Surface } from '../../../../rust/bridge/housesContract';
 import { archiveSurfaceSource } from './sourceArchive';
+import { packCandidateColumns } from '../candidateColumns';
 
 export interface SurfacePacketOptions extends CompileOptions { candidateBounds?: Bounds | 'all'; candidateLimit?: number; roads?: readonly SurfaceRoad[]; encoding?: 'json' | 'binary' }
 export interface DecorCompileOptions extends SurfacePacketOptions {
@@ -39,7 +40,8 @@ function packetCandidates(world: SurfaceWorld, options: SurfacePacketOptions) {
   const b = world.bounds, cx = (b.minX + b.maxX) / 2, cz = (b.minZ + b.maxZ) / 2;
   const candidateBounds = options.candidateBounds === 'all' ? b : options.candidateBounds ?? { minX: Math.max(b.minX, cx - 160), maxX: Math.min(b.maxX, cx + 160),
     minZ: Math.max(b.minZ, cz - 160), maxZ: Math.min(b.maxZ, cz + 160) };
-  return { candidateBounds, candidates: generateSurfaceCandidates(world, candidateBounds, { maxCandidates: options.candidateLimit ?? 100000, signal: options.signal }) };
+  const candidates = generateSurfaceCandidates(world, candidateBounds, { maxCandidates: options.candidateLimit ?? 100000, signal: options.signal });
+  return options.encoding === 'binary' ? { candidateBounds, candidateColumns: packCandidateColumns(candidates) } : { candidateBounds, candidates };
 }
 function addWaterValidationWarning(world: SurfaceWorld, validation: ReturnType<typeof decorToSurfaceInput>['sourceWaterValidation']) {
   const removed = validation.sourceWetCells - validation.physicalWetCells;
