@@ -146,7 +146,7 @@ func _ready() -> void:
 	var addon = ClassDB.instantiate("Terrain3D")
 	assert(addon.get("version")=="1.0.2","Expected pinned Terrain3D 1.0.2")
 	addon.free()
-	var symbol_option=options.get("--water-symbol-width-px","0")
+	var symbol_option=options.get("--water-symbol-width-px","1.25" if options.get("--water-mode","source-map")=="source-map" else "0")
 	if not symbol_option is String or not symbol_option.is_valid_float() or not is_finite(float(symbol_option)) or float(symbol_option)<0.0 or float(symbol_option)>1.25:
 		push_error("--water-symbol-width-px requires a finite number from 0 to 1.25")
 		get_tree().quit(2);return

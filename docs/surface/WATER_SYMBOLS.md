@@ -2,8 +2,10 @@
 
 `--water-mode source-map --water-symbol-width-px 1.25` requests a renderer-only
 vector outline of retained water polygons. It is recommended as a regional
-cartographic control for evaluation. The default is 0, preserving the previous
-unexpanded contour rendering and its sampling settings. The fresh-source harness
+cartographic control for evaluation. The mapper source-map profile defaults to
+1.25 pixels; `--water-symbol-width-px 0` preserves the previous unexpanded
+contour rendering and its sampling settings. The raw bake helper still defaults
+to 0. Physical `source-levels` mode never enables symbols. The fresh-source harness
 uses `--viewer-water-symbol-width-px 1.25` (the shorter name is also accepted).
 Nothing automatically changes historical V8 artifacts or their verdicts.
 

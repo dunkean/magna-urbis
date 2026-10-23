@@ -208,3 +208,10 @@ sous-pixel ; aucun trait minimum n'est ajouté. Ses budgets, omissions et confli
 sont déclarés dans les métriques de chaque capture. Le bake GPU d'un snapshot
 immuable précède son application ; les captures attendent sa fin. Forward+ est
 nécessaire pour cette projection sur terrain seul.
+
+
+For readable regional mapper output, source-map water defaults to a declared
+1.25-screen-pixel outline of the retained Float64 vector contours. The metadata
+separates that display recipe from source geometry/levels/areas. Use
+`--water-symbol-width-px 0` for unexpanded contours; source-levels physical mode
+never enables symbols. See [the policy and limits](../docs/surface/WATER_SYMBOLS.md).
