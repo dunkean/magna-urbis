@@ -42,8 +42,12 @@ func load_manifest(path: String) -> void:
 			var normal := _load_image(maps.get("normal",maps.get("NormalGL","")),path)
 			var rough := _load_image(maps.get("roughness",maps.get("Rough","")),path)
 			var height := _load_image(maps.get("height",maps.get("Displacement","")),path)
-			if diffuse == null or normal == null or rough == null or height == null:
+			if diffuse == null or normal == null or rough == null:
 				continue
+			if height==null:
+				height=Image.create(ATLAS_SIZE,ATLAS_SIZE,false,Image.FORMAT_RF)
+				height.fill(Color(0.5,0,0,1))
+				push_warning("PBR height unavailable for "+str(asset.get("id","unknown"))+"; using explicit flat-height fallback")
 			var ah := Image.create(ATLAS_SIZE,ATLAS_SIZE,false,Image.FORMAT_RGBAH)
 			var nr := Image.create(ATLAS_SIZE,ATLAS_SIZE,false,Image.FORMAT_RGBA8)
 			var red := 0.0
@@ -114,10 +118,10 @@ func configure(material: Object, world: Dictionary, origin: Dictionary) -> void:
 		material_scales.append(scale)
 		material_layers.append(layers.get(material_key,0))
 		phases.append(Vector2(fposmod(origin.x/scale,1.0),fposmod(origin.z/scale,1.0)))
-		y_phases.append(fposmod(origin.y/scale,1.0))
+		y_phases.append(fposmod(-origin.y/scale,1.0))
 		lattice_xz.append(_lattice_phase(origin.x/scale,origin.z/scale))
-		lattice_zy.append(_lattice_phase(origin.z/scale,origin.y/scale))
-		lattice_xy.append(_lattice_phase(origin.x/scale,origin.y/scale))
+		lattice_zy.append(_lattice_phase(origin.z/scale,-origin.y/scale))
+		lattice_xy.append(_lattice_phase(origin.x/scale,-origin.y/scale))
 	material.set_shader_param("material_phase_y",y_phases)
 	material.set_shader_param("material_lattice_xz",lattice_xz)
 	material.set_shader_param("material_lattice_zy",lattice_zy)
@@ -131,8 +135,8 @@ func configure(material: Object, world: Dictionary, origin: Dictionary) -> void:
 		var mean_color := layer_means[mini(i,layer_means.size()-1)]
 		means.append(Vector4(mean_color.r,mean_color.g,mean_color.b,mean_color.a))
 	material.set_shader_param("layer_mean",means)
-	for entry in {"palette":colors,"material_scales":material_scales,"material_layers":material_layers,"material_phase":phases,"pbr_albedo_height":albedo_height,"pbr_normal_rough":normal_rough,"world_phase":Vector2(fposmod(origin.x,4096.0),fposmod(origin.z,4096.0))}:
-		material.set_shader_param(entry,{"palette":colors,"material_scales":material_scales,"material_layers":material_layers,"material_phase":phases,"pbr_albedo_height":albedo_height,"pbr_normal_rough":normal_rough,"world_phase":Vector2(fposmod(origin.x,4096.0),fposmod(origin.z,4096.0))}[entry])
+	var parameters := {"palette":colors,"material_scales":material_scales,"material_layers":material_layers,"material_phase":phases,"pbr_albedo_height":albedo_height,"pbr_normal_rough":normal_rough}
+	for entry in parameters: material.set_shader_param(entry,parameters[entry])
 
 func _lattice_phase(u: float, v: float) -> Vector4:
 	return _cell_phase(u-0.577350269*v,1.154700538*v)

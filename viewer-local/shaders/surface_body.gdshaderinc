@@ -17,10 +17,14 @@
         slot_weights[i*2+1]=surface_weights[i]*slots[i].b;
     }
     vec4 state=texture(surface_state,source_uv);
-    vec2 p=v_vertex.xz+world_phase;
-    float footprint=max(length(dFdx(v_vertex.xz)),length(dFdy(v_vertex.xz)));
+    // Derivatives must be evaluated outside data-dependent material/projection branches.
+    vec3 surface_dx=dFdx(v_vertex);
+    vec3 surface_dy=dFdy(v_vertex);
+    float footprint=max(length(surface_dx.xz),length(surface_dy.xz));
     vec4 ah=vec4(0.0); vec4 nr=vec4(0.0); vec4 mean_palette=vec4(0.0);
     float fine=0.0;
+    vec3 source_mean=vec3(0.0);
+    vec3 map_mean=vec3(0.0);
     for(int i=0;i<8;i++) {
         bool first=true;
         for(int j=0;j<i;j++) if(ids[i]==ids[j]) first=false;
@@ -30,8 +34,11 @@
             if(weight<=0.00001) continue;
             float scale=max(material_scales[id],0.25);
             vec4 a; vec4 n;
-            sample_surface_material(v_vertex,w_normal,w_tangent,w_binormal,id,a,n);
+            if(presentation_mode==0) sample_surface_material(v_vertex,surface_dx,surface_dy,w_normal,w_tangent,w_binormal,id,a,n);
+            else { a=vec4(0.0); n=vec4(0.5,0.5,1.0,1.0); }
             ah+=a*weight; nr+=n*weight; mean_palette+=palette[id]*weight;
+            source_mean+=layer_mean[material_layers[id]].rgb*weight;
+            map_mean+=map_palette[id].rgb*weight;
             fine+=(1.0-smoothstep(scale*0.2,scale*1.5,footprint))*weight;
         }
     }
@@ -39,26 +46,37 @@
     // The canonical mean already includes substrate and the full recipe mixture;
     // use it at every scale, including contacts where the compact pair loses a third recipe.
     vec3 base=texture(surface_average,source_uv).rgb;
-    // Fallback atlases carry neutral greys. Authored PBR remains modulated by substrate.
-    vec3 ground=base*mix(vec3(1.0),ah.rgb,0.82);
+    // One shared contrast gain preserves a neutral pebble's chroma. Per-channel
+    // division can turn bright fragments cyan under an authored green mean.
+    vec3 lower_headroom=base/max(source_mean,vec3(0.0001));
+    vec3 upper_headroom=(vec3(1.0)-base)/max(vec3(1.0)-source_mean,vec3(0.0001));
+    float contrast=0.82*clamp(min(min(min(lower_headroom.x,lower_headroom.y),lower_headroom.z),min(min(upper_headroom.x,upper_headroom.y),upper_headroom.z)),0.0,1.0);
+    vec3 ground=base+ah.rgb*contrast;
     ground=mix(ground,base,smoothstep(source_spacing_m*0.5,source_spacing_m*2.0,footprint));
-    ground*=0.91+0.18*macro;
+    float macro_band=1.0-smoothstep(2.0,12.0,footprint);
+    ground+=(macro-0.5)*0.18*macro_band*min(base,vec3(1.0)-base);
     float wet=clamp(state.g,0.0,1.0);
     ground*=1.0-wet*0.28;
-    float canopy=clamp(state.r,0.0,1.0);
-    float crown=surface_noise(v_vertex.xz/9.0+noise_phase_9.xy,noise_phase_9.zw);
-    float canopy_pattern=mix(canopy,smoothstep(1.0-canopy-0.12,1.0-canopy+0.12,crown),1.0-smoothstep(3.0,18.0,footprint));
-    // The same projected-size band thins object geometry; no camera-distance palette switch.
-    float distant=smoothstep(1.0,6.0,footprint);
-    float edge=min(min(v_vertex.x-candidate_bounds.x,candidate_bounds.z-v_vertex.x),min(v_vertex.z-candidate_bounds.y,candidate_bounds.w-v_vertex.z));
-    distant=max(distant,1.0-smoothstep(0.0,24.0,edge));
-    ground=mix(ground,vec3(0.055,0.105,0.036)*(0.8+0.4*crown),canopy_pattern*distant);
+    ground=mix(ground,canopy_linear_albedo,surface_canopy_residual(v_vertex.xz,canopy_pixel_footprint(v_vertex.xz,PROJECTION_MATRIX*VIEW_MATRIX,VIEWPORT_SIZE),state.r));
     ground=mix(ground,vec3(0.79,0.83,0.87),state.b);
     ALBEDO=display_color(clamp(ground,vec3(0.0),vec3(0.95)));
-    ROUGHNESS=clamp(mix(mean_palette.a,nr.a,0.7)-wet*0.28+state.b*0.05,0.12,1.0);
+    float base_roughness=clamp(mix(mean_palette.a,nr.a,0.7)-wet*0.28+state.b*0.05,0.12,1.0);
+    float normal_length=clamp(length(nr.xyz*2.0-1.0),0.05,1.0);
+    float normal_variance=(1.0-normal_length)/normal_length;
+    ROUGHNESS=sqrt(clamp(base_roughness*base_roughness+normal_variance*micro_strength*micro_strength,0.0144,1.0));
     NORMAL_MAP=mix(vec3(0.5,0.5,1.0),nr.xyz,fine*micro_strength*(1.0-state.b));
     NORMAL_MAP_DEPTH=0.75;
-    AO=mix(1.0,0.78+0.22*ah.a,fine);
+    AO=1.0;
+    if(presentation_mode==1) {
+        vec3 light_direction=normalize(vec3(-0.5,1.0,-0.5));
+        float relief=mix(1.0,clamp(dot(w_normal,light_direction)/light_direction.y,0.55,1.15),clamp(map_relief_shade,0.0,1.0));
+        vec3 mapped=mix(map_mean,canopy_linear_albedo,surface_canopy_residual(v_vertex.xz,canopy_pixel_footprint(v_vertex.xz,PROJECTION_MATRIX*VIEW_MATRIX,VIEWPORT_SIZE),state.r));
+        ALBEDO=vec3(0.0);
+        EMISSION=display_color(mapped*relief);
+        NORMAL_MAP=vec3(0.5,0.5,1.0);
+        ROUGHNESS=1.0;
+        SPECULAR=0.0;
+    }
     if(diagnostic==1) ALBEDO=display_color(base);
     if(diagnostic==2) ALBEDO=vec3(state.r,state.a,state.g);
     if(diagnostic==3) { float b=texture(surface_bedrock,source_uv).r; ALBEDO=vec3(fract(b*0.618),fract(b*0.371+0.2),fract(b*0.217+0.4)); }
