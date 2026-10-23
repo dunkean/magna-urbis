@@ -1,0 +1,26 @@
+{
+  "localMinX": -19999.9237060547,
+  "localMaxX": 19921.9512939453,
+  "scope": "readonly actual V5 stdout and per-view source bounds; NOT GPU replay",
+  "metricsPath": "D:/workspace/self/_worktrees/magna-urbis-surface-world-2026-10-23/web/out/surface/native-e2e-40km-v5/native-tour/metrics.json",
+  "heightImageSize": 2048,
+  "localCameraX": -38.986206054698414,
+  "cameraFocus": {
+    "x": 20000.0,
+    "y": 20000.0
+  },
+  "stdoutPath": "D:/workspace/self/_worktrees/magna-urbis-surface-world-2026-10-23/web/out/surface/native-e2e-40km-v5/native-tour/stdout.log",
+  "origin": [
+    20038.9862060547,
+    2170.00805664063,
+    20038.9862060547
+  ],
+  "worldId": "72041dc77961a489f15424bfd505d773",
+  "displaySpacingM": 77.972412109375,
+  "sourceBounds": {
+    "maxX": 39960.9375,
+    "maxZ": 39960.9375,
+    "minX": 39.0625,
+    "minZ": 39.0625
+  }
+}
