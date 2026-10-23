@@ -29,6 +29,7 @@ func run():
 	# The directional cascade still resolves the object, so this exercises shadows.
 	var production=ShaderMaterial.new();production.shader=load("res://shaders/canopy_instance.gdshader")
 	var reference_camera=Camera3D.new();reference_camera.projection=Camera3D.PROJECTION_ORTHOGONAL;reference_camera.size=10000;reference_camera.position=Vector3(0,50,0);scene.add_child(reference_camera);reference_camera.look_at(Vector3.ZERO,Vector3.FORWARD);reference_camera.current=false;camera.current=true
+	production.set_shader_parameter("canopy_geometry_weight",1.0)
 	production.set_shader_parameter("canopy_main_camera_enabled",true)
 	production.set_shader_parameter("canopy_main_camera_vp",reference_camera.get_camera_projection()*Projection(reference_camera.get_camera_transform().affine_inverse()))
 	production.set_shader_parameter("canopy_main_viewport_size",Vector2(1024,512));production.set_shader_parameter("canopy_reference_y",0.0)
