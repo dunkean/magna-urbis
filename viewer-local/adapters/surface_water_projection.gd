@@ -3,8 +3,9 @@ extends RefCounted
 # GPU/main-thread adapter, intentionally separate from physical water surfaces.
 # Bake original vector triangles into a map texture, then project only onto
 # terrain render layer1. No source coordinate, measured level or bank is edited.
-const MAX_RESOLUTION := 2048
+const MAX_RESOLUTION := 4096
 const MAX_VERTICES := 999996
+const Symbols=preload("res://adapters/surface_water_symbols.gd")
 
 static func _sha(bytes: PackedByteArray) -> String:
 	var context:=HashingContext.new();context.start(HashingContext.HASH_SHA256);
@@ -19,7 +20,7 @@ static func cache_key(geometry: Dictionary, focus: Dictionary, width_m: float, c
 	var vertices: PackedVector3Array=geometry.get("vertices",PackedVector3Array())
 	var class_hash: String=_sha(geometry.classImage.get_data()) if geometry.get("classImage") is Image else ""
 	var coverage_hash: String=_sha(geometry.coverageImage.get_data()) if geometry.get("coverageImage") is Image else ""
-	return _sha(var_to_bytes({"format":"magna-source-water-terrain-projection-1","sourceKey":str(options.get("sourceKey","")),"vertices":_sha(vertices.to_byte_array()),"anchor":geometry.get("anchor",{}),"focusX":float(focus.get("x",NAN)),"focusZ":float(focus.get("y",NAN)),"widthM":width_m,"resolution":clampi(int(options.get("resolution",1024)),64,MAX_RESOLUTION),"msaa":int(options.get("msaa",0)),"minHeightM":float(options.get("minHeightM",-10000.0)),"maxHeightM":float(options.get("maxHeightM",10000.0)),"classHash":class_hash,"classOrigin":geometry.get("classOrigin",{}),"classSpacingM":geometry.get("classSpacingM",0.0),"coverageHash":coverage_hash,"coverageOrigin":geometry.get("coverageOrigin",{}),"coverageSpacingM":geometry.get("coverageSpacingM",0.0),"colors":[_color(colors,"river",Vector3(.035,.17,.20)),_color(colors,"lake",Vector3(.028,.10,.115)),_color(colors,"sea",Vector3(.018,.095,.125)),_color(colors,"fallback",Vector3(.028,.10,.115))]}))
+	return _sha(var_to_bytes({"format":"magna-source-water-terrain-projection-1","symbolPlan":Symbols.plan(width_m,options),"sourceKey":str(options.get("sourceKey","")),"vertices":_sha(vertices.to_byte_array()),"anchor":geometry.get("anchor",{}),"focusX":float(focus.get("x",NAN)),"focusZ":float(focus.get("y",NAN)),"widthM":width_m,"resolution":clampi(int(options.get("resolution",1024)),64,MAX_RESOLUTION),"msaa":int(options.get("msaa",0)),"minHeightM":float(options.get("minHeightM",-10000.0)),"maxHeightM":float(options.get("maxHeightM",10000.0)),"classHash":class_hash,"classOrigin":geometry.get("classOrigin",{}),"classSpacingM":geometry.get("classSpacingM",0.0),"coverageHash":coverage_hash,"coverageOrigin":geometry.get("coverageOrigin",{}),"coverageSpacingM":geometry.get("coverageSpacingM",0.0),"colors":[_color(colors,"river",Vector3(.035,.17,.20)),_color(colors,"lake",Vector3(.028,.10,.115)),_color(colors,"sea",Vector3(.018,.095,.125)),_color(colors,"fallback",Vector3(.028,.10,.115))]}))
 
 # parent must be in a live SceneTree. Caller owns cache keyed by cache_key and
 # checks its request generation after awaiting bake. All color inputs are LINEAR
@@ -31,6 +32,10 @@ static func bake(parent: Node, geometry: Dictionary, origin: Dictionary, focus: 
 	if str(options.get("sourceKey","")).is_empty():return {"error":"projection sourceKey is required"}
 	if RenderingServer.get_current_rendering_method()=="gl_compatibility": return {"error":"source-map terrain projection requires Forward+ or Mobile Decal support"}
 	if not is_finite(width_m) or width_m<=0.0: return {"error":"invalid projection width"}
+	var plan=Symbols.plan(width_m,options)
+	if plan.has("error"):return plan
+	var requested_width=width_m
+	width_m=float(plan.widthM)
 	for key in ["x","y"]:
 		if not is_finite(float(focus.get(key,NAN))): return {"error":"invalid canonical projection focus"}
 	for key in ["x","y","z"]:
@@ -45,15 +50,18 @@ static func bake(parent: Node, geometry: Dictionary, origin: Dictionary, focus: 
 	var min_height:=float(options.get("minHeightM",-10000.0));var max_height:=float(options.get("maxHeightM",10000.0))
 	if not is_finite(min_height) or not is_finite(max_height) or min_height>=max_height: return {"error":"invalid terrain projection height bounds"}
 	var bounds={"minX":float(focus.x)-width_m*.5,"maxX":float(focus.x)+width_m*.5,"minZ":float(focus.y)-width_m*.5,"maxZ":float(focus.y)+width_m*.5}
-	var result={"cacheKey":cache_key(geometry,focus,width_m,colors,options),"bounds":bounds,"worldCenter":{"x":float(focus.x),"y":(min_height+max_height)*.5,"z":float(focus.y)},"position":Vector3(float(focus.x)-float(origin.x),(min_height+max_height)*.5-float(origin.y),float(focus.y)-float(origin.z)),"size":Vector3(width_m,max_height-min_height,width_m),"cullMask":1,"texture":null,"diagnostics":{"waterPresentation":"source-map-terrain-projection","sourceAuthority":str(geometry.get("authority","unknown")),"sourceLevelsUnchanged":true,"sourceVertices":vertices.size(),"projectionCullMask":1,"physicalWaterSurfaceClaimed":false,"minimumRiverStrokeApplied":false,"sourceVectorAreaM2":geometry.get("sourceVectorAreaM2",0.0)}}
+	var result={"cacheKey":cache_key(geometry,focus,requested_width,colors,options),"bounds":bounds,"worldCenter":{"x":float(focus.x),"y":(min_height+max_height)*.5,"z":float(focus.y)},"position":Vector3(float(focus.x)-float(origin.x),(min_height+max_height)*.5-float(origin.y),float(focus.y)-float(origin.z)),"size":Vector3(width_m,max_height-min_height,width_m),"cullMask":1,"texture":null,"diagnostics":{"waterPresentation":"source-map-terrain-projection","sourceAuthority":str(geometry.get("authority","unknown")),"sourceGeometrySha256":_sha(vertices.to_byte_array()),"sourceLevelsUnchanged":true,"sourceVertices":vertices.size(),"projectionCullMask":1,"physicalWaterSurfaceClaimed":false,"minimumRiverStrokeApplied":false,"sourceVectorAreaM2":geometry.get("sourceVectorAreaM2",0.0)}}
 	for key in ["sourceVectorRequestedAreaM2","sourceVectorMissingAreaM2","sourceVectorCoverageComplete","missingLevelTriangles","sourceVectorScanWork","vertexBudget","budgetLimited","fixedHydrologyFallbackReason","vectorBedDiagnosticSamples","vectorBedDiagnosticConflicts","vectorBedDiagnosticMissing","vectorBedDiagnosticMaximumDeltaM","vectorBedDiagnosticBudget","vectorBedDiagnosticToleranceM","sourceLevelBoundaryQueriesResolved","sourceLevelMaximumBoundaryQueryRoundoffM","sourceLevelBoundaryPolicy","sourceVectorClipBounds"]:
 		if geometry.has(key):result.diagnostics[key]=geometry[key]
 	result.diagnostics["sourceVectorAreaScope"]="input geometry clip window; projection camera may be narrower"
 	result.diagnostics["subpixelPolicy"]="original contour coverage only; no minimum stroke or physical-width edits"
+	result.diagnostics.merge(Symbols.diagnostics(plan),true)
+	result.diagnostics["resolution"]=int(plan.resolution);result.diagnostics["metresPerTexel"]=width_m/int(plan.resolution)
+	if plan.widthPx>0.0:result.diagnostics["subpixelPolicy"]="declared all-water coverage symbol; original source contours, levels and physical area unchanged"
 	if vertices.is_empty(): result.diagnostics["empty"]=true;return result
-	var resolution:=clampi(int(options.get("resolution",1024)),64,MAX_RESOLUTION)
+	var resolution:=int(plan.resolution)
 	var viewport:=SubViewport.new();viewport.size=Vector2i(resolution,resolution);viewport.own_world_3d=true;viewport.transparent_bg=true;viewport.render_target_update_mode=SubViewport.UPDATE_ALWAYS
-	viewport.msaa_3d={2:Viewport.MSAA_2X,4:Viewport.MSAA_4X,8:Viewport.MSAA_8X}.get(int(options.get("msaa",0)),Viewport.MSAA_DISABLED)
+	viewport.msaa_3d={2:Viewport.MSAA_2X,4:Viewport.MSAA_4X,8:Viewport.MSAA_8X}.get(int(plan.msaa),Viewport.MSAA_DISABLED)
 	parent.add_child(viewport)
 	var environment:=WorldEnvironment.new();var config:=Environment.new();config.background_mode=Environment.BG_COLOR;config.background_color=Color(0,0,0,0);config.tonemap_mode=Environment.TONE_MAPPER_LINEAR;environment.environment=config;viewport.add_child(environment)
 	var camera:=Camera3D.new();camera.projection=Camera3D.PROJECTION_ORTHOGONAL;camera.size=width_m;camera.near=.1;camera.far=maxf(10.0,max_y-min_y+20.0);camera.position=Vector3(0,max_y+10.0,0);viewport.add_child(camera);camera.look_at(Vector3(0,min_y,0),Vector3(0,0,-1));camera.current=true
@@ -78,6 +86,11 @@ static func bake(parent: Node, geometry: Dictionary, origin: Dictionary, focus: 
 	var image:=viewport.get_texture().get_image()
 	viewport.queue_free()
 	if image==null or image.is_empty():return {"error":"source map texture readback unavailable"}
+	result.diagnostics["sourceCoverageImageSha256"]=_sha(image.get_data())
+	if plan.widthPx>0.0:
+		image=await Symbols.apply(parent,image,plan)
+		if image==null or image.is_empty():return {"error":"symbolic source map texture readback unavailable"}
+		result.diagnostics["symbolCoverageImageSha256"]=_sha(image.get_data())
 	image.generate_mipmaps();result.texture=ImageTexture.create_from_image(image)
 	result.diagnostics["resolution"]=resolution;result.diagnostics["metresPerTexel"]=width_m/resolution;result.diagnostics["buildMs"]=(Time.get_ticks_usec()-started)/1000.0
 	return result
