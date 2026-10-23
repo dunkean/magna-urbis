@@ -4,7 +4,7 @@ import {
   type CompileOptions, type SurfaceCompileInput, type SurfaceFields, type SurfaceSample, type SurfaceWorld,
   type Bounds, type CanonicalSurfaceContext, type CanonicalSurfaceContextRef, type ClimateInput, type GeologyInput, type MaterialRecipe, type SurfaceGridGeometry, type TerrainGrid,
 } from './model';
-import { DEFAULT_ROCK_UNITS, SURFACE_MATERIALS, createMaterialIndex, dominantMaterialPair, materialColor, packMaterialMean, unpackMaterialMean, type MaterialComposition } from './materials';
+import { DEFAULT_ROCK_UNITS, SURFACE_MATERIALS, createMaterialIndex, dominantMaterialPair, materialColor, packMaterialMean, unpackMaterialMean, organicSoilFraction, type MaterialComposition } from './materials';
 import { sampleTerrainHeight, type ReconstructedTerrain } from './heightSampling';
 
 import { fingerprint } from './hash';
@@ -427,8 +427,9 @@ export function compileSurfaceWorld(input: SurfaceCompileInput, options: Compile
       : Math.abs(coastDistance)<40 && water===WaterClass.Dry && origin!==DepositOrigin.Coastal ? M['coastal-rock'] : M['fractured-bedrock'];
     const supportSediment:Array<[number,number]>=[[M['alluvial-bars'],alluvial],[M['angular-talus'],gravity],[M['wind-ripple-sand'],wind],[M['coastal-sediment'],origin===DepositOrigin.Coastal?coastal:0]];
     const supportSum=supportSediment.reduce((sum,[,v])=>sum+v,0),supportScale=Math.max(1,supportSum),soilRest=(1-rockCover)*(1-Math.min(1,supportSum));
-    const dryFraction=clamp((.65-aridity)/.4),soilRecipe=moisture>.8&&s<.12?M['wetland-organic']:M['mineral-soil'];
-    let groundWeights:Array<[number,number]>=[[supportRock,rockCover],[soilRecipe,soilRest*(1-dryFraction)],[M['arid-reg'],soilRest*dryFraction],...supportSediment.map(([id,v])=>[id,v/supportScale*(1-rockCover)] as [number,number])];
+    const dryFraction=clamp((.65-aridity)/.4),humus=organicSoilFraction(moisture,s,f.organic[i]);
+    const soilWeight=soilRest*(1-dryFraction);
+    let groundWeights:Array<[number,number]>=[[supportRock,rockCover],[M['mineral-soil'],soilWeight*(1-humus)],[M['organic-soil'],soilWeight*humus],[M['arid-reg'],soilRest*dryFraction],...supportSediment.map(([id,v])=>[id,v/supportScale*(1-rockCover)] as [number,number])];
     if(occupation===Occupation.Road||occupation===Occupation.Yard)groundWeights=[[M['compacted-road'],1]];
     else if(occupation===Occupation.Crop)groundWeights=[[M['cultivated-soil'],1]];
     else if(occupation===Occupation.Built)groundWeights=[[M['built-foundation'],1]];
