@@ -104,14 +104,36 @@ export function worldToSurfaceInput(world: World, source: SourceIdentity, climat
       waterClass: Uint8Array.from(world.terrain.water, c => c === 1 ? 3 : c === 3 ? 1 : c) } };
 }
 
-export function decorToSurfaceInput(decor: Decor): SurfaceCompileInput {
+export interface DecorWaterValidation {
+  policy: 'positive-depth-only-1mm'; sourceWetCells: number; physicalWetCells: number;
+  aboveBedCells: number; zeroOrUnresolvedDepthCells: number; invalidLevelCells: number; ambiguousCaveCells: number;
+  assumption: string;
+}
+export function decorToSurfaceInput(decor: Decor): SurfaceCompileInput & { sourceWaterValidation: DecorWaterValidation } {
   const r = decor.raster, cell = r.width / r.n, display = decor.meta.terrainDisplay;
+  const waterClass = Uint8Array.from(r.water, c => c === 1 ? 3 : c === 3 ? 1 : c), waterLevelM = new Float32Array(r.height.length).fill(NaN);
+  const cavern = new URLSearchParams(decor.meta.query).get('relief') === 'cavern' || decor.meta.tags?.relief === 'cavern';
+  const validation: DecorWaterValidation = { policy: 'positive-depth-only-1mm', sourceWetCells: 0, physicalWetCells: 0,
+    aboveBedCells: 0, zeroOrUnresolvedDepthCells: 0, invalidLevelCells: 0, ambiguousCaveCells: 0,
+    assumption: 'Retained river raster is a conservative safety envelope, not proof of physical inundation. Only finite source levels at least 1 mm above the retained bed define contextual water; other cells are Dry/NaN. Original water classes, levels, river IDs and vector geometry remain unchanged in source. Cave class 2 is ambiguous and not promoted to lake water.' };
+  for (let i = 0; i < waterClass.length; i++) {
+    if (!waterClass[i]) continue;
+    validation.sourceWetCells++;
+    const level = r.waterLevel[i], depth = level - r.height[i];
+    if (cavern && r.water[i] === 2) validation.ambiguousCaveCells++;
+    else if (!Number.isFinite(level)) validation.invalidLevelCells++;
+    else if (depth < -.001) validation.aboveBedCells++;
+    else if (depth < .001) validation.zeroOrUnresolvedDepthCells++;
+    else { validation.physicalWetCells++; waterLevelM[i] = level; continue; }
+    waterClass[i] = 0;
+  }
   return { seed: parseInt(hashString(decor.meta.seed), 16), terrain: { width: r.n, height: r.n,
     originX: cell / 2, originZ: cell / 2, spacingM: cell, heights: r.height.slice(),
     source: { id: decor.meta.id, version: decor.meta.created, sourceLOD: 0, sourceLODKnown: false,
       nativeSpacingM: display?.sourceCell ?? cell,
       provenance: `Retained Magna settlement raster (may be sampled from the displayed B-spline control grid); seed=${decor.meta.seed}; query=${decor.meta.query}; crop=${JSON.stringify(decor.meta.pipeline?.crop ?? null)}; offline capture (source LOD unrecorded)` } },
     climate: climateFromMagnaQuery(decor.meta.query),
-    hydrology: { version: decor.meta.created, provenance: 'Retained decor water raster; source IDs retained in export metadata',
-      boundary: 'truncated', waterClass: Uint8Array.from(r.water, c => c === 1 ? 3 : c === 3 ? 1 : c), waterLevelM: Float32Array.from(r.waterLevel, (level, i) => r.water[i] ? level : NaN) } };
+    sourceWaterValidation: validation,
+    hydrology: { version: decor.meta.created, provenance: `Retained decor water contextualized with ${validation.policy}: ${validation.physicalWetCells}/${validation.sourceWetCells} source envelope cells have resolved positive depth. Source IDs and original masks/levels remain in export metadata. ${validation.assumption}`,
+      boundary: 'truncated', waterClass, waterLevelM } };
 }
