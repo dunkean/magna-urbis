@@ -16,7 +16,7 @@ func options() -> Dictionary:
 	return result
 
 func ready_for_input(require_live: bool) -> bool:
-	if viewer.get("terrain")==null or viewer.get("worker")!=null or viewer.get("packet_worker")!=null or bool(viewer.get("view_dirty")): return false
+	if viewer.get("terrain")==null or viewer.get("worker")!=null or viewer.get("packet_worker")!=null or bool(viewer.get("view_dirty")) or bool(viewer.get("water_projection_busy")): return false
 	if require_live:
 		var world: Dictionary = viewer.get("world")
 		var rendered: Dictionary = viewer.get("rendered_snapshot")
