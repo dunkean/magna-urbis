@@ -105,6 +105,7 @@ var environment_settings: Environment
 var geometry_detail_textures:Dictionary={}
 var rendered_geometry_detail:Dictionary={}
 var city_map_metrics:Dictionary={}
+var scene_top_y:=-INF
 var unsupported_tree_count:=0
 
 func _ready() -> void:
@@ -351,8 +352,11 @@ func _update_camera() -> void:
 	if not oblique:
 		camera.projection = Camera3D.PROJECTION_ORTHOGONAL
 		camera.size = width_m/get_viewport().get_visible_rect().size.aspect()
-		var highest: float = float(world.get("_heightRange",Vector2(0,0)).y)-origin.y
-		camera.position = target+Vector3(0,maxf(maxf(width_m,20.0),highest-target.y+maxf(1.0,width_m*0.02)),0.0001)
+		var highest: float = maxf(float(world.get("_heightRange",Vector2(0,0)).y)-origin.y,scene_top_y)
+		# Keep the highest loaded source roof below both camera AND its near plane.
+		# Orthographic framing stays unchanged when camera elevation increases.
+		var required_distance=(highest-target.y+maxf(1.0,width_m*0.02))/0.99
+		camera.position = target+Vector3(0,maxf(maxf(width_m,20.0),required_distance),0.0001)
 	else:
 		camera.projection = Camera3D.PROJECTION_PERSPECTIVE
 		var distance := width_m/(2.0*tan(deg_to_rad(camera.fov)*0.5)*get_viewport().get_visible_rect().size.aspect())
@@ -373,6 +377,7 @@ func _build_scene_objects(prepared: Dictionary) -> void:
 	var world:Dictionary=prepared.world
 	var packet:Dictionary=prepared.packet
 	var presentation_mode:String=rendered_presentation_mode
+	scene_top_y=-INF
 	canopy_materials.clear()
 	for child in objects.get_children():
 		child.visible=false
@@ -471,6 +476,7 @@ func _build_scene_objects(prepared: Dictionary) -> void:
 		normals.shader=load("res://shaders/normals.gdshader")
 		for child in objects.get_children():
 			if child is GeometryInstance3D: child.material_override=normals
+	_cache_scene_top_y()
 func _mesh_from_arrays(arrays: Array) -> ArrayMesh:
 	var mesh := ArrayMesh.new()
 	if arrays[Mesh.ARRAY_VERTEX].size()>0: mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,arrays)
@@ -1034,3 +1040,12 @@ func _source_actual_at_focus(value:Dictionary,display:Dictionary,position:Dictio
 		if float(part.weight)>0.000001:actual=part.source
 	if fine_weight>0.000001:actual=value.terrain.source
 	return {"sourceActualAtFocus":actual,"focusInsideSource":Data.contains(value.bounds,x,z),"fineContributionWeight":fine_weight,"seamWeight":seam_weight,"contributions":contributions}
+
+# Bound once per coherent object replacement, never once per camera input.
+# Decal projection volumes are not physical structures and are excluded.
+func _cache_scene_top_y()->void:
+	scene_top_y=-INF
+	for child in objects.get_children():
+		if not child.visible or not (child is MeshInstance3D or child is MultiMeshInstance3D):continue
+		var bounds:AABB=child.transform*child.get_aabb()
+		if bounds.position.is_finite() and bounds.size.is_finite():scene_top_y=maxf(scene_top_y,bounds.end.y)
