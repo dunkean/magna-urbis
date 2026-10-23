@@ -1,10 +1,11 @@
+import{surfaceColluvium,naturalGroundWeights}from'./groundSupport';
 import {
   SURFACE_COMPILER_VERSION, SURFACE_PHYSICAL_CONTEXT_VERSION, SURFACE_POPULATION_VERSION, SURFACE_SCHEMA_VERSION, DepositOrigin, Landform, Occupation, WaterClass,
   assertNotAborted, clamp, hashString, terrainBounds,
   type CompileOptions, type SurfaceCompileInput, type SurfaceFields, type SurfaceSample, type SurfaceWorld,
   type Bounds, type CanonicalSurfaceContext, type CanonicalSurfaceContextRef, type ClimateInput, type GeologyInput, type MaterialRecipe, type SurfaceGridGeometry, type TerrainGrid,
 } from './model';
-import { DEFAULT_ROCK_UNITS, SURFACE_MATERIALS, createMaterialIndex, dominantMaterialPair, materialColor, packMaterialMean, unpackMaterialMean, organicSoilFraction, type MaterialComposition } from './materials';
+import { DEFAULT_ROCK_UNITS, SURFACE_MATERIALS, createMaterialIndex, dominantMaterialPair, materialColor, packMaterialMean, unpackMaterialMean, type MaterialComposition } from './materials';
 import { sampleTerrainHeight, type ReconstructedTerrain } from './heightSampling';
 
 import { fingerprint } from './hash';
@@ -293,22 +294,7 @@ export function compileSurfaceWorld(input: SurfaceCompileInput, options: Compile
     'Low-cover opacity is a same-plane support budget: rock exclusion, dead litter, shrub proxy and herbs; canopy crown cover may overlap vertically. Shrubs currently use the authored low-vegetation recipe, not a dedicated foliage PBR asset.');
   if (t.spacingM < t.source.nativeSpacingM) warnings.push('Grid is finer than native source spacing; this is reconstruction, not new source terrain detail.');
   if (t.source.sourceLODKnown === false) warnings.push('Generator source LOD was not recorded by the legacy source; numeric sourceLOD is a compatibility placeholder.');
-  const colluvium = new Float32Array(n), colluvialSource = new Uint16Array(n), colluvialBest = new Float32Array(n);
-  // Route a source-connected gravity potential over the same downhill graph. Deposits have an actual upslope rock source.
-  for (const i of order) {
-    const rock = geology.units[ids.get(f.bedrock[i])!], steep = clamp((f.slope[i] - .38) / .6);
-    const local = steep * rock.hardness * t.spacingM / 20;
-    if (local > colluvialBest[i]) { colluvialBest[i] = local; colluvialSource[i] = rock.id; }
-    colluvium[i] += local;
-    const j = f.downstream[i];
-    if (j >= 0) {
-      const stepM = Math.hypot(j % t.width - i % t.width, Math.floor(j / t.width) - Math.floor(i / t.width)) * t.spacingM;
-      const decayLength = (options.colluvialDecayLengthM ?? 100) * (f.slope[i] < .22 ? .2 : 1);
-      const retained = t.heights[j] >= t.heights[i] ? 0 : Math.exp(-stepM / decayLength);
-      colluvium[j] += colluvium[i] * retained;
-      if (colluvialBest[i] * retained > colluvialBest[j]) { colluvialBest[j] = colluvialBest[i] * retained; colluvialSource[j] = colluvialSource[i]; }
-    }
-  }
+  const {colluvium,colluvialSource}=surfaceColluvium(t,f,new Map(geology.units.map(u=>[u.id,u])),order,options);
   if (input.occupation) f.occupation.set(input.occupation.classes);
   const yearPhase = Math.cos((state.dayOfYear - 200) * Math.PI * 2 / 365.25);
   for (let i = 0; i < n; i++) {
@@ -423,18 +409,7 @@ export function compileSurfaceWorld(input: SurfaceCompileInput, options: Compile
     // Three vertical layers. Build bare support BEFORE litter/live cover; the
     // legacy composite above is deliberately preserved byte-for-byte.
     const rockCover=clamp((f.stoniness[i]-.08)/.75);
-    const supportRock = input.processes?.karst?.[i] && bed.lithology==='limestone' ? M['carbonate-karst']
-      : input.processes?.volcanic?.[i] || input.processes?.geothermal?.[i] ? M['volcanic-crust']
-      : Math.abs(coastDistance)<40 && water===WaterClass.Dry && origin!==DepositOrigin.Coastal ? M['coastal-rock'] : M['fractured-bedrock'];
-    const supportSediment:Array<[number,number]>=[[M['alluvial-bars'],alluvial],[M['angular-talus'],gravity],[M['wind-ripple-sand'],wind],[M['coastal-sediment'],origin===DepositOrigin.Coastal?coastal:0]];
-    const supportSum=supportSediment.reduce((sum,[,v])=>sum+v,0),supportScale=Math.max(1,supportSum),soilRest=(1-rockCover)*(1-Math.min(1,supportSum));
-    const dryFraction=clamp((.65-aridity)/.4),humus=organicSoilFraction(moisture,s,f.organic[i]);
-    const soilWeight=soilRest*(1-dryFraction);
-    let groundWeights:Array<[number,number]>=[[supportRock,rockCover],[M['mineral-soil'],soilWeight*(1-humus)],[M['organic-soil'],soilWeight*humus],[M['arid-reg'],soilRest*dryFraction],...supportSediment.map(([id,v])=>[id,v/supportScale*(1-rockCover)] as [number,number])];
-    // Coarse occupation is an exclusion/support constraint, not evidence of laid
-    // paving. Source roads/courts/buildings carry their own vector materials;
-    // preserve the local mineral/organic substrate beneath all three.
-    if(occupation===Occupation.Crop)groundWeights=[[M['cultivated-soil'],1]];
+    const groundWeights=naturalGroundWeights({stoniness:f.stoniness[i],bed,s,water,origin,coastDistance,alluvial,gravity,wind,coastal,aridity,moisture,organic:f.organic[i],occupation,karst:input.processes?.karst?.[i],volcanic:input.processes?.volcanic?.[i],geothermal:input.processes?.geothermal?.[i]},M);
     const groundComposition=dominantMaterialPair(groundWeights);
     const blocked=water!==WaterClass.Dry||occupation===Occupation.Road||occupation===Occupation.Yard||occupation===Occupation.Built;
     const deadLitter=blocked?0:clamp(f.litter[i]*1.35)*(1-rockCover);

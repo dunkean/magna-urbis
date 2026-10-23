@@ -26,3 +26,19 @@ npx tsc --noEmit
 ```
 
 The diagnostic checks the input packet SHA and aborts if it is not the archived source419 fixture. GPU appearance is not claimed by this CPU proof.
+
+
+## Explicit retained419 derivative
+
+`web/scripts/migrate_surface_natural_ground.ts` creates a distinct1.5.3 packet from the pinned immutable419 source. It shares `groundSupport.ts` with the compiler, reconstructs the same colluvial accumulation from the retained samples and canonical source graph, and derives only the four bare-ground arrays. It never derives soil by subtracting the legacy composite. Five low-cover arrays and every physical/context field remain byte-exact.
+
+The migration requires the exact source packet SHA, matching retained parent, original climate and the recorded absent process masks/default floodplain and colluvial parameters. It refuses a mismatch in any natural ground cell. It is deliberately a pinned evidence tool, not an automatic migration of arbitrary old saves whose generation parameters may be unknown.
+
+The complete1024² context has3,604 Road and1,108 Built cells. Road now has52 distinct ground means and Built30; the1,043,864 natural cells retain exactly the same ground values. The explicit canonical/parent/source references and derived world identity are updated; native urban identity,419 realizations,81 refusals, terrain source identities, legacy composition, populations and archives are unchanged. Binary encode/decode/hydration verifies the resulting packet. See [urban-ground-v9-migration.json](evidence/urban-ground-v9-migration.json).
+
+```powershell
+cd web
+npx tsx scripts/migrate_surface_natural_ground.ts --source <native-current-419-source-footprints.surfacebin> --out <native-current-419-ground-1.5.3.surfacebin> --report <migration-report.json>
+```
+
+Comparable plan400m and aerial oblique600m captures remain a separate GPU qualification step on the final integrated renderer.

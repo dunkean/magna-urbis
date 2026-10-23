@@ -1,0 +1,127 @@
+{
+  "format": "native419-natural-ground-migration",
+  "version": 1,
+  "source": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-adapters-2026-10-23\\web\\out\\surface\\native-city-realization\\native-current-419-source-footprints.surfacebin",
+  "output": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-v9-adapters\\web\\out\\surface\\urban-ground-v9\\native-current-419-ground-1.5.3.surfacebin",
+  "sourceSha256": "3bc88b136930baa83d31b9ca3f41a05a768365a6fa8ad6719a93f204d430da81",
+  "outputSha256": "79fb75b31448278c561076eb92bf3f82c8c55d50b707af5052fc4fb27a8aa141",
+  "bytes": 246789041,
+  "preconditions": {
+    "processes": "absent",
+    "floodplainWidthM": 150,
+    "colluvialDecayLengthM": 100,
+    "climate": "original retained climate",
+    "terrain": "matching original retained parent samples"
+  },
+  "canonicalGroundBefore": {
+    "0": {
+      "count": 1043864,
+      "primaryRecipes": {
+        "mineral-soil": 1002648,
+        "alluvial-bars": 41200,
+        "fractured-bedrock": 16
+      },
+      "distinctGroundMeans": 197
+    },
+    "5": {
+      "count": 3604,
+      "primaryRecipes": {
+        "compacted-road": 3604
+      },
+      "distinctGroundMeans": 1
+    },
+    "6": {
+      "count": 1108,
+      "primaryRecipes": {
+        "built-foundation": 1108
+      },
+      "distinctGroundMeans": 1
+    },
+    "7": {
+      "count": 0,
+      "primaryRecipes": {},
+      "distinctGroundMeans": 0
+    }
+  },
+  "canonicalGroundAfter": {
+    "0": {
+      "count": 1043864,
+      "primaryRecipes": {
+        "mineral-soil": 1002648,
+        "alluvial-bars": 41200,
+        "fractured-bedrock": 16
+      },
+      "distinctGroundMeans": 197
+    },
+    "5": {
+      "count": 3604,
+      "primaryRecipes": {
+        "mineral-soil": 3566,
+        "alluvial-bars": 38
+      },
+      "distinctGroundMeans": 52
+    },
+    "6": {
+      "count": 1108,
+      "primaryRecipes": {
+        "mineral-soil": 1061,
+        "alluvial-bars": 47
+      },
+      "distinctGroundMeans": 30
+    },
+    "7": {
+      "count": 0,
+      "primaryRecipes": {},
+      "distinctGroundMeans": 0
+    }
+  },
+  "changedArrays": [
+    "groundMaterial",
+    "groundMaterialSecondary",
+    "groundMaterialBlend",
+    "groundMaterialMeanColor"
+  ],
+  "changedCanonicalElements": {
+    "groundMaterial": 4712,
+    "groundMaterialSecondary": 4712,
+    "groundMaterialBlend": 4712,
+    "groundMaterialMeanColor": 4712
+  },
+  "occupiedPrimaryMaterialChangedCells": 4712,
+  "checks": {
+    "canonicalPhysicalLegacyLowCoverExact": true,
+    "projectedPhysicalLegacyLowCoverExact": true,
+    "terrainExact": true,
+    "occupationVersionExact": true,
+    "populationVersionExact": true,
+    "environmentVersionExact": true,
+    "naturalGroundExact": true,
+    "parentHeightsIdentityExact": true,
+    "urbanExact": true,
+    "candidateColumnsExact": true,
+    "sourceGeometryExact": true,
+    "sourceRetainedMetadataAndArchivesExact": true,
+    "sourceNativeArchivesExact": true,
+    "binaryRoundtripFieldsExact": true,
+    "binaryRoundtripUrbanExact": true,
+    "binaryRoundtripCandidatesExact": true,
+    "binaryRoundtripSourceArchivesExact": true
+  },
+  "oldWorldId": "4365e0b2fe3417ec91065852c898d0be",
+  "newWorldId": "0de1e8948131f56a677a8e24e8ecbac8",
+  "oldCanonicalContextId": "0dcb7c3a561605540182454213a55a0e",
+  "newCanonicalContextId": "00eb9ae088b9342e0ce55680861edf6c",
+  "oldSceneContextId": "e00858d48a584a3a4e476d345cd17cd8",
+  "newSceneContextId": "8e09c3d1ddcde80fb6b3cc29039a8965",
+  "sourceUrbanId": "963cb15129efcccd7849a1adae4c81fb",
+  "physicalTerrainClaim": "Retained original15.625m parent source; no new terrain generation or support edits",
+  "nativeBuildingCount": 419,
+  "planningRefusalsRetained": 81,
+  "gpuRun": false,
+  "validation": {
+    "surfaceTests": 189,
+    "files": 34,
+    "typecheck": "pass",
+    "gpuRun": false
+  }
+}
