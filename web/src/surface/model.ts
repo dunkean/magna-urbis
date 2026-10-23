@@ -4,6 +4,8 @@ export const SURFACE_COMPILER_VERSION = 'surface-1.0.0';
 export interface Bounds { minX: number; minZ: number; maxX: number; maxZ: number }
 export interface SourceIdentity {
   id: string; version: string; sourceLOD: number; nativeSpacingM: number;
+  /** False for legacy exports whose generator LOD was never recorded. */
+  sourceLODKnown?: boolean;
   provenance?: string;
 }
 /** Row-major samples: index = z * width + x; bounds include the last sample. */
@@ -47,6 +49,8 @@ export interface HydrologyInput {
 }
 export interface ClimateInput {
   version: string; meanAnnualTempC: number; annualPrecipMm: number;
+  /** Optional physical fields on the canonical grid, e.g. adapted regional climate. */
+  temperatureC?: Float32Array; precipitationMm?: Float32Array;
   seasonalAmplitudeC?: number; referenceElevationM?: number;
   lapseRateCPerKm?: number; windRadians?: number;
   /** Already corrected imported climate must set this true to avoid a second lapse correction. */
