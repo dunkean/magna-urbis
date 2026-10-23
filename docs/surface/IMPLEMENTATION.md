@@ -230,8 +230,20 @@ sept captures par paliers ont passé leurs contrôles de provenance CPU, mais un
 défaut d'alignement de l'import Terrain3D découvert ensuite interdit de les
 qualifier comme preuve physique du rendu. Les artefacts V1, V2 et V3 restent des
 campagnes échouées ; leur présence ne constitue pas une acceptation visuelle.
+V4 a produit les sept PNG, puis a échoué avant la navigation sur une comparaison
+exacte entre `0.467289719626168` (JSON Godot) et `0.4672897196261682` (JS).
+La correction autorise seulement l'arrondi décimal à une tolérance relative de
+`1e-12`, avec test de rejet d'une densité réellement différente. Le rapport V4
+reste **failed** et ne prouve pas le mouvement continu. Les vues 40 m et 10 m y
+réutilisent le même vrai paquet final : emprise 100 m, grille 214², espacement
+livré 0,4672897 m et espacement natif déclaré 0,46875 m. Les 4,8828125 mm/px de
+la caméra 10 m ne sont pas une résolution physique de cette source.
 Ajouter `--viewer-navigation-seconds 20` au driver lance ce second
 processus après la tournée, en gardant le même navigateur/session ouverts. Il
+peut aussi être lancé avant la tournée avec `--viewer-navigation-first`, afin de
+diagnostiquer la progression pendant le mouvement plus tôt ; le statut complet
+exige toujours les deux phases demandées sur la même source/session.
+Le probe
 injecte de vrais événements molette et glisser à20Hz, mesure les applications de
 géométrie et de source pendant le mouvement, puis attend le drain final. Un
 résultat qui n'applique aucun détail live pendant les entrées est un échec, même
