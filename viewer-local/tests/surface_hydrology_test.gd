@@ -18,6 +18,7 @@ func run():
 	if result.get("authority","")!="magna-urbis-fixed-hydrology": failures.append("source authority absent")
 	if absf(result.get("sourceVectorAreaM2",0.0)-152.0)>0.00001: failures.append("source widths or island hole area changed")
 	if result.has("coverageImage"): failures.append("coarse envelope would clip native vectors")
+	if not result.has("classImage") or result.classImage.get_pixel(0,0).r!=2.0: failures.append("source lake category lost")
 	for p in result.vertices:
 		if p.y!=5.0: failures.append("source water level changed");break
 	# Archives are data-only and selective: restore the geometry attachment,

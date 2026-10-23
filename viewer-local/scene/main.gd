@@ -342,10 +342,11 @@ func _build_scene_objects(prepared: Dictionary) -> void:
 		for key in data:
 			var value=data[key]
 			if value is String or value is bool or value is int or value is float and is_finite(value): entry.diagnostics[key]=value
-		for key in ["coverageOrigin","coverageSpacingM","coverageSize","bedOrigin","bedSpacingM","bedSize","bedBounds","bedReconstruction"]:
+		for key in ["coverageOrigin","coverageSpacingM","coverageSize","bedOrigin","bedSpacingM","bedSize","bedBounds","bedReconstruction","classOrigin","classSpacingM","classSize"]:
 			if data.has(key): entry[key]=data[key]
 		if data.has("coverageImage"): entry.coverageTexture=ImageTexture.create_from_image(data.coverageImage)
 		if data.has("bedImage"): entry.bedTexture=ImageTexture.create_from_image(data.bedImage)
+		if data.has("classImage"): entry.classTexture=ImageTexture.create_from_image(data.classImage)
 		scene_mesh_cache[request.waterKey]=entry
 	if prepared.has("urbanGeometry"):
 		var data: Dictionary = prepared.urbanGeometry
@@ -361,6 +362,12 @@ func _build_scene_objects(prepared: Dictionary) -> void:
 			water.mesh=entry.mesh
 			water.position=Vector3(entry.anchor.x-origin.x,entry.anchor.y-origin.y,entry.anchor.z-origin.z)
 			var material := Presentation.water_material(packet,presentation_mode)
+			material.set_shader_parameter("class_enabled",entry.has("classTexture"))
+			if entry.has("classTexture"):
+				material.set_shader_parameter("class_map",entry.classTexture)
+				material.set_shader_parameter("class_origin_local",Vector2(float(entry.classOrigin.x)-float(origin.x),float(entry.classOrigin.z)-float(origin.z)))
+				material.set_shader_parameter("class_spacing",entry.classSpacingM)
+				material.set_shader_parameter("class_grid_size",Vector2(entry.classSize))
 			material.set_shader_parameter("wave_phase",Vector2(fposmod(origin.x*0.32,TAU),fposmod(origin.z*0.27,TAU)))
 			material.set_shader_parameter("render_origin_y",float(origin.y))
 			material.set_shader_parameter("coverage_enabled",entry.has("coverageTexture"))

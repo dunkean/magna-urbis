@@ -4,6 +4,14 @@ render_mode blend_mix, depth_draw_opaque, cull_disabled;
 uniform vec3 tint = vec3(0.035, 0.17, 0.20); // Legacy explicit-linear fallback.
 uniform vec3 linear_tint = vec3(-1.0);
 uniform int presentation_mode = 0; // 0 aerial, 1 cartographic flat shared style.
+uniform bool class_enabled = false;
+uniform sampler2D class_map : filter_nearest, repeat_disable;
+uniform vec2 class_origin_local;
+uniform vec2 class_grid_size = vec2(1.0);
+uniform float class_spacing = 1.0;
+uniform vec3 linear_river_tint = vec3(0.035,0.17,0.20);
+uniform vec3 linear_lake_tint = vec3(0.028,0.10,0.115);
+uniform vec3 linear_sea_tint = vec3(0.018,0.095,0.125);
 uniform vec2 wave_phase = vec2(0.0);
 uniform bool coverage_enabled = false;
 uniform sampler2D coverage_map : filter_linear_mipmap, repeat_disable;
@@ -45,7 +53,6 @@ void fragment() {
     vec2 cell=(local_position.xz-coverage_origin_local)/coverage_spacing;
     // Derivatives precede every data-dependent discard and branch.
     vec2 cell_dx=dFdx(cell); vec2 cell_dy=dFdy(cell);
-    float pixel_footprint=max(length(dFdx(local_position.xz)),length(dFdy(local_position.xz)));
     if(coverage_enabled) {
         if(any(lessThan(cell,vec2(-0.5))) || any(greaterThanEqual(cell,coverage_grid_size-0.5))) discard;
         // Near: exact categorical cells. Far: linear area mips, never any-wet.
@@ -59,14 +66,24 @@ void fragment() {
     if(presentation_mode!=1 && bed_clip_enabled && all(greaterThanEqual(local_position.xz,bed_bounds_local.xy)) && all(lessThanEqual(local_position.xz,bed_bounds_local.zw))) {
         if(local_position.y+render_origin_y-resolved_bed(local_position.xz)<0.001) discard;
     }
-    float wave=sin(local_position.x*0.32+wave_phase.x)*sin(local_position.z*0.27+wave_phase.y)*0.018*(1.0-smoothstep(4.9,9.8,pixel_footprint));
     vec3 water_color=linear_tint.x>=0.0?linear_tint:tint;
+    if(class_enabled) {
+        vec2 coordinate=(local_position.xz-class_origin_local)/class_spacing;
+        if(all(greaterThanEqual(coordinate,vec2(-0.5))) && all(lessThan(coordinate,class_grid_size-0.5))) {
+            int kind=int(texelFetch(class_map,ivec2(floor(coordinate+0.5)),0).r+0.5);
+            if(kind==1)water_color=linear_river_tint;
+            else if(kind==2)water_color=linear_lake_tint;
+            else if(kind==3)water_color=linear_sea_tint;
+        }
+    }
     ALPHA=coverage;
     if(presentation_mode==1) {
         ALBEDO=vec3(0.0); EMISSION=display_color(water_color);
         ROUGHNESS=1.0; METALLIC=0.0; SPECULAR=0.0;
     } else {
-        ALBEDO=display_color(max(water_color+vec3(wave),vec3(0.0)));
+        // Fixed-map water has source-controlled colour. Periodic albedo waves
+        // produced a visible checkerboard, unrelated to hydrology or lighting.
+        ALBEDO=display_color(water_color);
         ROUGHNESS=0.16; METALLIC=0.05; SPECULAR=0.65;
     }
     #if CURRENT_RENDERER == RENDERER_COMPATIBILITY
