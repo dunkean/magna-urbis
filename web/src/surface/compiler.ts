@@ -4,7 +4,7 @@ import {
   type CompileOptions, type SurfaceCompileInput, type SurfaceFields, type SurfaceSample, type SurfaceWorld,
   type Bounds, type CanonicalSurfaceContext, type CanonicalSurfaceContextRef, type ClimateInput, type GeologyInput, type SurfaceGridGeometry, type TerrainGrid,
 } from './model';
-import { DEFAULT_ROCK_UNITS, SURFACE_MATERIALS } from './materials';
+import { DEFAULT_ROCK_UNITS, SURFACE_MATERIALS, dominantMaterialPair, materialColor, packMaterialMean, unpackMaterialMean, type MaterialComposition } from './materials';
 
 /** Hash includes content and shape, not merely source labels (edit-safe cache invalidation). */
 function fingerprint(value: unknown): string {
@@ -34,9 +34,9 @@ function validateGrid(t: TerrainGrid): void {
 
 const FLOAT_FIELDS = ['slope', 'aspect', 'curvature', 'contributingAreaM2', 'waterLevelM', 'distanceToWaterM', 'handM', 'twi',
   'depositDepthM', 'sand', 'silt', 'clay', 'organic', 'stoniness', 'soilDepthM', 'moisture', 'temperatureC', 'precipitationMm',
-  'treeCover', 'grassCover', 'shrubCover', 'litter', 'orientation', 'snow', 'wetness'] as const;
+  'treeCover', 'grassCover', 'shrubCover', 'litter', 'orientation', 'snow', 'wetness', 'materialBlend'] as const;
 const BYTE_FIELDS = ['landform', 'waterClass', 'closedBasin', 'depositOrigin', 'occupation'] as const;
-const SHORT_FIELDS = ['bedrock', 'sourceRock', 'material'] as const;
+const SHORT_FIELDS = ['bedrock', 'sourceRock', 'material', 'materialSecondary'] as const;
 const INT_FIELDS = ['downstream', 'basin'] as const;
 function createFields(n: number, radii: number, units: number): SurfaceFields {
   const f = {} as SurfaceFields;
@@ -44,6 +44,7 @@ function createFields(n: number, radii: number, units: number): SurfaceFields {
   for (const key of BYTE_FIELDS) f[key] = new Uint8Array(n);
   for (const key of SHORT_FIELDS) f[key] = new Uint16Array(n);
   for (const key of INT_FIELDS) f[key] = new Int32Array(n);
+  f.materialMeanColor = new Uint32Array(n);
   f.topographicPosition = Array.from({ length: radii }, () => new Float32Array(n));
   f.provenance = Array.from({ length: units }, () => new Float32Array(n));
   f.waterLevelM.fill(NaN); f.handM.fill(-1); f.distanceToWaterM.fill(Infinity); f.downstream.fill(-1);
@@ -332,14 +333,30 @@ export function compileSurfaceWorld(input: SurfaceCompileInput, options: Compile
     if (input.processes?.karst?.[i] && bed.lithology === 'limestone') material = 5;
     if (input.processes?.volcanic?.[i] || input.processes?.geothermal?.[i]) material = 6;
     if (Math.abs(coastDistance) < 40 && water === WaterClass.Dry) material = origin === DepositOrigin.Coastal ? 10 : 11;
-    if (input.processes?.periglacial?.[i] && seasonalTemp < 2) material = 14;
     if (occupation === Occupation.Road || occupation === Occupation.Yard) material = 15;
     if (occupation === Occupation.Crop) material = 16;
     if (occupation === Occupation.Built) material = 17;
-    if (f.snow[i] > .3) material = 14;
     if (water === WaterClass.River || water === WaterClass.Lake) material = 8;
     if (water === WaterClass.Ocean) material = 12;
-    f.material[i] = material;
+    let composition: MaterialComposition;
+    if (water || occupation === Occupation.Road || occupation === Occupation.Yard || occupation === Occupation.Crop || occupation === Occupation.Built) {
+      composition = { primary: material, secondary: material, blend: 0 };
+    } else {
+      // Coverage budget on the ground support. Canopy is separate; litter and grass compete for exposed soil.
+      const rockCover = clamp((f.stoniness[i] - .08) / .75);
+      const litterCover = clamp(f.litter[i] * 1.35) * (1 - rockCover);
+      const grassCover = clamp(f.grassCover[i]) * Math.max(0, 1 - rockCover - litterCover);
+      const remaining = Math.max(0, 1 - rockCover - litterCover - grassCover);
+      const rockMaterial = material === 5 || material === 6 || material === 11 ? material : 1;
+      const sedimentWeights: Array<[number, number]> = [[7, alluvial], [4, gravity], [2, wind], [10, origin === DepositOrigin.Coastal ? coastal : 0]];
+      const processSum = sedimentWeights.reduce((sum, [, weight]) => sum + weight, 0), processScale = Math.max(1, processSum);
+      const dryFraction = clamp((.65 - aridity) / .4), residual = remaining * (1 - Math.min(1, processSum));
+      composition = dominantMaterialPair([[rockMaterial, rockCover], [18, litterCover], [13, grassCover],
+        [0, residual * (1 - dryFraction)], [3, residual * dryFraction], ...sedimentWeights.map(([id, weight]) => [id, weight / processScale * remaining] as [number, number])]);
+    }
+    f.material[i] = composition.primary; f.materialSecondary[i] = composition.secondary; f.materialBlend[i] = composition.blend;
+    const primaryColor = materialColor(SURFACE_MATERIALS[composition.primary], source), secondaryColor = materialColor(SURFACE_MATERIALS[composition.secondary], source);
+    f.materialMeanColor[i] = packMaterialMean(primaryColor.map((v, channel) => v * (1 - composition.blend) + secondaryColor[channel] * composition.blend));
   }
   const terrainVersion = fingerprint(t), hydrologyVersion = fingerprint(input.hydrology ?? 'derived-d8-1');
   const geologyVersion = fingerprint(geology), occupationVersion = fingerprint(input.occupation ?? 'natural');
@@ -364,6 +381,7 @@ export function sampleSurface(world: SurfaceWorld, x: number, z: number): Surfac
   const context = getCanonicalSurfaceContext(world), f = context.fields;
   const sampler = gridSampler(context.grid, x, z), i = sampler.nearest;
   const bilinear = sampler.continuous;
+  const composition = sampleMaterialComposition(f, sampler.indices, sampler.weights);
   const rock = world.geology.units.find(r => r.id === f.bedrock[i])!;
   return { x, z, heightM: gridSampler(world.terrain, x, z).continuous(world.terrain.heights), slope: bilinear(f.slope), aspect: f.aspect[i], curvature: bilinear(f.curvature),
     landform: f.landform[i], bedrock: rock, sourceRock: world.geology.units.find(r => r.id === f.sourceRock[i])!, depositOrigin: f.depositOrigin[i],
@@ -372,7 +390,8 @@ export function sampleSurface(world: SurfaceWorld, x: number, z: number): Surfac
     handM: bilinear(f.handM), distanceToWaterM: bilinear(f.distanceToWaterM), waterClass: f.waterClass[i], waterLevelM: f.waterLevelM[i],
     temperatureC: bilinear(f.temperatureC), precipitationMm: bilinear(f.precipitationMm), treeCover: bilinear(f.treeCover), grassCover: bilinear(f.grassCover),
     shrubCover: bilinear(f.shrubCover), litter: bilinear(f.litter), occupation: f.occupation[i], orientation: f.orientation[i], snow: bilinear(f.snow),
-    wetness: bilinear(f.wetness), material: world.materials[f.material[i]],
+    wetness: bilinear(f.wetness), material: world.materials[composition.primary], materialSecondary: world.materials[composition.secondary], materialBlend: composition.blend,
+    materialMeanColorLinear: composition.mean,
     provenance: world.geology.units.map((r, u) => ({ unitId: r.id, fraction: f.provenance[u][i] })) };
 }
 
@@ -391,16 +410,27 @@ export function deserializeSurfaceWorld(json: string, options: { resolveCanonica
   validateGeology(w.geology);
   if (w.climate.temperatureC) w.climate.temperatureC = new Float32Array(w.climate.temperatureC);
   if (w.climate.precipitationMm) w.climate.precipitationMm = new Float32Array(w.climate.precipitationMm);
-  restoreFields(w.fields, w.terrain.heights.length);
+  restoreFields(w.fields, w.terrain.heights.length, w);
   if (w.canonicalContext) {
     validateGridGeometry(w.canonicalContext.grid);
-    restoreFields(w.canonicalContext.fields, w.canonicalContext.grid.width * w.canonicalContext.grid.height);
+    restoreFields(w.canonicalContext.fields, w.canonicalContext.grid.width * w.canonicalContext.grid.height, w);
   } else if (w.canonicalContextRef && options.resolveCanonicalContext) w.canonicalContext = options.resolveCanonicalContext(w.canonicalContextRef);
   if (w.canonicalContext) validateContextReference(w.canonicalContext, w.canonicalContextRef, w.versions);
   return w;
 }
 
-function restoreFields(fields: SurfaceFields, n: number): void {
+function restoreFields(fields: SurfaceFields, n: number, world: SurfaceWorld): void {
+  // Additive schema1 extension: old packets explicitly remain single-material compositions.
+  const legacy = fields.materialSecondary === undefined && fields.materialBlend === undefined && fields.materialMeanColor === undefined;
+  if (legacy) {
+    fields.materialSecondary = Array.from(fields.material) as unknown as Uint16Array;
+    fields.materialBlend = new Array(n).fill(0) as unknown as Float32Array;
+    fields.materialMeanColor = Array.from(fields.material, (id, i) => {
+      const recipe = world.materials[id], rock = world.geology.units.find(r => r.id === fields.sourceRock[i]);
+      if (!recipe || !rock) throw new Error('Invalid legacy material/source id');
+      return packMaterialMean(materialColor(recipe, rock));
+    }) as unknown as Uint32Array;
+  }
   for (const key of FLOAT_FIELDS) {
     const source = fields[key] as unknown as Array<number | null>;
     if (!Array.isArray(source) || source.length !== n) throw new Error('Malformed SurfaceWorld field ' + key);
@@ -409,10 +439,15 @@ function restoreFields(fields: SurfaceFields, n: number): void {
   for (const key of BYTE_FIELDS) fields[key] = new Uint8Array(fields[key]);
   for (const key of SHORT_FIELDS) fields[key] = new Uint16Array(fields[key]);
   for (const key of INT_FIELDS) fields[key] = new Int32Array(fields[key]);
+  if (!Array.isArray(fields.materialMeanColor) || fields.materialMeanColor.length !== n) throw new Error('Malformed SurfaceWorld field materialMeanColor');
+  fields.materialMeanColor = new Uint32Array(fields.materialMeanColor);
   fields.topographicPosition = fields.topographicPosition.map(a => new Float32Array(a));
   fields.provenance = fields.provenance.map(a => new Float32Array(a));
   for (const [key, a] of Object.entries(fields)) {
     if (Array.isArray(a) ? a.some(v => v.length !== n) : a.length !== n) throw new Error('Malformed SurfaceWorld field ' + key);
+  }
+  for (let i = 0; i < n; i++) {
+    if (fields.material[i] >= world.materials.length || fields.materialSecondary[i] >= world.materials.length || !Number.isFinite(fields.materialBlend[i]) || fields.materialBlend[i] < 0 || fields.materialBlend[i] > 1) throw new Error('Invalid material composition');
   }
 }
 
@@ -421,15 +456,26 @@ function validateGridGeometry(grid: SurfaceGridGeometry): void {
     || !Number.isFinite(grid.originX) || !Number.isFinite(grid.originZ) || !Number.isFinite(grid.spacingM) || grid.spacingM <= 0) throw new Error('Invalid canonical context grid');
 }
 
-function gridSampler(t: SurfaceGridGeometry, x: number, z: number): { nearest: number; continuous: (a: Float32Array) => number } {
+function gridSampler(t: SurfaceGridGeometry, x: number, z: number): { nearest: number; indices: number[]; weights: number[]; continuous: (a: Float32Array) => number } {
   const gx = clamp((x - t.originX) / t.spacingM, 0, t.width - 1), gz = clamp((z - t.originZ) / t.spacingM, 0, t.height - 1);
   const x0 = Math.min(t.width - 2, Math.floor(gx)), z0 = Math.min(t.height - 2, Math.floor(gz));
   const fx = gx - x0, fz = gz - z0, nearest = Math.round(gz) * t.width + Math.round(gx), p = z0 * t.width + x0;
-  return { nearest, continuous: a => {
+  return { nearest, indices: [p, p + 1, p + t.width, p + t.width + 1], weights: [(1 - fx) * (1 - fz), fx * (1 - fz), (1 - fx) * fz, fx * fz], continuous: a => {
     const values = [a[p], a[p + 1], a[p + t.width], a[p + t.width + 1]];
     if (!values.every(Number.isFinite)) return a[nearest];
     return (values[0] * (1 - fx) + values[1] * fx) * (1 - fz) + (values[2] * (1 - fx) + values[3] * fx) * fz;
   } };
+}
+
+function sampleMaterialComposition(fields: SurfaceFields, indices: number[], weights: number[]): MaterialComposition & { mean: [number, number, number] } {
+  const entries: Array<[number, number]> = [], mean: [number, number, number] = [0, 0, 0];
+  for (let corner = 0; corner < 4; corner++) {
+    const i = indices[corner], weight = weights[corner], blend = fields.materialBlend[i];
+    entries.push([fields.material[i], weight * (1 - blend)], [fields.materialSecondary[i], weight * blend]);
+    const color = unpackMaterialMean(fields.materialMeanColor[i]);
+    for (let channel = 0; channel < 3; channel++) mean[channel] += color[channel] * weight;
+  }
+  return { ...dominantMaterialPair(entries), mean };
 }
 
 function contextReference(context: CanonicalSurfaceContext): CanonicalSurfaceContextRef {
@@ -492,6 +538,9 @@ export function retargetSurfaceWorld(baseWorld: SurfaceWorld, fineTerrain: Terra
     for (const key of FLOAT_FIELDS) fields[key][i] = key === 'waterLevelM' || key === 'aspect' || key === 'orientation' || key === 'handM' ? sourceFields[key][j] : sample.continuous(sourceFields[key]);
     for (const key of BYTE_FIELDS) fields[key][i] = sourceFields[key][j];
     for (const key of SHORT_FIELDS) fields[key][i] = sourceFields[key][j];
+    const composition = sampleMaterialComposition(sourceFields, sample.indices, sample.weights);
+    fields.material[i] = composition.primary; fields.materialSecondary[i] = composition.secondary; fields.materialBlend[i] = composition.blend;
+    fields.materialMeanColor[i] = packMaterialMean(composition.mean);
     fields.basin[i] = sourceFields.basin[j];
     // Project graph addresses only when their canonical target is inside this patch. The authoritative graph stays in canonicalContext.
     const downstream = sourceFields.downstream[j];
