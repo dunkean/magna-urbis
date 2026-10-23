@@ -457,11 +457,11 @@ func _build_scene_objects(prepared: Dictionary) -> void:
 		for batch in urban_entry.batches:
 			for id in batch.get("buildingIds",[]):native_ids[str(id)]=true
 		var ids=native_ids.keys();ids.sort()
-		rendered_urban_metrics.merge({"nativeBuildings":urban_entry.nativeBuildings,"proxyBuildings":urban_entry.proxyBuildings,"materialBatches":urban_entry.batches.size(),"buildingIds":ids,"budgetLimited":urban_entry.budgetLimited})
+		rendered_urban_metrics.merge({"nativeBuildings":urban_entry.nativeBuildings,"proxyBuildings":urban_entry.proxyBuildings,"materialBatches":urban_entry.batches.size(),"buildingIds":ids,"budgetLimited":urban_entry.budgetLimited},true)
 	if scene_mesh_cache.has(request.waterKey):
 		var entry: Dictionary = scene_mesh_cache[request.waterKey]
 		water_metrics=entry.get("diagnostics",{}).duplicate()
-		water_metrics.merge({"worldId":rendered_world_id,"waterPresentation":"source-levels","sourceLevelsUnchanged":true,"physicalWaterSurfaceClaimed":true})
+		water_metrics.merge({"worldId":rendered_world_id,"waterPresentation":"source-levels","sourceLevelsUnchanged":true,"physicalWaterSurfaceClaimed":true},true)
 		if prepared.has("waterProjection"):
 			var projection:Dictionary=prepared.waterProjection
 			water_metrics.merge(projection.get("diagnostics",{}),true)
