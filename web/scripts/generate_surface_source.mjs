@@ -15,7 +15,7 @@ import { decodeSurfaceBinary, encodeSurfaceBinary } from '../src/surface/binary.
 import { compileSurfaceWorld } from '../src/surface/compiler.ts';
 import { hashString } from '../src/surface/model.ts';
 import { registrationFieldFingerprint } from '../src/surface/registrationBinding.ts';
-import { isDominantFineDisplay,verifyMotionLiveDisplay } from './surface_navigation_evidence.ts';
+import { isFinalQualityDisplay,verifyFinalDisplay,verifyMotionLiveDisplay,verifyTourQuality } from './surface_navigation_evidence.ts';
 
 const args = process.argv.slice(2);
 const option = (name, fallback) => {
@@ -148,18 +148,21 @@ async function runNativeTour(sessionId) {
   const captures=events.filter(e=>e.event==='capture'),near=captures.find(e=>e.widthM===10);
   if(captures.length!==7||captures.some((e,i)=>e.widthM!==widths[i]||e.error!==0))throw new Error('Native tour did not record seven successful new captures in the required scale order');
   const nativeAccepted=report.viewer.metrics.liveAcceptance??[],nativeRendered=report.viewer.metrics.renderEvents??[];
+  report.viewer.cameraSatisfaction=verifyTourQuality(captures);
   for(const capture of captures){
     const display=capture.renderedSnapshot;
-    if(!isDominantFineDisplay(display)||!nativeAccepted.some(e=>e.worldId===display.worldId&&e.requestSerial===display.liveSerial&&e.sourceEpoch===display.sourceEpoch&&e.sceneEpoch===display.sceneEpoch)
-      ||!nativeRendered.some(e=>isDominantFineDisplay(e)&&e.worldId===display.worldId&&e.liveSerial===display.liveSerial&&e.appliedTickMs===display.appliedTickMs)
+    const sourcePacket=packets.find(e=>e.packet?.worldId===display?.worldId)?.packet;
+    if(!isFinalQualityDisplay(display)||!nativeAccepted.some(e=>e.request?.preview===false&&e.request?.resolution===512&&e.worldId===display.worldId&&e.requestSerial===display.liveSerial&&e.sourceEpoch===display.sourceEpoch&&e.sceneEpoch===display.sceneEpoch)
+      ||!nativeRendered.some(e=>isFinalQualityDisplay(e)&&e.worldId===display.worldId&&e.liveSerial===display.liveSerial&&e.appliedTickMs===display.appliedTickMs)
       ||!packets.some(e=>e.packet?.worldId===display.worldId))throw new Error(`Native ${capture.widthM}m capture was not linked to a displayed live source packet`);
+    if(capture.viewSatisfaction.deliveredSpacingM!==sourcePacket.terrain.spacingM)throw new Error(`Native ${capture.widthM}m cache density differed from the actual source grid`);
   }
   const loadedBinding=report.viewer.metrics.loadedLiveBinding;
   if(loadedBinding?.fingerprint!==report.source.canonicalFieldFingerprint||loadedBinding.n!==report.source.grid.width
     ||loadedBinding.widthM!==width||loadedBinding.error)throw new Error('Native loaded-world binding did not match the exported height content');
   report.viewer.nearMetresPerPixel=near?.metresPerPixel??10/Number(report.viewer.metrics.resolution?.[0]);
   if(nativeErrors.length)throw new Error('Native renderer or live transport reported errors; see native-tour/stderr.log and report.viewer.errors');
-  if(requests.length<7||packets.length<7||report.viewer.endToEnd.acceptedBinaryReplies<7||!tiles.some(e=>e.meta?.decoderUsed===true))throw new Error('Native tour did not prove all seven levels through broker, browser worker and decoder-backed Python source');
+  if(!requests.length||!packets.length||!report.viewer.endToEnd.acceptedBinaryReplies||!tiles.some(e=>e.meta?.decoderUsed===true))throw new Error('Native tour did not prove the live broker, browser worker and decoder-backed Python source');
   if(packets.some(e=>e.packet?.source.registrationBinding?.expectedSourceId!==e.packet?.terrain.source.id)||new Set(packets.map(e=>e.sourceEpoch)).size!==1
     ||new Set(packets.map(e=>e.environmentVersion)).size!==1||packets.some(e=>e.canonicalBuildCount!==1))throw new Error('Native live tour changed source lineage or recompiled camera-dependent canonical context');
   if(packets.some(e=>e.packet?.source.registrationBinding?.canonicalFieldFingerprint!==report.source.canonicalFieldFingerprint))throw new Error('Native source registration differs from the exact loaded export heightfield');
@@ -194,11 +197,14 @@ async function runNativeNavigation(sessionId) {
   phase.elapsedMs=Date.now()-began-phase.startedElapsedMs;
   if(existsSync(paths.report))phase.result=JSON.parse(await readFile(paths.report,'utf8'));
   if(existsSync(paths.metrics))phase.metrics=JSON.parse(await readFile(paths.metrics,'utf8'));
-  try{phase.displayEvidence=verifyMotionLiveDisplay(phase.result,phase.metrics);}catch(error){phase.displayEvidenceFailure=String(error);}
+  if(phase.result?.continuousSeconds!==navigationSeconds||phase.result.motionEndTickMs-phase.result.motionStartTickMs!==Math.round(navigationSeconds*1000))throw new Error('Navigation proof changed its requested nominal motion duration');
+  try{phase.displayEvidence=verifyMotionLiveDisplay(phase.result,phase.metrics);phase.finalDisplayEvidence=verifyFinalDisplay(phase.result,phase.metrics);}catch(error){phase.displayEvidenceFailure=String(error);}
   if(phase.metrics.loadedLiveBinding?.fingerprint!==report.source.canonicalFieldFingerprint||phase.metrics.loadedLiveBinding?.error)throw new Error('Native navigation loaded a different source heightfield');
   const relevant=browserEvents.filter(e=>e.elapsedMs>=phase.startedElapsedMs),packets=relevant.filter(e=>e.kind==='worker-compiled');
   phase.workerPackets=packets.length;phase.environmentVersions=[...new Set(packets.map(e=>e.environmentVersion))];
   phase.canonicalBuildCounts=[...new Set(packets.map(e=>e.canonicalBuildCount))];
+  phase.requestQuality=packets.map(e=>({worldId:e.packet?.worldId,preview:e.packet?.source.request?.preview,requestedResolution:e.packet?.source.request?.resolution,
+    deliveredGrid:e.packet?.terrain&&{width:e.packet.terrain.width,height:e.packet.terrain.height,spacingM:e.packet.terrain.spacingM},nativeSpacingM:e.packet?.terrain.source.nativeSpacingM}));
   phase.pythonTiles=network.filter(e=>e.elapsedMs>=phase.startedElapsedMs&&e.url?.includes('/refinement/tile')).length;
   const logs=await Promise.all([readFile(paths.stdout,'utf8'),readFile(paths.stderr,'utf8')]);
   const unavailable=logs.join('\n').split(/\r?\n/).filter(line=>line.includes('Live terrain unavailable'));

@@ -224,14 +224,36 @@ au plus5 mm/px. Les deltas bruts fin/parent sont enregistrés avant le feather d
 viewer : ce ne sont pas une mesure directe d'une couture affichée.
 
 La navigation continue dispose du benchmark externe
-`viewer-local/diagnostics/navigation_probe.gd`, prêt mais non exécuté en E2E à
-cette date. Ajouter `--viewer-navigation-seconds 20` au driver lance ce second
+`viewer-local/diagnostics/navigation_probe.gd`. La tentative V3 a échoué : aucun
+nouveau monde live n'a été affiché pendant les 20 secondes de mouvement. Les
+sept captures par paliers ont passé leurs contrôles de provenance CPU, mais un
+défaut d'alignement de l'import Terrain3D découvert ensuite interdit de les
+qualifier comme preuve physique du rendu. Les artefacts V1, V2 et V3 restent des
+campagnes échouées ; leur présence ne constitue pas une acceptation visuelle.
+Ajouter `--viewer-navigation-seconds 20` au driver lance ce second
 processus après la tournée, en gardant le même navigateur/session ouverts. Il
 injecte de vrais événements molette et glisser à20Hz, mesure les applications de
 géométrie et de source pendant le mouvement, puis attend le drain final. Un
 résultat qui n'applique aucun détail live pendant les entrées est un échec, même
 si le parent reste affiché. Le rapport sépare les annulations attendues des erreurs.
-Une tournée par paliers n'en tient pas lieu. Restent à mesurer : applications pendant
+Une tournée par paliers n'en tient pas lieu. La prochaine campagne doit afficher
+pendant ces mêmes 20 secondes au moins un monde distinct du warmup, issu d'une
+requête interactive explicite `preview:true,resolution:128`, accepté puis réellement
+appliqué pendant le mouvement. Après arrêt, le drain et les sept captures exigent
+la qualité finale demandée `preview:false,resolution:512`. Ces nombres décrivent
+la requête : la grille effectivement fournie et `nativeSpacingM` restent les
+mesures de la source, y compris lorsque sa limite physique borne la résolution.
+Le mode interactif change le coût de préparation, sans recréer le relief, les
+classes canoniques, le scénario géologique ni l'inventaire des candidats.
+
+Une source finale déjà présente peut satisfaire une vue plus petite si son
+emprise et sa densité la couvrent. Ce cache doit être prouvé par les champs de
+satisfaction de la vue ; il ne compte jamais comme nouvelle acceptation ni
+comme nouveau monde affiché. Le serial réel du paquet peut donc rester identique
+entre deux captures. La satisfaction des caméras successives doit progresser et
+les captures restent reliées au paquet final réellement rendu. Cette politique
+est en cours d'intégration et n'est pas encore validée par une nouvelle campagne.
+Restent à mesurer : applications pendant
 les entrées continues, âge des résultats, files d'attente/annulations, retour sur
 site après éviction, p95/p99 et pics d'upload/RAM/VRAM, avec routes/eau/ville/couvert
 et les styles cartographiques choisis.
