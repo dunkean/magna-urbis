@@ -749,6 +749,49 @@ fn generate_modern(
         footprint.links.as_slice(),
     ]
     .concat();
+    // A port reaches its waterline: the harbour apron joins the land the
+    // growth grid left between town and water.
+    if macroplan::harbour::port_town(cfg) {
+        for domain in &mut footprint.structure.allocated {
+            let wide = macroplan::harbour::apron(domain, surface, cfg, 50.0);
+            // The apron belongs to the epoch it adjoins (walls, zones and
+            // densities read the epoch shapes).
+            for piece in g::difference(&wide, domain) {
+                let c = g::interior_point(&piece);
+                let near = |s: &Shape| {
+                    s.outer
+                        .iter()
+                        .map(|p| (p.x - c.x).hypot(p.y - c.y))
+                        .fold(f64::INFINITY, f64::min)
+                };
+                if let Some(epoch) = (0..footprint.phases.len())
+                    .filter(|&e| !footprint.phases[e].is_empty())
+                    .min_by(|&a, &b| {
+                        let d = |e: usize| {
+                            footprint.phases[e]
+                                .iter()
+                                .map(near)
+                                .fold(f64::INFINITY, f64::min)
+                        };
+                        d(a).total_cmp(&d(b))
+                    })
+                {
+                    let mut shapes = std::mem::take(&mut footprint.phases[epoch]);
+                    shapes.push(piece);
+                    // Pockets closed between the apron and the stair-stepped
+                    // epoch edge are part of the epoch.
+                    footprint.phases[epoch] = g::union(&shapes)
+                        .into_iter()
+                        .map(|mut s| {
+                            s.holes.retain(|h| g::signed(h).abs() >= 2500.0);
+                            s
+                        })
+                        .collect();
+                }
+            }
+            *domain = wide;
+        }
+    }
     let domains = footprint.structure.allocated.clone();
     let total_area = domains.iter().map(g::area).sum::<f64>().max(1.0);
     let bounds = footprint

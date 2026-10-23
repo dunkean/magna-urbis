@@ -1239,16 +1239,29 @@ struct ShoreField {
     sources: Vec<usize>,
 }
 impl ShoreField {
-    fn new(grid: &Grid, surface: Surface<'_>) -> Self {
+    /// Distance to water. A port (`navigable`) reads only the sea or a lake
+    /// when the grid holds some: a brook does not draw its harbour.
+    fn new(grid: &Grid, surface: Surface<'_>, navigable: bool) -> Self {
         let n = grid.nx * grid.ny;
         let mut result = Self {
             distances: vec![f64::INFINITY; n],
             sources: vec![usize::MAX; n],
         };
         let mut heap = std::collections::BinaryHeap::new();
+        let code = |p: Point| {
+            let x = ((p.x / surface.width * surface.n as f64) as usize).min(surface.n - 1);
+            let y = ((p.y / surface.width * surface.n as f64) as usize).min(surface.n - 1);
+            surface.water[y * surface.n + x]
+        };
+        let inside = |p: Point| p.x < surface.width && p.y < surface.width;
+        let open = navigable
+            && (0..n).any(|i| {
+                let p = grid.point(i);
+                inside(p) && matches!(code(p), 1 | 2)
+            });
         for i in 0..n {
             let p = grid.point(i);
-            if p.x < surface.width && p.y < surface.width && surface.wet(p) {
+            if inside(p) && surface.wet(p) && (!open || matches!(code(p), 1 | 2)) {
                 result.distances[i] = 0.0;
                 result.sources[i] = i;
                 heap.push(Arrival { cost: 0.0, cell: i });
@@ -1434,7 +1447,7 @@ fn accessible(
     };
     let n = grid.nx * grid.ny;
     let field = RoadField::new(roads, &grid, radius * 0.35);
-    let shore = ShoreField::new(&grid, surface);
+    let shore = ShoreField::new(&grid, surface, macroplan::harbour::port_town(cfg));
     let noise = crate::noise::Noise::new(rng.fork("growth-cost"));
     let mut dry_mask = vec![false; n];
     let mut heights = vec![0.0; n];
@@ -1877,7 +1890,7 @@ fn ribbon(
             .floor() as usize
             + 1,
     };
-    let shore = ShoreField::new(&grid, surface);
+    let shore = ShoreField::new(&grid, surface, macroplan::harbour::port_town(cfg));
     let paths: Vec<_> = roads
         .iter()
         .flat_map(|s| macroplan::clip(s, &reserve))
@@ -2004,6 +2017,13 @@ pub(super) fn generate(
         orientation(site, cfg, surface, roads)
     };
     let mut centers = centers(site, cfg, family, mechanism, radius, angle, surface, &rng);
+    // A port grows along its harbour shore.
+    let water_affinity = morph.value["growth"]["water"].as_f64().unwrap_or(0.3);
+    let water_affinity = if macroplan::harbour::port_town(cfg) {
+        water_affinity.max(1.0)
+    } else {
+        water_affinity
+    };
     let epochs = cfg.footprint.epochs;
     let fractions = epoch_fractions(&epoch_densities(site, cfg, morph));
     let natural = mechanism != "planned"
@@ -2084,7 +2104,7 @@ pub(super) fn generate(
             &fractions,
             surface,
             roads,
-            morph.value["growth"]["water"].as_f64().unwrap_or(0.3),
+            water_affinity,
         );
         if fallback {
             warnings.push(
@@ -2141,7 +2161,7 @@ pub(super) fn generate(
             } else {
                 buildable_grade(site, cfg)
             },
-            morph.value["growth"]["water"].as_f64().unwrap_or(0.3),
+            water_affinity,
             service,
         )
     };

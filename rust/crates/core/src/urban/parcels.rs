@@ -5,6 +5,7 @@ use super::{Layout, Morph, Parcel, ParcelConfig, Partition, Point, Shape};
 use crate::rng::Rng;
 use std::collections::BTreeMap;
 mod admission;
+mod camp;
 #[cfg(test)]
 mod cadastral_tests;
 mod contacts;
@@ -3611,8 +3612,13 @@ pub(super) fn generate(
                 .is_some_and(|m| m.admissibility.shared_access);
         // Organic tissue (catalogue `parcellation: organic`, elven groves): a
         // relaxed Voronoi cut with footpaths, no frontage strips or depth bound.
-        let organic = cfg.operator == "culture" && organic::enabled(morph);
+        // Camps (catalogue `campLayout`: kraal, tipi circle, ordu, longhouse
+        // rows) lay out the whole settlement's rings or rows; they share the
+        // organic tissue's passes (no frontage depth bound, footpath access).
+        let camp = cfg.operator == "culture" && camp::enabled(morph);
+        let organic = camp || cfg.operator == "culture" && organic::enabled(morph);
         let mut parcels = match morph.text("plotOp") {
+            _ if camp => camp::lots(&block.shape, bi, axis, &mut fronts, morph, layout),
             _ if organic => {
                 organic::lots(&block.shape, bi, axis, &mut fronts, morph, zone, &mut rng)
             }
@@ -3902,7 +3908,17 @@ pub(super) fn generate(
                 p.provenance.push("curtain-backed".into());
             }
         }
+        // A camp's block of open ground (fields inside its fence) is no
+        // failed cut, and a clipped cell too small for its hut or tent is
+        // open ground, never a residual lot.
+        if camp {
+            for p in parcels.iter_mut().filter(|p| p.use_kind == "residual") {
+                p.use_kind = "garden".into();
+                p.reason = "camp-open".into();
+            }
+        }
         if morph.text("plotOp") != "garden"
+            && !camp
             && !parcels.iter().any(|p| p.use_kind == "plot")
             && parcels.iter().all(|p| p.use_kind == "garden")
             && !parcels

@@ -75,6 +75,17 @@ pub(in super::super) fn kind(o: &Occupancy) -> Kind {
         || matches!(typology, "domus" | "calli" | "kancha-house")
         || plot == "courtyard";
     let pavilions = op == "pavilionCompound" || plot == "siheyuan";
+    // A camp builds every lot in its own way: the byre, the granary and the
+    // council lodge are huts, tents or long houses like the dwellings.
+    if !m.text("campLayout").is_empty() {
+        match typology {
+            "roundhouse" | "ger" | "tipi" | "beehive-hut" | "orc-hut" | "igloo" => {
+                return Kind::Round;
+            }
+            "longhouse" | "maloca" | "plank-house" => return Kind::Long,
+            _ => {}
+        }
+    }
     // A farm is a house, a barn and a yard wherever it stands.
     if o.role.starts_with("dwelling.farm") {
         return Kind::Farm;
@@ -106,13 +117,20 @@ pub(in super::super) fn kind(o: &Occupancy) -> Kind {
     }
     if matches!(
         typology,
-        "roundhouse" | "ger" | "tipi" | "beehive-hut" | "orc-hut" | "smial" | "tree-house"
+        "roundhouse"
+            | "ger"
+            | "tipi"
+            | "beehive-hut"
+            | "orc-hut"
+            | "smial"
+            | "tree-house"
+            | "igloo"
     ) {
         return Kind::Round;
     }
     if matches!(
         typology,
-        "longhouse" | "byre-house" | "stone-hall" | "duergar-hall"
+        "longhouse" | "byre-house" | "stone-hall" | "duergar-hall" | "maloca" | "plank-house"
     ) || matches!(op, "hall" | "duergarHall")
     {
         return Kind::Long;
@@ -2214,6 +2232,23 @@ fn preview_form(p: &Parcel, o: &Occupancy) -> (Vec<(Shape, &'static str)>, Kind)
                     rng.range(7.0, 12.0) * (0.85 + 0.3 * o.wealth),
                     depth.min(rng.range(8.0, 11.0)),
                 ),
+            };
+            // A camp's long house (Iroquoian longhouse, maloca, plank house)
+            // fills its lot's length at the culture's width (`campHouse`:
+            // [width, longest]), its long side along the lot's longer side.
+            let (house_w, house_d) = match o.morph.pair("campHouse") {
+                [w, longest]
+                    if kind == Kind::Long && w > 0.0 && !o.morph.text("campLayout").is_empty() =>
+                {
+                    let along = (width.max(plot_depth) - 3.0).min(longest).max(w);
+                    let across = w.min(width.min(plot_depth) - 2.0).max(4.0);
+                    if width >= plot_depth {
+                        (along, across)
+                    } else {
+                        (across, along)
+                    }
+                }
+                _ => (house_w, house_d),
             };
             // A long house turns its gable to a narrow street frontage.
             let (house_w, house_d) = if kind == Kind::Long && house_w > width * 1.05 {

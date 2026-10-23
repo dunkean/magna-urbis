@@ -4,6 +4,8 @@ use super::{Block, Layout, LayoutConfig, Morph, Point, Shape, Street, Surface, U
 use super::{geometry as g, network, parcels, routing};
 use std::collections::BTreeMap;
 
+pub(in crate::urban) mod districts;
+
 fn dist(a: Point, b: Point) -> f64 {
     (a.x - b.x).hypot(a.y - b.y)
 }
@@ -372,7 +374,7 @@ pub(super) fn summarize(layout: &mut Layout, cfg: &LayoutConfig) {
             .map_or(0, |c| c.id);
         groups.entry((center, q.phase)).or_default().push(qi);
     }
-    s.districts = groups
+    let mut districts: Vec<UrbanDistrict> = groups
         .into_iter()
         .enumerate()
         .map(|(id, ((center, phase), quarters))| UrbanDistrict {
@@ -392,6 +394,29 @@ pub(super) fn summarize(layout: &mut Layout, cfg: &LayoutConfig) {
             },
         })
         .collect();
+    // The count follows the city's size and culture (`districts::target`), cut
+    // by people (zone density) into compact lumps of whole quarters; the role
+    // stage may still split further for small towns.
+    let population = s.metrics.planned_population.round() as u32;
+    let wanted = districts::target(&layout.culture, population, layout.quarters.len());
+    if wanted > districts.len() {
+        let points: Vec<Point> = layout
+            .quarters
+            .iter()
+            .map(|q| g::interior_point(&q.shape))
+            .collect();
+        let weight: Vec<f64> = layout
+            .quarters
+            .iter()
+            .map(|q| g::area(&q.shape) * districts::zone_weight(&q.zone))
+            .collect();
+        let cardinal = districts::is_cardinal(&layout.culture);
+        districts::split(&mut districts, wanted, &points, &weight, cardinal);
+        for (id, d) in districts.iter_mut().enumerate() {
+            d.id = id;
+        }
+    }
+    s.districts = districts;
 }
 
 #[cfg(test)]

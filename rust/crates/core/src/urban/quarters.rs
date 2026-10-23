@@ -1266,7 +1266,10 @@ fn split_quarter(
                 a0 < target && f.hu / f.hv.max(1.0) < if cfg.zone == "faubourg" { 7.0 } else { 2.6 }
             }
         };
-        if pc.kind != "block" || small || a0 < 2.0 * m.number("minBlock") {
+        // A camp (catalogue `campLayout`) has no lanes: its quarter stays
+        // whole, laid out by `parcels/camp.rs`.
+        let camp = !m.text("campLayout").is_empty();
+        if pc.kind != "block" || small || camp || a0 < 2.0 * m.number("minBlock") {
             out.push(pc);
             continue;
         }
@@ -2378,14 +2381,45 @@ pub(super) fn generate(
     // A stilt culture stands on its shore (geography.rs). Its shallow water
     // becomes ground only once the programme sees that ground too
     // (`generate_quarters`, OPUS_CITY.md request): until then, the shore.
+    // Otherwise a port moves to its harbour shore (`harbour::sited`).
     let culture = if cfg.culture == "site" {
         &site.culture
     } else {
         &cfg.culture
     };
     let stilt = super::geography::stilt_ground(site, culture, surface);
-    let site = stilt.as_ref().map_or(site, |g| &g.site);
+    let unsited = stilt.as_ref().map_or(site, |g| &g.site);
+    let harboured = stilt
+        .is_none()
+        .then(|| macroplan::harbour::sited(site, cfg, surface))
+        .flatten();
+    let site = harboured.as_ref().unwrap_or(unsited);
     let first = generate_once(seed, site, cfg, m, surface, roads)?;
+    // A harbour site whose land cannot hold the town (half its households,
+    // 60 % of its planned land) is compared with the town's own place: the
+    // harbour is kept when it holds at least 60 % of that land.
+    let land = |l: &Layout| {
+        l.structure
+            .as_ref()
+            .map_or(0.0, |s| s.allocated.iter().map(g::area).sum::<f64>())
+    };
+    let short = |l: &Layout| capacity::of(l).is_some_and(|p| p.shortfall > 0.5 * p.required);
+    let cramped = harboured.is_some()
+        && (short(&first)
+            || first
+                .structure
+                .as_ref()
+                .is_some_and(|s| land(&first) < 0.6 * s.metrics.target_area));
+    let (site, first) = if cramped {
+        let home = generate_once(seed, unsited, cfg, m, surface, roads)?;
+        if !short(&first) && land(&first) >= 0.6 * land(&home) {
+            (site, first)
+        } else {
+            (unsited, home)
+        }
+    } else {
+        (site, first)
+    };
     let Some(p) = capacity::of(&first) else {
         return Ok(first);
     };
@@ -3264,11 +3298,28 @@ fn generate_once(
             }
         }
     }
+    // The waterfront of the final quarters (peripheral frontage included)
+    // gets its quays, beyond those of the plan (`harbour::quays`).
+    let culture = if cfg.culture == "site" {
+        site.culture.as_str()
+    } else {
+        cfg.culture.as_str()
+    };
+    let port = macroplan::harbour::port_town(cfg);
+    if cfg.placement == "center"
+        && (port || profiles::settlement_profile(culture, site.population, phases.len()).waterfront)
+    {
+        let shapes: Vec<Shape> = quarters.iter().map(|q| q.shape.clone()).collect();
+        macroplan::harbour::quays(&shapes, &mut streets, surface, cfg, site, culture, port);
+    }
     lap("harmonize+fringe");
-    // Street and wall ribbons, built per street in parallel (input order).
+    let seaward = macroplan::harbour::seaward(&streets, surface);
+    // Street and wall ribbons, built per street in parallel (input order),
+    // with the land between each quay and its water.
     let ribbon_sources: Vec<(&[Point], Vec<f64>)> = streets
         .iter()
         .map(|s| (s.path.as_slice(), s.widths.clone()))
+        .chain(seaward.iter().map(|(p, w)| (p.as_slice(), w.clone())))
         .chain(enclosures.iter().map(|e| {
             (
                 e.path.as_slice(),
@@ -3617,6 +3668,19 @@ fn generate_once(
     {
         b.kind = format!("compound:{}", cfg.monument)
     }
+    // Piers, landing stages and moles stand on the finished quays, over the
+    // water: they cut no block.
+    let works = macroplan::harbour::works(
+        &streets,
+        surface,
+        site,
+        if cfg.culture == "site" {
+            &site.culture
+        } else {
+            &cfg.culture
+        },
+    );
+    streets.extend(works);
     let mut layout = Layout {
         config: Some(applied.clone()),
         programme: None,

@@ -297,7 +297,12 @@ fn assert_connected(layout: &Layout) {
 /// snapped endpoints. Unit tests separately check exact bilinear peak detection.
 fn assert_physical(layout: &Layout, surface: Surface<'_>, cfg: &LayoutConfig) {
     for street in &layout.streets {
-        if matches!(street.role.as_str(), "bridge" | "ford" | "causeway") {
+        // Crossings and harbour works (piers, landing stages, moles) stand
+        // over the water.
+        if matches!(
+            street.role.as_str(),
+            "bridge" | "ford" | "causeway" | "pier" | "landing" | "mole"
+        ) {
             continue;
         }
         let limit = if street.role == "stairs" {

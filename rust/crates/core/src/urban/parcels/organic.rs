@@ -76,21 +76,11 @@ pub(super) fn lots(
         .filter(|p| area(p) > 1e-6)
         .collect();
     let width = morph.number_or("footpathWidth", 1.8).clamp(1.2, 3.0);
-    let (paths, path_fronts) = footpaths(shape, &cells, fronts, width);
+    let (paths, raw, path_fronts) = footpaths(shape, &cells, fronts, width);
     fronts.extend(path_fronts);
     let mut out = Vec::with_capacity(cells.len() + paths.len());
     for cell in cells {
-        let mut pieces = vec![cell];
-        for path in &paths {
-            if !boxes_overlap(bbox(path), bbox(&pieces[0])) {
-                continue;
-            }
-            pieces = pieces.iter().flat_map(|p| difference(p, path)).collect();
-            if pieces.is_empty() {
-                break;
-            }
-        }
-        for piece in pieces.into_iter().filter(|p| area(p) > 1e-6) {
+        for piece in cut_out(cell, &raw).into_iter().filter(|p| area(p) > 1e-6) {
             let mut p = parcel(piece, block, axis, fronts, "plot");
             p.provenance = vec!["organic-cell".into()];
             out.push(p);
@@ -104,6 +94,28 @@ pub(super) fn lots(
         out.push(p);
     }
     out
+}
+
+/// `cell` minus the path pieces overlapping it (small pieces: one segment or
+/// one join each, so a cell meets only the few beside it).
+pub(super) fn cut_out(cell: Shape, raw: &[(Shape, (f64, f64, f64, f64))]) -> Vec<Shape> {
+    let mut pieces = vec![cell];
+    for (path, pb) in raw {
+        if pieces.is_empty() {
+            break;
+        }
+        pieces = pieces
+            .into_iter()
+            .flat_map(|p| {
+                if boxes_overlap(*pb, bbox(&p)) {
+                    difference(&p, path)
+                } else {
+                    vec![p]
+                }
+            })
+            .collect();
+    }
+    pieces
 }
 
 fn ring_shape(ring: &[Point]) -> Shape {
@@ -283,15 +295,32 @@ impl Nodes {
 /// each starting with one whole side of the cell it serves, later routes
 /// joining earlier ones. Returns the path parcels (clipped to the block) and
 /// their reversed rings as shared fronts.
-fn footpaths(
+pub(super) fn footpaths(
     shape: &Shape,
     cells: &[Shape],
     fronts: &[Front],
     width: f64,
-) -> (Vec<Shape>, Vec<Front>) {
-    let mut served: Vec<f64> = cells.iter().map(|c| frontage(c, fronts).0).collect();
+) -> (Vec<Shape>, Vec<(Shape, (f64, f64, f64, f64))>, Vec<Front>) {
+    // Fronts near each cell only (a camp brings thousands of path fronts).
+    let mut served: Vec<f64> = cells
+        .iter()
+        .map(|c| {
+            let b = bbox(c);
+            let near: Vec<Front> = fronts
+                .iter()
+                .filter(|f| {
+                    f.a.x.max(f.b.x) >= b.0 - 0.1
+                        && f.a.x.min(f.b.x) <= b.2 + 0.1
+                        && f.a.y.max(f.b.y) >= b.1 - 0.1
+                        && f.a.y.min(f.b.y) <= b.3 + 0.1
+                })
+                .copied()
+                .collect();
+            frontage(c, &near).0
+        })
+        .collect();
     if served.iter().all(|&f| f >= MIN_FRONT) || fronts.is_empty() {
-        return (vec![], vec![]);
+        return (vec![], vec![], vec![]);
     }
     let mut nodes = Nodes {
         points: Vec::new(),
@@ -433,11 +462,15 @@ fn footpaths(
         routes.push((line, front.unwrap_or(0)));
     }
     if routes.is_empty() {
-        return (vec![], vec![]);
+        return (vec![], vec![], vec![]);
     }
+    // One piece per segment and per join: the cells are cut by the few
+    // beside them, the path parcels are their union.
     let mut pieces = Vec::new();
     for (line, _) in &routes {
-        pieces.extend(ribbon(line, &[width]));
+        for w in line.windows(2) {
+            pieces.extend(ribbon(w, &[width]));
+        }
         for &p in line {
             pieces.push(disc(p, 0.5 * width));
         }
@@ -467,7 +500,14 @@ fn footpaths(
             }
         }
     }
-    (paths, shared)
+    let raw = pieces
+        .into_iter()
+        .map(|p| {
+            let b = bbox(&p);
+            (p, b)
+        })
+        .collect();
+    (paths, raw, shared)
 }
 
 /// Octagon of radius `r` (a path's rounded join).

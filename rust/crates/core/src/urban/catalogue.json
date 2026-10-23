@@ -44761,7 +44761,7 @@
           "closes"
         ],
         "streetOp": "organic",
-        "closeOp": "closes",
+        "closeOp": "none",
         "plotOp": "burgage",
         "buildingOp": "streetFrontRow",
         "orientation": "road",
@@ -44832,24 +44832,24 @@
         "gridSkew": 0,
         "blockSize": {
           "core": [
-            2200,
-            6500
+            150000.0,
+            250000.0
           ],
           "middle": [
-            3500,
-            10000
+            150000.0,
+            250000.0
           ],
           "edge": [
-            5000,
-            15000
+            150000.0,
+            250000.0
           ],
           "faubourg": [
-            4500,
-            14000
+            150000.0,
+            250000.0
           ],
           "village": [
-            7000,
-            22000
+            150000.0,
+            250000.0
           ]
         },
         "minBlock": 700,
@@ -44936,46 +44936,46 @@
         },
         "setback": {
           "core": [
-            0,
-            0.3
+            0.5,
+            1.5
           ],
           "middle": [
-            0,
-            0.8
+            0.5,
+            1.5
           ],
           "edge": [
             0.5,
-            3
+            1.5
           ],
           "faubourg": [
             0.5,
-            3
+            1.5
           ],
           "village": [
-            3,
-            10
+            0.5,
+            1.5
           ]
         },
         "sideGap": {
           "core": [
-            0,
-            0
+            0.5,
+            1.5
           ],
           "middle": [
-            0,
-            1.2
+            0.5,
+            1.5
           ],
           "edge": [
             0.5,
-            2.5
+            1.5
           ],
           "faubourg": [
-            0.8,
-            3
+            0.5,
+            1.5
           ],
           "village": [
-            3,
-            8
+            0.5,
+            1.5
           ]
         },
         "infill": {
@@ -45027,12 +45027,25 @@
         },
         "courtyardMin": 9,
         "density": {
-          "core": 60,
-          "middle": 60,
-          "edge": 60,
-          "faubourg": 60,
-          "village": 60
-        }
+          "core": 100,
+          "middle": 100,
+          "edge": 100,
+          "faubourg": 100,
+          "village": 100
+        },
+        "campLayout": "ring",
+        "campOpening": "road",
+        "campRow": 9.5,
+        "campArc": [
+          9.0,
+          10.5
+        ],
+        "campPath": 2.5,
+        "campGap": 50.0,
+        "campCentre": 0.3,
+        "campHead": "back",
+        "campCentreUse": "byre",
+        "campLanes": 1
       }
     },
     "kraal/village": {
@@ -45047,7 +45060,7 @@
           "closes"
         ],
         "streetOp": "organic",
-        "closeOp": "closes",
+        "closeOp": "none",
         "plotOp": "burgage",
         "buildingOp": "streetFrontRow",
         "orientation": "road",
@@ -45118,24 +45131,24 @@
         "gridSkew": 0,
         "blockSize": {
           "core": [
-            2200,
-            6500
+            150000.0,
+            250000.0
           ],
           "middle": [
-            3500,
-            10000
+            150000.0,
+            250000.0
           ],
           "edge": [
-            5000,
-            15000
+            150000.0,
+            250000.0
           ],
           "faubourg": [
-            4500,
-            14000
+            150000.0,
+            250000.0
           ],
           "village": [
-            7000,
-            22000
+            150000.0,
+            250000.0
           ]
         },
         "minBlock": 700,
@@ -45222,46 +45235,46 @@
         },
         "setback": {
           "core": [
-            0,
-            0.3
+            0.5,
+            1.5
           ],
           "middle": [
-            0,
-            0.8
+            0.5,
+            1.5
           ],
           "edge": [
             0.5,
-            3
+            1.5
           ],
           "faubourg": [
             0.5,
-            3
+            1.5
           ],
           "village": [
-            3,
-            10
+            0.5,
+            1.5
           ]
         },
         "sideGap": {
           "core": [
-            0,
-            0
+            0.5,
+            1.5
           ],
           "middle": [
-            0,
-            1.2
+            0.5,
+            1.5
           ],
           "edge": [
             0.5,
-            2.5
+            1.5
           ],
           "faubourg": [
-            0.8,
-            3
+            0.5,
+            1.5
           ],
           "village": [
-            3,
-            8
+            0.5,
+            1.5
           ]
         },
         "infill": {
@@ -45313,12 +45326,25 @@
         },
         "courtyardMin": 9,
         "density": {
-          "core": 60,
-          "middle": 60,
-          "edge": 60,
-          "faubourg": 60,
-          "village": 60
-        }
+          "core": 100,
+          "middle": 100,
+          "edge": 100,
+          "faubourg": 100,
+          "village": 100
+        },
+        "campLayout": "ring",
+        "campOpening": "road",
+        "campRow": 9.5,
+        "campArc": [
+          9.0,
+          10.5
+        ],
+        "campPath": 2.5,
+        "campGap": 50.0,
+        "campCentre": 0.3,
+        "campHead": "back",
+        "campCentreUse": "byre",
+        "campLanes": 1
       }
     },
     "kraal/hamlet": {
@@ -45333,7 +45359,7 @@
           "closes"
         ],
         "streetOp": "organic",
-        "closeOp": "closes",
+        "closeOp": "none",
         "plotOp": "burgage",
         "buildingOp": "streetFrontRow",
         "orientation": "road",
@@ -45404,24 +45430,24 @@
         "gridSkew": 0,
         "blockSize": {
           "core": [
-            2200,
-            6500
+            150000.0,
+            250000.0
           ],
           "middle": [
-            3500,
-            10000
+            150000.0,
+            250000.0
           ],
           "edge": [
-            5000,
-            15000
+            150000.0,
+            250000.0
           ],
           "faubourg": [
-            4500,
-            14000
+            150000.0,
+            250000.0
           ],
           "village": [
-            7000,
-            22000
+            150000.0,
+            250000.0
           ]
         },
         "minBlock": 700,
@@ -45508,46 +45534,46 @@
         },
         "setback": {
           "core": [
-            0,
-            0.3
+            0.5,
+            1.5
           ],
           "middle": [
-            0,
-            0.8
+            0.5,
+            1.5
           ],
           "edge": [
             0.5,
-            3
+            1.5
           ],
           "faubourg": [
             0.5,
-            3
+            1.5
           ],
           "village": [
-            3,
-            10
+            0.5,
+            1.5
           ]
         },
         "sideGap": {
           "core": [
-            0,
-            0
+            0.5,
+            1.5
           ],
           "middle": [
-            0,
-            1.2
+            0.5,
+            1.5
           ],
           "edge": [
             0.5,
-            2.5
+            1.5
           ],
           "faubourg": [
-            0.8,
-            3
+            0.5,
+            1.5
           ],
           "village": [
-            3,
-            8
+            0.5,
+            1.5
           ]
         },
         "infill": {
@@ -45599,12 +45625,25 @@
         },
         "courtyardMin": 9,
         "density": {
-          "core": 60,
-          "middle": 60,
-          "edge": 60,
-          "faubourg": 60,
-          "village": 60
-        }
+          "core": 100,
+          "middle": 100,
+          "edge": 100,
+          "faubourg": 100,
+          "village": 100
+        },
+        "campLayout": "ring",
+        "campOpening": "road",
+        "campRow": 9.5,
+        "campArc": [
+          9.0,
+          10.5
+        ],
+        "campPath": 2.5,
+        "campGap": 50.0,
+        "campCentre": 0.3,
+        "campHead": "back",
+        "campCentreUse": "byre",
+        "campLanes": 1
       }
     },
     "kraal/grown-core": {
@@ -46471,7 +46510,7 @@
           "closes"
         ],
         "streetOp": "organic",
-        "closeOp": "closes",
+        "closeOp": "none",
         "plotOp": "burgage",
         "buildingOp": "streetFrontRow",
         "orientation": "road",
@@ -46542,24 +46581,24 @@
         "gridSkew": 0,
         "blockSize": {
           "core": [
-            2200,
-            6500
+            150000.0,
+            250000.0
           ],
           "middle": [
-            3500,
-            10000
+            150000.0,
+            250000.0
           ],
           "edge": [
-            5000,
-            15000
+            150000.0,
+            250000.0
           ],
           "faubourg": [
-            4500,
-            14000
+            150000.0,
+            250000.0
           ],
           "village": [
-            7000,
-            22000
+            150000.0,
+            250000.0
           ]
         },
         "minBlock": 700,
@@ -46646,46 +46685,46 @@
         },
         "setback": {
           "core": [
-            0,
-            0.3
+            0.5,
+            1.5
           ],
           "middle": [
-            0,
-            0.8
+            0.5,
+            1.5
           ],
           "edge": [
             0.5,
-            3
+            1.5
           ],
           "faubourg": [
             0.5,
-            3
+            1.5
           ],
           "village": [
-            3,
-            10
+            0.5,
+            1.5
           ]
         },
         "sideGap": {
           "core": [
-            0,
-            0
+            0.5,
+            1.5
           ],
           "middle": [
-            0,
-            1.2
+            0.5,
+            1.5
           ],
           "edge": [
             0.5,
-            2.5
+            1.5
           ],
           "faubourg": [
-            0.8,
-            3
+            0.5,
+            1.5
           ],
           "village": [
-            3,
-            8
+            0.5,
+            1.5
           ]
         },
         "infill": {
@@ -46737,12 +46776,23 @@
         },
         "courtyardMin": 9,
         "density": {
-          "core": 160,
-          "middle": 160,
-          "edge": 160,
-          "faubourg": 160,
-          "village": 160
-        }
+          "core": 350,
+          "middle": 350,
+          "edge": 350,
+          "faubourg": 350,
+          "village": 350
+        },
+        "campLayout": "rows",
+        "campRow": 12.0,
+        "campRowLength": [
+          26.0,
+          52.0
+        ],
+        "campPath": 3.5,
+        "campHouse": [
+          6.5,
+          60.0
+        ]
       }
     },
     "native-iroquoian/village": {
@@ -46757,7 +46807,7 @@
           "closes"
         ],
         "streetOp": "organic",
-        "closeOp": "closes",
+        "closeOp": "none",
         "plotOp": "burgage",
         "buildingOp": "streetFrontRow",
         "orientation": "road",
@@ -46828,24 +46878,24 @@
         "gridSkew": 0,
         "blockSize": {
           "core": [
-            2200,
-            6500
+            150000.0,
+            250000.0
           ],
           "middle": [
-            3500,
-            10000
+            150000.0,
+            250000.0
           ],
           "edge": [
-            5000,
-            15000
+            150000.0,
+            250000.0
           ],
           "faubourg": [
-            4500,
-            14000
+            150000.0,
+            250000.0
           ],
           "village": [
-            7000,
-            22000
+            150000.0,
+            250000.0
           ]
         },
         "minBlock": 700,
@@ -46932,46 +46982,46 @@
         },
         "setback": {
           "core": [
-            0,
-            0.3
+            0.5,
+            1.5
           ],
           "middle": [
-            0,
-            0.8
+            0.5,
+            1.5
           ],
           "edge": [
             0.5,
-            3
+            1.5
           ],
           "faubourg": [
             0.5,
-            3
+            1.5
           ],
           "village": [
-            3,
-            10
+            0.5,
+            1.5
           ]
         },
         "sideGap": {
           "core": [
-            0,
-            0
+            0.5,
+            1.5
           ],
           "middle": [
-            0,
-            1.2
+            0.5,
+            1.5
           ],
           "edge": [
             0.5,
-            2.5
+            1.5
           ],
           "faubourg": [
-            0.8,
-            3
+            0.5,
+            1.5
           ],
           "village": [
-            3,
-            8
+            0.5,
+            1.5
           ]
         },
         "infill": {
@@ -47023,12 +47073,23 @@
         },
         "courtyardMin": 9,
         "density": {
-          "core": 160,
-          "middle": 160,
-          "edge": 160,
-          "faubourg": 160,
-          "village": 160
-        }
+          "core": 350,
+          "middle": 350,
+          "edge": 350,
+          "faubourg": 350,
+          "village": 350
+        },
+        "campLayout": "rows",
+        "campRow": 12.0,
+        "campRowLength": [
+          26.0,
+          52.0
+        ],
+        "campPath": 3.5,
+        "campHouse": [
+          6.5,
+          60.0
+        ]
       }
     },
     "native-iroquoian/hamlet": {
@@ -47043,7 +47104,7 @@
           "closes"
         ],
         "streetOp": "organic",
-        "closeOp": "closes",
+        "closeOp": "none",
         "plotOp": "burgage",
         "buildingOp": "streetFrontRow",
         "orientation": "road",
@@ -47114,24 +47175,24 @@
         "gridSkew": 0,
         "blockSize": {
           "core": [
-            2200,
-            6500
+            150000.0,
+            250000.0
           ],
           "middle": [
-            3500,
-            10000
+            150000.0,
+            250000.0
           ],
           "edge": [
-            5000,
-            15000
+            150000.0,
+            250000.0
           ],
           "faubourg": [
-            4500,
-            14000
+            150000.0,
+            250000.0
           ],
           "village": [
-            7000,
-            22000
+            150000.0,
+            250000.0
           ]
         },
         "minBlock": 700,
@@ -47218,46 +47279,46 @@
         },
         "setback": {
           "core": [
-            0,
-            0.3
+            0.5,
+            1.5
           ],
           "middle": [
-            0,
-            0.8
+            0.5,
+            1.5
           ],
           "edge": [
             0.5,
-            3
+            1.5
           ],
           "faubourg": [
             0.5,
-            3
+            1.5
           ],
           "village": [
-            3,
-            10
+            0.5,
+            1.5
           ]
         },
         "sideGap": {
           "core": [
-            0,
-            0
+            0.5,
+            1.5
           ],
           "middle": [
-            0,
-            1.2
+            0.5,
+            1.5
           ],
           "edge": [
             0.5,
-            2.5
+            1.5
           ],
           "faubourg": [
-            0.8,
-            3
+            0.5,
+            1.5
           ],
           "village": [
-            3,
-            8
+            0.5,
+            1.5
           ]
         },
         "infill": {
@@ -47309,12 +47370,23 @@
         },
         "courtyardMin": 9,
         "density": {
-          "core": 160,
-          "middle": 160,
-          "edge": 160,
-          "faubourg": 160,
-          "village": 160
-        }
+          "core": 350,
+          "middle": 350,
+          "edge": 350,
+          "faubourg": 350,
+          "village": 350
+        },
+        "campLayout": "rows",
+        "campRow": 12.0,
+        "campRowLength": [
+          26.0,
+          52.0
+        ],
+        "campPath": 3.5,
+        "campHouse": [
+          6.5,
+          60.0
+        ]
       }
     },
     "native-iroquoian/grown-core": {
@@ -49885,7 +49957,7 @@
           "closes"
         ],
         "streetOp": "organic",
-        "closeOp": "closes",
+        "closeOp": "none",
         "plotOp": "burgage",
         "buildingOp": "streetFrontRow",
         "orientation": "road",
@@ -49956,24 +50028,24 @@
         "gridSkew": 0,
         "blockSize": {
           "core": [
-            2200,
-            6500
+            150000.0,
+            250000.0
           ],
           "middle": [
-            3500,
-            10000
+            150000.0,
+            250000.0
           ],
           "edge": [
-            5000,
-            15000
+            150000.0,
+            250000.0
           ],
           "faubourg": [
-            4500,
-            14000
+            150000.0,
+            250000.0
           ],
           "village": [
-            7000,
-            22000
+            150000.0,
+            250000.0
           ]
         },
         "minBlock": 700,
@@ -50060,46 +50132,46 @@
         },
         "setback": {
           "core": [
-            0,
-            0.3
+            0.5,
+            1.5
           ],
           "middle": [
-            0,
-            0.8
+            0.5,
+            1.5
           ],
           "edge": [
             0.5,
-            3
+            1.5
           ],
           "faubourg": [
             0.5,
-            3
+            1.5
           ],
           "village": [
-            3,
-            10
+            0.5,
+            1.5
           ]
         },
         "sideGap": {
           "core": [
-            0,
-            0
+            0.5,
+            1.5
           ],
           "middle": [
-            0,
-            1.2
+            0.5,
+            1.5
           ],
           "edge": [
             0.5,
-            2.5
+            1.5
           ],
           "faubourg": [
-            0.8,
-            3
+            0.5,
+            1.5
           ],
           "village": [
-            3,
-            8
+            0.5,
+            1.5
           ]
         },
         "infill": {
@@ -50151,12 +50223,25 @@
         },
         "courtyardMin": 9,
         "density": {
-          "core": 30,
-          "middle": 30,
-          "edge": 30,
-          "faubourg": 30,
-          "village": 30
-        }
+          "core": 80,
+          "middle": 80,
+          "edge": 80,
+          "faubourg": 80,
+          "village": 80
+        },
+        "campLayout": "ring",
+        "campOpening": "east",
+        "campRow": 14.0,
+        "campArc": [
+          9.0,
+          12.0
+        ],
+        "campPath": 3.0,
+        "campGap": 36.0,
+        "campCentre": 0.6,
+        "campRings": 2,
+        "campCentreUse": "place",
+        "campLanes": 1
       }
     },
     "native-plains/village": {
@@ -50171,7 +50256,7 @@
           "closes"
         ],
         "streetOp": "organic",
-        "closeOp": "closes",
+        "closeOp": "none",
         "plotOp": "burgage",
         "buildingOp": "streetFrontRow",
         "orientation": "road",
@@ -50242,24 +50327,24 @@
         "gridSkew": 0,
         "blockSize": {
           "core": [
-            2200,
-            6500
+            150000.0,
+            250000.0
           ],
           "middle": [
-            3500,
-            10000
+            150000.0,
+            250000.0
           ],
           "edge": [
-            5000,
-            15000
+            150000.0,
+            250000.0
           ],
           "faubourg": [
-            4500,
-            14000
+            150000.0,
+            250000.0
           ],
           "village": [
-            7000,
-            22000
+            150000.0,
+            250000.0
           ]
         },
         "minBlock": 700,
@@ -50346,46 +50431,46 @@
         },
         "setback": {
           "core": [
-            0,
-            0.3
+            0.5,
+            1.5
           ],
           "middle": [
-            0,
-            0.8
+            0.5,
+            1.5
           ],
           "edge": [
             0.5,
-            3
+            1.5
           ],
           "faubourg": [
             0.5,
-            3
+            1.5
           ],
           "village": [
-            3,
-            10
+            0.5,
+            1.5
           ]
         },
         "sideGap": {
           "core": [
-            0,
-            0
+            0.5,
+            1.5
           ],
           "middle": [
-            0,
-            1.2
+            0.5,
+            1.5
           ],
           "edge": [
             0.5,
-            2.5
+            1.5
           ],
           "faubourg": [
-            0.8,
-            3
+            0.5,
+            1.5
           ],
           "village": [
-            3,
-            8
+            0.5,
+            1.5
           ]
         },
         "infill": {
@@ -50437,12 +50522,25 @@
         },
         "courtyardMin": 9,
         "density": {
-          "core": 30,
-          "middle": 30,
-          "edge": 30,
-          "faubourg": 30,
-          "village": 30
-        }
+          "core": 80,
+          "middle": 80,
+          "edge": 80,
+          "faubourg": 80,
+          "village": 80
+        },
+        "campLayout": "ring",
+        "campOpening": "east",
+        "campRow": 14.0,
+        "campArc": [
+          9.0,
+          12.0
+        ],
+        "campPath": 3.0,
+        "campGap": 36.0,
+        "campCentre": 0.6,
+        "campRings": 2,
+        "campCentreUse": "place",
+        "campLanes": 1
       }
     },
     "native-plains/hamlet": {
@@ -50457,7 +50555,7 @@
           "closes"
         ],
         "streetOp": "organic",
-        "closeOp": "closes",
+        "closeOp": "none",
         "plotOp": "burgage",
         "buildingOp": "streetFrontRow",
         "orientation": "road",
@@ -50528,24 +50626,24 @@
         "gridSkew": 0,
         "blockSize": {
           "core": [
-            2200,
-            6500
+            150000.0,
+            250000.0
           ],
           "middle": [
-            3500,
-            10000
+            150000.0,
+            250000.0
           ],
           "edge": [
-            5000,
-            15000
+            150000.0,
+            250000.0
           ],
           "faubourg": [
-            4500,
-            14000
+            150000.0,
+            250000.0
           ],
           "village": [
-            7000,
-            22000
+            150000.0,
+            250000.0
           ]
         },
         "minBlock": 700,
@@ -50632,46 +50730,46 @@
         },
         "setback": {
           "core": [
-            0,
-            0.3
+            0.5,
+            1.5
           ],
           "middle": [
-            0,
-            0.8
+            0.5,
+            1.5
           ],
           "edge": [
             0.5,
-            3
+            1.5
           ],
           "faubourg": [
             0.5,
-            3
+            1.5
           ],
           "village": [
-            3,
-            10
+            0.5,
+            1.5
           ]
         },
         "sideGap": {
           "core": [
-            0,
-            0
+            0.5,
+            1.5
           ],
           "middle": [
-            0,
-            1.2
+            0.5,
+            1.5
           ],
           "edge": [
             0.5,
-            2.5
+            1.5
           ],
           "faubourg": [
-            0.8,
-            3
+            0.5,
+            1.5
           ],
           "village": [
-            3,
-            8
+            0.5,
+            1.5
           ]
         },
         "infill": {
@@ -50723,12 +50821,25 @@
         },
         "courtyardMin": 9,
         "density": {
-          "core": 30,
-          "middle": 30,
-          "edge": 30,
-          "faubourg": 30,
-          "village": 30
-        }
+          "core": 80,
+          "middle": 80,
+          "edge": 80,
+          "faubourg": 80,
+          "village": 80
+        },
+        "campLayout": "ring",
+        "campOpening": "east",
+        "campRow": 14.0,
+        "campArc": [
+          9.0,
+          12.0
+        ],
+        "campPath": 3.0,
+        "campGap": 36.0,
+        "campCentre": 0.6,
+        "campRings": 2,
+        "campCentreUse": "place",
+        "campLanes": 1
       }
     },
     "native-plains/grown-core": {
@@ -112447,24 +112558,24 @@
         "gridSkew": 0,
         "blockSize": {
           "core": [
-            5000,
-            12000
+            150000.0,
+            250000.0
           ],
           "middle": [
-            6000,
-            15000
+            150000.0,
+            250000.0
           ],
           "edge": [
-            8000,
-            20000
+            150000.0,
+            250000.0
           ],
           "faubourg": [
-            8000,
-            20000
+            150000.0,
+            250000.0
           ],
           "village": [
-            8000,
-            22000
+            150000.0,
+            250000.0
           ]
         },
         "minBlock": 700,
@@ -112551,46 +112662,46 @@
         },
         "setback": {
           "core": [
-            0,
-            0.3
+            0.5,
+            1.5
           ],
           "middle": [
-            0,
-            0.8
+            0.5,
+            1.5
           ],
           "edge": [
             0.5,
-            3
+            1.5
           ],
           "faubourg": [
             0.5,
-            3
+            1.5
           ],
           "village": [
-            3,
-            10
+            0.5,
+            1.5
           ]
         },
         "sideGap": {
           "core": [
-            0,
-            0
+            0.5,
+            1.5
           ],
           "middle": [
-            0,
-            1.2
+            0.5,
+            1.5
           ],
           "edge": [
             0.5,
-            2.5
+            1.5
           ],
           "faubourg": [
-            0.8,
-            3
+            0.5,
+            1.5
           ],
           "village": [
-            3,
-            8
+            0.5,
+            1.5
           ]
         },
         "infill": {
@@ -112642,12 +112753,33 @@
         },
         "courtyardMin": 9,
         "density": {
-          "core": 105,
-          "middle": 90,
-          "edge": 75,
-          "faubourg": 68,
-          "village": 60
-        }
+          "core": 220,
+          "middle": 220,
+          "edge": 220,
+          "faubourg": 220,
+          "village": 220
+        },
+        "arch": {
+          "typology": "ger",
+          "roof": "dome",
+          "storeys": [
+            1,
+            1
+          ],
+          "material": "felt"
+        },
+        "campLayout": "ring",
+        "campOpening": "south",
+        "campRow": 10.5,
+        "campArc": [
+          10.5,
+          12.5
+        ],
+        "campPath": 3.5,
+        "campGap": 0.0,
+        "campCentre": 0.14,
+        "campCentreUse": "plot",
+        "campLanes": 4
       }
     },
     "mongol-ordu/village": {
@@ -112721,24 +112853,24 @@
         "gridSkew": 0,
         "blockSize": {
           "core": [
-            5000,
-            12000
+            150000.0,
+            250000.0
           ],
           "middle": [
-            6000,
-            15000
+            150000.0,
+            250000.0
           ],
           "edge": [
-            8000,
-            20000
+            150000.0,
+            250000.0
           ],
           "faubourg": [
-            8000,
-            20000
+            150000.0,
+            250000.0
           ],
           "village": [
-            8000,
-            22000
+            150000.0,
+            250000.0
           ]
         },
         "minBlock": 700,
@@ -112825,46 +112957,46 @@
         },
         "setback": {
           "core": [
-            0,
-            0.3
+            0.5,
+            1.5
           ],
           "middle": [
-            0,
-            0.8
+            0.5,
+            1.5
           ],
           "edge": [
             0.5,
-            3
+            1.5
           ],
           "faubourg": [
             0.5,
-            3
+            1.5
           ],
           "village": [
-            3,
-            10
+            0.5,
+            1.5
           ]
         },
         "sideGap": {
           "core": [
-            0,
-            0
+            0.5,
+            1.5
           ],
           "middle": [
-            0,
-            1.2
+            0.5,
+            1.5
           ],
           "edge": [
             0.5,
-            2.5
+            1.5
           ],
           "faubourg": [
-            0.8,
-            3
+            0.5,
+            1.5
           ],
           "village": [
-            3,
-            8
+            0.5,
+            1.5
           ]
         },
         "infill": {
@@ -112916,12 +113048,33 @@
         },
         "courtyardMin": 9,
         "density": {
-          "core": 105,
-          "middle": 90,
-          "edge": 75,
-          "faubourg": 68,
-          "village": 60
-        }
+          "core": 220,
+          "middle": 220,
+          "edge": 220,
+          "faubourg": 220,
+          "village": 220
+        },
+        "arch": {
+          "typology": "ger",
+          "roof": "dome",
+          "storeys": [
+            1,
+            1
+          ],
+          "material": "felt"
+        },
+        "campLayout": "ring",
+        "campOpening": "south",
+        "campRow": 10.5,
+        "campArc": [
+          10.5,
+          12.5
+        ],
+        "campPath": 3.5,
+        "campGap": 0.0,
+        "campCentre": 0.14,
+        "campCentreUse": "plot",
+        "campLanes": 4
       }
     },
     "mongol-ordu/hamlet": {
@@ -112995,24 +113148,24 @@
         "gridSkew": 0,
         "blockSize": {
           "core": [
-            5000,
-            12000
+            150000.0,
+            250000.0
           ],
           "middle": [
-            6000,
-            15000
+            150000.0,
+            250000.0
           ],
           "edge": [
-            8000,
-            20000
+            150000.0,
+            250000.0
           ],
           "faubourg": [
-            8000,
-            20000
+            150000.0,
+            250000.0
           ],
           "village": [
-            8000,
-            22000
+            150000.0,
+            250000.0
           ]
         },
         "minBlock": 700,
@@ -113099,46 +113252,46 @@
         },
         "setback": {
           "core": [
-            0,
-            0.3
+            0.5,
+            1.5
           ],
           "middle": [
-            0,
-            0.8
+            0.5,
+            1.5
           ],
           "edge": [
             0.5,
-            3
+            1.5
           ],
           "faubourg": [
             0.5,
-            3
+            1.5
           ],
           "village": [
-            3,
-            10
+            0.5,
+            1.5
           ]
         },
         "sideGap": {
           "core": [
-            0,
-            0
+            0.5,
+            1.5
           ],
           "middle": [
-            0,
-            1.2
+            0.5,
+            1.5
           ],
           "edge": [
             0.5,
-            2.5
+            1.5
           ],
           "faubourg": [
-            0.8,
-            3
+            0.5,
+            1.5
           ],
           "village": [
-            3,
-            8
+            0.5,
+            1.5
           ]
         },
         "infill": {
@@ -113190,12 +113343,33 @@
         },
         "courtyardMin": 9,
         "density": {
-          "core": 105,
-          "middle": 90,
-          "edge": 75,
-          "faubourg": 68,
-          "village": 60
-        }
+          "core": 220,
+          "middle": 220,
+          "edge": 220,
+          "faubourg": 220,
+          "village": 220
+        },
+        "arch": {
+          "typology": "ger",
+          "roof": "dome",
+          "storeys": [
+            1,
+            1
+          ],
+          "material": "felt"
+        },
+        "campLayout": "ring",
+        "campOpening": "south",
+        "campRow": 10.5,
+        "campArc": [
+          10.5,
+          12.5
+        ],
+        "campPath": 3.5,
+        "campGap": 0.0,
+        "campCentre": 0.14,
+        "campCentreUse": "plot",
+        "campLanes": 4
       }
     },
     "mongol-ordu/grown-core": {
@@ -114087,24 +114261,24 @@
         "gridSkew": 0.08,
         "blockSize": {
           "core": [
-            1200,
-            3500
+            5000.0,
+            12000.0
           ],
           "middle": [
-            1600,
-            4500
+            5000.0,
+            12000.0
           ],
           "edge": [
-            2000,
-            5500
+            5000.0,
+            12000.0
           ],
           "faubourg": [
-            2000,
-            5500
+            5000.0,
+            12000.0
           ],
           "village": [
-            2500,
-            7000
+            5000.0,
+            12000.0
           ]
         },
         "minBlock": 400,
@@ -114191,46 +114365,46 @@
         },
         "setback": {
           "core": [
-            1,
-            3
+            0.5,
+            1.5
           ],
           "middle": [
-            1,
-            3
+            0.5,
+            1.5
           ],
           "edge": [
-            1,
-            3
+            0.5,
+            1.5
           ],
           "faubourg": [
-            1,
-            3
+            0.5,
+            1.5
           ],
           "village": [
-            1,
-            3
+            0.5,
+            1.5
           ]
         },
         "sideGap": {
           "core": [
-            1,
-            2.5
+            0.5,
+            1.5
           ],
           "middle": [
-            1,
-            2.5
+            0.5,
+            1.5
           ],
           "edge": [
-            1,
-            2.5
+            0.5,
+            1.5
           ],
           "faubourg": [
-            1,
-            2.5
+            0.5,
+            1.5
           ],
           "village": [
-            1,
-            2.5
+            0.5,
+            1.5
           ]
         },
         "infill": {
@@ -114282,14 +114456,16 @@
         },
         "courtyardMin": 9,
         "density": {
-          "core": 420,
-          "middle": 350,
-          "edge": 280,
-          "faubourg": 245,
-          "village": 175
+          "core": 300,
+          "middle": 300,
+          "edge": 300,
+          "faubourg": 300,
+          "village": 300
         },
         "contourFollow": 0.9,
-        "contourBlend": 1
+        "contourBlend": 1,
+        "footpathWidth": 1.8,
+        "parcellation": "organic"
       }
     },
     "maori-pa/village": {
@@ -114362,24 +114538,24 @@
         "gridSkew": 0.08,
         "blockSize": {
           "core": [
-            1200,
-            3500
+            5000.0,
+            12000.0
           ],
           "middle": [
-            1600,
-            4500
+            5000.0,
+            12000.0
           ],
           "edge": [
-            2000,
-            5500
+            5000.0,
+            12000.0
           ],
           "faubourg": [
-            2000,
-            5500
+            5000.0,
+            12000.0
           ],
           "village": [
-            2500,
-            7000
+            5000.0,
+            12000.0
           ]
         },
         "minBlock": 400,
@@ -114466,46 +114642,46 @@
         },
         "setback": {
           "core": [
-            1,
-            3
+            0.5,
+            1.5
           ],
           "middle": [
-            1,
-            3
+            0.5,
+            1.5
           ],
           "edge": [
-            1,
-            3
+            0.5,
+            1.5
           ],
           "faubourg": [
-            1,
-            3
+            0.5,
+            1.5
           ],
           "village": [
-            1,
-            3
+            0.5,
+            1.5
           ]
         },
         "sideGap": {
           "core": [
-            1,
-            2.5
+            0.5,
+            1.5
           ],
           "middle": [
-            1,
-            2.5
+            0.5,
+            1.5
           ],
           "edge": [
-            1,
-            2.5
+            0.5,
+            1.5
           ],
           "faubourg": [
-            1,
-            2.5
+            0.5,
+            1.5
           ],
           "village": [
-            1,
-            2.5
+            0.5,
+            1.5
           ]
         },
         "infill": {
@@ -114557,14 +114733,16 @@
         },
         "courtyardMin": 9,
         "density": {
-          "core": 420,
-          "middle": 350,
-          "edge": 280,
-          "faubourg": 245,
-          "village": 175
+          "core": 300,
+          "middle": 300,
+          "edge": 300,
+          "faubourg": 300,
+          "village": 300
         },
         "contourFollow": 0.9,
-        "contourBlend": 1
+        "contourBlend": 1,
+        "footpathWidth": 1.8,
+        "parcellation": "organic"
       }
     },
     "maori-pa/hamlet": {
@@ -114637,24 +114815,24 @@
         "gridSkew": 0.08,
         "blockSize": {
           "core": [
-            1200,
-            3500
+            5000.0,
+            12000.0
           ],
           "middle": [
-            1600,
-            4500
+            5000.0,
+            12000.0
           ],
           "edge": [
-            2000,
-            5500
+            5000.0,
+            12000.0
           ],
           "faubourg": [
-            2000,
-            5500
+            5000.0,
+            12000.0
           ],
           "village": [
-            2500,
-            7000
+            5000.0,
+            12000.0
           ]
         },
         "minBlock": 400,
@@ -114741,46 +114919,46 @@
         },
         "setback": {
           "core": [
-            1,
-            3
+            0.5,
+            1.5
           ],
           "middle": [
-            1,
-            3
+            0.5,
+            1.5
           ],
           "edge": [
-            1,
-            3
+            0.5,
+            1.5
           ],
           "faubourg": [
-            1,
-            3
+            0.5,
+            1.5
           ],
           "village": [
-            1,
-            3
+            0.5,
+            1.5
           ]
         },
         "sideGap": {
           "core": [
-            1,
-            2.5
+            0.5,
+            1.5
           ],
           "middle": [
-            1,
-            2.5
+            0.5,
+            1.5
           ],
           "edge": [
-            1,
-            2.5
+            0.5,
+            1.5
           ],
           "faubourg": [
-            1,
-            2.5
+            0.5,
+            1.5
           ],
           "village": [
-            1,
-            2.5
+            0.5,
+            1.5
           ]
         },
         "infill": {
@@ -114832,14 +115010,16 @@
         },
         "courtyardMin": 9,
         "density": {
-          "core": 420,
-          "middle": 350,
-          "edge": 280,
-          "faubourg": 245,
-          "village": 175
+          "core": 300,
+          "middle": 300,
+          "edge": 300,
+          "faubourg": 300,
+          "village": 300
         },
         "contourFollow": 0.9,
-        "contourBlend": 1
+        "contourBlend": 1,
+        "footpathWidth": 1.8,
+        "parcellation": "organic"
       }
     },
     "pnw-plank-village/core": {
@@ -114911,24 +115091,24 @@
         "gridSkew": 0,
         "blockSize": {
           "core": [
-            3000,
-            8000
+            150000.0,
+            250000.0
           ],
           "middle": [
-            4000,
-            10000
+            150000.0,
+            250000.0
           ],
           "edge": [
-            5000,
-            12000
+            150000.0,
+            250000.0
           ],
           "faubourg": [
-            5000,
-            12000
+            150000.0,
+            250000.0
           ],
           "village": [
-            6000,
-            15000
+            150000.0,
+            250000.0
           ]
         },
         "minBlock": 700,
@@ -115015,46 +115195,46 @@
         },
         "setback": {
           "core": [
-            0,
-            0.3
+            0.5,
+            1.5
           ],
           "middle": [
-            0,
-            0.8
+            0.5,
+            1.5
           ],
           "edge": [
             0.5,
-            3
+            1.5
           ],
           "faubourg": [
             0.5,
-            3
+            1.5
           ],
           "village": [
-            3,
-            10
+            0.5,
+            1.5
           ]
         },
         "sideGap": {
           "core": [
-            0,
-            0
+            0.5,
+            1.5
           ],
           "middle": [
-            0,
-            1.2
+            0.5,
+            1.5
           ],
           "edge": [
             0.5,
-            2.5
+            1.5
           ],
           "faubourg": [
-            0.8,
-            3
+            0.5,
+            1.5
           ],
           "village": [
-            3,
-            8
+            0.5,
+            1.5
           ]
         },
         "infill": {
@@ -115106,12 +115286,33 @@
         },
         "courtyardMin": 9,
         "density": {
-          "core": 90,
-          "middle": 80,
-          "edge": 70,
-          "faubourg": 60,
-          "village": 50
-        }
+          "core": 200,
+          "middle": 200,
+          "edge": 200,
+          "faubourg": 200,
+          "village": 200
+        },
+        "arch": {
+          "typology": "plank-house",
+          "roof": "gable",
+          "storeys": [
+            1,
+            1
+          ],
+          "material": "cedar-plank"
+        },
+        "campLayout": "rows",
+        "campRow": 32.0,
+        "campRowLength": [
+          24.0,
+          30.0
+        ],
+        "campPath": 3.0,
+        "campRings": 2,
+        "campHouse": [
+          15.0,
+          20.0
+        ]
       }
     },
     "pnw-plank-village/village": {
@@ -115183,24 +115384,24 @@
         "gridSkew": 0,
         "blockSize": {
           "core": [
-            3000,
-            8000
+            150000.0,
+            250000.0
           ],
           "middle": [
-            4000,
-            10000
+            150000.0,
+            250000.0
           ],
           "edge": [
-            5000,
-            12000
+            150000.0,
+            250000.0
           ],
           "faubourg": [
-            5000,
-            12000
+            150000.0,
+            250000.0
           ],
           "village": [
-            6000,
-            15000
+            150000.0,
+            250000.0
           ]
         },
         "minBlock": 700,
@@ -115287,46 +115488,46 @@
         },
         "setback": {
           "core": [
-            0,
-            0.3
+            0.5,
+            1.5
           ],
           "middle": [
-            0,
-            0.8
+            0.5,
+            1.5
           ],
           "edge": [
             0.5,
-            3
+            1.5
           ],
           "faubourg": [
             0.5,
-            3
+            1.5
           ],
           "village": [
-            3,
-            10
+            0.5,
+            1.5
           ]
         },
         "sideGap": {
           "core": [
-            0,
-            0
+            0.5,
+            1.5
           ],
           "middle": [
-            0,
-            1.2
+            0.5,
+            1.5
           ],
           "edge": [
             0.5,
-            2.5
+            1.5
           ],
           "faubourg": [
-            0.8,
-            3
+            0.5,
+            1.5
           ],
           "village": [
-            3,
-            8
+            0.5,
+            1.5
           ]
         },
         "infill": {
@@ -115378,12 +115579,33 @@
         },
         "courtyardMin": 9,
         "density": {
-          "core": 90,
-          "middle": 80,
-          "edge": 70,
-          "faubourg": 60,
-          "village": 50
-        }
+          "core": 200,
+          "middle": 200,
+          "edge": 200,
+          "faubourg": 200,
+          "village": 200
+        },
+        "arch": {
+          "typology": "plank-house",
+          "roof": "gable",
+          "storeys": [
+            1,
+            1
+          ],
+          "material": "cedar-plank"
+        },
+        "campLayout": "rows",
+        "campRow": 32.0,
+        "campRowLength": [
+          24.0,
+          30.0
+        ],
+        "campPath": 3.0,
+        "campRings": 2,
+        "campHouse": [
+          15.0,
+          20.0
+        ]
       }
     },
     "pnw-plank-village/hamlet": {
@@ -115455,24 +115677,24 @@
         "gridSkew": 0,
         "blockSize": {
           "core": [
-            3000,
-            8000
+            150000.0,
+            250000.0
           ],
           "middle": [
-            4000,
-            10000
+            150000.0,
+            250000.0
           ],
           "edge": [
-            5000,
-            12000
+            150000.0,
+            250000.0
           ],
           "faubourg": [
-            5000,
-            12000
+            150000.0,
+            250000.0
           ],
           "village": [
-            6000,
-            15000
+            150000.0,
+            250000.0
           ]
         },
         "minBlock": 700,
@@ -115559,46 +115781,46 @@
         },
         "setback": {
           "core": [
-            0,
-            0.3
+            0.5,
+            1.5
           ],
           "middle": [
-            0,
-            0.8
+            0.5,
+            1.5
           ],
           "edge": [
             0.5,
-            3
+            1.5
           ],
           "faubourg": [
             0.5,
-            3
+            1.5
           ],
           "village": [
-            3,
-            10
+            0.5,
+            1.5
           ]
         },
         "sideGap": {
           "core": [
-            0,
-            0
+            0.5,
+            1.5
           ],
           "middle": [
-            0,
-            1.2
+            0.5,
+            1.5
           ],
           "edge": [
             0.5,
-            2.5
+            1.5
           ],
           "faubourg": [
-            0.8,
-            3
+            0.5,
+            1.5
           ],
           "village": [
-            3,
-            8
+            0.5,
+            1.5
           ]
         },
         "infill": {
@@ -115650,12 +115872,33 @@
         },
         "courtyardMin": 9,
         "density": {
-          "core": 90,
-          "middle": 80,
-          "edge": 70,
-          "faubourg": 60,
-          "village": 50
-        }
+          "core": 200,
+          "middle": 200,
+          "edge": 200,
+          "faubourg": 200,
+          "village": 200
+        },
+        "arch": {
+          "typology": "plank-house",
+          "roof": "gable",
+          "storeys": [
+            1,
+            1
+          ],
+          "material": "cedar-plank"
+        },
+        "campLayout": "rows",
+        "campRow": 32.0,
+        "campRowLength": [
+          24.0,
+          30.0
+        ],
+        "campPath": 3.0,
+        "campRings": 2,
+        "campHouse": [
+          15.0,
+          20.0
+        ]
       }
     },
     "inuit-camp/core": {
@@ -115728,34 +115971,34 @@
         "gridSkew": 0,
         "blockSize": {
           "core": [
-            2000,
-            6000
+            3000.0,
+            9000.0
           ],
           "middle": [
-            2500,
-            7000
+            3000.0,
+            9000.0
           ],
           "edge": [
-            3000,
-            8000
+            3000.0,
+            9000.0
           ],
           "faubourg": [
-            3000,
-            8000
+            3000.0,
+            9000.0
           ],
           "village": [
-            3000,
-            9000
+            3000.0,
+            9000.0
           ]
         },
         "minBlock": 700,
         "minWidth": 17,
         "widthByRank": [
-          5,
-          4,
-          3,
+          3.0,
           2.4,
-          2
+          2.0,
+          1.8,
+          1.6
         ],
         "widthScale": 1,
         "widthJitter": 0.12,
@@ -115832,46 +116075,46 @@
         },
         "setback": {
           "core": [
-            0,
-            0.3
+            0.5,
+            1.5
           ],
           "middle": [
-            0,
-            0.8
+            0.5,
+            1.5
           ],
           "edge": [
             0.5,
-            3
+            1.5
           ],
           "faubourg": [
             0.5,
-            3
+            1.5
           ],
           "village": [
-            3,
-            10
+            0.5,
+            1.5
           ]
         },
         "sideGap": {
           "core": [
-            0,
-            0
+            0.5,
+            1.5
           ],
           "middle": [
-            0,
-            1.2
+            0.5,
+            1.5
           ],
           "edge": [
             0.5,
-            2.5
+            1.5
           ],
           "faubourg": [
-            0.8,
-            3
+            0.5,
+            1.5
           ],
           "village": [
-            3,
-            8
+            0.5,
+            1.5
           ]
         },
         "infill": {
@@ -115923,12 +116166,23 @@
         },
         "courtyardMin": 9,
         "density": {
-          "core": 260,
-          "middle": 228,
-          "edge": 195,
-          "faubourg": 195,
+          "core": 163,
+          "middle": 163,
+          "edge": 163,
+          "faubourg": 163,
           "village": 163
-        }
+        },
+        "footpathWidth": 2.0,
+        "arch": {
+          "typology": "igloo",
+          "roof": "dome",
+          "storeys": [
+            1,
+            1
+          ],
+          "material": "snow"
+        },
+        "parcellation": "organic"
       }
     },
     "inuit-camp/village": {
@@ -116001,34 +116255,34 @@
         "gridSkew": 0,
         "blockSize": {
           "core": [
-            2000,
-            6000
+            3000.0,
+            9000.0
           ],
           "middle": [
-            2500,
-            7000
+            3000.0,
+            9000.0
           ],
           "edge": [
-            3000,
-            8000
+            3000.0,
+            9000.0
           ],
           "faubourg": [
-            3000,
-            8000
+            3000.0,
+            9000.0
           ],
           "village": [
-            3000,
-            9000
+            3000.0,
+            9000.0
           ]
         },
         "minBlock": 700,
         "minWidth": 17,
         "widthByRank": [
-          5,
-          4,
-          3,
+          3.0,
           2.4,
-          2
+          2.0,
+          1.8,
+          1.6
         ],
         "widthScale": 1,
         "widthJitter": 0.12,
@@ -116105,46 +116359,46 @@
         },
         "setback": {
           "core": [
-            0,
-            0.3
+            0.5,
+            1.5
           ],
           "middle": [
-            0,
-            0.8
+            0.5,
+            1.5
           ],
           "edge": [
             0.5,
-            3
+            1.5
           ],
           "faubourg": [
             0.5,
-            3
+            1.5
           ],
           "village": [
-            3,
-            10
+            0.5,
+            1.5
           ]
         },
         "sideGap": {
           "core": [
-            0,
-            0
+            0.5,
+            1.5
           ],
           "middle": [
-            0,
-            1.2
+            0.5,
+            1.5
           ],
           "edge": [
             0.5,
-            2.5
+            1.5
           ],
           "faubourg": [
-            0.8,
-            3
+            0.5,
+            1.5
           ],
           "village": [
-            3,
-            8
+            0.5,
+            1.5
           ]
         },
         "infill": {
@@ -116196,12 +116450,23 @@
         },
         "courtyardMin": 9,
         "density": {
-          "core": 260,
-          "middle": 228,
-          "edge": 195,
-          "faubourg": 195,
+          "core": 163,
+          "middle": 163,
+          "edge": 163,
+          "faubourg": 163,
           "village": 163
-        }
+        },
+        "footpathWidth": 2.0,
+        "arch": {
+          "typology": "igloo",
+          "roof": "dome",
+          "storeys": [
+            1,
+            1
+          ],
+          "material": "snow"
+        },
+        "parcellation": "organic"
       }
     },
     "inuit-camp/hamlet": {
@@ -116274,34 +116539,34 @@
         "gridSkew": 0,
         "blockSize": {
           "core": [
-            2000,
-            6000
+            3000.0,
+            9000.0
           ],
           "middle": [
-            2500,
-            7000
+            3000.0,
+            9000.0
           ],
           "edge": [
-            3000,
-            8000
+            3000.0,
+            9000.0
           ],
           "faubourg": [
-            3000,
-            8000
+            3000.0,
+            9000.0
           ],
           "village": [
-            3000,
-            9000
+            3000.0,
+            9000.0
           ]
         },
         "minBlock": 700,
         "minWidth": 17,
         "widthByRank": [
-          5,
-          4,
-          3,
+          3.0,
           2.4,
-          2
+          2.0,
+          1.8,
+          1.6
         ],
         "widthScale": 1,
         "widthJitter": 0.12,
@@ -116378,46 +116643,46 @@
         },
         "setback": {
           "core": [
-            0,
-            0.3
+            0.5,
+            1.5
           ],
           "middle": [
-            0,
-            0.8
+            0.5,
+            1.5
           ],
           "edge": [
             0.5,
-            3
+            1.5
           ],
           "faubourg": [
             0.5,
-            3
+            1.5
           ],
           "village": [
-            3,
-            10
+            0.5,
+            1.5
           ]
         },
         "sideGap": {
           "core": [
-            0,
-            0
+            0.5,
+            1.5
           ],
           "middle": [
-            0,
-            1.2
+            0.5,
+            1.5
           ],
           "edge": [
             0.5,
-            2.5
+            1.5
           ],
           "faubourg": [
-            0.8,
-            3
+            0.5,
+            1.5
           ],
           "village": [
-            3,
-            8
+            0.5,
+            1.5
           ]
         },
         "infill": {
@@ -116469,12 +116734,23 @@
         },
         "courtyardMin": 9,
         "density": {
-          "core": 260,
-          "middle": 228,
-          "edge": 195,
-          "faubourg": 195,
+          "core": 163,
+          "middle": 163,
+          "edge": 163,
+          "faubourg": 163,
           "village": 163
-        }
+        },
+        "footpathWidth": 2.0,
+        "arch": {
+          "typology": "igloo",
+          "roof": "dome",
+          "storeys": [
+            1,
+            1
+          ],
+          "material": "snow"
+        },
+        "parcellation": "organic"
       }
     },
     "siberian-camp/core": {
@@ -117369,24 +117645,24 @@
         "gridSkew": 0.08,
         "blockSize": {
           "core": [
-            5000,
-            12000
+            150000.0,
+            250000.0
           ],
           "middle": [
-            6000,
-            14000
+            150000.0,
+            250000.0
           ],
           "edge": [
-            7000,
-            16000
+            150000.0,
+            250000.0
           ],
           "faubourg": [
-            7000,
-            16000
+            150000.0,
+            250000.0
           ],
           "village": [
-            8000,
-            18000
+            150000.0,
+            250000.0
           ]
         },
         "minBlock": 400,
@@ -117473,46 +117749,46 @@
         },
         "setback": {
           "core": [
-            1,
-            3
+            0.5,
+            1.5
           ],
           "middle": [
-            1,
-            3
+            0.5,
+            1.5
           ],
           "edge": [
-            1,
-            3
+            0.5,
+            1.5
           ],
           "faubourg": [
-            1,
-            3
+            0.5,
+            1.5
           ],
           "village": [
-            1,
-            3
+            0.5,
+            1.5
           ]
         },
         "sideGap": {
           "core": [
-            1,
-            2.5
+            0.5,
+            1.5
           ],
           "middle": [
-            1,
-            2.5
+            0.5,
+            1.5
           ],
           "edge": [
-            1,
-            2.5
+            0.5,
+            1.5
           ],
           "faubourg": [
-            1,
-            2.5
+            0.5,
+            1.5
           ],
           "village": [
-            1,
-            2.5
+            0.5,
+            1.5
           ]
         },
         "infill": {
@@ -117564,12 +117840,38 @@
         },
         "courtyardMin": 9,
         "density": {
-          "core": 105,
-          "middle": 90,
-          "edge": 83,
-          "faubourg": 75,
-          "village": 68
-        }
+          "core": 250,
+          "middle": 250,
+          "edge": 250,
+          "faubourg": 250,
+          "village": 250
+        },
+        "arch": {
+          "typology": "maloca",
+          "roof": "thatch-ridge",
+          "storeys": [
+            1,
+            1
+          ],
+          "material": "thatch"
+        },
+        "campLayout": "ring",
+        "campOpening": "road",
+        "campRow": 18.0,
+        "campArc": [
+          36.0,
+          50.0
+        ],
+        "campPath": 4.0,
+        "campGap": 0.0,
+        "campCentre": 0.42,
+        "campRings": 1,
+        "campCentreUse": "place",
+        "campLanes": 1,
+        "campHouse": [
+          12.0,
+          60.0
+        ]
       }
     },
     "guarani-village/village": {
@@ -117642,24 +117944,24 @@
         "gridSkew": 0.08,
         "blockSize": {
           "core": [
-            5000,
-            12000
+            150000.0,
+            250000.0
           ],
           "middle": [
-            6000,
-            14000
+            150000.0,
+            250000.0
           ],
           "edge": [
-            7000,
-            16000
+            150000.0,
+            250000.0
           ],
           "faubourg": [
-            7000,
-            16000
+            150000.0,
+            250000.0
           ],
           "village": [
-            8000,
-            18000
+            150000.0,
+            250000.0
           ]
         },
         "minBlock": 400,
@@ -117746,46 +118048,46 @@
         },
         "setback": {
           "core": [
-            1,
-            3
+            0.5,
+            1.5
           ],
           "middle": [
-            1,
-            3
+            0.5,
+            1.5
           ],
           "edge": [
-            1,
-            3
+            0.5,
+            1.5
           ],
           "faubourg": [
-            1,
-            3
+            0.5,
+            1.5
           ],
           "village": [
-            1,
-            3
+            0.5,
+            1.5
           ]
         },
         "sideGap": {
           "core": [
-            1,
-            2.5
+            0.5,
+            1.5
           ],
           "middle": [
-            1,
-            2.5
+            0.5,
+            1.5
           ],
           "edge": [
-            1,
-            2.5
+            0.5,
+            1.5
           ],
           "faubourg": [
-            1,
-            2.5
+            0.5,
+            1.5
           ],
           "village": [
-            1,
-            2.5
+            0.5,
+            1.5
           ]
         },
         "infill": {
@@ -117837,12 +118139,38 @@
         },
         "courtyardMin": 9,
         "density": {
-          "core": 105,
-          "middle": 90,
-          "edge": 83,
-          "faubourg": 75,
-          "village": 68
-        }
+          "core": 250,
+          "middle": 250,
+          "edge": 250,
+          "faubourg": 250,
+          "village": 250
+        },
+        "arch": {
+          "typology": "maloca",
+          "roof": "thatch-ridge",
+          "storeys": [
+            1,
+            1
+          ],
+          "material": "thatch"
+        },
+        "campLayout": "ring",
+        "campOpening": "road",
+        "campRow": 18.0,
+        "campArc": [
+          36.0,
+          50.0
+        ],
+        "campPath": 4.0,
+        "campGap": 0.0,
+        "campCentre": 0.42,
+        "campRings": 1,
+        "campCentreUse": "place",
+        "campLanes": 1,
+        "campHouse": [
+          12.0,
+          60.0
+        ]
       }
     },
     "guarani-village/hamlet": {
@@ -117915,24 +118243,24 @@
         "gridSkew": 0.08,
         "blockSize": {
           "core": [
-            5000,
-            12000
+            150000.0,
+            250000.0
           ],
           "middle": [
-            6000,
-            14000
+            150000.0,
+            250000.0
           ],
           "edge": [
-            7000,
-            16000
+            150000.0,
+            250000.0
           ],
           "faubourg": [
-            7000,
-            16000
+            150000.0,
+            250000.0
           ],
           "village": [
-            8000,
-            18000
+            150000.0,
+            250000.0
           ]
         },
         "minBlock": 400,
@@ -118019,46 +118347,46 @@
         },
         "setback": {
           "core": [
-            1,
-            3
+            0.5,
+            1.5
           ],
           "middle": [
-            1,
-            3
+            0.5,
+            1.5
           ],
           "edge": [
-            1,
-            3
+            0.5,
+            1.5
           ],
           "faubourg": [
-            1,
-            3
+            0.5,
+            1.5
           ],
           "village": [
-            1,
-            3
+            0.5,
+            1.5
           ]
         },
         "sideGap": {
           "core": [
-            1,
-            2.5
+            0.5,
+            1.5
           ],
           "middle": [
-            1,
-            2.5
+            0.5,
+            1.5
           ],
           "edge": [
-            1,
-            2.5
+            0.5,
+            1.5
           ],
           "faubourg": [
-            1,
-            2.5
+            0.5,
+            1.5
           ],
           "village": [
-            1,
-            2.5
+            0.5,
+            1.5
           ]
         },
         "infill": {
@@ -118110,12 +118438,38 @@
         },
         "courtyardMin": 9,
         "density": {
-          "core": 105,
-          "middle": 90,
-          "edge": 83,
-          "faubourg": 75,
-          "village": 68
-        }
+          "core": 250,
+          "middle": 250,
+          "edge": 250,
+          "faubourg": 250,
+          "village": 250
+        },
+        "arch": {
+          "typology": "maloca",
+          "roof": "thatch-ridge",
+          "storeys": [
+            1,
+            1
+          ],
+          "material": "thatch"
+        },
+        "campLayout": "ring",
+        "campOpening": "road",
+        "campRow": 18.0,
+        "campArc": [
+          36.0,
+          50.0
+        ],
+        "campPath": 4.0,
+        "campGap": 0.0,
+        "campCentre": 0.42,
+        "campRings": 1,
+        "campCentreUse": "place",
+        "campLanes": 1,
+        "campHouse": [
+          12.0,
+          60.0
+        ]
       }
     },
     "budj-bim/core": {
@@ -124418,9 +124772,192 @@
       }
     }
   },
+  "districts": {
+    "default": {
+      "unit": "quartier",
+      "people": 3000,
+      "quartersPer": 1.5
+    },
+    "pools": {
+      "saints": [
+        "Saint-Martin",
+        "Saint-Éloi",
+        "Saint-Jacques",
+        "Saint-Germain",
+        "Saint-Nicolas",
+        "Sainte-Croix",
+        "Saint-Pierre",
+        "Saint-Étienne",
+        "Saint-Maclou",
+        "Saint-Jean",
+        "Saint-Michel",
+        "Saint-Laurent",
+        "Saint-Gervais",
+        "Saint-Paul",
+        "Saint-Sulpice",
+        "Saint-Médard",
+        "Saint-Marcel",
+        "Saint-Denis",
+        "Saint-Eustache",
+        "Saint-Merri",
+        "Saint-Leu",
+        "Saint-Séverin",
+        "Sainte-Opportune",
+        "Saint-Honoré",
+        "Saint-Hilaire",
+        "Saint-Benoît",
+        "Saint-Julien",
+        "Saint-Roch",
+        "Saint-Rémi",
+        "Saint-Aignan",
+        "Saint-Gilles",
+        "Saint-André",
+        "Saint-Vincent",
+        "Saint-Barthélemy",
+        "Sainte-Geneviève",
+        "Saint-Georges",
+        "Saint-Cyr",
+        "Saint-Loup",
+        "Saint-Maurice",
+        "Sainte-Catherine",
+        "Sainte-Marguerite",
+        "Saint-Christophe",
+        "Saint-Antoine",
+        "Saint-Landry"
+      ],
+      "mahalle": [
+        "de Sinan-Pacha",
+        "de Hadji-Bayram",
+        "de Yeni-Cami",
+        "de Mimar-Sinan",
+        "de Kadi-Ali",
+        "de Molla-Fenari",
+        "de Hadji-Hamza",
+        "de Karagöz",
+        "de Sultan-Selim",
+        "de Ali-Pacha",
+        "d'Ibrahim-Bey",
+        "de Kemal-Reis",
+        "de Hasan-Çelebi",
+        "de Mustafa-Aga",
+        "d'Orhan-Gazi",
+        "de Hadji-Kasım",
+        "de Halil-Pacha",
+        "de Piri-Reis",
+        "de Davud-Pacha",
+        "de Cafer-Aga",
+        "de Süleyman-Bey",
+        "de Zeynep-Hatun",
+        "de Fatma-Sultane",
+        "d'Ebüssuûd",
+        "de Kara-Mustafa",
+        "de Lala-Pacha",
+        "de la Mosquée-Verte",
+        "du Bedesten",
+        "de Tahtakale",
+        "des Teinturiers",
+        "des Orfèvres",
+        "des Chaudronniers",
+        "des Selliers",
+        "des Tanneurs",
+        "du Vieux-Hammam",
+        "de la Source-aux-Platanes"
+      ],
+      "fang": [
+        "de la Paix-Éternelle",
+        "de la Vertu-Honorée",
+        "de la Longue-Vie",
+        "de la Grande-Harmonie",
+        "de la Bonne-Fortune",
+        "du Ciel-Serein",
+        "de la Joie-Durable",
+        "de la Juste-Mesure",
+        "de la Piété-Filiale",
+        "de la Prospérité-Nouvelle",
+        "de la Lumière-Claire",
+        "de la Source-Pure",
+        "du Pont-d'Or",
+        "du Pavillon-du-Nord",
+        "de l'Étendard-Rouge",
+        "de la Porte-de-l'Est",
+        "du Lotus-Blanc",
+        "de la Cloche-Fidèle",
+        "du Tambour",
+        "du Mûrier",
+        "du Jade-Vert",
+        "de la Tortue-Noire",
+        "du Phénix",
+        "du Dragon-Calme",
+        "de la Grue-Blanche",
+        "du Pin-Vert",
+        "du Bambou",
+        "de la Montagne-Douce",
+        "du Gué-Tranquille",
+        "de l'Orient-Heureux",
+        "de la Courtoisie",
+        "de la Droiture",
+        "de la Sagesse",
+        "de la Bienveillance",
+        "de la Confiance",
+        "du Mérite-Récompensé"
+      ],
+      "vicus": [
+        "Tuscus",
+        "Jugarius",
+        "Cyprius",
+        "Sandaliarius",
+        "Pallacinae",
+        "Vestae",
+        "Sobrius",
+        "Aesculeti",
+        "Lorarius",
+        "Longus",
+        "Patricius",
+        "Fortunae",
+        "Mamuri",
+        "Argiletum",
+        "Subura",
+        "Velabrum",
+        "Carinae",
+        "Aventinus",
+        "Caelimontium",
+        "Esquiliae",
+        "Viminalis",
+        "Quirinalis",
+        "Janiculum",
+        "Tiberinus",
+        "Portuensis",
+        "Salinae",
+        "Frumentarius",
+        "Olitorius",
+        "Boarius",
+        "Pistorum",
+        "Fabricius",
+        "Capitolinus",
+        "Pompeianus",
+        "Flaminius",
+        "Marcellus",
+        "Octaviae",
+        "Pacis",
+        "Ostiensis",
+        "Gallicus",
+        "Hortensis",
+        "Libarius",
+        "Vinarius",
+        "Aquarius",
+        "Dianae"
+      ]
+    }
+  },
   "cultures": {
     "european-organic": {
       "label": "Medieval organic (Europe)",
+      "districts": {
+        "unit": "paroisse",
+        "anchor": "worship.parish",
+        "per": 1.5,
+        "names": "saints"
+      },
       "recipes": [
         {
           "id": "core",
@@ -124520,6 +125057,12 @@
     },
     "bastide": {
       "label": "Bastide (planned grid)",
+      "districts": {
+        "unit": "paroisse",
+        "anchor": "worship.parish",
+        "per": 1.5,
+        "names": "saints"
+      },
       "recipes": [
         {
           "id": "core",
@@ -124603,6 +125146,13 @@
     },
     "medina": {
       "label": "Medina (North Africa)",
+      "districts": {
+        "unit": "hawma",
+        "anchor": "worship.masjid",
+        "per": 1.5,
+        "quartersPer": 1.3,
+        "names": "mahalle"
+      },
       "recipes": [
         {
           "id": "core",
@@ -124710,6 +125260,12 @@
     },
     "chinese": {
       "label": "Chinese walled city",
+      "districts": {
+        "unit": "fang",
+        "anchor": "worship.temple",
+        "per": 1,
+        "names": "fang"
+      },
       "recipes": [
         {
           "id": "core",
@@ -124832,6 +125388,11 @@
     },
     "japanese-jokamachi": {
       "label": "Japanese castle town (jōkamachi)",
+      "districts": {
+        "unit": "chō",
+        "anchor": "worship.temple",
+        "per": 1
+      },
       "recipes": [
         {
           "id": "core",
@@ -125032,6 +125593,13 @@
     },
     "roman-core": {
       "label": "Roman castrum core",
+      "districts": {
+        "unit": "vicus",
+        "anchor": "worship.temple",
+        "per": 1,
+        "quartersPer": 1.2,
+        "names": "vicus"
+      },
       "recipes": [
         {
           "id": "core",
@@ -125072,6 +125640,16 @@
         "orientation": "road",
         "stairs": false,
         "waterfront": true,
+        "harbour": {
+          "quayPerSqrtPop": 7,
+          "quayWidth": 7,
+          "pierSpacing": 120,
+          "pierLength": [
+            40,
+            90
+          ],
+          "basin": true
+        },
         "sources": [
           "web/src/gen/urban/culture.ts",
           ".local-archive/publication-2026-10-09/repository/web/URBAN_MORPHOLOGY.md"
@@ -125568,6 +126146,11 @@
     },
     "aztec": {
       "label": "Aztec city (Tenochtitlan)",
+      "districts": {
+        "unit": "calpulli",
+        "anchor": "worship.temple",
+        "per": 1
+      },
       "recipes": [
         {
           "id": "core",
@@ -125793,6 +126376,12 @@
     },
     "byzantine-greek": {
       "label": "Byzantine hill town (Mystras)",
+      "districts": {
+        "unit": "paroisse",
+        "anchor": "worship.parish",
+        "per": 1.5,
+        "names": "saints"
+      },
       "recipes": [
         {
           "id": "core",
@@ -125936,6 +126525,16 @@
         "orientation": "road",
         "stairs": false,
         "waterfront": true,
+        "harbour": {
+          "quayPerSqrtPop": 10,
+          "quayWidth": 4,
+          "pierSpacing": 60,
+          "pierLength": [
+            8,
+            18
+          ],
+          "fondamenta": true
+        },
         "sources": [
           "web/src/gen/urban/culture.ts",
           ".local-archive/publication-2026-10-09/repository/web/URBAN_MORPHOLOGY.md"
@@ -125997,6 +126596,13 @@
     },
     "persian": {
       "label": "Persian city (Isfahan)",
+      "districts": {
+        "unit": "mahalla",
+        "anchor": "worship.masjid",
+        "per": 1.5,
+        "quartersPer": 1.3,
+        "names": "mahalle"
+      },
       "recipes": [
         {
           "id": "core",
@@ -126106,6 +126712,13 @@
     },
     "ottoman": {
       "label": "Ottoman town (Bursa)",
+      "districts": {
+        "unit": "mahalle",
+        "anchor": "worship.masjid",
+        "per": 1,
+        "quartersPer": 1.3,
+        "names": "mahalle"
+      },
       "recipes": [
         {
           "id": "core",
@@ -126310,6 +126923,12 @@
     },
     "hanseatic": {
       "label": "Hanseatic port (Lubeck)",
+      "districts": {
+        "unit": "paroisse",
+        "anchor": "worship.parish",
+        "per": 1.5,
+        "names": "saints"
+      },
       "recipes": [
         {
           "id": "core",
@@ -126350,6 +126969,16 @@
         "orientation": "water",
         "stairs": false,
         "waterfront": true,
+        "harbour": {
+          "quayPerSqrtPop": 8,
+          "quayWidth": 8,
+          "pierSpacing": 90,
+          "pierLength": [
+            15,
+            35
+          ],
+          "basin": false
+        },
         "sources": [
           "web/src/gen/urban/culture.ts",
           ".local-archive/publication-2026-10-09/repository/web/URBAN_MORPHOLOGY.md"
@@ -128107,10 +128736,18 @@
         0
       ],
       "village": {
-        "form": "ring"
+        "form": "ring",
+        "enclosure": {
+          "shape": "circle",
+          "wall": "hedge"
+        }
       },
       "hamlet": {
-        "form": "ring"
+        "form": "ring",
+        "enclosure": {
+          "shape": "circle",
+          "wall": "hedge"
+        }
       },
       "render": {
         "towerShape": "round",
@@ -128844,6 +129481,16 @@
         "orientation": "road",
         "stairs": false,
         "waterfront": true,
+        "harbour": {
+          "quayPerSqrtPop": 5,
+          "quayWidth": 5,
+          "pierSpacing": 100,
+          "pierLength": [
+            25,
+            60
+          ],
+          "basin": false
+        },
         "sources": [
           "web/src/gen/urban/culture.ts",
           ".local-archive/publication-2026-10-09/repository/web/URBAN_MORPHOLOGY.md"
@@ -130461,6 +131108,16 @@
         "orientation": "terrain",
         "stairs": true,
         "waterfront": false,
+        "harbour": {
+          "quayPerSqrtPop": 6,
+          "quayWidth": 6,
+          "pierSpacing": 110,
+          "pierLength": [
+            30,
+            70
+          ],
+          "basin": true
+        },
         "sources": [
           "docs/styles_architecturaux_mondiaux_city_mapper.md#AF-MAG-S03",
           "docs/styles_architecturaux_mondiaux_city_mapper.md#EUR-MED-S03",
@@ -130651,6 +131308,12 @@
     },
     "flemish-cloth-town": {
       "label": "Flandre · ville drapière à beffroi",
+      "districts": {
+        "unit": "paroisse",
+        "anchor": "worship.parish",
+        "per": 1.5,
+        "names": "saints"
+      },
       "recipes": [
         {
           "id": "core",
@@ -130765,6 +131428,12 @@
     },
     "rynek-town": {
       "label": "Europe centrale · ville à rynek",
+      "districts": {
+        "unit": "paroisse",
+        "anchor": "worship.parish",
+        "per": 1.5,
+        "names": "saints"
+      },
       "recipes": [
         {
           "id": "core",
@@ -132410,7 +133079,7 @@
         0
       ],
       "village": {
-        "form": "auto",
+        "form": "camp",
         "enclosure": {
           "shape": "oval",
           "wall": "none",
@@ -132418,7 +133087,7 @@
         }
       },
       "hamlet": {
-        "form": "auto",
+        "form": "camp",
         "enclosure": {
           "shape": "oval",
           "wall": "none",

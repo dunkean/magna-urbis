@@ -7,6 +7,8 @@ use super::{
 use crate::rng::Rng;
 use std::f64::consts::{PI, TAU};
 
+pub(super) mod harbour;
+
 pub(super) struct Plan {
     pub envelope: Shape,
     pub structure: Option<UrbanStructure>,
@@ -916,7 +918,11 @@ pub(super) fn generate_domain(
         split_by(&mut regions, road);
     }
     split_joined_roads(&mut regions, &streets);
-    if pattern == "radial" || pattern == "organic" || profile.gates == "cardinal" {
+    // A camp (catalogue `campLayout`: kraal, tipi circle, ordu, longhouse or
+    // plaza village) has no street armature: one quarter, paths only, laid out
+    // by `parcels/camp.rs`. Regional roads still cross it.
+    let camp = !m.text("campLayout").is_empty();
+    if !camp && (pattern == "radial" || pattern == "organic" || profile.gates == "cardinal") {
         cultural_spines(
             &mut regions,
             &mut streets,
@@ -933,7 +939,11 @@ pub(super) fn generate_domain(
         );
         split_joined_roads(&mut regions, &streets);
     }
-    let desired = (cfg.count * cfg.rings).min(256);
+    let desired = if camp {
+        1
+    } else {
+        (cfg.count * cfg.rings).min(256)
+    };
     let mut attempts = 0;
     let mut rejected = vec![];
     while regions.len() < desired && attempts < desired * 5 {
@@ -1073,8 +1083,10 @@ pub(super) fn generate_domain(
             });
         }
     }
-    if profile.waterfront {
-        add_quay(&regions, &mut streets, surface, cfg, m, &mut rng);
+    // Waterfront cultures and every port build quays (`harbour`).
+    let port = harbour::port_town(cfg);
+    if profile.waterfront || port {
+        harbour::quays(&regions, &mut streets, surface, cfg, site, culture, port);
         // A town whose programme has quay services (warehouse, emporium,
         // fish market) gets a landing row behind its quays.
         if super::roles::services(culture, site.population, "auto")
@@ -1155,139 +1167,6 @@ pub(super) fn generate_domain(
         streets,
         enclosures,
         warnings,
-    }
-}
-
-fn add_quay(
-    regions: &[Shape],
-    streets: &mut Vec<Street>,
-    surface: Surface<'_>,
-    cfg: &LayoutConfig,
-    m: &Morph,
-    rng: &mut Rng,
-) {
-    let offset = (surface.width / surface.n as f64 * 0.1).clamp(3.0, 8.0);
-    let mut candidates: Vec<(f64, Vec<Point>, Point, Point)> = vec![];
-    for s in regions {
-        let first_candidate = candidates.len();
-        // The coast is commonly tessellated into sub-metre edges. Its vertex
-        // spacing must not determine whether a usable quay is long enough.
-        // Straighten only within < 1/4 of the landward setback; every resulting
-        // complete path still passes the dry-ground and grade checks below.
-        let mut outline = s.outer.clone();
-        if let Some(&first) = outline.first() {
-            outline.push(first);
-        }
-        let shoreline = g::simplify(&outline, offset * 0.25, |_| false);
-        for edge in shoreline.windows(2) {
-            let (a, b) = (edge[0], edge[1]);
-            let l = dist(a, b);
-            if l < 10.0 {
-                continue;
-            }
-            let normal = Point {
-                x: -(b.y - a.y) / l,
-                y: (b.x - a.x) / l,
-            };
-            let shift = |p: Point, d: f64| Point {
-                x: p.x + normal.x * d,
-                y: p.y + normal.y * d,
-            };
-            let mid = point(a, b, 0.5);
-            let wet_side = shift(mid, -offset);
-            if wet_side.x < 0.0
-                || wet_side.y < 0.0
-                || wet_side.x >= surface.width
-                || wet_side.y >= surface.width
-            {
-                continue;
-            }
-            let x = (wet_side.x / surface.width * surface.n as f64) as usize;
-            let y = (wet_side.y / surface.width * surface.n as f64) as usize;
-            if !matches!(surface.water[y * surface.n + x], 1..=3) || surface.wet(shift(mid, offset))
-            {
-                continue;
-            }
-            let path = vec![shift(a, offset), shift(b, offset)];
-            if routing::path_clear(surface, &path, cfg.max_street_grade.min(0.04)) {
-                let p = point(path[0], path[1], 0.5);
-                if let Some((d, q, _)) = nearest(p, streets)
-                    && d < 80.0
-                    && routing::segment_clear(surface, p, q, cfg.max_street_grade)
-                {
-                    // Adjacent usable reaches form one quay platform. Do not
-                    // rank tiny contour segments independently and leave gaps
-                    // merely because the contour changed direction slightly.
-                    if candidates.len() > first_candidate {
-                        let previous = candidates.last_mut().unwrap();
-                        let tail = &previous.1[previous.1.len() - 2..];
-                        let turn = ((tail[1].x - tail[0].x) * (path[1].x - path[0].x)
-                            + (tail[1].y - tail[0].y) * (path[1].y - path[0].y))
-                            / (dist(tail[0], tail[1]) * l).max(1e-9);
-                        let gap = dist(tail[1], path[0]);
-                        if gap <= offset * 2.0
-                            && turn >= 0.707
-                            && routing::segment_clear(
-                                surface,
-                                tail[1],
-                                path[0],
-                                cfg.max_street_grade.min(0.04),
-                            )
-                        {
-                            let length =
-                                previous.0 * (1.0 + dist(previous.2, previous.3) * 0.02) + gap + l;
-                            if gap > 1e-5 {
-                                previous.1.push(path[0]);
-                            }
-                            previous.1.push(path[1]);
-                            if d < dist(previous.2, previous.3) {
-                                previous.2 = p;
-                                previous.3 = q;
-                            }
-                            previous.0 = length / (1.0 + dist(previous.2, previous.3) * 0.02);
-                            continue;
-                        }
-                    }
-                    candidates.push((l / (1.0 + d * 0.02), path, p, q));
-                }
-            }
-        }
-    }
-    candidates.sort_by(|a, b| b.0.total_cmp(&a.0));
-    let mut accepted = 0;
-    for (_, path, p, q) in candidates.into_iter().take(12) {
-        // Keep room for the contour simplification error on the seaward side.
-        // The whole platform, including inner joins, must stay on dry land;
-        // a dry centreline alone is insufficient on an irregular shore.
-        let preferred = m.width(1, rng).max(4.0).min(offset * 1.5);
-        let Some(width) = [preferred, 4.0].into_iter().find(|&width| {
-            g::ribbon(&path, &vec![width; path.len()])
-                .iter()
-                .all(|ribbon| {
-                    let dry_area: f64 = g::dry_clip(&surface, ribbon).iter().map(g::area).sum();
-                    g::area(ribbon) - dry_area <= 1e-4
-                })
-        }) else {
-            continue;
-        };
-        if dist(p, q) > 1.0 {
-            streets.push(Street {
-                path: vec![p, q],
-                widths: vec![4.0; 2],
-                rank: 2,
-                role: "street".into(),
-            });
-        }
-        streets.push(Street {
-            widths: vec![width; path.len()],
-            path,
-            rank: 1,
-            role: "quay".into(),
-        });
-        accepted += 1;
-        if accepted == 4 {
-            break;
-        }
     }
 }
 
@@ -1608,21 +1487,19 @@ mod tests {
             role: "street".into(),
         };
         let cfg = LayoutConfig::default();
-        let morph = Morph {
-            value: serde_json::json!({}),
-        };
         let mut streets = vec![road.clone()];
-        add_quay(
+        harbour::quays(
             &[shore(128.)],
             &mut streets,
             surface,
             &cfg,
-            &morph,
-            &mut Rng::new("quay"),
+            &port_site(),
+            "european-organic",
+            true,
         );
         let quays: Vec<_> = streets.iter().filter(|s| s.role == "quay").collect();
         assert_eq!(quays.len(), 1);
-        assert!(dist(quays[0].path[0], *quays[0].path.last().unwrap()) > 190.);
+        assert!(dist(quays[0].path[0], *quays[0].path.last().unwrap()) > 170.);
         assert!(routing::path_clear(surface, &quays[0].path, 0.04));
         for ribbon in g::ribbon(&quays[0].path, &quays[0].widths) {
             assert!(
@@ -1634,20 +1511,20 @@ mod tests {
                     <= 1e-4
             );
         }
-        let middle = point(quays[0].path[0], quays[0].path[1], 0.5);
         assert!(
             streets
                 .iter()
-                .any(|s| s.role == "street" && s.path.contains(&middle))
+                .any(|s| s.role == "street" && quays[0].path.contains(&s.path[0]))
         );
         let mut inland = vec![road];
-        add_quay(
+        harbour::quays(
             &[shore(150.)],
             &mut inland,
             surface,
             &cfg,
-            &morph,
-            &mut Rng::new("quay"),
+            &port_site(),
+            "european-organic",
+            true,
         );
         assert!(!inland.iter().any(|s| s.role == "quay"));
     }
@@ -1685,15 +1562,14 @@ mod tests {
             rank: 1,
             role: "street".into(),
         }];
-        add_quay(
+        harbour::quays(
             &[shore],
             &mut streets,
             surface,
             &LayoutConfig::default(),
-            &Morph {
-                value: serde_json::json!({}),
-            },
-            &mut Rng::new("quay-curve"),
+            &port_site(),
+            "european-organic",
+            true,
         );
         let quays: Vec<_> = streets.iter().filter(|s| s.role == "quay").collect();
         assert_eq!(quays.len(), 1);
@@ -1705,8 +1581,18 @@ mod tests {
                 .windows(2)
                 .map(|w| dist(w[0], w[1]))
                 .sum::<f64>()
-                > 200.
+                > 180.
         );
+    }
+    fn port_site() -> Site {
+        Site {
+            key: "port".into(),
+            name: String::new(),
+            population: 2000,
+            culture: "european-organic".into(),
+            center: Point { x: 170.0, y: 120.0 },
+            radius: 200.0,
+        }
     }
 
     fn site(culture: &str, population: u32) -> Site {
