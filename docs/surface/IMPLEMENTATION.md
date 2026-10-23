@@ -1,8 +1,8 @@
 # SurfaceWorld — état de l'implémentation
 
-État documentaire du 23 octobre 2026, lu sur l'intégration `d8d85f1` et les modules
-livrés séparément. L'intégration finale du détail géométrique et du scénario
-géologique est encore en cours. **La phase 6 et la campagne E2E finale ne sont pas
+État documentaire du 23 octobre 2026, code intégré jusqu'à `7acaf90`. Le détail
+géométrique, le scénario géologique, les styles et l'hydrologie fixe sont raccordés.
+**La phase 6 et la campagne E2E finale ne sont pas
 déclarées terminées.** Les rapports de revue initiaux sont conservés sans modifier
 leur verdict. Ce document distingue le code disponible, les preuves exécutées et
 les qualifications qui restent à faire.
@@ -53,7 +53,7 @@ flowchart LR
 | Raffinement | `retargetSurfaceWorld` conserve le contexte canonique et ses catégories ; il projette les continus sémantiquement, renormalise les fractions et conserve les métadonnées du vrai relief fin. |
 | Source | `provider.ts`, `adapters/infiniteRefinement.ts`, `registrationBinding.ts` : requête emprise/pas, annulation, snapshot des contrôles retenus, fingerprint 128 bits, versions et emprise strictes. |
 | Contexte régional | `adapters/neuralEarth.ts`, `regionalCompiler.ts`, `geologyScenario.ts` : géoréférence, unités et provenance explicites ; aucun substrat déduit du seul climat. |
-| Géométrie locale | `geometryDetail.ts` : pente/normales/appui issus des vraies hauteurs au support physique déclaré ; contexte, scénario et source liés. Intégration finale en cours à la date de ce rapport. |
+| Géométrie locale | `geometryDetail.ts` et `surface_geometry_detail.gd` : pente/normales/appui issus des vraies hauteurs au support physique déclaré ; contexte, scénario et source liés ; couche d'exposition conditionnée par les sols, l'eau et l'occupation. |
 | Populations | `population.ts`, `treeCanopy.ts`, `candidateColumns.ts` : cellules monde, IDs/rangs/variantes stables, acceptation indépendante de la saison, budgets de calcul et transport typé. |
 | Ville et occupation | `adapters/magnaUrban.ts`, `urbanColumns.ts`, `occupation.ts` : même schéma export/live, IDs, volumes et matériaux source, empreintes/trous/niveaux, emprises de voirie et exclusions. |
 | Présentation | `presentation.ts`, `web/src/render/terrainStyle.ts` et palettes exportées : choix de style séparé des champs physiques, espaces CSS/sRGB/linéaire explicités. |
@@ -76,6 +76,39 @@ contextes et la ville. Les éditions de routes, placements, climat ou bâtiments
 font évoluer les epochs ; un ancien résultat ne peut devenir celui du nouveau
 monde. La coalescence conserve le premier contexte en construction et le dernier
 job utile ; un délai d'annulation borné permet ensuite de terminer le worker.
+
+Les paquets binaires sont envoyés par le navigateur en blocs de 4 Mio, avec
+offset/total, session et accusés de réception stricts. Le broker n'émet le paquet
+vers Godot qu'une fois tous les octets contigus reçus, avec `Content-Length`.
+Cela évite les blocs HTTP supérieurs à 16 Mio refusés par Godot et les chaînes CDP
+géantes quand un navigateur est inspecté. Une annulation détruit la transaction ;
+un bloc tardif ne la recrée pas. Le contenu MUFSURF1 reste inchangé.
+
+## Hydrologie de la carte fixe
+
+**Le réseau de Magna Urbis fait autorité.** Classes, niveaux, identifiants,
+largeurs et contours conservés restent archivés ; D8 sert aux diagnostics de sol
+quand la capture ne possède pas de graphe, sans créer de rivières à leur place.
+Godot reprend les polygones de lacs/rivières et leurs îlots. La mer utilise encore
+l'union des cellules marines source. Les niveaux affichés sont interpolés depuis
+les seules cellules humides mesurées ; les triangles sans niveau sont omis et
+comptabilisés, sans inventer de cote. Le mode aérien coupe l'eau contre le vrai lit.
+
+Les contours simples passent par la triangulation native bornée ; les groupes
+multi-contours utilisent un balayage pair/impair à arêtes actives en coordonnées
+locales. Les doublons stricts sont retirés de l'affichage, sans modifier les données
+source. Le vrai cas de 40 km produit 719 184 sommets, aucun niveau manquant et
+environ 2,8 s de préparation de cette géométrie seule. Les diagnostics déclarent
+le budget, le fallback éventuel et les surfaces manquantes.
+
+La capture comporte 26 anneaux invalides : les conventions de remplissage du
+balayage diffèrent d'une réparation GEOS indépendante d'environ 106 m² sur
+48 millions de m². L'écart supplémentaire dû aux sommets GPU est de 4,77 m².
+Aucune équivalence topologique parfaite avec GEOS n'est revendiquée. Les couleurs
+de mer, lac et rivière utilisent des classes catégorielles séparées du masque de
+couverture. Les routes projetées et les objets cartographiques utilisent les
+palettes existantes ; les contours de route restent contenus dans la largeur
+source. Les vagues périodiques d'albédo qui formaient un damier ont été retirées.
 
 ## Ce qui répond à « où / quoi », et ses limites
 
@@ -150,6 +183,8 @@ versionnés ; la provenance ci-dessous indique la portée exacte de chaque preuv
 | --- | --- | --- |
 | Intégration : `web/out/surface/benchmark-1024-reviewed.json` | Benchmark synthétique explicite1024² : compile 5,253 s, encode 34,7 ms, decode 47,5 ms,170 933 312 octets, roundtrip byte-exact, pic RSS ≈615 Mo sur ce snapshot historique. | Ce n'est ni une vraie génération ni une mesure actuelle de toutes les dernières couches/identités. |
 | Intégration : `web/out/surface/ui-burst-reviewed/report.json` | Vrai navigateur, export annulable, raffinement HTTP d'une capture retenue et burst ; contexte construit une fois, requêtes périmées distinguées. | `decoderUsed=false` pour cette ancienne capture ; aucune preuve d'inférence neurale fraîche ou de FPSnatifs. |
+| Intégration : `web/out/surface/native-e2e-40km/report.json` (premier essai) | Nouvelle source teacher réelle et export réussis ; parcours natif échoué sur un bloc HTTP >16 Mio et une limite CDP. L'échec et sa provenance sont conservés. | Ce premier essai ne valide pas la tournée native. Le framing et les uploads bornés ont ensuite été corrigés ; une nouvelle campagne est nécessaire. |
+| Modèle : `web/out/surface/driver-upload-probe/bounded-upload-report.json` | Vrai navigateur et HTTP/1 : 96 Mio en 24 POST, 4 Mio maximum par corps et enregistrement CDP, SHA256 exact. | Fixture de transport, pas une génération ni un rendu natif. |
 | Modèle : `web/out/surface/real40km/teacher/report.json` | Source neuve40×40km, modèles `coarse4/original/original`, token conservé, vrai Python CUDA ; raffinement40 m / 64², pas demandé 0,625 m, sourceLOD −6, pas source 0,46875 m, `decoderUsed=true`. | Ce rapport ne couvre pas encore le parcours natif complet40 km →10 m. |
 | Modèle : même dossier, `fresh-neural-heightfield.f32` et `raw-neural-1024.surfacebin` |1024² hauteurs brutes au pas 39,0625 m avant la reconstruction/hydrologie Magna, SHA256 `97e330f001aca1ccc6a1adb8dd884dc2ff40d412bf6235133dbf4d3403b68694`, copie exacte vérifiée. Un extrait8² est committé avec sa provenance. | Le contexte de stress compilé sur ce brut n'est pas présenté comme l'hydrologie retenue de la ville. |
 | Modèle : `web/out/surface/real40km/report.json` | Le défaut student64 a échoué explicitement avec «Non-finite decoder student output» ; la source et l'erreur ont été conservées. | Le succès du teacher choisi explicitement ne répare ni ne masque ce défaut student64. |
