@@ -56,6 +56,10 @@ pub(in super::super) struct Occupancy<'a> {
     /// the programme never asks the houses side for a court the lot cannot
     /// hold; elsewhere it stays the light court of a row building.
     pub court_lot: bool,
+    /// Whether a home's court wish stays a court in the composition
+    /// `building_sites` finally asks (feasibility.rs), when it knows; `None`
+    /// falls back to `courts::court_kept`, its approximation from the pack.
+    pub court_kept: Option<bool>,
 }
 
 pub(in super::super) fn kind(o: &Occupancy) -> Kind {
@@ -894,7 +898,9 @@ fn preview_form(p: &Parcel, o: &Occupancy) -> (Vec<(Shape, &'static str)>, Kind)
     let kind = if court_wish
         && matches!(o.function, "domestic" | "mixed")
         && !o.landmark
-        && !super::courts::court_kept(p, o.pack, o.role, o.function)
+        && !o
+            .court_kept
+            .unwrap_or_else(|| super::courts::court_kept(p, o.pack, o.role, o.function))
     {
         Kind::Row
     } else {
@@ -1939,6 +1945,7 @@ mod tests {
                     seed,
                     pack: "EUR-MED",
                     court_lot: false,
+                    court_kept: None,
                 },
             );
             let rear = fp
@@ -1980,6 +1987,7 @@ mod tests {
             seed,
             pack: "MED-ANT",
             court_lot: false,
+            court_kept: None,
         };
         let seeds = ["a", "b", "c", "d", "e", "f", "g", "h"];
         let mut built = 0.0;
@@ -2111,6 +2119,7 @@ mod tests {
                     seed: &seed,
                     pack: "EUR-MED",
                     court_lot: false,
+                    court_kept: None,
                 };
                 let fp = preview(&p, &o);
                 let body = fp.first().expect("street body");
@@ -2177,6 +2186,7 @@ mod tests {
                 seed: &seed,
                 pack: "MED-ANT",
                 court_lot: false,
+                court_kept: None,
             };
             // The small lot is a row (at most with a row's back court).
             let (_, form) = preview_parts(&small, &o);
@@ -2209,6 +2219,7 @@ mod tests {
                 seed,
                 pack: "EUR-MED",
                 court_lot: false,
+                court_kept: None,
             }
         }
         let courts = |w: f64| {
@@ -2262,6 +2273,7 @@ mod tests {
             seed: "landmark",
             pack,
             court_lot: false,
+            court_kept: None,
         };
         let church = preview_parts(&site, &o("worship.parish", "EUR-MED")).0;
         let labels: Vec<_> = church.iter().map(|p| p.1).collect();
@@ -2375,6 +2387,7 @@ mod tests {
                         seed: &seed,
                         pack: "MED-ANT",
                         court_lot: false,
+                        court_kept: None,
                     };
                     for (s, label) in preview_parts(l, &o).0 {
                         assert!(
@@ -2427,6 +2440,7 @@ mod tests {
                 seed,
                 pack: "EUR-MED",
                 court_lot: false,
+                court_kept: None,
             };
             for seed in ["a", "b", "c", "d"] {
                 let farm = preview_parts(&site, &o("dwelling.farm", seed)).0;

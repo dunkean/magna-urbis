@@ -835,7 +835,70 @@ impl BuildingSiteIndex {
         } else {
             None
         };
-        let court_lot = collective_home && fits.iter().any(|p| court_layout(p));
+        // Shops and houses keep the tissue range by pressure.
+        let floors_range = if let Some(range) = tall {
+            Some(range)
+        } else if collective_home {
+            let top = tissue
+                .as_ref()
+                .and_then(|(_, morph)| morph.value["arch"]["storeys"][1].as_u64())
+                .map_or(floors, |hi| hi as u32)
+                .clamp(
+                    culture.admissibility.floors[0],
+                    culture.admissibility.floors[1],
+                );
+            Some([top, top])
+        } else if domestic || functional.is_some() {
+            Some([
+                floors
+                    .saturating_sub(1)
+                    .max(culture.admissibility.floors[0])
+                    .min(floors),
+                floors,
+            ])
+        } else {
+            None
+        };
+        let wish = floors_range.or_else(|| wish_of(&programme["floors"]));
+        let drawable: Vec<_> = if feasible {
+            feasibility::drawable(
+                &culture.architecture_pack,
+                building_culture,
+                &pr.context.period,
+                mode == "historical_strict",
+            )
+            .collect()
+        } else {
+            Vec::new()
+        };
+        // The composition finally asked for a wished form, by the same calls
+        // as below: the preview draws a home's court only where a court wish
+        // stays a court (preview = asked composition, by construction).
+        let asked = |wished: &'static str| {
+            let c = feasibility::feasible_composition(
+                wished,
+                wish,
+                &drawable,
+                fits,
+                culture.admissibility.party_walls,
+            )
+            .unwrap_or(wished);
+            if round7() {
+                feasibility::programme_composition(
+                    c,
+                    wish,
+                    feasibility::programme_source_role(&role, &allocation.function),
+                    fits,
+                )
+            } else {
+                c
+            }
+        };
+        let court_kept = feasible.then(|| asked("courtyard") == "courtyard");
+        // An insula wraps its court only where the lot holds a native court
+        // layout and the court is the composition asked.
+        let court_lot =
+            collective_home && fits.iter().any(|p| court_layout(p)) && court_kept != Some(false);
         let occupancy = tissue
             .as_ref()
             .map(|(zone, morph)| super::parcels::Occupancy {
@@ -849,6 +912,7 @@ impl BuildingSiteIndex {
                 seed: &site_seed,
                 pack: &culture.architecture_pack,
                 court_lot,
+                court_kept,
             });
         // One occupation choice (role + tissue, then the lot's geometry) feeds
         // both the preview and the wished composition: the realized form when
@@ -878,68 +942,20 @@ impl BuildingSiteIndex {
         );
         let mut programme = programme;
         programme["party_walls"] = json!(culture.admissibility.party_walls);
-        // Shops and houses keep the tissue range by pressure.
-        if let Some(range) = tall {
+        if let Some(range) = floors_range {
             programme["floors"] = json!(range);
-        } else if collective_home {
-            let top = tissue
-                .as_ref()
-                .and_then(|(_, morph)| morph.value["arch"]["storeys"][1].as_u64())
-                .map_or(floors, |hi| hi as u32)
-                .clamp(
-                    culture.admissibility.floors[0],
-                    culture.admissibility.floors[1],
-                );
-            programme["floors"] = json!([top, top]);
-        } else if domestic || functional.is_some() {
-            programme["floors"] = json!([
-                floors
-                    .saturating_sub(1)
-                    .max(culture.admissibility.floors[0])
-                    .min(floors),
-                floors
-            ]);
         }
-        let wish = wish_of(&programme["floors"]);
         // The programme houses' shortlist reads (composition, then floors) is
         // chosen so that the sources it is certain to draw are ones the lot
         // holds: the wished composition unless another one of the culture
         // brings more of them; floors among the levels those witnesses offer
         // (the insula levels already come from its witnesses).
         let wished = composition;
-        let composition = if feasible {
-            let drawable: Vec<_> = feasibility::drawable(
-                &culture.architecture_pack,
-                building_culture,
-                &pr.context.period,
-                mode == "historical_strict",
-            )
-            .collect();
-            feasibility::feasible_composition(
-                composition,
-                wish,
-                &drawable,
-                fits,
-                culture.admissibility.party_walls,
-            )
-            .unwrap_or(composition)
-        } else {
-            composition
-        };
         // The typology follows the programme: the composition is the one whose
         // first shortlist group draws a source of the programme's own role
         // (Roman shop → dwelling over a shop, house → masonry house, tenement
-        // → street block), among the sources the lot holds.
-        let composition = if feasible && round7() {
-            feasibility::programme_composition(
-                composition,
-                wish,
-                feasibility::programme_source_role(&role, &allocation.function),
-                fits,
-            )
-        } else {
-            composition
-        };
+        // → street block), among the sources the lot holds (`asked`).
+        let composition = if feasible { asked(composition) } else { composition };
         programme["composition"] = json!(composition);
         // The street wall stays the urban intent of the wished form.
         programme["frontage_continuity"] = json!(frontage_continuity(wished));
