@@ -75,6 +75,8 @@ function validate(value: unknown): asserts value is NeuralEarthPackage {
     if (layer.season !== undefined && (!record(layer.season) || !Number.isFinite(layer.season.dayOfYear) || layer.season.dayOfYear < 1 || layer.season.dayOfYear > 366 || typeof layer.season.elevationCorrected !== 'boolean')) throw new Error(`Invalid regional season: ${key}`);
   }
 }
+/** Binary consumers validate existing typed arrays without a decimal JSON round trip. */
+export { validate as validateRegionalPackage };
 /** Rotation only: planetary projection/geographic origin remain the consumer's job. */
 export function metricHorizontalToEastNorth(x: number, z: number, georeference: MetricGeoreference): [number, number] {
   const az = georeference.zAzimuthDeg * Math.PI / 180;
