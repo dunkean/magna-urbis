@@ -116,6 +116,14 @@ describe('phase2 environmental invariants', () => {
     expect(() => serializeSurfaceWorld(w, { maxJsonCharacters: 100 })).toThrow(/binary/);
   });
 
+  it('keeps optional undefined metadata fingerprints stable across JSON and binary manifests', () => {
+    const t = grid(); t.source.provenance = undefined;
+    const w = compileSurfaceWorld({ seed: 1, terrain: t });
+    expect(deserializeSurfaceWorld(serializeSurfaceWorld(w)).versions.terrain).toBe(w.versions.terrain);
+    const withoutOptional = { ...t, source: { id: t.source.id, version: t.source.version, sourceLOD: t.source.sourceLOD, nativeSpacingM: t.source.nativeSpacingM } };
+    expect(compileSurfaceWorld({ seed: 1, terrain: withoutOptional }).versions.terrain).toBe(w.versions.terrain);
+  });
+
   it('suppresses stale source failures after the request has been superseded', async () => {
     const rejectors: Array<(error: Error) => void> = [];
     const session = new SurfaceTerrainSession({ id: 'late-error', request: () => new Promise((_resolve, reject) => rejectors.push(reject)) }, 'world-1');
