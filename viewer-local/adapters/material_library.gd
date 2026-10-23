@@ -1,6 +1,73 @@
 class_name SurfaceMaterialLibrary
 extends RefCounted
 const ATLAS_SIZE := 1024
+# Bump when channel packing, colour decode, filtering or mean-residual semantics change.
+const PIPELINE_VERSION := "surface-pbr-linear-ah16f-normalgl-nr8-stochastic3-mean-residual-v2"
+const MAP_NAMES := ["baseColor","normal","roughness","height"]
+const MAP_ALIASES := ["Diffuse","NormalGL","Rough","Displacement"]
+var asset_version: Dictionary = {}
+var asset_digest := ""
+var loaded_asset_bindings: Dictionary = {}
+var _version_assets: Array = []
+var _height_fallbacks: Array = []
+
+static func _canonical(value):
+	if value is Dictionary:
+		var result := {}; var keys=value.keys(); keys.sort()
+		for key in keys: result[key]=_canonical(value[key])
+		return result
+	if value is Array:
+		var result := []
+		for child in value: result.append(_canonical(child))
+		return result
+	return value
+
+static func _asset_record(asset: Dictionary, height_fallback := false) -> Dictionary:
+	var maps := {}; var input: Dictionary = asset.get("maps",{})
+	for i in MAP_NAMES.size():
+		var map=input.get(MAP_NAMES[i],input.get(MAP_ALIASES[i],{}))
+		maps[MAP_NAMES[i]]={"sha256":str(map.get("sha256","")).to_lower(),"actualSha256":str(map.get("actualSha256","")).to_lower()} if map is Dictionary else {"sha256":"","actualSha256":""}
+	var recipes: Array = asset.get("recipeIds",[]).duplicate(); recipes.sort()
+	var families: Array = asset.get("families",[]).duplicate(); families.sort()
+	return {"assetId":str(asset.get("id",asset.get("assetId","unknown"))),"providerAssetId":str(asset.get("assetId",asset.get("id","unknown"))),"recipeIds":recipes,"families":families,"physicalExtentMetres":float(asset.get("physicalExtentMetres",asset.get("physicalSizeM",4.0))),"heightAmplitudeMetres":float(asset.get("heightAmplitudeMetres",0.0)),"heightFallback":0.5 if height_fallback else null,"maps":maps}
+
+# Pure provenance operation: paths, URLs and dictionary insertion order are not inputs.
+static func describe_assets(assets: Array, height_fallbacks: Array = []) -> Dictionary:
+	var records := []; var bindings := {}
+	for asset in assets:
+		var record := _asset_record(asset,height_fallbacks.has(str(asset.get("id",asset.get("assetId","unknown")))))
+		records.append(record)
+		bindings[record.assetId]=record.assetId
+		for family in asset.get("families",[]):
+			if not bindings.has(family): bindings[family]=record.assetId
+		for recipe in asset.get("recipeIds",[]): bindings["recipe:"+str(recipe)]=record.assetId
+	records.sort_custom(func(a,b): return a.assetId<b.assetId)
+	var value := {"format":"magna-surface-render-assets","version":1,"pipelineVersion":PIPELINE_VERSION,"atlasSize":ATLAS_SIZE,"fallback":{"height":0.5,"kind":"analytic-neutral"},"assets":records,"bindings":bindings}
+	value=_canonical(value)
+	value["digest"]=JSON.stringify(value).sha256_text()
+	return value
+
+func _finish_asset_version() -> void:
+	asset_version=describe_assets(_version_assets,_height_fallbacks)
+	asset_digest=asset_version.digest
+	loaded_asset_bindings.clear()
+	for key in layers:
+		var layer: int = layers[key]; var color: Color = layer_means[layer]
+		loaded_asset_bindings[key]={"assetId":str(loaded_assets[layer-1]),"layer":layer,"physicalExtentMetres":scales[key],"meanColorLinear":[color.r,color.g,color.b]}
+
+func _version_asset(asset: Dictionary, manifest_path: String) -> Dictionary:
+	var record := asset.duplicate(true); var input: Dictionary = record.get("maps",{})
+	for i in MAP_NAMES.size():
+		var name: String = MAP_NAMES[i] if input.has(MAP_NAMES[i]) else MAP_ALIASES[i]
+		var map=input.get(name,{})
+		var value: String = str(map.get("path",map.get("localPath",""))) if map is Dictionary else str(map)
+		if not map is Dictionary: map={}
+		if not value.is_empty():
+			var path := value if value.is_absolute_path() else manifest_path.get_base_dir().path_join(value)
+			if FileAccess.file_exists(path): map["actualSha256"]=FileAccess.get_sha256(path)
+		input[name]=map
+	record["maps"]=input
+	return record
 
 var albedo_height := Texture2DArray.new()
 var normal_rough := Texture2DArray.new()
@@ -10,6 +77,7 @@ var loaded_assets: Array = []
 var layer_means := PackedColorArray()
 
 func load_manifest(path: String) -> void:
+	layers.clear(); scales.clear(); loaded_assets.clear(); layer_means.clear(); _version_assets.clear(); _height_fallbacks.clear()
 	var albedos: Array[Image] = []
 	var normals: Array[Image] = []
 	# Neutral fallback is an explicit analytic material, usable offline.
@@ -45,6 +113,7 @@ func load_manifest(path: String) -> void:
 			if diffuse == null or normal == null or rough == null:
 				continue
 			if height==null:
+				_height_fallbacks.append(str(asset.get("id",asset.get("assetId","unknown"))))
 				height=Image.create(ATLAS_SIZE,ATLAS_SIZE,false,Image.FORMAT_RF)
 				height.fill(Color(0.5,0,0,1))
 				push_warning("PBR height unavailable for "+str(asset.get("id","unknown"))+"; using explicit flat-height fallback")
@@ -76,12 +145,14 @@ func load_manifest(path: String) -> void:
 			for recipe_id in asset.get("recipeIds",[]):
 				layers["recipe:"+str(recipe_id)]=layer
 				scales["recipe:"+str(recipe_id)]=scales[asset_id]
+			_version_assets.append(_version_asset(asset,path))
 			loaded_assets.append(asset_id)
 			albedos.append(ah)
 			normals.append(nr)
 			layer_means.append(Color(red/(ATLAS_SIZE*ATLAS_SIZE),green/(ATLAS_SIZE*ATLAS_SIZE),blue/(ATLAS_SIZE*ATLAS_SIZE),1))
 	albedo_height.create_from_images(albedos)
 	normal_rough.create_from_images(normals)
+	_finish_asset_version()
 
 func _load_image(value, manifest_path: String) -> Image:
 	if value is Dictionary:
