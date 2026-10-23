@@ -11,6 +11,7 @@ import { fingerprint } from './hash';
 export { fingerprint } from './hash';
 import { deriveSurfaceGeometryDetail, sampleSurfaceGeometryDetail, hydrateSurfaceGeometryDetail } from './geometryDetail';
 import { SURFACE_MEMORY_BUDGET_BYTES } from './limits';
+import { validateGeologyScenario } from './geologyScenario';
 
 /** Read-only identity verification for packets made before the 128-bit cache keys.
  * New compilations and geometry retargets always use the current algorithm. */
@@ -89,6 +90,7 @@ function validateAligned(input: SurfaceCompileInput, n: number): void {
 }
 
 function validateGeology(g: GeologyInput): Map<number, number> {
+  if(g.scenario){validateGeologyScenario(g.scenario);if(fingerprint(g.units)!==fingerprint(g.scenario.units))throw new Error('Geological scenario catalogue differs from its declared units');}
   if (!g.units.length || g.units.length > 64) throw new Error('Geology requires 1..64 explicit units');
   const ids = new Map<number, number>();
   g.units.forEach((r, j) => {
@@ -258,7 +260,7 @@ export function compileSurfaceWorld(input: SurfaceCompileInput, options: Compile
   const n = t.width * t.height;
   validateAligned(input, n);
   const warnings: string[] = [], assumptions: string[] = [];
-  const geology = input.geology ? { ...input.geology, units: input.geology.units.map(u => ({ ...u, colorLinear: [...u.colorLinear] as [number, number, number] })), bedrock: new Uint16Array(input.geology.bedrock) }
+  const geology = input.geology ? { ...input.geology, scenario:input.geology.scenario?structuredClone(input.geology.scenario):undefined, units: input.geology.units.map(u => ({ ...u, colorLinear: [...u.colorLinear] as [number, number, number] })), bedrock: new Uint16Array(input.geology.bedrock) }
     : { version: 'declared-default-granite-1', provenance: 'Explicit default scenario: uniform granitic basement; not inferred from climate', units: [{ ...DEFAULT_ROCK_UNITS[0], colorLinear: [...DEFAULT_ROCK_UNITS[0].colorLinear] as [number, number, number] }], bedrock: new Uint16Array(n).fill(1) };
   if (!input.geology) warnings.push('No geology map supplied: declared uniform granite scenario, not an observed lithology.');
   const ids = validateGeology(geology);
@@ -771,6 +773,7 @@ function refinedWorldIdentity(world: SurfaceWorld): string {
 function attachGeometryDetail(world: SurfaceWorld, options: {signal?: AbortSignal;memoryBudgetBytes?:number}): void {
   const detail=deriveSurfaceGeometryDetail(world.terrain,{canonicalContextId:world.canonicalContextRef?.id,geologyScenario:world.geology.scenario,
     signal:options.signal,memoryBudgetBytes:Math.max(1,(options.memoryBudgetBytes??SURFACE_MEMORY_BUDGET_BYTES)-world.diagnostics.estimatedBytes)});
+  if(!world.canonicalContextRef&&detail.localBedrockUnitId)for(let i=0;i<world.geology.bedrock.length;i++)if(world.geology.bedrock[i]!==detail.localBedrockUnitId[i])throw new Error('Canonical bedrock differs from the explicit geological scenario on source heights');
   const conditioned=new Float32Array(world.terrain.width*world.terrain.height);
   for(let i=0;i<conditioned.length;i++) {
     if(!(i%4096))assertNotAborted(options.signal);

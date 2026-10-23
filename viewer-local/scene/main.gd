@@ -600,7 +600,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			KEY_O: oblique = not oblique; changed = true
 			KEY_D:
 				var previous := diagnostic
-				diagnostic = (diagnostic+1)%6
+				diagnostic = (diagnostic+1)%7
 				if terrain!=null: terrain.get("material").call("set_shader_param","diagnostic",diagnostic)
 				if previous==5 or diagnostic==5: _begin_prepare()
 			KEY_S: _capture("res://captures/surface-%d.png"%Time.get_unix_time_from_system())
