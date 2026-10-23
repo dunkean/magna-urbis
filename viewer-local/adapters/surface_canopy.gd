@@ -93,7 +93,7 @@ static func prepare(packet: Dictionary,selected: Dictionary) -> Dictionary:
 	coverage_image.generate_mipmaps() # Linear coverage, not sRGB and not overlap counts.
 	var normal_image:=Image.create_from_data(width,height,false,Image.FORMAT_RGBAF,normal_values.to_byte_array());normal_image.generate_mipmaps()
 	var counts_image := Image.create_from_data(width,height,false,Image.FORMAT_RGBAF,counts.to_byte_array())
-	var atlas := {"available":true,"version":"canopy-r2-meso","coverageImage":coverage_image,"countsImage":counts_image,"normalImage":normal_image,
+	var atlas := {"available":true,"version":"canopy-r3-normal-shadow-maincamera","coverageImage":coverage_image,"countsImage":counts_image,"normalImage":normal_image,
 		"origin":origin,"spacingM":spacing,"gridSize":Vector2(width,height),"bounds":bounds,"fallbackBlendM":transition_widths(bounds).paint,"geometryBlendM":transition_widths(bounds).geometry,
 		"linearAlbedo":LINEAR_ALBEDO,"treeCount":trees,"selectedTreeCount":selected_trees,"unsupportedTreeCount":unsupported_trees,
 		"scope":"Exact provided crown inventory inside its page; renderer-only calibrated approximate canopy outside, never candidate IDs"}
