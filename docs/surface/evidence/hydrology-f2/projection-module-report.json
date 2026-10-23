@@ -1,0 +1,33 @@
+{
+  "adapter": "NVIDIA GeForce RTX 4090",
+  "backend": "forward_plus",
+  "bakedTintMaxError": 0.00174525380134583,
+  "failures": [],
+  "projectedWaterRGB": [
+    0.34901961684227,
+    0.486274510622025,
+    0.905882358551025
+  ],
+  "projection": {
+    "buildMs": 137.708,
+    "metresPerTexel": 0.15625,
+    "minimumRiverStrokeApplied": false,
+    "physicalWaterSurfaceClaimed": false,
+    "projectionCullMask": 1,
+    "resolution": 256,
+    "sourceAuthority": "synthetic-test-only",
+    "sourceLevelsUnchanged": true,
+    "sourceVectorAreaM2": 400.0,
+    "sourceVectorAreaScope": "input geometry clip window; projection camera may be narrower",
+    "sourceVertices": 6,
+    "subpixelPolicy": "original contour coverage only; no minimum stroke or physical-width edits",
+    "waterPresentation": "source-map-terrain-projection"
+  },
+  "roofRGB": [
+    1.0,
+    0.0,
+    0.0
+  ],
+  "scope": "synthetic below-bed/class-tint/large-coordinate/roof exclusion control for production projection module; real regional contours validated separately",
+  "sourceUnchanged": true
+}
