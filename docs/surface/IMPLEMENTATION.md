@@ -1,10 +1,11 @@
 # SurfaceWorld — état de l'implémentation
 
-État documentaire du 23 octobre 2026, code intégré jusqu'à `b4a52b0`. Le détail
+État documentaire du 23 octobre 2026, code intégré jusqu'à `3829dbd`. Le détail
 géométrique, le scénario géologique, les styles et l'hydrologie fixe sont raccordés.
 **La campagne technique V5 passe ; la phase 6 n'est pas acceptée visuellement.**
-Le contrat TS 1.5 sépare maintenant sol, couvert bas et arbres ; son raccordement
-natif est encore en cours à ce snapshot documentaire. V5 qualifie le code 1.4
+Le contrat 1.5.2 et ses shaders natifs séparent maintenant sol, couvert bas et arbres.
+Les probes GPU des trois couches passent ; la campagne live V6 et la qualification
+ville correspondante restent à exécuter. V5 qualifie le code 1.4
 figé `f6a45af`, pas ces nouvelles couches. Les rapports de revue initiaux sont conservés sans modifier
 leur verdict. Ce document distingue le code disponible, les preuves exécutées et
 les qualifications qui restent à faire.
@@ -52,7 +53,7 @@ flowchart LR
 | --- | --- |
 | Monde physique indépendant du moteur | `web/src/surface/model.ts`, mètres, repère main droite +X est / +Y haut / +Z sud, grilles à centres de cellules. |
 | Compilation canonique | `compiler.ts` : morphologie multi-rayons, géologie explicite ou scénario granite déclaré, drainage source ou D8 déclaré, sols/dépôts/couverts, recettes matérielles et identités. |
-| Étages physiques | `surfaceLayers.ts`, compilateur `surface-1.5.0` : paires et moyennes du sol nu et du couvert bas, opacité basse, arbres/couronnes indépendants ; neuf arrays et 28 octets supplémentaires par échantillon, disponibilité legacy explicite. |
+| Étages physiques | `surfaceLayers.ts`, compilateur `surface-1.5.2` : paires et moyennes du sol nu et du couvert bas, interpolation prémultipliée du couvert, humus brun continu, arbres/couronnes indépendants ; neuf arrays et 28 octets supplémentaires par échantillon, disponibilité legacy explicite. |
 | Raffinement | `retargetSurfaceWorld` conserve le contexte canonique et ses catégories ; il projette les continus sémantiquement, renormalise les fractions et conserve les métadonnées du vrai relief fin. |
 | Source | `provider.ts`, `adapters/infiniteRefinement.ts`, `registrationBinding.ts` : requête emprise/pas, annulation, snapshot des contrôles retenus, empreinte de contenu non cryptographique, versions et emprise strictes. |
 | Contexte régional | `adapters/neuralEarth.ts`, `regionalCompiler.ts`, `geologyScenario.ts` : géoréférence, unités et provenance explicites ; aucun substrat déduit du seul climat. |
@@ -95,7 +96,19 @@ quand la capture ne possède pas de graphe, sans créer de rivières à leur pla
 Godot reprend les polygones de lacs/rivières et leurs îlots. La mer utilise encore
 l'union des cellules marines source. Les niveaux affichés sont interpolés depuis
 les seules cellules humides mesurées ; les triangles sans niveau sont omis et
-comptabilisés, sans inventer de cote. Le mode aérien coupe l'eau contre le vrai lit.
+comptabilisés, sans inventer de cote. Le mode physique `source-levels` coupe l'eau
+contre le vrai lit et expose les conflits entre niveaux régionaux et relief raffiné.
+
+Le mode de carte fixe par défaut est une **projection des contours source sur le
+terrain** : un Decal limité à la couche de terrain, sans recouvrir les toits et
+objets urbains. Il conserve les niveaux archivés sans prétendre que cette surface
+projetée est leur simulation physique. Il ne creuse pas le relief et ne monte pas
+l'eau pour masquer un conflit. Une preuve GPU à 10 km conserve les 6 495 pixels
+des contours de référence et aucun des 52 pixels de toit affectés par un overlay
+sans profondeur. Les métriques de chaque vue indiquent l'autorité, les niveaux
+manquants, budgets, surfaces et conflits d'appui. Les segments plus fins qu'un
+pixel restent sous-échantillonnés : aucune conservation visuelle du débit n'est
+revendiquée. Voir [la preuve de projection](evidence/hydrology-f2/README.md).
 
 Les contours simples passent par la triangulation native bornée ; les groupes
 multi-contours utilisent un balayage pair/impair à arêtes actives en coordonnées
