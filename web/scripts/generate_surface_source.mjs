@@ -3,6 +3,8 @@
  * --viewer-assets C:/data/resolved.json --viewer-launcher ROOT/web/scripts/surface_viewer.mjs
  * --geology-scenario tilted-strata-v1 opts into an explicit fixed world-space scenario.
  * --viewer-navigation-first runs the same continuous-input test before the tour.
+ * --viewer-layer-probe adds four same-source visibility captures and unlit bare ground.
+ * --viewer-water-mode source-map explicitly selects terrain-only retained-vector display.
  * --viewer-resolution 2048x1280. Browser/SSE/worker stay alive until the seven-level tour exits. */
 import { chromium } from 'playwright';
 import { mkdir, readFile, writeFile, readdir } from 'node:fs/promises';
@@ -17,6 +19,9 @@ import { compileSurfaceWorld } from '../src/surface/compiler.ts';
 import { hashString } from '../src/surface/model.ts';
 import { registrationFieldFingerprint } from '../src/surface/registrationBinding.ts';
 import { isFinalQualityDisplay,sameDeliveredSpacing,verifyFinalDisplay,verifyMotionLiveDisplay,verifyTourQuality } from './surface_navigation_evidence.ts';
+import { verifyExplicitLayerCapture,verifyWaterCapture,verifyLayerIsolationProbe } from './surface_render_evidence.ts';
+import { hasExplicitSurfaceLayers } from '../src/surface/surfaceLayers.ts';
+import { captureSurfaceRepositorySnapshot,assertFrozenSurfaceSnapshots } from './surface_repository_snapshot.mjs';
 
 const args = process.argv.slice(2);
 const option = (name, fallback) => {
@@ -36,6 +41,10 @@ const viewerGodot = option('--viewer-godot', undefined), viewerAssets = option('
 const viewerLauncher = resolve(option('--viewer-launcher', fileURLToPath(new URL('./surface_viewer.mjs', import.meta.url))));
 const viewerTimeoutMs = Number(option('--viewer-timeout-ms', '900000'));
 const viewerResolution = option('--viewer-resolution', '2048x1280');
+const viewerWaterMode=option('--viewer-water-mode','source-map');
+const layerProbe=args.includes('--viewer-layer-probe');
+if(layerProbe&&!viewerGodot)throw new Error('--viewer-layer-probe requires --viewer-godot');
+if(!['source-map','source-levels'].includes(viewerWaterMode))throw new Error('Viewer water mode must be source-map or source-levels');
 const navigationSeconds=Number(option('--viewer-navigation-seconds','0'));
 const navigationFirst=args.includes('--viewer-navigation-first');
 if(!Number.isFinite(navigationSeconds)||navigationSeconds!==0&&(navigationSeconds<5||navigationSeconds>120)||navigationSeconds&&!viewerGodot)throw new Error('Navigation requires --viewer-godot and duration5..120 seconds');
@@ -50,24 +59,20 @@ const paths = { report: resolve(out, 'report.json'), progress: resolve(out, 'pro
 const report = { format: 'magna-fresh-source-proof', version: 1, startedAt: new Date(began).toISOString(), base, neural, widthM: width, seed,
   requestedSource: 'neural-python', freshGeneration: true, paths, errors, network, progress, status: 'starting' };
 report.browserEvents = browserEvents;
+report.requiredRenderContract={version:'surface-layers-1',waterMode:viewerWaterMode,physicalSourceChangesAllowed:false};
 report.nativePhaseOrder=viewerGodot?(navigationFirst?['navigation','tour']:['tour',...(navigationSeconds?['navigation']:[])]):[];
+if(layerProbe)report.nativePhaseOrder.push('layer-isolation');
 report.driverProcessId=process.pid;
 if(viewerGodot)report.requestedViewer={godot:resolve(viewerGodot),assets:viewerAssets&&resolve(viewerAssets),launcher:viewerLauncher,
   resolution:viewerResolution,mode:args.includes('--viewer-oblique')?'oblique':'top',presentation:'aerial',timeoutMs:viewerTimeoutMs};
+if(viewerAssets)report.assets={manifest:resolve(viewerAssets),manifestSha256:createHash('sha256').update(await readFile(resolve(viewerAssets))).digest('hex'),scope:'Resolved asset manifest pinned separately from tracked source code; native asset digest identifies loaded maps.'};
 if(geologyScenario)report.requestedGeology={id:geologyScenario,queryParameter:'surface_geology',provenance:'Explicit authored preset, fixed world frame; not observed geological data or a terrain-height modification.'};
 if (decoderModel) report.requestedModels = { decoderModel };
-const snapshotFiles=['viewer-local/scene/main.gd','viewer-local/adapters/surface_data.gd','viewer-local/adapters/surface_geometry.gd',
-  'viewer-local/shaders/surface_body.gdshaderinc','viewer-local/shaders/canopy.gdshaderinc','web/src/surface/model.ts','web/src/surface/compiler.ts',
-  'web/src/surface/geologyScenario.ts','web/src/surface/geometryDetail.ts','web/src/surface/workerProcessor.ts',
-  'web/src/ui/surfaceLiveSession.ts','web/src/ui/surfaceWorkerSource.ts','web/src/ui/terrainbench.ts','web/scripts/surface_live_plugin.ts'];
 const snapshotRoot=resolve(dirname(viewerLauncher),'../..');
-async function repositorySnapshot(){
-  const git=args=>{const r=spawnSync('git',['-C',snapshotRoot,...args],{windowsHide:true,encoding:'utf8'});return r.status===0?r.stdout.trim():`unavailable: ${r.stderr?.trim()??r.error??r.status}`;};
-  const files=Object.fromEntries(await Promise.all(snapshotFiles.map(async name=>{try{return[name,createHash('sha256').update(await readFile(resolve(snapshotRoot,name))).digest('hex')];}catch(error){return[name,`unavailable: ${error.code??String(error)}`];}})));
-  return{root:snapshotRoot,head:git(['rev-parse','HEAD']),status:git(['status','--porcelain','--untracked-files=normal']),files};
-}
+const repositorySnapshot=()=>captureSurfaceRepositorySnapshot(snapshotRoot);
 report.code={driver:{path:fileURLToPath(import.meta.url),sha256:createHash('sha256').update(await readFile(fileURLToPath(import.meta.url))).digest('hex')},
   selectedRepository:await repositorySnapshot(),serviceRelationship:'The selected viewer repository is expected to serve the supplied Vite URL; the endpoint does not independently attest its Git revision.'};
+if(viewerGodot){try{assertFrozenSurfaceSnapshots(report.code.selectedRepository);}catch(error){report.status='failed';report.failure=String(error);await writeFile(paths.report,JSON.stringify(report,null,2));throw error;}}
 let saveQueue = Promise.resolve();
 const save = () => { const snapshot=JSON.stringify(report,null,2);saveQueue=saveQueue.then(()=>writeFile(paths.report,snapshot));return saveQueue; };
 let viewerProcess;
@@ -83,7 +88,7 @@ const stopViewer = () => {
 // exact cause synchronously and stop only this driver's owned renderer tree.
 const unexpectedFailure=(error,origin)=>{
   report.status='failed';report.failure=String(error);report.unexpectedDriverFailure={origin,message:String(error),stack:error?.stack,elapsedMs:Date.now()-began};
-  for(const phase of [report.viewer,report.navigation])if(phase?.status==='running')phase.status='failed';
+  for(const phase of [report.viewer,report.navigation,report.layerProbe])if(phase?.status==='running')phase.status='failed';
   try{writeFileSync(paths.report,JSON.stringify(report,null,2));}catch{}
   stopViewer();
 };
@@ -93,7 +98,7 @@ async function runNativeTour(sessionId) {
   const logPath=resolve(directory,'stdout.log'),errorPath=resolve(directory,'stderr.log'),metricsPath=resolve(directory,'metrics.json');
   const widths=[40000,10000,2560,640,160,40,10],events=[],nativeErrors=[];
   const command=[viewerLauncher,'--godot',resolve(viewerGodot),'--world',paths.source,'--live-url',`${base}/surface-live/terrain`,
-    '--session-id',sessionId,'--tour',directory,'--metrics',metricsPath,'--width','40000','--resolution',viewerResolution,'--presentation','aerial'];
+    '--session-id',sessionId,'--tour',directory,'--metrics',metricsPath,'--width','40000','--resolution',viewerResolution,'--presentation','aerial','--water-mode',viewerWaterMode,'--layers','all'];
   if(!args.includes('--viewer-oblique'))command.push('--top');
   if(viewerAssets)command.push('--assets',resolve(viewerAssets));
   report.viewer={status:'running',startedAt:new Date().toISOString(),startedElapsedMs:Date.now()-began,sessionId,
@@ -153,6 +158,7 @@ async function runNativeTour(sessionId) {
   if(captures.length!==7||captures.some((e,i)=>e.widthM!==widths[i]||e.error!==0))throw new Error('Native tour did not record seven successful new captures in the required scale order');
   const nativeAccepted=report.viewer.metrics.liveAcceptance??[],nativeRendered=report.viewer.metrics.renderEvents??[];
   report.viewer.cameraSatisfaction=verifyTourQuality(captures);
+  report.viewer.surfaceLayerEvidence=[];report.viewer.waterEvidence=[];
   for(const capture of captures){
     const display=capture.renderedSnapshot;
     const sourcePacket=packets.find(e=>e.packet?.worldId===display?.worldId)?.packet;
@@ -160,6 +166,8 @@ async function runNativeTour(sessionId) {
       ||!nativeRendered.some(e=>isFinalQualityDisplay(e)&&e.worldId===display.worldId&&e.liveSerial===display.liveSerial&&e.appliedTickMs===display.appliedTickMs)
       ||!packets.some(e=>e.packet?.worldId===display.worldId))throw new Error(`Native ${capture.widthM}m capture was not linked to a displayed live source packet`);
     if(!sameDeliveredSpacing(capture.viewSatisfaction.deliveredSpacingM,sourcePacket.terrain.spacingM))throw new Error(`Native ${capture.widthM}m cache density differed from the actual source grid`);
+    report.viewer.surfaceLayerEvidence.push({widthM:capture.widthM,...verifyExplicitLayerCapture(capture,sourcePacket)});
+    report.viewer.waterEvidence.push({widthM:capture.widthM,...verifyWaterCapture(capture,{requireSourceMap:viewerWaterMode==='source-map'&&capture.widthM>=2560})});
   }
   const loadedBinding=report.viewer.metrics.loadedLiveBinding;
   if(loadedBinding?.fingerprint!==report.source.canonicalFieldFingerprint||loadedBinding.n!==report.source.grid.width
@@ -184,7 +192,7 @@ async function runNativeNavigation(sessionId) {
   const paths={directory,stdout:resolve(directory,'stdout.log'),stderr:resolve(directory,'stderr.log'),metrics:resolve(directory,'metrics.json'),report:resolve(directory,'navigation-report.json')};
   const command=['--path',project,'--script','res://diagnostics/navigation_probe.gd','--','--world',report.paths.source,
     '--live-url',`${base}/surface-live/terrain`,'--session-id',sessionId,'--width','40000','--resolution',viewerResolution,
-    '--presentation','aerial','--metrics',paths.metrics,'--navigation-seconds',String(navigationSeconds),'--navigation-report',paths.report];
+    '--presentation','aerial','--water-mode',viewerWaterMode,'--layers','all','--metrics',paths.metrics,'--navigation-seconds',String(navigationSeconds),'--navigation-report',paths.report];
   if(!args.includes('--viewer-oblique'))command.push('--top');if(viewerAssets)command.push('--assets',resolve(viewerAssets));
   const phase={status:'running',startedElapsedMs:Date.now()-began,paths,command:[resolve(viewerGodot),...command],browserHeldOpen:true};report.navigation=phase;report.status='native-navigation';await save();
   const stdout=createWriteStream(paths.stdout),stderr=createWriteStream(paths.stderr);let timeout;
@@ -209,6 +217,13 @@ async function runNativeNavigation(sessionId) {
   phase.canonicalBuildCounts=[...new Set(packets.map(e=>e.canonicalBuildCount))];
   phase.requestQuality=packets.map(e=>({worldId:e.packet?.worldId,preview:e.packet?.source.request?.preview,requestedResolution:e.packet?.source.request?.resolution,
     deliveredGrid:e.packet?.terrain&&{width:e.packet.terrain.width,height:e.packet.terrain.height,spacingM:e.packet.terrain.spacingM},nativeSpacingM:e.packet?.terrain.source.nativeSpacingM}));
+  const finalPacket=packets.find(e=>e.packet?.worldId===phase.metrics.renderedSnapshot?.worldId)?.packet;
+  phase.surfaceLayerEvidence=verifyExplicitLayerCapture({renderedSnapshot:phase.metrics.renderedSnapshot,surfaceLayers:phase.metrics.surfaceLayers},finalPacket);
+  phase.waterEvidence=verifyWaterCapture({renderedSnapshot:phase.metrics.renderedSnapshot,water:phase.metrics.water});
+  if(phase.displayEvidence)phase.displayEvidence.displayedLiveWorlds=phase.displayEvidence.displayedLiveWorlds.map(display=>{
+    const actual=packets.find(e=>e.packet?.worldId===display.worldId)?.packet;
+    return{...display,deliveredGrid:actual?.terrain&&{width:actual.terrain.width,height:actual.terrain.height,spacingM:actual.terrain.spacingM},nativeSpacingM:actual?.terrain.source.nativeSpacingM};
+  });
   phase.pythonTiles=network.filter(e=>e.elapsedMs>=phase.startedElapsedMs&&e.url?.includes('/refinement/tile')).length;
   const logs=await Promise.all([readFile(paths.stdout,'utf8'),readFile(paths.stderr,'utf8')]);
   const unavailable=logs.join('\n').split(/\r?\n/).filter(line=>line.includes('Live terrain unavailable'));
@@ -223,6 +238,44 @@ async function runNativeNavigation(sessionId) {
     ||phase.environmentVersions[0]!==report.live.environmentVersion
     ||geologyScenario&&packets.some(e=>JSON.stringify(e.packet?.geologyScenario)!==JSON.stringify(report.source.geologyScenario))
     ||network.some(e=>e.elapsedMs>=phase.startedElapsedMs&&e.url?.includes('/generate?')))throw new Error('Continuous native navigation changed canonical context or regenerated source');
+  phase.status='complete';await save();
+}
+async function runNativeLayerProbe(sessionId){
+  const directory=resolve(out,'native-layer-isolation');await mkdir(directory,{recursive:true});
+  const project=resolve(dirname(viewerLauncher),'../../viewer-local');
+  const paths={directory,stdout:resolve(directory,'stdout.log'),stderr:resolve(directory,'stderr.log'),metrics:resolve(directory,'metrics.json'),report:resolve(directory,'layer-report.json')};
+  const command=['--path',project,'--script','res://diagnostics/layer_probe.gd','--','--world',report.paths.source,'--live-url',`${base}/surface-live/terrain`,
+    '--session-id',sessionId,'--width','10000','--resolution',viewerResolution,'--presentation','aerial','--water-mode',viewerWaterMode,'--layers','all',
+    '--metrics',paths.metrics,'--layer-report',paths.report,'--layer-captures',directory];
+  if(!args.includes('--viewer-oblique'))command.push('--top');if(viewerAssets)command.push('--assets',resolve(viewerAssets));
+  const phase={status:'running',startedElapsedMs:Date.now()-began,paths,command:[resolve(viewerGodot),...command],browserHeldOpen:true};
+  report.layerProbe=phase;report.status='native-layer-isolation';await save();
+  const stdout=createWriteStream(paths.stdout),stderr=createWriteStream(paths.stderr);let timeout;
+  try{
+    Object.assign(phase,await new Promise((done,fail)=>{
+      viewerProcess=spawn(resolve(viewerGodot),command,{windowsHide:true,detached:process.platform!=='win32',stdio:['ignore','pipe','pipe']});phase.processId=viewerProcess.pid;
+      viewerProcess.stdout.on('data',chunk=>stdout.write(chunk));viewerProcess.stderr.on('data',chunk=>stderr.write(chunk));
+      viewerProcess.once('error',fail);viewerProcess.once('close',(code,signal)=>done({code,signal}));timeout=setTimeout(()=>{phase.timedOut=true;stopViewer();},viewerTimeoutMs);
+    }));
+  }finally{clearTimeout(timeout);stopViewer();stdout.end();stderr.end();await Promise.all([finished(stdout),finished(stderr)]);}
+  phase.elapsedMs=Date.now()-began-phase.startedElapsedMs;
+  if(existsSync(paths.report))phase.result=JSON.parse(await readFile(paths.report,'utf8'));
+  if(existsSync(paths.metrics))phase.metrics=JSON.parse(await readFile(paths.metrics,'utf8'));
+  verifyLayerIsolationProbe(phase.result);
+  const bare=phase.result.bareGroundMean,first=phase.result.views[0];
+  if(!bare||bare.diagnostic!==7||['terrainVersion','canonicalContextId','groundFieldsVersion','inventoryFingerprint','geometryDetailId','groundSampleFingerprint'].some(key=>bare[key]!==first[key]))throw new Error('Unlit bare-ground diagnostic edited or omitted physical support');
+  const logs=await Promise.all([readFile(paths.stdout,'utf8'),readFile(paths.stderr,'utf8')]);
+  const captures=logs[0].split(/\r?\n/).filter(line=>line.startsWith('{')).flatMap(line=>{try{const event=JSON.parse(line);return event.event==='capture'?[event]:[];}catch{return[];}});
+  const packets=browserEvents.filter(e=>e.kind==='worker-compiled'&&e.elapsedMs>=phase.startedElapsedMs);
+  phase.captures=[];
+  for(const view of [...phase.result.views,bare]){
+    const event=captures.find(e=>e.path.replaceAll('\\','/')===view.capturePath.replaceAll('\\','/'));
+    const packet=packets.find(e=>e.packet?.worldId===event?.renderedSnapshot?.worldId)?.packet;
+    const layer=verifyExplicitLayerCapture(event,packet,view.visibility),water=verifyWaterCapture(event,{requireSourceMap:viewerWaterMode==='source-map'});
+    const png=await readFile(view.capturePath);if(png.subarray(0,8).toString('hex')!=='89504e470d0a1a0a'||png.readUInt32BE(16)!==Number(viewerResolution.split('x')[0])||png.readUInt32BE(20)!==Number(viewerResolution.split('x')[1]))throw new Error('Layer probe PNG dimensions differ');
+    phase.captures.push({path:view.capturePath,sha256:createHash('sha256').update(png).digest('hex'),surfaceLayers:layer,water});
+  }
+  if(phase.timedOut||phase.code!==0||phase.result.status!=='complete'||logs.some(log=>/(?:SCRIPT|SHADER) ERROR|ERROR:|Live terrain unavailable/.test(log)))throw new Error('Native layer isolation failed; see its retained logs');
   phase.status='complete';await save();
 }
 const serviceStatus = async () => {
@@ -266,7 +319,7 @@ try {
     };
     // Inspect only the small binary manifest and parent height controls, without
     // cloning the large SurfaceWorld or interfering with transferred buffers.
-    let retainedParent;
+    let retainedParent;const canonicalGrids=new Map();
     const sampleHeight = (t, x, z) => {
       const gx = Math.max(0, Math.min(t.width - 1, (x - t.originX) / t.spacingM)), gz = Math.max(0, Math.min(t.height - 1, (z - t.originZ) / t.spacingM));
       const ix = Math.floor(gx), iz = Math.floor(gz), u = gx - ix, v = gz - iz;
@@ -281,6 +334,8 @@ try {
       if (!(binary instanceof ArrayBuffer) || binary.byteLength < 16) return undefined;
       const view = new DataView(binary), length = view.getUint32(8, true), start = Math.ceil((16 + length) / 8) * 8;
       const manifest = JSON.parse(new TextDecoder().decode(new Uint8Array(binary, 16, length))), packet = manifest.value, t = packet.world.terrain;
+      const contextId=packet.world.canonicalContextRef?.id;
+      if(contextId&&packet.world.canonicalContext?.grid)canonicalGrids.set(contextId,packet.world.canonicalContext.grid);
       const values = path => { const d = manifest.arrays.find(a => a.path.join('.') === path); return d?.dtype === 'f32' ? new Float32Array(binary, start+d.offset, d.length) : undefined; };
       const parent = packet.terrainParents?.[0]?.terrain, parentValues = values('terrainParents.0.terrain.heights');
       if (parent && parentValues) retainedParent = { ...parent, heights: new Float32Array(parentValues) };
@@ -295,8 +350,10 @@ try {
         boundary={samples:count,rawFineVsParentMaxAbsM:max,rawFineVsParentRmsM:Math.sqrt(sum/count),parentReconstruction:retainedParent.reconstruction??'bilinear-samples',
           note:'Raw source boundary before viewer feathering; residual differences do not measure a displayed seam.'};
       }
-      return { bytes:binary.byteLength, worldId:packet.world.id, terrain:{width:t.width,height:t.height,originX:t.originX,originZ:t.originZ,spacingM:t.spacingM,reconstruction:t.reconstruction,source:t.source},
-        contextId:packet.world.canonicalContextRef?.id, includesCanonicalContext:!!packet.world.canonicalContext, parentTerrain:parent && {...parent,heights:undefined},geologyScenario:packet.world.geology?.scenario,
+      const layerNames=['groundMaterial','groundMaterialSecondary','groundMaterialBlend','groundMaterialMeanColor','lowCoverMaterial','lowCoverMaterialSecondary','lowCoverMaterialBlend','lowCoverMaterialMeanColor','lowCoverOpacity'];
+      const layerFieldDescriptors=Object.fromEntries(layerNames.map(name=>{const descriptor=manifest.arrays.find(a=>a.path.join('.')==='world.fields.'+name);return[name,descriptor&&{dtype:descriptor.dtype,length:descriptor.length}];}));
+      return { bytes:binary.byteLength, worldId:packet.world.id,surfaceLayers:packet.world.surfaceLayers,layerFieldDescriptors,terrain:{width:t.width,height:t.height,originX:t.originX,originZ:t.originZ,spacingM:t.spacingM,reconstruction:t.reconstruction,source:t.source},
+        contextId,canonicalGrid:canonicalGrids.get(contextId),includesCanonicalContext:!!packet.world.canonicalContext, parentTerrain:parent && {...parent,heights:undefined},geologyScenario:packet.world.geology?.scenario,
         source:{live:packet.source?.live,provider:packet.source?.provider,originalSource:packet.source?.originalSource,
           compilation:packet.source?.compilation,registrationBinding:packet.source?.registrationBinding,canonicalContextId:packet.source?.canonicalContextId,
           sceneContextId:packet.source?.sceneContextId,sourceEpoch:packet.source?.sourceEpoch,sceneEpoch:packet.source?.sceneEpoch,request:packet.source?.request},versions:packet.world.versions,boundary };
@@ -388,6 +445,7 @@ try {
   if (retainedWidth !== width || packet.source.meta.seed !== seed || sourceQuery.get('source') !== 'neural-python') throw new Error('Exported source provenance does not match the requested fresh source');
   if(geologyScenario&&(sourceQuery.get('surface_geology')!==geologyScenario||packet.world.geology?.scenario?.id!==geologyScenario))throw new Error('Export lost or did not compile the explicitly requested geological scenario');
   const exportedTerrain=packet.world.terrain;
+  if(!hasExplicitSurfaceLayers(packet.world.fields)||packet.world.surfaceLayers?.version!=='surface-layers-1'||packet.world.surfaceLayers.groundAvailability!=='explicit'||packet.world.surfaceLayers.lowCoverAvailability!=='explicit')throw new Error('Fresh export lacks explicitly separated ground/low-cover/tree layers');
   if(exportedTerrain.width!==exportedTerrain.height||Math.abs(exportedTerrain.originX-exportedTerrain.spacingM/2)>1e-6||Math.abs(exportedTerrain.originZ-exportedTerrain.spacingM/2)>1e-6)throw new Error('Fresh E2E requires the full uncropped source frame');
   const canonicalFieldFingerprint=registrationFieldFingerprint({width:exportedTerrain.spacingM*exportedTerrain.width,n:exportedTerrain.width,data:exportedTerrain.heights});
   const retainedField=packet.source.retainedField;
@@ -397,7 +455,7 @@ try {
   for (const h of packet.world.terrain.heights) { if (!Number.isFinite(h)) throw new Error('Non-finite fresh source height'); min = Math.min(min, h); max = Math.max(max, h); }
   report.source = { id: packet.source.meta.id, created: packet.source.meta.created, query: packet.source.meta.query, bytes: sourceBytes.length,
     grid: { width: packet.world.terrain.width, height: packet.world.terrain.height, spacingM: packet.world.terrain.spacingM },
-    sourceIdentity: packet.world.terrain.source, heightRangeM: { min, max }, diagnostics: packet.world.diagnostics,
+    sourceIdentity: packet.world.terrain.source, heightRangeM: { min, max }, diagnostics: packet.world.diagnostics,surfaceLayers:packet.world.surfaceLayers,canonicalSurfaceLayersVersion:packet.world.versions.surfaceLayers,
     climate: packet.world.climate,canonicalFieldFingerprint,retainedField,frame:packet.source.frame,urbanId:packet.urbanId,
     geologyScenario:packet.world.geology?.scenario, buildings: packet.urban?.buildings?.length ?? packet.urban?.buildingCount ?? 0 };
   report.status = 'source-exported'; await save();
@@ -444,16 +502,18 @@ try {
   if(navigationFirst)await runNativeNavigation(sessions.at(-1));
   if(viewerGodot)await runNativeTour(sessions.at(-1));
   if(navigationSeconds&&!navigationFirst)await runNativeNavigation(sessions.at(-1));
-  if(viewerGodot&&report.viewer?.status!=='complete'||navigationSeconds&&report.navigation?.status!=='complete')throw new Error('A requested native proof phase did not complete');
+  if(layerProbe)await runNativeLayerProbe(sessions.at(-1));
+  if(viewerGodot&&report.viewer?.status!=='complete'||navigationSeconds&&report.navigation?.status!=='complete'||layerProbe&&report.layerProbe?.status!=='complete')throw new Error('A requested native proof phase did not complete');
   report.code.finalRepository=await repositorySnapshot();
-  if(viewerGodot&&(report.code.finalRepository.head!==report.code.selectedRepository.head||JSON.stringify(report.code.finalRepository.files)!==JSON.stringify(report.code.selectedRepository.files)))throw new Error('Selected native/browser source snapshot changed during E2E; freeze the integration and rerun');
+  if(viewerGodot)assertFrozenSurfaceSnapshots(report.code.selectedRepository,report.code.finalRepository);
+  if(viewerAssets){report.assets.finalManifestSha256=createHash('sha256').update(await readFile(resolve(viewerAssets))).digest('hex');if(report.assets.finalManifestSha256!==report.assets.manifestSha256)throw new Error('Resolved asset manifest changed during the run');}
   report.finalService = await serviceStatus(); report.status = 'complete'; report.durationMs = Date.now() - began;
   await page.screenshot({ path: resolve(out, 'fresh-source-after-refinement.png') });
   await save(); console.log(JSON.stringify({ result: { status: report.status, durationMs: report.durationMs, widthM: width,
     sourceBytes: report.source.bytes, neuralOutput: report.neuralOutput, live: report.live, paths, errors } }));
 } catch (error) {
   report.code.finalRepository??=await repositorySnapshot();
-  for(const phase of [report.viewer,report.navigation])if(phase?.status==='running')phase.status='failed';
+  for(const phase of [report.viewer,report.navigation,report.layerProbe])if(phase?.status==='running')phase.status='failed';
   report.status = 'failed'; report.failure = String(error); report.finalService = await serviceStatus(); report.durationMs = Date.now() - began;
   await save(); throw error;
 } finally { stopViewer();await browser.close();process.removeListener('SIGINT',interrupted);process.removeListener('SIGTERM',interrupted);process.removeListener('uncaughtExceptionMonitor',unexpectedFailure); }
