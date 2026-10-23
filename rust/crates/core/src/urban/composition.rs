@@ -1536,6 +1536,9 @@ fn fortify(
     let predicted = fortification::Predicted {
         widths: table.map(|w| w * 1.1),
         arterial: if site.population >= 20_000 { 0 } else { 1 },
+        dwelling: super::culture::mapping_for(culture, &cfg.programme.period).map_or([5.0, 5.0], |m| {
+            [m.admissibility.min_frontage, m.admissibility.min_depth]
+        }),
     };
     for (i, wall) in walls.iter().chain(&inner_walls).enumerate() {
         let path = closed(&wall.outer);

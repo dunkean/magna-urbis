@@ -545,6 +545,10 @@ fn tiles(shapes: Vec<Shape>, size: f64) -> Vec<Shape> {
 const TILE: f64 = 200.0;
 /// Gap between a lean-to front and the ribbon of the lane serving it (m).
 const LEAN_GAP: f64 = 0.6;
+/// A faubourg house against the wall holds one narrow dwelling or shop
+/// (a gabled row house at most): never deeper or wider.
+const LEAN_MAX_DEPTH: f64 = 12.0;
+const LEAN_MAX_FRONT: f64 = 12.0;
 /// Shapes with their boxes, for cheap repeated subtraction.
 struct Cut {
     shapes: Vec<(Shape, Box2)>,
@@ -960,6 +964,9 @@ fn final_width(s: &Street, i: usize, crossing: bool, predicted: &Predicted) -> f
 pub(super) struct Predicted {
     pub widths: [f64; 5],
     pub arterial: usize,
+    /// Smallest dwelling lot the culture admits (frontage, depth, m): a
+    /// faubourg lean-to is laid at least this size, so it can be built.
+    pub dwelling: [f64; 2],
 }
 /// Street ribbons (+1 m) within `reach` of the curtain.
 fn street_clear(
@@ -1916,7 +1923,10 @@ pub(super) fn build(
                 })
                 .collect();
             for side in [-1.0, 1.0] {
-                let depth = ar.range(5.0, 7.0);
+                // Deeper than a lean-to is a house of its own: such a
+                // culture keeps the drawn lean-to as decor only.
+                let [min_front, min_depth] = predicted.dwelling;
+                let depth = ar.range(5.0, 7.0).max(if min_depth <= LEAN_MAX_DEPTH { min_depth } else { 0.0 });
                 let o1 = depth + LEAN_GAP + lw * 0.5;
                 let end = (if side > 0.0 {
                     dist(q, path[k + 1])
@@ -1967,7 +1977,7 @@ pub(super) fn build(
                 let first = attached.len();
                 let mut a = ac + lw * 0.5 + LEAN_GAP;
                 while a < end {
-                    let f = ar.range(5.0, 9.0);
+                    let f = ar.range(5.0, 9.0).max(min_front.min(LEAN_MAX_FRONT));
                     if a + f > end {
                         break;
                     }
@@ -2720,6 +2730,7 @@ mod tests {
         Predicted {
             widths: [9.0, 8.0, 5.0, 3.5, 3.0],
             arterial: 1,
+            dwelling: [5.0, 5.0],
         }
     }
     /// One enclosure built as `fortify` does.

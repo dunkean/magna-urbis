@@ -2191,8 +2191,10 @@ pub fn allocate(layout: &Layout, partition: &mut Partition) {
 /// Heap tier of a main-street lot for housing: above any cohesion bonus.
 const PRIME_TIER: f64 = 100.0;
 /// Public frontage on a main street (rank 0 or 1): the street wall.
+/// Main-street lots, and the faubourg lean-tos at the gates: built first
+/// (shops ahead of houses) and never left as empty gardens while a house fits.
 fn prime_frontage(p: &Parcel) -> bool {
-    public_street(p) && p.rank <= 1
+    public_street(p) && (p.rank <= 1 || p.family == "faubourg")
 }
 fn public_street(p: &Parcel) -> bool {
     matches!(p.use_kind.as_str(), "plot" | "compound")
