@@ -13,6 +13,8 @@ import { FOREST_BANK_GLSL, forestBankDensity, forestBankField, forestLakeInterio
 export interface ForestSettings { enabled: boolean; density: number; clearings: number }
 /** density 0..2 (1 = climate potential), clearings 0..1. */
 export const DEFAULT_FOREST_SETTINGS: ForestSettings = { enabled: true, density: 1, clearings: .45 };
+/** Included in completed-field and display-cache keys, not terrain identity. */
+export const V2_FOREST_PROFILE_VERSION = 'optical-thinning4';
 /** Occupation RGBA8: R/G signed distance to open/forest land, encoded
  * clamp(128+16d) in native texels (positive inside); B class id (0 none,
  * 1 field, 2 meadow, 3 pasture, 4 orchard, 5 garden, 6 commons, 7 built reserve, 8 occupied construction);
@@ -29,7 +31,7 @@ export interface ForestOccupation { x: number; y: number; width: number; n: numb
  * is the narrow bank-envelope raster on the same texels (ForestBank.rgba).
  * bankDensity is the applied 0..2 density control for gallery candidates;
  * its area channel is already scaled, and its bank geometry stays unchanged. */
-export interface ForestField { x: number; y: number; width: number; n: number; rgba: Uint8Array; bank?: Uint8Array; bankDensity?: number; key: string }
+export interface ForestField { x: number; y: number; width: number; n: number; rgba: Uint8Array; bank?: Uint8Array; bankDensity?: number; clearingProfile?: 'progressive'; key: string }
 export interface ForestFieldInput {
   /** Material seed, the same uint as uMaterialSeed (seedHash(settings.seed)). */
   seed: number;
@@ -43,6 +45,9 @@ export interface ForestFieldInput {
    * widthA, widthB, r, g, b; metres): defines the narrow gallery envelope. */
   riverSegments?: Float32Array;
   occupation?: ForestOccupation;
+  /** V2 appearance only: bounded thinning of the same seeded disturbance field.
+   * Omitted preserves Render3D's historical population exactly. */
+  clearingProfile?: 'progressive';
 }
 
 /** Field texels of about 16 m, capped at 1024² (39 m over 40 km). */
@@ -210,7 +215,14 @@ function renderEligibility(layer: ForestFieldInput['height'], climate: readonly 
 }
 
 
-let baseCache: { key: string; base: Float32Array; eligible: Float32Array; bank?: ForestBank } | undefined;
+/** CPU counterpart of canonical v2StandCoverage; optical gap law, not measured LAI. */
+export function v2StandCoverage(cover: number, stand: number, disturbed: number, trop: number): number {
+  const mosaic = .22 * (1 - .75 * trop);
+  const density = Math.exp(mosaic * stand + .05 * stand * (1 - cover)) * (1 - .3 * disturbed * (1 - .7 * trop));
+  return 1 - Math.pow(Math.max(1 - cover, .001), density);
+}
+
+let baseCache: { key: string; base: Float32Array; optical: Float32Array; eligible: Float32Array; bank?: ForestBank } | undefined;
 /** Deterministic in (seed, climate, heights, water, rivers, settings); no Math.random.
  * Terrain/climate terms vary at the height grid's scale and are evaluated on a
  * half-resolution base grid; clearings stay at full resolution. */
@@ -220,7 +232,8 @@ export function buildForestField(input: ForestFieldInput, settings: ForestSettin
   const density = clamp(settings.density, 0, 2), clearings = clamp(settings.clearings, 0, 1);
   const terrainKey = `forest7:${seed}:${T}:${P}:${layer.x},${layer.y},${layer.width},${n}:${fnv(new Uint8Array(layer.data.buffer, layer.data.byteOffset, layer.data.byteLength)).toString(36)}`
     + `:${input.water ? fnv(input.water).toString(36) : '-'}:${forestSegmentsKey(input.riverSegments)}`;
-  const key = `${terrainKey}:${settings.enabled ? 1 : 0}:${density}:${clearings}:${input.occupation?.key ?? '-'}`;
+  const key = `${terrainKey}:${settings.enabled ? 1 : 0}:${density}:${clearings}:${input.occupation?.key ?? '-'}`
+    + (input.clearingProfile === 'progressive' ? `:${V2_FOREST_PROFILE_VERSION}` : '');
   const rgba = new Uint8Array(N * N * 4), data = layer.data;
   const heightAt = (wx: number, wy: number): number => {
     if (n < 2) return data[0];
@@ -234,6 +247,7 @@ export function buildForestField(input: ForestFieldInput, settings: ForestSettin
   const B = Math.max(16, Math.ceil(N / 2)), bcell = layer.width / B;
   const cached = baseCache?.key === terrainKey ? baseCache : undefined;
   const base = cached?.base ?? new Float32Array(B * B * 5);
+  const optical = cached?.optical ?? new Float32Array(B * B);
   const eligible = cached?.eligible ?? renderEligibility(layer, input.climate, seed, N, heightAt);
   let bank = cached?.bank;
   if (!cached) {
@@ -293,6 +307,9 @@ export function buildForestField(input: ForestFieldInput, settings: ForestSettin
       // Boreal wet flats open into bog and fen.
       const bog = valley * (1 - sstep(.02, .08, slope)) * sstep(1.6, 3, humid) * (1 - sstep(11, 17, grow)) * (1 - wTropRegion);
       let cover = thermal * moisture * coverMax * (1 - .6 * bog) * (1 - .2 * ridge * (1 - moisture));
+      // Retain a separate V2 channel: either style can populate the shared
+      // terrain cache first without changing historical cover or other fields.
+      optical[o] = v2StandCoverage(cover, stand, disturbed, wTropRegion);
       // Wet tropical disturbance and stand mosaic mostly lower and lighten the
       // canopy (height, tone) rather than opening it: the canopy stays closed.
       const mosaic = .22 * (1 - .75 * wTropRegion);
@@ -311,13 +328,19 @@ export function buildForestField(input: ForestFieldInput, settings: ForestSettin
       const b = o * 5;
       base[b] = cover; base[b + 1] = bias; base[b + 2] = height; base[b + 3] = needle; base[b + 4] = tone;
     }
-    baseCache = { key: terrainKey, base, eligible, bank };
+    baseCache = { key: terrainKey, base, optical, eligible, bank };
   }
-  // Full resolution: clearings 100–400 m (thresholded fbm), signed sea exclusion.
+  // Full resolution: legacy clearings or bounded V2 thinning at 100–400 m,
+  // then the independent physical eligibility and signed sea exclusion.
   // Target opened share of the potential forest. Closed wet tropical forest stays mostly closed (CHMv2 tropical
   // windows show no ≥ 1 ha opening, a known smoothing bias), so it keeps 15 %: ~2.7 % at the default.
   // The terrain bias widens the noise to a ~1.15 standard deviation.
-  const clearedFraction = .4 * clearings * (1 - .85 * sstep(13, 19, T - 6)), threshold = 1.15 * upperQuantile(Math.max(clearedFraction, 1e-4));
+  // V2 represents natural stands: wet productive forests retain fewer small
+  // disturbance openings. This bounded appearance policy is not a measured
+  // universal clearing rate. Rock, bog, drought and treeline gates stay intact.
+  const humidAnnual = P / Math.max(20 * T + 280, 120);
+  const clearingRate = input.clearingProfile === 'progressive' ? .4 + (.08 - .4) * sstep(.8, 1.8, humidAnnual) : .4;
+  const clearedFraction = clearingRate * clearings * (1 - .85 * sstep(13, 19, T - 6)), threshold = 1.15 * upperQuantile(Math.max(clearedFraction, 1e-4));
   const byte = (v: number): number => (v <= 0 ? 0 : v >= 1 ? 255 : v * 255 + .5) | 0;
   for (let j = 0; j < N; j++) {
     const wy = (j + .5) * cell, gy = clamp(wy / bcell - .5, 0, B - 1), y0 = Math.min(B - 2, Math.floor(gy)), fy = gy - y0;
@@ -326,8 +349,17 @@ export function buildForestField(input: ForestFieldInput, settings: ForestSettin
       const b00 = (y0 * B + x0) * 5, b10 = b00 + 5, b01 = b00 + B * 5, b11 = b01 + 5;
       const w00 = (1 - fx) * (1 - fy), w10 = fx * (1 - fy), w01 = (1 - fx) * fy, w11 = fx * fy;
       const at = (c: number): number => base[b00 + c] * w00 + base[b10 + c] * w10 + base[b01 + c] * w01 + base[b11 + c] * w11;
-      const opened = clearedFraction <= 0 ? 0 : sstep(threshold - .25, threshold + .25, .4 * noise((layer.x + wx) / 200 + 31.7, (layer.y + wy) / 200 - 17.3, seed + 41 + 0x9e37) / 1.077 + at(1));
-      let cover = at(0) * (1 - opened);
+      const score = .4 * noise((layer.x + wx) / 200 + 31.7, (layer.y + wy) / 200 - 17.3, seed + 41 + 0x9e37) / 1.077 + at(1);
+      // The same 100--400 m score thins V2 stands instead of clearing cells.
+      // Symmetric, unbiased scores retain mean loss c before the .55 cap;
+      // physical openings and the historical Render3D threshold stay separate.
+      const opened = clearedFraction <= 0 ? 0 : input.clearingProfile === 'progressive'
+        ? Math.min(.55, 2 * clearedFraction / (1 + Math.exp(clamp(-score / 1.15, -20, 20))))
+        : sstep(threshold - .25, threshold + .25, score);
+      const potential = input.clearingProfile === 'progressive'
+        ? optical[y0 * B + x0] * w00 + optical[y0 * B + x0 + 1] * w10 + optical[(y0 + 1) * B + x0] * w01 + optical[(y0 + 1) * B + x0 + 1] * w11
+        : at(0);
+      let cover = potential * (1 - opened);
       if (density !== 1) cover = 1 - Math.pow(1 - Math.min(cover, .999), density);
       // After the density control, so it cannot reforest rock or the treeline.
       // Height stays whole down to E = .4, then collapses: sparse marginal
@@ -356,7 +388,7 @@ export function buildForestField(input: ForestFieldInput, settings: ForestSettin
     const k = o * 4, base = forestBankDensity(bankRgba[k + 2] * .5);
     bankRgba[k + 3] = Math.min(255, Math.round(bankRgba[k + 3] * (1 - Math.pow(1 - base, density)) / base));
   }
-  return { x: layer.x, y: layer.y, width: layer.width, n: N, rgba, bank: bankRgba, bankDensity: density, key };
+  return { x: layer.x, y: layer.y, width: layer.width, n: N, rgba, bank: bankRgba, bankDensity: density, clearingProfile: input.clearingProfile, key };
 }
 
 /** Crown lattice: per-level coverage target d → control τ (Monte-Carlo
@@ -375,14 +407,25 @@ const list = (values: readonly number[]): string => values.map(v => Number.isInt
 export const FOREST_PRELUDE_GLSL = `
 #define RENDER3D_FOREST
 uniform int uForest;
+uniform int uRenderV2;uniform float uV2Season;uniform int uV2WaterVisible;
+float v2Foliage=1.;
+float v2FloorModulation=1.;
+vec3 v2MacroNormal=vec3(0.,1.,0.);
+vec3 v2MacroCanopy=vec3(0.);
+float v2GroundSnow=0.;
+float v2MeanEnabled=0.,v2ForestReveal=0.;
 uniform int uForestBrushes; uniform highp sampler2DArray uForestBrushAtlas;
 uniform sampler2D uForestField; uniform vec3 uForestRect;
 uniform int uHasForestBank; uniform sampler2D uForestBank; uniform float uForestBankDensity;
 uniform int uHasOccupation; uniform sampler2D uOccupation; uniform vec3 uOccupationRect; uniform float uOccupationN;
 float forestWaterCoverage(vec2 world);
+vec3 forestRootSurface(vec2 world);
+float forestRootCell();
+float forestBeachCoverage(vec2 world);
 // Written by the last earthMaterial call (display RGB): Render's colour, the
 // same surface without and with full canopy, and its macro woods coverage.
-vec3 renderGuideColor=vec3(0.),renderGuideOpen=vec3(0.),renderGuideClosed=vec3(0.);float renderGuideWoods=0.;
+vec3 renderGuideColor=vec3(0.),renderGuideOpen=vec3(0.),renderGuideClosed=vec3(0.),renderGuideBaseOpen=vec3(0.),renderGuideBaseClosed=vec3(0.),renderGuideSediment=vec3(0.);float renderGuideWoods=0.,renderGuideBeach=0.,renderGuideFlats=0.;
+float renderGuideShore=1e9,renderGuideOpenness=0.;
 `;
 
 /** Needs GROUND_FIELD_GLSL (GroundMaterial, groundHash, groundSmooth), uMaterialSeed/uMaterialClimate
@@ -494,7 +537,11 @@ ForestCrown forestCrown(ivec2 cell,int level,float s,ForestStand st,ForestPatch 
     k.edge=1.-groundSmooth(0.,.1,share-threshold);
   }
   // A tree's centre stays on land; its complete crown can overhang the bank.
-  if(occupied||(k.alive && forestWaterCoverage(k.c)>=.5))k.alive=false;
+  if(occupied||(k.alive && forestWaterCoverage(k.c)>=(uRenderV2>0?.05:.5)))k.alive=false;
+  if(uRenderV2>0&&k.alive){
+    float beachChoice=forestU8(groundHash(ivec3(cell,level*2+37),seed),0u);
+    if(beachChoice<forestBeachCoverage(k.c))k.alive=false;
+  }
   k.riparian=k.riparian&&k.alive;
   // Geometry only for live crowns. No early return: ANGLE/D3D11 miscompiled it here.
   k.needle=false;k.r=0.;k.h=0.;k.depth=0.;
@@ -598,8 +645,12 @@ vec3 forestFloor(vec3 ground,ForestStand st,float cold){
   litter=mix(litter,vec3(.15,.24,.10),st.trop);
   // Boreal floors: moss in wet stands, pale lichen in dry ones.
   litter=mix(litter,mix(vec3(.27,.32,.18),vec3(.58,.58,.48),.7*st.dry),cold*st.needle);
+  if(uRenderV2>0)litter=mix(litter,ground,v2GroundSnow);
   return mix(ground,litter,.65*(1.-.6*st.dry));
 }
+// Detail belongs to the exposed surface, after the grass/litter blend. Tree
+// crowns carry their own frequencies and never inherit the mineral pattern.
+vec3 forestFloorAlbedo(vec3 color){return groundToLinear(color*(uRenderV2>0?v2FloorModulation:1.));}
 // Bank vegetation keeps its foliage greener than the dry climate palette.
 vec3 forestRiparianTint(ForestStand st){ForestStand w=st;w.dry*=.45;return forestPalette(w,0.)/max(forestPalette(st,0.),vec3(.02));}
 // Shadowed fraction s: remove the direct-light component of the normal.
@@ -644,18 +695,19 @@ void applyForest(inout GroundMaterial m,vec2 world,float footprint,vec3 light){
   // while the forest is unresolved; k carries the Render3D ground detail
   // (rock tint, clasts, strata) from Render's colour onto its open guide.
   vec3 ground=groundToDisplay(m.albedo);
-  vec3 k=clamp(ground/max(renderGuideColor,vec3(.02)),vec3(.25),vec3(4.));
+  vec3 k=uRenderV2>0?vec3(1.):clamp(ground/max(renderGuideColor,vec3(.02)),vec3(.25),vec3(4.));
   vec3 openGround=clamp(renderGuideOpen*k,0.,1.);
   vec3 refAlbedo=m.albedo;
   // The same nearest-class mask applies in 2D, perspective and raster exports.
   // Return before gallery, neighbouring crowns and shadows are evaluated.
-  if(occupied){m.albedo=groundToLinear(openGround);return;}
+  if(occupied){m.albedo=forestFloorAlbedo(openGround);return;}
   // Applied occupation acts at every distance: open land replaces Render's
   // macro woods by its own tree share, applied woods add their weak prior.
   if(uHasOccupation==1&&openA+forcedA>0.){
     float woods=mix(renderGuideWoods,st.allow*.7+hedgeA/max(openA,1e-3)*st.hedge*.6,openA);
     woods=mix(woods,max(woods,.25*forestHeightGate(st.height)),forcedA);
-    refAlbedo=groundToLinear(ground+(woods-renderGuideWoods)*(renderGuideClosed*k-openGround));
+    if(uRenderV2>0){woods*=1.-clamp(renderGuideBeach/.8,0.,1.);refAlbedo=mix(forestFloorAlbedo(openGround),groundToLinear(v2MacroCanopy),woods);}
+    else refAlbedo=groundToLinear(ground+(woods-renderGuideWoods)*(renderGuideClosed*k-openGround));
   }
   // Riparian gallery over the reference: an area-filtered hint of the narrow
   // bank envelope, colour only (no stand paint, normal or shadow). Weak (50 %)
@@ -663,6 +715,7 @@ void applyForest(inout GroundMaterial m,vec2 world,float footprint,vec3 light){
   // crowns are legible yet, so the ribbon never jumps when they resolve.
   vec3 galleryMean=groundToLinear(forestCrownColor(st,renderGuideClosed,0.,vec2(0.),0.)*forestRiparianTint(st));
   float galleryArea=forestBankCover(world,fp)*(1.-.5*openA);
+  if(uRenderV2>0)galleryArea*=v2Foliage*(1.-clamp(renderGuideBeach/.8,0.,1.));
   refAlbedo=mix(refAlbedo,galleryMean,mix(.5,1.,reveal)*galleryArea);
   // Stand statistics: share s = c/d of the ground in stands, crown cover d inside them.
   float radius=mix((.24*st.height+1.)*(1.+.45*st.dry),.14*st.height+.9,st.needle);
@@ -677,6 +730,7 @@ void applyForest(inout GroundMaterial m,vec2 world,float footprint,vec3 light){
   // legible: a small (6 %) residual of the canonical stands while they are
   // unreadable, so no spotted stand pattern replaces Render's coherent guide.
   reveal*=mix(.06,1.,crownVis*crownVis);
+  if(uRenderV2>0&&v2MeanEnabled>.5){v2ForestReveal=reveal;if(reveal>0.)reveal=1.;}
   if(reveal<=0.){m.albedo=refAlbedo;return;}
   // A zero-cover fragment can still lie under a crown centred across the
   // clearing boundary. The coarser mip covers that neighbouring support;
@@ -684,7 +738,7 @@ void applyForest(inout GroundMaterial m,vec2 world,float footprint,vec3 light){
   // Beyond it, Render's macro woods give way to its open ground. Gallery
   // crowns reach 16 m beyond their envelope at most.
   vec2 bank=forestBankAt(world);float galleryNear=bank.x>-16.?forestBankDensity(bank.y):0.;
-  if(st.cover<.002&&galleryNear<=0.&&uHasOccupation==0&&forestField(world,max(lod,1.)).r<.00001){m.albedo=mix(refAlbedo,groundToLinear(openGround),reveal);return;}
+  if(st.cover<.002&&galleryNear<=0.&&uHasOccupation==0&&forestField(world,max(lod,1.)).r<.00001){m.albedo=mix(refAlbedo,forestFloorAlbedo(openGround),reveal);return;}
   vec3 l=normalize(light);vec2 sun=length(l.xz)>1e-4?normalize(l.xz):vec2(0.);float cot=clamp(length(l.xz)/max(l.y,.05),0.,4.);
   float patchDetail=uForestBrushes==1?crownVis:groundSmooth(.6,2.5,radius/fp);
   float patchVis=(1.-groundSmooth(6.,14.,fp))*mix(.18,1.,patchDetail);
@@ -705,6 +759,7 @@ void applyForest(inout GroundMaterial m,vec2 world,float footprint,vec3 light){
     mask=mix(share,clamp((share-pv.x)/max(pv.y*fp,feather)+.5,0.,1.),patchVis);
     maskQ=mix(sq,clamp((sq-pq.x)/max(pq.y*fp,feather)+.5,0.,1.),patchVis);
   }
+  if(uRenderV2>0){mask*=1.-clamp(renderGuideBeach/.8,0.,1.);maskQ*=1.-forestBeachCoverage(q);}
   // Sub-crown grain between the crown band and the mean: crown-scale noise whose amplitude fades
   // with spacing/footprint (≈ the variance of unresolved crowns), so the transition never aliases.
   float grainVis=(1.-crownVis)*groundSmooth(.35,1.2,radius/fp),grain=0.;
@@ -712,13 +767,15 @@ void applyForest(inout GroundMaterial m,vec2 world,float footprint,vec3 light){
     grain=forestPerlin(g-vec2(c),forestGradient(c),forestGradient(c+ivec2(1,0)),forestGradient(c+ivec2(0,1)),forestGradient(c+ivec2(1,1))).x*grainVis;}
   float natural=mask*d*(1.-openA),openTrees=openA*(st.allow*.7+hedgeA/max(openA,1e-3)*st.hedge*.6);
   float canopy=clamp(natural+openTrees,0.,1.),stand=mask*(1.-openA);
+  if(uRenderV2>0)canopy*=v2Foliage;
   float groundShadow=clamp(maskQ*dq*(1.-openA)+openTrees*.6,0.,1.);
+  if(uRenderV2>0)groundShadow*=v2Foliage;
   vec3 litter=forestFloor(openGround,st,cold);
   // Render's canopy colour (its snow included) with the stand's tone residual.
   vec3 mean=forestCrownColor(st,renderGuideClosed,st.needle,vec2(0.),0.);
   // Mean crown self-shading (normal tilt) and occlusion, matched to the crown band.
   float selfShade=mix(.24,.42,st.needle);
-  vec3 albedo=mix(groundToLinear(mix(openGround,litter,stand)),groundToLinear(mean)*(1.+.5*grain),canopy);
+  vec3 albedo=mix(forestFloorAlbedo(mix(openGround,litter,stand)),groundToLinear(mean)*(1.+.5*grain),canopy);
   // Unresolved gallery crowns: their expected canopy fraction, colour and a
   // slight occlusion only.
   albedo=mix(albedo,galleryMean,galleryArea*(1.-canopy));
@@ -738,7 +795,7 @@ void applyForest(inout GroundMaterial m,vec2 world,float footprint,vec3 light){
     if(d0>.002)forestCrowns(hit,int(l0),s0,st,aa);
     if(d1>.002)forestCrowns(hit,int(l0)+1,s1,st,aa);
     // Water sees the crowns as displayed: resolved and revealed.
-    forestResolvedCover=hit.cover*crownVis*reveal;
+    forestResolvedCover=hit.cover*crownVis*(uRenderV2>0&&v2MeanEnabled>.5?v2ForestReveal:reveal);
     float zp=hit.cover>0.?hit.top:0.,shade=0.;
     // Analytic crowns cast a soft dominant-level shadow. Fantasy motifs already
     // contain an oblique painted contact shade: projecting that drawing again
@@ -747,6 +804,7 @@ void applyForest(inout GroundMaterial m,vec2 world,float footprint,vec3 light){
       if(w<.5)shade=forestShadow(hit,int(l0),s0,st,aa,zp,sun,cot);else shade=forestShadow(hit,int(l0)+1,s1,st,aa,zp,sun,cot);
     }
     // Crown surface: leaf clumps (broadleaf) or branch whorls (conifers), rim and trough occlusion.
+    if(uRenderV2>0){hit.cover*=v2Foliage;shade*=v2Foliage;forestResolvedCover*=v2Foliage;}
     uint hc=hit.id*0x9e3779b9u;
     vec2 jitter=vec2(forestU8(hc,0u),forestU8(hc,8u))*2.-1.;float special=forestU8(hc,16u),phase=forestU8(hc,24u)*6.2831853;
     float clumpVis=groundSmooth(2.5,7.,hit.r/fp),clump;vec2 dClump;
@@ -777,7 +835,8 @@ void applyForest(inout GroundMaterial m,vec2 world,float footprint,vec3 light){
     // The artwork supplies most of its shading; a shallow crown normal retains
     // volume without wrapping a full circular dome over an oblique drawing.
     vec2 slope=uForestBrushes==1?.25*hit.slope:hit.slope+clumpVis*dClump*hit.r*(hit.needle?.14:.16);
-    vec2 macroSlope=-nGround.xz/max(nGround.y,.2);
+    vec3 terrainNormal=uRenderV2>0?v2MacroNormal:nGround;
+    vec2 macroSlope=-terrainNormal.xz/max(terrainNormal.y,.2);
     vec3 nCrown=normalize(vec3(-(macroSlope.x+slope.x),1.,-(macroSlope.y+slope.y)));
     // Shaded crowns keep their sky light (no black caps).
     nCrown=forestTilt(nCrown,l,shade*.3);
@@ -788,7 +847,7 @@ void applyForest(inout GroundMaterial m,vec2 world,float footprint,vec3 light){
     if(hit.riparian)crown*=forestRiparianTint(st);
     // Forest floor under and right around crowns; open ground beyond.
     float under=uForestBrushes==1?hit.cover:1.-groundSmooth(1.,1.8,hit.near);
-    vec3 nearAlbedo=mix(groundToLinear(mix(openGround,litter,under)),groundToLinear(crown),hit.cover);
+    vec3 nearAlbedo=mix(forestFloorAlbedo(mix(openGround,litter,under)),groundToLinear(crown),hit.cover);
     vec3 nearNormal=normalize(mix(forestTilt(nGround,l,shade*.3),nCrown,hit.cover));
     float nearOcc=mix(m.occlusion*mix(1.,.72,under),occCrown,hit.cover);
     float nearRough=mix(m.roughness,.9,hit.cover);

@@ -1,8 +1,8 @@
 import { PALETTES, STYLE_LIST, isMapStyle, type MapStyle, type Palette } from './styles';
 import { waterRamp, type WaterStyle } from './waterStyle';
 
-export type TerrainStyle = MapStyle | 'render' | 'render3d' | 'render3d-brush' | 'fantasy-ink' | 'fantasy-color' | 'copernicus';
-export const isRender3dStyle = (style: TerrainStyle): boolean => style === 'render3d' || style === 'render3d-brush';
+export type TerrainStyle = MapStyle | 'render' | 'render3d' | 'render3d-brush' | 'fantasy-ink' | 'fantasy-color' | 'render-v2' | 'render-v2-substrate' | 'render-v2-moisture' | 'render-v2-vegetation' | 'render-v2-snow' | 'copernicus';
+export const isRender3dStyle = (style: TerrainStyle): boolean => style === 'render3d' || style === 'render3d-brush' || style.startsWith('render-v2');
 export interface TerrainStyleDefinition {
   id: TerrainStyle; label: string; palette: Palette; water: WaterStyle;
   kind: 'palette' | 'material' | 'brush' | 'diagnostic';
@@ -15,6 +15,7 @@ const definitions = new Map<TerrainStyle, TerrainStyleDefinition>([
   ['render', definition('render', 'Render · Neural Earth', PALETTES.parchment, 'material', { stops: [[0, '#1a4d5c'], [.4, '#0b2945'], [1, '#051126']], bandFraction: .016 })],
   ['render3d', definition('render3d', 'Render3D · Multiscale', PALETTES.parchment, 'material', { stops: [[0, '#1a4d5c'], [.4, '#0b2945'], [1, '#051126']], bandFraction: .016 })],
   ['render3d-brush', definition('render3d-brush', 'Render3DBrush', PALETTES.parchment, 'material', { stops: [[0, '#1a4d5c'], [.4, '#0b2945'], [1, '#051126']], bandFraction: .016 })],
+  ...(['render-v2', 'render-v2-substrate', 'render-v2-moisture', 'render-v2-vegetation', 'render-v2-snow'] as const).map((id, i) => [id, definition(id, ['Render v2 - Satellite', 'Render v2 - Substrate', 'Render v2 - Moisture', 'Render v2 - Vegetation', 'Render v2 - Snow / ice'][i], PALETTES.parchment, 'material', { stops: [[0, '#1a4d5c'], [1, '#051126']], bandFraction: .016 })] as const),
   ['fantasy-ink', definition('fantasy-ink', 'Fantasy · Encre N&B', ink, 'brush', waterRamp(ink.waterEdge, ink.seaFill))],
   ['fantasy-color', definition('fantasy-color', 'Fantasy · Aquarelle', color, 'brush', waterRamp(color.waterEdge, color.seaFill))],
   // Legacy URL/render adapter. Elevation is exposed as a diagnostic in the UI.

@@ -3,6 +3,8 @@ import { openMethodNote, type MethodNoteId } from './methodNotes';
 /** Short, keyboard-accessible explanations next to the controls they describe. */
 export function installTerrainHelp(): void {
   const explanations: Record<string, () => string> = {
+    renderV2Season:()=> 'Calendrier annuel du paysage satellite : feuillaison, herbacées, neige et glace. Le climat annuel du preset est adapté par une amplitude continentale approximative. Aucun relief régénéré. Cliquez pour lire la méthode.',
+    renderV2Diagnostic:()=> 'Affiche le paysage satellite ou un diagnostic de son substrat, de son humidité, de sa végétation ou de la neige et de la glace. Ce sont des vues du même layer Render v2 ; la saison et le terrain sont conservés.',
     terrainSource: () => {
       const value = (document.getElementById('terrainSource') as HTMLSelectElement).value;
       return value === 'procedural' ? 'Procédural : les zones modulent les propriétés locales des bruits, du soulèvement et des crêtes avant l’érosion. Les montagnes sont générées dans leur masque, avec leur géographie interne. La génération zonée utilise Rust ; l’échantillonnage peut rester GPU.'
@@ -52,7 +54,7 @@ export function installTerrainHelp(): void {
     const title = Array.from(label.childNodes).filter(n => n.nodeType === Node.TEXT_NODE).map(n => n.textContent).join('').trim();
     button.setAttribute('aria-label', `Aide : ${title || 'terrain'}`); button.setAttribute('aria-controls', tip.id); button.setAttribute('aria-expanded', 'false');
     row.append(button);
-    const method = (): MethodNoteId | undefined => control.id === 'style' && (control as HTMLSelectElement).value === 'render3d-brush' ? 'render3d-brush'
+    const method = (): MethodNoteId | undefined => control.id==='renderV2Season'||control.id==='renderV2Diagnostic'||control.id==='style'&&(control as HTMLSelectElement).value.startsWith('render-v2')?'render-v2': control.id === 'style' && (control as HTMLSelectElement).value === 'render3d-brush' ? 'render3d-brush'
       : ['brush_landuse', 'brush_size'].includes(control.id) ? 'fantasy-landuse'
       : ['forestEnabled', 'forestDensity', 'forestClearings'].includes(control.id) ? 'render3d-vegetation' : ['projection3d', 'refinement3d', 'tileBounds3d'].includes(control.id)
       || control.id === 'style' && (control as HTMLSelectElement).value === 'render3d' ? 'render3d-ground' : undefined;

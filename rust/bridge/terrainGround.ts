@@ -146,7 +146,12 @@ const glslArray = (key: keyof typeof bands[number]): string => bands.map(b => gl
 export const GROUND_FIELD_GLSL = `
 float groundSmooth(float a,float b,float x){float t=clamp((x-a)/(b-a),0.,1.);return t*t*(3.-2.*t);}
 vec3 groundToLinear(vec3 c){return pow(max(c,vec3(0.)),vec3(2.2));}
-vec3 groundToDisplay(vec3 c){return pow(clamp(c,vec3(0.),vec3(1.)),vec3(1./2.2));}
+vec3 groundToDisplay(vec3 c){
+#ifdef RENDER3D_FOREST
+  if(uRenderV2>0)return pow(max(c,vec3(0.)),vec3(1./2.2));
+#endif
+  return pow(clamp(c,vec3(0.),vec3(1.)),vec3(1./2.2));
+}
 uint groundHash(ivec3 cell,uint seed){
   uvec3 p=uvec3(cell);uint h=(p.x*0x9e3779b9u)^(p.y*0x85ebca6bu)^(p.z*0xc2b2ae35u)^seed;
   h=(h^(h>>16u))*0x7feb352du;h=(h^(h>>15u))*0x846ca68bu;return h^(h>>16u);

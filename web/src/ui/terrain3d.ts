@@ -2,6 +2,7 @@ import { bindForest, deleteForestTextures, forestTexture, forestTextures, RENDER
 import { FOREST_PRELUDE_GLSL, type ForestField, type ForestOccupation } from '../../../rust/bridge/terrainForest';
 import { bindForestBrushes, disposeForestBrushes } from '../render/forestBrushAtlas';
 import { NEURAL_EARTH_MATERIAL_GLSL } from '../../../rust/bridge/terrainMaterial';
+import { RENDER_V2_GLSL, renderV2GlacierSources } from '../../../rust/bridge/terrainRenderV2';
 import { RENDER_3D_MATERIAL_GLSL } from '../../../rust/bridge/terrainMaterial3d';
 import { createGroundDisplacementSampler } from '../../../rust/bridge/terrainGround';
 import { terrainLights, type TerrainLighting } from '../render/terrainLighting';
@@ -29,7 +30,7 @@ export interface Terrain3dTileContent {
 }
 export interface Terrain3dGroundSettings {
   seed: number; climate: { temperature: number; precipitation: number }; sourceCell: number;
-  lighting: TerrainLighting; displacement: boolean; forestBrushes?: boolean;
+  lighting: TerrainLighting; displacement: boolean; forestBrushes?: boolean; renderV2?: number; v2Season?: number; waterVisible?: boolean;
   contours?: { step: number; color: string; opacity: number; flat: boolean };
 }
 export const TERRAIN_3D_FOV = Math.PI / 3.7;
@@ -111,6 +112,7 @@ float forestWaterCoverage(vec2 p){
 ${NEURAL_EARTH_MATERIAL_GLSL}
 ${RENDER_3D_MATERIAL_GLSL}
 ${RENDER_3D_FOREST_GLSL}
+${RENDER_V2_GLSL}
 vec4 groundSpline(float t){float u=1.-t;return vec4(u*u*u,3.*t*t*t-6.*t*t+4.,-3.*t*t*t+3.*t*t+3.*t+1.,t*t*t)/6.;}
 vec4 groundSplineDerivative(float t){return vec4(-.5*(1.-t)*(1.-t),1.5*t*t-2.*t,-1.5*t*t+t+.5,.5*t*t);}
 vec3 groundMacroSurface(vec2 p){
@@ -122,6 +124,13 @@ vec3 groundMacroSurface(vec2 p){
   }
   return s;
 }
+float groundMacroHeight(vec2 p){
+  ivec2 q=ivec2((p-macroRect.xy)/macroRect.z*float(macroN));
+  return texelFetch(macroField,clamp(q,ivec2(0),ivec2(macroN-1)),0).r;
+}
+vec3 forestRootSurface(vec2 p){return groundMacroSurface(p);}
+float forestRootCell(){return macroRect.z/float(macroN);}
+
 void main() {
   vec4 projected = mix(texture(previousMaterial, previousRect.xy + texcoord * previousRect.zw),
     texture(material, textureRect.xy + texcoord * textureRect.zw), textureBlend);
@@ -132,14 +141,28 @@ void main() {
     float footprint=max(.001,max(length(dFdx(physical)),length(dFdy(physical))));
     vec3 s=groundMacroSurface(physical.xz);
     float shore=max(s.x,0.)/max(length(s.yz),.0001);
-    vec3 macro=earthMaterial(s,physical.xz,max(footprint,1.),0.,shore,0.);
-    // A canonical normal field avoids changing microdetail at coarse/fine
-    // boundaries. Geometry approximates this field; it is not added twice.
-    GroundMaterial m=terrainGroundMaterial(s,physical.xz,footprint,macro,uMaterialClimate,uMaterialSeed);
-    if(uForest==1) applyForest(m,physical.xz,footprint,groundLight);
-    base=shadeTerrainGround(m,normalize(groundEye-physical),groundLight,groundLight2,groundStrength);
-    float under=1.-forestResolvedCover;
-    base=base*(1.-projected.a*under)+projected.rgb*under;
+    float openness=0.;
+    if(uRenderV2>0&&s.x>=0.&&s.x<12.&&length(s.yz)<.5){
+      float r=max(300.,2.*macroRect.z/float(macroN));
+      for(int i=0;i<12;i++){
+        vec2 d=vec2(cos(float(i)*.523598776),sin(float(i)*.523598776));
+        if(groundMacroHeight(physical.xz+d*r)<0.){shore=min(shore,r);openness+=1./12.;}
+        if(groundMacroHeight(physical.xz+d*r*.5)<0.)shore=min(shore,r*.5);
+      }
+    }
+    GroundMaterial m;
+    vec3 macro=earthMaterial(s,physical.xz,max(footprint,1.),0.,shore,openness);
+    if(uRenderV2>0)m=v2Ground(s,physical.xz,footprint,0.,groundLight,groundLight2,groundStrength,renderGuideBaseOpen);
+    else {
+      m=terrainGroundMaterial(s,physical.xz,footprint,macro,uMaterialClimate,uMaterialSeed);
+    }
+    if(uForest==1)applyForest(m,physical.xz,footprint,groundLight);
+    base=uRenderV2>0?v2ShadeGround(m,normalize(groundEye-physical),groundLight,groundLight2,groundStrength):shadeTerrainGround(m,normalize(groundEye-physical),groundLight,groundLight2,groundStrength);
+    if(uRenderV2>0)base=v2DisplayShoulder(base);
+    float under=uRenderV2>0?1.:1.-forestResolvedCover;
+    if(uRenderV2>1)base=v2Diagnostic(s,physical.xz,0.,footprint);
+    if(uRenderV2>0)base=v2WaterAt(base,s,physical.xz,footprint,projected.a,s.x<0.?1.:3.,s.x<0.?-s.x:8.*projected.a);
+    else base=base*(1.-projected.a*under)+projected.rgb*under;
     if(groundContours==1 && s.x>0.){
       float v=s.x/groundContourStep,dv=max(fwidth(v),1e-6),k=floor(v+.5);
       bool major=mod(k,5.)<.5;
@@ -494,6 +517,9 @@ export class Terrain3d {
   setGroundMaterial(settings: Terrain3dGroundSettings | undefined): void {
     const previous = this.groundSettings;
     this.groundSettings = settings;
+    if(settings?.renderV2 && !previous?.renderV2 && !this.textureSource){
+      this.gl.deleteTexture(this.material);this.material=this.uploadTexture(new Uint8Array([0,0,0,0]));
+    }
     if (previous?.displacement !== settings?.displacement || previous?.seed !== settings?.seed
       || previous?.sourceCell !== settings?.sourceCell
       || previous?.climate.temperature !== settings?.climate.temperature
@@ -501,6 +527,7 @@ export class Terrain3d {
     this.limitCamera();
     this.request();
   }
+  setRenderV2Season(season:number):void { if(this.groundSettings?.renderV2){this.groundSettings={...this.groundSettings,v2Season:season};this.request();} }
   setTileBoundaries(visible: boolean): void { this.tileBounds = visible; this.request(); }
   /** Presentation consumes the same immutable native scene as the map. */
   setBuildings(scene: PlacementBatch | undefined, appearance: UrbanBuildingAppearance, visible = true): void {
@@ -1192,6 +1219,7 @@ export class Terrain3d {
     gl.uniform1i(gl.getUniformLocation(this.terrainProgram,'showTileBounds'),this.tileBounds?1:0);
     if(settings){
       const lights=terrainLights(settings.lighting);
+      gl.uniform1i(gl.getUniformLocation(this.terrainProgram,'uRenderV2'),settings.renderV2??0);gl.uniform1i(gl.getUniformLocation(this.terrainProgram,'uV2WaterVisible'),settings.waterVisible===false?0:1);gl.uniform4fv(gl.getUniformLocation(this.terrainProgram,'uV2GlacierSources[0]'),renderV2GlacierSources(this.layer,settings.climate));gl.uniform1f(gl.getUniformLocation(this.terrainProgram,'uV2Season'),settings.v2Season??.5);
       gl.uniform1ui(gl.getUniformLocation(this.terrainProgram,'uMaterialSeed'),settings.seed>>>0);
       gl.uniform2f(gl.getUniformLocation(this.terrainProgram,'uMaterialClimate'),settings.climate.temperature,settings.climate.precipitation);
       gl.uniform3f(gl.getUniformLocation(this.terrainProgram,'groundEye'),this.camera.x+frame.eye[0],(frame.targetHeight+frame.eye[1])/this.camera.exaggeration,this.camera.y+frame.eye[2]);

@@ -46,6 +46,18 @@ vec3 surfaceMix(vec3 a,vec3 b,float t){return a*(1.-t)+b*t;}
       float v=pattern.x/sqrt(1.+pattern.x*pattern.x)*sqrt(pattern.y);
       return c+clamp(sharp,0.,1.)*c*(1.-c)*v;
     }
+    float surfaceBeachWidth(vec2 reach,vec2 grove,vec2 fine,float openness){
+      return 140.*sstep(-.15,.75,.65*reach.x*sqrt(reach.y)+.5*grove.x*sqrt(grove.y))*sstep(.15,.4,openness)*(1.+.35*fine.x*sqrt(fine.y));
+    }
+    // Fixed physical reference for V2 crown roots, independent of the viewport.
+    float surfaceRootBeach(vec3 s,vec2 world,float shore,float openness){
+      vec3 point=vec3(world,0.);float fp=30.;
+      vec2 reach=surfaceFbm(point,20000.,3,fp,uMaterialSeed+7u);
+      vec2 grove=surfaceFbm(point,4800.,4,fp,uMaterialSeed+3u);
+      vec2 fine=surfaceFbm(point,240.,4,fp,uMaterialSeed+5u);
+      float width=surfaceBeachWidth(reach,grove,fine,openness);
+      return clamp((min(width,20.*fp)-shore+fp)/fp,0.,1.)*(1.-sstep(4.,12.,s.x))*(1.-sstep(.2,.5,length(s.yz)));
+    }
     float surfaceSeason(){return 1.0;}
     float surfaceSeaIce(vec3 point,float ts0,float tw0,float footprint){
       vec2 regional=surfaceFbm(point,64000.,4,footprint,uMaterialSeed+1u);float m1=regional.x*sqrt(regional.y);
@@ -129,6 +141,9 @@ vec3 surfaceMix(vec3 a,vec3 b,float t){return a*(1.-t)+b*t;}
       vec3 canopy=surfaceMix(vec3(.20,.28,.14),vec3(.16,.255,.13),wTrop);
       canopy=surfaceMix(canopy,vec3(.15,.22,.16),wBoreal);
       canopy=surfaceMix(canopy,vec3(.27,.29,.17),dryForest*.75);
+#ifdef RENDER3D_FOREST
+      vec3 guideLeafCanopy=canopy;
+#endif
       float deciduous=(1.-wTrop)*(1.-.7*wBoreal)*(1.-.5*dryForest);
       float local=fract(season+(ts>=tw?0.:.5));
       float autumn=sstep(.66,.76,local)*(1.-sstep(.84,.92,local));
@@ -155,8 +170,12 @@ vec3 surfaceMix(vec3 a,vec3 b,float t){return a*(1.-t)+b*t;}
       // ~190 m wide with a ragged inner edge, as area coverage (visible at 240 m
       // samples); low flats behind it stay as wetter river/estuary bars.
       vec2 reach=surfaceFbm(point,20000.,3,fp,salt+7u);
-      float width=140.*sstep(-.15,.75,.65*reach.x*sqrt(reach.y)+.5*grove.x*sqrt(grove.y))*sstep(.15,.4,openness)*(1.+.35*fine.x*sqrt(fine.y));
-      float beach=clamp((min(width,20.*fp)-shore+fp)/fp,0.,1.)*(1.-sstep(4.,12.,height))*(1.-sstep(.2,.5,grade));
+      float width=surfaceBeachWidth(reach,grove,fine,openness);
+      float beachLimit=20.*fp;
+#ifdef RENDER3D_FOREST
+      if(uRenderV2>0)beachLimit=20.*max(fp,30.);
+#endif
+      float beach=clamp((min(width,beachLimit)-shore+fp)/fp,0.,1.)*(1.-sstep(4.,12.,height))*(1.-sstep(.2,.5,grade));
       // Sediment follows the coast's geology: quartz or golden sand by province,
       // tropical coral sand, and local stone on cool or rugged coasts. Summer
       // warmth preserves sandy continental coasts despite their winter frost.
@@ -170,7 +189,13 @@ vec3 surfaceMix(vec3 a,vec3 b,float t){return a*(1.-t)+b*t;}
       color=surfaceMix(color,sediment*.9,flats*(1.-sstep(240.,960.,fp))*.8);
       color=surfaceMix(color,sediment,beach*.8);
 #ifdef RENDER3D_FOREST
-      guideOpen=surfaceMix(surfaceMix(guideOpen,sediment*.9,flats*(1.-sstep(240.,960.,fp))*.8),sediment,beach*.8);
+      // V2 keeps the existing ground while applying its own calendar.
+      renderGuideBaseOpen=guideOpen;
+      renderGuideBaseClosed=guideLeafCanopy*tint*(1.-.18*highland)*(1.+variation*canopyDetail)*(1.-.06*valley);
+      guideOpen=surfaceMix(surfaceMix(renderGuideBaseOpen,sediment*.9,flats*(1.-sstep(240.,960.,fp))*.8),sediment,beach*.8);
+      renderGuideBeach=beach*.8;renderGuideSediment=sediment;
+      renderGuideFlats=flats*(1.-sstep(240.,960.,fp))*.8;
+      renderGuideShore=shore;renderGuideOpenness=openness;
 #endif
       // Snow: seasonal and perennial, exposure-aware, sheds from steep ridges.
       float hemisphere=point.y/max(sqrt(point.y*point.y+.0064*dot(point,point)),1.);
