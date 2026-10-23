@@ -43,7 +43,7 @@ export function verifyWaterCapture(capture:unknown,options:{requireSourceMap?:bo
   for(const key of ['sourceVectorRequestedAreaM2','sourceVectorAreaM2','sourceVectorMissingAreaM2','missingLevelTriangles'])if(!nonnegative(water[key]))throw new Error('Malformed source water coverage '+key);
   if(water.sourceVectorCoverageComplete!==true||water.sourceVectorMissingAreaM2!==0||water.missingLevelTriangles!==0||water.budgetLimited!==false
     ||typeof water.fixedHydrologyFallbackReason==='string'&&!!water.fixedHydrologyFallbackReason.trim())throw new Error('Source vector omission, budget limit or mixed fallback');
-  if(options.requireSourceMap&&(water.sourceVectorRequestedAreaM2<=0||water.waterPresentation!=='source-map-terrain-projection'
+  if(options.requireSourceMap&&(water.sourceVectorRequestedAreaM2<=0||water.sourceVectorAreaM2<=0||!Number.isSafeInteger(water.sourceVertices)||water.sourceVertices<3||water.waterPresentation!=='source-map-terrain-projection'
     ||water.projectionCullMask!==1||water.sourceLevelsUnchanged!==true||water.physicalWaterSurfaceClaimed!==false||water.minimumRiverStrokeApplied!==false))
     throw new Error('Regional water is not an unedited terrain-only source-map projection');
   if(water.waterPresentation==='source-map-terrain-projection'&&(water.projectionCullMask!==1||water.sourceLevelsUnchanged!==true
