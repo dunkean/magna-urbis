@@ -7,6 +7,7 @@ import {Occupation,WaterClass,type SurfaceWorld} from '../src/surface/model';
 import {hasExplicitSurfaceLayers,LEGACY_SURFACE_LAYERS_WARNING,selectSurfaceLayerView,SURFACE_LAYER_FIELDS} from '../src/surface/surfaceLayers';
 import {surfaceLayerInput} from './fixtures/surfaceLayerInput';
 import baseline from './fixtures/surface-layer-legacy-baseline.json';
+import {packMaterialMean,unpackMaterialMean}from'../src/surface/materials';
 
 const compile=()=>compileSurfaceWorld(surfaceLayerInput(),{topographicRadiiM:[32,64,128]});
 const bounds={minX:32,minZ:32,maxX:480,maxZ:480};
@@ -14,6 +15,26 @@ function fine(originX=96,originZ=96){const t=surfaceLayerInput().terrain;return{
   heights:Float32Array.from({length:33*33},(_,i)=>130+Math.sin(i%33)*.02),source:{...t.source,nativeSpacingM:4,sourceLOD:-1}};}
 
 describe('explicit soil, low-cover and tree layers',()=>{
+  it('premultiplies translucent low cover so arbitrary transparent litter cannot tint grass in sampling or retargeting',()=>{
+    const source=surfaceLayerInput().terrain,world=compileSurfaceWorld({seed:2,terrain:{...source,width:2,height:2,heights:new Float32Array(4).fill(100)}});
+    const f=world.fields;if(!hasExplicitSurfaceLayers(f))throw Error();
+    const grass=world.materials.findIndex(m=>m.id==='vegetation-litter'),litter=world.materials.findIndex(m=>m.id==='forest-litter');
+    const green=packMaterialMean([.1,.3,.04]),brown=packMaterialMean([.3,.08,.02]);
+    f.lowCoverMaterial.fill(litter);f.lowCoverMaterialSecondary.fill(litter);f.lowCoverMaterialBlend.fill(0);f.lowCoverMaterialMeanColor.fill(packMaterialMean([1,0,1]));
+    f.lowCoverOpacity.fill(0);f.lowCoverOpacity[0]=1;f.lowCoverMaterial[0]=grass;f.lowCoverMaterialSecondary[0]=grass;f.lowCoverMaterialMeanColor[0]=green;
+    const a=sampleSurface(world,16,16).surfaceLayers.lowCover!;expect(a.opacity).toBe(.25);expect(a.material.id).toBe('vegetation-litter');expect(a.materialSecondary.id).toBe('vegetation-litter');expect(a.meanColorLinear).toEqual(unpackMaterialMean(green));
+    f.lowCoverMaterialMeanColor[1]=packMaterialMean([0,0,1]);f.lowCoverMaterialMeanColor[2]=0;
+    expect(sampleSurface(world,16,16).surfaceLayers.lowCover).toEqual(a);
+    f.lowCoverOpacity[0]=.2;f.lowCoverOpacity[1]=.8;f.lowCoverMaterialMeanColor[1]=brown;
+    const sample=sampleSurface(world,16,16).surfaceLayers.lowCover!,alpha=(f.lowCoverOpacity[0]+f.lowCoverOpacity[1])*.25;
+    expect(sample.opacity).toBe(alpha);expect(sample.material.id).toBe('forest-litter');expect(sample.materialSecondary.id).toBe('vegetation-litter');expect(sample.materialBlend).toBeCloseTo(.2,6);
+    const expected=unpackMaterialMean(green).map((v,c)=>(v*f.lowCoverOpacity[0]+unpackMaterialMean(brown)[c]*f.lowCoverOpacity[1])/(alpha*4));
+    sample.meanColorLinear.forEach((value,c)=>expect(value).toBeCloseTo(expected[c],12));
+    const refined=retargetSurfaceWorld(world,{...world.terrain,originX:16,originZ:16,spacingM:1,heights:new Float32Array(4).fill(100),source:{...world.terrain.source,nativeSpacingM:1}});
+    expect(refined.fields.lowCoverMaterial![0]).toBe(litter);expect(refined.fields.lowCoverMaterialBlend![0]).toBeCloseTo(.2,6);expect(refined.fields.lowCoverOpacity![0]).toBeCloseTo(alpha,6);
+    expect(refined.fields.lowCoverMaterialMeanColor![0]).toBe(packMaterialMean(expected));
+    f.lowCoverOpacity.fill(0);expect(sampleSurface(world,16,16).surfaceLayers.lowCover!.meanColorLinear).toEqual([0,0,0]);
+  });
   it('preserves all pre-layer physical fields, legacy composition, source geometry and exact candidate acceptance/IDs',()=>{
     const world=compile(),originalFields={...world.fields};for(const key of SURFACE_LAYER_FIELDS)delete originalFields[key];
     expect(fingerprint(originalFields)).toBe(baseline.fieldsFingerprint);
