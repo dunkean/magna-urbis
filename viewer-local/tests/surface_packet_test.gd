@@ -22,6 +22,8 @@ func _initialize():
 	check(not packet.is_empty(),"real binary packet validated")
 	if packet.is_empty(): print(JSON.stringify({"failures":errors})); quit(1); return
 	var world: Dictionary=packet.world
+	world["_terrainParents"]=packet.get("terrainParents",[])
+	world["_heightLayers"]=G.prepare_height_layers(world)
 	check(packet.urban.buildings.size()==500,"500 distinct real native records")
 	var geometry_packet=packet.duplicate(false)
 	geometry_packet.urban=packet.urban.duplicate(false)
