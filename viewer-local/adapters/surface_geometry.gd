@@ -328,7 +328,7 @@ static func build_urban(packet: Dictionary, world: Dictionary, origin: Dictionar
 	var vertices := PackedVector3Array()
 	var normals := PackedVector3Array()
 	var roads := PackedVector3Array()
-	var result := {"vertices":vertices,"normals":normals,"roadVertices":roads,"anchor":origin.duplicate(),"buildingIds":[],"materialGroups":[],"supportConflicts":[],"maximumSupportDeltaM":0.0,
+	var result := {"vertices":vertices,"normals":normals,"roadVertices":roads,"anchor":origin.duplicate(),"buildingIds":[],"materialGroups":[],"omittedBuildingIds":[],"supportConflicts":[],"maximumSupportDeltaM":0.0,
 		"nativeBuildings":0,"proxyBuildings":0,"skippedProxies":0,"roadChunks":0,"roadPieces":0,"skippedDegenerates":0,"budgetLimited":false,"buildMs":0.0,"cityIdentity":city_identity(packet)}
 	var window := _window(focus,view_width)
 	if window.is_empty() or not _valid_origin(origin): return result
@@ -344,8 +344,13 @@ static func build_urban(packet: Dictionary, world: Dictionary, origin: Dictionar
 		var proxy: bool = building.get("representation","")=="cartographic-proxy" or building.get("nativeRealization",true)==false
 		if proxy and not show_proxies: result.skippedProxies+=1; continue
 		if not _building_visible(building,window): continue
+		var source_triangles: Array = building.get("triangles",[])
+		if vertices.size()+source_triangles.size()*3>MAX_BUILDING_VERTICES:
+			# Keep native shells atomic: a budget must never cut a closed building
+			# halfway through its facade, roof or courtyard faces.
+			result.omittedBuildingIds.append(building.get("id","")); result.budgetLimited=true; continue
 		var before := vertices.size()
-		for triangle in building.get("triangles",[]):
+		for triangle in source_triangles:
 			if vertices.size()+3>MAX_BUILDING_VERTICES: result.budgetLimited=true; break
 			var points = triangle.get("points",[])
 			if points.size()!=3: result.skippedDegenerates+=1; continue
@@ -394,7 +399,6 @@ static func build_urban(packet: Dictionary, world: Dictionary, origin: Dictionar
 			result.buildingIds.append(building.get("id",""))
 			if proxy: result.proxyBuildings+=1
 			else: result.nativeBuildings+=1
-		if result.budgetLimited: break
 	# Independent road budget: a single complex native mesh cannot erase roads,
 	# and input order cannot choose which district receives the remaining budget.
 	var display: Dictionary = world.get("_displaySource",world)
