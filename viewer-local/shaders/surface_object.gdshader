@@ -1,4 +1,5 @@
 shader_type spatial;
+uniform int presentation_mode=0;
 uniform vec3 linear_tint = vec3(1.0);
 varying vec3 instance_linear_albedo;
 varying float projected_size;
@@ -13,6 +14,12 @@ void fragment(){
     vec3 albedo=instance_linear_albedo*linear_tint;
     ALBEDO=OUTPUT_IS_SRGB?object_srgb(albedo):albedo;
     ROUGHNESS=0.91;
+    if(presentation_mode==1){
+        ALBEDO=vec3(0.0);
+        EMISSION=OUTPUT_IS_SRGB?object_srgb(albedo):albedo;
+        ROUGHNESS=1.0;
+        SPECULAR=0.0;
+    }
     ALPHA=smoothstep(1.25,3.0,projected_size);
     ALPHA_HASH_SCALE=1.0;
 }
