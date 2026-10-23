@@ -107,6 +107,10 @@ static func _validate_packet(packet: Dictionary) -> Dictionary:
 		if not packet.terrainParents is Array or packet.terrainParents.size()>6: return {}
 		for parent in packet.terrainParents:
 			if not parent is Dictionary or not parent.get("terrain") is Dictionary or not parent.get("bounds") is Dictionary: return {}
+			var reference=world.get("canonicalContextRef")
+			if reference is Dictionary and (not parent.get("canonicalContextId") is String or parent.canonicalContextId!=str(reference.get("id",""))):
+				push_error("Terrain parent canonicalContextId does not match the packet context; refusing partial display")
+				return {}
 			var grid: Dictionary = parent.terrain
 			var n := int(grid.get("width",0))*int(grid.get("height",0))
 			if not _validate_grid(grid,1048576): return {}
