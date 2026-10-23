@@ -339,6 +339,16 @@ pub(super) fn occupation_pressures(layout: &Layout) -> Vec<f64> {
     pressure::for_layout(layout)
 }
 
+/// Provenance of a lot admitted by a witness at any orientation (odd ground).
+const POLYGONAL: &str = "polygonal-lot";
+/// How far from its contact the witness of such a lot may stand, in metres.
+const POLYGONAL_REACH: f64 = 3.0;
+/// Provenance of a lot too small or thin for the native admission rectangle,
+/// kept built with the largest scaled-down body it holds (shed, annex, narrow
+/// house of odd ground).
+const DEGENERATE: &str = "degenerate-lot";
+/// Scales of the admission rectangle tried for a degenerate lot.
+const DEGENERATE_SCALES: [f64; 4] = [1.0, 0.85, 0.7, 0.55];
 fn parcel_fronts(p: &Parcel) -> Vec<Front> {
     if !p.contacts.is_empty() {
         return p
@@ -386,7 +396,26 @@ pub(super) fn parcel_envelope(
             ..f
         })
         .collect();
-    families::envelope(&p.shape, &fronts, width, depth, access_width)
+    families::envelope(&p.shape, &fronts, width, depth, access_width).or_else(|| {
+        // A lot of odd ground (`polygonal-lot`) was admitted by a rectangle at
+        // any orientation; allocation and sites ask the same question.
+        let degenerate = p.provenance.iter().any(|x| x == DEGENERATE);
+        if !degenerate && !p.provenance.iter().any(|x| x == POLYGONAL) {
+            return None;
+        }
+        // A degenerate lot keeps the largest body of the admission shape it holds.
+        let scales: &[f64] = if degenerate { &DEGENERATE_SCALES } else { &[1.0] };
+        scales.iter().find_map(|k| {
+            families::free_envelope(
+                &p.shape,
+                &fronts,
+                width * k,
+                depth * k,
+                access_width,
+                POLYGONAL_REACH,
+            )
+        })
+    })
 }
 /// Uncut reserves use the same admission search without synthetic properties.
 pub(super) fn contact_envelope(
@@ -2174,6 +2203,136 @@ fn balance_neighbours(
     }
 }
 
+/// Invariant (dense zones keep no empty land): a lot without any admissible
+/// house is joined to an adjacent lot of its block (an admitted one or another
+/// leftover) as soon as the union holds a witness, whatever its shape (an L, a
+/// wedge, a thin row lot made whole): in a town core odd ground is built, not
+/// left open. The union must be one ring, stay within the through-lot depth,
+/// within `cap` and within `balance` times its smallest neighbour (the
+/// 2.5x of the strict repairs is relaxed), and the smallest union is taken so
+/// the receivers stay balanced. Passes repeat: a leftover that gained a
+/// neighbour's frontage may serve the next one.
+fn absorb(
+    cells: &mut Vec<Parcel>,
+    fronts: &[Front],
+    witness: &dyn Fn(&Shape) -> Option<Shape>,
+    too_deep: &dyn Fn(&Shape) -> bool,
+    cap: f64,
+    balance: f64,
+) {
+    let leftover = |p: &Parcel| {
+        (p.use_kind == "plot" && p.envelope.is_none())
+            || (p.use_kind == "residual" && p.reason == "insufficient-frontage")
+    };
+    for _ in 0..4 {
+        let mut ids: Vec<(f64, String)> = cells
+            .iter()
+            .filter(|p| leftover(p))
+            .map(|p| (area(&p.shape), p.id.clone()))
+            .collect();
+        ids.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
+        let mut progressed = false;
+        for (_, id) in ids {
+            let Some(i) = cells.iter().position(|p| p.id == id) else {
+                continue;
+            };
+            let rb = super::geometry::bbox(&cells[i].shape);
+            let mut near: Vec<(usize, f64)> = cells
+                .iter()
+                .enumerate()
+                .filter(|(j, p)| {
+                    *j != i
+                        && (p.use_kind == "plot" || leftover(p))
+                        && boxes_touch(rb, super::geometry::bbox(&p.shape))
+                })
+                .map(|(j, p)| (j, shared(&cells[i].shape, &p.shape)))
+                .filter(|&(_, s)| s >= 0.8)
+                .collect();
+            near.sort_by(|a, b| b.1.total_cmp(&a.1).then(a.0.cmp(&b.0)));
+            let mut best: Option<(usize, Shape, Shape)> = None;
+            let mut pooled: Option<(usize, Shape)> = None;
+            for &(j, _) in near.iter().take(6) {
+                let Some(union) = joined(&cells[i].shape, &cells[j].shape) else {
+                    continue;
+                };
+                if too_deep(&union) || area(&union) > cap {
+                    continue;
+                }
+                let ub = super::geometry::bbox(&union);
+                let smallest = cells
+                    .iter()
+                    .enumerate()
+                    .filter(|(k, p)| {
+                        *k != i
+                            && *k != j
+                            && p.use_kind == "plot"
+                            && p.envelope.is_some()
+                            && boxes_touch(ub, super::geometry::bbox(&p.shape))
+                            && shared(&union, &p.shape) > 1.0
+                    })
+                    .map(|(_, p)| area(&p.shape))
+                    .fold(f64::INFINITY, f64::min);
+                if area(&union) > balance * smallest {
+                    continue;
+                }
+                let Some(envelope) = witness(&union) else {
+                    // Neighbouring leftovers are pooled: one wider piece may
+                    // hold what each thin piece cannot (a row of wedges).
+                    if leftover(&cells[j]) && pooled.is_none() {
+                        pooled = Some((j, union));
+                    }
+                    continue;
+                };
+                if best
+                    .as_ref()
+                    .is_none_or(|(_, u, _)| area(&union) < area(u))
+                {
+                    best = Some((j, union, envelope));
+                }
+            }
+            let Some((j, union, envelope)) = best else {
+                if let Some((j, union)) = pooled {
+                    let mut lot = parcel(union, cells[i].block, cells[i].axis, fronts, "plot");
+                    lot.parent_ids = vec![cells[i].id.clone(), cells[j].id.clone()];
+                    lot.provenance = cells[i].provenance.clone();
+                    lot.provenance.push("residual-pooled".into());
+                    let (lo, hi) = (i.min(j), i.max(j));
+                    cells[lo] = lot;
+                    cells.remove(hi);
+                    progressed = true;
+                }
+                continue;
+            };
+            let (parents, provenance, axis) = if cells[j].use_kind == "plot" {
+                (
+                    vec![cells[j].id.clone(), cells[i].id.clone()],
+                    cells[j].provenance.clone(),
+                    cells[j].axis,
+                )
+            } else {
+                (
+                    vec![cells[i].id.clone(), cells[j].id.clone()],
+                    cells[i].provenance.clone(),
+                    cells[i].axis,
+                )
+            };
+            let mut lot = parcel(union, cells[i].block, axis, fronts, "plot");
+            lot.parent_ids = parents;
+            lot.provenance = provenance;
+            lot.provenance.push("residual-absorbed".into());
+            lot.reason = "admissibility-repaired".into();
+            lot.envelope = Some(envelope);
+            let (lo, hi) = (i.min(j), i.max(j));
+            cells[lo] = lot;
+            cells.remove(hi);
+            progressed = true;
+        }
+        if !progressed {
+            break;
+        }
+    }
+}
+
 fn access_kind(front: &Front, layout: &Layout) -> &'static str {
     if front.shared {
         return "collective";
@@ -2200,6 +2359,7 @@ fn qualify(
     inward: bool,
     family: &str,
     depth_limit: Option<f64>,
+    dense: bool,
 ) {
     let tier = |shape: &Shape, a: &super::culture::UrbanAdmissibility, gated: bool| {
         if area(shape) + 1e-6 < a.min_area {
@@ -2342,6 +2502,75 @@ fn qualify(
     }
     let strict_deep =
         |s: &Shape| depth_limit.is_some_and(|limit| lot_depth(s, fronts) > limit + 0.01);
+    if dense {
+        absorb(cells, fronts, &witness, &through_deep, 1.5 * cap, 3.5);
+        // Odd ground that holds the admission rectangle only slanted is still
+        // a house lot: the leftover is admitted by a free witness, never
+        // before a join was tried.
+        for p in cells.iter_mut().filter(|p| p.use_kind == "plot" && p.envelope.is_none()) {
+            let free = |a: &super::culture::UrbanAdmissibility| {
+                if area(&p.shape) + 1e-6 < a.min_area {
+                    return None;
+                }
+                let allowed: Vec<_> = fronts
+                    .iter()
+                    .filter(|f| !f.shared || a.shared_access)
+                    .copied()
+                    .collect();
+                families::free_envelope(
+                    &p.shape,
+                    &allowed,
+                    a.min_frontage,
+                    a.min_depth,
+                    a.min_access_width,
+                    POLYGONAL_REACH,
+                )
+            };
+            if let Some(e) = free(profile).or_else(|| fallback.and_then(free)) {
+                p.envelope = Some(e);
+                p.provenance.push(POLYGONAL.into());
+            }
+        }
+        // Odd ground too thin for the full rectangle keeps the largest
+        // scaled-down body it holds (at least half the minimal house area).
+        for p in cells.iter_mut().filter(|p| p.use_kind == "plot" && p.envelope.is_none()) {
+            let small = fallback.unwrap_or(profile);
+            if area(&p.shape) < 0.5 * small.min_area {
+                continue;
+            }
+            let allowed: Vec<_> = fronts
+                .iter()
+                .filter(|f| !f.shared || small.shared_access)
+                .copied()
+                .collect();
+            let found = DEGENERATE_SCALES[1..].iter().find_map(|k| {
+                families::free_envelope(
+                    &p.shape,
+                    &allowed,
+                    small.min_frontage * k,
+                    small.min_depth * k,
+                    small.min_access_width,
+                    POLYGONAL_REACH,
+                )
+            });
+            if let Some(e) = found {
+                p.envelope = Some(e);
+                p.provenance.push(DEGENERATE.into());
+            }
+        }
+        // Land that holds no native house at all (a few square metres of
+        // wedge) is not left as an unowned hole: it is the court or garden of
+        // the lot beside it (attached below), or a pocket garden of its own.
+        for p in cells.iter_mut().filter(|p| {
+            (p.use_kind == "plot" && p.envelope.is_none())
+                || (p.use_kind == "residual" && p.reason == "insufficient-frontage")
+        }) {
+            p.use_kind = "garden".into();
+            p.reason = "retained-backland".into();
+            p.envelope = None;
+            p.provenance.push("dense-leftover".into());
+        }
+    }
     balance_neighbours(cells, fronts, &witness, &strict_deep);
     split_corners(cells, fronts, &witness, &strict_deep);
     // Frontage rule of the tier that admitted the lot (the lenient one for refusals).
@@ -2358,7 +2587,18 @@ fn qualify(
         } else {
             lenient
         };
-        let gated = inward && primary;
+        let polygonal = p
+            .provenance
+            .iter()
+            .any(|x| x == POLYGONAL || x == DEGENERATE);
+        // A lot of odd ground whose street contact is shorter than the
+        // frontage rule is entered by a passage (the access width rule).
+        let narrow = polygonal
+            && !contacts.iter().enumerate().any(|(i, _)| {
+                let (lo, hi) = contacts::support_span(&contacts, i);
+                hi - lo + 1e-6 >= rule.min_frontage
+            });
+        let gated = (inward && primary) || narrow;
         if p.use_kind == "plot" {
             if p.envelope.is_none() {
                 p.use_kind = "residual".into();
@@ -2619,6 +2859,7 @@ fn pair_courts(
                 inward,
                 family,
                 depth_limit,
+                false,
             );
             one.pop()
         })
@@ -3480,6 +3721,8 @@ pub(super) fn generate(
             admission.shared_access = true;
         }
         let family = families::family(morph.text("plotOp"));
+        // Dense zones leave no empty land: leftovers are joined (`absorb`).
+        let dense = matches!(zone.as_str(), "core" | "middle");
         let depth_limit = (!matches!(morph.text("plotOp"), "compound" | "wholeBlock"))
             .then(|| maximum_plot_depth(morph, zone));
         qualify(
@@ -3491,6 +3734,7 @@ pub(super) fn generate(
             family == "courtyard",
             family,
             depth_limit,
+            dense,
         );
         // Invariant (bug 2b): no admitted lot reaches deeper than the culture's
         // lot depth from its best access; the land behind becomes its garden.
@@ -3518,6 +3762,7 @@ pub(super) fn generate(
                 family == "courtyard",
                 family,
                 depth_limit,
+                dense,
             );
             parcels.extend(bounded);
         }
@@ -3591,6 +3836,7 @@ pub(super) fn generate(
                     family == "courtyard",
                     family,
                     depth_limit,
+                    dense,
                 );
                 let admitted = children.len() >= 2
                     && children.iter().all(|p| {
@@ -3638,6 +3884,9 @@ pub(super) fn generate(
         if morph.text("plotOp") != "garden"
             && !parcels.iter().any(|p| p.use_kind == "plot")
             && parcels.iter().all(|p| p.use_kind == "garden")
+            && !parcels
+                .iter()
+                .any(|p| p.provenance.iter().any(|x| x == "dense-leftover"))
         {
             for p in &mut parcels {
                 p.use_kind = "residual".into();

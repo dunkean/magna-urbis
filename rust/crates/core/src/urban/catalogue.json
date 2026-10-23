@@ -2692,12 +2692,12 @@
         "gridSkew": 0,
         "blockSize": {
           "core": [
-            380,
-            1100
+            5000,
+            14000
           ],
           "middle": [
-            380,
-            1100
+            4000,
+            12000
           ],
           "edge": [
             9000,
@@ -2712,7 +2712,7 @@
             16000
           ]
         },
-        "minBlock": 220,
+        "minBlock": 1200,
         "minWidth": 9,
         "widthByRank": [
           5,
@@ -4050,8 +4050,8 @@
         "buildingOp": "pavilionCompound",
         "orientation": "cardinal",
         "laneSpacing": [
-          58,
-          125
+          76,
+          240
         ],
         "wardArea": 26000,
         "spineAmp": 0,
@@ -4082,7 +4082,7 @@
           4.5,
           6
         ],
-        "accessDepth": 27,
+        "accessDepth": 40,
         "fieldTwist": 0,
         "extraRadials": false,
         "ringSpacing": 0,
@@ -4335,8 +4335,8 @@
         "buildingOp": "pavilionCompound",
         "orientation": "cardinal",
         "laneSpacing": [
-          58,
-          125
+          76,
+          240
         ],
         "wardArea": 26000,
         "spineAmp": 0,
@@ -4367,7 +4367,7 @@
           4.5,
           6
         ],
-        "accessDepth": 27,
+        "accessDepth": 40,
         "fieldTwist": 0,
         "extraRadials": false,
         "ringSpacing": 0,
@@ -4903,8 +4903,8 @@
         "buildingOp": "pavilionCompound",
         "orientation": "cardinal",
         "laneSpacing": [
-          58,
-          125
+          76,
+          240
         ],
         "wardArea": 26000,
         "spineAmp": 0,
@@ -4935,7 +4935,7 @@
           4.5,
           6
         ],
-        "accessDepth": 27,
+        "accessDepth": 40,
         "fieldTwist": 0,
         "extraRadials": false,
         "ringSpacing": 0,
@@ -20251,7 +20251,8 @@
         "id": "persian-bazaar",
         "streets": [
           "gateToGate",
-          "organicInfill"
+          "organicInfill",
+          "culDeSacTree"
         ],
         "streetOp": "organic",
         "closeOp": "none",
@@ -20325,12 +20326,12 @@
         "gridSkew": 0,
         "blockSize": {
           "core": [
-            380,
-            1100
+            5000,
+            14000
           ],
           "middle": [
-            380,
-            1100
+            4000,
+            12000
           ],
           "edge": [
             9000,
@@ -20345,7 +20346,7 @@
             16000
           ]
         },
-        "minBlock": 220,
+        "minBlock": 1200,
         "minWidth": 9,
         "widthByRank": [
           7,
@@ -21670,7 +21671,8 @@
         "id": "ottoman-carsi",
         "streets": [
           "radials",
-          "organicInfill"
+          "organicInfill",
+          "closes"
         ],
         "streetOp": "organic",
         "closeOp": "none",
@@ -21744,12 +21746,12 @@
         "gridSkew": 0,
         "blockSize": {
           "core": [
-            380,
-            1100
+            3000,
+            9000
           ],
           "middle": [
-            380,
-            1100
+            3500,
+            10000
           ],
           "edge": [
             9000,
@@ -21764,7 +21766,7 @@
             16000
           ]
         },
-        "minBlock": 220,
+        "minBlock": 700,
         "minWidth": 9,
         "widthByRank": [
           6.5,
@@ -69002,8 +69004,8 @@
         "buildingOp": "pavilionCompound",
         "orientation": "cardinal",
         "laneSpacing": [
-          58,
-          125
+          76,
+          240
         ],
         "wardArea": 26000,
         "spineAmp": 0,
@@ -69034,7 +69036,7 @@
           4.5,
           6
         ],
-        "accessDepth": 27,
+        "accessDepth": 40,
         "fieldTwist": 0,
         "extraRadials": false,
         "ringSpacing": 0,

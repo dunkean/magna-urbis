@@ -640,7 +640,11 @@ impl Field<'_> {
             "water" => self.water,
             _ => self.angle,
         };
-        let base = if self.align_regional {
+        // A planned cardinal grid (Chinese, Hindu temple town) is laid out to
+        // the compass like its walls and gates: regional roads join its gates,
+        // they do not turn its lattice.
+        let compass = m.text("orientation") == "cardinal" && m.text("streetOp") == "grid";
+        let base = if self.align_regional && !compass {
             self.regional.axis(p).unwrap_or(cultural_base)
         } else {
             cultural_base
@@ -4545,5 +4549,169 @@ mod tests {
                 assert!(warning.contains("découpe empruntée"), "{warning}");
             }
         }
+    }
+
+    /// A flat town whose regional roads end at its centre, arriving on the
+    /// given bearings (degrees), as the regional graph delivers them.
+    fn flat_town(culture: &str, population: u32, bearings: &[f64]) -> Layout {
+        let n = 256;
+        let width = 3000.0;
+        let heights = vec![10.0; n * n];
+        let water = vec![0; n * n];
+        let surface = Surface {
+            geometry: None,
+            width,
+            n,
+            height: &heights,
+            water: &water,
+        };
+        let c = width * 0.5;
+        let roads: Vec<Street> = bearings
+            .iter()
+            .map(|b| {
+                let (dx, dy) = (b.to_radians().cos(), b.to_radians().sin());
+                Street {
+                    path: (0..=24)
+                        .map(|i| Point {
+                            x: c + dx * 1400.0 * (1.0 - i as f64 / 24.0),
+                            y: c + dy * 1400.0 * (1.0 - i as f64 / 24.0),
+                        })
+                        .collect(),
+                    widths: vec![7.0; 25],
+                    rank: 0,
+                    role: "regional".into(),
+                }
+            })
+            .collect();
+        let site = Site {
+            key: "probe".into(),
+            name: "Probe".into(),
+            population,
+            culture: culture.into(),
+            center: Point { x: c, y: c },
+            radius: 300.0,
+        };
+        super::super::generate_quarters(
+            "probe-town",
+            std::slice::from_ref(&site),
+            &LayoutConfig::default(),
+            surface,
+            &roads,
+        )
+        .unwrap()
+        .remove(0)
+    }
+    /// Street land of the core: the share of its quarters left out of blocks.
+    fn core_street_share(layout: &Layout) -> f64 {
+        let core: Vec<usize> = (0..layout.quarters.len())
+            .filter(|&i| layout.quarters[i].zone == "core")
+            .collect();
+        let land: f64 = core
+            .iter()
+            .map(|&i| g::area(&layout.quarters[i].shape))
+            .sum();
+        let built: f64 = layout
+            .blocks
+            .iter()
+            .filter(|b| core.contains(&b.quarter))
+            .map(|b| g::area(&b.shape))
+            .sum();
+        1.0 - built / land.max(1.0)
+    }
+    fn core_blocks(layout: &Layout) -> Vec<&super::super::Block> {
+        layout
+            .blocks
+            .iter()
+            .filter(|b| b.zone == "core" && b.kind == "block")
+            .collect()
+    }
+    /// Invariant (medina core): a few through streets and a tree of derbs
+    /// serve large inward-looking blocks; streets stay a small share of the
+    /// core and every lot is still served (street, derb or shared access).
+    #[test]
+    fn medina_core_is_large_blocks_served_by_derbs() {
+        let layout = flat_town("medina", 5000, &[20.0, 140.0, 255.0]);
+        let share = core_street_share(&layout);
+        let blocks = core_blocks(&layout);
+        let mean =
+            blocks.iter().map(|b| g::area(&b.shape)).sum::<f64>() / blocks.len().max(1) as f64;
+        let derbs = layout.streets.iter().filter(|s| s.role == "close").count();
+        eprintln!(
+            "medina core: street share {share:.3}, {} blocks of {mean:.0} m², {derbs} derbs",
+            blocks.len()
+        );
+        assert!(share < 0.22, "core street share {share:.3}");
+        assert!(mean > 2000.0, "core blocks of {mean:.0} m²");
+        assert!(derbs > 0, "no derb serves the deep blocks");
+        let parts = super::super::generate_parcels(
+            "probe-town",
+            std::slice::from_ref(&layout),
+            &super::super::ParcelConfig::default(),
+        )
+        .unwrap();
+        let unserved: Vec<_> = parts[0]
+            .parcels
+            .iter()
+            .filter(|p| p.use_kind == "plot" && layout.blocks[p.block].zone == "core")
+            .filter(|p| p.access.as_ref().is_none_or(|a| a.kind == "unserved"))
+            .map(|p| p.id.clone())
+            .collect();
+        assert!(
+            unserved.is_empty(),
+            "core lots without access: {unserved:?}"
+        );
+    }
+    /// Invariant (Chinese walled city): the lattice runs to the compass, and
+    /// regional roads arriving on any bearing reach the centre along its axes
+    /// instead of cutting the wards diagonally; hutong lanes leave large blocks.
+    #[test]
+    fn chinese_core_runs_to_the_compass_and_roads_take_its_axes() {
+        let layout = flat_town("chinese", 5000, &[25.0, 118.0, 248.0]);
+        let core: Vec<&Shape> = layout
+            .quarters
+            .iter()
+            .filter(|q| q.zone == "core")
+            .map(|q| &q.shape)
+            .collect();
+        let inside = |p: Point| core.iter().any(|q| g::contains(q, p));
+        // Length on and off the compass axes, for the segments inside the core.
+        let off_axis = |filter: &dyn Fn(&Street) -> bool| {
+            let (mut on, mut off) = (0.0, 0.0);
+            for s in layout.streets.iter().filter(|s| filter(s)) {
+                for w in s.path.windows(2) {
+                    let l = (w[1].x - w[0].x).hypot(w[1].y - w[0].y);
+                    let mid = Point {
+                        x: (w[0].x + w[1].x) * 0.5,
+                        y: (w[0].y + w[1].y) * 0.5,
+                    };
+                    if l < 1.0 || !inside(mid) {
+                        continue;
+                    }
+                    let a = (w[1].y - w[0].y).atan2(w[1].x - w[0].x);
+                    if (2.0 * a).sin().abs() < 0.07 {
+                        on += l
+                    } else {
+                        off += l
+                    }
+                }
+            }
+            off / (on + off).max(1.0)
+        };
+        let regional = off_axis(&|s: &Street| s.role == "regional");
+        let lanes = off_axis(&|s: &Street| s.rank >= 2 && s.role != "close");
+        let share = core_street_share(&layout);
+        let blocks = core_blocks(&layout);
+        let mean =
+            blocks.iter().map(|b| g::area(&b.shape)).sum::<f64>() / blocks.len().max(1) as f64;
+        eprintln!(
+            "chinese core: regional off-axis {regional:.2}, lanes off-axis {lanes:.2}, street share {share:.3}, {} blocks of {mean:.0} m²",
+            blocks.len()
+        );
+        assert!(
+            regional < 0.05,
+            "regional roads off the axes: {regional:.2}"
+        );
+        assert!(lanes < 0.15, "lanes off the axes: {lanes:.2}");
+        assert!(mean > 2500.0, "core blocks of {mean:.0} m²");
     }
 }

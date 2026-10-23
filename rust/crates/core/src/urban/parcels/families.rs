@@ -134,6 +134,122 @@ pub(super) fn envelope(
     None
 }
 
+/// Witness of a lot of odd ground: the admission rectangle at any orientation
+/// (along a street contact or a long side of the lot), placed where it lies
+/// closest to a contact reaching `access_width`. A wedge, an L or a slanted
+/// lot that holds no street-aligned rectangle still holds a house, and the
+/// polygon house of such a lot keeps this body inside it. `reach` is how far
+/// the rectangle may stand from the contact (a setback, not a hole).
+pub(super) fn free_envelope(
+    shape: &Shape,
+    fronts: &[Front],
+    width: f64,
+    depth: f64,
+    access_width: f64,
+    reach: f64,
+) -> Option<Shape> {
+    let contacts = contacts::boundary_contacts(shape, fronts);
+    let served: Vec<(Point, Point)> = contacts
+        .iter()
+        .enumerate()
+        .filter(|&(i, _)| {
+            let (lo, hi) = contacts::support_span(&contacts, i);
+            hi - lo + 1e-6 >= access_width
+        })
+        .map(|(_, f)| (f.a, f.b))
+        .collect();
+    if served.is_empty() {
+        return None;
+    }
+    // Sample points of the served contacts, every 0.5 m (at most 48 in all).
+    let mut marks: Vec<Point> = Vec::new();
+    for &(a, b) in &served {
+        let n = ((length(sub(b, a)) / 0.5).ceil() as usize).clamp(1, 48);
+        marks.extend((0..=n).map(|k| add(a, scale(sub(b, a), k as f64 / n as f64))));
+    }
+    if marks.len() > 96 {
+        let step = marks.len().div_ceil(96);
+        marks = marks.into_iter().step_by(step).collect();
+    }
+    let mut dirs: Vec<(f64, Point)> = served
+        .iter()
+        .map(|&(a, b)| (length(sub(b, a)), unit(sub(b, a))))
+        .collect();
+    let ring = &shape.outer;
+    dirs.extend(
+        ring.iter()
+            .zip(ring.iter().cycle().skip(1))
+            .take(ring.len())
+            .map(|(&p, &q)| (length(sub(q, p)), unit(sub(q, p))))
+            .filter(|(l, _)| *l >= 2.0),
+    );
+    dirs.sort_by(|a, b| b.0.total_cmp(&a.0));
+    let mut axes: Vec<Point> = Vec::new();
+    for (_, d) in dirs {
+        if axes.len() >= 10 {
+            break;
+        }
+        if axes.iter().all(|a| dot(*a, d).abs() < 0.9994) {
+            axes.push(d);
+        }
+    }
+    let gap = |c: &[Point; 4]| {
+        marks
+            .iter()
+            .map(|&m| {
+                (0..4)
+                    .map(|k| distance(m, c[k], c[(k + 1) % 4]))
+                    .fold(f64::INFINITY, f64::min)
+            })
+            .fold(f64::INFINITY, f64::min)
+    };
+    let mut best: Option<(f64, Shape)> = None;
+    let mut swapped = false;
+    for u in axes {
+        let v0 = normal(u);
+        for (w, d) in [(width, depth), (depth, width)] {
+            let turned = w != width;
+            for sign in [1.0, -1.0] {
+                let v = scale(v0, sign);
+                let (s0, s1) = bounds(shape, u);
+                let (t0, t1) = bounds(shape, v);
+                if s1 - s0 + 1e-6 < w || t1 - t0 + 1e-6 < d {
+                    continue;
+                }
+                let (ds, dt) = (
+                    ((s1 - s0 - w) / 24.0).max(0.4),
+                    ((t1 - t0 - d) / 24.0).max(0.4),
+                );
+                let mut s = s0;
+                while s <= s1 - w + 1e-9 {
+                    let mut t = t0;
+                    while t <= t1 - d + 1e-9 {
+                        let a = add(scale(u, s), scale(v, t));
+                        if rect_within(shape, a, u, v, w, d) {
+                            let r = rect(a, u, v, w, d);
+                            let c = [r.outer[0], r.outer[1], r.outer[2], r.outer[3]];
+                            let g = gap(&c);
+                            if g <= reach && best.as_ref().is_none_or(|(b, _)| g < *b - 1e-9) {
+                                best = Some((g, r));
+                                swapped = turned;
+                            }
+                        }
+                        t += dt;
+                    }
+                    s += ds;
+                }
+            }
+        }
+    }
+    // The stored witness always reads width x depth from its first corner.
+    best.map(|(_, mut r)| {
+        if swapped {
+            r.outer.rotate_left(1);
+        }
+        r
+    })
+}
+
 fn rect(a: Point, u: Point, v: Point, width: f64, depth: f64) -> Shape {
     Shape {
         outer: vec![
@@ -171,7 +287,14 @@ pub(super) fn courts(
     let u = unit(sub(f.b, f.a));
     let v = normal(u);
     let mid = scale(add(f.a, f.b), 0.5);
-    let cap = ray_limit(shape, add(mid, scale(v, 0.05)), v, fronts, f.rank, f64::INFINITY);
+    let cap = ray_limit(
+        shape,
+        add(mid, scale(v, 0.05)),
+        v,
+        fronts,
+        f.rank,
+        f64::INFINITY,
+    );
     let depth = morph.range("plotDepth", zone)[0].max(8.0).min(cap * 0.6);
     let court_size = morph.range("houseArea", zone)[0].sqrt().clamp(6.0, 16.0);
     // Small domains remain one enclos rather than being hollowed into slivers.

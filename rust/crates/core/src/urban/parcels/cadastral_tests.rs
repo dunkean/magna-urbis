@@ -266,6 +266,22 @@ fn cadastral_shared_court_has_real_street_and_internal_contacts() {
 fn cadastral_refusals_and_intentional_gardens_are_distinct() {
     let mut layout = fixture(false, false, "medina");
     layout.blocks[0].shape = rectangle(0.0, 0.0, 5.0, 40.0);
+    // Outside dense zones a refusal stays an explicit residual (garden rules
+    // apply there); in a core it is built or kept as a garden, never a hole.
+    let mut dense = layout.clone();
+    dense.blocks[0].zone = "core".into();
+    let kept = generate(
+        "narrow-dense",
+        &dense,
+        &ParcelConfig::default(),
+        &morph("wholeBlock"),
+    )
+    .unwrap();
+    assert!(matches!(
+        kept.parcels[0].use_kind.as_str(),
+        "plot" | "garden"
+    ));
+    layout.blocks[0].zone = "edge".into();
     let rejected = generate(
         "narrow-refusal",
         &layout,
@@ -792,14 +808,25 @@ fn deep_blocks_split_back_to_back_lots_evenly() {
     let mut m = morph("burgage");
     m.value["plotDepth"]["core"] = json!([30.0, 34.0]);
     m.value["deepFill"] = json!(true);
-    let lots = strips(&shape, 0, Point { x: 1.0, y: 0.0 }, &fronts, &m, "core", &mut Rng::new("deep"));
+    let lots = strips(
+        &shape,
+        0,
+        Point { x: 1.0, y: 0.0 },
+        &fronts,
+        &m,
+        "core",
+        &mut Rng::new("deep"),
+    );
     let main = lots
         .iter()
         .filter(|p| p.use_kind == "plot" && p.front.is_some_and(|f| f[0].y.abs() < 0.5))
         .map(|p| p.shape.outer.iter().map(|q| q.y).fold(0.0, f64::max))
         .fold(0.0, f64::max);
     assert!(main > 0.0, "main street is cut");
-    assert!(main <= 0.5 * 80.0 + 1.3, "main lots {main} m deep in an 80 m block");
+    assert!(
+        main <= 0.5 * 80.0 + 1.3,
+        "main lots {main} m deep in an 80 m block"
+    );
 }
 
 /// Invariant (lot balance): sharing a residual strip never bloats a lot past
@@ -1041,6 +1068,7 @@ fn court_tissues_pair_small_lots_into_court_house_lots() {
         false,
         "frontage",
         None,
+        false,
     );
     assert!(
         cells
@@ -1204,6 +1232,7 @@ fn a_court_pair_that_would_dwarf_its_rear_neighbours_is_not_made() {
         false,
         "frontage",
         None,
+        false,
     );
     assert_eq!(cells.len(), 20);
     assert!(cells.iter().all(|c| c.envelope.is_some()));
@@ -1227,4 +1256,78 @@ fn a_court_pair_that_would_dwarf_its_rear_neighbours_is_not_made() {
     );
     let total: f64 = cells.iter().map(|c| area(&c.shape)).sum();
     assert!((total - 4800.0).abs() < 1e-6, "exact partition: {total}");
+}
+
+/// Invariant (dense zones keep no empty land): in a core a leftover that no
+/// aligned house fits is joined to its neighbour when the union holds a house,
+/// else admitted by a free witness (a slanted body in a slanted lot); outside
+/// dense zones it stays a leftover for the garden rules.
+#[test]
+fn dense_leftovers_are_joined_or_admitted_by_a_free_witness() {
+    let axis = Point { x: 1.0, y: 0.0 };
+    let small = super::super::culture::UrbanAdmissibility {
+        recipe_id: "MED-ANT-B12".into(),
+        native_layout: "single".into(),
+        floors: [1, 2],
+        eras: vec![],
+        min_frontage: 5.4,
+        min_access_width: 1.2,
+        min_area: 5.4 * 7.95,
+        min_depth: 7.95,
+        max_slope: 0.2,
+        shared_access: false,
+        party_walls: true,
+    };
+    let layout: Layout = serde_json::from_value(json!({
+        "key":"leftover","culture":"roman-core","center":{"x":10.0,"y":15.0},
+        "quarters":[],"warnings":[],"blocks":[{"shape":rectangle(0.0, 0.0, 40.0, 30.0),"quarter":0,"kind":"block","axis":{"x":1.0,"y":0.0},"zone":"core"}],
+        "streets":[{"widths":[6.0,6.0],"path":[{"x":-3.0,"y":-3.0},{"x":43.0,"y":-3.0}],"rank":1,"role":"street"}]
+    }))
+    .unwrap();
+    let fronts = [front((0.0, 0.0), (40.0, 0.0), 1, 0)];
+    // 1. A 3 m strip beside two admitted lots is joined, area conserved.
+    let mut cells: Vec<Parcel> = [(0.0, 8.0), (8.0, 16.0), (16.0, 19.0)]
+        .iter()
+        .map(|&(a, b)| parcel(rectangle(a, 0.0, b, 30.0), 0, axis, &fronts, "plot"))
+        .collect();
+    let before: f64 = cells.iter().map(|c| area(&c.shape)).sum();
+    qualify(
+        &mut cells, &fronts, &layout, &small, None, false, "frontage", None, true,
+    );
+    assert!(
+        cells
+            .iter()
+            .all(|c| c.use_kind == "plot" && c.envelope.is_some())
+    );
+    assert!((cells.iter().map(|c| area(&c.shape)).sum::<f64>() - before).abs() < 1e-6);
+    // 2. A slanted lot that holds no aligned house holds a slanted one.
+    let slanted = Shape {
+        outer: vec![
+            Point { x: 0.0, y: 0.0 },
+            Point { x: 12.0, y: 0.0 },
+            Point { x: 32.0, y: 20.0 },
+            Point { x: 20.0, y: 20.0 },
+        ],
+        holes: Vec::new(),
+    };
+    let fronts = [front((0.0, 0.0), (12.0, 0.0), 1, 0)];
+    let make = || vec![parcel(slanted.clone(), 0, axis, &fronts, "plot")];
+    let mut cells = make();
+    qualify(
+        &mut cells, &fronts, &layout, &small, None, false, "frontage", None, false,
+    );
+    assert!(cells[0].envelope.is_none(), "no aligned house fits");
+    let mut cells = make();
+    qualify(
+        &mut cells, &fronts, &layout, &small, None, false, "frontage", None, true,
+    );
+    let lot = &cells[0];
+    assert!(lot.use_kind == "plot" && lot.provenance.iter().any(|p| p == "polygonal-lot"));
+    assert!(
+        lot.envelope
+            .as_ref()
+            .is_some_and(|e| witnessed_by(e, &small))
+    );
+    // Allocation asks the same question the cadastre answered.
+    assert!(parcel_envelope(lot, small.min_frontage, small.min_depth, 0.8).is_some());
 }
