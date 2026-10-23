@@ -176,3 +176,12 @@ static func water_material(packet: Dictionary, mode: String, kind := "lake") -> 
 	material.set_shader_parameter("linear_tint",color)
 	material.set_shader_parameter("presentation_mode",1 if resolved.cartographic else 0)
 	return material
+
+static func city_map_material(packet:Dictionary,outline:=false)->Material:
+	var palette:Dictionary=profile(packet,"cartographic").palette.get("urban",{})
+	var color=_token(palette,"massEdge" if outline else "mass",Vector3(0.09,0.07,0.05) if outline else Vector3(0.35,0.26,0.17))
+	return _flat_shader_material(color,"source-city-map-outline" if outline else "source-city-map-fill")
+
+static func canopy_trunk_color(packet:Dictionary,mode:String)->Vector3:
+	var resolved=profile(packet,mode)
+	return _token(resolved.palette,"treeInk",Vector3(0.055,0.105,0.036)) if resolved.cartographic else Vector3(0.16,0.105,0.067)

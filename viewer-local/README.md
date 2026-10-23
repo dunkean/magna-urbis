@@ -1,9 +1,11 @@
 # Prévisualisation locale SurfaceWorld
 
-Godot est un consommateur optionnel des données Magna Urbis. Le générateur de
-ville, le mapper, les palettes et les sorties finales SVG/Canvas restent les
-références. Ce projet ne génère aucun relief et ne modifie ni les hauteurs source,
-ni les volumes urbains natifs, ni leurs identifiants de matériaux.
+Godot est un moteur de rendu candidat pour les cartes et plans JDR 2D/3D de
+Magna Urbis. Les contrats de donn�es restent ind�pendants du moteur ; les palettes
+existantes, les vues orthographiques et les exports de cartes guident son �valuation.
+Les sorties SVG/Canvas conservent actuellement les �tiquettes et la composition
+finale non reprises ici. Ce projet ne g�n�re aucun relief et ne modifie ni les hauteurs
+source, ni les volumes urbains natifs, ni leurs identifiants de mat�riaux.
 
 ## Installer et lancer
 
@@ -149,7 +151,7 @@ certifiée. Un zoom à 1 cm/px n'ajoute aucune information à un DEM grossier.
 L'eau conserve les classes/niveaux fournis ; les rives dépendent de leur support.
 Les volumes urbains natifs sont conservés ; les proxies cartographiques restent
 identifiés comme tels et sont masqués par défaut. Les routes projetées ne terrassent
-pas le terrain. Le rendu optionnel Godot ne remplace pas les styles cartographiques
+pas le terrain. Le rendu Godot actuel ne remplace pas encore les styles cartographiques
 finis de Magna Urbis.
 
 Références : [Terrain3D 1.0.2](https://github.com/TokisanGames/Terrain3D/releases/tag/v1.0.2-stable),
