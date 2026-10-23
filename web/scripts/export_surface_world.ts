@@ -3,9 +3,10 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import { readDecorFile } from '../src/ui/decorFile';
 import { exportSurfacePacket } from '../src/surface/adapters/export';
+import type { Building3dScene } from '../src/render/urbanBuildingGeometry';
 
 const [input, output, ...args] = process.argv.slice(2);
-if (!input || !output) throw new Error('Usage: export_surface_world.ts INPUT.decor OUTPUT.json [--crop x,y,n]');
+if (!input || !output) throw new Error('Usage: export_surface_world.ts INPUT.decor OUTPUT.json [--crop x,y,n] [--candidates all|centre] [--candidate-limit 100000] [--native-scene FILE.json]');
 const bytes = await readFile(input);
 let decor = await readDecorFile(new Blob([new Uint8Array(bytes)]));
 let originX = 0, originZ = 0;
@@ -30,7 +31,15 @@ if (cropIndex >= 0) {
     height: cut(r.height), water: cut(r.water), waterLevel: cut(r.waterLevel), riverWidth: cut(r.riverWidth), riverIds: cut(r.riverIds) } };
   decor.meta.pipeline = { ...decor.meta.pipeline, stage: decor.meta.pipeline?.stage ?? 'terrain', crop: { x: x * cell, y: y * cell, width: n * cell, sourceWidth: r.width } };
 }
-const packet = exportSurfacePacket(decor, undefined, { originX, originZ });
+const candidateMode = args[args.indexOf('--candidates') + 1] ?? 'centre';
+if (args.includes('--candidates') && !['all', 'centre'].includes(candidateMode)) throw new Error('Candidates must be all or centre.');
+const candidateLimit = args.includes('--candidate-limit') ? Number(args[args.indexOf('--candidate-limit') + 1]) : 100000;
+if (!Number.isInteger(candidateLimit) || candidateLimit < 0) throw new Error('Candidate limit must be a nonnegative integer.');
+const nativePath = args.includes('--native-scene') ? args[args.indexOf('--native-scene') + 1] : undefined;
+const nativeScene = nativePath ? JSON.parse(await readFile(nativePath, 'utf8')) as Building3dScene : undefined;
+const packet = exportSurfacePacket(decor, nativeScene, { terrainOriginX: originX, terrainOriginZ: originZ, candidateBounds: candidateMode === 'all' ? 'all' : undefined, candidateLimit });
+if (nativePath) Object.assign(packet.source, { externalNativeScene: { file: nativePath, coordinates: 'unchanged source XY',
+  relationshipToTerrain: 'Explicit external native-scene diagnostic. Matching terrain capture lineage is not asserted.' } });
 await writeFile(output, JSON.stringify(packet));
 console.log(JSON.stringify({ output, sourceId: decor.meta.id, sourceSeed: decor.meta.seed, terrain: packet.world.terrain,
   buildings: packet.urban.buildings.length }, (key, value) => key === 'heights' ? '[retained source samples]' : value));
