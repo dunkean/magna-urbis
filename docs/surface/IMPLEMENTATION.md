@@ -1,11 +1,14 @@
 # SurfaceWorld — état de l'implémentation
 
-État documentaire du 23 octobre 2026, code intégré jusqu'à `3829dbd`. Le détail
+État documentaire du 23 octobre 2026, code intégré jusqu'à `f117492`. Le détail
 géométrique, le scénario géologique, les styles et l'hydrologie fixe sont raccordés.
 **La campagne technique V5 passe ; la phase 6 n'est pas acceptée visuellement.**
 Le contrat 1.5.2 et ses shaders natifs séparent maintenant sol, couvert bas et arbres.
-Les probes GPU des trois couches passent ; la campagne live V6 et la qualification
-ville correspondante restent à exécuter. V5 qualifie le code 1.4
+Les probes GPU des trois couches passent. Les tentatives V6 et V7 sont conservées
+comme **échouées**, malgré la progression live pendant le mouvement : V6 omettait
+une métadonnée de projection vide ; V7 perdait 43 triangles d'eau au bord source.
+Les corrections et leurs régressions ciblées sont intégrées ; une nouvelle
+campagne complète doit encore les qualifier ensemble. V5 qualifie le code 1.4
 figé `f6a45af`, pas ces nouvelles couches. Les rapports de revue initiaux sont conservés sans modifier
 leur verdict. Ce document distingue le code disponible, les preuves exécutées et
 les qualifications qui restent à faire.
@@ -110,6 +113,15 @@ manquants, budgets, surfaces et conflits d'appui. Les segments plus fins qu'un
 pixel restent sous-échantillonnés : aucune conservation visuelle du débit n'est
 revendiquée. Voir [la preuve de projection](evidence/hydrology-f2/README.md).
 
+Le défaut V7 de 43 triangles manquants a été reproduit : la conversion d'un
+sommet relatif en Float32 reconstruisait la limite 0 m à −0,000122 m. Le lookup
+strict rejetait alors une cote source pourtant disponible. La correction borne
+la reprise à un demi-ULP de coordonnées relatives déjà clippées en double. Elle
+ne déplace ni les sommets ni les niveaux et ne prolonge pas la recherche des
+cellules humides. Les quatre contrôles CPU de production (40 km, 10 km, rebase,
+translation ±10⁹ m) ne perdent plus aucun triangle ; les vrais niveaux manquants
+restent des erreurs. Voir [la preuve et ses limites](evidence/hydrology-f2/FLOAT_BOUNDARY.md).
+
 Les contours simples passent par la triangulation native bornée ; les groupes
 multi-contours utilisent un balayage pair/impair à arêtes actives en coordonnées
 locales. Les doublons stricts sont retirés de l'affichage, sans modifier les données
@@ -161,6 +173,43 @@ globale. Le composite `material*` historique est conservé pour compatibilité,
 mais n'est plus appelé « sol nu ». Un ancien paquet ne permet pas de récupérer
 ce sol par soustraction de son top2. Voir le
 [contrat, les invariants et les limites](../SURFACE_RENDER_LAYERS.md).
+
+Le lecteur natif contrôle les neuf types, les rôles, les versions projetées et
+canoniques, puis prépare cinq images : paires support, moyenne support, paires
+basses, moyenne basse prémultipliée et état bas. Les visibilités agissent sur les
+réponses et les objets de chaque étage. Les probes réels et les fixtures d'alpha
+0/1 qualifient l'absence de contamination du support ; ils ne remplacent pas une
+acceptation artistique de la scène. Voir [les preuves GPU](evidence/native-layers/README.md).
+
+## Ville, plans et réalisations natives
+
+Les [quatre vues des 500 plans conservés](evidence/native-city500-v152.json)
+vérifient les identifiants, matériaux, routes, parent de terrain et trois couches,
+avec un plan rapproché et une perspective. Ce jeu source ne contient **aucune
+face étiquetée toiture** : sa conservation ne qualifie pas des maisons complètes.
+Le renderer cartographique emploie une représentation d'empreinte de toit déclarée.
+Une valeur native de matériau absente ne devient plus la chaîne `"<null>"` : le
+rôle de surface résout les slots source, sans réécrire les données originales.
+
+Une [fixture distincte de 419 extérieurs natifs](evidence/native-current-exterior-fixture.json)
+est produite par `plans::plan_batch` puis `plans::realize_plan`, avec les vraies
+empreintes, requêtes de site et seeds archivées. Le moteur actuel refuse 81 sites
+au planning ; aucun substitut n'est généré. Les 500 occupations historiques
+restent explicitement la référence : 419 nouveaux extérieurs et 81 parcelles non
+réalisées. L'ancien plan incompatible conserve son refus de version et ses octets.
+Les nouveaux plans sont de nouvelles révisions, avec notamment des différences
+de plancher pouvant atteindre 0,139 m ; ils ne sont pas annoncés comme les anciens
+plans inchangés. Le paquet conserve les entrées/réponses natives en UTF-8 typé.
+
+Les [outils reproductibles](../../web/scripts/fixtures/native-city-realization/README.md)
+sont versionnés et la [réexécution CPU](evidence/native-exterior-tool-reproduction.json)
+redonne exactement le même paquet. Le WASM mis en cache ne fournissait pas les
+exports de réalisation actuels : cette preuve utilise un exécutable natif isolé,
+dont les 196 fichiers source ont été vérifiés identiques à l'intégration. Aucun
+dépôt principal n'est reconstruit ni modifié. Les captures des nouveaux extérieurs
+restent à qualifier sur le prochain gel de rendu. Ces scènes reposent sur un
+parent conservé ; elles ne prouvent pas une nouvelle ville sur un relief neural
+fraîchement raffiné.
 
 Orogen expose un vrai graphe et des couches climatiques, mais aucun catalogue de
 lithologie dans les sorties auditées. L'importateur exige donc une géologie
