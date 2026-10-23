@@ -1,0 +1,107 @@
+{
+  "format": "magna-surface-e2e-negative-evidence",
+  "version": 1,
+  "campaign": "native-e2e-40km-v6",
+  "status": "failed",
+  "driverExitCode": 1,
+  "failure": "Error: Source-map projection hides physical edits, roof projection or subpixel stroke changes",
+  "failedStage": "post-native-navigation source-map evidence validation",
+  "snapshot": {
+    "initialHead": "d3c6b1d362ec466a3c8b50a7b5db8c6518f05353",
+    "finalHead": "d3c6b1d362ec466a3c8b50a7b5db8c6518f05353",
+    "initialStatus": "",
+    "finalStatus": "",
+    "filesUnchanged": true,
+    "trackedRuntimeFiles": 529
+  },
+  "source": {
+    "fresh": true,
+    "profile": "coarse4-original-original",
+    "modelRevision": "919550498b3fd7c9d4c53e575f6a2d5475f9be2d",
+    "neuralToken": "4d2467d0850340c6815922629c319490",
+    "rawNeuralHeightSHA256": "3c7c2f32e37844842f058208e21522543bcec69125348e115390f83d5b814159",
+    "grid": {
+      "width": 512,
+      "height": 512,
+      "spacingM": 78.125
+    },
+    "surfaceLayers": {
+      "version": "surface-layers-1",
+      "groundAvailability": "explicit",
+      "lowCoverAvailability": "explicit",
+      "fieldsVersion": "70533423386cea0d08667aa3e2d535af"
+    },
+    "exportedBuildings": 0
+  },
+  "navigation": {
+    "nativeExitCode": 0,
+    "nativeProbeStatus": "complete",
+    "driverPhaseStatus": "failed",
+    "nominalSeconds": 20,
+    "actualMotionWallSeconds": 20,
+    "motionWindow": [
+      80702,
+      100702
+    ],
+    "warmupSeconds": 58.672,
+    "drainSeconds": 8.62,
+    "maximumInputGapSeconds": 0.274000000000001,
+    "finalReady": true,
+    "qualifiedFreshDisplayedWorlds": [
+      {
+        "worldId": "84891e3ab89175045ef79ce262c2746e",
+        "requestSerial": 114,
+        "appliedTickMs": 94008,
+        "preview": true,
+        "requestedResolution": 128,
+        "sourceLOD": -2,
+        "nativeSpacingM": 7.5
+      },
+      {
+        "worldId": "21f3670386d3909d228e0dc340709a6f",
+        "requestSerial": 208,
+        "appliedTickMs": 97118,
+        "preview": true,
+        "requestedResolution": 128,
+        "sourceLOD": -6,
+        "nativeSpacingM": 0.46875
+      }
+    ],
+    "explicitRenderedLayersVerified": true,
+    "finalEmptyWater": {
+      "empty": true,
+      "sourceVertices": 0,
+      "requestedAreaM2": 0,
+      "waterPresentation": "source-map-terrain-projection",
+      "projectionCullMask": 1,
+      "sourceLevelsUnchanged": true,
+      "physicalWaterSurfaceClaimed": false,
+      "minimumRiverStrokeApplied": false,
+      "subpixelPolicyPresent": false
+    },
+    "failedRequirement": "Every source-map projection declares subpixelPolicy; the empty/no-water metadata branch omitted that field. The criterion was not changed."
+  },
+  "tourExecuted": false,
+  "sevenTourCapturesQualified": false,
+  "layerIsolationExecuted": false,
+  "limitations": [
+    "Native motion displayed two genuinely new preview128 worlds, but the driver phase still failed the water metadata gate.",
+    "No seven-scale tour or layer-isolation phase ran. F1/F2/F3 visual acceptance is not established by V6.",
+    "The missing policy field is a diagnostic metadata defect on an empty water view, not evidence that levels or source contours were edited.",
+    "Historical V1 through V4 and this V6 failed run remain preserved; a new campaign must use a new output directory and frozen source snapshot."
+  ],
+  "cleanup": {
+    "ownedDriverAndNativeProcessesStopped": true,
+    "gpuReleased": true,
+    "rootTrackedFilesModified": false
+  },
+  "artifacts": {
+    "directory": "web/out/surface/native-e2e-40km-v6",
+    "reportSha256": "50cb00b69152b09e06fa49c92aa2de3df7c8ef7b3100b0bd7304ddede2e8f7c6",
+    "navigationProofSha256": "f2a911dcdc0f8963ea2742b3ba826a4dd2e2bab71dc7d39c7b0a4c8599941933",
+    "navigationMetricsSha256": "63bd29329755a6fd8d42eadf111e46315d8ac4db312997059d3849fa871727f1"
+  },
+  "technicalAcceptance": false,
+  "artisticAcceptance": false,
+  "productionAcceptance": false
+}
