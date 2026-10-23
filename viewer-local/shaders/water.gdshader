@@ -54,7 +54,9 @@ void fragment() {
         else coverage=textureGrad(coverage_map,(cell+0.5)/coverage_grid_size,cell_dx/coverage_grid_size,cell_dy/coverage_grid_size).r;
         if(coverage<=0.001) discard;
     }
-    if(bed_clip_enabled && all(greaterThanEqual(local_position.xz,bed_bounds_local.xy)) && all(lessThanEqual(local_position.xz,bed_bounds_local.zw))) {
+    // The fixed cartographic map retains Magna's authored water outlines.
+    // Aerial rendering alone clips physical water against the refined bed.
+    if(presentation_mode!=1 && bed_clip_enabled && all(greaterThanEqual(local_position.xz,bed_bounds_local.xy)) && all(lessThanEqual(local_position.xz,bed_bounds_local.zw))) {
         if(local_position.y+render_origin_y-resolved_bed(local_position.xz)<0.001) discard;
     }
     float wave=sin(local_position.x*0.32+wave_phase.x)*sin(local_position.z*0.27+wave_phase.y)*0.018*(1.0-smoothstep(4.9,9.8,pixel_footprint));
