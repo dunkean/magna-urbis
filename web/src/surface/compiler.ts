@@ -2,7 +2,7 @@ import {
   SURFACE_COMPILER_VERSION, SURFACE_SCHEMA_VERSION, DepositOrigin, Landform, Occupation, WaterClass,
   assertNotAborted, clamp, hashString, terrainBounds,
   type CompileOptions, type SurfaceCompileInput, type SurfaceFields, type SurfaceSample, type SurfaceWorld,
-  type GeologyInput, type TerrainGrid,
+  type ClimateInput, type GeologyInput, type TerrainGrid,
 } from './model';
 import { DEFAULT_ROCK_UNITS, SURFACE_MATERIALS } from './materials';
 
@@ -213,7 +213,7 @@ export function compileSurfaceWorld(input: SurfaceCompileInput, options: Compile
     : { version: 'declared-default-granite-1', provenance: 'Explicit default scenario: uniform granitic basement; not inferred from climate', units: [{ ...DEFAULT_ROCK_UNITS[0], colorLinear: [...DEFAULT_ROCK_UNITS[0].colorLinear] as [number, number, number] }], bedrock: new Uint16Array(n).fill(1) };
   if (!input.geology) warnings.push('No geology map supplied: declared uniform granite scenario, not an observed lithology.');
   const ids = validateGeology(geology);
-  const climate = input.climate ? { ...input.climate, temperatureC: input.climate.temperatureC ? new Float32Array(input.climate.temperatureC) : undefined, precipitationMm: input.climate.precipitationMm ? new Float32Array(input.climate.precipitationMm) : undefined }
+  const climate: ClimateInput = input.climate ? { ...input.climate, temperatureC: input.climate.temperatureC ? new Float32Array(input.climate.temperatureC) : undefined, precipitationMm: input.climate.precipitationMm ? new Float32Array(input.climate.precipitationMm) : undefined }
     : { version: 'temperate-default-1', meanAnnualTempC: 12, annualPrecipMm: 850, seasonalAmplitudeC: 10, referenceElevationM: 0, lapseRateCPerKm: 6.5, windRadians: 0 };
   if (![climate.meanAnnualTempC, climate.annualPrecipMm, climate.seasonalAmplitudeC ?? 0, climate.lapseRateCPerKm ?? 6.5, climate.referenceElevationM ?? 0, climate.windRadians ?? 0].every(Number.isFinite) || climate.annualPrecipMm < 0) throw new Error('Climate must use finite physical degrees C and mm/year');
   const state = { ...(input.state ?? { version: 'summer-default-1', dayOfYear: 200, surfaceWetness: 0, snowWaterEquivalentM: 0 }) };
