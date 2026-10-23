@@ -2,9 +2,10 @@ import type { Surface } from '../../../../rust/bridge/housesContract';
 import type { Building3dScene } from '../../render/urbanBuildingGeometry';
 import type { World } from '../../gen/types';
 import { buildingOccupationSurfaces } from '../../ui/urbanBuildingProjection';
-import { Occupation, hashString, type OccupationInput, type TerrainGrid } from '../model';
+import { Occupation, type OccupationInput, type TerrainGrid } from '../model';
+import { fingerprint } from '../compiler';
 
-export interface SurfaceRoad { id?: string; points: readonly (readonly [number, number])[]; widthM: number }
+export interface SurfaceRoad { id?: string; sourceIndex?: number; points: readonly (readonly [number, number])[]; widthM: number; surface?: string; class?: string; profile?: string; a?: number; b?: number }
 const contains = (surface: Surface, x: number, y: number): boolean => surface.some(shape => {
   let inside = false;
   for (const ring of [shape.outer, ...shape.holes]) for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
@@ -85,6 +86,6 @@ export function occupationFromMagnaSurfaces(terrain: TerrainGrid, surfaces: read
       if (touched) classes[index] = Occupation.Built;
     });
   }
-  return { version: `magna-occupation:${hashString(JSON.stringify([terrain.originX, terrain.originZ, terrain.width, terrain.height, terrain.spacingM, Array.from(classes), Array.from(orientationRadians)]))}`,
+  return { version: `magna-occupation:${fingerprint([terrain.originX, terrain.originZ, terrain.width, terrain.height, terrain.spacingM, classes, orientationRadians])}`,
     classes, orientationRadians };
 }

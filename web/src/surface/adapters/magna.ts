@@ -63,9 +63,11 @@ export async function createLiveInfiniteTerrainProvider(settings: TerrainSetting
 
 export function exportMagnaBuildings(scene: Building3dScene) {
   return { schemaVersion: 'magna-building-meshes-1' as const, coordinateSystem: 'x-east,y-up,z-map-y' as const,
+    occupationSource: scene.occupationBuildings === undefined ? 'visual-fallback' as const : 'accepted-records' as const,
     occupationBuildings: (scene.occupationBuildings ?? scene.buildings).map(building => ({ id: building.id, parcelId: building.parcel_id,
       representation: isBuildingProjection(building) ? 'cartographic-proxy' as const : 'native' as const,
       nativeRealization: !isBuildingProjection(building), groundHeightM: building.ground_z_m,
+      ...(!isBuildingProjection(building) ? { nativeLevels: building.volumes.map(volume => ({ volumeId: volume.id, volumeMaterials: structuredClone(volume.materials), levels: structuredClone(volume.levels) })) } : {}),
       surfaces: structuredClone(buildingOccupationSurfaces(building)), groundConstraints: structuredClone(buildingGroundConstraints(building)) })),
     materials: structuredClone(scene.materials ?? []), buildings: scene.buildings.map(building => {
       const proxy = isBuildingProjection(building), triangles: BuildingTriangle[] = [];
@@ -80,6 +82,10 @@ export function exportMagnaBuildings(scene: Building3dScene) {
       });
       return { id: building.id, parcelId: building.parcel_id, representation: proxy ? 'cartographic-proxy' as const : 'native' as const,
         nativeRealization: !proxy, groundHeightM: building.ground_z_m,
+        presentation: { sourceSystem: 'magna-native-houses', recipeId: building.recipe_id, variantId: building.variant_id,
+          culture: structuredClone(building.culture), function: building.function,
+          ...(!proxy ? { simplification: building.simplification } : {}) },
+        ...(!proxy ? { nativeLevels: building.volumes.map(volume => ({ volumeId: volume.id, volumeMaterials: structuredClone(volume.materials), levels: structuredClone(volume.levels) })) } : {}),
         footprint: structuredClone(building.footprint), roofFootprint: structuredClone(building.roof_footprint), triangles };
     }) };
 }
