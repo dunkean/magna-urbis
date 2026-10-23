@@ -1,17 +1,48 @@
 # SurfaceWorld — état de l'implémentation
 
-État documentaire du 23 octobre 2026, code intégré jusqu'à `f117492`. Le détail
-géométrique, le scénario géologique, les styles et l'hydrologie fixe sont raccordés.
-**La campagne technique V5 passe ; la phase 6 n'est pas acceptée visuellement.**
-Le contrat 1.5.2 et ses shaders natifs séparent maintenant sol, couvert bas et arbres.
-Les probes GPU des trois couches passent. Les tentatives V6 et V7 sont conservées
-comme **échouées**, malgré la progression live pendant le mouvement : V6 omettait
-une métadonnée de projection vide ; V7 perdait 43 triangles d'eau au bord source.
-Les corrections et leurs régressions ciblées sont intégrées ; une nouvelle
-campagne complète doit encore les qualifier ensemble. V5 qualifie le code 1.4
-figé `f6a45af`, pas ces nouvelles couches. Les rapports de revue initiaux sont conservés sans modifier
-leur verdict. Ce document distingue le code disponible, les preuves exécutées et
-les qualifications qui restent à faire.
+État documentaire du 23 octobre 2026, renderer figé `984f488`, compilateur
+`surface-1.5.2`. **La campagne technique V8 complète passe.** La revue finale
+Opus 5.5 est en préparation ; ce résultat technique n'est pas une acceptation
+artistique ni une adoption définitive du moteur. Les échecs V1–V4, V6 et V7 et les
+verdicts de revue initiaux restent conservés. V5 qualifiait le code 1.4 ; V8
+qualifie les nouvelles couches sol, couvert bas et arbres, leur intégration native
+et le parcours live. La feuille de route complète n'est pas annoncée comme livrée.
+
+## Qualification du snapshot intégré
+
+La [preuve V8](evidence/native-e2e-v8.json) porte sur une nouvelle génération
+teacher réelle 40 × 40 km, avec le même navigateur et la même session pendant
+les trois phases. Ses 542 fichiers de runtime ont des hashes identiques au début
+et à la fin ; le HEAD et le statut propre sont également inchangés.
+
+- Navigation de 20,016 s : trois nouveaux mondes preview128 acceptés puis
+  réellement affichés pendant les entrées, aux pas natifs 15 / 0,9375 / 0,46875 m.
+  Le drain final demandé en 512 est terminé après 7,239 s.
+- Sept captures 2048 × 1280, de 40 km à 10 m de largeur, avec les trois couches
+  explicites et sans omission de contours d'eau. Les 51 lookups de bord corrigés
+  sont rapportés à 40 km ; les niveaux source restent inchangés.
+- Quatre états de visibilité et un diagnostic de sol nu : pixels distincts,
+  mêmes hashes des véritables hauteurs, champs de sol, inventaire, contexte et
+  détail géométrique. Le pas écran final vaut 4,8828125 mm/px ; le pas natif de
+  relief reste 0,46875 m. La grille livrée interpolée est encore une autre mesure.
+- Temps de frame pendant navigation : médiane 31,155 ms, p95 38,156 ms,
+  p99 60,133 ms, maximum 528,975 ms. Warmup 50,541 s ; préparation et application
+  restent coûteuses. Ce n'est pas une preuve de streaming continu à 60 FPS.
+
+La [qualification urbaine séparée](evidence/native-current-419-render.json)
+montre les 419 extérieurs natifs dans une vue d'ensemble, un plan rapproché et
+une perspective avec leurs vraies toitures. Aucun proxy de bâtiment, budget de
+mesh atteint ou erreur runtime n'est signalé. Les comptes soumis, cadrés sur CPU
+et visibles après occlusion ne sont pas confondus. Le terrain urbain est un parent
+conservé au pas de 15,625 m, pas le relief fraîchement généré de V8. Le plafond de
+256 projecteurs de routes est explicite sur la vue d'ensemble.
+
+Les vérifications complémentaires passent : 185 tests SurfaceWorld et 8 tests
+historiques de routes, TypeScript complet, build terrainbench (445 modules),
+parse GDScript/shaders, et tests natifs de liaison de parent, eau vide, arrondi de
+bord et slots de matériaux. Les rejets attendus du test de parent sont des cas
+négatifs, pas des erreurs dans les captures. Les probes GPU isolés complètent
+cette preuve sans être annoncés comme des scènes de production complètes.
 
 ## Produit et choix du moteur
 
@@ -222,7 +253,7 @@ redonne exactement le même paquet. Le WASM mis en cache ne fournissait pas les
 exports de réalisation actuels : cette preuve utilise un exécutable natif isolé,
 dont les 196 fichiers source ont été vérifiés identiques à l'intégration. Aucun
 dépôt principal n'est reconstruit ni modifié. Les captures des nouveaux extérieurs
-restent à qualifier sur le prochain gel de rendu. Ces scènes reposent sur un
+passent sur le même gel `984f488`. Ces scènes reposent sur un
 parent conservé ; elles ne prouvent pas une nouvelle ville sur un relief neural
 fraîchement raffiné.
 
@@ -339,12 +370,12 @@ le téléchargement est une préparation hors boucle de rendu. Les probes GPU du
 [README natif](../../viewer-local/README.md) se lancent avec le backend indiqué
 dans leur rapport ; `canopy_probe.gd` requiert un vrai renderer, sans `--headless`.
 
-La réexécution corrigée ci-dessous est **préparée, pas encore qualifiée**.
+La campagne V8 ci-dessous est **techniquement qualifiée** sur le gel déclaré.
 Le serveurVite et le servicePython doivent déjà être actifs. Garder le même
 snapshot pendant la génération et le parcours évite les rechargements de code :
 
 ```powershell
-node --import tsx scripts/generate_surface_source.mjs --url http://127.0.0.1:5197 --neural http://127.0.0.1:8893 --width 40000 --seed surface-native-e2e-40km --decoder-model original --geology-scenario tilted-strata-v1 --out out/surface/native-e2e-40km --viewer-godot $env:GODOT --viewer-assets C:/data/resolved.json --viewer-resolution 2048x1280
+node --import tsx scripts/generate_surface_source.mjs --url http://127.0.0.1:5197 --neural http://127.0.0.1:8893 --width 40000 --seed surface-native-e2e-40km --decoder-model original --geology-scenario tilted-strata-v1 --out out/surface/native-e2e-40km-v8 --viewer-godot $env:GODOT --viewer-assets C:/data/resolved.json --viewer-resolution 2048x1280 --viewer-navigation-seconds 20 --viewer-navigation-first --viewer-layer-probe --viewer-water-mode source-map
 ```
 
 `--viewer-launcher` permet de choisir explicitement le launcher du worktree
@@ -385,7 +416,7 @@ satisfaction de la vue ; il ne compte jamais comme nouvelle acceptation ni
 comme nouveau monde affiché. Le serial réel du paquet peut donc rester identique
 entre deux captures. La satisfaction des caméras successives doit progresser et
 les captures restent reliées au paquet final réellement rendu. Cette politique
-est en cours d'intégration et n'est pas encore validée par une nouvelle campagne.
+est vérifiée par V5 puis V8, sans compter un cache comme une nouvelle acceptation.
 Restent à mesurer : applications pendant
 les entrées continues, âge des résultats, files d'attente/annulations, retour sur
 site après éviction, p95/p99 et pics d'upload/RAM/VRAM, avec routes/eau/ville/couvert
@@ -398,8 +429,8 @@ et les styles cartographiques choisis.
 
 | ID | État au snapshot | Reste nécessaire pour le critère du design |
 | --- | --- | --- |
-| B01 | Implémenté : sources/snapshots, vraies captures et provenance archivées. | Compléter le manifeste final avec le snapshot exact de la campagne finale. |
-| B02 | Implémenté : fournisseur neutre, emprises/centres, annulation, eau/occupation/ville et liaison de contrôles. | Qualifier le parcours natif complet avec la source fraîche. |
+| B01 | Implémenté : sources/snapshots, captures et manifeste V8 exact archivés. | Maintenir cette provenance lors des prochains changements. |
+| B02 | Implémenté : fournisseur neutre, emprises/centres, annulation, eau/occupation/ville et liaison de contrôles. | Parcours natif frais qualifié par V8 ; scène urbaine neuve et live complète encore distincte. |
 | B03 | Prototype Godot/Terrain3D et vrais imports40km ; parent/noyaux/précision instrumentés. | Navigation continue et tournée finale, vidéo, décision moteur fondée aussi sur styles/plans/export. |
 | B04 | Prototype PBR réel, eau, objets bornés, éclairage et métriquesGPU. | Qualité de la scène complète et budgets pendant les remplacements. |
 | B05 | Implémenté : contrat moteur-neutre, versions/provenance, sampling, hydration et binaire. | Revue finale du schéma intégré et de ses frontières. |
@@ -414,7 +445,7 @@ et les styles cartographiques choisis.
 | B14 | Partiel : couronnes calibrées, transmittance/residual commun, masque d'appui séparé. | Canopy/ombres/couleurs sur navigation réelle et couverts hétérogènes ; forêt photographique non livrée. |
 | B15 | Partiel : filtrage linéaire, moyenne PBRGPU, classes/poids communs et rebase. | Mesurer aliasing/popping/continuité lumineuse sur trajectoires, pas seulement probes. |
 | B16 | Partiel : scène linéaire et styles cartographiques distincts, eau source explicite. | Plusieurs éclairages, rives mobiles compatibles et ombres de toute la scène. |
-| B17 | En cours : captures/profils réels séparés ; première tentative E2E échouée, revue 6 exigeant des corrections. | Réussir la campagne finale 40 km →10 m et le mouvement continu ; faire recontrôler les corrections. |
+| B17 | V8 technique complète : source neuve, mouvement, sept échelles, quatre visibilités et sol nu ; ville419 séparée. | Verdict artistique/revue finale indépendant, puis trajectoires et scènes supplémentaires. |
 | B18 | Prototype : vrai importOrogen/NeuralEarth métrique, unités/lapse/provenance ; géologie externe exigée. | Intégration d'un paquet géologique régional réel et confrontation aux scènes. |
 | B19 | Partiel : matériaux/coastmasks/eau et provenance de dépôt déclarés. | Deux côtes qualifiées, bancs/marais géométriques, fond/turbidité/flux. |
 | B20 | Partiel : occupation, exclusions, routes et ville native/style source conservés. | Scène rurale complète : champs/cours/haies et contacts d'appui validés. |

@@ -3,7 +3,10 @@
 Le contrat `surface-layers-1` (compilateur `surface-1.5.2`) distingue trois
 étages physiques. Leur représentation optique est un choix de rendu, séparé des
 données canoniques. La campagne V5 portait sur `surface-1.4.0` : elle **ne valide
-pas** ce nouveau contrat, son shader ni sa qualité visuelle.
+pas** ce nouveau contrat, son shader ni sa qualité visuelle. La campagne
+[V8](surface/evidence/native-e2e-v8.json) qualifie techniquement son intégration
+live : quatre visibilités distinctes, mêmes données physiques et inventaire.
+Elle ne vaut pas acceptation artistique.
 
 1. **Sol/support** : roche, dépôts, sol minéral et matière organique du sol. Le
    carbone/humus du sol reste distinct de la litière morte en surface. Ce support
