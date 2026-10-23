@@ -15,6 +15,7 @@ export interface SurfaceCompilerJob {
   terrain: TerrainGrid; region: SurfaceWorkerRegion;
   maxCandidates?: number; maxCheckedSlots?: number; binaryBudgetBytes?: number; memoryBudgetBytes?: number;
   registrationBinding?: Readonly<SurfaceRegistrationBinding>;
+  presentation?: import('./presentation').SurfacePresentation;
 }
 interface Pending {
   id: number; job: SurfaceCompilerJob; resolve(value: SurfaceCompilerResult): void; reject(error: Error): void;

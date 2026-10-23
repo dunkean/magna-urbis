@@ -1,117 +1,151 @@
-# Visualiseur local SurfaceWorld
+# Prévisualisation locale SurfaceWorld
 
-Visualiseur Godot indépendant de l'interface Magna Urbis. Il consomme le paquet
-JSON `magna-surface-packet` v1 (ou un `SurfaceWorld` v1), ses hauteurs, son contexte,
-ses niveaux d'eau, ses candidats déterministes et les triangles urbains natifs.
-Il ne génère pas le relief.
+Godot est un consommateur optionnel des données Magna Urbis. Le générateur de
+ville, le mapper, les palettes et les sorties finales SVG/Canvas restent les
+références. Ce projet ne génère aucun relief et ne modifie ni les hauteurs source,
+ni les volumes urbains natifs, ni leurs identifiants de matériaux.
 
 ## Installer et lancer
 
-Version testée : **Godot 4.7.2 stable**, **Terrain3D 1.0.2 stable**, Windows,
-OpenGL Compatibility, NVIDIA RTX 5090. Terrain3D est téléchargé hors Git par le
-bootstrap, vérifié par SHA-256, puis installé sous `addons/terrain_3d`.
+Versions épinglées : **Godot 4.7.2 stable**, **Terrain3D 1.0.2 stable**. Le bootstrap
+Windows vérifie le SHA-256 de l'archive Terrain3D et installe l'extension hors Git.
+Le moteur doit être installé séparément. Forward+ est le backend par défaut ; il
+permet les Decals de routes. Compatibility est un repli avec des capacités différentes.
 
 ```powershell
 $env:GODOT = 'C:/tools/Godot_v4.7.2-stable_win64_console.exe'
 ./viewer-local/bootstrap.ps1 -Godot $env:GODOT
-node web/scripts/surface_viewer.mjs --world C:/data/surface-world.json --assets C:/data/surface-assets/resolved.json
+node web/scripts/surface_viewer.mjs --check
+node web/scripts/surface_viewer.mjs --world C:/data/world.surfacebin --assets C:/data/surface-assets/resolved.json
 ```
 
-Le lanceur accepte aussi `--godot <exécutable>`. Sans catalogue, il utilise une
-matière analytique neutre, explicitement distincte des six matériaux PBR réels.
-Le catalogue `resolved.json` issu de `web/scripts/surface_assets.mjs` contient
-des chemins locaux ; aucun réseau n'est utilisé pendant le rendu hors ligne.
-
-Sur Linux/macOS : décompresser le même zip Terrain3D dans `viewer-local/` pour
-obtenir `addons/terrain_3d/terrain.gdextension`, puis importer le projet avec
+Le lanceur accepte `--godot <exécutable>` et `--renderer forward_plus|mobile|gl_compatibility`.
+Les chemins relatifs sont résolus depuis le répertoire courant. Il importe le
+projet au premier lancement. `--check` vérifie les scripts, le contrat de shader
+Terrain3D et les versions ; un test GPU reste nécessaire pour qualifier un backend.
+Sur Linux/macOS, décompresser le zip épinglé dans `viewer-local/` et importer avec
 `godot --headless --path viewer-local --editor --import --quit`. Ces plateformes
 ne sont pas qualifiées par les mesures Windows.
 
-Contrôles : molette zoom, glisser bouton gauche pour déplacer le centre, `O`
-dessus/oblique, `1` à `7` pour 40 km/10 km/2,56 km/640 m/160 m/40 m/10 m,
-`D` matériaux/couverts/roche mère/état, `F` inspection JSON du centre, `S` capture,
-Échap pour statistiques et fermeture. Le dessus est orthographique ; sa largeur
-et son pas en m/px sont exacts. En perspective, le pas affiché est celui du plan
-passant par le centre visé, pas une résolution uniforme de toute l'image.
+Le lecteur accepte JSON `magna-surface-packet` v1, `SurfaceWorld` JSON, et le
+transport binaire **MUFSURF1**. Ce dernier conserve les colonnes typées, les doubles
+précisions urbaines et les sentinelles ; il évite les chaînes JSON géantes des
+grilles 1024². Les colonnes urbaines et de population sont lues sans matérialiser
+un million d'objets JavaScript/Godot. Les schémas canoniques restent sous
+`web/src/surface/`.
 
-## Captures et profil
+`resolved.json` provient de `web/scripts/surface_assets.mjs`. Ses cartes sont
+locales : aucun téléchargement n'a lieu pendant le rendu hors ligne. Le catalogue
+actuel contient quinze jeux PBR CC0 ; `recipeIds` est prioritaire sur le repli par
+famille. Sans catalogue, le matériau analytique de repli est explicite. Une carte
+de hauteur absente devient un relief de texture plat, avec avertissement.
+
+## Vues et styles de carte
 
 ```powershell
-node web/scripts/surface_viewer.mjs --check
-node web/scripts/surface_viewer.mjs --world C:/data/surface-world.json --assets C:/data/surface-assets/resolved.json --width 10 --top --frames 180 --capture C:/data/close.png --metrics C:/data/close.json
-node web/scripts/surface_viewer.mjs --world C:/data/surface-world.json --assets C:/data/surface-assets/resolved.json --top --tour C:/data/tour --metrics C:/data/tour.json
+node web/scripts/surface_viewer.mjs --world C:/data/city.surfacebin --presentation cartographic --style blueprint --top
+node web/scripts/surface_viewer.mjs --world C:/data/world.surfacebin --assets C:/data/surface-assets/resolved.json --presentation aerial
 ```
 
-`--x` / `--z` fixent le centre canonique en mètres. `--tour` enregistre les sept
-échelles, avec 60 images de stabilisation entre remplacements. `--frames` et
-`--tour` désactivent l'entrée clavier/souris pour des captures reproductibles.
-Les images et profils générés restent sous `captures/` ou la destination choisie.
-Les profils séparent préparation CPU hors thread, transfert/réinstanciation,
-mémoire graphique déclarée, draw calls et quantiles des durées d'image.
-Le backend OpenGL n'expose pas ici les timestamps GPU : `gpuTimeMs` reste `null`.
-Les durées d'image comprennent la synchronisation verticale ; ce ne sont pas
-des mesures isolées de coût GPU.
+Le paquet transporte `presentation`, une copie de la palette commune et de son
+origine. Le lanceur fournit aussi `surface/presentation/palettes.json`, exporté des
+styles existants, pour les overrides `--style`. Le profil conserve l'identité des
+quinze styles terrain, leurs palettes et métadonnées d'eau. Godot prévisualise la
+palette, la hiérarchie des masses urbaines, les groupes de matériaux natifs et la
+vue orthographique. Les brosses fantasy, la composition, les étiquettes et la mise
+en page finale restent assurées par les renderers web existants.
 
-## Alimentation à la demande
+La vue cartographique emploie une exposition linéaire, une lumière ambiante blanche
+et aucun soleil direct. Les routes projetées peuvent ainsi conserver leurs
+couleurs CSS. La vue aérienne emploie les matières PBR et les teintes de prévisualisation
+associées aux motifs natifs (`tile`, `wood`, `stone`, etc.). Ces teintes ne réécrivent
+pas le catalogue architectural source. Le cache de matériaux est borné et distingue
+les palettes, les affectations de slots et les identifiants source.
 
-Le lecteur conserve le `sourceLOD`, `nativeSpacingM` et l'identité du paquet.
-Un ancien niveau non enregistré s'affiche comme « unknown (retained) ». Une
-subdivision ou interpolation d'affichage ne devient jamais un niveau source.
+L'interface de diagnostic est masquée par défaut ; `--hud` ou `H` l'affiche.
+Molette : zoom ; glisser gauche : déplacement ; `O` : dessus/oblique ; `1` à `7` :
+40 km à 10 m ; `D` : diagnostics ; `F` : inspection JSON du centre ; `S` : capture ;
+Échap : profil et fermeture. La largeur orthographique et le pas en m/px sont
+exacts. En perspective, le pas annoncé concerne le plan du centre visé.
 
-`--live-url http://127.0.0.1:PORT/surface-live/terrain` connecte le visualiseur au
-broker local et au navigateur Terrain Bench actif. Il envoie
-`{region:{x:minX,y:minZ,extent,resolution:512}}` ; `--session-id` est optionnel et
-désigne la session du navigateur, pas l'identité du monde. Une requête maximum est
-en vol ; les réponses dépassées après navigation sont rejetées. Le parent reste
-affiché pendant le calcul et une erreur réseau conserve le dernier monde valide.
-La qualification du raffinement source réel est séparée de celle du viewer :
-un paquet hors ligne n'en constitue pas une preuve.
+## Captures, profils et contrôles GPU
 
-`--stream-dir <répertoire>` offre aussi un transport par fichiers :
-`requests/<id>.json` contient `id,worldId,bounds,resolutionM,sourceLOD` ; le
-fournisseur écrit atomiquement `responses/<id>.json`, un paquet avec facultativement
-`requestId` et `baseWorldId`. Le viewer ignore les réponses d'anciennes requêtes.
-Remplacer atomiquement le fichier `--world` permet également le rechargement.
+```powershell
+node web/scripts/surface_viewer.mjs --world C:/data/world.surfacebin --assets C:/data/surface-assets/resolved.json --width 10 --top --frames 180 --capture C:/data/close.png --metrics C:/data/close.json
+node web/scripts/surface_viewer.mjs --world C:/data/world.surfacebin --assets C:/data/surface-assets/resolved.json --top --tour C:/data/tour --metrics C:/data/tour.json
+```
 
-## Choix de rendu et limites J0
+`--x` et `--z` fixent le centre canonique. `--frames` et `--tour` désactivent les
+entrées pour rendre la capture reproductible. Une étape de tour attend la
+préparation et la réponse live appliquée, ou l'erreur explicite de cette requête,
+puis stabilise les images. Les profils séparent préparation CPU, import des
+régions/objets, durée de navigation, rendu CPU/GPU mesuré par le viewport et mémoire
+graphique déclarée. Les quantiles d'image incluent la synchronisation verticale ;
+les timestamps GPU ne mesurent pas tout le coût CPU et restent absents si le
+backend ne fournit aucun échantillon positif.
 
-La caméra et l'origine canonique sont gardées dans des scalaires GDScript double
-précision. Le repère GPU est relatif : une fenêtre de quatre régions 256² est
-reconstruite sur un thread CPU, puis ses cartes sont remplacées avec les objets,
-l'eau et la caméra. Le nœud Terrain3D n'est jamais simplement translaté. Les
-phases UV sont reconstruites par couche en coordonnées canoniques réduites ; les
-catégories du contexte restent au pas source. Les trous marquent les données
-absentes hors emprise, sans inventer une extension du paquet.
+Contrôles indépendants, avec le même exécutable Godot et le répertoire `viewer-local` :
 
-Terrain3D 1.0.2 limite l'espacement du maillage à 0,25–100 m. La représentation
-peut donc interpoler une source plus grossière sans altérer sa provenance.
-Les textures PBR empaquettent couleur/hauteur et normale OpenGL/rugosité dans
-deux tableaux 512² avec mips. Trois transformations stochastiques partagent UV,
-rotation et pondération de hauteur pour toutes les cartes ; la normale est
-tournée en sens inverse. L'empreinte filtre les normales et le couvert lointain.
-Le proche utilise MultiMesh pour arbres, troncs, blocs, débris et touffes.
-Un index mondial de cellules 128 m évite de parcourir tous les candidats à
-chaque sélection. Le budget visible est 16 000 candidats ; aucune nouvelle
-population n'est tirée par le renderer.
+```powershell
+& $env:GODOT --path viewer-local --rendering-method forward_plus --script diagnostics/material_mean_probe.gd -- C:/data/surface-assets/resolved.json C:/data/material-mean.json
+& $env:GODOT --path viewer-local --rendering-method forward_plus --script diagnostics/normal_frame_probe.gd
+& $env:GODOT --path viewer-local --rendering-method forward_plus --script diagnostics/cartographic_decal_probe.gd -- C:/data/decal-probe
+& $env:GODOT --headless --path viewer-local --script diagnostics/presentation_probe.gd -- surface/presentation/palettes.json
+```
 
-La décision J0 est **conserver Godot/Terrain3D pour cette tranche**, avec réserves
-mesurées : le transfert initial et les remplacements peuvent dépasser 16,7 ms ;
-le profil l'indique. Il n'y a pas encore de microgéométrie centimétrique ni de
-raccord avec un patch déplacé complémentaire. Les arbres sont des représentants
-géométriques simples ; le couvert analytique distant n'est pas une synthèse
-forestière photographique. Les transitions de représentation et la réponse
-moyenne demandent encore les tests quantitatifs du design. L'eau utilise les
-classes/niveaux fournis sur leur support natif ; les rives sont limitées par ce
-support. Les routes sont des rubans appuyés au terrain, sans terrassement.
-Les matériaux urbains sont une teinte neutre : les volumes/triangles natifs sont
-préservés, mais leurs familles de matériaux ne sont pas encore réinterprétées.
+`material_mean_probe` emploie le sampler de production et trois empreintes par
+matériau, puis compare une origine déplacée de 64 m à travers 4096 m. Sur RTX 4090
+Forward+, quinze jeux PBR et le repli ont donné une erreur maximale de moyenne
+linéaire de **0,154 %**, et une différence de rebase de **1 niveau 8 bits**.
+La rotation de normales 0/90/180/270° a donné zéro écart encodé dans le probe GPU.
+Le probe Decal donne la couleur route CSS exacte, avec zéro pixel différent après
+une déformation du sol de ±2 m ; le sol diffère de sa cible de moins d'un niveau
+8 bits. Ces contrôles isolés ne constituent pas une qualification visuelle complète.
 
-La campagne complète de six milieux à 40 km, les séquences sans popping,
-les seuils de continuité d'albédo/couverture et les profils GPU par passe restent
-des critères d'acceptation distincts. Un zoom matériel à 1 cm/px ne signifie pas
-qu'un DEM de 15 m possède une géométrie centimétrique.
+## Source, précision et alimentation à la demande
 
-Références primaires : [versions Terrain3D](https://github.com/TokisanGames/Terrain3D/releases/tag/v1.0.2-stable),
-[données/régions et mises à jour](https://terrain3d.readthedocs.io/en/stable/api/class_terrain3ddata.html),
-[double précision expérimentale](https://terrain3d.readthedocs.io/en/stable/docs/double_precision.html).
-Le shader minimum de l'addon est utilisé sous sa licence MIT conservée par le bootstrap.
+La caméra conserve les coordonnées canoniques en doubles précisions. La
+soustraction de l'origine précède les coordonnées GPU. Les fenêtres Terrain3D
+sont reconstruites depuis la source et remplacées ensemble ; le nœud n'est pas
+simplement translaté. Le pas et les origines d'affichage suivent la grille source.
+Terrain3D limite son espacement à 0,25–100 m : toute interpolation d'affichage reste
+distincte de `sourceLOD`, `nativeSpacingM` et `sourceLODKnown`.
+
+Les shaders reconstruisent les poids des deux matériaux de chacun des quatre
+voisins du contexte. Les moyennes de couleur sont linéaires. Les cartes PBR utilisent
+une couleur/hauteur RGBA16F linéaire et une normale/rugosité, en tableaux 1024² avec
+mips. Les transformations et poids stochastiques sont communs aux cartes ; les
+normales OpenGL tournent dans le même repère. La variation de couleur est centrée
+sur la moyenne et bornée sans amplification des cibles sombres. Les dérivées sont
+calculées avant les branches ; le bruit macro est filtré selon l'empreinte.
+
+`--live-url http://127.0.0.1:PORT/surface-live/terrain` utilise le navigateur Terrain
+Bench actif et son moteur réel. `--session-id` sélectionne facultativement sa
+session, pas un monde. Les demandes indiquent une origine minimale, une étendue
+et une résolution, et restent dans l'emprise retenue du contexte. Les identités
+`knownContextId` et `knownSceneContextId` évitent de retransmettre le contexte et
+la ville inchangés. Les parents restent visibles pendant le chargement ; une
+erreur du fournisseur conserve le dernier monde valide et sa provenance. Le
+lecteur ne remplace jamais une erreur de décodeur par un bruit de relief.
+
+`--stream-dir <répertoire>` permet également des demandes/réponses par fichiers ;
+le fournisseur doit publier ses réponses atomiquement. Un export hors ligne ne
+prouve pas que le raffinement source a été généré à la demande.
+
+## Limites de cette prévisualisation
+
+Le transfert des régions peut dépasser 16,7 ms ; les profils l'indiquent. Les
+arbres, buissons et débris sont des représentants géométriques simples. Le couvert
+lointain utilise l'atlas des couronnes candidates et leur transmittance ; cela ne
+constitue pas une forêt photographique. Il n'y a pas de microgéométrie centimétrique
+certifiée. Un zoom à 1 cm/px n'ajoute aucune information à un DEM grossier.
+L'eau conserve les classes/niveaux fournis ; les rives dépendent de leur support.
+Les volumes urbains natifs sont conservés ; les proxies cartographiques restent
+identifiés comme tels et sont masqués par défaut. Les routes projetées ne terrassent
+pas le terrain. Le rendu optionnel Godot ne remplace pas les styles cartographiques
+finis de Magna Urbis.
+
+Références : [Terrain3D 1.0.2](https://github.com/TokisanGames/Terrain3D/releases/tag/v1.0.2-stable),
+[régions Terrain3D](https://terrain3d.readthedocs.io/en/stable/api/class_terrain3ddata.html),
+[environnement et tonemapping Godot](https://docs.godotengine.org/en/stable/tutorials/3d/environment_and_post_processing.html).
+La licence MIT du shader Terrain3D reste dans l'archive installée par le bootstrap.

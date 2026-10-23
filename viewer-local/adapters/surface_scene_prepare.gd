@@ -2,6 +2,7 @@ class_name SurfaceScenePrepare
 extends RefCounted
 const Data = preload("res://adapters/surface_data.gd")
 const Population = preload("res://adapters/surface_population.gd")
+const Roads = preload("res://adapters/surface_roads.gd")
 
 # Prepare winding, normals and material batches without touching the scene tree.
 static func mesh_arrays(vertices: PackedVector3Array, normals: PackedVector3Array = PackedVector3Array()) -> Array:
@@ -21,7 +22,21 @@ static func mesh_arrays(vertices: PackedVector3Array, normals: PackedVector3Arra
 static func prepare(request: Dictionary) -> Dictionary:
 	var started := Time.get_ticks_usec()
 	var result := Data.prepare(request.world,request.origin,request.width,request.generation,request.packet,request.skipContext,request.displaySource,request.skipHeight,request.sceneRequest)
-	result.populations=Population.prepare(request.packet,request.focus,request.width,request.viewportWidth,request.oblique)
+	result.populations=Population.prepare(request.packet,request.focus,request.width,request.viewportWidth,request.oblique,not request.get("groundOnly",false))
+	if request.get("projectRoads",false) and not request.get("groundOnly",false): result.roadProjectors=Roads.prepareRoadProjectors(request.packet,request.world,request.origin,request.focus,request.width)
+	result.populations.buffers={}
+	var rock_colors: Dictionary = {}
+	for rock in request.world.geology.units: rock_colors[int(rock.id)]=rock.colorLinear
+	for family in result.populations.families:
+		for i in result.populations.families[family].size():
+			var candidate: Dictionary = result.populations.families[family][i].duplicate(false)
+			var rgb: Array = [0.055,0.105,0.036] if family=="tree" else [0.10,0.20,0.065]
+			if family=="boulder": rgb=rock_colors.get(int(Data.field_at(request.world,"sourceRock",candidate.x,candidate.z,true)),[0.33,0.32,0.29])
+			elif family=="debris" or family=="grass": rgb=request.world.materials[int(Data.field_at(request.world,"material",candidate.x,candidate.z,true))].colorLinear
+			candidate["_linearAlbedo"]=rgb
+			result.populations.families[family][i]=candidate
+		result.populations.buffers[family]=population_buffer(result.populations.families[family],family,request.origin)
+	result.populations.trunkBuffer=population_buffer(result.populations.families.tree,"trunk",request.origin)
 	if result.has("waterGeometry"): result.waterArrays=mesh_arrays(result.waterGeometry.vertices)
 	if result.has("urbanGeometry"):
 		var urban: Dictionary = result.urbanGeometry
@@ -42,3 +57,26 @@ static func prepare(request: Dictionary) -> Dictionary:
 		result.urbanBatches=batches
 	result.prepareMs=(Time.get_ticks_usec()-started)/1000.0
 	return result
+
+# MultiMesh's documented 3x4 row-major transform + linear RGBA colour and four custom float channels.
+# The raw buffer avoids thousands of main-thread transform setter calls.
+static func population_buffer(candidates: Array, family: String, origin: Dictionary) -> PackedFloat32Array:
+	var buffer := PackedFloat32Array(); buffer.resize(candidates.size()*20)
+	for i in candidates.size():
+		var c: Dictionary = candidates[i]
+		var size := float(c.size)
+		var crown: bool = family=="tree"
+		var radius := float(c.get("crownRadiusM",size*0.42))
+		if not is_finite(radius): radius=size*0.42
+		var sx := radius/0.42 if crown else size
+		var sy := size*(0.66 if crown else 1.0)
+		var elevation := size*(0.72 if crown else 0.37 if family=="trunk" else 0.35 if family=="boulder" or family=="debris" else 0.5)
+		var angle := 0.0 if family=="trunk" else float(c.orientation)
+		var cosine := cos(angle); var sine := sin(angle); var at := i*20
+		buffer[at]=cosine*sx; buffer[at+1]=0.0; buffer[at+2]=sine*sx; buffer[at+3]=float(c.x)-float(origin.x)
+		buffer[at+4]=0.0; buffer[at+5]=sy; buffer[at+6]=0.0; buffer[at+7]=float(c.y)+elevation-float(origin.y)
+		buffer[at+8]=-sine*sx; buffer[at+9]=0.0; buffer[at+10]=cosine*sx; buffer[at+11]=float(c.z)-float(origin.z)
+		var rgb: Array = c.get("_linearAlbedo",[0.33,0.32,0.29])
+		buffer[at+12]=float(rgb[0]); buffer[at+13]=float(rgb[1]); buffer[at+14]=float(rgb[2]); buffer[at+15]=1.0
+		buffer[at+16]=size; buffer[at+17]=float(c.get("canopyClass",0)); buffer[at+18]=float(c.get("rank",0.0)); buffer[at+19]=1.0
+	return buffer

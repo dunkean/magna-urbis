@@ -5,6 +5,7 @@ import { decodeSurfaceBinary, encodeSurfaceBinary } from '../src/surface/binary'
 import { deserializeRegionalPackage, validateRegionalPackage } from '../src/surface/adapters/neuralEarth';
 import { compileRegionalSurfaceWorld, type RegionalSurfaceMapping } from '../src/surface/adapters/regionalCompiler';
 import { validateSurfacePacket } from '../src/surface/packet';
+import type { SurfaceWorld } from '../src/surface/model';
 
 const [input, mappingPath, output, ...args] = process.argv.slice(2);
 if (!input || !mappingPath || !output) throw new Error('Usage: import_regional_surface.ts REGION.surfacebin MAPPING.json OUTPUT.surfacebin [--geology GEOLOGY.surfacebin] [--terrain PRIMARY.surfacebin] [--report REPORT.json]');
@@ -17,8 +18,8 @@ async function readRegion(path: string) {
 const packet = await readRegion(input), mapping = JSON.parse(await readFile(mappingPath, 'utf8')) as RegionalSurfaceMapping;
 const geologyPath = flag('--geology'), terrainPath = flag('--terrain');
 const geologyPackage = geologyPath ? await readRegion(geologyPath) : undefined;
-const primary = terrainPath ? decodeSurfaceBinary(new Uint8Array(await readFile(terrainPath))) : undefined;
-if (primary) validateSurfacePacket(primary);
+let primary: { world: SurfaceWorld } | undefined;
+if (terrainPath) { const value = decodeSurfaceBinary(new Uint8Array(await readFile(terrainPath))); validateSurfacePacket(value); primary = value; }
 const start = performance.now(), world = compileRegionalSurfaceWorld(packet, mapping, { geologyPackage, terrain: primary?.world.terrain });
 const result = { format: 'magna-surface-packet', version: 1, world,
   source: { regional: world.regionalSource, primaryTerrain: terrainPath ? { file: terrainPath, frame: 'Explicit caller assertion: unchanged source coordinates use this regional package frame.' } : undefined } };

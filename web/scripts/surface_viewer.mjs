@@ -4,6 +4,11 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 const project = fileURLToPath(new URL('../../viewer-local/', import.meta.url));
 const args = process.argv.slice(2);
+if (!args.includes('--style-catalogue')) args.push('--style-catalogue', fileURLToPath(new URL('../../surface/presentation/palettes.json', import.meta.url)));
+const rendering = args.indexOf('--renderer');
+const renderer = rendering >= 0 ? args[rendering + 1] : 'forward_plus';
+if (!['forward_plus', 'mobile', 'gl_compatibility'].includes(renderer)) throw new Error('Renderer must be forward_plus, mobile, or gl_compatibility.');
+if (rendering >= 0) args.splice(rendering, 2);
 const option = args.indexOf('--godot');
 let godot = process.env.GODOT;
 if (option >= 0) { godot = args[option + 1]; args.splice(option, 2); }
@@ -12,7 +17,7 @@ if (!godot) throw new Error('Set GODOT or pass --godot <Godot 4.7.2 executable>.
 if (godot.includes('/') || godot.includes('\\')) godot = path.resolve(godot);
 const version = spawnSync(godot, ['--version'], { encoding: 'utf8', windowsHide: true });
 if (!/^4\.7\.2\.stable\./m.test(version.stdout ?? '')) throw new Error(`Expected pinned Godot 4.7.2 stable; got ${(version.stdout ?? version.stderr ?? '').trim()}`);
-for (const name of ['--world', '--assets', '--capture', '--metrics', '--tour', '--stream-dir']) {
+for (const name of ['--world', '--assets', '--capture', '--metrics', '--tour', '--stream-dir', '--style-catalogue']) {
   const index = args.indexOf(name);
   if (index < 0) continue;
   if (!args[index + 1] || args[index + 1].startsWith('--')) throw new Error(`${name} requires a path.`);
@@ -35,5 +40,5 @@ if (check >= 0) {
   process.exit(/(?:SCRIPT|SHADER) ERROR|ERROR:/.test((result.stdout ?? '') + (result.stderr ?? '')) ? 1 : result.status ?? 1);
 }
 if (!args.includes('--world')) throw new Error('Required: --world <surface-world.json>. Options: --assets <resolved.json> --top --width <metres> --live-url <url> --capture <png> --frames 120 --metrics <json> --tour <directory>.');
-const result = spawnSync(godot, ['--path', project, '--', ...args], { stdio: 'inherit', windowsHide: true });
+const result = spawnSync(godot, ['--path', project, '--rendering-method', renderer, '--', ...args], { stdio: 'inherit', windowsHide: true });
 process.exit(result.status ?? 1);

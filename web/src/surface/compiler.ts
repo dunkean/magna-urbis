@@ -259,6 +259,7 @@ export function compileSurfaceWorld(input: SurfaceCompileInput, options: Compile
   assertNotAborted(options.signal);
   if (!Number.isSafeInteger(input.seed)) throw new Error('Surface seed must be a safe integer');
   validateGrid(input.terrain);
+  if (input.terrain.reconstruction === 'cubic-bspline-controls') throw new Error('Canonical environment analysis requires physical samples; reconstruct provider controls explicitly before compilation');
   const rawRadii = options.topographicRadiiM ?? [Math.max(150, input.terrain.spacingM * 2), Math.max(600, input.terrain.spacingM * 4), Math.max(2000, input.terrain.spacingM * 8)];
   if (!rawRadii.length || rawRadii.length > 16 || rawRadii.some((r, i) => !Number.isFinite(r) || r <= 0 || i > 0 && r <= rawRadii[i - 1])) throw new Error('Topographic radii must be 1..16 ascending positive metres');
   const radii = rawRadii.map(r => Math.max(1, Math.round(r / input.terrain.spacingM)) * input.terrain.spacingM);
