@@ -4,11 +4,13 @@ import type { VectorGeography } from '../../../rust/bridge/urbanGeography';
 import type { TerrainData } from '../../../rust/bridge/terrain';
 import { rasterStats, type Decor } from './decor';
 import { cropWaterSvg, retainedWaterMaterial } from './decorWater';
+import { resolveSurfaceFrame } from '../surface/adapters/frame';
 import { cityWorkshopState, translateWorkshopState, workshopSettings } from './urbanSnapshot';
 
 /** Crop on cell boundaries: FP32 elevations and every hydrological cell remain bit-identical. */
 export function cropTerrain(decor: Decor, x: number, y: number, width: number): Decor {
   const r = decor.raster, cell = r.width / r.n;
+  const sourceFrame=resolveSurfaceFrame(decor);
   if (![x, y, width].every(Number.isFinite) || width <= 0 || x < 0 || y < 0 || x + width > r.width + .001 || y + width > r.width + .001) throw new Error('La sélection carrée doit rester dans le terrain.');
   const n = Math.max(2, Math.min(r.n, Math.round(width / cell)));
   const ix = Math.max(0, Math.min(r.n - n, Math.round(x / cell))), iy = Math.max(0, Math.min(r.n - n, Math.round(y / cell)));
@@ -26,6 +28,8 @@ export function cropTerrain(decor: Decor, x: number, y: number, width: number): 
   const geometry: VectorGeography | undefined = r.geometry ? { land: r.geometry.land.flatMap(ring => clip([ring]).flat()), water: r.geometry.water.flatMap(clip) } : undefined;
   const material = retainedWaterMaterial(decor);
   const raster = { width, n, height: crop(r.height), water: crop(r.water), waterLevel: crop(r.waterLevel), riverWidth: crop(r.riverWidth), riverIds: crop(r.riverIds), geometry };
+  const cropFrame={x,y,width,sourceWidth:sourceFrame.fullSource.widthM,coordinateFrame:'crop-local' as const,
+    sourceOriginX:sourceFrame.terrainSourceOrigin.x+x,sourceOriginZ:sourceFrame.terrainSourceOrigin.z+y};
   return { raster, meta: { ...decor.meta, width, label: `${decor.meta.label} · portion ${(width / 1000).toFixed(2)} km`,
     regeneration: decor.meta.regeneration && { ...decor.meta.regeneration, crops: [...decor.meta.regeneration.crops, { x, y, width }] },
     settlements: [], roads: null, roadConfig: null,
@@ -34,7 +38,7 @@ export function cropTerrain(decor: Decor, x: number, y: number, width: number): 
     waterSvg: cropWaterSvg(decor.meta.waterSvg, x, y, width),
     waterMaterialSvg: decor.meta.waterMaterialSvg === undefined ? undefined : cropWaterSvg(decor.meta.waterMaterialSvg, x, y, width),
     stats: { ...decor.meta.stats, ...rasterStats(raster), roadKm: 0 },
-    pipeline: { stage: 'terrain', parent: decor.meta.id, crop: { x, y, width, sourceWidth: r.width } } } };
+    pipeline: { stage: 'terrain', parent: decor.meta.id, crop: cropFrame } } };
 }
 
 /** Retained raster for the provisional terrain renderer; generation reads the original raster directly. */

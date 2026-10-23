@@ -5,6 +5,7 @@ import { readDecorFile } from '../src/ui/decorFile';
 import { exportSurfacePacket } from '../src/surface/adapters/export';
 import type { Building3dScene } from '../src/render/urbanBuildingGeometry';
 import { encodeSurfaceBinary } from '../src/surface/binary';
+import { resolveSurfaceFrame } from '../src/surface/adapters/frame';
 import { surfaceGeologyScenario, withSurfaceGeologyQuery } from '../src/surface/adapters/geology';
 
 const [input, output, ...args] = process.argv.slice(2);
@@ -40,11 +41,15 @@ if (cropIndex >= 0) {
     return result;
   };
   const cell = r.width / r.n;
+  const previousFrame=resolveSurfaceFrame(decor);
   originX = x * cell; originZ = y * cell;
   // Export full source geometry in metadata; compile crop using canonical origin.
   decor = { meta: structuredClone(decor.meta), raster: { ...r, n, width: n * cell,
     height: cut(r.height), water: cut(r.water), waterLevel: cut(r.waterLevel), riverWidth: cut(r.riverWidth), riverIds: cut(r.riverIds) } };
-  decor.meta.pipeline = { ...decor.meta.pipeline, stage: decor.meta.pipeline?.stage ?? 'terrain', crop: { x: x * cell, y: y * cell, width: n * cell, sourceWidth: r.width } };
+  const cropFrame={x:x*cell,y:y*cell,width:n*cell,sourceWidth:previousFrame.fullSource.widthM,coordinateFrame:previousFrame.geometrySourceOrigin.x===0 && previousFrame.geometrySourceOrigin.z===0 ? 'source-global' as const : 'retained-input' as const,
+    sourceOriginX:previousFrame.terrainSourceOrigin.x+originX,sourceOriginZ:previousFrame.terrainSourceOrigin.z+originZ,
+    geometryOriginX:previousFrame.geometrySourceOrigin.x,geometryOriginZ:previousFrame.geometrySourceOrigin.z};
+  decor.meta.pipeline = { ...decor.meta.pipeline, stage: decor.meta.pipeline?.stage ?? 'terrain', crop:cropFrame };
 }
 const candidateMode = args[args.indexOf('--candidates') + 1] ?? 'centre';
 if (args.includes('--candidates') && !['all', 'centre'].includes(candidateMode)) throw new Error('Candidates must be all or centre.');
@@ -54,7 +59,7 @@ const nativePath = args.includes('--native-scene') ? args[args.indexOf('--native
 const nativeScene = nativePath ? JSON.parse(await readFile(nativePath, 'utf8')) as Building3dScene : undefined;
 const requestedFormat = args.includes('--format') ? args[args.indexOf('--format') + 1] : output.endsWith('.json') ? 'json' : 'binary';
 if (!['json', 'binary'].includes(requestedFormat)) throw new Error('Format must be json or binary. Prefer binary for full-resolution worlds.');
-const packet = exportSurfacePacket(decor, nativeScene, { terrainOriginX: originX, terrainOriginZ: originZ, candidateBounds: candidateMode === 'all' ? 'all' : undefined, candidateLimit, encoding: requestedFormat as 'json' | 'binary' });
+const packet = exportSurfacePacket(decor, nativeScene, { candidateBounds: candidateMode === 'all' ? 'all' : undefined, candidateLimit, encoding: requestedFormat as 'json' | 'binary' });
 if (nativePath) Object.assign(packet.source, { externalNativeScene: { file: nativePath, coordinates: 'unchanged source XY',
   relationshipToTerrain: 'Explicit external native-scene diagnostic. Matching terrain capture lineage is not asserted.' } });
 const encoded = requestedFormat === 'binary' ? encodeSurfaceBinary(packet) : JSON.stringify(packet);
