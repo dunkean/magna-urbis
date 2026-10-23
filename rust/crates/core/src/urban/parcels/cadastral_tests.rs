@@ -1051,3 +1051,157 @@ fn court_tissues_pair_small_lots_into_court_house_lots() {
     let total: f64 = cells.iter().map(|c| area(&c.shape)).sum();
     assert!((total - 3600.0).abs() < 1e-6, "exact partition: {total}");
 }
+
+/// Invariant (joins on float seams): neighbours cut by separate half-planes
+/// share their side only to floating precision (gaps under 2 cm, T-junctions);
+/// they still join into one ring holding both areas. Real 01-l pairs whose
+/// balance redraw failed on this (`no union`, 16 of the 34 unbalanced pairs).
+#[test]
+fn neighbours_sharing_a_seamed_side_join_into_one_lot() {
+    let cases: Vec<serde_json::Value> =
+        serde_json::from_str(include_str!("fixtures/seamed-neighbours-01l.json")).unwrap();
+    assert!(!cases.is_empty());
+    for case in cases {
+        let a: Shape = serde_json::from_value(case["pair"][0].clone()).unwrap();
+        let b: Shape = serde_json::from_value(case["pair"][1].clone()).unwrap();
+        assert!(shared(&a, &b) >= 1.0, "block {}: neighbours", case["block"]);
+        let union = joined(&a, &b).unwrap_or_else(|| panic!("block {}: no union", case["block"]));
+        let whole = area(&a) + area(&b);
+        assert!(union.holes.is_empty() && super::super::geometry::simple(&union));
+        assert!(
+            (area(&union) - whole).abs() <= 0.01 + 1e-4 * whole,
+            "block {}: {} vs {whole}",
+            case["block"],
+            area(&union)
+        );
+    }
+}
+
+/// Invariant (lot balance, partial redraw): when moving the common boundary
+/// all the way to frontage-proportional areas would cost the depth bound (or
+/// a witness), it moves part of the way, as long as the ratio still falls.
+#[test]
+fn an_unbalanced_pair_is_redrawn_part_way_when_the_full_move_is_too_deep() {
+    // Main street along y = 0 (rank 1), back lane along y = 50 (rank 3).
+    let fronts = [
+        front((0.0, 0.0), (10.0, 0.0), 1, 0),
+        front((10.0, 50.0), (0.0, 50.0), 3, 1),
+    ];
+    let axis = Point { x: 1.0, y: 0.0 };
+    let witness = |s: &Shape| Some(s.clone());
+    let mut cells = vec![
+        parcel(rectangle(0.0, 0.0, 10.0, 40.0), 0, axis, &fronts, "plot"),
+        parcel(rectangle(0.0, 40.0, 10.0, 50.0), 0, axis, &fronts, "plot"),
+    ];
+    for c in &mut cells {
+        c.envelope = witness(&c.shape);
+    }
+    // A back-lane lot reaches at most 22 m behind its lane (the street lots
+    // 40 m): an even split (25 m each) is refused.
+    let reach = |s: &Shape| {
+        let (lo, hi) = bounds(s, Point { x: 0.0, y: 1.0 });
+        if lo < 0.5 { hi } else { 50.0 - lo }
+    };
+    let street = |s: &Shape| bounds(s, Point { x: 0.0, y: 1.0 }).0 < 0.5;
+    let too_deep = |s: &Shape| reach(s) > if street(s) { 40.01 } else { 22.01 };
+    balance_neighbours(&mut cells, &fronts, &witness, &too_deep);
+    let (a, b) = (area(&cells[0].shape), area(&cells[1].shape));
+    assert!((a + b - 500.0).abs() < 1e-6, "exact partition: {}", a + b);
+    assert!(
+        a.max(b) / a.min(b) < 3.0,
+        "still unbalanced: {a:.0} / {b:.0}"
+    );
+    assert!(
+        reach(&cells[1].shape) <= 22.01,
+        "the lane lot stays within its depth"
+    );
+    assert!(
+        cells
+            .iter()
+            .all(|c| c.provenance.iter().any(|x| x == "neighbour-balance"))
+    );
+}
+
+/// Invariant (court pairs keep the balance): a court lot made of 2-4 street
+/// neighbours is never 3x a neighbour of similar frontage on another street
+/// (rear or side lots): the pair is not made and its parts stay houses.
+#[test]
+fn a_court_pair_that_would_dwarf_its_rear_neighbours_is_not_made() {
+    let fronts = [
+        front((0.0, 0.0), (120.0, 0.0), 1, 0),
+        front((120.0, 40.0), (0.0, 40.0), 3, 1),
+    ];
+    let axis = Point { x: 1.0, y: 0.0 };
+    let court = super::super::culture::UrbanAdmissibility {
+        recipe_id: "MED-ANT-B02".into(),
+        native_layout: "atrium".into(),
+        floors: [1, 2],
+        eras: vec![],
+        min_frontage: 28.1,
+        min_access_width: 1.2,
+        min_area: 28.1 * 28.3,
+        min_depth: 28.3,
+        max_slope: 0.2,
+        shared_access: false,
+        party_walls: true,
+    };
+    let small = super::super::culture::UrbanAdmissibility {
+        recipe_id: "MED-ANT-B12".into(),
+        native_layout: "single".into(),
+        min_frontage: 5.4,
+        min_area: 5.4 * 7.95,
+        min_depth: 7.95,
+        ..court.clone()
+    };
+    let layout: Layout = serde_json::from_value(json!({
+        "key":"pairs-rear","culture":"roman-core","center":{"x":60.0,"y":20.0},
+        "quarters":[],"warnings":[],"blocks":[{"shape":rectangle(0.0, 0.0, 120.0, 40.0),"quarter":0,"kind":"block","axis":{"x":1.0,"y":0.0},"zone":"core"}],
+        "streets":[{"widths":[6.0,6.0],"path":[{"x":-3.0,"y":-3.0},{"x":123.0,"y":-3.0}],"rank":1,"role":"street"},
+                   {"widths":[4.0,4.0],"path":[{"x":123.0,"y":42.0},{"x":-3.0,"y":42.0}],"rank":3,"role":"lane"}]
+    }))
+    .unwrap();
+    // 8 x 30 m house lots on the street, 24 x 10 m lots on the back lane: a
+    // 4-lot court (32 m, 960 m²) would hold 4x a rear lot of 24 m frontage.
+    let mut cells: Vec<Parcel> = (0..15)
+        .map(|i| {
+            let x = i as f64 * 8.0;
+            parcel(rectangle(x, 0.0, x + 8.0, 30.0), 0, axis, &fronts, "plot")
+        })
+        .chain((0..5).map(|i| {
+            let x = i as f64 * 24.0;
+            parcel(rectangle(x, 30.0, x + 24.0, 40.0), 0, axis, &fronts, "plot")
+        }))
+        .collect();
+    qualify(
+        &mut cells,
+        &fronts,
+        &layout,
+        &court,
+        Some(&small),
+        false,
+        "frontage",
+        None,
+    );
+    assert_eq!(cells.len(), 20);
+    assert!(cells.iter().all(|c| c.envelope.is_some()));
+    pair_courts(
+        &mut cells,
+        &fronts,
+        &layout,
+        &court,
+        Some(&small),
+        "frontage",
+        None,
+        Some("MED-ANT"),
+        1.0,
+        &mut Rng::new("pairs-rear"),
+    );
+    assert!(
+        !cells
+            .iter()
+            .any(|c| c.provenance.iter().any(|x| x == "court-pair")),
+        "a court lot dwarfs its rear neighbours"
+    );
+    let total: f64 = cells.iter().map(|c| area(&c.shape)).sum();
+    assert!((total - 4800.0).abs() < 1e-6, "exact partition: {total}");
+}

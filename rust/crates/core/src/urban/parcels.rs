@@ -1527,18 +1527,21 @@ fn joined(a: &Shape, b: &Shape) -> Option<Shape> {
     let mut union = overlay(a, b)?;
     if union.0.len() != 1 {
         // Neighbours cut by separate half-planes share their side only to
-        // floating precision (sub-centimetre gaps): snap the vertices of each
-        // lying on a side of the other onto it, then join again. Snapping a
-        // sliver can fold it over itself: only simple rings are joined.
-        let a2 = snap_onto(a, b, 0.02);
-        let b2 = snap_onto(b, &a2, 0.02);
-        if !super::geometry::simple(&a2) || !super::geometry::simple(&b2) {
-            return None;
-        }
-        union = overlay(&a2, &b2)?;
-        if union.0.len() != 1 {
-            return None;
-        }
+        // floating precision (sub-centimetre gaps, T-junctions): conform each
+        // ring to the other (vertices snapped onto it, its vertices inserted on
+        // the common side) so the overlay sees one boundary, then join again.
+        // A join is kept only as one ring holding both areas (no fold).
+        let a1 = conform(a, b, 0.02);
+        let b1 = conform(b, &a1, 0.02);
+        let a2 = conform(&a1, &b1, 0.02);
+        let whole = area(a) + area(b);
+        union = [(&a2, &b1), (&a1, b), (a, &b1)]
+            .into_iter()
+            .filter_map(|(x, y)| overlay(x, y))
+            .find(|u| {
+                use geo::Area;
+                u.0.len() == 1 && (u.unsigned_area() - whole).abs() <= 0.01 + 1e-4 * whole
+            })?;
     }
     let p = &union.0[0];
     let points = |r: &LineString| {
@@ -1551,6 +1554,57 @@ fn joined(a: &Shape, b: &Shape) -> Option<Shape> {
         outer: points(p.exterior()),
         holes: p.interiors().iter().map(points).collect(),
     })
+}
+
+/// `shape` conformed to its neighbour `onto`: each vertex within `tolerance`
+/// of a vertex of `onto` moved onto it (else onto its nearest side), and each
+/// vertex of `onto` lying on one of its sides inserted there, so the common
+/// boundary carries the same vertices in both rings.
+fn conform(shape: &Shape, onto: &Shape, tolerance: f64) -> Shape {
+    let rings: Vec<&Vec<Point>> = std::iter::once(&onto.outer)
+        .chain(onto.holes.iter())
+        .collect();
+    let corners: Vec<Point> = rings.iter().flat_map(|r| r.iter().copied()).collect();
+    let snapped = snap_onto(shape, onto, tolerance);
+    let snap = |p: Point| {
+        corners
+            .iter()
+            .copied()
+            .filter(|q| length(sub(p, *q)) <= tolerance)
+            .min_by(|x, y| length(sub(p, *x)).total_cmp(&length(sub(p, *y))))
+            .unwrap_or(p)
+    };
+    let ring = |r: &[Point]| {
+        let mut out: Vec<Point> = Vec::with_capacity(r.len());
+        let n = r.len();
+        for i in 0..n {
+            let (p, q) = (snap(r[i]), snap(r[(i + 1) % n]));
+            out.push(p);
+            let len = length(sub(q, p));
+            let mut inner: Vec<(f64, Point)> = corners
+                .iter()
+                .map(|&v| (super::geometry::distance(v, p, q), v))
+                .filter(|(d, _)| d.0 <= tolerance && d.1 * len > 1e-6 && (1.0 - d.1) * len > 1e-6)
+                .map(|(d, v)| (d.1, v))
+                .collect();
+            inner.sort_by(|x, y| x.0.total_cmp(&y.0));
+            out.extend(inner.into_iter().map(|(_, v)| v));
+        }
+        let mut clean: Vec<Point> = Vec::with_capacity(out.len());
+        for p in out {
+            if clean.last().is_none_or(|q| length(sub(p, *q)) > 1e-7) {
+                clean.push(p);
+            }
+        }
+        while clean.len() > 1 && length(sub(clean[0], *clean.last().unwrap())) <= 1e-7 {
+            clean.pop();
+        }
+        clean
+    };
+    Shape {
+        outer: ring(&snapped.outer),
+        holes: snapped.holes.iter().map(|r| ring(r)).collect(),
+    }
 }
 
 /// `shape` with each vertex within `tolerance` of a side of `onto` moved onto
@@ -1908,16 +1962,26 @@ fn redraw_pair(
     let fb = frontage(&b.shape, fronts).0.max(1.0);
     let a_below =
         dot(super::geometry::centroid(&a.shape), n) < dot(super::geometry::centroid(&b.shape), n);
-    let share = fa / (fa + fb);
-    let below = if a_below { share } else { 1.0 - share };
-    let [x, y] = split_share(union, n, below.clamp(0.3, 0.7))?;
-    let (na, nb) = if a_below { (x, y) } else { (y, x) };
-    let after = area(&na).max(area(&nb)) / area(&na).min(area(&nb)).max(1e-6);
-    if after > 0.8 * ratio || too_deep(&na) || too_deep(&nb) {
-        return None;
+    // The boundary moves toward frontage-proportional areas, all the way first,
+    // then part way when the full move costs a witness or the depth bound.
+    let target = fa / (fa + fb);
+    let current = area(&a.shape) / area(union).max(1e-6);
+    for k in [1.0, 0.75, 0.5, 0.35] {
+        let share = (current + k * (target - current)).clamp(0.3, 0.7);
+        let below = if a_below { share } else { 1.0 - share };
+        let Some([x, y]) = split_share(union, n, below) else {
+            continue;
+        };
+        let (na, nb) = if a_below { (x, y) } else { (y, x) };
+        let after = area(&na).max(area(&nb)) / area(&na).min(area(&nb)).max(1e-6);
+        if after > 0.8 * ratio || too_deep(&na) || too_deep(&nb) {
+            continue;
+        }
+        if let (Some(ea), Some(eb)) = (witness(&na), witness(&nb)) {
+            return Some((na, nb, ea, eb));
+        }
     }
-    let (ea, eb) = (witness(&na)?, witness(&nb)?);
-    Some((na, nb, ea, eb))
+    None
 }
 
 /// Invariant (corner lots): a corner lot holding 3 times or more the area of
@@ -1988,24 +2052,26 @@ fn split_corners(
         // The corner part is the one on the main street's side.
         let corner_low = dot(n, scale(add(main.a, main.b), 0.5)) < 0.5 * (lo + hi);
         let target = (1.6 * aj / ai).clamp(0.3, 0.7);
-        let split = [target, 0.5, 0.6, 0.4].into_iter().find_map(|share| {
-            let [x, y] = split_share(
-                &corner.shape,
-                n,
-                if corner_low { share } else { 1.0 - share },
-            )?;
-            let (c, rest) = if corner_low { (x, y) } else { (y, x) };
-            let (ac, ar) = (area(&c), area(&rest));
-            if ac.max(aj) / ac.min(aj) >= 3.0
-                || ar < 0.5 * aj
-                || too_deep(&c)
-                || too_deep(&rest)
-                || frontage(&rest, fronts).0 < 3.0
-            {
-                return None;
-            }
-            Some((c.clone(), witness(&c)?, rest.clone(), witness(&rest)?))
-        });
+        let split = [target, 0.5, 0.45, 0.55, 0.4, 0.6, 0.35, 0.65]
+            .into_iter()
+            .find_map(|share| {
+                let [x, y] = split_share(
+                    &corner.shape,
+                    n,
+                    if corner_low { share } else { 1.0 - share },
+                )?;
+                let (c, rest) = if corner_low { (x, y) } else { (y, x) };
+                let (ac, ar) = (area(&c), area(&rest));
+                if ac.max(aj) / ac.min(aj) >= 3.0
+                    || ar < 0.5 * aj
+                    || too_deep(&c)
+                    || too_deep(&rest)
+                    || frontage(&rest, fronts).0 < 3.0
+                {
+                    return None;
+                }
+                Some((c.clone(), witness(&c)?, rest.clone(), witness(&rest)?))
+            });
         let Some((c, ec, rest, er)) = split else {
             i += 1;
             continue;
@@ -2555,6 +2621,23 @@ fn pair_courts(
     // The court profile must admit the union, else its parts stay as they were.
     let mut leader: BTreeMap<usize, Parcel> = BTreeMap::new();
     let mut gone = vec![false; cells.len()];
+    // Invariant (lot balance): a court lot is large for its frontage on its own
+    // street, never 3x a neighbour of similar frontage on another one (side or
+    // rear lots of a corner): the pair is then not made.
+    let front = |p: &Parcel| p.access.as_ref().map_or(0.0, |a| a.front_length);
+    let unbalances = |lot: &Parcel, group: &[usize]| {
+        let (a, f) = (area(&lot.shape), front(lot));
+        cells.iter().enumerate().any(|(k, q)| {
+            let g = front(q);
+            !group.contains(&k)
+                && q.use_kind == "plot"
+                && q.envelope.is_some()
+                && a >= 3.0 * area(&q.shape)
+                && f.min(g) > 0.0
+                && f.max(g) <= 1.5 * f.min(g)
+                && shared(&lot.shape, &q.shape) >= 1.0
+        })
+    };
     for ((group, _), lot) in merged.iter().zip(lots.iter_mut()) {
         if let Some(lot) = lot.take().filter(|lot| {
             lot.use_kind == "plot"
@@ -2562,6 +2645,7 @@ fn pair_courts(
                     .envelope
                     .as_ref()
                     .is_some_and(|e| witnessed_by(e, profile))
+                && !unbalances(lot, group)
         }) {
             for &g in group {
                 gone[g] = true;
@@ -4417,9 +4501,16 @@ mod tests {
                 // their depth runs from their own front, not the block's streets.
                 ("faubourg", Some([a, b])) => {
                     let n = normal(unit(sub(b, a)));
-                    p.shape.outer.iter().map(|q| dot(sub(*q, a), n).abs()).fold(0.0, f64::max)
+                    p.shape
+                        .outer
+                        .iter()
+                        .map(|q| dot(sub(*q, a), n).abs())
+                        .fold(0.0, f64::max)
                 }
-                _ => lot_depth(&p.shape, &frontages(&layout_ref.blocks[p.block].shape, layout_ref, &index)),
+                _ => lot_depth(
+                    &p.shape,
+                    &frontages(&layout_ref.blocks[p.block].shape, layout_ref, &index),
+                ),
             })
             .fold(0.0, f64::max);
         assert!(deepest <= 100.0, "deepest admitted lot {deepest:.1} m");
