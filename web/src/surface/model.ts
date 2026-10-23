@@ -102,11 +102,24 @@ export interface SurfaceVersions {
   terrain: string; hydrology: string; geology: string; environment: string;
   occupation: string; population: string; materialLibrary: string; surfaceState: string;
 }
+export type SurfaceGridGeometry = Pick<TerrainGrid, 'width' | 'height' | 'originX' | 'originZ' | 'spacingM'>;
+/** Borrowed immutable context: geometry refinements do not reclassify these canonical fields. */
+export interface CanonicalSurfaceContext {
+  id: string; grid: SurfaceGridGeometry; bounds: Bounds; source: SourceIdentity;
+  versions: SurfaceVersions; fields: SurfaceFields;
+}
+export interface CanonicalSurfaceContextRef {
+  id: string; environmentVersion: string; occupationVersion: string;
+  materialLibraryVersion: string; surfaceStateVersion: string; populationVersion: string;
+}
 export interface SurfaceWorld {
   schemaVersion: typeof SURFACE_SCHEMA_VERSION; compilerVersion: string; id: string; seed: number;
   units: 'metres'; crs: 'local-xz'; bounds: Bounds; versions: SurfaceVersions;
   terrain: TerrainGrid; geology: GeologyInput; climate: ClimateInput; state: SurfaceState;
   fields: SurfaceFields; materials: MaterialRecipe[]; topographicRadiiM: number[];
+  /** Present on geometry-only refinements. May be omitted from runtime transfer with an explicit reference. */
+  canonicalContext?: CanonicalSurfaceContext;
+  canonicalContextRef?: CanonicalSurfaceContextRef;
   diagnostics: { warnings: string[]; assumptions: string[]; hydrologyBoundary: string; estimatedBytes: number };
 }
 export interface SurfaceSample {
