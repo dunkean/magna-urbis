@@ -1,5 +1,6 @@
 // Renderer-only canopy approximation outside supplied candidate inventory.
 // Marginal rank CDF calibrated on deterministic full-cell-jittered world sites.
+#include "res://shaders/canopy_lod.gdshaderinc"
 uniform vec4 canopy_meso_phase=vec4(0.0);
 uniform int canopy_meso_seed=0;
 const float CANOPY_MESO_CELL_M=16.0;
@@ -12,8 +13,7 @@ float canopy_meso_hash(ivec2 cell,uint salt){
 }
 float canopy_meso_cover(vec2 world_xz,float footprint_m,float cover){
  cover=clamp(cover,0.0,1.0);if(cover<=0.0||cover>=1.0)return cover;
- float diameter=2.0*CANOPY_MESO_CELL_M*sqrt(cover/3.141592654);
- float detail=smoothstep(1.5,3.0,diameter/max(footprint_m,.000001));
+ float detail=canopy_reference_visible_weight(footprint_m);
  if(detail<=0.0)return cover;
  vec2 p=world_xz/CANOPY_MESO_CELL_M+canopy_meso_phase.xy;
  ivec2 cell=ivec2(floor(p))+ivec2(canopy_meso_phase.zw);vec2 f=fract(p);
@@ -33,8 +33,7 @@ float canopy_meso_cover(vec2 world_xz,float footprint_m,float cover){
 }
 vec3 canopy_meso_normal(vec2 world_xz,float footprint_m,float cover){
  cover=clamp(cover,0.000001,.999999);
- float diameter=2.0*CANOPY_MESO_CELL_M*sqrt(cover/3.141592654);
- float detail=smoothstep(1.5,3.0,diameter/max(footprint_m,.000001));
+ float detail=canopy_reference_visible_weight(footprint_m);
  if(detail<=0.0)return vec3(0,1,0);
  vec2 p=world_xz/CANOPY_MESO_CELL_M+canopy_meso_phase.xy;
  ivec2 cell=ivec2(floor(p))+ivec2(canopy_meso_phase.zw);vec2 f=fract(p);vec2 nearest=vec2(0.0);float best=4.0;
@@ -47,7 +46,7 @@ vec3 canopy_meso_normal(vec2 world_xz,float footprint_m,float cover){
   radius=(float(i)+(cover-CANOPY_MESO_CDF[i])/max(CANOPY_MESO_CDF[i+1]-CANOPY_MESO_CDF[i],.000001))*(1.5/64.0);break;
  }
  vec2 radial=nearest/max(radius,.000001);float height=sqrt(max(.001,1.0-dot(radial,radial)));
- vec3 normal=normalize(vec3(radial.x,height*1.157,radial.y));
+ vec3 normal=normalize(vec3(radial.x,height*1.272727273,radial.y));
  return normalize(mix(vec3(0,1,0),normal,detail));
 }
 

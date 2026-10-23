@@ -17,6 +17,7 @@ rng=np.random.default_rng(20261023);d=np.sort(distance(rng.uniform(0,128,524288)
 lines=', '.join(f'{v:.9f}' for v in cdf)
 Path('viewer-local/shaders/canopy_meso.gdshaderinc').write_text('''// Renderer-only canopy approximation outside supplied candidate inventory.
 // Marginal rank CDF calibrated on deterministic full-cell-jittered world sites.
+#include "res://shaders/canopy_lod.gdshaderinc"
 uniform vec4 canopy_meso_phase=vec4(0.0);
 uniform int canopy_meso_seed=0;
 const float CANOPY_MESO_CELL_M=16.0;
@@ -29,8 +30,7 @@ float canopy_meso_hash(ivec2 cell,uint salt){
 }
 float canopy_meso_cover(vec2 world_xz,float footprint_m,float cover){
  cover=clamp(cover,0.0,1.0);if(cover<=0.0||cover>=1.0)return cover;
- float diameter=2.0*CANOPY_MESO_CELL_M*sqrt(cover/3.141592654);
- float detail=smoothstep(1.5,3.0,diameter/max(footprint_m,.000001));
+ float detail=canopy_reference_visible_weight(footprint_m);
  if(detail<=0.0)return cover;
  vec2 p=world_xz/CANOPY_MESO_CELL_M+canopy_meso_phase.xy;
  ivec2 cell=ivec2(floor(p))+ivec2(canopy_meso_phase.zw);vec2 f=fract(p);
@@ -50,8 +50,7 @@ float canopy_meso_cover(vec2 world_xz,float footprint_m,float cover){
 }
 vec3 canopy_meso_normal(vec2 world_xz,float footprint_m,float cover){
  cover=clamp(cover,0.000001,.999999);
- float diameter=2.0*CANOPY_MESO_CELL_M*sqrt(cover/3.141592654);
- float detail=smoothstep(1.5,3.0,diameter/max(footprint_m,.000001));
+ float detail=canopy_reference_visible_weight(footprint_m);
  if(detail<=0.0)return vec3(0,1,0);
  vec2 p=world_xz/CANOPY_MESO_CELL_M+canopy_meso_phase.xy;
  ivec2 cell=ivec2(floor(p))+ivec2(canopy_meso_phase.zw);vec2 f=fract(p);vec2 nearest=vec2(0.0);float best=4.0;
@@ -64,11 +63,11 @@ vec3 canopy_meso_normal(vec2 world_xz,float footprint_m,float cover){
   radius=(float(i)+(cover-CANOPY_MESO_CDF[i])/max(CANOPY_MESO_CDF[i+1]-CANOPY_MESO_CDF[i],.000001))*(1.5/64.0);break;
  }
  vec2 radial=nearest/max(radius,.000001);float height=sqrt(max(.001,1.0-dot(radial,radial)));
- vec3 normal=normalize(vec3(radial.x,height*1.157,radial.y));
+ vec3 normal=normalize(vec3(radial.x,height*1.272727273,radial.y));
  return normalize(mix(vec3(0,1,0),normal,detail));
 }
 
-''')
+''',encoding='utf-8')
 x,z=np.meshgrid((np.arange(512)+.5)*(40/512),(np.arange(512)+.5)*(40/512));checks=[]
 def smooth(a,b,v):
  t=np.clip((v-a)/(b-a),0,1);return t*t*(3-2*t)
@@ -76,7 +75,7 @@ for seed in [1,69,2026]:
  rank=np.interp(distance(x+1250.37,z-513.21,seed),bins,cdf)
  for cover in [.03,.1,.27,.5,.8,.97]:
   for footprint in [.1,1.25,4.,8.,20.]:
-   aa=min(cover,1-cover,max(.000001,footprint/16));detail=smooth(1.5,3.0,32*np.sqrt(cover/np.pi)/max(footprint,.000001));mask=cover*(1-detail)+(1-smooth(cover-aa,cover+aa,rank))*detail
+   aa=min(cover,1-cover,max(.000001,footprint/16));detail=sum(w*smooth(1.25,3.0,2*r/max(footprint,.000001))for w,r in zip([.069234149693,.170458698543,.320515009970,.439792141794],[2.5,4,5.5,7]));mask=cover*(1-detail)+(1-smooth(cover-aa,cover+aa,rank))*detail
    checks.append({'seed':seed,'cover':cover,'footprintM':footprint,'mean':float(mask.mean()),'errorPoints':float((mask.mean()-cover)*100)})
-report={'kind':'CPU calibration and independent seed/grid validation; not GPU evidence','version':'canopy-meso-fullcell-jitter-cdf-1','cellMetres':16,'siteCountPerCell':1,'neighborhood':25,'stableHashPeriodMetres':16777216,'calibrationSamples':len(d),'maximumAbsoluteCoverageErrorPoints':max(abs(c['errorPoints']) for c in checks),'samples':checks,'cdf':cdf.tolist()}
-Path('viewer-local/diagnostics/evidence/canopy-meso-cpu.json').write_text(json.dumps(report,indent=2)+'\n');print(report['maximumAbsoluteCoverageErrorPoints'])
+report={'kind':'CPU calibration and independent seed/grid validation; not GPU evidence','version':'canopy-meso-fullcell-jitter-physical-spectrum-2','cellMetres':16,'siteCountPerCell':1,'neighborhood':25,'stableHashPeriodMetres':16777216,'calibrationSamples':len(d),'maximumAbsoluteCoverageErrorPoints':max(abs(c['errorPoints']) for c in checks),'samples':checks,'cdf':cdf.tolist()}
+Path('viewer-local/diagnostics/evidence/canopy-meso-cpu.json').write_text(json.dumps(report,indent=2)+'\n',encoding='utf-8');print(report['maximumAbsoluteCoverageErrorPoints'])

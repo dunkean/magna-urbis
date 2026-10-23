@@ -4,7 +4,9 @@ func run():
 	root.size=Vector2i(512,512);var world=Node3D.new();root.add_child(world);var camera=Camera3D.new();camera.projection=Camera3D.PROJECTION_ORTHOGONAL;camera.size=2;camera.position=Vector3(0,0,2);world.add_child(camera)
 	var mesh=MeshInstance3D.new();mesh.mesh=QuadMesh.new();mesh.mesh.size=Vector2(2,2);world.add_child(mesh)
 	var material=ShaderMaterial.new();var shader=Shader.new();shader.code='shader_type spatial;render_mode unshaded;\n#include "res://shaders/color_space.gdshaderinc"\n#include "res://shaders/canopy_meso.gdshaderinc"\nuniform float cover=.27;uniform float footprint=1.25;uniform vec2 local_base=vec2(0.0);void fragment(){float c=canopy_meso_cover(UV*640.0+local_base,footprint,cover);ALBEDO=display_color(vec3(c));}';material.shader=shader;mesh.material_override=material
-	var origin=Vector2(20000.25,-4095.75);material.set_shader_parameter("canopy_meso_phase",Vector4(fposmod(origin.x/16,1),fposmod(origin.y/16,1),posmod(floori(origin.x/16),1048576),posmod(floori(origin.y/16),1048576)))
+	var origin={"x":20000.25,"z":-4095.75}
+	var setup=load("res://adapters/surface_canopy.gd").meso_parameters({"seed":0},origin)
+	material.set_shader_parameter("canopy_meso_phase",setup.canopy_meso_phase)
 	var samples=[];var maximum=0.0
 	for seed in [1,69,2026]:
 		material.set_shader_parameter("canopy_meso_seed",seed)
@@ -34,7 +36,7 @@ func run():
 		for y in range(2,510,4):
 			for x in range(2,510,4):error=maxf(error,absf(snapshots[0].get_pixel(x,y).r-snapshots[1].get_pixel(x,y).r)*255)
 		rebase_error=maxf(rebase_error,error);identity_cases.append({"worldPositionM":target,"differentWorldIds":true,"differentSourceVersionsAndLOD":true,"sameCanonicalSeed":true,"originDeltaM":64,"maximumByteError":error})
-	var report={"version":"canopy-meso-fullcell-jitter-cdf-1","passed":maximum<2.0 and rebase_error<=2,"maximumCoverageErrorPoints":maximum,"maximumRebaseByteError":rebase_error,"samples":samples,"refinementIdentityCases":identity_cases,"godot":Engine.get_version_info().string,"backend":RenderingServer.get_current_rendering_method(),"adapter":RenderingServer.get_video_adapter_name(),"scope":"renderer-only approximate canopy, canonical mean coverage; no candidate identity claimed"}
+	var report={"version":"canopy-meso-fullcell-jitter-physical-spectrum-2","passed":maximum<2.0 and rebase_error<=2,"maximumCoverageErrorPoints":maximum,"maximumRebaseByteError":rebase_error,"samples":samples,"refinementIdentityCases":identity_cases,"godot":Engine.get_version_info().string,"backend":RenderingServer.get_current_rendering_method(),"adapter":RenderingServer.get_video_adapter_name(),"scope":"renderer-only approximate canopy, canonical mean coverage; no candidate identity claimed"}
 	var args=OS.get_cmdline_user_args()
 	if not args.is_empty():var file=FileAccess.open(args[0],FileAccess.WRITE);file.store_string(JSON.stringify(report,"  "))
 	print(JSON.stringify({"passed":report.passed,"maximumCoverageErrorPoints":maximum,"maximumRebaseByteError":rebase_error}));quit(0 if report.passed else 1)

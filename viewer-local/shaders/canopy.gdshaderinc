@@ -1,4 +1,4 @@
-// canopy-r2. RGB and coverage are linear. Counts have NO mipmaps.
+// canopy-r4. RGB and coverage are linear. Counts have NO mipmaps.
 #include "res://shaders/canopy_meso.gdshaderinc"
 uniform bool canopy_enabled = false;
 // A shadow pass has a different VIEW/PROJECTION. LOD always uses the main camera.
@@ -15,6 +15,7 @@ uniform float canopy_spacing_m = 1.0;
 uniform vec4 canopy_bounds;
 uniform float canopy_fallback_blend_m = 16.0;
 // Renderer-only approximate shadow transfer for painted crowns, not source geometry.
+uniform bool canopy_shadow_use_total=true;
 uniform vec2 canopy_shadow_offset=vec2(4.7,-8.5);
 uniform vec3 canopy_shadow_transmittance=vec3(.25,.34,.50);
 uniform vec3 canopy_linear_albedo = vec3(0.055,0.105,0.036);
@@ -23,15 +24,6 @@ uniform vec3 canopy_linear_albedo = vec3(0.055,0.105,0.036);
 uniform float canopy_reference_y = 0.0;
 uniform float canopy_footprint_override_m = 0.0; // diagnostics only
 
-float canopy_radius_for_class(int cls) {
-    if(cls==0) return 2.5;
-    if(cls==1) return 4.0;
-    if(cls==2) return 5.5;
-    return 7.0;
-}
-float canopy_instance_weight(int cls,float footprint_m) {
-    return smoothstep(1.25,3.0,2.0*canopy_radius_for_class(cls)/max(footprint_m,0.00001));
-}
 float canopy_pixel_footprint(vec2 world_xz,mat4 view_projection,vec2 viewport_size) {
     if(canopy_footprint_override_m>0.0) return canopy_footprint_override_m;
     vec4 point=view_projection*vec4(world_xz.x,canopy_reference_y,world_xz.y,1.0);
@@ -61,7 +53,9 @@ float surface_canopy_target(vec2 world_xz,float footprint_m,float mean_cover) {
     float edge=min(min(world_xz.x-canopy_bounds.x,canopy_bounds.z-world_xz.x),min(world_xz.y-canopy_bounds.y,canopy_bounds.w-world_xz.y));
     float local=smoothstep(0.0,max(canopy_fallback_blend_m,0.00001),edge);
     float lod=max(0.0,log2(max(footprint_m/canopy_spacing_m,1.0)));
-    return mix(meso,textureLod(canopy_coverage,uv,lod).r,local);
+    float detail=canopy_reference_visible_weight(footprint_m);
+    float exact=mix(mean_cover,textureLod(canopy_coverage,uv,lod).r,detail);
+    return mix(meso,exact,local);
 }
 float surface_canopy_residual(vec2 world_xz,float footprint_m,float mean_cover) {
     float total=surface_canopy_target(world_xz,footprint_m,mean_cover);
@@ -87,5 +81,6 @@ vec3 surface_canopy_normal(vec2 p,float footprint,float mean_cover) {
     float lod=max(0.0,log2(max(footprint/canopy_spacing_m,1.0)));
     vec4 n=textureLod(canopy_normals,uv,lod);
     vec3 exact=n.a>.00001?normalize(n.rgb/n.a*2.0-1.0):vec3(0,1,0);
+    exact=normalize(mix(vec3(0,1,0),exact,canopy_reference_visible_weight(footprint)));
     return normalize(mix(approximate,exact,local));
 }

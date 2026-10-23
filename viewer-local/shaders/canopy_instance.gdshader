@@ -6,11 +6,15 @@ uniform int presentation_mode = 0;
 uniform vec3 linear_tint = vec3(0.055,0.105,0.036);
 varying vec3 canopy_world_position;
 varying flat int canopy_class;
+varying vec3 canopy_world_normal;
 void vertex() {
     canopy_world_position=(MODEL_MATRIX*vec4(VERTEX,1.0)).xyz;
     canopy_class=int(INSTANCE_CUSTOM.g+0.5);
+    // MultiMesh built-in normal transform does not correct nonuniform instance scale.
+    canopy_world_normal=transpose(inverse(mat3(MODEL_MATRIX)))*NORMAL;
 }
 void fragment() {
+    NORMAL=normalize(mat3(VIEW_MATRIX)*canopy_world_normal);
     float footprint=canopy_main_pixel_footprint(canopy_world_position.xz,PROJECTION_MATRIX*VIEW_MATRIX,VIEWPORT_SIZE);
     ALBEDO=display_color(linear_tint);
     ROUGHNESS=presentation_mode==1?1.0:0.91;
