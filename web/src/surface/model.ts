@@ -1,6 +1,7 @@
 /** Renderer-independent physical surface contract. X/Z horizontal, Y altitude, all in metres. */
 export const SURFACE_SCHEMA_VERSION = 1 as const;
 export const SURFACE_COMPILER_VERSION = 'surface-1.0.0';
+export const SURFACE_POPULATION_VERSION = 'population-1.1.0';
 export interface Bounds { minX: number; minZ: number; maxX: number; maxZ: number }
 export interface SourceIdentity {
   id: string; version: string; sourceLOD: number; nativeSpacingM: number;

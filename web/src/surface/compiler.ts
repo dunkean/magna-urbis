@@ -1,5 +1,5 @@
 import {
-  SURFACE_COMPILER_VERSION, SURFACE_SCHEMA_VERSION, DepositOrigin, Landform, Occupation, WaterClass,
+  SURFACE_COMPILER_VERSION, SURFACE_POPULATION_VERSION, SURFACE_SCHEMA_VERSION, DepositOrigin, Landform, Occupation, WaterClass,
   assertNotAborted, clamp, hashString, terrainBounds,
   type CompileOptions, type SurfaceCompileInput, type SurfaceFields, type SurfaceSample, type SurfaceWorld,
   type ClimateInput, type GeologyInput, type TerrainGrid,
@@ -344,13 +344,13 @@ export function compileSurfaceWorld(input: SurfaceCompileInput, options: Compile
   const terrainVersion = fingerprint(t), hydrologyVersion = fingerprint(input.hydrology ?? 'derived-d8-1');
   const geologyVersion = fingerprint(geology), occupationVersion = fingerprint(input.occupation ?? 'natural');
   const environment = fingerprint([terrainVersion, hydrologyVersion, geologyVersion, climate, input.processes, radii, SURFACE_COMPILER_VERSION]);
-  const population = hashString([environment, occupationVersion, input.seed, 'population-1'].join(':'));
+  const population = hashString([environment, occupationVersion, input.seed, SURFACE_POPULATION_VERSION].join(':'));
   const materialLibrary = fingerprint(SURFACE_MATERIALS), surfaceState = fingerprint(state);
   let estimatedBytes = t.heights.byteLength;
   for (const v of Object.values(f)) estimatedBytes += Array.isArray(v) ? v.reduce((s, a) => s + a.byteLength, 0) : v.byteLength;
   assertNotAborted(options.signal);
   return { schemaVersion: SURFACE_SCHEMA_VERSION, compilerVersion: SURFACE_COMPILER_VERSION,
-    id: hashString([environment, occupationVersion, materialLibrary, surfaceState, input.seed].join(':')),
+    id: hashString([environment, occupationVersion, population, materialLibrary, surfaceState, input.seed].join(':')),
     seed: input.seed, units: 'metres', crs: 'local-xz', bounds: terrainBounds(t),
     versions: { terrain: terrainVersion, hydrology: hydrologyVersion, geology: geologyVersion, environment, occupation: occupationVersion, population, materialLibrary, surfaceState },
     terrain: t, geology, climate, state, fields: f, materials: SURFACE_MATERIALS.map(m => ({ ...m, colorLinear: [...m.colorLinear], compatibleSubstrates: [...m.compatibleSubstrates], compatibleProcesses: [...m.compatibleProcesses] })), topographicRadiiM: [...radii],

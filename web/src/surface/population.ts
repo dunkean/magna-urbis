@@ -17,7 +17,13 @@ const FAMILIES: Array<{ family: SurfaceCandidate['family']; cellM: number; slots
   { family: 'grass', cellM: 4, slots: 2, minSize: .15, maxSize: .65 },
   { family: 'debris', cellM: 8, slots: 2, minSize: .08, maxSize: .8 },
 ];
-function random(key: string, channel: number): number { return parseInt(hashString(key + ':' + channel), 16) / 4294967296; }
+function random(key: string, channel: number): number {
+  // Avalanche prevents adjacent channel suffixes from making jitter, size and acceptance correlated.
+  let value = parseInt(hashString(key + ':' + channel), 16);
+  value = Math.imul(value ^ value >>> 16, 0x7feb352d);
+  value = Math.imul(value ^ value >>> 15, 0x846ca68b);
+  return ((value ^ value >>> 16) >>> 0) / 4294967296;
+}
 
 /** Canonical world cells; independent of renderer pages, request order, camera and seasonal state. */
 export function generateSurfaceCandidates(world: SurfaceWorld, bounds: Bounds, options: PopulationOptions = {}): SurfaceCandidate[] {
