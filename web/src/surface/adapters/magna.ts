@@ -4,6 +4,7 @@ import type { Decor } from '../../ui/decor';
 import { eachBuildingTriangle, isBuildingProjection, type Building3dScene, type BuildingTriangle } from '../../render/urbanBuildingGeometry';
 import { assertNotAborted, hashString, type TerrainGrid, type SourceIdentity, type SurfaceCompileInput } from '../model';
 import type { TerrainProvider, TerrainRequest } from '../provider';
+import { climateFromMagnaQuery } from './climate';
 
 /** Magna map XY, altitude Z -> metric horizontal XZ, altitude Y. */
 export const magnaToMetric = (x: number, y: number, altitude: number): [number, number, number] => [x, altitude, y];
@@ -85,9 +86,10 @@ export function decorToSurfaceInput(decor: Decor): SurfaceCompileInput {
   const r = decor.raster, cell = r.width / r.n, display = decor.meta.terrainDisplay;
   return { seed: parseInt(hashString(decor.meta.seed), 16), terrain: { width: r.n, height: r.n,
     originX: cell / 2, originZ: cell / 2, spacingM: cell, heights: r.height.slice(),
-    source: { id: decor.meta.id, version: decor.meta.created, sourceLOD: 0,
+    source: { id: decor.meta.id, version: decor.meta.created, sourceLOD: 0, sourceLODKnown: false,
       nativeSpacingM: display?.sourceCell ?? cell,
       provenance: `Retained Magna decor; seed=${decor.meta.seed}; query=${decor.meta.query}; crop=${JSON.stringify(decor.meta.pipeline?.crop ?? null)}; offline capture (source LOD unrecorded)` } },
+    climate: climateFromMagnaQuery(decor.meta.query),
     hydrology: { version: decor.meta.created, provenance: 'Retained decor water raster; source IDs retained in export metadata',
       boundary: 'truncated', waterClass: Uint8Array.from(r.water, c => c === 1 ? 3 : c === 3 ? 1 : c), waterLevelM: r.waterLevel.slice() } };
 }
