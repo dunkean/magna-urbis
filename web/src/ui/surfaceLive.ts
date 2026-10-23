@@ -16,7 +16,8 @@ export function installSurfaceLive(handler: (region: SurfaceLiveRegion, signal: 
         onStatus?.('Préparation de la surface pour le visualiseur local…');
         const packet = await handler(region, controller.signal);
         if (controller.signal.aborted) return;
-        await fetch(`/surface-live/reply/${id}`, { method: 'POST', headers: { 'Content-Type': 'application/octet-stream', 'X-Surface-Session': sessionId }, body: encodeSurfaceBinary(packet).buffer as ArrayBuffer, signal: controller.signal });
+        const binary = packet instanceof ArrayBuffer ? packet : encodeSurfaceBinary(packet).buffer as ArrayBuffer;
+        await fetch(`/surface-live/reply/${id}`, { method: 'POST', headers: { 'Content-Type': 'application/octet-stream', 'X-Surface-Session': sessionId }, body: binary, signal: controller.signal });
         onStatus?.('Surface transmise au visualiseur local.');
       } catch (error) {
         if (!controller.signal.aborted) {
