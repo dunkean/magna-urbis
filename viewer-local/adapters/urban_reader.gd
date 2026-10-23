@@ -26,6 +26,9 @@ static func validate(urban: Dictionary) -> bool:
 		if urban[name] is Array:
 			for value in urban[name]:
 				if not (value is int or value is float) or not is_finite(float(value)): return false
+	for name in ["buildingTriangleOffsets","triangleSlots","triangleMaterial","triangleMaterialPresence","triangleSurface","surfaceShapeOffsets","shapeRingOffsets","ringPointOffsets","roadPointOffsets"]:
+		for value in urban[name]:
+			if not is_finite(float(value)) or float(value)!=floorf(float(value)): return false
 	var count := int(urban.positions.size()/9)
 	if urban.positions.size()%9!=0 or urban.normals.size()!=count*3 or urban.surfacePositions.size()%2!=0 or urban.roadPositions.size()%2!=0: return false
 	if not _offsets(urban.buildingTriangleOffsets,count) or urban.buildingTriangleOffsets.size()!=urban.buildings.size()+1: return false

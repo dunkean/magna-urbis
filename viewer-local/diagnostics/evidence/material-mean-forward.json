@@ -1,0 +1,493 @@
+{
+  "adapter": "NVIDIA GeForce RTX 4090",
+  "backend": "forward_plus",
+  "maximumRebaseByteError": 1,
+  "maximumRelativeMeanError": 0.0015329122543335,
+  "passed": true,
+  "probe": "production stochastic sampler, linear RGBA16F mips, numeric uniform upload",
+  "samples": [
+    {
+      "asset": "fallback",
+      "footprintM": 0.001953125,
+      "linearMean": [
+        0.249872460961342,
+        0.249872460961342,
+        0.249872460961342
+      ],
+      "relativeError": 0.000510156154632568
+    },
+    {
+      "asset": "fallback",
+      "footprintM": 0.03125,
+      "linearMean": [
+        0.250013947486877,
+        0.250013947486877,
+        0.250013947486877
+      ],
+      "relativeError": 5.57899475097656e-05
+    },
+    {
+      "asset": "fallback",
+      "footprintM": 1.0,
+      "linearMean": [
+        0.250193983316422,
+        0.250193983316422,
+        0.250193983316422
+      ],
+      "relativeError": 0.000775933265686035
+    },
+    {
+      "asset": "rock",
+      "footprintM": 0.00390625,
+      "linearMean": [
+        0.249896958470345,
+        0.250141173601151,
+        0.250383228063583
+      ],
+      "relativeError": 0.0015329122543335
+    },
+    {
+      "asset": "rock",
+      "footprintM": 0.0625,
+      "linearMean": [
+        0.25021293759346,
+        0.250205606222153,
+        0.250223636627197
+      ],
+      "relativeError": 0.000894546508789063
+    },
+    {
+      "asset": "rock",
+      "footprintM": 2.0,
+      "linearMean": [
+        0.250193983316422,
+        0.250193983316422,
+        0.250193983316422
+      ],
+      "relativeError": 0.000775933265686035
+    },
+    {
+      "asset": "soil",
+      "footprintM": 0.0009765625,
+      "linearMean": [
+        0.249835252761841,
+        0.249838978052139,
+        0.249869734048843
+      ],
+      "relativeError": 0.000658988952636719
+    },
+    {
+      "asset": "soil",
+      "footprintM": 0.015625,
+      "linearMean": [
+        0.249863907694817,
+        0.249901503324509,
+        0.250007063150406
+      ],
+      "relativeError": 0.000544369220733643
+    },
+    {
+      "asset": "soil",
+      "footprintM": 0.5,
+      "linearMean": [
+        0.25014466047287,
+        0.250193208456039,
+        0.250193983316422
+      ],
+      "relativeError": 0.000775933265686035
+    },
+    {
+      "asset": "litter",
+      "footprintM": 0.00146484375,
+      "linearMean": [
+        0.249829575419426,
+        0.249824866652489,
+        0.249798715114594
+      ],
+      "relativeError": 0.000805139541625977
+    },
+    {
+      "asset": "litter",
+      "footprintM": 0.0234375,
+      "linearMean": [
+        0.249862253665924,
+        0.249938279390335,
+        0.250107645988464
+      ],
+      "relativeError": 0.000550985336303711
+    },
+    {
+      "asset": "litter",
+      "footprintM": 0.75,
+      "linearMean": [
+        0.250193983316422,
+        0.250193983316422,
+        0.250193983316422
+      ],
+      "relativeError": 0.000775933265686035
+    },
+    {
+      "asset": "grass",
+      "footprintM": 0.005859375,
+      "linearMean": [
+        0.249856397509575,
+        0.249860927462578,
+        0.249748900532722
+      ],
+      "relativeError": 0.00100439786911011
+    },
+    {
+      "asset": "grass",
+      "footprintM": 0.09375,
+      "linearMean": [
+        0.249836325645447,
+        0.249898374080658,
+        0.249785244464874
+      ],
+      "relativeError": 0.00085902214050293
+    },
+    {
+      "asset": "grass",
+      "footprintM": 3.0,
+      "linearMean": [
+        0.250056475400925,
+        0.250221788883209,
+        0.250235676765442
+      ],
+      "relativeError": 0.000942707061767578
+    },
+    {
+      "asset": "sand",
+      "footprintM": 0.00146484375,
+      "linearMean": [
+        0.249835580587387,
+        0.249825179576874,
+        0.249923676252365
+      ],
+      "relativeError": 0.000699281692504883
+    },
+    {
+      "asset": "sand",
+      "footprintM": 0.0234375,
+      "linearMean": [
+        0.249885514378548,
+        0.25009560585022,
+        0.250209420919418
+      ],
+      "relativeError": 0.00083768367767334
+    },
+    {
+      "asset": "sand",
+      "footprintM": 0.75,
+      "linearMean": [
+        0.250193983316422,
+        0.250193983316422,
+        0.250193983316422
+      ],
+      "relativeError": 0.000775933265686035
+    },
+    {
+      "asset": "gravel",
+      "footprintM": 0.00146484375,
+      "linearMean": [
+        0.249916419386864,
+        0.249936491250992,
+        0.25002908706665
+      ],
+      "relativeError": 0.000334322452545166
+    },
+    {
+      "asset": "gravel",
+      "footprintM": 0.0234375,
+      "linearMean": [
+        0.250259608030319,
+        0.250262290239334,
+        0.250275015830994
+      ],
+      "relativeError": 0.00110006332397461
+    },
+    {
+      "asset": "gravel",
+      "footprintM": 0.75,
+      "linearMean": [
+        0.250193983316422,
+        0.250193983316422,
+        0.250193983316422
+      ],
+      "relativeError": 0.000775933265686035
+    },
+    {
+      "asset": "dry-cracked-soil",
+      "footprintM": 0.00146484375,
+      "linearMean": [
+        0.249843671917915,
+        0.249852284789085,
+        0.249889075756073
+      ],
+      "relativeError": 0.000625312328338623
+    },
+    {
+      "asset": "dry-cracked-soil",
+      "footprintM": 0.0234375,
+      "linearMean": [
+        0.2500921189785,
+        0.250176399946213,
+        0.250204205513
+      ],
+      "relativeError": 0.000816822052001953
+    },
+    {
+      "asset": "dry-cracked-soil",
+      "footprintM": 0.75,
+      "linearMean": [
+        0.250193983316422,
+        0.250193983316422,
+        0.250193983316422
+      ],
+      "relativeError": 0.000775933265686035
+    },
+    {
+      "asset": "cultivated-soil",
+      "footprintM": 0.00146484375,
+      "linearMean": [
+        0.249800533056259,
+        0.250056654214859,
+        0.25021705031395
+      ],
+      "relativeError": 0.00086820125579834
+    },
+    {
+      "asset": "cultivated-soil",
+      "footprintM": 0.0234375,
+      "linearMean": [
+        0.24987980723381,
+        0.250152885913849,
+        0.250194489955902
+      ],
+      "relativeError": 0.000777959823608398
+    },
+    {
+      "asset": "cultivated-soil",
+      "footprintM": 0.75,
+      "linearMean": [
+        0.250193983316422,
+        0.250193983316422,
+        0.250193983316422
+      ],
+      "relativeError": 0.000775933265686035
+    },
+    {
+      "asset": "dark-rock",
+      "footprintM": 0.001953125,
+      "linearMean": [
+        0.250218778848648,
+        0.250204563140869,
+        0.250197201967239
+      ],
+      "relativeError": 0.000875115394592285
+    },
+    {
+      "asset": "dark-rock",
+      "footprintM": 0.03125,
+      "linearMean": [
+        0.250195235013962,
+        0.250194221735001,
+        0.250193983316422
+      ],
+      "relativeError": 0.000780940055847168
+    },
+    {
+      "asset": "dark-rock",
+      "footprintM": 1.0,
+      "linearMean": [
+        0.250193983316422,
+        0.250193983316422,
+        0.250193983316422
+      ],
+      "relativeError": 0.000775933265686035
+    },
+    {
+      "asset": "weathered-cliff",
+      "footprintM": 0.00390625,
+      "linearMean": [
+        0.24974524974823,
+        0.249843642115593,
+        0.250101894140244
+      ],
+      "relativeError": 0.00101900100708008
+    },
+    {
+      "asset": "weathered-cliff",
+      "footprintM": 0.0625,
+      "linearMean": [
+        0.249741524457932,
+        0.249812573194504,
+        0.250216543674469
+      ],
+      "relativeError": 0.00103390216827393
+    },
+    {
+      "asset": "weathered-cliff",
+      "footprintM": 2.0,
+      "linearMean": [
+        0.249780371785164,
+        0.24986906349659,
+        0.250193983316422
+      ],
+      "relativeError": 0.000878512859344482
+    },
+    {
+      "asset": "wet-beach",
+      "footprintM": 0.0029296875,
+      "linearMean": [
+        0.249865666031837,
+        0.249854981899261,
+        0.249875098466873
+      ],
+      "relativeError": 0.000580072402954102
+    },
+    {
+      "asset": "wet-beach",
+      "footprintM": 0.046875,
+      "linearMean": [
+        0.249844700098038,
+        0.249898418784142,
+        0.250018715858459
+      ],
+      "relativeError": 0.000621199607849121
+    },
+    {
+      "asset": "wet-beach",
+      "footprintM": 1.5,
+      "linearMean": [
+        0.250202864408493,
+        0.250194430351257,
+        0.250193983316422
+      ],
+      "relativeError": 0.000811457633972168
+    },
+    {
+      "asset": "clean-sand",
+      "footprintM": 0.0009765625,
+      "linearMean": [
+        0.249841451644897,
+        0.249916285276413,
+        0.250055730342865
+      ],
+      "relativeError": 0.000634193420410156
+    },
+    {
+      "asset": "clean-sand",
+      "footprintM": 0.015625,
+      "linearMean": [
+        0.250183492898941,
+        0.250196367502213,
+        0.250198185443878
+      ],
+      "relativeError": 0.000792741775512695
+    },
+    {
+      "asset": "clean-sand",
+      "footprintM": 0.5,
+      "linearMean": [
+        0.250193983316422,
+        0.250193983316422,
+        0.250193983316422
+      ],
+      "relativeError": 0.000775933265686035
+    },
+    {
+      "asset": "snow",
+      "footprintM": 0.001953125,
+      "linearMean": [
+        0.249878972768784,
+        0.249879956245422,
+        0.249873161315918
+      ],
+      "relativeError": 0.000507354736328125
+    },
+    {
+      "asset": "snow",
+      "footprintM": 0.03125,
+      "linearMean": [
+        0.249779969453812,
+        0.249781876802444,
+        0.249750882387161
+      ],
+      "relativeError": 0.00099647045135498
+    },
+    {
+      "asset": "snow",
+      "footprintM": 1.0,
+      "linearMean": [
+        0.249967753887177,
+        0.249951019883156,
+        0.250008046627045
+      ],
+      "relativeError": 0.000195920467376709
+    },
+    {
+      "asset": "leaf-litter",
+      "footprintM": 0.0009765625,
+      "linearMean": [
+        0.249804079532623,
+        0.249797850847244,
+        0.250216394662857
+      ],
+      "relativeError": 0.000865578651428223
+    },
+    {
+      "asset": "leaf-litter",
+      "footprintM": 0.015625,
+      "linearMean": [
+        0.249796122312546,
+        0.249907121062279,
+        0.250274360179901
+      ],
+      "relativeError": 0.00109744071960449
+    },
+    {
+      "asset": "leaf-litter",
+      "footprintM": 0.5,
+      "linearMean": [
+        0.250193983316422,
+        0.250193983316422,
+        0.250193983316422
+      ],
+      "relativeError": 0.000775933265686035
+    },
+    {
+      "asset": "wet-organic-soil",
+      "footprintM": 0.0009765625,
+      "linearMean": [
+        0.249849289655685,
+        0.249839618802071,
+        0.249843835830688
+      ],
+      "relativeError": 0.000641524791717529
+    },
+    {
+      "asset": "wet-organic-soil",
+      "footprintM": 0.015625,
+      "linearMean": [
+        0.249834924936295,
+        0.249838724732399,
+        0.24991999566555
+      ],
+      "relativeError": 0.000660300254821777
+    },
+    {
+      "asset": "wet-organic-soil",
+      "footprintM": 0.5,
+      "linearMean": [
+        0.250056684017181,
+        0.25013867020607,
+        0.250190764665604
+      ],
+      "relativeError": 0.000763058662414551
+    }
+  ],
+  "threshold": 0.03,
+  "godot": "4.7.2.stable.official.ed1daf0bf",
+  "productionShaderCommit": "9d86d00cfa9cb8de772432ade68572c3e86f96a6"
+}
