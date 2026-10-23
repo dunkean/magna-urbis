@@ -1,8 +1,10 @@
 class_name SurfaceHydrology
 extends RefCounted
 const Geometry = preload("res://adapters/surface_geometry.gd")
-const CityMap = preload("res://adapters/surface_city_map.gd")
-const MAX_VERTICES := 399996
+const Sweep = preload("res://adapters/surface_hydrology_sweep.gd")
+# Exact regional vectors can exceed the historical raster-quad cap. This bound
+# is still <12 MiB of packed positions; it never changes source water footprints.
+const MAX_VERTICES := 999996
 const MAX_SOURCE_POINTS := 500000
 const MAX_SCAN_WORK := 12000000
 
@@ -130,6 +132,7 @@ static func prepare(packet: Dictionary, world: Dictionary, origin: Dictionary, f
 	var tx:=float(translation.get("x",0.0)); var tz:=float(translation.get("z",0.0))
 	var vertices:=PackedVector3Array(); var missing:=0; var points:=0; var area:=0.0; var work:=0
 	var missing_area:=0.0; var requested_area:=0.0; var duplicate_groups:=0; var display_groups:=0; var seen_groups: Dictionary={}
+	var native_groups:=0;var sweep_groups:=0;var maximum_float_error:=0.0;var maximum_float_tolerance:=0.0
 	for group in geometry.water:
 		if not group is Array: return _fallback(fallback,"invalid source water group")
 		for ring in group:
@@ -153,14 +156,16 @@ static func prepare(packet: Dictionary, world: Dictionary, origin: Dictionary, f
 			var clipped:=_clip(translated,window)
 			if clipped.size()>=3: rings.append(clipped)
 		if rings.is_empty(): continue
-		var scan_levels: Dictionary={}; var edges:=0
-		for ring in rings:
-			edges+=ring.size()
-			for point in ring: scan_levels[point.y]=true
-		work+=edges*scan_levels.size()
-		if work>MAX_SCAN_WORK: return _fallback(fallback,"source vector scan work budget exceeded")
-		var mesh:=CityMap.triangulate([{"outer":rings[0],"holes":rings.slice(1)}],origin,float(origin.y),MAX_VERTICES-vertices.size())
-		if mesh.invalid or mesh.budgetLimited: return _fallback(fallback,"source vector triangulation invalid or over budget")
+		var mesh:=Sweep.triangulate(rings,origin,MAX_VERTICES-vertices.size(),MAX_SCAN_WORK-work)
+		work+=int(mesh.get("work",0))
+		if mesh.get("workBudgetLimited",false):return _fallback(fallback,"source vector active-edge scan work budget exceeded")
+		if mesh.invalid:return _fallback(fallback,"source vector triangulation parity invalid after work="+str(work))
+		if mesh.budgetLimited:return _fallback(fallback,"source vector vertex budget exceeded: output="+str(vertices.size())+", required next="+str(mesh.get("requiredVerticesAtLeast",0)))
+		if mesh.get("nativeSimpleRing",false):
+			native_groups+=1
+			maximum_float_error=maxf(maximum_float_error,float(mesh.get("floatAreaErrorM2",0.0)))
+			maximum_float_tolerance=maxf(maximum_float_tolerance,float(mesh.get("floatAreaToleranceM2",0.0)))
+		else:sweep_groups+=1
 		requested_area+=float(mesh.areaM2)
 		var before_group:=vertices.size()
 		var triangles: PackedVector3Array=mesh.vertices
@@ -198,6 +203,11 @@ static func prepare(packet: Dictionary, world: Dictionary, origin: Dictionary, f
 	result.missingLevelTriangles=missing; result.sourceVectorPoints=points
 	result.sourceVectorRequestedAreaM2=requested_area; result.sourceVectorMissingAreaM2=missing_area; result.sourceVectorCoverageComplete=missing==0
 	result.sourceGroups=geometry.water.size(); result.sourceDuplicateGroups=duplicate_groups; result.displayGroups=display_groups
+	result.sourceSimpleRingNativeGroups=native_groups;result.sourceEvenOddSweepGroups=sweep_groups
+	result.maximumNativeFloatAreaErrorM2=maximum_float_error;result.maximumNativeFloatAreaToleranceM2=maximum_float_tolerance
+	result.vertexBudget=MAX_VERTICES
+	result.renderAlgorithm="retained even-odd boundary-vertex scan bands; native ear clipping only for one contour with explicit float-area validation"
+	result.sourceTopologyPolicy="source contours unchanged; no self-intersection repair or survey-level topology equivalence claimed"
 	result.sourceVectorClipBounds={"minX":window.minX,"minZ":window.minZ,"maxX":window.maxX,"maxZ":window.maxZ}; result.sourceVectorScanWork=work
 	result.levelInterpolation="finite original wet source levels only; no channel generation or level editing"
 	result.buildMs=(Time.get_ticks_usec()-started)/1000.0
