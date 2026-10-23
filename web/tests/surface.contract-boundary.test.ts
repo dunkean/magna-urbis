@@ -6,6 +6,7 @@ import { exportSurfacePacket } from '../src/surface/adapters/export';
 import type { Decor } from '../src/ui/decor';
 import type { TerrainSettings } from '../../rust/bridge/terrain';
 import type { Building3dScene } from '../src/render/urbanBuildingGeometry';
+import { unpackUrbanColumns } from '../src/surface/urbanColumns';
 
 const regional = (): NeuralEarthPackage => ({ format: 'surface-regional-exchange', version: 1, id: 'region', seed: '47',
   georeference: { crs: 'local-east-up-south', origin: { longitudeDeg: 2, latitudeDeg: 48, altitudeM: 20 }, zAzimuthDeg: 180, verticalDatum: 'EGM96' },
@@ -57,11 +58,15 @@ describe('reviewed physical contract boundaries', () => {
       footprint, roof_footprint: footprint, occupation_surfaces: [footprint], ground_constraints: [{ footprint, height_m: 3 }] };
     const scene = { buildings: [building] } as unknown as Building3dScene, before = JSON.stringify(scene);
     const packet = exportSurfacePacket(d, scene, { originX: 100, originZ: 200, roads: [{ id: 'r', points: [[1, 8], [11, 8]], widthM: 1 }], encoding: 'binary' });
+    const urban = unpackUrbanColumns(packet.urban);
     expect([packet.world.terrain.originX, packet.world.terrain.originZ]).toEqual([100.5, 200.5]);
-    expect(packet.urban.buildings[0].footprint[0].outer[0]).toEqual({ x: 102, y: 202 });
-    expect(packet.urban.buildings[0].triangles[0].points[0]).toEqual([102, 3, 202]);
-    expect(packet.urban.occupationBuildings[0].surfaces[0][0].outer[0]).toEqual({ x: 102, y: 202 });
-    expect(packet.urban.roads[0].points[0]).toEqual([101, 208]);
+    expect(urban.buildings[0].footprint[0].outer[0]).toEqual({ x: 102, y: 202 });
+    expect(urban.buildings[0].triangles[0].points[0]).toEqual([102, 3, 202]);
+    expect(urban.occupationBuildings![0].surfaces[0][0].outer[0]).toEqual({ x: 102, y: 202 });
+    expect(urban.roads![0].points[0]).toEqual([101, 208]);
+    expect(packet.source.water.originConvention).toBe('first-sample-centre');
+    expect([packet.source.water.originX,packet.source.water.originZ]).toEqual([100.5,200.5]);
+    expect([packet.source.water.cornerX,packet.source.water.cornerZ]).toEqual([100,200]);
     expect(packet.world.terrain.heights).toBeInstanceOf(Float32Array);
     expect(JSON.stringify(scene)).toBe(before);
   });
