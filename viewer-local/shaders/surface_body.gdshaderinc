@@ -1,0 +1,34 @@
+    vec2 source_uv=(v_vertex.xz-source_origin)/source_extent;
+    int id=clamp(int(texture(surface_ids,source_uv).r+0.5),0,31);
+    vec4 state=texture(surface_state,source_uv);
+    vec2 p=v_vertex.xz+world_phase;
+    float footprint=max(length(dFdx(v_vertex.xz)),length(dFdy(v_vertex.xz)));
+    float scale=max(material_scales[id],0.25);
+    vec2 material_uv=v_vertex.xz/scale+material_phase[id];
+    vec4 ah; vec4 nr;
+    sample_pbr(material_uv,dFdx(material_uv),dFdy(material_uv),material_layers[id],ah,nr);
+    float fine=1.0-smoothstep(scale*0.2,scale*1.5,footprint);
+    float macro=surface_noise(p/16.0);
+    vec3 base=palette[id].rgb;
+    // Fallback atlases carry neutral greys. Authored PBR remains modulated by substrate.
+    vec3 ground=base*mix(vec3(1.0),ah.rgb*2.0,0.82);
+    ground*=0.91+0.18*macro;
+    float wet=clamp(state.g,0.0,1.0);
+    ground*=1.0-wet*0.28;
+    float canopy=clamp(state.r,0.0,1.0);
+    float crown=surface_noise(p/9.0);
+    float canopy_pattern=mix(canopy,smoothstep(1.0-canopy-0.12,1.0-canopy+0.12,crown),1.0-smoothstep(3.0,18.0,footprint));
+    float distant=smoothstep(instance_blend_distance*0.65,instance_blend_distance,v_vertex_xz_dist);
+    float edge=min(min(v_vertex.x-candidate_bounds.x,candidate_bounds.z-v_vertex.x),min(v_vertex.z-candidate_bounds.y,candidate_bounds.w-v_vertex.z));
+    distant=max(distant,1.0-smoothstep(0.0,24.0,edge));
+    ground=mix(ground,vec3(0.055,0.105,0.036)*(0.8+0.4*crown),canopy_pattern*distant);
+    ground=mix(ground,vec3(0.79,0.83,0.87),state.b);
+    ALBEDO=clamp(ground,vec3(0.0),vec3(0.95));
+    ROUGHNESS=clamp(mix(palette[id].a,nr.a,0.7)-wet*0.28+state.b*0.05,0.12,1.0);
+    NORMAL_MAP=mix(vec3(0.5,0.5,1.0),nr.xyz,fine*micro_strength*(1.0-state.b));
+    NORMAL_MAP_DEPTH=0.75;
+    AO=mix(1.0,0.78+0.22*ah.a,fine);
+    if(diagnostic==1) ALBEDO=palette[id].rgb;
+    if(diagnostic==2) ALBEDO=vec3(state.r,state.a,state.g);
+    if(diagnostic==3) { float b=texture(surface_bedrock,source_uv).r; ALBEDO=vec3(fract(b*0.618),fract(b*0.371+0.2),fract(b*0.217+0.4)); }
+    if(diagnostic==4) ALBEDO=vec3(state.b,wet,1.0-wet);
