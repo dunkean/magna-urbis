@@ -26,6 +26,18 @@ async function connect(base: string) {
   return { event, session: (await event()).data.sessionId as string };
 }
 describe('Surface live transport', () => {
+  it('rejects foreign browser origins and simple cross-origin POSTs', async () => {
+    const base = await start();
+    expect((await fetch(`${base}/surface-live/terrain`, { method: 'POST', headers: { Origin: 'https://elsewhere.example', 'Content-Type': 'application/json' }, body: JSON.stringify({ region }) })).status).toBe(403);
+    expect((await fetch(`${base}/surface-live/terrain`, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify({ region }) })).status).toBe(415);
+  });
+  it('reports supersession as cancellation rather than a generation failure', async () => {
+    const base = await start(), browser = await connect(base);
+    const pending = post(`${base}/surface-live/terrain`, { region });
+    const request = await browser.event();
+    await post(`${base}/surface-live/reply/${request.data.id}`, { sessionId: browser.session, cancelled: true, error: 'superseded' });
+    const response = await pending; expect(response.status).toBe(409); expect(await response.json()).toEqual({ cancelled: true, reason: 'superseded' });
+  });
   it('requires a generation browser and validates requests before queueing', async () => {
     const base = await start();
     expect((await post(`${base}/surface-live/terrain`, { region })).status).toBe(503);

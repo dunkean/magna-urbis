@@ -4,6 +4,7 @@ import type { TerrainProvider } from '../src/surface/provider';
 import { createSurfaceLiveSession, createSurfaceLiveBinarySession } from '../src/ui/surfaceLiveSession';
 import { decodeSurfaceBinary } from '../src/surface/binary';
 import type { SurfaceWorkerPacket } from '../src/surface/workerProtocol';
+import { registrationFieldFingerprint, type SurfaceRegistrationBinding } from '../src/surface/registrationBinding';
 
 function fixture(): Decor {
   const n = 8, height = new Float32Array(n * n).fill(100);
@@ -12,8 +13,11 @@ function fixture(): Decor {
     stats: { land: 1, minHeight: 100, maxHeight: 100, riverKm: 0, roadKm: 0 } },
     raster: { n, width: 80, height, water: new Uint8Array(n * n), waterLevel: height.slice(), riverWidth: new Float32Array(n * n), riverIds: new Int32Array(n * n) } } as Decor;
 }
-function provider(): TerrainProvider {
-  return { id: 'registered-source', async request(request) {
+function provider(): TerrainProvider & { registrationBinding: SurfaceRegistrationBinding } {
+  const d = fixture(), field = registrationFieldFingerprint({ width: d.raster.width, n: d.raster.n, data: d.raster.height });
+  return { id: 'registered-source', registrationBinding: { expectedSourceId: 'registered-source:42:content-id', providerId: 'registered-source', registrationId: 'mock-registration',
+    sourceVersion: 'refinement-1', fieldFingerprint: field, width: 80, n: 8, interpolation: 'cell-centred-cubic-bspline-controls',
+    canonicalFieldFingerprint: field, canonicalWidth: 80, canonicalN: 8, canonicalDerivation: 'identity' }, async request(request) {
     const width = Math.round((request.bounds.maxX - request.bounds.minX) / request.spacingM);
     return { width, height: width, spacingM: request.spacingM, originX: request.bounds.minX + request.spacingM / 2,
       originZ: request.bounds.minZ + request.spacingM / 2, heights: new Float32Array(width * width).fill(101),
@@ -28,8 +32,10 @@ describe('Live context handoff', () => {
     const signal = new AbortController().signal;
     const first = decodeSurfaceBinary<SurfaceWorkerPacket>(new Uint8Array(await session({ x: 20, y: 20, extent: 40, resolution: 16 }, signal)));
     expect(first.world.canonicalContext).toBeDefined();
-    const second = decodeSurfaceBinary<SurfaceWorkerPacket>(new Uint8Array(await session({ x: 20, y: 20, extent: 40, resolution: 32, knownContextId: first.world.canonicalContextRef!.id }, signal)));
+    const second = decodeSurfaceBinary<SurfaceWorkerPacket>(new Uint8Array(await session({ x: 20, y: 20, extent: 40, resolution: 32, knownContextId: first.world.canonicalContextRef!.id, knownSceneContextId: first.source.sceneContextId as string }, signal)));
     expect(second.world.canonicalContext).toBeUndefined(); expect(second.world.canonicalContextRef).toEqual(first.world.canonicalContextRef);
+    expect(first.urban).toBeDefined(); expect(second.urban).toBeUndefined();
+    expect(second.source.meta).toBeUndefined(); expect(second.source.sceneContextId).toBe(first.source.sceneContextId);
     session.dispose();
     await expect(session({ x: 20, y: 20, extent: 40, resolution: 16 }, signal)).rejects.toMatchObject({ name: 'AbortError' });
   });
@@ -38,9 +44,12 @@ describe('Live context handoff', () => {
     const session = createSurfaceLiveSession(source, undefined, provider(), () => true);
     const first = await session({ x: 20, y: 20, extent: 40, resolution: 16 }, controller.signal);
     expect(first.world.canonicalContext).toBeDefined(); expect(first.world.terrain.source.sourceLOD).toBe(-2);
+    expect(first.terrainParents?.[0].terrain.source.id).toBe(first.world.terrain.source.id);
+    expect(first.terrainParents?.[0].terrain.source.sourceLODKnown).toBe(false);
     const knownContextId = first.world.canonicalContextRef!.id;
     const second = await session({ x: 20, y: 20, extent: 40, resolution: 32, knownContextId }, controller.signal);
     expect(second.world.canonicalContext).toBeUndefined();
+    expect(second.terrainParents).toBeUndefined();
     expect(second.world.canonicalContextRef).toEqual(first.world.canonicalContextRef);
     expect(second.world.versions.environment).toBe(first.world.versions.environment);
     expect(second.world.versions.population).toBe(first.world.versions.population);

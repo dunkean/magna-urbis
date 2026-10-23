@@ -1992,22 +1992,25 @@ async function exportPipeline(action: 'save' | 'next' | 'download'): Promise<voi
 el('pipelineSave').onclick = () => void exportPipeline('save');
 el('pipelineNext').onclick = () => void exportPipeline('next');
 el('pipelineDownload').onclick = () => void exportPipeline('download');
+let surfaceExportAbort: AbortController | undefined;
+window.addEventListener('pagehide', () => surfaceExportAbort?.abort(), { once: true });
 el('pipelineSurface').onclick = async () => {
-  const button = el<HTMLButtonElement>('pipelineSurface'); button.disabled = true;
+  if (surfaceExportAbort) { surfaceExportAbort.abort(); return; }
+  const button = el<HTMLButtonElement>('pipelineSurface'), label = button.textContent;
+  const controller = new AbortController(); surfaceExportAbort = controller; button.textContent = 'Annuler l’export surface';
   try {
-    const { exportSurfacePacket } = await import('../surface/adapters/export');
+    const { exportSurfaceInWorker } = await import('./surfaceExport');
     const retained = pipelineCapture(), scene = pipelineStage === 'settlements' ? settlements.urban.buildingState.scene : undefined;
     el('pipelineStatus').textContent = 'Compilation des surfaces et conservation des bâtiments…';
     await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
-    const packet = exportSurfacePacket(retained, scene, { encoding: 'binary' });
-    const { encodeSurfaceBinary } = await import('../surface/binary');
-    const blob = new Blob([encodeSurfaceBinary(packet).buffer as ArrayBuffer], { type: 'application/octet-stream' });
+    const bytes = await exportSurfaceInWorker(retained, scene, controller.signal);
+    const blob = new Blob([bytes], { type: 'application/octet-stream' });
     const url = URL.createObjectURL(blob), link = document.createElement('a');
     link.href = url; link.download = `${retained.meta.id}.surfacebin`; link.click();
     setTimeout(() => URL.revokeObjectURL(url), 10000);
     el('pipelineStatus').textContent = 'Surface exportée pour le visualiseur local ; données de ville conservées.';
-  } catch (error) { el('pipelineStatus').textContent = error instanceof Error ? error.message : String(error); }
-  finally { button.disabled = false; }
+  } catch (error) { el('pipelineStatus').textContent = error instanceof Error && error.name === 'AbortError' ? 'Export surface annulé.' : error instanceof Error ? error.message : String(error); }
+  finally { if (surfaceExportAbort === controller) surfaceExportAbort = undefined; button.textContent = label; button.disabled = false; }
 };
 
 if (import.meta.env.DEV) {
