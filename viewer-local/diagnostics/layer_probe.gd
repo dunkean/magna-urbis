@@ -13,7 +13,7 @@ func options()->Dictionary:
 	return result
 
 func ready(require_live:bool)->bool:
-	if viewer.get("terrain")==null or viewer.get("worker")!=null or viewer.get("packet_worker")!=null or bool(viewer.get("view_dirty")):return false
+	if viewer.get("terrain")==null or viewer.get("worker")!=null or viewer.get("packet_worker")!=null or bool(viewer.get("view_dirty")) or bool(viewer.get("water_projection_busy")):return false
 	if not require_live:return true
 	var world:Dictionary=viewer.get("world");var shown:Dictionary=viewer.get("rendered_snapshot")
 	return not bool(viewer.get("live_busy")) and int(viewer.get("view_satisfied_serial"))==int(viewer.get("live_serial")) and shown.get("worldId")==world.get("id") and shown.get("request",{}).get("preview")==false and shown.get("request",{}).get("resolution")==512
