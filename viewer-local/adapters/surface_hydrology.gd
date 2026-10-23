@@ -7,6 +7,7 @@ const Sweep = preload("res://adapters/surface_hydrology_sweep.gd")
 const MAX_VERTICES := 999996
 const MAX_SOURCE_POINTS := 500000
 const MAX_SCAN_WORK := 12000000
+const MAX_BED_DIAGNOSTIC_SAMPLES := 4096
 
 # Fixed-map water comes from Magna's retained polygons and measured levels.
 # This is a display adapter: no routing, flow threshold, channel generation,
@@ -97,6 +98,27 @@ static func _fallback(value: Dictionary, reason: String) -> Dictionary:
 	var result:=value.duplicate(false)
 	result.fixedHydrologyFallbackReason=reason
 	result.authority="magna-retained-physical-raster"
+	result.fixedVectorDisplayAvailable=false
+	return result
+
+# Visibility diagnostics are distinct from physical raster validation. A retained
+# vector may have complete measured levels while lying below the current display
+# terrain. Never fix that by raising water or rewriting its source contours.
+# This bounded, deterministic sample is NOT an exact count of clipped fragments.
+static func vector_bed_diagnostics(vertices: PackedVector3Array, world: Dictionary, origin: Dictionary) -> Dictionary:
+	var result: Dictionary={"vectorBedDiagnosticSamples":0,"vectorBedDiagnosticConflicts":0,"vectorBedDiagnosticMissing":0,"vectorBedDiagnosticMaximumDeltaM":0.0,"vectorBedDiagnosticBudget":MAX_BED_DIAGNOSTIC_SAMPLES,"vectorBedDiagnosticToleranceM":0.001}
+	if vertices.is_empty(): return result
+	var display: Dictionary=world.get("_displaySource",world).duplicate(false)
+	if not display.has("_heightLayers"): display["_heightLayers"]=Geometry.prepare_height_layers(display)
+	var stride:=maxi(1,ceili(float(vertices.size())/MAX_BED_DIAGNOSTIC_SAMPLES))
+	for i in range(0,vertices.size(),stride):
+		var point: Vector3=vertices[i]
+		var bed:=Geometry.height_at(display,float(origin.x)+point.x,float(origin.z)+point.z)
+		if not is_finite(bed): result.vectorBedDiagnosticMissing+=1; continue
+		var delta:=bed-(float(origin.y)+point.y)
+		result.vectorBedDiagnosticSamples+=1
+		result.vectorBedDiagnosticMaximumDeltaM=maxf(float(result.vectorBedDiagnosticMaximumDeltaM),delta)
+		if delta>=-0.001: result.vectorBedDiagnosticConflicts+=1
 	return result
 
 static func prepare(packet: Dictionary, world: Dictionary, origin: Dictionary, focus: Dictionary, width: float, fallback: Dictionary) -> Dictionary:
@@ -194,12 +216,18 @@ static func prepare(packet: Dictionary, world: Dictionary, origin: Dictionary, f
 	# A budget-aggregated sea needs its separate coverage material. Until this
 	# adapter has multiple water batches, keep the already safe complete fallback.
 	if sea.get("requiresCoverageMask",false) or vertices.size()+sea.vertices.size()>MAX_VERTICES: return _fallback(fallback,"exact sea and vector batches exceed the shared geometry budget")
+	var bed_diagnostics:=vector_bed_diagnostics(vertices,world,origin)
 	vertices.append_array(sea.vertices)
 	var result:=fallback.duplicate(false)
 	result.erase("coverageImage"); result.erase("coverageOrigin"); result.erase("coverageSpacingM"); result.erase("coverageSize")
 	result.vertices=vertices; result.quads=int(ceil(vertices.size()/6.0)); result.sourceStride=1
 	result.representation="Magna retained vector lakes/rivers and original sea-cell union"
 	result.authority="magna-urbis-fixed-hydrology"; result.sourceVectorAreaM2=area
+	result.fixedVectorDisplayAvailable=true
+	result.fixedVectorCartographicPolicy="project retained contours independently of terrain depth; keep measured source levels unchanged"
+	result.fixedVectorPhysicalPolicy="measured source levels with display-bed occlusion; conflicts are not repaired or rerouted"
+	result.resolvedBedConflictScope="physical raster only; vector visibility uses bounded vectorBedDiagnostic samples"
+	for diagnostic in bed_diagnostics: result[diagnostic]=bed_diagnostics[diagnostic]
 	var source_classes:=PackedFloat32Array(); source_classes.resize(n*n)
 	for i in source_classes.size():
 		var kind:=int(water.classes[i]); source_classes[i]=3.0 if kind==1 else 1.0 if kind==3 else float(kind)
