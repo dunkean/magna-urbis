@@ -3,6 +3,7 @@ import type { Building3dScene } from '../render/urbanBuildingGeometry';
 import { decorToSurfaceInput, exportMagnaBuildings } from '../surface/adapters/magna';
 import { occupationFromMagnaScene, type SurfaceRoad } from '../surface/adapters/occupation';
 import type { PreparedSurfaceWorkerSource } from '../surface/workerProtocol';
+import { archiveSurfaceSource } from '../surface/adapters/sourceArchive';
 
 export interface SurfaceDecorWorkerSource { decor: Decor; scene?: Building3dScene; providerId: string }
 
@@ -16,5 +17,5 @@ export function prepareSurfaceDecorWorkerSource(value: unknown): PreparedSurface
   const buildings = scene ?? { buildings: [] };
   input.occupation = occupationFromMagnaScene(input.terrain, buildings, roads, input.occupation);
   return { input, providerId: payload.providerId, registeredSourceBinding: true,
-    urban: { ...exportMagnaBuildings(buildings), roads }, sourceMetadata: { meta: decor.meta } };
+    urban: { ...exportMagnaBuildings(buildings), roads }, sourceMetadata: archiveSurfaceSource({ meta: decor.meta }) };
 }

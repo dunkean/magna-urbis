@@ -32,7 +32,7 @@ describe('renderer independent Magna adapters', () => {
     const decor = { meta: { id: 'capture', seed: 'source-seed', created: '2026-10-22', query: '?source=neural-python',
       terrainDisplay: { sourceCell: 40 } }, raster: { n: 3, width: 120,
       height: new Float32Array([1, 2, 3, 2, 3, 4, 3, 4, 5]), water: new Uint8Array([0, 3, 0, 0, 3, 0, 0, 3, 0]),
-      waterLevel: new Float32Array(9).fill(3), riverWidth: new Float32Array(9).fill(2), riverIds: new Int32Array(9).fill(847) } } as Decor;
+      waterLevel: new Float32Array(9).fill(9), riverWidth: new Float32Array(9).fill(2), riverIds: new Int32Array(9).fill(847) } } as Decor;
     const packet = exportSurfacePacket(decor, undefined, { originX: 1000, originZ: 2000 });
     expect(packet.source.water.riverIds).toEqual(Array(9).fill(847));
     expect(packet.source.meta.seed).toBe('source-seed');

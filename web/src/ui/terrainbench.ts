@@ -2011,11 +2011,12 @@ el('pipelineSurface').onclick = async () => {
 
 if (import.meta.env.DEV) {
   let liveTerrain: TerrainData | undefined, liveScene: typeof appliedBuildingScene;
-  let liveHandler: Promise<ReturnType<typeof import('./surfaceLiveSession').createSurfaceLiveSession>> | undefined;
+  let liveHandler: Promise<ReturnType<typeof import('./surfaceLiveSession').createSurfaceLiveBinarySession>> | undefined;
   const disconnect = installSurfaceLive(async (region, signal) => {
     if (!terrain || overviewPending || generationError) throw new Error('Attendez un terrain conservé avant la connexion du visualiseur.');
     const scene = settlements.urban.buildingState.scene;
     if (!liveHandler || liveTerrain !== terrain || liveScene !== scene) {
+      if (liveHandler) void liveHandler.then(handler => handler.dispose()).catch(() => {});
       const retained = terrain, applied = settings;
       // Export-crop controls do not change the world currently being viewed.
       // Live requests use the full retained world, never that optional crop.
@@ -2025,7 +2026,7 @@ if (import.meta.env.DEV) {
       if (decor.meta.pipeline?.urban?.buildingState?.cold && !scene) throw new Error('Chargez les bâtiments conservés avant leur rendu local.');
       liveTerrain = retained; liveScene = scene;
       liveHandler = (async () => {
-        const [{ createInfiniteRefinementProvider }, { createSurfaceLiveSession }] = await Promise.all([
+        const [{ createInfiniteRefinementProvider }, { createSurfaceLiveBinarySession }] = await Promise.all([
           import('../surface/adapters/infiniteRefinement'), import('./surfaceLiveSession'),
         ]);
         const field = retained.field;
@@ -2035,13 +2036,13 @@ if (import.meta.env.DEV) {
           { seed: retained.neural?.neuralSeed ?? String(seedHash(applied.seed) >>> 0), source: applied.source,
             neuralToken: retained.neural?.neuralToken,
             neuralWindow: isNeuralSource(applied.source) ? neuralWindow(NEURAL_EXTENT, retained.width, applied.neuralFit ?? 'crop', applied.neuralSlopes ?? true, applied.coastMask ?? 0) : undefined });
-        return createSurfaceLiveSession(decor, scene, provider,
+        return createSurfaceLiveBinarySession(decor, scene, provider,
           () => terrain === retained && settings === applied && settlements.urban.buildingState.scene === scene && !overviewPending);
       })().catch(error => { liveHandler = undefined; throw error; });
     }
     return (await liveHandler)(region, signal);
   }, message => { el('pipelineStatus').textContent = message; });
-  window.addEventListener('pagehide', disconnect, { once: true });
+  window.addEventListener('pagehide', () => { disconnect(); if (liveHandler) void liveHandler.then(handler => handler.dispose()).catch(() => {}); }, { once: true });
 }
 updateView();
 terrainLoading('ready');
