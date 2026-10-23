@@ -39,6 +39,7 @@ import type { ForestRaster } from '../../../rust/bridge/terrainMaterialRaster';
 import ForestWorker from './forestWorker?worker&inline';
 import type { ForestReply, ForestRequest } from './forestWorker';
 import { pinsFromString, pinsToString, viewFromString, viewToString } from './share';
+import { copySurfaceGeologyQuery } from '../surface/adapters/geology';
 import { clampView, fitView, panBy, screenToWorld, worldToScreen, zoomAt, type View } from '../render/view';
 import { COAST_DIRECTIONS, ISLAND_MODES, type IslandMode, TERRAIN_SOURCES, NEURAL_RELIEFS, NEURAL_CLIMATES, NEURAL_EXTENT, DEFAULT_NEURAL_SERVER, DEFAULT_PYTHON_SERVER, neuralServerForSource, isNeuralSource, type TerrainSource, type NeuralClimate } from '../../../rust/bridge/terrain';
 import { captureDecorData, downloadBytes } from './decorCapture';
@@ -588,6 +589,7 @@ function forestRaster(region = terrain): ForestRaster | undefined {
 /** Keep the applied terrain recipe while recording its displayed style and forest controls. */
 function withForestQuery(d: Decor): Decor {
   const params = new URLSearchParams(d.meta.query);
+  if (query.has('surface_geology') || query.has('surface_geology_descriptor')) copySurfaceGeologyQuery(params, query);
   params.set('style', baseStyle);
   params.set('forest', forest.enabled ? '1' : '0');
   for (const key of ['forestDensity', 'forestClearings'] as const) {
@@ -1006,6 +1008,7 @@ function status(message: string, error = false): void {
 }
 function shareQuery(): string {
   const params = new URLSearchParams({ brush_density: String(fantasyOptions.density), brush_size: String(fantasyOptions.size), brush_spacing: String(fantasyOptions.spacing), engine: 'rust', v: '4', seed: settings.seed, width: String(settings.width), motif: String(settings.motifSize), relief: settings.relief, erosion: String(settings.erosion), style: baseStyle, auto: input('auto').checked ? '1' : '0' });
+  copySurfaceGeologyQuery(params, query.has('surface_geology') || query.has('surface_geology_descriptor') ? query : retainedDecor?.meta.query ?? query);
   if (!gpu) params.set('render', 'svg');
   params.set('brush_landuse', fantasyOptions.followLanduse ? '1' : '0');
   for (const [key, value] of Object.entries(settings.hydrology ?? DEFAULT_HYDROLOGY)) params.set(`hydro_${key}`, typeof value === 'boolean' ? value ? '1' : '0' : String(value));

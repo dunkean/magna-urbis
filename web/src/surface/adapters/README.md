@@ -39,3 +39,26 @@ Export offsets have separate meanings: `originX/originZ` translate the common ph
 Accepted occupation and visible overlays remain distinct: `urban.occupationBuildings` retains accepted IDs, child occupation surfaces and physical ground constraints, while `urban.buildings` holds visible triangles. Explicit empty accepted occupation stays empty. `occupationFromMagnaScene(terrain,scene,roads,base)` rasterizes the existing accepted source surfaces and physical road widths at the canonical terrain sample centres. `occupationFromMagnaWorld` reads existing 2D city masses/streets without creating native records; `worldToSurfaceInput` includes it automatically. `occupationFromMagnaSurfaces` accepts direct physical surfaces. Boundary-touching cells are conservatively excluded so thin walls and roads cannot disappear between samples; courtyard interiors remain free at the available raster resolution. This is an exclusion mask, not a claim that coarse DEM spacing resolves architecture. Packet helpers apply these exclusions before population selection; runtime callers can supply roads through options.
 
 The refinement provider exposes a detached `registration` snapshot. Its source identity includes the actual retained registration ID as well as the seed; a newly registered source cannot silently reuse the same lineage after source expiry or terrain edits. Consumers must recompile canonical context for a new registration identity before retargeting refinements.
+
+
+Explicit geology is opt-in with `surface_geology=tilted-strata-v1`. The optional
+`surface_geology_descriptor` query value is a complete versioned JSON descriptor
+from `createTiltedStrataScenario`; it is validated and preserved in shared recipes.
+The named scenario without JSON uses the fixed authored world anchor (0,0), never
+an anchor inferred from a tile, crop, height distribution or climate. Missing
+selection keeps the compiler's existing explicitly unobserved uniform fallback.
+
+CLI: `--surface-geology tilted-strata-v1 [--surface-geology-descriptor FILE.json]`.
+Exports evaluate bedrock after crop and common frame offsets. The same descriptor
+must be retained for every live request; native heights, source IDs and city
+geometry are unchanged. This is an authored geological demonstration, not a survey.
+
+Hydrology authority remains Magna's retained network: `source.water` carries raw
+0=dry/1=sea/2=lake/3=river-safety-envelope classes, levels, river IDs and widths;
+`source.geometry` and `source.meta.waterSvg` retain original source geography.
+Compiled wet classes use 0=dry/1=river/2=lake/3=ocean and reject safety-envelope
+cells without resolved positive depth. DECOR does not retain receiver topology:
+compiler D8 routing is a soil/HAND/TWI diagnostic and never the rendered source
+river network. `worldToSurfaceInput` reuses an existing World receiver/flow exactly;
+that legacy World contract does not supply per-cell lake/river levels. Render
+source water geometry rather than presenting such missing levels as measurements.
