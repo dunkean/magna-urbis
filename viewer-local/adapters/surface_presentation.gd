@@ -3,6 +3,7 @@ extends RefCounted
 
 # Optional native preview of the shared mapper profile. Never changes the
 # source geometry, material IDs, environment fields, source palette or layout.
+const NativeMaterial=preload("res://adapters/surface_native_material.gd")
 static var _catalogues: Dictionary = {}
 static var _materials: Dictionary = {}
 static var _road_textures:Dictionary={}
@@ -121,10 +122,7 @@ static func _flat_shader_material(color: Vector3, name: String) -> ShaderMateria
 
 static func building_material(material_id, slots: Dictionary, surface_name: String, packet: Dictionary, mode: String) -> Material:
 	var resolved := profile(packet,mode)
-	var id := str(material_id) if material_id!=null else ""
-	if id.is_empty():
-		for slot in (["cladding","roof_frame"] if surface_name=="roof" else ["coating","infill","frame","base"]):
-			if not str(slots.get(slot,"")).is_empty(): id=str(slots[slot]); break
+	var id := NativeMaterial.resolve(material_id,slots,surface_name)
 	var pattern := "plain"
 	for source_material in packet.get("urban",{}).get("materials",[]):
 		if str(source_material.get("id",""))==id: pattern=str(source_material.get("pattern","plain")); break

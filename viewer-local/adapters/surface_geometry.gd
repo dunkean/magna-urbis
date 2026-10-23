@@ -3,6 +3,7 @@ extends RefCounted
 
 # CPU-only builders. Vertices use canonical right-handed outward winding;
 # SurfaceData.make_mesh performs the single conversion to Godot clockwise faces.
+const NativeMaterial=preload("res://adapters/surface_native_material.gd")
 const UrbanReader = preload("res://adapters/urban_reader.gd")
 const MAX_VERTICES := 999999
 const MAX_BUILDING_VERTICES := 600000
@@ -423,7 +424,7 @@ static func build_urban(packet: Dictionary, world: Dictionary, origin: Dictionar
 			if cross.dot(normal)<0.0:
 				var saved := local_points[1]; local_points[1]=local_points[2]; local_points[2]=saved
 			var slots: Dictionary = triangle.get("materials",{})
-			var material_id: String = str(triangle.get("material",slots.get("cladding",slots.get("coating",""))))
+			var material_id: String = NativeMaterial.resolve(triangle.get("material"),slots,str(triangle.get("surface","wall")))
 			var groups: Array = result.materialGroups
 			var last: Dictionary = groups.back() if not groups.is_empty() else {}
 			if not last.is_empty() and last.materialId==material_id and last.buildingId==building.get("id","") and last.surface==triangle.get("surface","wall") and last.slots==slots:
