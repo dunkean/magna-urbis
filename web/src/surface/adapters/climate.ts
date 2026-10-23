@@ -23,10 +23,10 @@ export function climateFromMagnaQuery(query: string): ClimateInput {
   const params = new URLSearchParams(query.startsWith('?') ? query.slice(1) : query);
   const presetName = params.get('climate') ?? 'temperate';
   const values = { ...(MAGNA_CLIMATE_PRESETS[presetName as NeuralClimate] ?? MAGNA_CLIMATE_PRESETS.temperate) };
-  for (const key of Object.keys(values) as (keyof ClimateValues)[]) {
+  if (presetName === 'custom') for (const key of Object.keys(values) as (keyof ClimateValues)[]) {
     if (!params.has(key)) continue;
-    const value = Number(params.get(key));
-    if (!Number.isFinite(value) || (key !== 'temperature' && value < 0)) throw new Error(`Invalid source climate value: ${key}`);
+    const raw = params.get(key), value = Number(raw);
+    if (!raw || !raw.trim() || !Number.isFinite(value)) continue;
     values[key] = value;
   }
   return magnaClimateToSurface(values, `magna-query-climate:${presetName}:${JSON.stringify(values)}`);

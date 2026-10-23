@@ -23,7 +23,7 @@ describe('renderer independent Magna adapters', () => {
     expect(arid.meanAnnualTempC).toBe(23);
     expect(arid.annualPrecipMm).toBe(150);
     expect(arid.seasonalAmplitudeC).toBeCloseTo(8 * Math.SQRT2);
-    const custom = climateFromMagnaQuery('?climate=arid&temperature=-4&temperatureStd=200&precipitation=999');
+    const custom = climateFromMagnaQuery('?climate=custom&temperature=-4&temperatureStd=200&precipitation=999');
     expect(custom.meanAnnualTempC).toBe(-4);
     expect(custom.annualPrecipMm).toBe(999);
     expect(custom.seasonalAmplitudeC).toBeCloseTo(2 * Math.SQRT2);
@@ -47,22 +47,22 @@ describe('renderer independent Magna adapters', () => {
     const transport = (async (url: string | URL | Request, options?: RequestInit) => {
       calls.push({ url: String(url), body: JSON.parse(String(options?.body)), signal: options?.signal });
       if (String(url).endsWith('/register')) return Response.json({ id: 'retained', version: 'v1', minMpp: 1, nativeMpp: 30, decoderUsed: true });
-      return new Response(new Float32Array([120, 121, 122, 123]).buffer, { headers: { 'X-Neural-Meta': JSON.stringify({ x: 100, y: 200, width: 4, n: 2,
+      return new Response(new Float32Array([120, 121, 122, 123, ...Array(60).fill(124)]).buffer, { headers: { 'X-Neural-Meta': JSON.stringify({ x: 100, y: 200, width: 4, n: 8,
         sourceCell: 2, lod: 7, version: 'refined-v2', decoderUsed: true }) } });
     }) as typeof fetch;
-    const field = new Float32Array([1, 2, 3, 4]);
-    const provider = await createInfiniteRefinementProvider('http://localhost:8793', { width: 60, n: 2, data: field }, { seed: 'true-seed', source: 'neural-python' }, transport);
+    const field = new Float32Array(64).fill(1);
+    const provider = await createInfiniteRefinementProvider('http://localhost:8793', { width: 60, n: 8, data: field }, { seed: '47', source: 'neural-python' }, transport);
     const controller = new AbortController();
     const grid = await provider.request({ bounds: { minX: 100, minZ: 200, maxX: 104, maxZ: 204 }, spacingM: 0.01, worldVersion: 'world', signal: controller.signal });
     expect(calls.map(c => c.url)).toEqual(['http://localhost:8793/refinement/register', 'http://localhost:8793/refinement/tile']);
     expect(calls[1].body.resolution).toBe(8);
     expect(calls[1].signal).toBe(controller.signal);
-    expect([grid.originX, grid.originZ, grid.spacingM, grid.source.nativeSpacingM, grid.source.sourceLOD]).toEqual([101, 201, 2, 2, 7]);
+    expect([grid.originX, grid.originZ, grid.spacingM, grid.source.nativeSpacingM, grid.source.sourceLOD]).toEqual([100.25, 200.25, .5, 2, 7]);
     expect(grid.source.sourceLODKnown).toBe(true);
-    expect(grid.source.id).toBe('infinite:true-seed:retained');
+    expect(grid.source.id).toBe('infinite:47:retained');
     expect(provider.registration.id).toBe('retained');
-    expect([...grid.heights]).toEqual([120, 121, 122, 123]);
-    expect([...field]).toEqual([1, 2, 3, 4]);
+    expect([...grid.heights].slice(0, 4)).toEqual([120, 121, 122, 123]);
+    expect([...field]).toEqual(Array(64).fill(1));
   });
   it('rejects a stream response when the world changed during compilation', async () => {
     let worldId = 'first';
@@ -131,7 +131,7 @@ describe('renderer independent Magna adapters', () => {
   });
   it('exchanges named regional layers, stable geometry IDs and seasonal units losslessly', () => {
     const packet: NeuralEarthPackage = { format: 'surface-regional-exchange', version: 1, id: 'region', seed: 'seed-exact',
-      georeference: { crs: 'local-enu', origin: { longitudeDeg: 2.3, latitudeDeg: 48.8, altitudeM: 34 }, zAzimuthDeg: 0, verticalDatum: 'EGM96' },
+      georeference: { crs: 'local-east-up-south', origin: { longitudeDeg: 2.3, latitudeDeg: 48.8, altitudeM: 34 }, zAzimuthDeg: 180, verticalDatum: 'EGM96' },
       features: { 'river:0001': { id: 'source-river-id', holes: [[[1, 2], [3, 4]]] } }, layers: { 'climate/winter': {
         id: 'temp-original', sourceKey: 'neural.temps.winter', units: 'K', originX: 20, originZ: 40, spacingM: 100,
         width: 2, height: 1, values: new Float32Array([273.15, NaN]), sourceLOD: 3, nativeSpacingM: 100,
