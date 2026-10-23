@@ -1,0 +1,389 @@
+{
+  "frames": [
+    {
+      "focusX": 19680.0,
+      "path": "res://captures/v9-final-spatial/pan-19680",
+      "state": {
+        "activeAtlasWorldId": "8d07d5dcd69b258208c2040cd4a37720",
+        "atlasBounds": {
+          "maxX": 20128.0,
+          "maxZ": 20448.0001220703,
+          "minX": 19232.0,
+          "minZ": 19552.0001220703
+        },
+        "crownHeightEnvelopeM": 20.0,
+        "exactWeight": 1.0,
+        "frustumBounds": {
+          "maxX": 20000.0,
+          "maxZ": 20320.0001220703,
+          "minX": 19360.0,
+          "minZ": 19680.0001220703
+        },
+        "geometryWeight": 1.0,
+        "haloM": 22.6789927482605,
+        "marginM": 105.32100725174,
+        "maximumPixelFootprintM": 0.625009536888685,
+        "pageBounds": {
+          "maxX": 20128.0,
+          "maxZ": 20448.0001220703,
+          "minX": 19232.0,
+          "minZ": 19552.0001220703
+        },
+        "pendingAtlas": false,
+        "phase": 2.0,
+        "reason": "complete-frustum-plus-halo",
+        "referenceY": 2128.0441702243,
+        "residentTerrainBounds": {
+          "maxX": 20292.8125,
+          "maxZ": 20612.8125,
+          "minX": 19025.3125,
+          "minZ": 19345.3125
+        },
+        "safePhase": 2.0,
+        "spatialBlend": "none; one phase for the whole viewport",
+        "transitionM": 45.7514563106796,
+        "treePage": {
+          "bounds": {
+            "maxX": 22000.0,
+            "maxZ": 22000.0,
+            "minX": 18000.0,
+            "minZ": 18000.0
+          },
+          "complete": true,
+          "count": 67221.0,
+          "includeOverhang": true,
+          "limitedBy": "none",
+          "requestedBounds": {
+            "maxX": 22000.0,
+            "maxZ": 22000.0,
+            "minX": 18000.0,
+            "minZ": 18000.0
+          },
+          "retention": 1.0
+        }
+      },
+      "widthM": 640,
+      "worldId": "8d07d5dcd69b258208c2040cd4a37720"
+    },
+    {
+      "focusX": 19840.0,
+      "path": "res://captures/v9-final-spatial/pan-19840",
+      "state": {
+        "activeAtlasWorldId": "8d07d5dcd69b258208c2040cd4a37720",
+        "atlasBounds": {
+          "maxX": 20288.0,
+          "maxZ": 20448.0001220703,
+          "minX": 19392.0,
+          "minZ": 19552.0001220703
+        },
+        "crownHeightEnvelopeM": 20.0,
+        "exactWeight": 1.0,
+        "frustumBounds": {
+          "maxX": 20160.0,
+          "maxZ": 20320.0001220703,
+          "minX": 19520.0,
+          "minZ": 19680.0001220703
+        },
+        "geometryWeight": 1.0,
+        "haloM": 22.6789927482605,
+        "marginM": 105.32100725174,
+        "maximumPixelFootprintM": 0.625009536888685,
+        "pageBounds": {
+          "maxX": 20288.0,
+          "maxZ": 20448.0001220703,
+          "minX": 19392.0,
+          "minZ": 19552.0001220703
+        },
+        "pendingAtlas": false,
+        "phase": 2.0,
+        "reason": "complete-frustum-plus-halo",
+        "referenceY": 2179.77474535746,
+        "residentTerrainBounds": {
+          "maxX": 20452.8125,
+          "maxZ": 20612.8125,
+          "minX": 19185.3125,
+          "minZ": 19345.3125
+        },
+        "safePhase": 2.0,
+        "spatialBlend": "none; one phase for the whole viewport",
+        "transitionM": 45.7514563106796,
+        "treePage": {
+          "bounds": {
+            "maxX": 22000.0,
+            "maxZ": 22000.0,
+            "minX": 18000.0,
+            "minZ": 18000.0
+          },
+          "complete": true,
+          "count": 67221.0,
+          "includeOverhang": true,
+          "limitedBy": "none",
+          "requestedBounds": {
+            "maxX": 22000.0,
+            "maxZ": 22000.0,
+            "minX": 18000.0,
+            "minZ": 18000.0
+          },
+          "retention": 1.0
+        }
+      },
+      "widthM": 640,
+      "worldId": "8d07d5dcd69b258208c2040cd4a37720"
+    },
+    {
+      "focusX": 20000.0,
+      "path": "res://captures/v9-final-spatial/pan-20000",
+      "state": {
+        "activeAtlasWorldId": "8d07d5dcd69b258208c2040cd4a37720",
+        "atlasBounds": {
+          "maxX": 20448.0,
+          "maxZ": 20448.0001220703,
+          "minX": 19552.0,
+          "minZ": 19552.0001220703
+        },
+        "crownHeightEnvelopeM": 20.0,
+        "exactWeight": 1.0,
+        "frustumBounds": {
+          "maxX": 20320.0,
+          "maxZ": 20320.0001220703,
+          "minX": 19680.0,
+          "minZ": 19680.0001220703
+        },
+        "geometryWeight": 1.0,
+        "haloM": 22.6789927482605,
+        "marginM": 105.32100725174,
+        "maximumPixelFootprintM": 0.625009536888685,
+        "pageBounds": {
+          "maxX": 20448.0,
+          "maxZ": 20448.0001220703,
+          "minX": 19552.0,
+          "minZ": 19552.0001220703
+        },
+        "pendingAtlas": false,
+        "phase": 2.0,
+        "reason": "complete-frustum-plus-halo",
+        "referenceY": 2170.05847167969,
+        "residentTerrainBounds": {
+          "maxX": 20612.8125,
+          "maxZ": 20612.8125,
+          "minX": 19345.3125,
+          "minZ": 19345.3125
+        },
+        "safePhase": 2.0,
+        "spatialBlend": "none; one phase for the whole viewport",
+        "transitionM": 45.7514563106796,
+        "treePage": {
+          "bounds": {
+            "maxX": 22000.0,
+            "maxZ": 22000.0,
+            "minX": 18000.0,
+            "minZ": 18000.0
+          },
+          "complete": true,
+          "count": 67221.0,
+          "includeOverhang": true,
+          "limitedBy": "none",
+          "requestedBounds": {
+            "maxX": 22000.0,
+            "maxZ": 22000.0,
+            "minX": 18000.0,
+            "minZ": 18000.0
+          },
+          "retention": 1.0
+        }
+      },
+      "widthM": 640,
+      "worldId": "8d07d5dcd69b258208c2040cd4a37720"
+    },
+    {
+      "focusX": 20160.0,
+      "path": "res://captures/v9-final-spatial/pan-20160",
+      "state": {
+        "activeAtlasWorldId": "8d07d5dcd69b258208c2040cd4a37720",
+        "atlasBounds": {
+          "maxX": 20608.0,
+          "maxZ": 20448.0001220703,
+          "minX": 19712.0,
+          "minZ": 19552.0001220703
+        },
+        "crownHeightEnvelopeM": 20.0,
+        "exactWeight": 1.0,
+        "frustumBounds": {
+          "maxX": 20480.0,
+          "maxZ": 20320.0001220703,
+          "minX": 19840.0,
+          "minZ": 19680.0001220703
+        },
+        "geometryWeight": 1.0,
+        "haloM": 22.6789927482605,
+        "marginM": 105.32100725174,
+        "maximumPixelFootprintM": 0.625009536888685,
+        "pageBounds": {
+          "maxX": 20608.0,
+          "maxZ": 20448.0001220703,
+          "minX": 19712.0,
+          "minZ": 19552.0001220703
+        },
+        "pendingAtlas": false,
+        "phase": 2.0,
+        "reason": "complete-frustum-plus-halo",
+        "referenceY": 2139.04915664791,
+        "residentTerrainBounds": {
+          "maxX": 20772.8125,
+          "maxZ": 20612.8125,
+          "minX": 19505.3125,
+          "minZ": 19345.3125
+        },
+        "safePhase": 2.0,
+        "spatialBlend": "none; one phase for the whole viewport",
+        "transitionM": 45.7514563106796,
+        "treePage": {
+          "bounds": {
+            "maxX": 22000.0,
+            "maxZ": 22000.0,
+            "minX": 18000.0,
+            "minZ": 18000.0
+          },
+          "complete": true,
+          "count": 67221.0,
+          "includeOverhang": true,
+          "limitedBy": "none",
+          "requestedBounds": {
+            "maxX": 22000.0,
+            "maxZ": 22000.0,
+            "minX": 18000.0,
+            "minZ": 18000.0
+          },
+          "retention": 1.0
+        }
+      },
+      "widthM": 640,
+      "worldId": "8d07d5dcd69b258208c2040cd4a37720"
+    },
+    {
+      "focusX": 20320.0,
+      "path": "res://captures/v9-final-spatial/pan-20320",
+      "state": {
+        "activeAtlasWorldId": "8d07d5dcd69b258208c2040cd4a37720",
+        "atlasBounds": {
+          "maxX": 20768.0,
+          "maxZ": 20448.0001220703,
+          "minX": 19872.0,
+          "minZ": 19552.0001220703
+        },
+        "crownHeightEnvelopeM": 20.0,
+        "exactWeight": 1.0,
+        "frustumBounds": {
+          "maxX": 20640.0,
+          "maxZ": 20320.0001220703,
+          "minX": 20000.0,
+          "minZ": 19680.0001220703
+        },
+        "geometryWeight": 1.0,
+        "haloM": 22.6789927482605,
+        "marginM": 105.32100725174,
+        "maximumPixelFootprintM": 0.625009536888685,
+        "pageBounds": {
+          "maxX": 20768.0,
+          "maxZ": 20448.0001220703,
+          "minX": 19872.0,
+          "minZ": 19552.0001220703
+        },
+        "pendingAtlas": false,
+        "phase": 2.0,
+        "reason": "complete-frustum-plus-halo",
+        "referenceY": 2106.71385829634,
+        "residentTerrainBounds": {
+          "maxX": 20932.8125,
+          "maxZ": 20612.8125,
+          "minX": 19665.3125,
+          "minZ": 19345.3125
+        },
+        "safePhase": 2.0,
+        "spatialBlend": "none; one phase for the whole viewport",
+        "transitionM": 45.7514563106796,
+        "treePage": {
+          "bounds": {
+            "maxX": 22000.0,
+            "maxZ": 22000.0,
+            "minX": 18000.0,
+            "minZ": 18000.0
+          },
+          "complete": true,
+          "count": 67221.0,
+          "includeOverhang": true,
+          "limitedBy": "none",
+          "requestedBounds": {
+            "maxX": 22000.0,
+            "maxZ": 22000.0,
+            "minX": 18000.0,
+            "minZ": 18000.0
+          },
+          "retention": 1.0
+        }
+      },
+      "widthM": 640,
+      "worldId": "8d07d5dcd69b258208c2040cd4a37720"
+    }
+  ],
+  "oblique": {
+    "activeAtlasWorldId": "8d07d5dcd69b258208c2040cd4a37720",
+    "atlasBounds": {
+      "maxX": 20674.7592773438,
+      "maxZ": 20443.9962158203,
+      "minX": 19325.2407226563,
+      "minZ": 19124.7769775391
+    },
+    "crownHeightEnvelopeM": 20.0,
+    "exactWeight": 1.0,
+    "frustumBounds": {
+      "maxX": 20546.7592773438,
+      "maxZ": 20315.9962158203,
+      "minX": 19453.2407226563,
+      "minZ": 19252.7769775391
+    },
+    "geometryWeight": 1.0,
+    "haloM": 22.6789927482605,
+    "marginM": 105.32100725174,
+    "maximumPixelFootprintM": 2.03355387357511,
+    "pageBounds": {
+      "maxX": 20674.7592773438,
+      "maxZ": 20443.9962158203,
+      "minX": 19325.2407226563,
+      "minZ": 19124.7769775391
+    },
+    "pendingAtlas": false,
+    "phase": 2.0,
+    "reason": "complete-frustum-plus-halo",
+    "referenceY": 2170.05847167969,
+    "residentTerrainBounds": {
+      "maxX": 21252.8125,
+      "maxZ": 21252.8125,
+      "minX": 18705.3125,
+      "minZ": 18705.3125
+    },
+    "safePhase": 2.0,
+    "spatialBlend": "none; one phase for the whole viewport",
+    "transitionM": 45.7514563106796,
+    "treePage": {
+      "bounds": {
+        "maxX": 22000.0,
+        "maxZ": 22000.0,
+        "minX": 18000.0,
+        "minZ": 18000.0
+      },
+      "complete": true,
+      "count": 67221.0,
+      "includeOverhang": true,
+      "limitedBy": "none",
+      "requestedBounds": {
+        "maxX": 22000.0,
+        "maxZ": 22000.0,
+        "minX": 18000.0,
+        "minZ": 18000.0
+      },
+      "retention": 1.0
+    }
+  },
+  "scope": "Real retained V8 source and candidate inventory unchanged; production whole-view canopy plus camera pans across former 480m query edges"
+}
