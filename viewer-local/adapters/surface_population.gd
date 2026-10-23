@@ -31,7 +31,7 @@ static func prepare(packet: Dictionary, focus: Dictionary, width_m: float, viewp
 		var candidate: Dictionary = candidates[i] if columns.is_empty() else {"stableId":columns.ids[i],"family":columns.families[int(columns.family[i])],"x":px,"y":columns.positions[i*3+1],"z":pz,"size":size,"orientation":columns.orientation[i],"rank":columns.rank[i],"variant":columns.variant[i],"crownRadiusM":crown_radius}
 		if str(candidate.family)=="tree":
 			if unsupported.has(str(candidate.stableId)): continue
-			if canopy_bounds.is_empty() or not Canopy.can_select(px,pz,crown_radius,canopy_bounds): continue
+			if canopy_bounds.is_empty() or not Canopy.can_select(px,pz,crown_radius,canopy_bounds,float(candidate.get("rank",0.0))): continue
 			candidate=candidate.duplicate()
 			candidate["canopyClass"]=Canopy.radius_class(crown_radius)
 		if families.has(candidate.family): eligible.append(candidate)

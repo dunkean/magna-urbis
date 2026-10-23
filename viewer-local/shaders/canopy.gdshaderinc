@@ -1,4 +1,5 @@
-// canopy-r1. RGB and coverage are linear. Counts have NO mipmaps.
+// canopy-r2. RGB and coverage are linear. Counts have NO mipmaps.
+#include "res://shaders/canopy_meso.gdshaderinc"
 uniform bool canopy_enabled = false;
 uniform sampler2D canopy_coverage : filter_linear_mipmap, repeat_disable;
 uniform sampler2D canopy_counts : filter_nearest, repeat_disable;
@@ -42,12 +43,13 @@ float canopy_visible_at(ivec2 texel,float footprint_m) {
 // Exact identity at each filtered query: V+(1-V)*G=C. Budgeted-out and
 // culled candidates remain in C, so a geometry cap never clears the forest.
 float surface_canopy_residual(vec2 world_xz,float footprint_m,float mean_cover) {
-    if(!canopy_enabled) return clamp(mean_cover,0.0,1.0);
+    float meso=canopy_meso_cover(world_xz,footprint_m,mean_cover);
+    if(!canopy_enabled) return meso;
     vec2 uv=((world_xz-canopy_origin)/canopy_spacing_m+vec2(0.5))/canopy_grid_size;
     float edge=min(min(world_xz.x-canopy_bounds.x,canopy_bounds.z-world_xz.x),min(world_xz.y-canopy_bounds.y,canopy_bounds.w-world_xz.y));
     float local=smoothstep(0.0,max(canopy_fallback_blend_m,0.00001),edge);
     float lod=max(0.0,log2(max(footprint_m/canopy_spacing_m,1.0)));
-    float total=mix(clamp(mean_cover,0.0,1.0),textureLod(canopy_coverage,uv,lod).r,local);
+    float total=mix(meso,textureLod(canopy_coverage,uv,lod).r,local);
     vec2 grid=clamp(uv*canopy_grid_size-vec2(0.5),vec2(0.0),canopy_grid_size-vec2(1.001));
     ivec2 cell=ivec2(floor(grid)); vec2 f=fract(grid);
     // Interpolate TRANSMITTANCES, never counts: pow(E[count]) creates area.
@@ -55,6 +57,6 @@ float surface_canopy_residual(vec2 world_xz,float footprint_m,float mean_cover) 
         mix(canopy_visible_at(cell+ivec2(0,1),footprint_m),canopy_visible_at(cell+ivec2(1,1),footprint_m),f.x),f.y);
     // Selection keeps entire selected crowns inside the full-confidence atlas
     // interior. Consequently no geometry exists in the analytic-mean halo.
-    visible=min(total,visible*local);
+    visible=min(total,visible);
     return visible>=0.999999 ? 0.0 : clamp((total-visible)/(1.0-visible),0.0,1.0);
 }

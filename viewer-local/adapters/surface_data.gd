@@ -2,6 +2,7 @@ class_name SurfaceData
 extends RefCounted
 const Geometry = preload("res://adapters/surface_geometry.gd")
 const UrbanReader = preload("res://adapters/urban_reader.gd")
+const Layers=preload("res://adapters/surface_layers.gd")
 const Detail=preload("res://adapters/surface_geometry_detail.gd")
 const MAX_PACKET_BYTES := 512*1024*1024
 
@@ -39,6 +40,8 @@ static func decode_packet(bytes: PackedByteArray) -> Dictionary:
 		# Validate every address before decoding any payload allocation.
 		for descriptor in manifest.arrays:
 			if not descriptor is Dictionary or not strides.has(descriptor.get("dtype","")): return {}
+			var expected=Layers.expected_wire_dtype(descriptor.get("path",[]))
+			if not expected.is_empty() and descriptor.dtype!=expected:return {}
 			var stride: int = strides[descriptor.dtype]
 			if not _integer(descriptor.get("length"),0,MAX_PACKET_BYTES/stride) or not _integer(descriptor.get("offset"),0,payload_length): return {}
 			if int(descriptor.offset)%stride!=0 or int(descriptor.offset)+int(descriptor.length)*stride>payload_length: return {}
@@ -160,6 +163,7 @@ static func unpack_world(packet: Dictionary) -> Dictionary:
 	return value
 
 static func validate_world(world: Dictionary) -> bool:
+	if not Layers.validate(world):return false
 	if not world.get("terrain") is Dictionary or not world.get("fields") is Dictionary or not world.get("materials") is Array:
 		push_error("Malformed SurfaceWorld dictionaries")
 		return false
@@ -315,23 +319,29 @@ static func prepare(world: Dictionary, origin: Dictionary, view_width: float, se
 	terrain = canonical.grid
 	var fields: Dictionary = canonical.fields
 	var result := {"worldId":world.id,"world":world,"packet":packet,"generation":serial,"origin":origin,"spacing":spacing,"localStart":local_start,"height":null if skip_height else height,"control":null if skip_height else control,"contextGrid":terrain,"displaySource":display_source,"sceneRequest":scene_request}
+	var layers=Layers.prepare(world,canonical)
+	result.surfaceLayers=layers
+	result.surfaceLayersMetadata=layers.get("metadata",{}).duplicate(true)
+	result.surfaceLayersMetadata["fieldsVersion"]=world.get("surfaceLayers",{}).get("fieldsVersion","")
+	result.surfaceLayersMetadata["canonicalVersion"]=world.get("versions",{}).get("surfaceLayers","")
 	if skip_context:
 		_append_scene(result,world,packet,origin,view_width,scene_request)
 		result.prepareMs=(Time.get_ticks_usec()-start)/1000.0
 		return result
-	var ids := Image.create(int(terrain.width),int(terrain.height),false,Image.FORMAT_RGBAF)
+	var ids:Image=layers.groundIds if layers.get("available",false) else Image.create(int(terrain.width),int(terrain.height),false,Image.FORMAT_RGBAF)
 	var state := Image.create(int(terrain.width),int(terrain.height),false,Image.FORMAT_RGBAF)
 	var rock := Image.create(int(terrain.width),int(terrain.height),false,Image.FORMAT_RF)
-	var average := Image.create(int(terrain.width),int(terrain.height),false,Image.FORMAT_RGBAF)
+	var average:Image=layers.groundAverage if layers.get("available",false) else Image.create(int(terrain.width),int(terrain.height),false,Image.FORMAT_RGBAF)
 	for z in int(terrain.height):
 		for x in int(terrain.width):
 			var i: int = z*int(terrain.width)+x
+			state.set_pixel(x,z,Color(float(fields.treeCover[i]),float(fields.wetness[i]),float(fields.snow[i]),float(fields.grassCover[i])))
+			rock.set_pixel(x,z,Color(float(fields.bedrock[i]),0,0,1))
+			if layers.get("available",false):continue
 			var primary := int(fields.material[i])
 			var secondary := int(fields.materialSecondary[i]) if fields.has("materialSecondary") else primary
 			var blend := float(fields.materialBlend[i]) if fields.has("materialBlend") else 0.0
 			ids.set_pixel(x,z,Color(float(primary),float(secondary),blend,1))
-			state.set_pixel(x,z,Color(float(fields.treeCover[i]),float(fields.wetness[i]),float(fields.snow[i]),float(fields.grassCover[i])))
-			rock.set_pixel(x,z,Color(float(fields.bedrock[i]),0,0,1))
 			var material: Dictionary = world.materials[primary]
 			var rgb: Array = material.colorLinear
 			var rgb_secondary: Array = world.materials[secondary].colorLinear

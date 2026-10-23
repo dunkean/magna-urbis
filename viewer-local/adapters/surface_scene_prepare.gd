@@ -26,6 +26,9 @@ static func prepare(request: Dictionary) -> Dictionary:
 	var started := Time.get_ticks_usec()
 	var result := Data.prepare(request.world,request.origin,request.width,request.generation,request.packet,request.skipContext,request.displaySource,request.skipHeight,request.sceneRequest)
 	result.worldRevision=request.get("worldRevision",0)
+	result.viewWidth=request.width
+	result.focus=request.focus
+	result.oblique=request.oblique
 	for key in ["heightImageSize","displaySamples","physicalLineage","contextKey","heightKey","liveSerial","presentationMode"]:
 		if request.has(key):result[key]=request[key]
 	result.geometryDetail=Detail.prepare(request.world)
@@ -48,7 +51,11 @@ static func prepare(request: Dictionary) -> Dictionary:
 			var candidate: Dictionary = result.populations.families[family][i].duplicate(false)
 			var rgb: Array = [0.055,0.105,0.036] if family=="tree" else [0.10,0.20,0.065]
 			if family=="boulder": rgb=rock_colors.get(int(Data.field_at(request.world,"sourceRock",candidate.x,candidate.z,true)),[0.33,0.32,0.29])
-			elif family=="debris" or family=="grass": rgb=request.world.materials[int(Data.field_at(request.world,"material",candidate.x,candidate.z,true))].colorLinear
+			elif family=="debris" or family=="grass":
+				# A blade is live low vegetation, never an arbitrary terrain recipe.
+				var recipe_id="forest-litter" if family=="debris" else "vegetation-litter"
+				for recipe in request.world.materials:
+					if recipe.id==recipe_id: rgb=recipe.colorLinear;break
 			if cartographic:
 				var css=str(map_palette.get("treeFill" if family=="tree" or family=="shrub" else "grass" if family=="grass" else "inkSoft",""))
 				var color=Presentation.color_linear(css,Vector3(0.2,0.3,0.2));rgb=[color.x,color.y,color.z]

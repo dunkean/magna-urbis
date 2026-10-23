@@ -72,20 +72,71 @@
     ground+=(macro-0.5)*0.18*macro_band*min(base,vec3(1.0)-base);
     float wet=clamp(state.g,0.0,1.0);
     ground*=1.0-wet*0.28;
-    ground=mix(ground,canopy_linear_albedo,surface_canopy_residual(v_vertex.xz,canopy_pixel_footprint(v_vertex.xz,PROJECTION_MATRIX*VIEW_MATRIX,VIEWPORT_SIZE),state.r));
+
     ground=mix(ground,vec3(0.79,0.83,0.87),state.b);
-    ALBEDO=display_color(clamp(ground,vec3(0.0),vec3(0.95)));
+
     float base_roughness=clamp(mix(mean_palette.a,nr.a,0.7)-wet*0.28+state.b*0.05,0.12,1.0);
     float normal_length=clamp(length(nr.xyz*2.0-1.0),0.05,1.0);
     float normal_variance=(1.0-normal_length)/normal_length;
     ROUGHNESS=sqrt(clamp(base_roughness*base_roughness+normal_variance*micro_strength*micro_strength,0.0144,1.0));
-    NORMAL_MAP=mix(vec3(0.5,0.5,1.0),nr.xyz,fine*micro_strength*(1.0-state.b));
+    vec3 composed_normal=mix(vec3(0.5,0.5,1.0),nr.xyz,fine*micro_strength*(1.0-state.b));
+    // Sol and low cover remain independently available underneath the crowns.
+    // Alpha is applied to the four texels BEFORE categorical material weights.
+    vec4 low_premul=surface_layers_explicit ? texture(low_cover_average,source_uv) : vec4(0.0);
+    float low_alpha=clamp(low_premul.a,0.0,1.0);
+    vec3 low_base=low_premul.rgb/max(low_alpha,0.000001);
+    vec4 low_ah=vec4(0.0); vec4 low_nr=vec4(0.0); vec4 low_palette=vec4(0.0);
+    vec3 low_source_mean=vec3(0.0); vec3 low_map_mean=vec3(0.0); float low_fine=0.0;
+    float low_weight_sum=0.0;
+    if(surface_layers_explicit) {
+        vec4 low_slots[4];
+        low_slots[0]=texelFetch(low_cover_ids,cell,0);
+        low_slots[1]=texelFetch(low_cover_ids,cell+ivec2(1,0),0);
+        low_slots[2]=texelFetch(low_cover_ids,cell+ivec2(0,1),0);
+        low_slots[3]=texelFetch(low_cover_ids,cell+ivec2(1,1),0);
+        for(int i=0;i<4;i++) {
+            float coverage_weight=surface_weights[i]*clamp(low_slots[i].a,0.0,1.0);
+            for(int j=0;j<2;j++) {
+                int id=clamp(int((j==0?low_slots[i].r:low_slots[i].g)+0.5),0,31);
+                float weight=coverage_weight*(j==0?1.0-low_slots[i].b:low_slots[i].b);
+                if(weight<=0.000001) continue;
+                vec4 a; vec4 n;
+                if(presentation_mode==0) sample_surface_material(v_vertex,surface_dx,surface_dy,w_normal,w_tangent,w_binormal,id,a,n);
+                else { a=vec4(0.0); n=vec4(0.5,0.5,1.0,1.0); }
+                low_ah+=a*weight; low_nr+=n*weight; low_palette+=palette[id]*weight;
+                low_source_mean+=layer_mean[material_layers[id]].rgb*weight;
+                low_map_mean+=map_palette[id].rgb*weight;
+                low_fine+=(1.0-smoothstep(material_scales[id]*0.2,material_scales[id]*1.5,footprint))*weight;
+                low_weight_sum+=weight;
+            }
+        }
+    }
+    float safe_low_weight=max(low_weight_sum,0.000001);
+    low_ah/=safe_low_weight;low_nr/=safe_low_weight;low_palette/=safe_low_weight;
+    low_source_mean/=safe_low_weight;low_map_mean/=safe_low_weight;low_fine/=safe_low_weight;
+    vec3 low_lower=low_base/max(low_source_mean,vec3(0.0001));
+    vec3 low_upper=(vec3(1.0)-low_base)/max(vec3(1.0)-low_source_mean,vec3(0.0001));
+    float low_contrast=0.82*clamp(min(min(min(low_lower.x,low_lower.y),low_lower.z),min(min(low_upper.x,low_upper.y),low_upper.z)),0.0,1.0);
+    vec3 low_response=(low_base+low_ah.rgb*low_contrast)*(1.0-wet*0.28);
+    float low_rough=clamp(mix(low_palette.a,low_nr.a,0.7)-wet*0.28,0.12,1.0);
+    vec3 low_normal=mix(vec3(0.5,0.5,1.0),low_nr.xyz,low_fine*micro_strength);
+    float visible_low=(show_low_cover && surface_layers_explicit)?low_alpha:0.0;
+    if(!show_ground) { ground=vec3(0.0); composed_normal=vec3(0.5,0.5,1.0); ROUGHNESS=1.0; }
+    ground=mix(ground,low_response,visible_low);
+    ROUGHNESS=sqrt(mix(ROUGHNESS*ROUGHNESS,low_rough*low_rough,visible_low));
+    composed_normal=mix(composed_normal,low_normal,visible_low);
+    float crown_mask=show_trees?surface_canopy_residual(v_vertex.xz,canopy_pixel_footprint(v_vertex.xz,PROJECTION_MATRIX*VIEW_MATRIX,VIEWPORT_SIZE),state.r):0.0;
+    ground=mix(ground,canopy_linear_albedo,crown_mask);
+    ALBEDO=display_color(clamp(ground,vec3(0.0),vec3(0.95)));
+    NORMAL_MAP=composed_normal;
     NORMAL_MAP_DEPTH=0.75;
     AO=1.0;
     if(presentation_mode==1) {
         vec3 light_direction=normalize(vec3(-0.5,1.0,-0.5));
         float relief=mix(1.0,clamp(dot(w_normal,light_direction)/light_direction.y,0.55,1.15),clamp(map_relief_shade,0.0,1.0));
-        vec3 mapped=mix(map_mean,canopy_linear_albedo,surface_canopy_residual(v_vertex.xz,canopy_pixel_footprint(v_vertex.xz,PROJECTION_MATRIX*VIEW_MATRIX,VIEWPORT_SIZE),state.r));
+        vec3 mapped=show_ground?map_mean:vec3(0.0);
+        mapped=mix(mapped,low_map_mean,visible_low);
+        mapped=mix(mapped,canopy_linear_albedo,crown_mask);
         ALBEDO=display_color(mapped*relief);
         EMISSION=vec3(0.0);
         NORMAL_MAP=vec3(0.5,0.5,1.0);
@@ -99,3 +150,14 @@
     if(diagnostic==5) { ALBEDO=vec3(0.0); EMISSION=normalize(w_normal)*0.5+0.5; NORMAL_MAP=vec3(0.5,0.5,1.0); }
 
     if(diagnostic==6) { ALBEDO=vec3(0.0); EMISSION=display_color(vec3(clamp(detail_slope/1.570796327,0.0,1.0),detail_exposure,detail_confidence)); NORMAL_MAP=vec3(0.5,0.5,1.0); }
+
+    // Single-variable unlit probes isolate fields from illumination and normals.
+    if(diagnostic>=7 && diagnostic<=12) {
+        vec3 probe=base;
+        if(diagnostic==8) probe=vec3(low_alpha);
+        if(diagnostic==9) probe=vec3(state.r);
+        if(diagnostic==10) probe=normalize(w_normal)*0.5+0.5;
+        if(diagnostic==11) probe=low_base;
+        if(diagnostic==12) probe=vec3(crown_mask);
+        ALBEDO=vec3(0.0); EMISSION=display_color(probe); ROUGHNESS=1.0; SPECULAR=0.0; NORMAL_MAP=vec3(0.5,0.5,1.0);
+    }
