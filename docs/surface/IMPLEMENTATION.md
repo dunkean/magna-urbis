@@ -212,6 +212,18 @@ réponses et les objets de chaque étage. Les probes réels et les fixtures d'al
 0/1 qualifient l'absence de contamination du support ; ils ne remplacent pas une
 acceptation artistique de la scène. Voir [les preuves GPU](evidence/native-layers/README.md).
 
+La [canopée r4](evidence/canopy-r4/README.md) corrige les normales des véritables
+instances MultiMesh non uniformes : le contrôle GPU les rend identiques à la
+sphère MeshInstance de référence. Le filtrage optique exact/méso partage le même
+spectre physique ; le LOD géométrique utilise un seuil distinct en pixels. La
+couverture combinée de la page réelle reste à moins de 0,096 point de sa cible.
+La réponse d'ombre est optique sur toute la canopée : les arbres/troncs seuls ne
+projettent plus d'ombres géométriques Godot. Les ombres du terrain et des bâtiments
+restent actives. La transmission et la hauteur de couronne de référence sont des
+paramètres déclarés ; ni énergie physique des ombres, ni pénombre, ni silhouettes
+photographiques ne sont qualifiées. Des différences de représentation restent
+perceptibles aux échelles intermédiaires et en oblique.
+
 Orogen expose un vrai graphe et des couches climatiques, mais aucun catalogue de
 lithologie dans les sorties auditées. L'importateur exige donc une géologie
 catégorielle indépendante. Les températures sont converties depuis la convention
