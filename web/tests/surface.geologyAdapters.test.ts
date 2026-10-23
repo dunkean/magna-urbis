@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { applySurfaceGeology, copySurfaceGeologyQuery, surfaceGeologyScenario, withSurfaceGeologyQuery } from '../src/surface/adapters/geology';
 import { createTiltedStrataScenario, rockUnitAtScenario } from '../src/surface/geologyScenario';
-import { decorToSurfaceInput } from '../src/surface/adapters/magna';
+import { decorToSurfaceInput, worldToSurfaceInput } from '../src/surface/adapters/magna';
+import { magnaSurfacePresentation } from '../src/surface/presentation';
+import { PALETTES } from '../src/render/styles';
 import { compileFromDecor, exportSurfaceInputPacket, exportSurfacePacket } from '../src/surface/adapters/export';
 import { prepareSurfaceDecorWorkerSource } from '../src/ui/surfaceWorkerSource';
 import type { Decor } from '../src/ui/decor';
@@ -54,6 +56,27 @@ describe('explicit shared source geology', () => {
     expect(override.world.geology.bedrock).toEqual(input.geology!.bedrock);
     expect(surfaceGeologyScenario((override.source.meta as any).query)).toEqual(s);
     expect(applySurfaceGeology(input,'')).toBe(input);
+  });
+  it('retains source 2D routing and flow exactly while allowing the same explicit scenario', () => {
+    const receiver=new Int32Array([-1,0,0,1]), flow=new Float32Array([1,2,3,4]), heights=new Float32Array([0,10,20,30]);
+    const world={seed:'source-seed',terrain:{height:{w:2,h:2,cell:10,data:heights},receiver,flow:{data:flow},water:new Uint8Array([0,1,2,3])}} as any;
+    const identity={id:'source-native-world',version:'generation-v1',sourceLOD:7,nativeSpacingM:10};
+    const input=worldToSurfaceInput(world,identity,undefined,{query:'surface_geology=tilted-strata-v1'});
+    expect(input.hydrology!.downstream).toEqual(receiver);
+    expect(input.hydrology!.contributingAreaM2).toEqual(new Float32Array([100,200,300,400]));
+    expect(input.hydrology!.waterClass).toEqual(new Uint8Array([0,3,2,1]));
+    expect(input.geology!.version).toContain('tilted-strata-v1:');
+    input.hydrology!.downstream![0]=3; expect(receiver[0]).toBe(-1);
+    expect(heights).toEqual(new Float32Array([0,10,20,30]));
+  });
+  it('keeps every existing mapper palette independent of the authored geology opt-in', () => {
+    const scenario=createTiltedStrataScenario();
+    for(const style of Object.keys(PALETTES)) {
+      const query=new URLSearchParams({style}).toString();
+      const before=magnaSurfacePresentation(query), after=magnaSurfacePresentation(withSurfaceGeologyQuery(query,scenario));
+      expect(after.palette).toEqual(before.palette); expect(after.mapStyle).toBe(before.mapStyle);
+      expect(after.policy.materialAssignments).toBe('preserved');
+    }
   });
   it('preserves Magna water network identity, levels, class encoding and source geometry across producers', () => {
     const d=decor(); d.raster.height.fill(0); d.raster.water.set([1,2,3]); d.raster.waterLevel.fill(4); d.raster.riverIds.fill(731); d.raster.riverWidth.fill(2);
