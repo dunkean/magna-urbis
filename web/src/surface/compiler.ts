@@ -17,7 +17,7 @@ function fingerprint(value: unknown): string {
       for (let j = 0; j < bytes.length; j++) hash = Math.imul(hash ^ bytes[j], 16777619);
     } else if (Array.isArray(v)) { feed('['); for (const x of v) walk(x); feed(']'); }
     else if (v && typeof v === 'object') {
-      feed('{'); for (const key of Object.keys(v).sort()) { feed(key + ':'); walk((v as Record<string, unknown>)[key]); } feed('}');
+      feed('{'); for (const key of Object.keys(v).filter(key => (v as Record<string, unknown>)[key] !== undefined).sort()) { feed(key + ':'); walk((v as Record<string, unknown>)[key]); } feed('}');
     } else feed(typeof v + ':' + String(v) + ';');
   };
   walk(value);
