@@ -15,7 +15,7 @@ import { decodeSurfaceBinary, encodeSurfaceBinary } from '../src/surface/binary.
 import { compileSurfaceWorld } from '../src/surface/compiler.ts';
 import { hashString } from '../src/surface/model.ts';
 import { registrationFieldFingerprint } from '../src/surface/registrationBinding.ts';
-import { verifyMotionLiveDisplay } from './surface_navigation_evidence.ts';
+import { isDominantFineDisplay,verifyMotionLiveDisplay } from './surface_navigation_evidence.ts';
 
 const args = process.argv.slice(2);
 const option = (name, fallback) => {
@@ -150,8 +150,8 @@ async function runNativeTour(sessionId) {
   const nativeAccepted=report.viewer.metrics.liveAcceptance??[],nativeRendered=report.viewer.metrics.renderEvents??[];
   for(const capture of captures){
     const display=capture.renderedSnapshot;
-    if(!display?.source?.sourceLODKnown||!nativeAccepted.some(e=>e.worldId===display.worldId&&e.requestSerial===display.liveSerial&&e.sourceEpoch===display.sourceEpoch&&e.sceneEpoch===display.sceneEpoch)
-      ||!nativeRendered.some(e=>e.worldId===display.worldId&&e.liveSerial===display.liveSerial&&e.appliedTickMs===display.appliedTickMs)
+    if(!isDominantFineDisplay(display)||!nativeAccepted.some(e=>e.worldId===display.worldId&&e.requestSerial===display.liveSerial&&e.sourceEpoch===display.sourceEpoch&&e.sceneEpoch===display.sceneEpoch)
+      ||!nativeRendered.some(e=>isDominantFineDisplay(e)&&e.worldId===display.worldId&&e.liveSerial===display.liveSerial&&e.appliedTickMs===display.appliedTickMs)
       ||!packets.some(e=>e.packet?.worldId===display.worldId))throw new Error(`Native ${capture.widthM}m capture was not linked to a displayed live source packet`);
   }
   const loadedBinding=report.viewer.metrics.loadedLiveBinding;
