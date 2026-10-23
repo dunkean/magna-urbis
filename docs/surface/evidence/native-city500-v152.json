@@ -1,0 +1,362 @@
+{
+  "format": "magna-native-city500-retained-layer-qualification",
+  "version": 1,
+  "status": "retained-plan-compatibility-passed-complete-house-realization-not-qualified",
+  "rootRuntimeHead": "d3c6b1d362ec466a3c8b50a7b5db8c6518f05353",
+  "runtimeAndHeadUnchangedAcrossCaptures": true,
+  "scope": "Four static native viewer captures, same 500 genuine accepted source plans. No fresh neural city, fine-child contribution, complete roof-realization, pixel-per-building visibility or 60 FPS claim.",
+  "rootEvidenceDirectory": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\city500-v152-final",
+  "fixture": {
+    "sha256": "91ad2a522f159f67d629dd46e36d97c1b1786222eaa00bac25454bf2834e7ef2",
+    "originalInvalidBindingFixtureSha256": "9d24f903baf03b93acbe66b49374616081a389eb512aeabdad10daa197e46f50",
+    "changedMetadataPaths": [
+      "terrainParents.0.canonicalContextId",
+      "source.canonicalContextId"
+    ],
+    "entirePhysicalPayloadByteIdentical": true,
+    "physicalPayloadSha256": "4ffd3161b373d288e9524ff32f0ad386af2d637860be9b170c052b51fa22a019",
+    "sourceUrbanIDsMaterialsLevelsHeightsUnchanged": true,
+    "parentLODUnrecorded": true,
+    "decoderUsed": false,
+    "originalNegativeFixturePreserved": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-adapters-2026-10-23\\web\\out\\surface\\city500-v152-qualification\\city500-negative-parent-binding.surfacebin"
+  },
+  "largeFrame": {
+    "sourceBuildings": 500,
+    "sourceFootprintsFullyContained": 500,
+    "allSourceIDsSubmitted": true
+  },
+  "closeTopFrame": {
+    "method": "densest800m top frame tested at each exact source footprint area centroid; holes subtract area; no synthetic building or translated geometry",
+    "focusSourceBuildingId": "layout-f9dab5910f08a8a2/block-63453de88e667573/parcel-7fa87557e25d475e/building",
+    "fullyContainedSourceFootprints": 198,
+    "sourceCentroidsInFrame": 204,
+    "strictSubsetOf500": true,
+    "notClaimedAsGPUOcclusionCount": true
+  },
+  "closeObliqueFrame": {
+    "method": "native triangle projected bounds with production48deg oblique camera and1280x800 frame; targetheight sampled original retained bilinear parent; geometric query not GPU occlusion count",
+    "fullyContainedNativeProjectedBounds": 214,
+    "intersectingNativeProjectedBounds": 223,
+    "strictSubsetOf500": true,
+    "notClaimedAsGPUOcclusionCount": true
+  },
+  "captures": [
+    {
+      "name": "blueprint-top",
+      "image": "blueprint-top.png",
+      "imageSha256": "d730274c0dd5d7d1526b4f075f7e295e38edcceeba564c510ef67f827b6a725a",
+      "metrics": "blueprint-top.json",
+      "metricsSha256": "0989fe476d8ac82fa0267f31a5e6c813f142724873d50daea088e91123a2c981",
+      "frameWidthM": 8400,
+      "focus": {
+        "x": 6846.66,
+        "z": 8024.22
+      },
+      "backend": "forward_plus",
+      "adapter": "NVIDIA GeForce RTX 4090",
+      "staticFramesRequested": 32,
+      "exitCode": 0,
+      "runtimeErrorCount": 0,
+      "totalStartupAndCaptureMs": 45647,
+      "submittedNativeBuildings": 500,
+      "submittedProxyBuildings": 0,
+      "submittedMaterialBatches": 6,
+      "submittedSourceIDsExact": true,
+      "submittedIDsStrictSubset": false,
+      "submittedIDsSha256": "a0e55bcf789d43431cdbefef017eaf463759ef6d637b30e24cfa13994e51d078",
+      "cartographicRoofOverlayRecords": 500,
+      "nativeMeshSubmissionBudgetLimited": false,
+      "visibilityScope": "submitted cache-window mesh IDs, NOT pixel-level visibility counts",
+      "surfaceLayers": {
+        "version": "surface-layers-1",
+        "groundAvailability": "explicit",
+        "lowCoverAvailability": "explicit",
+        "legacyFallback": false,
+        "renderMode": "three-physical-layers",
+        "textureSource": "canonical",
+        "textureGrid": {
+          "height": 1024.0,
+          "originX": 7.8125,
+          "originZ": 7.8125,
+          "spacingM": 15.625,
+          "width": 1024.0
+        },
+        "visibility": {
+          "ground": true,
+          "lowCover": true,
+          "trees": true
+        }
+      },
+      "actualSourceAtFocus": {
+        "type": "retained-parent",
+        "weight": 1,
+        "id": "infinite:47:e6f0c520536077f7cdd3284dbd1ce85e",
+        "version": "decoder-v12-nyquist-notch:magna-retained-v1:e2bf5473c0ff:f21afa261ed7",
+        "retainedSampleSpacingM": 15.625,
+        "sourceLODKnown": false
+      },
+      "activeChildContributionAtFocus": 0,
+      "roadProjectors": 256,
+      "water": {
+        "authority": "magna-urbis-fixed-hydrology",
+        "waterPresentation": "source-map-terrain-projection",
+        "sourceVectorRequestedAreaM2": 2716542.16819078,
+        "sourceVectorAreaM2": 2716542.58946538,
+        "sourceVectorMissingAreaM2": 0.0,
+        "sourceVectorCoverageComplete": true,
+        "missingLevelTriangles": 0,
+        "budgetLimited": false,
+        "fixedHydrologyFallbackReason": null,
+        "vectorBedDiagnosticSamples": 3901,
+        "vectorBedDiagnosticConflicts": 1680,
+        "vectorBedDiagnosticMaximumDeltaM": 16.4040985107422
+      }
+    },
+    {
+      "name": "aerial-top",
+      "image": "aerial-top.png",
+      "imageSha256": "61895b73869843107c7d851d5f3680bff1d8cd6cecc10f86aeb9e51eeb8cd817",
+      "metrics": "aerial-top.json",
+      "metricsSha256": "4a16cdde6fd4acdda605614c5ca8adfa0d86053e26fc616a954c92d6e77c88cd",
+      "frameWidthM": 8400,
+      "focus": {
+        "x": 6846.66,
+        "z": 8024.22
+      },
+      "backend": "forward_plus",
+      "adapter": "NVIDIA GeForce RTX 4090",
+      "staticFramesRequested": 32,
+      "exitCode": 0,
+      "runtimeErrorCount": 0,
+      "totalStartupAndCaptureMs": 51333,
+      "submittedNativeBuildings": 500,
+      "submittedProxyBuildings": 0,
+      "submittedMaterialBatches": 6,
+      "submittedSourceIDsExact": true,
+      "submittedIDsStrictSubset": false,
+      "submittedIDsSha256": "a0e55bcf789d43431cdbefef017eaf463759ef6d637b30e24cfa13994e51d078",
+      "cartographicRoofOverlayRecords": 0,
+      "nativeMeshSubmissionBudgetLimited": false,
+      "visibilityScope": "submitted cache-window mesh IDs, NOT pixel-level visibility counts",
+      "surfaceLayers": {
+        "version": "surface-layers-1",
+        "groundAvailability": "explicit",
+        "lowCoverAvailability": "explicit",
+        "legacyFallback": false,
+        "renderMode": "three-physical-layers",
+        "textureSource": "canonical",
+        "textureGrid": {
+          "height": 1024.0,
+          "originX": 7.8125,
+          "originZ": 7.8125,
+          "spacingM": 15.625,
+          "width": 1024.0
+        },
+        "visibility": {
+          "ground": true,
+          "lowCover": true,
+          "trees": true
+        }
+      },
+      "actualSourceAtFocus": {
+        "type": "retained-parent",
+        "weight": 1,
+        "id": "infinite:47:e6f0c520536077f7cdd3284dbd1ce85e",
+        "version": "decoder-v12-nyquist-notch:magna-retained-v1:e2bf5473c0ff:f21afa261ed7",
+        "retainedSampleSpacingM": 15.625,
+        "sourceLODKnown": false
+      },
+      "activeChildContributionAtFocus": 0,
+      "roadProjectors": 256,
+      "water": {
+        "authority": "magna-urbis-fixed-hydrology",
+        "waterPresentation": "source-map-terrain-projection",
+        "sourceVectorRequestedAreaM2": 2716542.16819078,
+        "sourceVectorAreaM2": 2716542.58946538,
+        "sourceVectorMissingAreaM2": 0.0,
+        "sourceVectorCoverageComplete": true,
+        "missingLevelTriangles": 0,
+        "budgetLimited": false,
+        "fixedHydrologyFallbackReason": null,
+        "vectorBedDiagnosticSamples": 3901,
+        "vectorBedDiagnosticConflicts": 1680,
+        "vectorBedDiagnosticMaximumDeltaM": 16.4040985107422
+      }
+    },
+    {
+      "name": "blueprint-close-top",
+      "image": "blueprint-close-top.png",
+      "imageSha256": "dc0b51fb3f9ff137eb9f3d2bb6933585bcc4d22f6698bd22d24140cb2894080c",
+      "metrics": "blueprint-close-top.json",
+      "metricsSha256": "b034d16846a56dbdd9d0e32cad5e445d3d7e41e9e226877cbab4eb00f82b921c",
+      "frameWidthM": 800,
+      "focus": {
+        "x": 6503.226961398358,
+        "z": 8606.15617283957
+      },
+      "backend": "forward_plus",
+      "adapter": "NVIDIA GeForce RTX 4090",
+      "staticFramesRequested": 32,
+      "exitCode": 0,
+      "runtimeErrorCount": 0,
+      "totalStartupAndCaptureMs": 49832,
+      "submittedNativeBuildings": 393,
+      "submittedProxyBuildings": 0,
+      "submittedMaterialBatches": 6,
+      "submittedSourceIDsExact": true,
+      "submittedIDsStrictSubset": true,
+      "submittedIDsSha256": "e40db224c8f691636eff6f0eb8bac67327c7b06635d136c906f02511a4b7ab08",
+      "cartographicRoofOverlayRecords": 393,
+      "nativeMeshSubmissionBudgetLimited": false,
+      "visibilityScope": "submitted cache-window mesh IDs, NOT pixel-level visibility counts",
+      "surfaceLayers": {
+        "version": "surface-layers-1",
+        "groundAvailability": "explicit",
+        "lowCoverAvailability": "explicit",
+        "legacyFallback": false,
+        "renderMode": "three-physical-layers",
+        "textureSource": "canonical",
+        "textureGrid": {
+          "height": 1024.0,
+          "originX": 7.8125,
+          "originZ": 7.8125,
+          "spacingM": 15.625,
+          "width": 1024.0
+        },
+        "visibility": {
+          "ground": true,
+          "lowCover": true,
+          "trees": true
+        }
+      },
+      "actualSourceAtFocus": {
+        "type": "retained-parent",
+        "weight": 1,
+        "id": "infinite:47:e6f0c520536077f7cdd3284dbd1ce85e",
+        "version": "decoder-v12-nyquist-notch:magna-retained-v1:e2bf5473c0ff:f21afa261ed7",
+        "retainedSampleSpacingM": 15.625,
+        "sourceLODKnown": false
+      },
+      "activeChildContributionAtFocus": 0,
+      "roadProjectors": 210,
+      "water": {
+        "authority": "magna-urbis-fixed-hydrology",
+        "waterPresentation": "source-map-terrain-projection",
+        "sourceVectorRequestedAreaM2": 195616.91151938,
+        "sourceVectorAreaM2": 195616.929693222,
+        "sourceVectorMissingAreaM2": 0.0,
+        "sourceVectorCoverageComplete": true,
+        "missingLevelTriangles": 0,
+        "budgetLimited": false,
+        "fixedHydrologyFallbackReason": null,
+        "vectorBedDiagnosticSamples": 834,
+        "vectorBedDiagnosticConflicts": 335,
+        "vectorBedDiagnosticMaximumDeltaM": 2.79269420833634
+      }
+    },
+    {
+      "name": "aerial-close-oblique",
+      "image": "aerial-close-oblique.png",
+      "imageSha256": "7bd9363ffc0b12873ca198ad9bce1ed07b373554c52be36de39c1d5f6f2cb223",
+      "metrics": "aerial-close-oblique.json",
+      "metricsSha256": "57c6b9eb13cd5857b21cbf7c48968b377745d890e0fea9be9497de00ae9acb5d",
+      "frameWidthM": 800,
+      "focus": {
+        "x": 6503.226961398358,
+        "z": 8606.15617283957
+      },
+      "backend": "forward_plus",
+      "adapter": "NVIDIA GeForce RTX 4090",
+      "staticFramesRequested": 32,
+      "exitCode": 0,
+      "runtimeErrorCount": 0,
+      "totalStartupAndCaptureMs": 44026,
+      "submittedNativeBuildings": 393,
+      "submittedProxyBuildings": 0,
+      "submittedMaterialBatches": 6,
+      "submittedSourceIDsExact": true,
+      "submittedIDsStrictSubset": true,
+      "submittedIDsSha256": "e40db224c8f691636eff6f0eb8bac67327c7b06635d136c906f02511a4b7ab08",
+      "cartographicRoofOverlayRecords": 0,
+      "nativeMeshSubmissionBudgetLimited": false,
+      "visibilityScope": "submitted cache-window mesh IDs, NOT pixel-level visibility counts",
+      "surfaceLayers": {
+        "version": "surface-layers-1",
+        "groundAvailability": "explicit",
+        "lowCoverAvailability": "explicit",
+        "legacyFallback": false,
+        "renderMode": "three-physical-layers",
+        "textureSource": "canonical",
+        "textureGrid": {
+          "height": 1024.0,
+          "originX": 7.8125,
+          "originZ": 7.8125,
+          "spacingM": 15.625,
+          "width": 1024.0
+        },
+        "visibility": {
+          "ground": true,
+          "lowCover": true,
+          "trees": true
+        }
+      },
+      "actualSourceAtFocus": {
+        "type": "retained-parent",
+        "weight": 1,
+        "id": "infinite:47:e6f0c520536077f7cdd3284dbd1ce85e",
+        "version": "decoder-v12-nyquist-notch:magna-retained-v1:e2bf5473c0ff:f21afa261ed7",
+        "retainedSampleSpacingM": 15.625,
+        "sourceLODKnown": false
+      },
+      "activeChildContributionAtFocus": 0,
+      "roadProjectors": 210,
+      "water": {
+        "authority": "magna-urbis-fixed-hydrology",
+        "waterPresentation": "source-map-terrain-projection",
+        "sourceVectorRequestedAreaM2": 195616.91151938,
+        "sourceVectorAreaM2": 195616.929693222,
+        "sourceVectorMissingAreaM2": 0.0,
+        "sourceVectorCoverageComplete": true,
+        "missingLevelTriangles": 0,
+        "budgetLimited": false,
+        "fixedHydrologyFallbackReason": null,
+        "vectorBedDiagnosticSamples": 834,
+        "vectorBedDiagnosticConflicts": 335,
+        "vectorBedDiagnosticMaximumDeltaM": 2.79269420833634
+      }
+    }
+  ],
+  "nativeSourceGeometryAudit": {
+    "CPUOnly": true,
+    "sourceNativeBuildings": 500,
+    "sourceTriangles": 18390,
+    "roofTaggedTriangles": 0,
+    "buildingsWithRoofTaggedTriangles": 0,
+    "upwardNormalsYAboveHalf": 2510,
+    "downwardNormalsYBelowMinusHalf": 0,
+    "nativeNormalsCount": 18390,
+    "sourcePlaneSupportProbe": {
+      "method": "bilinear retained parent minus native construction-plane height at native triangle bounding-box centre; NOT accepted ground-constraint violation check",
+      "samples": 500,
+      "minDeltaM": -0.6137906566643423,
+      "maxDeltaM": -0.006475845093973476,
+      "medianDeltaM": -0.13692409925446114,
+      "rmsDeltaM": 0.19164544215571686
+    },
+    "sourceMeshesEdited": false,
+    "limitations": [
+      "Roof flag reflects source urban DTO tagging; absence of roof tags alone does not prove raw native roof_mesh absent.",
+      "Native construction plane is not a promise of constant terrain under a footprint; no accepted min/max constraints exported.",
+      "Static captures preserve native architectural-plan geometry, not completed house realizations."
+    ],
+    "verticalWallNormalsAbsYBelow1eMinus6": 15880
+  },
+  "knownProductLimits": [
+    "Accepted source plans have no roof-tagged triangles in this packet. Aerial captures expose retained walls/caps, not complete realized native roofs.",
+    "Cartographic roof overlay is explicitly renderer-only source-footprint preview, not a native realized roof.",
+    "Geometric in-frame subsets and submitted mesh counts do not establish per-building pixel visibility.",
+    "Native construction planes are preserved; no exported accepted min/max ground constraints establish universal support certification.",
+    "Water source-map projection preserves source levels; physical bed conflicts remain diagnosed, not repaired.",
+    "Source river strokes below a pixel and legacy artistic parity remain separate limitations."
+  ]
+}
