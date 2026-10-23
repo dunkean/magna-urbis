@@ -49,6 +49,18 @@ if(viewerGodot)report.requestedViewer={godot:resolve(viewerGodot),assets:viewerA
   resolution:viewerResolution,mode:args.includes('--viewer-oblique')?'oblique':'top',presentation:'aerial',timeoutMs:viewerTimeoutMs};
 if(geologyScenario)report.requestedGeology={id:geologyScenario,queryParameter:'surface_geology',provenance:'Explicit authored preset, fixed world frame; not observed geological data or a terrain-height modification.'};
 if (decoderModel) report.requestedModels = { decoderModel };
+const snapshotFiles=['viewer-local/scene/main.gd','viewer-local/adapters/surface_data.gd','viewer-local/adapters/surface_geometry.gd',
+  'viewer-local/shaders/surface_body.gdshaderinc','viewer-local/shaders/canopy.gdshaderinc','web/src/surface/model.ts','web/src/surface/compiler.ts',
+  'web/src/surface/geologyScenario.ts','web/src/surface/geometryDetail.ts','web/src/surface/workerProcessor.ts',
+  'web/src/ui/surfaceLiveSession.ts','web/src/ui/surfaceWorkerSource.ts','web/src/ui/terrainbench.ts','web/scripts/surface_live_plugin.ts'];
+const snapshotRoot=resolve(dirname(viewerLauncher),'../..');
+async function repositorySnapshot(){
+  const git=args=>{const r=spawnSync('git',['-C',snapshotRoot,...args],{windowsHide:true,encoding:'utf8'});return r.status===0?r.stdout.trim():`unavailable: ${r.stderr?.trim()??r.error??r.status}`;};
+  const files=Object.fromEntries(await Promise.all(snapshotFiles.map(async name=>{try{return[name,createHash('sha256').update(await readFile(resolve(snapshotRoot,name))).digest('hex')];}catch(error){return[name,`unavailable: ${error.code??String(error)}`];}})));
+  return{root:snapshotRoot,head:git(['rev-parse','HEAD']),status:git(['status','--porcelain','--untracked-files=normal']),files};
+}
+report.code={driver:{path:fileURLToPath(import.meta.url),sha256:createHash('sha256').update(await readFile(fileURLToPath(import.meta.url))).digest('hex')},
+  selectedRepository:await repositorySnapshot(),serviceRelationship:'The selected viewer repository is expected to serve the supplied Vite URL; the endpoint does not independently attest its Git revision.'};
 let saveQueue = Promise.resolve();
 const save = () => { const snapshot=JSON.stringify(report,null,2);saveQueue=saveQueue.then(()=>writeFile(paths.report,snapshot));return saveQueue; };
 let viewerProcess;
@@ -384,11 +396,14 @@ try {
   if (!live.world.terrain.source.sourceLODKnown || !live.world.canonicalContext || !decoderUsed) throw new Error('Fresh refinement did not prove a decoder-backed source level and canonical context');
   if(viewerGodot)await runNativeTour(sessions.at(-1));
   if(navigationSeconds)await runNativeNavigation(sessions.at(-1));
+  report.code.finalRepository=await repositorySnapshot();
+  if(viewerGodot&&(report.code.finalRepository.head!==report.code.selectedRepository.head||JSON.stringify(report.code.finalRepository.files)!==JSON.stringify(report.code.selectedRepository.files)))throw new Error('Selected native/browser source snapshot changed during E2E; freeze the integration and rerun');
   report.finalService = await serviceStatus(); report.status = 'complete'; report.durationMs = Date.now() - began;
   await page.screenshot({ path: resolve(out, 'fresh-source-after-refinement.png') });
   await save(); console.log(JSON.stringify({ result: { status: report.status, durationMs: report.durationMs, widthM: width,
     sourceBytes: report.source.bytes, neuralOutput: report.neuralOutput, live: report.live, paths, errors } }));
 } catch (error) {
+  report.code.finalRepository??=await repositorySnapshot();
   for(const phase of [report.viewer,report.navigation])if(phase?.status==='running')phase.status='failed';
   report.status = 'failed'; report.failure = String(error); report.finalService = await serviceStatus(); report.durationMs = Date.now() - began;
   await save(); throw error;
