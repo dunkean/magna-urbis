@@ -1,5 +1,7 @@
 class_name SurfacePopulation
 extends RefCounted
+const Canopy = preload("res://adapters/surface_canopy.gd")
+const FAMILY_BUDGETS := {"tree":10000,"shrub":2500,"boulder":2000,"grass":1000,"debris":500}
 
 # Pure CPU query. Run on a worker, never sort the full population on the UI thread.
 static func prepare(packet: Dictionary, focus: Dictionary, width_m: float, viewport_width: float, oblique: bool) -> Dictionary:
@@ -7,6 +9,7 @@ static func prepare(packet: Dictionary, focus: Dictionary, width_m: float, viewp
 	var columns: Dictionary = packet.get("candidateColumns",{})
 	var count := int(columns.count) if not columns.is_empty() else candidates.size()
 	var families := {"tree":[],"shrub":[],"boulder":[],"grass":[],"debris":[]}
+	var canopy_bounds: Dictionary = packet.get("candidateBounds",{})
 	var radius := clampf(width_m*(1.5 if oblique else 1.0),40.0,5000.0)
 	var query_radius := radius+float(packet.get("_maximumCrownRadiusM",0.0))
 	var buckets: Dictionary = packet.get("_candidateBuckets",{})
@@ -24,8 +27,15 @@ static func prepare(packet: Dictionary, focus: Dictionary, width_m: float, viewp
 		if Vector2(px-focus.x,pz-focus.y).length()>radius+crown_radius: continue
 		if maxf(size,2.0*crown_radius)/width_m*viewport_width<1.25: continue
 		var candidate: Dictionary = candidates[i] if columns.is_empty() else {"stableId":columns.ids[i],"family":columns.families[int(columns.family[i])],"x":px,"y":columns.positions[i*3+1],"z":pz,"size":size,"orientation":columns.orientation[i],"rank":columns.rank[i],"variant":columns.variant[i],"crownRadiusM":crown_radius}
+		if str(candidate.family)=="tree":
+			if canopy_bounds.is_empty() or not Canopy.can_select(px,pz,crown_radius,canopy_bounds): continue
+			candidate=candidate.duplicate()
+			candidate["canopyClass"]=Canopy.radius_class(crown_radius)
 		if families.has(candidate.family): eligible.append(candidate)
 	eligible.sort_custom(func(a,b): return float(a.get("rank",0.0))<float(b.get("rank",0.0)) if float(a.get("rank",0.0))!=float(b.get("rank",0.0)) else str(a.stableId)<str(b.stableId))
-	if eligible.size()>16000: eligible.resize(16000)
-	for candidate in eligible: families[candidate.family].append(candidate)
-	return {"families":families,"selectedCount":eligible.size(),"candidateCount":count}
+	var selected := {}; var selected_count := 0
+	for candidate in eligible:
+		if families[candidate.family].size()>=int(FAMILY_BUDGETS[candidate.family]): continue
+		families[candidate.family].append(candidate); selected_count+=1
+		if str(candidate.family)=="tree": selected[str(candidate.stableId)]=true
+	return {"families":families,"selectedCount":selected_count,"candidateCount":count,"canopy":Canopy.prepare(packet,selected),"familyBudgets":FAMILY_BUDGETS}
