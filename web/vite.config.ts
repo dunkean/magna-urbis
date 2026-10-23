@@ -2,6 +2,7 @@ import { defineConfig, normalizePath, type Plugin } from 'vite';
 import { viteSingleFile } from 'vite-plugin-singlefile';
 import { createReadStream, existsSync, readFileSync, statSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { surfaceLivePlugin } from './scripts/surface_live_plugin';
 
 const vendorNotice = '/*! polygon-clipping 0.15.7\n' + readFileSync(new URL('./src/vendor/polygonClipping.LICENSE.md', import.meta.url), 'utf8') + '\n*/';
 
@@ -113,7 +114,7 @@ export default defineConfig(({ mode: requested, command }) => {
   return {
   root: 'src/ui',
   base: single ? undefined : './',
-  plugins: [...(single ? [viteSingleFile()] : [externalAssets()]), neuralServe(), ...(mode === 'rustbench' ? [rustBenchEntry()] : []), ...(['terrainbench', 'citybench', 'rustbench'].includes(mode) ? [terrainWasmReload(), decorServe()] : []), ...(['housebench', 'rustbench'].includes(mode) ? [housesWasmReload()] : [])],
+  plugins: [surfaceLivePlugin(), ...(single ? [viteSingleFile()] : [externalAssets()]), neuralServe(), ...(mode === 'rustbench' ? [rustBenchEntry()] : []), ...(['terrainbench', 'citybench', 'rustbench'].includes(mode) ? [terrainWasmReload(), decorServe()] : []), ...(['housebench', 'rustbench'].includes(mode) ? [housesWasmReload()] : [])],
   // Keep third-party notices inside the self-contained offline bundle.
   esbuild: { legalComments: 'inline' },
   optimizeDeps: mode === 'housebench' ? { entries: ['housebench.html'] } : mode === 'rustbench' ? { entries: ['rustbench.html', 'terrainbench.html', 'citybench.html', 'urbanbench.html', 'housebench.html'] } : undefined,
