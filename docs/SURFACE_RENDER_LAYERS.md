@@ -1,6 +1,6 @@
 # Sol, couvert bas, arbres et représentation de canopée
 
-Le contrat `surface-layers-1` (compilateur `surface-1.5.1`) distingue trois
+Le contrat `surface-layers-1` (compilateur `surface-1.5.2`) distingue trois
 étages physiques. Leur représentation optique est un choix de rendu, séparé des
 données canoniques. La campagne V5 portait sur `surface-1.4.0` : elle **ne valide
 pas** ce nouveau contrat, son shader ni sa qualité visuelle.
@@ -69,8 +69,16 @@ Le support est calculé à partir des mêmes scores roche/dépôts/sols que le
 compilateur, avant le couvert. Il conserve les contacts, les affleurements et les
 dépôts ; il n'est pas remplacé par une couleur de sol uniforme. Les recettes
 rocheuses de support utilisent le substrat déclaré, les dépôts gravitaires leur
-source de fragments. Les sols humides peuvent utiliser `wetland-organic` ; cela
-reste un potentiel de synthèse, pas une observation pédologique.
+source de fragments. Les sols humiques utilisent la nouvelle recette brune
+`organic-soil`, ajoutée en fin de catalogue ; `wetland-organic` conserve son ID
+et sa couleur legacy mais ne remplace plus brutalement le support.
+La fraction dérivée de humus varie continûment (C1) avec l'humidité entre
+0,72 et 0,88, décroît avec la pente entre 0,08 et 0,16 **radian**, et utilise la
+fraction organique existante entre 0,02 et 0,16. Ces intervalles sont des choix
+d'auteur pour un potentiel d'apparence, pas des seuils de classification
+pédologique calibrés. Ils ne dépendent ni du zoom ni d'un filtrage UV ajouté.
+Les poids minéral/humus se répartissent le même support ; la moyenne conserve
+tous les poids avant réduction top2. Les champs physiques restent inchangés.
 
 L'opacité basse prend successivement le support non rocheux, la litière, les
 arbustes puis les herbes. Cette priorité est une approximation déclarée de la

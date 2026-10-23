@@ -37,7 +37,18 @@ export const SURFACE_MATERIALS: MaterialRecipe[] = [
   recipe('cultivated-soil', 'mineral-plains', [.19, .12, .065], 'ridges', .65, .065),
   recipe('built-foundation', 'mineral-plains', [.30, .29, .27], 'fractures', .8, .006),
   recipe('forest-litter', 'vegetation', [.105, .065, .026], 'patches', .45, .015),
+  // Append-only support recipe. Humus is brown soil, not the green legacy wetland cover.
+  recipe('organic-soil', 'mineral-plains', [.12, .074, .037], 'patches', .6, .008, .94),
 ];
+
+/** Authored continuous soil-appearance potential, not a diagnostic soil class.
+ * Moisture/organic are fractions; slope is radians, never percent grade or degrees.
+ * The C1 transition changes only derived ground recipes, never physical fields. */
+export function organicSoilFraction(moisture:number,slopeRadians:number,organic:number):number {
+  if(![moisture,slopeRadians,organic].every(Number.isFinite)||moisture<0||moisture>1||organic<0||organic>1||slopeRadians<0||slopeRadians>Math.PI/2+1e-6)throw new Error('Soil appearance requires fractions and slope in radians');
+  const smooth=(a:number,b:number,value:number)=>{const t=Math.max(0,Math.min(1,(value-a)/(b-a)));return t*t*(3-2*t);};
+  return smooth(.72,.88,moisture)*(1-smooth(.08,.16,slopeRadians))*smooth(.02,.16,organic);
+}
 
 export function createMaterialIndex(materials: MaterialRecipe[]): Record<string, number> {
   if (!materials.length || materials.length > 65536) throw new Error('Material catalogue requires 1..65536 entries');
@@ -45,7 +56,7 @@ export function createMaterialIndex(materials: MaterialRecipe[]): Record<string,
   materials.forEach((m, i) => {
     if (!m.id || !m.version || result[m.id] !== undefined) throw new Error('Material recipe ids must be unique and versioned');
     if(m.surfaceRole!==undefined&&!['ground','low-cover','water','seasonal'].includes(m.surfaceRole))throw new Error('Invalid authored material surface role');
-    const expectedRole=['forest-litter','vegetation-litter'].includes(m.id)?'low-cover':['inland-water','marine-water'].includes(m.id)?'water':m.id==='snow-ice'?'seasonal':undefined;
+    const expectedRole=['forest-litter','vegetation-litter'].includes(m.id)?'low-cover':['inland-water','marine-water'].includes(m.id)?'water':m.id==='snow-ice'?'seasonal':m.id==='organic-soil'?'ground':undefined;
     if(expectedRole&&m.surfaceRole!==undefined&&m.surfaceRole!==expectedRole)throw new Error('Material id has an incompatible vertical surface role');
     if (m.colorLinear.length !== 3 || m.colorLinear.some(v => !Number.isFinite(v) || v < 0 || v > 1) || !Number.isFinite(m.roughness) || m.roughness < 0 || m.roughness > 1) throw new Error('Invalid material color/roughness');
     result[m.id] = i;
