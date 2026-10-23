@@ -1,47 +1,59 @@
 # Declared regional water symbols
 
 `--water-mode source-map --water-symbol-width-px 1.25` requests a renderer-only
-symbol around the retained source-water coverage. It is recommended as a regional
-cartographic control for evaluation. The default is0, preserving the previous
+vector outline of retained water polygons. It is recommended as a regional
+cartographic control for evaluation. The default is 0, preserving the previous
 unexpanded contour rendering and its sampling settings. The fresh-source harness
 uses `--viewer-water-symbol-width-px 1.25` (the shorter name is also accepted).
 Nothing automatically changes historical V8 artifacts or their verdicts.
 
-This is an **all-water** symbol because the polygon coverage does not reliably
+This is an **all-vector-water** symbol because the polygons do not reliably
 identify river-only boundaries. It neither constructs a centreline nor widens a
 physical river. No source contour, triangle/index array, level, routing edge or
-hydrological field is edited. Lakes and sea coverage receive the same symbol.
+hydrological field is edited. Lake, river and hole boundaries are outlined.
+The original sea-cell union remains fill-only when no sea contours were supplied;
+the renderer never invents a shoreline from the sea raster.
 
-The module first bakes the original source triangles, then a separate GPU pass
-places an antialiased disk of the requested screen diameter around nonzero
-coverage samples. The finite shader uses exact texel fetches and a four-texel
-radius limit; it adds no undeclared bilinear dilation. Source colors are retained
-from a contributing coverage sample. This is a display recipe, not a measured
-hydrological width or a physical water surface.
+Hydrology retains the clipped source rings in `PackedFloat64Array` XZ columns.
+After the original triangle fill, a 2D pass draws those vector rings with closed,
+rounded, antialiased Line2D strokes. World coordinates are subtracted in double
+precision before conversion to renderer vectors. Two banks of a thin channel
+overlap naturally, even if its fill received no raster samples. There is no
+centreline extraction. A single declared fallback water tint is used for the
+outline, without asserting an unavailable river/lake classification. This is a
+display recipe, not a measured width or physical water surface. Clip-window
+closing edges describe the data window, not surveyed banks.
 
 For a top orthographic map, screen metres per pixel is the actual camera width
 divided by the viewport width. The nominal symbolic padding is half the requested
 diameter times that scale. Projection overscan does not define screen scale.
 An oblique projection can only use a declared ground-scale approximation with
 this uniform texture-space operator; it is not a constant-width perspective
-stroke. Camera scale, approximation policy and symbol width invalidate the cache.
+stroke. Camera scale, approximation policy, symbol width, palette and the actual
+Float64 contour bytes invalidate the cache.
 
 Positive mode selects MSAA4 and a bake texel no larger than one screen pixel's
 ground footprint. The padded bake is limited to4096²; a request needing more
 fails instead of silently undersampling. Readback/coverage/final-mip image
-workspace is estimated before allocation and capped at256MiB. Engine-owned GPU
+workspace is estimated before allocation and capped at 256 MiB. Vector outlines
+have separate limits: 500,000 points, 8,192 nodes, and a conservative render
+workspace estimate capped at 256 MiB. An incomplete/over-budget contour inventory
+cannot be used for positive symbol mode; mode 0 retains the original fill.
+Engine-owned GPU
 framebuffer, MSAA/depth attachments, texture-cache entries and the rest of the
 scene are additional allocations, not included in that image-workspace figure.
 
-An important limit remains: a segment that receives no sample in the initial
-antialiased source raster cannot be recovered by post-process dilation. A source
-triangle count or geometric coverage total alone cannot establish pixel-level
-network continuity. Actual regional images must be inspected and measured.
+Version 1 used post-raster dilation and could not recover a segment absent from
+the initial fill raster. Version 2 strokes the original vectors before sampling.
+It preserves source steps, intersections and data limitations; it does not repair
+topology or establish flow. A geometric area total alone does not establish
+pixel-level continuity. Actual regional images remain part of qualification.
 
 Diagnostics keep the original geometric source areas and missing-triangle counts.
 They add `waterSymbolVersion`, policy, requested pixel width, screen scale and
 scale policy, nominal padding, image budget, and separate source/symbol image
-digests. `sourceGeometryUnchanged:true` and `symbolicPhysicalWidthClaim:false` are
+digests, plus the contour hash, Float64 precision, counts, completeness, node and
+workspace budgets. `sourceGeometryUnchanged:true` and `symbolicPhysicalWidthClaim:false` are
 required. Source geometry also has its own digest. Empty views still declare the
 requested symbol policy and sampling plan, but do not claim an allocated image.
 
@@ -52,18 +64,24 @@ area is never substituted for source area. Mode0 does not accept hidden symbols.
 
 CPU checks cover dimensions, scale, image budget, invalid requests, cache
 invalidation and negative evidence. `water_symbols_real_probe.gd` provides the
-separate retained40km GPU control: original source triangles, production mode0,
-requested1.25 mode and a layer2 roof. Its receiver and blue palette are controlled;
+separate retained 40 km GPU control: original source triangles, production mode 0,
+historical post-only at identical fill sampling, vector 1.25 mode and a layer 2
+roof. Its receiver and blue palette are controlled;
 it does not qualify a new neural generation, Terrain3D, final styling or physical
 water/bed consistency. See the accompanying report for whether that GPU control
 has actually run; code availability alone is not a passing result.
 
-The retained V8 40km GPU control passed on Forward+/RTX4090: mode0 produced
-114,995 blue-classified pixels and1.25 produced141,730, a23.25% increase. Source
-geometry/levels/arrays and geometric areas remained identical, with zero missing
-triangles. At the actual roof interior,32 previously water-colored pixels became
-zero water pixels. Bake costs were344ms and723ms respectively. The images were
-opened: the regional network is easier to follow, but some thin branches remain
-intermittent. This control does not establish complete network continuity or
-artistic acceptance. Exact digests, dimensions and scope are recorded in
-[the GPU evidence](evidence/water-symbols-v9-gpu.json).
+The historical post-only control remains preserved in
+[the version 1 evidence](evidence/water-symbols-v9-gpu.json).
+The vector control passed on Forward+/RTX 4090: 182,735 bank samples were checked
+at half-screen-pixel spacing, with a 3x3 visibility neighbourhood. All were visible
+under vector symbols; 863 had been absent under post-only. All 13,392 newly
+visible pixels lay within the independent two-pixel source-bank AA/filter band.
+No sampling budget was exhausted. Mode 0 and the historical post-only reference
+PNG bytes exactly match their earlier captures. Geometry, levels, arrays and
+areas remained identical, with zero missing triangles. The roof covered 103
+previously water-colored pixels; zero remained blue. Vector bake cost was 593 ms.
+The images were opened and the recovered branches follow the original traces.
+This is a bounded display control, not a survey/topology or production-style
+claim. Exact digests and scope are in
+[the vector evidence](evidence/water-vector-symbols-v9-gpu.json).
