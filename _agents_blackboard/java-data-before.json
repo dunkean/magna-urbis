@@ -1,0 +1,1050 @@
+{
+  "MED-ANT-B01": {
+    "geometry": "1395be47484c0c39f6238d6be078ad366341103b242f731891cfa500a6966dd9",
+    "weight": 50
+  },
+  "MED-ANT-B02": {
+    "geometry": "6b74e2c31414965b817a97cbd33418782cf200a35da685472ae8f0a3ff767db6",
+    "weight": 25
+  },
+  "MED-ANT-B03": {
+    "geometry": "ea6e65d5ab89ff0fcd4e20f0882634898f4c40e895edeafd4bfcbe600b24d1dc",
+    "weight": 25
+  },
+  "MED-ANT-B04": {
+    "geometry": "92ff985d10edf59f82e0073d05397ec8c8bdf61de346773c8abe37218609de08",
+    "weight": 25
+  },
+  "MED-ANT-B05": {
+    "geometry": "d381fcaf857bf8fdb46e8f7fe56254204c289262f7267b4643603cf3558d814b",
+    "weight": 25
+  },
+  "MED-ANT-B08": {
+    "geometry": "7c465584bbd05495b780bb0eb75de160133633db0f283b300770d2ea95f50eef",
+    "weight": 10
+  },
+  "MED-ANT-B11": {
+    "geometry": "534da23f86b2b951334f0be015f9b308279f5400c1895a99a867c2596ed81431",
+    "weight": 0
+  },
+  "ATL-CEL-B01": {
+    "geometry": "8becb0ff48f39092978f1c11f466735a9bcbdf1234c92236fb19fb593e291766",
+    "weight": 50
+  },
+  "ATL-CEL-B02": {
+    "geometry": "823ed41b94459b464f1b23a12183976ff5a9644e18a9030c554ef0e4ab1cd6b9",
+    "weight": 25
+  },
+  "ATL-CEL-B03": {
+    "geometry": "f2e6739bafc6b60eb899d5b56cbf9a3d62d90b56ce419e6f7008615cf23eff0b",
+    "weight": 25
+  },
+  "ATL-CEL-B04": {
+    "geometry": "c59370345906070d61d6fbe0c7b1770ee4a693eefac03d64d93bb7a317fb430b",
+    "weight": 25
+  },
+  "ATL-CEL-B05": {
+    "geometry": "a705f8348db7b8d7520430433b61193e63c665b00cfcaaf06a91dd535ba62e0c",
+    "weight": 0
+  },
+  "ATL-CEL-B06": {
+    "geometry": "3154e5c748bb9db68a57d183777adb56adf205c89e4bc97d7bd03d4baa87891c",
+    "weight": 10
+  },
+  "ATL-CEL-B07": {
+    "geometry": "248c1609851a176cbe1094a132575d938e2ac110678b81535d2e77ef17fda03e",
+    "weight": 10
+  },
+  "ATL-CEL-B08": {
+    "geometry": "6fc2b4a47cb98ab117e77e9219c5dc9a00a49ce1da2a0e787591bd0a5fe49d39",
+    "weight": 10
+  },
+  "ATL-CEL-B09": {
+    "geometry": "9a9a27ec94898b187c1db39f545ef1c327c7bbc1fcdb95fb2b5701bb30709c6f",
+    "weight": 0
+  },
+  "EUR-MED-B01": {
+    "geometry": "0d4d4f540e41a6b48368db6060af76bba3db0cb4c9aad6da68db1c5b70b0a2b9",
+    "weight": 50
+  },
+  "EUR-MED-B02": {
+    "geometry": "bc88d9f8d4842dbfa9a814c24b5d73c10bb7a453f58a13a0a64f3ea02ccbc9a4",
+    "weight": 50
+  },
+  "EUR-MED-B03": {
+    "geometry": "d34125fe9a4c67235198cf627faadd950c9d00e5bc254539056b77979a1fd1fc",
+    "weight": 25
+  },
+  "EUR-MED-B04": {
+    "geometry": "730a74cceca322c399fcacfb0d5c047991c20d482e59c81aaa447c3248c6a2b1",
+    "weight": 25
+  },
+  "EUR-MED-B05": {
+    "geometry": "3e9bbd9e049fc5f0e1e617268435e8544d47fcc5d49cbe50398c541d1b7ff73d",
+    "weight": 25
+  },
+  "EUR-MED-B06": {
+    "geometry": "b5abbef061c45100476497eb718ee075f6ec16086147907f885a5c036bd54313",
+    "weight": 25
+  },
+  "EUR-MED-B07": {
+    "geometry": "418f51d7cfef8eab532ed9b0aa19aae5ac077a868dcec735c0c062bd9b556701",
+    "weight": 25
+  },
+  "EUR-MED-B08": {
+    "geometry": "d599baf00d9a749ae7d2a4a6f8bc47956fe05e66a962438073ed43367c98bc76",
+    "weight": 10
+  },
+  "EUR-MED-B09": {
+    "geometry": "77a563b004bd7befe8846f7e9821733458043c92d563e03f32c32b93d7742ac1",
+    "weight": 10
+  },
+  "EUR-MED-B10": {
+    "geometry": "ad58bb51b612e018427c2f929304e4eb3bc34ca24768bdca730caf2211fcd42f",
+    "weight": 10
+  },
+  "EUR-MED-B11": {
+    "geometry": "2457eae99f96059b64bcda93ae04917c64c5ae74304d49a758c46e320dcac47b",
+    "weight": 10
+  },
+  "EUR-MED-B12": {
+    "geometry": "bd82325f88a42ee66c617150224ad873169352bcdcf1368c046de7217779b1c8",
+    "weight": 10
+  },
+  "EUR-MED-B13": {
+    "geometry": "82d1d212685ecd6273a8d7c2f2b6f2c8b69fad4411bc94a069aa0f81535e0a33",
+    "weight": 10
+  },
+  "EUR-NOR-B01": {
+    "geometry": "a9c85874b3957e758439a66e71bef2a2d57e9a28c2604da309c3f677d166303b",
+    "weight": 50
+  },
+  "EUR-NOR-B02": {
+    "geometry": "8fe8245b7b0b1087bc202dd5655c33c79c5a0181376189cae4fa4e21f19cd355",
+    "weight": 25
+  },
+  "EUR-NOR-B03": {
+    "geometry": "38cc880cb61141617daa42b6d0a8f5b5a8c8eaa7b1f2c2dd25aa5dd8dd839666",
+    "weight": 25
+  },
+  "EUR-NOR-B04": {
+    "geometry": "4274e6bfccd69cabda1f7b04b6764f94f47307304cb0a39818a450fc567c8bbe",
+    "weight": 0
+  },
+  "EUR-NOR-B05": {
+    "geometry": "c3ab9db403b74011167545b04421a66f58cd7e5d4f642a911ffdea79ea64a46a",
+    "weight": 0
+  },
+  "EUR-NOR-B07": {
+    "geometry": "985be2ac665ee9262b6b8b5cc5dc5c07d0f5b7348897a3b997146455261aee56",
+    "weight": 10
+  },
+  "EUR-NOR-B08": {
+    "geometry": "34ca31f35c088f473314acbe41049800bb7f87320c62f808394fe4680871bfe7",
+    "weight": 10
+  },
+  "EUR-NOR-B09": {
+    "geometry": "514d724cb75e442b5745f53b303049df6c382a87a35e5dbc7a7ff87a13adcc74",
+    "weight": 10
+  },
+  "EUR-NOR-B10": {
+    "geometry": "38cc880cb61141617daa42b6d0a8f5b5a8c8eaa7b1f2c2dd25aa5dd8dd839666",
+    "weight": 10
+  },
+  "EUR-EAST-B01": {
+    "geometry": "259942041861cb09b8fc845e1b6056a4ebd8b1b201452d1061330973a1d05348",
+    "weight": 50
+  },
+  "EUR-EAST-B02": {
+    "geometry": "054d1bb1e0d8f13a238c405f9ebb88821a0acc771228ed8bcf23c172fd4f04e5",
+    "weight": 25
+  },
+  "EUR-EAST-B03": {
+    "geometry": "dd5abcfc4c02a067c3d765d6137d5f8604ac40445bcfc0b02c1ef0a0b9114a92",
+    "weight": 25
+  },
+  "EUR-EAST-B04": {
+    "geometry": "fb79c284ac6bb426923c5d12f133be4873132c90aba757a8009897175470c315",
+    "weight": 25
+  },
+  "EUR-EAST-B06": {
+    "geometry": "1a5a78028b766fb7b3a6bded6aab2fadc8e81cad0f1396036945e2016b8f2a69",
+    "weight": 25
+  },
+  "EUR-EAST-B09": {
+    "geometry": "3e71ae9e495b52379c6a84ed963b5c5afa6e45bd0f9a923eb9462c3622b2146f",
+    "weight": 10
+  },
+  "AF-NILE-B01": {
+    "geometry": "cb11e504f4fa14a14cba59df3307f5b73230ac73fd9abc00e340eca9e6c77c61",
+    "weight": 50
+  },
+  "AF-NILE-B02": {
+    "geometry": "6bb9f45fd2fafd0333b9e925b7b5f5493bc4cf54cc5b11464a83102acea81092",
+    "weight": 25
+  },
+  "AF-NILE-B03": {
+    "geometry": "a5bafb8892b84936b675f407877fb29f87701af2593e39550b5bc577cd2ea7ef",
+    "weight": 25
+  },
+  "AF-NILE-B04": {
+    "geometry": "2f5d7ae82ec8906edc8a0b3d595fe6b971a824da23929c4dc76cc73188161104",
+    "weight": 0
+  },
+  "AF-NILE-B06": {
+    "geometry": "e82cf140477c5edf93f03089a1e8fe9b56060e03dd7fc42e02a65e74d2c2d80c",
+    "weight": 25
+  },
+  "AF-NILE-B08": {
+    "geometry": "ee6717c964f31999bea3dbc68ccc3fc832ca59e5391d127a14f298f4785a5df8",
+    "weight": 10
+  },
+  "AF-MAG-B01": {
+    "geometry": "16f63a04797bf13d3b69f78ba42fcf8cf0656bfdeb070e7c854e4ec17a1634e8",
+    "weight": 50
+  },
+  "AF-MAG-B02": {
+    "geometry": "32f55d74c826e6ca5454ee525a82117686c070334fa0be03661793b36d304b5e",
+    "weight": 25
+  },
+  "AF-MAG-B03": {
+    "geometry": "ecf2d6ea5b735c13478d51f203bd13d576db9c3b8c51c52a1ccfa0f26073d54d",
+    "weight": 25
+  },
+  "AF-MAG-B04": {
+    "geometry": "c024fa1aa818328f27d9a734d53c3a8b9f15cc85c7b0492515d110242d6fa40a",
+    "weight": 25
+  },
+  "AF-MAG-B05": {
+    "geometry": "b757ebecec35b1db40f21e7135348d1b44a0a85171640c0c5cbdcc9280a964da",
+    "weight": 25
+  },
+  "AF-MAG-B07": {
+    "geometry": "39accb10e5acb445a0a0b19d4ba4b5c6fbda272fd5ce6d52277afeba471fb3ce",
+    "weight": 0
+  },
+  "AF-MAG-B08": {
+    "geometry": "156de430382e523c7cfe1b08d5030910de612f2c12fdacb8901f7fd5a9a215d2",
+    "weight": 0
+  },
+  "AF-MAG-B09": {
+    "geometry": "8d2e03ccab14d0b063fe057f61c1904146efb249f70893c5f04955988720c3ba",
+    "weight": 10
+  },
+  "AF-MAG-B10": {
+    "geometry": "56e25cfcd83e6840a12d2f4ca1a74271d1bb29499abfbfbbbe427e53b91d13ad",
+    "weight": 10
+  },
+  "AF-MAG-B11": {
+    "geometry": "96c7bbb560a64ce65205dc0743860c9c470ce2eeda8431eaf8242733f8c6fc84",
+    "weight": 10
+  },
+  "AS-MIDE-B01": {
+    "geometry": "32f55d74c826e6ca5454ee525a82117686c070334fa0be03661793b36d304b5e",
+    "weight": 50
+  },
+  "AS-MIDE-B02": {
+    "geometry": "0c1007643aca9114fc47adb123ab2063050ed3a3a6c0a68095c2628eb5e72eda",
+    "weight": 25
+  },
+  "AS-MIDE-B03": {
+    "geometry": "efcd5d0ed3f0ce00a0403965a6f5df709c548c5f60af3e6b19899709c56527c6",
+    "weight": 25
+  },
+  "AS-MIDE-B04": {
+    "geometry": "e62baf07785f0684df5d37b69c6fe18468a8f9d6ef73a5127d5b65eb179f61ae",
+    "weight": 25
+  },
+  "AS-MIDE-B06": {
+    "geometry": "91f1ce8f405eaa57e2c40e3cc29174782dc31678143ea54afbca2de3a071d8e1",
+    "weight": 25
+  },
+  "AS-MIDE-B09": {
+    "geometry": "98e499f577fa671cdb7697c568013750dae5eec23d0785af461007c01699529b",
+    "weight": 10
+  },
+  "AS-MIDE-B10": {
+    "geometry": "a245eb74d6aaa953518b8a54dcf39f90b76d043309bb93b861fbc7313c98675a",
+    "weight": 10
+  },
+  "AS-MIDE-B12": {
+    "geometry": "9fc89fc963e452fb34e5b6be8233c6b275766ff0fbec41d4123966ecb927e83a",
+    "weight": 10
+  },
+  "AS-MIDE-B13": {
+    "geometry": "e0ebe62b2fc613fc29f5ada665b584c155c9e61386d119ff5928ca7690349aa1",
+    "weight": 10
+  },
+  "AS-STEP-B01": {
+    "geometry": "df95e560348f3efe67bfa49afdebfd249d47b784aa37974b79315db6e28e91ce",
+    "weight": 50
+  },
+  "AS-STEP-B02": {
+    "geometry": "00f93c0c68e700e7d973f45568b1c7014ad38bb239ca4c7b921d309ac0cd7ecb",
+    "weight": 25
+  },
+  "AS-STEP-B03": {
+    "geometry": "d4fd45d5565c447fa5e60aa179ad7a3d2bb56f521a08b888f30a2a6799cf10de",
+    "weight": 25
+  },
+  "AS-STEP-B04": {
+    "geometry": "edd82e17ac3e4fa52973862f4ab93500fc5169994f05e6b89a4539738472695a",
+    "weight": 25
+  },
+  "AS-STEP-B07": {
+    "geometry": "7a1f0da3311ee748c1716e00c82d02db833fc038b1b8702a3f1a29142c57de54",
+    "weight": 0
+  },
+  "AS-STEP-B08": {
+    "geometry": "27a4ba7024bd89135862cbb58f8376aca6b26bae83dcf8c1b5486b7965475566",
+    "weight": 10
+  },
+  "AS-STEP-B09": {
+    "geometry": "28b10cb024dda6250763c9c65b06cac5f5e210005c174d6b163892a8d249fa75",
+    "weight": 10
+  },
+  "AF-SAHEL-B01": {
+    "geometry": "0232c4a951b1dfee6b3cac13b3b0d9c53df0c4496f5fedaeb9f4717828d52600",
+    "weight": 50
+  },
+  "AF-SAHEL-B02": {
+    "geometry": "6955704034cc1cc4ae7869802234a2979a2905b444cfeac3883023253ca3bb04",
+    "weight": 50
+  },
+  "AF-SAHEL-B03": {
+    "geometry": "d6c729b882d1de1223725f2dbe213a391d2993fdac1209f83a24752d72674d39",
+    "weight": 25
+  },
+  "AF-SAHEL-B04": {
+    "geometry": "22cbd5c30df8c137d06a7b5bbd640b22df21217de9403171ec73f308bf55ff41",
+    "weight": 25
+  },
+  "AF-SAHEL-B05": {
+    "geometry": "e413b5484865a52a3da565d97c6e296ffd6d78ca77c8309af73797afa571dcfb",
+    "weight": 25
+  },
+  "AF-SAHEL-B07": {
+    "geometry": "7fc8dac74b1bd217b63cfaf1eab831752127693e9c49c5f64bcc853ab242c396",
+    "weight": 0
+  },
+  "AF-SAHEL-B08": {
+    "geometry": "4c5cb50c7364e9ef387d85f8bc0493b77d0da48660bea62e374a3d3f25d4aabf",
+    "weight": 25
+  },
+  "AF-SAHEL-B09": {
+    "geometry": "05afad21f78ef282e8475e462e32ed4871f5216a550666e96548ed237e3caefc",
+    "weight": 10
+  },
+  "AF-SAHEL-B10": {
+    "geometry": "04514830066060b081aff2debbc1675f76c8c9187665057ab943cb83113c9879",
+    "weight": 10
+  },
+  "AF-SAHEL-B11": {
+    "geometry": "41ad22225ebdf050d1e475e2a26dd94e85553d467a5533f90874f6f7ce9a5c0d",
+    "weight": 10
+  },
+  "AF-WEST-B01": {
+    "geometry": "11e38a63161a098cf0455e4df18cc1ff517da9850f997c8fb46e1ced92164346",
+    "weight": 50
+  },
+  "AF-WEST-B02": {
+    "geometry": "6770f7060d8670d3a794aacc359e17ce344207a3825902b1dda4616cd6bb152d",
+    "weight": 25
+  },
+  "AF-WEST-B03": {
+    "geometry": "99f1574482ab8f10a11a12f021336c3f33d35c19e68cf104d52c45ae2545a060",
+    "weight": 0
+  },
+  "AF-WEST-B04": {
+    "geometry": "aecd46dc51ed475866545460cb916bb5c6d10383ea310b4d1b0f2d1f02b927f7",
+    "weight": 25
+  },
+  "AF-WEST-B05": {
+    "geometry": "4689bb79e844f308fdfaecf19653d3330fe6cdf67168788f45350dbf51ef00ab",
+    "weight": 25
+  },
+  "AF-WEST-B06": {
+    "geometry": "5f73d844a2e5bae683e2145404b3674f0b17689915ee976933a914096c23cb4e",
+    "weight": 10
+  },
+  "AF-WEST-B07": {
+    "geometry": "c1932958658956f86c865e29b060ef9f4427f4d964059ebcaf2f4f843f860503",
+    "weight": 10
+  },
+  "AF-WEST-B08": {
+    "geometry": "41fcbc41459036f4a85df61240884461d5e81fb7774a7b44212347187f3ed6de",
+    "weight": 0
+  },
+  "AF-WEST-B09": {
+    "geometry": "f24432a9c9f5a705f5cfb977f581ac5fc42881aa0fabd6de2cb19090faabb940",
+    "weight": 10
+  },
+  "AF-WEST-B10": {
+    "geometry": "351ac80b136f4c9d4552fe9622c23348acfdf3d2814025652f0feb28c4ce4397",
+    "weight": 0
+  },
+  "AF-SOUTH-B01": {
+    "geometry": "788a74eb1877728fbf64176316551baa6008bd7f24a3cfe7e392e8c738f19f62",
+    "weight": 50
+  },
+  "AF-SOUTH-B02": {
+    "geometry": "e60c9bc0c324114dad10b1e6b7dd627c6a34d0103bafcf66960d36a6725d62cc",
+    "weight": 0
+  },
+  "AF-SOUTH-B03": {
+    "geometry": "84ca550da72387587746d98526cf1b9ff814a1442c0a8b2560210202c1bd4759",
+    "weight": 25
+  },
+  "AF-SOUTH-B04": {
+    "geometry": "ca2d1ca9f81dc148ca54c59f5ce3fc055b26f13b9622858f1289f15b4223bae1",
+    "weight": 25
+  },
+  "AF-SOUTH-B05": {
+    "geometry": "4f62670a2ae1028c1d4d142130c1375c715a8c7ed9d84e5e7ee41d00fc22bc86",
+    "weight": 25
+  },
+  "AF-SOUTH-B06": {
+    "geometry": "2fc71a0856fa666eaa2c360274983501a33455a64c12e23759c5f9c4e81b14b5",
+    "weight": 25
+  },
+  "AF-SOUTH-B08": {
+    "geometry": "4c2f5bc0ea1bc1c163fea1048832eda2e58949bacaacd7e901f14a63eb70d73f",
+    "weight": 10
+  },
+  "AF-SOUTH-B09": {
+    "geometry": "a15a99c80f61f4a66e40b416f24bf2a6106570336837a5a175f4e22886f83bcf",
+    "weight": 0
+  },
+  "AF-EAST-B01": {
+    "geometry": "d6377026e73437570000ae03e04b5e72a1f57f067e362304d9840220f48a7239",
+    "weight": 50
+  },
+  "AF-EAST-B02": {
+    "geometry": "dc4a2da63c96bff8d538ac95241277e7f170c4ceb14e7737bb9ccf9ff2bbf0db",
+    "weight": 25
+  },
+  "AF-EAST-B03": {
+    "geometry": "bb919a612ff42a94d0faf32af41a37e7169324c5fed292a190d460335a4e0262",
+    "weight": 25
+  },
+  "AF-EAST-B04": {
+    "geometry": "0ad7f5775c0e41656b6ed41fbf8c7e59caacd838aa7195674e31cc332adda6a1",
+    "weight": 25
+  },
+  "AF-EAST-B06": {
+    "geometry": "0c189ce66d618fbdf2fab93bfc3ce4e7646b1f112dbb439393b403047e9c474c",
+    "weight": 0
+  },
+  "AF-EAST-B07": {
+    "geometry": "e60c9bc0c324114dad10b1e6b7dd627c6a34d0103bafcf66960d36a6725d62cc",
+    "weight": 0
+  },
+  "AF-EAST-B08": {
+    "geometry": "d69f614f32f31d03d7db60ae7b350022bd4a6755ecb7049232adeb6e4a3e60aa",
+    "weight": 10
+  },
+  "AF-EAST-B10": {
+    "geometry": "58b6bfb7b2b57847601dcdd3e3132c258fd3c4545372c74432e01a749fcd9966",
+    "weight": 10
+  },
+  "AS-IND-B01": {
+    "geometry": "8b1068d950e9ef9843bee1b4dd6d88fc442a9a98c4852c0035dbab977f6ddbca",
+    "weight": 50
+  },
+  "AS-IND-B02": {
+    "geometry": "20c42f58a6ed9ae03e9763bd4f5c60f5bfdc08f666407d0a60c6501f63e6721e",
+    "weight": 25
+  },
+  "AS-IND-B03": {
+    "geometry": "6744458a3974838e23b163fc38e937654e12111d279e116090b9cad23ae48e46",
+    "weight": 25
+  },
+  "AS-IND-B04": {
+    "geometry": "a3e44ec2bd1857f32d21d63b89fe1bf312e8dfd0c7bf7076c2a279eeb4569258",
+    "weight": 25
+  },
+  "AS-IND-B05": {
+    "geometry": "f068f593d495088ca2625d5b152522f1ca058a29d53765112ca70b4ae994f58c",
+    "weight": 25
+  },
+  "AS-IND-B10": {
+    "geometry": "51cdf4aefbcd21f5ba7a45f48b65bdcd83cba58816d69022c7e667eaf1dec0f9",
+    "weight": 10
+  },
+  "AS-IND-B12": {
+    "geometry": "d6fcb0486137b6540f0f419f42a0ab0d1f7681bcec6e16718bdef12cc24217be",
+    "weight": 10
+  },
+  "AS-IND-B13": {
+    "geometry": "54e59a10e0e7bdc468e7e0b374a43daca3200a3c589a0c495e7ed2e108498490",
+    "weight": 0
+  },
+  "AS-HIM-B01": {
+    "geometry": "b498a459bfbfd62af28e5959a49091ff7a78716921c7c5cb02b03ff38e5a3849",
+    "weight": 50
+  },
+  "AS-HIM-B02": {
+    "geometry": "f9503eb0765849b390887f551b0b70b15f39a987c8bdb041e2407bb16b36e193",
+    "weight": 25
+  },
+  "AS-HIM-B03": {
+    "geometry": "8f510fc3997ae408125ae005dd0c52914bf1e3a4d91d18c3b7258cbe6dfa3139",
+    "weight": 25
+  },
+  "AS-HIM-B04": {
+    "geometry": "ad58bb51b612e018427c2f929304e4eb3bc34ca24768bdca730caf2211fcd42f",
+    "weight": 25
+  },
+  "AS-HIM-B08": {
+    "geometry": "6e87f3cd32fc855f852713ccbb52a1171e8434a125c47149525fa24e2fa85478",
+    "weight": 10
+  },
+  "AS-HIM-B09": {
+    "geometry": "e3e3f6fad60e3ebb21e53db1e5904c6c1a8722b33461082acd6b428f32f875f7",
+    "weight": 0
+  },
+  "AS-HIM-B10": {
+    "geometry": "341e022e1f1984c95d46da744f7f9acdbfe2a76308f7d3a1064b5e62bcd3ebdf",
+    "weight": 10
+  },
+  "AS-CHI-B01": {
+    "geometry": "e9bc3dd8346fb71add0368e40696272941374045a6f359aceb41eea6a9ef9c64",
+    "weight": 50
+  },
+  "AS-CHI-B02": {
+    "geometry": "cdd70681fc4f1bc635c4db70d2e73a8569438f361da35477b67787d18a3aeff0",
+    "weight": 25
+  },
+  "AS-CHI-B03": {
+    "geometry": "14aa476ce85978ca3e10989a7280a7ca4f6e20cad714e42ecab90e61572e3111",
+    "weight": 25
+  },
+  "AS-CHI-B04": {
+    "geometry": "31890430a84300262ec2e063a5665a8821442e3ca5c66e370a2466ea3b3053de",
+    "weight": 25
+  },
+  "AS-CHI-B05": {
+    "geometry": "e49664895f58c6f1c7ab73452ee0cd3c03b1c69a3eabac948b9a24a799ef1272",
+    "weight": 25
+  },
+  "AS-CHI-B08": {
+    "geometry": "3915d214662c0fcc8177e97220ded8e3245d501c117e41cb687ead7cc1ebec45",
+    "weight": 25
+  },
+  "AS-CHI-B10": {
+    "geometry": "880f12056e1821c651a8ecd0271e13a1ca808330f03e140c5956028f6710715a",
+    "weight": 10
+  },
+  "AS-CHI-B11": {
+    "geometry": "ea1cdff7b0a393db88ace19d0180b1de9120a084ea353f6247ce6cc304eeedc4",
+    "weight": 10
+  },
+  "AS-CHI-B12": {
+    "geometry": "266cd5085c90967716218238286f08d730efe5676f05b324bb62df46176c1992",
+    "weight": 0
+  },
+  "AS-CHI-B13": {
+    "geometry": "643f488bfc9fc8fef376faa81e812f470ff4f5678f8634af38b5c24a1ffc15d0",
+    "weight": 10
+  },
+  "AS-CHI-B14": {
+    "geometry": "aceb3cda35c8b1de3bdca1dfd446913c56addfa3a623f1614134367af925f32c",
+    "weight": 0
+  },
+  "AS-KOR-B01": {
+    "geometry": "aecd46dc51ed475866545460cb916bb5c6d10383ea310b4d1b0f2d1f02b927f7",
+    "weight": 50
+  },
+  "AS-KOR-B02": {
+    "geometry": "118a9995e8f9f3f8fb1dd178c3d0b3cc306270e909249b35168e290f50e3e435",
+    "weight": 25
+  },
+  "AS-KOR-B03": {
+    "geometry": "3dab63cfe5287507a157112e1333d9712588b1ead1eab97f1f4c2b82453c7768",
+    "weight": 0
+  },
+  "AS-KOR-B05": {
+    "geometry": "0076e8cdb7773a54a4797b4b2f0a5c122855a649991c4cb402be86ece10abc8c",
+    "weight": 25
+  },
+  "AS-KOR-B08": {
+    "geometry": "f84edec69881ee8ca6f39afe258d7a5e6bed4ee9d38f3f042c8179023afb3a68",
+    "weight": 10
+  },
+  "AS-JAP-B01": {
+    "geometry": "ee6ac408f819c393132d50c16e986a59bbbd20fef4fa38e449bcf17c55184021",
+    "weight": 50
+  },
+  "AS-JAP-B02": {
+    "geometry": "ce5dd3fcad3aae6f716f51012e5c296bb056f4666456dc8b23ea0928ecd773bd",
+    "weight": 25
+  },
+  "AS-JAP-B03": {
+    "geometry": "e00f43f79c95a3f82ef25cab8d0c118e692086de161225ccd0da30eb90bb7743",
+    "weight": 25
+  },
+  "AS-JAP-B04": {
+    "geometry": "0fe77512b19316e61e0efe9f1ea1366d8679c19f8bd165295141779a79965e75",
+    "weight": 25
+  },
+  "AS-JAP-B05": {
+    "geometry": "47e989c8e5633e885d9bfe5ab9ff476d525c9b2812709af2c4e23830d8701340",
+    "weight": 0
+  },
+  "AS-JAP-B09": {
+    "geometry": "a57e548803baa53ae4f6c746dc14e2aeac2aaa19e0066da6fc9b0748a585db2f",
+    "weight": 10
+  },
+  "AS-JAP-B10": {
+    "geometry": "c4b6d8726040191f6b8e03c9deda3df36c992c9dacc34b885be1d1746a33ac4d",
+    "weight": 0
+  },
+  "AS-JAP-B11": {
+    "geometry": "1edbac1a509c5f559269479b4cbd0999c6671e2378d9c434a907858d790dbdc6",
+    "weight": 10
+  },
+  "AS-SEA-B01": {
+    "geometry": "9f788da08e6e7c2685be8483d38812846d90df105adcbec89f2a62620b26307a",
+    "weight": 50
+  },
+  "AS-SEA-B02": {
+    "geometry": "461ab2faebbf21daaf897276a066fdfc20d206706303cddc5883b6ffdbc4f839",
+    "weight": 50
+  },
+  "AS-SEA-B03": {
+    "geometry": "4edaa7d5ff8f17b0bb26c6c0c333edc5f5cdbcc592c7b156afac41081c9022c0",
+    "weight": 25
+  },
+  "AS-SEA-B04": {
+    "geometry": "d7e056c72e974f8b576f10bec6e72ff4af7753ae46a6704b0461f6092532cb9b",
+    "weight": 25
+  },
+  "AS-SEA-B05": {
+    "geometry": "6a81844f818038b99def4e78f00ae8a102c378efceabaed295d47780488b4b81",
+    "weight": 25
+  },
+  "AS-SEA-B11": {
+    "geometry": "2ffac7ae7ea0e64746e75ef62b86328ae66e07f81bd3d67371cc73247d8f014b",
+    "weight": 0
+  },
+  "AS-SEA-B12": {
+    "geometry": "75e9bc7b83d9be6f14d07ba78801930633930956a4b649cd954980cd298b0ee6",
+    "weight": 0
+  },
+  "AS-ISL-B01": {
+    "geometry": "d5350ee5faa927f461e73871b722af5ed6dab4eaf011ed359d068b59a952cd34",
+    "weight": 50
+  },
+  "AS-ISL-B02": {
+    "geometry": "ec4e722921c00f983ad755cdefc4316e0af3973b4a58b2eda17912571966ae26",
+    "weight": 25
+  },
+  "AS-ISL-B03": {
+    "geometry": "e2f1a04d859da08476a44ac13197e7a422890def58f19343e3a762258cf2fcfa",
+    "weight": 25
+  },
+  "AS-ISL-B04": {
+    "geometry": "0488349be2d65ae6070e8775b8b1a33e3e2349f243f15d89bdb35ca490448b64",
+    "weight": 0
+  },
+  "AS-ISL-B05": {
+    "geometry": "95084bd575ccaa9e9eea3332d4c223b0ff1c91c27f55facad608e34d73a1c036",
+    "weight": 25
+  },
+  "AS-ISL-B06": {
+    "geometry": "43cf209e52b0d2a0583b072e851114f0f8014e0ca55f5962c2db8503371dbdc0",
+    "weight": 25
+  },
+  "AS-ISL-B07": {
+    "geometry": "fc43d362fefd58f7cf4a758e1e1bd071dd2c01ff782ba860f8fa49006279af5f",
+    "weight": 25
+  },
+  "AS-ISL-B09": {
+    "geometry": "7cad912e051474bf3f57f4cffe557cd517fdba2a630a82be04c6426bb9f02693",
+    "weight": 10
+  },
+  "AS-ISL-B10": {
+    "geometry": "23d509413a5dfb763451d7742a25b2073c4c8667bcbb68414196bd30c599ae1b",
+    "weight": 10
+  },
+  "AS-ISL-B11": {
+    "geometry": "5d37c0dbe6d660a6838ff9625f0150b7d21bbe634b4d829f53b9bdc2f8e120d1",
+    "weight": 10
+  },
+  "OC-PAC-B01": {
+    "geometry": "bcb378d90d45157dee3cb8baf12c69ad1eda58f3b614960e7418b4126dcbc035",
+    "weight": 50
+  },
+  "OC-PAC-B02": {
+    "geometry": "8c2fe1b6bf9adda7817f8d8cc6dccb18419dcb200451db1e430a7551f84da84d",
+    "weight": 25
+  },
+  "OC-PAC-B03": {
+    "geometry": "330ce29c374ba2feb16903d3e9cde0c664bead06215bb4f9fa8d9e4489b00152",
+    "weight": 25
+  },
+  "OC-PAC-B04": {
+    "geometry": "a705f8348db7b8d7520430433b61193e63c665b00cfcaaf06a91dd535ba62e0c",
+    "weight": 0
+  },
+  "OC-PAC-B05": {
+    "geometry": "0d777425e988147e13662bb3d942fce7fa29a73e77991d3ceb4ce076353db15a",
+    "weight": 25
+  },
+  "OC-PAC-B08": {
+    "geometry": "a3e44ec2bd1857f32d21d63b89fe1bf312e8dfd0c7bf7076c2a279eeb4569258",
+    "weight": 10
+  },
+  "OC-PAC-B09": {
+    "geometry": "05283a8f9d549100bcf4aa4a580064ca024cec9087787c377545fa3ba0285fc3",
+    "weight": 10
+  },
+  "OC-PAC-B10": {
+    "geometry": "d8ba97fb12a7e96f9c3c26ba61e12e5b6d45eec3b8c89797617d259b84d5162a",
+    "weight": 10
+  },
+  "OC-AUS-B01": {
+    "geometry": "575a17c0c207120aa7c41d2e0f0231178a28de8179746baaffe548bb24befde7",
+    "weight": 50
+  },
+  "OC-AUS-B02": {
+    "geometry": "866d90cbf81e06e125bfe082efd06a09929893e8975ac83df0babbacbe1d3dc2",
+    "weight": 50
+  },
+  "OC-AUS-B03": {
+    "geometry": "4fc5713baef2b3447491bde9ee86c940188a8488e248b15a86bb333ed0fbf452",
+    "weight": 25
+  },
+  "OC-AUS-B06": {
+    "geometry": "6e98ec6a4bd5536cffe20d1fece245aaef727b7366e2261c58c0bcd7d93c6421",
+    "weight": 10
+  },
+  "OC-AUS-B07": {
+    "geometry": "05283a8f9d549100bcf4aa4a580064ca024cec9087787c377545fa3ba0285fc3",
+    "weight": 10
+  },
+  "AM-ARC-B01": {
+    "geometry": "b98fbc32d786808abd343deae3b9484cc55601fe226eccbd47ac0bb7f1ce18a7",
+    "weight": 50
+  },
+  "AM-ARC-B02": {
+    "geometry": "42f8b51b0fd232c09cf74653866a4d2922f580a5a032671bbc9f518f2d37de90",
+    "weight": 25
+  },
+  "AM-ARC-B03": {
+    "geometry": "42f8b51b0fd232c09cf74653866a4d2922f580a5a032671bbc9f518f2d37de90",
+    "weight": 25
+  },
+  "AM-ARC-B04": {
+    "geometry": "894b67297ee4b947ed6bbe369f3bfa2c593d9346b727c07a5d6455b7853b369b",
+    "weight": 25
+  },
+  "AM-ARC-B05": {
+    "geometry": "dc851367bed9ba9390cdd530ce36279a584161328104b93e2e4eaed1e1b2f29a",
+    "weight": 25
+  },
+  "AM-ARC-B06": {
+    "geometry": "cfbcd9a24b13de7ecf60eda458e56791c3f058e9e42c6d188ed21e44e1d75863",
+    "weight": 25
+  },
+  "AM-ARC-B07": {
+    "geometry": "d7df7e9e614e935e44517d337556788c6bbce73f89ed1143f9e5858bf4ae616e",
+    "weight": 10
+  },
+  "AM-ARC-B08": {
+    "geometry": "cfd0f9ff0a98fd68bd30d0bce77530d2a692843049f34f4e4fa6800005787419",
+    "weight": 0
+  },
+  "AM-ARC-B09": {
+    "geometry": "9a5e3fafe86336fc5e4b68da66f5c528a9c3ab64ee314addd0063828a6ce02fe",
+    "weight": 0
+  },
+  "AM-ARC-B10": {
+    "geometry": "a317ee652568368a37dee5a83590f9fe1447cd9f2b04e50420ec039b2354116f",
+    "weight": 10
+  },
+  "AM-WOODS-B01": {
+    "geometry": "9ba46f91be98685b1ea67f1ca7ff1f60c4f344d83377df3743cffb4db84fc08d",
+    "weight": 50
+  },
+  "AM-WOODS-B02": {
+    "geometry": "ee50ac3d8639d6563c470fdea35b1114e556650573d7cb205fe881048e426554",
+    "weight": 25
+  },
+  "AM-WOODS-B03": {
+    "geometry": "34ca31f35c088f473314acbe41049800bb7f87320c62f808394fe4680871bfe7",
+    "weight": 25
+  },
+  "AM-WOODS-B04": {
+    "geometry": "14d5b1d08a152548e978a34ab51346e2d1bbad949e1a956da3dcf6d3604bf44b",
+    "weight": 25
+  },
+  "AM-WOODS-B05": {
+    "geometry": "a306122e5994516e27767533da46fe36d12ded213993fdf5be8ec746040129dd",
+    "weight": 25
+  },
+  "AM-WOODS-B07": {
+    "geometry": "c1c1bfc964d2c1b8dca481ad18c788c71ee8fcb2cc16aae25fb83947fe12cfea",
+    "weight": 10
+  },
+  "AM-WOODS-B08": {
+    "geometry": "e2dafc56542124b218ed435c86bd8bc3037e43c9f760df171651bdea866dcd7e",
+    "weight": 0
+  },
+  "AM-WOODS-B09": {
+    "geometry": "36840e1a7fa6d57d624f3a6dd4479a2f08e802a29aea9f81055040e5a4e299e0",
+    "weight": 0
+  },
+  "AM-WOODS-B10": {
+    "geometry": "19cbd0b7613334d39ee4bf3ebd33b2ff77dd82302d270503e8cc04aeafa01e4f",
+    "weight": 0
+  },
+  "AM-PUEB-B01": {
+    "geometry": "d4fd45d5565c447fa5e60aa179ad7a3d2bb56f521a08b888f30a2a6799cf10de",
+    "weight": 50
+  },
+  "AM-PUEB-B02": {
+    "geometry": "d5548718ce6832d6d95e4614d6e9a86ad394d664a74a059435efe22f329e67b1",
+    "weight": 25
+  },
+  "AM-PUEB-B03": {
+    "geometry": "3d41d73489d4b9a0d3b54fee53a7a757946f9919b4e42a8e24ddd23fc4ecd01c",
+    "weight": 25
+  },
+  "AM-PUEB-B05": {
+    "geometry": "a7d3281d7ed48e3da0c60483b3d35f3d9bb52b5404f6fe30add49e17cdfb6b58",
+    "weight": 25
+  },
+  "AM-PUEB-B06": {
+    "geometry": "b003bfb73f9c4f9d63836b4c8db16b685772c822f16add00463dd66c874f3d30",
+    "weight": 25
+  },
+  "AM-PUEB-B07": {
+    "geometry": "3567e912e606e69fd7cff0e093389fdbdff064ac0fb540fe5571d694d81ad4d9",
+    "weight": 0
+  },
+  "AM-PUEB-B08": {
+    "geometry": "92b1a0a42b12ed10f9a0ca6e3b1988ac9492cc1c8d734492178dd3e3c06a0506",
+    "weight": 10
+  },
+  "AM-PUEB-B09": {
+    "geometry": "dce35232e3823b4233216d28450d8fa01829a7dcf5ea4f808bc286cc4125be0f",
+    "weight": 0
+  },
+  "AM-PUEB-B10": {
+    "geometry": "e05d62889f4730db484fdd9187fa50aa5f5a88c0ff71fe1486a3beb470836a97",
+    "weight": 10
+  },
+  "AM-MISS-B01": {
+    "geometry": "5280fb248753f290b7238b91256232db27780089789146a6d8e96d0ca26dbc4f",
+    "weight": 50
+  },
+  "AM-MISS-B02": {
+    "geometry": "a5a05326a8eefa71f4391639a81d7d29b1563f39254caea77a6ef5f72596cb01",
+    "weight": 0
+  },
+  "AM-MISS-B03": {
+    "geometry": "275dfa7eebcaa7bc7c3ac303bb32e15ea2f8ca82d40ac53d1ab1bae6ebb41019",
+    "weight": 0
+  },
+  "AM-MISS-B05": {
+    "geometry": "36840e1a7fa6d57d624f3a6dd4479a2f08e802a29aea9f81055040e5a4e299e0",
+    "weight": 0
+  },
+  "AM-MISS-B08": {
+    "geometry": "09ffb2ca123917c930e862ed1a56f5a27f2409076d454163c925e7fe4a468a1d",
+    "weight": 0
+  },
+  "AM-MESO-B01": {
+    "geometry": "df4a6d16f8e70da9266a8470035b16c8cd0d54fb476de226c074e18fdb809556",
+    "weight": 50
+  },
+  "AM-MESO-B02": {
+    "geometry": "c46d0a1d1b4c59e5d1d8d0ad54a4226a1f6bb417540a434033beeb9cd7082c5a",
+    "weight": 25
+  },
+  "AM-MESO-B03": {
+    "geometry": "eedfb5062e9d4fb7a877f4623346db1a7c865e865c8beff873357d0b9ae17531",
+    "weight": 25
+  },
+  "AM-MESO-B04": {
+    "geometry": "17b2ab3109fe2bcd5150f7762b17e7139d16a5577bd38b26bd6d0cb380f0c770",
+    "weight": 25
+  },
+  "AM-MESO-B07": {
+    "geometry": "49a1acb1526bdb466865e947fe6d80ed8c4132a74b926de2510d4f975663221c",
+    "weight": 0
+  },
+  "AM-MESO-B10": {
+    "geometry": "83e41e57e2b39b1f658f1af2567ca20aef186e57218002560b185dece6844b81",
+    "weight": 10
+  },
+  "AM-MESO-B11": {
+    "geometry": "ad87a1f891cf4c5fea2cecffcd77c3482ace60bcecfa80f520506b03455118af",
+    "weight": 0
+  },
+  "AM-MESO-B12": {
+    "geometry": "594b6b51122a04f1309f3b052c9865e6b5da1bc78c076c28728e1345f2c9e7ea",
+    "weight": 0
+  },
+  "AM-MESO-B13": {
+    "geometry": "3f19569c71a95dadf79a69892292f180d2a37689dcddd419313b56cea9e90d3d",
+    "weight": 10
+  },
+  "AM-AND-B01": {
+    "geometry": "a510e663db228e776fea31ffb0ed58ebc7c9768667896bfe333d8a40009a1996",
+    "weight": 50
+  },
+  "AM-AND-B02": {
+    "geometry": "83dced095953c1df9fa70fd3d6e2e5977839ab820bd17a96d926102ac804db86",
+    "weight": 25
+  },
+  "AM-AND-B03": {
+    "geometry": "3343b04f525685024d04b5bffbb1cb3febd605a43e55bd168461a77b5d3c1758",
+    "weight": 25
+  },
+  "AM-AND-B04": {
+    "geometry": "0e7bb04d761fa1995778aec1ea0574b19a06e4097377a7173ae7ea7bd9a7bfbd",
+    "weight": 0
+  },
+  "AM-AND-B05": {
+    "geometry": "6d068db4b27a927550f1b0f4d7204be069f3866241fbed14d1c44f41e086097f",
+    "weight": 0
+  },
+  "AM-AND-B07": {
+    "geometry": "c91735afe14ffc97c530e8d53c5e6db36838e08e14890ccb4c1a64a569633669",
+    "weight": 25
+  },
+  "AM-AND-B10": {
+    "geometry": "ad87a1f891cf4c5fea2cecffcd77c3482ace60bcecfa80f520506b03455118af",
+    "weight": 0
+  },
+  "AM-TROP-B01": {
+    "geometry": "4c2f5bc0ea1bc1c163fea1048832eda2e58949bacaacd7e901f14a63eb70d73f",
+    "weight": 50
+  },
+  "AM-TROP-B02": {
+    "geometry": "409dc9991c25eef3aacc9955b62eed0cda5dfa69f0fc884fba955e33c5ffee1f",
+    "weight": 25
+  },
+  "AM-TROP-B03": {
+    "geometry": "87b4cb3419056b7a9560dd7a387a87a7227d52edfeafabcbb646a33c29360c5d",
+    "weight": 25
+  },
+  "AM-TROP-B04": {
+    "geometry": "d45f0aa94f882e572c38ddc94c63e3a10c37c8178ae00f938e923f4eff0d10f7",
+    "weight": 25
+  },
+  "AM-TROP-B05": {
+    "geometry": "45f41840b87902dd142ff45d625244bcb5400a99d3486311d81f3a5e779182ca",
+    "weight": 25
+  },
+  "AM-TROP-B06": {
+    "geometry": "349e85bfb9060543052f35806093cf4dc3c3dffce6d5e5b07b0e14526366b0de",
+    "weight": 25
+  },
+  "AM-TROP-B08": {
+    "geometry": "918a0c2e084c4ef0a10895c6dd84fa18102bfcaf83ff2456ce32fe20a3f2bb21",
+    "weight": 10
+  },
+  "AM-TROP-B09": {
+    "geometry": "9cb1b01161ac78def1aa8bfdb51a9b64eaf555af1f7b452452f56779903ecb0f",
+    "weight": 0
+  },
+  "AM-TROP-B10": {
+    "geometry": "2ffac7ae7ea0e64746e75ef62b86328ae66e07f81bd3d67371cc73247d8f014b",
+    "weight": 0
+  },
+  "AS-SIB-B01": {
+    "geometry": "e83c7007461cec030db324ceeafda078bd063dc0f1eeef20b28a8accae379dea",
+    "weight": 50
+  },
+  "AS-SIB-B02": {
+    "geometry": "17d2f2d79b5ba9ac3afd3f3e3fbfe20021281aa8db40017379e693cbfa4e4302",
+    "weight": 25
+  },
+  "AS-SIB-B03": {
+    "geometry": "f3f3dfa5212d2bf588e085e0405db865a5c0eb9b422f1145d26bb9b84313814b",
+    "weight": 25
+  },
+  "AS-SIB-B04": {
+    "geometry": "42f8b51b0fd232c09cf74653866a4d2922f580a5a032671bbc9f518f2d37de90",
+    "weight": 25
+  },
+  "AS-SIB-B05": {
+    "geometry": "cf8b41b48774b5be7b70639a603ff1ec719f0c9ea4a7328b641cee91d012a54e",
+    "weight": 0
+  },
+  "AS-SIB-B06": {
+    "geometry": "856b8e18192287022d113f731183a3e611b40cbcb36c5c6f36152d3b8f5ee53e",
+    "weight": 10
+  },
+  "AS-SIB-B07": {
+    "geometry": "9e37e971492632f49dea9fb3df5852a0a1b207c4f6ab39a629dc15e7164cbb44",
+    "weight": 10
+  },
+  "AS-SIB-B08": {
+    "geometry": "0ca354741eccfb6fcd347d49e280447f092e7265875a258bb43109f1f1b87b59",
+    "weight": 10
+  },
+  "AM-PNW-B01": {
+    "geometry": "8178acec4d3db35c00286318e0b1fb668609cbd46604d2ac2271bdc2192779c6",
+    "weight": 50
+  },
+  "AM-PNW-B02": {
+    "geometry": "8178acec4d3db35c00286318e0b1fb668609cbd46604d2ac2271bdc2192779c6",
+    "weight": 25
+  },
+  "AM-PNW-B03": {
+    "geometry": "25ef33231d174ee1635143e4192f221799f4fe8b037b8fcc34046ddf4e889cad",
+    "weight": 25
+  },
+  "AM-PNW-B04": {
+    "geometry": "f3f7b1a34c053e3fa60f4891350e6667e3a2249d5b54e2ffd017a59b166afba6",
+    "weight": 0
+  },
+  "AM-PNW-B05": {
+    "geometry": "8640d563f73ac42b9ec15d9f1e396a4f0a6959cb86a79e7c56fddaefef92d95d",
+    "weight": 0
+  },
+  "AM-PNW-B06": {
+    "geometry": "59448bd8a0459335f6c1faafea4591b314638e626924e87c015552dfa2fb5e81",
+    "weight": 10
+  },
+  "AM-PNW-B07": {
+    "geometry": "68d959265807ba5317af21ade0b6ea77836064d870042029c51d83f4c1dd5702",
+    "weight": 0
+  },
+  "AM-PNW-B08": {
+    "geometry": "733f98293c5da84a0cc0b1c46670958dc3ad02e615599d6c044840dace8ffd0b",
+    "weight": 10
+  },
+  "AM-SOUTH-B01": {
+    "geometry": "92f4eb809dd014f84d842615c7b86a126b9399ee698d76c69bb327e7278f9d14",
+    "weight": 50
+  },
+  "AM-SOUTH-B02": {
+    "geometry": "b836b81cc883ab1c87f0b9cf1a62ccce90de281be29414a82806e618cb872646",
+    "weight": 25
+  },
+  "AM-SOUTH-B03": {
+    "geometry": "57f392b221b78b176dc64f461cfc51ce1b15fa4968a98ba9a0a5722ade2a386b",
+    "weight": 25
+  },
+  "AM-SOUTH-B04": {
+    "geometry": "f7d398eee0ca65eb759ae6683e794f109410e0f869eb7530eac06ed376cf9809",
+    "weight": 25
+  },
+  "AM-SOUTH-B05": {
+    "geometry": "c1c1bfc964d2c1b8dca481ad18c788c71ee8fcb2cc16aae25fb83947fe12cfea",
+    "weight": 25
+  },
+  "AM-SOUTH-B06": {
+    "geometry": "a705f8348db7b8d7520430433b61193e63c665b00cfcaaf06a91dd535ba62e0c",
+    "weight": 0
+  },
+  "AM-SOUTH-B07": {
+    "geometry": "25b1040a37f1dfefeaf86a06e08ebb894215e169cc119b4adb872914c0a985ed",
+    "weight": 10
+  }
+}

@@ -143,6 +143,9 @@ pub(super) fn add_entries(unit: &mut HouseUnit, parameters: &Parameters) -> Resu
                         forbidden.extend(existing.iter().map(|p| p.passage.clone()));
                         let accept = |opening, strip: &Surface, _| {
                             distinct(opening, &existing)
+                                && has_profiled_portal_landings(
+                                    &room.floor, &outside.floor, opening, strip, spec.width_m,
+                                )
                                 && unit.walls.iter().any(|w| {
                                     matches!(
                                         w.kind,

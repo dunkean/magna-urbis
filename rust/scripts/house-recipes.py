@@ -47,6 +47,19 @@ def add(name, parent=None, **changes):
 
 add('timber', details=['posts', 'hearth'])
 add('masonry', structure_system='masonry', materials={'frame': 'MAT-STONE-MORTAR', 'infill': 'MAT-STONE-MORTAR', 'coating': 'MAT-PLASTER-LIME', 'cladding': 'MAT-TILE-CLAY'}, floors=[1, 2], roof_pitch_deg=[20, 40], details=['masonry_joints', 'hearth'])
+# Compact Roman envelopes: dimensions are authored artistic ranges, not surveys.
+# No shop interior, independent apartments or household capacity is implied.
+add('roman_shop_house', 'masonry', width_m=[4.5, 6.5], depth_m=[7, 11],
+    floors=[2, 2], rooms_per_body=[1, 2], wall_thickness_m=[0.25, 0.4],
+    roof_pitch_deg=[20, 35], overhang_m=[0.15, 0.3],
+    materials={'frame': 'MAT-BURNT-BRICK', 'infill': 'MAT-BURNT-BRICK'},
+    details=['masonry_joints', 'shopfront'])
+# B13's explicit infill opt-out keeps one body at every declared storey count.
+# side_corridor would add a gallery; Strip already creates its lateral path.
+# Native interior/urban admission and household capacity are separate checks.
+add('roman_street_block', 'roman_shop_house', layout='strip',
+    width_m=[6.5, 10], depth_m=[10, 18], rooms_per_body=[2, 4],
+    urban_frontage_infill=False, details=['masonry_joints', 'rear_yard'])
 add('stone', 'masonry', materials={'frame': 'MAT-STONE-DRY', 'infill': 'MAT-STONE-DRY', 'cladding': 'MAT-SLATE'}, details=['masonry_joints', 'porch'])
 add('earth', structure_system='earth_wall', materials={'frame': 'MAT-ADOBE', 'infill': 'MAT-ADOBE', 'cladding': 'MAT-MUD-PLASTER'}, roof_system='RF-FLAT', allowed_roofs=['RF-FLAT'], floors=[1, 2], roof_pitch_deg=[0, 0], wall_thickness_m=[0.45, 0.8], details=['parapet', 'scupper', 'exterior_stair'])
 add('round', footprint_family='FP-ROUND', allowed_footprints=['FP-ROUND', 'FP-OVAL'], roof_system='RF-CONE', allowed_roofs=['RF-CONE'], width_m=[4, 8], depth_m=[4, 8], rooms_per_body=[1, 1], details=['hearth', 'single_door'])
@@ -113,6 +126,11 @@ add('saddle', 'stilt', roof_system='RF-SADDLE', allowed_roofs=['RF-SADDLE'], wid
 add('horns', 'saddle', width_m=[10, 16], depth_m=[18, 28], details=['multiple_horns', 'carved_panels', 'raised_posts'])
 add('batak', 'saddle', roof_system='RF-CURVED', allowed_roofs=['RF-CURVED'], details=['projected_gables', 'carved_panels', 'raised_posts'])
 add('joglo', 'pavilion', roof_system='RF-HIP', allowed_roofs=['RF-HIP'], width_m=[14, 22], depth_m=[14, 22], details=['four_master_posts', 'high_central_pyramid', 'open_sides'])
+add('javanese_kampung', width_m=[4.5, 7.5], depth_m=[6, 11],
+    materials={'frame': 'MAT-TIMBER-POST', 'roof_frame': 'MAT-TIMBER-POST', 'infill': 'MAT-BAMBOO', 'coating': '', 'cladding': 'MAT-TILE-CLAY'},
+    roof_pitch_deg=[35, 45], overhang_m=[0.35, 0.6], wall_thickness_m=[0.12, 0.18], details=[])
+add('javanese_limasan', 'javanese_kampung', width_m=[5, 8], depth_m=[9, 13],
+    roof_system='RF-HIP', allowed_roofs=['RF-HIP'], roof_pitch_deg=[30, 40])
 add('balinese', 'pavilion', layout='kancha', width_m=[20, 30], depth_m=[20, 30], bodies=[4, 8], materials={'infill': 'MAT-BAMBOO'}, details=['separate_pavilions', 'enclosure', 'family_shrine'])
 add('shell', 'oval', roof_system='RF-SHELL', allowed_roofs=['RF-SHELL'], width_m=[6, 12], depth_m=[14, 24], details=['arcs', 'continuous_shell', 'low_entry'])
 add('boat_shell', 'shell', width_m=[3, 5], depth_m=[16, 24], materials={'base': 'MAT-BASALT', 'cladding': 'MAT-REED'}, details=['boat_plan', 'basalt_base', 'low_entry'])
@@ -143,7 +161,7 @@ add('platform', 'earth', footprint_family='FP-TERRACE', allowed_footprints=['FP-
 # @ = domestic annex; + = spatial domestic component; ! = non-residential;
 # ~ = landscape. Prestige and collective roles are resolved explicitly below.
 ASSIGNMENTS = {
-    'MED-ANT': 'masonry atrium peristyle insula court_tile !long !long court_flat !vault !round villa',
+    'MED-ANT': 'masonry atrium peristyle insula court_tile !long !long court_flat !vault !round villa roman_shop_house roman_street_block',
     'ATL-CEL': 'round stone_round long stone_round @small_stilt strip shell tower @stone_round',
     'EUR-MED': 'timber strip jettied masonry market farm fortified tower arcade alpine redent long bridge',
     'EUR-NOR': 'long log turf_parallel @long @small_stilt !tiered dome tipi farm turf_parallel',
@@ -162,7 +180,7 @@ ASSIGNMENTS = {
     'AS-KOR': 'forest hanok open_oval !pavilion timber !tiered !tiered clan',
     'AS-JAP': 'japan japan shinden strip @small_stilt !tiered !pavilion !siheyuan samurai tiered strip !tower',
     'AS-SEA': 'stilt forest stilt court_tile stilt !tower !round !tower !siheyuan !tiered @small_stilt +stilt !small_stilt',
-    'AS-ISL': 'stilt long_stilt saddle @saddle balinese joglo stilt !platform stilt horns batak !tiered !long',
+    'AS-ISL': 'stilt long_stilt saddle @saddle balinese joglo stilt !platform stilt horns batak !tiered !long javanese_kampung javanese_limasan',
     'OC-PAC': 'open_oval oval timber @small_stilt oval !long ~platform stilt shell boat_shell !long ~court_flat ~platform',
     'OC-AUS': 'bark dome stone_round ~earth ~round bark shell ~platform',
     'AM-ARC': 'tipi turf turf pithouse igloo turf bark @long @small_stilt turf',
@@ -185,6 +203,49 @@ PACK_ERAS = {
 }
 LATE_IDS = {'AS-MIDE-B13', 'AF-WEST-B10', 'AF-EAST-B12', 'AS-HIM-B11',
             'AS-CHI-B13', 'AS-JAP-B11', 'AS-JAP-B12', 'AS-ISL-B10', 'OC-PAC-B11'}
+# Explicit cultural membership, independent from a settlement archetype or roof.
+TRADITION_ASSIGNMENTS = {identifier: 'javanese' for identifier in ['AS-ISL-B06', 'AS-ISL-B14', 'AS-ISL-B15']}
+TRADITION_ASSIGNMENTS['MED-ANT-B12'] = 'roman_urban'
+TRADITION_ASSIGNMENTS['MED-ANT-B13'] = 'roman_urban'
+JAVA_SOURCE = 'docs/sources/javanese-domestic-architecture.md'
+ROMAN_SOURCE = 'docs/sources/roman-compact-domestic-architecture.md'
+# Provenance and artistic defaults belong to a recipe, not to the generic
+# inspired_only permission. Keep the two existing Java records byte-identical.
+JAVA_INSPIRED_METADATA = dict(
+    source=JAVA_SOURCE, level_height_m=2.8,
+    parameter_note='Dimensions, pitch, eaves, wall thickness, room count and production weight are explicit artistic defaults; measured late buildings are examples, not universal ranges. See ' + JAVA_SOURCE + '. Simple closed dwelling: no emper, gallery, annex or extra household is implied.',
+    temporal=dict(eras=[], tradition_long=True, late_only=False, from_year=None, to_year=None),
+    chronology_note='Late documented examples; no ancient or medieval date is asserted. Inspired interpretation only; see ' + JAVA_SOURCE,
+    chronology_confidence='undated_tradition',
+)
+INSPIRED_ONLY_RECIPES = {
+    identifier: copy.deepcopy(JAVA_INSPIRED_METADATA)
+    for identifier in ['AS-ISL-B14', 'AS-ISL-B15']
+}
+INSPIRED_ONLY_RECIPES['MED-ANT-B12'] = dict(
+    source=ROMAN_SOURCE, level_height_m=2.8,
+    parameter_note='Inspired compact Roman envelope: dimensions, two storeys, room count, roof shape/pitch, eaves, wall thickness and production weight are artistic defaults, not measured historical ranges. Shopfront adds a decorative panel and marks the first ground-floor room as Shop; this generic partition, separate commercial access, apartments and household capacity are not certified as a Roman functional programme. See ' + ROMAN_SOURCE + '.',
+    temporal=dict(eras=['A'], tradition_long=False, late_only=False, from_year=None, to_year=None),
+    chronology_note='Shop-and-upper-dwelling arrangements are documented in Imperial Roman contexts; this generated envelope has no exact archaeological date or measured dimensional range. Inspired interpretation only; see ' + ROMAN_SOURCE,
+    chronology_confidence='broad_tradition',
+    roof_confidence='uncertain',
+)
+INSPIRED_ONLY_RECIPES['MED-ANT-B13'] = {'source': 'docs/sources/roman-compact-domestic-architecture.md',
+ 'level_height_m': 2.8,
+ 'parameter_note': 'Inspired compact Roman street block: all dimensional ranges, 2/3/4 storeys, 2.8m storey '
+                   'height, room count, roof, rear court and lateral passage proportions are artistic/native '
+                   'construction defaults, not archaeological measurements. Generic communal rooms and '
+                   'internal stairs do not certify apartments, independent tenancy, households or '
+                   'inhabitants. No automatic burgage infill, shopfront, gallery or multiple_households '
+                   'programme is declared. See docs/sources/roman-compact-domestic-architecture.md.',
+ 'temporal': {'eras': ['A'], 'tradition_long': False, 'late_only': False, 'from_year': None, 'to_year': None},
+ 'chronology_note': 'Imperial Roman multi-storey street dwellings are documented, including facade-lit and '
+                    'court-lit examples; this generated block has no exact archaeological date or measured '
+                    'dimensional range. Inspired interpretation only; see '
+                    'docs/sources/roman-compact-domestic-architecture.md',
+ 'chronology_confidence': 'broad_tradition',
+ 'roof_confidence': 'uncertain'}
+INSPIRED_ONLY_IDS = set(INSPIRED_ONLY_RECIPES)
 PRESTIGE_IDS = {'MED-ANT-B11', 'AS-IND-B13', 'AS-HIM-B09', 'AS-CHI-B14',
                'AS-JAP-B10', 'AM-MESO-B07', 'AM-MESO-B12', 'AF-WEST-B10',
                'AF-EAST-B06', 'AM-MISS-B02', 'AM-MISS-B03'}
@@ -309,7 +370,7 @@ ROLE_CODES = dict(D='dwelling', E='residential_ensemble', C='communal_dwelling',
                   M='mixed_residential', A='domestic_annex', S='spatial_component',
                   N='non_domestic', L='landscape')
 ROLE_ASSIGNMENTS = {
-    'MED-ANT': 'D D D C D N N D N N M',
+    'MED-ANT': 'D D D C D N N D N N M M C',
     'ATL-CEL': 'D D D E A D D D A',
     'EUR-MED': 'D D D D M E D D D D D D D',
     'EUR-NOR': 'C D E A A N D D E E',
@@ -328,7 +389,7 @@ ROLE_ASSIGNMENTS = {
     'AS-KOR': 'D D S N D N N E',
     'AS-JAP': 'D D D M A N N N D M M N',
     'AS-SEA': 'D D E E D N N N N N A S N',
-    'AS-ISL': 'D C D A E D D N D D D N N',
+    'AS-ISL': 'D C D A E D D N D D D N N D D',
     'OC-PAC': 'D D D A D N L D D D N L L',
     'OC-AUS': 'D D D L L D D L',
     'AM-ARC': 'D D D D D C D A A C',
@@ -346,7 +407,7 @@ ROLE_ASSIGNMENTS = {
 # One authored local context per B entry (including excluded entries). These are
 # references for an isolated building bench, not a claim to generate a city.
 CONTEXT_ASSIGNMENTS = {
-    'MED-ANT': '03:GRID 03:GRID 03:GRID 03:GRID 01:IRREGULAR 01:IRREGULAR 03:GRID 06:COASTAL 03:GRID 01:IRREGULAR 08:DISPERSED',
+    'MED-ANT': '03:GRID 03:GRID 03:GRID 03:GRID 01:IRREGULAR 01:IRREGULAR 03:GRID 06:COASTAL 03:GRID 01:IRREGULAR 08:DISPERSED 04:LINEAR 03:GRID',
     'ATL-CEL': '01:CLUSTER 01:CLUSTER 01:DISPERSED 03:HILL 01:DISPERSED 02:WALLED 07:COASTAL 08:HILL 06:TERRACE',
     'EUR-MED': '01:NUCLEATED 02:LINEAR 03:IRREGULAR 01:NUCLEATED 02:LINEAR 01:DISPERSED 05:WALLED 09:VERTICAL 08:LINEAR 06:TERRACE 03:IRREGULAR 07:LINEAR 02:RIVER',
     'EUR-NOR': '01:DISPERSED 05:LINEAR 03:COMPOUND 02:COASTAL 05:DISPERSED 01:NUCLEATED 06:NOMAD 06:NOMAD 05:COMPOUND 03:COMPOUND',
@@ -365,7 +426,7 @@ CONTEXT_ASSIGNMENTS = {
     'AS-KOR': '01:COURTYARDS 01:COURTYARDS 04:TERRACE 05:HILL 01:COURTYARDS 06:AXIAL 05:CEREMONIAL 06:COURTYARDS',
     'AS-JAP': '01:DISPERSED 06:COMPOUND 02:AXIAL 04:LINEAR 01:COMPOUND 03:CEREMONIAL 07:CEREMONIAL 03:COURTYARDS 08:COMPOUND 08:AXIAL 04:LINEAR 09:VERTICAL',
     'AS-SEA': '01:WATER-STILT 09:DISPERSED 01:COMPOUND 06:COURTYARDS 05:WATER-STILT 03:AXIAL 04:CEREMONIAL 07:CEREMONIAL 08:COURTYARDS 08:AXIAL 01:COMPOUND 05:FLOATING 08:COURTYARDS',
-    'AS-ISL': '01:WATER-STILT 02:MEGAHOUSE 03:LINEAR 03:LINEAR 04:COMPOUND 05:COURTYARDS 06:RIVER 07:AXIAL 08:LINEAR 12:LINEAR 09:HILL 04:CEREMONIAL 11:MEGAHOUSE',
+    'AS-ISL': '01:WATER-STILT 02:MEGAHOUSE 03:LINEAR 03:LINEAR 04:COMPOUND 05:COURTYARDS 06:RIVER 07:AXIAL 08:LINEAR 12:LINEAR 09:HILL 04:CEREMONIAL 11:MEGAHOUSE 05:COURTYARDS 05:COURTYARDS',
     'OC-PAC': '01:COASTAL 01:COASTAL 05:CLUSTER 04:HILL 11:NUCLEATED 06:CEREMONIAL 07:CEREMONIAL 03:WATER-STILT 02:CLUSTER 08:COMPOUND 09:CEREMONIAL 10:ISLANDS 11:CEREMONIAL',
     'OC-AUS': '01:DISPERSED 01:CLUSTER 04:CLUSTER 03:RIVER 08:RIVER 06:DISPERSED 05:COASTAL 01:TERRESTRIAL-RITUAL',
     'AM-ARC': '01:NOMAD 02:CLUSTER 08:COASTAL 07:CLUSTER 04:ICE 03:MEGAHOUSE 05:RIVER 03:COASTAL 05:RIVER 06:MEGAHOUSE',
@@ -626,6 +687,9 @@ def complete_parameters(identifier, data, role):
     data['structural_spec'] = structure_defaults(identifier, data)
     data['components'] = []
     data['notes'] = []
+    inspired = INSPIRED_ONLY_RECIPES.get(identifier)
+    if inspired and 'level_height_m' in inspired:
+        data['level_height_m'] = inspired['level_height_m']
     if identifier in BATCH_DIMENSION_DEFAULTS:
         data['notes'].append('Dimensions graphiques stylisées explicites : pièces entières et vraies volées après murs/retraits, sans réduction des corps, pièces ou étages ; aucune mesure archéologique déduite.')
     if identifier == 'AS-MIDE-B03':
@@ -764,6 +828,8 @@ def complete_parameters(identifier, data, role):
             raise ValueError(f'Unknown architectural trait {identifier}: {detail}')
     data['details'] = geometry
     data['notes'] = notes
+    if inspired:
+        data['notes'].append(inspired['parameter_note'])
     if identifier == 'AF-SAHEL-B09':
         data['notes'].append('Vestibule conique du groupe à cours : position, plan rond, dimensions et chaume de couverture stylisés, sans mesure archéologique.')
     if identifier == 'AS-STEP-B01':
@@ -875,9 +941,12 @@ V = {
     'oval_shed': variant('Abri ovale en appentis', footprint_family='FP-OVAL', roof_system='RF-SHED', materials={'cladding': 'MAT-BARK'}),
     'shed_thatch': variant('Appentis de chaume des cellules de travail', roof_system='RF-SHED', roof_pitch_deg=[25, 40], materials={'cladding': 'MAT-THATCH'}),
     'round_cone': variant('Petit cylindre à cône de chaume', footprint_family='FP-ROUND', roof_system='RF-CONE', materials={'cladding': 'MAT-THATCH'}, roof_pitch_deg=[35, 55]),
+    'three_storeys': variant('Trois niveaux — variante inspirée', floors=[3, 3]),
+    'four_storeys': variant('Quatre niveaux — variante inspirée', floors=[4, 4]),
 }
 VARIANT_ASSIGNMENTS = {
     'MED-ANT-B01': 'flat_earth', 'MED-ANT-B05': 'flat_earth',
+    'MED-ANT-B13': 'three_storeys four_storeys',
     'ATL-CEL-B01': 'oval_plan', 'ATL-CEL-B02': 'oval_plan', 'ATL-CEL-B04': 'oval_plan rect_gable',
     'EUR-MED-B01': 'rect_gable', 'EUR-MED-B03': 'slate_cladding', 'EUR-MED-B04': 'slate_cladding',
     'EUR-MED-B06': 'quadrangle', 'EUR-MED-B07': 'flat_stone', 'EUR-MED-B08': 'gable_tile',
@@ -997,6 +1066,13 @@ def variants_for(identifier, parameters, role):
         data['level_height_m'] = level_height(data)
         if identifier == 'AS-MIDE-B03':
             data['level_height_m'] = 4.6
+        inspired = INSPIRED_ONLY_RECIPES.get(identifier)
+        if inspired:
+            # Authored inspired floor variants retain their declared height,
+            # and each adjacent-level route must reach the resulting top floor.
+            # Do this before copying the bundle into its main component.
+            data['level_height_m'] = inspired.get('level_height_m', data['level_height_m'])
+            data['vertical_routes'] = routes(data['vertical_access'], data['floors'][1])
         data['detail_spec'] = detail_defaults(data)
         data['level_materials'] = level_material_defaults(identifier, data)
         data['structural_spec'] = structure_defaults(identifier, data)
@@ -1014,7 +1090,8 @@ def variants_for(identifier, parameters, role):
             part['count'] = data['bodies']
         if data['roof_system'] in ['RF-FLAT', 'RF-STEP']:
             data['roof_pitch_deg'] = [0, 0]
-        variants.append(dict(id=key, label=V[key]['label'], parameters=data, confidence='source_preset'))
+        variants.append(dict(id=key, label=V[key]['label'], parameters=data,
+                             confidence='stylized' if inspired else 'source_preset'))
     return variants
 
 
@@ -1034,6 +1111,10 @@ KNOWN_WINDOWS = {
 
 
 def chronology(identifier, pack, context):
+    inspired = INSPIRED_ONLY_RECIPES.get(identifier)
+    if inspired:
+        return (copy.deepcopy(inspired['temporal']), inspired['chronology_note'],
+                inspired['chronology_confidence'])
     eras = ERA_OVERRIDES.get(identifier, ['M'] if pack == 'AM-MISS' or
                             (pack == 'AM-AND' and identifier not in ['AM-AND-B01', 'AM-AND-B06', 'AM-AND-B09', 'AM-AND-B11', 'AM-AND-B12', 'AM-AND-B13']) else PACK_ERAS.get(pack, ['A', 'M']))
     years = KNOWN_WINDOWS.get(identifier)
@@ -1376,10 +1457,25 @@ component|EUR-MED-B06|garden|apiary
 '''.strip().splitlines()
 
 
-def build():
-    source = json.loads((DATA / 'source-inventory.json').read_text(encoding='utf-8'))
+def inspired_source_reference(identifier):
+    metadata = INSPIRED_ONLY_RECIPES.get(identifier)
+    if not metadata:
+        return []
+    path = metadata['source']
+    headings = [i for i, line in enumerate((ROOT / path).read_text(encoding='utf-8').splitlines(), 1)
+                if line.startswith('## ' + identifier + ' ')]
+    if len(headings) != 1:
+        raise ValueError(f'Expected one provenance heading for {identifier} in {path}')
+    return [dict(path=path, line=headings[0])]
+
+
+def build(source=None):
+    # Supplying an extracted inventory permits an in-memory preparation check
+    # without writing recipes.json or source-inventory.json.
+    if source is None:
+        source = json.loads((DATA / 'source-inventory.json').read_text(encoding='utf-8'))
     by_id = {entry['id']: entry for entry in source['entries']}
-    catalogue = dict(schema_version='2', catalogue_version='atlas-houses-2',
+    catalogue = dict(schema_version='2', catalogue_version='atlas-houses-3',
                      sources=source['sources'], packs=[], materials=[], recipes=[], coverage=[],
                      geometry_traits=[dict(id=identifier, operator=operator, status='planned')
                                       for identifier, operator in sorted(TRAITS.items())],
@@ -1446,13 +1542,15 @@ def build():
             temporal, chronology_note, chronology_confidence = chronology(identifier, pack, context)
             roof_confidence = ('uncertain' if identifier in ['ATL-CEL-B08', 'OC-AUS-B03', 'AF-EAST-B08'] else
                                'not_applicable' if parameters['roof_system'] == 'uncovered' else 'source_preset')
+            roof_confidence = INSPIRED_ONLY_RECIPES.get(identifier, {}).get('roof_confidence', roof_confidence)
             catalogue['recipes'].append(dict(
                 id=identifier, pack_id=pack, label=entry['label'], priority=entry['priority'],
                 role=role, profile=key, parameters=parameters, variants=variants,
                 component_kind=COMPONENT_KINDS.get(identifier), temporal=temporal,
                 confidence='stylized', roof_confidence=roof_confidence,
                 sources=[dict(path=source['sources'][0]['path'], line=entry['source_line']),
-                         dict(path=source['sources'][0]['path'], line=context['source_line'])],
+                         dict(path=source['sources'][0]['path'], line=context['source_line'])] +
+                        inspired_source_reference(identifier),
                 source_description=entry['columns'],
                 settlement_pattern=pattern_id, settlement_archetype=context_id,
                 subtradition=context['label'], context_note=context['columns'][-1],
@@ -1462,9 +1560,15 @@ def build():
                 weight=0 if role in ['domestic_annex', 'spatial_component'] or identifier in PRESTIGE_IDS else
                        50 if entry['priority'] == 'P0' else 25 if entry['priority'] == 'P1' else 10,
             ))
+            if identifier in TRADITION_ASSIGNMENTS:
+                catalogue['recipes'][-1]['tradition_id'] = TRADITION_ASSIGNMENTS[identifier]
+            if identifier in INSPIRED_ONLY_IDS:
+                catalogue['recipes'][-1]['inspired_only'] = True
     source_buildings = {identifier for identifier in by_id if re.search(r'-B\d+$', identifier)}
     if mapped != source_buildings:
         raise ValueError(f'Catalogue/source mismatch: missing {source_buildings - mapped}, extra {mapped - source_buildings}')
+    if not (set(TRADITION_ASSIGNMENTS) | INSPIRED_ONLY_IDS) <= {r['id'] for r in catalogue['recipes']}:
+        raise ValueError('Unknown executable recipe in tradition/inspired-only assignments')
     return catalogue
 
 

@@ -34,3 +34,37 @@
 .urban-stage .urban-tissue-controls { padding-top: 8px; border-top: 1px solid #c5d5c9; }
 .urban-stage .advanced { margin: 5px 0; }
 .urban-stage .advanced > summary { cursor: pointer; }
+/* City Bench sections: long option labels must not push controls out of the column. */
+[data-bench="city"] .stages label { min-width: 0; gap: 6px; }
+[data-bench="city"] .stages select, [data-bench="city"] .stages input:not([type=checkbox]):not([type=range]):not([type=file]) { flex: 0 1 auto; min-width: 0; max-width: 60%; }
+/* A wrapping column sizes its line to the widest label; keep the column width instead. */
+[data-bench="city"] .stages .advanced .control-group, [data-bench="city"] .stages .stage-controls > .control-group { flex-wrap: nowrap; }
+[data-bench="city"] .urban-view-tabs button { flex: 1 1 auto; width: auto; min-width: max-content; padding: 3px 8px; }
+[data-bench="city"] nav button { width: auto; padding: 3px 10px; }
+/* City Bench canvas: roles legend and frame statistics. */
+.city-legend { font-size: 11px; margin: 6px 0; }
+.city-legend:empty { display: none; }
+.city-legend > div { display: flex; flex-wrap: wrap; gap: 3px 10px; margin: 3px 0 6px; }
+.city-legend span { display: inline-flex; align-items: center; white-space: nowrap; }
+.city-legend small { display: block; color: #5c695f; }
+.city-frame { display: block; margin-top: 6px; font-size: 10px; color: #5c695f; font-variant-numeric: tabular-nums; }
+[data-city-building-counts] { display: block; font-size: 11px; margin: 4px 0; font-variant-numeric: tabular-nums; }
+[data-city-realized] button { margin-left: 4px; }
+/* City Bench inspector: one card per clicked item (house, lot, quarter) with its edit controls. */
+.city-inspect { margin: 6px 0; padding: 6px 7px; border: 1px solid #c5d5c9; border-radius: 5px; background: #f8faf6; font-size: 11px; }
+.city-inspect > header { display: flex; align-items: center; justify-content: space-between; gap: 6px; margin-bottom: 4px; }
+.city-inspect .urban-inspection { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 2px 8px; margin: 0; }
+.city-inspect .urban-inspection dt { color: #5c695f; }
+.city-inspect .urban-inspection dd { margin: 0; overflow-wrap: anywhere; }
+.city-edited { font-size: 10px; padding: 0 5px; border-radius: 8px; background: #e7c66e; color: #4b3a12; }
+.city-edit { margin-top: 5px; }
+.city-edit > summary { cursor: pointer; color: #2d5b46; }
+.city-edit .control-group { display: grid; gap: 4px; margin: 4px 0; }
+.city-edit label { display: flex; justify-content: space-between; align-items: center; gap: 6px; }
+.city-edit-actions { display: flex; gap: 6px; }
+.city-edit-actions button { flex: 1; }
+.city-inspect [data-edit-status]:empty { display: none; }
+.city-inspect [data-edit-status], .city-edit-refusal { display: block; margin-top: 4px; color: #956228; }
+.city-edits { display: flex; align-items: center; justify-content: space-between; gap: 6px; font-size: 11px; padding: 4px 6px; border-radius: 5px; background: #fbf1d5; }
+.city-edits:empty { display: none; }
+.city-edits button { width: auto; padding: 2px 8px; }

@@ -78,7 +78,7 @@ fn route(
     to: Point,
 ) -> Option<Street> {
     for (grade, role, width) in [
-        (cfg.max_lane_grade, "approach", 3.0),
+        (cfg.max_street_grade, "approach", 3.0),
         (cfg.max_stair_grade, "stairs", 2.0),
     ] {
         if role == "stairs" && !cfg.allow_stairs {
@@ -169,7 +169,9 @@ pub(super) fn satellites(
                 .min_by(|a, b| distance(a.point, p).total_cmp(&distance(b.point, p)))
                 .unwrap()
                 .point;
-            if route(&mut planner, cfg, from, p).is_some() {
+            // A satellite is a cart-served hamlet, never a summit patch reached
+            // only by stairs: its access must hold street grade.
+            if planner.route(from, p, cfg.max_street_grade).is_some() {
                 centers.push(UrbanCenter {
                     id: centers.len(),
                     point: p,
@@ -194,11 +196,33 @@ pub(super) fn serve(
     surface: Surface<'_>,
     radius: f64,
     target: f64,
+    roads: &[Street],
 ) -> Vec<Street> {
     let mut domains = union(&phases.iter().flatten().cloned().collect::<Vec<_>>());
     if domains.len() < 2 || centers.is_empty() {
         return vec![];
     }
+    // Banks joined by an existing regional crossing are served by it, like
+    // the growth that reached them; dry links are only routed on land.
+    let reach = (radius * 0.1).max(60.0);
+    let near = |s: &Shape, p: Point| {
+        g::contains(s, p)
+            || s.outer
+                .iter()
+                .zip(s.outer.iter().cycle().skip(1))
+                .any(|(&a, &b)| g::distance(p, a, b).0 <= reach)
+    };
+    let spans = roads
+        .iter()
+        .filter(|r| matches!(r.role.as_str(), "bridge" | "ford" | "causeway"))
+        .filter_map(|r| Some((*r.path.first()?, *r.path.last()?)))
+        .collect::<Vec<_>>();
+    let bridged = |kept: &[Shape], s: &Shape| {
+        spans.iter().any(|&(a, b)| {
+            (near(s, a) && kept.iter().any(|k| near(k, b)))
+                || (near(s, b) && kept.iter().any(|k| near(k, a)))
+        })
+    };
     let origin = centers[0].point;
     domains.sort_by(|a, b| {
         g::contains(b, origin)
@@ -219,13 +243,20 @@ pub(super) fn serve(
             (bounds.3 + margin).min(surface.width),
         ),
     );
-    let mut kept = vec![];
+    let mut kept: Vec<Shape> = vec![];
     let mut anchors: Vec<Point> = vec![];
     let mut links: Vec<Street> = vec![];
+    // A bank may only become reachable once the island before it is kept.
+    let mut deferred = vec![];
     for domain in domains {
         let nucleus = centers.iter().find(|c| g::contains(&domain, c.point));
-        if !kept.is_empty() && (g::area(&domain) < (target * 0.006).max(250.0) || kept.len() >= 12)
+        if !kept.is_empty() && (g::area(&domain) < (target * 0.01).max(1000.0) || kept.len() >= 12)
         {
+            continue;
+        }
+        if !kept.is_empty() && bridged(&kept, &domain) {
+            anchors.push(g::interior_point(&domain));
+            kept.push(domain);
             continue;
         }
         let p = nucleus.map_or_else(|| g::interior_point(&domain), |c| c.point);
@@ -252,11 +283,20 @@ pub(super) fn serve(
         if let Some(link) = connection {
             links.push(link);
         } else if !anchors.is_empty() && nucleus.is_none() {
+            deferred.push(domain);
             continue;
         }
         // Explicit original nuclei may be separated by water; preserve them
         // without fabricating a dry-land crossing.
         anchors.push(p);
+        kept.push(domain);
+    }
+    while let Some(i) = deferred
+        .iter()
+        .position(|d| kept.len() < 12 && bridged(&kept, d))
+    {
+        let domain = deferred.swap_remove(i);
+        anchors.push(g::interior_point(&domain));
         kept.push(domain);
     }
     for phase in phases {
@@ -299,6 +339,7 @@ mod tests {
             surface,
             120.0,
             20800.0,
+            &[],
         );
         assert_eq!(phases[0].len(), 2);
         assert_eq!(links.len(), 1);
@@ -316,6 +357,7 @@ mod tests {
             surface,
             120.0,
             20800.0,
+            &[],
         );
         assert_eq!(
             serde_json::to_string(&links).unwrap(),
@@ -352,11 +394,59 @@ mod tests {
                 &LayoutConfig::default(),
                 surface,
                 120.0,
-                20800.0
+                20800.0,
+                &[],
             )
             .is_empty()
         );
         assert_eq!(phases[0].len(), 1);
         assert!(g::contains(&phases[0][0], centers[0].point));
+    }
+
+    #[test]
+    fn patch_across_an_existing_bridge_is_served_by_that_bridge() {
+        let height = vec![0.0; 64 * 64];
+        let water: Vec<u8> = (0..height.len())
+            .map(|i| u8::from((24..32).contains(&(i % 64))))
+            .collect();
+        let surface = Surface {
+            geometry: None,
+            width: 640.0,
+            n: 64,
+            height: &height,
+            water: &water,
+        };
+        let centers = vec![UrbanCenter {
+            id: 0,
+            point: Point { x: 120.0, y: 300.0 },
+            weight: 1.0,
+        }];
+        let mut phases = vec![vec![
+            g::rectangle(60.0, 240.0, 230.0, 360.0),
+            g::rectangle(330.0, 260.0, 420.0, 340.0),
+        ]];
+        let bridge = Street {
+            path: vec![Point { x: 232.0, y: 300.0 }, Point { x: 328.0, y: 300.0 }],
+            widths: vec![6.0, 6.0],
+            rank: 1,
+            role: "bridge".into(),
+        };
+        let links = serve(
+            &mut phases,
+            &centers,
+            &LayoutConfig::default(),
+            surface,
+            120.0,
+            20800.0,
+            &[bridge],
+        );
+        // The bridge itself serves the far bank: no dry link is invented.
+        assert!(links.is_empty());
+        assert_eq!(phases[0].len(), 2);
+        assert!(
+            phases[0]
+                .iter()
+                .any(|s| g::contains(s, Point { x: 380.0, y: 300.0 }))
+        );
     }
 }

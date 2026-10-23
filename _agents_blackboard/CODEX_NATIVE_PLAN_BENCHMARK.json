@@ -1,0 +1,35 @@
+[
+  {
+    "accepted": 1000,
+    "elapsed_ms": 328.1787,
+    "fixture": "EUR-MED-B02 / disjoint 30x38m planar sites / deterministic distinct seeds",
+    "max_bytes": 13583,
+    "mean_bytes": 12861,
+    "refused": 0,
+    "requested": 1000,
+    "roof_mesh_faces": 0,
+    "serialized_building_bytes": 12861015
+  },
+  {
+    "accepted": 10000,
+    "elapsed_ms": 6894.1105,
+    "fixture": "EUR-MED-B02 / disjoint 30x38m planar sites / deterministic distinct seeds",
+    "max_bytes": 13594,
+    "mean_bytes": 12865,
+    "refused": 0,
+    "requested": 10000,
+    "roof_mesh_faces": 0,
+    "serialized_building_bytes": 128651131
+  },
+  {
+    "accepted": 100000,
+    "elapsed_ms": 119973.1263,
+    "fixture": "EUR-MED-B02 / disjoint 30x38m planar sites / deterministic distinct seeds",
+    "max_bytes": 13617,
+    "mean_bytes": 12865,
+    "refused": 0,
+    "requested": 100000,
+    "roof_mesh_faces": 0,
+    "serialized_building_bytes": 1286590872
+  }
+]

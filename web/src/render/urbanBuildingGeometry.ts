@@ -1,8 +1,29 @@
 import type { MaterialSlots, Point, Surface } from '../../../rust/bridge/housesContract';
 import type { PlacedBuilding } from '../../../rust/bridge/urbanArchitecture';
+import type { HouseMaterial } from '../../../rust/bridge/housesContract';
+import type { NativeBuildingProjection } from '../ui/urbanBuildingProjection';
+import { retainBuildingFeature, type BuildingFeatureLod } from './urbanBuildingFeatureLod';
 
 export type BuildingVector = [number, number, number];
 export interface BuildingTriangle { points: [BuildingVector, BuildingVector, BuildingVector]; normal: BuildingVector; surface: 'wall' | 'roof'; materials: MaterialSlots; material?: string }
+/** A cartographic projection is never a PlacedBuilding or a realization input. */
+export type Building3dVisual = PlacedBuilding | NativeBuildingProjection;
+export interface Building3dScene {
+  buildings: readonly Building3dVisual[];
+  materials?: HouseMaterial[];
+  /** Accepted source records for terrain/forest exclusion, independent of
+   * purely visual exterior overlays. Omitted on legacy scenes. */
+  occupationBuildings?: readonly Building3dVisual[];
+}
+export function isBuildingProjection(building: Building3dVisual): building is NativeBuildingProjection {
+  return 'projection' in building && building.projection === 'native-building-visual-1';
+}
+export function building3dHeight(building: Building3dVisual): number {
+  if (isBuildingProjection(building)) return building.height_m;
+  return building.cartographic?.height_m ?? building.volumes.reduce((height, v) =>
+    Math.max(height, v.z_m + v.wall_height_m + v.roof_height_m - building.ground_z_m), 0);
+}
+const PROXY_MATERIALS: MaterialSlots = { frame: '', infill: '', coating: '', cladding: '', base: '', roof_frame: '' };
 
 /** Exact even-odd horizontal trapezoids, split only at boundary vertices. This
  * display triangulation retains holes and changes no native boundary. */
@@ -32,7 +53,7 @@ export function surfaceTriangles(surface: Surface): [Point, Point, Point][] {
 
 /** One display mesh iterator shared by GPU preparation and picking. All z are
  * absolute physical metres; roof faces are copied from native geometry. */
-export function eachBuildingTriangle(building: PlacedBuilding, emit: (triangle: BuildingTriangle) => void, overview = false): void {
+export function eachBuildingTriangle(building: Building3dVisual, emit: (triangle: BuildingTriangle) => void, overview = false, featureLod?: BuildingFeatureLod): void {
   const extrude = (surface: Surface, z: number, height: number, materials: MaterialSlots, cap: boolean, material?: string): void => {
     if (height <= 1e-8) return;
     for (const shape of surface) for (const [ri, ring] of [shape.outer, ...shape.holes].entries()) {
@@ -49,6 +70,18 @@ export function eachBuildingTriangle(building: PlacedBuilding, emit: (triangle: 
     }
     if (cap) for (const triangle of surfaceTriangles(surface)) emit({ points: triangle.map(p => [p.x, p.y, z + height]) as BuildingTriangle['points'], normal: [0, 0, 1], materials, material, surface: 'wall' });
   };
+  if (isBuildingProjection(building)) {
+    // Display-only height extrusion and horizontal roof-outline cap. These are
+    // explicitly cartographic proxies, never fabricated native walls, volumes,
+    // foundations, gables or source draws. Picking uses these same triangles.
+    const materials = building.materials ?? PROXY_MATERIALS;
+    extrude(building.footprint, building.ground_z_m, building.height_m, materials, false);
+    for (const triangle of surfaceTriangles(building.roof_footprint)) emit({
+      points: triangle.map(p => [p.x, p.y, building.ground_z_m + building.height_m]) as BuildingTriangle['points'],
+      normal: [0, 0, 1], materials, material: materials.cladding, surface: 'roof',
+    });
+    return;
+  }
   for (const volume of building.volumes) {
     const foundation = volume.foundation;
     if (foundation) extrude(foundation.footprint, foundation.z_min_m, foundation.z_max_m - foundation.z_min_m, volume.materials, true);
@@ -71,6 +104,7 @@ export function eachBuildingTriangle(building: PlacedBuilding, emit: (triangle: 
   const materials = building.volumes[0]?.materials;
   if (materials) for (const foundation of building.structural_foundations ?? []) extrude(foundation.footprint, foundation.z_min_m, foundation.z_max_m-foundation.z_min_m, materials, true, materials.base);
   if (materials) for (const feature of building.structural_features ?? []) {
+    if (!retainBuildingFeature(feature, overview, featureLod)) continue;
     if (['stair', 'ladder'].includes(feature.kind) && feature.vertices3d.length >= 3) {
       const vertices = feature.vertices3d;
       for (let i = 1; i + 1 < vertices.length; i++) {

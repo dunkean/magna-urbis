@@ -29,6 +29,32 @@ async function setup() {
 afterEach(() => { vi.unstubAllGlobals(); vi.clearAllMocks(); });
 
 describe('urban worker retained quarter boundary', () => {
+  it('reads another worker native source without a private raster upload or a silent stale-source fallback', async () => {
+    const runtime = { profile: 'local' as const, server: 'http://127.0.0.1:8810' };
+    const source = { version: 1 as const, session: '', terrainRevision: 'terrain-token', layoutsRevision: 'layout-token', partitionsRevision: 'parcel-token' };
+    const fetch = vi.fn().mockImplementation(async (_url, options) => {
+      const input = JSON.parse(options.body);
+      if (input.kind === 'parcels') { source.session = input.session; return new Response(JSON.stringify({ id: input.id, partitions: [], urbanSource: source })); }
+      if (input.source.partitionsRevision === 'stale') return new Response(JSON.stringify({ error: '[urban_source_stale] changed' }), { status: 400 });
+      return new Response(JSON.stringify({ id: input.id, placementRequests: [] }));
+    });
+    vi.stubGlobal('fetch', fetch);
+    const urbanOwner = await createUrbanEngine(runtime), houseReader = await createUrbanEngine(runtime);
+    const response = await urbanOwner.run({ id: 1, seed: 'city', kind: 'parcels', layoutsId: 9, runtime });
+    expect(response.urbanSource).toEqual(source);
+    expect((await houseReader.run({ id: 2, seed: 'houses', kind: 'buildingSites', source: response.urbanSource, keys: ['town'], runtime })).error).toBeUndefined();
+    expect(fetch).toHaveBeenCalledTimes(2);
+    const read = JSON.parse(fetch.mock.calls[1][1].body);
+    expect(read).toMatchObject({ source, session: source.session, keys: ['town'] });
+    expect(read.raster).toBeUndefined(); expect(read.layouts).toBeUndefined(); expect(read.partitions).toBeUndefined();
+    expect(fetch.mock.calls.map(([url]) => url)).toEqual([`${runtime.server}/urban`, `${runtime.server}/urban`]);
+    expect((await houseReader.run({ id: 3, seed: 'houses', kind: 'buildingSites', source: { ...source, partitionsRevision: 'stale' }, runtime })).error).toContain('urban_source_stale');
+    expect(fetch).toHaveBeenCalledTimes(3);
+    expect((await houseReader.run({ id: 4, seed: 'houses', kind: 'buildingSites', source, raster: raster(), runtime })).error).toContain('without uploaded geometry');
+    expect((await houseReader.run({ id: 5, seed: 'houses', kind: 'buildingSites', source, runtime: { ...runtime, profile: 'web' } })).error).toContain('local source');
+    expect(fetch).toHaveBeenCalledTimes(3);
+  });
+
   it('reuses exactly the old JS-number JSON boundary for every parcel edit', async () => {
     const engine = await setup();
     const explicit = await engine.run({ id: 2, kind: 'parcels', seed: 'parcels', layouts: [layout] });

@@ -68,12 +68,6 @@ fn retained_medina_repaired_cells_recover_a_native_module_without_losing_land() 
     let after =
         super::super::generate_parcels(seed, std::slice::from_ref(&layout), &automatic).unwrap();
     let count = |p: &Partition| p.parcels.iter().filter(|p| p.use_kind == "plot").count();
-    assert!(
-        count(&after[0]) > count(&before[0]),
-        "native cadence before={} after={}",
-        count(&before[0]),
-        count(&after[0])
-    );
     // Smaller *native* flat-roof domains may make the initial cuts sufficient;
     // a particular repair provenance is not the required cadastral outcome.
     eprintln!(
@@ -94,6 +88,16 @@ fn retained_medina_repaired_cells_recover_a_native_module_without_losing_land() 
                 .filter(|p| p.block == bi && p.use_kind == "plot")
                 .count())
             .collect::<Vec<_>>()
+    );
+    // Forced strips now also cut normal to the curved souk frontage and place
+    // their cuts by area, so they may beat the native cadence by one lot on
+    // these three small blocks; the native path must stay within one lot and
+    // still recover modules beyond the four of the original regression.
+    assert!(
+        count(&after[0]) + 1 >= count(&before[0]) && count(&after[0]) > 4,
+        "native cadence before={} after={}",
+        count(&before[0]),
+        count(&after[0])
     );
     for (bi, block) in layout.blocks.iter().enumerate() {
         let cells = after[0]
@@ -683,4 +687,367 @@ fn unsupported_period_preserves_land_without_a_neutral_admission_fallback() {
     assert_eq!(area(&p.shape), 4000.0);
     assert!(!p.contacts.is_empty());
     assert!(p.envelope.is_none());
+}
+
+/// Offline probe (ignored): `Q_LAYOUT` (a replayed layout.json) and `Q_REQUEST`
+/// (its quarters request) regenerate the partition and print lot balance facts.
+#[test]
+#[ignore]
+fn probe_partition() {
+    let (Ok(lp), Ok(rp)) = (std::env::var("Q_LAYOUT"), std::env::var("Q_REQUEST")) else {
+        return;
+    };
+    let layout: Layout = serde_json::from_str(&std::fs::read_to_string(lp).unwrap()).unwrap();
+    let request: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(rp).unwrap()).unwrap();
+    let cfg: ParcelConfig = serde_json::from_value(match &request["parcelConfig"] {
+        serde_json::Value::Null => json!({}),
+        v => v.clone(),
+    })
+    .unwrap();
+    let seed = request["seed"]
+        .as_str()
+        .map(str::to_owned)
+        .unwrap_or_else(|| request["seed"].to_string());
+    let t = std::time::Instant::now();
+    let out = super::super::generate_parcels(&seed, &[layout], &cfg).unwrap();
+    eprintln!("parcels {} in {:?}", out[0].parcels.len(), t.elapsed());
+    if let Ok(path) = std::env::var("Q_OUT") {
+        std::fs::write(path, serde_json::to_string(&out[0]).unwrap()).unwrap();
+    }
+}
+
+fn front(a: (f64, f64), b: (f64, f64), rank: usize, street: usize) -> Front {
+    Front {
+        a: Point { x: a.0, y: a.1 },
+        b: Point { x: b.0, y: b.1 },
+        rank,
+        street,
+        shared: false,
+        gate: false,
+    }
+}
+
+/// Invariant (back-to-back balance): between two opposite fronts, the
+/// higher-ranked street claims at most `MAX_DEPTH_SHARE` of the depth, so a
+/// main-street lot and the back-lane lot behind it stay within 3:2 in depth
+/// (plus the 1.2 m allowance of `ray_limit`).
+#[test]
+fn back_to_back_lots_share_the_block_depth_within_the_rank_bound() {
+    let shape = rectangle(0.0, 0.0, 60.0, 40.0);
+    // Main street (rank 0) along y = 0, back lane (rank 3) along y = 40.
+    let fronts = [
+        front((0.0, 0.0), (60.0, 0.0), 0, 0),
+        front((60.0, 40.0), (0.0, 40.0), 3, 1),
+    ];
+    let mut m = morph("burgage");
+    m.value["plotDepth"]["core"] = json!([38.0, 40.0]);
+    m.value["deepFill"] = json!(true);
+    let lots = strips(
+        &shape,
+        0,
+        Point { x: 1.0, y: 0.0 },
+        &fronts,
+        &m,
+        "core",
+        &mut Rng::new("balance"),
+    );
+    let reach = |p: &Parcel, y: f64| {
+        p.shape
+            .outer
+            .iter()
+            .map(|q| (q.y - y).abs())
+            .fold(0.0, f64::max)
+    };
+    let (mut main, mut lane) = (0.0_f64, f64::INFINITY);
+    for p in lots.iter().filter(|p| p.use_kind == "plot") {
+        match p.front.map(|f| f[0].y.round() as i64) {
+            Some(0) => main = main.max(reach(p, 0.0)),
+            Some(40) => lane = lane.min(reach(p, 40.0)),
+            _ => {}
+        }
+    }
+    assert!(main > 0.0 && lane.is_finite(), "both fronts are cut");
+    assert!(
+        main <= MAX_DEPTH_SHARE * 40.0 + 1.3,
+        "main lots {main} m deep"
+    );
+    // 3:2 plus the 1.2 m allowance of `ray_limit` (before: 0.85, about 6:1).
+    assert!(
+        main / lane <= (0.6 * 40.0 + 1.3) / (0.4 * 40.0 - 1.3),
+        "depth ratio {main}/{lane}"
+    );
+}
+
+/// Invariant (lot balance): sharing a residual strip never bloats a lot past
+/// 2.5x its smallest admitted neighbour; the strip becomes garden land.
+#[test]
+fn residual_sharing_that_would_bloat_a_lot_leaves_a_garden() {
+    let fronts = [front((0.0, 34.0), (30.0, 34.0), 2, 0)];
+    let axis = Point { x: 1.0, y: 0.0 };
+    let admitted = |s: Shape| {
+        let mut p = parcel(s.clone(), 0, axis, &fronts, "plot");
+        p.envelope = Some(s);
+        p
+    };
+    let strip = parcel(rectangle(0.0, 30.0, 30.0, 34.0), 0, axis, &fronts, "plot");
+    let mut cells = vec![
+        admitted(rectangle(0.0, 0.0, 30.0, 30.0)),
+        admitted(rectangle(-6.0, 0.0, 0.0, 10.0)),
+        strip,
+    ];
+    let accept = |s: &Shape| Some(s.clone());
+    let shallow = |_: &Shape| false;
+    assert!(share_out(
+        &mut cells,
+        2,
+        &fronts,
+        &accept,
+        &shallow,
+        f64::INFINITY
+    ));
+    assert_eq!(cells.len(), 3);
+    assert!(
+        (area(&cells[0].shape) - 900.0).abs() < 1e-6,
+        "the big lot did not grow"
+    );
+    assert_eq!(cells[2].use_kind, "garden");
+    assert!(cells[2].provenance.iter().any(|q| q == "balance-garden"));
+}
+
+/// Invariant (garden character): an adapted tissue keeps its garden floor;
+/// lots give up rear land beyond their witness, which stays inside them.
+#[test]
+fn adapted_tissue_keeps_its_garden_floor_without_losing_witnesses() {
+    let layout = fixture(false, false, "european-organic");
+    let fronts = [front((0.0, 0.0), (100.0, 0.0), 1, 0)];
+    let axis = Point { x: 1.0, y: 0.0 };
+    let mut cells: Vec<Parcel> = (0..10)
+        .map(|i| {
+            let x = i as f64 * 10.0;
+            let mut p = parcel(rectangle(x, 0.0, x + 10.0, 40.0), 0, axis, &fronts, "plot");
+            p.envelope = Some(rectangle(x + 1.0, 0.0, x + 9.0, 12.0));
+            p
+        })
+        .collect();
+    let witnesses: Vec<Shape> = cells.iter().map(|p| p.envelope.clone().unwrap()).collect();
+    keep_gardens(&mut cells, &fronts, &layout, 0.3, 8.0);
+    let gardens: f64 = cells
+        .iter()
+        .filter(|p| p.use_kind == "garden")
+        .map(|p| area(&p.shape))
+        .sum();
+    assert!(gardens >= 0.3 * 4000.0 - 1.0, "gardens {gardens} m²");
+    let plots: Vec<&Parcel> = cells.iter().filter(|p| p.use_kind == "plot").collect();
+    assert_eq!(plots.len(), 10);
+    for (p, w) in plots.iter().zip(&witnesses) {
+        let outside: f64 = difference(w, &p.shape).iter().map(area).sum();
+        assert!(outside < 1e-6 && p.envelope.is_some() && p.front.is_some());
+    }
+    assert!(
+        cells
+            .iter()
+            .filter(|p| p.use_kind == "garden")
+            .all(|p| p.reason == "attached-rear-land")
+    );
+}
+
+fn walled(depth: f64, wall: bool, attached: bool) -> Layout {
+    let mut layout = fixture(false, false, "european-organic");
+    layout.blocks[0].shape = rectangle(0.0, 0.0, 100.0, depth);
+    if wall {
+        let y = depth + 1.5;
+        let mut e: super::super::Enclosure = serde_json::from_value(json!({
+            "path":[{"x":-200.0,"y":-200.0},{"x":300.0,"y":-200.0},{"x":300.0,"y":y},{"x":-200.0,"y":y}],
+            "kind":"wall","gates":[]
+        }))
+        .unwrap();
+        if attached {
+            // A lean-to on the outer face beside a road along x = 120.
+            e.attached = vec![super::super::Attached {
+                kind: "lean-to".into(),
+                side: "out".into(),
+                shape: rectangle(110.0, y + 1.5, 116.0, y + 8.0),
+                height_m: 5.0,
+            }];
+            layout.streets.push(serde_json::from_value(json!({
+                "widths":[6.0,6.0],"path":[{"x":120.0,"y":y - 50.0},{"x":120.0,"y":y + 60.0}],"rank":2,"role":"street"
+            })).unwrap());
+        }
+        layout.enclosures.push(e);
+    }
+    layout
+}
+
+/// Invariant (houses against the wall): lots whose depth ends on the inner
+/// face of the town wall run to it (no strip of back land in between) and
+/// carry `curtain-backed`; without the wall the same block keeps rear gardens.
+#[test]
+fn lots_backing_onto_the_town_wall_reach_it_without_a_gap() {
+    let cfg = ParcelConfig::default();
+    let m = morph("burgage");
+    let open = generate("wall", &walled(34.0, false, false), &cfg, &m).unwrap();
+    let gardens = |p: &Partition| -> f64 {
+        p.parcels
+            .iter()
+            .filter(|q| q.use_kind == "garden")
+            .map(|q| area(&q.shape))
+            .sum()
+    };
+    assert!(gardens(&open) > 100.0, "the open block keeps back land");
+    let walled = generate("wall", &walled(34.0, true, false), &cfg, &m).unwrap();
+    assert!(gardens(&walled) < 1.0, "{} m² of gap", gardens(&walled));
+    let plots: Vec<&Parcel> = walled
+        .parcels
+        .iter()
+        .filter(|q| q.use_kind == "plot")
+        .collect();
+    assert!(!plots.is_empty());
+    assert!(
+        plots
+            .iter()
+            .all(|q| q.provenance.iter().any(|t| t == "curtain-backed"))
+    );
+}
+
+/// Invariant (faubourg against the wall): a lean-to outside the reserve with
+/// a road beside it is a served plot; inside the reserve it stays decor.
+#[test]
+fn lean_to_outside_the_reserve_is_a_served_faubourg_lot() {
+    let mut layout = walled(30.0, true, true);
+    let lots = lean_to_lots(&layout);
+    assert_eq!(lots.len(), 1);
+    let lot = &lots[0];
+    assert_eq!(
+        (lot.use_kind.as_str(), lot.family.as_str()),
+        ("plot", "faubourg")
+    );
+    assert_eq!(lot.access.as_ref().and_then(|a| a.street), Some(1));
+    assert!(lot.front.is_some() && lot.envelope.is_some());
+    layout.enclosures[0].reserve = vec![layout.enclosures[0].attached[0].shape.clone()];
+    assert!(lean_to_lots(&layout).is_empty());
+}
+
+/// Invariant (corner lots, A3 « paires déséquilibrées »): a corner lot of 3x
+/// its street neighbour's area gives its far part along the side street to a
+/// lot of its own; the corner keeps about 1.6x its neighbour, the land is
+/// shared exactly and every part keeps a witness.
+#[test]
+fn an_oversized_corner_lot_gives_its_side_street_part_to_a_lot_of_its_own() {
+    // Main street along y = 0, side street along x = 0.
+    let fronts = [
+        front((0.0, 0.0), (40.0, 0.0), 1, 0),
+        front((0.0, 40.0), (0.0, 0.0), 2, 1),
+    ];
+    let axis = Point { x: 1.0, y: 0.0 };
+    let mut corner = parcel(rectangle(0.0, 0.0, 10.0, 40.0), 0, axis, &fronts, "plot");
+    corner.provenance.push("corner-lot".into());
+    let neighbour = parcel(rectangle(10.0, 0.0, 18.0, 15.0), 0, axis, &fronts, "plot");
+    let mut cells = vec![corner, neighbour];
+    let witness = |s: &Shape| (area(s) >= 60.0).then(|| s.clone());
+    for c in &mut cells {
+        c.envelope = witness(&c.shape);
+    }
+    split_corners(&mut cells, &fronts, &witness, &|_| false);
+    assert_eq!(cells.len(), 3, "the corner lot is split");
+    let total: f64 = cells.iter().map(|c| area(&c.shape)).sum();
+    assert!((total - 520.0).abs() < 1e-6, "exact partition: {total}");
+    let corner = area(&cells[0].shape);
+    assert!(
+        corner / 120.0 < 3.0 && corner / 120.0 > 1.2,
+        "corner {corner:.1} m²"
+    );
+    let side = &cells[2];
+    assert!(side.provenance.iter().any(|x| x == "corner-split"));
+    assert!(!side.provenance.iter().any(|x| x == "corner-lot"));
+    assert!(
+        frontage(&side.shape, &fronts).0 >= 3.0,
+        "the side lot fronts the side street"
+    );
+    assert!(cells.iter().all(|c| c.envelope.is_some()));
+}
+
+/// Invariant (court lot pairs): in a court tissue whose lots are admitted by
+/// the compact tier only, neighbours on one street are joined when together
+/// they hold the court house; the union is exact, admitted by the court
+/// profile, and some lots stay ordinary houses (types mix in the block).
+#[test]
+fn court_tissues_pair_small_lots_into_court_house_lots() {
+    let fronts = [front((0.0, 0.0), (120.0, 0.0), 1, 0)];
+    let axis = Point { x: 1.0, y: 0.0 };
+    // MED-ANT's atrium house (28.1 x 28.3 m) on 8 m x 30 m lots.
+    let court = super::super::culture::UrbanAdmissibility {
+        recipe_id: "MED-ANT-B02".into(),
+        native_layout: "atrium".into(),
+        floors: [1, 2],
+        eras: vec![],
+        min_frontage: 28.1,
+        min_access_width: 1.2,
+        min_area: 28.1 * 28.3,
+        min_depth: 28.3,
+        max_slope: 0.2,
+        shared_access: false,
+        party_walls: true,
+    };
+    let small = super::super::culture::UrbanAdmissibility {
+        recipe_id: "MED-ANT-B12".into(),
+        native_layout: "single".into(),
+        min_frontage: 5.4,
+        min_area: 5.4 * 7.95,
+        min_depth: 7.95,
+        ..court.clone()
+    };
+    let layout: Layout = serde_json::from_value(json!({
+        "key":"pairs","culture":"roman-core","center":{"x":60.0,"y":15.0},
+        "quarters":[],"warnings":[],"blocks":[{"shape":rectangle(0.0, 0.0, 120.0, 30.0),"quarter":0,"kind":"block","axis":{"x":1.0,"y":0.0},"zone":"core"}],
+        "streets":[{"widths":[6.0,6.0],"path":[{"x":-3.0,"y":-3.0},{"x":123.0,"y":-3.0}],"rank":1,"role":"street"}]
+    }))
+    .unwrap();
+    let mut cells: Vec<Parcel> = (0..15)
+        .map(|i| {
+            let x = i as f64 * 8.0;
+            parcel(rectangle(x, 0.0, x + 8.0, 30.0), 0, axis, &fronts, "plot")
+        })
+        .collect();
+    qualify(
+        &mut cells,
+        &fronts,
+        &layout,
+        &court,
+        Some(&small),
+        false,
+        "frontage",
+        None,
+    );
+    assert!(
+        cells
+            .iter()
+            .all(|c| c.envelope.as_ref().is_some_and(|e| witnessed_by(e, &small)))
+    );
+    let mut rng = Rng::new("pairs");
+    pair_courts(
+        &mut cells,
+        &fronts,
+        &layout,
+        &court,
+        Some(&small),
+        "frontage",
+        None,
+        Some("MED-ANT"),
+        0.55,
+        &mut rng,
+    );
+    let paired: Vec<_> = cells
+        .iter()
+        .filter(|c| c.provenance.iter().any(|x| x == "court-pair"))
+        .collect();
+    assert!(!paired.is_empty(), "no court lot pair");
+    assert!(paired.len() < cells.len(), "every lot became a court house");
+    for p in &paired {
+        assert!(p.envelope.as_ref().is_some_and(|e| witnessed_by(e, &court)));
+        assert!(super::courts::holds_court(p, "MED-ANT", Some("dwelling")));
+        assert!(p.parent_ids.len() >= 2 && p.parent_ids.len() <= 4);
+    }
+    let total: f64 = cells.iter().map(|c| area(&c.shape)).sum();
+    assert!((total - 3600.0).abs() < 1e-6, "exact partition: {total}");
 }

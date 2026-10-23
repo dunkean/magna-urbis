@@ -21,8 +21,8 @@ export type SuburbOpt = 'auto' | 'none' | 'some' | 'many';
 /** Informal settlements on the least valued land (M4). */
 export type ShantyOpt = 'auto' | 'none' | 'some' | 'many';
 /** Historical site archetypes the settlement core can be placed in (site/site.ts). */
-export type SiteArchetype = 'bridge' | 'confluence' | 'meander' | 'harbor' | 'estuary' | 'valley' | 'hilltop' | 'plain';
-export const SITE_ARCHETYPES: SiteArchetype[] = ['bridge', 'confluence', 'meander', 'harbor', 'estuary', 'valley', 'hilltop', 'plain'];
+export type SiteArchetype = 'bridge' | 'confluence' | 'meander' | 'harbor' | 'estuary' | 'valley' | 'hilltop' | 'plain' | 'lakeshore' | 'island' | 'spur' | 'pass';
+export const SITE_ARCHETYPES: SiteArchetype[] = ['bridge', 'confluence', 'meander', 'harbor', 'estuary', 'valley', 'hilltop', 'plain', 'lakeshore', 'island', 'spur', 'pass'];
 export type SiteType = 'auto' | SiteArchetype;
 /** Cultural / scenario hooks for site selection (filled by the culture layer). All fields optional. */
 export interface SitePrefs {

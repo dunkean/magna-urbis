@@ -1,0 +1,168 @@
+"""Offline constructive rectangle/setback witness, not native admission.
+
+Solve one fixed-angle translation LP on a convex SUBSET of the actual rights.
+The subset is the exact rights intersected with the half-plane behind the old
+front line. No convex hull replaces the concave cadastral polygon. Native
+geometry, portals, interiors and buildings are never constructed by this file.
+"""
+import hashlib
+import itertools
+import json
+import math
+from pathlib import Path
+import sys
+
+from shapely import affinity
+from shapely.geometry import Polygon, LineString, Point, box
+from shapely.ops import unary_union
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "web/scripts"))
+from native_foundation_compare import surface, terrain_bounds, float_bits
+
+INPUTS = {}
+def read(path):
+    raw = (ROOT / path).read_bytes()
+    INPUTS[path] = hashlib.sha256(raw).hexdigest()
+    return json.loads(raw)
+
+requests = read("web/out/strip-initial-budget-proof/requests.json")["requests"]
+index, request = next((i, r) for i, r in enumerate(requests) if "cbfa2d85b3057462" in r["id"])
+before = read("web/out/native-entry-existing-door-cli-proof/replay/primary-plans.json")
+after = read("web/out/source-aspect-budget-cli-proof/replay/primary-plans.json")
+old = next(b for b in before["buildings"] if b["id"] == request["id"])
+current = {b["id"]: b for b in after["buildings"]}
+origin = old["transform"]["origin"]
+angle = old["transform"]["orientation_deg"]
+def local(g):
+    return affinity.rotate(affinity.translate(g, -origin["x"], -origin["y"]), -angle, origin=(0, 0))
+def world(g):
+    return affinity.translate(affinity.rotate(g, angle, origin=(0, 0)), origin["x"], origin["y"])
+
+land = surface(request["cadastral"]).difference(surface(request["reserves"]))
+body_rights = surface(request["buildable"]).difference(surface(request["reserves"]))
+roof_rights = surface(request["roof_domain"]).difference(surface(request["reserves"]))
+common = local(land.intersection(body_rights).intersection(roof_rights))
+native = float_bits(old["resolved"])
+old_body = surface(native["surfaces"][native["bodies"][0]["footprint"]])
+front_y = old_body.bounds[1]
+x0, y0, x1, y1 = common.bounds
+rear_subset = common.intersection(box(x0, front_y, x1, y1))
+assert rear_subset.geom_type == "Polygon" and not rear_subset.interiors
+vertices = list(rear_subset.exterior.coords)[:-1]
+signed = sum(a[0]*b[1]-a[1]*b[0] for a,b in zip(vertices, vertices[1:]+vertices[:1]))
+if signed < 0:
+    vertices.reverse()
+turns = [(b[0]-a[0])*(c[1]-b[1])-(b[1]-a[1])*(c[0]-b[0])
+         for a,b,c in zip(vertices,vertices[1:]+vertices[:1],vertices[2:]+vertices[:2])]
+assert min(turns) >= 0, "Unsupported: exact rear subset is not convex"
+
+# Observed old native roof projects 1 mm beyond the declared overhang. This is
+# a conservative same-family rectangle proposal, still requiring native replay.
+margin = round((old["volumes"][0]["overhang_m"] + .001)*1000)/1000
+w, d = 7.072, 16.970
+assert 5 <= w <= 18 and 7 <= d <= 24 and 5/12 <= w/d <= 9/7
+constraints = []
+for a,b in zip(vertices,vertices[1:]+vertices[:1]):
+    nx, ny = b[1]-a[1], a[0]-b[0]
+    length = math.hypot(nx,ny)
+    nx,ny = nx/length,ny/length
+    c = nx*a[0]+ny*a[1] - max(nx,0)*w - max(ny,0)*d - margin*(abs(nx)+abs(ny))
+    constraints.append((nx,ny,c))
+
+# The LP is two dimensional: enumerate boundary intersections, then choose the
+# lowest feasible front. These are scalar constraint calculations, no trial
+# native buildings and no extra orientation/dimension sweep.
+translation_vertices = []
+for a,b in itertools.combinations(constraints,2):
+    det=a[0]*b[1]-a[1]*b[0]
+    if abs(det)<1e-12:
+        continue
+    x=(a[2]*b[1]-a[1]*b[2])/det
+    y=(a[0]*b[2]-a[2]*b[0])/det
+    if all(nx*x+ny*y<=c+1e-10 for nx,ny,c in constraints):
+        translation_vertices.append((x,y))
+assert translation_vertices, "No witness in this sufficient subset; not global infeasibility"
+x,y=min(translation_vertices,key=lambda v:(v[1],v[0]))
+body_local=box(x,y,x+w,y+d)
+roof_local=box(x-margin,y-margin,x+w+margin,y+d+margin)
+body,roof=world(body_local),world(roof_local)
+
+access=request["accesses"][0]
+street=local(LineString([(p["x"],p["y"]) for p in access["segment"]]))
+A,B=list(street.coords)
+E=(x+w*.5,y)
+tx,ty=B[0]-A[0],B[1]-A[1]
+t=((E[0]-A[0])*tx+(E[1]-A[1])*ty)/(tx*tx+ty*ty)
+S=(A[0]+t*tx,A[1]+t*ty)
+vx,vy=S[0]-E[0],S[1]-E[1]
+length=math.hypot(vx,vy)
+qx,qy=-vy/length,vx/length
+# The existing plans corridor has width 0.8 m; this is not a new clearance.
+width=.8
+caps=[]
+for side in (-1,1):
+    px,py=E[0]+side*width*.5*qx,E[1]+side*width*.5*qy
+    f=(y-py)/vy
+    facade=(px+f*vx,y)
+    det=vx*(-ty)-(-tx)*vy
+    u=((A[0]-px)*(-ty)-(-tx)*(A[1]-py))/det
+    street_point=(px+u*vx,py+u*vy)
+    street_t=((street_point[0]-A[0])*tx+(street_point[1]-A[1])*ty)/(tx*tx+ty*ty)
+    assert x<=facade[0]<=x+w and 0<=street_t<=1
+    caps.append((facade,street_point,street_t))
+path_local=Polygon([caps[0][0],caps[0][1],caps[1][1],caps[1][0]])
+path=world(path_local)
+assert path_local.is_valid
+
+occupied=[]
+for r in requests[:index]:
+    b=current.get(r["id"])
+    if b:
+        occupied.extend(surface(b[k]) for k in ("footprint","courtyards","circulation"))
+        occupied.extend(surface(f["surface"]) for f in b["structural_features"])
+occupied=unary_union(occupied)
+low,high,slope=terrain_bounds(request["terrain"],body)
+checks={
+    "body_outside_buildable_m2":body.difference(body_rights).area,
+    "roof_rectangle_outside_roof_rights_m2":roof.difference(roof_rights).area,
+    "connector_outside_cadastral_m2":path.difference(land).area,
+    "connector_body_overlap_m2":path.intersection(body).area,
+    "body_previous_occupation_overlap_m2":body.intersection(occupied).area,
+    "roof_previous_occupation_overlap_m2":roof.intersection(occupied).area,
+    "connector_previous_occupation_overlap_m2":path.intersection(occupied).area,
+    "roof_outside_exact_convex_subset_m2":roof_local.difference(rear_subset).area,
+}
+assert all(v<1e-7 for v in checks.values()), checks
+new_origin=world(Point(x,y))
+report={
+    "version":"cbfa-constructive-setback-offline-1",
+    "scope":"GEOS/analytical witness only; no native construction/admission",
+    "id":request["id"],"recipe":old["recipe_id"],"request_index":index,
+    "target_m2":request["programme"]["built_area_m2"],
+    "incumbent_area_m2":surface(current[request["id"]]["footprint"]).area,
+    "source_ratio":[5/12,9/7],"dimensions_m":[w,d],"body_area_m2":w*d,
+    "roof_margin_m":margin,"old_transform":old["transform"],
+    "translation_old_local_m":[x,y],
+    "proposed_transform":{"origin":{"x":new_origin.x,"y":new_origin.y},"orientation_deg":angle},
+    "convex_subset":{"method":"exact rights intersection with y>=old body front; no hull", "front_y":front_y,
+        "vertices":vertices,"signed_turn_min":min(turns),"area_m2":rear_subset.area,
+        "excluded_rights_area_m2":common.difference(rear_subset).area,
+        "constraints":len(constraints),"translation_vertices":translation_vertices},
+    "frontage":{"id":access["id"],"street_local":[A,B],"entry_proxy_local":E,
+        "contact_local":S,"width_m":width,"cap_coordinates_local":caps,
+        "path_local":list(path_local.exterior.coords),"path_area_m2":path.area,
+        "entry_contract":"geometric facade centre only; no native doorway claimed"},
+    "terrain":{"low_m":low,"high_m":high,"step_m":high-low,"slope_deg":slope,
+        "max_step_m":request["terrain"]["max_foundation_step_m"],"max_slope_deg":12},
+    "checks":checks,"native_constructions":0,"geometry_proposals":1,
+    "pending":["same-source native rectangle and RF-STEEP-STEP roof projection",
+        "ordinary native terrain/support/rights admission",
+        "actual structural doorway matching this facade connection, or certified connector to it",
+        "native exterior/interior replay, unchanged source/floors"],
+    "inputs_sha256":INPUTS,"script_sha256":hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+}
+out=json.dumps(report,indent=2)
+if len(sys.argv)==2:
+    Path(sys.argv[1]).write_text(out+"\n",encoding="utf-8")
+print(out)

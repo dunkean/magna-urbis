@@ -7,6 +7,7 @@ use crate::wall_geometry::wall_section;
 use geo::Contains;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 mod disjoint_walk_trim;
+pub(crate) mod plan_entry;
 mod profiles;
 mod public_roofs;
 mod roof_apertures;
@@ -329,6 +330,57 @@ fn portal(
     )
 }
 
+/// Apply a profile's final clear width while retaining the selected cut's
+/// signed depths. Selection and materialization must use this exact same
+/// construction, otherwise a first unbuildable candidate can hide a later door.
+fn profiled_passage(
+    opening: [Point; 2],
+    cut: &Surface,
+    width: f64,
+) -> Option<([Point; 2], Surface)> {
+    let length = libm::hypot(opening[1].x - opening[0].x, opening[1].y - opening[0].y);
+    if length < GRID_M {
+        return None;
+    }
+    let ax = (opening[1].x - opening[0].x) / length;
+    let ay = (opening[1].y - opening[0].y) / length;
+    let cx = (opening[0].x + opening[1].x) * 0.5;
+    let cy = (opening[0].y + opening[1].y) * 0.5;
+    let opening = [
+        point(cx - ax * width * 0.5, cy - ay * width * 0.5),
+        point(cx + ax * width * 0.5, cy + ay * width * 0.5),
+    ];
+    let length = libm::hypot(opening[1].x - opening[0].x, opening[1].y - opening[0].y);
+    if length < GRID_M {
+        return None;
+    }
+    let nx = -(opening[1].y - opening[0].y) / length;
+    let ny = (opening[1].x - opening[0].x) / length;
+    let cx = (opening[0].x + opening[1].x) * 0.5;
+    let cy = (opening[0].y + opening[1].y) * 0.5;
+    let (min, max) = cut.iter().flat_map(|p| &p.outer)
+        .map(|p| nx * (p.x - cx) + ny * (p.y - cy))
+        .fold((f64::INFINITY, f64::NEG_INFINITY), |(min, max), v| {
+            (min.min(v), max.max(v))
+        });
+    if !min.is_finite() || !max.is_finite() {
+        return None;
+    }
+    Some((opening, portal_strip_depths(opening, -min, max)))
+}
+
+fn has_profiled_portal_landings(
+    a: &Surface,
+    b: &Surface,
+    opening: [Point; 2],
+    cut: &Surface,
+    width: f64,
+) -> bool {
+    profiled_passage(opening, cut, width).is_some_and(|(opening, passage)| {
+        has_opposed_portal_landings(a, b, opening, &passage, width)
+    })
+}
+
 #[allow(clippy::too_many_arguments)]
 fn portal_with_profile(
     unit: &mut HouseUnit,
@@ -382,6 +434,12 @@ fn portal_with_profile(
     let id = format!("{}:portal:{}", unit.id, unit.access.portals.len());
     let mut wall_id = None;
     let mut lintels = vec![];
+    // A horizontal lintel occupies the wall opening, not the pedestrian
+    // landings on either side of that wall. Retain every actual cut section;
+    // crossing several walls does not turn the intervening gap into timber.
+    let mut lintel_domains = vec![];
+    let mut lintel_height = 0.25_f64;
+    let mut lintel_shell_reference = false;
     let mut cut_solid = false;
     let opening_height = if kind == PortalKind::Tunnel {
         1.0
@@ -404,33 +462,18 @@ fn portal_with_profile(
                 spec.id
             ));
         }
-        let length = libm::hypot(opening[1].x - opening[0].x, opening[1].y - opening[0].y);
-        if length < 0.001 {
-            return Err("Axe de porte profilée nul.".into());
-        }
-        let ax = (opening[1].x - opening[0].x) / length;
-        let ay = (opening[1].y - opening[0].y) / length;
-        let cx = (opening[0].x + opening[1].x) * 0.5;
-        let cy = (opening[0].y + opening[1].y) * 0.5;
-        let opening = [
-            point(cx - ax * spec.width_m * 0.5, cy - ay * spec.width_m * 0.5),
-            point(cx + ax * spec.width_m * 0.5, cy + ay * spec.width_m * 0.5),
-        ];
-        let (min, max) = cut
-            .iter()
-            .flat_map(|p| &p.outer)
-            .map(|p| -ay * p.x + ax * p.y)
-            .fold((f64::INFINITY, f64::NEG_INFINITY), |(min, max), v| {
-                (min.min(v), max.max(v))
-            });
-        (
-            opening,
-            segment_strip(opening[0], opening[1], max - min),
-            spec.width_m,
-        )
+        let (opening, passage) = profiled_passage(opening, &cut, spec.width_m)
+            .ok_or("Axe ou passage de porte profilée invalide à sa largeur finale.")?;
+        (opening, passage, spec.width_m)
     } else {
         (opening, passage, width)
     };
+    if profile.is_some()
+        && (za - zb).abs() < 0.001
+        && !has_opposed_portal_landings(&a.floor, &b.floor, opening, &passage, width)
+    {
+        return Err("Porte profilée sans paliers opposés à sa largeur libre finale.".into());
+    }
     for wall in unit.walls.iter_mut().filter(|_| {
         matches!(
             kind,
@@ -504,13 +547,20 @@ fn portal_with_profile(
                 cut_solid = true;
                 continue;
             }
+            let wall_opening = intersection(&wall.footprint, &passage);
             let top = wall.z_m + wall.height_m;
+            lintel_shell_reference |= wall.shell_reference;
             if top > head_z + 0.001 && !wall.shell_reference {
                 let mut lintel = wall.clone();
                 lintel.id = format!("lintel:{}:{id}", wall.id);
-                lintel.footprint = intersection(&wall.footprint, &passage);
+                lintel.footprint = wall_opening;
                 lintel.z_m = head_z;
                 lintel.height_m = snap(top - head_z);
+                // Only an actual retained upper wall can carry this plain
+                // lintel representation. A low fence may have an open gate
+                // without creating a floating beam or refusing the gate.
+                lintel_domains.push(lintel.footprint.clone());
+                lintel_height = lintel_height.min(top - head_z).min(lintel.height_m);
                 lintel.opening_ids.clear();
                 lintels.push(lintel);
             }
@@ -522,15 +572,32 @@ fn portal_with_profile(
         unit.walls.retain(|wall| !wall.footprint.is_empty());
     }
     unit.walls.extend(lintels);
-    if profile.is_none() && !cut_solid && wall_id.is_some() && za == zb {
-        unit.features.push(feature(
+    if profile.is_none()
+        && !cut_solid
+        && wall_id.is_some()
+        && za == zb
+        && (lintel_shell_reference || !lintel_domains.is_empty())
+    {
+        // A shell-reference wall stands for a separately generated roof shell.
+        // Its support is not certified by this plain-wall correction; preserve
+        // that existing path, as for the distinct profiled/solid constructors.
+        let (lintel_domain, lintel_height) = if lintel_shell_reference {
+            (passage.clone(), 0.25)
+        } else {
+            (unite(&lintel_domains), lintel_height)
+        };
+        let mut lintel = feature(
             &format!("lintel:{id}"),
             FeatureKind::PortalLintel,
-            passage.clone(),
+            lintel_domain,
             head_z,
-            0.25,
+            lintel_height,
             "MAT-TIMBER-POST",
-        ));
+        );
+        // feature() snaps dimensions; rounding must not raise the timber
+        // beyond a real wall top just above the opening head.
+        lintel.height_m = lintel.height_m.min(lintel_height);
+        unit.features.push(lintel);
     }
     unit.access.portals.push(Portal {
         shape: profile.map_or(crate::catalogue::PortalShape::Rect, |spec| spec.shape),
@@ -651,6 +718,85 @@ fn candidate(
     candidate_filtered(a, b, width, depth, forbidden, |_, _, _| true)
 }
 
+/// A portal crosses the boundary between two walk domains. Merely touching
+/// both with its long strip is insufficient: on a small lot, its outer edge
+/// can touch the exterior and the room on the SAME side of the opening.
+/// Reuse the exact strip vertices and the existing landing-area requirement;
+/// this validates the opening axis without moving it or trimming its passage.
+fn portal_side_halves(
+    opening: [Point; 2],
+    strip: &Surface,
+) -> Option<[Surface; 2]> {
+    let [polygon] = strip.as_slice() else {
+        return None;
+    };
+    let [p0, p1, p2, p3] = polygon.outer.as_slice() else {
+        return None;
+    };
+    // candidate_filtered produces this quadrilateral with segment_strip.
+    // Split it on the opening itself; do not snap two new derived boundaries.
+    let first = quad([*p0, *p1, opening[1], opening[0]]);
+    let second = quad([opening[0], opening[1], *p2, *p3]);
+    Some([first, second])
+}
+
+fn opposed_portal_sides(
+    a: &Surface,
+    b: &Surface,
+    opening: [Point; 2],
+    strip: &Surface,
+    width: f64,
+) -> [bool; 2] {
+    let Some([first, second]) = portal_side_halves(opening, strip) else {
+        return [false; 2];
+    };
+    let minimum = width * 0.12;
+    [
+        area(&intersection(a, &first)) >= minimum
+            && area(&intersection(b, &second)) >= minimum,
+        area(&intersection(a, &second)) >= minimum
+            && area(&intersection(b, &first)) >= minimum,
+    ]
+}
+
+fn has_opposed_portal_landings(
+    a: &Surface,
+    b: &Surface,
+    opening: [Point; 2],
+    strip: &Surface,
+    width: f64,
+) -> bool {
+    let Some([first, second]) = portal_side_halves(opening, strip) else {
+        return false;
+    };
+    let minimum = width * 0.12;
+    // Same predicates/operands as opposed_portal_sides, but callers needing
+    // only a boolean need not clip the reverse orientation after a success.
+    (area(&intersection(a, &first)) >= minimum
+        && area(&intersection(b, &second)) >= minimum)
+        || (area(&intersection(a, &second)) >= minimum
+            && area(&intersection(b, &first)) >= minimum)
+}
+
+/// Construct a native passage with independent depths on each side of its
+/// opening. The opening lies on the source boundary: only the target side
+/// needs to span the measured separation, including an enclosure's thickness.
+fn portal_strip_depths(opening: [Point; 2], first_depth: f64, second_depth: f64) -> Surface {
+    let [a, b] = opening;
+    let length = libm::hypot(b.x - a.x, b.y - a.y);
+    if length < GRID_M {
+        return vec![];
+    }
+    let nx = -(b.y - a.y) / length;
+    let ny = (b.x - a.x) / length;
+    quad([
+        point(a.x - nx * first_depth, a.y - ny * first_depth),
+        point(b.x - nx * first_depth, b.y - ny * first_depth),
+        point(b.x + nx * second_depth, b.y + ny * second_depth),
+        point(a.x + nx * second_depth, a.y + ny * second_depth),
+    ])
+}
+
 fn candidate_filtered(
     a: &Surface,
     b: &Surface,
@@ -659,8 +805,9 @@ fn candidate_filtered(
     forbidden: &[Surface],
     accept: impl Fn([Point; 2], &Surface, [Point; 2]) -> bool,
 ) -> Option<([Point; 2], Surface)> {
-    let mut options = vec![];
+    let mut proposals = vec![];
     let target_bounds = bounds(b);
+    let target_geo = to_geo(b);
     for ring in rings(a) {
         for (start, end) in ring
             .iter()
@@ -700,57 +847,78 @@ fn candidate_filtered(
                     point(middle.x - dx * width * 0.5, middle.y - dy * width * 0.5),
                     point(middle.x + dx * width * 0.5, middle.y + dy * width * 0.5),
                 ];
-                let gap = if to_geo(b).contains(&geo::Point::new(middle.x, middle.y)) {
-                    0.0
-                } else {
-                    rings(b)
-                        .flat_map(|ring| {
-                            ring.iter()
-                                .zip(ring.iter().cycle().skip(1))
-                                .take(ring.len())
-                        })
-                        .map(|(start, end)| {
-                            let vx = end.x - start.x;
-                            let vy = end.y - start.y;
-                            let length2 = vx * vx + vy * vy;
-                            let t = if length2 > 1e-12 {
-                                ((middle.x - start.x) * vx + (middle.y - start.y) * vy) / length2
-                            } else {
-                                0.0
-                            };
-                            let t = t.clamp(0.0, 1.0);
-                            libm::hypot(middle.x - start.x - t * vx, middle.y - start.y - t * vy)
-                        })
-                        .fold(f64::INFINITY, f64::min)
-                };
-                if gap > depth {
-                    continue;
-                }
-                // This cut crosses the measured separation plus a real landing
-                // on each side, including thick enclosure walls.
-                let strip = segment_strip(opening[0], opening[1], 2.0 * (gap + 0.2));
-                if area(&intersection(&strip, a)) < width * 0.12
-                    || area(&intersection(&strip, b)) < width * 0.12
-                {
-                    continue;
-                }
-                if forbidden
-                    .iter()
-                    .any(|s| area(&intersection(s, &strip)) > 0.003)
-                {
-                    continue;
-                }
-                if accept(opening, &strip, [*start, *end]) {
-                    options.push((middle, opening, strip));
-                }
+                proposals.push((middle, opening, [*start, *end]));
             }
         }
     }
-    options.sort_by(|a, b| b.0.y.total_cmp(&a.0.y).then(a.0.x.total_cmp(&b.0.x)));
-    options
-        .into_iter()
-        .next()
-        .map(|(_, opening, strip)| (opening, strip))
+    // Keep the former stable priority, including ties from source ring/edge
+    // enumeration. All callers provide pure, read-only accept predicates:
+    // first(sort(filter(proposals))) equals first(filter(sort(proposals))).
+    // Test only the candidates needed for that same first admitted passage;
+    // neither geometry construction nor profile/solid guards are approximated.
+    proposals.sort_by(|a, b| b.0.y.total_cmp(&a.0.y).then(a.0.x.total_cmp(&b.0.x)));
+    for (middle, opening, edge) in proposals {
+        let gap = if target_geo.contains(&geo::Point::new(middle.x, middle.y)) {
+            0.0
+        } else {
+            rings(b)
+                .flat_map(|ring| {
+                    ring.iter()
+                        .zip(ring.iter().cycle().skip(1))
+                        .take(ring.len())
+                })
+                .map(|(start, end)| {
+                    let vx = end.x - start.x;
+                    let vy = end.y - start.y;
+                    let length2 = vx * vx + vy * vy;
+                    let t = if length2 > 1e-12 {
+                        ((middle.x - start.x) * vx + (middle.y - start.y) * vy) / length2
+                    } else {
+                        0.0
+                    };
+                    let t = t.clamp(0.0, 1.0);
+                    libm::hypot(middle.x - start.x - t * vx, middle.y - start.y - t * vy)
+                })
+                .fold(f64::INFINITY, f64::min)
+        };
+        if gap > depth {
+            continue;
+        }
+        // Infer the source/target side from real opposed landings,
+        // never from polygon winding or a guessed facade normal.
+        let symmetric = segment_strip(opening[0], opening[1], 2.0 * (gap + 0.2));
+        let sides = opposed_portal_sides(a, b, opening, &symmetric, width);
+        let valid_common = |strip: &Surface| {
+            area(&intersection(strip, a)) >= width * 0.12
+                && area(&intersection(strip, b)) >= width * 0.12
+                && !forbidden.iter().any(|s| area(&intersection(s, strip)) > 0.003)
+                && accept(opening, strip, edge)
+        };
+        let asymmetric = sides.into_iter().enumerate().find_map(|(side, opposed)| {
+            if !opposed {
+                return None;
+            }
+            let (first, second) = if side == 0 { (0.2, gap + 0.2) } else { (gap + 0.2, 0.2) };
+            let strip = portal_strip_depths(opening, first, second);
+            (valid_common(&strip)
+                && has_opposed_portal_landings(a, b, opening, &strip, width))
+                .then_some(strip)
+        });
+        // A nonrectangular landing can require the larger native
+        // passage. Retain it only when its final geometry proves ALL
+        // the same guards; no site clipping or right is inferred here.
+        let strip = asymmetric.or_else(|| {
+            // sides already proves the final predicate for this EXACT
+            // symmetric surface; keep full-strip/forbidden/profile
+            // guards and reuse only the identical opposed-side result.
+            sides.into_iter().any(|side| side).then(|| symmetric)
+                .filter(|strip| valid_common(strip))
+        });
+        if let Some(strip) = strip {
+            return Some((opening, strip));
+        }
+    }
+    None
 }
 
 fn interface(
@@ -1195,8 +1363,17 @@ fn connect_horizontal(
                 .as_ref()
                 .map(|owner| profiles::entries(unit, owner))
                 .unwrap_or_default();
-            let accept = |opening, _: &Surface, _| {
-                profile.is_none() || entry_owner.is_none() || profiles::distinct(opening, &existing)
+            let accept = |opening, strip: &Surface, _| {
+                (profile.is_none() || entry_owner.is_none() || profiles::distinct(opening, &existing))
+                    && profile.as_ref().is_none_or(|spec| {
+                        // A candidate that does not cross an enclosure is
+                        // deliberately rebuilt unprofiled by the branch below.
+                        ((site || court_width.is_some())
+                            && !profiles::crosses_enclosure(unit, strip, nodes[i].z_m))
+                            || has_profiled_portal_landings(
+                                &nodes[i].floor, &nodes[j].floor, opening, strip, spec.width_m,
+                            )
+                    })
             };
             if let Some((opening, strip)) = candidate_filtered(
                 &nodes[i].floor,
@@ -2409,12 +2586,17 @@ fn add_exterior_interfaces(
                             .filter(|other| other.id != r.id && (other.z_m - z).abs() < 0.001)
                             .map(|r| r.floor.clone())
                             .collect();
-                        candidate(
+                        candidate_filtered(
                             &landing,
                             &r.floor,
                             door_width,
                             body.wall_thickness_m + 0.3,
                             &forb,
+                            |opening, strip, _| profile.as_ref().is_none_or(|spec| {
+                                has_profiled_portal_landings(
+                                    &landing, &r.floor, opening, strip, spec.width_m,
+                                )
+                            }),
                         )
                         .map(|(o, p)| (r.clone(), o, p))
                     }) else {
@@ -2475,4 +2657,15 @@ fn add_exterior_interfaces(
 mod batches25_tests;
 
 #[cfg(test)]
+mod opposed_portal_tests;
+
+#[cfg(test)]
+#[path = "access/candidate_order_tests.rs"]
+mod candidate_order_tests;
+
+#[cfg(test)]
 mod fixture_json_exact;
+
+#[cfg(test)]
+#[path = "access/portal_lintel_domain_tests.rs"]
+mod portal_lintel_domain_tests;

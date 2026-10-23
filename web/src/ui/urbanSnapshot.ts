@@ -2,6 +2,7 @@
  * `resolved` remain opaque local data and are never rewritten by the UI. */
 import type { Point, Shape } from '../../../rust/bridge/urban';
 import type { PlacementBatch, PlacedBuilding } from '../../../rust/bridge/urbanArchitecture';
+import { isArchivedPlan, registerPlanArchives } from '../../../rust/bridge/compactPlanArchive';
 import type { WorkshopState } from './testbenchUrban';
 import type { UrbanBuildingState } from './urbanBuildingsPanel';
 
@@ -13,10 +14,10 @@ export function applyWorkshopPopulation<T extends { key: string; population: num
   if (!key || population === undefined || !Number.isInteger(population) || population < 1 || population > 5_000_000) return sites;
   return sites.map(site => site.key === key ? { ...site, population } : site);
 }
-export function buildingSettings(state?: UrbanBuildingState): Omit<UrbanBuildingState, 'scene'> | undefined {
+export function buildingSettings(state?: UrbanBuildingState): Omit<UrbanBuildingState, 'scene' | 'cold'> | undefined {
   if (!state) return undefined;
-  const { scene, ...settings } = state;
-  return { ...settings, generated: settings.generated ?? !!scene };
+  const { scene, cold, ...settings } = state;
+  return { ...settings, generated: settings.generated ?? !!(scene || cold) };
 }
 export function workshopSettings(state: WorkshopState): Omit<WorkshopState, 'layouts' | 'partitions'> {
   const { layouts: _layouts, partitions: _partitions, ...settings } = state;
@@ -27,7 +28,7 @@ export function workshopSettings(state: WorkshopState): Omit<WorkshopState, 'lay
 export function appliedWorkshopSnapshot(state: WorkshopState): WorkshopState {
   const settings = structuredClone(workshopSettings(state));
   return { ...settings, layouts: state.layouts?.slice(), partitions: state.partitions?.slice(),
-    buildingState: settings.buildingState && { ...settings.buildingState, scene: state.buildingState?.scene } };
+    buildingState: settings.buildingState && { ...settings.buildingState, scene: state.buildingState?.scene, cold: state.buildingState?.cold } };
 }
 const point = <T extends Point>(p: T, dx: number, dy: number): T => ({ ...p, x: p.x + dx, y: p.y + dy });
 const shape = (s: Shape, dx: number, dy: number): Shape => ({ ...s,
@@ -39,6 +40,7 @@ export function translateBuilding(building: PlacedBuilding, dx: number, dy: numb
     transform: { ...building.transform, origin: point(building.transform.origin, dx, dy) },
     footprint: surface(building.footprint, dx, dy), roof_footprint: surface(building.roof_footprint, dx, dy), courtyards: surface(building.courtyards, dx, dy),
     circulation: surface(building.circulation, dx, dy), entrance: point(building.entrance, dx, dy),
+    ...(building.cartographic && { cartographic: { ...building.cartographic, ridges: building.cartographic.ridges.map(([a,b]) => [point(a,dx,dy),point(b,dx,dy)] as [Point,Point]) } }),
     structural_foundations: building.structural_foundations?.map(foundation => ({ ...foundation, footprint: surface(foundation.footprint, dx, dy) })),
     structural_features: building.structural_features.map(feature => ({ ...feature,
       surface: surface(feature.surface, dx, dy), vertices3d: feature.vertices3d.map(p => point(p, dx, dy)),
@@ -69,18 +71,30 @@ export function translateWorkshopState(state: WorkshopState, dx: number, dy: num
   const built = state.buildingState;
   return { ...state, layouts: translateLand(state.layouts, dx, dy), partitions: translateLand(state.partitions, dx, dy),
     buildingState: built && { ...built, camera: built.camera && point(built.camera, dx, dy),
+      cold: built.cold && { ...built.cold, offset: { x: (built.cold.offset?.x ?? 0) + dx, y: (built.cold.offset?.y ?? 0) + dy } },
       scene: built.scene && translateBuildingScene(built.scene, dx, dy) } };
 }
 function parcelIds(state: WorkshopState, key: string): Set<string> {
   return new Set(state.partitions?.filter(p => p.key === key).flatMap(p => p.parcels.flatMap(p => p.id ? [p.id] : [])) ?? []);
 }
 function subset(scene: PlacementBatch, ids: Set<string>, included: boolean): PlacementBatch {
-  return { ...scene, buildings: scene.buildings.filter(b => ids.has(b.parcel_id) === included),
+  const result = { ...scene, buildings: scene.buildings.filter(b => ids.has(b.parcel_id) === included),
     refusals: scene.refusals.filter(r => ids.has(r.parcel_id) === included),
     open_spaces: scene.open_spaces.filter(s => ids.has(s.parcel_id) === included) };
+  if (scene.plan_archives) {
+    const used = new Set(result.buildings.map(b => b.resolved).filter(isArchivedPlan).map(ref => ref.archive_id));
+    result.plan_archives = Object.fromEntries(Object.entries(scene.plan_archives).filter(([id]) => used.has(id)));
+    registerPlanArchives(result);
+  }
+  return result;
+}
+function hasSceneContent(scene: PlacementBatch | undefined): boolean {
+  return !!scene && !!(scene.buildings.length || scene.refusals.length || scene.open_spaces.length);
 }
 export function cityWorkshopState(state: WorkshopState, key: string): WorkshopState {
   const ids = parcelIds(state, key), settings = state.citySettings?.[key], built = state.buildingState;
+  if (built?.cold && (built.cold.cityKey ?? (state.layouts?.length === 1 ? state.layouts[0].key : undefined)) !== key)
+    throw new Error('Le stockage des maisons doit appartenir à la ville sélectionnée.');
   if (built?.scene && (built.scene.buildings.length || built.scene.refusals.length || built.scene.open_spaces.length) && ids.size === 0) throw new Error('La scène bâtie exige les identifiants des parcelles appliquées pour transférer cette ville.');
   return { ...state, ...(settings && { layoutConfig: settings.layoutConfig, parcelConfig: settings.parcelConfig, quarterSeed: settings.quarterSeed, parcelSeed: settings.parcelSeed }), siteKey: key, population: state.siteKey === key ? state.population : state.layouts?.find(l => l.key === key)?.programme?.population, layouts: state.layouts?.filter(l => l.key === key), partitions: state.partitions?.filter(p => p.key === key),
     buildingState: built && { ...built, ...settings?.building, scene: built.scene && subset(built.scene, ids, true) } };
@@ -92,25 +106,54 @@ export function mergeCityWorkshop(previous: WorkshopState | undefined, incoming:
   }
   const moved = dx === 0 && dy === 0 ? incoming : translateWorkshopState(incoming, dx, dy), oldScene = previous?.buildingState?.scene;
   const ids = new Set([...(previous ? parcelIds(previous, key) : []), ...parcelIds(moved, key)]);
+  const previousCold = previous?.buildingState?.cold, incomingCold = moved.buildingState?.cold;
+  if (previousCold && (previousCold.cityKey ?? (previous?.layouts?.length === 1 ? previous.layouts[0].key : undefined)) !== key)
+    throw new Error('La fusion de plusieurs stockages de maisons distincts doit être conservée avant remplacement.');
+  if (incomingCold) {
+    if ((incomingCold.cityKey ?? key) !== key || oldScene?.buildings.some(b => !ids.has(b.parcel_id))
+      || oldScene?.refusals.some(b => !ids.has(b.parcel_id)) || oldScene?.open_spaces.some(b => !ids.has(b.parcel_id)))
+      throw new Error('La fusion de maisons en mémoire et de stockages distincts nécessite une migration complète.');
+    return { ...moved, citySettings: { ...previous?.citySettings, ...moved.citySettings },
+      layouts: [...previous?.layouts?.filter(l => l.key !== key) ?? [], ...moved.layouts ?? []],
+      partitions: [...previous?.partitions?.filter(p => p.key !== key) ?? [], ...moved.partitions ?? []],
+      buildingState: { ...moved.buildingState!, scene: undefined, cold: { ...incomingCold, cityKey: key } } };
+  }
   const retained = oldScene && subset(oldScene, ids, false), next = moved.buildingState?.scene;
-  const materials = new Map([...(retained?.materials ?? []), ...(next?.materials ?? [])].map(material => [material.id, material]));
-  const combined = next || retained ? { ...(next ?? retained!), ...(materials.size ? { materials: [...materials.values()] } : {}),
+  const retainedContent = hasSceneContent(retained), nextContent = hasSceneContent(next);
+  if (retainedContent && nextContent && (retained!.schema_version !== next!.schema_version || retained!.generator_version !== next!.generator_version)) {
+    throw new Error('Les scènes bâties utilisent des versions incompatibles. Régénérez ensemble les villes conservées avant de les fusionner.');
+  }
+  // An empty reply may remove one city, but cannot relabel the accepted plans
+  // of another city or replace their material/archive metadata with a new version.
+  const retainedData = retainedContent || !nextContent ? retained : undefined;
+  const nextData = nextContent || !retainedContent ? next : undefined;
+  const materials = new Map([...(retainedData?.materials ?? []), ...(nextData?.materials ?? [])].map(material => [material.id, material]));
+  const combined = next || retained ? { ...(nextData ?? retainedData!), ...(materials.size ? { materials: [...materials.values()] } : {}),
+    ...((nextData?.plan_archives || retainedData?.plan_archives) && {plan_archives: {...retainedData?.plan_archives,...nextData?.plan_archives}}),
     buildings: [...retained?.buildings ?? [], ...next?.buildings ?? []],
     refusals: [...retained?.refusals ?? [], ...next?.refusals ?? []],
     open_spaces: [...retained?.open_spaces ?? [], ...next?.open_spaces ?? []] } : undefined;
+  if (combined?.plan_archives) registerPlanArchives(combined);
   const built = moved.buildingState ?? previous?.buildingState;
   const retainedPartitions = previous?.partitions?.filter(p => p.key !== key) ?? [];
   return { ...moved,
     citySettings: { ...previous?.citySettings, ...moved.citySettings },
     layouts: [...previous?.layouts?.filter(l => l.key !== key) ?? [], ...moved.layouts ?? []],
     partitions: moved.partitions ? [...retainedPartitions, ...moved.partitions] : retainedPartitions.length ? retainedPartitions : undefined,
-    buildingState: built && { ...built, scene: combined },
+    buildingState: built && { ...built, cold: undefined, scene: combined },
   };
 }
 
 /** Split a multi-city native reply by exact parcel ownership before replacement. */
 export function mergeWorkshopCities(previous: WorkshopState, incoming: WorkshopState): WorkshopState {
   let merged = previous;
+  if (incoming.layouts?.length && previous.buildingState?.scene) {
+    // Remove all replaced cities before the first merge, so a full multi-city
+    // replacement can adopt a new version atomically. Unrelated cities still
+    // participate in the compatibility guard; native archives stay opaque.
+    const ids = new Set(incoming.layouts.flatMap(layout => [...parcelIds(previous, layout.key), ...parcelIds(incoming, layout.key)]));
+    merged = { ...previous, buildingState: { ...previous.buildingState, scene: subset(previous.buildingState.scene, ids, false) } };
+  }
   for (const layout of incoming.layouts ?? []) merged = mergeCityWorkshop(merged, cityWorkshopState(incoming, layout.key), layout.key, 0, 0);
   return merged;
 }

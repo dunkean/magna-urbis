@@ -11,7 +11,7 @@ fn key(p: Point) -> (i64, i64) {
 fn fixed(s: &Street) -> bool {
     matches!(
         s.role.as_str(),
-        "regional" | "bridge" | "ford" | "causeway" | "stairs"
+        "regional" | "bridge" | "ford" | "causeway" | "stairs" | "quay"
     )
 }
 fn width(s: &Street, i: usize) -> f64 {
@@ -177,6 +177,18 @@ mod tests {
             rank: 2,
             role: role.into(),
         }
+    }
+    #[test]
+    fn quay_keeps_its_shore_clearance_at_a_wide_road_junction() {
+        let quay = street(&[(0., 0.), (60., 0.)], 4.5, "quay");
+        let mut streets = vec![
+            quay.clone(),
+            street(&[(60., 0.), (120., 0.)], 10., "street"),
+            street(&[(60., 0.), (60., 80.)], 8., "street"),
+        ];
+        harmonize(&mut streets);
+        assert_eq!(streets[0].widths, quay.widths);
+        assert_eq!(streets[0].path, quay.path);
     }
     #[test]
     fn peripheral_continuation_keeps_imported_width_and_tapers_before_its_next_junction() {

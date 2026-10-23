@@ -3,19 +3,26 @@
 //! Layouts are retained inputs to the parcel stage; this is not the future World model.
 mod access;
 pub mod building_sites;
+pub mod display;
 mod composition;
+// Structural user edits (shape, delete, reroll): urban/edits.rs.
+mod edits;
+pub use edits::quarter_removed;
 pub mod culture;
 pub mod programme;
 pub use culture::{CultureMapping, UrbanAdmissibility};
 pub use programme::{ProgrammeContext, UrbanProgramme};
 mod footprint;
+mod fortification;
 mod fringe;
 mod geography;
 mod geometry;
 pub use geography::{Geography, VectorGeography};
 mod influences;
+pub mod kinds;
 mod macroplan;
 mod network;
+mod par;
 mod parcels;
 mod profiles;
 mod quarters;
@@ -23,6 +30,7 @@ mod quarters;
 mod refonte_tests;
 #[cfg(test)]
 mod regression;
+pub mod roles;
 mod routing;
 mod widths;
 
@@ -33,7 +41,7 @@ use serde_json::{Value, json};
 use std::collections::BTreeSet;
 use std::sync::OnceLock;
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct Shape {
     pub outer: Vec<Point>,
     #[serde(default)]
@@ -56,11 +64,103 @@ pub struct Quarter {
 fn core_zone() -> String {
     "core".into()
 }
-#[derive(Clone, Debug, Serialize, Deserialize)]
+/// A fortified circuit. `path`, `kind`, `gates` and `towers` keep their old
+/// meaning; the other fields (`fortification::build`) describe the integrated
+/// structures and are omitted when empty, so old clients read the same JSON.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct Enclosure {
     pub path: Vec<Point>,
     pub kind: String,
     pub gates: Vec<Point>,
+    /// Tower anchors on the curtain: `towers[i] == towers_detail[i].anchor`
+    /// (gate towers, then corners, then flanks).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub towers: Vec<Point>,
+    /// `palisade|gord|hedge|curtain|flanked|concentric|rammed-earth|wengcheng|bastioned`.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub style: String,
+    /// `timber|timber-earth|thorn|stone|brick|rammed-earth|earth-stone`.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub material: String,
+    /// Curtain body thickness from the inner face (offset −½ ribbon) outward.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub curtain_width_m: f64,
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub height_m: f64,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub towers_detail: Vec<Tower>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub gatehouses: Vec<Gatehouse>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub bastions: Vec<Work>,
+    /// `outer-wall|barbican|antemural|wengcheng|ravelin|citadel|glacis`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub outworks: Vec<Work>,
+    /// Ditch pieces, kind `dry|wet`, cut by causeways at the gates.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub ditch: Vec<Work>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub attached: Vec<Attached>,
+    /// Union of the curtain body and every structure outside the inner face:
+    /// land no quarter, block or lot occupies.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub reserve: Vec<Shape>,
+}
+fn is_zero(v: &f64) -> bool {
+    *v == 0.0
+}
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Tower {
+    /// On the curtain path.
+    pub anchor: Point,
+    pub center: Point,
+    /// `round|square|d|rect`.
+    pub shape: String,
+    /// Half size across (radius for a round tower).
+    pub radius_m: f64,
+    /// Outward depth (`rect` only).
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub depth_m: f64,
+    /// Curtain tangent (rad).
+    pub angle: f64,
+    pub height_m: f64,
+    /// `corner|flank|gate|water`.
+    pub kind: String,
+    /// Clipped polygon actually built.
+    pub footprint: Shape,
+}
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Gatehouse {
+    /// Index in `Enclosure::gates`.
+    pub gate: usize,
+    /// `timber|tower|twin-tower|bab|ravelin|water|postern`.
+    pub kind: String,
+    /// Whole gate block, spanning the passage (upper storey, lintel).
+    pub shape: Shape,
+    /// Ground masses: `shape` minus the street, as they enter the reserve.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub masses: Vec<Shape>,
+    /// Inner face to outer end along the street (a water gate: bank to bank).
+    pub passage: [Point; 2],
+    pub passage_width_m: f64,
+    pub height_m: f64,
+}
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Work {
+    pub kind: String,
+    pub shape: Shape,
+    pub height_m: f64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub passage: Option<[Point; 2]>,
+}
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Attached {
+    /// `lean-to`.
+    pub kind: String,
+    /// `out` (outer face).
+    pub side: String,
+    pub shape: Shape,
+    pub height_m: f64,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Block {
@@ -122,6 +222,16 @@ pub struct UrbanDistrict {
     pub phase: usize,
     pub tissue: String,
     pub quarters: Vec<usize>,
+    /// Functional role (`civic`, `market`, `religious`, `craft:<trade>`, `port`,
+    /// `elite`, `commoner`, `poor`, `garrison`, `gardens`, `foreign`); see `roles`.
+    #[serde(default)]
+    pub role: String,
+    /// Relative social standing, 0 (poorest) to 1 (richest).
+    #[serde(default)]
+    pub wealth: f64,
+    /// French label of the role for the UI (`Quartier des tanneurs`).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub label: String,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct UrbanEvent {
@@ -142,6 +252,71 @@ pub struct UrbanMetrics {
     pub shortfall_area: f64,
     pub components: usize,
     pub access_added: usize,
+    /// Housing capacity plan (adaptive capacity), absent for explicit budgets.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub capacity: Option<CapacityPlan>,
+}
+/// Housing capacity of a settlement, sized before the footprint grows: the
+/// households to house, the tissue's predicted yield (the culture's own lot
+/// cutting probed on reference blocks), and the bounded steps taken, in order:
+/// densify within the culture's ranges, extend the footprint, then borrow the
+/// street spacing and lot cutting of a compact tissue on a share of quarters.
+/// Borrowing changes only the tissue; houses, floors and households stay the
+/// receiving culture's.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct CapacityPlan {
+    /// Households of the population (domestic and mixed).
+    pub households: f64,
+    /// Households the parcels must hold (demand, trades and margin).
+    pub required: f64,
+    /// Footprint of the catalogue densities, before any extension (m²).
+    pub nominal_area: f64,
+    /// Predicted households per hectare of allocated land, own tissue as drawn.
+    pub nominal_yield: f64,
+    /// Same, after densification.
+    pub planned_yield: f64,
+    /// Predicted share of block land left as gardens, own tissue as drawn.
+    pub garden_share: f64,
+    /// Same, densified as planned with the footprint.
+    pub densified_garden: f64,
+    /// Land the institutions reserve as whole blocks, estimated (m²).
+    pub reserved_area: f64,
+    /// Densification of the lots and floors within the culture's own ranges,
+    /// 0 (as drawn) to 1.
+    pub densify: f64,
+    /// Densification of the street network (block sizes, lattice spacing),
+    /// decided with the footprint; the lots may densify further.
+    pub network_densify: f64,
+    /// Share of the real block land left as gardens, measured on the sample.
+    pub measured_garden: f64,
+    /// Footprint target over the nominal one (1 to the extension bound).
+    pub extension: f64,
+    /// Compact tissue lending its street spacing and lot cutting (empty: none).
+    pub donor: String,
+    pub donor_yield: f64,
+    /// Share of the land cut with the donor tissue, 0 to 1.
+    pub borrowed_share: f64,
+    /// Quarters (indices in `layout.quarters`) cut with the donor tissue.
+    pub borrowed_quarters: Vec<usize>,
+    /// Scale of the fringe vacancy left as fields (1 = the culture's own).
+    pub vacancy: f64,
+    /// Households the footprint stage predicts (probed yields × housing land
+    /// of the target), before the real blocks exist.
+    pub forecast: f64,
+    /// Same land, tissue fully densified (the closed loop compares probe and
+    /// measure at the same densification).
+    pub forecast_dense: f64,
+    /// Households the real blocks hold with the tissue as planned (before
+    /// any lot densification or fringe reduction of the quarter stage).
+    pub measured_plan: f64,
+    /// Households predicted on the final blocks.
+    pub predicted: f64,
+    /// Households still predicted missing (terrain or bounds reached).
+    pub shortfall: f64,
+    /// Correction of the probed yields after a first measure of the real
+    /// blocks fell short (1 = none; `quarters::generate`).
+    pub calibration: f64,
 }
 /// Applied growth budgets and their disjoint land, before street carving.
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -309,7 +484,13 @@ pub struct LayoutConfig {
     pub access_depth: f64,
     pub access_budget: usize,
     pub composition: String,
+    /// `auto`, `nucleated`, `ribbon`, or a settlement kind id (`kinds::Kind`:
+    /// `single`, `ruin`, `farmstead`, `camp`, `hamlet`, `street-village`,
+    /// `nucleated-village`, `market-town`, `walled-town`, `city`, `metropolis`).
     pub settlement_form: String,
+    /// Site archetype from settlement placement (`harbor`, `bridge`, `hilltop`,
+    /// `spur`, `pass`, `island`, `lakeshore`, `valley`, `plain`); empty = unknown.
+    pub site_archetype: String,
     pub suburbs: String,
     /// Zero follows the cultural population thresholds.
     pub phases: usize,
@@ -326,11 +507,58 @@ pub struct LayoutConfig {
     pub placement: String,
     pub monument: String,
     pub fortification: String,
+    /// `auto` (cultural draw) or a style of `fortification::STYLES`, applied
+    /// when it fits the fortification kind (« Style de l’enceinte »).
+    pub fortification_style: String,
     pub max_street_grade: f64,
     pub max_lane_grade: f64,
     pub max_stair_grade: f64,
     pub allow_stairs: bool,
     pub params: Value,
+    /// Per-quarter user edits (inspector « éditer un quartier »); empty by default.
+    pub overrides: UrbanOverrides,
+    /// Yield correction of the adaptive-capacity plan, set only by the closed
+    /// loop of `quarters::generate` (0 = none). Internal, never serialized.
+    #[serde(skip)]
+    pub capacity_yield: f64,
+    /// Densification the closed loop already measured as insufficient: the
+    /// second plan starts from it (internal, never serialized).
+    #[serde(skip)]
+    pub capacity_floor: f64,
+}
+/// User overrides keyed by the quarter's index in `layout.quarters`.
+///
+/// Stability rule: the composition quarters (the first ones in `layout.quarters`)
+/// depend only on the seed, the site and the layout config *without* `overrides`:
+/// culture/tissue/density edits act after the quarter partition, on that quarter's
+/// subdivision only, with an RNG forked from the quarter index, so editing one
+/// quarter never renumbers or reshapes them. Peripheral frontage strips appended
+/// after them follow the final streets and may change. An edited culture reaches
+/// the quarter's lots through an appended growth phase. Role and wealth overrides
+/// are applied by the programme stage.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct UrbanOverrides {
+    pub quarters: std::collections::BTreeMap<String, QuarterOverride>,
+}
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct QuarterOverride {
+    pub role: Option<String>,
+    pub wealth: Option<f64>,
+    pub culture: Option<String>,
+    pub tissue: Option<String>,
+    pub density: Option<f64>,
+    /// New outline (`urban/edits.rs`): clipped to dry land, the other quarters
+    /// and the main streets; the quarter's interior is redrawn inside it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub shape: Option<Shape>,
+    /// The quarter owns no block any more; main streets stay.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub deleted: Option<bool>,
+    /// Redraw of the quarter's interior (streets, blocks, lots); absent = original.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub salt: Option<u32>,
 }
 impl Default for LayoutConfig {
     fn default() -> Self {
@@ -351,6 +579,7 @@ impl Default for LayoutConfig {
             access_budget: 4,
             composition: "settlement".into(),
             settlement_form: "auto".into(),
+            site_archetype: String::new(),
             suburbs: "auto".into(),
             phases: 0,
             culture: "site".into(),
@@ -365,11 +594,15 @@ impl Default for LayoutConfig {
             placement: "center".into(),
             monument: "none".into(),
             fortification: "culture".into(),
+            fortification_style: "auto".into(),
             max_street_grade: 0.12,
             max_lane_grade: 0.18,
             max_stair_grade: 0.65,
             allow_stairs: true,
             params: json!({}),
+            overrides: UrbanOverrides::default(),
+            capacity_yield: 0.0,
+            capacity_floor: 0.0,
         }
     }
 }
@@ -389,6 +622,37 @@ pub struct ParcelConfig {
     pub zone: String,
     pub density: f64,
     pub params: Value,
+    /// Per-lot user edits (« éditer une parcelle »); empty by default.
+    pub overrides: ParcelOverrides,
+}
+/// User overrides keyed by parcel id. Parcel ids hash the lot geometry within
+/// its block, so they are stable for the same layout and parcel config; these
+/// overrides only change uses, never geometry, so they never renumber lots.
+/// A quarter role override can move programme reservations, hence re-cut and
+/// re-identify the lots of the blocks involved.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct ParcelOverrides {
+    pub parcels: std::collections::BTreeMap<String, ParcelOverride>,
+}
+/// Forced use of one lot: a catalogue role (`worship.parish`, `commerce.inn`,
+/// `open.garden`, `dwelling.mansion`…), a houses function, a household count.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct ParcelOverride {
+    pub role: Option<String>,
+    pub function: Option<String>,
+    pub households: Option<f64>,
+    /// New outline (`urban/edits.rs`), clipped to its block; neighbours give up
+    /// or take back the difference. The lot keeps its id.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub shape: Option<Shape>,
+    /// `merge` (absorbed by its best neighbour) or `garden` (unbuilt open ground).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub deleted: Option<String>,
+    /// Redraw of the lot's use among admissible demands, and of its house seed.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub salt: Option<u32>,
 }
 impl Default for ParcelConfig {
     fn default() -> Self {
@@ -400,6 +664,7 @@ impl Default for ParcelConfig {
             zone: "auto".into(),
             density: 1.0,
             params: json!({}),
+            overrides: ParcelOverrides::default(),
         }
     }
 }
@@ -782,7 +1047,9 @@ pub fn generate_quarters(
     }
     if sites.len() > 1000
         || !["settlement", "district"].contains(&config.composition.as_str())
-        || !["auto", "nucleated", "ribbon"].contains(&config.settlement_form.as_str())
+        || !(["auto", "nucleated", "ribbon"].contains(&config.settlement_form.as_str())
+            || kinds::Kind::from_id(&config.settlement_form).is_some())
+        || config.site_archetype.len() > 32
         || !["auto", "none", "few", "many"].contains(&config.suburbs.as_str())
         || config.phases > 5
         || !(3..=64).contains(&config.count)
@@ -793,6 +1060,8 @@ pub fn generate_quarters(
         || !(0.1..=5.0).contains(&config.radius_scale)
         || !["center", "rectangle", "skew", "notched"].contains(&config.placement.as_str())
         || !["culture", "none", "wall", "palisade"].contains(&config.fortification.as_str())
+        || !(config.fortification_style == "auto"
+            || fortification::STYLES.contains(&config.fortification_style.as_str()))
         || !config.max_street_grade.is_finite()
         || !(0.02..=0.3).contains(&config.max_street_grade)
         || !config.max_lane_grade.is_finite()
@@ -817,6 +1086,11 @@ pub fn generate_quarters(
         {
             return Err("Settlement urbain invalide".into());
         }
+        // The settlement kind sets the macro grammar; the layout keeps the
+        // user's configuration (`kinds::finish`).
+        let original = config;
+        let (effective, kind) = kinds::effective(site, original, roads);
+        let config = &effective;
         let culture = if config.culture == "site" {
             &site.culture
         } else {
@@ -837,11 +1111,29 @@ pub fn generate_quarters(
         )?;
         let morph = with_tissue(morph, &config.tissue);
         let key_seed = format!("{seed}\u{1}settlement:{}", site.key);
-        let mut layout = quarters::generate(&key_seed, site, config, &morph, surface, roads)?;
-        access::refine(&mut layout, config, &morph, surface);
-        access::summarize(&mut layout, config);
-        programme::prepare(&mut layout, site.population, &config.programme, surface)?;
-        out.push(layout);
+        // edits hook (urban/edits.rs): structural quarter edits splice a
+        // variant plan into this one; without them this is plan then finish.
+        let plan = |config: &LayoutConfig| -> Result<Layout, String> {
+            let small = (kind.small() && config.footprint.mechanism != "legacy")
+                .then(|| kinds::lay_out(&key_seed, site, config, kind, &morph, surface, roads))
+                .flatten();
+            let mut layout = match small {
+                Some(layout) => layout,
+                None => quarters::generate(&key_seed, site, config, &morph, surface, roads)?,
+            };
+            kinds::stamp(&mut layout, kind, original);
+            access::refine(&mut layout, config, &morph, surface);
+            // Fortifications follow the final streets and blocks.
+            fortification::settle(&mut layout, surface);
+            Ok(layout)
+        };
+        let finish = |layout: &mut Layout| -> Result<(), String> {
+            access::summarize(layout, config);
+            programme::prepare(layout, site.population, &config.programme, surface)?;
+            kinds::finish(layout, kind, original);
+            Ok(())
+        };
+        out.push(edits::with_quarter_edits(config, plan, finish)?);
     }
     Ok(out)
 }
@@ -866,6 +1158,7 @@ pub fn generate_parcels(
     {
         return Err("Opérateur de parcelles inconnu".into());
     }
+    edits::validate_parcels(config)?;
     let mut out = vec![];
     for layout in layouts {
         let culture = if config.culture == "site" {
@@ -888,6 +1181,8 @@ pub fn generate_parcels(
         )?;
         let key_seed = format!("{seed}\u{1}settlement:{}", layout.key);
         let mut partition = parcels::generate(&key_seed, layout, config, &morph)?;
+        // edits hook (urban/edits.rs): lot shapes and deletions.
+        edits::apply_parcel_edits(layout, &mut partition);
         programme::allocate(layout, &mut partition);
         out.push(partition);
     }

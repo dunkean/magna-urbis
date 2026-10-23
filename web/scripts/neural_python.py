@@ -17,6 +17,13 @@ from urllib.parse import urlparse
 
 ROOT = Path(__file__).resolve().parents[2]
 EARTH = Path(os.environ.get('MAGNA_NEURAL_EARTH', ROOT.parent / 'infinite_map')).resolve()
+# Neural Earth's Windows default points at E:, which is not present on every
+# workstation. Keep runtime files local and reuse an installed Hub snapshot.
+if os.name == 'nt' and not Path('E:/').exists():
+    os.environ.setdefault('TERRAIN_RUNTIME_ROOT', str(ROOT / 'rust/pkg/neural-runtime'))
+hub_home = Path.home() / '.cache/huggingface'
+if (hub_home / 'hub/models--xandergos--terrain-diffusion-30m').is_dir():
+    os.environ.setdefault('HF_HOME', str(hub_home))
 for key, value in {'MPLBACKEND': 'Agg', 'TERRAIN_CUDA_GRAPHS': '0',
                    'TERRAIN_COARSE_STREAMS': '1', 'TERRAIN_DISTILL_LIVE': '0'}.items():
     os.environ[key] = value

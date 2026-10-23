@@ -1214,6 +1214,15 @@ function liftTerrainContours(): void {
     source.setAttribute('display', 'none'); overlay.append(copy);
   }
 }
+/** Retained water without its rivers: lake shapes, their material and any crop wrappers. */
+function lakesOnlySvg(svg: string): string {
+  if (!svg) return '';
+  const host = document.createElementNS('http://www.w3.org/2000/svg', 'svg'); host.innerHTML = svg;
+  for (const node of Array.from(host.querySelectorAll('path,circle,polygon,rect'))) {
+    if (!node.closest('defs,clipPath,mask') && !node.classList.contains('water-lakes')) node.remove();
+  }
+  return host.innerHTML;
+}
 function renderWater(): void {
   schedule3dTexture();
   const layer = document.getElementById('hydrologyOverlay');
@@ -1224,7 +1233,11 @@ function renderWater(): void {
   if (retainedDecor && layer) {
     gpu?.setWater(undefined); gpu?.setOverlay(undefined);
     const retainedWater = input('showWater').checked ? decorWaterSvg(retainedDecor, baseStyle, input('showLakes').checked) : '';
-    if (gpu && isRender3dStyle(style)) {
+    if (gpu && style === 'render') {
+      // Render: the GPU paints the rivers (depth, banks); lakes keep their SVG material above.
+      gpu.setRetainedWater(input('showWater').checked ? decorWaterSvg(retainedDecor, baseStyle, false) : '', retainedDecor.raster.width);
+      layer.innerHTML = svgWaterLayer(lakesOnlySvg(retainedWater));
+    } else if (gpu && isRender3dStyle(style)) {
       gpu.setRetainedWater(retainedWater, retainedDecor.raster.width); layer.innerHTML = '';
     } else { gpu?.setRetainedWater(undefined); layer.innerHTML = svgWaterLayer(retainedWater); }
     el('hydrologyLegend').hidden = !elevationDiagnostic || !input('showLegend').checked;

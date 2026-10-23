@@ -7,11 +7,22 @@ import type { PlacementBatch, PlacedBuilding, PlacementBatchSettings } from '../
 import { openBench } from './benchHistory';
 import { readUrbanHouseModel, urbanHouseModelCode } from './urbanHouseModel';
 import { buildingHeight } from '../render/urbanBuildings';
+import { programmeBalanceEvidence } from './urbanProgrammeEvidence';
 import { URBAN_FUNCTION_LABELS, type UrbanBuildingAppearance, type UrbanBuildingDiagnostic, type UrbanBuildingStyle } from '../render/urbanBuildingStyle';
+import type { UrbanColdSceneResponse } from './urbanScene';
+import type { BuildingChunkRead } from './urbanBuildingChunkStore';
+import type { PlanArchiveScene } from '../../../rust/bridge/compactPlanArchive';
+import type { NativeBuildingProjectionRefusal } from './urbanBuildingProjection';
 
 export interface UrbanBuildingDraft { seed: string; floors: string; typology: string; model: string; culture?: string; fit?: boolean }
+export type UrbanColdBuildingState = Pick<UrbanColdSceneResponse, 'store' | 'counts'> & {
+  offset?: { x: number; y: number }; cityKey?: string;
+};
+export type UrbanBuildingGenerateResult = ({ scene: PlacementBatch; cold?: never } | { cold: UrbanColdBuildingState; scene?: never })
+  & { timing?: { sites: number; placement: number } };
 export interface UrbanBuildingState {
   seed: string; visible: boolean; appearance: UrbanBuildingAppearance; scene?: PlacementBatch;
+  cold?: UrbanColdBuildingState;
   generated?: boolean;
   settings?: PlacementBatchSettings;
   selected?: string; projection?: boolean; camera?: import('./terrain3d').Terrain3dCamera;
@@ -19,15 +30,161 @@ export interface UrbanBuildingState {
 const xml = (text: string): string => text.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 const functionName = (key: string): string => ({ housing: 'Habitat', residential: 'Habitat', commerce: 'Commerce', craft: 'Artisanat', institution: 'Institution', market: 'Marché', common: 'Communs', agriculture: 'Agriculture', ...URBAN_FUNCTION_LABELS } as Record<string, string>)[key] ?? key;
 
+export type UrbanBuildingPanelSelection = { status: 'none' } | { status: 'pending' | 'missing'; id: string }
+  | { status: 'error'; id: string; message: string } | { status: 'ready'; id: string; value: BuildingChunkRead };
+const coldIdentity = (cold: UrbanColdBuildingState) => JSON.stringify([cold.store.sceneId, cold.store.fingerprint,
+  cold.store.sourceFingerprint, cold.counts.generator_version, cold.cityKey ?? null, cold.offset?.x ?? 0, cold.offset?.y ?? 0]);
+function panelState(value: UrbanBuildingState): UrbanBuildingState {
+  if (value.scene && value.cold) throw new Error('Une scène bâtie ne peut pas conserver à la fois une scène native et un stockage froid.');
+  const cold = value.cold;
+  if (cold?.offset !== undefined && (!cold.offset || !Number.isFinite(cold.offset.x) || !Number.isFinite(cold.offset.y)))
+    throw new Error('Le décalage de la scène bâtie doit contenir deux coordonnées finies.');
+  if (cold?.cityKey !== undefined && (typeof cold.cityKey !== 'string' || !cold.cityKey.length))
+    throw new Error('La clé de ville de la scène bâtie doit être une chaîne non vide.');
+  const offset = cold?.offset;
+  return { seed: value.seed, visible: value.visible, appearance: value.appearance, generated: value.generated,
+    settings: value.settings, projection: value.projection, camera: value.camera, scene: cold ? undefined : value.scene,
+    cold: cold ? Object.freeze({ store: Object.freeze({ format: cold.store.format, sceneId: cold.store.sceneId,
+      fingerprint: cold.store.fingerprint, sourceFingerprint: cold.store.sourceFingerprint }),
+    counts: Object.freeze({ schema_version: cold.counts.schema_version, generator_version: cold.counts.generator_version,
+      buildings: cold.counts.buildings, refusals: cold.counts.refusals, open_spaces: cold.counts.open_spaces }),
+      ...(cold.cityKey !== undefined ? { cityKey: cold.cityKey } : {}),
+      ...(offset && (offset.x !== 0 || offset.y !== 0) ? { offset: Object.freeze({ x: offset.x === 0 ? 0 : offset.x, y: offset.y === 0 ? 0 : offset.y }) } : {}) }) : undefined,
+    selected: cold ? value.selected : value.scene?.buildings.some(b => b.id === value.selected) ? value.selected : undefined };
+}
+export function urbanBuildingPanelSummary(state: UrbanBuildingState): string {
+  if (state.cold) {
+    const c = state.cold.counts;
+    return `${c.buildings} plans de bâtiments · ${c.refusals} refus · ${c.open_spaces} espaces libres voulus · capacité non évaluée`;
+  }
+  const scene = state.scene;
+  return scene ? `${scene.buildings.length} bâtiments · ${scene.refusals.length} refus · ${scene.open_spaces.length} espaces libres voulus`
+    : 'Générez les parcelles pour implanter les bâtiments.';
+}
+/** Missing metadata differs from an authenticated empty list. Counts continue
+ * to come from the committed manifest, never an inferred native batch. */
+export function urbanBuildingPanelRefusalsHtml(state: UrbanBuildingState, coldRefusals?: readonly NativeBuildingProjectionRefusal[]): string {
+  if (state.cold && coldRefusals === undefined) return state.cold.counts.refusals
+    ? `<li>${state.cold.counts.refusals} refus conservés dans l’archive ; liste détaillée indisponible.</li>` : '';
+  const refusals = state.cold ? coldRefusals! : state.scene?.refusals ?? [];
+  return refusals.map(r => `<li data-refusal="${xml(r.parcel_id)}">${xml(r.parcel_id)} : ${xml(r.message)}</li>`).join('');
+}
+export function urbanBuildingPanelCapacity(state: UrbanBuildingState, selected: PlacedBuilding): string {
+  const scene = state.scene;
+  return !state.cold && !!scene && selected.simplification === 'recipe_volumes' && scene.generator_version !== 'silhouette'
+    && !scene?.generator_version.startsWith('architectural-plans-') && selected.cartographic?.validation !== 'plan_only'
+    ? `${selected.useful_area_m2.toFixed(1)} m² utiles indicatifs · ${selected.domestic_units.toFixed(1)} unités domestiques estimées` : 'capacité non évaluée';
+}
+export function urbanBuildingPanelEvidence(state: UrbanBuildingState): ReturnType<typeof programmeBalanceEvidence> {
+  return state.cold ? () => 'not_calculated' : programmeBalanceEvidence(state.scene);
+}
+
+/** State/async orchestration also used by the actual DOM panel. It retains one
+ * selected native record, never a cold scene reconstructed as PlacementBatch. */
+export function createUrbanBuildingPanelState(initial: UrbanBuildingState, options: {
+  readColdBuilding?(cold: UrbanColdBuildingState, id: string): Promise<BuildingChunkRead | undefined>;
+  exportCold?(cold: UrbanColdBuildingState): Promise<void>;
+  exportScene?(scene: PlacementBatch): void | Promise<void>;
+  onUpdate?(state: UrbanBuildingState): void;
+}) {
+  const { readColdBuilding, exportCold, exportScene, onUpdate } = options;
+  let state = panelState(initial), version = 0, selection: UrbanBuildingPanelSelection = { status: 'none' }, exporting = false;
+  type Job = { cold: UrbanColdBuildingState; identity: string; id: string; version: number };
+  let pending: Job | undefined, loaded: Job | undefined, running = false, waiters: (() => void)[] = [];
+  const notify = () => onUpdate?.(state);
+  const current = (job: Job) => version === job.version && state.cold === job.cold && state.selected === job.id && coldIdentity(job.cold) === job.identity;
+  function clear() { version++; pending = loaded = undefined; selection = { status: 'none' }; }
+  function schedule() {
+    if (running) return; running = true; queueMicrotask(() => { void drain(); });
+  }
+  async function drain() {
+    try {
+      while (pending) {
+        const job = pending; pending = undefined;
+        try {
+          const value = await readColdBuilding!(job.cold, job.id); if (!current(job)) continue;
+          if (value && (value.building.id !== job.id || value.scene.buildings.length !== 1 || value.scene.buildings[0] !== value.building))
+            throw new Error('Le bâtiment chargé ne correspond pas à la sélection et à son contexte.');
+          loaded = value ? job : undefined;
+          selection = value ? { status: 'ready', id: job.id, value: Object.freeze({ building: value.building, scene: value.scene, chunkIndex: value.chunkIndex }) }
+            : { status: 'missing', id: job.id };
+          notify();
+        } catch (error) {
+          if (!current(job)) continue; loaded = undefined;
+          selection = { status: 'error', id: job.id, message: error instanceof Error ? error.message : String(error) }; notify();
+        }
+      }
+    } finally {
+      running = false;
+      const done = waiters; waiters = []; done.forEach(resolve => resolve());
+    }
+  }
+  function startSelection(id: string, update = true): boolean {
+    if (!id) return false;
+    if (!state.cold) {
+      if (!state.scene?.buildings.some(b => b.id === id)) return false;
+      clear(); state = { ...state, selected: id }; if (update) notify(); return true;
+    }
+    if (state.selected === id && (selection.status === 'pending' || selection.status === 'ready' && loaded && current(loaded))) return false;
+    clear(); state = { ...state, selected: id };
+    const cold = state.cold!;
+    if (!readColdBuilding) selection = { status: 'error', id, message: 'La lecture du bâtiment sélectionné est indisponible.' };
+    else { selection = { status: 'pending', id }; pending = { cold, identity: coldIdentity(cold), id, version }; schedule(); }
+    if (update) notify(); return true;
+  }
+  function replace(next: UrbanBuildingState) {
+    const accepted = panelState(next); clear(); state = accepted;
+    if (state.cold && state.selected) startSelection(state.selected, false); notify();
+  }
+  if (state.cold && state.selected) startSelection(state.selected, false);
+  return {
+    get state() { return state; }, get selection() { return selection; }, get version() { return version; }, get exporting() { return exporting; },
+    get canExport() { return !exporting && (state.cold ? !!exportCold : !!state.scene && !!exportScene); },
+    select: startSelection,
+    whenSelectionIdle(): Promise<void> { return running ? new Promise(resolve => waiters.push(resolve)) : Promise.resolve(); },
+    restore: replace,
+    replaceScene(scene?: PlacementBatch) { replace({ ...state, scene, cold: undefined }); },
+    replaceCold(cold?: UrbanColdBuildingState) { replace({ ...state, scene: undefined, cold, selected: cold ? state.selected : undefined }); },
+    resetAppliedSettings() { state = { ...state, settings: undefined }; notify(); },
+    invalidate() { replace({ ...state, scene: undefined, cold: undefined, selected: undefined }); },
+    applyGenerated(result: UrbanBuildingGenerateResult, seed: string, settings: PlacementBatchSettings) {
+      if (!!result.scene === !!result.cold) throw new Error('Le résultat doit contenir une seule représentation bâtie.');
+      replace({ ...state, seed, settings, generated: true, scene: result.scene, cold: result.cold });
+    },
+    async openSelected(open: (building: PlacedBuilding, context?: PlanArchiveScene) => Promise<void>): Promise<void> {
+      if (state.cold) {
+        if (selection.status !== 'ready' || !loaded || !current(loaded)) throw new Error('Le bâtiment sélectionné n’est pas chargé.');
+        return open(selection.value.building, selection.value.scene);
+      }
+      const building = state.scene?.buildings.find(b => b.id === state.selected); if (!building) throw new Error('Aucun bâtiment sélectionné.');
+      return open(building);
+    },
+    async exportCurrent(): Promise<void> {
+      if (exporting) throw new Error('Un export est déjà en cours.');
+      const cold = state.cold, scene = state.scene;
+      if (cold && !exportCold) throw new Error('L’export complet de cette scène est indisponible.');
+      if (!cold && (!scene || !exportScene)) throw new Error('Aucune scène bâtie à exporter.');
+      exporting = true; notify();
+      try { if (cold) await exportCold!(cold); else await exportScene!(scene!); }
+      finally { exporting = false; notify(); }
+    },
+  };
+}
+
 /** Shared controls for Settlements and the existing urban workshop. Draft inputs
  * are read only by their action; display changes never call generation. */
 export function createUrbanBuildingsPanel(options: {
   host: Element; getProgramme(): ProgrammeContext;
   applyProgramme(context: ProgrammeContext): void;
-  generate(seed: string, settings: PlacementBatchSettings, onProgress: (completed: number, total: number) => void): Promise<{ scene: PlacementBatch; timing?: { sites: number; placement: number } }>;
+  generate(seed: string, settings: PlacementBatchSettings, onProgress: (completed: number, total: number) => void): Promise<UrbanBuildingGenerateResult>;
   onChange(state: UrbanBuildingState): void;
-  onOpen(building: PlacedBuilding): Promise<void>;
+  onOpen(building: PlacedBuilding, context?: PlanArchiveScene): Promise<void>;
+  readColdBuilding?(cold: UrbanColdBuildingState, id: string): Promise<BuildingChunkRead | undefined>;
+  getColdRefusals?(cold: UrbanColdBuildingState): readonly NativeBuildingProjectionRefusal[] | undefined;
+  exportCold?(cold: UrbanColdBuildingState): Promise<void>;
   onProjection?(active: boolean): void;
+  /** City Bench: flat silhouettes from the lots; house generation options are not offered. */
+  silhouettes?: boolean;
 }) {
   const programme = document.createElement('details'); programme.id = 'urbanProgrammeStage'; programme.className = 'stage urban-stage'; programme.open = true;
   programme.innerHTML = `<summary>Programme et usages</summary><div class="stage-controls">
@@ -76,25 +233,73 @@ export function createUrbanBuildingsPanel(options: {
   }
   const renderHelp = document.createElement('button'); renderHelp.type = 'button'; renderHelp.textContent = '?'; renderHelp.title = 'Styles, hauteurs et rendu 2D / 3D';
   renderHelp.onclick = () => openMethodNote('urban-buildings-rendering'); $<HTMLSelectElement>('[data-building-style]').closest('label')!.append(renderHelp);
-  let state: UrbanBuildingState = { seed: '', visible: true, appearance: { style: 'cartographic', diagnostic: 'none' } };
+  const buildingStyle: UrbanBuildingStyle = options.silhouettes ? 'silhouette' : 'cartographic';
+  if (options.silhouettes) {
+    programme.querySelector('summary')!.textContent = '8 · Programme et usages';
+    panel.querySelector('summary')!.textContent = '9 · Bâtiments · silhouettes';
+    $('[data-buildings-generate]').textContent = 'Tracer les silhouettes';
+    $<HTMLSelectElement>('[data-building-style]').replaceChildren(new Option('Silhouettes à plat', 'silhouette'));
+    // Silhouettes carry no volumes, hence no physical height to colour.
+    $<HTMLSelectElement>('[data-building-diagnostic]').querySelector('option[value="height"]')?.remove();
+    // Typology, levels, house models and parcel fitting only shape detailed houses.
+    for (const element of [$('[data-building-typology]').closest('details')!, $('[data-building-house-model]').closest('details')!, fitLabel]) (element as HTMLElement).hidden = true;
+    // The City Bench 3D view (city3d.ts) shows silhouettes, compact plans and detailed houses.
+    $('[data-building-3d]').textContent = 'Vue 3D';
+    architectureHint.textContent = 'Emprise proposée par chaque lot (rectangle d’admission, sinon surface constructible). Les maisons détaillées seront réintégrées plus tard.';
+  }
+  let state: UrbanBuildingState = { seed: '', visible: true, appearance: { style: buildingStyle, diagnostic: 'none' } };
   let epoch = 0, busy = false;
   const draftControls = '[data-building-seed], [data-building-floors], [data-building-typology], [data-building-house-model], [data-building-culture], [data-building-fit]';
   for (const control of Array.from(panel.querySelectorAll<HTMLInputElement | HTMLSelectElement>(draftControls))) {
     control.addEventListener('input', () => { $('[data-building-draft]').hidden = false; });
     control.addEventListener('change', () => { $('[data-building-draft]').hidden = false; });
   }
-  let reportedScene: PlacementBatch | undefined;
+  let reportedRefusals: readonly NativeBuildingProjectionRefusal[] | undefined;
+  let reportedCold: UrbanColdBuildingState | undefined;
+  let programmes: UrbanProgramme[] = [], reportedProgrammes: UrbanProgramme[] | undefined, programmeScene: PlacementBatch | undefined,
+    programmeCold: UrbanColdBuildingState | undefined;
+  function reportProgrammes(): void {
+    if (reportedProgrammes === programmes && programmeScene === state.scene && programmeCold === state.cold) return;
+    reportedProgrammes = programmes; programmeScene = state.scene; programmeCold = state.cold;
+    const balanceEvidence = urbanBuildingPanelEvidence(state);
+    p$('[data-programme-report]').innerHTML = programmes.map(p => {
+      const evidence = balanceEvidence(p), known = evidence === 'scene_consistent';
+      const missing = evidence === 'not_calculated' ? 'non calculé' : 'non vérifié';
+      return `<table class="urban-programme"><thead><tr><th>Besoin</th><th>Demande</th><th title="Capacité prévue des parcelles">Prévu</th><th title="Estimation calculée sur les bâtiments générés">Bâti estimé</th><th title="Espaces ouverts conservés dans le bilan de cette scène">Libre</th><th title="Besoin restant selon le programme">Déficit du programme</th></tr></thead><tbody>${p.demands.map(d => `<tr title="${xml([...d.provenance, ...d.reasons].join(' · '))}"><th>${xml(functionName(d.function))}<small>${d.unit === 'domesticUnits' ? 'unités domestiques' : 'm² utiles indicatifs'}</small></th><td>${d.requested.toFixed(1)}</td><td>${d.parcelCapacity.toFixed(1)}</td><td>${known ? d.builtCapacity.toFixed(1) : missing}</td><td>${known ? (d.openCapacity ?? 0).toFixed(1) : missing}</td><td>${d.deficit.toFixed(1)}${known ? '' : ' (programme)'}</td></tr>`).join('')}</tbody></table><small>${known ? 'Estimation calculée sur les bâtiments générés.' : evidence === 'not_calculated' ? 'La capacité des bâtiments n’a pas été évaluée. Les valeurs prévues viennent du programme.' : 'Le bilan des bâtiments n’est pas disponible pour cette scène.'}</small>${p.warnings.length ? `<small data-programme-warnings role="status">${p.warnings.map(xml).join('<br>')}</small>` : ''}<small>${p.cultures.map(c => `${xml(c.culture)} → ${xml(c.architecturePack)}${c.borrowing ? ` · ${xml(c.borrowing)}` : ''}`).join('<br>')}</small>`;
+    }).join('') || '<small>Le programme apparaît avec le plan appliqué.</small>';
+  }
   const report = (): void => {
-    const scene = state.scene;
-    if (!busy) $('[data-buildings-status]').textContent = scene ? `${scene.buildings.length} bâtiments · ${scene.refusals.length} refus · ${scene.open_spaces.length} espaces libres voulus` : 'Générez les parcelles pour implanter les bâtiments.';
-    $<HTMLButtonElement>('[data-building-json]').disabled = !scene;
-    if (scene !== reportedScene) $('[data-building-refusals]').innerHTML = (scene?.refusals ?? []).map(r => `<li data-refusal="${xml(r.parcel_id)}">${xml(r.parcel_id)} : ${xml(r.message)}</li>`).join('');
-    reportedScene = scene;
-    const selected = scene?.buildings.find(b => b.id === state.selected), box = $('[data-building-inspection]');
-    box.innerHTML = selected ? `<strong>${xml(functionName(selected.function))}</strong><dl class="urban-inspection"><dt>Parcelle</dt><dd>${xml(selected.parcel_id)}</dd><dt>Culture et recette</dt><dd>${xml(selected.culture.culture)} · ${xml(selected.recipe_id)}</dd><dt>Sol / hauteur physique</dt><dd>${selected.ground_z_m.toFixed(2)} m / ${buildingHeight(selected).toFixed(2)} m</dd><dt>Capacité indicative</dt><dd>${selected.useful_area_m2.toFixed(1)} m² · ${selected.domestic_units.toFixed(1)} unités domestiques</dd><dt>Accès</dt><dd>${xml(selected.access_id)}</dd></dl><button type="button" data-open-house>Ouvrir dans Maisons</button>${selected.culture.borrowing ? `<small>${xml(selected.culture.borrowing)}</small>` : ''}` : '<small>Cliquer sur un bâtiment pour l’inspecter.</small>';
+    const scene = state.scene, cold = state.cold, loading = model.selection;
+    if (!busy) $('[data-buildings-status]').textContent = urbanBuildingPanelSummary(state);
+    const exportButton = $<HTMLButtonElement>('[data-building-json]'); exportButton.disabled = !model.canExport;
+    exportButton.textContent = cold ? 'Exporter la scène complète' : 'Exporter la scène JSON';
+    exportButton.title = cold && !options.exportCold ? 'L’export complet de cette scène est indisponible.' : '';
+    if (model.exporting) exportButton.setAttribute('aria-busy', 'true'); else exportButton.removeAttribute('aria-busy');
+    const refusals = cold ? options.getColdRefusals?.(cold) : scene?.refusals;
+    if (refusals !== reportedRefusals || cold !== reportedCold) $('[data-building-refusals]').innerHTML = urbanBuildingPanelRefusalsHtml(state, cold ? refusals : undefined);
+    reportedRefusals = refusals; reportedCold = cold;
+    const selected = cold ? loading.status === 'ready' ? loading.value.building : undefined : scene?.buildings.find(b => b.id === state.selected);
+    const box = $('[data-building-inspection]'), capacity = selected ? urbanBuildingPanelCapacity(state, selected) : 'capacité non évaluée';
+    const emptyInspection = cold && loading.status === 'pending' ? '<small>Chargement du bâtiment sélectionné…</small>'
+      : cold && loading.status === 'missing' ? '<small>Le bâtiment sélectionné est absent de cette scène.</small>'
+        : cold && loading.status === 'error' ? `<small>Lecture du bâtiment impossible : ${xml(loading.message)}</small>`
+          : '<small>Cliquer sur un bâtiment pour l’inspecter.</small>';
+    box.innerHTML = selected ? `<strong>${xml(functionName(selected.function))}</strong><dl class="urban-inspection"><dt>Parcelle</dt><dd>${xml(selected.parcel_id)}</dd><dt>Culture et recette</dt><dd>${xml(selected.culture.culture)} · ${xml(selected.recipe_id)}</dd><dt>Sol / hauteur physique</dt><dd>${selected.ground_z_m.toFixed(2)} m / ${buildingHeight(selected).toFixed(2)} m</dd><dt>Indicateurs domestiques</dt><dd>${capacity}</dd><dt>Accès</dt><dd>${xml(selected.access_id)}</dd></dl><button type="button" data-open-house>Ouvrir dans Maisons</button>${selected.culture.borrowing ? `<small>${xml(selected.culture.borrowing)}</small>` : ''}` : emptyInspection;
     const open = box.querySelector<HTMLButtonElement>('[data-open-house]');
-    if (open && selected) open.onclick = () => { void options.onOpen(selected).catch(error => { $('[data-buildings-status]').textContent = String(error); }); };
+    if (open && options.silhouettes) open.hidden = true;
+    const selectedVersion = model.version;
+    if (open && selected) open.onclick = () => {
+      if (selectedVersion !== model.version) return;
+      void model.openSelected(options.onOpen).catch(error => { if (selectedVersion === model.version) $('[data-buildings-status]').textContent = String(error); });
+    };
+    reportProgrammes();
   };
+  const model = createUrbanBuildingPanelState(state, { readColdBuilding: options.readColdBuilding, exportCold: options.exportCold,
+    exportScene: scene => {
+      const url = URL.createObjectURL(new Blob([JSON.stringify(scene)], { type: 'application/json' }));
+      const link = document.createElement('a'); link.href = url; link.download = 'urban-scene.json'; link.click(); setTimeout(() => URL.revokeObjectURL(url), 0);
+    }, onUpdate: next => { state = next; report(); } });
+  state = model.state;
   function changed(): void { report(); options.onChange(state); }
   function syncProgramme(provided?: ProgrammeContext): void {
     const context = { ...defaultProgrammeContext(), ...(provided ?? options.getProgramme()) };
@@ -131,7 +336,7 @@ export function createUrbanBuildingsPanel(options: {
         if (ticket === epoch && busy) $('[data-buildings-status]').textContent = `${completed.toLocaleString()} / ${total.toLocaleString()} lots traités`;
       });
       if (ticket !== epoch) return;
-      state = { ...state, seed, settings, scene: result.scene, generated: true }; if (!applied) $('[data-building-draft]').hidden = true; busy = false; changed();
+      busy = false; model.applyGenerated(result, seed, settings); if (!applied) $('[data-building-draft]').hidden = true; options.onChange(state);
       if (result.timing) $('[data-buildings-status]').textContent += ` · implantation ${result.timing.placement.toFixed(0)} ms`;
     } catch (error) { if (ticket === epoch) $('[data-buildings-status]').textContent = String(error); }
     finally { if (ticket === epoch) { busy = false; $<HTMLButtonElement>('[data-buildings-generate]').removeAttribute('aria-busy'); } }
@@ -141,16 +346,18 @@ export function createUrbanBuildingsPanel(options: {
   $<HTMLSelectElement>('[data-building-diagnostic]').onchange = event => { state.appearance = { ...state.appearance, diagnostic: (event.target as HTMLSelectElement).value as UrbanBuildingDiagnostic }; changed(); };
   $<HTMLButtonElement>('[data-building-3d]').onclick = () => { state.projection = !state.projection; options.onProjection?.(!!state.projection); $<HTMLButtonElement>('[data-building-3d]').setAttribute('aria-pressed', String(!!state.projection)); options.onChange(state); };
   $<HTMLButtonElement>('[data-building-json]').onclick = () => {
-    if (!state.scene) return;
-    const url = URL.createObjectURL(new Blob([JSON.stringify(state.scene)], { type: 'application/json' }));
-    const link = document.createElement('a'); link.href = url; link.download = 'urban-scene.json'; link.click(); setTimeout(() => URL.revokeObjectURL(url), 0);
+    const ticket = epoch, scene = state.scene, cold = state.cold;
+    void model.exportCurrent().catch(error => {
+      if (ticket === epoch && state.scene === scene && state.cold === cold) $('[data-buildings-status]').textContent = String(error);
+    });
   };
   syncProgramme();
   return {
     programme, panel, generate,
+    refreshReport: report,
     get state(): UrbanBuildingState { return state; },
     get busy(): boolean { return busy; },
-    resetAppliedSettings(): void { state = { ...state, settings: undefined }; },
+    resetAppliedSettings(): void { model.resetAppliedSettings(); },
     captureDraft(): UrbanBuildingDraft | undefined {
       return $('[data-building-draft]').hidden ? undefined : { seed: $<HTMLInputElement>('[data-building-seed]').value, floors: $<HTMLInputElement>('[data-building-floors]').value, typology: $<HTMLSelectElement>('[data-building-typology]').value, model: $<HTMLInputElement>('[data-building-house-model]').value, culture: architectureCulture.value, fit: $<HTMLInputElement>('[data-building-fit]').checked };
     },
@@ -164,14 +371,16 @@ export function createUrbanBuildingsPanel(options: {
       $<HTMLInputElement>('[data-building-fit]').checked = draft.fit !== false;
       $('[data-building-draft]').hidden = false;
     },
-    select(id: string): void { if (!state.scene?.buildings.some(b => b.id === id)) return; state.selected = id; changed(); },
-    updateProgrammes(programmes: UrbanProgramme[]): void {
-      p$('[data-programme-report]').innerHTML = programmes.map(p => `<table class="urban-programme"><thead><tr><th>Besoin</th><th>Demande</th><th title="Capacité parcellaire estimée">Lots</th><th title="Capacité réellement bâtie">Bâti</th><th title="Espaces ouverts effectivement conservés">Libre</th><th>Déficit</th></tr></thead><tbody>${p.demands.map(d => `<tr title="${xml([...d.provenance, ...d.reasons].join(' · '))}"><th>${xml(functionName(d.function))}<small>${d.unit === 'domesticUnits' ? 'unités domestiques' : 'm² utiles indicatifs'}</small></th><td>${d.requested.toFixed(1)}</td><td>${d.parcelCapacity.toFixed(1)}</td><td>${d.builtCapacity.toFixed(1)}</td><td>${(d.openCapacity ?? 0).toFixed(1)}</td><td>${d.deficit.toFixed(1)}</td></tr>`).join('')}</tbody></table>${p.warnings.length ? `<small data-programme-warnings role="status">${p.warnings.map(xml).join('<br>')}</small>` : ''}<small>${p.cultures.map(c => `${xml(c.culture)} → ${xml(c.architecturePack)}${c.borrowing ? ` · ${xml(c.borrowing)}` : ''}`).join('<br>')}</small>`).join('') || '<small>Le programme apparaît avec le plan appliqué.</small>';
+    select(id: string): void { if (model.select(id)) options.onChange(state); },
+    get selection(): UrbanBuildingPanelSelection { return model.selection; },
+    whenSelectionIdle(): Promise<void> { return model.whenSelectionIdle(); },
+    updateProgrammes(next: UrbanProgramme[]): void {
+      programmes = next; reportProgrammes();
     },
     restore(saved?: UrbanBuildingState): void {
+      model.restore({ seed: '', visible: true, appearance: { style: buildingStyle, diagnostic: 'none' }, ...saved });
       ++epoch; busy = false;
-      state = { seed: '', visible: true, appearance: { style: 'cartographic', diagnostic: 'none' }, ...saved };
-      state.appearance = { ...state.appearance, style: 'cartographic' };
+      state.appearance = { ...state.appearance, style: buildingStyle };
       $<HTMLInputElement>('[data-building-seed]').value = state.seed;
       $<HTMLInputElement>('[data-building-floors]').value = state.settings?.floors === undefined ? '' : String(state.settings.floors);
       $<HTMLSelectElement>('[data-building-typology]').value = state.settings?.typology ?? '';
@@ -186,7 +395,8 @@ export function createUrbanBuildingsPanel(options: {
       $('[data-building-draft]').hidden = true;
       syncProgramme(); report();
     },
-    replaceScene(scene: PlacementBatch | undefined): void { state = { ...state, scene, selected: scene?.buildings.some(building => building.id === state.selected) ? state.selected : undefined }; report(); },
+    replaceScene(scene: PlacementBatch | undefined): void { model.replaceScene(scene); },
+    replaceCold(cold?: UrbanColdBuildingState): void { model.replaceCold(cold); },
     syncProgramme,
     setProgrammeDraft(context: ProgrammeContext): void { syncProgramme(context); p$('[data-programme-draft]').hidden = false; },
     setBuildingDraft(saved?: UrbanBuildingState): void {
@@ -199,6 +409,6 @@ export function createUrbanBuildingsPanel(options: {
       $<HTMLInputElement>('[data-building-fit]').checked = saved.settings?.parcel_fit !== false;
       $('[data-building-draft]').hidden = false;
     },
-    invalidate(): void { ++epoch; busy = false; state = { ...state, scene: undefined, selected: undefined }; report(); $<HTMLButtonElement>('[data-buildings-generate]').removeAttribute('aria-busy'); },
+    invalidate(): void { ++epoch; busy = false; model.invalidate(); $<HTMLButtonElement>('[data-buildings-generate]').removeAttribute('aria-busy'); },
   };
 }

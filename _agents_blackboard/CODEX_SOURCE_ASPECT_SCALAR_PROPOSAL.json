@@ -1,0 +1,470 @@
+{
+  "version": "source-aspect-scalar-proposal-1",
+  "implemented": false,
+  "nativeConstructionRuns": 0,
+  "siteOrTerrainCertification": false,
+  "witnesses": [
+    {
+      "parcel": "a7029f26afac0cdd",
+      "targetM2": 348.8,
+      "phases": {
+        "before": {
+          "recipe": "AS-ISL-B14",
+          "size": 1.0,
+          "sourceWidthM": [
+            4.5,
+            7.5
+          ],
+          "sourceDepthM": [
+            6,
+            11
+          ],
+          "sourceAspect": [
+            0.4090909090909091,
+            1.25
+          ],
+          "allowedAxesM": [
+            [
+              4.5,
+              15.0
+            ],
+            [
+              6.0,
+              22.0
+            ]
+          ],
+          "retainedNominalM": [
+            7.5,
+            11.0
+          ],
+          "retainedM": [
+            7.5,
+            11.0
+          ],
+          "retainedAreaM2": 82.5,
+          "retainedAspect": 0.6818181818181818,
+          "aspectValid": true,
+          "allowedAxesValid": true,
+          "projectedM": [
+            7.5,
+            11.0
+          ],
+          "projectedAreaM2": 82.5,
+          "applicability": "new budget proposals only; admitted incumbent is not redrawn",
+          "trace": "Domestic footprint budget: target=348.800m2 actual=82.500m2 ratio=0.237 target_met=false tolerance=0.10; initial=82.500m2; 8/8 dimension pairs, 24/24 rigid poses, 0 admitted; chosen source, floors, court fraction and passage retained. Bounded search did not meet target; best validated plan retained, not a proof of impossibility."
+        },
+        "after": {
+          "recipe": "AS-ISL-B15",
+          "size": 1.0,
+          "sourceWidthM": [
+            5,
+            8
+          ],
+          "sourceDepthM": [
+            9,
+            13
+          ],
+          "sourceAspect": [
+            0.38461538461538464,
+            0.8888888888888888
+          ],
+          "allowedAxesM": [
+            [
+              5.0,
+              16.0
+            ],
+            [
+              9.0,
+              26.0
+            ]
+          ],
+          "retainedNominalM": [
+            8.0,
+            13.0
+          ],
+          "retainedM": [
+            7.105000004172325,
+            8.016000002622604
+          ],
+          "retainedAreaM2": 56.953680052078965,
+          "retainedAspect": 0.8863522956396923,
+          "aspectValid": true,
+          "allowedAxesValid": false,
+          "projectedM": null,
+          "projectedAreaM2": null,
+          "applicability": "new budget proposals only; admitted incumbent is not redrawn",
+          "trace": "Domestic footprint budget: target=348.800m2 actual=56.954m2 ratio=0.163 target_met=false tolerance=0.10; initial=56.954m2; 8/8 dimension pairs, 24/24 rigid poses, 0 admitted; chosen source, floors, court fraction and passage retained. Bounded search did not meet target; best validated plan retained, not a proof of impossibility."
+        }
+      }
+    },
+    {
+      "parcel": "a416b05f397c3d2c",
+      "targetM2": 736.3,
+      "phases": {
+        "before": {
+          "recipe": "AS-ISL-B14",
+          "size": 1.0,
+          "sourceWidthM": [
+            4.5,
+            7.5
+          ],
+          "sourceDepthM": [
+            6,
+            11
+          ],
+          "sourceAspect": [
+            0.4090909090909091,
+            1.25
+          ],
+          "allowedAxesM": [
+            [
+              4.5,
+              15.0
+            ],
+            [
+              6.0,
+              22.0
+            ]
+          ],
+          "retainedNominalM": [
+            4.5,
+            22.0
+          ],
+          "retainedM": [
+            4.5,
+            22.0
+          ],
+          "retainedAreaM2": 99.0,
+          "retainedAspect": 0.20454545454545456,
+          "aspectValid": false,
+          "allowedAxesValid": true,
+          "projectedM": [
+            6.364,
+            15.556000000000001
+          ],
+          "projectedAreaM2": 98.998384,
+          "applicability": "new budget proposals only; admitted incumbent is not redrawn",
+          "trace": "Domestic footprint budget: target=736.300m2 actual=99.000m2 ratio=0.134 target_met=false tolerance=0.10; initial=82.500m2; 6/8 dimension pairs, 24/24 rigid poses, 4 admitted; chosen source, floors, court fraction and passage retained. Bounded search did not meet target; best validated plan retained, not a proof of impossibility."
+        },
+        "after": {
+          "recipe": "AS-ISL-B15",
+          "size": 1.0,
+          "sourceWidthM": [
+            5,
+            8
+          ],
+          "sourceDepthM": [
+            9,
+            13
+          ],
+          "sourceAspect": [
+            0.38461538461538464,
+            0.8888888888888888
+          ],
+          "allowedAxesM": [
+            [
+              5.0,
+              16.0
+            ],
+            [
+              9.0,
+              26.0
+            ]
+          ],
+          "retainedNominalM": [
+            5.0,
+            26.0
+          ],
+          "retainedM": [
+            5.0,
+            26.0
+          ],
+          "retainedAreaM2": 130.0,
+          "retainedAspect": 0.19230769230769232,
+          "aspectValid": false,
+          "allowedAxesValid": true,
+          "projectedM": [
+            7.072,
+            18.382
+          ],
+          "projectedAreaM2": 129.99750400000002,
+          "applicability": "new budget proposals only; admitted incumbent is not redrawn",
+          "trace": "Domestic footprint budget: target=736.300m2 actual=130.000m2 ratio=0.177 target_met=false tolerance=0.10; initial=104.000m2; 6/8 dimension pairs, 24/24 rigid poses, 2 admitted; chosen source, floors, court fraction and passage retained. Bounded search did not meet target; best validated plan retained, not a proof of impossibility."
+        }
+      }
+    },
+    {
+      "parcel": "4100d63eb878ede1",
+      "targetM2": 374.7,
+      "phases": {
+        "before": {
+          "recipe": "AS-ISL-B14",
+          "size": 1.0,
+          "sourceWidthM": [
+            4.5,
+            7.5
+          ],
+          "sourceDepthM": [
+            6,
+            11
+          ],
+          "sourceAspect": [
+            0.4090909090909091,
+            1.25
+          ],
+          "allowedAxesM": [
+            [
+              4.5,
+              15.0
+            ],
+            [
+              6.0,
+              22.0
+            ]
+          ],
+          "retainedNominalM": [
+            4.5,
+            22.0
+          ],
+          "retainedM": [
+            4.5,
+            22.0
+          ],
+          "retainedAreaM2": 99.0,
+          "retainedAspect": 0.20454545454545456,
+          "aspectValid": false,
+          "allowedAxesValid": true,
+          "projectedM": [
+            6.364,
+            15.556000000000001
+          ],
+          "projectedAreaM2": 98.998384,
+          "applicability": "new budget proposals only; admitted incumbent is not redrawn",
+          "trace": "Domestic footprint budget: target=374.700m2 actual=99.000m2 ratio=0.264 target_met=false tolerance=0.10; initial=82.500m2; 8/8 dimension pairs, 22/24 rigid poses, 8 admitted; chosen source, floors, court fraction and passage retained. Bounded search did not meet target; best validated plan retained, not a proof of impossibility."
+        },
+        "after": {
+          "recipe": "AS-ISL-B15",
+          "size": 1.0,
+          "sourceWidthM": [
+            5,
+            8
+          ],
+          "sourceDepthM": [
+            9,
+            13
+          ],
+          "sourceAspect": [
+            0.38461538461538464,
+            0.8888888888888888
+          ],
+          "allowedAxesM": [
+            [
+              5.0,
+              16.0
+            ],
+            [
+              9.0,
+              26.0
+            ]
+          ],
+          "retainedNominalM": [
+            5.0,
+            26.0
+          ],
+          "retainedM": [
+            5.0,
+            26.0
+          ],
+          "retainedAreaM2": 130.0,
+          "retainedAspect": 0.19230769230769232,
+          "aspectValid": false,
+          "allowedAxesValid": true,
+          "projectedM": [
+            7.072,
+            18.382
+          ],
+          "projectedAreaM2": 129.99750400000002,
+          "applicability": "new budget proposals only; admitted incumbent is not redrawn",
+          "trace": "Domestic footprint budget: target=374.700m2 actual=130.000m2 ratio=0.347 target_met=false tolerance=0.10; initial=104.000m2; 8/8 dimension pairs, 21/24 rigid poses, 8 admitted; chosen source, floors, court fraction and passage retained. Bounded search did not meet target; best validated plan retained, not a proof of impossibility."
+        }
+      }
+    }
+  ],
+  "sourceOnlySequences": [
+    {
+      "recipe": "AS-ISL-B14",
+      "limitation": "no parcel guide, terrain, source-minimum body solver or native pose evaluated",
+      "oldSlots": [
+        {
+          "orientation": "street",
+          "dimensionsM": [
+            15.0,
+            22
+          ]
+        },
+        {
+          "orientation": "street",
+          "dimensionsM": [
+            4.5,
+            22
+          ]
+        },
+        {
+          "orientation": "long_edge",
+          "dimensionsM": [
+            15.0,
+            22
+          ]
+        },
+        {
+          "orientation": "long_edge",
+          "dimensionsM": [
+            4.5,
+            22
+          ]
+        }
+      ],
+      "projectedSlots": [
+        {
+          "orientation": "street",
+          "dimensionsM": [
+            15.0,
+            22
+          ]
+        },
+        {
+          "orientation": "street",
+          "dimensionsM": [
+            6.364,
+            15.556000000000001
+          ]
+        },
+        {
+          "orientation": "long_edge",
+          "dimensionsM": [
+            15.0,
+            22
+          ]
+        },
+        {
+          "orientation": "long_edge",
+          "dimensionsM": [
+            6.364,
+            15.556000000000001
+          ]
+        }
+      ],
+      "slotCountBefore": 4,
+      "slotCountAfter": 4,
+      "additionalSlots": 0
+    },
+    {
+      "recipe": "AS-ISL-B15",
+      "limitation": "no parcel guide, terrain, source-minimum body solver or native pose evaluated",
+      "oldSlots": [
+        {
+          "orientation": "street",
+          "dimensionsM": [
+            16,
+            26
+          ]
+        },
+        {
+          "orientation": "street",
+          "dimensionsM": [
+            5,
+            26
+          ]
+        },
+        {
+          "orientation": "long_edge",
+          "dimensionsM": [
+            16,
+            26
+          ]
+        },
+        {
+          "orientation": "long_edge",
+          "dimensionsM": [
+            5,
+            26
+          ]
+        }
+      ],
+      "projectedSlots": [
+        {
+          "orientation": "street",
+          "dimensionsM": [
+            16,
+            26
+          ]
+        },
+        {
+          "orientation": "street",
+          "dimensionsM": [
+            7.072,
+            18.382
+          ]
+        },
+        {
+          "orientation": "long_edge",
+          "dimensionsM": [
+            16,
+            26
+          ]
+        },
+        {
+          "orientation": "long_edge",
+          "dimensionsM": [
+            7.072,
+            18.382
+          ]
+        }
+      ],
+      "slotCountBefore": 4,
+      "slotCountAfter": 4,
+      "additionalSlots": 0
+    }
+  ],
+  "elongatedControl": {
+    "recipe": "EUR-NOR-B01",
+    "footprint": "FP-LONG",
+    "activationScope": "outside initial Single/FP-RECT scope; numeric non-regression control only",
+    "sourceWidthM": [
+      6,
+      10
+    ],
+    "sourceDepthM": [
+      18,
+      36
+    ],
+    "sourceAspect": [
+      0.16666666666666666,
+      0.5555555555555556
+    ],
+    "nativeExtremeM": [
+      6,
+      36
+    ],
+    "nativeExtremeKept": [
+      6,
+      36
+    ],
+    "homotheticExtremeM": [
+      12,
+      72
+    ],
+    "homotheticExtremeKept": [
+      12,
+      72
+    ],
+    "oneAxisOnlyM": [
+      6,
+      72
+    ],
+    "oneAxisProjectionM": [
+      8.486,
+      50.907000000000004
+    ]
+  }
+}

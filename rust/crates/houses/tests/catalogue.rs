@@ -92,7 +92,7 @@ fn coverage_matches_both_current_sources_and_all_atlas_ids() {
         .map(|entry| &entry.id)
         .collect();
     let coverage_ids: BTreeSet<_> = catalogue.coverage.iter().map(|entry| &entry.id).collect();
-    assert_eq!(source_ids.len(), 345);
+    assert_eq!(source_ids.len(), 349);
     assert_eq!(source_ids, coverage_ids);
     assert_eq!(
         coverage_ids.len(),

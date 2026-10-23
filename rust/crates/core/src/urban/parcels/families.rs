@@ -11,8 +11,65 @@ pub(super) fn family(op: &str) -> &'static str {
     }
 }
 
-/// A bounded admissibility witness, checked by polygon difference (including
-/// holes). Failed search is a refusal, not proof that no possible plan exists.
+/// Exact convex-rectangle containment, holes included: no boundary edge enters
+/// the rectangle shrunk by 0.1 mm, and its centre lies inside. This replaces the
+/// former boolean-difference witness (same verdict to numerical tolerance) at a
+/// small fraction of its cost: one Liang-Barsky clip per boundary edge.
+pub(super) fn rect_within(
+    shape: &Shape,
+    a: Point,
+    u: Point,
+    v: Point,
+    width: f64,
+    depth: f64,
+) -> bool {
+    const EPS: f64 = 1e-4;
+    let (s0, s1, t0, t1) = (EPS, width - EPS, EPS, depth - EPS);
+    if s1 <= s0 || t1 <= t0 {
+        return false;
+    }
+    let local = |p: Point| {
+        let d = sub(p, a);
+        (dot(d, u), dot(d, v))
+    };
+    for ring in std::iter::once(&shape.outer).chain(shape.holes.iter()) {
+        for (&p, &q) in ring
+            .iter()
+            .zip(ring.iter().cycle().skip(1))
+            .take(ring.len())
+        {
+            let ((px, py), (qx, qy)) = (local(p), local(q));
+            if px.max(qx) <= s0 || px.min(qx) >= s1 || py.max(qy) <= t0 || py.min(qy) >= t1 {
+                continue;
+            }
+            let (dx, dy) = (qx - px, qy - py);
+            let (mut enter, mut exit) = (0.0_f64, 1.0_f64);
+            let mut inside = true;
+            for (pk, qk) in [(-dx, px - s0), (dx, s1 - px), (-dy, py - t0), (dy, t1 - py)] {
+                if pk.abs() < 1e-15 {
+                    if qk < 0.0 {
+                        inside = false;
+                        break;
+                    }
+                } else if pk < 0.0 {
+                    enter = enter.max(qk / pk);
+                } else {
+                    exit = exit.min(qk / pk);
+                }
+            }
+            if inside && enter <= exit {
+                return false;
+            }
+        }
+    }
+    super::super::geometry::contains(
+        shape,
+        add(a, add(scale(u, width * 0.5), scale(v, depth * 0.5))),
+    )
+}
+
+/// A bounded admissibility witness, checked by exact rectangle containment
+/// (including holes). Failed search is a refusal, not proof that no plan exists.
 pub(super) fn envelope(
     shape: &Shape,
     fronts: &[Front],
@@ -20,8 +77,6 @@ pub(super) fn envelope(
     depth: f64,
     access_width: f64,
 ) -> Option<Shape> {
-    use geo::{Area, BooleanOps};
-    let polygon = super::super::geometry::polygon(shape);
     let contacts = contacts::boundary_contacts(shape, fronts);
     let mut candidates: Vec<_> = contacts
         .iter()
@@ -53,20 +108,8 @@ pub(super) fn envelope(
             let along = lo + (len - width) * t;
             for setback in [0.0, 0.5, 1.5, 3.0] {
                 let a = add(add(f.a, scale(u, along)), scale(v, setback));
-                let candidate = Shape {
-                    outer: vec![
-                        a,
-                        add(a, scale(u, width)),
-                        add(add(a, scale(u, width)), scale(v, depth)),
-                        add(a, scale(v, depth)),
-                    ],
-                    holes: Vec::new(),
-                };
-                let outside = super::super::geometry::polygon(&candidate)
-                    .difference(&polygon)
-                    .unsigned_area();
-                if outside < 1e-5_f64.max(width * depth * 1e-8) {
-                    return Some(candidate);
+                if rect_within(shape, a, u, v, width, depth) {
+                    return Some(rect(a, u, v, width, depth));
                 }
             }
         }
@@ -80,21 +123,8 @@ pub(super) fn envelope(
                             scale(u, u0 + (u1 - u0 - width) * along),
                             scale(v, v0 + (v1 - v0 - depth) * across),
                         );
-                        let candidate = Shape {
-                            outer: vec![
-                                a,
-                                add(a, scale(u, width)),
-                                add(add(a, scale(u, width)), scale(v, depth)),
-                                add(a, scale(v, depth)),
-                            ],
-                            holes: Vec::new(),
-                        };
-                        if super::super::geometry::polygon(&candidate)
-                            .difference(&polygon)
-                            .unsigned_area()
-                            < 1e-5_f64.max(width * depth * 1e-8)
-                        {
-                            return Some(candidate);
+                        if rect_within(shape, a, u, v, width, depth) {
+                            return Some(rect(a, u, v, width, depth));
                         }
                     }
                 }
@@ -102,6 +132,18 @@ pub(super) fn envelope(
         }
     }
     None
+}
+
+fn rect(a: Point, u: Point, v: Point, width: f64, depth: f64) -> Shape {
+    Shape {
+        outer: vec![
+            a,
+            add(a, scale(u, width)),
+            add(add(a, scale(u, width)), scale(v, depth)),
+            add(a, scale(v, depth)),
+        ],
+        holes: Vec::new(),
+    }
 }
 
 /// Retain a connected court/passage and cut compact properties around it. Its
@@ -295,6 +337,209 @@ pub(super) fn inherited(
             child.provenance.insert(0, "inherited-subdivision".into());
         }
         result.extend(children);
+    }
+    result
+}
+
+/// Inward courtyard tissue (medina derbs, hutong branches, Byzantine closes).
+/// Lots are sized from the culture's house areas and cut along streets; every
+/// part of the block farther than one lot band from any access receives a
+/// cul-de-sac passage (1.4-2.4 m) ending in a small square. Each passage starts
+/// from the nearest street or earlier passage, so they form trees that always
+/// reach a street; lots along them are entered through a gate. Passages are
+/// shared parcel land (`court`), never new public streets.
+pub(super) fn derbs(
+    shape: &Shape,
+    block: usize,
+    axis: Point,
+    fronts: &mut Vec<Front>,
+    morph: &Morph,
+    zone: &str,
+    rng: &mut Rng,
+) -> Vec<Parcel> {
+    use super::super::geometry::{ContainmentIndex, bbox, union};
+    let [amin, amax] = morph.range("houseArea", zone);
+    let (amin, amax) = (amin.max(40.0), amax.max(amin.max(40.0)));
+    let [f0, f1] = morph.range("frontage", zone);
+    let [d0, d1] = morph.range("plotDepth", zone);
+    let width = [f0.max(0.75 * amin.sqrt()).max(4.0), 0.0];
+    let width = [width[0], f1.max(0.9 * amax.sqrt()).max(width[0])];
+    let cap = maximum_plot_depth(morph, zone);
+    let depth = [
+        d0.max(amin.sqrt()).min(cap),
+        d1.max(1.2 * amax.sqrt()).min(cap),
+    ];
+    let mut lots = morph.clone();
+    lots.value["frontage"][zone] = serde_json::json!(width);
+    lots.value["plotDepth"][zone] = serde_json::json!(depth);
+    lots.value["deepFill"] = serde_json::json!(true);
+    let reach = depth[1];
+    let total = area(shape);
+    // Far samples of the block (a coarse grid, at most ~600 points).
+    let (x0, y0, x1, y1) = bbox(shape);
+    let step = (reach / 3.0).max((total / 600.0).sqrt()).max(2.0);
+    let inside = ContainmentIndex::new(shape);
+    let mut samples = Vec::new();
+    let mut y = y0 + step * 0.5;
+    while total > 1.5 * reach * reach && y < y1 {
+        let mut x = x0 + step * 0.5;
+        while x < x1 {
+            let p = Point { x, y };
+            if inside.contains(p) {
+                samples.push(p);
+            }
+            x += step;
+        }
+        y += step;
+    }
+    let near = |p: Point, a: Point, b: Point| distance(p, a, b);
+    let mut far: Vec<f64> = samples
+        .iter()
+        .map(|&p| {
+            fronts
+                .iter()
+                .filter(|f| !f.shared)
+                .map(|f| near(p, f.a, f.b))
+                .fold(f64::INFINITY, f64::min)
+        })
+        .collect();
+    // Access lines: streets first, then each carved passage centre line.
+    let mut lines: Vec<(Point, Point, Front)> = fronts
+        .iter()
+        .filter(|f| !f.shared)
+        .map(|f| (f.a, f.b, *f))
+        .collect();
+    let lane = {
+        let pair = morph.pair("derbWidth");
+        if pair[1] > 0.0 { pair } else { [1.4, 2.4] }
+    };
+    let mut pieces: Vec<(Shape, Front)> = Vec::new();
+    for _ in 0..24 {
+        if pieces.len() >= 10 || lines.is_empty() {
+            break;
+        }
+        let Some((i, &d)) = far
+            .iter()
+            .enumerate()
+            .max_by(|a, b| a.1.total_cmp(b.1).then(b.0.cmp(&a.0)))
+        else {
+            break;
+        };
+        if d <= reach * 1.15 {
+            break;
+        }
+        let p = samples[i];
+        let (q, f) = lines
+            .iter()
+            .map(|&(a, b, f)| {
+                let e = sub(b, a);
+                let t = (dot(sub(p, a), e) / dot(e, e).max(1e-12)).clamp(0.0, 1.0);
+                (add(a, scale(e, t)), f)
+            })
+            .min_by(|a, b| length(sub(p, a.0)).total_cmp(&length(sub(p, b.0))))
+            .unwrap();
+        // Stop one lot band short of the far side: that band is served too.
+        let len = (length(sub(p, q)) - 0.5 * reach).max(0.0);
+        let dir = unit(sub(p, q));
+        let n = normal(dir);
+        let w = rng.range(lane[0], lane[1]);
+        let end = add(q, scale(dir, len));
+        let square = (2.5 * w).clamp(4.0, 7.0);
+        let fits = len > 6.0
+            && rect_within(
+                shape,
+                add(add(q, scale(dir, 0.6)), scale(n, -0.5 * w)),
+                dir,
+                n,
+                len - 0.6,
+                w,
+            )
+            && rect_within(
+                shape,
+                add(add(end, scale(dir, -0.5 * square)), scale(n, -0.5 * square)),
+                dir,
+                n,
+                square,
+                square,
+            );
+        if !fits {
+            far[i] = 0.0;
+            continue;
+        }
+        let start = add(q, scale(dir, -0.5));
+        pieces.push((
+            rect(add(start, scale(n, -0.5 * w)), dir, n, len + 0.5, w),
+            f,
+        ));
+        pieces.push((
+            rect(
+                add(add(end, scale(dir, -0.5 * square)), scale(n, -0.5 * square)),
+                dir,
+                n,
+                square,
+                square,
+            ),
+            f,
+        ));
+        lines.push((q, end, f));
+        for (k, s) in samples.iter().enumerate() {
+            far[k] = far[k].min(near(*s, q, end) - 0.5 * w);
+        }
+    }
+    if pieces.is_empty() {
+        return strips(shape, block, axis, fronts, &lots, zone, rng);
+    }
+    let courts: Vec<(Shape, Front)> =
+        union(&pieces.iter().map(|p| p.0.clone()).collect::<Vec<_>>())
+            .iter()
+            .flat_map(|s| intersection(s, shape))
+            .map(|c| {
+                let f = pieces
+                    .iter()
+                    .find(|(p, _)| !intersection(p, &c).is_empty())
+                    .map_or(pieces[0].1, |p| p.1);
+                (c, f)
+            })
+            .collect();
+    let mut cells = vec![shape.clone()];
+    for (court, f) in &courts {
+        cells = cells.iter().flat_map(|c| difference(c, court)).collect();
+        // Reversed court rings: their left side faces the lots around them.
+        for ring in std::iter::once(&court.outer).chain(court.holes.iter()) {
+            for (&a, &b) in ring
+                .iter()
+                .zip(ring.iter().cycle().skip(1))
+                .take(ring.len())
+            {
+                fronts.push(Front {
+                    a: b,
+                    b: a,
+                    street: f.street,
+                    rank: f.rank + 1,
+                    shared: true,
+                    gate: true,
+                });
+            }
+        }
+    }
+    let mut result = Vec::new();
+    for (i, cell) in cells.iter().enumerate() {
+        result.extend(strips(
+            cell,
+            block,
+            axis,
+            fronts,
+            &lots,
+            zone,
+            &mut rng.fork(&format!("derb-domain:{i}")),
+        ));
+    }
+    for (court, _) in courts {
+        let mut p = parcel(court, block, axis, fronts, "court");
+        p.use_kind = "court".into();
+        p.reason = "shared-court-and-passage".into();
+        p.provenance = vec!["derb-passage".into()];
+        result.push(p);
     }
     result
 }

@@ -1,0 +1,779 @@
+{
+  "accepted": 56,
+  "individuals": [
+    {
+      "id": "layout-f9dab5910f08a8a2/block-aaf080594bf1ca75/parcel-b1c6befd1e1b7e5e/building",
+      "ms": 5.0006,
+      "refusal": null,
+      "winner": "EUR-MED-B02::default"
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-c0057ad32bfc9fc2/parcel-47f87d0ce803a76d/building",
+      "ms": 4.2269,
+      "refusal": "Architectural bodies, courts or structures do not fit the supplied domain. Constrained composition: Morphology: this authored layout/programme has no constrained composition operator; retain its native template.",
+      "winner": null
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-4e6492a6ddb9cc9a/parcel-70d320eac8acf282/building",
+      "ms": 4.1544,
+      "refusal": "Architectural bodies, courts or structures do not fit the supplied domain. Constrained composition: Morphology: this authored layout/programme has no constrained composition operator; retain its native template.",
+      "winner": null
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-30c1e440d5acdab1/parcel-1e114efa34124bd6/building",
+      "ms": 3.7815000000000003,
+      "refusal": null,
+      "winner": "EUR-MED-B02::brick_walls"
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-b4e2aaf053382657/parcel-7a7928240e6216de/building",
+      "ms": 3.7431,
+      "refusal": null,
+      "winner": "EUR-MED-B11::default"
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-39d08aaee6e31119/parcel-a56b33d74144624e/building",
+      "ms": 3.6153,
+      "refusal": null,
+      "winner": "EUR-MED-B11::default"
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-b4e2aaf053382657/parcel-755727546db21202/building",
+      "ms": 3.5551,
+      "refusal": null,
+      "winner": "EUR-MED-B11::default"
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-c41a364e125d6b9e/parcel-8b23864412ac03b5/building",
+      "ms": 3.1037,
+      "refusal": null,
+      "winner": "EUR-MED-B02::brick_walls"
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-39d08aaee6e31119/parcel-0426dc743618d9c2/building",
+      "ms": 2.9652,
+      "refusal": null,
+      "winner": "EUR-MED-B11::default"
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-39d08aaee6e31119/parcel-a8156d0f608a625d/building",
+      "ms": 2.879,
+      "refusal": null,
+      "winner": "EUR-MED-B02::stone_walls"
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-39d08aaee6e31119/parcel-d2e6d6b7a5ada22d/building",
+      "ms": 2.6461,
+      "refusal": "Architectural bodies, courts or structures do not fit the supplied domain. Constrained composition: Morphology: this authored layout/programme has no constrained composition operator; retain its native template.",
+      "winner": null
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-c41a364e125d6b9e/parcel-dfae6b91b9638733/building",
+      "ms": 2.5416000000000003,
+      "refusal": null,
+      "winner": "EUR-MED-B11::default"
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-c41a364e125d6b9e/parcel-72dc4a01dc8b338c/building",
+      "ms": 2.4737999999999998,
+      "refusal": null,
+      "winner": "EUR-MED-B02::default"
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-e0a84d30106d53df/parcel-e9a8b57906d41ffd/building",
+      "ms": 2.3784,
+      "refusal": null,
+      "winner": "EUR-MED-B02::default"
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-1b98be457cfed184/parcel-766427d3e2adae08/building",
+      "ms": 2.3292,
+      "refusal": null,
+      "winner": "EUR-MED-B02::stone_walls"
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-aaf080594bf1ca75/parcel-693e8b92fd09e7b9/building",
+      "ms": 2.263,
+      "refusal": null,
+      "winner": "EUR-MED-B02::default"
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-4e6492a6ddb9cc9a/parcel-8fdba1bd493786f9/building",
+      "ms": 2.2380999999999998,
+      "refusal": null,
+      "winner": "EUR-MED-B02::stone_walls"
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-e0a84d30106d53df/parcel-4a4c8749f7002089/building",
+      "ms": 2.227,
+      "refusal": "Architectural bodies, courts or structures do not fit the supplied domain. Constrained composition: Morphology: no admissible composition within 80 bounded candidates; no body was clipped or required range/court removed.",
+      "winner": null
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-c41a364e125d6b9e/parcel-264ada4a1b2dfa9a/building",
+      "ms": 2.1633999999999998,
+      "refusal": "Architectural bodies, courts or structures do not fit the supplied domain. Constrained composition: Morphology: this authored layout/programme has no constrained composition operator; retain its native template.",
+      "winner": null
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-c41a364e125d6b9e/parcel-8ac02736d5e424ee/building",
+      "ms": 2.0934,
+      "refusal": null,
+      "winner": "EUR-MED-B02::brick_walls"
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-b4e2aaf053382657/parcel-01200fc3acd5a0a2/building",
+      "ms": 2.0928999999999998,
+      "refusal": null,
+      "winner": "EUR-MED-B02::stone_walls"
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-1b98be457cfed184/parcel-82f0033dc61c4218/building",
+      "ms": 2.0537,
+      "refusal": "Architectural bodies, courts or structures do not fit the supplied domain. Constrained composition: Morphology: this authored layout/programme has no constrained composition operator; retain its native template.",
+      "winner": null
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-a3398ce4071f6c1b/parcel-ce16f63da59edc91/building",
+      "ms": 1.9111,
+      "refusal": null,
+      "winner": "EUR-MED-B02::default"
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-aaf080594bf1ca75/parcel-2699afc7ce2b1271/building",
+      "ms": 1.8856000000000002,
+      "refusal": null,
+      "winner": "EUR-MED-B11::default"
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-e0a84d30106d53df/parcel-55539dead6d69607/building",
+      "ms": 1.8295,
+      "refusal": null,
+      "winner": "EUR-MED-B02::stone_walls"
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-30c1e440d5acdab1/parcel-845a9bb67e3f189c/building",
+      "ms": 1.7644,
+      "refusal": null,
+      "winner": "EUR-MED-B02::default"
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-39d08aaee6e31119/parcel-47c07ac434bc70b1/building",
+      "ms": 1.7583,
+      "refusal": "Architectural bodies, courts or structures do not fit the supplied domain. Constrained composition: Morphology: this authored layout/programme has no constrained composition operator; retain its native template.",
+      "winner": null
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-4e6492a6ddb9cc9a/parcel-8822d858ebaaf6e4/building",
+      "ms": 1.7013,
+      "refusal": null,
+      "winner": "EUR-MED-B02::default"
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-e0a84d30106d53df/parcel-24dea96ea3f0433e/building",
+      "ms": 1.6627,
+      "refusal": null,
+      "winner": "EUR-MED-B11::default"
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-32269305b67342a8/parcel-06e01d5fda686b30/building",
+      "ms": 1.6540000000000001,
+      "refusal": null,
+      "winner": "EUR-MED-B02::default"
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-d32deea65c6191af/parcel-b551728b1bf643fa/building",
+      "ms": 1.6103,
+      "refusal": null,
+      "winner": "EUR-MED-B02::stone_walls"
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-b4e2aaf053382657/parcel-17308652deed338b/building",
+      "ms": 1.6015000000000001,
+      "refusal": null,
+      "winner": "EUR-MED-B02::brick_walls"
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-e0a84d30106d53df/parcel-615628c91244af93/building",
+      "ms": 1.5536,
+      "refusal": null,
+      "winner": "EUR-MED-B02::brick_walls"
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-3b39f2783e7cc766/parcel-3b39f2783e7cc766/building",
+      "ms": 1.5527,
+      "refusal": null,
+      "winner": "EUR-MED-B02::stone_walls"
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-39d08aaee6e31119/parcel-44c1a377533c40fa/building",
+      "ms": 1.5510000000000002,
+      "refusal": "Architectural bodies, courts or structures do not fit the supplied domain. Constrained composition: Morphology: this authored layout/programme has no constrained composition operator; retain its native template.",
+      "winner": null
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-d32deea65c6191af/parcel-2461b5004e627cba/building",
+      "ms": 1.5494,
+      "refusal": null,
+      "winner": "EUR-MED-B02::stone_walls"
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-c41a364e125d6b9e/parcel-7ea042e0cfb4d903/building",
+      "ms": 1.4813999999999998,
+      "refusal": null,
+      "winner": "EUR-MED-B02::brick_walls"
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-d32deea65c6191af/parcel-efa16dc81d938b5b/building",
+      "ms": 1.41,
+      "refusal": null,
+      "winner": "EUR-MED-B02::default"
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-c41a364e125d6b9e/parcel-add6dc76afc24ded/building",
+      "ms": 1.3672,
+      "refusal": null,
+      "winner": "EUR-MED-B02::default"
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-1b98be457cfed184/parcel-1f0d44db336af096/building",
+      "ms": 1.3089,
+      "refusal": null,
+      "winner": "EUR-MED-B02::brick_walls"
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-1b98be457cfed184/parcel-941a88e7af4e2ba3/building",
+      "ms": 1.306,
+      "refusal": null,
+      "winner": "EUR-MED-B02::brick_walls"
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-1b98be457cfed184/parcel-cef1221f04103f9d/building",
+      "ms": 1.2741,
+      "refusal": null,
+      "winner": "EUR-MED-B02::default"
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-c0057ad32bfc9fc2/parcel-443995b6d26ae823/building",
+      "ms": 1.2429999999999999,
+      "refusal": null,
+      "winner": "EUR-MED-B02::brick_walls"
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-30c1e440d5acdab1/parcel-c5e13c186261e6e4/building",
+      "ms": 1.1900000000000002,
+      "refusal": null,
+      "winner": "EUR-MED-B05::default"
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-d32deea65c6191af/parcel-86866c498271b7a8/building",
+      "ms": 1.1708999999999998,
+      "refusal": null,
+      "winner": "EUR-MED-B11::default"
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-c41a364e125d6b9e/parcel-b38a3002664390a7/building",
+      "ms": 1.1676,
+      "refusal": null,
+      "winner": "EUR-MED-B02::default"
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-c0057ad32bfc9fc2/parcel-820fbf63a178e5f7/building",
+      "ms": 1.1668,
+      "refusal": null,
+      "winner": "EUR-MED-B02::default"
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-e0a84d30106d53df/parcel-19c2f01d493d14d6/building",
+      "ms": 1.1612,
+      "refusal": null,
+      "winner": "EUR-MED-B02::default"
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-30c1e440d5acdab1/parcel-aab8a0051ee08581/building",
+      "ms": 1.1374,
+      "refusal": null,
+      "winner": "EUR-MED-B02::brick_walls"
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-b4e2aaf053382657/parcel-35597455bcf679e7/building",
+      "ms": 1.1241,
+      "refusal": null,
+      "winner": "EUR-MED-B02::stone_walls"
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-32269305b67342a8/parcel-efb9e4f324f43110/building",
+      "ms": 1.108,
+      "refusal": null,
+      "winner": "EUR-MED-B03::default"
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-c41a364e125d6b9e/parcel-c0e3c79752126716/building",
+      "ms": 1.0674000000000001,
+      "refusal": null,
+      "winner": "EUR-MED-B02::stone_walls"
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-30c1e440d5acdab1/parcel-fa5ace1bdcd78b03/building",
+      "ms": 1.0613000000000001,
+      "refusal": null,
+      "winner": "EUR-MED-B02::stone_walls"
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-1b98be457cfed184/parcel-606002ef813fca94/building",
+      "ms": 1.0612,
+      "refusal": null,
+      "winner": "EUR-MED-B02::default"
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-4e6492a6ddb9cc9a/parcel-48284886aea95f81/building",
+      "ms": 1.0221,
+      "refusal": null,
+      "winner": "EUR-MED-B02::default"
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-30c1e440d5acdab1/parcel-925d1fd0189c0dec/building",
+      "ms": 0.9954000000000001,
+      "refusal": null,
+      "winner": "EUR-MED-B11::default"
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-c41a364e125d6b9e/parcel-c3991a920d52fad5/building",
+      "ms": 0.9859999999999999,
+      "refusal": null,
+      "winner": "EUR-MED-B11::default"
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-e0a84d30106d53df/parcel-68b160264ae1fb48/building",
+      "ms": 0.9458,
+      "refusal": null,
+      "winner": "EUR-MED-B02::brick_walls"
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-4e6492a6ddb9cc9a/parcel-4960f08c7d7711d3/building",
+      "ms": 0.8868,
+      "refusal": null,
+      "winner": "EUR-MED-B11::default"
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-c41a364e125d6b9e/parcel-05480ec6f4ab8df1/building",
+      "ms": 0.8638,
+      "refusal": null,
+      "winner": "EUR-MED-B11::default"
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-c41a364e125d6b9e/parcel-cf1ca46973c9058a/building",
+      "ms": 0.8088000000000001,
+      "refusal": null,
+      "winner": "EUR-MED-B02::default"
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-30c1e440d5acdab1/parcel-ea23abc735adb4c8/building",
+      "ms": 0.7157,
+      "refusal": null,
+      "winner": "EUR-MED-B08::gable_tile"
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-30c1e440d5acdab1/parcel-ecdff809e00ca4b7/building",
+      "ms": 0.6476000000000001,
+      "refusal": null,
+      "winner": "EUR-MED-B05::default"
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-32269305b67342a8/parcel-1c2ea3e41fb670fe/building",
+      "ms": 0.6066999999999999,
+      "refusal": null,
+      "winner": "EUR-MED-B11::default"
+    }
+  ],
+  "open": 0,
+  "plan_ms": 118.01,
+  "refused": 8,
+  "requests": 64,
+  "sha256": "d3dde9086d06853f5568d061ee96e69163a9a274b2c829f74fa329dcaef74e1a",
+  "shortlist_ms": 7.32475,
+  "shortlists": [
+    [
+      "EUR-MED-B05::default",
+      "EUR-MED-B03::slate_cladding",
+      "EUR-MED-B02::brick_walls",
+      "EUR-MED-B08::default"
+    ],
+    [
+      "EUR-MED-B11::default",
+      "EUR-MED-B02::brick_walls",
+      "EUR-MED-B05::default",
+      "EUR-MED-B09::default"
+    ],
+    [
+      "EUR-MED-B03::slate_cladding",
+      "EUR-MED-B02::brick_walls",
+      "EUR-MED-B08::default",
+      "EUR-MED-B09::default"
+    ],
+    [
+      "EUR-MED-B08::gable_tile",
+      "EUR-MED-B02::stone_walls",
+      "EUR-MED-B03::brick_infill",
+      "EUR-MED-B11::default"
+    ],
+    [
+      "EUR-MED-B02::default",
+      "EUR-MED-B11::default",
+      "EUR-MED-B05::default",
+      "EUR-MED-B08::gable_tile"
+    ],
+    [
+      "EUR-MED-B05::default",
+      "EUR-MED-B03::default",
+      "EUR-MED-B02::brick_walls",
+      "EUR-MED-B09::brick_walls"
+    ],
+    [
+      "EUR-MED-B05::default",
+      "EUR-MED-B09::default",
+      "EUR-MED-B02::brick_walls",
+      "EUR-MED-B03::slate_cladding"
+    ],
+    [
+      "EUR-MED-B03::default",
+      "EUR-MED-B02::stone_walls",
+      "EUR-MED-B08::default",
+      "EUR-MED-B05::default"
+    ],
+    [
+      "EUR-MED-B03::default",
+      "EUR-MED-B02::default",
+      "EUR-MED-B08::gable_tile",
+      "EUR-MED-B09::default"
+    ],
+    [
+      "EUR-MED-B11::default",
+      "EUR-MED-B05::default",
+      "EUR-MED-B03::brick_infill",
+      "EUR-MED-B02::default"
+    ],
+    [
+      "EUR-MED-B03::slate_cladding",
+      "EUR-MED-B09::brick_walls",
+      "EUR-MED-B02::default",
+      "EUR-MED-B05::default"
+    ],
+    [
+      "EUR-MED-B02::stone_walls"
+    ],
+    [
+      "EUR-MED-B03::brick_infill",
+      "EUR-MED-B02::stone_walls",
+      "EUR-MED-B11::default",
+      "EUR-MED-B05::default"
+    ],
+    [
+      "EUR-MED-B02::default",
+      "EUR-MED-B03::default",
+      "EUR-MED-B11::default",
+      "EUR-MED-B08::default"
+    ],
+    [
+      "EUR-MED-B02::stone_walls",
+      "EUR-MED-B03::default",
+      "EUR-MED-B08::default",
+      "EUR-MED-B11::default"
+    ],
+    [
+      "EUR-MED-B02::stone_walls",
+      "EUR-MED-B05::default",
+      "EUR-MED-B03::default",
+      "EUR-MED-B09::default"
+    ],
+    [
+      "EUR-MED-B03::brick_infill",
+      "EUR-MED-B02::brick_walls",
+      "EUR-MED-B09::default",
+      "EUR-MED-B11::default"
+    ],
+    [
+      "EUR-MED-B02::brick_walls",
+      "EUR-MED-B08::gable_tile",
+      "EUR-MED-B03::default",
+      "EUR-MED-B05::default"
+    ],
+    [
+      "EUR-MED-B02::default",
+      "EUR-MED-B08::default",
+      "EUR-MED-B03::slate_cladding",
+      "EUR-MED-B05::default"
+    ],
+    [
+      "EUR-MED-B02::stone_walls",
+      "EUR-MED-B05::default",
+      "EUR-MED-B08::gable_tile",
+      "EUR-MED-B03::slate_cladding"
+    ],
+    [
+      "EUR-MED-B09::default",
+      "EUR-MED-B02::stone_walls",
+      "EUR-MED-B05::default",
+      "EUR-MED-B03::slate_cladding"
+    ],
+    [
+      "EUR-MED-B11::default",
+      "EUR-MED-B09::brick_walls",
+      "EUR-MED-B02::default",
+      "EUR-MED-B03::default"
+    ],
+    [
+      "EUR-MED-B02::default",
+      "EUR-MED-B09::default",
+      "EUR-MED-B03::default",
+      "EUR-MED-B05::default"
+    ],
+    [
+      "EUR-MED-B02::stone_walls",
+      "EUR-MED-B03::default",
+      "EUR-MED-B08::gable_tile",
+      "EUR-MED-B11::default"
+    ],
+    [
+      "EUR-MED-B02::default",
+      "EUR-MED-B03::default",
+      "EUR-MED-B08::gable_tile",
+      "EUR-MED-B05::default"
+    ],
+    [
+      "EUR-MED-B11::default",
+      "EUR-MED-B02::brick_walls",
+      "EUR-MED-B03::brick_infill",
+      "EUR-MED-B05::default"
+    ],
+    [
+      "EUR-MED-B02::default",
+      "EUR-MED-B03::default",
+      "EUR-MED-B05::default",
+      "EUR-MED-B08::default"
+    ],
+    [
+      "EUR-MED-B05::default",
+      "EUR-MED-B11::default",
+      "EUR-MED-B02::stone_walls",
+      "EUR-MED-B08::default"
+    ],
+    [
+      "EUR-MED-B05::default",
+      "EUR-MED-B03::brick_infill",
+      "EUR-MED-B02::stone_walls",
+      "EUR-MED-B11::default"
+    ],
+    [
+      "EUR-MED-B02::default",
+      "EUR-MED-B03::brick_infill",
+      "EUR-MED-B11::default",
+      "EUR-MED-B05::default"
+    ],
+    [
+      "EUR-MED-B08::gable_tile",
+      "EUR-MED-B02::default",
+      "EUR-MED-B09::default",
+      "EUR-MED-B11::default"
+    ],
+    [
+      "EUR-MED-B09::brick_walls",
+      "EUR-MED-B08::default",
+      "EUR-MED-B02::default",
+      "EUR-MED-B03::slate_cladding"
+    ],
+    [
+      "EUR-MED-B11::default",
+      "EUR-MED-B02::stone_walls",
+      "EUR-MED-B03::default",
+      "EUR-MED-B05::default"
+    ],
+    [
+      "EUR-MED-B09::brick_walls",
+      "EUR-MED-B05::default",
+      "EUR-MED-B08::gable_tile",
+      "EUR-MED-B02::default"
+    ],
+    [
+      "EUR-MED-B02::brick_walls",
+      "EUR-MED-B03::default",
+      "EUR-MED-B05::default",
+      "EUR-MED-B08::gable_tile"
+    ],
+    [
+      "EUR-MED-B02::brick_walls",
+      "EUR-MED-B05::default",
+      "EUR-MED-B11::default",
+      "EUR-MED-B08::default"
+    ],
+    [
+      "EUR-MED-B02::stone_walls",
+      "EUR-MED-B03::default",
+      "EUR-MED-B09::brick_walls",
+      "EUR-MED-B05::default"
+    ],
+    [
+      "EUR-MED-B02::default",
+      "EUR-MED-B05::default",
+      "EUR-MED-B03::default",
+      "EUR-MED-B09::brick_walls"
+    ],
+    [
+      "EUR-MED-B02::brick_walls",
+      "EUR-MED-B03::brick_infill",
+      "EUR-MED-B09::brick_walls",
+      "EUR-MED-B05::default"
+    ],
+    [
+      "EUR-MED-B08::gable_tile",
+      "EUR-MED-B02::default",
+      "EUR-MED-B03::slate_cladding",
+      "EUR-MED-B05::default"
+    ],
+    [
+      "EUR-MED-B05::default",
+      "EUR-MED-B02::stone_walls",
+      "EUR-MED-B09::default",
+      "EUR-MED-B03::slate_cladding"
+    ],
+    [
+      "EUR-MED-B03::brick_infill",
+      "EUR-MED-B02::default",
+      "EUR-MED-B05::default",
+      "EUR-MED-B11::default"
+    ],
+    [
+      "EUR-MED-B05::default",
+      "EUR-MED-B03::slate_cladding",
+      "EUR-MED-B09::brick_walls",
+      "EUR-MED-B11::default"
+    ],
+    [
+      "EUR-MED-B03::slate_cladding",
+      "EUR-MED-B02::default",
+      "EUR-MED-B09::default",
+      "EUR-MED-B05::default"
+    ],
+    [
+      "EUR-MED-B02::brick_walls",
+      "EUR-MED-B05::default",
+      "EUR-MED-B03::brick_infill",
+      "EUR-MED-B08::gable_tile"
+    ],
+    [
+      "EUR-MED-B02::default",
+      "EUR-MED-B05::default",
+      "EUR-MED-B03::default",
+      "EUR-MED-B09::brick_walls"
+    ],
+    [
+      "EUR-MED-B02::brick_walls",
+      "EUR-MED-B11::default",
+      "EUR-MED-B05::default",
+      "EUR-MED-B03::default"
+    ],
+    [
+      "EUR-MED-B08::gable_tile",
+      "EUR-MED-B02::brick_walls",
+      "EUR-MED-B03::slate_cladding",
+      "EUR-MED-B05::default"
+    ],
+    [
+      "EUR-MED-B03::slate_cladding",
+      "EUR-MED-B02::stone_walls",
+      "EUR-MED-B08::gable_tile",
+      "EUR-MED-B05::default"
+    ],
+    [
+      "EUR-MED-B03::slate_cladding",
+      "EUR-MED-B08::gable_tile",
+      "EUR-MED-B02::brick_walls",
+      "EUR-MED-B11::default"
+    ],
+    [
+      "EUR-MED-B05::default",
+      "EUR-MED-B02::stone_walls",
+      "EUR-MED-B03::brick_infill",
+      "EUR-MED-B11::default"
+    ],
+    [
+      "EUR-MED-B03::default",
+      "EUR-MED-B02::default",
+      "EUR-MED-B05::default",
+      "EUR-MED-B09::default"
+    ],
+    [
+      "EUR-MED-B03::slate_cladding",
+      "EUR-MED-B11::default",
+      "EUR-MED-B02::brick_walls",
+      "EUR-MED-B09::default"
+    ],
+    [
+      "EUR-MED-B08::gable_tile",
+      "EUR-MED-B09::brick_walls",
+      "EUR-MED-B11::default",
+      "EUR-MED-B05::default"
+    ],
+    [
+      "EUR-MED-B08::default",
+      "EUR-MED-B02::default",
+      "EUR-MED-B09::brick_walls",
+      "EUR-MED-B03::default"
+    ],
+    [
+      "EUR-MED-B03::brick_infill",
+      "EUR-MED-B02::default",
+      "EUR-MED-B11::default",
+      "EUR-MED-B09::default"
+    ],
+    [
+      "EUR-MED-B09::default",
+      "EUR-MED-B11::default",
+      "EUR-MED-B08::default",
+      "EUR-MED-B02::stone_walls"
+    ],
+    [
+      "EUR-MED-B08::default",
+      "EUR-MED-B02::default",
+      "EUR-MED-B11::default",
+      "EUR-MED-B05::default"
+    ],
+    [
+      "EUR-MED-B03::default",
+      "EUR-MED-B08::gable_tile",
+      "EUR-MED-B02::stone_walls",
+      "EUR-MED-B09::default"
+    ],
+    [
+      "EUR-MED-B02::default",
+      "EUR-MED-B09::default",
+      "EUR-MED-B03::brick_infill",
+      "EUR-MED-B11::default"
+    ],
+    [
+      "EUR-MED-B03::slate_cladding",
+      "EUR-MED-B02::brick_walls",
+      "EUR-MED-B05::default",
+      "EUR-MED-B09::default"
+    ],
+    [
+      "EUR-MED-B02::brick_walls",
+      "EUR-MED-B05::default",
+      "EUR-MED-B09::brick_walls",
+      "EUR-MED-B03::brick_infill"
+    ],
+    [
+      "EUR-MED-B05::default",
+      "EUR-MED-B02::default",
+      "EUR-MED-B08::default",
+      "EUR-MED-B09::default"
+    ],
+    [
+      "EUR-MED-B08::gable_tile",
+      "EUR-MED-B02::brick_walls",
+      "EUR-MED-B05::default",
+      "EUR-MED-B03::default"
+    ]
+  ],
+  "validation_ms": 2.69075
+}

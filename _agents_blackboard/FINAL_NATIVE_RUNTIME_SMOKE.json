@@ -1,0 +1,36 @@
+{
+  "ok": true,
+  "base": "http://127.0.0.1:8799",
+  "checked": "2026-10-22T17:03:10.0381133+02:00",
+  "service": "magna-urbis-local",
+  "capabilities": [
+    "urban.programme",
+    "urban.building-sites",
+    "urban.built-capacity",
+    "urban.architecture-culture",
+    "houses.placement",
+    "houses.profiles",
+    "houses.enrich",
+    "houses.config-template",
+    "houses.workshop-template",
+    "houses.parcel-fit",
+    "houses.compact-plans",
+    "houses.style-index"
+  ],
+  "accepted": 2,
+  "refusals": 0,
+  "realizations": [
+    {
+      "id": "layout-f9dab5910f08a8a2/block-6ea27952781956ef/parcel-bb9d178d52c9afa2/building",
+      "recipe": "EUR-MED-B02",
+      "bodies": 1,
+      "roofFaces": 38
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-e83ac599ede878db/parcel-20b433448cba29dd/building",
+      "recipe": "EUR-MED-B02",
+      "bodies": 1,
+      "roofFaces": 30
+    }
+  ]
+}

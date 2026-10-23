@@ -8,9 +8,8 @@ import { terrainLights, type TerrainLighting } from '../render/terrainLighting';
 import { gridHeight, raycastGrid, type TerrainPickGrid } from './terrain3dPicking';
 import { stitchTerrainPieces, type TerrainStitchedPiece, type TerrainStitchPiece } from './terrain3dStitch';
 import { UrbanBuildingPass } from './urbanBuilding3d';
-import type { PlacementBatch } from '../../../rust/bridge/urbanArchitecture';
 import type { UrbanBuildingAppearance } from '../render/urbanBuildingStyle';
-import type { BuildingVector } from '../render/urbanBuildingGeometry';
+import type { BuildingVector, Building3dVisual, Building3dScene } from '../render/urbanBuildingGeometry';
 import { withBuildingOccupation } from './forestOccupation';
 import { UrbanBuildingGround } from './urbanBuildingGround';
 
@@ -290,13 +289,13 @@ export class Terrain3d {
   private terrainProgram!: WebGLProgram;
   private skyProgram!: WebGLProgram;
   private buildings!: UrbanBuildingPass;
-  private buildingScene?: PlacementBatch;
+  private buildingScene?: Building3dScene;
   private buildingAppearance: UrbanBuildingAppearance = { style: 'geometric', diagnostic: 'none' };
   private buildingsVisible = true;
   private buildingGround = new UrbanBuildingGround();
   private mergedOccupation?: ForestOccupation;
   private mergedOccupationSource?: ForestOccupation;
-  private mergedOccupationScene?: PlacementBatch;
+  private mergedOccupationScene?: Building3dScene;
   private indices!: WebGLBuffer;
   private seams!: WebGLBuffer;
   private clippedIndices = new Map<string, { buffer: WebGLBuffer; count: number }>();
@@ -503,11 +502,17 @@ export class Terrain3d {
   }
   setTileBoundaries(visible: boolean): void { this.tileBounds = visible; this.request(); }
   /** Presentation consumes the same immutable native scene as the map. */
-  setBuildings(scene: PlacementBatch | undefined, appearance: UrbanBuildingAppearance, visible = true): void {
+  setBuildings(scene: Building3dScene | undefined, appearance: UrbanBuildingAppearance, visible = true): void {
     const changed = this.buildingScene !== scene;
     this.buildingScene = scene; this.buildingAppearance = appearance; this.buildingsVisible = visible;
     if (changed) { this.buildingGround = new UrbanBuildingGround(scene); this.clearPatches(); this.setForest(this.forestField, this.forestOccupation); }
     this.buildings.setScene(visible ? scene : undefined, appearance); this.request();
+  }
+  /** Swap a few buildings of the current scene (native exteriors in or out):
+   * only their sectors rebuild; relief, patches and forest stay untouched. */
+  replaceBuildings(changes: readonly Building3dVisual[]): string[] {
+    if (!this.buildingsVisible || !changes.length) return [];
+    const missing = this.buildings.replaceBuildings(changes); this.request(); return missing;
   }
   /** Render3D forest: texture uploads only, no mesh or material tile rebuild. */
   setForest(field: ForestField | undefined, occupation?: ForestOccupation): void {

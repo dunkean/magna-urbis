@@ -24,6 +24,14 @@ const specs: Record<string, PanelSpec> = {
   landuseStage: { main: '#landuseEnabled, #landuseBiome', methodText: 'Occupation procédurale', computeText: 'CPU · TypeScript', action: '#landuseGenerate' },
 };
 
+/** City Bench (citybench.html): one city, its editor, the exploration tools and the seeds stay in view. */
+const citySpecs: Record<string, PanelSpec> = {
+  settlementStage: { main: '#setEditor', methodText: 'Une ville · position fixée', computeText: 'CPU · Rust / WASM' },
+  urbanQuarterStage: { main: '[data-enabled], .settlement-style-controls, .urban-explorer, [data-seed], [data-warnings]', method: '[data-config="composition"]', computeText: 'CPU · Rust / WASM', action: '[data-apply]' },
+  urbanParcelStage: { main: '[data-enabled], [data-config="operator"], [data-seed]', computeText: 'CPU · Rust / WASM', action: '[data-apply]' },
+};
+const stageSpecs = document.body.dataset.bench === 'city' ? { ...specs, ...citySpecs } : specs;
+
 function group(title: string, className: string): HTMLElement {
   const section = document.createElement('section'); section.className = `panel-group ${className}`;
   section.setAttribute('aria-label', title);
@@ -191,7 +199,7 @@ function organize(): void {
       const field = document.getElementById(id); if (field) relief.querySelector('.stage-controls')!.append(field.closest('label')!);
     }
   }
-  for (const [id, spec] of Object.entries(specs)) {
+  for (const [id, spec] of Object.entries(stageSpecs)) {
     const panel = document.getElementById(id); if (panel instanceof HTMLDetailsElement) organizeStage(panel, spec);
   }
   const sketch = document.querySelector<HTMLDetailsElement>('#terrainSketchEditor > details');

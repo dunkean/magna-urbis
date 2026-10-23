@@ -2,7 +2,8 @@ import { houseMaterialColor, type HouseMaterialCatalogue } from '../../../rust/b
 import type { MaterialSlots } from '../../../rust/bridge/housesContract';
 import type { ArchitectureFunction } from '../../../rust/bridge/urbanArchitecture';
 
-export type UrbanBuildingStyle = 'geometric' | 'cartographic';
+/** `silhouette`: flat footprints only (City Bench), no roofs or materials. */
+export type UrbanBuildingStyle = 'geometric' | 'cartographic' | 'silhouette';
 export type UrbanBuildingDiagnostic = 'none' | 'uses' | 'height' | 'access';
 export interface UrbanBuildingAppearance { style: UrbanBuildingStyle; diagnostic: UrbanBuildingDiagnostic }
 export interface BuildingPaint { wall: string; roof: string; edge: string; courtyard: string }

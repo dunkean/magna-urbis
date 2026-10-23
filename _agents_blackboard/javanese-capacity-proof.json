@@ -1,0 +1,236 @@
+{
+  "metrics": {
+    "accessAdded": 96,
+    "allocatedArea": 6157226.0264086295,
+    "components": 1,
+    "grossDensity": 169.67841249416617,
+    "plannedPopulation": 100000,
+    "reservedArea": 1831135.6392432777,
+    "shortfallArea": 0,
+    "streetArea": 1003981.9912404194,
+    "targetArea": 5893501.6264039
+  },
+  "uses": {
+    "plot": {
+      "count": 1867,
+      "area_m2": 3033588.8416493014
+    },
+    "court": {
+      "count": 188,
+      "area_m2": 56728.21619924158
+    },
+    "garden": {
+      "count": 1960,
+      "area_m2": 1758354.3060386293
+    },
+    "reserve": {
+      "count": 23,
+      "area_m2": 151960.24500879645
+    },
+    "residual": {
+      "count": 267,
+      "area_m2": 136623.50899725407
+    },
+    "place": {
+      "count": 1,
+      "area_m2": 15988.439286392182
+    }
+  },
+  "reasons": [
+    {
+      "use": "garden",
+      "reason": "edge-enclosure",
+      "count": 1953,
+      "area_m2": 1663245.320703756
+    },
+    {
+      "use": "reserve",
+      "reason": "reserve:programme",
+      "count": 19,
+      "area_m2": 151901.4192749597
+    },
+    {
+      "use": "residual",
+      "reason": "no-admissible-envelope",
+      "count": 233,
+      "area_m2": 125565.5903216973
+    },
+    {
+      "use": "garden",
+      "reason": "attached-rear-land",
+      "count": 7,
+      "area_m2": 95108.9853348732
+    },
+    {
+      "use": "residual",
+      "reason": "insufficient-cultural-frontage",
+      "count": 32,
+      "area_m2": 10976.596914634109
+    },
+    {
+      "use": "residual",
+      "reason": "insufficient-frontage",
+      "count": 2,
+      "area_m2": 81.32176092267036
+    },
+    {
+      "use": "reserve",
+      "reason": "no-street-contact",
+      "count": 4,
+      "area_m2": 58.825733836740255
+    }
+  ],
+  "zones": {
+    "edge": {
+      "plot": 504,
+      "court": 66,
+      "garden": 1582,
+      "reserve": 10,
+      "residual": 72
+    },
+    "core": {
+      "residual": 100,
+      "plot": 766,
+      "court": 61,
+      "reserve": 10,
+      "place": 1,
+      "garden": 3
+    },
+    "middle": {
+      "plot": 597,
+      "residual": 95,
+      "reserve": 3,
+      "garden": 375,
+      "court": 61
+    }
+  },
+  "site_count": 1752,
+  "domestic_count": 1546,
+  "domestic_composition": {
+    "row": 1546
+  },
+  "domestic_target": {
+    "n": 1546,
+    "sum": 481293.3,
+    "min": 0,
+    "median": 284.75,
+    "p90": 644.5,
+    "max": 1265.2
+  },
+  "domestic_land": {
+    "n": 1546,
+    "sum": 2540382.7088631354,
+    "min": 359.4822411686182,
+    "median": 1452.7267545629293,
+    "p90": 2615.712933462113,
+    "max": 11035.072509385645
+  },
+  "by_households": {
+    "1": {
+      "count": 19,
+      "target": {
+        "n": 19,
+        "sum": 5148.8,
+        "min": 91.4,
+        "median": 275.5,
+        "p90": 388.8,
+        "max": 452.4
+      },
+      "land": {
+        "n": 19,
+        "sum": 9566.52879677713,
+        "min": 359.4822411686182,
+        "median": 502.3673118054867,
+        "p90": 584.1216224879026,
+        "max": 693.3778205364943
+      }
+    },
+    "2": {
+      "count": 134,
+      "target": {
+        "n": 134,
+        "sum": 49282.9,
+        "min": 0,
+        "median": 391.8,
+        "p90": 507.3,
+        "max": 654.7
+      },
+      "land": {
+        "n": 134,
+        "sum": 94675.50576590374,
+        "min": 503.44140000268817,
+        "median": 696.8708000574261,
+        "p90": 836.6186189875007,
+        "max": 994.9111222177744
+      }
+    },
+    "3": {
+      "count": 217,
+      "target": {
+        "n": 217,
+        "sum": 86051.9,
+        "min": 0,
+        "median": 432.7,
+        "p90": 588,
+        "max": 898.8
+      },
+      "land": {
+        "n": 217,
+        "sum": 207576.033327464,
+        "min": 713.9846908412874,
+        "median": 949.7118105590343,
+        "p90": 1096.5654257386923,
+        "max": 1373.8246371597052
+      }
+    },
+    "4": {
+      "count": 260,
+      "target": {
+        "n": 260,
+        "sum": 100683.0,
+        "min": 0,
+        "median": 412.8,
+        "p90": 682.2,
+        "max": 836.6
+      },
+      "land": {
+        "n": 260,
+        "sum": 307075.0587185994,
+        "min": 840.5075079165399,
+        "median": 1172.652268294245,
+        "p90": 1379.808626305312,
+        "max": 1739.4996048808098
+      }
+    },
+    "5": {
+      "count": 916,
+      "target": {
+        "n": 916,
+        "sum": 240126.7,
+        "min": 0,
+        "median": 102.05,
+        "p90": 696.2,
+        "max": 1265.2
+      },
+      "land": {
+        "n": 916,
+        "sum": 1921489.5822543912,
+        "min": 1015.5018065869808,
+        "median": 1901.8216365724802,
+        "p90": 2920.745865345001,
+        "max": 11035.072509385645
+      }
+    }
+  },
+  "allocation_households": 6558,
+  "pins": {
+    "None": 1546
+  },
+  "diagnostics": {
+    "coveredArea": 5153243.9985603085,
+    "residualArea": 0.04901323266178914,
+    "overlapArea": 0.006451092953536852,
+    "unservedArea": 11116.744409425848
+  },
+  "programme_warnings": []
+}

@@ -1,4 +1,5 @@
-import type { PlacementBatch } from '../../../rust/bridge/urbanArchitecture';
+import type { Building3dScene } from '../render/urbanBuildingGeometry';
+import { buildingGroundConstraints } from './urbanBuildingProjection';
 import type { Surface } from '../../../rust/bridge/housesContract';
 
 function contains(surface: Surface, x: number, y: number): boolean {
@@ -15,10 +16,9 @@ function contains(surface: Surface, x: number, y: number): boolean {
  * The native physical foundation is never moved to follow refined terrain. */
 export class UrbanBuildingGround {
   private cells = new Map<string, { footprint: Surface; height: number }[]>();
-  constructor(scene?: PlacementBatch) {
-    for (const building of scene?.buildings ?? []) {
-      this.insert(building.footprint, building.ground_z_m);
-      for (const foundation of building.structural_foundations ?? []) this.insert(foundation.footprint, foundation.z_max_m);
+  constructor(scene?: Building3dScene) {
+    for (const building of scene?.occupationBuildings ?? scene?.buildings ?? []) {
+      for (const constraint of buildingGroundConstraints(building)) this.insert(constraint.footprint, constraint.height_m);
     }
   }
   private insert(footprint: Surface, height: number): void {

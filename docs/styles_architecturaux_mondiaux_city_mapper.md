@@ -249,8 +249,8 @@
 | P2 | `MED-ANT-B09` — **Halle voûtée romaine** | Trame de rectangles et travées en berceau/arêtes | Brique/béton antique et pierres | Voûtes visibles sur grandes masses |
 | P2 | `MED-ANT-B10` — **Tholos / rotonde** | Plan circulaire entouré ou non de colonnes | Pierre de taille | Toit conique ou dôme selon monument |
 | P3 | `MED-ANT-B11` — **Villa de terrasse colonnadée** | Plusieurs ailes en U autour d'esplanade | Maçonnerie décorée, galeries | Tuiles à plusieurs hauteurs |
-
-
+| P1 | `MED-ANT-B12` — **Logement sur boutique romain compact — enveloppe inspirée** | Un rectangle fermé, deux niveaux, sans cour centrale ; dimensions artistiques, capacité inconnue | Maçonnerie de brique enduite, charpente bois ; pas de boutique intérieure certifiée | Deux pans de tuiles proposés ; forme et pente artistiques |
+| P1 | `MED-ANT-B13` — **Petit immeuble romain de rue — enveloppe inspirée** | Un corps fermé, 2 niveaux par défaut, variantes 3/4 ; cour arrière et passage latéral ; dimensions artistiques, capacité inconnue | Brique enduite, charpente bois ; distribution collective générique sans appartements certifiés | Deux pans de tuiles proposés ; aucun remplissage burgage automatique |
 ## 02. Europe atlantique et celte — âge du Fer, castros, oppida `ATL-CEL`
 
 **Périmètre et signature :** A → début M. Villages défensifs de hauteur, maisons rondes dans certaines zones atlantiques, mais aussi maisons rectangulaires et habitats de pierre ; la « hutte gauloise ronde » n’est pas un modèle universel.
@@ -938,6 +938,10 @@
 | P2 | `AS-ISL-B11` — **Maison batak à hauts pignons** | Grand rectangle sur pilotis | Bois, façades décorées | Haut toit incurvé et pignons projetés |
 | P2 | `AS-ISL-B12` — **Salle/temple balinais à toiture multi-tier** | Carré/petit rectangle sur socle | Piliers bois et maçonnerie | Toiture *meru* empilée en niveaux décroissants |
 | P3 | `AS-ISL-B13` — **Grand maison-tambaran analogue** | Très haut rectangle de rassemblement | Charpente de bois et panneaux tissés | Façade / faîtage exceptionnellement élevés, région à préciser |
+| P0 | `AS-ISL-B14` — **Maison kampung javanaise** | Corps résidentiel rectangulaire fermé, un étage ; dimensions procédurales artistiques | Ossature bois, parois bois/bambou ; assemblage inspiré | Deux pans et pignons triangulaires ; couverture de tuiles |
+| P1 | `AS-ISL-B15` — **Maison limasan javanaise** | Corps résidentiel rectangulaire fermé, un étage ; dimensions procédurales artistiques | Ossature bois, parois bois/bambou ; assemblage inspiré | Quatre versants avec faîtage ; couverture de tuiles, sans tumpang sari de joglo |
+
+B14/B15 : voir le [dossier de sources et les paramètres artistiques](sources/javanese-domestic-architecture.md). Les relevés tardifs établissent des formes et des exemples, pas une plage universelle ni une restitution antique/médiévale stricte. Les premières recettes restent des corps simples sans emper, galerie ni annexe générés.
 
 **Point d’attention :** La **longhouse** et la maison **tongkonan** sont des *ensembles sociaux*, pas seulement des toits originaux : orienter les rangées, accès au fleuve, greniers et espaces rituels en conséquence.
 

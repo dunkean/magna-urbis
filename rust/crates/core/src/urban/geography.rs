@@ -19,6 +19,12 @@ pub struct Geography {
     edges: Vec<(Point, Point)>,
     bins: BTreeMap<(i64, i64), Vec<usize>>,
     cell: f64,
+    /// Fine cells: 3 = crossed by a land/water edge (exact test), 0 = not yet
+    /// known, 1 = dry, 2 = wet. A cell no edge crosses lies wholly on one side,
+    /// so its first exact answer holds for every point inside it.
+    states: Vec<std::sync::atomic::AtomicU8>,
+    fine: f64,
+    side: usize,
 }
 fn even_odd(rings: Vec<Vec<Point>>) -> Vec<Shape> {
     let mut land = geo::MultiPolygon(vec![]);
@@ -63,7 +69,14 @@ impl Geography {
             edges: vec![],
             bins: BTreeMap::new(),
             cell: width / 64.0,
+            states: vec![],
+            fine: (width / 1024.0).max(2.0),
+            side: 0,
         };
+        result.side = (width / result.fine).ceil() as usize;
+        result.states = (0..result.side * result.side)
+            .map(|_| std::sync::atomic::AtomicU8::new(0))
+            .collect();
         for s in result.land.iter().chain(&result.water) {
             for ring in std::iter::once(&s.outer).chain(&s.holes) {
                 for (&a, &b) in ring
@@ -73,6 +86,24 @@ impl Geography {
                 {
                     let id = result.edges.len();
                     result.edges.push((a, b));
+                    // Conservative: the sampled cells and their neighbours.
+                    let steps =
+                        ((a.x - b.x).hypot(a.y - b.y) / (result.fine * 0.5)).ceil() as usize;
+                    for k in 0..=steps.max(1) {
+                        let t = k as f64 / steps.max(1) as f64;
+                        let cx = ((a.x + (b.x - a.x) * t) / result.fine).floor() as i64;
+                        let cy = ((a.y + (b.y - a.y) * t) / result.fine).floor() as i64;
+                        for y in cy - 1..=cy + 1 {
+                            for x in cx - 1..=cx + 1 {
+                                if (0..result.side as i64).contains(&x)
+                                    && (0..result.side as i64).contains(&y)
+                                {
+                                    result.states[y as usize * result.side + x as usize]
+                                        .store(3, std::sync::atomic::Ordering::Relaxed);
+                                }
+                            }
+                        }
+                    }
                     for y in (a.y.min(b.y) / result.cell).floor() as i64
                         ..=(a.y.max(b.y) / result.cell).floor() as i64
                     {
@@ -87,9 +118,27 @@ impl Geography {
         }
         Ok(result)
     }
-    pub(super) fn wet(&self, p: Point) -> bool {
+    fn exact_wet(&self, p: Point) -> bool {
         !self.land_index.iter().any(|s| s.contains(p))
             || self.water_index.iter().any(|s| s.contains(p))
+    }
+    pub(super) fn wet(&self, p: Point) -> bool {
+        use std::sync::atomic::Ordering::Relaxed;
+        let (x, y) = ((p.x / self.fine).floor(), (p.y / self.fine).floor());
+        if x < 0.0 || y < 0.0 || x >= self.side as f64 || y >= self.side as f64 {
+            return self.exact_wet(p);
+        }
+        let state = &self.states[y as usize * self.side + x as usize];
+        match state.load(Relaxed) {
+            1 => false,
+            2 => true,
+            3 => self.exact_wet(p),
+            _ => {
+                let wet = self.exact_wet(p);
+                state.store(if wet { 2 } else { 1 }, Relaxed);
+                wet
+            }
+        }
     }
     fn candidates(&self, bb: (f64, f64, f64, f64)) -> BTreeSet<usize> {
         let mut ids = BTreeSet::new();
@@ -102,7 +151,29 @@ impl Geography {
         }
         ids
     }
+    /// Whether no land/water edge can cross the segment: every half-cell sample
+    /// lies in a cell no edge comes within about one cell of.
+    fn uniform_segment(&self, a: Point, b: Point) -> bool {
+        let steps = ((a.x - b.x).hypot(a.y - b.y) / (self.fine * 0.5)).ceil() as usize;
+        (0..=steps.max(1)).all(|k| {
+            let t = k as f64 / steps.max(1) as f64;
+            let (x, y) = (
+                ((a.x + (b.x - a.x) * t) / self.fine).floor(),
+                ((a.y + (b.y - a.y) * t) / self.fine).floor(),
+            );
+            x >= 0.0
+                && y >= 0.0
+                && x < self.side as f64
+                && y < self.side as f64
+                && self.states[y as usize * self.side + x as usize]
+                    .load(std::sync::atomic::Ordering::Relaxed)
+                    != 3
+        })
+    }
     pub(super) fn segment_dry(&self, a: Point, b: Point) -> bool {
+        if self.uniform_segment(a, b) {
+            return !self.wet(a);
+        }
         let mut cuts = vec![0.0, 1.0];
         for i in self.candidates((a.x.min(b.x), a.y.min(b.y), a.x.max(b.x), a.y.max(b.y))) {
             let (c, d) = self.edges[i];

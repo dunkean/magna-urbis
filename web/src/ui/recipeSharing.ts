@@ -1,5 +1,7 @@
 import { encodeRecipe, decodeRecipe, type MapRecipe, type RecipeStage, type RecipeTerrain } from './recipe';
-import { encodeDecorAsync, decodeDecorAsync, type Decor } from './decor';
+import { decorColdStates, encodeDecorAsync, type Decor } from './decor';
+import { readDecorFile, type DecorFileOptions } from './decorFile';
+import { encodeDecorFileBytes } from './decorFileBytes';
 import { saveHistory } from './benchHistory';
 import { encodeSketch, readStoredSketch, placeSketchInFragment } from './terrainSketchSharing';
 import { cropTerrain } from './benchTerrainTransfer';
@@ -17,7 +19,7 @@ async function portableQuery(query: string): Promise<URLSearchParams> {
 }
 
 /** Resolve browser-local inputs so a code also works in another browser or machine. */
-export async function portableRecipe(stage: RecipeStage, query: string, decor?: Decor): Promise<MapRecipe> {
+export async function portableRecipe(stage: RecipeStage, query: string, decor?: Decor, options: DecorFileOptions = {}): Promise<MapRecipe> {
   const params = await portableQuery(query);
   const retainUrban = (stage === 'urban' || stage === 'settlements') && !!decor?.meta.pipeline?.urban?.layouts?.length;
   if (decor) {
@@ -31,7 +33,9 @@ export async function portableRecipe(stage: RecipeStage, query: string, decor?: 
     } };
   }
   if (params.has('artifact') && !decor) throw new Error('Attendez le chargement du terrain conservé.');
-  if (decor?.meta.regeneration && !retainUrban) {
+  // A remaining cold reference (including a draft snapshot) always needs its
+  // exact native frames; a procedural terrain recipe cannot carry local refs.
+  if (decor?.meta.regeneration && !retainUrban && !decorColdStates(decor).length) {
     const source = await portableQuery(decor.meta.regeneration.query);
     for (const key of ['artifact', 'stage', 'pipeline', 'pins', 'view', 'showPins', 'settlements', 'roads', 'urban']) source.delete(key);
     source.set('auto', '0');
@@ -39,7 +43,10 @@ export async function portableRecipe(stage: RecipeStage, query: string, decor?: 
     meta.query = (await portableQuery(meta.query)).toString();
     return { stage, query: params.toString(), terrain: { query: source.toString(), crops: regeneration.crops, meta } };
   }
-  return { stage, query: params.toString(), ...(decor ? { decor: await encodeDecorAsync(decor) } : {}) };
+  const portable = params.toString();
+  return { stage, query: portable, ...(decor ? { decor: decorColdStates(decor).length
+    ? await encodeDecorFileBytes(decor, { ...options, maxBytes: 24 * 1024 * 1024 })
+    : await encodeDecorAsync(decor) } : {}) };
 }
 
 /** Run the existing terrain bench offscreen, then repeat cell-aligned crops in order. */
@@ -69,12 +76,19 @@ async function regenerateTerrain(source: RecipeTerrain, signal?: AbortSignal): P
   } finally { iframe.remove(); }
 }
 
-export async function restoreRecipe(recipe: MapRecipe, signal?: AbortSignal): Promise<MapRecipe> {
+export async function restoreRecipe(recipe: MapRecipe, signal?: AbortSignal, options: DecorFileOptions = {}): Promise<MapRecipe> {
   if (recipe.decor || recipe.terrain) {
-    const decor = recipe.terrain ? await regenerateTerrain(recipe.terrain, signal) : await decodeDecorAsync(recipe.decor!), params = new URLSearchParams(recipe.query);
+    const params = new URLSearchParams(recipe.query);
+    const validate = (decor: Decor): void => {
+      if (params.get('artifact') !== decor.meta.id || (recipe.stage === 'urban' && params.get('decor') !== decor.meta.id)) throw new Error('Le terrain intégré ne correspond pas à la recette.');
+    };
+    const decor = recipe.terrain ? await regenerateTerrain(recipe.terrain, signal)
+      : await readDecorFile(new Blob([new Uint8Array(recipe.decor!)]), { ...options, signal: signal ?? options.signal, validate });
     signal?.throwIfAborted();
-    if (params.get('artifact') !== decor.meta.id || (recipe.stage === 'urban' && params.get('decor') !== decor.meta.id)) throw new Error('Le terrain intégré ne correspond pas à la recette.');
-    const saved = await saveHistory(decor, false, recipe.terrain ? undefined : recipe.decor);
+    validate(decor);
+    // Imported cold references point to a newly committed local generation;
+    // portable container bytes must never masquerade as local history gzip.
+    const saved = await saveHistory(decor, false);
     params.set('artifact', saved.meta.id); if (recipe.stage === 'urban') params.set('decor', saved.meta.id);
     return { ...recipe, query: params.toString() };
   } else if (new URLSearchParams(recipe.query).has('artifact')) throw new Error('Terrain conservé absent du code.');
@@ -129,7 +143,14 @@ export function installRecipeSharing(options: {
   controls.querySelector('[data-recipe-export]')!.addEventListener('click', async () => {
     show('export'); note.textContent = 'Préparation du code…'; copy.disabled = download.disabled = true;
     try {
-      const recipe = await options.capture(), code = encodeRecipe(recipe);
+      const recipe = await options.capture();
+      let code: string;
+      try { code = encodeRecipe(recipe); }
+      catch (error) {
+        if (error instanceof Error && error.message.includes('volumineuse'))
+          throw new Error('Carte trop volumineuse pour un code (format limité à 32 Mo). Utilisez le partage .decor avec enregistrement direct sur disque.');
+        throw error;
+      }
       field.value = code; field.select(); copy.disabled = download.disabled = false;
       const seed = new URLSearchParams(recipe.query).get('seed') ?? 'carte';
       filename = `${recipe.stage}-${seed.replace(/[^\p{L}\p{N}_-]/gu, '_').slice(0, 60)}.murecipe`;

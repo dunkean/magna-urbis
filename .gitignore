@@ -9,6 +9,7 @@ web/out/
 web/scratch/
 TownGeneratorOS/
 rust/target/
+rust/crates/neural-wasm/target/
 rust/pkg/
 rust/out/
 rust/.cargo/config.toml
@@ -42,3 +43,5 @@ web/decors/
 # Generated house-access observer output (not regression fixtures).
 rust/crates/houses/access-integration-cases/
 rust/crates/houses/access-integration-standard-cases/
+_agents_blackboard/*/
+__pycache__/

@@ -1,7 +1,8 @@
 import type { ForestOccupation } from '../../../rust/bridge/terrainForest';
 import type { Polygon } from '../gen/core/geom';
 import type { LandKind, LandUseLayer } from '../gen/types';
-import type { PlacementBatch } from '../../../rust/bridge/urbanArchitecture';
+import type { Building3dScene } from '../render/urbanBuildingGeometry';
+import { buildingOccupationSurfaces } from './urbanBuildingProjection';
 
 /** Shared classes: 7 is a general built reserve, 8 an occupied construction. */
 const CLASS: Partial<Record<LandKind, number>> = { field: 1, meadow: 2, pasture: 3, orchard: 4, garden: 5, commons: 6 };
@@ -9,9 +10,10 @@ const BUILT = 7, OCCUPIED = 8, RANGE = 8;
 
 /** Merge accepted footprints and authorized circulation into the same retained
  * occupation contract, regardless of the building layer's visibility. */
-export function withBuildingOccupation(source: ForestOccupation | undefined, scene: PlacementBatch | undefined): ForestOccupation | undefined {
-  if (!scene?.buildings.length) return source;
-  const shapes = scene.buildings.flatMap(b => [...b.footprint, ...b.circulation, ...(b.structural_features ?? []).flatMap(feature => feature.surface ?? [])]);
+export function withBuildingOccupation(source: ForestOccupation | undefined, scene: Building3dScene | undefined): ForestOccupation | undefined {
+  const buildings = scene?.occupationBuildings ?? scene?.buildings;
+  if (!buildings?.length) return source;
+  const shapes = buildings.flatMap(b => buildingOccupationSurfaces(b).flatMap(surface => surface));
   let x0 = source?.x ?? Infinity, y0 = source?.y ?? Infinity, x1 = source ? source.x + source.width : -Infinity, y1 = source ? source.y + source.width : -Infinity;
   for (const shape of shapes) for (const p of shape.outer) { x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y); x1 = Math.max(x1, p.x); y1 = Math.max(y1, p.y); }
   const side = Math.max(x1 - x0, y1 - y0), cell = Math.max(.5, side / (1536 - RANGE * 2));

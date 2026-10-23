@@ -1231,7 +1231,7 @@ fn gallery_arms(surface: &Surface, sections: u32) -> Result<Vec<RoofArm>, String
     Ok(arms)
 }
 
-fn cover_galleries(unit: &mut HouseUnit, p: &Parameters) -> Result<(), String> {
+pub(crate) fn cover_galleries(unit: &mut HouseUnit, p: &Parameters) -> Result<(), String> {
     if !p.gallery_cover.enabled {
         return Ok(());
     }
@@ -3118,6 +3118,37 @@ fn prove_wall_profiles(unit: &mut HouseUnit, p: &Parameters) -> Result<(), Strin
     Ok(())
 }
 
+/// Executable pre-access operators whose geometry does not require rooms.
+/// This is a dispatch capability, not a whitelist of acceptable output features.
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum PreAccessFrameDetail {
+    FourMasterPosts,
+    OpenSide,
+    OpenSides,
+    HighCentralPyramid,
+}
+
+pub(crate) fn pre_access_frame_detail(id: &str) -> Option<PreAccessFrameDetail> {
+    Some(match id {
+        "four_master_posts" => PreAccessFrameDetail::FourMasterPosts,
+        "open_side" => PreAccessFrameDetail::OpenSide,
+        "open_sides" => PreAccessFrameDetail::OpenSides,
+        "high_central_pyramid" => PreAccessFrameDetail::HighCentralPyramid,
+        _ => return None,
+    })
+}
+
+impl PreAccessFrameDetail {
+    pub(crate) fn apply(self, unit: &mut HouseUnit, p: &Parameters) {
+        match self {
+            Self::FourMasterPosts => posts(unit, "four_master_posts", &p.materials.frame, true),
+            Self::OpenSide => open_sides(unit, "open_side", true, &p.materials.frame),
+            Self::OpenSides => open_sides(unit, "open_sides", false, &p.materials.frame),
+            Self::HighCentralPyramid => roof_trait(unit, "high_central_pyramid", p),
+        }
+    }
+}
+
 pub(crate) fn add_details(
     unit: &mut HouseUnit,
     recipe: &Recipe,
@@ -3161,6 +3192,11 @@ pub(crate) fn add_details_for_role(
             .any(|entry| entry.id == *trait_)
         {
             return Err(format!("Trait architectural inconnu : {trait_}."));
+        }
+        // Same declaration order and same primitives as before extraction.
+        if let Some(operator) = pre_access_frame_detail(trait_) {
+            operator.apply(unit, p);
+            continue;
         }
         match trait_.as_str() {
             "hearth" | "central_hearth" => domestic_fitting(
@@ -3340,7 +3376,6 @@ pub(crate) fn add_details_for_role(
                 };
                 beams(unit, trait_, FeatureKind::Frame, BEAM_SPACING_M, material);
             }
-            "four_master_posts" => posts(unit, trait_, &p.materials.frame, true),
             "oblique_large_posts" => diagonal_posts(unit, trait_, p),
             "bone_posts" => posts(unit, trait_, "MAT-BONE", false),
             "driftwood_posts" => posts(unit, trait_, "MAT-DRIFTWOOD", false),
@@ -3637,7 +3672,6 @@ pub(crate) fn add_details_for_role(
             | "roof_steps"
             | "tiered_roofs"
             | "interlocking_roofs"
-            | "high_central_pyramid"
             | "high_central_hall"
             | "high_cone"
             | "high_gables"
@@ -3671,9 +3705,6 @@ pub(crate) fn add_details_for_role(
                 ],
                 "aucun retrait ou soutènement de terrain dans la variante",
             ),
-            "open_side" | "open_sides" => {
-                open_sides(unit, trait_, trait_ == "open_side", &p.materials.frame)
-            }
             "multiple_households" | "hundreds_of_cells" | "repeated_cells" | "inhabited_ring" => {
                 if !unit.rooms.iter().any(|room| room.household_id.is_some()) {
                     diagnose(

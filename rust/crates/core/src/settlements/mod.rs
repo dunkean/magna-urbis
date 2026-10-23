@@ -253,6 +253,39 @@ impl Terrain {
             architecture_culture,
         )
     }
+    /// A bounded page from immutable retained city inputs. Preparation lives in
+    /// `BuildingSiteIndex`; the terrain and its raster are borrowed only here.
+    #[allow(clippy::too_many_arguments)]
+    pub fn urban_building_sites_page(
+        &self,
+        index: &mut crate::urban::building_sites::BuildingSiteIndex,
+        seed: &str,
+        layouts: &[crate::urban::Layout],
+        partitions: &[crate::urban::Partition],
+        architecture_culture: Option<&str>,
+        offset: usize,
+        limit: usize,
+        max_bytes: usize,
+    ) -> Result<crate::urban::building_sites::SitePage, String> {
+        let r = &self.fields.r;
+        index.page(
+            seed,
+            layouts,
+            partitions,
+            crate::urban::Surface {
+                geometry: self.urban_geometry.as_ref(),
+                width: r.width,
+                n: r.n,
+                height: &r.height,
+                water: &r.water,
+            },
+            &r.water_level,
+            architecture_culture,
+            offset,
+            limit,
+            max_bytes,
+        )
+    }
     pub fn new(raster: Raster<'_>) -> Result<Self, String> {
         let size = raster.n.checked_mul(raster.n).ok_or("Invalid raster")?;
         if !(16..=1024).contains(&raster.n)

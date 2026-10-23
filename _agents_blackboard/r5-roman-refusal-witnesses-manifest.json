@@ -1,0 +1,119 @@
+{
+  "source": "web/out/r5-roman/after/city-04-mountain-bay-s-placement-requests.json",
+  "source_sha256": "75e14e7ee8f493e282d589480df6079160f8d7db67ac4177b1f3694d601dee20",
+  "scope": "Eight exact request objects, no altered geometry/seed/programme. No replay performed. An isolated replay omits earlier accepted batch occupancy unless restored separately; original batch settings are not present in this request-array archive.",
+  "witnesses": [
+    {
+      "id": "layout-f9dab5910f08a8a2/block-0d3568179998c859/parcel-d85568ded9431341/building",
+      "original_position": 0,
+      "category": "row_simple_source_missing",
+      "purpose": "No B01 among four courts; house target99.3m2; no recorded terrain failure.",
+      "request_sha256_canonical_json": "6ffd326a2dd3953e5da79201272fe85b952a9fb84f6b42bf62f9c186de8ab30e",
+      "archived_refusal": {
+        "attempts": 0,
+        "code": "plan_refused",
+        "id": "layout-f9dab5910f08a8a2/block-0d3568179998c859/parcel-d85568ded9431341/building",
+        "message": "Architectural bodies, courts or structures do not fit the supplied domain. Constrained composition: Morphology: this authored layout/programme has no constrained composition operator; retain its native template. Street-front preference exhausted 0 bounded rigid poses; cadastral, roof and access constraints were retained.",
+        "parcel_id": "layout-f9dab5910f08a8a2/block-0d3568179998c859/parcel-d85568ded9431341"
+      }
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-606c37543ad80a65/parcel-b717fcd8e58837c7/building",
+      "original_position": 53,
+      "category": "small_tenement_typology_gap",
+      "purpose": "No B01; target24.8m2 is below B01 nominal35m2 minimum; do not claim programme capacity from a fallback.",
+      "request_sha256_canonical_json": "b19d51cb49c3a3ace791d3162113de55ac8f18e5be33fc8dd67097e19a40189f",
+      "archived_refusal": {
+        "attempts": 0,
+        "code": "plan_refused",
+        "id": "layout-f9dab5910f08a8a2/block-606c37543ad80a65/parcel-b717fcd8e58837c7/building",
+        "message": "Architectural bodies, courts or structures do not fit the supplied domain. Constrained composition: Morphology: this authored layout/programme has no constrained composition operator; retain its native template. Street-front preference exhausted 0 bounded rigid poses; cadastral, roof and access constraints were retained.",
+        "parcel_id": "layout-f9dab5910f08a8a2/block-606c37543ad80a65/parcel-b717fcd8e58837c7"
+      }
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-cc278c8c38f2a35e/parcel-e28c4d5331723e1b/building",
+      "original_position": 177,
+      "category": "simple_present_geometry_untraced",
+      "purpose": "B01/default already tried; shop target87m2; final message does not retain its own refusal.",
+      "request_sha256_canonical_json": "a2a2279103f666e5fbc4218069d8249e8a3c84a6c770f2447da4270c5f18bbda",
+      "archived_refusal": {
+        "attempts": 0,
+        "code": "plan_refused",
+        "id": "layout-f9dab5910f08a8a2/block-cc278c8c38f2a35e/parcel-e28c4d5331723e1b/building",
+        "message": "Architectural bodies, courts or structures do not fit the supplied domain. Constrained composition: Morphology: this authored layout/programme has no constrained composition operator; retain its native template. Street-front preference exhausted 4 bounded rigid poses; cadastral, roof and access constraints were retained.",
+        "parcel_id": "layout-f9dab5910f08a8a2/block-cc278c8c38f2a35e/parcel-e28c4d5331723e1b"
+      }
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-869de491bfe25777/parcel-2a77099a1d516ed1/building",
+      "original_position": 305,
+      "category": "large_target_geometry_untraced",
+      "purpose": "B01/adobe already tried; target406.6m2 below inspired432 upper bound, no fit guaranteed.",
+      "request_sha256_canonical_json": "6b38aeba12f6674b6fe43fee8e543ce6bece3e6137f3d38bc195757a29d70fa4",
+      "archived_refusal": {
+        "attempts": 0,
+        "code": "plan_refused",
+        "id": "layout-f9dab5910f08a8a2/block-869de491bfe25777/parcel-2a77099a1d516ed1/building",
+        "message": "Architectural bodies, courts or structures do not fit the supplied domain. Constrained composition: Morphology: this authored layout/programme has no constrained composition operator; retain its native template. Street-front preference exhausted 6 bounded rigid poses; cadastral, roof and access constraints were retained.",
+        "parcel_id": "layout-f9dab5910f08a8a2/block-869de491bfe25777/parcel-2a77099a1d516ed1"
+      }
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-dfe620665b72f417/parcel-a1cb4a99b0bd549c/building",
+      "original_position": 347,
+      "category": "foundation_step_only",
+      "purpose": "Contained candidate required0.795m against0.75m, slope6.283deg; no tolerance relaxation.",
+      "request_sha256_canonical_json": "86679fa42e2d9cde230ef7539f2052c35e61ebf4fd286695690f2c1448ce7d09",
+      "archived_refusal": {
+        "attempts": 0,
+        "code": "plan_refused",
+        "id": "layout-f9dab5910f08a8a2/block-dfe620665b72f417/parcel-a1cb4a99b0bd549c/building",
+        "message": "Architectural bodies, courts or structures do not fit the supplied domain. Constrained composition: Morphology: this authored layout/programme has no constrained composition operator; retain its native template. Street-front preference exhausted 2 bounded rigid poses; cadastral, roof and access constraints were retained. An earlier candidate fitting bodies/courts/structures failed terrain before roof/access checks: Architecture exceeds physical foundation/slope limits. Required step 0.795 m / allowed 0.750 m; raster slope 6.283 deg / allowed 12 deg.",
+        "parcel_id": "layout-f9dab5910f08a8a2/block-dfe620665b72f417/parcel-a1cb4a99b0bd549c"
+      }
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-9241f1784bfb914a/parcel-46cad69c714e39be/building",
+      "original_position": 319,
+      "category": "foundation_step_and_slope",
+      "purpose": "Contained candidate required1.316m and15.189deg; not a presumed shortlist gain.",
+      "request_sha256_canonical_json": "b5777e6ca883d946248716fa5744c5054a515be726666480426db7edabbc10cb",
+      "archived_refusal": {
+        "attempts": 0,
+        "code": "plan_refused",
+        "id": "layout-f9dab5910f08a8a2/block-9241f1784bfb914a/parcel-46cad69c714e39be/building",
+        "message": "Architectural bodies, courts or structures do not fit the supplied domain. Constrained composition: Morphology: this authored layout/programme has no constrained composition operator; retain its native template. Street-front preference exhausted 2 bounded rigid poses; cadastral, roof and access constraints were retained. An earlier candidate fitting bodies/courts/structures failed terrain before roof/access checks: Architecture exceeds physical foundation/slope limits. Required step 1.316 m / allowed 0.750 m; raster slope 15.189 deg / allowed 12 deg.",
+        "parcel_id": "layout-f9dab5910f08a8a2/block-9241f1784bfb914a/parcel-46cad69c714e39be"
+      }
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-8ea8f3b57e06705f/parcel-a5bdac37759faea7/building",
+      "original_position": 281,
+      "category": "access_and_earlier_terrain",
+      "purpose": "Final access failure plus earlier0.753m step; dimensions/terrain alone do not certify access.",
+      "request_sha256_canonical_json": "1241a7a1b44f398dcb5c15277eabe993ef878421fcd8ba33f910e09951905d81",
+      "archived_refusal": {
+        "attempts": 0,
+        "code": "plan_refused",
+        "id": "layout-f9dab5910f08a8a2/block-8ea8f3b57e06705f/parcel-a5bdac37759faea7/building",
+        "message": "No unobstructed planning connection from building to declared frontage. Street-front preference exhausted 12 bounded rigid poses; cadastral, roof and access constraints were retained. An earlier candidate fitting bodies/courts/structures failed terrain before roof/access checks: Architecture exceeds physical foundation/slope limits. Required step 0.753 m / allowed 0.750 m; raster slope 4.969 deg / allowed 12 deg.",
+        "parcel_id": "layout-f9dab5910f08a8a2/block-8ea8f3b57e06705f/parcel-a5bdac37759faea7"
+      }
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-71c5dc7176adaf8d/parcel-71c5dc7176adaf8d/building",
+      "original_position": 38,
+      "category": "functional_source_gap",
+      "purpose": "Horreum warehouse pinned by producer to domusB02; terrain failure also real; no authored horreum capability.",
+      "request_sha256_canonical_json": "d7af8ad4887865b9f62cb8bdcd810e52a5ad0152d629ad65097d35da84bd95de",
+      "archived_refusal": {
+        "attempts": 0,
+        "code": "plan_refused",
+        "id": "layout-f9dab5910f08a8a2/block-71c5dc7176adaf8d/parcel-71c5dc7176adaf8d/building",
+        "message": "Architectural bodies, courts or structures do not fit the supplied domain. Constrained composition: Morphology: this authored layout/programme has no constrained composition operator; retain its native template. An earlier candidate fitting bodies/courts/structures failed terrain before roof/access checks: Architecture exceeds physical foundation/slope limits. Required step 1.123 m / allowed 0.750 m; raster slope 3.712 deg / allowed 12 deg.",
+        "parcel_id": "layout-f9dab5910f08a8a2/block-71c5dc7176adaf8d/parcel-71c5dc7176adaf8d"
+      }
+    }
+  ]
+}

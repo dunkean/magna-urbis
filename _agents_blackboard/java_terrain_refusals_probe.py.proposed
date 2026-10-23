@@ -1,0 +1,96 @@
+"""Archived refusal classification and independent terrain lower bounds.
+No native call; no selected architecture or failed footing is invented.
+"""
+import collections, hashlib, json, math, re, sys
+from pathlib import Path
+from shapely.geometry import box, Point
+
+ROOT=Path(__file__).resolve().parents[1]
+sys.path.insert(0,str(ROOT/'web/scripts'))
+from native_foundation_compare import surface, terrain_bounds
+FOLDER=ROOT/'web/out/java-full-setback-proof'
+INPUTS={}
+def read(name):
+    p=FOLDER/name;raw=p.read_bytes();INPUTS[str(p.relative_to(ROOT)).replace('\\','/')]=hashlib.sha256(raw).hexdigest()
+    return json.loads(raw)
+
+def minimum_slope(terrain,domain):
+    """Exact bilinear gradient minimum over each clipped cell, GEOS arithmetic.
+
+    grad(z)=(b+d*v,c+d*u)/step; its norm is |d|/step² times
+    distance to the zero-gradient point. This is a LAND lower bound, never
+    the maximum slope or height range of an unknown refused footing.
+    """
+    g=terrain.get('grid')
+    if not g:
+        return math.degrees(math.atan(math.hypot(*terrain['gradient'])))
+    ox,oy=g['origin']['x'],g['origin']['y'];step=g['step_m'];w,h=g['width'],g['height'];z=g['elevations_m']
+    coverage=box(ox,oy,ox+(w-1)*step,oy+(h-1)*step)
+    if domain.difference(coverage).area>1e-9:raise ValueError('domain outside supplied raster')
+    result=math.inf
+    for iy in range(h-1):
+        for ix in range(w-1):
+            x,y=ox+ix*step,oy+iy*step
+            part=domain.intersection(box(x,y,x+step,y+step))
+            if part.is_empty:continue
+            z00,z10,z01,z11=z[iy*w+ix],z[iy*w+ix+1],z[(iy+1)*w+ix],z[(iy+1)*w+ix+1]
+            b,c,d=z10-z00,z01-z00,z11-z10-z01+z00
+            magnitude=math.hypot(b,c)/step if d==0 else abs(d)/(step*step)*part.distance(Point(x-c*step/d,y-b*step/d))
+            result=min(result,magnitude)
+    if not math.isfinite(result):raise ValueError('empty terrain coverage')
+    return math.degrees(math.atan(result))
+
+requests=read('after-enriched-requests.json')['requests']; byid={r['id']:(i,r) for i,r in enumerate(requests)}
+plans=read('after-plans.json');catalogue=read('catalogue-snapshot.json')
+recipe={r['id']:r for r in catalogue['recipes']}
+pattern=re.compile(r'Required step ([\d.]+) m / allowed ([\d.]+) m; raster slope ([\d.]+) deg / allowed ([\d.]+) deg')
+rows=[];secondary=0
+for refusal in plans['refusals']:
+    message=refusal['message']; matches=pattern.findall(message)
+    if not message.startswith('Architecture exceeds physical foundation/slope limits.'):
+        secondary+=bool(matches);continue
+    i,r=byid[refusal['id']];values=[list(map(float,x)) for x in matches]
+    step,allowed,slope,maxslope=values[0]
+    cause='step_and_slope' if step>allowed and slope>maxslope else 'step_only' if step>allowed else 'slope_only' if slope>maxslope else 'rounded_threshold_unknown'
+    pin=(r.get('config') or {}).get('recipe')
+    row={'index':i,'id':r['id'],'parcel_id':r['parcel_id'],'function':r['function'],
+        'pinned_recipe':pin,'target_m2':(r.get('programme') or {}).get('built_area_m2'),
+        'primary_cause_rounded':cause,'terrain_records_rounded':values,
+        'earlier_lower_step':len(values)>1 and values[1][0]<step,
+        'failed_native_dimensions':None,'failed_native_footing':None,'failed_native_pose':None,
+        'why_native_fields_null':'Refusal archive stores message/attempts only; preview and placement_hint are not native footings.',
+        'message':message}
+    legal=surface(r['buildable']).difference(surface(r['reserves']))
+    try:
+        lower=minimum_slope(r['terrain'],legal)
+        lo,hi,upper=terrain_bounds(r['terrain'],legal)
+        row['whole_buildable_terrain']={'area_m2':legal.area,'bounds':list(legal.bounds),'minimum_slope_deg':lower,
+            'maximum_slope_deg':upper,'height_range_m':hi-lo,
+            'every_point_exceeds_12deg':lower>12+1e-8,
+            'scope':'Legal land only, not a failed native footing; minima above12 prove slope obstruction for any positive footprint there. Otherwise no global feasibility claim.'}
+    except (ValueError,RuntimeError) as error:
+        row['whole_buildable_terrain']={'unknown':str(error)}
+    if pin:
+        p=recipe[pin]['parameters']
+        row['declared_source_contract']={k:p.get(k) for k in ['layout','width_m','depth_m','bodies','floors','support','footprint_family','courtyard_ratio']}
+        row['declared_source_contract']['warning']='Nominal source ranges, not the actual adapted dimensions nor a universal placement minimum.'
+    rows.append(row)
+
+counter=lambda key:dict(collections.Counter(key(r) for r in rows))
+steps=sorted(r['terrain_records_rounded'][0][0] for r in rows)
+summary={
+ 'primary_terrain_refusals':len(rows),'other_primary_refusals_with_earlier_terrain':secondary,
+ 'causes':counter(lambda r:r['primary_cause_rounded']),
+ 'functions':counter(lambda r:r['function']), 'pinned_recipes':counter(lambda r:r['pinned_recipe'] or 'automatic_unknown_source'),
+ 'first_step_quantiles_m':{str(q):steps[round((len(steps)-1)*q)] for q in [0,.25,.5,.75,.9,1]},
+ 'near_step_limit_0_75_to_0_85_with_slope_at_most12':sum(.75<r['terrain_records_rounded'][0][0]<=.85 and r['terrain_records_rounded'][0][2]<=12 for r in rows),
+ 'with_earlier_record':sum(len(r['terrain_records_rounded'])>1 for r in rows),
+ 'earlier_lower_step':sum(r['earlier_lower_step'] for r in rows),
+ 'whole_buildable_proven_everywhere_over12':sum(r['whole_buildable_terrain'].get('every_point_exceeds_12deg',False) for r in rows),
+ 'no_failed_native_architecture_archived':len(rows),
+}
+report={'version':'java-primary-terrain-refusals-offline-1','summary':summary,'rows':rows,
+ 'inputs_sha256':INPUTS,'script_sha256':hashlib.sha256(Path(__file__).read_bytes()).hexdigest()}
+if len(sys.argv)==2:Path(sys.argv[1]).write_bytes((json.dumps(report,indent=2)+'\n').encode())
+print(json.dumps(summary,indent=2))
+print('everywhere-steep witnesses:',[(r['index'],r['parcel_id'],r['whole_buildable_terrain']['minimum_slope_deg']) for r in rows if r['whole_buildable_terrain'].get('every_point_exceeds_12deg')][:5])

@@ -1,0 +1,3486 @@
+{
+  "summary": {
+    "requests": 390,
+    "accepted": 271,
+    "refused": 113,
+    "open": 6,
+    "automatic": 369,
+    "automatic_accepted": 261,
+    "automatic_refused": 108,
+    "gained": 99,
+    "lost": 0,
+    "same_geometry_terrain_access_requests": 390,
+    "final_classes": {
+      "unsupported_composition_final": 84,
+      "minimum_span_final": 20,
+      "bounded_search_final": 1,
+      "terrain_final": 7,
+      "access_final": 1
+    },
+    "terrain_evidence_count": 87,
+    "terrain_step_only_count": 64,
+    "terrain_slope_and_step_count": 23,
+    "auto_refusal_b01_present_terrain_cross": {
+      "(False, False)": 17,
+      "(False, True)": 2,
+      "(True, True)": 80,
+      "(True, False)": 9
+    },
+    "auto_shortlist_b01_missing": 19,
+    "accepted_recipes": {
+      "MED-ANT-B01": 269,
+      "MED-ANT-B08": 1,
+      "MED-ANT-B02": 1
+    },
+    "refused_roles": {
+      "dwelling.house": 18,
+      "worship.capitolium": 1,
+      "storage.horreum": 1,
+      "dwelling.tenement": 20,
+      "dwelling.townhouse": 67,
+      "dwelling.shop": 3,
+      "civic.basilica": 1,
+      "civic.thermae": 1,
+      "craft.fullonica": 1
+    },
+    "refused_districts": {
+      "civic": 7,
+      "port": 34,
+      "commoner": 4,
+      "elite": 68
+    },
+    "terrain_districts": {
+      "port": 23,
+      "commoner": 2,
+      "elite": 60,
+      "civic": 2
+    },
+    "sources": {
+      "web\\out\\r5-roman\\after\\city-04-mountain-bay-s-placement-requests.json": "75e14e7ee8f493e282d589480df6079160f8d7db67ac4177b1f3694d601dee20",
+      "web\\out\\r5-roman\\after\\city-04-mountain-bay-s-plans.json": "24d85319b98ec778ae52df1127784f2fc3434763d4b1c629371c60f03fe6de19",
+      "rust\\crates\\houses\\data\\recipes.json": "6ccfa6c5bf8e88dc45dd24a0a3db15e6d636d5a76cc4027e934234c917182157"
+    },
+    "shortlist_method": "Offline direct port of random::Rng UTF-16/sfc32, order_styles, source weights/ranges and Row/floor ranking; validates all261 native automatic accepted recipe/variants are in reconstructed shortlist. No geometry generated. Current MED-ANT-only guards asserted.",
+    "automatic_budget": {
+      "positive_targets": 360,
+      "accepted_positive_targets": 254,
+      "met_within_ten_percent": 62,
+      "median_actual_target_ratio": 0.4052532833038111,
+      "capacity_certified": false
+    }
+  },
+  "refusals": [
+    {
+      "id": "layout-f9dab5910f08a8a2/block-0d3568179998c859/parcel-d85568ded9431341/building",
+      "role": "dwelling.house",
+      "function": "domestic",
+      "district": "civic",
+      "target_m2": 99.3,
+      "buildable_m2": 180.71909501729533,
+      "pin": null,
+      "composition": "row",
+      "floors": [
+        1,
+        2
+      ],
+      "shortlist_reconstruction": [
+        "MED-ANT-B02::default",
+        "MED-ANT-B08::default",
+        "MED-ANT-B03::brick_walls",
+        "MED-ANT-B05::flat_earth"
+      ],
+      "b01_in_shortlist": false,
+      "final_class": "unsupported_composition_final",
+      "terrain_evidence": [],
+      "max_access_width_m": 16.782356343333717,
+      "message": "Architectural bodies, courts or structures do not fit the supplied domain. Constrained composition: Morphology: this authored layout/programme has no constrained composition operator; retain its native template. Street-front preference exhausted 0 bounded rigid poses; cadastral, roof and access constraints were retained."
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-ece382df87e1ffe2/parcel-ece382df87e1ffe2/building",
+      "role": "worship.capitolium",
+      "function": "collective",
+      "district": "port",
+      "target_m2": 698.3,
+      "buildable_m2": 3051.287163514644,
+      "pin": "MED-ANT-B02",
+      "composition": "religious",
+      "floors": null,
+      "shortlist_reconstruction": null,
+      "b01_in_shortlist": null,
+      "final_class": "unsupported_composition_final",
+      "terrain_evidence": [
+        {
+          "required_step_m": 0.89,
+          "allowed_step_m": 0.75,
+          "raster_slope_deg": 2.696,
+          "allowed_slope_deg": 12.0
+        }
+      ],
+      "max_access_width_m": 65.44978761122209,
+      "message": "Architectural bodies, courts or structures do not fit the supplied domain. Constrained composition: Morphology: this authored layout/programme has no constrained composition operator; retain its native template. An earlier candidate fitting bodies/courts/structures failed terrain before roof/access checks: Architecture exceeds physical foundation/slope limits. Required step 0.890 m / allowed 0.750 m; raster slope 2.696 deg / allowed 12 deg."
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-71c5dc7176adaf8d/parcel-71c5dc7176adaf8d/building",
+      "role": "storage.horreum",
+      "function": "warehouse",
+      "district": "port",
+      "target_m2": 689.3,
+      "buildable_m2": 3002.011611352209,
+      "pin": "MED-ANT-B02",
+      "composition": "hall",
+      "floors": null,
+      "shortlist_reconstruction": null,
+      "b01_in_shortlist": null,
+      "final_class": "unsupported_composition_final",
+      "terrain_evidence": [
+        {
+          "required_step_m": 1.123,
+          "allowed_step_m": 0.75,
+          "raster_slope_deg": 3.712,
+          "allowed_slope_deg": 12.0
+        }
+      ],
+      "max_access_width_m": 50.59172927670792,
+      "message": "Architectural bodies, courts or structures do not fit the supplied domain. Constrained composition: Morphology: this authored layout/programme has no constrained composition operator; retain its native template. An earlier candidate fitting bodies/courts/structures failed terrain before roof/access checks: Architecture exceeds physical foundation/slope limits. Required step 1.123 m / allowed 0.750 m; raster slope 3.712 deg / allowed 12 deg."
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-606c37543ad80a65/parcel-b717fcd8e58837c7/building",
+      "role": "dwelling.tenement",
+      "function": "domestic",
+      "district": "civic",
+      "target_m2": 24.8,
+      "buildable_m2": 237.38465483905748,
+      "pin": null,
+      "composition": "row",
+      "floors": [
+        2,
+        2
+      ],
+      "shortlist_reconstruction": [
+        "MED-ANT-B03::brick_walls",
+        "MED-ANT-B08::default",
+        "MED-ANT-B02::default",
+        "MED-ANT-B05::flat_earth"
+      ],
+      "b01_in_shortlist": false,
+      "final_class": "unsupported_composition_final",
+      "terrain_evidence": [],
+      "max_access_width_m": 18.031044683456457,
+      "message": "Architectural bodies, courts or structures do not fit the supplied domain. Constrained composition: Morphology: this authored layout/programme has no constrained composition operator; retain its native template. Street-front preference exhausted 0 bounded rigid poses; cadastral, roof and access constraints were retained."
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-bac53de20f02b5b7/parcel-bad81dec23821a81/building",
+      "role": "dwelling.house",
+      "function": "domestic",
+      "district": "commoner",
+      "target_m2": 86.4,
+      "buildable_m2": 1108.499737592414,
+      "pin": null,
+      "composition": "row",
+      "floors": [
+        1,
+        2
+      ],
+      "shortlist_reconstruction": [
+        "MED-ANT-B03::brick_walls",
+        "MED-ANT-B02::default",
+        "MED-ANT-B08::default",
+        "MED-ANT-B05::default"
+      ],
+      "b01_in_shortlist": false,
+      "final_class": "unsupported_composition_final",
+      "terrain_evidence": [
+        {
+          "required_step_m": 1.033,
+          "allowed_step_m": 0.75,
+          "raster_slope_deg": 3.362,
+          "allowed_slope_deg": 12.0
+        }
+      ],
+      "max_access_width_m": 29.901134161113703,
+      "message": "Architectural bodies, courts or structures do not fit the supplied domain. Constrained composition: Morphology: this authored layout/programme has no constrained composition operator; retain its native template. Street-front preference exhausted 10 bounded rigid poses; cadastral, roof and access constraints were retained. An earlier candidate fitting bodies/courts/structures failed terrain before roof/access checks: Architecture exceeds physical foundation/slope limits. Required step 1.033 m / allowed 0.750 m; raster slope 3.362 deg / allowed 12 deg."
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-0d1e71c6ff968384/parcel-1278d201d826cd73/building",
+      "role": "dwelling.house",
+      "function": "domestic",
+      "district": "commoner",
+      "target_m2": 138.5,
+      "buildable_m2": 376.9079664819874,
+      "pin": null,
+      "composition": "row",
+      "floors": [
+        1,
+        2
+      ],
+      "shortlist_reconstruction": [
+        "MED-ANT-B03::default",
+        "MED-ANT-B08::default",
+        "MED-ANT-B05::default",
+        "MED-ANT-B02::brick_walls"
+      ],
+      "b01_in_shortlist": false,
+      "final_class": "unsupported_composition_final",
+      "terrain_evidence": [],
+      "max_access_width_m": 18.765655058560913,
+      "message": "Architectural bodies, courts or structures do not fit the supplied domain. Constrained composition: Morphology: this authored layout/programme has no constrained composition operator; retain its native template. Street-front preference exhausted 6 bounded rigid poses; cadastral, roof and access constraints were retained."
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-1836be4373692603/parcel-c4e256b2b49f60c9/building",
+      "role": "dwelling.townhouse",
+      "function": "domestic",
+      "district": "elite",
+      "target_m2": 69.3,
+      "buildable_m2": 183.44764133915305,
+      "pin": null,
+      "composition": "row",
+      "floors": [
+        1,
+        2
+      ],
+      "shortlist_reconstruction": [
+        "MED-ANT-B02::brick_walls",
+        "MED-ANT-B01::brick_walls",
+        "MED-ANT-B03::default",
+        "MED-ANT-B05::flat_earth"
+      ],
+      "b01_in_shortlist": true,
+      "final_class": "unsupported_composition_final",
+      "terrain_evidence": [
+        {
+          "required_step_m": 1.92,
+          "allowed_step_m": 0.75,
+          "raster_slope_deg": 14.4,
+          "allowed_slope_deg": 12.0
+        }
+      ],
+      "max_access_width_m": 25.914955069263467,
+      "message": "Architectural bodies, courts or structures do not fit the supplied domain. Constrained composition: Morphology: this authored layout/programme has no constrained composition operator; retain its native template. Street-front preference exhausted 3 bounded rigid poses; cadastral, roof and access constraints were retained. An earlier candidate fitting bodies/courts/structures failed terrain before roof/access checks: Architecture exceeds physical foundation/slope limits. Required step 1.920 m / allowed 0.750 m; raster slope 14.400 deg / allowed 12 deg."
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-1836be4373692603/parcel-94a9acf43b54ea10/building",
+      "role": "dwelling.townhouse",
+      "function": "domestic",
+      "district": "elite",
+      "target_m2": 77.4,
+      "buildable_m2": 190.66804978018627,
+      "pin": null,
+      "composition": "row",
+      "floors": [
+        1,
+        2
+      ],
+      "shortlist_reconstruction": [
+        "MED-ANT-B05::default",
+        "MED-ANT-B02::brick_walls",
+        "MED-ANT-B03::default",
+        "MED-ANT-B08::default"
+      ],
+      "b01_in_shortlist": false,
+      "final_class": "minimum_span_final",
+      "terrain_evidence": [],
+      "max_access_width_m": 13.501812349887471,
+      "message": "Architectural bodies, courts or structures do not fit the supplied domain. Constrained composition: Morphology: available span 11.171 x 12.864 m cannot preserve minimum ranges/court/access (29.257 x 29.257 m). Street-front preference exhausted 0 bounded rigid poses; cadastral, roof and access constraints were retained."
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-2cae8d817777c84f/parcel-a77eaf84fc8d572e/building",
+      "role": "dwelling.townhouse",
+      "function": "domestic",
+      "district": "elite",
+      "target_m2": 93.2,
+      "buildable_m2": 1459.4506953367963,
+      "pin": null,
+      "composition": "row",
+      "floors": [
+        1,
+        2
+      ],
+      "shortlist_reconstruction": [
+        "MED-ANT-B02::default",
+        "MED-ANT-B05::flat_earth",
+        "MED-ANT-B01::default",
+        "MED-ANT-B03::default"
+      ],
+      "b01_in_shortlist": true,
+      "final_class": "unsupported_composition_final",
+      "terrain_evidence": [
+        {
+          "required_step_m": 2.352,
+          "allowed_step_m": 0.75,
+          "raster_slope_deg": 16.229,
+          "allowed_slope_deg": 12.0
+        }
+      ],
+      "max_access_width_m": 6.762098815418989,
+      "message": "Architectural bodies, courts or structures do not fit the supplied domain. Constrained composition: Morphology: this authored layout/programme has no constrained composition operator; retain its native template. Street-front preference exhausted 8 bounded rigid poses; cadastral, roof and access constraints were retained. An earlier candidate fitting bodies/courts/structures failed terrain before roof/access checks: Architecture exceeds physical foundation/slope limits. Required step 2.352 m / allowed 0.750 m; raster slope 16.229 deg / allowed 12 deg."
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-2cae8d817777c84f/parcel-a970437962ee9bd7/building",
+      "role": "dwelling.townhouse",
+      "function": "domestic",
+      "district": "elite",
+      "target_m2": 86.9,
+      "buildable_m2": 1437.8792744944803,
+      "pin": null,
+      "composition": "row",
+      "floors": [
+        1,
+        2
+      ],
+      "shortlist_reconstruction": [
+        "MED-ANT-B03::brick_walls",
+        "MED-ANT-B01::adobe_walls",
+        "MED-ANT-B05::flat_earth",
+        "MED-ANT-B02::default"
+      ],
+      "b01_in_shortlist": true,
+      "final_class": "unsupported_composition_final",
+      "terrain_evidence": [
+        {
+          "required_step_m": 2.516,
+          "allowed_step_m": 0.75,
+          "raster_slope_deg": 23.266,
+          "allowed_slope_deg": 12.0
+        }
+      ],
+      "max_access_width_m": 42.34370505102933,
+      "message": "Architectural bodies, courts or structures do not fit the supplied domain. Constrained composition: Morphology: this authored layout/programme has no constrained composition operator; retain its native template. Street-front preference exhausted 16 bounded rigid poses; cadastral, roof and access constraints were retained. An earlier candidate fitting bodies/courts/structures failed terrain before roof/access checks: Architecture exceeds physical foundation/slope limits. Required step 2.516 m / allowed 0.750 m; raster slope 23.266 deg / allowed 12 deg."
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-a25fbdd01e626698/parcel-d0fc6cf28f56a3f4/building",
+      "role": "dwelling.house",
+      "function": "domestic",
+      "district": "civic",
+      "target_m2": 99.5,
+      "buildable_m2": 158.09122965065762,
+      "pin": null,
+      "composition": "row",
+      "floors": [
+        1,
+        2
+      ],
+      "shortlist_reconstruction": [
+        "MED-ANT-B03::default",
+        "MED-ANT-B01::default",
+        "MED-ANT-B08::default",
+        "MED-ANT-B05::flat_earth"
+      ],
+      "b01_in_shortlist": true,
+      "final_class": "unsupported_composition_final",
+      "terrain_evidence": [],
+      "max_access_width_m": 12.58318014806762,
+      "message": "Architectural bodies, courts or structures do not fit the supplied domain. Constrained composition: Morphology: this authored layout/programme has no constrained composition operator; retain its native template. Street-front preference exhausted 6 bounded rigid poses; cadastral, roof and access constraints were retained."
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-6d759541191da131/parcel-0d4536b64828dbe8/building",
+      "role": "dwelling.house",
+      "function": "domestic",
+      "district": "commoner",
+      "target_m2": 82.6,
+      "buildable_m2": 288.42825337685645,
+      "pin": null,
+      "composition": "row",
+      "floors": [
+        1,
+        2
+      ],
+      "shortlist_reconstruction": [
+        "MED-ANT-B02::default",
+        "MED-ANT-B05::flat_earth",
+        "MED-ANT-B03::default",
+        "MED-ANT-B08::default"
+      ],
+      "b01_in_shortlist": false,
+      "final_class": "minimum_span_final",
+      "terrain_evidence": [],
+      "max_access_width_m": 13.692152738571169,
+      "message": "Architectural bodies, courts or structures do not fit the supplied domain. Constrained composition: Morphology: available span 11.677 x 19.881 m cannot preserve minimum ranges/court/access (21.871 x 28.625 m). Street-front preference exhausted 2 bounded rigid poses; cadastral, roof and access constraints were retained."
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-6d759541191da131/parcel-8c3a9d9c8b57ddd2/building",
+      "role": "dwelling.house",
+      "function": "domestic",
+      "district": "commoner",
+      "target_m2": 89.2,
+      "buildable_m2": 302.26823058817536,
+      "pin": null,
+      "composition": "row",
+      "floors": [
+        1,
+        2
+      ],
+      "shortlist_reconstruction": [
+        "MED-ANT-B01::adobe_walls",
+        "MED-ANT-B02::brick_walls",
+        "MED-ANT-B03::default",
+        "MED-ANT-B05::default"
+      ],
+      "b01_in_shortlist": true,
+      "final_class": "unsupported_composition_final",
+      "terrain_evidence": [
+        {
+          "required_step_m": 1.409,
+          "allowed_step_m": 0.75,
+          "raster_slope_deg": 8.802,
+          "allowed_slope_deg": 12.0
+        }
+      ],
+      "max_access_width_m": 16.267807841300964,
+      "message": "Architectural bodies, courts or structures do not fit the supplied domain. Constrained composition: Morphology: this authored layout/programme has no constrained composition operator; retain its native template. Street-front preference exhausted 4 bounded rigid poses; cadastral, roof and access constraints were retained. An earlier candidate fitting bodies/courts/structures failed terrain before roof/access checks: Architecture exceeds physical foundation/slope limits. Required step 1.409 m / allowed 0.750 m; raster slope 8.802 deg / allowed 12 deg."
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-4688373d4a078a5d/parcel-0d557a8a4823b4df/building",
+      "role": "dwelling.townhouse",
+      "function": "domestic",
+      "district": "elite",
+      "target_m2": 92.9,
+      "buildable_m2": 1746.3900739802048,
+      "pin": null,
+      "composition": "row",
+      "floors": [
+        1,
+        2
+      ],
+      "shortlist_reconstruction": [
+        "MED-ANT-B03::brick_walls",
+        "MED-ANT-B05::default",
+        "MED-ANT-B01::default",
+        "MED-ANT-B08::default"
+      ],
+      "b01_in_shortlist": true,
+      "final_class": "bounded_search_final",
+      "terrain_evidence": [
+        {
+          "required_step_m": 1.582,
+          "allowed_step_m": 0.75,
+          "raster_slope_deg": 9.127,
+          "allowed_slope_deg": 12.0
+        }
+      ],
+      "max_access_width_m": 36.54700382246393,
+      "message": "Architectural bodies, courts or structures do not fit the supplied domain. Constrained composition: Morphology: no admissible composition within 80 bounded candidates; no body was clipped or required range/court removed. Street-front preference exhausted 12 bounded rigid poses; cadastral, roof and access constraints were retained. An earlier candidate fitting bodies/courts/structures failed terrain before roof/access checks: Architecture exceeds physical foundation/slope limits. Required step 1.582 m / allowed 0.750 m; raster slope 9.127 deg / allowed 12 deg."
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-a5c03f38c0c88112/parcel-ca7db442932ee8e9/building",
+      "role": "dwelling.townhouse",
+      "function": "domestic",
+      "district": "elite",
+      "target_m2": 79.3,
+      "buildable_m2": 526.6376959183253,
+      "pin": null,
+      "composition": "row",
+      "floors": [
+        1,
+        2
+      ],
+      "shortlist_reconstruction": [
+        "MED-ANT-B02::brick_walls",
+        "MED-ANT-B01::brick_walls",
+        "MED-ANT-B03::brick_walls",
+        "MED-ANT-B05::flat_earth"
+      ],
+      "b01_in_shortlist": true,
+      "final_class": "unsupported_composition_final",
+      "terrain_evidence": [
+        {
+          "required_step_m": 1.117,
+          "allowed_step_m": 0.75,
+          "raster_slope_deg": 7.398,
+          "allowed_slope_deg": 12.0
+        }
+      ],
+      "max_access_width_m": 18.177659961885045,
+      "message": "Architectural bodies, courts or structures do not fit the supplied domain. Constrained composition: Morphology: this authored layout/programme has no constrained composition operator; retain its native template. Street-front preference exhausted 7 bounded rigid poses; cadastral, roof and access constraints were retained. An earlier candidate fitting bodies/courts/structures failed terrain before roof/access checks: Architecture exceeds physical foundation/slope limits. Required step 1.117 m / allowed 0.750 m; raster slope 7.398 deg / allowed 12 deg."
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-a5c03f38c0c88112/parcel-55bea4af2bfc543f/building",
+      "role": "dwelling.townhouse",
+      "function": "domestic",
+      "district": "elite",
+      "target_m2": 61,
+      "buildable_m2": 235.43879146920517,
+      "pin": null,
+      "composition": "row",
+      "floors": [
+        1,
+        2
+      ],
+      "shortlist_reconstruction": [
+        "MED-ANT-B01::default",
+        "MED-ANT-B02::brick_walls",
+        "MED-ANT-B03::brick_walls",
+        "MED-ANT-B05::default"
+      ],
+      "b01_in_shortlist": true,
+      "final_class": "unsupported_composition_final",
+      "terrain_evidence": [
+        {
+          "required_step_m": 1.364,
+          "allowed_step_m": 0.75,
+          "raster_slope_deg": 8.618,
+          "allowed_slope_deg": 12.0
+        }
+      ],
+      "max_access_width_m": 7.2659501540098335,
+      "message": "Architectural bodies, courts or structures do not fit the supplied domain. Constrained composition: Morphology: this authored layout/programme has no constrained composition operator; retain its native template. Street-front preference exhausted 3 bounded rigid poses; cadastral, roof and access constraints were retained. An earlier candidate fitting bodies/courts/structures failed terrain before roof/access checks: Architecture exceeds physical foundation/slope limits. Required step 1.364 m / allowed 0.750 m; raster slope 8.618 deg / allowed 12 deg."
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-a5c03f38c0c88112/parcel-3a163ed49341ba4e/building",
+      "role": "dwelling.townhouse",
+      "function": "domestic",
+      "district": "elite",
+      "target_m2": 66.9,
+      "buildable_m2": 235.58711204770952,
+      "pin": null,
+      "composition": "row",
+      "floors": [
+        1,
+        2
+      ],
+      "shortlist_reconstruction": [
+        "MED-ANT-B03::brick_walls",
+        "MED-ANT-B02::brick_walls",
+        "MED-ANT-B05::default",
+        "MED-ANT-B01::default"
+      ],
+      "b01_in_shortlist": true,
+      "final_class": "terrain_final",
+      "terrain_evidence": [
+        {
+          "required_step_m": 0.825,
+          "allowed_step_m": 0.75,
+          "raster_slope_deg": 6.926,
+          "allowed_slope_deg": 12.0
+        }
+      ],
+      "max_access_width_m": 7.281418016599442,
+      "message": "Architecture exceeds physical foundation/slope limits. Required step 0.825 m / allowed 0.750 m; raster slope 6.926 deg / allowed 12 deg. Street-front preference exhausted 3 bounded rigid poses; cadastral, roof and access constraints were retained."
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-a5c03f38c0c88112/parcel-9939e71064bd7f66/building",
+      "role": "dwelling.townhouse",
+      "function": "domestic",
+      "district": "elite",
+      "target_m2": 44.7,
+      "buildable_m2": 373.22862815251574,
+      "pin": null,
+      "composition": "row",
+      "floors": [
+        1,
+        2
+      ],
+      "shortlist_reconstruction": [
+        "MED-ANT-B01::default",
+        "MED-ANT-B05::default",
+        "MED-ANT-B03::default",
+        "MED-ANT-B02::default"
+      ],
+      "b01_in_shortlist": true,
+      "final_class": "unsupported_composition_final",
+      "terrain_evidence": [
+        {
+          "required_step_m": 0.938,
+          "allowed_step_m": 0.75,
+          "raster_slope_deg": 8.944,
+          "allowed_slope_deg": 12.0
+        }
+      ],
+      "max_access_width_m": 8.36928504152394,
+      "message": "Architectural bodies, courts or structures do not fit the supplied domain. Constrained composition: Morphology: this authored layout/programme has no constrained composition operator; retain its native template. Street-front preference exhausted 6 bounded rigid poses; cadastral, roof and access constraints were retained. An earlier candidate fitting bodies/courts/structures failed terrain before roof/access checks: Architecture exceeds physical foundation/slope limits. Required step 0.938 m / allowed 0.750 m; raster slope 8.944 deg / allowed 12 deg."
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-a5c03f38c0c88112/parcel-474eb7a7280570d0/building",
+      "role": "dwelling.townhouse",
+      "function": "domestic",
+      "district": "elite",
+      "target_m2": 62.7,
+      "buildable_m2": 471.1353726061061,
+      "pin": null,
+      "composition": "row",
+      "floors": [
+        1,
+        2
+      ],
+      "shortlist_reconstruction": [
+        "MED-ANT-B01::default",
+        "MED-ANT-B02::brick_walls",
+        "MED-ANT-B03::default",
+        "MED-ANT-B05::default"
+      ],
+      "b01_in_shortlist": true,
+      "final_class": "unsupported_composition_final",
+      "terrain_evidence": [
+        {
+          "required_step_m": 1.224,
+          "allowed_step_m": 0.75,
+          "raster_slope_deg": 8.401,
+          "allowed_slope_deg": 12.0
+        }
+      ],
+      "max_access_width_m": 9.518430714666255,
+      "message": "Architectural bodies, courts or structures do not fit the supplied domain. Constrained composition: Morphology: this authored layout/programme has no constrained composition operator; retain its native template. Street-front preference exhausted 10 bounded rigid poses; cadastral, roof and access constraints were retained. An earlier candidate fitting bodies/courts/structures failed terrain before roof/access checks: Architecture exceeds physical foundation/slope limits. Required step 1.224 m / allowed 0.750 m; raster slope 8.401 deg / allowed 12 deg."
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-2e46cd4722e0c655/parcel-e407b43e47321b7f/building",
+      "role": "dwelling.townhouse",
+      "function": "domestic",
+      "district": "elite",
+      "target_m2": 63.1,
+      "buildable_m2": 263.1960973176174,
+      "pin": null,
+      "composition": "row",
+      "floors": [
+        1,
+        2
+      ],
+      "shortlist_reconstruction": [
+        "MED-ANT-B05::flat_earth",
+        "MED-ANT-B02::default",
+        "MED-ANT-B01::brick_walls",
+        "MED-ANT-B03::brick_walls"
+      ],
+      "b01_in_shortlist": true,
+      "final_class": "unsupported_composition_final",
+      "terrain_evidence": [
+        {
+          "required_step_m": 1.733,
+          "allowed_step_m": 0.75,
+          "raster_slope_deg": 10.369,
+          "allowed_slope_deg": 12.0
+        }
+      ],
+      "max_access_width_m": 10.396824717242229,
+      "message": "Architectural bodies, courts or structures do not fit the supplied domain. Constrained composition: Morphology: this authored layout/programme has no constrained composition operator; retain its native template. Street-front preference exhausted 6 bounded rigid poses; cadastral, roof and access constraints were retained. An earlier candidate fitting bodies/courts/structures failed terrain before roof/access checks: Architecture exceeds physical foundation/slope limits. Required step 1.733 m / allowed 0.750 m; raster slope 10.369 deg / allowed 12 deg."
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-2e46cd4722e0c655/parcel-b9e7f460520583a8/building",
+      "role": "dwelling.townhouse",
+      "function": "domestic",
+      "district": "elite",
+      "target_m2": 42.1,
+      "buildable_m2": 857.9300310937688,
+      "pin": null,
+      "composition": "row",
+      "floors": [
+        1,
+        2
+      ],
+      "shortlist_reconstruction": [
+        "MED-ANT-B01::brick_walls",
+        "MED-ANT-B05::flat_earth",
+        "MED-ANT-B03::default",
+        "MED-ANT-B08::default"
+      ],
+      "b01_in_shortlist": true,
+      "final_class": "minimum_span_final",
+      "terrain_evidence": [
+        {
+          "required_step_m": 1.564,
+          "allowed_step_m": 0.75,
+          "raster_slope_deg": 14.061,
+          "allowed_slope_deg": 12.0
+        }
+      ],
+      "max_access_width_m": 19.49739315566992,
+      "message": "Architectural bodies, courts or structures do not fit the supplied domain. Constrained composition: Morphology: available span 25.997 x 42.071 m cannot preserve minimum ranges/court/access (32.149 x 32.149 m). Street-front preference exhausted 11 bounded rigid poses; cadastral, roof and access constraints were retained. An earlier candidate fitting bodies/courts/structures failed terrain before roof/access checks: Architecture exceeds physical foundation/slope limits. Required step 1.564 m / allowed 0.750 m; raster slope 14.061 deg / allowed 12 deg."
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-2e46cd4722e0c655/parcel-fb0865eb790361c2/building",
+      "role": "dwelling.townhouse",
+      "function": "domestic",
+      "district": "elite",
+      "target_m2": null,
+      "buildable_m2": 843.1632377188653,
+      "pin": null,
+      "composition": "row",
+      "floors": [
+        1,
+        2
+      ],
+      "shortlist_reconstruction": [
+        "MED-ANT-B01::brick_walls",
+        "MED-ANT-B03::brick_walls",
+        "MED-ANT-B05::default",
+        "MED-ANT-B02::default"
+      ],
+      "b01_in_shortlist": true,
+      "final_class": "unsupported_composition_final",
+      "terrain_evidence": [
+        {
+          "required_step_m": 1.561,
+          "allowed_step_m": 0.75,
+          "raster_slope_deg": 8.018,
+          "allowed_slope_deg": 12.0
+        }
+      ],
+      "max_access_width_m": 15.906360641430954,
+      "message": "Architectural bodies, courts or structures do not fit the supplied domain. Constrained composition: Morphology: this authored layout/programme has no constrained composition operator; retain its native template. Street-front preference exhausted 7 bounded rigid poses; cadastral, roof and access constraints were retained. An earlier candidate fitting bodies/courts/structures failed terrain before roof/access checks: Architecture exceeds physical foundation/slope limits. Required step 1.561 m / allowed 0.750 m; raster slope 8.018 deg / allowed 12 deg."
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-2e46cd4722e0c655/parcel-44a7d8e923a67cc0/building",
+      "role": "dwelling.townhouse",
+      "function": "domestic",
+      "district": "elite",
+      "target_m2": 34.4,
+      "buildable_m2": 225.82076748134568,
+      "pin": null,
+      "composition": "row",
+      "floors": [
+        1,
+        2
+      ],
+      "shortlist_reconstruction": [
+        "MED-ANT-B02::default",
+        "MED-ANT-B05::flat_earth",
+        "MED-ANT-B03::brick_walls",
+        "MED-ANT-B01::brick_walls"
+      ],
+      "b01_in_shortlist": true,
+      "final_class": "terrain_final",
+      "terrain_evidence": [
+        {
+          "required_step_m": 0.785,
+          "allowed_step_m": 0.75,
+          "raster_slope_deg": 8.85,
+          "allowed_slope_deg": 12.0
+        },
+        {
+          "required_step_m": 0.977,
+          "allowed_step_m": 0.75,
+          "raster_slope_deg": 8.943,
+          "allowed_slope_deg": 12.0
+        }
+      ],
+      "max_access_width_m": 21.309445533046645,
+      "message": "Architecture exceeds physical foundation/slope limits. Required step 0.785 m / allowed 0.750 m; raster slope 8.850 deg / allowed 12 deg. Street-front preference exhausted 3 bounded rigid poses; cadastral, roof and access constraints were retained. An earlier candidate fitting bodies/courts/structures failed terrain before roof/access checks: Architecture exceeds physical foundation/slope limits. Required step 0.977 m / allowed 0.750 m; raster slope 8.943 deg / allowed 12 deg."
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-00e63da3245ae0c1/parcel-b0f70c54661cfded/building",
+      "role": "dwelling.townhouse",
+      "function": "domestic",
+      "district": "elite",
+      "target_m2": 78,
+      "buildable_m2": 266.0534670990892,
+      "pin": null,
+      "composition": "row",
+      "floors": [
+        1,
+        2
+      ],
+      "shortlist_reconstruction": [
+        "MED-ANT-B01::default",
+        "MED-ANT-B03::brick_walls",
+        "MED-ANT-B05::flat_earth",
+        "MED-ANT-B02::default"
+      ],
+      "b01_in_shortlist": true,
+      "final_class": "unsupported_composition_final",
+      "terrain_evidence": [
+        {
+          "required_step_m": 2.315,
+          "allowed_step_m": 0.75,
+          "raster_slope_deg": 14.317,
+          "allowed_slope_deg": 12.0
+        }
+      ],
+      "max_access_width_m": 40.123017731641966,
+      "message": "Architectural bodies, courts or structures do not fit the supplied domain. Constrained composition: Morphology: this authored layout/programme has no constrained composition operator; retain its native template. Street-front preference exhausted 11 bounded rigid poses; cadastral, roof and access constraints were retained. An earlier candidate fitting bodies/courts/structures failed terrain before roof/access checks: Architecture exceeds physical foundation/slope limits. Required step 2.315 m / allowed 0.750 m; raster slope 14.317 deg / allowed 12 deg."
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-3ab358506d2bc144/parcel-245d9d3f984aa405/building",
+      "role": "dwelling.tenement",
+      "function": "domestic",
+      "district": "civic",
+      "target_m2": 437.5,
+      "buildable_m2": 630.59113306785,
+      "pin": null,
+      "composition": "row",
+      "floors": [
+        2,
+        2
+      ],
+      "shortlist_reconstruction": [
+        "MED-ANT-B05::flat_earth",
+        "MED-ANT-B02::default",
+        "MED-ANT-B08::default",
+        "MED-ANT-B03::brick_walls"
+      ],
+      "b01_in_shortlist": false,
+      "final_class": "unsupported_composition_final",
+      "terrain_evidence": [
+        {
+          "required_step_m": 1.259,
+          "allowed_step_m": 0.75,
+          "raster_slope_deg": 4.482,
+          "allowed_slope_deg": 12.0
+        }
+      ],
+      "max_access_width_m": 19.9213257821902,
+      "message": "Architectural bodies, courts or structures do not fit the supplied domain. Constrained composition: Morphology: this authored layout/programme has no constrained composition operator; retain its native template. Street-front preference exhausted 4 bounded rigid poses; cadastral, roof and access constraints were retained. An earlier candidate fitting bodies/courts/structures failed terrain before roof/access checks: Architecture exceeds physical foundation/slope limits. Required step 1.259 m / allowed 0.750 m; raster slope 4.482 deg / allowed 12 deg."
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-cc278c8c38f2a35e/parcel-e28c4d5331723e1b/building",
+      "role": "dwelling.shop",
+      "function": "mixed",
+      "district": "civic",
+      "target_m2": 87,
+      "buildable_m2": 202.4405768411234,
+      "pin": null,
+      "composition": "row",
+      "floors": [
+        1,
+        2
+      ],
+      "shortlist_reconstruction": [
+        "MED-ANT-B01::default",
+        "MED-ANT-B03::default",
+        "MED-ANT-B08::default",
+        "MED-ANT-B05::default"
+      ],
+      "b01_in_shortlist": true,
+      "final_class": "unsupported_composition_final",
+      "terrain_evidence": [],
+      "max_access_width_m": 10.04502252908157,
+      "message": "Architectural bodies, courts or structures do not fit the supplied domain. Constrained composition: Morphology: this authored layout/programme has no constrained composition operator; retain its native template. Street-front preference exhausted 4 bounded rigid poses; cadastral, roof and access constraints were retained."
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-9a8d1dd1ca0724b6/parcel-9a8d1dd1ca0724b6/building",
+      "role": "civic.basilica",
+      "function": "collective",
+      "district": "civic",
+      "target_m2": 824.1,
+      "buildable_m2": 2148.7591120055877,
+      "pin": "MED-ANT-B02",
+      "composition": "civic",
+      "floors": null,
+      "shortlist_reconstruction": null,
+      "b01_in_shortlist": null,
+      "final_class": "unsupported_composition_final",
+      "terrain_evidence": [
+        {
+          "required_step_m": 1.103,
+          "allowed_step_m": 0.75,
+          "raster_slope_deg": 4.199,
+          "allowed_slope_deg": 12.0
+        }
+      ],
+      "max_access_width_m": 62.319413199175656,
+      "message": "Architectural bodies, courts or structures do not fit the supplied domain. Constrained composition: Morphology: this authored layout/programme has no constrained composition operator; retain its native template. An earlier candidate fitting bodies/courts/structures failed terrain before roof/access checks: Architecture exceeds physical foundation/slope limits. Required step 1.103 m / allowed 0.750 m; raster slope 4.199 deg / allowed 12 deg."
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-85185a64f5d5cf34/parcel-625c405697bfb311/building",
+      "role": "dwelling.shop",
+      "function": "mixed",
+      "district": "civic",
+      "target_m2": 194,
+      "buildable_m2": 219.7552273371257,
+      "pin": null,
+      "composition": "row",
+      "floors": [
+        1,
+        2
+      ],
+      "shortlist_reconstruction": [
+        "MED-ANT-B05::flat_earth",
+        "MED-ANT-B01::flat_earth",
+        "MED-ANT-B02::brick_walls",
+        "MED-ANT-B08::default"
+      ],
+      "b01_in_shortlist": true,
+      "final_class": "minimum_span_final",
+      "terrain_evidence": [],
+      "max_access_width_m": 9.095610539456338,
+      "message": "Architectural bodies, courts or structures do not fit the supplied domain. Constrained composition: Morphology: available span 17.626 x 10.204 m cannot preserve minimum ranges/court/access (31.381 x 31.381 m). Street-front preference exhausted 2 bounded rigid poses; cadastral, roof and access constraints were retained."
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-84e9f19353251041/parcel-1efd5f10c42cdd79/building",
+      "role": "dwelling.house",
+      "function": "domestic",
+      "district": "port",
+      "target_m2": 118.5,
+      "buildable_m2": 278.11986505100504,
+      "pin": null,
+      "composition": "row",
+      "floors": [
+        1,
+        2
+      ],
+      "shortlist_reconstruction": [
+        "MED-ANT-B05::default",
+        "MED-ANT-B02::brick_walls",
+        "MED-ANT-B01::default",
+        "MED-ANT-B03::default"
+      ],
+      "b01_in_shortlist": true,
+      "final_class": "unsupported_composition_final",
+      "terrain_evidence": [
+        {
+          "required_step_m": 1.56,
+          "allowed_step_m": 0.75,
+          "raster_slope_deg": 11.752,
+          "allowed_slope_deg": 12.0
+        }
+      ],
+      "max_access_width_m": 14.45240844834731,
+      "message": "Architectural bodies, courts or structures do not fit the supplied domain. Constrained composition: Morphology: this authored layout/programme has no constrained composition operator; retain its native template. Street-front preference exhausted 6 bounded rigid poses; cadastral, roof and access constraints were retained. An earlier candidate fitting bodies/courts/structures failed terrain before roof/access checks: Architecture exceeds physical foundation/slope limits. Required step 1.560 m / allowed 0.750 m; raster slope 11.752 deg / allowed 12 deg."
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-fc701b8f5be6c10b/parcel-7760fc4f6d7bdbd8/building",
+      "role": "dwelling.tenement",
+      "function": "domestic",
+      "district": "port",
+      "target_m2": 77,
+      "buildable_m2": 472.1705493135378,
+      "pin": null,
+      "composition": "row",
+      "floors": [
+        2,
+        2
+      ],
+      "shortlist_reconstruction": [
+        "MED-ANT-B05::flat_earth",
+        "MED-ANT-B02::default",
+        "MED-ANT-B08::default",
+        "MED-ANT-B03::default"
+      ],
+      "b01_in_shortlist": false,
+      "final_class": "unsupported_composition_final",
+      "terrain_evidence": [],
+      "max_access_width_m": 11.388514537842587,
+      "message": "Architectural bodies, courts or structures do not fit the supplied domain. Constrained composition: Morphology: this authored layout/programme has no constrained composition operator; retain its native template. Street-front preference exhausted 3 bounded rigid poses; cadastral, roof and access constraints were retained."
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-fc701b8f5be6c10b/parcel-c51c9c7aeb3fb1ec/building",
+      "role": "dwelling.house",
+      "function": "domestic",
+      "district": "port",
+      "target_m2": 54.9,
+      "buildable_m2": 115.3548411061056,
+      "pin": null,
+      "composition": "row",
+      "floors": [
+        1,
+        2
+      ],
+      "shortlist_reconstruction": [
+        "MED-ANT-B08::default",
+        "MED-ANT-B02::default",
+        "MED-ANT-B03::default",
+        "MED-ANT-B05::default"
+      ],
+      "b01_in_shortlist": false,
+      "final_class": "unsupported_composition_final",
+      "terrain_evidence": [],
+      "max_access_width_m": 7.128677867055901,
+      "message": "Architectural bodies, courts or structures do not fit the supplied domain. Constrained composition: Morphology: this authored layout/programme has no constrained composition operator; retain its native template. Street-front preference exhausted 0 bounded rigid poses; cadastral, roof and access constraints were retained."
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-6443b1cb10da5820/parcel-7fd0a92ac25d161d/building",
+      "role": "dwelling.tenement",
+      "function": "domestic",
+      "district": "port",
+      "target_m2": 246.2,
+      "buildable_m2": 533.5883250772022,
+      "pin": null,
+      "composition": "row",
+      "floors": [
+        2,
+        2
+      ],
+      "shortlist_reconstruction": [
+        "MED-ANT-B03::default",
+        "MED-ANT-B01::brick_walls",
+        "MED-ANT-B02::default",
+        "MED-ANT-B05::default"
+      ],
+      "b01_in_shortlist": true,
+      "final_class": "unsupported_composition_final",
+      "terrain_evidence": [
+        {
+          "required_step_m": 1.661,
+          "allowed_step_m": 0.75,
+          "raster_slope_deg": 12.726,
+          "allowed_slope_deg": 12.0
+        }
+      ],
+      "max_access_width_m": 12.928787814555912,
+      "message": "Architectural bodies, courts or structures do not fit the supplied domain. Constrained composition: Morphology: this authored layout/programme has no constrained composition operator; retain its native template. Street-front preference exhausted 6 bounded rigid poses; cadastral, roof and access constraints were retained. An earlier candidate fitting bodies/courts/structures failed terrain before roof/access checks: Architecture exceeds physical foundation/slope limits. Required step 1.661 m / allowed 0.750 m; raster slope 12.726 deg / allowed 12 deg."
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-441f08ed0eb22d2f/parcel-8aaee29428eaf1f8/building",
+      "role": "dwelling.house",
+      "function": "domestic",
+      "district": "port",
+      "target_m2": 151.2,
+      "buildable_m2": 248.04583724355325,
+      "pin": null,
+      "composition": "row",
+      "floors": [
+        1,
+        2
+      ],
+      "shortlist_reconstruction": [
+        "MED-ANT-B02::brick_walls",
+        "MED-ANT-B03::brick_walls",
+        "MED-ANT-B01::adobe_walls",
+        "MED-ANT-B08::default"
+      ],
+      "b01_in_shortlist": true,
+      "final_class": "minimum_span_final",
+      "terrain_evidence": [
+        {
+          "required_step_m": 1.248,
+          "allowed_step_m": 0.75,
+          "raster_slope_deg": 7.722,
+          "allowed_slope_deg": 12.0
+        }
+      ],
+      "max_access_width_m": 9.050402055420674,
+      "message": "Architectural bodies, courts or structures do not fit the supplied domain. Constrained composition: Morphology: available span 13.091 x 19.675 m cannot preserve minimum ranges/court/access (24.564 x 32.360 m). Street-front preference exhausted 4 bounded rigid poses; cadastral, roof and access constraints were retained. An earlier candidate fitting bodies/courts/structures failed terrain before roof/access checks: Architecture exceeds physical foundation/slope limits. Required step 1.248 m / allowed 0.750 m; raster slope 7.722 deg / allowed 12 deg."
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-441f08ed0eb22d2f/parcel-375da66ee1259cf9/building",
+      "role": "dwelling.tenement",
+      "function": "domestic",
+      "district": "port",
+      "target_m2": 166.3,
+      "buildable_m2": 383.3161695324816,
+      "pin": null,
+      "composition": "row",
+      "floors": [
+        2,
+        2
+      ],
+      "shortlist_reconstruction": [
+        "MED-ANT-B02::brick_walls",
+        "MED-ANT-B05::flat_earth",
+        "MED-ANT-B03::default",
+        "MED-ANT-B01::adobe_walls"
+      ],
+      "b01_in_shortlist": true,
+      "final_class": "terrain_final",
+      "terrain_evidence": [
+        {
+          "required_step_m": 1.553,
+          "allowed_step_m": 0.75,
+          "raster_slope_deg": 9.551,
+          "allowed_slope_deg": 12.0
+        }
+      ],
+      "max_access_width_m": 9.987225260074126,
+      "message": "Architecture exceeds physical foundation/slope limits. Required step 1.553 m / allowed 0.750 m; raster slope 9.551 deg / allowed 12 deg. Street-front preference exhausted 3 bounded rigid poses; cadastral, roof and access constraints were retained."
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-441f08ed0eb22d2f/parcel-d8d40a9e9e150320/building",
+      "role": "dwelling.house",
+      "function": "domestic",
+      "district": "port",
+      "target_m2": 89.2,
+      "buildable_m2": 238.26385625312105,
+      "pin": null,
+      "composition": "row",
+      "floors": [
+        1,
+        2
+      ],
+      "shortlist_reconstruction": [
+        "MED-ANT-B08::default",
+        "MED-ANT-B01::default",
+        "MED-ANT-B02::brick_walls",
+        "MED-ANT-B05::default"
+      ],
+      "b01_in_shortlist": true,
+      "final_class": "unsupported_composition_final",
+      "terrain_evidence": [
+        {
+          "required_step_m": 1.256,
+          "allowed_step_m": 0.75,
+          "raster_slope_deg": 9.372,
+          "allowed_slope_deg": 12.0
+        }
+      ],
+      "max_access_width_m": 14.84041831492766,
+      "message": "Architectural bodies, courts or structures do not fit the supplied domain. Constrained composition: Morphology: this authored layout/programme has no constrained composition operator; retain its native template. Street-front preference exhausted 7 bounded rigid poses; cadastral, roof and access constraints were retained. An earlier candidate fitting bodies/courts/structures failed terrain before roof/access checks: Architecture exceeds physical foundation/slope limits. Required step 1.256 m / allowed 0.750 m; raster slope 9.372 deg / allowed 12 deg."
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-441f08ed0eb22d2f/parcel-7c7a523b24120403/building",
+      "role": "dwelling.tenement",
+      "function": "domestic",
+      "district": "port",
+      "target_m2": 289.9,
+      "buildable_m2": 371.0965958866291,
+      "pin": null,
+      "composition": "row",
+      "floors": [
+        2,
+        2
+      ],
+      "shortlist_reconstruction": [
+        "MED-ANT-B02::brick_walls",
+        "MED-ANT-B05::flat_earth",
+        "MED-ANT-B01::default",
+        "MED-ANT-B03::brick_walls"
+      ],
+      "b01_in_shortlist": true,
+      "final_class": "unsupported_composition_final",
+      "terrain_evidence": [
+        {
+          "required_step_m": 1.003,
+          "allowed_step_m": 0.75,
+          "raster_slope_deg": 7.228,
+          "allowed_slope_deg": 12.0
+        }
+      ],
+      "max_access_width_m": 16.335324836184355,
+      "message": "Architectural bodies, courts or structures do not fit the supplied domain. Constrained composition: Morphology: this authored layout/programme has no constrained composition operator; retain its native template. Street-front preference exhausted 5 bounded rigid poses; cadastral, roof and access constraints were retained. An earlier candidate fitting bodies/courts/structures failed terrain before roof/access checks: Architecture exceeds physical foundation/slope limits. Required step 1.003 m / allowed 0.750 m; raster slope 7.228 deg / allowed 12 deg."
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-f567fcfd5ee93e1d/parcel-f567fcfd5ee93e1d/building",
+      "role": "civic.thermae",
+      "function": "collective",
+      "district": "port",
+      "target_m2": 1341.6,
+      "buildable_m2": 2197.244935440831,
+      "pin": "MED-ANT-B02",
+      "composition": "civic",
+      "floors": null,
+      "shortlist_reconstruction": null,
+      "b01_in_shortlist": null,
+      "final_class": "unsupported_composition_final",
+      "terrain_evidence": [
+        {
+          "required_step_m": 2.59,
+          "allowed_step_m": 0.75,
+          "raster_slope_deg": 6.897,
+          "allowed_slope_deg": 12.0
+        }
+      ],
+      "max_access_width_m": 56.86826152111881,
+      "message": "Architectural bodies, courts or structures do not fit the supplied domain. Constrained composition: Morphology: this authored layout/programme has no constrained composition operator; retain its native template. An earlier candidate fitting bodies/courts/structures failed terrain before roof/access checks: Architecture exceeds physical foundation/slope limits. Required step 2.590 m / allowed 0.750 m; raster slope 6.897 deg / allowed 12 deg."
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-49c63ab9106537e6/parcel-54a5b5f75e7b5bd7/building",
+      "role": "dwelling.house",
+      "function": "domestic",
+      "district": "port",
+      "target_m2": 79.1,
+      "buildable_m2": 973.9903966602869,
+      "pin": null,
+      "composition": "row",
+      "floors": [
+        1,
+        2
+      ],
+      "shortlist_reconstruction": [
+        "MED-ANT-B01::adobe_walls",
+        "MED-ANT-B05::flat_earth",
+        "MED-ANT-B08::default",
+        "MED-ANT-B03::brick_walls"
+      ],
+      "b01_in_shortlist": true,
+      "final_class": "unsupported_composition_final",
+      "terrain_evidence": [
+        {
+          "required_step_m": 2.118,
+          "allowed_step_m": 0.75,
+          "raster_slope_deg": 13.542,
+          "allowed_slope_deg": 12.0
+        }
+      ],
+      "max_access_width_m": 15.579004211705934,
+      "message": "Architectural bodies, courts or structures do not fit the supplied domain. Constrained composition: Morphology: this authored layout/programme has no constrained composition operator; retain its native template. Street-front preference exhausted 11 bounded rigid poses; cadastral, roof and access constraints were retained. An earlier candidate fitting bodies/courts/structures failed terrain before roof/access checks: Architecture exceeds physical foundation/slope limits. Required step 2.118 m / allowed 0.750 m; raster slope 13.542 deg / allowed 12 deg."
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-ca66ab0f2ca3ae74/parcel-ced2e443653235dd/building",
+      "role": "dwelling.shop",
+      "function": "mixed",
+      "district": "port",
+      "target_m2": 495.2,
+      "buildable_m2": 696.3590554702096,
+      "pin": null,
+      "composition": "row",
+      "floors": [
+        1,
+        2
+      ],
+      "shortlist_reconstruction": [
+        "MED-ANT-B01::brick_walls",
+        "MED-ANT-B05::default",
+        "MED-ANT-B02::default",
+        "MED-ANT-B03::brick_walls"
+      ],
+      "b01_in_shortlist": true,
+      "final_class": "unsupported_composition_final",
+      "terrain_evidence": [
+        {
+          "required_step_m": 2.24,
+          "allowed_step_m": 0.75,
+          "raster_slope_deg": 11.267,
+          "allowed_slope_deg": 12.0
+        }
+      ],
+      "max_access_width_m": 21.49401378631592,
+      "message": "Architectural bodies, courts or structures do not fit the supplied domain. Constrained composition: Morphology: this authored layout/programme has no constrained composition operator; retain its native template. Street-front preference exhausted 6 bounded rigid poses; cadastral, roof and access constraints were retained. An earlier candidate fitting bodies/courts/structures failed terrain before roof/access checks: Architecture exceeds physical foundation/slope limits. Required step 2.240 m / allowed 0.750 m; raster slope 11.267 deg / allowed 12 deg."
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-a59de6386af41317/parcel-1155a2f2f0558ea3/building",
+      "role": "dwelling.tenement",
+      "function": "domestic",
+      "district": "port",
+      "target_m2": 262.3,
+      "buildable_m2": 381.07303785625845,
+      "pin": null,
+      "composition": "row",
+      "floors": [
+        2,
+        2
+      ],
+      "shortlist_reconstruction": [
+        "MED-ANT-B03::default",
+        "MED-ANT-B01::flat_earth",
+        "MED-ANT-B02::default",
+        "MED-ANT-B05::flat_earth"
+      ],
+      "b01_in_shortlist": true,
+      "final_class": "unsupported_composition_final",
+      "terrain_evidence": [],
+      "max_access_width_m": 7.467202970290663,
+      "message": "Architectural bodies, courts or structures do not fit the supplied domain. Constrained composition: Morphology: this authored layout/programme has no constrained composition operator; retain its native template. Street-front preference exhausted 4 bounded rigid poses; cadastral, roof and access constraints were retained."
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-a59de6386af41317/parcel-d81a9db3de5c1002/building",
+      "role": "dwelling.tenement",
+      "function": "domestic",
+      "district": "port",
+      "target_m2": 74,
+      "buildable_m2": 371.95568027952686,
+      "pin": null,
+      "composition": "row",
+      "floors": [
+        2,
+        2
+      ],
+      "shortlist_reconstruction": [
+        "MED-ANT-B02::brick_walls",
+        "MED-ANT-B03::brick_walls",
+        "MED-ANT-B01::flat_earth",
+        "MED-ANT-B08::default"
+      ],
+      "b01_in_shortlist": true,
+      "final_class": "minimum_span_final",
+      "terrain_evidence": [
+        {
+          "required_step_m": 1.356,
+          "allowed_step_m": 0.75,
+          "raster_slope_deg": 7.069,
+          "allowed_slope_deg": 12.0
+        }
+      ],
+      "max_access_width_m": 9.342040051013804,
+      "message": "Architectural bodies, courts or structures do not fit the supplied domain. Constrained composition: Morphology: available span 6.926 x 37.429 m cannot preserve minimum ranges/court/access (25.671 x 33.503 m). Street-front preference exhausted 6 bounded rigid poses; cadastral, roof and access constraints were retained. An earlier candidate fitting bodies/courts/structures failed terrain before roof/access checks: Architecture exceeds physical foundation/slope limits. Required step 1.356 m / allowed 0.750 m; raster slope 7.069 deg / allowed 12 deg."
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-cd128d2dfb8b1227/parcel-0be40efe76000315/building",
+      "role": "dwelling.tenement",
+      "function": "domestic",
+      "district": "port",
+      "target_m2": 277.9,
+      "buildable_m2": 395.22485626814887,
+      "pin": null,
+      "composition": "row",
+      "floors": [
+        2,
+        2
+      ],
+      "shortlist_reconstruction": [
+        "MED-ANT-B03::brick_walls",
+        "MED-ANT-B02::brick_walls",
+        "MED-ANT-B08::default",
+        "MED-ANT-B05::flat_earth"
+      ],
+      "b01_in_shortlist": false,
+      "final_class": "unsupported_composition_final",
+      "terrain_evidence": [],
+      "max_access_width_m": 16.002843516285196,
+      "message": "Architectural bodies, courts or structures do not fit the supplied domain. Constrained composition: Morphology: this authored layout/programme has no constrained composition operator; retain its native template. Street-front preference exhausted 1 bounded rigid poses; cadastral, roof and access constraints were retained."
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-ca4bfee8d82ff8f5/parcel-10431ad659a5aa6a/building",
+      "role": "dwelling.tenement",
+      "function": "domestic",
+      "district": "port",
+      "target_m2": 71,
+      "buildable_m2": 553.2699658689089,
+      "pin": null,
+      "composition": "row",
+      "floors": [
+        2,
+        2
+      ],
+      "shortlist_reconstruction": [
+        "MED-ANT-B08::default",
+        "MED-ANT-B02::default",
+        "MED-ANT-B05::default",
+        "MED-ANT-B03::default"
+      ],
+      "b01_in_shortlist": false,
+      "final_class": "unsupported_composition_final",
+      "terrain_evidence": [],
+      "max_access_width_m": 20.499374096109364,
+      "message": "Architectural bodies, courts or structures do not fit the supplied domain. Constrained composition: Morphology: this authored layout/programme has no constrained composition operator; retain its native template. Street-front preference exhausted 7 bounded rigid poses; cadastral, roof and access constraints were retained."
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-ca4bfee8d82ff8f5/parcel-00ff72baf61cfa96/building",
+      "role": "dwelling.house",
+      "function": "domestic",
+      "district": "port",
+      "target_m2": 170.1,
+      "buildable_m2": 320.1951109813526,
+      "pin": null,
+      "composition": "row",
+      "floors": [
+        1,
+        2
+      ],
+      "shortlist_reconstruction": [
+        "MED-ANT-B02::brick_walls",
+        "MED-ANT-B01::default",
+        "MED-ANT-B03::brick_walls",
+        "MED-ANT-B05::flat_earth"
+      ],
+      "b01_in_shortlist": true,
+      "final_class": "unsupported_composition_final",
+      "terrain_evidence": [
+        {
+          "required_step_m": 1.459,
+          "allowed_step_m": 0.75,
+          "raster_slope_deg": 7.649,
+          "allowed_slope_deg": 12.0
+        }
+      ],
+      "max_access_width_m": 16.734028141367567,
+      "message": "Architectural bodies, courts or structures do not fit the supplied domain. Constrained composition: Morphology: this authored layout/programme has no constrained composition operator; retain its native template. Street-front preference exhausted 5 bounded rigid poses; cadastral, roof and access constraints were retained. An earlier candidate fitting bodies/courts/structures failed terrain before roof/access checks: Architecture exceeds physical foundation/slope limits. Required step 1.459 m / allowed 0.750 m; raster slope 7.649 deg / allowed 12 deg."
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-ca4bfee8d82ff8f5/parcel-e3ad1e4e3cc28021/building",
+      "role": "dwelling.house",
+      "function": "domestic",
+      "district": "port",
+      "target_m2": 207.6,
+      "buildable_m2": 321.8183108046651,
+      "pin": null,
+      "composition": "row",
+      "floors": [
+        1,
+        2
+      ],
+      "shortlist_reconstruction": [
+        "MED-ANT-B03::default",
+        "MED-ANT-B01::adobe_walls",
+        "MED-ANT-B02::brick_walls",
+        "MED-ANT-B08::default"
+      ],
+      "b01_in_shortlist": true,
+      "final_class": "minimum_span_final",
+      "terrain_evidence": [
+        {
+          "required_step_m": 1.368,
+          "allowed_step_m": 0.75,
+          "raster_slope_deg": 11.119,
+          "allowed_slope_deg": 12.0
+        }
+      ],
+      "max_access_width_m": 14.404734476063943,
+      "message": "Architectural bodies, courts or structures do not fit the supplied domain. Constrained composition: Morphology: available span 22.611 x 15.934 m cannot preserve minimum ranges/court/access (23.969 x 23.969 m). Street-front preference exhausted 8 bounded rigid poses; cadastral, roof and access constraints were retained. An earlier candidate fitting bodies/courts/structures failed terrain before roof/access checks: Architecture exceeds physical foundation/slope limits. Required step 1.368 m / allowed 0.750 m; raster slope 11.119 deg / allowed 12 deg."
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-8ea8f3b57e06705f/parcel-a5bdac37759faea7/building",
+      "role": "dwelling.tenement",
+      "function": "domestic",
+      "district": "port",
+      "target_m2": 247.6,
+      "buildable_m2": 388.66830769600347,
+      "pin": null,
+      "composition": "row",
+      "floors": [
+        2,
+        2
+      ],
+      "shortlist_reconstruction": [
+        "MED-ANT-B05::default",
+        "MED-ANT-B03::brick_walls",
+        "MED-ANT-B08::default",
+        "MED-ANT-B01::brick_walls"
+      ],
+      "b01_in_shortlist": true,
+      "final_class": "access_final",
+      "terrain_evidence": [
+        {
+          "required_step_m": 0.753,
+          "allowed_step_m": 0.75,
+          "raster_slope_deg": 4.969,
+          "allowed_slope_deg": 12.0
+        }
+      ],
+      "max_access_width_m": 24.757136890236197,
+      "message": "No unobstructed planning connection from building to declared frontage. Street-front preference exhausted 12 bounded rigid poses; cadastral, roof and access constraints were retained. An earlier candidate fitting bodies/courts/structures failed terrain before roof/access checks: Architecture exceeds physical foundation/slope limits. Required step 0.753 m / allowed 0.750 m; raster slope 4.969 deg / allowed 12 deg."
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-8ea8f3b57e06705f/parcel-a212fc032a408ad2/building",
+      "role": "dwelling.tenement",
+      "function": "domestic",
+      "district": "port",
+      "target_m2": 307.6,
+      "buildable_m2": 556.7827786519192,
+      "pin": null,
+      "composition": "row",
+      "floors": [
+        2,
+        2
+      ],
+      "shortlist_reconstruction": [
+        "MED-ANT-B01::adobe_walls",
+        "MED-ANT-B02::default",
+        "MED-ANT-B05::flat_earth",
+        "MED-ANT-B08::default"
+      ],
+      "b01_in_shortlist": true,
+      "final_class": "minimum_span_final",
+      "terrain_evidence": [
+        {
+          "required_step_m": 1.527,
+          "allowed_step_m": 0.75,
+          "raster_slope_deg": 9.596,
+          "allowed_slope_deg": 12.0
+        }
+      ],
+      "max_access_width_m": 27.96939487002323,
+      "message": "Architectural bodies, courts or structures do not fit the supplied domain. Constrained composition: Morphology: available span 32.045 x 20.249 m cannot preserve minimum ranges/court/access (25.068 x 33.389 m). Street-front preference exhausted 8 bounded rigid poses; cadastral, roof and access constraints were retained. An earlier candidate fitting bodies/courts/structures failed terrain before roof/access checks: Architecture exceeds physical foundation/slope limits. Required step 1.527 m / allowed 0.750 m; raster slope 9.596 deg / allowed 12 deg."
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-8ea8f3b57e06705f/parcel-bc23891b6963d1ba/building",
+      "role": "dwelling.tenement",
+      "function": "domestic",
+      "district": "port",
+      "target_m2": 365.8,
+      "buildable_m2": 564.7284704693593,
+      "pin": null,
+      "composition": "row",
+      "floors": [
+        2,
+        2
+      ],
+      "shortlist_reconstruction": [
+        "MED-ANT-B01::flat_earth",
+        "MED-ANT-B03::brick_walls",
+        "MED-ANT-B02::default",
+        "MED-ANT-B05::flat_earth"
+      ],
+      "b01_in_shortlist": true,
+      "final_class": "unsupported_composition_final",
+      "terrain_evidence": [
+        {
+          "required_step_m": 1.587,
+          "allowed_step_m": 0.75,
+          "raster_slope_deg": 7.241,
+          "allowed_slope_deg": 12.0
+        }
+      ],
+      "max_access_width_m": 17.495284306771843,
+      "message": "Architectural bodies, courts or structures do not fit the supplied domain. Constrained composition: Morphology: this authored layout/programme has no constrained composition operator; retain its native template. Street-front preference exhausted 8 bounded rigid poses; cadastral, roof and access constraints were retained. An earlier candidate fitting bodies/courts/structures failed terrain before roof/access checks: Architecture exceeds physical foundation/slope limits. Required step 1.587 m / allowed 0.750 m; raster slope 7.241 deg / allowed 12 deg."
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-18960e8ea0e506fb/parcel-d66390dc8a736867/building",
+      "role": "dwelling.house",
+      "function": "domestic",
+      "district": "port",
+      "target_m2": 56,
+      "buildable_m2": 164.26536748092622,
+      "pin": null,
+      "composition": "row",
+      "floors": [
+        1,
+        2
+      ],
+      "shortlist_reconstruction": [
+        "MED-ANT-B03::brick_walls",
+        "MED-ANT-B05::default",
+        "MED-ANT-B08::default",
+        "MED-ANT-B01::flat_earth"
+      ],
+      "b01_in_shortlist": true,
+      "final_class": "terrain_final",
+      "terrain_evidence": [
+        {
+          "required_step_m": 0.967,
+          "allowed_step_m": 0.75,
+          "raster_slope_deg": 11.398,
+          "allowed_slope_deg": 12.0
+        }
+      ],
+      "max_access_width_m": 12.966262423818163,
+      "message": "Architecture exceeds physical foundation/slope limits. Required step 0.967 m / allowed 0.750 m; raster slope 11.398 deg / allowed 12 deg. Street-front preference exhausted 4 bounded rigid poses; cadastral, roof and access constraints were retained."
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-18960e8ea0e506fb/parcel-51a64a3352629186/building",
+      "role": "dwelling.tenement",
+      "function": "domestic",
+      "district": "port",
+      "target_m2": 231.9,
+      "buildable_m2": 326.79852658556774,
+      "pin": null,
+      "composition": "row",
+      "floors": [
+        2,
+        2
+      ],
+      "shortlist_reconstruction": [
+        "MED-ANT-B05::flat_earth",
+        "MED-ANT-B02::default",
+        "MED-ANT-B01::flat_earth",
+        "MED-ANT-B08::default"
+      ],
+      "b01_in_shortlist": true,
+      "final_class": "minimum_span_final",
+      "terrain_evidence": [
+        {
+          "required_step_m": 2.096,
+          "allowed_step_m": 0.75,
+          "raster_slope_deg": 10.96,
+          "allowed_slope_deg": 12.0
+        }
+      ],
+      "max_access_width_m": 11.427708170072428,
+      "message": "Architectural bodies, courts or structures do not fit the supplied domain. Constrained composition: Morphology: available span 12.526 x 23.689 m cannot preserve minimum ranges/court/access (26.285 x 34.189 m). Street-front preference exhausted 6 bounded rigid poses; cadastral, roof and access constraints were retained. An earlier candidate fitting bodies/courts/structures failed terrain before roof/access checks: Architecture exceeds physical foundation/slope limits. Required step 2.096 m / allowed 0.750 m; raster slope 10.960 deg / allowed 12 deg."
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-18960e8ea0e506fb/parcel-88cfc0fab5f71e45/building",
+      "role": "dwelling.house",
+      "function": "domestic",
+      "district": "port",
+      "target_m2": 182.5,
+      "buildable_m2": 266.26873548468575,
+      "pin": null,
+      "composition": "row",
+      "floors": [
+        1,
+        2
+      ],
+      "shortlist_reconstruction": [
+        "MED-ANT-B02::brick_walls",
+        "MED-ANT-B03::brick_walls",
+        "MED-ANT-B01::brick_walls",
+        "MED-ANT-B05::default"
+      ],
+      "b01_in_shortlist": true,
+      "final_class": "unsupported_composition_final",
+      "terrain_evidence": [
+        {
+          "required_step_m": 1.736,
+          "allowed_step_m": 0.75,
+          "raster_slope_deg": 11.396,
+          "allowed_slope_deg": 12.0
+        }
+      ],
+      "max_access_width_m": 8.12504373496191,
+      "message": "Architectural bodies, courts or structures do not fit the supplied domain. Constrained composition: Morphology: this authored layout/programme has no constrained composition operator; retain its native template. Street-front preference exhausted 4 bounded rigid poses; cadastral, roof and access constraints were retained. An earlier candidate fitting bodies/courts/structures failed terrain before roof/access checks: Architecture exceeds physical foundation/slope limits. Required step 1.736 m / allowed 0.750 m; raster slope 11.396 deg / allowed 12 deg."
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-18960e8ea0e506fb/parcel-32678426edd94b13/building",
+      "role": "dwelling.tenement",
+      "function": "domestic",
+      "district": "port",
+      "target_m2": 82.8,
+      "buildable_m2": 368.9570430968888,
+      "pin": null,
+      "composition": "row",
+      "floors": [
+        2,
+        2
+      ],
+      "shortlist_reconstruction": [
+        "MED-ANT-B03::default",
+        "MED-ANT-B02::brick_walls",
+        "MED-ANT-B08::default",
+        "MED-ANT-B05::default"
+      ],
+      "b01_in_shortlist": false,
+      "final_class": "unsupported_composition_final",
+      "terrain_evidence": [],
+      "max_access_width_m": 23.255543754835397,
+      "message": "Architectural bodies, courts or structures do not fit the supplied domain. Constrained composition: Morphology: this authored layout/programme has no constrained composition operator; retain its native template. Street-front preference exhausted 3 bounded rigid poses; cadastral, roof and access constraints were retained."
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-18960e8ea0e506fb/parcel-be2f4777c0fac59e/building",
+      "role": "dwelling.tenement",
+      "function": "domestic",
+      "district": "port",
+      "target_m2": 80.8,
+      "buildable_m2": 485.91018707398325,
+      "pin": null,
+      "composition": "row",
+      "floors": [
+        2,
+        2
+      ],
+      "shortlist_reconstruction": [
+        "MED-ANT-B02::default",
+        "MED-ANT-B03::default",
+        "MED-ANT-B05::default",
+        "MED-ANT-B08::default"
+      ],
+      "b01_in_shortlist": false,
+      "final_class": "minimum_span_final",
+      "terrain_evidence": [],
+      "max_access_width_m": 10.219941375397704,
+      "message": "Architectural bodies, courts or structures do not fit the supplied domain. Constrained composition: Morphology: available span 8.116 x 45.441 m cannot preserve minimum ranges/court/access (25.243 x 32.881 m). Street-front preference exhausted 4 bounded rigid poses; cadastral, roof and access constraints were retained."
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-18960e8ea0e506fb/parcel-e2a5abe296b48653/building",
+      "role": "dwelling.tenement",
+      "function": "domestic",
+      "district": "port",
+      "target_m2": 80.6,
+      "buildable_m2": 353.98309284448624,
+      "pin": null,
+      "composition": "row",
+      "floors": [
+        2,
+        2
+      ],
+      "shortlist_reconstruction": [
+        "MED-ANT-B02::default",
+        "MED-ANT-B03::brick_walls",
+        "MED-ANT-B05::flat_earth",
+        "MED-ANT-B08::default"
+      ],
+      "b01_in_shortlist": false,
+      "final_class": "minimum_span_final",
+      "terrain_evidence": [],
+      "max_access_width_m": 11.960432600424062,
+      "message": "Architectural bodies, courts or structures do not fit the supplied domain. Constrained composition: Morphology: available span 17.992 x 29.533 m cannot preserve minimum ranges/court/access (20.047 x 26.702 m). Street-front preference exhausted 7 bounded rigid poses; cadastral, roof and access constraints were retained."
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-18960e8ea0e506fb/parcel-1b46b9d4b92bbf24/building",
+      "role": "dwelling.house",
+      "function": "domestic",
+      "district": "port",
+      "target_m2": 78,
+      "buildable_m2": 205.39545419998467,
+      "pin": null,
+      "composition": "row",
+      "floors": [
+        1,
+        2
+      ],
+      "shortlist_reconstruction": [
+        "MED-ANT-B03::default",
+        "MED-ANT-B01::brick_walls",
+        "MED-ANT-B05::flat_earth",
+        "MED-ANT-B02::default"
+      ],
+      "b01_in_shortlist": true,
+      "final_class": "unsupported_composition_final",
+      "terrain_evidence": [
+        {
+          "required_step_m": 0.802,
+          "allowed_step_m": 0.75,
+          "raster_slope_deg": 8.509,
+          "allowed_slope_deg": 12.0
+        }
+      ],
+      "max_access_width_m": 9.328980890005578,
+      "message": "Architectural bodies, courts or structures do not fit the supplied domain. Constrained composition: Morphology: this authored layout/programme has no constrained composition operator; retain its native template. Street-front preference exhausted 4 bounded rigid poses; cadastral, roof and access constraints were retained. An earlier candidate fitting bodies/courts/structures failed terrain before roof/access checks: Architecture exceeds physical foundation/slope limits. Required step 0.802 m / allowed 0.750 m; raster slope 8.509 deg / allowed 12 deg."
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-237649ec8dc4ead7/parcel-ee922fdee52cdd99/building",
+      "role": "dwelling.house",
+      "function": "domestic",
+      "district": "port",
+      "target_m2": 97,
+      "buildable_m2": 744.420159899164,
+      "pin": null,
+      "composition": "row",
+      "floors": [
+        1,
+        2
+      ],
+      "shortlist_reconstruction": [
+        "MED-ANT-B08::default",
+        "MED-ANT-B02::brick_walls",
+        "MED-ANT-B03::default",
+        "MED-ANT-B05::default"
+      ],
+      "b01_in_shortlist": false,
+      "final_class": "unsupported_composition_final",
+      "terrain_evidence": [],
+      "max_access_width_m": 32.039790633731805,
+      "message": "Architectural bodies, courts or structures do not fit the supplied domain. Constrained composition: Morphology: this authored layout/programme has no constrained composition operator; retain its native template. Street-front preference exhausted 4 bounded rigid poses; cadastral, roof and access constraints were retained."
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-237649ec8dc4ead7/parcel-b0d912632989377d/building",
+      "role": "dwelling.house",
+      "function": "domestic",
+      "district": "port",
+      "target_m2": 458.3,
+      "buildable_m2": 774.6046605831943,
+      "pin": null,
+      "composition": "row",
+      "floors": [
+        1,
+        2
+      ],
+      "shortlist_reconstruction": [
+        "MED-ANT-B03::default",
+        "MED-ANT-B01::adobe_walls",
+        "MED-ANT-B08::default",
+        "MED-ANT-B02::brick_walls"
+      ],
+      "b01_in_shortlist": true,
+      "final_class": "unsupported_composition_final",
+      "terrain_evidence": [
+        {
+          "required_step_m": 2.214,
+          "allowed_step_m": 0.75,
+          "raster_slope_deg": 10.294,
+          "allowed_slope_deg": 12.0
+        }
+      ],
+      "max_access_width_m": 7.494347118842424,
+      "message": "Architectural bodies, courts or structures do not fit the supplied domain. Constrained composition: Morphology: this authored layout/programme has no constrained composition operator; retain its native template. Street-front preference exhausted 8 bounded rigid poses; cadastral, roof and access constraints were retained. An earlier candidate fitting bodies/courts/structures failed terrain before roof/access checks: Architecture exceeds physical foundation/slope limits. Required step 2.214 m / allowed 0.750 m; raster slope 10.294 deg / allowed 12 deg."
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-869de491bfe25777/parcel-2a77099a1d516ed1/building",
+      "role": "dwelling.tenement",
+      "function": "domestic",
+      "district": "port",
+      "target_m2": 406.6,
+      "buildable_m2": 617.7477937717922,
+      "pin": null,
+      "composition": "row",
+      "floors": [
+        2,
+        2
+      ],
+      "shortlist_reconstruction": [
+        "MED-ANT-B02::default",
+        "MED-ANT-B01::adobe_walls",
+        "MED-ANT-B05::default",
+        "MED-ANT-B03::default"
+      ],
+      "b01_in_shortlist": true,
+      "final_class": "unsupported_composition_final",
+      "terrain_evidence": [],
+      "max_access_width_m": 5.114357414426549,
+      "message": "Architectural bodies, courts or structures do not fit the supplied domain. Constrained composition: Morphology: this authored layout/programme has no constrained composition operator; retain its native template. Street-front preference exhausted 6 bounded rigid poses; cadastral, roof and access constraints were retained."
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-bba61ddd28e14aca/parcel-0f0adab55642e65f/building",
+      "role": "dwelling.tenement",
+      "function": "domestic",
+      "district": "port",
+      "target_m2": 242.6,
+      "buildable_m2": 381.76249289046973,
+      "pin": null,
+      "composition": "row",
+      "floors": [
+        2,
+        2
+      ],
+      "shortlist_reconstruction": [
+        "MED-ANT-B01::brick_walls",
+        "MED-ANT-B03::default",
+        "MED-ANT-B02::brick_walls",
+        "MED-ANT-B05::flat_earth"
+      ],
+      "b01_in_shortlist": true,
+      "final_class": "unsupported_composition_final",
+      "terrain_evidence": [
+        {
+          "required_step_m": 0.92,
+          "allowed_step_m": 0.75,
+          "raster_slope_deg": 5.627,
+          "allowed_slope_deg": 12.0
+        }
+      ],
+      "max_access_width_m": 19.92556399192747,
+      "message": "Architectural bodies, courts or structures do not fit the supplied domain. Constrained composition: Morphology: this authored layout/programme has no constrained composition operator; retain its native template. Street-front preference exhausted 8 bounded rigid poses; cadastral, roof and access constraints were retained. An earlier candidate fitting bodies/courts/structures failed terrain before roof/access checks: Architecture exceeds physical foundation/slope limits. Required step 0.920 m / allowed 0.750 m; raster slope 5.627 deg / allowed 12 deg."
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-bba61ddd28e14aca/parcel-7093fb345835cad0/building",
+      "role": "dwelling.tenement",
+      "function": "domestic",
+      "district": "port",
+      "target_m2": 125.4,
+      "buildable_m2": 377.5491943107918,
+      "pin": null,
+      "composition": "row",
+      "floors": [
+        2,
+        2
+      ],
+      "shortlist_reconstruction": [
+        "MED-ANT-B01::default",
+        "MED-ANT-B05::flat_earth",
+        "MED-ANT-B02::brick_walls",
+        "MED-ANT-B03::default"
+      ],
+      "b01_in_shortlist": true,
+      "final_class": "unsupported_composition_final",
+      "terrain_evidence": [],
+      "max_access_width_m": 4.492757665634813,
+      "message": "Architectural bodies, courts or structures do not fit the supplied domain. Constrained composition: Morphology: this authored layout/programme has no constrained composition operator; retain its native template. Street-front preference exhausted 8 bounded rigid poses; cadastral, roof and access constraints were retained."
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-9241f1784bfb914a/parcel-87c4d26ef7432d9f/building",
+      "role": "dwelling.townhouse",
+      "function": "domestic",
+      "district": "elite",
+      "target_m2": 77.3,
+      "buildable_m2": 180.98079597670585,
+      "pin": null,
+      "composition": "row",
+      "floors": [
+        1,
+        2
+      ],
+      "shortlist_reconstruction": [
+        "MED-ANT-B01::brick_walls",
+        "MED-ANT-B05::default",
+        "MED-ANT-B03::default",
+        "MED-ANT-B02::brick_walls"
+      ],
+      "b01_in_shortlist": true,
+      "final_class": "unsupported_composition_final",
+      "terrain_evidence": [],
+      "max_access_width_m": 5.920465625410543,
+      "message": "Architectural bodies, courts or structures do not fit the supplied domain. Constrained composition: Morphology: this authored layout/programme has no constrained composition operator; retain its native template. Street-front preference exhausted 2 bounded rigid poses; cadastral, roof and access constraints were retained."
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-9241f1784bfb914a/parcel-9c065de76b27e973/building",
+      "role": "dwelling.townhouse",
+      "function": "domestic",
+      "district": "elite",
+      "target_m2": 75.2,
+      "buildable_m2": 198.1979333567433,
+      "pin": null,
+      "composition": "row",
+      "floors": [
+        1,
+        2
+      ],
+      "shortlist_reconstruction": [
+        "MED-ANT-B02::default",
+        "MED-ANT-B03::default",
+        "MED-ANT-B08::default",
+        "MED-ANT-B05::flat_earth"
+      ],
+      "b01_in_shortlist": false,
+      "final_class": "unsupported_composition_final",
+      "terrain_evidence": [],
+      "max_access_width_m": 12.521646857261658,
+      "message": "Architectural bodies, courts or structures do not fit the supplied domain. Constrained composition: Morphology: this authored layout/programme has no constrained composition operator; retain its native template. Street-front preference exhausted 0 bounded rigid poses; cadastral, roof and access constraints were retained."
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-9241f1784bfb914a/parcel-46cad69c714e39be/building",
+      "role": "dwelling.townhouse",
+      "function": "domestic",
+      "district": "elite",
+      "target_m2": 41.3,
+      "buildable_m2": 133.29453245038167,
+      "pin": null,
+      "composition": "row",
+      "floors": [
+        1,
+        2
+      ],
+      "shortlist_reconstruction": [
+        "MED-ANT-B05::default",
+        "MED-ANT-B01::flat_earth",
+        "MED-ANT-B02::default",
+        "MED-ANT-B03::brick_walls"
+      ],
+      "b01_in_shortlist": true,
+      "final_class": "unsupported_composition_final",
+      "terrain_evidence": [
+        {
+          "required_step_m": 1.316,
+          "allowed_step_m": 0.75,
+          "raster_slope_deg": 15.189,
+          "allowed_slope_deg": 12.0
+        }
+      ],
+      "max_access_width_m": 6.287366688251495,
+      "message": "Architectural bodies, courts or structures do not fit the supplied domain. Constrained composition: Morphology: this authored layout/programme has no constrained composition operator; retain its native template. Street-front preference exhausted 2 bounded rigid poses; cadastral, roof and access constraints were retained. An earlier candidate fitting bodies/courts/structures failed terrain before roof/access checks: Architecture exceeds physical foundation/slope limits. Required step 1.316 m / allowed 0.750 m; raster slope 15.189 deg / allowed 12 deg."
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-9241f1784bfb914a/parcel-8b9f8f5a12b3deb0/building",
+      "role": "dwelling.townhouse",
+      "function": "domestic",
+      "district": "elite",
+      "target_m2": 57.6,
+      "buildable_m2": 470.2516066804528,
+      "pin": null,
+      "composition": "row",
+      "floors": [
+        1,
+        2
+      ],
+      "shortlist_reconstruction": [
+        "MED-ANT-B01::default",
+        "MED-ANT-B02::brick_walls",
+        "MED-ANT-B08::default",
+        "MED-ANT-B05::default"
+      ],
+      "b01_in_shortlist": true,
+      "final_class": "unsupported_composition_final",
+      "terrain_evidence": [
+        {
+          "required_step_m": 1.318,
+          "allowed_step_m": 0.75,
+          "raster_slope_deg": 11.378,
+          "allowed_slope_deg": 12.0
+        }
+      ],
+      "max_access_width_m": 18.724901981107116,
+      "message": "Architectural bodies, courts or structures do not fit the supplied domain. Constrained composition: Morphology: this authored layout/programme has no constrained composition operator; retain its native template. Street-front preference exhausted 9 bounded rigid poses; cadastral, roof and access constraints were retained. An earlier candidate fitting bodies/courts/structures failed terrain before roof/access checks: Architecture exceeds physical foundation/slope limits. Required step 1.318 m / allowed 0.750 m; raster slope 11.378 deg / allowed 12 deg."
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-9241f1784bfb914a/parcel-2f980d4dc9b3b13c/building",
+      "role": "dwelling.townhouse",
+      "function": "domestic",
+      "district": "elite",
+      "target_m2": null,
+      "buildable_m2": 1097.7883404814638,
+      "pin": null,
+      "composition": "row",
+      "floors": [
+        1,
+        2
+      ],
+      "shortlist_reconstruction": [
+        "MED-ANT-B01::default",
+        "MED-ANT-B03::brick_walls",
+        "MED-ANT-B02::brick_walls",
+        "MED-ANT-B05::default"
+      ],
+      "b01_in_shortlist": true,
+      "final_class": "unsupported_composition_final",
+      "terrain_evidence": [
+        {
+          "required_step_m": 2.683,
+          "allowed_step_m": 0.75,
+          "raster_slope_deg": 11.645,
+          "allowed_slope_deg": 12.0
+        }
+      ],
+      "max_access_width_m": 18.442113225513825,
+      "message": "Architectural bodies, courts or structures do not fit the supplied domain. Constrained composition: Morphology: this authored layout/programme has no constrained composition operator; retain its native template. Street-front preference exhausted 3 bounded rigid poses; cadastral, roof and access constraints were retained. An earlier candidate fitting bodies/courts/structures failed terrain before roof/access checks: Architecture exceeds physical foundation/slope limits. Required step 2.683 m / allowed 0.750 m; raster slope 11.645 deg / allowed 12 deg."
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-9241f1784bfb914a/parcel-37c34e4cf8f5264c/building",
+      "role": "dwelling.townhouse",
+      "function": "domestic",
+      "district": "elite",
+      "target_m2": 70.5,
+      "buildable_m2": 295.8130161985755,
+      "pin": null,
+      "composition": "row",
+      "floors": [
+        1,
+        2
+      ],
+      "shortlist_reconstruction": [
+        "MED-ANT-B02::brick_walls",
+        "MED-ANT-B01::default",
+        "MED-ANT-B03::default",
+        "MED-ANT-B05::default"
+      ],
+      "b01_in_shortlist": true,
+      "final_class": "unsupported_composition_final",
+      "terrain_evidence": [
+        {
+          "required_step_m": 1.245,
+          "allowed_step_m": 0.75,
+          "raster_slope_deg": 7.933,
+          "allowed_slope_deg": 12.0
+        }
+      ],
+      "max_access_width_m": 26.549107504633326,
+      "message": "Architectural bodies, courts or structures do not fit the supplied domain. Constrained composition: Morphology: this authored layout/programme has no constrained composition operator; retain its native template. Street-front preference exhausted 7 bounded rigid poses; cadastral, roof and access constraints were retained. An earlier candidate fitting bodies/courts/structures failed terrain before roof/access checks: Architecture exceeds physical foundation/slope limits. Required step 1.245 m / allowed 0.750 m; raster slope 7.933 deg / allowed 12 deg."
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-9241f1784bfb914a/parcel-4c2b83d2d4dfa3c1/building",
+      "role": "dwelling.townhouse",
+      "function": "domestic",
+      "district": "elite",
+      "target_m2": 86.3,
+      "buildable_m2": 347.25324036879465,
+      "pin": null,
+      "composition": "row",
+      "floors": [
+        1,
+        2
+      ],
+      "shortlist_reconstruction": [
+        "MED-ANT-B01::flat_earth",
+        "MED-ANT-B08::default",
+        "MED-ANT-B05::flat_earth",
+        "MED-ANT-B02::default"
+      ],
+      "b01_in_shortlist": true,
+      "final_class": "unsupported_composition_final",
+      "terrain_evidence": [
+        {
+          "required_step_m": 1.364,
+          "allowed_step_m": 0.75,
+          "raster_slope_deg": 10.402,
+          "allowed_slope_deg": 12.0
+        }
+      ],
+      "max_access_width_m": 18.985631118533448,
+      "message": "Architectural bodies, courts or structures do not fit the supplied domain. Constrained composition: Morphology: this authored layout/programme has no constrained composition operator; retain its native template. Street-front preference exhausted 8 bounded rigid poses; cadastral, roof and access constraints were retained. An earlier candidate fitting bodies/courts/structures failed terrain before roof/access checks: Architecture exceeds physical foundation/slope limits. Required step 1.364 m / allowed 0.750 m; raster slope 10.402 deg / allowed 12 deg."
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-9241f1784bfb914a/parcel-a8a4fc36b16733d1/building",
+      "role": "dwelling.townhouse",
+      "function": "domestic",
+      "district": "elite",
+      "target_m2": 101.1,
+      "buildable_m2": 553.0590462312102,
+      "pin": null,
+      "composition": "row",
+      "floors": [
+        1,
+        2
+      ],
+      "shortlist_reconstruction": [
+        "MED-ANT-B03::brick_walls",
+        "MED-ANT-B02::brick_walls",
+        "MED-ANT-B01::adobe_walls",
+        "MED-ANT-B05::flat_earth"
+      ],
+      "b01_in_shortlist": true,
+      "final_class": "unsupported_composition_final",
+      "terrain_evidence": [
+        {
+          "required_step_m": 2.812,
+          "allowed_step_m": 0.75,
+          "raster_slope_deg": 10.511,
+          "allowed_slope_deg": 12.0
+        }
+      ],
+      "max_access_width_m": 17.29413434916135,
+      "message": "Architectural bodies, courts or structures do not fit the supplied domain. Constrained composition: Morphology: this authored layout/programme has no constrained composition operator; retain its native template. Street-front preference exhausted 4 bounded rigid poses; cadastral, roof and access constraints were retained. An earlier candidate fitting bodies/courts/structures failed terrain before roof/access checks: Architecture exceeds physical foundation/slope limits. Required step 2.812 m / allowed 0.750 m; raster slope 10.511 deg / allowed 12 deg."
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-264bfe564848ac07/parcel-9216f8d82bc3b416/building",
+      "role": "dwelling.townhouse",
+      "function": "domestic",
+      "district": "elite",
+      "target_m2": 66.1,
+      "buildable_m2": 244.59004014870152,
+      "pin": null,
+      "composition": "row",
+      "floors": [
+        1,
+        2
+      ],
+      "shortlist_reconstruction": [
+        "MED-ANT-B05::flat_earth",
+        "MED-ANT-B01::default",
+        "MED-ANT-B02::brick_walls",
+        "MED-ANT-B03::default"
+      ],
+      "b01_in_shortlist": true,
+      "final_class": "unsupported_composition_final",
+      "terrain_evidence": [
+        {
+          "required_step_m": 1.965,
+          "allowed_step_m": 0.75,
+          "raster_slope_deg": 11.998,
+          "allowed_slope_deg": 12.0
+        }
+      ],
+      "max_access_width_m": 12.42468569274969,
+      "message": "Architectural bodies, courts or structures do not fit the supplied domain. Constrained composition: Morphology: this authored layout/programme has no constrained composition operator; retain its native template. Street-front preference exhausted 7 bounded rigid poses; cadastral, roof and access constraints were retained. An earlier candidate fitting bodies/courts/structures failed terrain before roof/access checks: Architecture exceeds physical foundation/slope limits. Required step 1.965 m / allowed 0.750 m; raster slope 11.998 deg / allowed 12 deg."
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-264bfe564848ac07/parcel-8dbdb7f9eea47e53/building",
+      "role": "dwelling.townhouse",
+      "function": "domestic",
+      "district": "elite",
+      "target_m2": 91.8,
+      "buildable_m2": 258.7366968570277,
+      "pin": null,
+      "composition": "row",
+      "floors": [
+        1,
+        2
+      ],
+      "shortlist_reconstruction": [
+        "MED-ANT-B05::default",
+        "MED-ANT-B08::default",
+        "MED-ANT-B01::flat_earth",
+        "MED-ANT-B03::default"
+      ],
+      "b01_in_shortlist": true,
+      "final_class": "unsupported_composition_final",
+      "terrain_evidence": [
+        {
+          "required_step_m": 2.077,
+          "allowed_step_m": 0.75,
+          "raster_slope_deg": 13.289,
+          "allowed_slope_deg": 12.0
+        }
+      ],
+      "max_access_width_m": 9.494617847229849,
+      "message": "Architectural bodies, courts or structures do not fit the supplied domain. Constrained composition: Morphology: this authored layout/programme has no constrained composition operator; retain its native template. Street-front preference exhausted 4 bounded rigid poses; cadastral, roof and access constraints were retained. An earlier candidate fitting bodies/courts/structures failed terrain before roof/access checks: Architecture exceeds physical foundation/slope limits. Required step 2.077 m / allowed 0.750 m; raster slope 13.289 deg / allowed 12 deg."
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-264bfe564848ac07/parcel-0c4cc85ca564a47b/building",
+      "role": "dwelling.townhouse",
+      "function": "domestic",
+      "district": "elite",
+      "target_m2": 87.7,
+      "buildable_m2": 261.3523507169448,
+      "pin": null,
+      "composition": "row",
+      "floors": [
+        1,
+        2
+      ],
+      "shortlist_reconstruction": [
+        "MED-ANT-B01::adobe_walls",
+        "MED-ANT-B05::flat_earth",
+        "MED-ANT-B02::default",
+        "MED-ANT-B03::brick_walls"
+      ],
+      "b01_in_shortlist": true,
+      "final_class": "unsupported_composition_final",
+      "terrain_evidence": [
+        {
+          "required_step_m": 1.853,
+          "allowed_step_m": 0.75,
+          "raster_slope_deg": 11.428,
+          "allowed_slope_deg": 12.0
+        }
+      ],
+      "max_access_width_m": 14.445640694420028,
+      "message": "Architectural bodies, courts or structures do not fit the supplied domain. Constrained composition: Morphology: this authored layout/programme has no constrained composition operator; retain its native template. Street-front preference exhausted 4 bounded rigid poses; cadastral, roof and access constraints were retained. An earlier candidate fitting bodies/courts/structures failed terrain before roof/access checks: Architecture exceeds physical foundation/slope limits. Required step 1.853 m / allowed 0.750 m; raster slope 11.428 deg / allowed 12 deg."
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-264bfe564848ac07/parcel-d8d2d023406b6b95/building",
+      "role": "dwelling.townhouse",
+      "function": "domestic",
+      "district": "elite",
+      "target_m2": 93,
+      "buildable_m2": 244.50462955143303,
+      "pin": null,
+      "composition": "row",
+      "floors": [
+        1,
+        2
+      ],
+      "shortlist_reconstruction": [
+        "MED-ANT-B05::default",
+        "MED-ANT-B02::brick_walls",
+        "MED-ANT-B01::default",
+        "MED-ANT-B03::brick_walls"
+      ],
+      "b01_in_shortlist": true,
+      "final_class": "unsupported_composition_final",
+      "terrain_evidence": [
+        {
+          "required_step_m": 1.624,
+          "allowed_step_m": 0.75,
+          "raster_slope_deg": 10.77,
+          "allowed_slope_deg": 12.0
+        }
+      ],
+      "max_access_width_m": 12.449105123741576,
+      "message": "Architectural bodies, courts or structures do not fit the supplied domain. Constrained composition: Morphology: this authored layout/programme has no constrained composition operator; retain its native template. Street-front preference exhausted 4 bounded rigid poses; cadastral, roof and access constraints were retained. An earlier candidate fitting bodies/courts/structures failed terrain before roof/access checks: Architecture exceeds physical foundation/slope limits. Required step 1.624 m / allowed 0.750 m; raster slope 10.770 deg / allowed 12 deg."
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-264bfe564848ac07/parcel-152c1944bb465778/building",
+      "role": "dwelling.townhouse",
+      "function": "domestic",
+      "district": "elite",
+      "target_m2": 130.7,
+      "buildable_m2": 290.3787339855917,
+      "pin": null,
+      "composition": "row",
+      "floors": [
+        1,
+        2
+      ],
+      "shortlist_reconstruction": [
+        "MED-ANT-B01::brick_walls",
+        "MED-ANT-B03::brick_walls",
+        "MED-ANT-B05::flat_earth",
+        "MED-ANT-B02::brick_walls"
+      ],
+      "b01_in_shortlist": true,
+      "final_class": "unsupported_composition_final",
+      "terrain_evidence": [
+        {
+          "required_step_m": 1.351,
+          "allowed_step_m": 0.75,
+          "raster_slope_deg": 14.254,
+          "allowed_slope_deg": 12.0
+        }
+      ],
+      "max_access_width_m": 9.419890642523544,
+      "message": "Architectural bodies, courts or structures do not fit the supplied domain. Constrained composition: Morphology: this authored layout/programme has no constrained composition operator; retain its native template. Street-front preference exhausted 3 bounded rigid poses; cadastral, roof and access constraints were retained. An earlier candidate fitting bodies/courts/structures failed terrain before roof/access checks: Architecture exceeds physical foundation/slope limits. Required step 1.351 m / allowed 0.750 m; raster slope 14.254 deg / allowed 12 deg."
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-537528cc21504ebd/parcel-628966c931b36e8f/building",
+      "role": "dwelling.townhouse",
+      "function": "domestic",
+      "district": "elite",
+      "target_m2": 59.8,
+      "buildable_m2": 366.54131961101666,
+      "pin": null,
+      "composition": "row",
+      "floors": [
+        1,
+        2
+      ],
+      "shortlist_reconstruction": [
+        "MED-ANT-B01::default",
+        "MED-ANT-B05::default",
+        "MED-ANT-B03::default",
+        "MED-ANT-B08::default"
+      ],
+      "b01_in_shortlist": true,
+      "final_class": "minimum_span_final",
+      "terrain_evidence": [
+        {
+          "required_step_m": 1.319,
+          "allowed_step_m": 0.75,
+          "raster_slope_deg": 11.303,
+          "allowed_slope_deg": 12.0
+        }
+      ],
+      "max_access_width_m": 18.377670482512208,
+      "message": "Architectural bodies, courts or structures do not fit the supplied domain. Constrained composition: Morphology: available span 35.453 x 17.325 m cannot preserve minimum ranges/court/access (24.161 x 24.161 m). Street-front preference exhausted 10 bounded rigid poses; cadastral, roof and access constraints were retained. An earlier candidate fitting bodies/courts/structures failed terrain before roof/access checks: Architecture exceeds physical foundation/slope limits. Required step 1.319 m / allowed 0.750 m; raster slope 11.303 deg / allowed 12 deg."
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-8d331563e420ae27/parcel-d57a5b3b2c2fb2de/building",
+      "role": "dwelling.townhouse",
+      "function": "domestic",
+      "district": "elite",
+      "target_m2": 66.6,
+      "buildable_m2": 165.26238486357033,
+      "pin": null,
+      "composition": "row",
+      "floors": [
+        1,
+        2
+      ],
+      "shortlist_reconstruction": [
+        "MED-ANT-B05::flat_earth",
+        "MED-ANT-B02::brick_walls",
+        "MED-ANT-B03::brick_walls",
+        "MED-ANT-B08::default"
+      ],
+      "b01_in_shortlist": false,
+      "final_class": "minimum_span_final",
+      "terrain_evidence": [],
+      "max_access_width_m": 9.721999915971328,
+      "message": "Architectural bodies, courts or structures do not fit the supplied domain. Constrained composition: Morphology: available span 14.443 x 8.681 m cannot preserve minimum ranges/court/access (30.459 x 39.253 m). Street-front preference exhausted 0 bounded rigid poses; cadastral, roof and access constraints were retained."
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-8d331563e420ae27/parcel-156943c51f226d94/building",
+      "role": "dwelling.townhouse",
+      "function": "domestic",
+      "district": "elite",
+      "target_m2": 40.7,
+      "buildable_m2": 160.84601605404168,
+      "pin": null,
+      "composition": "row",
+      "floors": [
+        1,
+        2
+      ],
+      "shortlist_reconstruction": [
+        "MED-ANT-B03::default",
+        "MED-ANT-B02::brick_walls",
+        "MED-ANT-B01::adobe_walls",
+        "MED-ANT-B08::default"
+      ],
+      "b01_in_shortlist": true,
+      "final_class": "minimum_span_final",
+      "terrain_evidence": [
+        {
+          "required_step_m": 1.759,
+          "allowed_step_m": 0.75,
+          "raster_slope_deg": 16.376,
+          "allowed_slope_deg": 12.0
+        }
+      ],
+      "max_access_width_m": 18.707611023731108,
+      "message": "Architectural bodies, courts or structures do not fit the supplied domain. Constrained composition: Morphology: available span 16.711 x 7.522 m cannot preserve minimum ranges/court/access (29.057 x 29.057 m). Street-front preference exhausted 4 bounded rigid poses; cadastral, roof and access constraints were retained. An earlier candidate fitting bodies/courts/structures failed terrain before roof/access checks: Architecture exceeds physical foundation/slope limits. Required step 1.759 m / allowed 0.750 m; raster slope 16.376 deg / allowed 12 deg."
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-8d331563e420ae27/parcel-7d6b8b1d8ecc7a7f/building",
+      "role": "dwelling.townhouse",
+      "function": "domestic",
+      "district": "elite",
+      "target_m2": 78.6,
+      "buildable_m2": 252.72232880769297,
+      "pin": null,
+      "composition": "row",
+      "floors": [
+        1,
+        2
+      ],
+      "shortlist_reconstruction": [
+        "MED-ANT-B02::brick_walls",
+        "MED-ANT-B01::flat_earth",
+        "MED-ANT-B08::default",
+        "MED-ANT-B03::brick_walls"
+      ],
+      "b01_in_shortlist": true,
+      "final_class": "unsupported_composition_final",
+      "terrain_evidence": [
+        {
+          "required_step_m": 1.912,
+          "allowed_step_m": 0.75,
+          "raster_slope_deg": 15.099,
+          "allowed_slope_deg": 12.0
+        }
+      ],
+      "max_access_width_m": 14.999279576682513,
+      "message": "Architectural bodies, courts or structures do not fit the supplied domain. Constrained composition: Morphology: this authored layout/programme has no constrained composition operator; retain its native template. Street-front preference exhausted 8 bounded rigid poses; cadastral, roof and access constraints were retained. An earlier candidate fitting bodies/courts/structures failed terrain before roof/access checks: Architecture exceeds physical foundation/slope limits. Required step 1.912 m / allowed 0.750 m; raster slope 15.099 deg / allowed 12 deg."
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-cdc84d43a2cb4e38/parcel-9c9d15146196d565/building",
+      "role": "dwelling.townhouse",
+      "function": "domestic",
+      "district": "elite",
+      "target_m2": 74.8,
+      "buildable_m2": 188.41306664561853,
+      "pin": null,
+      "composition": "row",
+      "floors": [
+        1,
+        2
+      ],
+      "shortlist_reconstruction": [
+        "MED-ANT-B03::default",
+        "MED-ANT-B05::default",
+        "MED-ANT-B01::default",
+        "MED-ANT-B02::brick_walls"
+      ],
+      "b01_in_shortlist": true,
+      "final_class": "unsupported_composition_final",
+      "terrain_evidence": [
+        {
+          "required_step_m": 1.879,
+          "allowed_step_m": 0.75,
+          "raster_slope_deg": 12.513,
+          "allowed_slope_deg": 12.0
+        }
+      ],
+      "max_access_width_m": 13.209238724157023,
+      "message": "Architectural bodies, courts or structures do not fit the supplied domain. Constrained composition: Morphology: this authored layout/programme has no constrained composition operator; retain its native template. Street-front preference exhausted 6 bounded rigid poses; cadastral, roof and access constraints were retained. An earlier candidate fitting bodies/courts/structures failed terrain before roof/access checks: Architecture exceeds physical foundation/slope limits. Required step 1.879 m / allowed 0.750 m; raster slope 12.513 deg / allowed 12 deg."
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-cdc84d43a2cb4e38/parcel-d56cc051669a1dc3/building",
+      "role": "dwelling.townhouse",
+      "function": "domestic",
+      "district": "elite",
+      "target_m2": 47.5,
+      "buildable_m2": 322.4689443856478,
+      "pin": null,
+      "composition": "row",
+      "floors": [
+        1,
+        2
+      ],
+      "shortlist_reconstruction": [
+        "MED-ANT-B01::flat_earth",
+        "MED-ANT-B02::default",
+        "MED-ANT-B08::default",
+        "MED-ANT-B03::default"
+      ],
+      "b01_in_shortlist": true,
+      "final_class": "unsupported_composition_final",
+      "terrain_evidence": [
+        {
+          "required_step_m": 1.451,
+          "allowed_step_m": 0.75,
+          "raster_slope_deg": 13.687,
+          "allowed_slope_deg": 12.0
+        }
+      ],
+      "max_access_width_m": 14.69163037254688,
+      "message": "Architectural bodies, courts or structures do not fit the supplied domain. Constrained composition: Morphology: this authored layout/programme has no constrained composition operator; retain its native template. Street-front preference exhausted 6 bounded rigid poses; cadastral, roof and access constraints were retained. An earlier candidate fitting bodies/courts/structures failed terrain before roof/access checks: Architecture exceeds physical foundation/slope limits. Required step 1.451 m / allowed 0.750 m; raster slope 13.687 deg / allowed 12 deg."
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-cdc84d43a2cb4e38/parcel-fb9b3d36053978bf/building",
+      "role": "dwelling.townhouse",
+      "function": "domestic",
+      "district": "elite",
+      "target_m2": 93.1,
+      "buildable_m2": 250.7054360061884,
+      "pin": null,
+      "composition": "row",
+      "floors": [
+        1,
+        2
+      ],
+      "shortlist_reconstruction": [
+        "MED-ANT-B01::brick_walls",
+        "MED-ANT-B03::default",
+        "MED-ANT-B05::default",
+        "MED-ANT-B02::default"
+      ],
+      "b01_in_shortlist": true,
+      "final_class": "unsupported_composition_final",
+      "terrain_evidence": [
+        {
+          "required_step_m": 1.982,
+          "allowed_step_m": 0.75,
+          "raster_slope_deg": 12.358,
+          "allowed_slope_deg": 12.0
+        }
+      ],
+      "max_access_width_m": 10.250059688590078,
+      "message": "Architectural bodies, courts or structures do not fit the supplied domain. Constrained composition: Morphology: this authored layout/programme has no constrained composition operator; retain its native template. Street-front preference exhausted 4 bounded rigid poses; cadastral, roof and access constraints were retained. An earlier candidate fitting bodies/courts/structures failed terrain before roof/access checks: Architecture exceeds physical foundation/slope limits. Required step 1.982 m / allowed 0.750 m; raster slope 12.358 deg / allowed 12 deg."
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-7bbe83ece7eb16ab/parcel-c1111562a5a95056/building",
+      "role": "dwelling.townhouse",
+      "function": "domestic",
+      "district": "elite",
+      "target_m2": 68.9,
+      "buildable_m2": 566.3818984939717,
+      "pin": null,
+      "composition": "row",
+      "floors": [
+        1,
+        2
+      ],
+      "shortlist_reconstruction": [
+        "MED-ANT-B02::brick_walls",
+        "MED-ANT-B03::default",
+        "MED-ANT-B01::brick_walls",
+        "MED-ANT-B05::default"
+      ],
+      "b01_in_shortlist": true,
+      "final_class": "unsupported_composition_final",
+      "terrain_evidence": [
+        {
+          "required_step_m": 1.843,
+          "allowed_step_m": 0.75,
+          "raster_slope_deg": 15.944,
+          "allowed_slope_deg": 12.0
+        }
+      ],
+      "max_access_width_m": 14.652922636800096,
+      "message": "Architectural bodies, courts or structures do not fit the supplied domain. Constrained composition: Morphology: this authored layout/programme has no constrained composition operator; retain its native template. Street-front preference exhausted 7 bounded rigid poses; cadastral, roof and access constraints were retained. An earlier candidate fitting bodies/courts/structures failed terrain before roof/access checks: Architecture exceeds physical foundation/slope limits. Required step 1.843 m / allowed 0.750 m; raster slope 15.944 deg / allowed 12 deg."
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-7bbe83ece7eb16ab/parcel-36e839f62b8661ca/building",
+      "role": "dwelling.townhouse",
+      "function": "domestic",
+      "district": "elite",
+      "target_m2": 88.8,
+      "buildable_m2": 610.8812358900905,
+      "pin": null,
+      "composition": "row",
+      "floors": [
+        1,
+        2
+      ],
+      "shortlist_reconstruction": [
+        "MED-ANT-B01::flat_earth",
+        "MED-ANT-B05::flat_earth",
+        "MED-ANT-B08::default",
+        "MED-ANT-B03::brick_walls"
+      ],
+      "b01_in_shortlist": true,
+      "final_class": "unsupported_composition_final",
+      "terrain_evidence": [
+        {
+          "required_step_m": 2.625,
+          "allowed_step_m": 0.75,
+          "raster_slope_deg": 14.507,
+          "allowed_slope_deg": 12.0
+        }
+      ],
+      "max_access_width_m": 10.265627768612887,
+      "message": "Architectural bodies, courts or structures do not fit the supplied domain. Constrained composition: Morphology: this authored layout/programme has no constrained composition operator; retain its native template. Street-front preference exhausted 2 bounded rigid poses; cadastral, roof and access constraints were retained. An earlier candidate fitting bodies/courts/structures failed terrain before roof/access checks: Architecture exceeds physical foundation/slope limits. Required step 2.625 m / allowed 0.750 m; raster slope 14.507 deg / allowed 12 deg."
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-7bbe83ece7eb16ab/parcel-0a2374b9e54e910d/building",
+      "role": "dwelling.townhouse",
+      "function": "domestic",
+      "district": "elite",
+      "target_m2": 86.3,
+      "buildable_m2": 348.18946790276095,
+      "pin": null,
+      "composition": "row",
+      "floors": [
+        1,
+        2
+      ],
+      "shortlist_reconstruction": [
+        "MED-ANT-B03::brick_walls",
+        "MED-ANT-B01::brick_walls",
+        "MED-ANT-B05::default",
+        "MED-ANT-B08::default"
+      ],
+      "b01_in_shortlist": true,
+      "final_class": "minimum_span_final",
+      "terrain_evidence": [
+        {
+          "required_step_m": 3.167,
+          "allowed_step_m": 0.75,
+          "raster_slope_deg": 16.113,
+          "allowed_slope_deg": 12.0
+        }
+      ],
+      "max_access_width_m": 9.359435829918578,
+      "message": "Architectural bodies, courts or structures do not fit the supplied domain. Constrained composition: Morphology: available span 18.328 x 20.664 m cannot preserve minimum ranges/court/access (22.751 x 30.071 m). Street-front preference exhausted 4 bounded rigid poses; cadastral, roof and access constraints were retained. An earlier candidate fitting bodies/courts/structures failed terrain before roof/access checks: Architecture exceeds physical foundation/slope limits. Required step 3.167 m / allowed 0.750 m; raster slope 16.113 deg / allowed 12 deg."
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-dfe620665b72f417/parcel-a1cb4a99b0bd549c/building",
+      "role": "dwelling.townhouse",
+      "function": "domestic",
+      "district": "elite",
+      "target_m2": 64.7,
+      "buildable_m2": 302.7901598503813,
+      "pin": null,
+      "composition": "row",
+      "floors": [
+        1,
+        2
+      ],
+      "shortlist_reconstruction": [
+        "MED-ANT-B05::default",
+        "MED-ANT-B02::brick_walls",
+        "MED-ANT-B01::default",
+        "MED-ANT-B03::brick_walls"
+      ],
+      "b01_in_shortlist": true,
+      "final_class": "unsupported_composition_final",
+      "terrain_evidence": [
+        {
+          "required_step_m": 0.795,
+          "allowed_step_m": 0.75,
+          "raster_slope_deg": 6.283,
+          "allowed_slope_deg": 12.0
+        }
+      ],
+      "max_access_width_m": 6.99766716817742,
+      "message": "Architectural bodies, courts or structures do not fit the supplied domain. Constrained composition: Morphology: this authored layout/programme has no constrained composition operator; retain its native template. Street-front preference exhausted 2 bounded rigid poses; cadastral, roof and access constraints were retained. An earlier candidate fitting bodies/courts/structures failed terrain before roof/access checks: Architecture exceeds physical foundation/slope limits. Required step 0.795 m / allowed 0.750 m; raster slope 6.283 deg / allowed 12 deg."
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-66f979470e8a9f47/parcel-88600fbac3366403/building",
+      "role": "dwelling.townhouse",
+      "function": "domestic",
+      "district": "elite",
+      "target_m2": 52.6,
+      "buildable_m2": 238.3857758953236,
+      "pin": null,
+      "composition": "row",
+      "floors": [
+        1,
+        2
+      ],
+      "shortlist_reconstruction": [
+        "MED-ANT-B03::brick_walls",
+        "MED-ANT-B01::flat_earth",
+        "MED-ANT-B05::default",
+        "MED-ANT-B02::brick_walls"
+      ],
+      "b01_in_shortlist": true,
+      "final_class": "unsupported_composition_final",
+      "terrain_evidence": [],
+      "max_access_width_m": 6.179924726486206,
+      "message": "Architectural bodies, courts or structures do not fit the supplied domain. Constrained composition: Morphology: this authored layout/programme has no constrained composition operator; retain its native template. Street-front preference exhausted 3 bounded rigid poses; cadastral, roof and access constraints were retained."
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-8d790b7e75053f6a/parcel-bf63186a2ed9c362/building",
+      "role": "dwelling.townhouse",
+      "function": "domestic",
+      "district": "elite",
+      "target_m2": 69.3,
+      "buildable_m2": 257.60082305641845,
+      "pin": null,
+      "composition": "row",
+      "floors": [
+        1,
+        2
+      ],
+      "shortlist_reconstruction": [
+        "MED-ANT-B01::flat_earth",
+        "MED-ANT-B03::brick_walls",
+        "MED-ANT-B02::default",
+        "MED-ANT-B05::flat_earth"
+      ],
+      "b01_in_shortlist": true,
+      "final_class": "unsupported_composition_final",
+      "terrain_evidence": [],
+      "max_access_width_m": 10.293716199205525,
+      "message": "Architectural bodies, courts or structures do not fit the supplied domain. Constrained composition: Morphology: this authored layout/programme has no constrained composition operator; retain its native template. Street-front preference exhausted 4 bounded rigid poses; cadastral, roof and access constraints were retained."
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-edf873e7338a227f/parcel-7ed2fbd14ecfa159/building",
+      "role": "dwelling.townhouse",
+      "function": "domestic",
+      "district": "elite",
+      "target_m2": 94.4,
+      "buildable_m2": 365.52883293200284,
+      "pin": null,
+      "composition": "row",
+      "floors": [
+        1,
+        2
+      ],
+      "shortlist_reconstruction": [
+        "MED-ANT-B03::brick_walls",
+        "MED-ANT-B05::default",
+        "MED-ANT-B01::default",
+        "MED-ANT-B02::brick_walls"
+      ],
+      "b01_in_shortlist": true,
+      "final_class": "unsupported_composition_final",
+      "terrain_evidence": [
+        {
+          "required_step_m": 1.68,
+          "allowed_step_m": 0.75,
+          "raster_slope_deg": 11.613,
+          "allowed_slope_deg": 12.0
+        }
+      ],
+      "max_access_width_m": 19.998015353897877,
+      "message": "Architectural bodies, courts or structures do not fit the supplied domain. Constrained composition: Morphology: this authored layout/programme has no constrained composition operator; retain its native template. Street-front preference exhausted 12 bounded rigid poses; cadastral, roof and access constraints were retained. An earlier candidate fitting bodies/courts/structures failed terrain before roof/access checks: Architecture exceeds physical foundation/slope limits. Required step 1.680 m / allowed 0.750 m; raster slope 11.613 deg / allowed 12 deg."
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-edf873e7338a227f/parcel-db2cb6cba9061faf/building",
+      "role": "dwelling.townhouse",
+      "function": "domestic",
+      "district": "elite",
+      "target_m2": 99,
+      "buildable_m2": 365.65272268047556,
+      "pin": null,
+      "composition": "row",
+      "floors": [
+        1,
+        2
+      ],
+      "shortlist_reconstruction": [
+        "MED-ANT-B01::flat_earth",
+        "MED-ANT-B03::brick_walls",
+        "MED-ANT-B02::default",
+        "MED-ANT-B05::default"
+      ],
+      "b01_in_shortlist": true,
+      "final_class": "unsupported_composition_final",
+      "terrain_evidence": [
+        {
+          "required_step_m": 1.404,
+          "allowed_step_m": 0.75,
+          "raster_slope_deg": 11.729,
+          "allowed_slope_deg": 12.0
+        }
+      ],
+      "max_access_width_m": 6.194281403989598,
+      "message": "Architectural bodies, courts or structures do not fit the supplied domain. Constrained composition: Morphology: this authored layout/programme has no constrained composition operator; retain its native template. Street-front preference exhausted 7 bounded rigid poses; cadastral, roof and access constraints were retained. An earlier candidate fitting bodies/courts/structures failed terrain before roof/access checks: Architecture exceeds physical foundation/slope limits. Required step 1.404 m / allowed 0.750 m; raster slope 11.729 deg / allowed 12 deg."
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-edf873e7338a227f/parcel-dbc9c8195ccc3530/building",
+      "role": "dwelling.townhouse",
+      "function": "domestic",
+      "district": "elite",
+      "target_m2": 63.2,
+      "buildable_m2": 211.414150073193,
+      "pin": null,
+      "composition": "row",
+      "floors": [
+        1,
+        2
+      ],
+      "shortlist_reconstruction": [
+        "MED-ANT-B02::default",
+        "MED-ANT-B03::default",
+        "MED-ANT-B08::default",
+        "MED-ANT-B05::default"
+      ],
+      "b01_in_shortlist": false,
+      "final_class": "unsupported_composition_final",
+      "terrain_evidence": [],
+      "max_access_width_m": 22.59475156095331,
+      "message": "Architectural bodies, courts or structures do not fit the supplied domain. Constrained composition: Morphology: this authored layout/programme has no constrained composition operator; retain its native template. Street-front preference exhausted 1 bounded rigid poses; cadastral, roof and access constraints were retained."
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-b413589ac5633042/parcel-6d51628c7b62fe4b/building",
+      "role": "dwelling.townhouse",
+      "function": "domestic",
+      "district": "elite",
+      "target_m2": 52.7,
+      "buildable_m2": 224.10810529859737,
+      "pin": null,
+      "composition": "row",
+      "floors": [
+        1,
+        2
+      ],
+      "shortlist_reconstruction": [
+        "MED-ANT-B08::default",
+        "MED-ANT-B05::default",
+        "MED-ANT-B01::default",
+        "MED-ANT-B02::brick_walls"
+      ],
+      "b01_in_shortlist": true,
+      "final_class": "unsupported_composition_final",
+      "terrain_evidence": [
+        {
+          "required_step_m": 1.282,
+          "allowed_step_m": 0.75,
+          "raster_slope_deg": 10.971,
+          "allowed_slope_deg": 12.0
+        }
+      ],
+      "max_access_width_m": 9.757298006474716,
+      "message": "Architectural bodies, courts or structures do not fit the supplied domain. Constrained composition: Morphology: this authored layout/programme has no constrained composition operator; retain its native template. Street-front preference exhausted 6 bounded rigid poses; cadastral, roof and access constraints were retained. An earlier candidate fitting bodies/courts/structures failed terrain before roof/access checks: Architecture exceeds physical foundation/slope limits. Required step 1.282 m / allowed 0.750 m; raster slope 10.971 deg / allowed 12 deg."
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-b413589ac5633042/parcel-d06d15bb04e18233/building",
+      "role": "dwelling.townhouse",
+      "function": "domestic",
+      "district": "elite",
+      "target_m2": 66.9,
+      "buildable_m2": 224.2323734583333,
+      "pin": null,
+      "composition": "row",
+      "floors": [
+        1,
+        2
+      ],
+      "shortlist_reconstruction": [
+        "MED-ANT-B03::default",
+        "MED-ANT-B01::brick_walls",
+        "MED-ANT-B02::brick_walls",
+        "MED-ANT-B05::flat_earth"
+      ],
+      "b01_in_shortlist": true,
+      "final_class": "unsupported_composition_final",
+      "terrain_evidence": [
+        {
+          "required_step_m": 1.185,
+          "allowed_step_m": 0.75,
+          "raster_slope_deg": 8.088,
+          "allowed_slope_deg": 12.0
+        }
+      ],
+      "max_access_width_m": 7.419384696500771,
+      "message": "Architectural bodies, courts or structures do not fit the supplied domain. Constrained composition: Morphology: this authored layout/programme has no constrained composition operator; retain its native template. Street-front preference exhausted 2 bounded rigid poses; cadastral, roof and access constraints were retained. An earlier candidate fitting bodies/courts/structures failed terrain before roof/access checks: Architecture exceeds physical foundation/slope limits. Required step 1.185 m / allowed 0.750 m; raster slope 8.088 deg / allowed 12 deg."
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-b413589ac5633042/parcel-47a21ba7751d6adf/building",
+      "role": "dwelling.townhouse",
+      "function": "domestic",
+      "district": "elite",
+      "target_m2": 72.2,
+      "buildable_m2": 161.5542355319485,
+      "pin": null,
+      "composition": "row",
+      "floors": [
+        1,
+        2
+      ],
+      "shortlist_reconstruction": [
+        "MED-ANT-B03::brick_walls",
+        "MED-ANT-B05::default",
+        "MED-ANT-B08::default",
+        "MED-ANT-B02::default"
+      ],
+      "b01_in_shortlist": false,
+      "final_class": "unsupported_composition_final",
+      "terrain_evidence": [],
+      "max_access_width_m": 16.53768626188559,
+      "message": "Architectural bodies, courts or structures do not fit the supplied domain. Constrained composition: Morphology: this authored layout/programme has no constrained composition operator; retain its native template. Street-front preference exhausted 0 bounded rigid poses; cadastral, roof and access constraints were retained."
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-bc87233275474444/parcel-9988ac8f8f233638/building",
+      "role": "dwelling.townhouse",
+      "function": "domestic",
+      "district": "elite",
+      "target_m2": 96.5,
+      "buildable_m2": 237.8577491817996,
+      "pin": null,
+      "composition": "row",
+      "floors": [
+        1,
+        2
+      ],
+      "shortlist_reconstruction": [
+        "MED-ANT-B01::default",
+        "MED-ANT-B03::brick_walls",
+        "MED-ANT-B05::default",
+        "MED-ANT-B02::brick_walls"
+      ],
+      "b01_in_shortlist": true,
+      "final_class": "unsupported_composition_final",
+      "terrain_evidence": [
+        {
+          "required_step_m": 1.085,
+          "allowed_step_m": 0.75,
+          "raster_slope_deg": 9.995,
+          "allowed_slope_deg": 12.0
+        }
+      ],
+      "max_access_width_m": 12.384968757629396,
+      "message": "Architectural bodies, courts or structures do not fit the supplied domain. Constrained composition: Morphology: this authored layout/programme has no constrained composition operator; retain its native template. Street-front preference exhausted 6 bounded rigid poses; cadastral, roof and access constraints were retained. An earlier candidate fitting bodies/courts/structures failed terrain before roof/access checks: Architecture exceeds physical foundation/slope limits. Required step 1.085 m / allowed 0.750 m; raster slope 9.995 deg / allowed 12 deg."
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-8d97b12f1723cc67/parcel-0192900a50b27695/building",
+      "role": "dwelling.townhouse",
+      "function": "domestic",
+      "district": "elite",
+      "target_m2": 57.5,
+      "buildable_m2": 706.7463082722388,
+      "pin": null,
+      "composition": "row",
+      "floors": [
+        1,
+        2
+      ],
+      "shortlist_reconstruction": [
+        "MED-ANT-B01::flat_earth",
+        "MED-ANT-B03::brick_walls",
+        "MED-ANT-B02::brick_walls",
+        "MED-ANT-B05::flat_earth"
+      ],
+      "b01_in_shortlist": true,
+      "final_class": "unsupported_composition_final",
+      "terrain_evidence": [
+        {
+          "required_step_m": 1.471,
+          "allowed_step_m": 0.75,
+          "raster_slope_deg": 12.452,
+          "allowed_slope_deg": 12.0
+        }
+      ],
+      "max_access_width_m": 10.315189487452798,
+      "message": "Architectural bodies, courts or structures do not fit the supplied domain. Constrained composition: Morphology: this authored layout/programme has no constrained composition operator; retain its native template. Street-front preference exhausted 6 bounded rigid poses; cadastral, roof and access constraints were retained. An earlier candidate fitting bodies/courts/structures failed terrain before roof/access checks: Architecture exceeds physical foundation/slope limits. Required step 1.471 m / allowed 0.750 m; raster slope 12.452 deg / allowed 12 deg."
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-8d97b12f1723cc67/parcel-7e588f28cfab428d/building",
+      "role": "dwelling.townhouse",
+      "function": "domestic",
+      "district": "elite",
+      "target_m2": 117.4,
+      "buildable_m2": 695.1579512692988,
+      "pin": null,
+      "composition": "row",
+      "floors": [
+        1,
+        2
+      ],
+      "shortlist_reconstruction": [
+        "MED-ANT-B05::default",
+        "MED-ANT-B02::default",
+        "MED-ANT-B03::brick_walls",
+        "MED-ANT-B01::default"
+      ],
+      "b01_in_shortlist": true,
+      "final_class": "terrain_final",
+      "terrain_evidence": [
+        {
+          "required_step_m": 1.657,
+          "allowed_step_m": 0.75,
+          "raster_slope_deg": 11.641,
+          "allowed_slope_deg": 12.0
+        },
+        {
+          "required_step_m": 2.335,
+          "allowed_step_m": 0.75,
+          "raster_slope_deg": 11.685,
+          "allowed_slope_deg": 12.0
+        }
+      ],
+      "max_access_width_m": 14.732772557938729,
+      "message": "Architecture exceeds physical foundation/slope limits. Required step 1.657 m / allowed 0.750 m; raster slope 11.641 deg / allowed 12 deg. Street-front preference exhausted 10 bounded rigid poses; cadastral, roof and access constraints were retained. An earlier candidate fitting bodies/courts/structures failed terrain before roof/access checks: Architecture exceeds physical foundation/slope limits. Required step 2.335 m / allowed 0.750 m; raster slope 11.685 deg / allowed 12 deg."
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-8d97b12f1723cc67/parcel-12762c21a1d7d33f/building",
+      "role": "dwelling.townhouse",
+      "function": "domestic",
+      "district": "elite",
+      "target_m2": 72.1,
+      "buildable_m2": 354.6608922299929,
+      "pin": null,
+      "composition": "row",
+      "floors": [
+        1,
+        2
+      ],
+      "shortlist_reconstruction": [
+        "MED-ANT-B02::default",
+        "MED-ANT-B05::default",
+        "MED-ANT-B03::default",
+        "MED-ANT-B01::brick_walls"
+      ],
+      "b01_in_shortlist": true,
+      "final_class": "terrain_final",
+      "terrain_evidence": [
+        {
+          "required_step_m": 1.509,
+          "allowed_step_m": 0.75,
+          "raster_slope_deg": 9.818,
+          "allowed_slope_deg": 12.0
+        },
+        {
+          "required_step_m": 2.19,
+          "allowed_step_m": 0.75,
+          "raster_slope_deg": 11.443,
+          "allowed_slope_deg": 12.0
+        }
+      ],
+      "max_access_width_m": 7.544727284332112,
+      "message": "Architecture exceeds physical foundation/slope limits. Required step 1.509 m / allowed 0.750 m; raster slope 9.818 deg / allowed 12 deg. Street-front preference exhausted 2 bounded rigid poses; cadastral, roof and access constraints were retained. An earlier candidate fitting bodies/courts/structures failed terrain before roof/access checks: Architecture exceeds physical foundation/slope limits. Required step 2.190 m / allowed 0.750 m; raster slope 11.443 deg / allowed 12 deg."
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-bf9e2f5f3b398ec7/parcel-fd5269c49525ca4b/building",
+      "role": "dwelling.townhouse",
+      "function": "domestic",
+      "district": "elite",
+      "target_m2": 85.9,
+      "buildable_m2": 415.88622454181314,
+      "pin": null,
+      "composition": "row",
+      "floors": [
+        1,
+        2
+      ],
+      "shortlist_reconstruction": [
+        "MED-ANT-B02::default",
+        "MED-ANT-B08::default",
+        "MED-ANT-B01::brick_walls",
+        "MED-ANT-B05::default"
+      ],
+      "b01_in_shortlist": true,
+      "final_class": "unsupported_composition_final",
+      "terrain_evidence": [
+        {
+          "required_step_m": 1.334,
+          "allowed_step_m": 0.75,
+          "raster_slope_deg": 9.87,
+          "allowed_slope_deg": 12.0
+        }
+      ],
+      "max_access_width_m": 27.67249597185355,
+      "message": "Architectural bodies, courts or structures do not fit the supplied domain. Constrained composition: Morphology: this authored layout/programme has no constrained composition operator; retain its native template. Street-front preference exhausted 12 bounded rigid poses; cadastral, roof and access constraints were retained. An earlier candidate fitting bodies/courts/structures failed terrain before roof/access checks: Architecture exceeds physical foundation/slope limits. Required step 1.334 m / allowed 0.750 m; raster slope 9.870 deg / allowed 12 deg."
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-420fc460c33632f8/parcel-658c3a5554ae4df3/building",
+      "role": "dwelling.townhouse",
+      "function": "domestic",
+      "district": "elite",
+      "target_m2": 80.8,
+      "buildable_m2": 319.35070452373475,
+      "pin": null,
+      "composition": "row",
+      "floors": [
+        1,
+        2
+      ],
+      "shortlist_reconstruction": [
+        "MED-ANT-B01::brick_walls",
+        "MED-ANT-B03::brick_walls",
+        "MED-ANT-B02::brick_walls",
+        "MED-ANT-B05::flat_earth"
+      ],
+      "b01_in_shortlist": true,
+      "final_class": "unsupported_composition_final",
+      "terrain_evidence": [
+        {
+          "required_step_m": 1.531,
+          "allowed_step_m": 0.75,
+          "raster_slope_deg": 9.637,
+          "allowed_slope_deg": 12.0
+        }
+      ],
+      "max_access_width_m": 18.423388804692877,
+      "message": "Architectural bodies, courts or structures do not fit the supplied domain. Constrained composition: Morphology: this authored layout/programme has no constrained composition operator; retain its native template. Street-front preference exhausted 9 bounded rigid poses; cadastral, roof and access constraints were retained. An earlier candidate fitting bodies/courts/structures failed terrain before roof/access checks: Architecture exceeds physical foundation/slope limits. Required step 1.531 m / allowed 0.750 m; raster slope 9.637 deg / allowed 12 deg."
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-420fc460c33632f8/parcel-c94181d6dd113dce/building",
+      "role": "dwelling.townhouse",
+      "function": "domestic",
+      "district": "elite",
+      "target_m2": 74.3,
+      "buildable_m2": 667.2660211855546,
+      "pin": null,
+      "composition": "row",
+      "floors": [
+        1,
+        2
+      ],
+      "shortlist_reconstruction": [
+        "MED-ANT-B01::flat_earth",
+        "MED-ANT-B05::default",
+        "MED-ANT-B02::default",
+        "MED-ANT-B08::default"
+      ],
+      "b01_in_shortlist": true,
+      "final_class": "minimum_span_final",
+      "terrain_evidence": [
+        {
+          "required_step_m": 1.519,
+          "allowed_step_m": 0.75,
+          "raster_slope_deg": 11.04,
+          "allowed_slope_deg": 12.0
+        }
+      ],
+      "max_access_width_m": 11.863818671902992,
+      "message": "Architectural bodies, courts or structures do not fit the supplied domain. Constrained composition: Morphology: available span 45.089 x 26.067 m cannot preserve minimum ranges/court/access (26.159 x 34.063 m). Street-front preference exhausted 10 bounded rigid poses; cadastral, roof and access constraints were retained. An earlier candidate fitting bodies/courts/structures failed terrain before roof/access checks: Architecture exceeds physical foundation/slope limits. Required step 1.519 m / allowed 0.750 m; raster slope 11.040 deg / allowed 12 deg."
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-420fc460c33632f8/parcel-5750a5735efc26cd/building",
+      "role": "dwelling.townhouse",
+      "function": "domestic",
+      "district": "elite",
+      "target_m2": 105.3,
+      "buildable_m2": 252.3886239794083,
+      "pin": null,
+      "composition": "row",
+      "floors": [
+        1,
+        2
+      ],
+      "shortlist_reconstruction": [
+        "MED-ANT-B01::adobe_walls",
+        "MED-ANT-B05::default",
+        "MED-ANT-B02::brick_walls",
+        "MED-ANT-B03::default"
+      ],
+      "b01_in_shortlist": true,
+      "final_class": "unsupported_composition_final",
+      "terrain_evidence": [
+        {
+          "required_step_m": 1.832,
+          "allowed_step_m": 0.75,
+          "raster_slope_deg": 10.451,
+          "allowed_slope_deg": 12.0
+        }
+      ],
+      "max_access_width_m": 15.55715678276216,
+      "message": "Architectural bodies, courts or structures do not fit the supplied domain. Constrained composition: Morphology: this authored layout/programme has no constrained composition operator; retain its native template. Street-front preference exhausted 8 bounded rigid poses; cadastral, roof and access constraints were retained. An earlier candidate fitting bodies/courts/structures failed terrain before roof/access checks: Architecture exceeds physical foundation/slope limits. Required step 1.832 m / allowed 0.750 m; raster slope 10.451 deg / allowed 12 deg."
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-420fc460c33632f8/parcel-a3368b356990e369/building",
+      "role": "dwelling.townhouse",
+      "function": "domestic",
+      "district": "elite",
+      "target_m2": 38.7,
+      "buildable_m2": 249.5446319077164,
+      "pin": null,
+      "composition": "row",
+      "floors": [
+        1,
+        2
+      ],
+      "shortlist_reconstruction": [
+        "MED-ANT-B01::brick_walls",
+        "MED-ANT-B05::flat_earth",
+        "MED-ANT-B03::brick_walls",
+        "MED-ANT-B08::default"
+      ],
+      "b01_in_shortlist": true,
+      "final_class": "minimum_span_final",
+      "terrain_evidence": [
+        {
+          "required_step_m": 1.133,
+          "allowed_step_m": 0.75,
+          "raster_slope_deg": 9.81,
+          "allowed_slope_deg": 12.0
+        }
+      ],
+      "max_access_width_m": 13.068781393357634,
+      "message": "Architectural bodies, courts or structures do not fit the supplied domain. Constrained composition: Morphology: available span 14.309 x 28.425 m cannot preserve minimum ranges/court/access (27.734 x 27.734 m). Street-front preference exhausted 6 bounded rigid poses; cadastral, roof and access constraints were retained. An earlier candidate fitting bodies/courts/structures failed terrain before roof/access checks: Architecture exceeds physical foundation/slope limits. Required step 1.133 m / allowed 0.750 m; raster slope 9.810 deg / allowed 12 deg."
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-fe59d72c3e1e4df4/parcel-e34eaae79d466da2/building",
+      "role": "dwelling.townhouse",
+      "function": "domestic",
+      "district": "elite",
+      "target_m2": 87.7,
+      "buildable_m2": 791.8259186102077,
+      "pin": null,
+      "composition": "row",
+      "floors": [
+        1,
+        2
+      ],
+      "shortlist_reconstruction": [
+        "MED-ANT-B01::adobe_walls",
+        "MED-ANT-B02::brick_walls",
+        "MED-ANT-B03::brick_walls",
+        "MED-ANT-B05::flat_earth"
+      ],
+      "b01_in_shortlist": true,
+      "final_class": "unsupported_composition_final",
+      "terrain_evidence": [
+        {
+          "required_step_m": 1.483,
+          "allowed_step_m": 0.75,
+          "raster_slope_deg": 9.849,
+          "allowed_slope_deg": 12.0
+        }
+      ],
+      "max_access_width_m": 21.56516281756261,
+      "message": "Architectural bodies, courts or structures do not fit the supplied domain. Constrained composition: Morphology: this authored layout/programme has no constrained composition operator; retain its native template. Street-front preference exhausted 7 bounded rigid poses; cadastral, roof and access constraints were retained. An earlier candidate fitting bodies/courts/structures failed terrain before roof/access checks: Architecture exceeds physical foundation/slope limits. Required step 1.483 m / allowed 0.750 m; raster slope 9.849 deg / allowed 12 deg."
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-fe59d72c3e1e4df4/parcel-78b5fec4c780ca3a/building",
+      "role": "dwelling.townhouse",
+      "function": "domestic",
+      "district": "elite",
+      "target_m2": 103.7,
+      "buildable_m2": 780.485525240656,
+      "pin": null,
+      "composition": "row",
+      "floors": [
+        1,
+        2
+      ],
+      "shortlist_reconstruction": [
+        "MED-ANT-B02::default",
+        "MED-ANT-B01::adobe_walls",
+        "MED-ANT-B03::default",
+        "MED-ANT-B05::flat_earth"
+      ],
+      "b01_in_shortlist": true,
+      "final_class": "unsupported_composition_final",
+      "terrain_evidence": [
+        {
+          "required_step_m": 2.146,
+          "allowed_step_m": 0.75,
+          "raster_slope_deg": 11.629,
+          "allowed_slope_deg": 12.0
+        }
+      ],
+      "max_access_width_m": 15.893530753496105,
+      "message": "Architectural bodies, courts or structures do not fit the supplied domain. Constrained composition: Morphology: this authored layout/programme has no constrained composition operator; retain its native template. Street-front preference exhausted 12 bounded rigid poses; cadastral, roof and access constraints were retained. An earlier candidate fitting bodies/courts/structures failed terrain before roof/access checks: Architecture exceeds physical foundation/slope limits. Required step 2.146 m / allowed 0.750 m; raster slope 11.629 deg / allowed 12 deg."
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-fe59d72c3e1e4df4/parcel-b24d458fe050324c/building",
+      "role": "dwelling.townhouse",
+      "function": "domestic",
+      "district": "elite",
+      "target_m2": 81.4,
+      "buildable_m2": 819.8556780265644,
+      "pin": null,
+      "composition": "row",
+      "floors": [
+        1,
+        2
+      ],
+      "shortlist_reconstruction": [
+        "MED-ANT-B01::adobe_walls",
+        "MED-ANT-B02::brick_walls",
+        "MED-ANT-B03::default",
+        "MED-ANT-B05::default"
+      ],
+      "b01_in_shortlist": true,
+      "final_class": "unsupported_composition_final",
+      "terrain_evidence": [
+        {
+          "required_step_m": 1.511,
+          "allowed_step_m": 0.75,
+          "raster_slope_deg": 9.713,
+          "allowed_slope_deg": 12.0
+        }
+      ],
+      "max_access_width_m": 19.592773007013623,
+      "message": "Architectural bodies, courts or structures do not fit the supplied domain. Constrained composition: Morphology: this authored layout/programme has no constrained composition operator; retain its native template. Street-front preference exhausted 12 bounded rigid poses; cadastral, roof and access constraints were retained. An earlier candidate fitting bodies/courts/structures failed terrain before roof/access checks: Architecture exceeds physical foundation/slope limits. Required step 1.511 m / allowed 0.750 m; raster slope 9.713 deg / allowed 12 deg."
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-ddbd9f08056bfe73/parcel-882c313a03a6f463/building",
+      "role": "dwelling.townhouse",
+      "function": "domestic",
+      "district": "elite",
+      "target_m2": 119.8,
+      "buildable_m2": 506.32455256022513,
+      "pin": null,
+      "composition": "row",
+      "floors": [
+        1,
+        2
+      ],
+      "shortlist_reconstruction": [
+        "MED-ANT-B01::adobe_walls",
+        "MED-ANT-B03::brick_walls",
+        "MED-ANT-B08::default",
+        "MED-ANT-B05::default"
+      ],
+      "b01_in_shortlist": true,
+      "final_class": "unsupported_composition_final",
+      "terrain_evidence": [
+        {
+          "required_step_m": 2.323,
+          "allowed_step_m": 0.75,
+          "raster_slope_deg": 11.735,
+          "allowed_slope_deg": 12.0
+        }
+      ],
+      "max_access_width_m": 33.49640055954448,
+      "message": "Architectural bodies, courts or structures do not fit the supplied domain. Constrained composition: Morphology: this authored layout/programme has no constrained composition operator; retain its native template. Street-front preference exhausted 6 bounded rigid poses; cadastral, roof and access constraints were retained. An earlier candidate fitting bodies/courts/structures failed terrain before roof/access checks: Architecture exceeds physical foundation/slope limits. Required step 2.323 m / allowed 0.750 m; raster slope 11.735 deg / allowed 12 deg."
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-c426f788eeae1b75/parcel-173389aa1c9632d7/building",
+      "role": "dwelling.townhouse",
+      "function": "domestic",
+      "district": "elite",
+      "target_m2": 90.1,
+      "buildable_m2": 411.0382487126626,
+      "pin": null,
+      "composition": "row",
+      "floors": [
+        1,
+        2
+      ],
+      "shortlist_reconstruction": [
+        "MED-ANT-B02::default",
+        "MED-ANT-B01::flat_earth",
+        "MED-ANT-B08::default",
+        "MED-ANT-B05::default"
+      ],
+      "b01_in_shortlist": true,
+      "final_class": "unsupported_composition_final",
+      "terrain_evidence": [
+        {
+          "required_step_m": 2.066,
+          "allowed_step_m": 0.75,
+          "raster_slope_deg": 12.032,
+          "allowed_slope_deg": 12.0
+        }
+      ],
+      "max_access_width_m": 9.79900191010218,
+      "message": "Architectural bodies, courts or structures do not fit the supplied domain. Constrained composition: Morphology: this authored layout/programme has no constrained composition operator; retain its native template. Street-front preference exhausted 7 bounded rigid poses; cadastral, roof and access constraints were retained. An earlier candidate fitting bodies/courts/structures failed terrain before roof/access checks: Architecture exceeds physical foundation/slope limits. Required step 2.066 m / allowed 0.750 m; raster slope 12.032 deg / allowed 12 deg."
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-c426f788eeae1b75/parcel-26d47bee4fb16f02/building",
+      "role": "dwelling.townhouse",
+      "function": "domestic",
+      "district": "elite",
+      "target_m2": 108.2,
+      "buildable_m2": 260.74221664108336,
+      "pin": null,
+      "composition": "row",
+      "floors": [
+        1,
+        2
+      ],
+      "shortlist_reconstruction": [
+        "MED-ANT-B05::default",
+        "MED-ANT-B01::brick_walls",
+        "MED-ANT-B08::default",
+        "MED-ANT-B02::brick_walls"
+      ],
+      "b01_in_shortlist": true,
+      "final_class": "unsupported_composition_final",
+      "terrain_evidence": [
+        {
+          "required_step_m": 1.759,
+          "allowed_step_m": 0.75,
+          "raster_slope_deg": 10.422,
+          "allowed_slope_deg": 12.0
+        }
+      ],
+      "max_access_width_m": 15.57377160341959,
+      "message": "Architectural bodies, courts or structures do not fit the supplied domain. Constrained composition: Morphology: this authored layout/programme has no constrained composition operator; retain its native template. Street-front preference exhausted 4 bounded rigid poses; cadastral, roof and access constraints were retained. An earlier candidate fitting bodies/courts/structures failed terrain before roof/access checks: Architecture exceeds physical foundation/slope limits. Required step 1.759 m / allowed 0.750 m; raster slope 10.422 deg / allowed 12 deg."
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-c426f788eeae1b75/parcel-cc272dda7d71304e/building",
+      "role": "dwelling.townhouse",
+      "function": "domestic",
+      "district": "elite",
+      "target_m2": 73.2,
+      "buildable_m2": 281.3098552087322,
+      "pin": null,
+      "composition": "row",
+      "floors": [
+        1,
+        2
+      ],
+      "shortlist_reconstruction": [
+        "MED-ANT-B03::default",
+        "MED-ANT-B01::default",
+        "MED-ANT-B05::flat_earth",
+        "MED-ANT-B02::default"
+      ],
+      "b01_in_shortlist": true,
+      "final_class": "unsupported_composition_final",
+      "terrain_evidence": [
+        {
+          "required_step_m": 1.217,
+          "allowed_step_m": 0.75,
+          "raster_slope_deg": 8.395,
+          "allowed_slope_deg": 12.0
+        }
+      ],
+      "max_access_width_m": 12.477552493890496,
+      "message": "Architectural bodies, courts or structures do not fit the supplied domain. Constrained composition: Morphology: this authored layout/programme has no constrained composition operator; retain its native template. Street-front preference exhausted 4 bounded rigid poses; cadastral, roof and access constraints were retained. An earlier candidate fitting bodies/courts/structures failed terrain before roof/access checks: Architecture exceeds physical foundation/slope limits. Required step 1.217 m / allowed 0.750 m; raster slope 8.395 deg / allowed 12 deg."
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-ac41be834bb394a9/parcel-590b91eb9709eb31/building",
+      "role": "dwelling.townhouse",
+      "function": "domestic",
+      "district": "elite",
+      "target_m2": 107.1,
+      "buildable_m2": 489.48126334743574,
+      "pin": null,
+      "composition": "row",
+      "floors": [
+        1,
+        2
+      ],
+      "shortlist_reconstruction": [
+        "MED-ANT-B02::default",
+        "MED-ANT-B05::flat_earth",
+        "MED-ANT-B01::flat_earth",
+        "MED-ANT-B08::default"
+      ],
+      "b01_in_shortlist": true,
+      "final_class": "minimum_span_final",
+      "terrain_evidence": [
+        {
+          "required_step_m": 1.705,
+          "allowed_step_m": 0.75,
+          "raster_slope_deg": 10.647,
+          "allowed_slope_deg": 12.0
+        }
+      ],
+      "max_access_width_m": 11.42110204415007,
+      "message": "Architectural bodies, courts or structures do not fit the supplied domain. Constrained composition: Morphology: available span 28.591 x 29.695 m cannot preserve minimum ranges/court/access (29.543 x 38.534 m). Street-front preference exhausted 8 bounded rigid poses; cadastral, roof and access constraints were retained. An earlier candidate fitting bodies/courts/structures failed terrain before roof/access checks: Architecture exceeds physical foundation/slope limits. Required step 1.705 m / allowed 0.750 m; raster slope 10.647 deg / allowed 12 deg."
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-ac41be834bb394a9/parcel-8a90f81442e699da/building",
+      "role": "dwelling.townhouse",
+      "function": "domestic",
+      "district": "elite",
+      "target_m2": 117.2,
+      "buildable_m2": 489.3407521066256,
+      "pin": null,
+      "composition": "row",
+      "floors": [
+        1,
+        2
+      ],
+      "shortlist_reconstruction": [
+        "MED-ANT-B05::flat_earth",
+        "MED-ANT-B03::brick_walls",
+        "MED-ANT-B01::default",
+        "MED-ANT-B08::default"
+      ],
+      "b01_in_shortlist": true,
+      "final_class": "minimum_span_final",
+      "terrain_evidence": [
+        {
+          "required_step_m": 2.402,
+          "allowed_step_m": 0.75,
+          "raster_slope_deg": 12.717,
+          "allowed_slope_deg": 12.0
+        }
+      ],
+      "max_access_width_m": 25.798821401305208,
+      "message": "Architectural bodies, courts or structures do not fit the supplied domain. Constrained composition: Morphology: available span 32.191 x 15.031 m cannot preserve minimum ranges/court/access (23.767 x 31.071 m). Street-front preference exhausted 8 bounded rigid poses; cadastral, roof and access constraints were retained. An earlier candidate fitting bodies/courts/structures failed terrain before roof/access checks: Architecture exceeds physical foundation/slope limits. Required step 2.402 m / allowed 0.750 m; raster slope 12.717 deg / allowed 12 deg."
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-38753e08c492bad6/parcel-df9cd59abdd557b0/building",
+      "role": "craft.fullonica",
+      "function": "workshop",
+      "district": "elite",
+      "target_m2": 103,
+      "buildable_m2": 507.56991334212944,
+      "pin": "MED-ANT-B01",
+      "composition": "row",
+      "floors": null,
+      "shortlist_reconstruction": null,
+      "b01_in_shortlist": null,
+      "final_class": "terrain_final",
+      "terrain_evidence": [
+        {
+          "required_step_m": 2.747,
+          "allowed_step_m": 0.75,
+          "raster_slope_deg": 13.9,
+          "allowed_slope_deg": 12.0
+        }
+      ],
+      "max_access_width_m": 15.268833389276526,
+      "message": "Architecture exceeds physical foundation/slope limits. Required step 2.747 m / allowed 0.750 m; raster slope 13.900 deg / allowed 12 deg."
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-38753e08c492bad6/parcel-a188d38a657ac25c/building",
+      "role": "dwelling.townhouse",
+      "function": "domestic",
+      "district": "elite",
+      "target_m2": 83.3,
+      "buildable_m2": 270.6693348935805,
+      "pin": null,
+      "composition": "row",
+      "floors": [
+        1,
+        2
+      ],
+      "shortlist_reconstruction": [
+        "MED-ANT-B03::default",
+        "MED-ANT-B01::flat_earth",
+        "MED-ANT-B05::default",
+        "MED-ANT-B02::default"
+      ],
+      "b01_in_shortlist": true,
+      "final_class": "unsupported_composition_final",
+      "terrain_evidence": [
+        {
+          "required_step_m": 1.848,
+          "allowed_step_m": 0.75,
+          "raster_slope_deg": 11.917,
+          "allowed_slope_deg": 12.0
+        }
+      ],
+      "max_access_width_m": 19.750456549971737,
+      "message": "Architectural bodies, courts or structures do not fit the supplied domain. Constrained composition: Morphology: this authored layout/programme has no constrained composition operator; retain its native template. Street-front preference exhausted 7 bounded rigid poses; cadastral, roof and access constraints were retained. An earlier candidate fitting bodies/courts/structures failed terrain before roof/access checks: Architecture exceeds physical foundation/slope limits. Required step 1.848 m / allowed 0.750 m; raster slope 11.917 deg / allowed 12 deg."
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-38753e08c492bad6/parcel-8ccbb417cc6ae9b0/building",
+      "role": "dwelling.townhouse",
+      "function": "domestic",
+      "district": "elite",
+      "target_m2": 104.6,
+      "buildable_m2": 924.3518328233622,
+      "pin": null,
+      "composition": "row",
+      "floors": [
+        1,
+        2
+      ],
+      "shortlist_reconstruction": [
+        "MED-ANT-B03::default",
+        "MED-ANT-B02::default",
+        "MED-ANT-B01::flat_earth",
+        "MED-ANT-B08::default"
+      ],
+      "b01_in_shortlist": true,
+      "final_class": "minimum_span_final",
+      "terrain_evidence": [
+        {
+          "required_step_m": 2.478,
+          "allowed_step_m": 0.75,
+          "raster_slope_deg": 12.427,
+          "allowed_slope_deg": 12.0
+        }
+      ],
+      "max_access_width_m": 14.042141775764469,
+      "message": "Architectural bodies, courts or structures do not fit the supplied domain. Constrained composition: Morphology: available span 23.846 x 51.128 m cannot preserve minimum ranges/court/access (25.385 x 25.385 m). Street-front preference exhausted 10 bounded rigid poses; cadastral, roof and access constraints were retained. An earlier candidate fitting bodies/courts/structures failed terrain before roof/access checks: Architecture exceeds physical foundation/slope limits. Required step 2.478 m / allowed 0.750 m; raster slope 12.427 deg / allowed 12 deg."
+    }
+  ]
+}

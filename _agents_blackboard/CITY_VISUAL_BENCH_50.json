@@ -1,0 +1,3780 @@
+{
+  "version": 2,
+  "status": "prepared_not_executed",
+  "created": "2026-10-22",
+  "scope": "50 primary screenshots: 40 distinct settlements and 10 close views, plus 12 declared auxiliary screenshots outside that count. This generator performs no run; execution reports are separate.",
+  "sources": [
+    "web/decors/index.json",
+    "rust/crates/core/src/urban/catalogue.json",
+    "rust/crates/core/src/urban/services.json",
+    "rust/bridge/urbanConfig.ts",
+    "web/scripts/city_bench_check.mjs",
+    "web/scripts/city_visual_audit.mjs",
+    "_agents_blackboard/city-visual-audit/01-l/quarters-request.json",
+    "_agents_blackboard/city-visual-audit/04-mountain/quarters-request.json",
+    "_agents_blackboard/city-visual-audit/01-l/focused-cases.json"
+  ],
+  "defaults": {
+    "viewport": {
+      "width": 1500,
+      "height": 1000
+    },
+    "deviceScaleFactor": 1,
+    "executionProfile": "local",
+    "background": "atlas",
+    "primaryImage": "{id}.png",
+    "sequential": true,
+    "retryCount": 0
+  },
+  "gates": {
+    "p0": "D2 progressive integration + A3 lot/body corrections visually reviewed. Run only on a coordinated binary; never rebuild/restart inside this suite.",
+    "specialized": "All P0 gates plus B2 low-end/state bridge/UI/runtime capability verified. Report unsupported instead of silent substitution.",
+    "million": "All P0 gates plus explicit resource/time budget after 100k completes. Uses compact base + bounded on-demand detail; never eager native city. Declared decor capacity exceeded."
+  },
+  "mergeRules": [
+    "Start from the artifact saved query. Set one list entry key=city, then override culture/population/settlement. Absence of settlement.position deletes any saved position and selects deterministically with the seed.",
+    "Deep merge urban nested overrides. Use the explicitly stored quarterSeed, parcelSeed and buildingState.seed verbatim, without adding suffixes; terrain seed stays the recorded decorSeed.",
+    "regressionReference identifies frozen native inputs and baseline outputs. Fixture-derived UI cases are not exact input replays: the UI recalculates settlements and roads. Do not claim identical regression geometry without comparing actual input payloads.",
+    "Generate/retain compact plans first for compact and detailed modes. Reuse pairedWith retained plans where available; only change camera/detail mode for the close shot.",
+    "Overview is focusCity fitted to applied settlement. Fixed camera is metres; restore view.scale=1/mpp after generation. Save final map viewBox.",
+    "Record actual server URL/version/binary timestamp and source revisions in report, never bake a port into shared situation content.",
+    "Exactly one primary PNG per entry. Auxiliary before/after, parcel, parchment or 3D captures use separate names and do not inflate the 50 primary views."
+  ],
+  "auxiliaryContract": {
+    "status": "declared_not_executed_runner_support_pending",
+    "unit": "Each case.auxiliaryViews entry is one capture, excluded from primaryScreenshots. image is its explicit output filename.",
+    "fields": "id, comparisonGroup, camera, renderView (parcels|buildings), architecture (compact|silhouette), image, countsTowardPrimary=false, purpose, fixtureFeatures",
+    "reuse": "Keep the same retained urban layout/partition and seeds for every entry in a comparisonGroup. Reuse native compact plans; obtain silhouettes from the same urban inputs. Changing layers must not regenerate settlements, roads, quarters or parcels.",
+    "camera": "All three entries of a group use exactly the same fixed world camera. Save actual map viewport/viewBox; a missing former witness after a fix is reported, not silently recentered.",
+    "provenance": "fixtureFeatures are baseline identifiers, not promises of stable IDs after geometry changes. The two 100k witness cameras derive from city-visual-audit/01-l/focused-cases.json.",
+    "unsupported": "Until the runner implements these captures, prepared/report must record them as pending/unsupported rather than count them as successful or omit them silently."
+  },
+  "measures": [
+    "Runtime version, CPU/RAM/process load snapshot, browser/version, source revisions, exact request/situation and applied camera.",
+    "Terrain ready; settlements, roads, quarters, parcels, buildingSites, first compact response, first visible building paint, complete compact scene timestamps separately.",
+    "Per-route request/response bytes, JSON parse/worker-transfer time when observable, archives bytes and peak browser heap where available.",
+    "Buildings accepted, refused by code/message, intended open spaces, requested/parcel/actual capacity with unknown kept null.",
+    "Recipes, variants, packs, body counts, material IDs and their frequencies; fallback/unsupported culture or functional-profile provenance.",
+    "Parcel area/frontage/depth/aspect quantiles, residual/unserved shares, invalid rings, overlap/outside lot, courtyard/min-wing-width examples.",
+    "Actual site and footprint slope distributions from the decor raster, sampled elevations/grades, stairs/terrace/access outcomes and applicable configured slope thresholds; relief tags alone do not establish slope adaptation.",
+    "Renderer queried/visible/drawn counts, LOD distribution, prepared vertices, roof mesh reads, raster tiles pending/cache bytes and warm-frame CPU.",
+    "Detail queue/inFlight/globalInFlight/cached/refused/cacheBytes/cachedVertices; no overview realization and physical peak≤2.",
+    "Browser errors, warning text, unfinished/chunk progress at deadline; image filenames and manual visual verdict with explicit reasons."
+  ],
+  "coverage": {
+    "primaryScreenshots": 50,
+    "distinctScenes": 40,
+    "closeViews": 10,
+    "auxiliaryScreenshots": 12,
+    "auxiliaryCameraGroups": 4,
+    "catalogueCultureCount": 53,
+    "coveredCultures": [
+      "aztec",
+      "barbarian-celtic",
+      "barbarian-norse",
+      "bastide",
+      "byzantine-greek",
+      "chinese",
+      "duergar-hold",
+      "dwarven",
+      "egyptian-planned",
+      "elven",
+      "european-organic",
+      "halfling",
+      "hanseatic",
+      "himalayan-terraces",
+      "inca",
+      "indus-planned",
+      "japanese-jokamachi",
+      "javanese-courts",
+      "khmer",
+      "korean",
+      "kraal",
+      "ksar-oasis",
+      "maya",
+      "medina",
+      "mesopotamian",
+      "native-iroquoian",
+      "native-plains",
+      "native-pueblo",
+      "newar",
+      "nomad-camp",
+      "nubian-fortified",
+      "oasis-caravan",
+      "ottoman",
+      "persian",
+      "roman-core",
+      "sahel",
+      "swahili-stone-town",
+      "yoruba"
+    ],
+    "notCoveredCultures": [
+      "barbarian",
+      "celtic-oppidum",
+      "drow-enclave",
+      "gnomish",
+      "indian-temple",
+      "levantine-tell",
+      "mississippian",
+      "myconid-colony",
+      "necropolis",
+      "norse-ringfort",
+      "orcish",
+      "russian-kremlin",
+      "stilt-town",
+      "venetian-lagoon",
+      "wizard-city"
+    ],
+    "decorCount": 21,
+    "environmentCount": 15,
+    "biomeTagMeaning": "Existing decor climate tag, not a verified per-pixel ecological biome."
+  },
+  "cases": [
+    {
+      "id": "01-farm",
+      "title": "Ferme isolée : corps habitables et dépendances lisibles sans réseau urbain artificiel.",
+      "artifact": "city-01-river-plain-s",
+      "culture": "european-organic",
+      "population": 8,
+      "seed": "visual50-v1-01-farm",
+      "settlement": {
+        "kind": "settlement",
+        "siteType": "auto",
+        "sitePrefs": {},
+        "position": {
+          "x": 2000,
+          "y": 2000
+        }
+      },
+      "urban": {
+        "quarterSeed": "visual50-v1-01-farm",
+        "parcelSeed": "visual50-v1-01-farm:parcels",
+        "layoutConfig": {
+          "programme": {
+            "mode": "inspired",
+            "role": "isolated-farm"
+          }
+        },
+        "buildingState": {
+          "seed": "visual50-v1-01-farm:houses",
+          "settings": {
+            "parcel_fit": true
+          }
+        }
+      },
+      "architecture": "compact",
+      "camera": {
+        "kind": "overview"
+      },
+      "tags": {
+        "biome": "temperate",
+        "relief": "flat",
+        "size": "farmstead",
+        "culture": "european-organic",
+        "environment": "river-plain"
+      },
+      "expectations": [
+        "Ferme isolée : corps habitables et dépendances lisibles sans réseau urbain artificiel.",
+        "Capture de bâtiments réellement affichés ; un état vide/refusé doit rester explicite dans le rapport.",
+        "Aucune génération native détaillée de toute la ville ; détails limités au visible ou à la sélection.",
+        "Empreintes conservées entre plan compact et détail, cours ouvertes, absence de slivers et de masquage silencieux des refus."
+      ],
+      "limitations": [
+        "Le nom de culture ne prouve pas sa couverture architecturale : relever pack, recette, profil, confiance et refus réels.",
+        "Les plans compacts ne certifient ni intérieurs ni capacité habitée ; conserver une valeur inconnue explicite.",
+        "Monuments et ateliers spécialisés peuvent rester des aperçus de programme ; ne pas les présenter comme modèles natifs certifiés.",
+        "Attendre B2 publié dans le bridge/UI et le binaire utilisé ; un rôle de programme ne garantit pas une géométrie spécialisée."
+      ],
+      "gate": "specialized",
+      "source": {
+        "decorWidthM": 4000,
+        "decorSeed": "city-river-plain-s",
+        "declaredMaxPopulation": 10000,
+        "cultureLabel": "Medieval organic (Europe)"
+      }
+    },
+    {
+      "id": "02-mill",
+      "title": "Moulin isolé : atelier identifié par craft.mill, accès et relation à une eau courante réelle.",
+      "artifact": "city-13-temperate-valley-s",
+      "culture": "european-organic",
+      "population": 6,
+      "seed": "visual50-v1-02-mill",
+      "settlement": {
+        "kind": "settlement",
+        "siteType": "meander",
+        "sitePrefs": {}
+      },
+      "urban": {
+        "quarterSeed": "visual50-v1-02-mill",
+        "parcelSeed": "visual50-v1-02-mill:parcels",
+        "layoutConfig": {
+          "programme": {
+            "mode": "inspired",
+            "role": "isolated-mill"
+          }
+        },
+        "buildingState": {
+          "seed": "visual50-v1-02-mill:houses",
+          "settings": {
+            "parcel_fit": true
+          }
+        }
+      },
+      "architecture": "compact",
+      "camera": {
+        "kind": "overview"
+      },
+      "tags": {
+        "biome": "temperate",
+        "relief": "valley",
+        "size": "farmstead",
+        "culture": "european-organic",
+        "environment": "temperate-valley"
+      },
+      "expectations": [
+        "Moulin isolé : atelier identifié par craft.mill, accès et relation à une eau courante réelle.",
+        "Capture de bâtiments réellement affichés ; un état vide/refusé doit rester explicite dans le rapport.",
+        "Aucune génération native détaillée de toute la ville ; détails limités au visible ou à la sélection.",
+        "Empreintes conservées entre plan compact et détail, cours ouvertes, absence de slivers et de masquage silencieux des refus."
+      ],
+      "limitations": [
+        "Le nom de culture ne prouve pas sa couverture architecturale : relever pack, recette, profil, confiance et refus réels.",
+        "Les plans compacts ne certifient ni intérieurs ni capacité habitée ; conserver une valeur inconnue explicite.",
+        "Monuments et ateliers spécialisés peuvent rester des aperçus de programme ; ne pas les présenter comme modèles natifs certifiés.",
+        "Attendre B2 publié dans le bridge/UI et le binaire utilisé ; un rôle de programme ne garantit pas une géométrie spécialisée."
+      ],
+      "gate": "specialized",
+      "source": {
+        "decorWidthM": 4000,
+        "decorSeed": "city-temperate-valley-s",
+        "declaredMaxPopulation": 10000,
+        "cultureLabel": "Medieval organic (Europe)"
+      }
+    },
+    {
+      "id": "03-norse-hamlet",
+      "title": "Hameau boréal : groupes de maisons longues séparés et espace agricole.",
+      "artifact": "city-09-boreal-river-s",
+      "culture": "barbarian-norse",
+      "population": 40,
+      "seed": "visual50-v1-03-norse-hamlet",
+      "settlement": {
+        "kind": "settlement",
+        "siteType": "auto",
+        "sitePrefs": {}
+      },
+      "urban": {
+        "quarterSeed": "visual50-v1-03-norse-hamlet",
+        "parcelSeed": "visual50-v1-03-norse-hamlet:parcels",
+        "layoutConfig": {
+          "programme": {
+            "mode": "inspired"
+          }
+        },
+        "buildingState": {
+          "seed": "visual50-v1-03-norse-hamlet:houses",
+          "settings": {
+            "parcel_fit": true
+          }
+        }
+      },
+      "architecture": "compact",
+      "camera": {
+        "kind": "overview"
+      },
+      "tags": {
+        "biome": "cold",
+        "relief": "mixed",
+        "size": "hamlet",
+        "culture": "barbarian-norse",
+        "environment": "boreal-river"
+      },
+      "expectations": [
+        "Hameau boréal : groupes de maisons longues séparés et espace agricole.",
+        "Capture de bâtiments réellement affichés ; un état vide/refusé doit rester explicite dans le rapport.",
+        "Aucune génération native détaillée de toute la ville ; détails limités au visible ou à la sélection.",
+        "Empreintes conservées entre plan compact et détail, cours ouvertes, absence de slivers et de masquage silencieux des refus."
+      ],
+      "limitations": [
+        "Le nom de culture ne prouve pas sa couverture architecturale : relever pack, recette, profil, confiance et refus réels.",
+        "Les plans compacts ne certifient ni intérieurs ni capacité habitée ; conserver une valeur inconnue explicite.",
+        "Monuments et ateliers spécialisés peuvent rester des aperçus de programme ; ne pas les présenter comme modèles natifs certifiés."
+      ],
+      "gate": "p0",
+      "source": {
+        "decorWidthM": 4000,
+        "decorSeed": "city-boreal-river-s",
+        "declaredMaxPopulation": 10000,
+        "cultureLabel": "Barbarian: Norse farmstead cluster"
+      }
+    },
+    {
+      "id": "04-celtic-hamlet",
+      "title": "Hameau à maisons rondes : cour centrale et taille des corps lisibles.",
+      "artifact": "city-03-aegean-hills-s",
+      "culture": "barbarian-celtic",
+      "population": 60,
+      "seed": "visual50-v1-04-celtic-hamlet",
+      "settlement": {
+        "kind": "settlement",
+        "siteType": "auto",
+        "sitePrefs": {},
+        "position": {
+          "x": 2000,
+          "y": 2000
+        }
+      },
+      "urban": {
+        "quarterSeed": "visual50-v1-04-celtic-hamlet",
+        "parcelSeed": "visual50-v1-04-celtic-hamlet:parcels",
+        "layoutConfig": {
+          "programme": {
+            "mode": "inspired"
+          }
+        },
+        "buildingState": {
+          "seed": "visual50-v1-04-celtic-hamlet:houses",
+          "settings": {
+            "parcel_fit": true
+          }
+        }
+      },
+      "architecture": "compact",
+      "camera": {
+        "kind": "overview"
+      },
+      "tags": {
+        "biome": "mediterranean",
+        "relief": "hills",
+        "size": "hamlet",
+        "culture": "barbarian-celtic",
+        "environment": "aegean-hills"
+      },
+      "expectations": [
+        "Hameau à maisons rondes : cour centrale et taille des corps lisibles.",
+        "Capture de bâtiments réellement affichés ; un état vide/refusé doit rester explicite dans le rapport.",
+        "Aucune génération native détaillée de toute la ville ; détails limités au visible ou à la sélection.",
+        "Empreintes conservées entre plan compact et détail, cours ouvertes, absence de slivers et de masquage silencieux des refus."
+      ],
+      "limitations": [
+        "Le nom de culture ne prouve pas sa couverture architecturale : relever pack, recette, profil, confiance et refus réels.",
+        "Les plans compacts ne certifient ni intérieurs ni capacité habitée ; conserver une valeur inconnue explicite.",
+        "Monuments et ateliers spécialisés peuvent rester des aperçus de programme ; ne pas les présenter comme modèles natifs certifiés."
+      ],
+      "gate": "p0",
+      "source": {
+        "decorWidthM": 4000,
+        "decorSeed": "city-aegean-hills-s",
+        "declaredMaxPopulation": 10000,
+        "cultureLabel": "Barbarian: Celtic ringfort"
+      }
+    },
+    {
+      "id": "05-kraal-village",
+      "title": "Concessions et espace collectif : séparation des toits arrondis et du vide central.",
+      "artifact": "city-07-arid-shore-s",
+      "culture": "kraal",
+      "population": 300,
+      "seed": "visual50-v1-05-kraal-village",
+      "settlement": {
+        "kind": "settlement",
+        "siteType": "auto",
+        "sitePrefs": {},
+        "position": {
+          "x": 2000,
+          "y": 2000
+        }
+      },
+      "urban": {
+        "quarterSeed": "visual50-v1-05-kraal-village",
+        "parcelSeed": "visual50-v1-05-kraal-village:parcels",
+        "layoutConfig": {
+          "programme": {
+            "mode": "inspired"
+          }
+        },
+        "buildingState": {
+          "seed": "visual50-v1-05-kraal-village:houses",
+          "settings": {
+            "parcel_fit": true
+          }
+        }
+      },
+      "architecture": "compact",
+      "camera": {
+        "kind": "overview"
+      },
+      "tags": {
+        "biome": "arid",
+        "relief": "flat",
+        "size": "village",
+        "culture": "kraal",
+        "environment": "arid-shore"
+      },
+      "expectations": [
+        "Concessions et espace collectif : séparation des toits arrondis et du vide central.",
+        "Capture de bâtiments réellement affichés ; un état vide/refusé doit rester explicite dans le rapport.",
+        "Aucune génération native détaillée de toute la ville ; détails limités au visible ou à la sélection.",
+        "Empreintes conservées entre plan compact et détail, cours ouvertes, absence de slivers et de masquage silencieux des refus."
+      ],
+      "limitations": [
+        "Le nom de culture ne prouve pas sa couverture architecturale : relever pack, recette, profil, confiance et refus réels.",
+        "Les plans compacts ne certifient ni intérieurs ni capacité habitée ; conserver une valeur inconnue explicite.",
+        "Monuments et ateliers spécialisés peuvent rester des aperçus de programme ; ne pas les présenter comme modèles natifs certifiés.",
+        "Décor de substitution géographique : mesure de contraste morphologique, pas reconstitution historique ni écologique."
+      ],
+      "gate": "p0",
+      "source": {
+        "decorWidthM": 4000,
+        "decorSeed": "city-arid-shore-s",
+        "declaredMaxPopulation": 10000,
+        "cultureLabel": "Kraal (African homestead)"
+      }
+    },
+    {
+      "id": "06-iroquoian-village",
+      "title": "Village de maisons longues : orientation des corps, accès et espaces entre groupes.",
+      "artifact": "city-09-boreal-river-s",
+      "culture": "native-iroquoian",
+      "population": 450,
+      "seed": "visual50-v1-06-iroquoian-village",
+      "settlement": {
+        "kind": "settlement",
+        "siteType": "auto",
+        "sitePrefs": {}
+      },
+      "urban": {
+        "quarterSeed": "visual50-v1-06-iroquoian-village",
+        "parcelSeed": "visual50-v1-06-iroquoian-village:parcels",
+        "layoutConfig": {
+          "programme": {
+            "mode": "inspired"
+          }
+        },
+        "buildingState": {
+          "seed": "visual50-v1-06-iroquoian-village:houses",
+          "settings": {
+            "parcel_fit": true
+          }
+        }
+      },
+      "architecture": "compact",
+      "camera": {
+        "kind": "overview"
+      },
+      "tags": {
+        "biome": "cold",
+        "relief": "mixed",
+        "size": "village",
+        "culture": "native-iroquoian",
+        "environment": "boreal-river"
+      },
+      "expectations": [
+        "Village de maisons longues : orientation des corps, accès et espaces entre groupes.",
+        "Capture de bâtiments réellement affichés ; un état vide/refusé doit rester explicite dans le rapport.",
+        "Aucune génération native détaillée de toute la ville ; détails limités au visible ou à la sélection.",
+        "Empreintes conservées entre plan compact et détail, cours ouvertes, absence de slivers et de masquage silencieux des refus."
+      ],
+      "limitations": [
+        "Le nom de culture ne prouve pas sa couverture architecturale : relever pack, recette, profil, confiance et refus réels.",
+        "Les plans compacts ne certifient ni intérieurs ni capacité habitée ; conserver une valeur inconnue explicite.",
+        "Monuments et ateliers spécialisés peuvent rester des aperçus de programme ; ne pas les présenter comme modèles natifs certifiés."
+      ],
+      "gate": "p0",
+      "source": {
+        "decorWidthM": 4000,
+        "decorSeed": "city-boreal-river-s",
+        "declaredMaxPopulation": 10000,
+        "cultureLabel": "Native American: Iroquoian longhouse village"
+      }
+    },
+    {
+      "id": "07-pueblo",
+      "title": "Volumes compacts en terrasses : conserver retraits et cours sans aplat uniforme.",
+      "artifact": "city-05-arid-plateau-s",
+      "culture": "native-pueblo",
+      "population": 900,
+      "seed": "visual50-v1-07-pueblo",
+      "settlement": {
+        "kind": "settlement",
+        "siteType": "auto",
+        "sitePrefs": {},
+        "position": {
+          "x": 2000,
+          "y": 2000
+        }
+      },
+      "urban": {
+        "quarterSeed": "visual50-v1-07-pueblo",
+        "parcelSeed": "visual50-v1-07-pueblo:parcels",
+        "layoutConfig": {
+          "programme": {
+            "mode": "inspired"
+          }
+        },
+        "buildingState": {
+          "seed": "visual50-v1-07-pueblo:houses",
+          "settings": {
+            "parcel_fit": true
+          }
+        }
+      },
+      "architecture": "compact",
+      "camera": {
+        "kind": "overview"
+      },
+      "tags": {
+        "biome": "arid",
+        "relief": "plateau",
+        "size": "village",
+        "culture": "native-pueblo",
+        "environment": "arid-plateau"
+      },
+      "expectations": [
+        "Volumes compacts en terrasses : conserver retraits et cours sans aplat uniforme.",
+        "Capture de bâtiments réellement affichés ; un état vide/refusé doit rester explicite dans le rapport.",
+        "Aucune génération native détaillée de toute la ville ; détails limités au visible ou à la sélection.",
+        "Empreintes conservées entre plan compact et détail, cours ouvertes, absence de slivers et de masquage silencieux des refus."
+      ],
+      "limitations": [
+        "Le nom de culture ne prouve pas sa couverture architecturale : relever pack, recette, profil, confiance et refus réels.",
+        "Les plans compacts ne certifient ni intérieurs ni capacité habitée ; conserver une valeur inconnue explicite.",
+        "Monuments et ateliers spécialisés peuvent rester des aperçus de programme ; ne pas les présenter comme modèles natifs certifiés."
+      ],
+      "gate": "p0",
+      "source": {
+        "decorWidthM": 4000,
+        "decorSeed": "city-arid-plateau-s",
+        "declaredMaxPopulation": 10000,
+        "cultureLabel": "Native American: Pueblo"
+      }
+    },
+    {
+      "id": "08-plains-camp",
+      "title": "Camp de plaine : unités rondes et organisation collective lisibles.",
+      "artifact": "city-01-river-plain-s",
+      "culture": "native-plains",
+      "population": 150,
+      "seed": "visual50-v1-08-plains-camp",
+      "settlement": {
+        "kind": "settlement",
+        "siteType": "auto",
+        "sitePrefs": {},
+        "position": {
+          "x": 2000,
+          "y": 2000
+        }
+      },
+      "urban": {
+        "quarterSeed": "visual50-v1-08-plains-camp",
+        "parcelSeed": "visual50-v1-08-plains-camp:parcels",
+        "layoutConfig": {
+          "programme": {
+            "mode": "inspired"
+          }
+        },
+        "buildingState": {
+          "seed": "visual50-v1-08-plains-camp:houses",
+          "settings": {
+            "parcel_fit": true
+          }
+        }
+      },
+      "architecture": "compact",
+      "camera": {
+        "kind": "overview"
+      },
+      "tags": {
+        "biome": "temperate",
+        "relief": "flat",
+        "size": "village",
+        "culture": "native-plains",
+        "environment": "river-plain"
+      },
+      "expectations": [
+        "Camp de plaine : unités rondes et organisation collective lisibles.",
+        "Capture de bâtiments réellement affichés ; un état vide/refusé doit rester explicite dans le rapport.",
+        "Aucune génération native détaillée de toute la ville ; détails limités au visible ou à la sélection.",
+        "Empreintes conservées entre plan compact et détail, cours ouvertes, absence de slivers et de masquage silencieux des refus."
+      ],
+      "limitations": [
+        "Le nom de culture ne prouve pas sa couverture architecturale : relever pack, recette, profil, confiance et refus réels.",
+        "Les plans compacts ne certifient ni intérieurs ni capacité habitée ; conserver une valeur inconnue explicite.",
+        "Monuments et ateliers spécialisés peuvent rester des aperçus de programme ; ne pas les présenter comme modèles natifs certifiés.",
+        "Décor de substitution géographique : mesure de contraste morphologique, pas reconstitution historique ni écologique."
+      ],
+      "gate": "p0",
+      "source": {
+        "decorWidthM": 4000,
+        "decorSeed": "city-river-plain-s",
+        "declaredMaxPopulation": 10000,
+        "cultureLabel": "Native American: Plains tipi camp"
+      }
+    },
+    {
+      "id": "09-nomad-camp",
+      "title": "Camp nomade : densité ouverte et variations de taille sans alignements domestiques imposés.",
+      "artifact": "city-06-desert-valley-s",
+      "culture": "nomad-camp",
+      "population": 500,
+      "seed": "visual50-v1-09-nomad-camp",
+      "settlement": {
+        "kind": "settlement",
+        "siteType": "auto",
+        "sitePrefs": {}
+      },
+      "urban": {
+        "quarterSeed": "visual50-v1-09-nomad-camp",
+        "parcelSeed": "visual50-v1-09-nomad-camp:parcels",
+        "layoutConfig": {
+          "programme": {
+            "mode": "inspired"
+          }
+        },
+        "buildingState": {
+          "seed": "visual50-v1-09-nomad-camp:houses",
+          "settings": {
+            "parcel_fit": true
+          }
+        }
+      },
+      "architecture": "compact",
+      "camera": {
+        "kind": "overview"
+      },
+      "tags": {
+        "biome": "arid",
+        "relief": "valley",
+        "size": "village",
+        "culture": "nomad-camp",
+        "environment": "desert-valley"
+      },
+      "expectations": [
+        "Camp nomade : densité ouverte et variations de taille sans alignements domestiques imposés.",
+        "Capture de bâtiments réellement affichés ; un état vide/refusé doit rester explicite dans le rapport.",
+        "Aucune génération native détaillée de toute la ville ; détails limités au visible ou à la sélection.",
+        "Empreintes conservées entre plan compact et détail, cours ouvertes, absence de slivers et de masquage silencieux des refus."
+      ],
+      "limitations": [
+        "Le nom de culture ne prouve pas sa couverture architecturale : relever pack, recette, profil, confiance et refus réels.",
+        "Les plans compacts ne certifient ni intérieurs ni capacité habitée ; conserver une valeur inconnue explicite.",
+        "Monuments et ateliers spécialisés peuvent rester des aperçus de programme ; ne pas les présenter comme modèles natifs certifiés."
+      ],
+      "gate": "p0",
+      "source": {
+        "decorWidthM": 4000,
+        "decorSeed": "city-desert-valley-s",
+        "declaredMaxPopulation": 10000,
+        "cultureLabel": "Nomad camp (steppe ordu)"
+      }
+    },
+    {
+      "id": "10-halfling-hamlet",
+      "title": "Hameau fantasy : petites implantations espacées et adaptation à la vallée.",
+      "artifact": "city-13-temperate-valley-s",
+      "culture": "halfling",
+      "population": 80,
+      "seed": "visual50-v1-10-halfling-hamlet",
+      "settlement": {
+        "kind": "settlement",
+        "siteType": "auto",
+        "sitePrefs": {}
+      },
+      "urban": {
+        "quarterSeed": "visual50-v1-10-halfling-hamlet",
+        "parcelSeed": "visual50-v1-10-halfling-hamlet:parcels",
+        "layoutConfig": {
+          "programme": {
+            "mode": "fantasy"
+          }
+        },
+        "buildingState": {
+          "seed": "visual50-v1-10-halfling-hamlet:houses",
+          "settings": {
+            "parcel_fit": true
+          }
+        }
+      },
+      "architecture": "compact",
+      "camera": {
+        "kind": "overview"
+      },
+      "tags": {
+        "biome": "temperate",
+        "relief": "valley",
+        "size": "hamlet",
+        "culture": "halfling",
+        "environment": "temperate-valley"
+      },
+      "expectations": [
+        "Hameau fantasy : petites implantations espacées et adaptation à la vallée.",
+        "Capture de bâtiments réellement affichés ; un état vide/refusé doit rester explicite dans le rapport.",
+        "Aucune génération native détaillée de toute la ville ; détails limités au visible ou à la sélection.",
+        "Empreintes conservées entre plan compact et détail, cours ouvertes, absence de slivers et de masquage silencieux des refus."
+      ],
+      "limitations": [
+        "Le nom de culture ne prouve pas sa couverture architecturale : relever pack, recette, profil, confiance et refus réels.",
+        "Les plans compacts ne certifient ni intérieurs ni capacité habitée ; conserver une valeur inconnue explicite.",
+        "Monuments et ateliers spécialisés peuvent rester des aperçus de programme ; ne pas les présenter comme modèles natifs certifiés."
+      ],
+      "gate": "p0",
+      "source": {
+        "decorWidthM": 4000,
+        "decorSeed": "city-temperate-valley-s",
+        "declaredMaxPopulation": 10000,
+        "cultureLabel": "Halfling shire"
+      }
+    },
+    {
+      "id": "11-byzantine-hills",
+      "title": "Bourg sur collines : lots obliques, accès et corps architecturaux sans pointes.",
+      "artifact": "city-03-aegean-hills-s",
+      "culture": "byzantine-greek",
+      "population": 4000,
+      "seed": "visual50-v1-11-byzantine-hills",
+      "settlement": {
+        "kind": "settlement",
+        "siteType": "auto",
+        "sitePrefs": {},
+        "position": {
+          "x": 2000,
+          "y": 2000
+        }
+      },
+      "urban": {
+        "quarterSeed": "visual50-v1-11-byzantine-hills",
+        "parcelSeed": "visual50-v1-11-byzantine-hills:parcels",
+        "layoutConfig": {
+          "programme": {
+            "mode": "inspired"
+          }
+        },
+        "buildingState": {
+          "seed": "visual50-v1-11-byzantine-hills:houses",
+          "settings": {
+            "parcel_fit": true
+          }
+        }
+      },
+      "architecture": "compact",
+      "camera": {
+        "kind": "overview"
+      },
+      "tags": {
+        "biome": "mediterranean",
+        "relief": "hills",
+        "size": "town",
+        "culture": "byzantine-greek",
+        "environment": "aegean-hills"
+      },
+      "expectations": [
+        "Bourg sur collines : lots obliques, accès et corps architecturaux sans pointes.",
+        "Capture de bâtiments réellement affichés ; un état vide/refusé doit rester explicite dans le rapport.",
+        "Aucune génération native détaillée de toute la ville ; détails limités au visible ou à la sélection.",
+        "Empreintes conservées entre plan compact et détail, cours ouvertes, absence de slivers et de masquage silencieux des refus."
+      ],
+      "limitations": [
+        "Le nom de culture ne prouve pas sa couverture architecturale : relever pack, recette, profil, confiance et refus réels.",
+        "Les plans compacts ne certifient ni intérieurs ni capacité habitée ; conserver une valeur inconnue explicite.",
+        "Monuments et ateliers spécialisés peuvent rester des aperçus de programme ; ne pas les présenter comme modèles natifs certifiés."
+      ],
+      "gate": "p0",
+      "source": {
+        "decorWidthM": 4000,
+        "decorSeed": "city-aegean-hills-s",
+        "declaredMaxPopulation": 10000,
+        "cultureLabel": "Byzantine hill town (Mystras)"
+      }
+    },
+    {
+      "id": "12-hanseatic-port",
+      "title": "Port atlantique : fronts bâtis, profondeur des maisons et places distingués.",
+      "artifact": "city-02-atlantic-coast-s",
+      "culture": "hanseatic",
+      "population": 8000,
+      "seed": "visual50-v1-12-hanseatic-port",
+      "settlement": {
+        "kind": "settlement",
+        "siteType": "auto",
+        "sitePrefs": {},
+        "position": {
+          "x": 2000,
+          "y": 2000
+        }
+      },
+      "urban": {
+        "quarterSeed": "visual50-v1-12-hanseatic-port",
+        "parcelSeed": "visual50-v1-12-hanseatic-port:parcels",
+        "layoutConfig": {
+          "programme": {
+            "mode": "inspired",
+            "role": "port"
+          }
+        },
+        "buildingState": {
+          "seed": "visual50-v1-12-hanseatic-port:houses",
+          "settings": {
+            "parcel_fit": true
+          }
+        }
+      },
+      "architecture": "compact",
+      "camera": {
+        "kind": "overview"
+      },
+      "tags": {
+        "biome": "oceanic",
+        "relief": "hills",
+        "size": "town",
+        "culture": "hanseatic",
+        "environment": "atlantic-coast"
+      },
+      "expectations": [
+        "Port atlantique : fronts bâtis, profondeur des maisons et places distingués.",
+        "Capture de bâtiments réellement affichés ; un état vide/refusé doit rester explicite dans le rapport.",
+        "Aucune génération native détaillée de toute la ville ; détails limités au visible ou à la sélection.",
+        "Empreintes conservées entre plan compact et détail, cours ouvertes, absence de slivers et de masquage silencieux des refus."
+      ],
+      "limitations": [
+        "Le nom de culture ne prouve pas sa couverture architecturale : relever pack, recette, profil, confiance et refus réels.",
+        "Les plans compacts ne certifient ni intérieurs ni capacité habitée ; conserver une valeur inconnue explicite.",
+        "Monuments et ateliers spécialisés peuvent rester des aperçus de programme ; ne pas les présenter comme modèles natifs certifiés."
+      ],
+      "gate": "p0",
+      "source": {
+        "decorWidthM": 4000,
+        "decorSeed": "city-atlantic-coast-s",
+        "declaredMaxPopulation": 10000,
+        "cultureLabel": "Hanseatic port (Lubeck)"
+      }
+    },
+    {
+      "id": "13-medina-courts",
+      "title": "Médina : cours ouvertes au ciel, ailes assez épaisses et ruelles accessibles.",
+      "artifact": "city-05-arid-plateau-s",
+      "culture": "medina",
+      "population": 8000,
+      "seed": "visual50-v1-13-medina-courts",
+      "settlement": {
+        "kind": "settlement",
+        "siteType": "auto",
+        "sitePrefs": {},
+        "position": {
+          "x": 2000,
+          "y": 2000
+        }
+      },
+      "urban": {
+        "quarterSeed": "visual50-v1-13-medina-courts",
+        "parcelSeed": "visual50-v1-13-medina-courts:parcels",
+        "layoutConfig": {
+          "programme": {
+            "mode": "inspired"
+          }
+        },
+        "buildingState": {
+          "seed": "visual50-v1-13-medina-courts:houses",
+          "settings": {
+            "parcel_fit": true
+          }
+        }
+      },
+      "architecture": "compact",
+      "camera": {
+        "kind": "overview"
+      },
+      "tags": {
+        "biome": "arid",
+        "relief": "plateau",
+        "size": "town",
+        "culture": "medina",
+        "environment": "arid-plateau"
+      },
+      "expectations": [
+        "Médina : cours ouvertes au ciel, ailes assez épaisses et ruelles accessibles.",
+        "Capture de bâtiments réellement affichés ; un état vide/refusé doit rester explicite dans le rapport.",
+        "Aucune génération native détaillée de toute la ville ; détails limités au visible ou à la sélection.",
+        "Empreintes conservées entre plan compact et détail, cours ouvertes, absence de slivers et de masquage silencieux des refus."
+      ],
+      "limitations": [
+        "Le nom de culture ne prouve pas sa couverture architecturale : relever pack, recette, profil, confiance et refus réels.",
+        "Les plans compacts ne certifient ni intérieurs ni capacité habitée ; conserver une valeur inconnue explicite.",
+        "Monuments et ateliers spécialisés peuvent rester des aperçus de programme ; ne pas les présenter comme modèles natifs certifiés."
+      ],
+      "gate": "p0",
+      "source": {
+        "decorWidthM": 4000,
+        "decorSeed": "city-arid-plateau-s",
+        "declaredMaxPopulation": 10000,
+        "cultureLabel": "Medina (North Africa)"
+      }
+    },
+    {
+      "id": "14-swahili-shore",
+      "title": "Ville littorale swahilie : concessions et toitures adaptées à son catalogue.",
+      "artifact": "city-07-arid-shore-s",
+      "culture": "swahili-stone-town",
+      "population": 5000,
+      "seed": "visual50-v1-14-swahili-shore",
+      "settlement": {
+        "kind": "settlement",
+        "siteType": "auto",
+        "sitePrefs": {},
+        "position": {
+          "x": 2000,
+          "y": 2000
+        }
+      },
+      "urban": {
+        "quarterSeed": "visual50-v1-14-swahili-shore",
+        "parcelSeed": "visual50-v1-14-swahili-shore:parcels",
+        "layoutConfig": {
+          "programme": {
+            "mode": "inspired",
+            "role": "port"
+          }
+        },
+        "buildingState": {
+          "seed": "visual50-v1-14-swahili-shore:houses",
+          "settings": {
+            "parcel_fit": true
+          }
+        }
+      },
+      "architecture": "compact",
+      "camera": {
+        "kind": "overview"
+      },
+      "tags": {
+        "biome": "arid",
+        "relief": "flat",
+        "size": "town",
+        "culture": "swahili-stone-town",
+        "environment": "arid-shore"
+      },
+      "expectations": [
+        "Ville littorale swahilie : concessions et toitures adaptées à son catalogue.",
+        "Capture de bâtiments réellement affichés ; un état vide/refusé doit rester explicite dans le rapport.",
+        "Aucune génération native détaillée de toute la ville ; détails limités au visible ou à la sélection.",
+        "Empreintes conservées entre plan compact et détail, cours ouvertes, absence de slivers et de masquage silencieux des refus."
+      ],
+      "limitations": [
+        "Le nom de culture ne prouve pas sa couverture architecturale : relever pack, recette, profil, confiance et refus réels.",
+        "Les plans compacts ne certifient ni intérieurs ni capacité habitée ; conserver une valeur inconnue explicite.",
+        "Monuments et ateliers spécialisés peuvent rester des aperçus de programme ; ne pas les présenter comme modèles natifs certifiés."
+      ],
+      "gate": "p0",
+      "source": {
+        "decorWidthM": 4000,
+        "decorSeed": "city-arid-shore-s",
+        "declaredMaxPopulation": 10000,
+        "cultureLabel": "Swahili stone town (Lamu / Zanzibar)"
+      }
+    },
+    {
+      "id": "15-roman-mountain",
+      "title": "Cas montagneux du corpus : limiter les grands résiduels et préserver cours/corps rectilignes.",
+      "artifact": "city-04-mountain-bay-s",
+      "culture": "roman-core",
+      "population": 5000,
+      "seed": "city-mountain-bay-s",
+      "settlement": {
+        "kind": "settlement",
+        "siteType": "auto",
+        "sitePrefs": {},
+        "position": {
+          "x": 2640,
+          "y": 2669
+        }
+      },
+      "urban": {
+        "quarterSeed": "city-mountain-bay-s",
+        "parcelSeed": "city-mountain-bay-s",
+        "layoutConfig": {
+          "programme": {
+            "role": "auto",
+            "resources": [],
+            "period": "",
+            "mode": "inspired",
+            "navigableAccess": false,
+            "lore": []
+          },
+          "axisAlignment": "regional",
+          "mixCulture": "",
+          "mixMode": "phases",
+          "mixShare": 0.5,
+          "mixAngle": 0,
+          "exitTreatment": "adaptive",
+          "peripheralRoad": "auto",
+          "siteAdaptation": 1,
+          "composition": "settlement",
+          "settlementForm": "auto",
+          "suburbs": "auto",
+          "phases": 0,
+          "preset": "culture",
+          "culture": "site",
+          "recipe": "auto",
+          "zone": "auto",
+          "density": 1,
+          "count": 4,
+          "rings": 1,
+          "radius": 0,
+          "radiusScale": 1,
+          "placement": "center",
+          "params": {},
+          "monument": "none",
+          "fortification": "culture",
+          "maxStreetGrade": 0.12,
+          "maxLaneGrade": 0.18,
+          "maxStairGrade": 0.65,
+          "allowStairs": true,
+          "footprint": {
+            "mechanism": "auto",
+            "family": "auto",
+            "budget": "population",
+            "grossDensity": 0,
+            "aspect": 1.4,
+            "orientation": 0,
+            "nuclei": 3,
+            "irregularity": 0.2,
+            "anisotropy": 0.65,
+            "separation": 1.3,
+            "epochs": 3,
+            "cohesion": 0.85,
+            "satellites": 0.15,
+            "branchDepth": 0.2,
+            "gapSize": 60
+          },
+          "tissue": "culture",
+          "accessMode": "adaptive",
+          "accessDepth": 0,
+          "accessBudget": 4
+        },
+        "buildingState": {
+          "seed": "city-mountain-bay-s",
+          "settings": {
+            "parcel_fit": true
+          }
+        },
+        "parcelConfig": {
+          "culture": "site",
+          "density": 1,
+          "operator": "culture",
+          "params": {},
+          "preset": "culture",
+          "recipe": "auto",
+          "zone": "auto"
+        }
+      },
+      "architecture": "compact",
+      "camera": {
+        "kind": "overview"
+      },
+      "tags": {
+        "biome": "mediterranean",
+        "relief": "mountains",
+        "size": "town",
+        "culture": "roman-core",
+        "environment": "mountain-bay"
+      },
+      "expectations": [
+        "Cas montagneux du corpus : limiter les grands résiduels et préserver cours/corps rectilignes.",
+        "Capture de bâtiments réellement affichés ; un état vide/refusé doit rester explicite dans le rapport.",
+        "Aucune génération native détaillée de toute la ville ; détails limités au visible ou à la sélection.",
+        "Empreintes conservées entre plan compact et détail, cours ouvertes, absence de slivers et de masquage silencieux des refus."
+      ],
+      "limitations": [
+        "Le nom de culture ne prouve pas sa couverture architecturale : relever pack, recette, profil, confiance et refus réels.",
+        "Les plans compacts ne certifient ni intérieurs ni capacité habitée ; conserver une valeur inconnue explicite.",
+        "Monuments et ateliers spécialisés peuvent rester des aperçus de programme ; ne pas les présenter comme modèles natifs certifiés.",
+        "Cas dérivé des entrées figées du corpus, pas replay UI exact : sites/rayon et routes sont recalculés. Référence native complète dans regressionReference."
+      ],
+      "gate": "p0",
+      "source": {
+        "decorWidthM": 4000,
+        "decorSeed": "city-mountain-bay-s",
+        "declaredMaxPopulation": 10000,
+        "cultureLabel": "Roman castrum core"
+      },
+      "regressionReference": {
+        "kind": "fixture-derived-ui-scenario",
+        "input": "_agents_blackboard/city-visual-audit/04-mountain/quarters-request.json",
+        "inputSha256": "25dedb269b4821961bb7facbef0354b27a2ff813f0c383e4683c75ee8f1e8694",
+        "baseline": {
+          "layout": "_agents_blackboard/city-visual-audit/04-mountain/layout.json",
+          "partition": "_agents_blackboard/city-visual-audit/04-mountain/partition.json",
+          "buildingSites": "_agents_blackboard/city-visual-audit/04-mountain/requests.json",
+          "provenance": "_agents_blackboard/city-visual-audit/04-mountain/source.json"
+        },
+        "derivation": "web/scripts/city_visual_audit.mjs: quarters uses the frozen request; parcels and buildingSites use its seed unchanged. parcelConfig is the captured resolved partition.config.",
+        "frozenSite": {
+          "key": "city",
+          "population": 5000,
+          "culture": "roman-core",
+          "center": {
+            "x": 2640,
+            "y": 2669
+          },
+          "radius": 561.7894090783491
+        },
+        "frozenRoadCount": 5,
+        "uiExactReplay": false,
+        "uiDifferences": [
+          "The UI recalculates settlements/site radius and roads from the decor situation; frozen request.sites and request.roads are not injected by this manifest.",
+          "Current UI normalization and architecture defaults may differ from the captured native pipeline. Record the actual requests and compare before claiming input identity."
+        ],
+        "exactComparison": "Replay the referenced quarters input (including sites/roads) and the recorded parcel/buildingSites seeds against the coordinated new runtime. Frozen outputs are the before baseline only; replaying outputs would bypass the urban corrections."
+      }
+    },
+    {
+      "id": "16-javanese-island",
+      "title": "Île tropicale : cours, enclos et composés à plusieurs corps.",
+      "artifact": "city-10-tropical-island-s",
+      "culture": "javanese-courts",
+      "population": 5000,
+      "seed": "visual50-v1-16-javanese-island",
+      "settlement": {
+        "kind": "settlement",
+        "siteType": "auto",
+        "sitePrefs": {}
+      },
+      "urban": {
+        "quarterSeed": "visual50-v1-16-javanese-island",
+        "parcelSeed": "visual50-v1-16-javanese-island:parcels",
+        "layoutConfig": {
+          "programme": {
+            "mode": "inspired"
+          }
+        },
+        "buildingState": {
+          "seed": "visual50-v1-16-javanese-island:houses",
+          "settings": {
+            "parcel_fit": true
+          }
+        }
+      },
+      "architecture": "compact",
+      "camera": {
+        "kind": "overview"
+      },
+      "tags": {
+        "biome": "tropical",
+        "relief": "hills",
+        "size": "town",
+        "culture": "javanese-courts",
+        "environment": "tropical-island"
+      },
+      "expectations": [
+        "Île tropicale : cours, enclos et composés à plusieurs corps.",
+        "Capture de bâtiments réellement affichés ; un état vide/refusé doit rester explicite dans le rapport.",
+        "Aucune génération native détaillée de toute la ville ; détails limités au visible ou à la sélection.",
+        "Empreintes conservées entre plan compact et détail, cours ouvertes, absence de slivers et de masquage silencieux des refus."
+      ],
+      "limitations": [
+        "Le nom de culture ne prouve pas sa couverture architecturale : relever pack, recette, profil, confiance et refus réels.",
+        "Les plans compacts ne certifient ni intérieurs ni capacité habitée ; conserver une valeur inconnue explicite.",
+        "Monuments et ateliers spécialisés peuvent rester des aperçus de programme ; ne pas les présenter comme modèles natifs certifiés."
+      ],
+      "gate": "p0",
+      "source": {
+        "decorWidthM": 4000,
+        "decorSeed": "city-tropical-island-s-2",
+        "declaredMaxPopulation": 10000,
+        "cultureLabel": "Java · ville de cours et enclos"
+      }
+    },
+    {
+      "id": "17-khmer-monsoon",
+      "title": "Grande implantation humide : trame des quartiers et espaces non bâtis entre composés.",
+      "artifact": "city-11-monsoon-plain-l",
+      "culture": "khmer",
+      "population": 30000,
+      "seed": "visual50-v1-17-khmer-monsoon",
+      "settlement": {
+        "kind": "settlement",
+        "siteType": "auto",
+        "sitePrefs": {},
+        "position": {
+          "x": 8000,
+          "y": 8000
+        }
+      },
+      "urban": {
+        "quarterSeed": "visual50-v1-17-khmer-monsoon",
+        "parcelSeed": "visual50-v1-17-khmer-monsoon:parcels",
+        "layoutConfig": {
+          "programme": {
+            "mode": "inspired"
+          }
+        },
+        "buildingState": {
+          "seed": "visual50-v1-17-khmer-monsoon:houses",
+          "settings": {
+            "parcel_fit": true
+          }
+        }
+      },
+      "architecture": "compact",
+      "camera": {
+        "kind": "overview"
+      },
+      "tags": {
+        "biome": "tropical",
+        "relief": "flat",
+        "size": "city",
+        "culture": "khmer",
+        "environment": "monsoon-plain"
+      },
+      "expectations": [
+        "Grande implantation humide : trame des quartiers et espaces non bâtis entre composés.",
+        "Capture de bâtiments réellement affichés ; un état vide/refusé doit rester explicite dans le rapport.",
+        "Aucune génération native détaillée de toute la ville ; détails limités au visible ou à la sélection.",
+        "Empreintes conservées entre plan compact et détail, cours ouvertes, absence de slivers et de masquage silencieux des refus."
+      ],
+      "limitations": [
+        "Le nom de culture ne prouve pas sa couverture architecturale : relever pack, recette, profil, confiance et refus réels.",
+        "Les plans compacts ne certifient ni intérieurs ni capacité habitée ; conserver une valeur inconnue explicite.",
+        "Monuments et ateliers spécialisés peuvent rester des aperçus de programme ; ne pas les présenter comme modèles natifs certifiés."
+      ],
+      "gate": "p0",
+      "source": {
+        "decorWidthM": 16000,
+        "decorSeed": "city-monsoon-plain-l",
+        "declaredMaxPopulation": 400000,
+        "cultureLabel": "Khmer city (Angkor)"
+      }
+    },
+    {
+      "id": "18-maya-ridges",
+      "title": "Ville forestière dispersée : continuité des accès entre noyaux sur relief.",
+      "artifact": "city-12-rainforest-ridges-l",
+      "culture": "maya",
+      "population": 12000,
+      "seed": "visual50-v1-18-maya-ridges",
+      "settlement": {
+        "kind": "settlement",
+        "siteType": "auto",
+        "sitePrefs": {},
+        "position": {
+          "x": 8000,
+          "y": 8000
+        }
+      },
+      "urban": {
+        "quarterSeed": "visual50-v1-18-maya-ridges",
+        "parcelSeed": "visual50-v1-18-maya-ridges:parcels",
+        "layoutConfig": {
+          "programme": {
+            "mode": "inspired"
+          }
+        },
+        "buildingState": {
+          "seed": "visual50-v1-18-maya-ridges:houses",
+          "settings": {
+            "parcel_fit": true
+          }
+        }
+      },
+      "architecture": "compact",
+      "camera": {
+        "kind": "overview"
+      },
+      "tags": {
+        "biome": "tropical",
+        "relief": "mountains",
+        "size": "town",
+        "culture": "maya",
+        "environment": "rainforest-ridges"
+      },
+      "expectations": [
+        "Ville forestière dispersée : continuité des accès entre noyaux sur relief.",
+        "Capture de bâtiments réellement affichés ; un état vide/refusé doit rester explicite dans le rapport.",
+        "Aucune génération native détaillée de toute la ville ; détails limités au visible ou à la sélection.",
+        "Empreintes conservées entre plan compact et détail, cours ouvertes, absence de slivers et de masquage silencieux des refus."
+      ],
+      "limitations": [
+        "Le nom de culture ne prouve pas sa couverture architecturale : relever pack, recette, profil, confiance et refus réels.",
+        "Les plans compacts ne certifient ni intérieurs ni capacité habitée ; conserver une valeur inconnue explicite.",
+        "Monuments et ateliers spécialisés peuvent rester des aperçus de programme ; ne pas les présenter comme modèles natifs certifiés."
+      ],
+      "gate": "p0",
+      "source": {
+        "decorWidthM": 16000,
+        "decorSeed": "city-rainforest-ridges-l",
+        "declaredMaxPopulation": 400000,
+        "cultureLabel": "Maya city (ceremonial core, sacbeob)"
+      }
+    },
+    {
+      "id": "19-aztec-lake",
+      "title": "Plateau lacustre : distinction parcelles, espaces publics et accès près de l’eau.",
+      "artifact": "city-15-lake-plateau-s",
+      "culture": "aztec",
+      "population": 8000,
+      "seed": "visual50-v1-19-aztec-lake",
+      "settlement": {
+        "kind": "settlement",
+        "siteType": "auto",
+        "sitePrefs": {},
+        "position": {
+          "x": 2000,
+          "y": 2000
+        }
+      },
+      "urban": {
+        "quarterSeed": "visual50-v1-19-aztec-lake",
+        "parcelSeed": "visual50-v1-19-aztec-lake:parcels",
+        "layoutConfig": {
+          "programme": {
+            "mode": "inspired"
+          }
+        },
+        "buildingState": {
+          "seed": "visual50-v1-19-aztec-lake:houses",
+          "settings": {
+            "parcel_fit": true
+          }
+        }
+      },
+      "architecture": "compact",
+      "camera": {
+        "kind": "overview"
+      },
+      "tags": {
+        "biome": "temperate",
+        "relief": "plateau",
+        "size": "town",
+        "culture": "aztec",
+        "environment": "lake-plateau"
+      },
+      "expectations": [
+        "Plateau lacustre : distinction parcelles, espaces publics et accès près de l’eau.",
+        "Capture de bâtiments réellement affichés ; un état vide/refusé doit rester explicite dans le rapport.",
+        "Aucune génération native détaillée de toute la ville ; détails limités au visible ou à la sélection.",
+        "Empreintes conservées entre plan compact et détail, cours ouvertes, absence de slivers et de masquage silencieux des refus."
+      ],
+      "limitations": [
+        "Le nom de culture ne prouve pas sa couverture architecturale : relever pack, recette, profil, confiance et refus réels.",
+        "Les plans compacts ne certifient ni intérieurs ni capacité habitée ; conserver une valeur inconnue explicite.",
+        "Monuments et ateliers spécialisés peuvent rester des aperçus de programme ; ne pas les présenter comme modèles natifs certifiés."
+      ],
+      "gate": "p0",
+      "source": {
+        "decorWidthM": 4000,
+        "decorSeed": "city-lake-plateau-s",
+        "declaredMaxPopulation": 10000,
+        "cultureLabel": "Aztec city (Tenochtitlan)"
+      }
+    },
+    {
+      "id": "20-inca-slopes",
+      "title": "Bourg andin : gradins, différences de niveau et escaliers sans corps écrasés.",
+      "artifact": "city-08-cold-peaks-s",
+      "culture": "inca",
+      "population": 3000,
+      "seed": "visual50-v1-20-inca-slopes",
+      "settlement": {
+        "kind": "settlement",
+        "siteType": "auto",
+        "sitePrefs": {}
+      },
+      "urban": {
+        "quarterSeed": "visual50-v1-20-inca-slopes",
+        "parcelSeed": "visual50-v1-20-inca-slopes:parcels",
+        "layoutConfig": {
+          "programme": {
+            "mode": "inspired"
+          }
+        },
+        "buildingState": {
+          "seed": "visual50-v1-20-inca-slopes:houses",
+          "settings": {
+            "parcel_fit": true
+          }
+        }
+      },
+      "architecture": "compact",
+      "camera": {
+        "kind": "overview"
+      },
+      "tags": {
+        "biome": "cold",
+        "relief": "high-mountains",
+        "size": "town",
+        "culture": "inca",
+        "environment": "cold-peaks"
+      },
+      "expectations": [
+        "Bourg andin : gradins, différences de niveau et escaliers sans corps écrasés.",
+        "Capture de bâtiments réellement affichés ; un état vide/refusé doit rester explicite dans le rapport.",
+        "Aucune génération native détaillée de toute la ville ; détails limités au visible ou à la sélection.",
+        "Empreintes conservées entre plan compact et détail, cours ouvertes, absence de slivers et de masquage silencieux des refus."
+      ],
+      "limitations": [
+        "Le nom de culture ne prouve pas sa couverture architecturale : relever pack, recette, profil, confiance et refus réels.",
+        "Les plans compacts ne certifient ni intérieurs ni capacité habitée ; conserver une valeur inconnue explicite.",
+        "Monuments et ateliers spécialisés peuvent rester des aperçus de programme ; ne pas les présenter comme modèles natifs certifiés."
+      ],
+      "gate": "p0",
+      "source": {
+        "decorWidthM": 4000,
+        "decorSeed": "city-cold-peaks-s",
+        "declaredMaxPopulation": 10000,
+        "cultureLabel": "Inca city (Cusco)"
+      }
+    },
+    {
+      "id": "21-himalayan-terraces",
+      "title": "Village de haute montagne : terrasses et gabarits lisibles dans les pentes.",
+      "artifact": "city-08-cold-peaks-s",
+      "culture": "himalayan-terraces",
+      "population": 1000,
+      "seed": "visual50-v1-21-himalayan-terraces",
+      "settlement": {
+        "kind": "settlement",
+        "siteType": "auto",
+        "sitePrefs": {}
+      },
+      "urban": {
+        "quarterSeed": "visual50-v1-21-himalayan-terraces",
+        "parcelSeed": "visual50-v1-21-himalayan-terraces:parcels",
+        "layoutConfig": {
+          "programme": {
+            "mode": "inspired"
+          }
+        },
+        "buildingState": {
+          "seed": "visual50-v1-21-himalayan-terraces:houses",
+          "settings": {
+            "parcel_fit": true
+          }
+        }
+      },
+      "architecture": "compact",
+      "camera": {
+        "kind": "overview"
+      },
+      "tags": {
+        "biome": "cold",
+        "relief": "high-mountains",
+        "size": "town",
+        "culture": "himalayan-terraces",
+        "environment": "cold-peaks"
+      },
+      "expectations": [
+        "Village de haute montagne : terrasses et gabarits lisibles dans les pentes.",
+        "Capture de bâtiments réellement affichés ; un état vide/refusé doit rester explicite dans le rapport.",
+        "Aucune génération native détaillée de toute la ville ; détails limités au visible ou à la sélection.",
+        "Empreintes conservées entre plan compact et détail, cours ouvertes, absence de slivers et de masquage silencieux des refus."
+      ],
+      "limitations": [
+        "Le nom de culture ne prouve pas sa couverture architecturale : relever pack, recette, profil, confiance et refus réels.",
+        "Les plans compacts ne certifient ni intérieurs ni capacité habitée ; conserver une valeur inconnue explicite.",
+        "Monuments et ateliers spécialisés peuvent rester des aperçus de programme ; ne pas les présenter comme modèles natifs certifiés."
+      ],
+      "gate": "p0",
+      "source": {
+        "decorWidthM": 4000,
+        "decorSeed": "city-cold-peaks-s",
+        "declaredMaxPopulation": 10000,
+        "cultureLabel": "Tibet et Ladakh · habitat en terrasses"
+      }
+    },
+    {
+      "id": "22-newar-squares",
+      "title": "Bourg de vallée : places rituelles et fronts continus préservant les ouvertures.",
+      "artifact": "city-13-temperate-valley-s",
+      "culture": "newar",
+      "population": 6000,
+      "seed": "visual50-v1-22-newar-squares",
+      "settlement": {
+        "kind": "settlement",
+        "siteType": "auto",
+        "sitePrefs": {}
+      },
+      "urban": {
+        "quarterSeed": "visual50-v1-22-newar-squares",
+        "parcelSeed": "visual50-v1-22-newar-squares:parcels",
+        "layoutConfig": {
+          "programme": {
+            "mode": "inspired"
+          }
+        },
+        "buildingState": {
+          "seed": "visual50-v1-22-newar-squares:houses",
+          "settings": {
+            "parcel_fit": true
+          }
+        }
+      },
+      "architecture": "compact",
+      "camera": {
+        "kind": "overview"
+      },
+      "tags": {
+        "biome": "temperate",
+        "relief": "valley",
+        "size": "town",
+        "culture": "newar",
+        "environment": "temperate-valley"
+      },
+      "expectations": [
+        "Bourg de vallée : places rituelles et fronts continus préservant les ouvertures.",
+        "Capture de bâtiments réellement affichés ; un état vide/refusé doit rester explicite dans le rapport.",
+        "Aucune génération native détaillée de toute la ville ; détails limités au visible ou à la sélection.",
+        "Empreintes conservées entre plan compact et détail, cours ouvertes, absence de slivers et de masquage silencieux des refus."
+      ],
+      "limitations": [
+        "Le nom de culture ne prouve pas sa couverture architecturale : relever pack, recette, profil, confiance et refus réels.",
+        "Les plans compacts ne certifient ni intérieurs ni capacité habitée ; conserver une valeur inconnue explicite.",
+        "Monuments et ateliers spécialisés peuvent rester des aperçus de programme ; ne pas les présenter comme modèles natifs certifiés."
+      ],
+      "gate": "p0",
+      "source": {
+        "decorWidthM": 4000,
+        "decorSeed": "city-temperate-valley-s",
+        "declaredMaxPopulation": 10000,
+        "cultureLabel": "Népal newar · ville à places rituelles"
+      }
+    },
+    {
+      "id": "23-korean-city",
+      "title": "Ville coréenne : composés et axes visibles à l’échelle du quartier.",
+      "artifact": "city-13-temperate-valley-l",
+      "culture": "korean",
+      "population": 30000,
+      "seed": "visual50-v1-23-korean-city",
+      "settlement": {
+        "kind": "settlement",
+        "siteType": "auto",
+        "sitePrefs": {}
+      },
+      "urban": {
+        "quarterSeed": "visual50-v1-23-korean-city",
+        "parcelSeed": "visual50-v1-23-korean-city:parcels",
+        "layoutConfig": {
+          "programme": {
+            "mode": "inspired"
+          }
+        },
+        "buildingState": {
+          "seed": "visual50-v1-23-korean-city:houses",
+          "settings": {
+            "parcel_fit": true
+          }
+        }
+      },
+      "architecture": "compact",
+      "camera": {
+        "kind": "overview"
+      },
+      "tags": {
+        "biome": "temperate",
+        "relief": "valley",
+        "size": "city",
+        "culture": "korean",
+        "environment": "temperate-valley"
+      },
+      "expectations": [
+        "Ville coréenne : composés et axes visibles à l’échelle du quartier.",
+        "Capture de bâtiments réellement affichés ; un état vide/refusé doit rester explicite dans le rapport.",
+        "Aucune génération native détaillée de toute la ville ; détails limités au visible ou à la sélection.",
+        "Empreintes conservées entre plan compact et détail, cours ouvertes, absence de slivers et de masquage silencieux des refus."
+      ],
+      "limitations": [
+        "Le nom de culture ne prouve pas sa couverture architecturale : relever pack, recette, profil, confiance et refus réels.",
+        "Les plans compacts ne certifient ni intérieurs ni capacité habitée ; conserver une valeur inconnue explicite.",
+        "Monuments et ateliers spécialisés peuvent rester des aperçus de programme ; ne pas les présenter comme modèles natifs certifiés."
+      ],
+      "gate": "p0",
+      "source": {
+        "decorWidthM": 16000,
+        "decorSeed": "city-temperate-valley-l",
+        "declaredMaxPopulation": 400000,
+        "cultureLabel": "Korean walled town (Hanyang)"
+      }
+    },
+    {
+      "id": "24-japanese-archipelago",
+      "title": "Grande ville insulaire : maisons étroites et grands domaines restent distincts.",
+      "artifact": "city-14-oceanic-archipelago-l",
+      "culture": "japanese-jokamachi",
+      "population": 100000,
+      "seed": "visual50-v1-24-japanese-archipelago",
+      "settlement": {
+        "kind": "settlement",
+        "siteType": "auto",
+        "sitePrefs": {}
+      },
+      "urban": {
+        "quarterSeed": "visual50-v1-24-japanese-archipelago",
+        "parcelSeed": "visual50-v1-24-japanese-archipelago:parcels",
+        "layoutConfig": {
+          "programme": {
+            "mode": "inspired"
+          }
+        },
+        "buildingState": {
+          "seed": "visual50-v1-24-japanese-archipelago:houses",
+          "settings": {
+            "parcel_fit": true
+          }
+        }
+      },
+      "architecture": "compact",
+      "camera": {
+        "kind": "overview"
+      },
+      "tags": {
+        "biome": "oceanic",
+        "relief": "mixed",
+        "size": "metropolis",
+        "culture": "japanese-jokamachi",
+        "environment": "oceanic-archipelago"
+      },
+      "expectations": [
+        "Grande ville insulaire : maisons étroites et grands domaines restent distincts.",
+        "Capture de bâtiments réellement affichés ; un état vide/refusé doit rester explicite dans le rapport.",
+        "Aucune génération native détaillée de toute la ville ; détails limités au visible ou à la sélection.",
+        "Empreintes conservées entre plan compact et détail, cours ouvertes, absence de slivers et de masquage silencieux des refus."
+      ],
+      "limitations": [
+        "Le nom de culture ne prouve pas sa couverture architecturale : relever pack, recette, profil, confiance et refus réels.",
+        "Les plans compacts ne certifient ni intérieurs ni capacité habitée ; conserver une valeur inconnue explicite.",
+        "Monuments et ateliers spécialisés peuvent rester des aperçus de programme ; ne pas les présenter comme modèles natifs certifiés."
+      ],
+      "gate": "p0",
+      "source": {
+        "decorWidthM": 16000,
+        "decorSeed": "city-oceanic-archipelago-l",
+        "declaredMaxPopulation": 400000,
+        "cultureLabel": "Japanese castle town (jōkamachi)"
+      }
+    },
+    {
+      "id": "25-european-100k",
+      "title": "Régression du corpus 100k : diversité de gabarits, faubourgs et premiers lots visibles rapidement.",
+      "artifact": "city-01-river-plain-l",
+      "culture": "european-organic",
+      "population": 100000,
+      "seed": "city-river-plain-l",
+      "settlement": {
+        "kind": "settlement",
+        "siteType": "auto",
+        "sitePrefs": {},
+        "position": {
+          "x": 8000,
+          "y": 8000
+        }
+      },
+      "urban": {
+        "quarterSeed": "city-river-plain-l",
+        "parcelSeed": "city-river-plain-l",
+        "layoutConfig": {
+          "programme": {
+            "role": "auto",
+            "resources": [],
+            "period": "",
+            "mode": "inspired",
+            "navigableAccess": false,
+            "lore": []
+          },
+          "axisAlignment": "regional",
+          "mixCulture": "",
+          "mixMode": "phases",
+          "mixShare": 0.5,
+          "mixAngle": 0,
+          "exitTreatment": "adaptive",
+          "peripheralRoad": "auto",
+          "siteAdaptation": 1,
+          "composition": "settlement",
+          "settlementForm": "auto",
+          "suburbs": "auto",
+          "phases": 0,
+          "preset": "culture",
+          "culture": "site",
+          "recipe": "auto",
+          "zone": "auto",
+          "density": 1,
+          "count": 4,
+          "rings": 1,
+          "radius": 0,
+          "radiusScale": 1,
+          "placement": "center",
+          "params": {},
+          "monument": "none",
+          "fortification": "culture",
+          "maxStreetGrade": 0.12,
+          "maxLaneGrade": 0.18,
+          "maxStairGrade": 0.65,
+          "allowStairs": true,
+          "footprint": {
+            "mechanism": "auto",
+            "family": "auto",
+            "budget": "population",
+            "grossDensity": 0,
+            "aspect": 1.4,
+            "orientation": 0,
+            "nuclei": 3,
+            "irregularity": 0.2,
+            "anisotropy": 0.65,
+            "separation": 1.3,
+            "epochs": 3,
+            "cohesion": 0.85,
+            "satellites": 0.15,
+            "branchDepth": 0.2,
+            "gapSize": 60
+          },
+          "tissue": "culture",
+          "accessMode": "adaptive",
+          "accessDepth": 0,
+          "accessBudget": 4
+        },
+        "buildingState": {
+          "seed": "city-river-plain-l",
+          "settings": {
+            "parcel_fit": true
+          }
+        },
+        "parcelConfig": {
+          "culture": "site",
+          "density": 1,
+          "operator": "culture",
+          "params": {},
+          "preset": "culture",
+          "recipe": "auto",
+          "zone": "auto"
+        }
+      },
+      "architecture": "compact",
+      "camera": {
+        "kind": "overview"
+      },
+      "tags": {
+        "biome": "temperate",
+        "relief": "flat",
+        "size": "metropolis",
+        "culture": "european-organic",
+        "environment": "river-plain"
+      },
+      "expectations": [
+        "Régression du corpus 100k : diversité de gabarits, faubourgs et premiers lots visibles rapidement.",
+        "Capture de bâtiments réellement affichés ; un état vide/refusé doit rester explicite dans le rapport.",
+        "Aucune génération native détaillée de toute la ville ; détails limités au visible ou à la sélection.",
+        "Empreintes conservées entre plan compact et détail, cours ouvertes, absence de slivers et de masquage silencieux des refus."
+      ],
+      "limitations": [
+        "Le nom de culture ne prouve pas sa couverture architecturale : relever pack, recette, profil, confiance et refus réels.",
+        "Les plans compacts ne certifient ni intérieurs ni capacité habitée ; conserver une valeur inconnue explicite.",
+        "Monuments et ateliers spécialisés peuvent rester des aperçus de programme ; ne pas les présenter comme modèles natifs certifiés.",
+        "Cas dérivé des entrées figées du corpus, pas replay UI exact : sites/rayon et routes sont recalculés. Référence native complète dans regressionReference."
+      ],
+      "gate": "p0",
+      "source": {
+        "decorWidthM": 16000,
+        "decorSeed": "city-river-plain-l",
+        "declaredMaxPopulation": 400000,
+        "cultureLabel": "Medieval organic (Europe)"
+      },
+      "regressionReference": {
+        "kind": "fixture-derived-ui-scenario",
+        "input": "_agents_blackboard/city-visual-audit/01-l/quarters-request.json",
+        "inputSha256": "28567de57067aa8fccdcee25a0804cf9bf7fbc2c709b90a9c3d504c3b7b3d7ab",
+        "baseline": {
+          "layout": "_agents_blackboard/city-visual-audit/01-l/layout.json",
+          "partition": "_agents_blackboard/city-visual-audit/01-l/partition.json",
+          "buildingSites": "_agents_blackboard/city-visual-audit/01-l/requests.json",
+          "provenance": "_agents_blackboard/city-visual-audit/01-l/source.json"
+        },
+        "derivation": "web/scripts/city_visual_audit.mjs: quarters uses the frozen request; parcels and buildingSites use its seed unchanged. parcelConfig is the captured resolved partition.config.",
+        "frozenSite": {
+          "key": "city",
+          "population": 100000,
+          "culture": "european-organic",
+          "center": {
+            "x": 8000,
+            "y": 8000
+          },
+          "radius": 1815.7360834719918
+        },
+        "frozenRoadCount": 10,
+        "uiExactReplay": false,
+        "uiDifferences": [
+          "The UI recalculates settlements/site radius and roads from the decor situation; frozen request.sites and request.roads are not injected by this manifest.",
+          "Current UI normalization and architecture defaults may differ from the captured native pipeline. Record the actual requests and compare before claiming input identity."
+        ],
+        "exactComparison": "Replay the referenced quarters input (including sites/roads) and the recorded parcel/buildingSites seeds against the coordinated new runtime. Frozen outputs are the before baseline only; replaying outputs would bypass the urban corrections."
+      }
+    },
+    {
+      "id": "26-chinese-million",
+      "title": "Charge 1M sur terrain 16 km : affichage progressif et LOD, avec déficit spatial explicitement rapporté.",
+      "artifact": "city-01-river-plain-l",
+      "culture": "chinese",
+      "population": 1000000,
+      "seed": "visual50-v1-26-chinese-million",
+      "settlement": {
+        "kind": "settlement",
+        "siteType": "auto",
+        "sitePrefs": {},
+        "position": {
+          "x": 8000,
+          "y": 8000
+        }
+      },
+      "urban": {
+        "quarterSeed": "visual50-v1-26-chinese-million",
+        "parcelSeed": "visual50-v1-26-chinese-million:parcels",
+        "layoutConfig": {
+          "programme": {
+            "mode": "inspired",
+            "role": "capital"
+          }
+        },
+        "buildingState": {
+          "seed": "visual50-v1-26-chinese-million:houses",
+          "settings": {
+            "parcel_fit": true
+          }
+        }
+      },
+      "architecture": "detailed",
+      "camera": {
+        "kind": "overview"
+      },
+      "tags": {
+        "biome": "temperate",
+        "relief": "flat",
+        "size": "megacity",
+        "culture": "chinese",
+        "environment": "river-plain"
+      },
+      "expectations": [
+        "Charge 1M sur terrain 16 km : affichage progressif et LOD, avec déficit spatial explicitement rapporté.",
+        "Capture de bâtiments réellement affichés ; un état vide/refusé doit rester explicite dans le rapport.",
+        "Aucune génération native détaillée de toute la ville ; détails limités au visible ou à la sélection.",
+        "Empreintes conservées entre plan compact et détail, cours ouvertes, absence de slivers et de masquage silencieux des refus."
+      ],
+      "limitations": [
+        "Le nom de culture ne prouve pas sa couverture architecturale : relever pack, recette, profil, confiance et refus réels.",
+        "Les plans compacts ne certifient ni intérieurs ni capacité habitée ; conserver une valeur inconnue explicite.",
+        "Monuments et ateliers spécialisés peuvent rester des aperçus de programme ; ne pas les présenter comme modèles natifs certifiés.",
+        "Population demandée 1M dépasse le maximum 400000 annoncé par ce décor 16 km. Cas de stress explicitement hors capacité déclarée, pas preuve de logement de 1M personnes."
+      ],
+      "gate": "million",
+      "source": {
+        "decorWidthM": 16000,
+        "decorSeed": "city-river-plain-l",
+        "declaredMaxPopulation": 400000,
+        "cultureLabel": "Chinese walled city"
+      }
+    },
+    {
+      "id": "27-persian-city",
+      "title": "Grande ville de vallée aride : cours, places et axes sans uniformiser les volumes.",
+      "artifact": "city-06-desert-valley-l",
+      "culture": "persian",
+      "population": 100000,
+      "seed": "visual50-v1-27-persian-city",
+      "settlement": {
+        "kind": "settlement",
+        "siteType": "auto",
+        "sitePrefs": {}
+      },
+      "urban": {
+        "quarterSeed": "visual50-v1-27-persian-city",
+        "parcelSeed": "visual50-v1-27-persian-city:parcels",
+        "layoutConfig": {
+          "programme": {
+            "mode": "inspired"
+          }
+        },
+        "buildingState": {
+          "seed": "visual50-v1-27-persian-city:houses",
+          "settings": {
+            "parcel_fit": true
+          }
+        }
+      },
+      "architecture": "compact",
+      "camera": {
+        "kind": "overview"
+      },
+      "tags": {
+        "biome": "arid",
+        "relief": "valley",
+        "size": "metropolis",
+        "culture": "persian",
+        "environment": "desert-valley"
+      },
+      "expectations": [
+        "Grande ville de vallée aride : cours, places et axes sans uniformiser les volumes.",
+        "Capture de bâtiments réellement affichés ; un état vide/refusé doit rester explicite dans le rapport.",
+        "Aucune génération native détaillée de toute la ville ; détails limités au visible ou à la sélection.",
+        "Empreintes conservées entre plan compact et détail, cours ouvertes, absence de slivers et de masquage silencieux des refus."
+      ],
+      "limitations": [
+        "Le nom de culture ne prouve pas sa couverture architecturale : relever pack, recette, profil, confiance et refus réels.",
+        "Les plans compacts ne certifient ni intérieurs ni capacité habitée ; conserver une valeur inconnue explicite.",
+        "Monuments et ateliers spécialisés peuvent rester des aperçus de programme ; ne pas les présenter comme modèles natifs certifiés."
+      ],
+      "gate": "p0",
+      "source": {
+        "decorWidthM": 16000,
+        "decorSeed": "city-desert-valley-l",
+        "declaredMaxPopulation": 400000,
+        "cultureLabel": "Persian city (Isfahan)"
+      }
+    },
+    {
+      "id": "28-ottoman-hills",
+      "title": "Ville ottomane vallonnée : parcelles obliques et silhouette cohérente des maisons.",
+      "artifact": "city-03-aegean-hills-l",
+      "culture": "ottoman",
+      "population": 30000,
+      "seed": "visual50-v1-28-ottoman-hills",
+      "settlement": {
+        "kind": "settlement",
+        "siteType": "auto",
+        "sitePrefs": {},
+        "position": {
+          "x": 8000,
+          "y": 8000
+        }
+      },
+      "urban": {
+        "quarterSeed": "visual50-v1-28-ottoman-hills",
+        "parcelSeed": "visual50-v1-28-ottoman-hills:parcels",
+        "layoutConfig": {
+          "programme": {
+            "mode": "inspired"
+          }
+        },
+        "buildingState": {
+          "seed": "visual50-v1-28-ottoman-hills:houses",
+          "settings": {
+            "parcel_fit": true
+          }
+        }
+      },
+      "architecture": "compact",
+      "camera": {
+        "kind": "overview"
+      },
+      "tags": {
+        "biome": "mediterranean",
+        "relief": "hills",
+        "size": "city",
+        "culture": "ottoman",
+        "environment": "aegean-hills"
+      },
+      "expectations": [
+        "Ville ottomane vallonnée : parcelles obliques et silhouette cohérente des maisons.",
+        "Capture de bâtiments réellement affichés ; un état vide/refusé doit rester explicite dans le rapport.",
+        "Aucune génération native détaillée de toute la ville ; détails limités au visible ou à la sélection.",
+        "Empreintes conservées entre plan compact et détail, cours ouvertes, absence de slivers et de masquage silencieux des refus."
+      ],
+      "limitations": [
+        "Le nom de culture ne prouve pas sa couverture architecturale : relever pack, recette, profil, confiance et refus réels.",
+        "Les plans compacts ne certifient ni intérieurs ni capacité habitée ; conserver une valeur inconnue explicite.",
+        "Monuments et ateliers spécialisés peuvent rester des aperçus de programme ; ne pas les présenter comme modèles natifs certifiés."
+      ],
+      "gate": "p0",
+      "source": {
+        "decorWidthM": 16000,
+        "decorSeed": "city-aegean-hills-l",
+        "declaredMaxPopulation": 400000,
+        "cultureLabel": "Ottoman town (Bursa)"
+      }
+    },
+    {
+      "id": "29-sahel-town",
+      "title": "Bourg sahélien : masses de terre, vides de cour et densité de rive.",
+      "artifact": "city-06-desert-valley-s",
+      "culture": "sahel",
+      "population": 6000,
+      "seed": "visual50-v1-29-sahel-town",
+      "settlement": {
+        "kind": "settlement",
+        "siteType": "auto",
+        "sitePrefs": {}
+      },
+      "urban": {
+        "quarterSeed": "visual50-v1-29-sahel-town",
+        "parcelSeed": "visual50-v1-29-sahel-town:parcels",
+        "layoutConfig": {
+          "programme": {
+            "mode": "inspired"
+          }
+        },
+        "buildingState": {
+          "seed": "visual50-v1-29-sahel-town:houses",
+          "settings": {
+            "parcel_fit": true
+          }
+        }
+      },
+      "architecture": "compact",
+      "camera": {
+        "kind": "overview"
+      },
+      "tags": {
+        "biome": "arid",
+        "relief": "valley",
+        "size": "town",
+        "culture": "sahel",
+        "environment": "desert-valley"
+      },
+      "expectations": [
+        "Bourg sahélien : masses de terre, vides de cour et densité de rive.",
+        "Capture de bâtiments réellement affichés ; un état vide/refusé doit rester explicite dans le rapport.",
+        "Aucune génération native détaillée de toute la ville ; détails limités au visible ou à la sélection.",
+        "Empreintes conservées entre plan compact et détail, cours ouvertes, absence de slivers et de masquage silencieux des refus."
+      ],
+      "limitations": [
+        "Le nom de culture ne prouve pas sa couverture architecturale : relever pack, recette, profil, confiance et refus réels.",
+        "Les plans compacts ne certifient ni intérieurs ni capacité habitée ; conserver une valeur inconnue explicite.",
+        "Monuments et ateliers spécialisés peuvent rester des aperçus de programme ; ne pas les présenter comme modèles natifs certifiés."
+      ],
+      "gate": "p0",
+      "source": {
+        "decorWidthM": 4000,
+        "decorSeed": "city-desert-valley-s",
+        "declaredMaxPopulation": 10000,
+        "cultureLabel": "Sahelian mud town (Djenne)"
+      }
+    },
+    {
+      "id": "30-egyptian-river",
+      "title": "Trame planifiée fluviale : îlots et maisons étroites sans effets de coupe en éventail.",
+      "artifact": "city-06-desert-valley-l",
+      "culture": "egyptian-planned",
+      "population": 30000,
+      "seed": "visual50-v1-30-egyptian-river",
+      "settlement": {
+        "kind": "settlement",
+        "siteType": "auto",
+        "sitePrefs": {}
+      },
+      "urban": {
+        "quarterSeed": "visual50-v1-30-egyptian-river",
+        "parcelSeed": "visual50-v1-30-egyptian-river:parcels",
+        "layoutConfig": {
+          "programme": {
+            "mode": "inspired"
+          }
+        },
+        "buildingState": {
+          "seed": "visual50-v1-30-egyptian-river:houses",
+          "settings": {
+            "parcel_fit": true
+          }
+        }
+      },
+      "architecture": "compact",
+      "camera": {
+        "kind": "overview"
+      },
+      "tags": {
+        "biome": "arid",
+        "relief": "valley",
+        "size": "city",
+        "culture": "egyptian-planned",
+        "environment": "desert-valley"
+      },
+      "expectations": [
+        "Trame planifiée fluviale : îlots et maisons étroites sans effets de coupe en éventail.",
+        "Capture de bâtiments réellement affichés ; un état vide/refusé doit rester explicite dans le rapport.",
+        "Aucune génération native détaillée de toute la ville ; détails limités au visible ou à la sélection.",
+        "Empreintes conservées entre plan compact et détail, cours ouvertes, absence de slivers et de masquage silencieux des refus."
+      ],
+      "limitations": [
+        "Le nom de culture ne prouve pas sa couverture architecturale : relever pack, recette, profil, confiance et refus réels.",
+        "Les plans compacts ne certifient ni intérieurs ni capacité habitée ; conserver une valeur inconnue explicite.",
+        "Monuments et ateliers spécialisés peuvent rester des aperçus de programme ; ne pas les présenter comme modèles natifs certifiés."
+      ],
+      "gate": "p0",
+      "source": {
+        "decorWidthM": 16000,
+        "decorSeed": "city-desert-valley-l",
+        "declaredMaxPopulation": 400000,
+        "cultureLabel": "Égypte · ville planifiée du Nil"
+      }
+    },
+    {
+      "id": "31-nubian-fort",
+      "title": "Bourg fortifié aride : relation entre enceinte, noyau et tissus domestiques.",
+      "artifact": "city-05-arid-plateau-s",
+      "culture": "nubian-fortified",
+      "population": 3000,
+      "seed": "visual50-v1-31-nubian-fort",
+      "settlement": {
+        "kind": "settlement",
+        "siteType": "auto",
+        "sitePrefs": {},
+        "position": {
+          "x": 2000,
+          "y": 2000
+        }
+      },
+      "urban": {
+        "quarterSeed": "visual50-v1-31-nubian-fort",
+        "parcelSeed": "visual50-v1-31-nubian-fort:parcels",
+        "layoutConfig": {
+          "programme": {
+            "mode": "inspired"
+          }
+        },
+        "buildingState": {
+          "seed": "visual50-v1-31-nubian-fort:houses",
+          "settings": {
+            "parcel_fit": true
+          }
+        }
+      },
+      "architecture": "compact",
+      "camera": {
+        "kind": "overview"
+      },
+      "tags": {
+        "biome": "arid",
+        "relief": "plateau",
+        "size": "town",
+        "culture": "nubian-fortified",
+        "environment": "arid-plateau"
+      },
+      "expectations": [
+        "Bourg fortifié aride : relation entre enceinte, noyau et tissus domestiques.",
+        "Capture de bâtiments réellement affichés ; un état vide/refusé doit rester explicite dans le rapport.",
+        "Aucune génération native détaillée de toute la ville ; détails limités au visible ou à la sélection.",
+        "Empreintes conservées entre plan compact et détail, cours ouvertes, absence de slivers et de masquage silencieux des refus."
+      ],
+      "limitations": [
+        "Le nom de culture ne prouve pas sa couverture architecturale : relever pack, recette, profil, confiance et refus réels.",
+        "Les plans compacts ne certifient ni intérieurs ni capacité habitée ; conserver une valeur inconnue explicite.",
+        "Monuments et ateliers spécialisés peuvent rester des aperçus de programme ; ne pas les présenter comme modèles natifs certifiés."
+      ],
+      "gate": "p0",
+      "source": {
+        "decorWidthM": 4000,
+        "decorSeed": "city-arid-plateau-s",
+        "declaredMaxPopulation": 10000,
+        "cultureLabel": "Nubie · ville fortifiée"
+      }
+    },
+    {
+      "id": "32-mesopotamian-courts",
+      "title": "Quartiers de cours à grande échelle : préserver les trous des patios jusque dans les tuiles raster.",
+      "artifact": "city-06-desert-valley-l",
+      "culture": "mesopotamian",
+      "population": 100000,
+      "seed": "visual50-v1-32-mesopotamian-courts",
+      "settlement": {
+        "kind": "settlement",
+        "siteType": "auto",
+        "sitePrefs": {}
+      },
+      "urban": {
+        "quarterSeed": "visual50-v1-32-mesopotamian-courts",
+        "parcelSeed": "visual50-v1-32-mesopotamian-courts:parcels",
+        "layoutConfig": {
+          "programme": {
+            "mode": "inspired"
+          }
+        },
+        "buildingState": {
+          "seed": "visual50-v1-32-mesopotamian-courts:houses",
+          "settings": {
+            "parcel_fit": true
+          }
+        }
+      },
+      "architecture": "compact",
+      "camera": {
+        "kind": "overview"
+      },
+      "tags": {
+        "biome": "arid",
+        "relief": "valley",
+        "size": "metropolis",
+        "culture": "mesopotamian",
+        "environment": "desert-valley"
+      },
+      "expectations": [
+        "Quartiers de cours à grande échelle : préserver les trous des patios jusque dans les tuiles raster.",
+        "Capture de bâtiments réellement affichés ; un état vide/refusé doit rester explicite dans le rapport.",
+        "Aucune génération native détaillée de toute la ville ; détails limités au visible ou à la sélection.",
+        "Empreintes conservées entre plan compact et détail, cours ouvertes, absence de slivers et de masquage silencieux des refus."
+      ],
+      "limitations": [
+        "Le nom de culture ne prouve pas sa couverture architecturale : relever pack, recette, profil, confiance et refus réels.",
+        "Les plans compacts ne certifient ni intérieurs ni capacité habitée ; conserver une valeur inconnue explicite.",
+        "Monuments et ateliers spécialisés peuvent rester des aperçus de programme ; ne pas les présenter comme modèles natifs certifiés."
+      ],
+      "gate": "p0",
+      "source": {
+        "decorWidthM": 16000,
+        "decorSeed": "city-desert-valley-l",
+        "declaredMaxPopulation": 400000,
+        "cultureLabel": "Mésopotamie · quartiers de cours"
+      }
+    },
+    {
+      "id": "33-oasis-caravan",
+      "title": "Cité caravanière : cours/composés et réserves fonctionnelles distincts.",
+      "artifact": "city-05-arid-plateau-s",
+      "culture": "oasis-caravan",
+      "population": 10000,
+      "seed": "visual50-v1-33-oasis-caravan",
+      "settlement": {
+        "kind": "settlement",
+        "siteType": "auto",
+        "sitePrefs": {},
+        "position": {
+          "x": 2000,
+          "y": 2000
+        }
+      },
+      "urban": {
+        "quarterSeed": "visual50-v1-33-oasis-caravan",
+        "parcelSeed": "visual50-v1-33-oasis-caravan:parcels",
+        "layoutConfig": {
+          "programme": {
+            "mode": "inspired",
+            "role": "crossroads"
+          }
+        },
+        "buildingState": {
+          "seed": "visual50-v1-33-oasis-caravan:houses",
+          "settings": {
+            "parcel_fit": true
+          }
+        }
+      },
+      "architecture": "compact",
+      "camera": {
+        "kind": "overview"
+      },
+      "tags": {
+        "biome": "arid",
+        "relief": "plateau",
+        "size": "town",
+        "culture": "oasis-caravan",
+        "environment": "arid-plateau"
+      },
+      "expectations": [
+        "Cité caravanière : cours/composés et réserves fonctionnelles distincts.",
+        "Capture de bâtiments réellement affichés ; un état vide/refusé doit rester explicite dans le rapport.",
+        "Aucune génération native détaillée de toute la ville ; détails limités au visible ou à la sélection.",
+        "Empreintes conservées entre plan compact et détail, cours ouvertes, absence de slivers et de masquage silencieux des refus."
+      ],
+      "limitations": [
+        "Le nom de culture ne prouve pas sa couverture architecturale : relever pack, recette, profil, confiance et refus réels.",
+        "Les plans compacts ne certifient ni intérieurs ni capacité habitée ; conserver une valeur inconnue explicite.",
+        "Monuments et ateliers spécialisés peuvent rester des aperçus de programme ; ne pas les présenter comme modèles natifs certifiés.",
+        "Décor de substitution géographique : mesure de contraste morphologique, pas reconstitution historique ni écologique."
+      ],
+      "gate": "p0",
+      "source": {
+        "decorWidthM": 4000,
+        "decorSeed": "city-arid-plateau-s",
+        "declaredMaxPopulation": 10000,
+        "cultureLabel": "Asie centrale · cité caravanière d’oasis"
+      }
+    },
+    {
+      "id": "34-ksar-oasis",
+      "title": "Petit ksar : compacte enceinte et parcelles irrégulières sans ailes en aiguilles.",
+      "artifact": "city-05-arid-plateau-s",
+      "culture": "ksar-oasis",
+      "population": 1000,
+      "seed": "visual50-v1-34-ksar-oasis",
+      "settlement": {
+        "kind": "settlement",
+        "siteType": "auto",
+        "sitePrefs": {},
+        "position": {
+          "x": 2000,
+          "y": 2000
+        }
+      },
+      "urban": {
+        "quarterSeed": "visual50-v1-34-ksar-oasis",
+        "parcelSeed": "visual50-v1-34-ksar-oasis:parcels",
+        "layoutConfig": {
+          "programme": {
+            "mode": "inspired"
+          }
+        },
+        "buildingState": {
+          "seed": "visual50-v1-34-ksar-oasis:houses",
+          "settings": {
+            "parcel_fit": true
+          }
+        }
+      },
+      "architecture": "compact",
+      "camera": {
+        "kind": "overview"
+      },
+      "tags": {
+        "biome": "arid",
+        "relief": "plateau",
+        "size": "town",
+        "culture": "ksar-oasis",
+        "environment": "arid-plateau"
+      },
+      "expectations": [
+        "Petit ksar : compacte enceinte et parcelles irrégulières sans ailes en aiguilles.",
+        "Capture de bâtiments réellement affichés ; un état vide/refusé doit rester explicite dans le rapport.",
+        "Aucune génération native détaillée de toute la ville ; détails limités au visible ou à la sélection.",
+        "Empreintes conservées entre plan compact et détail, cours ouvertes, absence de slivers et de masquage silencieux des refus."
+      ],
+      "limitations": [
+        "Le nom de culture ne prouve pas sa couverture architecturale : relever pack, recette, profil, confiance et refus réels.",
+        "Les plans compacts ne certifient ni intérieurs ni capacité habitée ; conserver une valeur inconnue explicite.",
+        "Monuments et ateliers spécialisés peuvent rester des aperçus de programme ; ne pas les présenter comme modèles natifs certifiés.",
+        "Décor de substitution géographique : mesure de contraste morphologique, pas reconstitution historique ni écologique."
+      ],
+      "gate": "p0",
+      "source": {
+        "decorWidthM": 4000,
+        "decorSeed": "city-arid-plateau-s",
+        "declaredMaxPopulation": 10000,
+        "cultureLabel": "Maghreb · ksar d’oasis"
+      }
+    },
+    {
+      "id": "35-yoruba-compounds",
+      "title": "Ville de concessions : groupes de corps autour de cours différenciées.",
+      "artifact": "city-11-monsoon-plain-s",
+      "culture": "yoruba",
+      "population": 8000,
+      "seed": "visual50-v1-35-yoruba-compounds",
+      "settlement": {
+        "kind": "settlement",
+        "siteType": "auto",
+        "sitePrefs": {},
+        "position": {
+          "x": 2000,
+          "y": 2000
+        }
+      },
+      "urban": {
+        "quarterSeed": "visual50-v1-35-yoruba-compounds",
+        "parcelSeed": "visual50-v1-35-yoruba-compounds:parcels",
+        "layoutConfig": {
+          "programme": {
+            "mode": "inspired"
+          }
+        },
+        "buildingState": {
+          "seed": "visual50-v1-35-yoruba-compounds:houses",
+          "settings": {
+            "parcel_fit": true
+          }
+        }
+      },
+      "architecture": "compact",
+      "camera": {
+        "kind": "overview"
+      },
+      "tags": {
+        "biome": "tropical",
+        "relief": "flat",
+        "size": "town",
+        "culture": "yoruba",
+        "environment": "monsoon-plain"
+      },
+      "expectations": [
+        "Ville de concessions : groupes de corps autour de cours différenciées.",
+        "Capture de bâtiments réellement affichés ; un état vide/refusé doit rester explicite dans le rapport.",
+        "Aucune génération native détaillée de toute la ville ; détails limités au visible ou à la sélection.",
+        "Empreintes conservées entre plan compact et détail, cours ouvertes, absence de slivers et de masquage silencieux des refus."
+      ],
+      "limitations": [
+        "Le nom de culture ne prouve pas sa couverture architecturale : relever pack, recette, profil, confiance et refus réels.",
+        "Les plans compacts ne certifient ni intérieurs ni capacité habitée ; conserver une valeur inconnue explicite.",
+        "Monuments et ateliers spécialisés peuvent rester des aperçus de programme ; ne pas les présenter comme modèles natifs certifiés.",
+        "Décor de substitution géographique : mesure de contraste morphologique, pas reconstitution historique ni écologique."
+      ],
+      "gate": "p0",
+      "source": {
+        "decorWidthM": 4000,
+        "decorSeed": "city-monsoon-plain-s",
+        "declaredMaxPopulation": 10000,
+        "cultureLabel": "Yoruba · ville de concessions"
+      }
+    },
+    {
+      "id": "36-indus-grid",
+      "title": "Ville de trame planifiée : tailles de lots, fronts et accès réguliers.",
+      "artifact": "city-01-river-plain-l",
+      "culture": "indus-planned",
+      "population": 30000,
+      "seed": "visual50-v1-36-indus-grid",
+      "settlement": {
+        "kind": "settlement",
+        "siteType": "auto",
+        "sitePrefs": {},
+        "position": {
+          "x": 8000,
+          "y": 8000
+        }
+      },
+      "urban": {
+        "quarterSeed": "visual50-v1-36-indus-grid",
+        "parcelSeed": "visual50-v1-36-indus-grid:parcels",
+        "layoutConfig": {
+          "programme": {
+            "mode": "inspired"
+          }
+        },
+        "buildingState": {
+          "seed": "visual50-v1-36-indus-grid:houses",
+          "settings": {
+            "parcel_fit": true
+          }
+        }
+      },
+      "architecture": "compact",
+      "camera": {
+        "kind": "overview"
+      },
+      "tags": {
+        "biome": "temperate",
+        "relief": "flat",
+        "size": "city",
+        "culture": "indus-planned",
+        "environment": "river-plain"
+      },
+      "expectations": [
+        "Ville de trame planifiée : tailles de lots, fronts et accès réguliers.",
+        "Capture de bâtiments réellement affichés ; un état vide/refusé doit rester explicite dans le rapport.",
+        "Aucune génération native détaillée de toute la ville ; détails limités au visible ou à la sélection.",
+        "Empreintes conservées entre plan compact et détail, cours ouvertes, absence de slivers et de masquage silencieux des refus."
+      ],
+      "limitations": [
+        "Le nom de culture ne prouve pas sa couverture architecturale : relever pack, recette, profil, confiance et refus réels.",
+        "Les plans compacts ne certifient ni intérieurs ni capacité habitée ; conserver une valeur inconnue explicite.",
+        "Monuments et ateliers spécialisés peuvent rester des aperçus de programme ; ne pas les présenter comme modèles natifs certifiés."
+      ],
+      "gate": "p0",
+      "source": {
+        "decorWidthM": 16000,
+        "decorSeed": "city-river-plain-l",
+        "declaredMaxPopulation": 400000,
+        "cultureLabel": "Indus · cité harappéenne"
+      }
+    },
+    {
+      "id": "37-bastide",
+      "title": "Bastide : place centrale et continuité du front bâti dans une trame régulière.",
+      "artifact": "city-01-river-plain-s",
+      "culture": "bastide",
+      "population": 3000,
+      "seed": "visual50-v1-37-bastide",
+      "settlement": {
+        "kind": "settlement",
+        "siteType": "auto",
+        "sitePrefs": {},
+        "position": {
+          "x": 2000,
+          "y": 2000
+        }
+      },
+      "urban": {
+        "quarterSeed": "visual50-v1-37-bastide",
+        "parcelSeed": "visual50-v1-37-bastide:parcels",
+        "layoutConfig": {
+          "programme": {
+            "mode": "inspired"
+          }
+        },
+        "buildingState": {
+          "seed": "visual50-v1-37-bastide:houses",
+          "settings": {
+            "parcel_fit": true
+          }
+        }
+      },
+      "architecture": "compact",
+      "camera": {
+        "kind": "overview"
+      },
+      "tags": {
+        "biome": "temperate",
+        "relief": "flat",
+        "size": "town",
+        "culture": "bastide",
+        "environment": "river-plain"
+      },
+      "expectations": [
+        "Bastide : place centrale et continuité du front bâti dans une trame régulière.",
+        "Capture de bâtiments réellement affichés ; un état vide/refusé doit rester explicite dans le rapport.",
+        "Aucune génération native détaillée de toute la ville ; détails limités au visible ou à la sélection.",
+        "Empreintes conservées entre plan compact et détail, cours ouvertes, absence de slivers et de masquage silencieux des refus."
+      ],
+      "limitations": [
+        "Le nom de culture ne prouve pas sa couverture architecturale : relever pack, recette, profil, confiance et refus réels.",
+        "Les plans compacts ne certifient ni intérieurs ni capacité habitée ; conserver une valeur inconnue explicite.",
+        "Monuments et ateliers spécialisés peuvent rester des aperçus de programme ; ne pas les présenter comme modèles natifs certifiés."
+      ],
+      "gate": "p0",
+      "source": {
+        "decorWidthM": 4000,
+        "decorSeed": "city-river-plain-s",
+        "declaredMaxPopulation": 10000,
+        "cultureLabel": "Bastide (planned grid)"
+      }
+    },
+    {
+      "id": "38-elven-forest",
+      "title": "Ville forestière fantasy : dispersions et composés propres à la culture, sans substitution européenne silencieuse.",
+      "artifact": "city-12-rainforest-ridges-s",
+      "culture": "elven",
+      "population": 5000,
+      "seed": "visual50-v1-38-elven-forest",
+      "settlement": {
+        "kind": "settlement",
+        "siteType": "auto",
+        "sitePrefs": {}
+      },
+      "urban": {
+        "quarterSeed": "visual50-v1-38-elven-forest",
+        "parcelSeed": "visual50-v1-38-elven-forest:parcels",
+        "layoutConfig": {
+          "programme": {
+            "mode": "fantasy"
+          }
+        },
+        "buildingState": {
+          "seed": "visual50-v1-38-elven-forest:houses",
+          "settings": {
+            "parcel_fit": true
+          }
+        }
+      },
+      "architecture": "compact",
+      "camera": {
+        "kind": "overview"
+      },
+      "tags": {
+        "biome": "tropical",
+        "relief": "mountains",
+        "size": "town",
+        "culture": "elven",
+        "environment": "rainforest-ridges"
+      },
+      "expectations": [
+        "Ville forestière fantasy : dispersions et composés propres à la culture, sans substitution européenne silencieuse.",
+        "Capture de bâtiments réellement affichés ; un état vide/refusé doit rester explicite dans le rapport.",
+        "Aucune génération native détaillée de toute la ville ; détails limités au visible ou à la sélection.",
+        "Empreintes conservées entre plan compact et détail, cours ouvertes, absence de slivers et de masquage silencieux des refus."
+      ],
+      "limitations": [
+        "Le nom de culture ne prouve pas sa couverture architecturale : relever pack, recette, profil, confiance et refus réels.",
+        "Les plans compacts ne certifient ni intérieurs ni capacité habitée ; conserver une valeur inconnue explicite.",
+        "Monuments et ateliers spécialisés peuvent rester des aperçus de programme ; ne pas les présenter comme modèles natifs certifiés."
+      ],
+      "gate": "p0",
+      "source": {
+        "decorWidthM": 4000,
+        "decorSeed": "city-rainforest-ridges-s",
+        "declaredMaxPopulation": 10000,
+        "cultureLabel": "Elven forest town"
+      }
+    },
+    {
+      "id": "39-dwarven-hold",
+      "title": "Forteresse de montagne fantasy : corps massifs, terrasses et cheminements.",
+      "artifact": "city-08-cold-peaks-s",
+      "culture": "dwarven",
+      "population": 5000,
+      "seed": "visual50-v1-39-dwarven-hold",
+      "settlement": {
+        "kind": "settlement",
+        "siteType": "auto",
+        "sitePrefs": {}
+      },
+      "urban": {
+        "quarterSeed": "visual50-v1-39-dwarven-hold",
+        "parcelSeed": "visual50-v1-39-dwarven-hold:parcels",
+        "layoutConfig": {
+          "programme": {
+            "mode": "fantasy"
+          }
+        },
+        "buildingState": {
+          "seed": "visual50-v1-39-dwarven-hold:houses",
+          "settings": {
+            "parcel_fit": true
+          }
+        }
+      },
+      "architecture": "compact",
+      "camera": {
+        "kind": "overview"
+      },
+      "tags": {
+        "biome": "cold",
+        "relief": "high-mountains",
+        "size": "town",
+        "culture": "dwarven",
+        "environment": "cold-peaks"
+      },
+      "expectations": [
+        "Forteresse de montagne fantasy : corps massifs, terrasses et cheminements.",
+        "Capture de bâtiments réellement affichés ; un état vide/refusé doit rester explicite dans le rapport.",
+        "Aucune génération native détaillée de toute la ville ; détails limités au visible ou à la sélection.",
+        "Empreintes conservées entre plan compact et détail, cours ouvertes, absence de slivers et de masquage silencieux des refus."
+      ],
+      "limitations": [
+        "Le nom de culture ne prouve pas sa couverture architecturale : relever pack, recette, profil, confiance et refus réels.",
+        "Les plans compacts ne certifient ni intérieurs ni capacité habitée ; conserver une valeur inconnue explicite.",
+        "Monuments et ateliers spécialisés peuvent rester des aperçus de programme ; ne pas les présenter comme modèles natifs certifiés."
+      ],
+      "gate": "p0",
+      "source": {
+        "decorWidthM": 4000,
+        "decorSeed": "city-cold-peaks-s",
+        "declaredMaxPopulation": 10000,
+        "cultureLabel": "Dwarven hold"
+      }
+    },
+    {
+      "id": "40-duergar-ruins",
+      "title": "Établissement ruiné : statut ruine, absence d’occupation et géométrie manquante signalées.",
+      "artifact": "city-08-cold-peaks-s",
+      "culture": "duergar-hold",
+      "population": 200,
+      "seed": "visual50-v1-40-duergar-ruins",
+      "settlement": {
+        "kind": "settlement",
+        "siteType": "auto",
+        "sitePrefs": {}
+      },
+      "urban": {
+        "quarterSeed": "visual50-v1-40-duergar-ruins",
+        "parcelSeed": "visual50-v1-40-duergar-ruins:parcels",
+        "layoutConfig": {
+          "programme": {
+            "mode": "fantasy",
+            "state": "ruined"
+          }
+        },
+        "buildingState": {
+          "seed": "visual50-v1-40-duergar-ruins:houses",
+          "settings": {
+            "parcel_fit": true
+          }
+        }
+      },
+      "architecture": "compact",
+      "camera": {
+        "kind": "overview"
+      },
+      "tags": {
+        "biome": "cold",
+        "relief": "high-mountains",
+        "size": "village",
+        "culture": "duergar-hold",
+        "environment": "cold-peaks"
+      },
+      "expectations": [
+        "Établissement ruiné : statut ruine, absence d’occupation et géométrie manquante signalées.",
+        "Capture de bâtiments réellement affichés ; un état vide/refusé doit rester explicite dans le rapport.",
+        "Aucune génération native détaillée de toute la ville ; détails limités au visible ou à la sélection.",
+        "Empreintes conservées entre plan compact et détail, cours ouvertes, absence de slivers et de masquage silencieux des refus."
+      ],
+      "limitations": [
+        "Le nom de culture ne prouve pas sa couverture architecturale : relever pack, recette, profil, confiance et refus réels.",
+        "Les plans compacts ne certifient ni intérieurs ni capacité habitée ; conserver une valeur inconnue explicite.",
+        "Monuments et ateliers spécialisés peuvent rester des aperçus de programme ; ne pas les présenter comme modèles natifs certifiés.",
+        "Attendre B2 publié dans le bridge/UI et le binaire utilisé ; un rôle de programme ne garantit pas une géométrie spécialisée.",
+        "Le décor est une montagne de surface : aucun terrain de caverne fourni. Comparaison du tissu fantasy uniquement. Ruine sémantique ≠ maillage effondré."
+      ],
+      "gate": "specialized",
+      "source": {
+        "decorWidthM": 4000,
+        "decorSeed": "city-cold-peaks-s",
+        "declaredMaxPopulation": 10000,
+        "cultureLabel": "Duergar industrial hold"
+      }
+    },
+    {
+      "id": "41-farm-close",
+      "title": "Corps et dépendances de la ferme, même implantation.",
+      "artifact": "city-01-river-plain-s",
+      "culture": "european-organic",
+      "population": 8,
+      "seed": "visual50-v1-01-farm",
+      "settlement": {
+        "kind": "settlement",
+        "siteType": "auto",
+        "sitePrefs": {},
+        "position": {
+          "x": 2000,
+          "y": 2000
+        }
+      },
+      "urban": {
+        "quarterSeed": "visual50-v1-01-farm",
+        "parcelSeed": "visual50-v1-01-farm:parcels",
+        "layoutConfig": {
+          "programme": {
+            "mode": "inspired",
+            "role": "isolated-farm"
+          }
+        },
+        "buildingState": {
+          "seed": "visual50-v1-01-farm:houses",
+          "settings": {
+            "parcel_fit": true
+          }
+        }
+      },
+      "architecture": "detailed",
+      "camera": {
+        "kind": "fixed",
+        "cx": 2000,
+        "cy": 2000,
+        "mpp": 0.12
+      },
+      "tags": {
+        "biome": "temperate",
+        "relief": "flat",
+        "size": "farmstead",
+        "culture": "european-organic",
+        "environment": "river-plain"
+      },
+      "expectations": [
+        "Corps et dépendances de la ferme, même implantation.",
+        "Capture de bâtiments réellement affichés ; un état vide/refusé doit rester explicite dans le rapport.",
+        "Aucune génération native détaillée de toute la ville ; détails limités au visible ou à la sélection.",
+        "Empreintes conservées entre plan compact et détail, cours ouvertes, absence de slivers et de masquage silencieux des refus.",
+        "Mesurer appels physiques simultanés ≤2, caches bornés et refus sans disparition du plan."
+      ],
+      "limitations": [
+        "Le nom de culture ne prouve pas sa couverture architecturale : relever pack, recette, profil, confiance et refus réels.",
+        "Les plans compacts ne certifient ni intérieurs ni capacité habitée ; conserver une valeur inconnue explicite.",
+        "Monuments et ateliers spécialisés peuvent rester des aperçus de programme ; ne pas les présenter comme modèles natifs certifiés.",
+        "Attendre B2 publié dans le bridge/UI et le binaire utilisé ; un rôle de programme ne garantit pas une géométrie spécialisée.",
+        "Le centre fixe peut tomber sur une place : enregistrer tout recentrage explicite dans le rapport, ne pas sélectionner discrètement une réussite."
+      ],
+      "gate": "specialized",
+      "source": {
+        "decorWidthM": 4000,
+        "decorSeed": "city-river-plain-s",
+        "declaredMaxPopulation": 10000,
+        "cultureLabel": "Medieval organic (Europe)"
+      },
+      "pairedWith": "01-farm"
+    },
+    {
+      "id": "42-byzantine-hills-close",
+      "title": "Corps sur parcelles obliques et angles des toits.",
+      "artifact": "city-03-aegean-hills-s",
+      "culture": "byzantine-greek",
+      "population": 4000,
+      "seed": "visual50-v1-11-byzantine-hills",
+      "settlement": {
+        "kind": "settlement",
+        "siteType": "auto",
+        "sitePrefs": {},
+        "position": {
+          "x": 2000,
+          "y": 2000
+        }
+      },
+      "urban": {
+        "quarterSeed": "visual50-v1-11-byzantine-hills",
+        "parcelSeed": "visual50-v1-11-byzantine-hills:parcels",
+        "layoutConfig": {
+          "programme": {
+            "mode": "inspired"
+          }
+        },
+        "buildingState": {
+          "seed": "visual50-v1-11-byzantine-hills:houses",
+          "settings": {
+            "parcel_fit": true
+          }
+        }
+      },
+      "architecture": "detailed",
+      "camera": {
+        "kind": "fixed",
+        "cx": 2000,
+        "cy": 2000,
+        "mpp": 0.2
+      },
+      "tags": {
+        "biome": "mediterranean",
+        "relief": "hills",
+        "size": "town",
+        "culture": "byzantine-greek",
+        "environment": "aegean-hills"
+      },
+      "expectations": [
+        "Corps sur parcelles obliques et angles des toits.",
+        "Capture de bâtiments réellement affichés ; un état vide/refusé doit rester explicite dans le rapport.",
+        "Aucune génération native détaillée de toute la ville ; détails limités au visible ou à la sélection.",
+        "Empreintes conservées entre plan compact et détail, cours ouvertes, absence de slivers et de masquage silencieux des refus.",
+        "Mesurer appels physiques simultanés ≤2, caches bornés et refus sans disparition du plan."
+      ],
+      "limitations": [
+        "Le nom de culture ne prouve pas sa couverture architecturale : relever pack, recette, profil, confiance et refus réels.",
+        "Les plans compacts ne certifient ni intérieurs ni capacité habitée ; conserver une valeur inconnue explicite.",
+        "Monuments et ateliers spécialisés peuvent rester des aperçus de programme ; ne pas les présenter comme modèles natifs certifiés.",
+        "Le centre fixe peut tomber sur une place : enregistrer tout recentrage explicite dans le rapport, ne pas sélectionner discrètement une réussite."
+      ],
+      "gate": "p0",
+      "source": {
+        "decorWidthM": 4000,
+        "decorSeed": "city-aegean-hills-s",
+        "declaredMaxPopulation": 10000,
+        "cultureLabel": "Byzantine hill town (Mystras)"
+      },
+      "pairedWith": "11-byzantine-hills"
+    },
+    {
+      "id": "43-medina-courts-close",
+      "title": "Patios transparents et largeur des ailes.",
+      "artifact": "city-05-arid-plateau-s",
+      "culture": "medina",
+      "population": 8000,
+      "seed": "visual50-v1-13-medina-courts",
+      "settlement": {
+        "kind": "settlement",
+        "siteType": "auto",
+        "sitePrefs": {},
+        "position": {
+          "x": 2000,
+          "y": 2000
+        }
+      },
+      "urban": {
+        "quarterSeed": "visual50-v1-13-medina-courts",
+        "parcelSeed": "visual50-v1-13-medina-courts:parcels",
+        "layoutConfig": {
+          "programme": {
+            "mode": "inspired"
+          }
+        },
+        "buildingState": {
+          "seed": "visual50-v1-13-medina-courts:houses",
+          "settings": {
+            "parcel_fit": true
+          }
+        }
+      },
+      "architecture": "detailed",
+      "camera": {
+        "kind": "fixed",
+        "cx": 2000,
+        "cy": 2000,
+        "mpp": 0.15
+      },
+      "tags": {
+        "biome": "arid",
+        "relief": "plateau",
+        "size": "town",
+        "culture": "medina",
+        "environment": "arid-plateau"
+      },
+      "expectations": [
+        "Patios transparents et largeur des ailes.",
+        "Capture de bâtiments réellement affichés ; un état vide/refusé doit rester explicite dans le rapport.",
+        "Aucune génération native détaillée de toute la ville ; détails limités au visible ou à la sélection.",
+        "Empreintes conservées entre plan compact et détail, cours ouvertes, absence de slivers et de masquage silencieux des refus.",
+        "Mesurer appels physiques simultanés ≤2, caches bornés et refus sans disparition du plan."
+      ],
+      "limitations": [
+        "Le nom de culture ne prouve pas sa couverture architecturale : relever pack, recette, profil, confiance et refus réels.",
+        "Les plans compacts ne certifient ni intérieurs ni capacité habitée ; conserver une valeur inconnue explicite.",
+        "Monuments et ateliers spécialisés peuvent rester des aperçus de programme ; ne pas les présenter comme modèles natifs certifiés.",
+        "Le centre fixe peut tomber sur une place : enregistrer tout recentrage explicite dans le rapport, ne pas sélectionner discrètement une réussite."
+      ],
+      "gate": "p0",
+      "source": {
+        "decorWidthM": 4000,
+        "decorSeed": "city-arid-plateau-s",
+        "declaredMaxPopulation": 10000,
+        "cultureLabel": "Medina (North Africa)"
+      },
+      "pairedWith": "13-medina-courts"
+    },
+    {
+      "id": "44-roman-mountain-close",
+      "title": "Zone montagneuse 2640,2669 du corpus régressif.",
+      "artifact": "city-04-mountain-bay-s",
+      "culture": "roman-core",
+      "population": 5000,
+      "seed": "city-mountain-bay-s",
+      "settlement": {
+        "kind": "settlement",
+        "siteType": "auto",
+        "sitePrefs": {},
+        "position": {
+          "x": 2640,
+          "y": 2669
+        }
+      },
+      "urban": {
+        "quarterSeed": "city-mountain-bay-s",
+        "parcelSeed": "city-mountain-bay-s",
+        "layoutConfig": {
+          "programme": {
+            "role": "auto",
+            "resources": [],
+            "period": "",
+            "mode": "inspired",
+            "navigableAccess": false,
+            "lore": []
+          },
+          "axisAlignment": "regional",
+          "mixCulture": "",
+          "mixMode": "phases",
+          "mixShare": 0.5,
+          "mixAngle": 0,
+          "exitTreatment": "adaptive",
+          "peripheralRoad": "auto",
+          "siteAdaptation": 1,
+          "composition": "settlement",
+          "settlementForm": "auto",
+          "suburbs": "auto",
+          "phases": 0,
+          "preset": "culture",
+          "culture": "site",
+          "recipe": "auto",
+          "zone": "auto",
+          "density": 1,
+          "count": 4,
+          "rings": 1,
+          "radius": 0,
+          "radiusScale": 1,
+          "placement": "center",
+          "params": {},
+          "monument": "none",
+          "fortification": "culture",
+          "maxStreetGrade": 0.12,
+          "maxLaneGrade": 0.18,
+          "maxStairGrade": 0.65,
+          "allowStairs": true,
+          "footprint": {
+            "mechanism": "auto",
+            "family": "auto",
+            "budget": "population",
+            "grossDensity": 0,
+            "aspect": 1.4,
+            "orientation": 0,
+            "nuclei": 3,
+            "irregularity": 0.2,
+            "anisotropy": 0.65,
+            "separation": 1.3,
+            "epochs": 3,
+            "cohesion": 0.85,
+            "satellites": 0.15,
+            "branchDepth": 0.2,
+            "gapSize": 60
+          },
+          "tissue": "culture",
+          "accessMode": "adaptive",
+          "accessDepth": 0,
+          "accessBudget": 4
+        },
+        "buildingState": {
+          "seed": "city-mountain-bay-s",
+          "settings": {
+            "parcel_fit": true
+          }
+        },
+        "parcelConfig": {
+          "culture": "site",
+          "density": 1,
+          "operator": "culture",
+          "params": {},
+          "preset": "culture",
+          "recipe": "auto",
+          "zone": "auto"
+        }
+      },
+      "architecture": "detailed",
+      "camera": {
+        "kind": "fixed",
+        "cx": 2640,
+        "cy": 2669,
+        "mpp": 0.2
+      },
+      "tags": {
+        "biome": "mediterranean",
+        "relief": "mountains",
+        "size": "town",
+        "culture": "roman-core",
+        "environment": "mountain-bay"
+      },
+      "expectations": [
+        "Zone montagneuse 2640,2669 du corpus régressif.",
+        "Capture de bâtiments réellement affichés ; un état vide/refusé doit rester explicite dans le rapport.",
+        "Aucune génération native détaillée de toute la ville ; détails limités au visible ou à la sélection.",
+        "Empreintes conservées entre plan compact et détail, cours ouvertes, absence de slivers et de masquage silencieux des refus.",
+        "Mesurer appels physiques simultanés ≤2, caches bornés et refus sans disparition du plan."
+      ],
+      "limitations": [
+        "Le nom de culture ne prouve pas sa couverture architecturale : relever pack, recette, profil, confiance et refus réels.",
+        "Les plans compacts ne certifient ni intérieurs ni capacité habitée ; conserver une valeur inconnue explicite.",
+        "Monuments et ateliers spécialisés peuvent rester des aperçus de programme ; ne pas les présenter comme modèles natifs certifiés.",
+        "Cas dérivé des entrées figées du corpus, pas replay UI exact : sites/rayon et routes sont recalculés. Référence native complète dans regressionReference.",
+        "Le centre fixe peut tomber sur une place : enregistrer tout recentrage explicite dans le rapport, ne pas sélectionner discrètement une réussite."
+      ],
+      "gate": "p0",
+      "source": {
+        "decorWidthM": 4000,
+        "decorSeed": "city-mountain-bay-s",
+        "declaredMaxPopulation": 10000,
+        "cultureLabel": "Roman castrum core"
+      },
+      "regressionReference": {
+        "kind": "fixture-derived-ui-scenario",
+        "input": "_agents_blackboard/city-visual-audit/04-mountain/quarters-request.json",
+        "inputSha256": "25dedb269b4821961bb7facbef0354b27a2ff813f0c383e4683c75ee8f1e8694",
+        "baseline": {
+          "layout": "_agents_blackboard/city-visual-audit/04-mountain/layout.json",
+          "partition": "_agents_blackboard/city-visual-audit/04-mountain/partition.json",
+          "buildingSites": "_agents_blackboard/city-visual-audit/04-mountain/requests.json",
+          "provenance": "_agents_blackboard/city-visual-audit/04-mountain/source.json"
+        },
+        "derivation": "web/scripts/city_visual_audit.mjs: quarters uses the frozen request; parcels and buildingSites use its seed unchanged. parcelConfig is the captured resolved partition.config.",
+        "frozenSite": {
+          "key": "city",
+          "population": 5000,
+          "culture": "roman-core",
+          "center": {
+            "x": 2640,
+            "y": 2669
+          },
+          "radius": 561.7894090783491
+        },
+        "frozenRoadCount": 5,
+        "uiExactReplay": false,
+        "uiDifferences": [
+          "The UI recalculates settlements/site radius and roads from the decor situation; frozen request.sites and request.roads are not injected by this manifest.",
+          "Current UI normalization and architecture defaults may differ from the captured native pipeline. Record the actual requests and compare before claiming input identity."
+        ],
+        "exactComparison": "Replay the referenced quarters input (including sites/roads) and the recorded parcel/buildingSites seeds against the coordinated new runtime. Frozen outputs are the before baseline only; replaying outputs would bypass the urban corrections."
+      },
+      "pairedWith": "15-roman-mountain",
+      "auxiliaryViews": [
+        {
+          "id": "mountain-core-parcels",
+          "comparisonGroup": "mountain-core",
+          "camera": {
+            "kind": "fixed",
+            "cx": 2640,
+            "cy": 2669,
+            "mpp": 0.2
+          },
+          "renderView": "parcels",
+          "architecture": "compact",
+          "image": "44-roman-mountain-close--mountain-core-parcels.png",
+          "countsTowardPrimary": false,
+          "purpose": "Comparer parcelles, silhouettes et plans natifs au même point montagneux 2640,2669.",
+          "fixtureFeatures": []
+        },
+        {
+          "id": "mountain-core-silhouettes",
+          "comparisonGroup": "mountain-core",
+          "camera": {
+            "kind": "fixed",
+            "cx": 2640,
+            "cy": 2669,
+            "mpp": 0.2
+          },
+          "renderView": "buildings",
+          "architecture": "silhouette",
+          "image": "44-roman-mountain-close--mountain-core-silhouettes.png",
+          "countsTowardPrimary": false,
+          "purpose": "Comparer parcelles, silhouettes et plans natifs au même point montagneux 2640,2669.",
+          "fixtureFeatures": []
+        },
+        {
+          "id": "mountain-core-plans",
+          "comparisonGroup": "mountain-core",
+          "camera": {
+            "kind": "fixed",
+            "cx": 2640,
+            "cy": 2669,
+            "mpp": 0.2
+          },
+          "renderView": "buildings",
+          "architecture": "compact",
+          "image": "44-roman-mountain-close--mountain-core-plans.png",
+          "countsTowardPrimary": false,
+          "purpose": "Comparer parcelles, silhouettes et plans natifs au même point montagneux 2640,2669.",
+          "fixtureFeatures": []
+        }
+      ]
+    },
+    {
+      "id": "45-pueblo-close",
+      "title": "Retraits et cours du composé pueblo.",
+      "artifact": "city-05-arid-plateau-s",
+      "culture": "native-pueblo",
+      "population": 900,
+      "seed": "visual50-v1-07-pueblo",
+      "settlement": {
+        "kind": "settlement",
+        "siteType": "auto",
+        "sitePrefs": {},
+        "position": {
+          "x": 2000,
+          "y": 2000
+        }
+      },
+      "urban": {
+        "quarterSeed": "visual50-v1-07-pueblo",
+        "parcelSeed": "visual50-v1-07-pueblo:parcels",
+        "layoutConfig": {
+          "programme": {
+            "mode": "inspired"
+          }
+        },
+        "buildingState": {
+          "seed": "visual50-v1-07-pueblo:houses",
+          "settings": {
+            "parcel_fit": true
+          }
+        }
+      },
+      "architecture": "detailed",
+      "camera": {
+        "kind": "fixed",
+        "cx": 2000,
+        "cy": 2000,
+        "mpp": 0.15
+      },
+      "tags": {
+        "biome": "arid",
+        "relief": "plateau",
+        "size": "village",
+        "culture": "native-pueblo",
+        "environment": "arid-plateau"
+      },
+      "expectations": [
+        "Retraits et cours du composé pueblo.",
+        "Capture de bâtiments réellement affichés ; un état vide/refusé doit rester explicite dans le rapport.",
+        "Aucune génération native détaillée de toute la ville ; détails limités au visible ou à la sélection.",
+        "Empreintes conservées entre plan compact et détail, cours ouvertes, absence de slivers et de masquage silencieux des refus.",
+        "Mesurer appels physiques simultanés ≤2, caches bornés et refus sans disparition du plan."
+      ],
+      "limitations": [
+        "Le nom de culture ne prouve pas sa couverture architecturale : relever pack, recette, profil, confiance et refus réels.",
+        "Les plans compacts ne certifient ni intérieurs ni capacité habitée ; conserver une valeur inconnue explicite.",
+        "Monuments et ateliers spécialisés peuvent rester des aperçus de programme ; ne pas les présenter comme modèles natifs certifiés.",
+        "Le centre fixe peut tomber sur une place : enregistrer tout recentrage explicite dans le rapport, ne pas sélectionner discrètement une réussite."
+      ],
+      "gate": "p0",
+      "source": {
+        "decorWidthM": 4000,
+        "decorSeed": "city-arid-plateau-s",
+        "declaredMaxPopulation": 10000,
+        "cultureLabel": "Native American: Pueblo"
+      },
+      "pairedWith": "07-pueblo"
+    },
+    {
+      "id": "46-aztec-lake-close",
+      "title": "Accès et vides entre maisons près du plateau lacustre.",
+      "artifact": "city-15-lake-plateau-s",
+      "culture": "aztec",
+      "population": 8000,
+      "seed": "visual50-v1-19-aztec-lake",
+      "settlement": {
+        "kind": "settlement",
+        "siteType": "auto",
+        "sitePrefs": {},
+        "position": {
+          "x": 2000,
+          "y": 2000
+        }
+      },
+      "urban": {
+        "quarterSeed": "visual50-v1-19-aztec-lake",
+        "parcelSeed": "visual50-v1-19-aztec-lake:parcels",
+        "layoutConfig": {
+          "programme": {
+            "mode": "inspired"
+          }
+        },
+        "buildingState": {
+          "seed": "visual50-v1-19-aztec-lake:houses",
+          "settings": {
+            "parcel_fit": true
+          }
+        }
+      },
+      "architecture": "detailed",
+      "camera": {
+        "kind": "fixed",
+        "cx": 2000,
+        "cy": 2000,
+        "mpp": 0.2
+      },
+      "tags": {
+        "biome": "temperate",
+        "relief": "plateau",
+        "size": "town",
+        "culture": "aztec",
+        "environment": "lake-plateau"
+      },
+      "expectations": [
+        "Accès et vides entre maisons près du plateau lacustre.",
+        "Capture de bâtiments réellement affichés ; un état vide/refusé doit rester explicite dans le rapport.",
+        "Aucune génération native détaillée de toute la ville ; détails limités au visible ou à la sélection.",
+        "Empreintes conservées entre plan compact et détail, cours ouvertes, absence de slivers et de masquage silencieux des refus.",
+        "Mesurer appels physiques simultanés ≤2, caches bornés et refus sans disparition du plan."
+      ],
+      "limitations": [
+        "Le nom de culture ne prouve pas sa couverture architecturale : relever pack, recette, profil, confiance et refus réels.",
+        "Les plans compacts ne certifient ni intérieurs ni capacité habitée ; conserver une valeur inconnue explicite.",
+        "Monuments et ateliers spécialisés peuvent rester des aperçus de programme ; ne pas les présenter comme modèles natifs certifiés.",
+        "Le centre fixe peut tomber sur une place : enregistrer tout recentrage explicite dans le rapport, ne pas sélectionner discrètement une réussite."
+      ],
+      "gate": "p0",
+      "source": {
+        "decorWidthM": 4000,
+        "decorSeed": "city-lake-plateau-s",
+        "declaredMaxPopulation": 10000,
+        "cultureLabel": "Aztec city (Tenochtitlan)"
+      },
+      "pairedWith": "19-aztec-lake"
+    },
+    {
+      "id": "47-european-100k-close",
+      "title": "Centre 100k conservé ; les deux défauts connus sont examinés dans les cadrages auxiliaires dédiés.",
+      "artifact": "city-01-river-plain-l",
+      "culture": "european-organic",
+      "population": 100000,
+      "seed": "city-river-plain-l",
+      "settlement": {
+        "kind": "settlement",
+        "siteType": "auto",
+        "sitePrefs": {},
+        "position": {
+          "x": 8000,
+          "y": 8000
+        }
+      },
+      "urban": {
+        "quarterSeed": "city-river-plain-l",
+        "parcelSeed": "city-river-plain-l",
+        "layoutConfig": {
+          "programme": {
+            "role": "auto",
+            "resources": [],
+            "period": "",
+            "mode": "inspired",
+            "navigableAccess": false,
+            "lore": []
+          },
+          "axisAlignment": "regional",
+          "mixCulture": "",
+          "mixMode": "phases",
+          "mixShare": 0.5,
+          "mixAngle": 0,
+          "exitTreatment": "adaptive",
+          "peripheralRoad": "auto",
+          "siteAdaptation": 1,
+          "composition": "settlement",
+          "settlementForm": "auto",
+          "suburbs": "auto",
+          "phases": 0,
+          "preset": "culture",
+          "culture": "site",
+          "recipe": "auto",
+          "zone": "auto",
+          "density": 1,
+          "count": 4,
+          "rings": 1,
+          "radius": 0,
+          "radiusScale": 1,
+          "placement": "center",
+          "params": {},
+          "monument": "none",
+          "fortification": "culture",
+          "maxStreetGrade": 0.12,
+          "maxLaneGrade": 0.18,
+          "maxStairGrade": 0.65,
+          "allowStairs": true,
+          "footprint": {
+            "mechanism": "auto",
+            "family": "auto",
+            "budget": "population",
+            "grossDensity": 0,
+            "aspect": 1.4,
+            "orientation": 0,
+            "nuclei": 3,
+            "irregularity": 0.2,
+            "anisotropy": 0.65,
+            "separation": 1.3,
+            "epochs": 3,
+            "cohesion": 0.85,
+            "satellites": 0.15,
+            "branchDepth": 0.2,
+            "gapSize": 60
+          },
+          "tissue": "culture",
+          "accessMode": "adaptive",
+          "accessDepth": 0,
+          "accessBudget": 4
+        },
+        "buildingState": {
+          "seed": "city-river-plain-l",
+          "settings": {
+            "parcel_fit": true
+          }
+        },
+        "parcelConfig": {
+          "culture": "site",
+          "density": 1,
+          "operator": "culture",
+          "params": {},
+          "preset": "culture",
+          "recipe": "auto",
+          "zone": "auto"
+        }
+      },
+      "architecture": "detailed",
+      "camera": {
+        "kind": "fixed",
+        "cx": 8000,
+        "cy": 8000,
+        "mpp": 0.2
+      },
+      "tags": {
+        "biome": "temperate",
+        "relief": "flat",
+        "size": "metropolis",
+        "culture": "european-organic",
+        "environment": "river-plain"
+      },
+      "expectations": [
+        "Centre 100k conservé ; les deux défauts connus sont examinés dans les cadrages auxiliaires dédiés.",
+        "Capture de bâtiments réellement affichés ; un état vide/refusé doit rester explicite dans le rapport.",
+        "Aucune génération native détaillée de toute la ville ; détails limités au visible ou à la sélection.",
+        "Empreintes conservées entre plan compact et détail, cours ouvertes, absence de slivers et de masquage silencieux des refus.",
+        "Mesurer appels physiques simultanés ≤2, caches bornés et refus sans disparition du plan."
+      ],
+      "limitations": [
+        "Le nom de culture ne prouve pas sa couverture architecturale : relever pack, recette, profil, confiance et refus réels.",
+        "Les plans compacts ne certifient ni intérieurs ni capacité habitée ; conserver une valeur inconnue explicite.",
+        "Monuments et ateliers spécialisés peuvent rester des aperçus de programme ; ne pas les présenter comme modèles natifs certifiés.",
+        "Cas dérivé des entrées figées du corpus, pas replay UI exact : sites/rayon et routes sont recalculés. Référence native complète dans regressionReference.",
+        "Le centre fixe peut tomber sur une place : enregistrer tout recentrage explicite dans le rapport, ne pas sélectionner discrètement une réussite."
+      ],
+      "gate": "p0",
+      "source": {
+        "decorWidthM": 16000,
+        "decorSeed": "city-river-plain-l",
+        "declaredMaxPopulation": 400000,
+        "cultureLabel": "Medieval organic (Europe)"
+      },
+      "regressionReference": {
+        "kind": "fixture-derived-ui-scenario",
+        "input": "_agents_blackboard/city-visual-audit/01-l/quarters-request.json",
+        "inputSha256": "28567de57067aa8fccdcee25a0804cf9bf7fbc2c709b90a9c3d504c3b7b3d7ab",
+        "baseline": {
+          "layout": "_agents_blackboard/city-visual-audit/01-l/layout.json",
+          "partition": "_agents_blackboard/city-visual-audit/01-l/partition.json",
+          "buildingSites": "_agents_blackboard/city-visual-audit/01-l/requests.json",
+          "provenance": "_agents_blackboard/city-visual-audit/01-l/source.json"
+        },
+        "derivation": "web/scripts/city_visual_audit.mjs: quarters uses the frozen request; parcels and buildingSites use its seed unchanged. parcelConfig is the captured resolved partition.config.",
+        "frozenSite": {
+          "key": "city",
+          "population": 100000,
+          "culture": "european-organic",
+          "center": {
+            "x": 8000,
+            "y": 8000
+          },
+          "radius": 1815.7360834719918
+        },
+        "frozenRoadCount": 10,
+        "uiExactReplay": false,
+        "uiDifferences": [
+          "The UI recalculates settlements/site radius and roads from the decor situation; frozen request.sites and request.roads are not injected by this manifest.",
+          "Current UI normalization and architecture defaults may differ from the captured native pipeline. Record the actual requests and compare before claiming input identity."
+        ],
+        "exactComparison": "Replay the referenced quarters input (including sites/roads) and the recorded parcel/buildingSites seeds against the coordinated new runtime. Frozen outputs are the before baseline only; replaying outputs would bypass the urban corrections."
+      },
+      "pairedWith": "25-european-100k",
+      "auxiliaryViews": [
+        {
+          "id": "100k-core-parcels",
+          "comparisonGroup": "100k-core",
+          "camera": {
+            "kind": "fixed",
+            "cx": 8000,
+            "cy": 8000,
+            "mpp": 0.2
+          },
+          "renderView": "parcels",
+          "architecture": "compact",
+          "image": "47-european-100k-close--100k-core-parcels.png",
+          "countsTowardPrimary": false,
+          "purpose": "Centre 8000,8000 : comparaison des trois couches ; les défauts connus sont hors de ce cadre proche.",
+          "fixtureFeatures": []
+        },
+        {
+          "id": "100k-core-silhouettes",
+          "comparisonGroup": "100k-core",
+          "camera": {
+            "kind": "fixed",
+            "cx": 8000,
+            "cy": 8000,
+            "mpp": 0.2
+          },
+          "renderView": "buildings",
+          "architecture": "silhouette",
+          "image": "47-european-100k-close--100k-core-silhouettes.png",
+          "countsTowardPrimary": false,
+          "purpose": "Centre 8000,8000 : comparaison des trois couches ; les défauts connus sont hors de ce cadre proche.",
+          "fixtureFeatures": []
+        },
+        {
+          "id": "100k-core-plans",
+          "comparisonGroup": "100k-core",
+          "camera": {
+            "kind": "fixed",
+            "cx": 8000,
+            "cy": 8000,
+            "mpp": 0.2
+          },
+          "renderView": "buildings",
+          "architecture": "compact",
+          "image": "47-european-100k-close--100k-core-plans.png",
+          "countsTowardPrimary": false,
+          "purpose": "Centre 8000,8000 : comparaison des trois couches ; les défauts connus sont hors de ce cadre proche.",
+          "fixtureFeatures": []
+        },
+        {
+          "id": "100k-unequal-parcels-parcels",
+          "comparisonGroup": "100k-unequal-parcels",
+          "camera": {
+            "kind": "fixed",
+            "cx": 7290.718129472567,
+            "cy": 7857.327858459841,
+            "mpp": 0.15
+          },
+          "renderView": "parcels",
+          "architecture": "compact",
+          "image": "47-european-100k-close--100k-unequal-parcels-parcels.png",
+          "countsTowardPrimary": false,
+          "purpose": "Paire de parcelles du corpus avec surfaces dans un rapport 9.64 malgré des fronts voisins ; contrôler coupe et occupation.",
+          "fixtureFeatures": [
+            "layout-f9dab5910f08a8a2/block-542abfb6c38433a7/parcel-ce234664c9f06f48",
+            "layout-f9dab5910f08a8a2/block-542abfb6c38433a7/parcel-93465b1bbf73a6fc"
+          ]
+        },
+        {
+          "id": "100k-unequal-parcels-silhouettes",
+          "comparisonGroup": "100k-unequal-parcels",
+          "camera": {
+            "kind": "fixed",
+            "cx": 7290.718129472567,
+            "cy": 7857.327858459841,
+            "mpp": 0.15
+          },
+          "renderView": "buildings",
+          "architecture": "silhouette",
+          "image": "47-european-100k-close--100k-unequal-parcels-silhouettes.png",
+          "countsTowardPrimary": false,
+          "purpose": "Paire de parcelles du corpus avec surfaces dans un rapport 9.64 malgré des fronts voisins ; contrôler coupe et occupation.",
+          "fixtureFeatures": [
+            "layout-f9dab5910f08a8a2/block-542abfb6c38433a7/parcel-ce234664c9f06f48",
+            "layout-f9dab5910f08a8a2/block-542abfb6c38433a7/parcel-93465b1bbf73a6fc"
+          ]
+        },
+        {
+          "id": "100k-unequal-parcels-plans",
+          "comparisonGroup": "100k-unequal-parcels",
+          "camera": {
+            "kind": "fixed",
+            "cx": 7290.718129472567,
+            "cy": 7857.327858459841,
+            "mpp": 0.15
+          },
+          "renderView": "buildings",
+          "architecture": "compact",
+          "image": "47-european-100k-close--100k-unequal-parcels-plans.png",
+          "countsTowardPrimary": false,
+          "purpose": "Paire de parcelles du corpus avec surfaces dans un rapport 9.64 malgré des fronts voisins ; contrôler coupe et occupation.",
+          "fixtureFeatures": [
+            "layout-f9dab5910f08a8a2/block-542abfb6c38433a7/parcel-ce234664c9f06f48",
+            "layout-f9dab5910f08a8a2/block-542abfb6c38433a7/parcel-93465b1bbf73a6fc"
+          ]
+        },
+        {
+          "id": "100k-thin-court-parcels",
+          "comparisonGroup": "100k-thin-court",
+          "camera": {
+            "kind": "fixed",
+            "cx": 8803.639219873949,
+            "cy": 8132.234449286888,
+            "mpp": 0.125
+          },
+          "renderView": "parcels",
+          "architecture": "compact",
+          "image": "47-european-100k-close--100k-thin-court-parcels.png",
+          "countsTowardPrimary": false,
+          "purpose": "Cour du corpus avec aile quasi nulle : vérifier épaisseur des corps, angles et vide du patio sans recadrer vers une autre réussite. Cadrage UI à 0,125 m/px (plafond 8 px/m), distinct du canvas historique à 0,12.",
+          "fixtureFeatures": [
+            "layout-f9dab5910f08a8a2/block-54f124d26d041f09/parcel-ba8e5a7e8a355e53/building"
+          ]
+        },
+        {
+          "id": "100k-thin-court-silhouettes",
+          "comparisonGroup": "100k-thin-court",
+          "camera": {
+            "kind": "fixed",
+            "cx": 8803.639219873949,
+            "cy": 8132.234449286888,
+            "mpp": 0.125
+          },
+          "renderView": "buildings",
+          "architecture": "silhouette",
+          "image": "47-european-100k-close--100k-thin-court-silhouettes.png",
+          "countsTowardPrimary": false,
+          "purpose": "Cour du corpus avec aile quasi nulle : vérifier épaisseur des corps, angles et vide du patio sans recadrer vers une autre réussite. Cadrage UI à 0,125 m/px (plafond 8 px/m), distinct du canvas historique à 0,12.",
+          "fixtureFeatures": [
+            "layout-f9dab5910f08a8a2/block-54f124d26d041f09/parcel-ba8e5a7e8a355e53/building"
+          ]
+        },
+        {
+          "id": "100k-thin-court-plans",
+          "comparisonGroup": "100k-thin-court",
+          "camera": {
+            "kind": "fixed",
+            "cx": 8803.639219873949,
+            "cy": 8132.234449286888,
+            "mpp": 0.125
+          },
+          "renderView": "buildings",
+          "architecture": "compact",
+          "image": "47-european-100k-close--100k-thin-court-plans.png",
+          "countsTowardPrimary": false,
+          "purpose": "Cour du corpus avec aile quasi nulle : vérifier épaisseur des corps, angles et vide du patio sans recadrer vers une autre réussite. Cadrage UI à 0,125 m/px (plafond 8 px/m), distinct du canvas historique à 0,12.",
+          "fixtureFeatures": [
+            "layout-f9dab5910f08a8a2/block-54f124d26d041f09/parcel-ba8e5a7e8a355e53/building"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "48-chinese-million-close",
+      "title": "Cœur 1M : seules les maisons proches sont réalisées ; vérifier mémoire/cache et files bornées.",
+      "artifact": "city-01-river-plain-l",
+      "culture": "chinese",
+      "population": 1000000,
+      "seed": "visual50-v1-26-chinese-million",
+      "settlement": {
+        "kind": "settlement",
+        "siteType": "auto",
+        "sitePrefs": {},
+        "position": {
+          "x": 8000,
+          "y": 8000
+        }
+      },
+      "urban": {
+        "quarterSeed": "visual50-v1-26-chinese-million",
+        "parcelSeed": "visual50-v1-26-chinese-million:parcels",
+        "layoutConfig": {
+          "programme": {
+            "mode": "inspired",
+            "role": "capital"
+          }
+        },
+        "buildingState": {
+          "seed": "visual50-v1-26-chinese-million:houses",
+          "settings": {
+            "parcel_fit": true
+          }
+        }
+      },
+      "architecture": "detailed",
+      "camera": {
+        "kind": "fixed",
+        "cx": 8000,
+        "cy": 8000,
+        "mpp": 0.25
+      },
+      "tags": {
+        "biome": "temperate",
+        "relief": "flat",
+        "size": "megacity",
+        "culture": "chinese",
+        "environment": "river-plain"
+      },
+      "expectations": [
+        "Cœur 1M : seules les maisons proches sont réalisées ; vérifier mémoire/cache et files bornées.",
+        "Capture de bâtiments réellement affichés ; un état vide/refusé doit rester explicite dans le rapport.",
+        "Aucune génération native détaillée de toute la ville ; détails limités au visible ou à la sélection.",
+        "Empreintes conservées entre plan compact et détail, cours ouvertes, absence de slivers et de masquage silencieux des refus.",
+        "Mesurer appels physiques simultanés ≤2, caches bornés et refus sans disparition du plan."
+      ],
+      "limitations": [
+        "Le nom de culture ne prouve pas sa couverture architecturale : relever pack, recette, profil, confiance et refus réels.",
+        "Les plans compacts ne certifient ni intérieurs ni capacité habitée ; conserver une valeur inconnue explicite.",
+        "Monuments et ateliers spécialisés peuvent rester des aperçus de programme ; ne pas les présenter comme modèles natifs certifiés.",
+        "Population demandée 1M dépasse le maximum 400000 annoncé par ce décor 16 km. Cas de stress explicitement hors capacité déclarée, pas preuve de logement de 1M personnes.",
+        "Le centre fixe peut tomber sur une place : enregistrer tout recentrage explicite dans le rapport, ne pas sélectionner discrètement une réussite."
+      ],
+      "gate": "million",
+      "source": {
+        "decorWidthM": 16000,
+        "decorSeed": "city-river-plain-l",
+        "declaredMaxPopulation": 400000,
+        "cultureLabel": "Chinese walled city"
+      },
+      "pairedWith": "26-chinese-million"
+    },
+    {
+      "id": "49-bastide-close",
+      "title": "Fronts de bastide : continuité et diversité sans rétrécir les maisons en pointes.",
+      "artifact": "city-01-river-plain-s",
+      "culture": "bastide",
+      "population": 3000,
+      "seed": "visual50-v1-37-bastide",
+      "settlement": {
+        "kind": "settlement",
+        "siteType": "auto",
+        "sitePrefs": {},
+        "position": {
+          "x": 2000,
+          "y": 2000
+        }
+      },
+      "urban": {
+        "quarterSeed": "visual50-v1-37-bastide",
+        "parcelSeed": "visual50-v1-37-bastide:parcels",
+        "layoutConfig": {
+          "programme": {
+            "mode": "inspired"
+          }
+        },
+        "buildingState": {
+          "seed": "visual50-v1-37-bastide:houses",
+          "settings": {
+            "parcel_fit": true
+          }
+        }
+      },
+      "architecture": "detailed",
+      "camera": {
+        "kind": "fixed",
+        "cx": 2000,
+        "cy": 2000,
+        "mpp": 0.2
+      },
+      "tags": {
+        "biome": "temperate",
+        "relief": "flat",
+        "size": "town",
+        "culture": "bastide",
+        "environment": "river-plain"
+      },
+      "expectations": [
+        "Fronts de bastide : continuité et diversité sans rétrécir les maisons en pointes.",
+        "Capture de bâtiments réellement affichés ; un état vide/refusé doit rester explicite dans le rapport.",
+        "Aucune génération native détaillée de toute la ville ; détails limités au visible ou à la sélection.",
+        "Empreintes conservées entre plan compact et détail, cours ouvertes, absence de slivers et de masquage silencieux des refus.",
+        "Mesurer appels physiques simultanés ≤2, caches bornés et refus sans disparition du plan."
+      ],
+      "limitations": [
+        "Le nom de culture ne prouve pas sa couverture architecturale : relever pack, recette, profil, confiance et refus réels.",
+        "Les plans compacts ne certifient ni intérieurs ni capacité habitée ; conserver une valeur inconnue explicite.",
+        "Monuments et ateliers spécialisés peuvent rester des aperçus de programme ; ne pas les présenter comme modèles natifs certifiés.",
+        "Le centre fixe peut tomber sur une place : enregistrer tout recentrage explicite dans le rapport, ne pas sélectionner discrètement une réussite."
+      ],
+      "gate": "p0",
+      "source": {
+        "decorWidthM": 4000,
+        "decorSeed": "city-river-plain-s",
+        "declaredMaxPopulation": 10000,
+        "cultureLabel": "Bastide (planned grid)"
+      },
+      "pairedWith": "37-bastide"
+    },
+    {
+      "id": "50-khmer-monsoon-close",
+      "title": "Cours et pavillons dans le tissu khmer.",
+      "artifact": "city-11-monsoon-plain-l",
+      "culture": "khmer",
+      "population": 30000,
+      "seed": "visual50-v1-17-khmer-monsoon",
+      "settlement": {
+        "kind": "settlement",
+        "siteType": "auto",
+        "sitePrefs": {},
+        "position": {
+          "x": 8000,
+          "y": 8000
+        }
+      },
+      "urban": {
+        "quarterSeed": "visual50-v1-17-khmer-monsoon",
+        "parcelSeed": "visual50-v1-17-khmer-monsoon:parcels",
+        "layoutConfig": {
+          "programme": {
+            "mode": "inspired"
+          }
+        },
+        "buildingState": {
+          "seed": "visual50-v1-17-khmer-monsoon:houses",
+          "settings": {
+            "parcel_fit": true
+          }
+        }
+      },
+      "architecture": "detailed",
+      "camera": {
+        "kind": "fixed",
+        "cx": 8000,
+        "cy": 8000,
+        "mpp": 0.2
+      },
+      "tags": {
+        "biome": "tropical",
+        "relief": "flat",
+        "size": "city",
+        "culture": "khmer",
+        "environment": "monsoon-plain"
+      },
+      "expectations": [
+        "Cours et pavillons dans le tissu khmer.",
+        "Capture de bâtiments réellement affichés ; un état vide/refusé doit rester explicite dans le rapport.",
+        "Aucune génération native détaillée de toute la ville ; détails limités au visible ou à la sélection.",
+        "Empreintes conservées entre plan compact et détail, cours ouvertes, absence de slivers et de masquage silencieux des refus.",
+        "Mesurer appels physiques simultanés ≤2, caches bornés et refus sans disparition du plan."
+      ],
+      "limitations": [
+        "Le nom de culture ne prouve pas sa couverture architecturale : relever pack, recette, profil, confiance et refus réels.",
+        "Les plans compacts ne certifient ni intérieurs ni capacité habitée ; conserver une valeur inconnue explicite.",
+        "Monuments et ateliers spécialisés peuvent rester des aperçus de programme ; ne pas les présenter comme modèles natifs certifiés.",
+        "Le centre fixe peut tomber sur une place : enregistrer tout recentrage explicite dans le rapport, ne pas sélectionner discrètement une réussite."
+      ],
+      "gate": "p0",
+      "source": {
+        "decorWidthM": 16000,
+        "decorSeed": "city-monsoon-plain-l",
+        "declaredMaxPopulation": 400000,
+        "cultureLabel": "Khmer city (Angkor)"
+      },
+      "pairedWith": "17-khmer-monsoon"
+    }
+  ]
+}

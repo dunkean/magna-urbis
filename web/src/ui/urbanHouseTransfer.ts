@@ -1,4 +1,6 @@
-import type { PlacedBuilding } from '../../../rust/bridge/urbanArchitecture';
+import type { PlacedBuilding, PlacementBatch } from '../../../rust/bridge/urbanArchitecture';
+import { resolveArchivedPlan } from '../../../rust/bridge/compactPlanArchive';
+import type { PlanArchiveScene } from '../../../rust/bridge/compactPlanArchive';
 import { openBench } from './benchHistory';
 
 let database: Promise<IDBDatabase> | undefined;
@@ -18,10 +20,13 @@ export async function readUrbanHouseCase(id: string): Promise<PlacedBuilding> {
   if (!building) throw new Error('Cas d’implantation absent de ce navigateur. Rouvrez le bâtiment depuis sa ville.');
   return building;
 }
-export async function openUrbanHouseCase(building: PlacedBuilding): Promise<void> {
+export async function openUrbanHouseCase(building: PlacedBuilding, scene?: PlanArchiveScene): Promise<void> {
   // Immutable copy of the resolved native plan; never a reverse edit of the city.
   const id = `placement-${crypto.randomUUID()}`;
-  await storeCase('readwrite', store => store.put(structuredClone(building), id));
+  // The receiving page has no access to the city's archive registry. Store only
+  // this selected resolved record, so a cold reload still opens the exact plan.
+  const transferred = { ...building, resolved: await resolveArchivedPlan(building, scene) };
+  await storeCase('readwrite', store => store.put(structuredClone(transferred), id));
   if (window.parent !== window && new URLSearchParams(location.search).get('embedded') === '1') {
     window.parent.postMessage({ channel: 'magna-urban-workshop', type: 'open-house', id }, location.protocol === 'file:' ? '*' : location.origin);
   } else openBench('houses', new URLSearchParams({ placement: id }));

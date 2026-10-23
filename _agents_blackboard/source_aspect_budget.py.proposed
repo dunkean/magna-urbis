@@ -1,0 +1,185 @@
+"""Isolated scalar proposal. Not imported by Houses and not a pose certificate.
+
+Run with Python explicitly to evaluate real archived Java dimensions and the
+catalogue's elongated EUR-NOR-B01 control. No native binary or geometry builder.
+"""
+import json
+import math
+from pathlib import Path
+import struct
+import unittest
+
+ROOT = Path(__file__).resolve().parents[1]
+GRID = 0.001  # Existing Houses metric grid, not an architectural aspect limit.
+
+
+def decoded(value):
+    if isinstance(value, dict):
+        if list(value) == ['$f64']:
+            return struct.unpack('>d', bytes.fromhex(value['$f64']))[0]
+        return {k: decoded(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [decoded(v) for v in value]
+    return value
+
+
+def aspect_interval(source_width, source_depth):
+    return source_width[0] / source_depth[1], source_width[1] / source_depth[0]
+
+
+def within_aspect(dimensions, source_width, source_depth):
+    w, d = dimensions
+    # Cross products keep declared endpoints exact when their represented
+    # source values are reused; no cultural/universal ratio threshold.
+    return w * source_depth[1] >= d * source_width[0] and w * source_depth[0] <= d * source_width[1]
+
+
+def within_bounds(dimensions, allowed):
+    return all(lo <= value <= hi for value, (lo, hi) in zip(dimensions, allowed))
+
+
+def project_area(dimensions, source_width, source_depth, allowed):
+    """One scalar projection per existing slot, before its existing site guide.
+
+    Keep dimensions bit-exact if valid. Otherwise retain their area as closely
+    as the native millimetre grid permits, choosing the nearest allowed width.
+    The existing guide may subsequently reduce depth; its final ratio must be
+    rechecked and refused when outside the source interval. No second repair.
+    """
+    w, d = dimensions
+    if not all(math.isfinite(v) and v > 0 for v in [w, d, *source_width, *source_depth,
+                                                  *allowed[0], *allowed[1]]):
+        return None
+    if any(lo > hi for lo, hi in allowed):
+        return None
+    if within_bounds(dimensions, allowed) and within_aspect(dimensions, source_width, source_depth):
+        return dimensions
+    area = w * d
+    if not math.isfinite(area):
+        return None
+    rmin, rmax = aspect_interval(source_width, source_depth)
+    low = max(allowed[0][0], area / allowed[1][1], math.sqrt(area * rmin))
+    high = min(allowed[0][1], area / allowed[1][0], math.sqrt(area * rmax))
+    low_grid, high_grid = math.ceil(low / GRID), math.floor(high / GRID)
+    if low_grid > high_grid:
+        return None
+    wi = min(max(math.floor(w / GRID + 0.5), low_grid), high_grid)
+    width = wi * GRID
+    lower_depth = max(allowed[1][0], width / rmax)
+    upper_depth = min(allowed[1][1], width / rmin)
+    low_depth_grid, high_depth_grid = math.ceil(lower_depth / GRID), math.floor(upper_depth / GRID)
+    if low_depth_grid > high_depth_grid:
+        return None
+    di = min(max(math.floor(area / width / GRID + 0.5), low_depth_grid), high_depth_grid)
+    result = [width, di * GRID]
+    # Defensive exact scalar checks after quantization. A numerical boundary
+    # failure is Unknown/refused here, never a tolerance-expanded certificate.
+    if not within_bounds(result, allowed) or not within_aspect(result, source_width, source_depth):
+        return None
+    return result
+
+
+def sources():
+    return {r['id']: r['parameters'] for r in json.loads(
+        (ROOT / 'rust/crates/houses/data/recipes.json').read_bytes())['recipes']}
+
+
+def evaluate():
+    catalogue = sources()
+    proof = ROOT / 'web/out/java-row-selection-proof'
+    batches = {phase: json.loads((proof / f'{phase}-plans.json').read_bytes())
+               for phase in ('before', 'after')}
+    requests = json.loads((proof / 'requests.json').read_bytes())['requests']
+    result = dict(version='source-aspect-scalar-proposal-1', implemented=False,
+                  nativeConstructionRuns=0, siteOrTerrainCertification=False,
+                  witnesses=[], sourceOnlySequences=[], elongatedControl={})
+    for pid in ('a7029f26afac0cdd', 'a416b05f397c3d2c', '4100d63eb878ede1'):
+        request = next(r for r in requests if pid in r['id'])
+        row = dict(parcel=pid, targetM2=request['programme']['built_area_m2'], phases={})
+        for phase, batch in batches.items():
+            building = next(b for b in batch['buildings'] if pid in b['id'])
+            compact = decoded(building['resolved'])
+            p = catalogue[building['recipe_id']]
+            width, depth = p['width_m'], p['depth_m']
+            size = compact['config']['size']
+            allowed = [[width[0] * size, 2 * width[1] * size],
+                       [depth[0] * size, 2 * depth[1] * size]]
+            parameter = compact['parameters'][compact['bodies'][0]['parameters']]['set']
+            nominal = [parameter['width_m'][0], parameter['depth_m'][0]]
+            footprint = compact['surfaces'][compact['bodies'][0]['footprint']]
+            points = [point for polygon in footprint for point in polygon['outer']]
+            actual = [max(p[axis] for p in points)-min(p[axis] for p in points) for axis in ('x','y')]
+            aspect_valid = within_aspect(actual, width, depth)
+            bounds_valid = within_bounds(actual, allowed)
+            projected = project_area(actual, width, depth, allowed) if bounds_valid else None
+            row['phases'][phase] = dict(recipe=building['recipe_id'], size=size,
+                sourceWidthM=width, sourceDepthM=depth, sourceAspect=aspect_interval(width, depth),
+                allowedAxesM=allowed, retainedNominalM=nominal, retainedM=actual, retainedAreaM2=actual[0] * actual[1],
+                retainedAspect=actual[0] / actual[1], aspectValid=aspect_valid,
+                allowedAxesValid=bounds_valid, projectedM=projected,
+                projectedAreaM2=projected[0] * projected[1] if projected else None,
+                applicability='new budget proposals only; admitted incumbent is not redrawn',
+                trace=next(d for d in building['diagnostics'] if d.startswith('Domestic footprint budget:')))
+        result['witnesses'].append(row)
+    # This is a source-only ordering control, not the unrecorded site-guided
+    # candidate trace. Existing guided branch has two widths per orientation.
+    for recipe_id in ('AS-ISL-B14', 'AS-ISL-B15'):
+        p = catalogue[recipe_id]; w, d = p['width_m'], p['depth_m']
+        allowed = [[w[0], 2 * w[1]], [d[0], 2 * d[1]]]
+        old = [[2 * w[1], 2 * d[1]], [w[0], 2 * d[1]]]
+        slots = [(orientation, dims) for orientation in ('street', 'long_edge') for dims in old]
+        result['sourceOnlySequences'].append(dict(recipe=recipe_id,
+            limitation='no parcel guide, terrain, source-minimum body solver or native pose evaluated',
+            oldSlots=[dict(orientation=o, dimensionsM=dim) for o, dim in slots],
+            projectedSlots=[dict(orientation=o, dimensionsM=project_area(dim, w, d, allowed)) for o, dim in slots],
+            slotCountBefore=len(slots), slotCountAfter=len(slots), additionalSlots=0))
+    long = catalogue['EUR-NOR-B01']; w, d = long['width_m'], long['depth_m']
+    allowed = [[w[0], 2 * w[1]], [d[0], 2 * d[1]]]
+    result['elongatedControl'] = dict(recipe='EUR-NOR-B01', footprint=long['footprint_family'],
+        activationScope='outside initial Single/FP-RECT scope; numeric non-regression control only',
+        sourceWidthM=w, sourceDepthM=d, sourceAspect=aspect_interval(w,d),
+        nativeExtremeM=[6,36], nativeExtremeKept=project_area([6,36],w,d,allowed),
+        homotheticExtremeM=[12,72], homotheticExtremeKept=project_area([12,72],w,d,allowed),
+        oneAxisOnlyM=[6,72], oneAxisProjectionM=project_area([6,72],w,d,allowed))
+    return result
+
+
+class ScalarProposalTests(unittest.TestCase):
+    def test_java_bands_violate_source_ratio_despite_permitted_axis_bounds(self):
+        for rid, band in [('AS-ISL-B14',[4.5,22]), ('AS-ISL-B15',[5,26])]:
+            p=sources()[rid]; w,d=p['width_m'],p['depth_m']; allowed=[[w[0],2*w[1]],[d[0],2*d[1]]]
+            self.assertTrue(within_bounds(band,allowed)); self.assertFalse(within_aspect(band,w,d))
+            projected=project_area(band,w,d,allowed)
+            self.assertIsNotNone(projected); self.assertTrue(within_aspect(projected,w,d))
+            self.assertTrue(within_bounds(projected,allowed))
+            self.assertLess(abs(math.prod(projected)-math.prod(band)),GRID*sum(projected))
+
+    def test_entire_source_interval_remains_available(self):
+        w,d=[5,8],[9,13]; allowed=[[5,16],[9,26]]
+        for dimensions in ([5,13],[8,9],[8,13],[16,26],[10,26]):
+            self.assertEqual(project_area(dimensions,w,d,allowed),dimensions)
+
+    def test_long_source_keeps_its_own_proportion_and_uniform_growth(self):
+        w,d=[6,10],[18,36]; allowed=[[6,20],[18,72]]
+        for dimensions in ([6,36],[12,72],[20,72]):
+            self.assertEqual(project_area(dimensions,w,d,allowed),dimensions)
+        self.assertFalse(within_aspect([6,72],w,d))
+        self.assertTrue(within_aspect(project_area([6,72],w,d,allowed),w,d))
+
+    def test_unavailable_scalar_solution_is_not_fabricated(self):
+        self.assertIsNone(project_area([5,26],[5,8],[9,13],[[5,5],[9,13]]))
+        self.assertIsNone(project_area([float('nan'),26],[5,8],[9,13],[[5,16],[9,26]]))
+
+    def test_post_guide_shrink_needs_a_final_ratio_guard(self):
+        self.assertFalse(within_aspect([16,9],[5,8],[9,13]))
+        # Third real Java witness: ratio and nominal axis bounds are distinct.
+        self.assertTrue(within_aspect([7.105,8.016],[5,8],[9,13]))
+        self.assertFalse(within_bounds([7.105,8.016],[[5,16],[9,26]]))
+
+
+if __name__ == '__main__':
+    suite = unittest.defaultTestLoader.loadTestsFromTestCase(ScalarProposalTests)
+    result = unittest.TextTestRunner().run(suite)
+    if not result.wasSuccessful():
+        raise SystemExit(1)
+    print(json.dumps(evaluate(), ensure_ascii=False, indent=2))

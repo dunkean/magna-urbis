@@ -3,7 +3,7 @@ if (window.parent === window && location.protocol !== 'file:') {
   const current = new URL(location.href);
   if (current.searchParams.get('standalone') !== '1') {
     const page = current.pathname.split('/').pop();
-    const stage = page === 'urbanbench.html' ? 'urban' : page === 'housebench.html' ? 'houses'
+    const stage = page === 'urbanbench.html' ? 'urban' : page === 'housebench.html' ? 'houses' : page === 'citybench.html' ? 'city'
       : current.searchParams.get('stage') === 'settlements' ? 'settlements' : 'terrain';
     const params = new URLSearchParams(current.search);
     const fragment = new URLSearchParams(current.hash.slice(1));

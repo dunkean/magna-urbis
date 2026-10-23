@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="fr">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Magna Urbis — Atelier ville</title><link rel="icon" type="image/png" href="./assets/logo-magna-urbis.png?inline">
+  <link rel="stylesheet" href="./terrainbench.css">
+  <link rel="stylesheet" href="./terrainSettlements.css">
+  <link rel="stylesheet" href="./terrainUrban.css">
+  <link rel="stylesheet" href="./benchPanels.css">
+</head>
+<body data-bench="city">
+  <script type="module" src="./benchEntry.ts"></script>
+  <header><strong class="brand">Ville <small>routes, plan et parcelles</small></strong></header>
+  <nav aria-label="Affichage">
+    <span class="section-label">Carte</span>
+    <div class="control-group" role="group" aria-label="Navigation"><button id="fit" type="button" title="Voir toute la carte">Carte entière</button><button id="focusCity" type="button" title="Cadrer la ville">Ville</button></div>
+    <div class="control-group" role="group" aria-label="Fond"><label title="Image pré-rendue du relief et de l’eau"><input id="showBackground" type="checkbox" checked>Fond de carte</label><label title="Style de l’image de fond (pré-rendue par render_city_maps.mjs --style) ; Parchemin passe aussi le plan à l’encre">Fond <select id="backgroundStyle"><option value="relief">Relief</option><option value="render">Rendu</option><option value="parchment">Parchemin</option></select></label><label>Opacité <input id="backgroundOpacity" type="range" min="0.2" max="1" step="0.05" value="1"></label></div>
+  </nav>
+  <div class="terrain-workspace">
+    <div class="terrain-left-panel">
+      <section class="stages" aria-label="Étapes de la ville"></section>
+      <p id="status" role="status" aria-live="polite">Choisissez une carte.</p>
+    </div>
+    <div class="terrain-content">
+      <main>
+        <div id="viewport" tabindex="0" aria-label="Carte. Molette : zoom, glisser : déplacer."><svg id="map" xmlns="http://www.w3.org/2000/svg" aria-label="Carte de la ville"></svg><output id="scale"></output></div>
+        <aside hidden></aside>
+      </main>
+    </div>
+  </div>
+  <script type="module" src="./benchPanels.ts"></script>
+  <script type="module" src="./citybench.ts"></script>
+</body>
+</html>

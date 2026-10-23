@@ -1,0 +1,339 @@
+{
+  "version": "java-full-replay-readonly-audit-1",
+  "source": "Exact archived pages; no native execution.",
+  "count": 1752,
+  "totalBytes": 15936805,
+  "neighborCount": 0,
+  "allTerrain": true,
+  "allSeed": true,
+  "functions": {
+    "domestic": 1398,
+    "collective": 123,
+    "warehouse": 26,
+    "workshop": 50,
+    "mixed": 148,
+    "open_space": 7
+  },
+  "settings": {
+    "parcel_fit": true
+  },
+  "capturedPlans": 28,
+  "postSurplusPages": 21,
+  "postExactBasePages": 7,
+  "postSurplusBytes": 24708,
+  "pageChain": [
+    {
+      "path": "web/out/javanese-user-10-8791/004-buildingSitesPage-response.json",
+      "sha256": "841681b7685d76101248d4682d69674a0ee722aa6e052aecf3f489ee2167b3b8",
+      "bytes": 779393,
+      "offset": 0,
+      "next": 64,
+      "count": 64,
+      "basePostBytes": 779378,
+      "capturedPostBytes": 779378,
+      "capturedExtraBytes": 0
+    },
+    {
+      "path": "web/out/javanese-user-10-8791/005-buildingSitesPage-response.json",
+      "sha256": "d78ad1646a7da08c65df8a0bc754755bae9b4d7a22da11bca14eebafd50d8af0",
+      "bytes": 533977,
+      "offset": 64,
+      "next": 128,
+      "count": 64,
+      "basePostBytes": 533971,
+      "capturedPostBytes": 534674,
+      "capturedExtraBytes": 703
+    },
+    {
+      "path": "web/out/javanese-user-10-8791/006-buildingSitesPage-response.json",
+      "sha256": "6fc34385083171e150e79d725bcec48a8669846ea064f839cfca4dd6e7455667",
+      "bytes": 518120,
+      "offset": 128,
+      "next": 192,
+      "count": 64,
+      "basePostBytes": 518102,
+      "capturedPostBytes": 518102,
+      "capturedExtraBytes": 0
+    },
+    {
+      "path": "web/out/javanese-user-10-8791/007-buildingSitesPage-response.json",
+      "sha256": "ffe9119bd16c5c4546cd6ad9453fe876af03e71e03577e86058aa1684a088326",
+      "bytes": 694867,
+      "offset": 192,
+      "next": 256,
+      "count": 64,
+      "basePostBytes": 694849,
+      "capturedPostBytes": 695558,
+      "capturedExtraBytes": 709
+    },
+    {
+      "path": "web/out/javanese-user-10-8791/008-buildingSitesPage-response.json",
+      "sha256": "06c2653656231152fc000f2ff90e8af476836310ca496c38693426a9ae20a465",
+      "bytes": 667326,
+      "offset": 256,
+      "next": 320,
+      "count": 64,
+      "basePostBytes": 667320,
+      "capturedPostBytes": 667320,
+      "capturedExtraBytes": 0
+    },
+    {
+      "path": "web/out/javanese-user-10-8791/009-buildingSitesPage-response.json",
+      "sha256": "dc4f85d91436705990fdd18a96120752d6d28029c6a9de5c31b18dde6d60f7fa",
+      "bytes": 569815,
+      "offset": 320,
+      "next": 384,
+      "count": 64,
+      "basePostBytes": 569808,
+      "capturedPostBytes": 569808,
+      "capturedExtraBytes": 0
+    },
+    {
+      "path": "web/out/javanese-user-10-8791/010-buildingSitesPage-response.json",
+      "sha256": "0113a87de33aecd82ca0534ae9d740365190a843a53d4ef29b21ef35818e54ec",
+      "bytes": 395305,
+      "offset": 384,
+      "next": 448,
+      "count": 64,
+      "basePostBytes": 395298,
+      "capturedPostBytes": 396700,
+      "capturedExtraBytes": 1402
+    },
+    {
+      "path": "web/out/javanese-user-10-8791/011-buildingSitesPage-response.json",
+      "sha256": "96b645ae9c14b52f0251ef4d338bce708dde9976b941eaafc2375bd7ab36fab2",
+      "bytes": 426592,
+      "offset": 448,
+      "next": 512,
+      "count": 64,
+      "basePostBytes": 426574,
+      "capturedPostBytes": 427626,
+      "capturedExtraBytes": 1052
+    },
+    {
+      "path": "web/out/javanese-user-10-8791/012-buildingSitesPage-response.json",
+      "sha256": "5abb04dc3463881609ef39c8bf24633f52612bd554cfbde8d03ced19fc597234",
+      "bytes": 790581,
+      "offset": 512,
+      "next": 576,
+      "count": 64,
+      "basePostBytes": 790574,
+      "capturedPostBytes": 790574,
+      "capturedExtraBytes": 0
+    },
+    {
+      "path": "web/out/javanese-user-10-8791/013-buildingSitesPage-response.json",
+      "sha256": "619b18b30784ddc61eb565ebb79001b9044999d261ff2d2d32a2e7556d8fae53",
+      "bytes": 821282,
+      "offset": 576,
+      "next": 640,
+      "count": 64,
+      "basePostBytes": 821264,
+      "capturedPostBytes": 822674,
+      "capturedExtraBytes": 1410
+    },
+    {
+      "path": "web/out/javanese-user-10-8791/014-buildingSitesPage-response.json",
+      "sha256": "b39595fa6cbb51d0ace52e97adc9db1369b9e295ab2938a53b572f9cd64f4d4e",
+      "bytes": 588491,
+      "offset": 640,
+      "next": 704,
+      "count": 64,
+      "basePostBytes": 588484,
+      "capturedPostBytes": 589190,
+      "capturedExtraBytes": 706
+    },
+    {
+      "path": "web/out/javanese-user-10-8791/015-buildingSitesPage-response.json",
+      "sha256": "62bb8aa5c737aa542742b6e5c87faaf5079f7da2fc40881ebeaf094a2d093444",
+      "bytes": 633643,
+      "offset": 704,
+      "next": 768,
+      "count": 64,
+      "basePostBytes": 633636,
+      "capturedPostBytes": 633988,
+      "capturedExtraBytes": 352
+    },
+    {
+      "path": "web/out/javanese-user-10-8791/016-buildingSitesPage-response.json",
+      "sha256": "f57db80e60c4df05ebd0365ac66137512eeee0a142af0cdf2e860af7e1298569",
+      "bytes": 565843,
+      "offset": 768,
+      "next": 832,
+      "count": 64,
+      "basePostBytes": 565836,
+      "capturedPostBytes": 568051,
+      "capturedExtraBytes": 2215
+    },
+    {
+      "path": "web/out/javanese-user-10-8791/017-buildingSitesPage-response.json",
+      "sha256": "833d6489a4dfca48fc4dc81eed12a8e67e29522f7d13793a208f79cc4fe8706f",
+      "bytes": 776881,
+      "offset": 832,
+      "next": 896,
+      "count": 64,
+      "basePostBytes": 776874,
+      "capturedPostBytes": 777224,
+      "capturedExtraBytes": 350
+    },
+    {
+      "path": "web/out/javanese-user-10-8791/018-buildingSitesPage-response.json",
+      "sha256": "2c7b3ce70f4ebcbe9e9e6381d49266b106d655f5736177b80fb32376ff709eb7",
+      "bytes": 657912,
+      "offset": 896,
+      "next": 960,
+      "count": 64,
+      "basePostBytes": 657905,
+      "capturedPostBytes": 658958,
+      "capturedExtraBytes": 1053
+    },
+    {
+      "path": "web/out/javanese-user-10-8791/019-buildingSitesPage-response.json",
+      "sha256": "e03886d0cbc47b07052265dc13b94939b063e64bcb782c4799c1935c72daf777",
+      "bytes": 670511,
+      "offset": 960,
+      "next": 1024,
+      "count": 64,
+      "basePostBytes": 670503,
+      "capturedPostBytes": 670854,
+      "capturedExtraBytes": 351
+    },
+    {
+      "path": "web/out/javanese-user-10-8791/020-buildingSitesPage-response.json",
+      "sha256": "fab3de83b66bacbe6e6547768217dfdd3b7c1a04334dcd789200e0e5366caaad",
+      "bytes": 484153,
+      "offset": 1024,
+      "next": 1088,
+      "count": 64,
+      "basePostBytes": 484144,
+      "capturedPostBytes": 486954,
+      "capturedExtraBytes": 2810
+    },
+    {
+      "path": "web/out/javanese-user-10-8791/021-buildingSitesPage-response.json",
+      "sha256": "163c9002e2d0b84d33e3646926f87d406450baea6ceae9334461fa8f772f052f",
+      "bytes": 406016,
+      "offset": 1088,
+      "next": 1152,
+      "count": 64,
+      "basePostBytes": 406007,
+      "capturedPostBytes": 406713,
+      "capturedExtraBytes": 706
+    },
+    {
+      "path": "web/out/javanese-user-10-8791/022-buildingSitesPage-response.json",
+      "sha256": "79317f87be1768d7e07e2dfae9cedb9a483156f4164106be19f4b7f59b9dbf27",
+      "bytes": 332374,
+      "offset": 1152,
+      "next": 1216,
+      "count": 64,
+      "basePostBytes": 332354,
+      "capturedPostBytes": 333054,
+      "capturedExtraBytes": 700
+    },
+    {
+      "path": "web/out/javanese-user-10-8791/023-buildingSitesPage-response.json",
+      "sha256": "f2a1fda4bddda49931849d7dd42c9f95fcdd851abebd793e825cdbc5f2e4dfa9",
+      "bytes": 380276,
+      "offset": 1216,
+      "next": 1280,
+      "count": 64,
+      "basePostBytes": 380257,
+      "capturedPostBytes": 382017,
+      "capturedExtraBytes": 1760
+    },
+    {
+      "path": "web/out/javanese-user-10-8791/024-buildingSitesPage-response.json",
+      "sha256": "9f8a920432fd121b62ed4e84562ba43a0d3c34fee0341ffe3f9931f4cb29e3eb",
+      "bytes": 597708,
+      "offset": 1280,
+      "next": 1344,
+      "count": 64,
+      "basePostBytes": 597688,
+      "capturedPostBytes": 597688,
+      "capturedExtraBytes": 0
+    },
+    {
+      "path": "web/out/javanese-user-10-8791/025-buildingSitesPage-response.json",
+      "sha256": "21d06cc4776fc368a786b39ae8ab7b2242669f93430fcd6c9fb8eccca02ff972",
+      "bytes": 520906,
+      "offset": 1344,
+      "next": 1408,
+      "count": 64,
+      "basePostBytes": 520897,
+      "capturedPostBytes": 521604,
+      "capturedExtraBytes": 707
+    },
+    {
+      "path": "web/out/javanese-user-10-8791/026-buildingSitesPage-response.json",
+      "sha256": "67004f7cb02c9e5ec238f20cbce380cced6332c4c954a7aba5e04eb0abf6f6fe",
+      "bytes": 485801,
+      "offset": 1408,
+      "next": 1472,
+      "count": 64,
+      "basePostBytes": 485793,
+      "capturedPostBytes": 487548,
+      "capturedExtraBytes": 1755
+    },
+    {
+      "path": "web/out/javanese-user-10-8791/027-buildingSitesPage-response.json",
+      "sha256": "b595e50dd82688f82806cd937ef603d1ce6cde94a920f487ba7a3e968dfdb70f",
+      "bytes": 474297,
+      "offset": 1472,
+      "next": 1536,
+      "count": 64,
+      "basePostBytes": 474289,
+      "capturedPostBytes": 476042,
+      "capturedExtraBytes": 1753
+    },
+    {
+      "path": "web/out/javanese-user-10-8791/028-buildingSitesPage-response.json",
+      "sha256": "4e498b94193d3d7f8cabf3c2619f993a838a7e930648f707a9c7a57c9d9871dc",
+      "bytes": 833023,
+      "offset": 1536,
+      "next": 1600,
+      "count": 64,
+      "basePostBytes": 833015,
+      "capturedPostBytes": 833717,
+      "capturedExtraBytes": 702
+    },
+    {
+      "path": "web/out/javanese-user-10-8791/029-buildingSitesPage-response.json",
+      "sha256": "ba53d13fc48b2f9161d3b38e5f82d16d3e973fa743e0884e9a744670fb78d070",
+      "bytes": 431186,
+      "offset": 1600,
+      "next": 1664,
+      "count": 64,
+      "basePostBytes": 431177,
+      "capturedPostBytes": 431879,
+      "capturedExtraBytes": 702
+    },
+    {
+      "path": "web/out/javanese-user-10-8791/030-buildingSitesPage-response.json",
+      "sha256": "c3d75a37ef1b5fe5057bbe3ef8a32cd03e20c535bd678213d39381cf963e4f91",
+      "bytes": 666229,
+      "offset": 1664,
+      "next": 1728,
+      "count": 64,
+      "basePostBytes": 666221,
+      "capturedPostBytes": 669031,
+      "capturedExtraBytes": 2810
+    },
+    {
+      "path": "web/out/javanese-user-10-8791/031-buildingSitesPage-response.json",
+      "sha256": "1db5f959e809d913f10eb7164d599744f1015894c52d46eb05e214ec5d243e3d",
+      "bytes": 234297,
+      "offset": 1728,
+      "next": 1752,
+      "count": 24,
+      "basePostBytes": 234278,
+      "capturedPostBytes": 234278,
+      "capturedExtraBytes": 0
+    }
+  ],
+  "limits": [
+    "Captured native POST bodies and accepted historical plan geometries are absent. Byte-size surplus is consistent with the documented bridge neighbor enrichment, not a reconstruction of the missing neighbors.",
+    "Historical runtime8791/culture/catalogue differ from later frozen comparison CLIs.",
+    "Use one bridge context per phase to regenerate cross-batch occupation; never reuse neighbors from the other phase."
+  ]
+}

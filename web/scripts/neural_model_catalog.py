@@ -61,7 +61,7 @@ def load_student(key, device='cuda'):
     config['dilations'] = tuple(config['dilations'])
     config = StudentConfig(**config)
     if saved.get('flow_architecture'):
-        from neural_earth_tile40.tile40_flow_network import ARCHITECTURE, TimeFlow
+        from distill.tile40_flow_network import ARCHITECTURE, TimeFlow
         if saved['flow_architecture'] != ARCHITECTURE:
             raise ValueError('Unknown residual model architecture.')
         model = TimeFlow(config)
@@ -102,9 +102,9 @@ def release():
 def finite_generator(decoder, device='cuda'):
     global _finite, _finite_key
     if _finite is None or _finite_key != (decoder, device):
-        from neural_earth_tile40.tile40_export_utils import ExportCoarse
-        from neural_earth_tile40.tile40_flow_runtime import FiniteFlowEncoder
-        from neural_earth_tile40.tile40_runtime import Tile40
+        from distill.tile40_export_utils import ExportCoarse
+        from distill.tile40_flow_runtime import FiniteFlowEncoder
+        from distill.tile40_runtime import Tile40
         coarse, _ = load_student('coarse2', device)
         base, saved = load_student('residual8k', device)
         if saved['contract']['coarse_sha256'] != _inventory['models']['coarse2']['sha256']:
@@ -123,7 +123,7 @@ def generate_finite(condition, params, seed, device='cuda'):
     import numpy as np
     import torch
     from scipy.ndimage import map_coordinates
-    from neural_earth_tile40.tile40_height import guided_reference, resample_tile
+    from distill.tile40_height import guided_reference, resample_tile
     selected = selection(params)
     generator = finite_generator(selected['decoderModel'], device)
     size, start, origin = int(condition['size']), int(condition['start']), int(condition['origin'])
@@ -175,7 +175,7 @@ def generate_finite(condition, params, seed, device='cuda'):
     done = time.perf_counter()
     if not np.isfinite(heights).all():
         raise RuntimeError('The residual model produced non-finite elevations.')
-    from neural_earth_tile40.tile40_runtime import ROOT_ORIGIN, ROOT_SIZE, window_origins
+    from distill.tile40_runtime import ROOT_ORIGIN, ROOT_SIZE, window_origins
     evaluations = [len(window_origins(generator.coarse_origin, generator.coarse_end, 64, 48))**2 * generator.coarse.steps,
                    generator.encoder.steps * 2,
                    1 if generator.whole_decoder else len(window_origins(ROOT_ORIGIN, ROOT_ORIGIN + ROOT_SIZE, 512, 384))**2]

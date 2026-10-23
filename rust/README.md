@@ -76,6 +76,19 @@ dense frontage parcels and Chinese buildings. Building dimensions can optionally
 fit the lot in inspired/fantasy mode; exact Houses models retain their own plan.
 See the bundled [style and propagation method](../docs/methods/urban-settlement-styles.md).
 
+**Ville** (`citybench.html`, tab `#city`) is the Settlements page reduced to one city, for exploring and
+debugging city generation. It loads only the City Bench maps: 15 contrasted environments (climate, relief,
+coast, rivers and lakes) in two sizes, 4 km for towns up to 10,000 inhabitants and 16 km for cities up to
+400,000, each with one settlement at the centre. Generate them from `web/` with
+`node scripts/export_decors.mjs --set city` (Python/CUDA neural service on :8793 and a dev server with
+`profile=web`; set `CUDA_VISIBLE_DEVICES` to choose the GPU of the service). They land in the git-ignored
+`web/decors/`. The page groups every option once, by theme: city (size, culture, position), roads,
+plan, footprint and growth, streets and blocks, enclosure/exits/influences, parcels, programme,
+buildings and display. Native keys shared by both stages (`streetOp`, `plotDepth`) are edited on the
+plan and applied to parcels too. **Nouvelle graine**, **Motif au hasard** and **Tirage précédent** explore
+patterns; **◀ / ▶ Culture** steps through the 53 catalogue cultures. Buildings are flat silhouettes taken
+from the native lot requests (`urbanSilhouettes.ts`), without the house generator.
+
 `npm run build:benches` assembles the container and all benches in
 `rust/out/benches/index.html`. It uses the existing terrain and houses WASM
 packages; build them with `npm run wasm:terrain` and `npm run wasm:houses` if

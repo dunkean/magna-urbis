@@ -107,6 +107,10 @@ pub fn architecture_capabilities_json() -> String {
         "houses.config-template",
         "houses.workshop-template",
         "houses.parcel-fit",
+        "houses.compact-plans",
+        "houses.style-index",
+        "houses.native-minimum-candidates-v1",
+        "houses.functional-choices-v1",
     ])
 }
 
@@ -141,5 +145,35 @@ pub fn enrich_placement_json(input: &str) -> String {
     match magna_urbis_houses::placement::enrich_placement(building) {
         Ok(batch) => success(batch),
         Err(error) => failure("enrichment_refused", None, &error),
+    }
+}
+
+#[wasm_bindgen]
+pub fn architecture_style_index_json() -> String {
+    match magna_urbis_houses::style_index::style_index() {
+        Ok(index) => success(index),
+        Err(error) => failure("style_index", None, &error),
+    }
+}
+
+#[wasm_bindgen]
+pub fn plan_buildings_json(input: &str) -> String {
+    if input.len() > 32 * 1024 * 1024 { return failure("input_budget", None, "Plan input exceeds 32 MiB."); }
+    let request = match serde_json::from_str(input) {
+        Ok(request) => request, Err(error) => return failure("invalid_json", None, &error.to_string()),
+    };
+    match magna_urbis_houses::plans::plan_batch(request) {
+        Ok(batch) => success(batch), Err(error) => failure("plan_generation", None, &error),
+    }
+}
+
+#[wasm_bindgen]
+pub fn realize_plan_json(input: &str) -> String {
+    if input.len() > 32 * 1024 * 1024 { return failure("input_budget", None, "Retained plan exceeds 32 MiB."); }
+    let request = match serde_json::from_str(input) {
+        Ok(request) => request, Err(error) => return failure("invalid_json", None, &error.to_string()),
+    };
+    match magna_urbis_houses::plans::realize_plan(request) {
+        Ok(batch) => success(batch), Err(error) => failure("realization_refused", None, &error),
     }
 }

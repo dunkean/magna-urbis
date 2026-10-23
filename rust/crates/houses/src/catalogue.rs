@@ -488,10 +488,23 @@ pub struct StructuralSpec {
     pub log_joints: Option<LogJointSpec>,
 }
 
+fn default_true() -> bool {
+    true
+}
+
+fn is_true(value: &bool) -> bool {
+    *value
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Parameters {
     pub variant_id: String,
     pub layout: Layout,
+    /// Source permission for automatic burgage side/rear wings in Strip layouts.
+    /// The native court and passage are retained when this is false.
+    /// Omission preserves both legacy behavior and serialized parameter bytes.
+    #[serde(default = "default_true", skip_serializing_if = "is_true")]
+    pub urban_frontage_infill: bool,
     pub footprint_family: String,
     pub roof_system: String,
     pub roof_spec: RoofSpec,
@@ -565,6 +578,13 @@ pub struct FunctionalMapping {
 pub struct Recipe {
     pub id: String,
     pub pack_id: String,
+    /// Authored tradition identity, independent from roof/profile/settlement.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tradition_id: Option<String>,
+    /// An inspired interpretation may not be selected in historical strict mode.
+    /// Unlike late_only, this does not require allow_late in inspired mode.
+    #[serde(default)]
+    pub inspired_only: bool,
     pub label: String,
     pub priority: String,
     pub role: Role,
@@ -782,15 +802,26 @@ impl Catalogue {
                 config.pack
             ));
         }
-        self.admissible(config).map(|_| ())
+        self.collect_admissible(config, true).map(|_| ())
     }
 
     pub fn admissible<'a>(&'a self, config: &HouseConfig) -> Result<Vec<&'a Recipe>, String> {
-        let candidates: Vec<_> = self
+        self.collect_admissible(config, false)
+    }
+
+    /// Validation only needs existence; selection still consumes the complete
+    /// ordered palette. A failed validation retains every original reason.
+    fn collect_admissible<'a>(
+        &'a self,
+        config: &HouseConfig,
+        first_only: bool,
+    ) -> Result<Vec<&'a Recipe>, String> {
+        let mut candidates = self
             .recipes
             .iter()
             .filter(|recipe| {
                 recipe.pack_id == config.pack
+                    && !(recipe.inspired_only && config.mode == HistoricalMode::HistoricalStrict)
                     && config
                         .recipe
                         .as_ref()
@@ -801,24 +832,28 @@ impl Catalogue {
                         || (config.allow_late && config.mode != HistoricalMode::HistoricalStrict))
                     && (config.era == "any" || recipe.temporal.eras.contains(&config.era))
             })
-            .collect();
-        if candidates.is_empty() {
+            .peekable();
+        if candidates.peek().is_none() {
             return Err(
                 "Aucune recette admissible pour ces choix de tradition, époque et profils tardifs."
                     .into(),
             );
         }
         let mut reasons = Vec::new();
-        let compatible: Vec<_> = candidates
-            .into_iter()
-            .filter(|recipe| match self.resolve_parameters(recipe, config) {
-                Ok(_) => true,
+        let mut compatible = Vec::new();
+        for recipe in candidates {
+            match self.resolve_parameters(recipe, config) {
+                Ok(_) => {
+                    compatible.push(recipe);
+                    if first_only {
+                        return Ok(compatible);
+                    }
+                }
                 Err(error) => {
                     reasons.push(format!("{}: {error}", recipe.id));
-                    false
                 }
-            })
-            .collect();
+            }
+        }
         if compatible.is_empty() {
             return Err(format!(
                 "Aucune recette compatible avec ces paramètres. {}",
@@ -1508,6 +1543,157 @@ fn finite_range(label: &str, value: f64, min: f64, max: f64) -> Result<(), Strin
         ));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod admission_validation_tests {
+    use super::*;
+
+    // Frozen pre-optimization oracle: full palette and refusal text are public
+    // behavior; validation must merely stop after its first successful member.
+    fn previous_admissible<'a>(
+        data: &'a Catalogue,
+        config: &HouseConfig,
+    ) -> Result<Vec<&'a Recipe>, String> {
+        let candidates: Vec<_> = data
+            .recipes
+            .iter()
+            .filter(|recipe| {
+                recipe.pack_id == config.pack
+                    && !(recipe.inspired_only && config.mode == HistoricalMode::HistoricalStrict)
+                    && config
+                        .recipe
+                        .as_ref()
+                        .map_or(recipe.weight > 0 && recipe.role.residential(), |id| {
+                            recipe.id == *id
+                        })
+                    && (!recipe.temporal.late_only
+                        || (config.allow_late && config.mode != HistoricalMode::HistoricalStrict))
+                    && (config.era == "any" || recipe.temporal.eras.contains(&config.era))
+            })
+            .collect();
+        if candidates.is_empty() {
+            return Err(
+                "Aucune recette admissible pour ces choix de tradition, époque et profils tardifs."
+                    .into(),
+            );
+        }
+        let mut reasons = vec![];
+        let compatible: Vec<_> = candidates
+            .into_iter()
+            .filter(|recipe| match data.resolve_parameters(recipe, config) {
+                Ok(_) => true,
+                Err(reason) => {
+                    reasons.push(format!("{}: {reason}", recipe.id));
+                    false
+                }
+            })
+            .collect();
+        if compatible.is_empty() {
+            return Err(format!(
+                "Aucune recette compatible avec ces paramètres. {}",
+                reasons.join(" ; ")
+            ));
+        }
+        Ok(compatible)
+    }
+
+    #[test]
+    fn validation_short_circuit_preserves_full_selection_and_exact_refusals() {
+        let data = catalogue().unwrap();
+        let mut configs = vec![];
+        for pack in ["EUR-MED", "AS-ISL", "AF-WEST"] {
+            for mode in [
+                HistoricalMode::HistoricalInspired,
+                HistoricalMode::HistoricalStrict,
+                HistoricalMode::FantasyMix,
+            ] {
+                configs.push(HouseConfig {
+                    pack: pack.into(),
+                    mode,
+                    ..Default::default()
+                });
+            }
+        }
+        for (recipe, variant, floors, mode) in [
+            (
+                "EUR-MED-B07",
+                "flat_stone",
+                None,
+                HistoricalMode::HistoricalInspired,
+            ),
+            (
+                "EUR-MED-B07",
+                "unknown-variant",
+                None,
+                HistoricalMode::HistoricalInspired,
+            ),
+            (
+                "AS-ISL-B14",
+                "default",
+                Some(12),
+                HistoricalMode::HistoricalInspired,
+            ),
+            (
+                "AS-ISL-B14",
+                "default",
+                None,
+                HistoricalMode::HistoricalStrict,
+            ),
+            (
+                "unknown-recipe",
+                "default",
+                None,
+                HistoricalMode::HistoricalInspired,
+            ),
+        ] {
+            let mut config = HouseConfig {
+                pack: if recipe.starts_with("AS-ISL") {
+                    "AS-ISL"
+                } else {
+                    "EUR-MED"
+                }
+                .into(),
+                recipe: Some(recipe.into()),
+                mode,
+                ..Default::default()
+            };
+            config.overrides.variant = Some(variant.into());
+            config.overrides.floors = floors;
+            configs.push(config);
+        }
+        let mut successes = 0;
+        let mut refusals = 0;
+        for config in configs {
+            let expected = previous_admissible(data, &config);
+            let ids = |result: Result<Vec<&Recipe>, String>| {
+                result.map(|recipes| {
+                    recipes
+                        .into_iter()
+                        .map(|r| r.id.clone())
+                        .collect::<Vec<_>>()
+                })
+            };
+            assert_eq!(ids(data.admissible(&config)), ids(expected.clone()));
+            assert_eq!(
+                data.validate_config(&config),
+                expected.as_ref().map(|_| ()).map_err(Clone::clone)
+            );
+            match expected {
+                Ok(recipes) => {
+                    successes += 1;
+                    let first = data.collect_admissible(&config, true).unwrap();
+                    assert_eq!(first.len(), 1);
+                    assert!(std::ptr::eq(first[0], recipes[0]));
+                }
+                Err(reason) => {
+                    refusals += 1;
+                    assert_eq!(data.collect_admissible(&config, true).unwrap_err(), reason);
+                }
+            }
+        }
+        assert!(successes > 0 && refusals > 0);
+    }
 }
 
 fn validate_portal_profile(profile: &PortalProfile, height: f64) -> Result<(), String> {

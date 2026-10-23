@@ -27,6 +27,8 @@ const DIRS: [(isize, isize); 16] = [
 ];
 const HEADINGS: usize = DIRS.len();
 const NONE: usize = usize::MAX;
+/// Route cost of one switchback hairpin, in metres of ordinary road.
+const HAIRPIN: f64 = 45.0;
 
 fn distance(a: Point, b: Point) -> f64 {
     (b.x - a.x).hypot(b.y - a.y)
@@ -434,7 +436,11 @@ impl<'a> RoutePlanner<'a> {
                     continue;
                 }
                 let length = self.step * ((dx * dx + dy * dy) as f64).sqrt();
-                let bend = self.step * 0.35 * (1.0 - cosine).powi(2);
+                // A hairpin is a built structure (retaining wall, turning
+                // space): it costs a fixed run of road, so a climb uses few
+                // hairpins and long legs instead of a lattice-sized sawtooth.
+                let hairpin = if cosine < -0.1 { HAIRPIN } else { 0.0 };
+                let bend = self.step * 0.35 * (1.0 - cosine).powi(2) + hairpin;
                 let cost = entry.cost + self.cost(length, grade, max_grade) + bend;
                 let state = next * HEADINGS + dir;
                 if self.slots[state].epoch != epoch || cost < self.slots[state].cost {
@@ -491,6 +497,39 @@ impl<'a> RoutePlanner<'a> {
             }
             simplified.push(path[j]);
             i = j;
+        }
+        // Round the lattice corners (staircase steps, 45° kinks) by corner
+        // cutting, keeping each cut only where the new legs stay dry, within
+        // the grade limit and inside the corridor. Hairpins keep their apex.
+        for _ in 0..2 {
+            let mut rounded = vec![simplified[0]];
+            for k in 1..simplified.len().saturating_sub(1) {
+                let (a, v, b) = (simplified[k - 1], simplified[k], simplified[k + 1]);
+                let (la, lb) = (distance(a, v), distance(v, b));
+                let cosine =
+                    ((v.x - a.x) * (b.x - v.x) + (v.y - a.y) * (b.y - v.y)) / (la * lb).max(1e-9);
+                let cut = (la.min(lb) * 0.3).min(25.0);
+                let p = lerp(v, a, cut / la.max(1e-9));
+                let q = lerp(v, b, cut / lb.max(1e-9));
+                let last = *rounded.last().unwrap();
+                let valid = cosine < 0.97
+                    && cosine > -0.1
+                    && cut > 1.0
+                    && [(last, p), (p, q), (q, b)].iter().all(|&(x, y)| {
+                        segment_clear(self.surface, x, y, max_grade)
+                            && shape.is_none_or(|shape| inside(shape, x, y))
+                    });
+                if valid {
+                    rounded.push(p);
+                    rounded.push(q);
+                } else {
+                    rounded.push(v);
+                }
+            }
+            if let Some(&end) = simplified.last() {
+                rounded.push(end);
+            }
+            simplified = rounded;
         }
         debug_assert!(path_clear(self.surface, &simplified, max_grade));
         debug_assert!(

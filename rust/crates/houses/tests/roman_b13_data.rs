@@ -1,0 +1,221 @@
+//! Native validation of the emitted B13 source bundles, separate from urban admission.
+//! Generic communal interiors do not certify independent apartments/capacity.
+use magna_urbis_houses::{
+    catalogue::{Layout, Parameters, catalogue},
+    enrich_architecture,
+    geometry::{area, rectangle},
+    model::{FeatureKind, HistoricalMode, RoomUsage, Surface},
+    placement::{PlacementBatchSettings, PlacementRequest},
+    plans::{PLAN_VERSION, PlanBatchRequest, PlanBuilding, RealizePlanRequest, plan_batch, realize_plan},
+    GENERATOR_VERSION,
+};
+use std::collections::{BTreeMap, BTreeSet};
+
+fn request(variant: &str, floors: u32, width: f64) -> PlacementRequest {
+    dimension_request(variant, floors, "minimum", [6.5, 10.], [width, 12.])
+}
+
+fn dimension_request(
+    variant: &str, floors: u32, label: &str, nominal: [f64; 2], site: [f64; 2],
+) -> PlacementRequest {
+    let id = format!("b13-{label}-{floors}-levels");
+    let [width, depth] = site;
+    let [w, d] = nominal;
+    serde_json::from_value(serde_json::json!({
+        "id":id,"parcel_id":format!("{id}-parcel"),
+        "cadastral":rectangle(0.,0.,width,depth),
+        "buildable":rectangle(0.,0.,width,depth),
+        "roof_domain":rectangle(0.,0.,width,depth),
+        "reserves":[],"party_boundaries":[],"neighbors":[],
+        "accesses":[{"id":"street","kind":"public","width_m":2.,
+            "segment":[{"x":0.,"y":depth},{"x":width,"y":depth}]}],
+        "culture":{"culture":"roman-core","pack":"MED-ANT",
+            "mode":"historical_inspired","borrowing":null},
+        "function":"domestic","seed":id,"parcel_fit":false,
+        "config":{"schema_version":"2","seed":id,"pack":"MED-ANT",
+            "recipe":"MED-ANT-B13","mode":"historical_inspired","era":"A",
+            "allow_late":false,"count":1,"size":1.,"variation":0.,"wealth":1.,
+            "orientation_deg":0.,"overrides":{"variant":variant,"floors":floors}},
+        "occupation":{"coverage":(w*d/(width*depth)).min(0.75),"frontage_m":w,"depth_m":d},
+        "programme":{"role":"dwelling.tenement","composition":"row",
+            "floors":[floors,floors],"built_area_m2":(w-1.25)*0.75*d},
+        "terrain":{"origin":{"x":0.,"y":0.},"ground_z_m":10.,
+            "gradient":[0.,0.],"water_z_m":null,"max_foundation_step_m":0.75}
+    })).unwrap()
+}
+
+fn batch(requests: Vec<PlacementRequest>) -> magna_urbis_houses::plans::PlanBatch {
+    let result = plan_batch(PlanBatchRequest {
+        schema_version: "1".into(), requests,
+        settings: Some(PlacementBatchSettings { parcel_fit: Some(false), ..Default::default() }),
+        footprints: BTreeMap::new(),
+    }).unwrap();
+    assert_eq!(result.generator_version, PLAN_VERSION);
+    result
+}
+
+fn detail_proof(building: &PlanBuilding, variant: &str, floors: u32, nominal: [f64; 2]) {
+    let restored: PlanBuilding = serde_json::from_slice(&serde_json::to_vec(building).unwrap()).unwrap();
+    assert_eq!(serde_json::to_vec(&building.resolved).unwrap(), serde_json::to_vec(&restored.resolved).unwrap());
+    assert_eq!(restored.resolved.generator_version, GENERATOR_VERSION);
+    assert_eq!(restored.resolved.format, "compact-plan-1");
+    let mut stale = restored.resolved.clone();
+    stale.generator_version = "houses-2".into();
+    assert!(stale.unpack().is_err(), "The old retained version must not be relabelled or regenerated.");
+    let resolved = restored.resolved.unpack().unwrap();
+    assert_eq!(resolved.generator_version, GENERATOR_VERSION);
+    assert_eq!(resolved.config.seed, building.id);
+    assert_eq!(resolved.config.size, 1.);
+    assert_eq!(resolved.config.recipe.as_deref(), Some("MED-ANT-B13"));
+    assert_eq!(resolved.config.overrides.variant.as_deref(), Some(variant));
+    assert_eq!(resolved.config.overrides.floors, Some(floors));
+    let frozen = serde_json::to_vec(&resolved).unwrap();
+    // Inspect the retained wire representation; the engine's planning fields
+    // remain private, and all enrichment below consumes this same Resolved.
+    let retained = serde_json::to_value(&resolved).unwrap();
+    let parameters: Parameters = serde_json::from_value(retained["parameters"].clone()).unwrap();
+    let bodies = retained["plan"]["bodies"].as_array().unwrap();
+    assert_eq!(bodies.len(), 1, "No implicit burgage wings");
+    let body_footprint: Surface = serde_json::from_value(bodies[0]["footprint"].clone()).unwrap();
+    let courts: Surface = serde_json::from_value(retained["plan"]["courts"].clone()).unwrap();
+    let paths: Surface = serde_json::from_value(retained["plan"]["paths"].clone()).unwrap();
+    assert_eq!(parameters.floors, [floors, floors]);
+    assert_eq!(parameters.width_m, [nominal[0]; 2]);
+    assert_eq!(parameters.depth_m, [nominal[1]; 2]);
+    assert!(!parameters.urban_frontage_infill);
+    assert!((area(&body_footprint) - (nominal[0]-1.25)*0.75*nominal[1]).abs() < 0.0001);
+    assert!((area(&courts) - nominal[0]*0.25*nominal[1]).abs() < 0.0001);
+    assert!((area(&paths) - 1.25*nominal[1]).abs() < 0.0001);
+    assert_eq!(parameters.details, vec!["masonry_joints".to_string(), "rear_yard".to_string()]);
+    assert!(!parameters.gallery_cover.enabled);
+    let p = serde_json::to_value(&parameters).unwrap();
+    for field in ["floors", "level_height_m", "vertical_routes", "materials", "roof_spec"] {
+        assert_eq!(p[field], p["components"][0][field]);
+    }
+    let routes = p["vertical_routes"].as_array().unwrap();
+    assert_eq!(routes.len(), floors as usize - 1);
+    for (level, route) in routes.iter().enumerate() {
+        assert_eq!(route["from_level"], level);
+        assert_eq!(route["to_level"], level + 1);
+    }
+    let exterior = realize_plan(RealizePlanRequest { building: restored.clone(), interiors: false }).unwrap();
+    let interior = enrich_architecture(&resolved).unwrap();
+    for detail in [&exterior, &interior] {
+        let unit = &detail.units[0];
+        assert_eq!(unit.recipe_id, "MED-ANT-B13");
+        assert_eq!(unit.variant_id, variant);
+        assert_eq!(unit.bodies.len(), 1);
+        assert_eq!(unit.bodies[0].levels.len(), floors as usize);
+        assert!(unit.bodies[0].levels.iter().all(|level| level.height_m == 2.8));
+        assert_eq!(unit.bodies[0].footprint, body_footprint);
+        assert!(!unit.roofs.faces.is_empty());
+    }
+    let unit = &interior.units[0];
+    for level in 0..floors {
+        assert!(unit.rooms.iter().any(|r| r.level == level));
+    }
+    assert!(unit.rooms.iter().all(|r| r.usage == RoomUsage::Communal));
+    assert!(unit.features.iter().filter(|f| f.kind == FeatureKind::Stair).count() >= floors as usize - 1);
+    let mut reached = BTreeSet::from([unit.access.root.clone()]);
+    loop {
+        let before = reached.len();
+        for portal in &unit.access.portals {
+            if reached.contains(&portal.from) { reached.insert(portal.to.clone()); }
+            if reached.contains(&portal.to) { reached.insert(portal.from.clone()); }
+        }
+        if reached.len() == before { break; }
+    }
+    assert!(unit.rooms.iter().all(|r| reached.contains(&r.access_node)));
+    assert_eq!(frozen, serde_json::to_vec(&resolved).unwrap());
+    assert_eq!(building.domestic_units, 0);
+
+    // Urban detail admission is a separate measured outcome. These explicit
+    // pinned source witnesses are outside the automatic native-entry upgrade.
+    // Neither houses-3 nor a valid autonomous interior certifies this urban
+    // connection. Never mask another failure as the known entry mismatch.
+    match realize_plan(RealizePlanRequest { building: restored, interiors: true }) {
+        Ok(detail) => {
+            assert_eq!(detail.units[0].bodies.len(), 1);
+            assert_eq!(detail.units[0].bodies[0].levels.len(), floors as usize);
+            eprintln!("{}: retained urban interior admitted", building.id);
+        }
+        Err(error) => {
+            assert_eq!(error, "Native interior entrance differs from the retained planning connection. City plan preserved; detailed site admission is required.");
+            let (sin, cos) = building.transform.orientation_deg.to_radians().sin_cos();
+            let gap = unit.access.portals.iter()
+                .filter(|p| p.from == unit.access.root || p.to == unit.access.root)
+                .map(|p| {
+                    let x = (p.opening[0].x + p.opening[1].x) * 0.5;
+                    let y = (p.opening[0].y + p.opening[1].y) * 0.5;
+                    let dx = building.transform.origin.x + x*cos - y*sin - building.entrance.x;
+                    let dy = building.transform.origin.y + x*sin + y*cos - building.entrance.y;
+                    dx.hypot(dy)
+                }).fold(f64::INFINITY, f64::min);
+            assert!(gap.is_finite() && gap >= 0.001);
+            eprintln!("{}: autonomous interior valid; retained urban connection refused, gap={gap:.6}m", building.id);
+        }
+    }
+}
+
+#[test]
+fn roman_b13_actual_two_three_four_levels_keep_one_body_and_adjacent_routes() {
+    let data = catalogue().unwrap();
+    let recipe = data.recipes.iter().find(|r| r.id == "MED-ANT-B13").unwrap();
+    assert!(recipe.inspired_only && recipe.parameters.layout == Layout::Strip);
+    assert_eq!(recipe.tradition_id.as_deref(), Some("roman_urban"));
+    assert!(!recipe.parameters.details.iter().any(|d| d == "multiple_households" || d == "side_corridor"));
+    for (variant, floors) in [("default", 2), ("three_storeys", 3), ("four_storeys", 4)] {
+        let result = batch(vec![request(variant, floors, 8.)]);
+        assert_eq!(result.buildings.len(), 1, "{variant}: {:?}", result.refusals);
+        assert!(result.refusals.is_empty());
+        assert!((area(&result.buildings[0].footprint) - 39.375).abs() < 0.0001);
+        detail_proof(&result.buildings[0], variant, floors, [6.5, 10.]);
+    }
+}
+
+#[test]
+fn roman_b13_source_bounds_and_native_maxima_stay_pinned_at_size_one() {
+    let data = catalogue().unwrap();
+    let recipe = data.recipes.iter().find(|r| r.id == "MED-ANT-B13").unwrap();
+    for (variant, floors) in [("default", 2), ("three_storeys", 3), ("four_storeys", 4)] {
+        // Explicit desired dimensions reach the source maximum without the
+        // artistic x2 parcel-fit allowance or a second random dimension draw.
+        // Coverage180/252 remains above the historical .66 infill threshold.
+        let request = dimension_request(variant, floors, "maximum", [10., 18.], [12., 21.]);
+        let config = request.config.as_ref().unwrap();
+        assert_eq!(config.size, 1.);
+        assert_eq!(request.parcel_fit, Some(false));
+        let source = data.resolve_variant_parameters(recipe, config, variant).unwrap();
+        assert_eq!(source.width_m, [6.5, 10.]);
+        assert_eq!(source.depth_m, [10., 18.]);
+        assert_eq!(source.floors, [floors; 2]);
+        assert_eq!(source.courtyard_ratio, [0.35, 0.55]);
+        assert!(!source.urban_frontage_infill);
+        assert_eq!(source.details, vec!["masonry_joints".to_string(), "rear_yard".to_string()]);
+        assert_eq!(source.components.len(), 1);
+        assert_eq!(source.components[0].id, "main");
+        assert_eq!(source.components[0].floors, [floors; 2]);
+        let result = batch(vec![request]);
+        assert_eq!(result.buildings.len(), 1, "{variant}: {:?}", result.refusals);
+        assert!(result.refusals.is_empty());
+        assert!((area(&result.buildings[0].footprint) - 118.125).abs() < 0.0001);
+        detail_proof(&result.buildings[0], variant, floors, [10., 18.]);
+    }
+}
+
+#[test]
+fn roman_b13_strict_hard_floor_and_small_lot_remain_refused() {
+    let mut strict = request("default", 2, 8.);
+    strict.id = "b13-strict".into();
+    strict.culture.mode = HistoricalMode::HistoricalStrict;
+    strict.config.as_mut().unwrap().mode = HistoricalMode::HistoricalStrict;
+    let mut wrong = request("default", 2, 8.);
+    wrong.id = "b13-wrong-hard-floor".into();
+    wrong.config.as_mut().unwrap().overrides.floors = Some(4);
+    let mut narrow = request("four_storeys", 4, 2.);
+    narrow.id = "b13-too-narrow".into();
+    let result = batch(vec![strict, wrong, narrow]);
+    assert!(result.buildings.is_empty() && result.open_spaces.is_empty());
+    assert_eq!(result.refusals.len(), 3);
+    assert!(result.refusals.iter().all(|r| !r.message.is_empty()));
+}

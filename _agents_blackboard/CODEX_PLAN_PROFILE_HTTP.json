@@ -1,0 +1,11 @@
+{
+  "status": 200,
+  "headers_ms": 1536.3819,
+  "read_ms": 21.336199999999963,
+  "parse_ms": 25.957999999999856,
+  "total_ms": 1583.6761,
+  "bytes": 6435857,
+  "accepted": 564,
+  "refused": 74,
+  "open": 4
+}

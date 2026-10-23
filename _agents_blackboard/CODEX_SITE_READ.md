@@ -1,0 +1,11 @@
+# Lecture d'un site original sans conserver toutes les contraintes en JavaScript
+
+22 octobre 2026. Native livré et test de route passé ; intégration du store UI en cours. Capability `urban.building-site-read`.
+
+`POST /urban` : `{kind:"buildingSite", source, keys?, seed, architectureCulture?, offset, expectedId, maxBytes}`. Réponse `{placementRequest, offset, total, ms}`. La source complète est obligatoire ; aucune création de session, aucun raster/géométrie uploadés. `expectedId` est obligatoire et doit correspondre exactement au site original. `maxBytes` est obligatoire, de 2 à 24 MiB ; son contrôle réutilise une page d'un élément, donc compte conservativement les deux crochets JSON.
+
+Le descripteur source/sélection/graine/culture suffit à retrouver le site. Il ne contient pas le `sourceId` éphémère du flux. L'index de pagination actif est réutilisé uniquement si ses paramètres sont identiques ; sinon un index temporaire est préparé, **une seule requête** matérialisée, puis l'index libéré. Aucun changement du flux actif ni copie des géométries cadastrales. Le coût de cet index temporaire reste proportionnel aux allocations sélectionnées : ce n'est pas une lecture aléatoire O(1) garantie.
+
+Un nouveau `buildingSitesBegin` ou un flux abandonné ne détruit donc pas la possibilité de rééditer une scène antérieure tant que son snapshot natif existe. Une nouvelle révision terrain/parcelles, une éviction de session ou un redémarrage invalide le descripteur ; le client doit afficher cette erreur, sans régénération implicite. Les handles restent propres au runtime et ne doivent pas entrer dans un décor ou un code MU1. Un site ayant le même ID dans une autre scène ne rétablit pas sa provenance.
+
+Vérification : `cargo test -p magna-urbis-local retained_source -- --nocapture` : 1 test de route réel vert (23 sites, 0,05 s après compilation). Les contrats de pages précédents restent vérifiés ; ajouts : égalité JSON complète avec le site original, ID/bornes/budget invalides refusés, relecture du descripteur ancien après begin sur une autre sélection, autre graine restituée exactement, flux actif inchangé après ces lectures, source périmée refusée et source absente sans création de session. Aucun benchmark grande ville relancé pour cette route.

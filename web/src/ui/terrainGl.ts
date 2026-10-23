@@ -23,6 +23,7 @@ import { lakeDistances, seaDistanceSurface, type WaterSurface } from '../render/
 import { isRender3dStyle, terrainStyle, type TerrainStyle } from '../render/terrainStyle';
 import { WATER_STYLE_GLSL, waterUniforms } from '../render/waterStyle';
 import { paintRetainedWater, retainedWaterPaths, type RetainedWaterPath } from '../render/retainedWaterGeometry';
+import { RENDER_WATER_FS, renderWaterRings } from '../render/renderWaterShader';
 import { CANVAS_MAP_STROKES, mapStrokeWidth } from '../render/strokes';
 import type { View } from '../render/view';
 import { FRACTAL_ROTATIONS, type FractalDetail } from '../../../rust/bridge/terrainAdjust';
@@ -460,6 +461,8 @@ interface GpuLayer { layer: HeightLayer; levels: Float32Array[]; texture: WebGLT
 export class TerrainGl {
   readonly gl: WebGL2RenderingContext;
   private terrain: WebGLProgram; private river: WebGLProgram; private composite: WebGLProgram;
+  /** Painted water of the `render` style (renderWaterShader.ts), compiled on first use. */
+  private renderWater?: { program: WebGLProgram; u: Map<string, WebGLUniformLocation | null> };
   private riverTarget?: { framebuffer: WebGLFramebuffer; texture: WebGLTexture; width: number; height: number };
   private waterTarget?: { framebuffer: WebGLFramebuffer; texture: WebGLTexture; width: number; height: number };
   private retainedWaterKey = '';
@@ -851,6 +854,9 @@ export class TerrainGl {
       }
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
     };
+    // The render style paints its water layers (depth, shelf, glint, wet banks); other styles keep the flat ink.
+    const paintedWater = look.style === 'render' && !look.groundCapture;
+    const waterBand = (this.seaSurface?.referenceWidth ?? look.mapWidth) * water.bandFraction;
     const renderRivers = (destination: WebGLFramebuffer | null): void => {
       if (!this.riverCount || look.layers.water === false) return;
       const target = this.target(width, height);
@@ -871,8 +877,10 @@ export class TerrainGl {
       gl.bindVertexArray(null);
       gl.bindFramebuffer(gl.FRAMEBUFFER, destination);
       gl.blendEquation(gl.FUNC_ADD); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
-      gl.useProgram(this.composite);
       gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, target.texture);
+      // Diagnostic colours (overlay) keep the plain composite.
+      if (paintedWater && !this.overlay) { this.paintWater(0, width, height, origin, px, stylePixelRatio, waterBand); return; }
+      gl.useProgram(this.composite);
       gl.uniform1i(gl.getUniformLocation(this.composite, 'uLayer'), 0);
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
     };
@@ -894,9 +902,11 @@ export class TerrainGl {
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
         this.retainedWaterViewKey = key;
       }
-      gl.bindFramebuffer(gl.FRAMEBUFFER, destination); gl.useProgram(this.composite);
-      gl.uniform1i(gl.getUniformLocation(this.composite, 'uLayer'), 11);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, destination);
       gl.enable(gl.BLEND); gl.blendEquation(gl.FUNC_ADD); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+      if (paintedWater) { this.paintWater(11, width, height, origin, px, stylePixelRatio, waterBand); return; }
+      gl.useProgram(this.composite);
+      gl.uniform1i(gl.getUniformLocation(this.composite, 'uLayer'), 11);
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
     };
     const separateWater = isRender3dStyle(look.style) && look.layers.relief && look.layers.hypsometry && look.layers.water !== false && !look.groundCapture;
@@ -930,6 +940,27 @@ export class TerrainGl {
     gl.disable(gl.BLEND);
     this.drawMs = performance.now() - started;
     if (animating) this.request();
+  }
+
+  /** Composite a coverage layer (texture unit `unit`, bound) as painted water; blending is set by the caller. */
+  private paintWater(unit: number, width: number, height: number, origin: [number, number], px: number, dpr: number, band: number): void {
+    const gl = this.gl;
+    if (!this.renderWater) this.renderWater = { program: compile(gl, COMPOSITE_VS, RENDER_WATER_FS), u: new Map() };
+    const { program, u: cache } = this.renderWater;
+    const u = (name: string): WebGLUniformLocation | null => { if (!cache.has(name)) cache.set(name, gl.getUniformLocation(program, name)); return cache.get(name)!; };
+    const water = terrainStyle('render').water, palette = waterUniforms(water), rings = renderWaterRings(px, band);
+    // Bilinear taps (the bound layer is only ever read with texelFetch elsewhere).
+    gl.activeTexture(gl.TEXTURE0 + unit);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.useProgram(program);
+    gl.uniform1i(u('uLayer'), unit);
+    gl.uniform2f(u('uCanvas'), width, height); gl.uniform2f(u('uOrigin'), origin[0], origin[1]);
+    gl.uniform1f(u('uPx'), px); gl.uniform1f(u('uDpr'), dpr); gl.uniform1f(u('uBand'), band);
+    gl.uniform1f(u('uBankPx'), Math.min(6 * dpr, Math.max(1.5 * dpr, 7 / px)));
+    gl.uniform1fv(u('uRings[0]'), rings); gl.uniform1i(u('uRingCount'), rings.length);
+    gl.uniform3fv(u('uWaterStops[0]'), palette.colors); gl.uniform1fv(u('uWaterStopT[0]'), palette.positions);
+    gl.uniform1i(u('uWaterStopCount'), water.stops.length);
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
   }
 
   private target(width: number, height: number): { framebuffer: WebGLFramebuffer; texture: WebGLTexture; width: number; height: number } {
@@ -970,6 +1001,7 @@ export class TerrainGl {
     if (this.retainedWaterTexture) gl.deleteTexture(this.retainedWaterTexture);
     if (this.captureTarget) { gl.deleteFramebuffer(this.captureTarget.framebuffer); gl.deleteTexture(this.captureTarget.texture); }
     gl.deleteProgram(this.terrain); gl.deleteProgram(this.river); gl.deleteProgram(this.composite);
+    if (this.renderWater) gl.deleteProgram(this.renderWater.program);
   }
 }
 

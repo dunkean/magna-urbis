@@ -63,6 +63,13 @@ pub(super) fn settlement_profile(culture: &str, population: u32, phases: usize) 
     }
     p
 }
+/// Pedestrian stairs serve urban land only where the culture builds them
+/// (stair towns, terraces) and the user allows them; everywhere else land must
+/// be reachable at street grade.
+pub(super) fn stairs_allowed(cfg: &super::LayoutConfig, culture: &str) -> bool {
+    let p = profile(culture);
+    cfg.allow_stairs && (p.stairs || p.pattern == "terraces" || cfg.tissue == "terraces")
+}
 pub(super) fn fortification(profile: UrbanProfile, selected: &str, population: u32) -> &str {
     let selected = if selected == "culture" {
         profile.fortification
@@ -97,7 +104,7 @@ mod tests {
     fn every_culture_has_replayable_native_recipes_and_a_profile() {
         let cat = catalogue();
         let cultures = cat["cultures"].as_object().unwrap();
-        assert_eq!(cultures.len(), 53);
+        assert_eq!(cultures.len(), 79);
         for (id, c) in cultures {
             let p = profile(id);
             assert!(

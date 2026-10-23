@@ -1,0 +1,11 @@
+{
+  "pid": 75080,
+  "port": 8791,
+  "executable": "D:\\workspace\\self\\magna-urbis\\web\\out\\native-city-current-20261022\\magna-urbis-local.exe",
+  "build": "2026-10-22T19:51:41.5817354+02:00",
+  "sha256": "CFEC16B2FBEFDC933FD95CF243E2237A501EE07D9FAA3F954BDEBC09F38C8B6C",
+  "verified": "Paged CityBench 07-pueblo and 37-bastide; 553 sites across 9 pages, 531 plans. Geometry remains needs_rework. Before frontage and C1 functional programmes.",
+  "preview8812": "Process stopped externally; its verified binary remains in native-house-preview-paged. This service is an exact hash-checked copy.",
+  "startup8791": "After Opus reported the outage, Codex verified connection refusal and vacant port, then started this copy. No existing service stopped; no default release target rebuilt.",
+  "profile": "optimized-dev"
+}

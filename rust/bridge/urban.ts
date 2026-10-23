@@ -4,14 +4,31 @@ import init, { SettlementTerrain } from '../pkg/wasm/magna_urbis_wasm.js';
 import wasmUrl from '../pkg/wasm/magna_urbis_wasm_bg.wasm?url&inline';
 import type { Point, RoadOutput, RoadSite, SettlementRaster } from './settlements';
 import type { ExecutionRuntime } from '../../web/src/ui/executionProfile';
-import { nativeRasterClient } from './nativeEngine';
+import { nativeJson, nativeRasterClient } from './nativeEngine';
+import { validateUrbanSource, type UrbanSourceHandle } from './urbanSource';
+export type { UrbanSourceHandle } from './urbanSource';
 export type { Point } from './settlements';
 
 export interface Shape { outer: Point[]; holes: Point[][] }
 export interface Street { path: Point[]; widths: number[]; rank: number; role: string }
 export interface Quarter { shape: Shape; phase: number; zone?: string }
 export interface Block { shape: Shape; quarter: number; kind: string; axis: Point; zone?: string; phase?: number }
-export interface Enclosure { path: Point[]; kind: string; gates: Point[] }
+export interface Enclosure {
+  path: Point[]; kind: string; gates: Point[];
+  /** Tower anchors on the curtain; towers[i] === towers_detail[i].anchor. */
+  towers?: Point[];
+  /** Fortification structures (Rust `urban::fortification`), all optional and snake_case. */
+  style?: 'palisade' | 'gord' | 'hedge' | 'curtain' | 'flanked' | 'concentric' | 'rammed-earth' | 'wengcheng' | 'bastioned' | string;
+  material?: 'timber' | 'timber-earth' | 'thorn' | 'stone' | 'brick' | 'rammed-earth' | 'earth-stone' | string;
+  curtain_width_m?: number; height_m?: number;
+  towers_detail?: { anchor: Point; center: Point; shape: 'round' | 'square' | 'd' | 'rect' | string; radius_m: number; depth_m?: number; angle: number; height_m: number; kind: 'corner' | 'flank' | 'gate' | 'water' | string; footprint: Shape }[];
+  gatehouses?: { gate: number; kind: 'timber' | 'tower' | 'twin-tower' | 'bab' | 'ravelin' | 'water' | 'postern' | string; shape: Shape; masses?: Shape[]; passage: [Point, Point]; passage_width_m: number; height_m: number }[];
+  bastions?: { kind: string; shape: Shape; height_m: number; passage?: [Point, Point] }[];
+  outworks?: { kind: 'outer-wall' | 'barbican' | 'antemural' | 'wengcheng' | 'ravelin' | 'citadel' | 'glacis' | string; shape: Shape; height_m: number; passage?: [Point, Point] }[];
+  ditch?: { kind: 'dry' | 'wet' | string; shape: Shape; height_m: number; passage?: [Point, Point] }[];
+  attached?: { kind: 'lean-to' | string; side: 'out' | string; shape: Shape; height_m: number }[];
+  reserve?: Shape[];
+}
 export interface GrowthPhase { culture?: string; kind: string; zone: string; recipe: string; population: number; targetArea: number; shapes: Shape[] }
 export interface UrbanStructure {
   version: 1; mechanism: string; family: string; reserve: Shape[]; allocated: Shape[];
@@ -80,9 +97,31 @@ export function regionalStreets(roads?: RoadOutput): Street[] {
     });
   }) ?? [];
 }
-export interface UrbanRequest { id: number; seed: string; kind: 'quarters' | 'parcels' | 'programme' | 'buildingSites' | 'builtCapacity'; architectureCulture?: string; scene?: import('./urbanArchitecture').PlacementBatch; raster?: SettlementRaster; sites?: RoadSite[]; roads?: Street[]; layoutConfig?: LayoutConfig; parcelConfig?: ParcelConfig; layouts?: Layout[]; partitions?: Partition[]; layoutsId?: number; runtime?: ExecutionRuntime }
-export interface UrbanResponse { id: number; layouts?: Layout[]; partitions?: Partition[]; placementRequests?: import('./urbanArchitecture').PlacementRequest[]; ms?: number; error?: string }
+export interface UrbanRequest { id: number; seed: string; kind: 'quarters' | 'parcels' | 'programme' | 'buildingSites' | 'builtCapacity'; architectureCulture?: string; scene?: import('./urbanArchitecture').PlacementBatch; raster?: SettlementRaster; sites?: RoadSite[]; roads?: Street[]; layoutConfig?: LayoutConfig; parcelConfig?: ParcelConfig; layouts?: Layout[]; partitions?: Partition[]; layoutsId?: number; runtime?: ExecutionRuntime;
+  /** Read a retained native snapshot across workers, without uploading geometry. */
+  source?: UrbanSourceHandle; keys?: string[] }
+export interface UrbanResponse { id: number; layouts?: Layout[]; partitions?: Partition[]; placementRequests?: import('./urbanArchitecture').PlacementRequest[]; ms?: number; error?: string;
+  urbanSource?: UrbanSourceHandle }
 export interface UrbanEngine { run(request: UrbanRequest): UrbanResponse | Promise<UrbanResponse> }
+
+/** The absent native field already means auto. Omit only that default so older
+ * strict engines remain usable; explicit styles must still reach their validator.
+ * UI settings, saved links and returned layouts retain their original config. */
+function nativeLayoutConfig(config: LayoutConfig) {
+  if (config.fortificationStyle !== 'auto') return config;
+  const { fortificationStyle: _automatic, ...input } = config;
+  return input;
+}
+function nativeLayouts(layouts: Layout[]) {
+  return layouts.map(layout => layout.config?.fortificationStyle === 'auto'
+    ? { ...layout, config: nativeLayoutConfig(layout.config) } : layout);
+}
+function nativeUrbanInput(request: UrbanRequest) {
+  return { ...request,
+    ...(request.layoutConfig ? { layoutConfig: nativeLayoutConfig(request.layoutConfig) } : {}),
+    ...(request.layouts ? { layouts: nativeLayouts(request.layouts) } : {}),
+  };
+}
 
 /** Reconciliation needs capacities, identities and open surfaces, never roof
  * meshes or retained architectural plans. Keep those out of the native transfer. */
@@ -102,10 +141,22 @@ export async function createUrbanEngine(runtime?: ExecutionRuntime): Promise<Urb
   let retainedLayouts: { id: number; json: string } | undefined;
   const native = nativeRasterClient();
   return { run(request) {
+    if (request.source) {
+      try {
+        validateUrbanSource(request.source);
+        if (request.runtime?.profile !== 'local' || request.kind !== 'buildingSites'
+          || request.raster || request.layouts || request.partitions) throw new Error('Retained urban reads require a local source without uploaded geometry.');
+        const { runtime: _runtime, ...input } = nativeUrbanInput(request);
+        // The handle belongs to the urban worker's session, not this engine's
+        // private raster client. A missing/stale source must remain an error.
+        return nativeJson<UrbanResponse>(request.runtime, '/urban', { ...input, session: request.source.session })
+          .catch(error => ({ id: request.id, error: String(error) }));
+      } catch (error) { return { id: request.id, error: String(error) }; }
+    }
     if (request.runtime?.profile === 'local') {
-      return native<UrbanResponse>('/urban', { ...request, runtime: request.runtime,
+      return native<UrbanResponse>('/urban', { ...nativeUrbanInput(request), runtime: request.runtime,
         ...(request.kind === 'builtCapacity' ? { scene: capacityInput(request.scene) } : {}),
-        ...(request.kind === 'quarters' ? { layoutConfig: normalizeLayoutConfig(request.layoutConfig, true) }
+        ...(request.kind === 'quarters' ? { layoutConfig: nativeLayoutConfig(normalizeLayoutConfig(request.layoutConfig, true)) }
           : { parcelConfig: normalizeParcelConfig(request.parcelConfig) }),
       }).catch(error => ({ id: request.id, error: String(error) }));
     }
@@ -124,13 +175,13 @@ export async function createUrbanEngine(runtime?: ExecutionRuntime): Promise<Urb
       const start = performance.now();
       if (request.kind === 'quarters') {
         retainedLayouts = undefined;
-        const layouts = JSON.parse(terrain.urban_quarters(request.seed, JSON.stringify(request.sites ?? []), JSON.stringify(normalizeLayoutConfig(request.layoutConfig, true)), JSON.stringify(request.roads ?? []))) as Layout[];
+        const layouts = JSON.parse(terrain.urban_quarters(request.seed, JSON.stringify(request.sites ?? []), JSON.stringify(nativeLayoutConfig(normalizeLayoutConfig(request.layoutConfig, true))), JSON.stringify(request.roads ?? []))) as Layout[];
         // Preserve the existing JS number roundtrip before Rust parses parcels.
         // Keeping native f64 layouts instead can subtly change polygon cuts.
-        retainedLayouts = { id: request.id, json: JSON.stringify(layouts) };
+        retainedLayouts = { id: request.id, json: JSON.stringify(nativeLayouts(layouts)) };
         return { id: request.id, layouts, ms: performance.now() - start };
       }
-      const layoutsJson = request.layouts ? JSON.stringify(request.layouts)
+      const layoutsJson = request.layouts ? JSON.stringify(nativeLayouts(request.layouts))
         : request.layoutsId === undefined ? '[]'
         : retainedLayouts?.id === request.layoutsId ? retainedLayouts.json : undefined;
       if (layoutsJson === undefined) throw new Error('Le plan des quartiers a changé. Régénérez les quartiers avant les parcelles.');

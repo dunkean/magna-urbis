@@ -33,17 +33,20 @@ pub(crate) struct LayoutPlan {
 
 /// Bounded burgage infill within the native row-house envelope. Separate native
 /// rectangular bodies keep roof construction exact; courts and access stay open.
+pub(crate) fn urban_frontage_infill_enabled(p: &Parameters, coverage: f64) -> bool {
+    !(!p.urban_frontage_infill
+        || p.layout != Layout::Strip
+        || coverage < 0.66
+        || p.details.iter().any(|detail| detail == "arcade"))
+}
+
 pub(crate) fn urban_frontage_infill(
     plan: &mut LayoutPlan,
     p: &Parameters,
     coverage: f64,
     seed: &str,
 ) {
-    if p.layout != Layout::Strip
-        || coverage < 0.66
-        || plan.bodies.len() != 1
-        || p.details.iter().any(|detail| detail == "arcade")
-    {
+    if !urban_frontage_infill_enabled(p, coverage) || plan.bodies.len() != 1 {
         return;
     }
     let w = p.width_m[0] - 1.25;
@@ -58,23 +61,7 @@ pub(crate) fn urban_frontage_infill(
         return;
     }
     let role = plan.bodies[0].role;
-    let mut rng = Rng::new(seed).fork("urban-burgage-infill");
-    let mut additions = vec![];
-    // A habitable side range is possible only if a real court remains beside it.
-    if w >= 4.0 && rear >= 2.2 {
-        let wing = snap((w * rng.range(0.44, 0.56)).clamp(2.2, w - 1.8));
-        additions.push(rectangle(0., 0., wing, rear));
-    }
-    // Retain at least a 1.8 m long court between front and rear ranges.
-    if coverage >= 0.84 && rear >= 4.0 && rng.chance(0.7) {
-        let depth = snap((rear * rng.range(0.4, 0.55)).clamp(2.2, rear - 1.8));
-        let used = unite(&additions);
-        let back = difference(&rectangle(0., 0., w, depth), &used);
-        if area(&back) >= 4.0 {
-            additions.push(back);
-        }
-    }
-    for surface in additions {
+    for surface in urban_frontage_infill_parts(p.width_m[0], d, coverage, seed) {
         if surface.is_empty() {
             continue;
         }
@@ -86,6 +73,89 @@ pub(crate) fn urban_frontage_infill(
         plan.diagnostics.push("Seeded urban burgage infill: native side/rear ranges inside the source envelope, retaining a court and side access; artistic adaptation of the TypeScript frontage operator.".into());
     }
 }
+
+/// Exact native additions for nominal strip width/depth, including the 1.25 m
+/// side passage. Reuses the original RNG sequence, millimetre snaps and rear
+/// difference. The returned surfaces are disjoint: sum their geometric areas
+/// for the added footprint, rather than approximating nominal rectangles.
+/// Callers must also honor `urban_frontage_infill_enabled` and the single-body
+/// strip topology; this helper alone is not a source/placement capability.
+pub(crate) fn urban_frontage_infill_parts(
+    width_m: f64,
+    depth_m: f64,
+    coverage: f64,
+    seed: &str,
+) -> Vec<Surface> {
+    let w = width_m - 1.25;
+    let rear = depth_m * 0.25;
+    let dimensions = UrbanFrontageInfillDraws::new(seed).dimensions(width_m, depth_m, coverage);
+    let mut additions = vec![];
+    if let Some(wing) = dimensions.side_width_m {
+        additions.push(rectangle(0., 0., wing, rear));
+    }
+    if let Some(depth) = dimensions.rear_depth_m {
+        let used = unite(&additions);
+        let back = difference(&rectangle(0., 0., w, depth), &used);
+        if area(&back) >= 4.0 {
+            additions.push(back);
+        }
+    }
+    additions
+}
+
+/// Both original RNG branches, drawn once. No RNG state escapes this operator:
+/// precomputing the unused branch does not change any architectural draw.
+pub(crate) struct UrbanFrontageInfillDraws {
+    side_fraction: f64,
+    rear_with_side: Option<f64>,
+    rear_without_side: Option<f64>,
+}
+
+pub(crate) struct UrbanFrontageInfillDimensions {
+    side_width_m: Option<f64>,
+    rear_depth_m: Option<f64>,
+}
+
+impl UrbanFrontageInfillDraws {
+    pub(crate) fn new(seed: &str) -> Self {
+        let mut with_side = Rng::new(seed).fork("urban-burgage-infill");
+        // Both branches start at exactly the same stream position. Clone it
+        // before the side draw instead of hashing/warming the same seed twice.
+        let mut without_side = with_side.clone();
+        let side_fraction = with_side.range(0.44, 0.56);
+        let rear_with_side = with_side.chance(0.7).then(|| with_side.range(0.4, 0.55));
+        let rear_without_side = without_side
+            .chance(0.7)
+            .then(|| without_side.range(0.4, 0.55));
+        Self { side_fraction, rear_with_side, rear_without_side }
+    }
+
+    fn dimensions(&self, width_m: f64, depth_m: f64, coverage: f64) -> UrbanFrontageInfillDimensions {
+        let w = width_m - 1.25;
+        let rear = depth_m * 0.25;
+        let side_width_m = (coverage >= 0.66 && w >= 4.0 && rear >= 2.2)
+            .then(|| snap((w * self.side_fraction).clamp(2.2, w - 1.8)));
+        let rear_fraction = if side_width_m.is_some() { self.rear_with_side } else { self.rear_without_side };
+        let rear_depth_m = if coverage >= 0.84 && rear >= 4.0 {
+            rear_fraction.map(|fraction| snap((rear * fraction).clamp(2.2, rear - 1.8)))
+        } else { None };
+        UrbanFrontageInfillDimensions { side_width_m, rear_depth_m }
+    }
+
+    /// Numeric area of the same snapped, disjoint rectangles. No Surface,
+    /// polygon boolean, layout or roof is constructed by dimension solving.
+    pub(crate) fn added_area_m2(&self, width_m: f64, depth_m: f64, coverage: f64) -> f64 {
+        let parts = self.dimensions(width_m, depth_m, coverage);
+        let side = parts.side_width_m.unwrap_or(0.0);
+        let side_area = side * snap(depth_m * 0.25);
+        let rear_area = parts.rear_depth_m.map_or(0.0, |d| (snap(width_m - 1.25) - side) * d);
+        side_area + if rear_area >= 4.0 { rear_area } else { 0.0 }
+    }
+}
+
+#[cfg(test)]
+#[path = "urban_frontage_infill_tests.rs"]
+mod urban_frontage_infill_tests;
 
 pub(crate) fn feature(
     id: &str,
@@ -170,7 +240,7 @@ fn axis_arm(s: &Surface, axis: [f64; 2]) -> RoofArm {
     }
 }
 
-fn minimum_domain(p: &Parameters) -> [f64; 2] {
+pub(crate) fn minimum_domain(p: &Parameters) -> [f64; 2] {
     let wall = p.wall_thickness_m[0] * 2.0;
     let grid = libm::ceil(libm::sqrt(p.rooms_per_body[0].max(1) as f64));
     let mut dims = [(wall + grid * 1.4).max(2.0); 2];
@@ -261,7 +331,7 @@ fn lightwells(p: &Parameters, out: &mut LayoutPlan) -> Result<(), String> {
     Ok(())
 }
 
-fn spec(s: Surface, p: &Parameters, role: Role) -> BodySpec {
+pub(crate) fn spec(s: Surface, p: &Parameters, role: Role) -> BodySpec {
     let count = p.floors[0];
     let z = match p.support.kind {
         SupportKind::Posts | SupportKind::Piers | SupportKind::Raft => p.support.height_m[0],
@@ -297,6 +367,14 @@ fn spec(s: Surface, p: &Parameters, role: Role) -> BodySpec {
         component: None,
         z,
     }
+}
+
+/// Retain the actual rectangular ranges for roofs when several ranges form a
+/// single architectural body. The occupied union is never replaced by its box.
+pub(crate) fn composed_spec(domains: &[Surface], p: &Parameters, role: Role) -> BodySpec {
+    let mut body = spec(unite(domains), p, role);
+    body.arms = arms(domains);
+    body
 }
 
 fn ring_sector(w: f64, d: f64, inner: f64, start: f64, end: f64, segments: usize) -> Surface {

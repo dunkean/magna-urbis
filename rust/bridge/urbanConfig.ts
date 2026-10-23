@@ -1,28 +1,73 @@
 export interface ProgrammeContext {
-  role: 'auto' | 'isolated-farm' | 'roadside-temple' | 'agricultural' | 'crossroads' | 'artisan' | 'riverine' | 'port' | 'capital';
+  role: 'auto' | ProgrammeIsolatedRole | 'agricultural' | 'crossroads' | 'artisan' | 'riverine' | 'port' | 'capital';
   resources: string[]; period: string; mode: 'strict' | 'inspired' | 'fantasy';
   /** Explicit navigable access, never derived from visible water. */
   navigableAccess: boolean; lore: string[];
+  /** Settlement condition (Rust `services.json` states); absent = `thriving`. */
+  state?: ProgrammeState;
+  /** Share of empty buildings, 0..1; absent or null = the state's default. */
+  decay?: number | null;
 }
+/** A single structure without a town: one intent on one unsubdivided domain. */
+export type ProgrammeIsolatedRole = 'isolated-farm' | 'roadside-temple' | 'isolated-shrine' | 'isolated-mill' | 'isolated-inn' | 'isolated-tower';
+export type ProgrammeState = 'thriving' | 'declining' | 'abandoned' | 'ruined';
 export const defaultProgrammeContext = (): ProgrammeContext => ({ role: 'auto', resources: [], period: '', mode: 'inspired', navigableAccess: false, lore: [] });
 /** Pure configuration boundary; the legacy web editor must not load Rust/WASM. */
-export interface ParcelConfig { preset: string; culture?: string; recipe: string; zone: string; density: number; params: Record<string, unknown>; operator: 'culture' | 'strips' | 'oriented' | 'compact' | 'inherited' | 'courtyard' | 'frontage' | 'compound' | 'wholeBlock' | 'garden' }
+export interface ParcelConfig { preset: string; culture?: string; recipe: string; zone: string; density: number; params: Record<string, unknown>; operator: 'culture' | 'strips' | 'oriented' | 'compact' | 'inherited' | 'courtyard' | 'frontage' | 'compound' | 'wholeBlock' | 'garden';
+  /** User edits; the layout stage reads `quarters`, the parcel stage `parcels`. */
+  overrides?: UrbanEdits }
+/** User edits of single quarters (keyed by quarter index, Rust `UrbanOverrides`)
+ * and single lots (keyed by parcel id, Rust `ParcelOverrides`). */
+export interface UrbanEdits {
+  quarters?: Record<string, QuarterOverride>;
+  parcels?: Record<string, ParcelOverride>;
+}
+/** A user-drawn polygon in world metres (outer ring, optional holes); rounded to 0.1 m by the UI. */
+export interface EditShape { outer: { x: number; y: number }[]; holes?: { x: number; y: number }[][] }
+export interface QuarterOverride {
+  culture?: string; tissue?: string; density?: number; role?: string; wealth?: number;
+  /** New outline of the quarter. The engine clips it, so the applied shape can be smaller. */
+  shape?: EditShape;
+  /** The quarter's blocks and lots are removed. The land returns to open ground; main streets stay. */
+  deleted?: boolean;
+  /** Redraw of the quarter's interior: 1, 2, 3… (absent = the original draw). */
+  salt?: number;
+}
+export interface ParcelOverride {
+  role?: string; function?: string; households?: number;
+  /** New outline of the lot, clipped to its block. Neighbours give up or take back the difference. */
+  shape?: EditShape;
+  /** 'merge': the lot is absorbed by its best neighbour (default of « Supprimer »).
+   *  'garden': the lot stays, as unbuilt open ground. */
+  deleted?: 'merge' | 'garden';
+  /** Redraw of the lot's role among admissible demands, plus its building seed. */
+  salt?: number;
+}
 export interface FootprintConfig {
   mechanism: 'auto' | 'legacy' | 'planned' | 'accessibility' | 'ribbon' | 'fusion';
   family: 'auto' | 'circle' | 'rectangle' | 'polygon' | 'compact' | 'elongated' | 'linear' | 'fan' | 'fingers' | 'dendritic' | 'lobed' | 'archipelago' | 'composite';
   budget: 'population' | 'radius'; grossDensity: number; aspect: number; orientation: number; nuclei: number; irregularity: number; anisotropy: number; separation: number; epochs: number;
   cohesion: number; satellites: number; branchDepth: number; gapSize: number;
 }
+/** `auto` or one of Rust urban::fortification::STYLES; the native resolver
+ * retains the cultural style when an explicit style does not fit the kind. */
+export const FORTIFICATION_STYLES = ['auto', 'palisade', 'gord', 'hedge', 'curtain', 'flanked', 'concentric', 'rammed-earth', 'wengcheng', 'bastioned'] as const;
+export type FortificationStyle = typeof FORTIFICATION_STYLES[number];
 export interface LayoutConfig extends Omit<ParcelConfig, 'operator'> {
   programme: ProgrammeContext;
   axisAlignment: 'regional' | 'culture'; mixCulture: string; mixMode: 'phases' | 'sectors'; mixShare: number; mixAngle: number; exitTreatment: 'legacy' | 'adaptive' | 'closed'; peripheralRoad: 'auto' | 'none' | 'partial' | 'full'; siteAdaptation: number;
-  composition: 'settlement' | 'district'; settlementForm: 'auto' | 'nucleated' | 'ribbon'; suburbs: 'auto' | 'none' | 'few' | 'many'; phases: number;
+  composition: 'settlement' | 'district'; settlementForm: 'auto' | 'nucleated' | 'ribbon' | SettlementKind; suburbs: 'auto' | 'none' | 'few' | 'many'; phases: number;
   count: number; rings: number; radius: number; radiusScale: number; placement: 'center' | 'rectangle' | 'skew' | 'notched'; monument: string;
-  fortification: 'culture' | 'none' | 'wall' | 'palisade'; maxStreetGrade: number; maxLaneGrade: number; maxStairGrade: number; allowStairs: boolean;
+  fortification: 'culture' | 'none' | 'wall' | 'palisade'; fortificationStyle: FortificationStyle;
+  maxStreetGrade: number; maxLaneGrade: number; maxStairGrade: number; allowStairs: boolean;
+  /** Site archetype from settlement placement (`harbor`, `bridge`, `hilltop`…); absent = unknown. */
+  siteArchetype?: string;
   footprint: FootprintConfig; tissue: 'culture' | 'grid' | 'organic' | 'radial' | 'terraces' | 'dendritic' | 'clusters'; accessMode: 'adaptive' | 'cultural' | 'none'; accessDepth: number; accessBudget: number;
 }
+/** Settlement kinds (Rust `urban::kinds::Kind`), from a lone building to a metropolis of wards. */
+export type SettlementKind = 'single' | 'ruin' | 'farmstead' | 'camp' | 'hamlet' | 'street-village' | 'nucleated-village' | 'market-town' | 'walled-town' | 'city' | 'metropolis';
 export const defaultFootprintConfig = (): FootprintConfig => ({ mechanism: 'auto', family: 'auto', budget: 'population', grossDensity: 0, aspect: 1.4, orientation: 0, nuclei: 3, irregularity: 0.2, anisotropy: 0.65, separation: 1.3, epochs: 3, cohesion: 0.85, satellites: 0.15, branchDepth: 0.2, gapSize: 60 });
-export const defaultLayoutConfig = (): LayoutConfig => ({ programme: defaultProgrammeContext(), axisAlignment: 'regional', mixCulture: '', mixMode: 'phases', mixShare: 0.5, mixAngle: 0, exitTreatment: 'adaptive', peripheralRoad: 'auto', siteAdaptation: 1, composition: 'settlement', settlementForm: 'auto', suburbs: 'auto', phases: 0, preset: 'culture', culture: 'site', recipe: 'auto', zone: 'auto', density: 1, count: 4, rings: 1, radius: 0, radiusScale: 1, placement: 'center', params: {}, monument: 'none', fortification: 'culture', maxStreetGrade: 0.12, maxLaneGrade: 0.18, maxStairGrade: 0.65, allowStairs: true, footprint: defaultFootprintConfig(), tissue: 'culture', accessMode: 'adaptive', accessDepth: 0, accessBudget: 4 });
+export const defaultLayoutConfig = (): LayoutConfig => ({ programme: defaultProgrammeContext(), axisAlignment: 'regional', mixCulture: '', mixMode: 'phases', mixShare: 0.5, mixAngle: 0, exitTreatment: 'adaptive', peripheralRoad: 'auto', siteAdaptation: 1, composition: 'settlement', settlementForm: 'auto', suburbs: 'auto', phases: 0, preset: 'culture', culture: 'site', recipe: 'auto', zone: 'auto', density: 1, count: 4, rings: 1, radius: 0, radiusScale: 1, placement: 'center', params: {}, monument: 'none', fortification: 'culture', fortificationStyle: 'auto', maxStreetGrade: 0.12, maxLaneGrade: 0.18, maxStairGrade: 0.65, allowStairs: true, footprint: defaultFootprintConfig(), tissue: 'culture', accessMode: 'adaptive', accessDepth: 0, accessBudget: 4 });
 export const defaultParcelConfig = (): ParcelConfig => ({ preset: 'culture', culture: 'site', recipe: 'auto', zone: 'auto', density: 1, params: {}, operator: 'culture' });
 
 /** Keep the Rust contract strict while discarding fields leaked by older UI versions. */
@@ -37,6 +82,10 @@ export function normalizeLayoutConfig(saved?: Partial<Omit<LayoutConfig, 'footpr
   const defaults = defaultLayoutConfig();
   const config = contractFields(defaults, saved as Partial<LayoutConfig>);
   config.programme = contractFields(defaultProgrammeContext(), saved?.programme);
+  // Optional fields reach Rust only when set, so older links keep their payload.
+  if (saved?.programme?.state) config.programme.state = saved.programme.state;
+  if (typeof saved?.programme?.decay === 'number') config.programme.decay = saved.programme.decay;
+  if (saved?.siteArchetype) config.siteArchetype = saved.siteArchetype;
   config.footprint = contractFields(defaults.footprint, saved?.footprint);
   // Missing controls in an existing scene retain the former geometry.
   if (saved) {
@@ -55,9 +104,13 @@ export function normalizeLayoutConfig(saved?: Partial<Omit<LayoutConfig, 'footpr
   if (legacy && saved && config.footprint.mechanism === 'legacy' && saved.exitTreatment === undefined) config.exitTreatment = 'legacy';
   if (legacy && saved && config.footprint.mechanism === 'legacy' && saved.siteAdaptation === undefined) config.siteAdaptation = 0;
   if (legacy && saved && !saved.composition) config.composition = 'district';
+  // Edits are not part of the defaults: carried through only when present.
+  if (saved?.overrides) config.overrides = saved.overrides;
   return config;
 }
 
 export function normalizeParcelConfig(saved?: Partial<ParcelConfig>): ParcelConfig {
-  return { ...contractFields(defaultParcelConfig(), saved), params: { ...saved?.params } };
+  const config: ParcelConfig = { ...contractFields(defaultParcelConfig(), saved), params: { ...saved?.params } };
+  if (saved?.overrides) config.overrides = saved.overrides;
+  return config;
 }

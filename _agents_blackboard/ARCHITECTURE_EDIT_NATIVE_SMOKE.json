@@ -1,0 +1,60 @@
+{
+  "ok": true,
+  "endpoint": "http://127.0.0.1:8794",
+  "timestamp": "2026-10-22T14:49:45.668Z",
+  "initialBuildings": 2,
+  "beforeRecipe": "EUR-MED-B01",
+  "afterRecipe": "EUR-MED-B02",
+  "stableIds": true,
+  "authoritativeSitesUnchanged": true,
+  "outsideIdentityPreserved": true,
+  "previousSceneUnchanged": true,
+  "selectedArchiveReplays": true,
+  "refusalSceneSameObject": true,
+  "refusedStyle": "missing-native-edit-smoke-variant",
+  "refusal": [
+    {
+      "attempts": 0,
+      "code": "plan_refused",
+      "id": "native-edit-0",
+      "message": "Aucune recette compatible avec ces paramètres. EUR-MED-B02: Variante inconnue missing-native-edit-smoke-variant pour EUR-MED-B02.",
+      "parcel_id": "native-edit-parcel-0"
+    }
+  ],
+  "nativeCalls": [
+    {
+      "requestIds": [
+        "native-edit-0",
+        "native-edit-1"
+      ],
+      "accepted": 2,
+      "refusals": [],
+      "elapsedMs": 23.546099999999967
+    },
+    {
+      "requestIds": [
+        "native-edit-0"
+      ],
+      "accepted": 1,
+      "refusals": [],
+      "elapsedMs": 3.262900000000002
+    },
+    {
+      "requestIds": [
+        "native-edit-0"
+      ],
+      "accepted": 0,
+      "refusals": [
+        {
+          "attempts": 0,
+          "code": "plan_refused",
+          "id": "native-edit-0",
+          "message": "Aucune recette compatible avec ces paramètres. EUR-MED-B02: Variante inconnue missing-native-edit-smoke-variant pour EUR-MED-B02.",
+          "parcel_id": "native-edit-parcel-0"
+        }
+      ],
+      "elapsedMs": 3.050799999999981
+    }
+  ],
+  "serviceStartedOrStopped": false
+}

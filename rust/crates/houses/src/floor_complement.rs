@@ -195,7 +195,7 @@ mod tests {
     }
 
     // These two witnesses depend on the pinned i_overlay=4.5.2 debug assertion.
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(all(not(target_arch = "wasm32"), debug_assertions))]
     #[test]
     #[should_panic(expected = "is_fill_top")]
     fn legacy_circulation_subtraction_panics_on_sib8_unit5_bits() {
@@ -207,7 +207,7 @@ mod tests {
         let _ = crate::geometry::difference(&remaining, &surface(fixture, "circulation_bits"));
     }
 
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(all(not(target_arch = "wasm32"), debug_assertions))]
     #[test]
     #[should_panic(expected = "is_fill_top")]
     fn legacy_occupied_intersection_panics_on_sib8_unit6_bits() {

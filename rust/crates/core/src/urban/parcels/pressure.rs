@@ -220,3 +220,35 @@ pub(super) fn apply(
     result.value["_occupationPressure"] = serde_json::json!(pressure);
     result
 }
+
+/// One pressure-adjusted range, with the same arithmetic as `apply` (without
+/// admission floors), for consumers that need a few keys and not a cloned morph.
+pub(super) fn adjusted(
+    morph: &Morph,
+    key: &str,
+    zone: &str,
+    pressure: f64,
+    planned: bool,
+    lo: f64,
+    hi: f64,
+) -> [f64; 2] {
+    let variation = if planned { 0.22 } else { 1.0 };
+    let local_pressure = match zone {
+        "core" => 0.65 + 0.35 * pressure,
+        "middle" => 0.35 + 0.65 * pressure,
+        _ => pressure,
+    };
+    let center = morph.range(key, "core");
+    let edge = morph.range(key, "edge");
+    let original = morph.range(key, zone);
+    let mut out = [0.0; 2];
+    for i in 0..2 {
+        let base = if !planned && zone != "village" && center[i] > 0.0 && edge[i] > 0.0 {
+            edge[i] + (center[i] - edge[i]) * local_pressure
+        } else {
+            original[i]
+        };
+        out[i] = base * (1.0 + variation * (lo + (hi - lo) * local_pressure - 1.0));
+    }
+    out
+}

@@ -41,6 +41,8 @@ pub(super) fn refine(layout: &mut Layout, cfg: &LayoutConfig, morph: &Morph, sur
         return;
     }
     let mut added = 0;
+    // Stair lanes only for cultures that build stairs (same rule as the plan).
+    let stairs = super::profiles::stairs_allowed(cfg, &layout.culture);
     let phase_morphs = layout
         .phases
         .iter()
@@ -191,9 +193,7 @@ pub(super) fn refine(layout: &mut Layout, cfg: &LayoutConfig, morph: &Morph, sur
                         "collective"
                     };
                     if !routing::path_clear(surface, &path, cfg.max_lane_grade) {
-                        if cfg.allow_stairs
-                            && routing::path_clear(surface, &path, cfg.max_stair_grade)
-                        {
+                        if stairs && routing::path_clear(surface, &path, cfg.max_stair_grade) {
                             role = "stairs";
                         } else {
                             continue;
@@ -380,6 +380,11 @@ pub(super) fn summarize(layout: &mut Layout, cfg: &LayoutConfig) {
             center,
             phase,
             quarters,
+            // Roles and wealth are scored later by `roles::assign`, once the
+            // programme stage knows waterfronts, heights and gates.
+            role: String::new(),
+            wealth: 0.5,
+            label: String::new(),
             tissue: if cfg.tissue == "culture" && s.family == "composite" && center > 0 {
                 "grid".into()
             } else {

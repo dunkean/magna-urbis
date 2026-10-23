@@ -93,6 +93,10 @@ pub(super) struct Fields {
     pub ds: Vec<f64>,
     pub db: Vec<f64>,
     pub hab: Vec<f64>,
+    /// Distance to standing lake water (class 2 above the ground).
+    pub dl: Vec<f64>,
+    /// Dry land whose 4-connected component never reaches the map edge.
+    pub island: Vec<bool>,
     pub sat: Vec<u32>,
     /// Dry-land height range, for the elevation preference.
     pub dry_range: (f32, f32),
@@ -153,6 +157,11 @@ impl Fields {
                 }
             })
             .collect();
+        let dl = distance(n, cell, |i| {
+            r.water[i] == 2 && r.water_level[i] > r.height[i]
+        })
+        .0;
+        let island = islands(n, &r.water);
         let mut sat = vec![0; (n + 1) * (n + 1)];
         for y in 0..n {
             let mut row = 0;
@@ -173,6 +182,8 @@ impl Fields {
             ds,
             db,
             hab,
+            dl,
+            island,
             sat,
             dry_range,
             long_grades: std::sync::OnceLock::new(),
@@ -280,6 +291,47 @@ fn deck_height(r: &Land) -> Vec<f32> {
         .collect()
 }
 
+/// Dry cells of every land mass that does not touch the map border.
+fn islands(n: usize, water: &[u8]) -> Vec<bool> {
+    let mut island = vec![false; n * n];
+    let mut seen = vec![false; n * n];
+    for start in 0..n * n {
+        if water[start] != 0 || seen[start] {
+            continue;
+        }
+        let (mut stack, mut cells, mut edge) = (vec![start], vec![], false);
+        seen[start] = true;
+        while let Some(i) = stack.pop() {
+            cells.push(i);
+            let (x, y) = (i % n, i / n);
+            edge |= x == 0 || y == 0 || x + 1 == n || y + 1 == n;
+            let mut push = |j: usize| {
+                if water[j] == 0 && !seen[j] {
+                    seen[j] = true;
+                    stack.push(j);
+                }
+            };
+            if x > 0 {
+                push(i - 1);
+            }
+            if x + 1 < n {
+                push(i + 1);
+            }
+            if y > 0 {
+                push(i - n);
+            }
+            if y + 1 < n {
+                push(i + n);
+            }
+        }
+        if !edge {
+            for i in cells {
+                island[i] = true;
+            }
+        }
+    }
+    island
+}
 fn distance(n: usize, cell: f64, mask: impl Fn(usize) -> bool) -> (Vec<f64>, Vec<usize>) {
     let mut d = vec![1e12; n * n];
     let mut source = vec![usize::MAX; n * n];

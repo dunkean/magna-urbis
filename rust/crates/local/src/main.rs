@@ -1,11 +1,15 @@
 //! Small loopback service sharing the exact native crates with the browser builds.
 //! Independent sessions retain terrain/urban layouts; rasters cross the boundary as bytes.
+mod urban_session;
+#[cfg(test)]
+mod urban_source_tests;
+
 use magna_urbis_core::{TerrainGenerator, TerrainZones, settlements, urban};
 use magna_urbis_houses::{catalogue, model::HouseConfig};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     io::{Read, Write},
     net::{SocketAddr, TcpListener, TcpStream},
     sync::{
@@ -14,6 +18,7 @@ use std::{
     },
     time::{Duration, Instant},
 };
+use urban_session::{RetainedUrban, UrbanSourceHandle};
 
 const MAX_BODY: usize = 128 * 1024 * 1024;
 const MAX_SESSIONS: usize = 8;
@@ -27,7 +32,8 @@ struct Session {
     field: Vec<f32>,
     field_exact: bool,
     settlements: Option<settlements::Terrain>,
-    layouts: Option<(u64, Vec<urban::Layout>)>,
+    layouts: Option<(u64, Arc<Vec<urban::Layout>>)>,
+    urban: RetainedUrban,
 }
 #[derive(Default)]
 struct Sessions {
@@ -35,6 +41,16 @@ struct Sessions {
     entries: HashMap<String, (u64, Arc<Mutex<Session>>)>,
 }
 impl Sessions {
+    /// A retained-source read must never recreate an evicted session.
+    fn existing(&mut self, id: &str) -> ApiResult<Arc<Mutex<Session>>> {
+        let entry = self.entries.get_mut(id).ok_or(
+            "[urban_source_missing] Retained urban session expired; regenerate it explicitly.",
+        )?;
+        self.clock += 1;
+        entry.0 = self.clock;
+        Ok(Arc::clone(&entry.1))
+    }
+
     fn get(&mut self, id: &str) -> ApiResult<Arc<Mutex<Session>>> {
         if id.is_empty() || id.len() > 128 {
             return Err("Identifiant de session invalide.".into());
@@ -298,6 +314,7 @@ fn raster_upload(body: &[u8], sessions: &Mutex<Sessions>) -> ApiResult<Reply> {
     // or silently route against a previous terrain. Release its grids before rebuilding.
     state.settlements = None;
     state.layouts = None;
+    state.urban.invalidate_terrain();
     let count = header
         .n
         .checked_mul(header.n)
@@ -338,6 +355,7 @@ fn raster_upload(body: &[u8], sessions: &Mutex<Sessions>) -> ApiResult<Reply> {
         terrain.set_urban_geometry(geometry)?;
     }
     state.settlements = Some(terrain);
+    state.urban.retain_terrain()?;
     json_reply(json!({"ok": true, "session": header.session}))
 }
 
@@ -384,11 +402,241 @@ fn settlement_reply(input: Value, state: &Session) -> ApiResult<Reply> {
     json_reply(result)
 }
 
-fn urban_reply(input: Value, state: &mut Session) -> ApiResult<Reply> {
+/// Serialize the original wire geometry once, then retain the exact decimal
+/// boundary seen by explicit callers. Drop generated geometry before reparsing;
+/// no whole-partition Value tree or duplicate JSON buffer is needed.
+fn retained_parcels_reply(
+    id: &Value,
+    session: &str,
+    layouts: Arc<Vec<urban::Layout>>,
+    partitions: Vec<urban::Partition>,
+    retained: &mut RetainedUrban,
+    started: Instant,
+) -> ApiResult<Reply> {
+    let mut body = b"{\"id\":".to_vec();
+    serde_json::to_writer(&mut body, id).map_err(|e| e.to_string())?;
+    body.extend_from_slice(b",\"partitions\":");
+    let begin = body.len();
+    serde_json::to_writer(&mut body, &partitions).map_err(|e| e.to_string())?;
+    let end = body.len();
+    drop(partitions);
+    let partitions = Arc::new(decode(&body[begin..end])?);
+    retained.retain_partitions(layouts, partitions)?;
+    let source = retained.source(session)?;
+    body.extend_from_slice(b",\"urbanSource\":");
+    serde_json::to_writer(&mut body, &source).map_err(|e| e.to_string())?;
+    body.extend_from_slice(b",\"ms\":");
+    serde_json::to_writer(&mut body, &millis(started)).map_err(|e| e.to_string())?;
+    body.push(b'}');
+    Ok(Reply {
+        kind: "application/json",
+        body,
+    })
+}
+
+fn selected_partition_indices(
+    layouts: &[urban::Layout],
+    partitions: &[urban::Partition],
+    keys: &[String],
+) -> ApiResult<Vec<usize>> {
+    let selected: HashSet<&str> = keys.iter().map(String::as_str).collect();
+    if selected.len() != keys.len() {
+        return Err("[urban_source_keys] Duplicate selected layout key.".into());
+    }
+    let known: HashSet<&str> = layouts.iter().map(|layout| layout.key.as_str()).collect();
+    if selected.iter().any(|key| !known.contains(key)) {
+        return Err("[urban_source_keys] Unknown selected layout key.".into());
+    }
+    let mut missing = selected.clone();
+    let indices = partitions
+        .iter()
+        .enumerate()
+        .filter_map(|(index, partition)| {
+            if selected.contains(partition.key.as_str()) {
+                missing.remove(partition.key.as_str());
+                Some(index)
+            } else {
+                None
+            }
+        })
+        .collect();
+    if !missing.is_empty() {
+        return Err("[urban_source_keys] Selected layout has no retained partition.".into());
+    }
+    Ok(indices)
+}
+
+fn urban_reply(input: Value, state: &mut Session, session: &str) -> ApiResult<Reply> {
+    if input["kind"] == "buildingSite" {
+        let source: UrbanSourceHandle = value(&input["source"])?;
+        let seed = input["seed"].as_str().ok_or("Graine absente.")?;
+        let culture = input
+            .get("architectureCulture")
+            .map(value::<String>)
+            .transpose()?;
+        let snapshot = state.urban.validate_source(session, &source)?;
+        let keys: Option<Vec<String>> = input.get("keys").map(value).transpose()?;
+        let selected = if let Some(keys) = keys {
+            selected_partition_indices(snapshot.layouts, snapshot.partitions, &keys)?
+        } else {
+            (0..snapshot.partitions.len()).collect()
+        };
+        let offset: usize = value(&input["offset"])?;
+        let max_bytes: usize = value(&input["maxBytes"])?;
+        let expected_id = input["expectedId"]
+            .as_str()
+            .filter(|s| !s.is_empty() && s.len() <= 1024)
+            .ok_or("[urban_site_identity] Invalid original building site ID.")?;
+        let terrain = state
+            .settlements
+            .as_ref()
+            .ok_or("Missing retained terrain for buildings")?;
+        let started = Instant::now();
+        let (placement_request, total) = state.urban.read_building_site(
+            session,
+            &source,
+            &selected,
+            seed,
+            culture.as_deref(),
+            terrain,
+            offset,
+            expected_id,
+            max_bytes,
+        )?;
+        #[derive(Serialize)]
+        #[serde(rename_all = "camelCase")]
+        struct SiteReply {
+            placement_request: Value,
+            offset: usize,
+            total: usize,
+            ms: f64,
+        }
+        return json_reply(SiteReply {
+            placement_request,
+            offset,
+            total,
+            ms: millis(started),
+        });
+    }
+    if input["kind"] == "buildingSitesBegin" {
+        let source: UrbanSourceHandle = value(&input["source"])?;
+        let seed = input["seed"].as_str().ok_or("Graine absente.")?;
+        let culture = input
+            .get("architectureCulture")
+            .map(value::<String>)
+            .transpose()?;
+        let snapshot = state.urban.validate_source(session, &source)?;
+        let keys: Option<Vec<String>> = input.get("keys").map(value).transpose()?;
+        let selected = if let Some(keys) = keys {
+            selected_partition_indices(snapshot.layouts, snapshot.partitions, &keys)?
+        } else {
+            (0..snapshot.partitions.len()).collect()
+        };
+        if state.settlements.is_none() {
+            return Err("Missing retained terrain for buildings".into());
+        }
+        return json_reply(state.urban.begin_building_sites(
+            session,
+            &source,
+            &selected,
+            seed,
+            culture.as_deref(),
+        )?);
+    }
+    if input["kind"] == "buildingSitesPage" {
+        // These values are fixed by begin. Never silently swap seed, culture or
+        // selection while continuing an occupation stream.
+        if ["seed", "architectureCulture", "keys"]
+            .iter()
+            .any(|key| input.get(key).is_some())
+        {
+            return Err("[urban_sites_query] Page query is fixed by buildingSitesBegin.".into());
+        }
+        let source: UrbanSourceHandle = value(&input["source"])?;
+        let source_id = input["sourceId"]
+            .as_str()
+            .filter(|s| !s.is_empty() && s.len() <= 128)
+            .ok_or("[urban_sites_query] Invalid building sites sourceId.")?;
+        let offset: usize = value(&input["offset"])?;
+        let limit: usize = value(&input["limit"])?;
+        let max_bytes: usize = value(&input["maxBytes"])?;
+        let terrain = state
+            .settlements
+            .as_ref()
+            .ok_or("Missing retained terrain for buildings")?;
+        let started = Instant::now();
+        let page = state.urban.page_building_sites(
+            session, &source, source_id, terrain, offset, limit, max_bytes,
+        )?;
+        #[derive(Serialize)]
+        #[serde(rename_all = "camelCase")]
+        struct PageReply {
+            placement_requests: Vec<Value>,
+            offset: usize,
+            next: usize,
+            total: usize,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            required_bytes: Option<usize>,
+            ms: f64,
+        }
+        return json_reply(PageReply {
+            placement_requests: page.requests,
+            offset: page.offset,
+            next: page.next,
+            total: page.total,
+            required_bytes: page.required_bytes,
+            ms: millis(started),
+        });
+    }
+    if input["kind"] == "displayBuffers" {
+        let source: UrbanSourceHandle = value(&input["source"])?;
+        let snapshot = state.urban.validate_source(session, &source)?;
+        let ids = input
+            .get("ids")
+            .map(value::<bool>)
+            .transpose()?
+            .unwrap_or(false);
+        let keys: Option<Vec<String>> = input.get("keys").map(value).transpose()?;
+        let (layouts, partitions): (Vec<&urban::Layout>, Vec<&urban::Partition>) =
+            if let Some(keys) = keys {
+                let indices =
+                    selected_partition_indices(snapshot.layouts, snapshot.partitions, &keys)?;
+                let selected: HashSet<&str> = keys.iter().map(String::as_str).collect();
+                (
+                    snapshot
+                        .layouts
+                        .iter()
+                        .filter(|layout| selected.contains(layout.key.as_str()))
+                        .collect(),
+                    indices
+                        .into_iter()
+                        .map(|index| &snapshot.partitions[index])
+                        .collect(),
+                )
+            } else {
+                (
+                    snapshot.layouts.iter().collect(),
+                    snapshot.partitions.iter().collect(),
+                )
+            };
+        return Ok(Reply {
+            kind: "application/octet-stream",
+            body: urban::display::display_buffers_refs(&layouts, &partitions, ids),
+        });
+    }
+    // Invalidate before parsing generation arguments, so a failed replacement
+    // cannot leave a previously issued handle silently pointing at old data.
+    match input["kind"].as_str() {
+        Some("quarters") => {
+            state.layouts = None;
+            state.urban.invalidate_layouts();
+        }
+        Some("parcels" | "programme" | "builtCapacity") => state.urban.invalidate_partitions(),
+        _ => {}
+    }
     let seed = input["seed"].as_str().ok_or("Graine absente.")?;
     let started = Instant::now();
     if input["kind"] == "quarters" {
-        state.layouts = None;
         let terrain = state
             .settlements
             .as_ref()
@@ -408,7 +656,10 @@ fn urban_reply(input: Value, state: &mut Session) -> ApiResult<Reply> {
         let result = json!({"id": input["id"], "layouts": layouts, "ms": millis(started)});
         // Reparse serialized decimal coordinates, as the WASM parcel boundary does.
         // Deserializing Value directly retains native f64 bits and can change cuts.
-        let retained = decode(&serde_json::to_vec(&result["layouts"]).map_err(|e| e.to_string())?)?;
+        let retained = Arc::new(decode(
+            &serde_json::to_vec(&result["layouts"]).map_err(|e| e.to_string())?,
+        )?);
+        state.urban.retain_layouts(Arc::clone(&retained))?;
         state.layouts = Some((input["id"].as_u64().ok_or("ID invalide.")?, retained));
         json_reply(result)
     } else if input["kind"] == "parcels" {
@@ -416,35 +667,78 @@ fn urban_reply(input: Value, state: &mut Session) -> ApiResult<Reply> {
             return Err("Générez le terrain avant les quartiers.".into());
         }
         let explicit: Option<Vec<urban::Layout>> = input.get("layouts").map(value).transpose()?;
-        let empty = Vec::new();
-        let layouts = match explicit.as_ref() {
-            Some(layouts) => layouts,
-            None if input.get("layoutsId").is_none() => &empty,
-            None => {
+        let layouts = match explicit {
+            Some(layouts) => Arc::new(layouts),
+            None if input.get("layoutsId").is_none() => Arc::new(Vec::new()),
+            None => Arc::clone(
                 &state
                     .layouts
                     .as_ref()
                     .filter(|(id, _)| Some(*id) == input["layoutsId"].as_u64())
                     .ok_or("Le plan a changé. Régénérez les quartiers avant les parcelles.")?
-                    .1
-            }
+                    .1,
+            ),
         };
         let config: urban::ParcelConfig = value(&input["parcelConfig"])?;
-        let partitions = urban::generate_parcels(seed, layouts, &config)?;
-        json_reply(json!({"id": input["id"], "partitions": partitions, "ms": millis(started)}))
+        let partitions = urban::generate_parcels(seed, &layouts, &config)?;
+        retained_parcels_reply(
+            &input["id"],
+            session,
+            layouts,
+            partitions,
+            &mut state.urban,
+            started,
+        )
     } else if input["kind"] == "buildingSites" {
-        let layouts: Vec<urban::Layout> = value(&input["layouts"])?;
-        let partitions: Vec<urban::Partition> = value(&input["partitions"])?;
         let terrain = state
             .settlements
             .as_ref()
             .ok_or("Missing retained terrain for buildings")?;
-        let output = terrain.urban_building_sites_with_culture(
-            seed,
-            &layouts,
-            &partitions,
-            input["architectureCulture"].as_str(),
-        )?;
+        let culture = input["architectureCulture"].as_str();
+        let output = if let Some(source) = input.get("source") {
+            let source: UrbanSourceHandle = value(source)?;
+            let snapshot = state.urban.validate_source(session, &source)?;
+            if let Some(keys) = input.get("keys") {
+                let keys: Vec<String> = value(keys)?;
+                let indices =
+                    selected_partition_indices(snapshot.layouts, snapshot.partitions, &keys)?;
+                if indices.len() == snapshot.partitions.len() {
+                    terrain.urban_building_sites_with_culture(
+                        seed,
+                        snapshot.layouts,
+                        snapshot.partitions,
+                        culture,
+                    )?
+                } else {
+                    let mut output = Vec::new();
+                    // Native sites are independently derived per partition and site
+                    // identity. Iterate the retained order, never the caller's keys.
+                    for index in indices {
+                        output.extend(terrain.urban_building_sites_with_culture(
+                            seed,
+                            snapshot.layouts,
+                            std::slice::from_ref(&snapshot.partitions[index]),
+                            culture,
+                        )?);
+                    }
+                    output
+                }
+            } else {
+                terrain.urban_building_sites_with_culture(
+                    seed,
+                    snapshot.layouts,
+                    snapshot.partitions,
+                    culture,
+                )?
+            }
+        } else {
+            if input.get("keys").is_some() {
+                return Err("[urban_source_keys] Selected keys require a retained source.".into());
+            }
+            let layouts: Vec<urban::Layout> = value(&input["layouts"])?;
+            let partitions: Vec<urban::Partition> = value(&input["partitions"])?;
+            terrain.urban_building_sites_with_culture(seed, &layouts, &partitions, culture)?
+        };
         json_reply(json!({"id":input["id"],"placementRequests":output,"ms":millis(started)}))
     } else if input["kind"] == "builtCapacity" {
         let partitions: Vec<urban::Partition> = value(&input["partitions"])?;
@@ -477,6 +771,20 @@ fn houses_reply(path: &str, body: &[u8]) -> ApiResult<Reply> {
                 serde_json::to_value(magna_urbis_houses::placement::place_batch(input)?)
                     .map_err(|e| e.to_string())
             }
+            "/houses/plans" => {
+                let input = decode(body)?;
+                serde_json::to_value(magna_urbis_houses::plans::plan_batch(input)?)
+                    .map_err(|e| e.to_string())
+            }
+            "/houses/realize-plan" => {
+                let input = decode(body)?;
+                serde_json::to_value(magna_urbis_houses::plans::realize_plan(input)?)
+                    .map_err(|e| e.to_string())
+            }
+            "/houses/style-index" => {
+                serde_json::to_value(magna_urbis_houses::style_index::style_index()?)
+                    .map_err(|e| e.to_string())
+            }
             "/houses/profiles" => {
                 serde_json::to_value(magna_urbis_houses::placement::admissibility_profiles()?)
                     .map_err(|e| e.to_string())
@@ -507,8 +815,8 @@ fn dispatch(path: &str, body: &[u8], sessions: &Mutex<Sessions>) -> ApiResult<Re
     if path == "/status" {
         return json_reply(
             json!({"ok": true, "service": "magna-urbis-local", "backend": "rust-native", "version": 1,
-                "capabilities": ["urban.programme", "urban.building-sites", "urban.built-capacity", "urban.architecture-culture",
-                    "houses.placement", "houses.profiles", "houses.enrich", "houses.config-template", "houses.workshop-template", "houses.parcel-fit"]}),
+                "capabilities": ["urban.programme", "urban.building-sites", "urban.building-site-pages", "urban.building-site-read", "urban.built-capacity", "urban.architecture-culture", "urban.retained-source", "urban.display-buffers",
+                    "houses.placement", "houses.profiles", "houses.enrich", "houses.config-template", "houses.workshop-template", "houses.parcel-fit", "houses.compact-plans", "houses.style-index", "houses.native-minimum-candidates-v1", "houses.functional-choices-v1"]}),
         );
     }
     if path == "/raster" {
@@ -518,24 +826,74 @@ fn dispatch(path: &str, body: &[u8], sessions: &Mutex<Sessions>) -> ApiResult<Re
         return houses_reply(path, body);
     }
     let input: Value = decode(body)?;
-    let id = input["session"].as_str().ok_or("Session absente.")?;
+    let source = input
+        .get("source")
+        .map(value::<UrbanSourceHandle>)
+        .transpose()?;
+    if path == "/urban"
+        && matches!(
+            input["kind"].as_str(),
+            Some("displayBuffers" | "buildingSitesBegin" | "buildingSitesPage" | "buildingSite")
+        )
+        && source.is_none()
+    {
+        return Err("[urban_source_invalid] This urban read requires a retained source.".into());
+    }
+    let id = if let Some(source) = source.as_ref() {
+        source.validate_shape()?;
+        if path != "/urban"
+            || !matches!(
+                input["kind"].as_str(),
+                Some(
+                    "buildingSites"
+                        | "displayBuffers"
+                        | "buildingSitesBegin"
+                        | "buildingSitesPage"
+                        | "buildingSite"
+                )
+            )
+        {
+            return Err("[urban_source_invalid] Unsupported retained urban read kind.".into());
+        }
+        if ["layouts", "partitions", "raster", "layoutsId"]
+            .iter()
+            .any(|key| input.get(key).is_some())
+        {
+            return Err(
+                "[urban_source_invalid] Use either a retained source or explicit geometry.".into(),
+            );
+        }
+        if input
+            .get("session")
+            .is_some_and(|session| session.as_str() != Some(source.session.as_str()))
+        {
+            return Err("[urban_source_invalid] Session does not match retained source.".into());
+        }
+        source.session.clone()
+    } else {
+        input["session"].as_str().ok_or("Session absente.")?.into()
+    };
     if path == "/release" {
         sessions
             .lock()
             .map_err(|_| "Sessions indisponibles.")?
             .entries
-            .remove(id);
+            .remove(&id);
         return json_reply(json!({"ok": true}));
     }
-    let session = sessions
-        .lock()
-        .map_err(|_| "Sessions indisponibles.")?
-        .get(id)?;
+    let session = {
+        let mut sessions = sessions.lock().map_err(|_| "Sessions indisponibles.")?;
+        if source.is_some() {
+            sessions.existing(&id)?
+        } else {
+            sessions.get(&id)?
+        }
+    };
     let mut state = session.lock().map_err(|_| "Session indisponible.")?;
     match path {
         "/terrain" => terrain_reply(value(&input)?, &mut state),
         "/settlements" => settlement_reply(input, &state),
-        "/urban" => urban_reply(input, &mut state),
+        "/urban" => urban_reply(input, &mut state, &id),
         _ => Err("Point d’entrée local inconnu.".into()),
     }
 }

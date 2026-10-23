@@ -345,10 +345,49 @@ fn cultural_spines(
         .map(|v| v.1)
         .filter(|&p| g::contains(shape, p))
         .unwrap_or(center);
+    let listed = |k: &str| {
+        m.value["streets"]
+            .as_array()
+            .is_some_and(|a| a.iter().any(|v| v.as_str() == Some(k)))
+    };
     let diameters = if radial {
         cfg.count.div_ceil(2).clamp(2, 8)
     } else {
         2
+    };
+    // Gate-to-gate spines (souk, bazaar) wander: two lateral sine waypoints
+    // per arm, scaled by the cultural `spineAmp`, still routed on dry, graded land.
+    let amplitude = if listed("gateToGate") {
+        m.number("spineAmp") * (radius / 150.0).clamp(1.0, 4.0)
+    } else {
+        0.0
+    };
+    let wander = |from: Point, to: Point, planner: &mut routing::RoutePlanner<'_>, sign: f64| {
+        let mut stops = vec![from];
+        if amplitude > 0.0 {
+            let (dx, dy) = (to.x - from.x, to.y - from.y);
+            let l = dx.hypot(dy).max(1e-6);
+            for (t, phase) in [(1.0 / 3.0, 1.0), (2.0 / 3.0, -0.6)] {
+                let p = Point {
+                    x: from.x + dx * t - dy / l * amplitude * phase * sign,
+                    y: from.y + dy * t + dx / l * amplitude * phase * sign,
+                };
+                if g::contains(shape, p) {
+                    stops.push(p);
+                }
+            }
+        }
+        stops.push(to);
+        let mut path = vec![from];
+        for w in stops.windows(2) {
+            path.extend(
+                planner
+                    .route(w[0], w[1], cfg.max_street_grade)?
+                    .into_iter()
+                    .skip(1),
+            );
+        }
+        Some(path)
     };
     for i in 0..diameters {
         let bearing = angle
@@ -422,18 +461,17 @@ fn cultural_spines(
                 }
             }
         }
+        let sign = if i % 2 == 0 { 1.0 } else { -1.0 };
         let path = if old_a {
-            planner.route(nucleus, b, cfg.max_street_grade)
+            wander(nucleus, b, planner, sign)
         } else if old_b {
-            planner.route(a, nucleus, cfg.max_street_grade)
+            wander(a, nucleus, planner, sign)
         } else {
-            planner
-                .route(a, nucleus, cfg.max_street_grade)
-                .and_then(|mut path| {
-                    let tail = planner.route(nucleus, b, cfg.max_street_grade)?;
-                    path.extend(tail.into_iter().skip(1));
-                    Some(path)
-                })
+            wander(a, nucleus, planner, sign).and_then(|mut path| {
+                let tail = wander(nucleus, b, planner, -sign)?;
+                path.extend(tail.into_iter().skip(1));
+                Some(path)
+            })
         };
         let Some(path) = path else {
             continue;
@@ -755,7 +793,7 @@ pub(super) fn generate_domain(
         );
         split_joined_roads(&mut regions, &streets);
     }
-    let desired = (cfg.count * cfg.rings).min(64);
+    let desired = (cfg.count * cfg.rings).min(256);
     let mut attempts = 0;
     let mut rejected = vec![];
     while regions.len() < desired && attempts < desired * 5 {
@@ -771,7 +809,14 @@ pub(super) fn generate_domain(
         let shape = &regions[index];
         let center = g::interior_point(shape);
         let mut selected = None;
-        let local_angle = if cfg.axis_alignment == "regional"
+        // A planned grid divides its quarters along its own lattice: one town
+        // orientation and ward lines at the culture's spacing through the centre,
+        // straight wherever the slope allows, so the quarter streets are the
+        // lines the blocks continue and junctions are crossroads.
+        let lattice = pattern == "grid";
+        let local_angle = if lattice {
+            angle
+        } else if cfg.axis_alignment == "regional"
             && !orientation_override
             && let Some(regional) = regional_axis(center, radius * 1.5, roads)
         {
@@ -799,17 +844,49 @@ pub(super) fn generate_domain(
         } else {
             angle
         };
+        let spacing = m.pair("gridSpacing");
+        let mut cuts = vec![];
         for turn in [0.0, PI * 0.5, PI * 0.25, -PI * 0.25] {
             if rect && turn.abs() == PI * 0.25 {
                 continue;
             }
-            let Some((a, b)) = chord(shape, center, local_angle + turn) else {
+            let heading = local_angle + turn;
+            let sp = spacing[usize::from(turn != 0.0)];
+            if lattice && sp > 0.0 {
+                let n = Point {
+                    x: -heading.sin(),
+                    y: heading.cos(),
+                };
+                let offset = (center.x - c.x) * n.x + (center.y - c.y) * n.y;
+                let k = (offset / sp).round();
+                for line in [k, k - 1.0, k + 1.0] {
+                    let shift = line * sp - offset;
+                    cuts.push((
+                        heading,
+                        Point {
+                            x: center.x + n.x * shift,
+                            y: center.y + n.y * shift,
+                        },
+                    ));
+                }
+            } else {
+                cuts.push((heading, center));
+            }
+        }
+        for (heading, through) in cuts {
+            let Some((a, b)) = chord(shape, through, heading) else {
                 continue;
             };
             let inset = (1e-7 / dist(a, b).max(0.1)).min(0.1);
             let start = point(a, b, inset);
             let end = point(b, a, inset);
-            let Some(path) = planner.route(start, end, cfg.max_street_grade) else {
+            let straight =
+                lattice && routing::path_clear(surface, &[start, end], cfg.max_street_grade);
+            let Some(path) = (if straight {
+                Some(vec![start, end])
+            } else {
+                planner.route(start, end, cfg.max_street_grade)
+            }) else {
                 continue;
             };
             if !inside_path(shape, &path) {
@@ -858,6 +935,14 @@ pub(super) fn generate_domain(
     }
     if profile.waterfront {
         add_quay(&regions, &mut streets, surface, cfg, m, &mut rng);
+        // A town whose programme has quay services (warehouse, emporium,
+        // fish market) gets a landing row behind its quays.
+        if super::roles::services(culture, site.population, "auto")
+            .iter()
+            .any(|n| n.entry.site == "quay")
+        {
+            add_landing_rows(&regions, &mut streets, roads, surface, cfg, m, culture);
+        }
     }
     let mut enclosures = vec![];
     if closed {
@@ -892,6 +977,8 @@ pub(super) fn generate_domain(
                 path,
                 kind: fortified.into(),
                 gates,
+                towers: vec![],
+                ..Default::default()
             });
         }
     }
@@ -940,14 +1027,20 @@ fn add_quay(
     rng: &mut Rng,
 ) {
     let offset = (surface.width / surface.n as f64 * 0.1).clamp(3.0, 8.0);
-    let mut candidates = vec![];
+    let mut candidates: Vec<(f64, Vec<Point>, Point, Point)> = vec![];
     for s in regions {
-        for (&a, &b) in s
-            .outer
-            .iter()
-            .zip(s.outer.iter().cycle().skip(1))
-            .take(s.outer.len())
-        {
+        let first_candidate = candidates.len();
+        // The coast is commonly tessellated into sub-metre edges. Its vertex
+        // spacing must not determine whether a usable quay is long enough.
+        // Straighten only within < 1/4 of the landward setback; every resulting
+        // complete path still passes the dry-ground and grade checks below.
+        let mut outline = s.outer.clone();
+        if let Some(&first) = outline.first() {
+            outline.push(first);
+        }
+        let shoreline = g::simplify(&outline, offset * 0.25, |_| false);
+        for edge in shoreline.windows(2) {
+            let (a, b) = (edge[0], edge[1]);
             let l = dist(a, b);
             if l < 10.0 {
                 continue;
@@ -982,13 +1075,61 @@ fn add_quay(
                     && d < 80.0
                     && routing::segment_clear(surface, p, q, cfg.max_street_grade)
                 {
+                    // Adjacent usable reaches form one quay platform. Do not
+                    // rank tiny contour segments independently and leave gaps
+                    // merely because the contour changed direction slightly.
+                    if candidates.len() > first_candidate {
+                        let previous = candidates.last_mut().unwrap();
+                        let tail = &previous.1[previous.1.len() - 2..];
+                        let turn = ((tail[1].x - tail[0].x) * (path[1].x - path[0].x)
+                            + (tail[1].y - tail[0].y) * (path[1].y - path[0].y))
+                            / (dist(tail[0], tail[1]) * l).max(1e-9);
+                        let gap = dist(tail[1], path[0]);
+                        if gap <= offset * 2.0
+                            && turn >= 0.707
+                            && routing::segment_clear(
+                                surface,
+                                tail[1],
+                                path[0],
+                                cfg.max_street_grade.min(0.04),
+                            )
+                        {
+                            let length =
+                                previous.0 * (1.0 + dist(previous.2, previous.3) * 0.02) + gap + l;
+                            if gap > 1e-5 {
+                                previous.1.push(path[0]);
+                            }
+                            previous.1.push(path[1]);
+                            if d < dist(previous.2, previous.3) {
+                                previous.2 = p;
+                                previous.3 = q;
+                            }
+                            previous.0 = length / (1.0 + dist(previous.2, previous.3) * 0.02);
+                            continue;
+                        }
+                    }
                     candidates.push((l / (1.0 + d * 0.02), path, p, q));
                 }
             }
         }
     }
     candidates.sort_by(|a, b| b.0.total_cmp(&a.0));
-    for (_, path, p, q) in candidates.into_iter().take(4) {
+    let mut accepted = 0;
+    for (_, path, p, q) in candidates.into_iter().take(12) {
+        // Keep room for the contour simplification error on the seaward side.
+        // The whole platform, including inner joins, must stay on dry land;
+        // a dry centreline alone is insufficient on an irregular shore.
+        let preferred = m.width(1, rng).max(4.0).min(offset * 1.5);
+        let Some(width) = [preferred, 4.0].into_iter().find(|&width| {
+            g::ribbon(&path, &vec![width; path.len()])
+                .iter()
+                .all(|ribbon| {
+                    let dry_area: f64 = g::dry_clip(&surface, ribbon).iter().map(g::area).sum();
+                    g::area(ribbon) - dry_area <= 1e-4
+                })
+        }) else {
+            continue;
+        };
         if dist(p, q) > 1.0 {
             streets.push(Street {
                 path: vec![p, q],
@@ -997,19 +1138,436 @@ fn add_quay(
                 role: "street".into(),
             });
         }
-        let width = m.width(1, rng).max(4.0).min(offset * 1.8);
         streets.push(Street {
             widths: vec![width; path.len()],
             path,
             rank: 1,
             role: "quay".into(),
         });
+        accepted += 1;
+        if accepted == 4 {
+            break;
+        }
+    }
+}
+
+/// Landing row behind each quay: a service lane at warehouse depth, closed on
+/// a neighbouring town street or else on the quay ends, so the quay-side strip becomes its own block instead of
+/// part of a large coastal block that one warehouse would absorb whole (the
+/// programme refuses blocks over four times a facility). The row is sized by
+/// the culture's own warehouse admission (frontage x depth of its native
+/// witness) and certified before the lane is kept: simple, dry, inside its
+/// quarter with usable land left behind it, lane within lane grade and the
+/// fall from quay to lane within the admission slope. Otherwise nothing is
+/// added and the quay keeps its coastal block.
+fn add_landing_rows(
+    regions: &[Shape],
+    streets: &mut Vec<Street>,
+    roads: &[Street],
+    surface: Surface<'_>,
+    cfg: &LayoutConfig,
+    m: &Morph,
+    culture: &str,
+) {
+    const LANE: f64 = 4.0;
+    let Some(profile) = super::culture::contextual_mapping(
+        culture,
+        &cfg.programme.period,
+        "middle",
+        m.text("plotOp"),
+        "warehouse",
+    )
+    .map(|c| c.admissibility) else {
+        return;
+    };
+    let (short, long) = (
+        profile.min_frontage.min(profile.min_depth).max(6.0),
+        profile.min_frontage.max(profile.min_depth).max(6.0),
+    );
+    let normal = |a: Point, b: Point| {
+        let l = dist(a, b).max(1e-9);
+        Point {
+            x: -(b.y - a.y) / l,
+            y: (b.x - a.x) / l,
+        }
+    };
+    // Quays of one quarter along one shore form one row: consecutive
+    // reaches (same heading, gap < one witness) chained in shore order.
+    let mut quays: Vec<(usize, Vec<Point>, f64)> = streets
+        .iter()
+        .filter(|s| s.role == "quay" && s.path.len() >= 2)
+        .filter_map(|s| {
+            let mid = point(s.path[0], s.path[1], 0.5);
+            let region = regions.iter().position(|r| g::contains(r, mid))?;
+            Some((
+                region,
+                s.path.clone(),
+                s.widths.iter().copied().fold(0.0, f64::max),
+            ))
+        })
+        .collect();
+    let mut chains: Vec<(usize, Vec<Point>, f64)> = vec![];
+    quays.sort_by_key(|q| q.0);
+    for region in quays
+        .iter()
+        .map(|q| q.0)
+        .collect::<std::collections::BTreeSet<_>>()
+    {
+        let mut own: Vec<(Vec<Point>, f64)> = quays
+            .iter()
+            .filter(|q| q.0 == region)
+            .map(|q| (q.1.clone(), q.2))
+            .collect();
+        let (a, b) = (own[0].0[0], *own[0].0.last().unwrap());
+        let l = dist(a, b).max(1e-9);
+        let axis = Point {
+            x: (b.x - a.x) / l,
+            y: (b.y - a.y) / l,
+        };
+        let along = |p: Point| p.x * axis.x + p.y * axis.y;
+        for (path, _) in &mut own {
+            if along(*path.last().unwrap()) < along(path[0]) {
+                path.reverse();
+            }
+        }
+        own.sort_by(|x, y| along(x.0[0]).total_cmp(&along(y.0[0])));
+        for (path, width) in own {
+            let heading = |p: &[Point]| {
+                let (a, b) = (p[0], p[p.len() - 1]);
+                let l = dist(a, b).max(1e-9);
+                Point {
+                    x: (b.x - a.x) / l,
+                    y: (b.y - a.y) / l,
+                }
+            };
+            if let Some(last) = chains.last_mut().filter(|c| {
+                c.0 == region && dist(*c.1.last().unwrap(), path[0]) < short && {
+                    let (h, k) = (heading(&c.1), heading(&path));
+                    h.x * k.x + h.y * k.y >= 0.8
+                }
+            }) {
+                last.1.extend(path);
+                last.2 = last.2.max(width);
+            } else {
+                chains.push((region, path, width));
+            }
+        }
+    }
+    for (region, path, width) in chains {
+        let region = &regions[region];
+        let length: f64 = path.windows(2).map(|w| dist(w[0], w[1])).sum();
+        // Clear land between the quay and lane ribbons holds the witness,
+        // with a tenth spare for a shore that is not parallel to the lane.
+        let depth = long * 1.1 + (width + LANE) * 0.5 + 1.0;
+        if length < short + LANE + 1.0 {
+            continue;
+        }
+        let mid = point(path[0], path[1], 0.5);
+        let (first, last) = (path[0], path[path.len() - 1]);
+        let chord = normal(first, last);
+        let n0 = normal(path[0], path[1]);
+        let inland = |side: f64| {
+            let p = Point {
+                x: mid.x + n0.x * side * depth * 0.5,
+                y: mid.y + n0.y * side * depth * 0.5,
+            };
+            g::contains(region, p) && !surface.wet(p)
+        };
+        let side = if inland(1.0) {
+            1.0
+        } else if inland(-1.0) {
+            -1.0
+        } else {
+            continue;
+        };
+        // Mitred parallel of the quay axis (quay reaches turn by < 45°), or
+        // a straight lane parallel to the quay's chord on a curved reach.
+        let parallel = |d: f64, straight: bool| -> Vec<Point> {
+            if straight {
+                return [first, last]
+                    .iter()
+                    .map(|p| Point {
+                        x: p.x + chord.x * side * d,
+                        y: p.y + chord.y * side * d,
+                    })
+                    .collect();
+            }
+            (0..path.len())
+                .map(|i| {
+                    let a = normal(path[i.saturating_sub(1)], path[i.max(1)]);
+                    let b = if i + 1 < path.len() {
+                        normal(path[i], path[i + 1])
+                    } else {
+                        a
+                    };
+                    let (x, y) = (a.x + b.x, a.y + b.y);
+                    let l = x.hypot(y).max(1e-9);
+                    let n = Point { x: x / l, y: y / l };
+                    let mitre = (n.x * a.x + n.y * a.y).max(0.7);
+                    Point {
+                        x: path[i].x + n.x * side * d / mitre,
+                        y: path[i].y + n.y * side * d / mitre,
+                    }
+                })
+                .collect()
+        };
+        let fall = profile.max_slope.min(cfg.max_street_grade);
+        let grade = cfg.max_lane_grade.max(cfg.max_street_grade);
+        let on_quay = |p: Point| path.windows(2).any(|w| g::distance(p, w[0], w[1]).0 < 1e-6);
+        let others: Vec<Street> = streets
+            .iter()
+            .chain(roads)
+            .filter(|s| s.role != "quay" && !(s.path.len() == 2 && on_quay(s.path[0])))
+            .cloned()
+            .collect();
+        // Each lane end returns to its quay end (a leg); where the leg would
+        // leave the quarter (a street bounds it there) it closes on that
+        // street instead. One leg at least keeps the quay on the network.
+        let close = |b: Point, quay_end: Point| {
+            if inside_path(region, &[quay_end, b]) {
+                return Some((quay_end, true));
+            }
+            match nearest(b, &others) {
+                Some((d, q, _))
+                    if d > 0.5
+                        && d < depth * 0.6
+                        && routing::segment_clear(surface, b, q, grade) =>
+                {
+                    Some((q, false))
+                }
+                _ => None,
+            }
+        };
+        for straight in [false, true] {
+            let back = parallel(depth, straight);
+            let (b0, b1) = (back[0], back[back.len() - 1]);
+            let (Some((start, start_leg)), Some((end, end_leg))) =
+                (close(b0, first), close(b1, last))
+            else {
+                continue;
+            };
+            let mut lane = vec![start];
+            lane.extend(back.iter().copied());
+            lane.push(end);
+            let mut ring = path.clone();
+            ring.extend(back.iter().rev().copied());
+            let strip = Shape {
+                outer: ring,
+                holes: vec![],
+            };
+            let a = g::area(&strip);
+            let certified = g::simple(&strip)
+                && a >= length * depth * 0.7
+                && inside_path(region, &back)
+                && (start_leg || end_leg)
+                && inside_path(region, &parallel(depth * 1.6, straight))
+                && routing::path_clear(surface, &lane, grade)
+                && path.iter().chain(&back).all(|&p| {
+                    (surface.height_at(p) - surface.height_at(mid)).abs() <= fall * depth
+                })
+                && g::dry_clip(&surface, &strip)
+                    .iter()
+                    .map(g::area)
+                    .sum::<f64>()
+                    >= a * 0.98;
+            if !certified {
+                continue;
+            }
+            // The quay's landing street now starts from the lane, so the
+            // strip stays one block; a landing that never reaches the lane
+            // (a town street inside the strip) leaves the quay without a row.
+            let links: Vec<usize> = (0..streets.len())
+                .filter(|&i| {
+                    let s = &streets[i];
+                    s.role == "street" && s.path.len() == 2 && on_quay(s.path[0])
+                })
+                .collect();
+            let mut joins = vec![];
+            for &link in &links {
+                let (p, q) = (streets[link].path[0], streets[link].path[1]);
+                let hit = lane
+                    .windows(2)
+                    .enumerate()
+                    .filter_map(|(k, w)| g::segment_hit(p, q, w[0], w[1]).map(|(t, x)| (k, t, x)))
+                    .filter(|&(_, t, _)| t > 1e-6)
+                    .min_by(|a, b| a.1.total_cmp(&b.1));
+                match hit {
+                    Some((k, _, x)) => joins.push((link, k, x)),
+                    None => break,
+                }
+            }
+            if joins.len() < links.len() {
+                break;
+            }
+            // Insert the joints from the lane's far end so indices hold.
+            joins.sort_by(|a, b| {
+                b.1.cmp(&a.1)
+                    .then(dist(lane[b.1], b.2).total_cmp(&dist(lane[a.1], a.2)))
+            });
+            for &(_, k, x) in &joins {
+                lane.insert(k + 1, x);
+            }
+            joins.sort_by(|a, b| b.0.cmp(&a.0));
+            for (link, _, x) in joins {
+                let q = streets[link].path[1];
+                if dist(x, q) > 1.0 {
+                    streets[link].path = vec![x, q];
+                } else {
+                    streets.remove(link);
+                }
+            }
+            // A row lane steeper than street grade is a lane, as in quarters.
+            let street = routing::path_clear(surface, &lane, cfg.max_street_grade);
+            streets.push(Street {
+                widths: vec![LANE; lane.len()],
+                path: lane,
+                rank: if street { 2 } else { 3 },
+                role: if street { "street" } else { "lane" }.into(),
+            });
+            break;
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn tessellated_shoreline_keeps_a_connected_dry_quay() {
+        let n = 64;
+        let height = vec![0.; n * n];
+        let water: Vec<u8> = (0..n * n).map(|i| u8::from(i % n < 32)).collect();
+        let surface = Surface {
+            geometry: None,
+            width: 256.,
+            n,
+            height: &height,
+            water: &water,
+        };
+        let shore = |x| {
+            let mut outer = vec![
+                Point { x, y: 20. },
+                Point { x: 200., y: 20. },
+                Point { x: 200., y: 220. },
+            ];
+            // The real coast is straight but its stored contour has 2 m edges.
+            outer.extend((0..=100).map(|i| Point {
+                x,
+                y: 220. - 2. * i as f64,
+            }));
+            g::normalized(Shape {
+                outer,
+                holes: vec![],
+            })
+        };
+        let road = Street {
+            path: vec![Point { x: 160., y: 30. }, Point { x: 160., y: 210. }],
+            widths: vec![5.; 2],
+            rank: 1,
+            role: "street".into(),
+        };
+        let cfg = LayoutConfig::default();
+        let morph = Morph {
+            value: serde_json::json!({}),
+        };
+        let mut streets = vec![road.clone()];
+        add_quay(
+            &[shore(128.)],
+            &mut streets,
+            surface,
+            &cfg,
+            &morph,
+            &mut Rng::new("quay"),
+        );
+        let quays: Vec<_> = streets.iter().filter(|s| s.role == "quay").collect();
+        assert_eq!(quays.len(), 1);
+        assert!(dist(quays[0].path[0], *quays[0].path.last().unwrap()) > 190.);
+        assert!(routing::path_clear(surface, &quays[0].path, 0.04));
+        for ribbon in g::ribbon(&quays[0].path, &quays[0].widths) {
+            assert!(
+                g::area(&ribbon)
+                    - g::dry_clip(&surface, &ribbon)
+                        .iter()
+                        .map(g::area)
+                        .sum::<f64>()
+                    <= 1e-4
+            );
+        }
+        let middle = point(quays[0].path[0], quays[0].path[1], 0.5);
+        assert!(
+            streets
+                .iter()
+                .any(|s| s.role == "street" && s.path.contains(&middle))
+        );
+        let mut inland = vec![road];
+        add_quay(
+            &[shore(150.)],
+            &mut inland,
+            surface,
+            &cfg,
+            &morph,
+            &mut Rng::new("quay"),
+        );
+        assert!(!inland.iter().any(|s| s.role == "quay"));
+    }
+
+    #[test]
+    fn adjacent_shoreline_reaches_form_one_dry_platform() {
+        let n = 256;
+        let height = vec![0.; n * n];
+        let water: Vec<u8> = (0..n * n)
+            .map(|i| {
+                let (x, y) = ((i % n) as f64 + 0.5, (i / n) as f64 + 0.5);
+                u8::from(x < 128. + 12. * (1. - (y - 120.).abs() / 100.).max(0.))
+            })
+            .collect();
+        let surface = Surface {
+            geometry: None,
+            width: 256.,
+            n,
+            height: &height,
+            water: &water,
+        };
+        let shore = g::normalized(Shape {
+            outer: vec![
+                Point { x: 128., y: 20. },
+                Point { x: 200., y: 20. },
+                Point { x: 200., y: 220. },
+                Point { x: 128., y: 220. },
+                Point { x: 140., y: 120. },
+            ],
+            holes: vec![],
+        });
+        let mut streets = vec![Street {
+            path: vec![Point { x: 160., y: 30. }, Point { x: 160., y: 210. }],
+            widths: vec![5.; 2],
+            rank: 1,
+            role: "street".into(),
+        }];
+        add_quay(
+            &[shore],
+            &mut streets,
+            surface,
+            &LayoutConfig::default(),
+            &Morph {
+                value: serde_json::json!({}),
+            },
+            &mut Rng::new("quay-curve"),
+        );
+        let quays: Vec<_> = streets.iter().filter(|s| s.role == "quay").collect();
+        assert_eq!(quays.len(), 1);
+        assert!(quays[0].path.len() >= 3);
+        assert!(routing::path_clear(surface, &quays[0].path, 0.04));
+        assert!(
+            quays[0]
+                .path
+                .windows(2)
+                .map(|w| dist(w[0], w[1]))
+                .sum::<f64>()
+                > 200.
+        );
+    }
 
     fn site(culture: &str, population: u32) -> Site {
         Site {

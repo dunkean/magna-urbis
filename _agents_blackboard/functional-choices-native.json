@@ -1,0 +1,319 @@
+{
+  "version": "functional-choices-2",
+  "catalogue_version": "atlas-houses-3",
+  "rules": [
+    {
+      "id": "java-inn-envelope-v1",
+      "culture_id": "javanese-courts",
+      "pack_id": "AS-ISL",
+      "urban_role": "commerce.inn",
+      "function": "collective",
+      "composition": "inn",
+      "adapter": "shared_lodging_envelope",
+      "modes": [
+        "historical_inspired",
+        "fantasy_mix"
+      ],
+      "sources": [
+        {
+          "style_id": "AS-ISL-B14::default",
+          "recipe_id": "AS-ISL-B14",
+          "variant_id": "default",
+          "tradition_id": "javanese",
+          "source_role": "dwelling",
+          "source_confidence": "stylized",
+          "sources": [
+            {
+              "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+              "line": 941
+            },
+            {
+              "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+              "line": 915
+            },
+            {
+              "path": "docs/sources/javanese-domestic-architecture.md",
+              "line": 5
+            }
+          ],
+          "temporal": {
+            "eras": [],
+            "tradition_long": true,
+            "late_only": false,
+            "from_year": null,
+            "to_year": null
+          },
+          "inspired_only": true,
+          "nominal_width_m": [
+            4.5,
+            7.5
+          ],
+          "nominal_depth_m": [
+            6.0,
+            11.0
+          ],
+          "floors": [
+            1,
+            1
+          ],
+          "roof_system": "RF-GABLE"
+        },
+        {
+          "style_id": "AS-ISL-B15::default",
+          "recipe_id": "AS-ISL-B15",
+          "variant_id": "default",
+          "tradition_id": "javanese",
+          "source_role": "dwelling",
+          "source_confidence": "stylized",
+          "sources": [
+            {
+              "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+              "line": 942
+            },
+            {
+              "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+              "line": 915
+            },
+            {
+              "path": "docs/sources/javanese-domestic-architecture.md",
+              "line": 13
+            }
+          ],
+          "temporal": {
+            "eras": [],
+            "tradition_long": true,
+            "late_only": false,
+            "from_year": null,
+            "to_year": null
+          },
+          "inspired_only": true,
+          "nominal_width_m": [
+            5.0,
+            8.0
+          ],
+          "nominal_depth_m": [
+            9.0,
+            13.0
+          ],
+          "floors": [
+            1,
+            1
+          ],
+          "roof_system": "RF-HIP"
+        }
+      ],
+      "functional_claim": "Inspired simple shared-lodging envelope only; not a complete or historically attributed pesanggrahan or inn.",
+      "detailed_interior": false,
+      "certified_capacity": false
+    },
+    {
+      "id": "java-shared-lodging-envelope-v1",
+      "culture_id": "javanese-courts",
+      "pack_id": "AS-ISL",
+      "urban_role": "commerce.dharamshala",
+      "function": "collective",
+      "composition": "hall",
+      "legacy_alias_for": "java-inn-envelope-v1",
+      "adapter": "shared_lodging_envelope",
+      "modes": [
+        "historical_inspired",
+        "fantasy_mix"
+      ],
+      "sources": [
+        {
+          "style_id": "AS-ISL-B14::default",
+          "recipe_id": "AS-ISL-B14",
+          "variant_id": "default",
+          "tradition_id": "javanese",
+          "source_role": "dwelling",
+          "source_confidence": "stylized",
+          "sources": [
+            {
+              "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+              "line": 941
+            },
+            {
+              "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+              "line": 915
+            },
+            {
+              "path": "docs/sources/javanese-domestic-architecture.md",
+              "line": 5
+            }
+          ],
+          "temporal": {
+            "eras": [],
+            "tradition_long": true,
+            "late_only": false,
+            "from_year": null,
+            "to_year": null
+          },
+          "inspired_only": true,
+          "nominal_width_m": [
+            4.5,
+            7.5
+          ],
+          "nominal_depth_m": [
+            6.0,
+            11.0
+          ],
+          "floors": [
+            1,
+            1
+          ],
+          "roof_system": "RF-GABLE"
+        },
+        {
+          "style_id": "AS-ISL-B15::default",
+          "recipe_id": "AS-ISL-B15",
+          "variant_id": "default",
+          "tradition_id": "javanese",
+          "source_role": "dwelling",
+          "source_confidence": "stylized",
+          "sources": [
+            {
+              "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+              "line": 942
+            },
+            {
+              "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+              "line": 915
+            },
+            {
+              "path": "docs/sources/javanese-domestic-architecture.md",
+              "line": 13
+            }
+          ],
+          "temporal": {
+            "eras": [],
+            "tradition_long": true,
+            "late_only": false,
+            "from_year": null,
+            "to_year": null
+          },
+          "inspired_only": true,
+          "nominal_width_m": [
+            5.0,
+            8.0
+          ],
+          "nominal_depth_m": [
+            9.0,
+            13.0
+          ],
+          "floors": [
+            1,
+            1
+          ],
+          "roof_system": "RF-HIP"
+        }
+      ],
+      "functional_claim": "Legacy saved-request alias only, not a Javanese dharamshala attribution. Inspired simple shared-lodging envelope; no complete inn or hall is certified.",
+      "detailed_interior": false,
+      "certified_capacity": false
+    },
+    {
+      "id": "java-storage-envelope-v1",
+      "culture_id": "javanese-courts",
+      "pack_id": "AS-ISL",
+      "urban_role": "storage.granary",
+      "function": "warehouse",
+      "composition": "hall",
+      "adapter": "storage_envelope",
+      "modes": [
+        "historical_inspired",
+        "fantasy_mix"
+      ],
+      "sources": [
+        {
+          "style_id": "AS-ISL-B14::default",
+          "recipe_id": "AS-ISL-B14",
+          "variant_id": "default",
+          "tradition_id": "javanese",
+          "source_role": "dwelling",
+          "source_confidence": "stylized",
+          "sources": [
+            {
+              "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+              "line": 941
+            },
+            {
+              "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+              "line": 915
+            },
+            {
+              "path": "docs/sources/javanese-domestic-architecture.md",
+              "line": 5
+            }
+          ],
+          "temporal": {
+            "eras": [],
+            "tradition_long": true,
+            "late_only": false,
+            "from_year": null,
+            "to_year": null
+          },
+          "inspired_only": true,
+          "nominal_width_m": [
+            4.5,
+            7.5
+          ],
+          "nominal_depth_m": [
+            6.0,
+            11.0
+          ],
+          "floors": [
+            1,
+            1
+          ],
+          "roof_system": "RF-GABLE"
+        },
+        {
+          "style_id": "AS-ISL-B15::default",
+          "recipe_id": "AS-ISL-B15",
+          "variant_id": "default",
+          "tradition_id": "javanese",
+          "source_role": "dwelling",
+          "source_confidence": "stylized",
+          "sources": [
+            {
+              "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+              "line": 942
+            },
+            {
+              "path": "docs/styles_architecturaux_mondiaux_city_mapper.md",
+              "line": 915
+            },
+            {
+              "path": "docs/sources/javanese-domestic-architecture.md",
+              "line": 13
+            }
+          ],
+          "temporal": {
+            "eras": [],
+            "tradition_long": true,
+            "late_only": false,
+            "from_year": null,
+            "to_year": null
+          },
+          "inspired_only": true,
+          "nominal_width_m": [
+            5.0,
+            8.0
+          ],
+          "nominal_depth_m": [
+            9.0,
+            13.0
+          ],
+          "floors": [
+            1,
+            1
+          ],
+          "roof_system": "RF-HIP"
+        }
+      ],
+      "functional_claim": "Inspired simple storage envelope only; no granary-specific floor, ventilation, pest control or storage capacity is certified.",
+      "detailed_interior": false,
+      "certified_capacity": false
+    }
+  ]
+}

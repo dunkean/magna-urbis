@@ -34,7 +34,9 @@ const campPlans: Record<string, Partial<Plan>> = {
 function originalPlan(c: Culture): Plan {
   const m = resolveMorph(c.core.morphology), e = c.core.enclosure;
   const terraces = Boolean(c.render.terraces || c.render.andenes || c.render.stairs || m.contourFollow);
-  const waterfront = ['hanseatic', 'swahili-stone-town', 'venetian-lagoon', 'stilt-town', 'aztec', 'gnomish'].includes(c.id);
+  // Capability only: native quay placement still requires an actual dry shore,
+  // a traversable grade and a connection to the street network.
+  const waterfront = ['roman-core', 'hanseatic', 'swahili-stone-town', 'venetian-lagoon', 'stilt-town', 'aztec', 'gnomish'].includes(c.id);
   return {
     pattern: terraces ? 'terraces' : c.camp ? 'dispersed' : m.streetOp === 'grid' ? 'grid' : e.shape === 'circle' ? 'radial' : 'organic',
     enclosure: e.shape, fortification: e.wall, gates: e.gates ?? 'roads',

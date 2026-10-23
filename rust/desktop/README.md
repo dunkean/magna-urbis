@@ -54,6 +54,15 @@ when available; select another checkout with `MAGNA_NEURAL_EARTH` or interpreter
 with `MAGNA_NEURAL_PYTHON`. For an installed app, start `npm run neural:python`
 separately when using that source. Native procedural terrain works without it.
 
+The default Python/CUDA source also uses the neural WASM module to prepare its
+conditioning. Initialize Neural Earth's `terrain-diffusion` and
+`native/magna-urbis` submodules, install its locked Python/CUDA dependencies in
+`.venv`, then run `npm run build:wasm` in that checkout and `npm run wasm:neural`
+from this project's `web/` directory. The service reuses models in the standard
+`~/.cache/huggingface` cache when present. On Windows without an `E:` drive, its
+runtime defaults to this project's ignored `rust/pkg/neural-runtime/` directory;
+explicit storage environment variables remain authoritative.
+
 The desktop window retains the current web renderer. GPU features depend on
 the system WebView and graphics driver; CPU paths remain available. The app
 does not imply a native Vulkan/DirectX renderer or a guaranteed speedup for

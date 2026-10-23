@@ -1,5 +1,5 @@
 import { decorGeography, type VectorGeography } from '../../../rust/bridge/urbanGeography';
-import { gunzip, gunzipSync, gzip, gzipSync } from 'fflate';
+import { Gunzip, gunzip, gunzipSync, gzip, gzipSync } from 'fflate';
 import type { RetainedWaterMaterial } from './decorWater';
 import type { RoadConfig, RoadOutput, Settlement, SettlementRaster } from '../../../rust/bridge/settlements';
 
@@ -74,13 +74,28 @@ function decorBytes(decor: Decor): Uint8Array {
   return out;
 }
 
-export function encodeDecor(decor: Decor): Uint8Array {
+/** These two slots are the retained building snapshots in the decor protocol. */
+export function decorColdStates(decor: Decor) {
+  return [decor.meta.pipeline?.urban?.buildingState?.cold, decor.meta.pipeline?.urbanDraft?.buildingState?.cold]
+    .filter((state): state is NonNullable<typeof state> => !!state);
+}
+export interface DecorCodecOptions {
+  /** Same-origin history or the metadata header of a complete cold export only. */
+  localReferences?: true;
+}
+function requirePortable(decor: Decor, options?: DecorCodecOptions): void {
+  if (!options?.localReferences && decorColdStates(decor).length)
+    throw new Error('Une ville conservée à froid doit être exportée avec ses blocs natifs via downloadDecorFile.');
+}
+export function encodeDecor(decor: Decor, options?: DecorCodecOptions): Uint8Array {
+  requirePortable(decor, options);
   return gzipSync(decorBytes(decor), { level: 6, mtime: 0 });
 }
 
 /** The portable format is identical; compression runs in fflate's local worker.
  * Only the newly allocated file buffer is transferred, never retained rasters. */
-export function encodeDecorAsync(decor: Decor): Promise<Uint8Array> {
+export function encodeDecorAsync(decor: Decor, options?: DecorCodecOptions): Promise<Uint8Array> {
+  requirePortable(decor, options);
   const raw = decorBytes(decor);
   return new Promise((resolve, reject) => {
     gzip(raw, { level: 6, mtime: 0, consume: true }, (error, bytes) => error ? reject(error) : resolve(bytes));
@@ -88,12 +103,17 @@ export function encodeDecorAsync(decor: Decor): Promise<Uint8Array> {
 }
 
 function readDecorBytes(raw: Uint8Array): Decor {
+  if (raw.byteLength < 12) throw new Error('Truncated decor header');
   const view = new DataView(raw.buffer, raw.byteOffset, raw.byteLength);
   if (view.getUint32(0, true) !== MAGIC) throw new Error('Not a Magna Urbis decor file');
   if (view.getUint32(4, true) !== 1) throw new Error(`Unsupported decor version ${view.getUint32(4, true)}`);
   const headerLength = view.getUint32(8, true);
+  if (headerLength > raw.byteLength - 12) throw new Error('Truncated decor metadata');
   const header = JSON.parse(new TextDecoder().decode(raw.subarray(12, 12 + headerLength))) as { meta: DecorMeta; width: number; n: number; geometry?: VectorGeography };
   const n = header.n, size = n * n;
+  if (!Number.isSafeInteger(n) || n <= 0 || !Number.isFinite(header.width) || header.width <= 0
+    || !Number.isSafeInteger(size * 17) || raw.byteLength !== 12 + headerLength + size * 17
+    || header.meta?.format !== 'magna-decor' || header.meta.version !== 1) throw new Error('Invalid or truncated decor raster');
   let offset = 12 + headerLength;
   const take = (bytes: number): Uint8Array => { const part = raw.slice(offset, offset + bytes); offset += bytes; return part; };
   const height = unshuffle(take(size * 4), size), water = take(size), waterLevel = unshuffle(take(size * 4), size);
@@ -105,6 +125,21 @@ function readDecorBytes(raw: Uint8Array): Decor {
 }
 
 export function decodeDecor(data: Uint8Array): Decor { return readDecorBytes(gunzipSync(data)); }
+/** File/header imports bound decompressed terrain as well as encoded bytes. */
+export function decodeDecorBounded(data: Uint8Array, maxRawBytes: number): Decor {
+  const parts: Uint8Array[] = []; let size = 0;
+  const decoder = new Gunzip(part => {
+    size += part.byteLength;
+    if (size > maxRawBytes) throw new Error('Decor raster exceeds import byte budget.');
+    parts.push(part);
+  });
+  // Small input slices bound the output produced between budget checks.
+  for (let i = 0; i < data.length; i += 1024) decoder.push(data.subarray(i, i + 1024), i + 1024 >= data.length);
+  if (!data.length) throw new Error('Empty decor file.');
+  const raw = new Uint8Array(size); let offset = 0;
+  for (const part of parts) { raw.set(part, offset); offset += part.length; }
+  return readDecorBytes(raw);
+}
 export function decodeDecorAsync(data: Uint8Array): Promise<Decor> {
   return new Promise((resolve, reject) => {
     gunzip(data, (error, raw) => {

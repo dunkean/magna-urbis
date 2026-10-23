@@ -7,6 +7,7 @@ use crate::geometry::*;
 use crate::layouts::{BodySpec, build_layout, feature};
 use crate::model::*;
 use crate::roofs;
+use crate::strip_programme_budget;
 use magna_urbis_random::Rng;
 use std::collections::BTreeMap;
 #[path = "floor_complement.rs"]
@@ -466,11 +467,142 @@ pub struct ResolvedArchitecture {
 }
 
 pub fn resolve_architecture(mut config: HouseConfig) -> Result<ResolvedArchitecture, String> {
-    resolve_architecture_for_site(&mut config, None, None, false, None, false)
+    resolve_architecture_for_site(&mut config, None, None, false, None, false, None)
+}
+
+/// Called only through the versioned functional registry. Draw the coherent
+/// source bundle once, fit its simple hall dimensions, and retain every source
+/// component/detail/material instead of applying the domestic fallback cleanup.
+pub(crate) fn resolve_registered_hall(
+    mut config: HouseConfig,
+    body_span_m: [f64; 2],
+    target_area_m2: Option<f64>,
+) -> Result<ResolvedArchitecture, String> {
+    config.count = 1;
+    let data = catalogue()?;
+    data.validate_config(&config)?;
+    let (source, mut parameters, seed) = selected_draws(data, &config)?
+        .into_iter()
+        .next()
+        .ok_or("No declared hall selected.")?;
+    let UnitSource::Atlas(recipe) = source else {
+        return Err("A registered hall requires its atlas source.".into());
+    };
+    // A conflicting Fantasy override is refused, never silently replaced or
+    // presented as a different functional programme under the same registry ID.
+    if parameters.layout != Layout::Single
+        || parameters.footprint_family != "FP-LONG"
+        || parameters.roof_system != "RF-GABLE"
+        || parameters.envelope != Envelope::Open
+        || parameters.bodies != [1, 1]
+        || parameters.floors != [1, 1]
+        || parameters.components.len() != 1
+        || parameters.components[0].id != "main"
+    {
+        return Err(
+            "Explicit overrides no longer describe this registered single-storey open hall.".into(),
+        );
+    }
+    let bounds = data.resolve_variant_parameters(recipe, &config, &parameters.variant_id)?;
+    let mut ranges = [bounds.width_m, bounds.depth_m];
+    for (axis, range) in ranges.iter_mut().enumerate() {
+        range[0] *= config.size;
+        range[1] = (range[1] * config.size).min(body_span_m[axis]);
+        // Stay on the native millimetre grid without rounding out of site/source bounds.
+        range[0] = libm::ceil(range[0] / GRID_M) * GRID_M;
+        range[1] = libm::floor(range[1] / GRID_M) * GRID_M;
+        if range[1] < range[0] {
+            return Err(format!(
+                "Registered hall minimum {:.3}m exceeds body span {:.3}m on axis {axis}.",
+                range[0], body_span_m[axis]
+            ));
+        }
+    }
+    let [width, depth] = if let Some(target) = target_area_m2 {
+        let fitted_area = target.clamp(ranges[0][0] * ranges[1][0], ranges[0][1] * ranges[1][1]);
+        let aspect = parameters.width_m[0] / parameters.depth_m[0];
+        let lo = ranges[0][0].max(fitted_area / ranges[1][1]);
+        let hi = ranges[0][1].min(fitted_area / ranges[1][0]);
+        // Products/divisions at a source bound can differ by one ulp. The
+        // final axis clamp still enforces the exact declared/site interval.
+        let w = snap(libm::sqrt(fitted_area * aspect).clamp(lo.min(hi), hi))
+            .clamp(ranges[0][0], ranges[0][1]);
+        let d = snap(fitted_area / w).clamp(ranges[1][0], ranges[1][1]);
+        [w, d]
+    } else {
+        [
+            parameters.width_m[0].clamp(ranges[0][0], ranges[0][1]),
+            parameters.depth_m[0].clamp(ranges[1][0], ranges[1][1]),
+        ]
+    };
+    parameters.width_m.fill(width);
+    parameters.depth_m.fill(depth);
+    let mut plan = build_layout(recipe, &parameters, &seed)?;
+    for body in &mut plan.bodies {
+        body.role = Role::NonDomestic;
+    }
+    Ok(ResolvedArchitecture {
+        schema_version: crate::SCHEMA_VERSION.into(),
+        generator_version: crate::GENERATOR_VERSION.into(),
+        recipe_id: recipe.id.clone(),
+        config,
+        parameters,
+        plan,
+        entrance: None,
+    })
+}
+
+/// Explicit inspired/fantasy adaptation of already resolved architectural
+/// draws. The original plan is untouched on refusal; enrichment retains the new
+/// plan exactly, without repeating either recipe selection or morphology draws.
+pub(crate) fn adapt_resolved_architecture(
+    resolved: &ResolvedArchitecture,
+    envelope: &Surface,
+    target_footprint: Option<&Surface>,
+) -> Result<ResolvedArchitecture, String> {
+    if resolved.config.mode == HistoricalMode::HistoricalStrict {
+        return Err("Constrained morphology is an inspired adaptation and is unavailable in historical_strict mode.".into());
+    }
+    if resolved.generator_version != crate::GENERATOR_VERSION
+        || resolved.schema_version != crate::SCHEMA_VERSION
+    {
+        return Err(
+            "Cannot adapt a retained architecture from an incompatible generator version.".into(),
+        );
+    }
+    let role = resolved
+        .plan
+        .bodies
+        .first()
+        .ok_or("No retained body to adapt.")?
+        .role;
+    let plan = if crate::morphology::supports_components(&resolved.parameters) {
+        crate::morphology::synthesize_components(
+            &resolved.parameters,
+            &resolved.plan,
+            envelope,
+            &resolved.config.seed,
+            target_footprint,
+        )?
+    } else {
+        crate::morphology::synthesize(
+            &resolved.parameters,
+            role,
+            envelope,
+            &resolved.config.seed,
+            target_footprint,
+        )?
+    };
+    let mut adapted = resolved.clone();
+    adapted.plan = plan;
+    // A site entrance belongs to a particular structural footprint; the caller
+    // must resolve a new frontage attachment after replacing that footprint.
+    adapted.entrance = None;
+    Ok(adapted)
 }
 
 pub(crate) fn resolve_urban_architecture(
-    mut config: HouseConfig,
+    config: HouseConfig,
     function: crate::placement::ArchitectureFunction,
     envelope_m: [f64; 2],
     minimum: bool,
@@ -478,6 +610,38 @@ pub(crate) fn resolve_urban_architecture(
     coverage: Option<f64>,
     parcel_fit: bool,
 ) -> Result<ResolvedArchitecture, String> {
+    resolve_urban_architecture_with_budget(
+        config,
+        function,
+        envelope_m,
+        minimum,
+        occupation_m,
+        coverage,
+        parcel_fit,
+        None,
+    )
+}
+
+/// Opt-in sizing for automatic inspired domestic requests. The caller checks
+/// original user pins/overrides before passing the target; selected recipe and
+/// programme-floor controls are already resolved here and must be retained.
+pub(crate) fn resolve_urban_architecture_with_budget(
+    mut config: HouseConfig,
+    function: crate::placement::ArchitectureFunction,
+    envelope_m: [f64; 2],
+    minimum: bool,
+    occupation_m: Option<[f64; 2]>,
+    coverage: Option<f64>,
+    parcel_fit: bool,
+    built_area_m2: Option<f64>,
+) -> Result<ResolvedArchitecture, String> {
+    let domestic_adaptation = !minimum
+        && config.mode != HistoricalMode::HistoricalStrict
+        && matches!(
+            function,
+            crate::placement::ArchitectureFunction::Domestic
+                | crate::placement::ArchitectureFunction::Mixed
+        );
     let mut resolved = resolve_architecture_for_site(
         &mut config,
         Some(function),
@@ -485,6 +649,9 @@ pub(crate) fn resolve_urban_architecture(
         minimum,
         occupation_m,
         parcel_fit,
+        built_area_m2
+            .filter(|_| domestic_adaptation)
+            .map(|area| (area, coverage)),
     )?;
     if !minimum
         && matches!(
@@ -512,6 +679,7 @@ fn resolve_architecture_for_site(
     minimum: bool,
     occupation_m: Option<[f64; 2]>,
     parcel_fit: bool,
+    strip_budget: Option<(f64, Option<f64>)>,
 ) -> Result<ResolvedArchitecture, String> {
     config.count = 1;
     let data = catalogue()?;
@@ -520,6 +688,7 @@ fn resolve_architecture_for_site(
         .into_iter()
         .next()
         .ok_or("No architecture selected.")?;
+    let mut initial_budget = None;
     if let (UnitSource::Atlas(recipe), Some(envelope)) = (source, envelope_m) {
         let bounds = recipe
             .variants
@@ -558,6 +727,7 @@ fn resolve_architecture_for_site(
                 parameters = compact;
             }
         }
+        let mut allowed_dimensions = [[0.0; 2]; 2];
         for (axis, (range, source_range, available)) in [
             (&mut parameters.width_m, bounds.width_m, envelope[0]),
             (&mut parameters.depth_m, bounds.depth_m, envelope[1]),
@@ -574,6 +744,7 @@ fn resolve_architecture_for_site(
                     Layout::Single | Layout::Strip | Layout::Courtyard | Layout::Siheyuan
                 );
             let max = source_range[1] * config.size * if adaptable { 2.0 } else { 1.0 };
+            allowed_dimensions[axis] = [min, max.min(available)];
             if available < min {
                 return Err(format!(
                     "Declared minimum architectural envelope {min:.2} m exceeds available site span {available:.2} m."
@@ -586,6 +757,19 @@ fn resolve_architecture_for_site(
             };
             let fitted = requested.min(available).clamp(min, max);
             range.fill(fitted);
+        }
+        if let Some((target, coverage)) = strip_budget {
+            initial_budget = strip_programme_budget::solve(
+                &parameters,
+                allowed_dimensions,
+                coverage,
+                &config.seed,
+                target,
+            )?;
+            if let Some(budget) = &initial_budget {
+                parameters.width_m.fill(budget.nominal_m[0]);
+                parameters.depth_m.fill(budget.nominal_m[1]);
+            }
         }
     }
     let non_domestic = function.is_some_and(|f| {
@@ -653,6 +837,13 @@ fn resolve_architecture_for_site(
             crate::layouts::build_workshop_layout(Role::Dwelling, &parameters, &seed)?
         }
     };
+    if let Some(budget) = initial_budget {
+        plan.diagnostics.push(format!(
+            "Initial native strip programme: scalar dimension solution {:.3} x {:.3} m, predicted body union {:.3} m2 for target {:.3} m2; millimetre-grid target {}. Source draws, floors, court/passage and seeded infill retained; one native layout, exact site admission still required.",
+            budget.nominal_m[0], budget.nominal_m[1], budget.footprint_m2,
+            budget.target_m2, if budget.target_met { "matched" } else { "not matched (bounded capacity or infill threshold)" },
+        ));
+    }
     if parcel_fit && !minimum && config.mode != HistoricalMode::HistoricalStrict {
         plan.diagnostics.push("Explicit urban lot fitting: eligible simple plans may extend width/depth to twice the source maxima; source minima, native layout, levels, roof and final site admission are retained. Artistic adaptation, not measured historical dimensions.".into());
     }
@@ -836,13 +1027,478 @@ fn body_roof_slab(
 /// Structural bodies and native roof geometry only. This consumes the retained
 /// layout and never invokes room subdivision, detail generation or recipe draws.
 pub(crate) fn volume_unit(resolved: &ResolvedArchitecture) -> Result<HouseUnit, String> {
+    let mut unit = structural_unit(resolved)?;
+    roofs::build_roofs_with_budget(&mut unit, MAX_BATCH_FACES as usize)?;
+    Ok(unit)
+}
+
+/// Keep native circulation covers/supports in an adapted retained plan before
+/// site admission. This builds no rooms, interior, roof mesh or new draws.
+pub(crate) fn retain_structural_circulation(
+    resolved: &mut ResolvedArchitecture,
+) -> Result<(), String> {
+    let mut unit = structural_unit(resolved)?;
+    crate::features::cover_galleries(&mut unit, &resolved.parameters)?;
+    // The portal belongs to this rebuilt native structure, not to an arbitrary
+    // midpoint on its projected footprint. Interior enrichment consumes the
+    // same certificate and must preserve its opening exactly.
+    let entrance =
+        crate::access::structural_access(&mut unit, &resolved.plan.paths, &resolved.parameters)?;
+    resolved.entrance = Some(entrance);
+    resolved.plan.features = unit.features;
+    resolved.plan.diagnostics.extend(
+        unit.diagnostics
+            .into_iter()
+            .skip(resolved.plan.diagnostics.len()),
+    );
+    Ok(())
+}
+
+/// Local physical geometry for a deliberately narrow, fully prepared source.
+/// No terrain, cadastral, access, roof or household admission is implied.
+#[derive(Clone)]
+pub(crate) struct PreparedFoundationDomains {
+    #[cfg(test)]
+    pub body_domain: Surface,
+    #[cfg(test)]
+    pub occupation_domain: Surface,
+    #[cfg(test)]
+    pub bearing_domain: Surface,
+    /// Transform these parts individually, then unite in world coordinates.
+    /// Boolean union and transformation need not commute on the geometry grid.
+    pub occupation_parts: Vec<Surface>,
+    pub bearing_parts: Vec<Surface>,
+    pub native_features: Vec<Feature>,
+    /// Present only on the explicit entry-preparation path. Its body portal
+    /// belongs in the retained architecture; its site portal receives the
+    /// external connector. Neither implies cadastral or terrain admission.
+    pub entry: Option<crate::access::plan_entry::PreparedPlanEntry>,
+}
+
+impl PreparedFoundationDomains {
+    /// Rare fallback only: keep every canonical occupation part and add the
+    /// other existing passage. Bearing geometry/features remain unchanged,
+    /// and cut-wall sections are shared by Arc rather than rebuilt or copied.
+    pub(crate) fn with_existing_entry(&self, index: usize) -> Result<Self, String> {
+        let entry = self.entry.as_ref().ok_or("Missing prepared native entrance.")?
+            .with_existing_entry(index)?;
+        let mut selected = self.clone();
+        for passage in [&entry.body_entry.passage, &entry.site_entry.passage] {
+            if !selected.occupation_parts.contains(passage) {
+                selected.occupation_parts.push(passage.clone());
+            }
+        }
+        #[cfg(test)]
+        { selected.occupation_domain = unite(&selected.occupation_parts); }
+        selected.entry = Some(entry);
+        Ok(selected)
+    }
+}
+
+pub(crate) enum FoundationPreparation {
+    Supported(PreparedFoundationDomains),
+    Unsupported(String),
+}
+
+/// Prepare genuine native circulation/support geometry once, without interiors,
+/// roof tessellation, recipe selection or new random draws. Bare courts/paths
+/// reserve land but do not impose a single level foundation on their whole area.
+/// Admission transforms the parts before union in world coordinates. The local
+/// unions are only test witnesses; production never computes unused booleans.
+/// Unknown structures remain explicit and use the conservative admission path.
+pub(crate) fn prepare_foundation_domains(
+    resolved: &ResolvedArchitecture,
+) -> Result<FoundationPreparation, String> {
+    prepare_foundation(resolved, false)
+}
+
+/// Opt-in preparation of the actual native portal on the same fresh structural
+/// unit as the foundation. This does not replace the existing no-entry wrapper.
+/// All resulting structures and both native passages remain visible to site
+/// admission; an access-builder error is never replaced by a facade midpoint.
+pub(crate) fn prepare_foundation_and_entry(
+    resolved: &ResolvedArchitecture,
+) -> Result<FoundationPreparation, String> {
+    prepare_foundation(resolved, true)
+}
+
+/// Eligibility for the final, fixed-pose Single entrance pass only. This is
+/// not a foundation certificate and does not broaden intermediate admission.
+/// The retained body/levels and native structures are checked separately.
+/// Capability for shared pre-entry detail operators, not recipe identity.
+/// Common Single/source/body constraints are checked by the caller below.
+pub(crate) fn single_frame_entry_details(p: &Parameters) -> bool {
+    p.floors == [1, 1]
+        && p.rooms_per_body[0] > 0
+        && p.vertical_access == crate::catalogue::VerticalAccess::None
+        && p.vertical_routes.is_empty()
+        && !p.details.is_empty()
+        && p.details.iter().all(|id| crate::features::pre_access_frame_detail(id).is_some())
+}
+
+pub(crate) fn single_native_entry_parameters(p: &Parameters) -> bool {
+    use crate::catalogue::{EnclosureFamily, VerticalAccess};
+    p.layout == Layout::Single
+        && p.footprint_family == "FP-RECT"
+        && p.support.kind == SupportKind::Ground
+        && p.support.height_m == [0., 0.]
+        && p.envelope == Envelope::Walled
+        && p.bodies == [1, 1]
+        && p.cells == [0, 0]
+        && p.enclosure_family == EnclosureFamily::None
+        && p.enclosures.is_empty()
+        && p.court_program.is_none()
+        && p.structural_spec.is_none()
+        && p.shell.is_none()
+        && p.roof_spec.shell.is_none()
+        && p.roof_spec.corbel.is_none()
+        && p.roof_spec.vault.is_none()
+        && matches!(
+            p.roof_system.as_str(),
+            "RF-GABLE" | "RF-HIP" | "RF-STEEP-STEP"
+        )
+        && p.portal_profile.is_none()
+        && p.site_gate_profile.is_none()
+        && p.detail_spec.is_none()
+        && !p.gallery_cover.enabled
+        && p.gallery_cover.facade_mode.is_none()
+        && (p.components.is_empty()
+            || p.components.len() == 1
+                && p.components[0].id == "main"
+                && p.components[0].count == [1, 1])
+        && matches!(
+            p.vertical_access,
+            VerticalAccess::None | VerticalAccess::InternalStair
+        )
+        && p.vertical_routes.iter().all(|route| {
+            matches!(
+                route.kind,
+                VerticalAccess::None | VerticalAccess::InternalStair
+            )
+        })
+        && ((p.elevation_family == "ground" && p.details.iter().all(|detail| {
+            matches!(detail.as_str(), "masonry_joints" | "shopfront")
+                || p.roof_system == "RF-STEEP-STEP"
+                    && matches!(detail.as_str(), "stepped_gable" | "party_walls")
+        })) || single_frame_entry_details(p))
+}
+
+fn prepare_foundation(
+    resolved: &ResolvedArchitecture,
+    with_entry: bool,
+) -> Result<FoundationPreparation, String> {
+    use crate::catalogue::{EnclosureFamily, VerticalAccess};
+    let unsupported = |reason: &str| Ok(FoundationPreparation::Unsupported(reason.into()));
+    let supported_parameters = |p: &Parameters| {
+        if p.layout == Layout::Single {
+            return with_entry && single_native_entry_parameters(p);
+        }
+        p.layout == Layout::Strip
+            && matches!(p.footprint_family.as_str(), "FP-RECT" | "FP-LONG")
+            && p.support.kind == SupportKind::Ground
+            && p.envelope == Envelope::Walled
+            && p.enclosure_family == EnclosureFamily::None
+            && p.enclosures.is_empty()
+            && p.court_program.is_none()
+            && p.structural_spec.is_none()
+            && p.shell.is_none()
+            && p.roof_spec.shell.is_none()
+            && p.roof_spec.corbel.is_none()
+            && p.roof_spec.vault.is_none()
+            && p.site_gate_profile.is_none()
+            && !p.gallery_cover.enabled
+            && p.gallery_cover.facade_mode.is_none()
+            && p.cells[1] == 0
+            && (p.components.is_empty() || p.components.len() == 1 && p.components[0].id == "main")
+            && matches!(
+                p.vertical_access,
+                VerticalAccess::None | VerticalAccess::InternalStair
+            )
+            && p.vertical_routes.iter().all(|route| {
+                matches!(
+                    route.kind,
+                    VerticalAccess::None | VerticalAccess::InternalStair
+                )
+            })
+            && p.details.iter().all(|detail| {
+                matches!(
+                    detail.as_str(),
+                    "party_walls" | "rear_yard" | "shopfront" | "side_corridor" | "masonry_joints"
+                )
+            })
+    };
+    if !supported_parameters(&resolved.parameters) {
+        return unsupported(
+            "Native foundation preparation covers declared ground/walled rectangular strips; final entry preparation also permits plain Single rectangles. Enclosures, covered galleries and unknown structural programmes remain unsupported.",
+        );
+    }
+    let single = resolved.parameters.layout == Layout::Single;
+    let shared_entry_details = single && with_entry && single_frame_entry_details(&resolved.parameters);
+    if shared_entry_details
+        && (resolved.config.overrides.site_slope_deg.is_some()
+            || resolved.plan.bodies.iter().any(|body| {
+                body.levels.len() != 1
+                    || !single_frame_entry_details(&body.parameters)
+                    || body.parameters.details != resolved.parameters.details
+            }))
+    {
+        return unsupported("Shared entry details require one actual ground level and the same declared executable detail programme; synthetic slope is unsupported.");
+    }
+    if single
+        && (resolved.plan.bodies.len() != 1
+            || !resolved.plan.courts.is_empty()
+            || !resolved.plan.paths.is_empty()
+            || !resolved.plan.features.is_empty()
+            || resolved.plan.context.iter().any(|f| f.kind != FeatureKind::Street))
+    {
+        return unsupported(
+            "Final Single entrance preparation requires one whole body without courts, paths, features or obstacle context; none was omitted.",
+        );
+    }
+    if resolved.generator_version != crate::GENERATOR_VERSION
+        || resolved.schema_version != crate::SCHEMA_VERSION
+    {
+        return Err(
+            "Cannot prepare physical domains for an incompatible retained architecture.".into(),
+        );
+    }
+    if resolved.plan.bodies.is_empty()
+        || resolved.plan.bodies.iter().any(|body| {
+            !supported_parameters(&body.parameters)
+                || body.z != 0.
+                || !body.voids.is_empty()
+                || !body.cells.is_empty()
+                || body.levels.is_empty()
+                || body.levels.iter().any(|level| level != &body.footprint)
+                || body.footprint.len() != 1
+                || !body.footprint[0].holes.is_empty()
+                || body.footprint[0].outer.len() != 4
+        })
+    {
+        return unsupported(
+            "Native foundation preparation requires retained whole ground-level rectangular bodies with unchanged upper footprints; no component or level was omitted.",
+        );
+    }
+    for body in &resolved.plan.bodies {
+        if !crate::placement::valid_surface(&body.footprint) {
+            return Err("Native foundation preparation received an invalid retained body.".into());
+        }
+        let b = bounds(&body.footprint);
+        if body.footprint[0].outer.iter().any(|q| {
+            !((q.x - b[0]).abs() <= 1e-8 || (q.x - b[2]).abs() <= 1e-8)
+                || !((q.y - b[1]).abs() <= 1e-8 || (q.y - b[3]).abs() <= 1e-8)
+        }) {
+            return unsupported(
+                "Native foundation preparation does not approximate an oblique or compound body by its bounds.",
+            );
+        }
+    }
+    let known_feature = |feature: &Feature| {
+        matches!(
+            feature.kind,
+            FeatureKind::Gallery | FeatureKind::Post | FeatureKind::PartyWall
+        ) && feature.roof.is_none()
+    };
+    if resolved
+        .plan
+        .features
+        .iter()
+        .any(|feature| !known_feature(feature))
+    {
+        return unsupported(
+            "Native foundation preparation found a retained site structure outside the supported circulation/post programme; it was not dropped.",
+        );
+    }
+    // This same native function is consumed by volume construction. In this
+    // scope it supplies side_corridor's actual gallery and columns; no second
+    // geometric implementation of their widths, clipping or supports exists.
+    let mut unit = if shared_entry_details {
+        structural_unit_with_single_entry_details(resolved)?
+    } else {
+        structural_unit(resolved)?
+    };
+    if single {
+        // Keep the same synthetic street context as detailed construction;
+        // the real external connection still uses the urban request's rights.
+        unit.site_context = resolved.plan.context.clone();
+    }
+    let entry = if with_entry {
+        let prepared = crate::access::plan_entry::prepare_plan_entry(
+            &mut unit,
+            &resolved.plan.paths,
+            &resolved.parameters,
+        )
+        .map_err(|reason| format!("Native planning entrance preparation failed: {reason}"))?;
+        Some(prepared)
+    } else {
+        None
+    };
+    // Access can cut walls or add interfaces. Collect the actual resulting
+    // structures after entry preparation, never a pre-access snapshot.
+    let native_features = crate::placement::native_site_features(&unit);
+    if single && !shared_entry_details && !native_features.is_empty() {
+        return unsupported(
+            "Final Single entrance preparation produced additional structures; the existing admitted house was not reinterpreted.",
+        );
+    }
+    if !shared_entry_details && native_features
+        .iter()
+        .any(|feature| !known_feature(feature))
+    {
+        return unsupported(
+            "Native preparation produced an unclassified structure; foundation admission remains unsupported rather than omitting it.",
+        );
+    }
+    if native_features.iter().any(|feature| {
+        !crate::placement::valid_surface(&feature.surface)
+            || !feature.z_m.is_finite()
+            || !feature.height_m.is_finite()
+            || feature.height_m < 0.
+    }) {
+        return Err(
+            "Native foundation preparation produced an invalid support surface or height.".into(),
+        );
+    }
+    let body_domain = unite(
+        &unit
+            .bodies
+            .iter()
+            .flat_map(|body| body.levels.iter().map(|level| level.footprint.clone()))
+            .collect::<Vec<_>>(),
+    );
+    let mut bearing_parts = vec![body_domain.clone()];
+    if shared_entry_details {
+        // Ground0 is established above. Actual wall sections and grounded
+        // features bear here; elevated headers/lintels retain occupation below
+        // without being invented as independent projected foundations.
+        let z = unit.bodies[0].levels[0].z_m + 0.01;
+        bearing_parts.extend(unit.walls.iter().map(|w| crate::wall_geometry::wall_section(w, z)));
+        bearing_parts.extend(unit.features.iter()
+            .filter(|f| f.z_m <= z && f.z_m + f.height_m > z)
+            .map(|f| f.surface.clone()));
+    } else {
+        bearing_parts.extend(native_features.iter().map(|feature| feature.surface.clone()));
+    }
+    #[cfg(test)]
+    let bearing_domain = unite(&bearing_parts);
+    let mut occupation_parts = vec![
+        body_domain.clone(),
+        resolved.plan.courts.clone(),
+        resolved.plan.paths.clone(),
+    ];
+    occupation_parts.extend(
+        native_features
+            .iter()
+            .map(|feature| feature.surface.clone()),
+    );
+    if let Some(prepared) = &entry {
+        occupation_parts.push(prepared.body_entry.passage.clone());
+        if prepared.site_entry.passage != prepared.body_entry.passage {
+            occupation_parts.push(prepared.site_entry.passage.clone());
+        }
+    }
+    #[cfg(test)]
+    let occupation_domain = unite(&occupation_parts);
+    let mut physical = PreparedFoundationDomains {
+        #[cfg(test)]
+        body_domain,
+        #[cfg(test)]
+        occupation_domain,
+        #[cfg(test)]
+        bearing_domain,
+        occupation_parts,
+        bearing_parts,
+        native_features,
+        entry,
+    };
+    if let (Some(retained), Some(prepared)) = (&resolved.entrance, &physical.entry)
+        && !crate::access::plan_entry::same_entrance(retained, &prepared.body_entry)
+    {
+        let alternative = prepared.alternatives.iter().position(|pair|
+            crate::access::plan_entry::same_entrance(retained, &pair.body_entry))
+            .ok_or("Native planning entrance differs from every prepared existing portal; no replacement or proxy was generated.")?;
+        // Build canonical occupation first, then add the retained alternative:
+        // replay cannot silently drop rights checked during its admission.
+        physical = physical.with_existing_entry(alternative)?;
+    }
+    Ok(FoundationPreparation::Supported(physical))
+}
+
+#[cfg(test)]
+#[path = "foundation_preparation_tests.rs"]
+mod foundation_preparation_tests;
+
+#[cfg(test)]
+#[path = "plan_entry_preparation_tests.rs"]
+mod plan_entry_preparation_tests;
+
+#[cfg(test)]
+#[path = "masonry_joint_foundation_tests.rs"]
+mod masonry_joint_foundation_tests;
+
+#[cfg(test)]
+pub(crate) fn structural_unit_for_entry_probe(
+    resolved: &ResolvedArchitecture,
+) -> Result<HouseUnit, String> {
+    structural_unit(resolved)
+}
+
+/// Final-entry-only wrapper over the retained native structure. The caller
+/// has checked its whole Single/Ground0/one-level source and real plan. No room
+/// subdivision, roof mesh, new draw, selected door or site pose is supplied.
+fn structural_unit_with_single_entry_details(
+    resolved: &ResolvedArchitecture,
+) -> Result<HouseUnit, String> {
+    let operators: Vec<_> = resolved.parameters.details.iter()
+        .map(|id| crate::features::pre_access_frame_detail(id)
+            .ok_or_else(|| format!("No shared pre-entry operator for {id}.")))
+        .collect::<Result<_, _>>()?;
+    let mut unit = structural_unit(resolved)?;
+    if unit.bodies.len() != 1 || unit.bodies[0].levels.len() != 1
+        || !unit.rooms.is_empty() || !unit.walls.is_empty()
+        || !unit.features.is_empty() || !unit.roofs.vertices.is_empty()
+        || !unit.roofs.faces.is_empty() || !unit.access.nodes.is_empty()
+        || !unit.access.portals.is_empty()
+    {
+        return Err("Shared entry details require the checked bare native skeleton; no pre-existing structure was omitted.".into());
+    }
+    unit.site_context = resolved.plan.context.clone();
+    let spec = &resolved.plan.bodies[0];
+    let body = unit.bodies[0].clone();
+    let level = &body.levels[0];
+    let interior = body_interior_domain(&level.footprint, body.envelope, body.wall_thickness_m);
+    let (kind, surface) = body_envelope_wall_domain(&level.footprint, &interior, body.envelope);
+    let circulations = [(0.0, resolved.plan.paths.clone())];
+    append_body_wall(&mut unit, &body.id, 0, &level.footprint, kind, surface,
+        &circulations, level.z_m, level.height_m, &level.materials.infill, &spec.parameters);
+    // Full add_details uses the global effective Parameters for these native
+    // operators. Body wall parameters/materials above remain component-local.
+    for operator in operators {
+        operator.apply(&mut unit, &resolved.parameters);
+    }
+    Ok(unit)
+}
+
+#[cfg(test)]
+pub(crate) fn single_entry_details_unit_for_probe(
+    resolved: &ResolvedArchitecture,
+) -> Result<HouseUnit, String> {
+    structural_unit_with_single_entry_details(resolved)
+}
+
+fn structural_unit(resolved: &ResolvedArchitecture) -> Result<HouseUnit, String> {
     let plan = &resolved.plan;
     let mut unit = HouseUnit {
         id: "unit-0".into(),
         recipe_id: resolved.recipe_id.clone(),
         variant_id: resolved.parameters.variant_id.clone(),
         label: resolved.recipe_id.clone(),
-        role: Role::Dwelling,
+        role: if !plan.bodies.is_empty() && plan.bodies.iter().all(|b| b.role == Role::NonDomestic)
+        {
+            Role::NonDomestic
+        } else {
+            Role::Dwelling
+        },
         transform: Transform {
             origin: point(0., 0.),
             orientation_deg: 0.,
@@ -925,9 +1581,29 @@ pub(crate) fn volume_unit(resolved: &ResolvedArchitecture) -> Result<HouseUnit, 
             cells: spec.cells.clone(),
         });
     }
+    // Roof attachments reference an aggregate level as well as their owning
+    // body. Keep the same native level extents as detailed construction; an
+    // empty level registry would reject every retained gallery cover.
+    let mut levels = BTreeMap::<u32, (f64, f64)>::new();
+    for body in &unit.bodies {
+        for level in &body.levels {
+            let extent = levels
+                .entry(level.index)
+                .or_insert((level.z_m, level.z_m + level.height_m));
+            extent.0 = extent.0.min(level.z_m);
+            extent.1 = extent.1.max(level.z_m + level.height_m);
+        }
+    }
+    unit.levels = levels
+        .into_iter()
+        .map(|(index, (z_min, z_max))| UnitLevel {
+            index,
+            z_min,
+            z_max,
+        })
+        .collect();
     crate::features::add_structural_circulation(&mut unit, &resolved.parameters)?;
     add_site_enclosures(&mut unit);
-    roofs::build_roofs_with_budget(&mut unit, MAX_BATCH_FACES as usize)?;
     Ok(unit)
 }
 
@@ -1612,6 +2288,80 @@ fn add_body_supports(
     }
 }
 
+fn body_interior_domain(domain: &Surface, envelope: Envelope, wall: f64) -> Surface {
+    if envelope == Envelope::Open {
+        domain.clone()
+    } else {
+        offset(domain, -wall)
+    }
+}
+
+fn body_envelope_wall_domain(
+    domain: &Surface,
+    interior: &Surface,
+    envelope: Envelope,
+) -> (WallKind, Surface) {
+    (
+        if envelope == Envelope::Rockcut {
+            WallKind::Rock
+        } else if matches!(envelope, Envelope::Shell | Envelope::Membrane) {
+            WallKind::Shell
+        } else {
+            WallKind::Exterior
+        },
+        difference(domain, interior),
+    )
+}
+
+/// The existing wall primitive, shared without room subdivision. Callers
+/// still compute the true outer and inner domains; a Level.floor is NOT the
+/// interior domain (it retains the whole footprint before access).
+#[allow(clippy::too_many_arguments)]
+fn append_body_wall(
+    unit: &mut HouseUnit,
+    id: &str,
+    li: usize,
+    domain: &Surface,
+    kind: WallKind,
+    surface: Surface,
+    circulations: &[(f64, Surface)],
+    z: f64,
+    height: f64,
+    material: &str,
+    p: &Parameters,
+) {
+    let same_circulation = unite(
+        &circulations
+            .iter()
+            .filter(|(cz, _)| (*cz - z).abs() < 0.001)
+            .map(|(_, s)| s.clone())
+            .collect::<Vec<_>>(),
+    );
+    let surface = difference(&surface, &same_circulation);
+    if area(&surface) > 0.001 {
+        unit.walls.push(Wall {
+            solid: None,
+            plan_section: None,
+            shell_reference: kind == WallKind::Shell
+                && p.roof_spec
+                    .shell
+                    .as_ref()
+                    .is_some_and(|shell| shell.profile == ShellProfile::Ogival),
+            id: format!("wall:{id}:{li}:{}", unit.walls.len()),
+            kind,
+            body_id: Some(id.into()),
+            level: li as u32,
+            z_m: z,
+            height_m: height,
+            footprint: surface,
+            centerline: domain.first().map(|p| p.outer.clone()).unwrap_or_default(),
+            material: material.into(),
+            party: false,
+            opening_ids: vec![],
+        });
+    }
+}
+
 fn build_body(
     unit: &mut HouseUnit,
     spec: BodySpec,
@@ -1685,11 +2435,7 @@ fn build_body(
             materials: materials.clone(),
         });
         let wall = p.wall_thickness_m[0];
-        let interior = if p.envelope == Envelope::Open {
-            domain.clone()
-        } else {
-            offset(domain, -wall)
-        };
+        let interior = body_interior_domain(domain, p.envelope, wall);
         let mut raw_cells = if !spec.cells.is_empty() {
             spec.cells
                 .iter()
@@ -1826,51 +2572,13 @@ fn build_body(
             circulations.push((z, domain.clone()));
         }
         if p.envelope != Envelope::Open {
-            let exterior = difference(domain, &interior);
+            let exterior = body_envelope_wall_domain(domain, &interior, p.envelope);
             let interior_walls = difference(&interior, &unite(&floors));
-            for (kind, surface) in [
-                (
-                    if p.envelope == Envelope::Rockcut {
-                        WallKind::Rock
-                    } else if matches!(p.envelope, Envelope::Shell | Envelope::Membrane) {
-                        WallKind::Shell
-                    } else {
-                        WallKind::Exterior
-                    },
-                    exterior,
-                ),
-                (WallKind::Interior, interior_walls),
-            ] {
-                let same_circulation = unite(
-                    &circulations
-                        .iter()
-                        .filter(|(cz, _)| (*cz - z).abs() < 0.001)
-                        .map(|(_, s)| s.clone())
-                        .collect::<Vec<_>>(),
+            for (kind, surface) in [exterior, (WallKind::Interior, interior_walls)] {
+                append_body_wall(
+                    unit, &id, li, domain, kind, surface, circulations, z, height,
+                    &materials.infill, p,
                 );
-                let surface = difference(&surface, &same_circulation);
-                if area(&surface) > 0.001 {
-                    unit.walls.push(Wall {
-                        solid: None,
-                        plan_section: None,
-                        shell_reference: kind == WallKind::Shell
-                            && p.roof_spec
-                                .shell
-                                .as_ref()
-                                .is_some_and(|shell| shell.profile == ShellProfile::Ogival),
-                        id: format!("wall:{id}:{li}:{}", unit.walls.len()),
-                        kind,
-                        body_id: Some(id.clone()),
-                        level: li as u32,
-                        z_m: z,
-                        height_m: height,
-                        footprint: surface,
-                        centerline: domain.first().map(|p| p.outer.clone()).unwrap_or_default(),
-                        material: materials.infill.clone(),
-                        party: false,
-                        opening_ids: vec![],
-                    });
-                }
             }
         }
     }
@@ -2169,7 +2877,9 @@ mod partition_tests {
         );
     }
 
-    #[cfg(not(target_arch = "wasm32"))]
+    // This historical crash witness targets i_overlay's debug assertion.
+    // The repaired partition's conservation tests also run in release.
+    #[cfg(all(not(target_arch = "wasm32"), debug_assertions))]
     #[test]
     #[should_panic(expected = "is_fill_top")]
     fn legacy_partition_panics_on_captured_raw_inputs() {
@@ -2260,3 +2970,11 @@ pub(crate) fn native_outboard787_draw() -> Result<HouseUnit, String> {
         .ok_or("Témoin 787 sans draw original 2.")?;
     generate_unit(source, &p, &config, &seed, 2)
 }
+
+#[cfg(test)]
+#[path = "b06_light_entry_tests/structure.rs"]
+mod b06_light_structure_tests;
+
+#[cfg(test)]
+#[path = "b06_light_entry_tests/negative.rs"]
+mod b06_light_negative_tests;

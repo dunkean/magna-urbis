@@ -10,6 +10,10 @@ use crate::model::*;
 use magna_urbis_random::Rng;
 use serde::{Deserialize, Serialize};
 
+/// Current native solver limit for a level foundation, shared by admission
+/// metadata and both placement paths. This is not a historical style limit.
+pub const MAX_LEVEL_FOUNDATION_SLOPE_DEG: f64 = 12.;
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ArchitectureCulture {
     pub culture: String,
@@ -36,7 +40,7 @@ pub enum ArchitectureTypology {
     Compound,
     Detached,
 }
-fn typology(layout: Layout) -> ArchitectureTypology {
+pub(crate) fn typology(layout: Layout) -> ArchitectureTypology {
     match layout {
         Layout::Strip => ArchitectureTypology::Row,
         Layout::Courtyard
@@ -89,7 +93,7 @@ impl ArchitectureTerrain {
             + (p.x - self.origin.x) * self.gradient[0]
             + (p.y - self.origin.y) * self.gradient[1]
     }
-    fn foundation_bounds(&self, surface: &Surface) -> Result<(f64, f64, f64), String> {
+    pub(crate) fn foundation_bounds(&self, surface: &Surface) -> Result<(f64, f64, f64), String> {
         let Some(grid) = &self.grid else {
             let heights: Vec<_> = surface
                 .iter()
@@ -211,6 +215,10 @@ pub struct PlacementRequest {
     pub roof_domain: Option<Surface>,
     #[serde(default)]
     pub placement_hint: Option<Surface>,
+    /// Opt-in, frozen native minimum poses from the matching source export.
+    /// Never an instruction to shrink a requested programme or ignore a pin.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub native_minimum_candidates: Vec<crate::native_candidate::NativeMinimumCandidate>,
     pub accesses: Vec<ArchitectureAccess>,
     pub party_boundaries: Vec<[Point; 2]>,
     pub neighbors: Vec<ArchitectureNeighbor>,
@@ -226,6 +234,8 @@ pub struct PlacementRequest {
     pub occupation: Option<ArchitectureOccupation>,
     #[serde(default)]
     pub parcel_fit: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub programme: Option<crate::programme::ArchitectureProgramme>,
 }
 #[derive(Clone, Serialize, Deserialize)]
 pub struct ArchitectureOccupation {
@@ -388,7 +398,7 @@ pub fn admissibility_profiles() -> Result<Vec<AdmissibilityProfile>, String> {
             minimum_domain_m:minimum.min_envelope_m,
             minimum_access_width_m:minimum.min_access_width_m,
             minimum_status:minimum.status.clone(), minimum_refusal:minimum.refusal.clone(),
-            max_slope_deg:12., requires_access:true,
+            max_slope_deg:MAX_LEVEL_FOUNDATION_SLOPE_DEG, requires_access:true,
             party_walls:p.details.iter().any(|d| d=="party_walls"),
             provenance:"Catalogue ranges and native minimum default-bundle domain (roof, enclosure, supports and access), excluding solver clearance; placement still validates the resolved plan.".into(),
             confidence:r.confidence.clone(),
@@ -504,7 +514,7 @@ fn non_domestic(f: ArchitectureFunction) -> bool {
 /// A single nonzero overlay of native projected faces. Canonical winding avoids
 /// interpreting underside faces as negative masks, and avoids accumulating tiny
 /// shared-edge artifacts through sequential pairwise OGC overlays.
-fn projected_roof_union(parts: &[Surface]) -> Surface {
+pub(crate) fn projected_roof_union(parts: &[Surface]) -> Surface {
     use geo::BooleanOps;
     use geo::algorithm::bool_ops::FillRule;
     let mut polygons: Surface = parts.iter().flatten().cloned().collect();
@@ -520,6 +530,29 @@ fn projected_roof_union(parts: &[Surface]) -> Surface {
     }
     from_geo(&to_geo(&polygons).union_with_fill_rule(&geo::MultiPolygon(vec![]), FillRule::NonZero))
 }
+
+/// Structural site geometry after native access has cut the actual gates.
+/// Shared by ordinary placement and cached admission poses, including lintels.
+pub(crate) fn native_site_features(unit: &HouseUnit) -> Vec<Feature> {
+    let mut features: Vec<_> = unit.features.iter()
+        .filter(|f| !unit.walls.iter().any(|w| w.id == format!("wall:{}", f.id)))
+        .cloned().collect();
+    features.extend(unit.walls.iter().map(|w| Feature {
+        id: format!("structure:{}", w.id),
+        kind: if w.kind == WallKind::Retaining {
+            FeatureKind::Retaining
+        } else {
+            FeatureKind::Enclosure
+        },
+        surface: w.footprint.clone(),
+        z_m: w.z_m,
+        height_m: w.height_m,
+        material: w.material.clone(),
+        vertices3d: vec![],
+        roof: None,
+    }));
+    features
+}
 fn refusal(
     r: &PlacementRequest,
     code: &str,
@@ -534,7 +567,7 @@ fn refusal(
         attempts,
     }
 }
-fn valid_surface(surface: &Surface) -> bool {
+pub(crate) fn valid_surface(surface: &Surface) -> bool {
     !surface.is_empty()
         && surface.iter().all(|p| {
             p.outer.len() >= 3
@@ -550,7 +583,7 @@ fn valid_surface(surface: &Surface) -> bool {
 /// Broad phase only: exact surfaces remain authoritative. Large envelopes use
 /// an overflow list rather than allocating an unbounded number of grid cells.
 #[derive(Default)]
-struct OccupationIndex {
+pub(crate) struct OccupationIndex {
     surfaces: Vec<Surface>,
     boxes: Vec<[f64; 4]>,
     cells: std::collections::BTreeMap<(i64, i64), Vec<usize>>,
@@ -573,7 +606,7 @@ impl OccupationIndex {
                 .collect(),
         )
     }
-    fn insert(&mut self, surface: Surface) {
+    pub(crate) fn insert(&mut self, surface: Surface) {
         if surface.is_empty() {
             return;
         }
@@ -589,7 +622,7 @@ impl OccupationIndex {
         self.boxes.push(b);
         self.surfaces.push(surface);
     }
-    fn local(&self, domain: &Surface) -> Surface {
+    pub(crate) fn local(&self, domain: &Surface) -> Surface {
         if !valid_surface(domain) {
             return vec![];
         }
@@ -817,12 +850,12 @@ fn place(
         ));
     }
     let slope = libm::atan(libm::hypot(terrain.gradient[0], terrain.gradient[1])).to_degrees();
-    if terrain.grid.is_none() && slope > 12. {
+    if terrain.grid.is_none() && slope > MAX_LEVEL_FOUNDATION_SLOPE_DEG {
         return Err(refusal(
             r,
             "slope_exceeded",
             format!(
-                "Physical slope {slope:.2}° exceeds the current level-foundation limit of 12°."
+                "Physical slope {slope:.2}° exceeds the current level-foundation limit of {MAX_LEVEL_FOUNDATION_SLOPE_DEG}°."
             ),
             0,
         ));
@@ -1240,26 +1273,7 @@ fn place(
             resolved.entrance = Some(native_entry);
             // Enclosure features are authored before access. Render their native
             // cut walls (including lintels), not the original closed ring.
-            let mut structural_features: Vec<_> = unit
-                .features
-                .iter()
-                .filter(|f| !unit.walls.iter().any(|w| w.id == format!("wall:{}", f.id)))
-                .cloned()
-                .collect();
-            structural_features.extend(unit.walls.iter().map(|w| Feature {
-                id: format!("structure:{}", w.id),
-                kind: if w.kind == WallKind::Retaining {
-                    FeatureKind::Retaining
-                } else {
-                    FeatureKind::Enclosure
-                },
-                surface: w.footprint.clone(),
-                z_m: w.z_m,
-                height_m: w.height_m,
-                material: w.material.clone(),
-                vertices3d: vec![],
-                roof: None,
-            }));
+            let structural_features = native_site_features(&unit);
             let footprint = unite(
                 &unit
                     .bodies
@@ -1726,10 +1740,10 @@ fn place(
                         continue;
                     }
                 };
-                if physical_slope > 12. {
+                if physical_slope > MAX_LEVEL_FOUNDATION_SLOPE_DEG {
                     last_code = "slope_exceeded";
                     reason = format!(
-                        "Physical raster slope {physical_slope:.2}° exceeds current level-foundation support limit of 12°."
+                        "Physical raster slope {physical_slope:.2}° exceeds current level-foundation support limit of {MAX_LEVEL_FOUNDATION_SLOPE_DEG}°."
                     );
                     continue;
                 }
@@ -2022,7 +2036,7 @@ fn place(
     Err(refusal(r, last_code, reason, attempts))
 }
 
-fn segment_corridor(a: Point, b: Point, width: f64) -> Surface {
+pub(crate) fn segment_corridor(a: Point, b: Point, width: f64) -> Surface {
     let length = libm::hypot(b.x - a.x, b.y - a.y);
     if length < 0.001 {
         return rectangle(a.x - width * 0.5, a.y - width * 0.5, width, width);
@@ -2198,6 +2212,7 @@ mod tests {
             reserves: vec![],
             roof_domain: None,
             placement_hint: None,
+            native_minimum_candidates: vec![],
             accesses: vec![ArchitectureAccess {
                 id: "street".into(),
                 segment: [point(0., 60.), point(80., 60.)],
@@ -2226,6 +2241,7 @@ mod tests {
             config: None,
             occupation: None,
             parcel_fit: None,
+            programme: None,
         }
     }
     fn run(r: PlacementRequest) -> PlacementBatch {
@@ -3023,18 +3039,57 @@ mod tests {
     }
     #[test]
     fn real_three_level_house_enriches_after_json_transfer() {
-        let resolved: ResolvedArchitecture = serde_json::from_str(include_str!(
+        let legacy: ResolvedArchitecture = serde_json::from_str(include_str!(
             "../fixtures/urban-enrichment-eur-med-b02.json"
         ))
         .unwrap();
+        // Keep the old retained geometry as evidence: changing its version
+        // would falsely certify the former entrance under the current engine.
+        assert_eq!(legacy.generator_version, "houses-2");
+        let legacy_before = serde_json::to_value(&legacy).unwrap();
+        let error = crate::engine::enrich_architecture(&legacy)
+            .err()
+            .expect("An old retained architecture must require regeneration.");
+        assert_eq!(
+            error,
+            "Resolved architecture version is incompatible; retained geometry was not regenerated."
+        );
+
+        // Rebuild through the real urban resolver with only the recorded
+        // source controls and nominal dimensions. Do not reuse old bodies,
+        // resolved parameter draws or the former entrance.
+        let dimensions = [legacy.parameters.width_m[0], legacy.parameters.depth_m[0]];
+        let current = resolve_urban_architecture(
+            legacy.config.clone(),
+            ArchitectureFunction::Domestic,
+            dimensions,
+            false,
+            Some(dimensions),
+            None,
+            false,
+        )
+        .unwrap();
+        assert_eq!(current.generator_version, crate::GENERATOR_VERSION);
+        assert_eq!(current.recipe_id, legacy.recipe_id);
+        assert_eq!(current.config.seed, legacy.config.seed);
+        assert_eq!(current.parameters.width_m, [dimensions[0]; 2]);
+        assert_eq!(current.parameters.depth_m, [dimensions[1]; 2]);
+        assert_eq!(current.parameters.floors, [3, 3]);
+        assert!(current.entrance.is_none());
+        let resolved: ResolvedArchitecture =
+            serde_json::from_slice(&serde_json::to_vec(&current).unwrap()).unwrap();
         let batch = crate::engine::enrich_architecture(&resolved).unwrap();
+        assert_eq!(batch.generator_version, crate::GENERATOR_VERSION);
         assert_eq!(batch.units[0].bodies[0].levels.len(), 3);
+        assert_eq!(batch.units[0].bodies.len(), resolved.plan.bodies.len());
         for (body, spec) in batch.units[0].bodies.iter().zip(&resolved.plan.bodies) {
             assert_eq!(body.footprint, spec.footprint);
+            assert_eq!(body.levels.len(), spec.levels.len());
             for (level, footprint) in body.levels.iter().zip(&spec.levels) {
                 assert_eq!(&level.footprint, footprint);
             }
         }
+        assert_eq!(serde_json::to_value(&legacy).unwrap(), legacy_before);
     }
     #[test]
     fn fragmented_frontage_search_uses_central_legal_contacts() {

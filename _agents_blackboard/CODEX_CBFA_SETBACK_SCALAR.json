@@ -1,0 +1,183 @@
+{
+  "version": "cbfa-constructive-setback-offline-1",
+  "scope": "GEOS/analytical witness only; no native construction/admission",
+  "id": "layout-f9dab5910f08a8a2/block-356ad6992b3b5b75/parcel-cbfa2d85b3057462/building",
+  "recipe": "EUR-MED-B11",
+  "request_index": 4,
+  "target_m2": 313.9,
+  "incumbent_area_m2": 80.27111001714292,
+  "source_ratio": [
+    0.4166666666666667,
+    1.2857142857142858
+  ],
+  "dimensions_m": [
+    7.072,
+    16.97
+  ],
+  "body_area_m2": 120.01183999999999,
+  "roof_margin_m": 0.465,
+  "old_transform": {
+    "origin": {
+      "x": 7165.642361138759,
+      "y": 7950.917536675575
+    },
+    "orientation_deg": -26.837093872975906
+  },
+  "translation_old_local_m": [
+    -2.0442800510831867,
+    3.594194484828331
+  ],
+  "proposed_transform": {
+    "origin": {
+      "x": 7165.440881074023,
+      "y": 7955.047514969167
+    },
+    "orientation_deg": -26.837093872975906
+  },
+  "convex_subset": {
+    "method": "exact rights intersection with y>=old body front; no hull",
+    "front_y": 0.0,
+    "vertices": [
+      [
+        -1.9712516281256758,
+        0.0
+      ],
+      [
+        5.49271994891701,
+        0.0
+      ],
+      [
+        5.4927199489166085,
+        43.01843170451607
+      ],
+      [
+        4.646103171219835,
+        43.27113795237146
+      ],
+      [
+        -9.007577278515784,
+        40.92354693386817
+      ]
+    ],
+    "signed_turn_min": 5.43788029930437,
+    "area_m2": 467.33505870947687,
+    "excluded_rights_area_m2": 4.9638476260290805,
+    "constraints": 5,
+    "translation_vertices": [
+      [
+        -2.0442800510833825,
+        24.605853308720423
+      ],
+      [
+        -2.0442800510831867,
+        3.594194484828331
+      ],
+      [
+        -5.553254183926401,
+        24.00252615537532
+      ]
+    ]
+  },
+  "frontage": {
+    "id": "layout-f9dab5910f08a8a2/block-356ad6992b3b5b75/parcel-cbfa2d85b3057462/street/177",
+    "street_local": [
+      [
+        -0.4917136985654349,
+        -0.5650000035763907
+      ],
+      [
+        5.492719948917017,
+        -0.8093350216532684
+      ]
+    ],
+    "entry_proxy_local": [
+      1.4917199489168134,
+      3.594194484828331
+    ],
+    "contact_local": [
+      1.3188883741712873,
+      -0.6389240398731698
+    ],
+    "width_m": 0.8,
+    "cap_coordinates_local": [
+      [
+        [
+          1.0913866956330127,
+          3.594194484828331
+        ],
+        [
+          0.919221350041832,
+          -0.6226062635692271
+        ],
+        0.23576751480916217
+      ],
+      [
+        [
+          1.892053202200614,
+          3.594194484828331
+        ],
+        [
+          1.7185553983007427,
+          -0.6552418161771119
+        ],
+        0.3693363862085763
+      ]
+    ],
+    "path_local": [
+      [
+        1.0913866956330127,
+        3.594194484828331
+      ],
+      [
+        0.919221350041832,
+        -0.6226062635692271
+      ],
+      [
+        1.7185553983007427,
+        -0.6552418161771119
+      ],
+      [
+        1.892053202200614,
+        3.594194484828331
+      ],
+      [
+        1.0913866956330127,
+        3.594194484828331
+      ]
+    ],
+    "path_area_m2": 3.3893162210575296,
+    "entry_contract": "geometric facade centre only; no native doorway claimed"
+  },
+  "terrain": {
+    "low_m": 42.612766763828674,
+    "high_m": 42.84287143784199,
+    "step_m": 0.2301046740133188,
+    "slope_deg": 1.5210437609643925,
+    "max_step_m": 0.75,
+    "max_slope_deg": 12
+  },
+  "checks": {
+    "body_outside_buildable_m2": 0.0,
+    "roof_rectangle_outside_roof_rights_m2": 0.0,
+    "connector_outside_cadastral_m2": 0.0,
+    "connector_body_overlap_m2": 0.0,
+    "body_previous_occupation_overlap_m2": 0.0,
+    "roof_previous_occupation_overlap_m2": 0.0,
+    "connector_previous_occupation_overlap_m2": 0.0,
+    "roof_outside_exact_convex_subset_m2": 0.0
+  },
+  "native_constructions": 0,
+  "geometry_proposals": 1,
+  "pending": [
+    "same-source native rectangle and RF-STEEP-STEP roof projection",
+    "ordinary native terrain/support/rights admission",
+    "actual structural doorway matching this facade connection, or certified connector to it",
+    "native exterior/interior replay, unchanged source/floors"
+  ],
+  "inputs_sha256": {
+    "web/out/strip-initial-budget-proof/requests.json": "4fb8c3e55cf52edfcbca524a98854429b152e3151cbbc60197a13941b77c253d",
+    "web/out/native-entry-existing-door-cli-proof/replay/primary-plans.json": "e7ec261aee98582ab584f281a38274640a940eaa6c549930779866d6bb94ccfa",
+    "web/out/source-aspect-budget-cli-proof/replay/primary-plans.json": "900398d7343b4e21957a834f83e030b8e35c687b9145a53f7b14b971c06e1da5"
+  },
+  "script_sha256": "8c0ac90a1ee8345f14cfb488fc880d1cfad9e07f5dd3431d61af09f18ccf4b54"
+}

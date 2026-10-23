@@ -1,5 +1,4 @@
 import { urbanOptionSync } from './urbanOptionSync';
-import { createUrbanLanduse } from './urbanLanduse';
 import type { Relief } from '../gen/options';
 import SettlementWorker from './settlementWorker?worker&inline';
 import { defaultSettlementConfig, defaultSettlementSpec, settlementRaster, runSettlementRequest, type Point, type RoadSite, type SettlementConfig, type SettlementOutput, type SettlementRequest, type SettlementResponse, type SettlementSpec } from '../../../rust/bridge/settlements';
@@ -10,12 +9,15 @@ import { SITE_ARCHETYPES, classOfPop } from '../gen/options';
 import { SETTLEMENT_KINDS } from './settlementKinds';
 import { createTerrainRoads } from './terrainRoads';
 import { createTerrainUrban } from './terrainUrban';
-import { captureDecorData, downloadBytes } from './decorCapture';
-import { decorEntry, encodeDecor, encodeDecorAsync, type Decor, type DecorEntry } from './decor';
+import { captureDecorData } from './decorCapture';
+import { type Decor } from './decor';
+import { downloadDecorFile } from './decorFile';
+import { createTerrainDecorExports } from './terrainDecorExport';
 import type { UrbanPaintingContext } from '../../../rust/bridge/urbanPaintingMask';
 import type { ForestOccupation } from '../../../rust/bridge/terrainForest';
 import type { UrbanLanduseScene } from './urbanLanduseData';
 import { forestOccupation } from './forestOccupation';
+import urbanCatalogue from '../../../rust/crates/core/src/urban/catalogue.json';
 
 const ns = 'http://www.w3.org/2000/svg';
 // Small cartographic silhouettes, centred on the settlement's actual position.
@@ -51,6 +53,8 @@ export function createTerrainSettlements(options: {
   useForestMaterial?(): boolean;
   /** Applied rural occupation in the displayed terrain frame, or undefined. */
   onForestOccupation?(occupation: ForestOccupation | undefined): void;
+  /** City Bench: one editable city (size, culture, position); no rural land use. */
+  city?: boolean;
 }) {
   const { map, viewport } = options;
   let restoringDecor = false;
@@ -114,11 +118,11 @@ export function createTerrainSettlements(options: {
     onDisplayChange: options.onChange,
   });
   const urban = createTerrainUrban({ map, before: backend, getTerrain: options.getTerrain,
-    getRaster: options.getRaster,
+    getRaster: options.getRaster, city: options.city,
     parcelDefault: options.parcelDefault ?? false,
-    getSeed: () => options.getSettings().seed, getAuto: options.getAuto, onChange: () => { if (!restoringDecor) publishOptions(urban.workshopDraft() ?? urban.workshopSettings()); draw(); options.onChange(); }, onPlanChange: () => { if (!restoringDecor) publishOptions(urban.workshopDraft() ?? urban.workshopSettings()); syncLanduse(); options.onPlanChange?.(); }, onFocus: options.onFocus, onProjection: options.onProjection });
+    getSeed: () => options.getSettings().seed, getAuto: options.getAuto, upstreamPending: () => enabled && !decorReady(), onChange: () => { if (!restoringDecor) publishOptions(urban.workshopDraft() ?? urban.workshopSettings()); draw(); options.onChange(); }, onPlanChange: () => { if (!restoringDecor) publishOptions(urban.workshopDraft() ?? urban.workshopSettings()); syncLanduse(); options.onPlanChange?.(); }, onFocus: options.onFocus, onProjection: options.onProjection });
   const publishOptions = urbanOptionSync(() => { const d = options.getDecor?.(); return d && urban.target !== 'all' ? `${d.meta.pipeline?.syncSource ?? d.meta.id}:${urban.target}` : undefined; }, state => urban.applyWorkshopDraft(state));
-  if (options.active !== false && !document.getElementById('showLanduse')) {
+  if (options.active !== false && !options.city && !document.getElementById('showLanduse')) {
     const label = document.createElement('label'); label.innerHTML = '<input id="showLanduse" type="checkbox" checked>Occupation du territoire';
     document.querySelector('#lightingControls .lighting-fields')!.append(label);
   }
@@ -126,13 +130,18 @@ export function createTerrainSettlements(options: {
   // Only an applied rural plan constrains the forest; natural cover never does.
   let landuseScene: UrbanLanduseScene | undefined, occupationScene: UrbanLanduseScene | undefined;
   let occupation: ForestOccupation | undefined, published: ForestOccupation | undefined;
-  const landuse = options.active === false ? undefined : createUrbanLanduse({ map, before: backend ?? panel,
-    onChange: options.onChange,
-    onPlanChange: () => options.onPlanChange?.(),
-    getView: () => ({ view: options.getView(), width: viewport.clientWidth, height: viewport.clientHeight }),
-    getBackground: () => ({ opacity: 0 }),
-    forestMaterial: () => !!options.useForestMaterial?.(),
-    onScene: (scene, applied) => { landuseScene = applied ? scene : undefined; publishForest(false); },
+  // Rural land use brings the fantasy brush atlases: loaded on demand, never by the City Bench.
+  let landuse: ReturnType<typeof import('./urbanLanduse')['createUrbanLanduse']> | undefined;
+  if (options.active !== false && !options.city) void import('./urbanLanduse').then(({ createUrbanLanduse }) => {
+    landuse = createUrbanLanduse({ map, before: backend ?? panel,
+      onChange: options.onChange,
+      onPlanChange: () => options.onPlanChange?.(),
+      getView: () => ({ view: options.getView(), width: viewport.clientWidth, height: viewport.clientHeight }),
+      getBackground: () => ({ opacity: 0 }),
+      forestMaterial: () => !!options.useForestMaterial?.(),
+      onScene: (scene, applied) => { landuseScene = applied ? scene : undefined; publishForest(false); },
+    });
+    syncLanduse(); options.onChange();
   });
   function publishForest(always: boolean): void {
     let next: ForestOccupation | undefined;
@@ -166,6 +175,30 @@ export function createTerrainSettlements(options: {
   const input = (name: string): HTMLInputElement => el<HTMLInputElement>(name);
   const mode = el<HTMLSelectElement>('setMode'), culture = el<HTMLSelectElement>('setCulture'), distribution = el<HTMLSelectElement>('setDistribution');
   culture.innerHTML = Object.values(CULTURES).map(c => `<option value="${esc(c.id)}">${esc(c.label)}</option>`).join('');
+  // The City Bench offers every culture of the native urban catalogue.
+  const cityCultures = Object.entries(urbanCatalogue.cultures).map(([id, c]) => ({ id, label: c.label }));
+  if (options.city) {
+    panel.querySelector('summary')!.firstChild!.textContent = '1 · Ville ';
+    for (const id of ['setEnabled', 'setMode', 'setDistribution', 'setMainPop', 'setCulture']) el(id).closest('label')!.hidden = true;
+    for (const id of ['setCounts', 'setGenerate', 'setTakeOver', 'setAdd', 'setExportDecor']) el(id).hidden = true;
+    for (const box of Array.from(panel.querySelectorAll<HTMLElement>(':scope > .stage-controls > details, :scope > .stage-controls > .control-group[data-show]'))) box.hidden = true;
+    el('setPickHint').textContent = 'Glissez le marqueur ou utilisez « Placer sur la carte » : seules les routes et le plan sont recalculés.';
+    el('setPickHint').before(el('setEditor'));
+    places.hidden = true;
+  }
+  /** Population ceiling of the loaded City Bench map (decor tag), else the editor's own limit. */
+  const maxPopulation = (): number => Number(options.getDecor?.()?.meta.tags.maxPopulation) || 5000000;
+  /** Nearest dry cell to a point, on the raster Rust places settlements on. */
+  function dryNear(p: Point): Point | undefined {
+    const t = options.getTerrain(); const raster = validation ?? options.getRaster?.() ?? (t ? settlementRaster(t) : undefined);
+    if (!raster) return undefined;
+    const n = raster.n, cell = raster.width / n, cx = Math.min(n - 1, Math.floor(p.x / cell)), cy = Math.min(n - 1, Math.floor(p.y / cell));
+    for (let r = 0; r < n; r++) for (let y = Math.max(0, cy - r); y <= Math.min(n - 1, cy + r); y++) for (let x = Math.max(0, cx - r); x <= Math.min(n - 1, cx + r); x++) {
+      if (Math.max(Math.abs(x - cx), Math.abs(y - cy)) !== r || raster.water[y * n + x]) continue;
+      return r ? { x: (x + 0.5) * cell, y: (y + 0.5) * cell } : p;
+    }
+    return undefined;
+  }
   function controls(): void {
     input('setEnabled').checked = enabled; mode.value = config.mode; distribution.value = config.distribution;
     input('setMainPop').value = String(config.main.population); input('setMainPop').disabled = config.mode === 'list'; culture.value = config.main.culture;
@@ -179,7 +212,9 @@ export function createTerrainSettlements(options: {
   function setPicking(key?: string): void {
     picking = key; if (key) { options.onPicking(); showPoints = true; input('setShowPoints').checked = true; }
     viewport.classList.toggle('settlement-picking', !!key);
-    el('setPickHint').textContent = key ? 'Click dry land on the map. Esc cancels.' : 'Select a marker to inspect its scores. Drag it to move it: only the roads are recalculated.';
+    el('setPickHint').textContent = options.city
+      ? key ? 'Cliquez sur la terre ferme. Échap annule.' : 'Glissez le marqueur ou utilisez « Placer sur la carte » : seules les routes et le plan sont recalculés.'
+      : key ? 'Click dry land on the map. Esc cancels.' : 'Select a marker to inspect its scores. Drag it to move it: only the roads are recalculated.';
     draw();
   }
   function adopt(): void {
@@ -259,7 +294,9 @@ export function createTerrainSettlements(options: {
   }
   function edit(change: (s: SettlementSpec) => void): void {
     adopt(); const spec = config.list.find(s => s.key === selection); if (!spec) return;
-    change(spec); list(); editor(); changed();
+    change(spec); list(); changed();
+    // Rebuild once focus has moved (Tab from X to Y), then return it to the same field.
+    requestAnimationFrame(() => { const focused = document.activeElement?.id; editor(); if (focused) document.getElementById(focused)?.focus(); });
   }
   function editor(): void {
     const result = output?.settlements.find(s => s.key === selection);
@@ -268,12 +305,12 @@ export function createTerrainSettlements(options: {
     host.innerHTML = `<div class="settlement-editor"><b>Properties</b>
       <label>Name <input id="setName" type="text" maxlength="60"></label>
       <label>Class <select id="setClass">${SETTLEMENT_KINDS.map(c => `<option value="${c.kind}">${c.label}</option>`).join('')}</select></label>
-      <label>Population <input id="setPopulation" type="number" min="1" max="5000000" step="1"></label>
-      <label>Culture <select id="setPlaceCulture">${culture.innerHTML}</select></label>
+      <label>Population <input id="setPopulation" type="number" min="1" max="${options.city ? maxPopulation() : 5000000}" step="1"></label>
+      <label>Culture <select id="setPlaceCulture">${options.city ? cityCultures.map(c => `<option value="${esc(c.id)}">${esc(c.label)}</option>`).join('') : culture.innerHTML}</select></label>${options.city ? '<div class="settlement-actions"><button id="setCulturePrevious" type="button" title="Culture précédente">◀ Culture</button><button id="setCultureNext" type="button" title="Culture suivante">Culture ▶</button></div>' : ''}
       <label>Role (label) <input id="setKind" type="text" maxlength="60"></label>
       <label>Site preference <select id="setSite"><option value="auto">Automatic</option>${SITE_ARCHETYPES.map(s => `<option value="${s}">${s}</option>`).join('')}</select></label>
       <label>X (m) <input id="setX" type="number" min="0" step="1" placeholder="auto"></label><label>Y (m) <input id="setY" type="number" min="0" step="1" placeholder="auto"></label>
-      <div class="settlement-actions"><button id="setMove" type="button">Place on map</button><button id="setAutoPosition" type="button">Automatic position</button><button id="setRemove" type="button">Delete</button></div>
+      <div class="settlement-actions"><button id="setMove" type="button">Place on map</button>${options.city ? '<button id="setCentre" type="button" title="Terre ferme la plus proche du centre de la carte">Centre de la carte</button>' : ''}<button id="setAutoPosition" type="button">Automatic position</button><button id="setRemove" type="button">Delete</button></div>
       <details><summary>Site preferences</summary><label>Mountain face <input id="setMountain" type="number" min="0" max="10" step="0.1"></label><label>Woodland <input id="setWood" type="number" min="0" max="10" step="0.1"></label><label>Hilltop weight <input id="setHill" type="number" min="0" max="10" step="0.1"></label></details>
       <div id="setScore"></div></div>`;
     input('setName').value = spec.name; input('setPopulation').value = String(spec.population);
@@ -299,6 +336,32 @@ export function createTerrainSettlements(options: {
       edit(s => { s.position = { x: Number(x.value), y: Number(y.value) }; });
     };
     input('setX').onchange = input('setY').onchange = positionChanged;
+    if (options.city) {
+      el<HTMLSelectElement>('setClass').replaceChildren(...SETTLEMENT_KINDS.filter(k => k.population <= maxPopulation()).map(k => new Option(k.label, k.kind)));
+      el<HTMLSelectElement>('setClass').value = classOfPop(spec.population);
+      el('setKind').closest('label')!.hidden = true;
+      // Implantation: a fixed position (map centre by default) or a site found by the placement strategy.
+      const site = el<HTMLSelectElement>('setSite');
+      site.closest('label')!.firstChild!.textContent = 'Implantation ';
+      site.replaceChildren(...IMPLANTATIONS.map(([value, label]) => new Option(label, value)));
+      // A placed site keeps its type once adopted (adoption pins the found position).
+      site.value = spec.siteType !== 'auto' ? spec.siteType : spec.position ? 'fixed' : 'auto';
+      site.onchange = () => {
+        if (site.value !== 'fixed') { edit(s => { s.siteType = site.value as SettlementSpec['siteType']; delete s.position; }); return; }
+        const width = options.getTerrain()?.width ?? 0, p = dryNear({ x: width / 2, y: width / 2 });
+        if (p) edit(s => { s.siteType = 'auto'; s.position = { x: Math.round(p.x), y: Math.round(p.y) }; });
+      };
+      el('setRemove').hidden = true; el('setMountain').closest('details')!.hidden = true;
+      const cultureSelect = el<HTMLSelectElement>('setPlaceCulture');
+      cultureSelect.onchange = () => { urban.adoptSiteCulture(); edit(s => { s.culture = cultureSelect.value; s.sitePrefs = {}; }); };
+      const step = (delta: number): void => { cultureSelect.selectedIndex = (cultureSelect.selectedIndex + delta + cultureSelect.options.length) % cultureSelect.options.length; cultureSelect.dispatchEvent(new Event('change')); };
+      el('setCulturePrevious').onclick = () => step(-1); el('setCultureNext').onclick = () => step(1);
+      el('setCentre').onclick = () => {
+        const width = options.getTerrain()?.width ?? 0, p = dryNear({ x: width / 2, y: width / 2 });
+        if (!p) { el('setScore').textContent = 'Aucune terre ferme sur cette carte.'; return; }
+        edit(s => { s.position = { x: Math.round(p.x), y: Math.round(p.y) }; });
+      };
+    }
     el('setMove').onclick = () => { adopt(); setPicking(selection); };
     el('setAutoPosition').onclick = () => edit(s => { delete s.position; });
     el('setRemove').onclick = () => { adopt(); config.list = config.list.filter(s => s.key !== selection); selection = ''; setPicking(); list(); editor(); changed(); };
@@ -315,7 +378,8 @@ export function createTerrainSettlements(options: {
     let layer = map.querySelector<SVGGElement>('#settlementOverlay');
     if (!layer) { layer = document.createElementNS(ns, 'g'); layer.id = 'settlementOverlay'; map.append(layer); }
     roads.draw();
-    layer.style.pointerEvents = urban.buildingView ? 'none' : 'auto';
+    // Inspector views (buildings; City Bench roles) take map clicks: markers stay visible but inert.
+    layer.style.pointerEvents = urban.inspecting ? 'none' : 'auto';
     const state = `${enabled}|${showPoints}|${selection}`;
     if (layer === drawnLayer && output === drawnOutput && state === drawnState) {
       for (const marker of Array.from(layer.querySelectorAll<SVGGElement>('[data-settlement]'))) {
@@ -356,7 +420,7 @@ export function createTerrainSettlements(options: {
     enabled = true; setPicking(); controls(); list(); editor(); changed(); return true;
   }
   map.addEventListener('pointerdown', event => {
-    if (urban.buildingView) return;
+    if (urban.inspecting) return;
     const marker = (event.target as Element).closest<SVGGElement>('[data-settlement]'); if (!marker || event.button !== 0 || picking) return;
     event.stopImmediatePropagation(); options.onPicking();
     const p = world(event); drag = { key: marker.dataset.settlement!, pointer: event.pointerId, start: p, point: p, moved: false }; map.setPointerCapture(event.pointerId);
@@ -375,7 +439,7 @@ export function createTerrainSettlements(options: {
   }, true);
   map.addEventListener('pointercancel', () => { drag = undefined; draw(); }, true);
   map.addEventListener('click', event => {
-    if (!urban.buildingView && (suppressClick || (event.target as Element).closest('[data-settlement]'))) { event.stopImmediatePropagation(); suppressClick = false; }
+    if (!urban.inspecting && (suppressClick || (event.target as Element).closest('[data-settlement]'))) { event.stopImmediatePropagation(); suppressClick = false; }
   }, true);
   window.addEventListener('keydown', event => { if (event.key === 'Escape') { setPicking(); drag = undefined; draw(); } });
   input('setEnabled').onchange = () => { enabled = input('setEnabled').checked; changed(); };
@@ -411,22 +475,20 @@ export function createTerrainSettlements(options: {
       { ...extra, query: extra?.query ?? options.getQuery?.(),
         pipeline: { stage: 'settlements', urban: urban.workshopState(), urbanDraft: urban.workshopDraft() } });
   };
-  const decor = (extra?: Parameters<typeof captureDecorData>[5]): { bytes: Uint8Array; meta: Decor['meta'] } => {
-    const snapshot = decorData(extra);
-    return { bytes: encodeDecor(snapshot), meta: snapshot.meta };
-  };
-  el('setExportDecor').onclick = async () => {
-    try { const s = options.getSettings(); downloadBytes(await encodeDecorAsync(decorData()), `${s.relief}-${s.seed}.decor`.replace(/[^\w.-]+/g, '_')); }
-    catch (error) { el('setStatus').textContent = String(error instanceof Error ? error.message : error); }
+  const exports = createTerrainDecorExports(decorData);
+  el('setExportDecor').onclick = () => {
+    try {
+      const s = options.getSettings();
+      // Call in the button activation, before history/compression/storage awaits.
+      void downloadDecorFile(decorData(), `${s.relief}-${s.seed}.decor`.replace(/[^\w.-]+/g, '_'))
+        .catch(error => { el('setStatus').textContent = String(error instanceof Error ? error.message : error); });
+    } catch (error) { el('setStatus').textContent = String(error instanceof Error ? error.message : error); }
   };
   // Batch export (web/scripts/export_decors.mjs) drives the bench through this hook.
   (window as unknown as { magnaDecor: unknown }).magnaDecor = {
     ready: decorReady,
-    export(file: string, extra?: Parameters<typeof captureDecorData>[5]): { base64: string; entry: DecorEntry } {
-      const { bytes, meta } = decor(extra); let text = '';
-      for (let i = 0; i < bytes.length; i += 0x8000) text += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
-      return { base64: btoa(text), entry: decorEntry(meta, file) };
-    },
+    export: exports.export,
+    exportAsync: exports.exportAsync,
   };
   controls(); list();
   return {
@@ -439,19 +501,32 @@ export function createTerrainSettlements(options: {
       list(); editor(); draw();
     },
     ready: decorReady,
-    capture: decor,
+    capture: exports.capture,
+    captureAsync: exports.captureAsync,
     captureData: decorData,
     restoreDecor(d: Decor): void {
       clearTimeout(timer); ++id; answered = id; complete = true; cachedTerrain = undefined;
       if (!d.meta.settlements.length) { needsPlacement = true; recalculate(); return; }
+      // The City Bench link carries the edited city (size, culture, position); the map keeps its first placement.
+      const edited = options.city && config.mode === 'list' && config.list.length ? clone(config.list) : undefined;
       enabled = true; output = { settlements: clone(d.meta.settlements), requested: d.meta.settlements.length, usableKm2: 0, warnings: [], ms: 0 }; needsPlacement = false;
-      config.mode = 'auto'; adopt(); selection = d.meta.pipeline?.city ?? ''; controls(); list(); editor();
+      config.mode = 'auto'; adopt();
+      const key = (s: SettlementSpec): string => JSON.stringify([s.key, s.population, s.culture, s.name, s.position && [Math.round(s.position.x), Math.round(s.position.y)]]);
+      const replaced = !!edited && edited.map(key).join() !== config.list.map(key).join();
+      if (replaced) config.list = edited!; selection = d.meta.pipeline?.city ?? (options.city ? output.settlements[0]?.key ?? '' : ''); controls(); list(); editor();
+      el('setStatus').textContent = `Map · ${output.settlements.length} place(s) · ${output.settlements.reduce((sum, s) => sum + s.population, 0).toLocaleString()} inhabitants`;
       if (d.meta.roadConfig) roads.setConfig(d.meta.roadConfig);
-      restoringDecor = true; roads.set(d.meta.roads ?? undefined); urban.setSettlements(output, d.meta.roads ?? undefined);
-      if (d.meta.pipeline?.urban?.layouts?.length) urban.restoreSnapshot(d.meta.pipeline.urban);
+      restoringDecor = true; roads.set(d.meta.roads ?? undefined);
+      // An edited city (link or situation) is placed and routed again right below:
+      // planning the map's original settlement first would be thrown away (100k: ~77 s).
+      if (!replaced) {
+        urban.setSettlements(output, d.meta.roads ?? undefined);
+        if (d.meta.pipeline?.urban?.layouts?.length) urban.restoreSnapshot(d.meta.pipeline.urban);
+      }
       if (d.meta.pipeline?.urbanDraft) urban.applyWorkshopDraft(d.meta.pipeline.urbanDraft);
       restoringDecor = false; publishOptions(urban.workshopDraft() ?? urban.workshopSettings());
       syncLanduse(); draw(); options.onChange();
+      if (replaced) changed();
     },
     get paintingContext(): UrbanPaintingContext {
       const cities = enabled ? output?.settlements : undefined, roadOutput = roads.enabled ? roads.output : undefined, landuseSample = landuse?.sample;
@@ -479,8 +554,19 @@ export function createTerrainSettlements(options: {
     share(params: URLSearchParams): void {
       params.set('settlements', JSON.stringify({ config, enabled, showPoints }));
       params.set('roads', roads.share());
-      urban.share(params); landuse?.share(params);
+      urban.share(params);
+      // Until land use has loaded, keep its settings from the current link.
+      if (landuse) landuse.share(params); else { const saved = new URLSearchParams(location.search).get('landuse'); if (saved) params.set('landuse', saved); }
     },
   };
 }
 import { executionRuntime } from './executionProfile';
+
+/** City Bench implantation choices; every site type is required first, then relaxed with a warning. */
+const IMPLANTATIONS: [string, string][] = [
+  ['fixed', 'Position fixe (centre ou placée à la main)'], ['auto', 'Stratégie automatique'],
+  ['harbor', 'Côte, port'], ['estuary', 'Estuaire'], ['bridge', 'Bord de rivière, pont'], ['meander', 'Méandre'],
+  ['confluence', 'Confluence'], ['lakeshore', 'Rive de lac'], ['island', 'Île'],
+  ['hilltop', 'Colline'], ['spur', 'Hauteur fortifiée, éperon'], ['pass', 'Col de montagne'],
+  ['valley', 'Fond de vallée'], ['plain', 'Plaine'],
+];

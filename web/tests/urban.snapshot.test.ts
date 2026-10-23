@@ -50,6 +50,90 @@ function decor(): Decor {
 }
 
 describe('applied urban scene transfers', () => {
+  it('keeps cold data in applied snapshots, omits local references from links and composes city translations', () => {
+    const input = state(); input.layouts = input.layouts!.filter(l => l.key === 'city'); input.partitions = input.partitions!.filter(p => p.key === 'city');
+    input.buildingState = { ...input.buildingState!, scene: undefined, cold: {
+      store: { format: 'urban-building-chunks-1', sceneId: 'cold-city', fingerprint: 'a'.repeat(64), sourceFingerprint: 'b'.repeat(64) },
+      counts: { schema_version: '1', generator_version: 'architectural-plans-2', buildings: 6, refusals: 3, open_spaces: 0 }, cityKey: 'city', offset: { x: 10, y: 20 },
+    } };
+    expect(buildingSettings(input.buildingState)).not.toHaveProperty('cold');
+    expect(buildingSettings(input.buildingState)!.generated).toBe(true);
+    expect(appliedWorkshopSnapshot(input).buildingState!.cold).toBe(input.buildingState.cold);
+    const moved = translateWorkshopState(input, -30, 45);
+    expect(moved.buildingState!.cold!.offset).toEqual({ x: -20, y: 65 });
+    expect(moved.buildingState!.cold!.store).toBe(input.buildingState.cold!.store);
+    expect(input.buildingState.cold!.offset).toEqual({ x: 10, y: 20 });
+    const merged = mergeCityWorkshop(input, { ...input, buildingState: undefined }, 'city', 0, 0);
+    expect(merged.buildingState!.cold).toBeUndefined(); expect(merged.buildingState!.scene).toBeUndefined();
+  });
+  it('rejects mixed scene versions without changing retained plans, and permits a complete replacement', () => {
+    const original = state(), scene = original.buildingState!.scene!;
+    scene.generator_version = 'architectural-plans-1';
+    const first = `plan-archive-${'d'.repeat(64)}`, second = `plan-archive-${'e'.repeat(64)}`, fresh = `plan-archive-${'f'.repeat(64)}`;
+    scene.plan_archives = { [first]: 'old city bytes', [second]: 'old other bytes' };
+    scene.buildings.forEach((b, index) => { b.resolved = { format: 'compact-plan-archive-1', archive_id: index ? second : first, index: 0 }; });
+    const before = structuredClone(original), incoming = cityWorkshopState(structuredClone(original), 'city'), next = incoming.buildingState!.scene!;
+    next.generator_version = 'architectural-plans-2';
+    next.plan_archives = { [fresh]: 'new city bytes' };
+    next.buildings[0].resolved = { format: 'compact-plan-archive-1', archive_id: fresh, index: 0 };
+    expect(() => mergeCityWorkshop(original, incoming, 'city', 0, 0)).toThrow(/versions incompatibles/);
+    expect(original).toEqual(before);
+    next.generator_version = scene.generator_version;
+    // Simulate an incompatible persisted payload outside the current TS schema.
+    next.schema_version = '2' as PlacementBatch['schema_version'];
+    expect(() => mergeCityWorkshop(original, incoming, 'city', 0, 0)).toThrow(/versions incompatibles/);
+    next.generator_version = 'architectural-plans-2'; next.schema_version = '1';
+    const replaced = mergeCityWorkshop(cityWorkshopState(original, 'city'), incoming, 'city', 0, 0).buildingState!.scene!;
+    expect(replaced.generator_version).toBe('architectural-plans-2');
+    expect(replaced.plan_archives).toEqual({ [fresh]: 'new city bytes' });
+    expect(replaced.buildings[0]).toBe(next.buildings[0]);
+    expect(replaced.buildings[0].resolved).toBe(next.buildings[0].resolved);
+    // A whole multi-city reply must not fail at an intermediate one-city merge.
+    const all = structuredClone(original);
+    all.buildingState!.scene = { ...next, buildings: [next.buildings[0], { ...building('other/b', 1600), resolved: { format: 'compact-plan-archive-1', archive_id: fresh, index: 1 } }] };
+    const combined = mergeWorkshopCities(original, all).buildingState!.scene!;
+    expect(combined.generator_version).toBe('architectural-plans-2');
+    expect(combined.buildings.map(b => b.parcel_id)).toEqual(['city/a', 'other/b']);
+    expect(combined.plan_archives).toEqual({ [fresh]: 'new city bytes' });
+    expect(original).toEqual(before);
+  });
+  it('keeps the version of nonempty retained results when a newer empty city removes its old results', () => {
+    const original = state(), scene = original.buildingState!.scene!, incoming = cityWorkshopState(original, 'city');
+    scene.generator_version = 'architectural-plans-1';
+    const archive = `plan-archive-${'a'.repeat(64)}`;
+    scene.buildings[1].resolved = { format: 'compact-plan-archive-1', archive_id: archive, index: 0 };
+    scene.plan_archives = { [archive]: 'unchanged old bytes' };
+    incoming.buildingState!.scene = { schema_version: '1', generator_version: 'architectural-plans-2', buildings: [], refusals: [], open_spaces: [], plan_archives: {} };
+    const merged = mergeCityWorkshop(original, incoming, 'city', 0, 0).buildingState!.scene!;
+    expect(merged.generator_version).toBe('architectural-plans-1');
+    expect(merged.buildings).toEqual([scene.buildings[1]]);
+    expect(merged.buildings[0]).toBe(scene.buildings[1]);
+    expect(merged.plan_archives).toEqual(scene.plan_archives);
+    // Refusals and declared open spaces are results too, not empty metadata.
+    for (const kind of ['refusals', 'open_spaces'] as const) {
+      const remaining = state(), old = remaining.buildingState!.scene!;
+      old.generator_version = 'architectural-plans-1'; old.buildings = [];
+      old.refusals = kind === 'refusals' ? [{ id: 'old', parcel_id: 'other/b', code: 'plan_refused', message: 'old result', attempts: 1 }] : [];
+      old.open_spaces = kind === 'open_spaces' ? [{ id: 'old', parcel_id: 'other/b', surface: [box(1600, 600)] }] : [];
+      const next = cityWorkshopState(state(), 'city'); next.buildingState!.scene!.generator_version = 'architectural-plans-2';
+      expect(() => mergeCityWorkshop(remaining, next, 'city', 0, 0)).toThrow(/versions incompatibles/);
+    }
+  });
+  it('keeps only referenced compact archives when splitting/merging cities and moves cartographic ridges', () => {
+    const original = state(), scene = original.buildingState!.scene!;
+    const first = `plan-archive-${'a'.repeat(64)}`, second = `plan-archive-${'b'.repeat(64)}`, stale = `plan-archive-${'c'.repeat(64)}`;
+    scene.plan_archives = { [first]: 'first', [second]: 'second', [stale]: 'unused' };
+    scene.buildings.forEach((b, index) => { b.resolved = { format: 'compact-plan-archive-1', archive_id: index ? second : first, index: 0 }; });
+    scene.buildings[0].cartographic = { height_m: 5, validation: 'plan_only', ridges: [[{x: 500,y: 600},{x: 510,y: 600}]] };
+    const city = cityWorkshopState(original, 'city');
+    expect(city.buildingState!.scene!.plan_archives).toEqual({ [first]: 'first' });
+    const moved = translateWorkshopState(city, 100, 200);
+    expect(moved.buildingState!.scene!.buildings[0].cartographic!.ridges).toEqual([[{x: 600,y: 800},{x: 610,y: 800}]]);
+    const merged = mergeCityWorkshop(original, moved, 'city', -100, -200).buildingState!.scene!;
+    expect(merged.plan_archives).toEqual({ [first]: 'first', [second]: 'second' });
+    expect(merged.buildings.find(b => b.parcel_id === 'city/a')!.cartographic).toEqual(scene.buildings[0].cartographic);
+    expect(scene.plan_archives[stale]).toBe('unused');
+  });
   it('edits only the applied target population in city metadata and retains all other cities', () => {
     const sites = [{ key: 'city', population: 300 }, { key: 'other', population: 600 }];
     const applied = { ...state(), population: 300_000, siteKey: 'city' };

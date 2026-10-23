@@ -40,7 +40,7 @@ function decorServe(): Plugin {
         const name = decodeURIComponent((req.url ?? '').split('?')[0]).replace(/^\/+/, '');
         const file = dir + name;
         if (!/^[\w.-]+$/.test(name) || !existsSync(file) || !statSync(file).isFile()) { next(); return; }
-        res.setHeader('Content-Type', name.endsWith('.json') ? 'application/json' : 'application/octet-stream');
+        res.setHeader('Content-Type', name.endsWith('.json') ? 'application/json' : name.endsWith('.png') ? 'image/png' : 'application/octet-stream');
         res.setHeader('Cache-Control', 'no-store');
         createReadStream(file).pipe(res);
       });
@@ -80,6 +80,21 @@ function neuralServe(): Plugin {
   } };
 }
 
+/** Shared external assets for the normal build: `?url&inline` WASM and
+ * `?worker&inline` workers resolve to one hashed file each in `assets/`, so the
+ * terrain WASM is not embedded as base64 in every worker and page. The explicit
+ * offline export (`--mode <bench>-offline` or MAGNA_SINGLE_FILE=1) keeps the
+ * self-contained single HTML file. */
+function externalAssets(): Plugin {
+  return {
+    name: 'magna-external-assets', apply: 'build', enforce: 'pre',
+    async resolveId(source, importer) {
+      if (!/[?&]inline\b/.test(source) || !/[?&](?:url|worker)\b/.test(source)) return null;
+      return this.resolve(source.replace(/&inline\b/, ''), importer, { skipSelf: true });
+    },
+  };
+}
+
 function rustBenchEntry(): Plugin {
   return { name: 'rust-bench-entry', apply: 'serve', configureServer(server) {
     server.middlewares.use((req, res, next) => {
@@ -91,26 +106,33 @@ function rustBenchEntry(): Plugin {
   } };
 }
 
-export default defineConfig(({ mode }) => ({
+export default defineConfig(({ mode: requested, command }) => {
+  // `<bench>-offline` builds the same bench as one self-contained file.
+  const offline = requested.endsWith('-offline') || process.env.MAGNA_SINGLE_FILE === '1', mode = requested.replace(/-offline$/, '');
+  const single = command === 'serve' || offline;
+  return {
   root: 'src/ui',
-  plugins: [viteSingleFile(), neuralServe(), ...(mode === 'rustbench' ? [rustBenchEntry()] : []), ...(['terrainbench', 'rustbench'].includes(mode) ? [terrainWasmReload(), decorServe()] : []), ...(['housebench', 'rustbench'].includes(mode) ? [housesWasmReload()] : [])],
+  base: single ? undefined : './',
+  plugins: [...(single ? [viteSingleFile()] : [externalAssets()]), neuralServe(), ...(mode === 'rustbench' ? [rustBenchEntry()] : []), ...(['terrainbench', 'citybench', 'rustbench'].includes(mode) ? [terrainWasmReload(), decorServe()] : []), ...(['housebench', 'rustbench'].includes(mode) ? [housesWasmReload()] : [])],
   // Keep third-party notices inside the self-contained offline bundle.
   esbuild: { legalComments: 'inline' },
-  optimizeDeps: mode === 'housebench' ? { entries: ['housebench.html'] } : mode === 'rustbench' ? { entries: ['rustbench.html', 'terrainbench.html', 'urbanbench.html', 'housebench.html'] } : undefined,
-  server: ['terrainbench', 'housebench', 'rustbench'].includes(mode) ? { fs: { allow: [fileURLToPath(new URL('..', import.meta.url))] } } : undefined,
+  optimizeDeps: mode === 'housebench' ? { entries: ['housebench.html'] } : mode === 'rustbench' ? { entries: ['rustbench.html', 'terrainbench.html', 'citybench.html', 'urbanbench.html', 'housebench.html'] } : undefined,
+  server: ['terrainbench', 'citybench', 'housebench', 'rustbench'].includes(mode) ? { fs: { allow: [fileURLToPath(new URL('..', import.meta.url))] } } : undefined,
   build: {
     target: 'es2022',
-    outDir: mode === 'rustbench' ? fileURLToPath(new URL('../rust/out/benches', import.meta.url)) : mode === 'housebench' ? fileURLToPath(new URL('../rust/out/houses', import.meta.url)) : mode === 'terrainbench' || mode === 'urbanbench' || mode === 'urbaneditor' ? fileURLToPath(new URL('../rust/out/browser', import.meta.url)) : '../../dist',
-    emptyOutDir: !['testbench', 'urbanbench', 'urbaneditor', 'rustbench'].includes(mode),
+    outDir: mode === 'rustbench' ? fileURLToPath(new URL('../rust/out/benches', import.meta.url)) : mode === 'housebench' ? fileURLToPath(new URL('../rust/out/houses', import.meta.url)) : mode === 'terrainbench' || mode === 'citybench' || mode === 'urbanbench' || mode === 'urbaneditor' ? fileURLToPath(new URL('../rust/out/browser', import.meta.url)) : '../../dist',
+    emptyOutDir: !['testbench', 'citybench', 'urbanbench', 'urbaneditor', 'rustbench'].includes(mode),
     chunkSizeWarningLimit: 6000,
     rollupOptions: {
       ...(mode === 'testbench' || mode === 'urbaneditor' ? { input: 'src/ui/testbench.html' } : {}),
       ...(mode === 'terrainbench' ? { input: 'src/ui/terrainbench.html' } : {}),
+      ...(mode === 'citybench' ? { input: 'src/ui/citybench.html' } : {}),
       ...(mode === 'urbanbench' ? { input: 'src/ui/urbanbench.html' } : {}),
       ...(mode === 'housebench' ? { input: 'src/ui/housebench.html' } : {}),
       ...(mode === 'rustbench' ? { input: 'src/ui/rustbench.html' } : {}),
       output: { banner: vendorNotice },
     },
   },
-  worker: { format: mode === 'housebench' ? 'iife' : 'es', rollupOptions: { output: { banner: vendorNotice } } },
-}));
+  worker: { format: mode === 'housebench' ? 'iife' : 'es', plugins: () => single ? [] : [externalAssets()], rollupOptions: { output: { banner: vendorNotice } } },
+  };
+});

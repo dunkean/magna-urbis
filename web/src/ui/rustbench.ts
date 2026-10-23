@@ -8,6 +8,7 @@ installExecutionProfile(document.querySelector('.shell-header')!);
 const benches = {
   terrain: { title: 'Terrain · 1–3', path: 'terrainbench.html', query: '' },
   settlements: { title: 'Settlements · 4–5', path: 'terrainbench.html', query: 'stage=settlements' },
+  city: { title: 'Ville', path: 'citybench.html', query: '' },
   urban: { title: 'Urbanisme', path: 'urbanbench.html', query: '' },
   houses: { title: 'Maisons', path: 'housebench.html', query: '' },
 } as const;

@@ -1,6 +1,7 @@
-import { ROAD_CLASSES, ROAD_LEVELS, ROAD_PROFILES, ROAD_SURFACES, defaultRoadConfig, type Point, type RoadClass, type RoadConfig, type RoadOutput, type RoadSegment, type RoadSurface } from '../../../rust/bridge/settlements';
+import { ROAD_CLASSES, ROAD_LEVELS, ROAD_PROFILES, ROAD_SURFACES, defaultRoadConfig, type Point, type RoadClass, type RoadConfig, type RoadCrossing, type RoadOutput, type RoadSegment, type RoadSurface } from '../../../rust/bridge/settlements';
 import type { Layout } from '../../../rust/bridge/urban';
 import { prepareUrbanRoadClip } from '../../../rust/bridge/urbanNetwork';
+import { RENDER_ROAD_PX, ROAD_STROKE_LAYERS, renderCrossingStrokes, renderRoadStrokes, roadStrokeWidth, splitAtCrossings, type RoadStroke } from '../render/roadPaintRender';
 
 const ns = 'http://www.w3.org/2000/svg';
 const CLASS_LABEL: Record<RoadClass, string> = { highway: 'Highway', main: 'Main road', local: 'Local road', track: 'Track', trail: 'Trail' };
@@ -15,7 +16,7 @@ const DASH: Partial<Record<RoadClass, string>> = { track: '5 3', trail: '1.2 3' 
 
 /** How one road is drawn: fill, optional casing (drawn 1.6 px wider underneath), width, dash. */
 interface RoadPaint { fill: string; casing: string | null; width: number; dash?: string }
-export type RoadPreset = 'surface' | 'atlas' | 'topographic' | 'ink' | 'minimal';
+export type RoadPreset = 'surface' | 'atlas' | 'topographic' | 'ink' | 'minimal' | 'render';
 /** Display only: changing it redraws the network without routing it again. */
 export interface RoadStyle { preset: RoadPreset; width: number; opacity: number; curves: boolean; casing: boolean; crossings: boolean }
 export const defaultRoadStyle = (): RoadStyle => ({ preset: 'surface', width: 1, opacity: 1, curves: true, casing: true, crossings: true });
@@ -36,6 +37,11 @@ const PRESETS: Record<RoadPreset, { label: string; paint(c: RoadClass, s: RoadSu
     label: 'Ink on parchment',
     paint: byClass({ highway: ['#3f2a1c', null], main: ['#4a3222', null], local: ['#56392a', null], track: ['#5f4334', null], trail: ['#6a4d3c', null] },
       { highway: 2.4, main: 1.9, local: 1.4, track: 1.1, trail: 0.9 }, { track: '6 3', trail: '1 2.6' }),
+  },
+  // Painted for the Render map style: drawn by drawRender (roadPaintRender.ts); this paint is the legend's.
+  render: {
+    label: 'Render · painted',
+    paint: (c, s) => { const fill = renderRoadStrokes(c, s).find(k => k.layer === 'fill')!; return { fill: fill.color, casing: s === 'dirt' ? null : '#2e2216', width: RENDER_ROAD_PX[c], dash: fill.dash }; },
   },
   minimal: {
     label: 'Minimal',
@@ -101,6 +107,8 @@ export function createTerrainRoads(options: { map: SVGSVGElement; before: Elemen
   let preparedOwnership: Layout[] | undefined, preparedOutput: RoadOutput | undefined;
   let clipUrban: ReturnType<typeof prepareUrbanRoadClip> | undefined;
   let pathCache = new WeakMap<Point[], Map<number, { paths: Point[][]; straight?: string; curved?: string }>>();
+  /** Painted preset: each road cut at its crossings, with stable piece identities for pathCache. */
+  let splitCache = new WeakMap<RoadSegment, { path: Point[]; crossing?: RoadCrossing['kind'] }[]>();
   const saved = new URLSearchParams(location.search).get('roads');
   if (saved) try {
     const s = JSON.parse(saved);
@@ -214,6 +222,9 @@ export function createTerrainRoads(options: { map: SVGSVGElement; before: Elemen
       const markers = options.map.querySelector('#fantasyPainting, #settlementOverlay');
       if (markers) options.map.insertBefore(layer, markers); else options.map.append(layer);
     }
+    // Screen px per metre: the painted preset's widths follow the zoom through CSS only.
+    const box = options.map.viewBox.baseVal;
+    if (box?.width) layer.style.setProperty('--road-k', String(+(options.map.clientWidth / box.width).toPrecision(5)));
     const state = `${enabled}|${show}|${JSON.stringify(style)}`;
     if (layer === drawnLayer && drawn === output && state === drawnState && drawnOwnership === urbanOwnership) return;
     drawnLayer = layer; drawn = output; drawnState = state; drawnOwnership = urbanOwnership; layer.replaceChildren();
@@ -250,6 +261,11 @@ export function createTerrainRoads(options: { map: SVGSVGElement; before: Elemen
       if (curves) return entry.curved ??= entry.paths.map(curveData).join(' ');
       return entry.straight ??= entry.paths.map(pathData).join(' ');
     };
+    if (style.preset === 'render') {
+      drawRender(order, outsidePath, painted, hits);
+      layer.append(painted, hits);
+      return;
+    }
     for (const s of order) {
       // Cut the physical polyline first: smoothing each remainder preserves its
       // exact attachment to the native street instead of moving it along a curve.
@@ -276,6 +292,63 @@ export function createTerrainRoads(options: { map: SVGSVGElement; before: Elemen
     }
     painted.append(casings, fills, crossings);
     layer.append(painted, hits);
+  }
+  /** The painted preset: global stroke layers (ditches, verges, shadows, casings, surfaces,
+   * detail), one group per colour with the opacity on the group, so junctions merge without
+   * blobs; then the crossings on top. Roads are cut at their crossings so the smoothed pieces
+   * run exactly onto the straight bridges, and roadsides stop at the bridges. */
+  function drawRender(order: RoadSegment[], outsidePath: (path: Point[], width: number, curves: boolean) => string, painted: SVGGElement, hits: SVGGElement): void {
+    const layers = new Map(ROAD_STROKE_LAYERS.map(l => [l, new Map<string, SVGGElement>()] as const));
+    const crossings = new Map<string, SVGGElement>();
+    const group = (groups: Map<string, SVGGElement>, k: RoadStroke): SVGGElement => {
+      const key = `${k.color}|${k.opacity ?? 1}`;
+      let g = groups.get(key);
+      if (!g) { g = document.createElementNS(ns, 'g'); g.style.pointerEvents = 'none'; if (k.opacity !== undefined) g.setAttribute('opacity', String(k.opacity)); groups.set(key, g); }
+      return g;
+    };
+    const stroke = (d: string, color: string, width: string, k: RoadStroke): SVGPathElement => {
+      const p = document.createElementNS(ns, 'path'); p.setAttribute('d', d); p.setAttribute('fill', 'none'); p.setAttribute('stroke', color);
+      p.setAttribute('vector-effect', 'non-scaling-stroke'); p.setAttribute('stroke-linejoin', 'round'); p.setAttribute('stroke-linecap', k.cap ?? 'round');
+      p.style.strokeWidth = width;
+      if (k.dash) p.setAttribute('stroke-dasharray', k.dash);
+      return p;
+    };
+    // Ditch bands: wide stroke minus the verges, for every ditched road at once.
+    const mask = document.createElementNS(ns, 'mask'); mask.id = 'roadDitchMask'; mask.setAttribute('maskUnits', 'userSpaceOnUse');
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const s of order) {
+      const px = RENDER_ROAD_PX[s.class] * style.width, metres = s.width;
+      let pieces = style.crossings ? splitCache.get(s) : [{ path: s.path }];
+      if (!pieces) { pieces = splitAtCrossings(s.path, s.crossings); splitCache.set(s, pieces); }
+      const drawn = pieces.map(p => ({ crossing: p.crossing, d: outsidePath(p.path, s.width, style.curves && !p.crossing) }));
+      const road = drawn.map(p => p.d).filter(Boolean).join(' '), land = drawn.filter(p => !p.crossing).map(p => p.d).filter(Boolean).join(' ');
+      for (const k of renderRoadStrokes(s.class, s.surface)) {
+        const d = k.layer === 'ditch' || k.layer === 'verge' ? land : road;
+        if (!d) continue;
+        group(layers.get(k.layer)!, k).append(stroke(d, k.color, roadStrokeWidth(k, px, metres), k));
+        if (k.cut) {
+          mask.append(stroke(d, '#fff', roadStrokeWidth(k, px, metres), k), stroke(d, '#000', roadStrokeWidth({ scale: k.scale, ...k.cut }, px, metres), k));
+          for (const p of s.path) { minX = Math.min(minX, p.x); minY = Math.min(minY, p.y); maxX = Math.max(maxX, p.x); maxY = Math.max(maxY, p.y); }
+        }
+      }
+      if (style.crossings) for (const piece of drawn) {
+        if (piece.crossing && piece.d) for (const c of renderCrossingStrokes(piece.crossing)) group(crossings, c).append(stroke(piece.d, c.color, roadStrokeWidth(c, px, metres), c));
+      }
+      if (road) {
+        const hit = document.createElementNS(ns, 'path'); hit.setAttribute('d', road); hit.setAttribute('fill', 'none'); hit.setAttribute('stroke', 'transparent');
+        hit.setAttribute('stroke-width', String(Math.max(8, px + 6))); hit.setAttribute('vector-effect', 'non-scaling-stroke');
+        hit.style.pointerEvents = 'stroke'; hit.dataset.road = '';
+        const title = document.createElementNS(ns, 'title'); title.textContent = describe(s); hit.append(title); hits.append(hit);
+      }
+    }
+    if (mask.childNodes.length) {
+      const pad = 100;
+      for (const [k, v] of Object.entries({ x: minX - pad, y: minY - pad, width: maxX - minX + 2 * pad, height: maxY - minY + 2 * pad })) mask.setAttribute(k, String(v));
+      const defs = document.createElementNS(ns, 'defs'); defs.append(mask); painted.append(defs);
+      for (const g of layers.get('ditch')!.values()) g.setAttribute('mask', 'url(#roadDitchMask)');
+    }
+    for (const l of ROAD_STROKE_LAYERS) painted.append(...layers.get(l)!.values());
+    painted.append(...crossings.values());
   }
   function describe(s: RoadSegment): string {
     const profile = ROAD_PROFILES.find(p => p.id === s.profile)?.label ?? s.profile;

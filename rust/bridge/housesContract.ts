@@ -1,7 +1,7 @@
 import type { ExecutionRuntime } from '../../web/src/ui/executionProfile';
 export type { AdmissibilityProfile, ArchitectureCulture, ArchitectureFunction, ArchitectureTerrain, ArchitectureTypology, ArchitectureVolume, ArchitectureWasm, PlacedBuilding, PlacementBatch, PlacementBatchRequest, PlacementBatchSettings, PlacementRefusal, PlacementRequest } from './urbanArchitecture';
 export const HOUSE_SCHEMA = '2';
-export const HOUSE_GENERATOR = 'houses-2';
+export const HOUSE_GENERATOR = 'houses-3';
 export const HOUSE_MAX_JSON_BYTES = 64 * 1024 * 1024;
 export type HouseRole = 'dwelling' | 'residential_ensemble' | 'communal_dwelling' | 'mixed_residential' | 'domestic_annex' | 'spatial_component' | 'non_domestic' | 'landscape';
 export type HistoricalMode = 'historical_strict' | 'historical_inspired' | 'fantasy_mix';
@@ -111,7 +111,7 @@ export interface Parameters {
   roof_pitch_deg: [number, number]; overhang_m: [number, number]; wall_thickness_m: [number, number]; courtyard_ratio: [number, number];
   allowed_roofs: string[]; allowed_footprints: string[];
 }
-export interface Recipe { id: string; pack_id: string; label: string; priority: string; role: HouseRole; profile: string; parameters: Parameters; variants: {id: string; label: string; parameters: Parameters; confidence: string}[]; component_kind: string | null; temporal: {eras: string[]; tradition_long: boolean; late_only: boolean; from_year: number | null; to_year: number | null}; confidence: string; roof_confidence: string; sources: {path: string; line: number}[]; source_description: string[]; settlement_pattern: string; settlement_archetype: string; subtradition: string; context_note: string; chronology_note: string; chronology_confidence: string; compound_pattern: string; surface_language: string; weight: number }
+export interface Recipe { id: string; pack_id: string; tradition_id?: string; inspired_only?: boolean; label: string; priority: string; role: HouseRole; profile: string; parameters: Parameters; variants: {id: string; label: string; parameters: Parameters; confidence: string}[]; component_kind: string | null; temporal: {eras: string[]; tradition_long: boolean; late_only: boolean; from_year: number | null; to_year: number | null}; confidence: string; roof_confidence: string; sources: {path: string; line: number}[]; source_description: string[]; settlement_pattern: string; settlement_archetype: string; subtradition: string; context_note: string; chronology_note: string; chronology_confidence: string; compound_pattern: string; surface_language: string; weight: number }
 export interface WorkshopPreset { id: string; label: string; description: string; confidence: 'stylized'; parameters: Parameters }
 export interface CoverageEntry { id: string; role: HouseRole; reason: string; profile: string | null; status: string }
 export interface SourceEntry { id: string; label: string; priority: string; pack_id: string | null; section: string; columns: string[]; source_line: number; source_text: string }

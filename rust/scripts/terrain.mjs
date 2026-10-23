@@ -53,9 +53,11 @@ async function main() {
   if (action === 'build') {
     await wasm(true);
     await vite('build', '--mode', 'terrainbench');
+    await vite('build', '--mode', 'citybench');
     await vite('build', '--mode', 'urbanbench');
     await vite('build', '--mode', 'urbaneditor');
     console.log(`Terrain bench: ${join(rustDir, 'out/browser/terrainbench.html')}`);
+    console.log(`City bench: ${join(rustDir, 'out/browser/citybench.html')} (maps from web/scripts/export_decors.mjs --set city)`);
     console.log(`Urban bench: ${join(rustDir, 'out/browser/urbanbench.html')} (open .decor files from web/decors)`);
     return;
   }
@@ -78,7 +80,7 @@ async function main() {
     if (file && /\.(rs|toml)$/.test(String(file)) && !/^(neural|houses)/.test(String(file))) schedule();
   });
   const manifestWatch = watch(join(rustDir, 'Cargo.toml'), schedule);
-  console.log('Terrain bench: http://localhost:5173/terrainbench.html (procedural or neural source) · Urban bench: http://localhost:5173/urbanbench.html · Rust auto-rebuild enabled');
+  console.log('Terrain bench: http://localhost:5173/terrainbench.html (procedural or neural source) · City bench: http://localhost:5173/citybench.html · Urban bench: http://localhost:5173/urbanbench.html · Rust auto-rebuild enabled');
   try { await vite('--mode', 'terrainbench', '--host', '127.0.0.1'); }
   finally { clearTimeout(timer); crateWatch.close(); manifestWatch.close(); }
 }

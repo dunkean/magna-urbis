@@ -2,9 +2,29 @@
  * Retained `resolved` is an opaque native plan for exact on-demand enrichment. */
 import type { EnvelopeKind, Feature, HistoricalMode, HouseBatch, HouseConfig, HouseMaterial, RoofEdge, RoofGroup, MaterialSlots, Point, RoofFace, RoofSpec, Surface, Vertex3 } from './housesContract';
 
+export const ARCHITECTURE_PLAN_GENERATOR = 'architectural-plans-2';
+/** Version pairs are explicit native contracts, never a migration/relabel rule.
+ * Historical scenes remain displayable; new edits must use one known pair. */
+export const ARCHITECTURE_PLAN_HOUSE_GENERATORS: Readonly<Record<string, string>> = {
+  'architectural-plans-1': 'houses-2',
+  [ARCHITECTURE_PLAN_GENERATOR]: 'houses-3',
+};
+
 export interface ArchitectureCulture { culture: string; pack: string; mode: HistoricalMode; borrowing: string | null }
 export type ArchitectureFunction = 'domestic' | 'mixed' | 'workshop' | 'warehouse' | 'collective' | 'open_space';
 export type ArchitectureTypology = 'common' | 'row' | 'courtyard' | 'compound' | 'detached';
+export type ProgrammeComposition = 'row' | 'detached' | 'courtyard' | 'farm' | 'compound' | 'hall' | 'religious' | 'civic' | 'defence' | 'inn';
+/** Urban preferences. Explicit house controls, source bounds and site rights win. */
+export interface ArchitectureProgramme {
+  role?: string | null; label?: string | null; landmark?: boolean | null;
+  district_role?: string | null; wealth?: number | null; households?: number | null; state?: string | null;
+  composition?: ProgrammeComposition | null;
+  /** Inclusive preferred range for the main inhabited body, not its towers. */
+  floors?: [number, number] | null;
+  /** Projected body footprint target, excluding courts and roof overhangs; not useful floor area. */
+  built_area_m2?: number | null;
+  frontage_continuity?: number | null; party_walls?: boolean | null;
+}
 export interface ArchitectureAccess { id: string; segment: [Point, Point]; kind: 'public' | 'collective' | 'private'; width_m: number }
 export interface ArchitectureNeighbor { id: string; footprint: Surface; height_m: number }
 export interface ArchitectureTerrain {
@@ -20,6 +40,9 @@ export interface PlacementRequest {
   roof_domain?: Surface;
   /** Native oriented admission rectangle; advisory, checked like any other candidate. */
   placement_hint?: Surface | null;
+  /** Explicit canonical minimum poses. A matching native source identity and
+   * real site checks are required; requested size/floors and model pins win. */
+  native_minimum_candidates?: NativeMinimumCandidate[];
   accesses: ArchitectureAccess[]; party_boundaries: [Point, Point][]; neighbors: ArchitectureNeighbor[];
   culture: ArchitectureCulture; function: ArchitectureFunction; seed: string; terrain: ArchitectureTerrain;
   typology?: ArchitectureTypology;
@@ -29,6 +52,18 @@ export interface PlacementRequest {
    * containment, access, roof and terrain admission remain binding. */
   occupation?: {coverage: number; depth_m: number; frontage_m: number};
   parcel_fit?: boolean;
+  programme?: ArchitectureProgramme | null;
+}
+export interface NativeMinimumCandidate {
+  identity: {
+    version: 'native-admission-witness-1'; catalogue_version: string;
+    generator_version: string; style_index_version: string; source_sha256: string;
+    style_id: string; recipe_id: string; variant_id: string; seed: string;
+  };
+  transform: {origin: Point; orientation_deg: number};
+  access_id: string;
+  /** Explicit contact on the declared access segment; no pose search in Houses. */
+  contact: Point;
 }
 export interface PlacementBatchSettings { culture?: string; parcel_fit?: boolean; floors?: number; typology?: ArchitectureTypology; house_config?: HouseConfig }
 export interface PlacementBatchRequest { schema_version: '1'; requests: PlacementRequest[]; settings?: PlacementBatchSettings }
@@ -48,7 +83,9 @@ export interface PlacedBuilding {
   volumes: ArchitectureVolume[]; useful_area_m2: number; domestic_units: number;
   structural_features: Feature[];
   structural_foundations?: {footprint: Surface; z_min_m: number; z_max_m: number}[];
-  simplification: 'recipe_volumes'; diagnostics: string[];
+  simplification: 'recipe_volumes' | 'architectural_plan'; diagnostics: string[];
+  /** Plan-level display proxies. Presence does not certify native roof/access construction. */
+  cartographic?: {height_m: number; ridges: [Point, Point][]; roof_system?: string; validation: 'plan_only' | 'native_site'};
   /** Complete resolved recipe/parameters/layout, no interiors or mesh. Never edit or regenerate. */
   resolved: unknown;
 }
@@ -56,6 +93,8 @@ export interface PlacementRefusal { id: string; parcel_id: string; code: string;
 export interface PlacementBatch {
   schema_version: '1'; generator_version: string; materials?: HouseMaterial[]; buildings: PlacedBuilding[]; refusals: PlacementRefusal[];
   open_spaces: { id: string; parcel_id: string; surface: Surface }[];
+  /** Lossless compressed retained plans, stored once per bounded transport chunk. */
+  plan_archives?: Record<string, string>;
 }
 export interface AdmissibilityProfile {
   recipe_id: string; pack: string; layout: string; role: string; width_m: [number, number]; depth_m: [number, number];
@@ -72,6 +111,9 @@ export interface ArchitectureWasm {
   architecture_profiles_json(): string;
   place_buildings_json(input: string): string;
   enrich_placement_json(input: string): string;
+  plan_buildings_json?(input: string): string;
+  realize_plan_json?(input: string): string;
+  architecture_style_index_json?(): string;
 }
 export function parseArchitectureResult<T>(json: string): T {
   if (new TextEncoder().encode(json).byteLength > 64 * 1024 * 1024) throw new Error('Architecture response exceeds 64 MiB.');

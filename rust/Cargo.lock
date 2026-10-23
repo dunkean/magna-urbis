@@ -4104,6 +4104,7 @@ dependencies = [
  "delaunator",
  "geo",
  "magna-urbis-random",
+ "rayon",
  "serde",
  "serde_json",
 ]

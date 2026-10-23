@@ -79,6 +79,7 @@ fn parameters(fp: &str, rf: &str) -> Parameters {
     Parameters {
         variant_id: "workshop".into(),
         layout: Layout::Single,
+        urban_frontage_infill: true,
         footprint_family: fp.into(),
         roof_system: rf.into(),
         roof_spec: RoofSpec::default(),

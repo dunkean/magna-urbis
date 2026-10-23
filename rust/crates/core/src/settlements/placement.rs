@@ -14,7 +14,15 @@ const CLASSES: [(&str, u32, u32); 5] = [
     ("farmstead", 5, 12),
 ];
 /// Site types that are not a single archetype of a cell; their weights apply where they match.
-const SPECIAL_SITES: [&str; 3] = ["estuary", "confluence", "meander"];
+const SPECIAL_SITES: [&str; 7] = [
+    "estuary",
+    "confluence",
+    "meander",
+    "lakeshore",
+    "island",
+    "spur",
+    "pass",
+];
 /// Rank-size density at ×1: places per 100 km² of usable land.
 const ZIPF_PLACES_PER_100_KM2: f64 = 10.0;
 
@@ -56,10 +64,42 @@ fn site_matches(f: &Fields, i: usize, site: &str, pop: u32) -> bool {
             ids.len() > 1
         }
         "hilltop" => f.r.height[i] - f.hb[i] > 6.0,
+        "lakeshore" => f.dl[i] < ext + 60.0,
+        "island" => f.island[i],
+        // A fortress height: clearly above its surroundings, with a usable top.
+        "spur" => f.r.height[i] - f.hb[i] > 15.0 && f.slope_s[i] < 0.14,
+        "pass" => is_pass(f, i, ext),
         "valley" => f.dw[i] < 900.0 && f.hab[i] > 2.5,
         "plain" => f.slope_s[i] < 0.05,
         _ => true,
     }
+}
+/// A saddle between two heights: ground rises on both sides of one axis and
+/// falls away on both sides of the crossing axis, high above the lowlands.
+fn is_pass(f: &Fields, i: usize, ext: f64) -> bool {
+    let n = f.r.n;
+    let reach = ((ext * 2.0).max(300.0) / f.cell).round().max(2.0) as isize;
+    let (x, y) = ((i % n) as isize, (i / n) as isize);
+    let h = f.r.height[i];
+    let at = |dx: isize, dy: isize| {
+        let (xx, yy) = (x + dx * reach, y + dy * reach);
+        (xx >= 0 && yy >= 0 && xx < n as isize && yy < n as isize)
+            .then(|| f.r.height[yy as usize * n + xx as usize] - h)
+    };
+    let axes = [
+        ((1, 0), (0, 1)),
+        ((0, 1), (1, 0)),
+        ((1, 1), (1, -1)),
+        ((1, -1), (1, 1)),
+    ];
+    f.elevation(i) > 0.35
+        && f.slope_s[i] < 0.16
+        && axes.iter().any(|&((ax, ay), (bx, by))| {
+            let rise = [at(ax, ay), at(-ax, -ay)];
+            let fall = [at(bx, by), at(-bx, -by)];
+            rise.iter().all(|d| d.is_some_and(|d| d > 25.0))
+                && fall.iter().all(|d| d.is_some_and(|d| d < -10.0))
+        })
 }
 fn matches(f: &Fields, i: usize, s: &SettlementSpec) -> bool {
     site_matches(f, i, &s.site_type, s.population)
@@ -533,4 +573,55 @@ pub(super) fn place(seed: &str, f: &Fields, cfg: &Config) -> Output {
         }
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::settlements::Raster;
+
+    #[test]
+    fn island_spur_and_lakeshore_sites_are_recognised() {
+        let n = 64;
+        let mut height = vec![10.0f32; n * n];
+        let mut water = vec![0u8; n * n];
+        let mut level = vec![0.0f32; n * n];
+        for y in 0..n {
+            for x in 0..n {
+                let i = y * n + x;
+                // Sea on the east third, with a small island in it.
+                if x >= 44 && !((50..56).contains(&x) && (28..36).contains(&y)) {
+                    water[i] = 1;
+                }
+                // A lake in the north-west, and a steep knoll in the south-west.
+                if (6..14).contains(&x) && (6..14).contains(&y) {
+                    water[i] = 2;
+                    level[i] = 11.0;
+                    height[i] = 8.0;
+                }
+                let d = ((x as f32 - 16.0).powi(2) + (y as f32 - 48.0).powi(2)).sqrt();
+                if d < 6.0 {
+                    height[i] = 40.0;
+                }
+            }
+        }
+        let rivers = vec![0.0f32; n * n];
+        let ids = vec![-1i32; n * n];
+        let f = Fields::new(Raster {
+            width: 3200.0,
+            n,
+            height: &height,
+            water: &water,
+            water_level: &level,
+            river_width: &rivers,
+            river_ids: &ids,
+        });
+        let at = |x: usize, y: usize| y * n + x;
+        assert!(site_matches(&f, at(52, 31), "island", 300));
+        assert!(!site_matches(&f, at(30, 31), "island", 300));
+        assert!(site_matches(&f, at(16, 10), "lakeshore", 300));
+        assert!(!site_matches(&f, at(30, 40), "lakeshore", 300));
+        assert!(site_matches(&f, at(16, 48), "spur", 300));
+        assert!(!site_matches(&f, at(30, 31), "spur", 300));
+    }
 }
