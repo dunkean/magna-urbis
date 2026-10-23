@@ -5,7 +5,7 @@
  * --viewer-resolution 2048x1280. Browser/SSE/worker stay alive until the seven-level tour exits. */
 import { chromium } from 'playwright';
 import { mkdir, readFile, writeFile, readdir } from 'node:fs/promises';
-import { createWriteStream, existsSync } from 'node:fs';
+import { createWriteStream, existsSync,writeFileSync } from 'node:fs';
 import { dirname,resolve } from 'node:path';
 import { createHash } from 'node:crypto';
 import { spawn, spawnSync } from 'node:child_process';
@@ -45,6 +45,7 @@ const paths = { report: resolve(out, 'report.json'), progress: resolve(out, 'pro
 const report = { format: 'magna-fresh-source-proof', version: 1, startedAt: new Date(began).toISOString(), base, neural, widthM: width, seed,
   requestedSource: 'neural-python', freshGeneration: true, paths, errors, network, progress, status: 'starting' };
 report.browserEvents = browserEvents;
+report.driverProcessId=process.pid;
 if(viewerGodot)report.requestedViewer={godot:resolve(viewerGodot),assets:viewerAssets&&resolve(viewerAssets),launcher:viewerLauncher,
   resolution:viewerResolution,mode:args.includes('--viewer-oblique')?'oblique':'top',presentation:'aerial',timeoutMs:viewerTimeoutMs};
 if(geologyScenario)report.requestedGeology={id:geologyScenario,queryParameter:'surface_geology',provenance:'Explicit authored preset, fixed world frame; not observed geological data or a terrain-height modification.'};
@@ -71,6 +72,16 @@ const stopViewer = () => {
   if (process.platform === 'win32') spawnSync('taskkill.exe', ['/PID', String(viewerProcess.pid), '/T', '/F'], { windowsHide: true, stdio: 'ignore' });
   else { try { process.kill(-viewerProcess.pid, 'SIGTERM'); } catch {} }
 };
+// Observe fatal tooling errors without pretending the corrupted process can
+// recover. The default uncaught-exception exit remains enabled; persist its
+// exact cause synchronously and stop only this driver's owned renderer tree.
+const unexpectedFailure=(error,origin)=>{
+  report.status='failed';report.failure=String(error);report.unexpectedDriverFailure={origin,message:String(error),stack:error?.stack,elapsedMs:Date.now()-began};
+  for(const phase of [report.viewer,report.navigation])if(phase?.status==='running')phase.status='failed';
+  try{writeFileSync(paths.report,JSON.stringify(report,null,2));}catch{}
+  stopViewer();
+};
+process.on('uncaughtExceptionMonitor',unexpectedFailure);
 async function runNativeTour(sessionId) {
   const directory=resolve(out,'native-tour');await mkdir(directory,{recursive:true});
   const logPath=resolve(directory,'stdout.log'),errorPath=resolve(directory,'stderr.log'),metricsPath=resolve(directory,'metrics.json');
@@ -97,6 +108,7 @@ async function runNativeTour(sessionId) {
   try{
     const completed=new Promise((done,fail)=>{
       viewerProcess=spawn(process.execPath,command,{windowsHide:true,detached:process.platform!=='win32',stdio:['ignore','pipe','pipe']});
+      report.viewer.processId=viewerProcess.pid;
       viewerProcess.stdout.on('data',chunk=>capture('stdout',chunk));viewerProcess.stderr.on('data',chunk=>capture('stderr',chunk));
       viewerProcess.once('error',fail);
       viewerProcess.once('close',(code,signal)=>done({code,signal}));
@@ -159,6 +171,7 @@ async function runNativeNavigation(sessionId) {
   try{
     const completed=new Promise((done,fail)=>{
       viewerProcess=spawn(resolve(viewerGodot),command,{windowsHide:true,detached:process.platform!=='win32',stdio:['ignore','pipe','pipe']});
+      phase.processId=viewerProcess.pid;
       viewerProcess.stdout.on('data',chunk=>stdout.write(chunk));viewerProcess.stderr.on('data',chunk=>stderr.write(chunk));
       viewerProcess.once('error',fail);viewerProcess.once('close',(code,signal)=>done({code,signal}));
       timeout=setTimeout(()=>{phase.timedOut=true;stopViewer();},viewerTimeoutMs);
@@ -407,4 +420,4 @@ try {
   for(const phase of [report.viewer,report.navigation])if(phase?.status==='running')phase.status='failed';
   report.status = 'failed'; report.failure = String(error); report.finalService = await serviceStatus(); report.durationMs = Date.now() - began;
   await save(); throw error;
-} finally { stopViewer();await browser.close();process.removeListener('SIGINT',interrupted);process.removeListener('SIGTERM',interrupted); }
+} finally { stopViewer();await browser.close();process.removeListener('SIGINT',interrupted);process.removeListener('SIGTERM',interrupted);process.removeListener('uncaughtExceptionMonitor',unexpectedFailure); }

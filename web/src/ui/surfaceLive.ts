@@ -1,6 +1,7 @@
 import type { SurfaceLiveRegion } from '../../scripts/surface_live_plugin';
 import { encodeSurfaceBinary } from '../surface/binary';
 import { SURFACE_PACKET_MAX_BYTES } from '../surface/limits';
+import { postSurfaceBinary } from './surfaceLiveUpload';
 /** Development bridge: source generation remains separate from display state. */
 export function installSurfaceLive(handler: (region: SurfaceLiveRegion, signal: AbortSignal) => Promise<unknown>, onStatus?: (message: string) => void): () => void {
   const events = new EventSource('/surface-live/events'), requests = new Map<string, AbortController>();
@@ -19,7 +20,7 @@ export function installSurfaceLive(handler: (region: SurfaceLiveRegion, signal: 
         const packet = await handler(region, controller.signal);
         if (controller.signal.aborted) return;
         const binary = packet instanceof ArrayBuffer ? packet : encodeSurfaceBinary(packet, { maxBytes: SURFACE_PACKET_MAX_BYTES }).buffer as ArrayBuffer;
-        await fetch(`/surface-live/reply/${id}`, { method: 'POST', headers: { 'Content-Type': 'application/octet-stream', 'X-Surface-Session': sessionId }, body: binary, signal: controller.signal });
+        await postSurfaceBinary(`/surface-live/reply/${id}`,binary,sessionId,controller.signal);
         onStatus?.('Surface transmise au visualiseur local.');
       } catch (error) {
         if (!controller.signal.aborted) {
