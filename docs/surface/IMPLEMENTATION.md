@@ -1,6 +1,6 @@
 # SurfaceWorld — état de l'implémentation
 
-État documentaire du 23 octobre 2026, code intégré jusqu'à `7acaf90`. Le détail
+État documentaire du 23 octobre 2026, code intégré jusqu'à `bdff00b`. Le détail
 géométrique, le scénario géologique, les styles et l'hydrologie fixe sont raccordés.
 **La phase 6 n'est pas acceptée et la
 campagne E2E finale reste à réussir.** Les rapports de revue initiaux sont conservés sans modifier
@@ -51,7 +51,7 @@ flowchart LR
 | Monde physique indépendant du moteur | `web/src/surface/model.ts`, mètres, repère main droite +X est / +Y haut / +Z sud, grilles à centres de cellules. |
 | Compilation canonique | `compiler.ts` : morphologie multi-rayons, géologie explicite ou scénario granite déclaré, drainage source ou D8 déclaré, sols/dépôts/couverts, recettes matérielles et identités. |
 | Raffinement | `retargetSurfaceWorld` conserve le contexte canonique et ses catégories ; il projette les continus sémantiquement, renormalise les fractions et conserve les métadonnées du vrai relief fin. |
-| Source | `provider.ts`, `adapters/infiniteRefinement.ts`, `registrationBinding.ts` : requête emprise/pas, annulation, snapshot des contrôles retenus, fingerprint 128 bits, versions et emprise strictes. |
+| Source | `provider.ts`, `adapters/infiniteRefinement.ts`, `registrationBinding.ts` : requête emprise/pas, annulation, snapshot des contrôles retenus, empreinte de contenu non cryptographique, versions et emprise strictes. |
 | Contexte régional | `adapters/neuralEarth.ts`, `regionalCompiler.ts`, `geologyScenario.ts` : géoréférence, unités et provenance explicites ; aucun substrat déduit du seul climat. |
 | Géométrie locale | `geometryDetail.ts` et `surface_geometry_detail.gd` : pente/normales/appui issus des vraies hauteurs au support physique déclaré ; contexte, scénario et source liés ; couche d'exposition conditionnée par les sols, l'eau et l'occupation. |
 | Populations | `population.ts`, `treeCanopy.ts`, `candidateColumns.ts` : cellules monde, IDs/rangs/variantes stables, acceptation indépendante de la saison, budgets de calcul et transport typé. |
@@ -199,6 +199,30 @@ en214ms avec SHA256exact ; il ne mesure ni la génération ni la scèneGPU. La p
 d'affichage exige aussi le focus dans le patch, une contribution fine dominante
 supérieure à0,5 et l'accord des métadonnées du tile avec la source effective au focus.
 
+La tentative V3 a parcouru les sept échelles sans erreur de transport, mais elle
+reste **échouée** : aucun nouveau détail live n'a été affiché pendant les 20 s de
+mouvement. Une régression d'optimisation a aussi invalidé le placement des petites
+images dans Terrain3D : un début à −128 échantillons sur des régions de 256 est
+arrondi par l'addon. Les hauteurs CPU identiques ne suffisaient pas à le détecter.
+Le minimum d'image de 512 est rétabli ; le probe natif importe un plan puis interroge
+les hauteurs réellement stockées. Les cinq contrôles du cas 512 aligné donnent
+une erreur nulle ; le cas 256 décalé reproduit bien l'erreur. Aucun résultat de
+préparation « une région » de V3 ne qualifie la géométrie.
+
+L'addon épinglé impose également un espacement de sommets de 0,25 à 100 m. La
+préparation conserve cette borne, y compris en prévisualisation. L'optimisation
+conservée déroule le même noyau B-spline en arithmétique double et évite une
+recherche de parents hors domaine ; 4 048 contrôles et 4 030 comparaisons du chemin
+typé/générique donnent des hauteurs identiques. Les gains CPU ne démontrent pas
+la fluidité de la navigation. Une nouvelle campagne sur le correctif intégré
+reste nécessaire.
+
+Les corrections de liaison calculent maintenant l'empreinte des véritables
+hauteurs chargées côté natif avant de recevoir un autre monde ; une simple
+affirmation du navigateur ne suffit plus. Les exports crop/translation déclarent
+leurs repères et conservent l'ancrage géologique. Un crop n'est pas accepté comme
+racine d'une session live couvrant le monde entier.
+
 ## Registre des preuves exécutées
 
 Les gros binaires, captures et rapports restent dans `web/out/` ou les captures
@@ -259,8 +283,9 @@ au plus5 mm/px. Les deltas bruts fin/parent sont enregistrés avant le feather d
 viewer : ce ne sont pas une mesure directe d'une couture affichée.
 
 La navigation continue dispose du benchmark externe
-`viewer-local/diagnostics/navigation_probe.gd`, prêt mais non exécuté en E2E à
-cette date. Ajouter `--viewer-navigation-seconds 20` au driver lance ce second
+`viewer-local/diagnostics/navigation_probe.gd`. Son exécution E2E V3 a échoué sur
+l'absence de nouveau détail affiché pendant le mouvement. Ajouter
+`--viewer-navigation-seconds 20` au driver lance ce second
 processus après la tournée, en gardant le même navigateur/session ouverts. Il
 injecte de vrais événements molette et glisser à20Hz, mesure les applications de
 géométrie et de source pendant le mouvement, puis attend le drain final. Un
