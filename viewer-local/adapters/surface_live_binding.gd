@@ -78,7 +78,7 @@ static func from_packet(packet: Dictionary, world: Dictionary) -> Dictionary:
 		"sourceId":meta.get("id") if meta is Dictionary else null,"seed":meta.get("seed") if meta is Dictionary else null,
 		"initialUrbanId":packet.get("urbanId"),"computeMs":(Time.get_ticks_usec()-started)/1000.0}
 
-static func rejection(loaded: Dictionary, packet: Dictionary, first_accept := true) -> String:
+static func rejection(loaded: Dictionary, packet: Dictionary, _first_accept := true) -> String:
 	if loaded.is_empty() or loaded.has("error"): return str(loaded.get("error","loaded map has no verified live source"))
 	var source=packet.get("source",{});var binding=source.get("registrationBinding",{}) if source is Dictionary else {}
 	if not binding is Dictionary or binding.get("canonicalFieldFingerprint")!=loaded.fingerprint or binding.get("canonicalN")!=loaded.n or binding.get("canonicalWidth")!=loaded.widthM: return "live canonical height content/shape differs from the loaded map"
@@ -88,5 +88,6 @@ static func rejection(loaded: Dictionary, packet: Dictionary, first_accept := tr
 	if meta is Dictionary:
 		for pair in [["sourceId","id"],["seed","seed"]]:
 			if loaded.get(pair[0])!=null and meta.get(pair[1])!=null and loaded[pair[0]]!=meta[pair[1]]: return "live source identity differs from the loaded map"
-	if first_accept and loaded.get("initialUrbanId")!=null and packet.get("urbanId")!=null and loaded.initialUrbanId!=packet.urbanId: return "live city content differs from the loaded map"
+	# Urban/presentation identities also contain source query/style metadata.
+	# A legitimate scene edit must not be mistaken for a different heightfield.
 	return ""

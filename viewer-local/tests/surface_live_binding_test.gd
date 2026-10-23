@@ -23,7 +23,7 @@ func _initialize():
 	other=incoming.duplicate(true);other.source.meta.id="different-map"
 	check(not Binding.rejection(descriptor,other).is_empty(),"different loaded map identity rejected")
 	other=incoming.duplicate(true);other.urbanId="other-city"
-	check(not Binding.rejection(descriptor,other).is_empty(),"different initial city rejected")
+	check(Binding.rejection(descriptor,other).is_empty(),"scene/style identities do not replace the physical source identity")
 	check(Binding.rejection(descriptor,other,false).is_empty(),"later scene edit preserves the already bound height field")
 	other=incoming.duplicate(true);other.world.terrain.source.id="unrelated-registration"
 	check(not Binding.rejection(descriptor,other).is_empty(),"child registration source identity checked")
