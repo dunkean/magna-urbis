@@ -9,7 +9,8 @@ export const DEFAULT_ROCK_UNITS: RockUnit[] = [
 ];
 
 function recipe(id: string, family: SurfaceFamily, color: [number, number, number], mode: MaterialRecipe['synthesisMode'], extent: number, relief: number, roughness = .85): MaterialRecipe {
-  return { id, version: '1', family, colorLinear: color, synthesisMode: mode, physicalExtentMetres: extent,
+  const surfaceRole: MaterialRecipe['surfaceRole'] = ['forest-litter','vegetation-litter'].includes(id)?'low-cover':family==='inland-water'||family==='marine'?'water':family==='snow-ice'?'seasonal':'ground';
+  return { id, version: '1', family, surfaceRole, colorLinear: color, synthesisMode: mode, physicalExtentMetres: extent,
     heightAmplitudeMetres: relief, roughness, normalConvention: 'opengl', compatibleSubstrates: [],
     compatibleProcesses: [DepositOrigin.Residual, DepositOrigin.Colluvial, DepositOrigin.Alluvial, DepositOrigin.Aeolian, DepositOrigin.Coastal],
     provenance: 'Authored analytic material; no photographic PBR asset claimed', wetResponse: .4, snowRetention: .7 };
@@ -43,6 +44,9 @@ export function createMaterialIndex(materials: MaterialRecipe[]): Record<string,
   const result: Record<string, number> = Object.create(null);
   materials.forEach((m, i) => {
     if (!m.id || !m.version || result[m.id] !== undefined) throw new Error('Material recipe ids must be unique and versioned');
+    if(m.surfaceRole!==undefined&&!['ground','low-cover','water','seasonal'].includes(m.surfaceRole))throw new Error('Invalid authored material surface role');
+    const expectedRole=['forest-litter','vegetation-litter'].includes(m.id)?'low-cover':['inland-water','marine-water'].includes(m.id)?'water':m.id==='snow-ice'?'seasonal':undefined;
+    if(expectedRole&&m.surfaceRole!==undefined&&m.surfaceRole!==expectedRole)throw new Error('Material id has an incompatible vertical surface role');
     if (m.colorLinear.length !== 3 || m.colorLinear.some(v => !Number.isFinite(v) || v < 0 || v > 1) || !Number.isFinite(m.roughness) || m.roughness < 0 || m.roughness > 1) throw new Error('Invalid material color/roughness');
     result[m.id] = i;
   });
