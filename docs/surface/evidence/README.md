@@ -57,3 +57,19 @@ PackedFloat32 est `dc11d36`.
 
 Les empreintes des copies de rapports et leurs empreintes LF normalisées, stables
 entre checkouts Windows/Linux, figurent dans [SHA256.json](SHA256.json).
+
+## Prochaine étape de transport, sans implémentation dans V4
+
+Une archive UTF-8 typée et réversible **par record** pourrait déplacer les grandes
+métadonnées hors du manifeste. Les identifiants, la représentation native/proxy et
+les bornes resteraient accessibles ; les autres champs seraient décodés à la
+demande après le culling. Archiver toute la ville dans un seul bloc imposerait de
+la parser entièrement avant de sélectionner les bâtiments visibles.
+
+La déduplication des niveaux ou métadonnées devrait exiger une **égalité exacte**,
+et non un identifiant commun : l'occupation acceptée et un overlay visuel peuvent
+porter des états différents. Des colonnes UTF-8 avec offsets Uint32 pour les IDs
+de candidats constitueraient une autre option pour réduire les quelque 3 MB du
+manifeste de stress. Chaque évolution demanderait un format versionné, des bornes
+mémoire explicites et des tests de roundtrip conservant niveaux, matériaux,
+styles, clés opaques et identités source. Le transport de ce lot reste inchangé.
