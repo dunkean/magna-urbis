@@ -102,4 +102,10 @@ describe('Surface live transport', () => {
     expect((await chunk(0)).status).toBe(200);controller.abort();await aborted;
     expect((await browser.event()).name).toBe('cancel');expect((await chunk(16)).status).toBe(410);
   });
+  it('fails an invalid completed packet immediately instead of retaining its upload until timeout',async()=>{
+    const base=await start(),browser=await connect(base),pending=post(`${base}/surface-live/terrain`,{region});const request=await browser.event();
+    const url=`${base}/surface-live/reply/${request.data.id}`,send=()=>fetch(url,{method:'POST',headers:{'Content-Type':'application/octet-stream','X-Surface-Session':browser.session,'X-Surface-Offset':'0','X-Surface-Total':'16'},body:new Uint8Array(16)});
+    expect((await send()).status).toBe(400);expect((await pending).status).toBe(422);
+    expect((await browser.event()).name).toBe('cancel');expect((await send()).status).toBe(410);
+  });
 });

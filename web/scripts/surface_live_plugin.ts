@@ -96,7 +96,7 @@ export function createSurfaceLiveBroker(timeoutMs = 120000) {
             if(item.upload){reply(response,409,{error:'Cannot mix whole-body and chunked surface uploads'});return;}
             bytes = await readBytes(request, SURFACE_PACKET_MAX_BYTES);
           }
-          if (bytes.length < 16 || bytes.subarray(0, 8).toString('ascii') !== 'MUFSURF1') { reply(response, 400, { error: 'Expected binary surface packet' }); return; }
+          if (bytes.length < 16 || bytes.subarray(0, 8).toString('ascii') !== 'MUFSURF1') { cancel(id,'Invalid binary surface packet',422);reply(response, 400, { error: 'Expected binary surface packet' }); return; }
           pending.delete(id); clearTimeout(item.timer);
           if (!item.response.destroyed && !item.response.writableEnded) {
             // Native HTTPClient caps an individual HTTP/1 chunk at 16 MiB.

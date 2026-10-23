@@ -1,7 +1,7 @@
 /** Hash includes content and shape, not merely source labels (edit-safe cache invalidation). */
 export function fingerprint(value: unknown): string {
-  // Four independently seeded lanes: cache identities carry 128 bits rather than
-  // the former 32-bit key. This is a content identity, not an authentication hash.
+  // Four seeded 32-bit lanes give a 128-bit output format. This is a fast cache
+  // fingerprint, not a claim of 128-bit collision resistance or authentication.
   const hashes = [2166136261, 3335557771, 1597334677, 3812015801];
   const feedByte = (byte: number) => { for (let lane = 0; lane < 4; lane++) hashes[lane] = Math.imul(hashes[lane] ^ byte, 16777619 + lane * 2); };
   const feed = (text: string) => { for (let j = 0; j < text.length; j++) { const c = text.charCodeAt(j); feedByte(c & 255); feedByte(c >>> 8); } };

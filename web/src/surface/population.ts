@@ -1,6 +1,7 @@
 import { sampleSurface } from './compiler';
 import { Occupation, WaterClass, assertNotAborted, clamp, hashString, type Bounds, type SurfaceCandidate, type SurfaceWorld } from './model';
 import { TREE_CELL_M, TREE_SLOTS_PER_CELL, TREE_CROWN_RADIUS_RATIO, treeAcceptanceForCover } from './treeCanopy';
+import { SURFACE_MAX_CANDIDATES } from './limits';
 
 export interface PopulationOptions {
   families?: SurfaceCandidate['family'][];
@@ -33,8 +34,8 @@ function random(key: string, channel: number): number {
 export function generateSurfaceCandidates(world: SurfaceWorld, bounds: Bounds, options: PopulationOptions = {}): SurfaceCandidate[] {
   assertNotAborted(options.signal);
   if (![bounds.minX, bounds.minZ, bounds.maxX, bounds.maxZ].every(Number.isFinite) || bounds.minX > bounds.maxX || bounds.minZ > bounds.maxZ) throw new Error('Invalid population query bounds');
-  const retention = clamp(options.retention ?? 1), maxCandidates = options.maxCandidates ?? 100_000;
-  if (!Number.isInteger(maxCandidates) || maxCandidates < 0) throw new Error('maxCandidates must be a nonnegative integer');
+  const retention = clamp(options.retention ?? 1), maxCandidates = options.maxCandidates ?? SURFACE_MAX_CANDIDATES;
+  if (!Number.isInteger(maxCandidates) || maxCandidates < 0 || maxCandidates>SURFACE_MAX_CANDIDATES) throw new Error(`maxCandidates must be an integer in 0..${SURFACE_MAX_CANDIDATES}; request smaller visible bounds`);
   const maxCheckedSlots = options.maxCheckedSlots ?? 2_000_000;
   if (!Number.isInteger(maxCheckedSlots) || maxCheckedSlots < 0) throw new Error('maxCheckedSlots must be a nonnegative integer');
   if (retention === 0) return [];

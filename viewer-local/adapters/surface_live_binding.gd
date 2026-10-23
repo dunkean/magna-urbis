@@ -53,6 +53,7 @@ static func from_packet(packet: Dictionary, world: Dictionary) -> Dictionary:
 	var frame=source.get("frame")
 	if frame is Dictionary and frame.get("liveCompatible")==false: return _error(str(frame.get("liveIncompatibilityReason","cropped or translated maps require an explicit full-world live frame")))
 	var grid: Dictionary
+	var identity := ""
 	var binding=source.get("registrationBinding")
 	if world.has("canonicalContextRef"):
 		if not binding is Dictionary: return _error("a refined snapshot needs its exact registration and retained parent before attaching live")
@@ -61,14 +62,16 @@ static func from_packet(packet: Dictionary, world: Dictionary) -> Dictionary:
 			if item is Dictionary and item.get("terrain") is Dictionary and int(item.terrain.get("width",0))==int(binding.get("n",0)): parent=item.terrain;break
 		grid=_grid(parent)
 		if grid.has("error"): return grid
-		if grid.widthM!=binding.get("width") or fingerprint(grid.widthM,grid.n,grid.values)!=binding.get("fieldFingerprint"): return _error("retained parent bytes differ from the snapshot registration")
+		var parent_identity:=fingerprint(grid.widthM,grid.n,grid.values)
+		if grid.widthM!=binding.get("width") or parent_identity!=binding.get("fieldFingerprint"): return _error("retained parent bytes differ from the snapshot registration")
 		var count:=int(binding.get("canonicalN",0))
 		if count<2 or count>4096 or binding.get("canonicalWidth")!=grid.widthM: return _error("invalid canonical registration shape")
+		if count==int(grid.n):identity=parent_identity
 		grid={"n":count,"widthM":grid.widthM,"values":_canonical_values(grid,count)}
 	else:
 		grid=_grid(world.get("terrain"))
 		if grid.has("error"): return grid
-	var identity:=fingerprint(grid.widthM,grid.n,grid.values)
+	if identity.is_empty():identity=fingerprint(grid.widthM,grid.n,grid.values)
 	if identity.is_empty(): return _error("cannot fingerprint the actual loaded retained heights")
 	if world.has("canonicalContextRef") and identity!=binding.get("canonicalFieldFingerprint"): return _error("retained parent does not reconstruct the canonical registered field")
 	var declared=source.get("retainedField")

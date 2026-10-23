@@ -152,6 +152,12 @@ describe('canonical SurfaceWorld', () => {
     expect(serializeSurfaceWorld(restored)).toBe(encoded);
     const edited=JSON.parse(encoded);edited.geometryDetail.surfaceConditioning.bedrockExposure[0]=.8;
     expect(()=>deserializeSurfaceWorld(JSON.stringify(edited))).toThrow(/conditioning differs/);
+    const rockEdit=JSON.parse(encoded);rockEdit.geology.units[0].colorLinear[0]+=.01;
+    expect(()=>deserializeSurfaceWorld(JSON.stringify(rockEdit))).toThrow(/Geology version mismatch/);
+    const materialEdit=JSON.parse(encoded);materialEdit.materials[0].roughness=.123;
+    expect(()=>deserializeSurfaceWorld(JSON.stringify(materialEdit))).toThrow(/Material library or surface state/);
+    const seasonEdit=JSON.parse(encoded);seasonEdit.state.dayOfYear=201;
+    expect(()=>deserializeSurfaceWorld(JSON.stringify(seasonEdit))).toThrow(/Material library or surface state/);
     raw.schemaVersion = 999;
     expect(() => deserializeSurfaceWorld(JSON.stringify(raw))).toThrow(/schema/);
   });

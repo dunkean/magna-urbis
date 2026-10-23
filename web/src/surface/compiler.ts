@@ -516,10 +516,14 @@ export function hydrateSurfaceWorld(value: unknown, options: SurfaceHydrationOpt
     restoreFields(w.canonicalContext.fields, w.canonicalContext.grid.width * w.canonicalContext.grid.height, w);
   } else if (w.canonicalContextRef && options.resolveCanonicalContext) w.canonicalContext = options.resolveCanonicalContext(w.canonicalContextRef);
   if (w.canonicalContext) validateContextReference(w.canonicalContext, w.canonicalContextRef, w.versions);
+  const canonicalBedrock=w.canonicalContext?.fields.bedrock ?? (!w.canonicalContextRef ? w.geology.bedrock : undefined);
+  if(canonicalBedrock && contentHash({...w.geology,bedrock:canonicalBedrock})!==w.versions.geology)throw new Error('Geology version mismatch: data was edited without invalidation');
+  if(contentHash(w.materials)!==w.versions.materialLibrary || contentHash(w.state)!==w.versions.surfaceState)throw new Error('Material library or surface state version mismatch');
   if (w.geometryDetail) {
     w.geometryDetail=hydrateSurfaceGeometryDetail(w.geometryDetail,w.terrain,w.canonicalContextRef?.id,options.memoryBudgetBytes);
     if (w.geometryDetail.surfaceConditioning && w.geometryDetail.surfaceConditioning.canonicalEnvironmentVersion!==w.versions.environment) throw new Error('Geometry conditioning differs from the canonical environment version');
     if(w.geometryDetail.surfaceConditioning)for(let i=0;i<n;i++)if(Math.abs(w.geometryDetail.surfaceConditioning.bedrockExposure[i]-conditionedExposure(w,w.geometryDetail,i))>2e-6)throw new Error('Geometry conditioning differs from canonical soils, water or occupation');
+    if(!w.canonicalContextRef&&w.geometryDetail.localBedrockUnitId)for(let i=0;i<n;i++)if(w.geology.bedrock[i]!==w.geometryDetail.localBedrockUnitId[i])throw new Error('Hydrated canonical bedrock differs from the explicit source-height scenario');
   }
   return w;
 }

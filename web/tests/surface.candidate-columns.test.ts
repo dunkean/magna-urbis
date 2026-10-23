@@ -31,6 +31,7 @@ describe('versioned neutral candidate columns', () => {
     expect(source[0].x).toBe(1e9); expect(source[0].stableId).not.toBe('changed');
   });
   it('rejects lossy coercions, rank overflow, bad codes and unsupported versions', () => {
+    expect(()=>packCandidateColumns(new Array(100001))).toThrow(/count exceeds budget/);
     for (const patch of [{ rank: 1 }, { rank: -1 }, { rank: NaN }, { variant: 256 }, { variant: .5 }, { x: Infinity }, { size: 1e100 }, { size: 1e-100 }, { crownRadiusM: 0 }])
       expect(() => packCandidateColumns([{ ...candidate(1), ...patch }])).toThrow();
     const columns = packCandidateColumns([candidate(0), candidate(1)]);
