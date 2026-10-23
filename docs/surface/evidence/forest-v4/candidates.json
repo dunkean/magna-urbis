@@ -1,0 +1,69 @@
+{
+  "source": "D:/workspace/self/_worktrees/magna-urbis-surface-world-2026-10-23/web/out/surface/native-e2e-40km-v4/fresh-source.surfacebin",
+  "CPUOnly": true,
+  "sourceFieldsUnchanged": true,
+  "queryMethod": "actual production generateSurfaceCandidates, tree-only query, no source generation",
+  "coverageMethod": "256x256 deterministic world probes; physical crown discs radius0.42size; area union, not disc sum",
+  "rows": [
+    {
+      "spanM": 320,
+      "bounds": {
+        "minX": 19840,
+        "maxX": 20160,
+        "minZ": 19840,
+        "maxZ": 20160
+      },
+      "treeCount": 476,
+      "expectedCountFromAcceptanceIntegral": 466.4592281731346,
+      "meanCanonicalTreeCover": 0.29186567978452643,
+      "measuredCrownUnionGridCoverage": 0.2946319580078125,
+      "absoluteCoverageDifferencePP": 0.2766278223286067,
+      "discAreaSumM2": 36495.662043532975,
+      "discAreaSumOverBBox": 0.3564029496438767,
+      "minX": 19840.06997293327,
+      "maxX": 20159.09656017553,
+      "minZ": 19840.116723459214,
+      "maxZ": 20158.003756511025
+    },
+    {
+      "spanM": 480,
+      "bounds": {
+        "minX": 19760,
+        "maxX": 20240,
+        "minZ": 19760,
+        "maxZ": 20240
+      },
+      "treeCount": 963,
+      "expectedCountFromAcceptanceIntegral": 996.2194760019347,
+      "meanCanonicalTreeCover": 0.2787222508576974,
+      "measuredCrownUnionGridCoverage": 0.2668914794921875,
+      "absoluteCoverageDifferencePP": -1.1830771365509918,
+      "discAreaSumM2": 73121.99878983054,
+      "discAreaSumOverBBox": 0.31736978641419505,
+      "minX": 19760.0883458741,
+      "maxX": 20239.40663862042,
+      "minZ": 19760.231429752894,
+      "maxZ": 20239.756768080406
+    },
+    {
+      "spanM": 512,
+      "bounds": {
+        "minX": 19744,
+        "maxX": 20256,
+        "minZ": 19744,
+        "maxZ": 20256
+      },
+      "treeCount": 1096,
+      "expectedCountFromAcceptanceIntegral": 1118.547018386111,
+      "meanCanonicalTreeCover": 0.2754399778337406,
+      "measuredCrownUnionGridCoverage": 0.2638397216796875,
+      "absoluteCoverageDifferencePP": -1.160025615405308,
+      "discAreaSumM2": 82273.17230970926,
+      "discAreaSumOverBBox": 0.3138472454441424,
+      "minX": 19744.3249253463,
+      "maxX": 20254.678010190837,
+      "minZ": 19744.2299398873,
+      "maxZ": 20255.98511527758
+    }
+  ]
+}

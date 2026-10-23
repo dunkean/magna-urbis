@@ -1,0 +1,19 @@
+{
+  "sourcePacketSha256": "bc78dfe7b0718872550684652707586a1cc7c7b47145ea7482d05ab1d27e6ae8",
+  "format": "surface-forest-cpu-evidence",
+  "version": 1,
+  "files": [
+    {
+      "sha256": "51ad1a2c7ff31f5deac9aae55841f1751764133172bd9ba635044e860580f3a8",
+      "file": "candidates.json"
+    },
+    {
+      "sha256": "5fee898ec2c40992e50f3da3ed6f431c020a38956ac667c0b91b33d0f4f93669",
+      "file": "candidates.ts"
+    },
+    {
+      "sha256": "ff40eff4593a0e159a70eac6ccc5cf7fd7182c49a739e84e3f134e34df8cdd15",
+      "file": "source-tree-cover.json"
+    }
+  ]
+}
