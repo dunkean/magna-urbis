@@ -2,7 +2,7 @@ import {
   SURFACE_COMPILER_VERSION, SURFACE_POPULATION_VERSION, SURFACE_SCHEMA_VERSION, DepositOrigin, Landform, Occupation, WaterClass,
   assertNotAborted, clamp, hashString, terrainBounds,
   type CompileOptions, type SurfaceCompileInput, type SurfaceFields, type SurfaceSample, type SurfaceWorld,
-  type ClimateInput, type GeologyInput, type TerrainGrid,
+  type Bounds, type CanonicalSurfaceContext, type CanonicalSurfaceContextRef, type ClimateInput, type GeologyInput, type SurfaceGridGeometry, type TerrainGrid,
 } from './model';
 import { DEFAULT_ROCK_UNITS, SURFACE_MATERIALS } from './materials';
 
@@ -359,20 +359,13 @@ export function compileSurfaceWorld(input: SurfaceCompileInput, options: Compile
 
 /** Continuous fields bilinear; categorical fields nearest. Soil fractions preserve their simplex under interpolation. */
 export function sampleSurface(world: SurfaceWorld, x: number, z: number): SurfaceSample {
-  const { terrain: t, fields: f, bounds: b } = world;
+  const b = world.bounds;
   if (!Number.isFinite(x) || !Number.isFinite(z) || x < b.minX || x > b.maxX || z < b.minZ || z > b.maxZ) throw new RangeError('Surface sample outside canonical terrain');
-  const gx = (x - t.originX) / t.spacingM, gz = (z - t.originZ) / t.spacingM;
-  const x0 = Math.min(t.width - 2, Math.floor(gx)), z0 = Math.min(t.height - 2, Math.floor(gz));
-  const fx = gx - x0, fz = gz - z0;
-  const i = Math.min(t.height - 1, Math.round(gz)) * t.width + Math.min(t.width - 1, Math.round(gx));
-  const bilinear = (a: Float32Array) => {
-    const p = z0 * t.width + x0;
-    const values = [a[p], a[p + 1], a[p + t.width], a[p + t.width + 1]];
-    if (!values.every(Number.isFinite)) return a[i];
-    return (values[0] * (1 - fx) + values[1] * fx) * (1 - fz) + (values[2] * (1 - fx) + values[3] * fx) * fz;
-  };
+  const context = getCanonicalSurfaceContext(world), f = context.fields;
+  const sampler = gridSampler(context.grid, x, z), i = sampler.nearest;
+  const bilinear = sampler.continuous;
   const rock = world.geology.units.find(r => r.id === f.bedrock[i])!;
-  return { x, z, heightM: bilinear(t.heights), slope: bilinear(f.slope), aspect: f.aspect[i], curvature: bilinear(f.curvature),
+  return { x, z, heightM: gridSampler(world.terrain, x, z).continuous(world.terrain.heights), slope: bilinear(f.slope), aspect: f.aspect[i], curvature: bilinear(f.curvature),
     landform: f.landform[i], bedrock: rock, sourceRock: world.geology.units.find(r => r.id === f.sourceRock[i])!, depositOrigin: f.depositOrigin[i],
     depositDepthM: bilinear(f.depositDepthM), sand: bilinear(f.sand), silt: bilinear(f.silt), clay: bilinear(f.clay), organic: bilinear(f.organic),
     stoniness: bilinear(f.stoniness), soilDepthM: bilinear(f.soilDepthM), moisture: bilinear(f.moisture), contributingAreaM2: bilinear(f.contributingAreaM2),
@@ -384,11 +377,12 @@ export function sampleSurface(world: SurfaceWorld, x: number, z: number): Surfac
 }
 
 /** Plain JSON arrays for neutral consumers. Non-finite water level/distance are represented by null. */
-export function serializeSurfaceWorld(world: SurfaceWorld): string {
-  return JSON.stringify(world, (_key, value) => ArrayBuffer.isView(value) ? Array.from(value as unknown as number[]) : value);
+export function serializeSurfaceWorld(world: SurfaceWorld, options: { includeCanonicalContext?: boolean } = {}): string {
+  return JSON.stringify(world, (key, value) => key === 'canonicalContext' && options.includeCanonicalContext === false ? undefined
+    : ArrayBuffer.isView(value) ? Array.from(value as unknown as number[]) : value);
 }
 
-export function deserializeSurfaceWorld(json: string): SurfaceWorld {
+export function deserializeSurfaceWorld(json: string, options: { resolveCanonicalContext?: (reference: CanonicalSurfaceContextRef) => CanonicalSurfaceContext | undefined } = {}): SurfaceWorld {
   const w = JSON.parse(json) as SurfaceWorld;
   if (w.schemaVersion !== SURFACE_SCHEMA_VERSION || w.units !== 'metres' || w.crs !== 'local-xz') throw new Error('Unsupported SurfaceWorld schema or units');
   w.terrain.heights = new Float32Array(w.terrain.heights);
@@ -397,19 +391,143 @@ export function deserializeSurfaceWorld(json: string): SurfaceWorld {
   validateGeology(w.geology);
   if (w.climate.temperatureC) w.climate.temperatureC = new Float32Array(w.climate.temperatureC);
   if (w.climate.precipitationMm) w.climate.precipitationMm = new Float32Array(w.climate.precipitationMm);
-  const n = w.terrain.heights.length;
+  restoreFields(w.fields, w.terrain.heights.length);
+  if (w.canonicalContext) {
+    validateGridGeometry(w.canonicalContext.grid);
+    restoreFields(w.canonicalContext.fields, w.canonicalContext.grid.width * w.canonicalContext.grid.height);
+  } else if (w.canonicalContextRef && options.resolveCanonicalContext) w.canonicalContext = options.resolveCanonicalContext(w.canonicalContextRef);
+  if (w.canonicalContext) validateContextReference(w.canonicalContext, w.canonicalContextRef, w.versions);
+  return w;
+}
+
+function restoreFields(fields: SurfaceFields, n: number): void {
   for (const key of FLOAT_FIELDS) {
-    const source = w.fields[key] as unknown as Array<number | null>;
+    const source = fields[key] as unknown as Array<number | null>;
     if (!Array.isArray(source) || source.length !== n) throw new Error('Malformed SurfaceWorld field ' + key);
-    w.fields[key] = Float32Array.from(source, v => v === null ? (key === 'waterLevelM' ? NaN : Infinity) : v);
+    fields[key] = Float32Array.from(source, v => v === null ? (key === 'waterLevelM' ? NaN : Infinity) : v);
   }
-  for (const key of BYTE_FIELDS) w.fields[key] = new Uint8Array(w.fields[key]);
-  for (const key of SHORT_FIELDS) w.fields[key] = new Uint16Array(w.fields[key]);
-  for (const key of INT_FIELDS) w.fields[key] = new Int32Array(w.fields[key]);
-  w.fields.topographicPosition = w.fields.topographicPosition.map(a => new Float32Array(a));
-  w.fields.provenance = w.fields.provenance.map(a => new Float32Array(a));
-  for (const [key, a] of Object.entries(w.fields)) {
+  for (const key of BYTE_FIELDS) fields[key] = new Uint8Array(fields[key]);
+  for (const key of SHORT_FIELDS) fields[key] = new Uint16Array(fields[key]);
+  for (const key of INT_FIELDS) fields[key] = new Int32Array(fields[key]);
+  fields.topographicPosition = fields.topographicPosition.map(a => new Float32Array(a));
+  fields.provenance = fields.provenance.map(a => new Float32Array(a));
+  for (const [key, a] of Object.entries(fields)) {
     if (Array.isArray(a) ? a.some(v => v.length !== n) : a.length !== n) throw new Error('Malformed SurfaceWorld field ' + key);
   }
-  return w;
+}
+
+function validateGridGeometry(grid: SurfaceGridGeometry): void {
+  if (!Number.isInteger(grid.width) || !Number.isInteger(grid.height) || grid.width < 2 || grid.height < 2 || grid.width * grid.height > 16_777_216
+    || !Number.isFinite(grid.originX) || !Number.isFinite(grid.originZ) || !Number.isFinite(grid.spacingM) || grid.spacingM <= 0) throw new Error('Invalid canonical context grid');
+}
+
+function gridSampler(t: SurfaceGridGeometry, x: number, z: number): { nearest: number; continuous: (a: Float32Array) => number } {
+  const gx = clamp((x - t.originX) / t.spacingM, 0, t.width - 1), gz = clamp((z - t.originZ) / t.spacingM, 0, t.height - 1);
+  const x0 = Math.min(t.width - 2, Math.floor(gx)), z0 = Math.min(t.height - 2, Math.floor(gz));
+  const fx = gx - x0, fz = gz - z0, nearest = Math.round(gz) * t.width + Math.round(gx), p = z0 * t.width + x0;
+  return { nearest, continuous: a => {
+    const values = [a[p], a[p + 1], a[p + t.width], a[p + t.width + 1]];
+    if (!values.every(Number.isFinite)) return a[nearest];
+    return (values[0] * (1 - fx) + values[1] * fx) * (1 - fz) + (values[2] * (1 - fx) + values[3] * fx) * fz;
+  } };
+}
+
+function contextReference(context: CanonicalSurfaceContext): CanonicalSurfaceContextRef {
+  const v = context.versions;
+  return { id: context.id, environmentVersion: v.environment, occupationVersion: v.occupation, materialLibraryVersion: v.materialLibrary, surfaceStateVersion: v.surfaceState, populationVersion: v.population };
+}
+
+function validateContextReference(context: CanonicalSurfaceContext, reference: CanonicalSurfaceContextRef | undefined, versions: SurfaceWorld['versions']): void {
+  if (!reference || fingerprint(contextReference(context)) !== fingerprint(reference)
+    || context.versions.environment !== versions.environment || context.versions.occupation !== versions.occupation
+    || context.versions.hydrology !== versions.hydrology || context.versions.geology !== versions.geology
+    || context.versions.materialLibrary !== versions.materialLibrary || context.versions.surfaceState !== versions.surfaceState
+    || context.versions.population !== versions.population) throw new Error('Canonical context identity/version mismatch');
+}
+
+/** The returned arrays are borrowed read-only. Missing references never silently fall back to approximate projected fields. */
+export function getCanonicalSurfaceContext(world: SurfaceWorld): CanonicalSurfaceContext {
+  if (world.canonicalContextRef) {
+    if (!world.canonicalContext) throw new Error('Canonical surface context unavailable; resolve canonicalContextRef before exact sampling or population generation');
+    validateContextReference(world.canonicalContext, world.canonicalContextRef, world.versions);
+    return world.canonicalContext;
+  }
+  const { width, height, originX, originZ, spacingM, source } = world.terrain;
+  return { id: hashString([world.id, 'canonical-context-1'].join(':')), grid: { width, height, originX, originZ, spacingM }, bounds: { ...terrainBounds(world.terrain) }, source: { ...source }, versions: { ...world.versions }, fields: world.fields };
+}
+
+export interface RetargetSurfaceOptions {
+  signal?: AbortSignal;
+  /** Active bounds inside fine sample bounds. Allows source padding outside the canonical footprint. */
+  bounds?: Bounds;
+  expectedEnvironmentVersion?: string;
+  expectedTerrainVersion?: string;
+}
+
+function assertBounds(bounds: Bounds, within: Bounds, label: string): void {
+  if (![bounds.minX, bounds.minZ, bounds.maxX, bounds.maxZ].every(Number.isFinite) || bounds.minX > bounds.maxX || bounds.minZ > bounds.maxZ
+    || bounds.minX < within.minX || bounds.maxX > within.maxX || bounds.minZ < within.minZ || bounds.maxZ > within.maxZ) throw new RangeError(label);
+}
+
+/** Geometry-only refinement: fixed canonical context, source-native heights and new terrain identity. No terrain/environment generator runs here. */
+export function retargetSurfaceWorld(baseWorld: SurfaceWorld, fineTerrain: TerrainGrid, options: RetargetSurfaceOptions = {}): SurfaceWorld {
+  assertNotAborted(options.signal);
+  if (baseWorld.schemaVersion !== SURFACE_SCHEMA_VERSION || baseWorld.units !== 'metres' || baseWorld.crs !== 'local-xz') throw new Error('Unsupported base SurfaceWorld schema or units');
+  validateGrid(fineTerrain);
+  const context = getCanonicalSurfaceContext(baseWorld), source = context.source;
+  if (fineTerrain.source.id !== source.id || fineTerrain.source.version !== source.version) throw new Error('Terrain refinement source identity/version differs from canonical source; explicitly rebuild context after a source edit');
+  if (options.expectedEnvironmentVersion !== undefined && options.expectedEnvironmentVersion !== baseWorld.versions.environment) throw new Error('Stale canonical environment version');
+  if (options.expectedTerrainVersion !== undefined && options.expectedTerrainVersion !== baseWorld.versions.terrain) throw new Error('Stale base terrain version');
+  const terrain = { ...fineTerrain, source: { ...fineTerrain.source }, heights: new Float32Array(fineTerrain.heights) };
+  const fineBounds = terrainBounds(terrain), bounds = { ...(options.bounds ?? fineBounds) }, half = context.grid.spacingM / 2;
+  const footprint = { minX: context.bounds.minX - half, minZ: context.bounds.minZ - half, maxX: context.bounds.maxX + half, maxZ: context.bounds.maxZ + half };
+  assertBounds(bounds, fineBounds, 'Active refinement bounds exceed fine terrain sample centres');
+  assertBounds(bounds, footprint, 'Active refinement bounds exceed canonical source footprint');
+  const n = terrain.width * terrain.height, sourceFields = context.fields;
+  const fields = createFields(n, sourceFields.topographicPosition.length, sourceFields.provenance.length);
+  for (let i = 0; i < n; i++) {
+    if (!(i % 4096)) assertNotAborted(options.signal);
+    const x = terrain.originX + i % terrain.width * terrain.spacingM, z = terrain.originZ + Math.floor(i / terrain.width) * terrain.spacingM;
+    const sample = gridSampler(context.grid, x, z), j = sample.nearest;
+    for (const key of FLOAT_FIELDS) fields[key][i] = key === 'waterLevelM' || key === 'aspect' || key === 'orientation' || key === 'handM' ? sourceFields[key][j] : sample.continuous(sourceFields[key]);
+    for (const key of BYTE_FIELDS) fields[key][i] = sourceFields[key][j];
+    for (const key of SHORT_FIELDS) fields[key][i] = sourceFields[key][j];
+    fields.basin[i] = sourceFields.basin[j];
+    // Project graph addresses only when their canonical target is inside this patch. The authoritative graph stays in canonicalContext.
+    const downstream = sourceFields.downstream[j];
+    if (downstream >= 0) {
+      const dx = context.grid.originX + downstream % context.grid.width * context.grid.spacingM;
+      const dz = context.grid.originZ + Math.floor(downstream / context.grid.width) * context.grid.spacingM;
+      if (dx >= fineBounds.minX && dx <= fineBounds.maxX && dz >= fineBounds.minZ && dz <= fineBounds.maxZ) {
+        const index = Math.round((dz - terrain.originZ) / terrain.spacingM) * terrain.width + Math.round((dx - terrain.originX) / terrain.spacingM);
+        if (index !== i) fields.downstream[i] = index;
+      }
+    }
+    const mineralSum = fields.sand[i] + fields.silt[i] + fields.clay[i];
+    if (!(mineralSum > 0)) throw new Error('Invalid canonical mineral fractions');
+    fields.sand[i] /= mineralSum; fields.silt[i] /= mineralSum; fields.clay[i] /= mineralSum;
+    for (let layer = 0; layer < fields.topographicPosition.length; layer++) fields.topographicPosition[layer][i] = sample.continuous(sourceFields.topographicPosition[layer]);
+    let sum = 0;
+    for (let unit = 0; unit < fields.provenance.length; unit++) { fields.provenance[unit][i] = sourceFields.provenance[unit][j]; sum += fields.provenance[unit][i]; }
+    if (!(sum > 0)) throw new Error('Invalid canonical provenance fractions');
+    for (const fractions of fields.provenance) fractions[i] /= sum;
+  }
+  const terrainVersion = fingerprint(terrain), reference = contextReference(context);
+  const versions = { ...baseWorld.versions, terrain: terrainVersion };
+  const geology = { ...baseWorld.geology, bedrock: new Uint16Array(fields.bedrock) };
+  const climate = { ...baseWorld.climate,
+    temperatureC: baseWorld.climate.temperatureC ? new Float32Array(fields.temperatureC) : undefined,
+    precipitationMm: baseWorld.climate.precipitationMm ? new Float32Array(fields.precipitationMm) : undefined };
+  let estimatedBytes = terrain.heights.byteLength;
+  for (const array of Object.values(fields)) estimatedBytes += Array.isArray(array) ? array.reduce((sum, a) => sum + a.byteLength, 0) : array.byteLength;
+  const warnings = [...baseWorld.diagnostics.warnings];
+  if (fineBounds.minX < footprint.minX || fineBounds.maxX > footprint.maxX || fineBounds.minZ < footprint.minZ || fineBounds.maxZ > footprint.maxZ) warnings.push('Fine source contains padding outside canonical footprint; projected padding context is clamped and excluded from active bounds.');
+  assertNotAborted(options.signal);
+  return { ...baseWorld, id: hashString([reference.id, terrainVersion, fingerprint(bounds), 'geometry-retarget-1'].join(':')),
+    bounds, terrain, fields, geology, climate, versions, canonicalContext: context, canonicalContextRef: reference,
+    state: { ...baseWorld.state }, topographicRadiiM: [...baseWorld.topographicRadiiM],
+    diagnostics: { ...baseWorld.diagnostics, warnings, assumptions: [...baseWorld.diagnostics.assumptions,
+      'Geometry refined without recompiling canonical context. Projected fields are renderer samples; exact CPU context and population eligibility resolve canonicalContext.',
+      'Projected downstream indices are patch-local references; -1 may mean an exterior target. Canonical graph and basin identities remain authoritative.',
+      'estimatedBytes counts this projection and source heights, excluding the borrowed canonical context.'], estimatedBytes } };
 }
