@@ -189,6 +189,16 @@ repère des exports crop. Le benchmark demande maintenant une application réell
 acceptation fraîche, avec sourceLOD connu ; un paquet seulement accepté ne suffit
 plus. Une nouvelle campagne complète doit suivre l'intégration et le nouveau gel.
 
+La tentativeV2 a confirmé les chunks acquittés sans crashCDP, mais la première
+capture native montrait encore le parent (LOD inconnu, serial−1) après un HTTP0.
+Elle a été arrêtée et marquéeFAILED, sans dérouler des paliers de repli. Le client
+natif lisait la réponse de121,21Mo avec la configuration par frame et un timeout
+total120s. Le correctif met la lecture HTTPsur thread, des blocs1MiB et une borne
+explicite300s. Le replay headless du vrai paquet sauvegardé62 241 233octets a passé
+en214ms avec SHA256exact ; il ne mesure ni la génération ni la scèneGPU. La preuve
+d'affichage exige aussi le focus dans le patch, une contribution fine dominante
+supérieure à0,5 et l'accord des métadonnées du tile avec la source effective au focus.
+
 ## Registre des preuves exécutées
 
 Les gros binaires, captures et rapports restent dans `web/out/` ou les captures
@@ -210,6 +220,7 @@ versionnés ; la provenance ci-dessous indique la portée exacte de chaque preuv
 | Viewer : `viewer-local/captures/material-mean-forward.json`, `carto-decal/result.json` | Probes de production sous Forward+ : erreur maximale de moyenne linéaire annoncée 0,154 %, rebase ≤1 niveau 8 bits ; normales tournées0/90/180/270° ; couleurs CSSroutes et sol déformé testés. | Contrôles isolés, matériels/backends propres aux rapports ; aucune extrapolation à toutes les scènes, ombres ou configurations. |
 | Modèle : `web/out/surface/canopy-probe/report.json` | Vrai GPU Godot4.7.2/OpenGL RTX5090 : couverture de couronnes chevauchantes +arbre exclu du budget, sept empreintes ; erreur absolue maximale 1,72 point. Tests translation 20 Mm et cache/mask inclus. | Petite fixture de couverture non photométrique ; pas toute la forêt régionale ni une qualification temporelle des ombres. |
 | Modèle : `web/out/surface/orogen-proof/report.json` | Vrai pipeline Orogen original lu sans modification,20 001 régions ; graphe SHA256 `dbd86d036a22633992a8532ab0069beb2f609238c4c40e32c32ec984d5478829`, crop régional et import binaire réussis. | La géologie utilisée pour cette preuve était un scénario granite de test explicitement séparé ; Orogen n'a fourni aucune lithologie. |
+| Modèle : `web/out/surface/http-io-proof/report.json`, `source.json` | Replay du vrai paquetV2 de62 241 233octets via HTTP1 `Content-Length`, Godot headless threadé/blocs1MiB/timeout300s :214ms, résultat0/HTTP200, SHA256 `d01c01e79d7f8d99c68f1885ebb6ae61b0a92de66f172398c77afc0488588e95` exact. | Contrôle du transport seul, sans nouvelle inférence, renduGPU ni preuve de fluidité en scène. |
 
 ## Commandes reproductibles
 
