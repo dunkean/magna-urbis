@@ -1,5 +1,5 @@
 import { describe,expect,it } from 'vitest';
-import { isFinalQualityDisplay,verifyFinalDisplay,verifyMotionLiveDisplay,verifyTourQuality,verifyViewSatisfaction } from '../scripts/surface_navigation_evidence';
+import { isFinalQualityDisplay,sameDeliveredSpacing,verifyFinalDisplay,verifyMotionLiveDisplay,verifyTourQuality,verifyViewSatisfaction } from '../scripts/surface_navigation_evidence';
 function fixture(){
   const source={id:'registered-source',version:'actual-v1',sourceLODKnown:true,sourceLOD:-6,nativeSpacingM:.46875};
   const request={x:0,y:0,extent:64,resolution:128,preview:true};
@@ -8,6 +8,11 @@ function fixture(){
     metrics:{renderEvents:[display],liveAcceptance:[{worldId:'live-new',request,requestSerial:5,tickMs:1200,sourceEpoch:'source',sceneEpoch:'scene'}],discardedPreparations:{oldEpoch:0,newerPacket:2}}};
 }
 describe('rendered live evidence during motion',()=>{
+  it('compares actual delivered spacing across Godot JSON decimal rounding without accepting changed source density',()=>{
+    expect(sameDeliveredSpacing(.467289719626168,100/214)).toBe(true);
+    expect(sameDeliveredSpacing(.46728,100/214)).toBe(false);
+    for(const bad of [NaN,Infinity,0,-1,undefined,'0.467289719626168'])expect(sameDeliveredSpacing(bad,100/214)).toBe(false);
+  });
   it('accepts a source-known application independently linked to a fresh accepted world',()=>{const{proof,metrics}=fixture();expect(verifyMotionLiveDisplay(proof,metrics).displayedLiveWorlds).toHaveLength(1);});
   it('rejects the former false positive: old geometry redrawn while newer data is accepted',()=>{const{proof,metrics}=fixture();proof.motionDisplayEvents[0]={...proof.motionDisplayEvents[0],worldId:'warmup-parent',liveSerial:4};
     expect(()=>verifyMotionLiveDisplay(proof,metrics)).toThrow(/actually rendered/);});
