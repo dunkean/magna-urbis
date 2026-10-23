@@ -1,7 +1,8 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { randomUUID } from 'node:crypto';
 import type { Plugin } from 'vite';
-export interface SurfaceLiveRegion { x: number; y: number; extent: number; resolution: number; knownContextId?: string }
+import { SURFACE_PACKET_MAX_BYTES } from '../src/surface/limits';
+export interface SurfaceLiveRegion { x: number; y: number; extent: number; resolution: number; knownContextId?: string; knownSceneContextId?: string }
 interface Pending { client: string; response: ServerResponse; timer: ReturnType<typeof setTimeout> }
 async function readBytes(request: IncomingMessage, limit: number): Promise<Buffer> {
   const chunks: Buffer[] = []; let length = 0;
@@ -31,6 +32,9 @@ export function createSurfaceLiveBroker(timeoutMs = 120000) {
     const url = new URL(request.url ?? '/', 'http://localhost');
     if (!url.pathname.startsWith('/surface-live/')) { next(); return; }
     try {
+      // Native clients omit Origin. Browser callers must belong to this exact local server.
+      if (request.headers.origin && new URL(request.headers.origin).host !== request.headers.host) { reply(response, 403, { error: 'Surface live accepts same-origin browser requests only' }); return; }
+      if (request.method === 'POST' && !(request.headers['content-type']?.startsWith('application/json') || request.headers['content-type']?.startsWith('application/octet-stream'))) { reply(response, 415, { error: 'Expected application/json or application/octet-stream' }); return; }
       if (request.method === 'GET' && url.pathname === '/surface-live/sessions') {
         reply(response, 200, { schemaVersion: 1, sessions: [...clients.keys()] }); return;
       }
@@ -49,7 +53,7 @@ export function createSurfaceLiveBroker(timeoutMs = 120000) {
         const body = await readJson(request, 65536), region = body.region as SurfaceLiveRegion;
         if (!region || ![region.x, region.y, region.extent, region.resolution].every(Number.isFinite)
           || region.extent <= 0 || !Number.isInteger(region.resolution) || region.resolution < 4 || region.resolution > 1024
-          || (region.knownContextId !== undefined && (typeof region.knownContextId !== 'string' || region.knownContextId.length > 256))) {
+          || ['knownContextId', 'knownSceneContextId'].some(key => { const v = region[key as keyof SurfaceLiveRegion]; return v !== undefined && (typeof v !== 'string' || v.length > 256); })) {
           reply(response, 400, { error: 'Expected finite region x/y/extent and integer resolution 4..1024' }); return;
         }
         const client = body.sessionId ?? [...clients.keys()].at(-1);
@@ -64,7 +68,7 @@ export function createSurfaceLiveBroker(timeoutMs = 120000) {
         if (!item) { reply(response, 410, { error: 'Request was cancelled or superseded' }); return; }
         if (request.headers['content-type']?.startsWith('application/octet-stream')) {
           if (request.headers['x-surface-session'] !== item.client) { reply(response, 409, { error: 'Wrong browser session' }); return; }
-          const bytes = await readBytes(request, 256 * 1024 * 1024);
+          const bytes = await readBytes(request, SURFACE_PACKET_MAX_BYTES);
           if (bytes.length < 16 || bytes.subarray(0, 8).toString('ascii') !== 'MUFSURF1') { reply(response, 400, { error: 'Expected binary surface packet' }); return; }
           pending.delete(id); clearTimeout(item.timer);
           if (!item.response.destroyed && !item.response.writableEnded) {
@@ -72,10 +76,10 @@ export function createSurfaceLiveBroker(timeoutMs = 120000) {
           }
           reply(response, 200, { accepted: true }); return;
         }
-        const body = await readJson(request, 256 * 1024 * 1024);
+        const body = await readJson(request, SURFACE_PACKET_MAX_BYTES);
         if (body.sessionId !== item.client) { reply(response, 409, { error: 'Wrong browser session' }); return; }
         pending.delete(id); clearTimeout(item.timer);
-        reply(item.response, body.error ? 422 : 200, body.error ? { error: body.error } : body.packet);
+        reply(item.response, body.cancelled ? 409 : body.error ? 422 : 200, body.cancelled ? { cancelled: true, reason: body.error } : body.error ? { error: body.error } : body.packet);
         reply(response, 200, { accepted: true }); return;
       }
       reply(response, 404, { error: 'Unknown surface live endpoint' });

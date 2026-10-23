@@ -7,21 +7,40 @@ import {
 import { DEFAULT_ROCK_UNITS, SURFACE_MATERIALS, createMaterialIndex, dominantMaterialPair, materialColor, packMaterialMean, unpackMaterialMean, type MaterialComposition } from './materials';
 
 /** Hash includes content and shape, not merely source labels (edit-safe cache invalidation). */
-function fingerprint(value: unknown): string {
-  let hash = 2166136261;
-  const feed = (text: string) => { for (let j = 0; j < text.length; j++) hash = Math.imul(hash ^ text.charCodeAt(j), 16777619); };
+export function fingerprint(value: unknown): string {
+  // Four independently seeded lanes: cache identities carry 128 bits rather than
+  // the former 32-bit key. This is a content identity, not an authentication hash.
+  const hashes = [2166136261, 3335557771, 1597334677, 3812015801];
+  const feedByte = (byte: number) => { for (let lane = 0; lane < 4; lane++) hashes[lane] = Math.imul(hashes[lane] ^ byte, 16777619 + lane * 2); };
+  const feed = (text: string) => { for (let j = 0; j < text.length; j++) { const c = text.charCodeAt(j); feedByte(c & 255); feedByte(c >>> 8); } };
   const walk = (v: unknown): void => {
     if (ArrayBuffer.isView(v)) {
       feed(v.constructor.name + ':' + v.byteLength + ':');
       const bytes = new Uint8Array(v.buffer, v.byteOffset, v.byteLength);
-      for (let j = 0; j < bytes.length; j++) hash = Math.imul(hash ^ bytes[j], 16777619);
+      for (let j = 0; j < bytes.length; j++) feedByte(bytes[j]);
     } else if (Array.isArray(v)) { feed('['); for (const x of v) walk(x); feed(']'); }
     else if (v && typeof v === 'object') {
       feed('{'); for (const key of Object.keys(v).filter(key => (v as Record<string, unknown>)[key] !== undefined).sort()) { feed(key + ':'); walk((v as Record<string, unknown>)[key]); } feed('}');
     } else feed(typeof v + ':' + String(v) + ';');
   };
   walk(value);
-  return (hash >>> 0).toString(16).padStart(8, '0');
+  return hashes.map(hash => (hash >>> 0).toString(16).padStart(8, '0')).join('');
+}
+
+/** Read-only identity verification for packets made before the 128-bit cache keys.
+ * New compilations and geometry retargets always use the current algorithm. */
+function legacyFingerprint(value: unknown): string {
+  let hash = 2166136261;
+  const feed = (text: string) => { for (let j = 0; j < text.length; j++) hash = Math.imul(hash ^ text.charCodeAt(j), 16777619); };
+  const walk = (v: unknown): void => {
+    if (ArrayBuffer.isView(v)) {
+      feed(v.constructor.name + ':' + v.byteLength + ':');
+      for (const byte of new Uint8Array(v.buffer, v.byteOffset, v.byteLength)) hash = Math.imul(hash ^ byte, 16777619);
+    } else if (Array.isArray(v)) { feed('['); for (const x of v) walk(x); feed(']'); }
+    else if (v && typeof v === 'object') { feed('{'); for (const key of Object.keys(v).filter(key => (v as Record<string, unknown>)[key] !== undefined).sort()) { feed(key + ':'); walk((v as Record<string, unknown>)[key]); } feed('}'); }
+    else feed(typeof v + ':' + String(v) + ';');
+  };
+  walk(value); return (hash >>> 0).toString(16).padStart(8, '0');
 }
 
 function validateGrid(t: TerrainGrid): void {
@@ -406,14 +425,14 @@ export function compileSurfaceWorld(input: SurfaceCompileInput, options: Compile
   const terrainVersion = fingerprint(t), hydrologyVersion = fingerprint(['hydrology-2', terrainVersion, input.hydrology, f.downstream, f.waterClass, f.waterLevelM]);
   const geologyVersion = fingerprint(geology), occupationVersion = fingerprint(input.occupation ?? 'natural');
   const environment = fingerprint([terrainVersion, hydrologyVersion, geologyVersion, climate, input.processes, radii, options.riverAreaThresholdM2 ?? 1_000_000, options.floodplainWidthM ?? 150, options.colluvialDecayLengthM ?? 100, materials.map(m => m.id), SURFACE_COMPILER_VERSION]);
-  const population = hashString([environment, occupationVersion, input.seed, SURFACE_POPULATION_VERSION].join(':'));
+  const population = fingerprint([environment, occupationVersion, input.seed, SURFACE_POPULATION_VERSION].join(':'));
   const materialLibrary = fingerprint(materials), surfaceState = fingerprint(state);
   let estimatedBytes = t.heights.byteLength;
   for (const v of Object.values(f)) estimatedBytes += Array.isArray(v) ? v.reduce((s, a) => s + a.byteLength, 0) : v.byteLength;
   assertNotAborted(options.signal);
   validateFieldFiniteness(f);
   return { schemaVersion: SURFACE_SCHEMA_VERSION, compilerVersion: SURFACE_COMPILER_VERSION,
-    id: hashString([environment, occupationVersion, population, materialLibrary, surfaceState, input.seed].join(':')),
+    id: fingerprint([environment, occupationVersion, population, materialLibrary, surfaceState, input.seed].join(':')),
     seed: input.seed, units: 'metres', crs: 'local-xz', bounds: terrainBounds(t),
     versions: { terrain: terrainVersion, hydrology: hydrologyVersion, geology: geologyVersion, environment, occupation: occupationVersion, population, materialLibrary, surfaceState },
     terrain: t, geology, climate, state, fields: f, materials: materials.map(m => ({ ...m, colorLinear: [...m.colorLinear], compatibleSubstrates: [...m.compatibleSubstrates], compatibleProcesses: [...m.compatibleProcesses] })), topographicRadiiM: [...radii],
@@ -492,10 +511,12 @@ export function hydrateSurfaceWorld(value: unknown, options: SurfaceHydrationOpt
     w.climate[key] = new Float32Array(w.climate[key]!);
   }
   if (!w.versions || ['terrain', 'hydrology', 'geology', 'environment', 'occupation', 'population', 'materialLibrary', 'surfaceState'].some(key => typeof w.versions[key as keyof typeof w.versions] !== 'string' || !w.versions[key as keyof typeof w.versions])) throw new Error('Malformed SurfaceWorld versions');
-  if (fingerprint(w.terrain) !== w.versions.terrain) throw new Error('Terrain version mismatch: data was edited without invalidation');
+  const legacy = /^surface-1\.[012]\./.test(w.compilerVersion);
+  const contentHash = legacy ? legacyFingerprint : fingerprint, identityHash = legacy ? hashString : fingerprint;
+  if (contentHash(w.terrain) !== w.versions.terrain) throw new Error('Terrain version mismatch: data was edited without invalidation');
   const expectedId = w.canonicalContextRef
-    ? hashString([w.canonicalContextRef.id, w.versions.terrain, fingerprint(w.bounds), 'geometry-retarget-1'].join(':'))
-    : hashString([w.versions.environment, w.versions.occupation, w.versions.population, w.versions.materialLibrary, w.versions.surfaceState, w.seed].join(':'));
+    ? identityHash([w.canonicalContextRef.id, w.versions.terrain, contentHash(w.bounds), 'geometry-retarget-1'].join(':'))
+    : identityHash([w.versions.environment, w.versions.occupation, w.versions.population, w.versions.materialLibrary, w.versions.surfaceState, w.seed].join(':'));
   if (w.id !== expectedId) throw new Error('SurfaceWorld id/version mismatch');
   restoreFields(w.fields, w.terrain.heights.length, w);
   if (w.canonicalContext) {
@@ -646,7 +667,7 @@ export function getCanonicalSurfaceContext(world: SurfaceWorld): CanonicalSurfac
     return world.canonicalContext;
   }
   const { width, height, originX, originZ, spacingM, source } = world.terrain;
-  return { id: hashString([world.id, 'canonical-context-1'].join(':')), grid: { width, height, originX, originZ, spacingM }, bounds: { ...terrainBounds(world.terrain) }, source: { ...source }, versions: { ...world.versions }, fields: world.fields };
+  return { id: fingerprint([world.id, 'canonical-context-1'].join(':')), grid: { width, height, originX, originZ, spacingM }, bounds: { ...terrainBounds(world.terrain) }, source: { ...source }, versions: { ...world.versions }, fields: world.fields };
 }
 
 export interface RetargetSurfaceOptions {
@@ -726,7 +747,7 @@ export function retargetSurfaceWorld(baseWorld: SurfaceWorld, fineTerrain: Terra
   if (fields.waterClass.some((water, i) => water !== WaterClass.Dry && terrain.heights[i] > fields.waterLevelM[i] + .001)) warnings.push('Refined bed rises above a canonical water level in some wet cells; canonical water is preserved and this support conflict requires source reconciliation.');
   if (fineBounds.minX < footprint.minX || fineBounds.maxX > footprint.maxX || fineBounds.minZ < footprint.minZ || fineBounds.maxZ > footprint.maxZ) warnings.push('Fine source contains padding outside canonical footprint; projected padding context is clamped and excluded from active bounds.');
   assertNotAborted(options.signal);
-  return { ...baseWorld, id: hashString([reference.id, terrainVersion, fingerprint(bounds), 'geometry-retarget-1'].join(':')),
+  return { ...baseWorld, compilerVersion: SURFACE_COMPILER_VERSION, id: fingerprint([reference.id, terrainVersion, fingerprint(bounds), 'geometry-retarget-1'].join(':')),
     bounds, terrain, fields, geology, climate, versions, canonicalContext: context, canonicalContextRef: reference,
     state: { ...baseWorld.state }, topographicRadiiM: [...baseWorld.topographicRadiiM],
     diagnostics: { ...baseWorld.diagnostics, warnings, assumptions: [...baseWorld.diagnostics.assumptions,

@@ -6,6 +6,24 @@ import type { Decor } from '../src/ui/decor';
 import nativeScene from './fixtures/surface-native-city-plans.json';
 
 describe('bounded binary source metadata', () => {
+  it('keeps typed NaN-bearing native/editor data outside JSON attachments without coercion', () => {
+    const source = { meta: { id: 'typed-editor', pipeline: { urban: { scene: { samples: new Float32Array([NaN, Infinity, -Infinity, 4]),
+      longText: 'x'.repeat(10000) + '\ud800', opaque: { arrayType: 'domain-key', bytes: 'unchanged' } } } } } };
+    const archived = archiveSurfaceSource(source);
+    const decoded = decodeSurfaceBinary<typeof archived>(encodeSurfaceBinary(archived));
+    expect(restoreSurfaceSource(decoded)).toStrictEqual(source);
+    expect(source.meta.pipeline.urban.scene.samples).toBeInstanceOf(Float32Array);
+    expect(() => archiveSurfaceSource({ meta: { scene: { pad: 'x'.repeat(10000), invalid: NaN } } })).toThrow();
+    expect(() => archiveSurfaceSource({ meta: { scene: { pad: 'x'.repeat(10000), opaque: new Date() } } })).toThrow();
+    expect(() => archiveSurfaceSource({ meta: { scene: { toJSON() { return {}; }, pad: 'x'.repeat(10000) } } })).toThrow();
+  });
+  it('rejects non-plain binary values rather than silently replacing them with empty records', () => {
+    class Hidden { value = 3; }
+    for (const value of [new ArrayBuffer(8), new Map([['x', 3]]), new Set([3]), new Date(), new Hidden()])
+      expect(() => encodeSurfaceBinary({ value })).toThrow();
+    const opaque = { [Symbol('hidden')]: 3 };
+    expect(() => encodeSurfaceBinary({ opaque })).toThrow();
+  });
   it('archives native/editor/opaque metadata reversibly while keeping source identity visible', () => {
     const source = { meta: { id: 'source-id', seed: '47', query: 'source=neural-python', pipeline: { urban: { buildingState: { scene: nativeScene } } },
       opaque: { arrayType: 'user-domain', format: 'surface-source-archive-1', bytes: 'arbitrary-source-value' }, waterSvg: '<svg>' + 'x'.repeat(100000) + '</svg>',

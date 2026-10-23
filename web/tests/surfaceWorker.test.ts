@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { decodeSurfaceBinary, encodeSurfaceBinary, isSurfaceBinary } from '../src/surface/binary';
 import { hydrateSurfaceWorld } from '../src/surface/compiler';
 import type { TerrainGrid } from '../src/surface/model';
@@ -87,23 +87,39 @@ describe('interruptible surface compiler client', () => {
     client.dispose(); expect(workers[0].terminated).toBe(true);
   });
 
-  it('physically terminates aborted work and reinitializes source/context for the next request', async () => {
+  it('rejects aborted output but finishes the durable canonical build for the next request', async () => {
     const workers: TestWorker[] = [], client = new SurfaceCompilerClient(initialization(), () => { const w = new TestWorker(); workers.push(w); return w; });
     const aborter = new AbortController(), pending = client.compile(job(), aborter.signal).catch(error => error);
-    aborter.abort(); expect(workers[0].terminated).toBe(true); expect(await pending).toMatchObject({ name: 'AbortError' });
-    const next = client.compile(job(2)); expect(workers).toHaveLength(2); expect(workers[1].messages[0].kind).toBe('initialize');
-    workers[1].run(); expect((await next).canonicalBuildCount).toBe(1); client.dispose();
+    aborter.abort(); expect(workers[0].terminated).toBe(false); expect(await pending).toMatchObject({ name: 'AbortError' });
+    const next = client.compile(job(2)); expect(workers).toHaveLength(1);
+    workers[0].run(); expect((await next).canonicalBuildCount).toBe(1); client.dispose();
   });
 
-  it('terminates superseded jobs and ignores their queued success/error callbacks', async () => {
+  it('coalesces five requests during the initial build and publishes only the latest result', async () => {
     const workers: TestWorker[] = [], client = new SurfaceCompilerClient(initialization(), () => { const w = new TestWorker(); workers.push(w); return w; });
-    const first = client.compile(job()).catch(error => error), staleMessage = workers[0].onmessage!, staleError = workers[0].onerror!;
-    const oldJob = workers[0].messages[1] as SurfaceWorkerJob;
-    const second = client.compile(job(2)); expect(workers[0].terminated).toBe(true);
-    const bytes = encodeSurfaceBinary({ stale: true });
-    staleMessage({ data: { ...oldJob, kind: 'compiled', binary: bytes.buffer as ArrayBuffer, contextId: 'stale', environmentVersion: 'stale', canonicalBuildCount: 1 } } as unknown as MessageEvent<SurfaceWorkerResponse>);
-    staleError({ message: 'old worker crash' } as ErrorEvent);
-    workers[1].run(); expect((await second).contextId).not.toBe('stale'); expect(await first).toMatchObject({ name: 'AbortError' }); client.dispose();
+    vi.useFakeTimers();
+    try {
+      const obsolete: Promise<unknown>[] = [];
+      for (let i = 1; i < 5; i++) { obsolete.push(client.compile(job(i)).catch(error => error)); vi.advanceTimersByTime(200); }
+      const latest = client.compile(job(5));
+      expect(workers).toHaveLength(1); expect(workers[0].messages).toHaveLength(2);
+      workers[0].run(); expect((await latest).canonicalBuildCount).toBe(1);
+      for (const result of await Promise.all(obsolete)) expect(result).toMatchObject({ name: 'AbortError' });
+      expect(workers[0].terminated).toBe(false);
+    } finally { client.dispose(); vi.useRealTimers(); }
+  });
+
+  it('retains the canonical cache after a routed validation error and bounds cancellation grace', async () => {
+    const workers: TestWorker[] = [], client = new SurfaceCompilerClient(initialization(), () => { const w = new TestWorker(); workers.push(w); return w; }, 100);
+    const invalid = client.compile({ ...job(), binaryBudgetBytes: 1 }).catch(error => error); workers[0].run();
+    expect(await invalid).toMatchObject({ name: 'RangeError' }); expect(workers[0].terminated).toBe(false);
+    const next = client.compile(job(2)); workers[0].run(); expect((await next).canonicalBuildCount).toBe(1);
+    vi.useFakeTimers();
+    try {
+      const pending = client.compile(job(3)).catch(error => error); client.cancel();
+      expect(await pending).toMatchObject({ name: 'AbortError' });
+      vi.advanceTimersByTime(101); expect(workers[0].terminated).toBe(true);
+    } finally { client.dispose(); vi.useRealTimers(); }
   });
 
   it('invalidates scene epochs, rejects pre-cancelled work without creating a worker, and propagates current crashes', async () => {
