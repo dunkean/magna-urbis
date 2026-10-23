@@ -59,7 +59,7 @@ describe('existing native city compatibility and accepted occupation', () => {
     expect(occupation.classes[10 * 20 + 15]).toBe(Occupation.Meadow);
     expect(source.classes.every(c => c === Occupation.Meadow)).toBe(true);
     const packet = exportSurfaceInputPacket({ seed: 7, terrain: grid, occupation: source }, scene, {}, { roads: [road] });
-    expect(packet.urban.roads[0].id).toBe('road-source-id');
+    expect(packet.urban.roads![0].id).toBe('road-source-id');
     expect(packet.candidates!.every(c => {
       const x = Math.max(0, Math.min(19, Math.round(c.x - grid.originX))), y = Math.max(0, Math.min(19, Math.round(c.z - grid.originZ)));
       return ![Occupation.Road, Occupation.Built].includes(occupation.classes[y * 20 + x]);
