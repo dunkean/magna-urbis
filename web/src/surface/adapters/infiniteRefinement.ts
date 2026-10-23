@@ -135,7 +135,7 @@ export async function createInfiniteRefinementProvider(server: string, field: Re
           || Math.abs(meta.x - b.minX) > tolerance || Math.abs(meta.y - b.minZ) > tolerance || Math.abs(meta.width - width) > tolerance) throw new Error('Invalid refinement tile metadata or samples');
         const spacingM = meta.width / meta.n;
         const grid: TerrainGrid = { width: meta.n, height: meta.n, originX: meta.x + spacingM / 2, originZ: meta.y + spacingM / 2,
-          spacingM, heights, source: { id: `infinite:${sourceOptions.seed}:${tileRegistration.id}`, version: meta.version,
+          spacingM, heights, reconstruction: 'bilinear-samples', source: { id: `infinite:${sourceOptions.seed}:${tileRegistration.id}`, version: meta.version,
             sourceLOD: meta.lod, sourceLODKnown: true, nativeSpacingM: meta.sourceCell } };
         assertRefinementTerrainRegion(grid, b);
         const measured = compareRefinementParent(retained, grid, canonicalField);

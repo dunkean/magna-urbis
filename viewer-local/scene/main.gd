@@ -395,26 +395,15 @@ func _build_populations(populations: Dictionary) -> void:
 			mat.albedo_color = Color(0.33,0.32,0.29)
 		mat.roughness = 0.91
 		var fade_material := ShaderMaterial.new()
-		fade_material.shader = load("res://shaders/instance.gdshader")
-		fade_material.set_shader_parameter("tint",mat.albedo_color)
+		fade_material.shader = load("res://shaders/surface_object.gdshader")
+		fade_material.set_shader_parameter("linear_tint",Vector3(mat.albedo_color.r,mat.albedo_color.g,mat.albedo_color.b))
 		mesh.surface_set_material(0,fade_material)
 		var multi := MultiMesh.new()
 		multi.transform_format = MultiMesh.TRANSFORM_3D
 		multi.use_custom_data = true
 		multi.mesh = mesh
 		multi.instance_count = visible.size()
-		for i in visible.size():
-			var candidate: Dictionary = visible[i]
-			var size: float = candidate.size
-			var crown: bool = family=="tree"
-			var crown_radius := float(candidate.get("crownRadiusM",size*0.42))
-			if not is_finite(crown_radius): crown_radius=size*0.42
-			var horizontal := crown_radius/0.42 if crown else size
-			var position := Vector3(float(candidate.x)-origin.x,float(candidate.y)+size*(0.72 if crown else 0.5)-origin.y,float(candidate.z)-origin.z)
-			var basis := Basis(Vector3.UP,float(candidate.orientation)).scaled(Vector3(horizontal,size*(0.66 if crown else 1.0),horizontal))
-			multi.set_instance_transform(i,Transform3D(basis,position))
-			var pixels := size/width_m*get_viewport().get_visible_rect().size.x
-			multi.set_instance_custom_data(i,Color(smoothstep(1.25,3.0,pixels),0,0,1))
+		multi.buffer=populations.buffers[family]
 		var instance := MultiMeshInstance3D.new()
 		instance.name = family+"_bounded_instances"
 		instance.multimesh = multi
@@ -426,19 +415,15 @@ func _build_populations(populations: Dictionary) -> void:
 			trunk_mesh.height = 0.74
 			trunk_mesh.radial_segments = 5
 			var trunk_mat := ShaderMaterial.new()
-			trunk_mat.shader = load("res://shaders/instance.gdshader")
-			trunk_mat.set_shader_parameter("tint",Color(0.16,0.105,0.067))
+			trunk_mat.shader = load("res://shaders/surface_object.gdshader")
+			trunk_mat.set_shader_parameter("linear_tint",Vector3(0.16,0.105,0.067))
 			trunk_mesh.material = trunk_mat
 			var trunks := MultiMesh.new()
 			trunks.transform_format = MultiMesh.TRANSFORM_3D
 			trunks.use_custom_data = true
 			trunks.mesh = trunk_mesh
 			trunks.instance_count = visible.size()
-			for i in visible.size():
-				var c: Dictionary = visible[i]
-				var size: float = c.size
-				trunks.set_instance_transform(i,Transform3D(Basis.IDENTITY.scaled(Vector3(size,size,size)),Vector3(float(c.x)-origin.x,float(c.y)+size*0.37-origin.y,float(c.z)-origin.z)))
-				trunks.set_instance_custom_data(i,Color(smoothstep(1.25,3.0,size/width_m*get_viewport().get_visible_rect().size.x),0,0,1))
+			trunks.buffer=populations.trunkBuffer
 			var trunk_instance := MultiMeshInstance3D.new()
 			trunk_instance.name = "tree_trunks"
 			trunk_instance.multimesh = trunks

@@ -87,8 +87,8 @@ export function compileRegionalSurfaceWorld(packet: NeuralEarthPackage, mapping:
   const unitIds = new Set(catalogue.units.map(unit => unit.id));
   for (const [code, id] of Object.entries(catalogue.codeToUnit)) if (!/^-?\d+$/.test(code) || !Number.isInteger(id) || !unitIds.has(id)) throw new Error('Geology code catalogue references an unknown explicit rock unit');
   const c = mapping.climate;
-  const annualT = c.annualTemperature && get(c.annualTemperature), summerT = c.summerTemperature && get(c.summerTemperature), winterT = c.winterTemperature && get(c.winterTemperature);
-  const annualP = c.annualPrecipitation && get(c.annualPrecipitation), summerP = c.summerPrecipitation && get(c.summerPrecipitation), winterP = c.winterPrecipitation && get(c.winterPrecipitation);
+  const annualT = c.annualTemperature ? get(c.annualTemperature) : undefined, summerT = c.summerTemperature ? get(c.summerTemperature) : undefined, winterT = c.winterTemperature ? get(c.winterTemperature) : undefined;
+  const annualP = c.annualPrecipitation ? get(c.annualPrecipitation) : undefined, summerP = c.summerPrecipitation ? get(c.summerPrecipitation) : undefined, winterP = c.winterPrecipitation ? get(c.winterPrecipitation) : undefined;
   if (!annualT && !(summerT && winterT) || !annualP && !(summerP && winterP)) throw new Error('Regional climate needs annual fields or both seasonal temperature/precipitation fields');
   const temperatureLayers = [annualT, summerT, winterT].filter(Boolean) as RegionalLayer[];
   const corrected = temperatureLayers.map(layer => layer.season?.elevationCorrected);
