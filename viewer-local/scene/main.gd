@@ -870,6 +870,12 @@ func _build_road_projectors(records: Array) -> void:
 		projector.texture_albedo=road_texture
 		projector.modulate=Color(0.42,0.38,0.30,1.0)
 		projector.albedo_mix=0.72
+		var style=Presentation.road_decal_style(packet,presentation_mode,record.get("metadata",record))
+		if style.cartographic:
+			projector.texture_albedo=style.texture
+			projector.modulate=style.modulate
+			projector.albedo_mix=style.albedoMix
+			projector.set_meta("cartographicRoadStyle",{"fillCSS":style.fillCSS,"edgeCSS":style.edgeCSS,"borderFraction":style.borderFraction,"rural":style.rural})
 		projector.set_meta("sourceRoad",record.metadata)
 		objects.add_child(projector)
 
