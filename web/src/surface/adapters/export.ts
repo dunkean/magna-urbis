@@ -5,13 +5,20 @@ import type { Bounds, CompileOptions, SurfaceCompileInput, SurfaceWorld } from '
 import { generateSurfaceCandidates } from '../population';
 import { occupationFromMagnaScene, type SurfaceRoad } from './occupation';
 import { decorToSurfaceInput, exportMagnaBuildings } from './magna';
+import { magnaClimateToSurface, MAGNA_CLIMATE_PRESETS } from './climate';
+import type { Surface } from '../../../../rust/bridge/housesContract';
 
-export interface SurfacePacketOptions extends CompileOptions { candidateBounds?: Bounds; roads?: readonly SurfaceRoad[] }
-export interface DecorCompileOptions extends SurfacePacketOptions { originX?: number; originZ?: number }
+export interface SurfacePacketOptions extends CompileOptions { candidateBounds?: Bounds | 'all'; candidateLimit?: number; roads?: readonly SurfaceRoad[]; encoding?: 'json' | 'binary' }
+export interface DecorCompileOptions extends SurfacePacketOptions {
+  /** Common frame translation applied to terrain, visible/accepted buildings and roads. */
+  originX?: number; originZ?: number;
+  /** Source grid crop corner in the unchanged city/map frame; not a city translation. */
+  terrainOriginX?: number; terrainOriginZ?: number;
+}
 export function compileFromDecor(decor: Decor, options: DecorCompileOptions = {}) {
   const input = decorToSurfaceInput(decor);
-  input.terrain.originX += options.originX ?? 0;
-  input.terrain.originZ += options.originZ ?? 0;
+  input.terrain.originX += (options.terrainOriginX ?? 0) + (options.originX ?? 0);
+  input.terrain.originZ += (options.terrainOriginZ ?? 0) + (options.originZ ?? 0);
   return compileSurfaceWorld(input, options);
 }
 
@@ -20,16 +27,30 @@ export function compileFromDecor(decor: Decor, options: DecorCompileOptions = {}
 export function exportSurfaceInputPacket(input: SurfaceCompileInput, scene: Building3dScene = { buildings: [] },
   source: Record<string, unknown> = {}, options: SurfacePacketOptions = {}) {
   const occupation = occupationFromMagnaScene(input.terrain, scene, options.roads, input.occupation);
-  const world = compileSurfaceWorld({ ...input, occupation }, options);
-  return { format: 'magna-surface-packet', version: 1, world: JSON.parse(serializeSurfaceWorld(world)),
+  const world = compileSurfaceWorld({ ...input, occupation, climate: input.climate ?? magnaClimateToSurface(MAGNA_CLIMATE_PRESETS.temperate, 'magna-temperate-default-1') }, options);
+  return { format: 'magna-surface-packet', version: 1, world: options.encoding === 'binary' ? world : JSON.parse(serializeSurfaceWorld(world)),
     urban: { ...exportMagnaBuildings(scene), roads: structuredClone(options.roads ?? []) }, source: structuredClone(source), ...packetCandidates(world, options) };
 }
 
 function packetCandidates(world: SurfaceWorld, options: SurfacePacketOptions) {
   const b = world.bounds, cx = (b.minX + b.maxX) / 2, cz = (b.minZ + b.maxZ) / 2;
-  const candidateBounds = options.candidateBounds ?? { minX: Math.max(b.minX, cx - 160), maxX: Math.min(b.maxX, cx + 160),
+  const candidateBounds = options.candidateBounds === 'all' ? b : options.candidateBounds ?? { minX: Math.max(b.minX, cx - 160), maxX: Math.min(b.maxX, cx + 160),
     minZ: Math.max(b.minZ, cz - 160), maxZ: Math.min(b.maxZ, cz + 160) };
-  return { candidateBounds, candidates: generateSurfaceCandidates(world, candidateBounds, { maxCandidates: 100000, signal: options.signal }) };
+  return { candidateBounds, candidates: generateSurfaceCandidates(world, candidateBounds, { maxCandidates: options.candidateLimit ?? 100000, signal: options.signal }) };
+}
+
+function translatedBuildings(scene: Building3dScene, dx: number, dz: number) {
+  const packet = exportMagnaBuildings(scene);
+  const surface = (s: Surface) => { for (const shape of s) for (const ring of [shape.outer, ...shape.holes]) for (const p of ring) { p.x += dx; p.y += dz; } };
+  for (const building of packet.buildings) {
+    surface(building.footprint); surface(building.roofFootprint);
+    for (const triangle of building.triangles) for (const p of triangle.points) { p[0] += dx; p[2] += dz; }
+  }
+  for (const building of packet.occupationBuildings) {
+    for (const s of building.surfaces) surface(s);
+    for (const c of building.groundConstraints) surface(c.footprint);
+  }
+  return packet;
 }
 
 /** Source metadata/geometry stay separate from compiled fields, preserving river
@@ -38,16 +59,20 @@ export function exportSurfacePacket(decor: Decor, scene?: Building3dScene, optio
   const retained = decor.meta.pipeline?.urban?.buildingState;
   if (retained?.cold && !scene) throw new Error('Cold native buildings require their retained chunk scene before surface export.');
   const input = decorToSurfaceInput(decor);
-  input.terrain.originX += options.originX ?? 0; input.terrain.originZ += options.originZ ?? 0;
+  const dx = options.originX ?? 0, dz = options.originZ ?? 0;
+  if (![dx, dz, options.terrainOriginX ?? 0, options.terrainOriginZ ?? 0].every(Number.isFinite)) throw new Error('Surface export offsets must be finite.');
+  input.terrain.originX += options.terrainOriginX ?? 0; input.terrain.originZ += options.terrainOriginZ ?? 0;
   const buildings = scene ?? retained?.scene ?? { buildings: [] };
   const roads: SurfaceRoad[] = options.roads ? [...options.roads] : (decor.meta.roads?.segments ?? []).map(road => ({ points: road.path.map(p => [p.x, p.y]), widthM: road.width }));
   input.occupation = occupationFromMagnaScene(input.terrain, buildings, roads, input.occupation);
+  input.terrain.originX += dx; input.terrain.originZ += dz;
   const world = compileSurfaceWorld(input, options);
   return { format: 'magna-surface-packet', version: 1,
-    world: JSON.parse(serializeSurfaceWorld(world)), urban: { ...exportMagnaBuildings(buildings),
-      roads: (decor.meta.roads?.segments ?? []).map((road, sourceIndex) => ({ sourceIndex, points: road.path.map(p => [p.x, p.y]),
-        widthM: road.width, surface: road.surface, class: road.class })) }, ...packetCandidates(world, options),
-    source: { meta: structuredClone(decor.meta), geometry: structuredClone(decor.raster.geometry),
-      water: { n: decor.raster.n, width: decor.raster.width, originX: options.originX ?? 0, originZ: options.originZ ?? 0, classes: Array.from(decor.raster.water),
+    world: options.encoding === 'binary' ? world : JSON.parse(serializeSurfaceWorld(world)), urban: { ...translatedBuildings(buildings, dx, dz), roadsCoordinateSystem: 'metric-xz' as const,
+      footprintsCoordinateSystem: 'metric-xz-as-xy' as const,
+      roads: roads.map((road, sourceIndex) => ({ ...structuredClone(road), sourceIndex, points: road.points.map(([x, z]) => [x + dx, z + dz]),
+        ...(!options.roads ? { surface: decor.meta.roads!.segments[sourceIndex].surface, class: decor.meta.roads!.segments[sourceIndex].class } : {}) })) }, ...packetCandidates(world, options),
+    source: { meta: structuredClone(decor.meta), geometry: structuredClone(decor.raster.geometry), sourceToWorldTranslation: { x: dx, z: dz },
+      water: { n: decor.raster.n, width: decor.raster.width, originX: (options.terrainOriginX ?? 0) + dx, originZ: (options.terrainOriginZ ?? 0) + dz, classes: Array.from(decor.raster.water),
         levelM: Array.from(decor.raster.waterLevel), riverIds: Array.from(decor.raster.riverIds), riverWidthM: Array.from(decor.raster.riverWidth) } } };
 }

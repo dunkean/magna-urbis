@@ -4,7 +4,8 @@ import type { Decor } from '../../ui/decor';
 import { eachBuildingTriangle, isBuildingProjection, type Building3dScene, type BuildingTriangle } from '../../render/urbanBuildingGeometry';
 import { assertNotAborted, hashString, type TerrainGrid, type SourceIdentity, type SurfaceCompileInput } from '../model';
 import type { TerrainProvider, TerrainRequest } from '../provider';
-import { climateFromMagnaQuery } from './climate';
+import { climateFromMagnaQuery, magnaClimateToSurface, MAGNA_CLIMATE_PRESETS } from './climate';
+import type { ClimateValues } from '../../../../rust/bridge/terrain';
 import { buildingOccupationSurfaces, buildingGroundConstraints } from '../../ui/urbanBuildingProjection';
 import { occupationFromMagnaWorld } from './occupation';
 
@@ -27,7 +28,7 @@ export function createInfiniteTerrainProvider(settings: TerrainSettings,
   return { id: `infinite:${retained.seed}`, async request(request: TerrainRequest) {
     assertNotAborted(request.signal);
     const b = request.bounds, extent = b.maxX - b.minX;
-    if (!(extent > 0) || Math.abs(extent - (b.maxZ - b.minZ)) > 1e-6 || !(request.spacingM > 0))
+    if (![b.minX, b.minZ, b.maxX, b.maxZ, request.spacingM].every(Number.isFinite) || !(extent > 0) || Math.abs(extent - (b.maxZ - b.minZ)) > 1e-6 || !(request.spacingM > 0))
       throw new Error('Infinite Generation bridge requires a square region and positive spacing.');
     const resolution = Math.max(64, Math.min(1024, Math.ceil(extent / request.spacingM)));
     const reply = await sample({ x: b.minX, y: b.minZ, extent, resolution }, structuredClone(retained), request.signal);
@@ -36,16 +37,25 @@ export function createInfiniteTerrainProvider(settings: TerrainSettings,
   } };
 }
 
-/** Browser/runtime entrypoint to the actual existing Infinite Generation bridge.
- * Keep the import lazy: offline exports and Neural Earth need no WASM or DOM.
- * Explicit source metadata is mandatory; display refinement is not evidence of a new LOD. */
+/** One worker per request isolates the actual generator's queue from the active
+ * page. Aborting terminates that worker, including queued/native computation. */
 export async function createLiveInfiniteTerrainProvider(settings: TerrainSettings,
-  sourceForReply: (terrain: TerrainData) => SourceIdentity): Promise<TerrainProvider> {
-  const { sampleRustTerrain } = await import('../../../../rust/bridge/terrain');
-  let serial = 0;
+  sourceForReply: (terrain: TerrainData) => SourceIdentity,
+  workerFactory: () => Worker = () => new Worker(new URL('./infiniteTerrain.worker.ts', import.meta.url), { type: 'module' })): Promise<TerrainProvider> {
   return createInfiniteTerrainProvider(settings, async (region, retained, signal) => {
     assertNotAborted(signal);
-    const terrain = await sampleRustTerrain({ id: ++serial, generation: 0, kind: 'detail', settings: retained, region, display: 'gl' });
+    const terrain = await new Promise<TerrainData>((resolve, reject) => {
+      const worker = workerFactory();
+      const cleanup = () => { worker.terminate(); signal?.removeEventListener('abort', aborted); };
+      const aborted = () => { cleanup(); reject(new DOMException('Surface generation aborted', 'AbortError')); };
+      signal?.addEventListener('abort', aborted, { once: true });
+      worker.onmessage = (event: MessageEvent<{ terrain?: TerrainData; error?: string }>) => {
+        cleanup(); event.data.terrain ? resolve(event.data.terrain) : reject(new Error(event.data.error ?? 'Surface worker returned no terrain.'));
+      };
+      worker.onerror = event => { cleanup(); reject(new Error(event.message || 'Surface worker failed.')); };
+      if (signal?.aborted) { aborted(); return; }
+      try { worker.postMessage({ region, settings: retained }); } catch (error) { cleanup(); reject(error); }
+    });
     assertNotAborted(signal);
     return { terrain, source: sourceForReply(terrain) };
   });
@@ -83,12 +93,13 @@ export function exportMagnaCity(world: World) {
       lakes: world.terrain.lakes, rivers: world.terrain.rivers } });
 }
 
-export function worldToSurfaceInput(world: World, source: SourceIdentity): SurfaceCompileInput {
+export function worldToSurfaceInput(world: World, source: SourceIdentity, climate: ClimateValues = MAGNA_CLIMATE_PRESETS.temperate): SurfaceCompileInput {
   const grid = world.terrain.height;
   const terrain = { width: grid.w, height: grid.h, originX: grid.cell / 2, originZ: grid.cell / 2,
     spacingM: grid.cell, heights: grid.data.slice(), source: { ...source } };
   return { seed: parseInt(hashString(world.seed), 16), terrain, occupation: occupationFromMagnaWorld(terrain, world),
-    hydrology: { version: source.version, provenance: 'Magna canonical terrain routing', boundary: 'truncated',
+    climate: magnaClimateToSurface(climate, `magna-world-climate:${JSON.stringify(climate)}`),
+    hydrology: { version: source.version, provenance: 'Magna canonical routing from depression-filled source; heights retain the source physical terrain', boundary: 'external-inflows',
       downstream: world.terrain.receiver.slice(), contributingAreaM2: Float32Array.from(world.terrain.flow.data, a => a * grid.cell ** 2),
       waterClass: Uint8Array.from(world.terrain.water, c => c === 1 ? 3 : c === 3 ? 1 : c) } };
 }
@@ -99,8 +110,8 @@ export function decorToSurfaceInput(decor: Decor): SurfaceCompileInput {
     originX: cell / 2, originZ: cell / 2, spacingM: cell, heights: r.height.slice(),
     source: { id: decor.meta.id, version: decor.meta.created, sourceLOD: 0, sourceLODKnown: false,
       nativeSpacingM: display?.sourceCell ?? cell,
-      provenance: `Retained Magna decor; seed=${decor.meta.seed}; query=${decor.meta.query}; crop=${JSON.stringify(decor.meta.pipeline?.crop ?? null)}; offline capture (source LOD unrecorded)` } },
+      provenance: `Retained Magna settlement raster (may be sampled from the displayed B-spline control grid); seed=${decor.meta.seed}; query=${decor.meta.query}; crop=${JSON.stringify(decor.meta.pipeline?.crop ?? null)}; offline capture (source LOD unrecorded)` } },
     climate: climateFromMagnaQuery(decor.meta.query),
     hydrology: { version: decor.meta.created, provenance: 'Retained decor water raster; source IDs retained in export metadata',
-      boundary: 'truncated', waterClass: Uint8Array.from(r.water, c => c === 1 ? 3 : c === 3 ? 1 : c), waterLevelM: r.waterLevel.slice() } };
+      boundary: 'truncated', waterClass: Uint8Array.from(r.water, c => c === 1 ? 3 : c === 3 ? 1 : c), waterLevelM: Float32Array.from(r.waterLevel, (level, i) => r.water[i] ? level : NaN) } };
 }
