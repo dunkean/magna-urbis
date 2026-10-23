@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 const project = fileURLToPath(new URL('../../viewer-local/', import.meta.url));
 const args = process.argv.slice(2);
+if (!args.includes('--style-catalogue')) args.push('--style-catalogue', fileURLToPath(new URL('../../surface/presentation/palettes.json', import.meta.url)));
 const rendering = args.indexOf('--renderer');
 const renderer = rendering >= 0 ? args[rendering + 1] : 'forward_plus';
 if (!['forward_plus', 'mobile', 'gl_compatibility'].includes(renderer)) throw new Error('Renderer must be forward_plus, mobile, or gl_compatibility.');
@@ -16,7 +17,7 @@ if (!godot) throw new Error('Set GODOT or pass --godot <Godot 4.7.2 executable>.
 if (godot.includes('/') || godot.includes('\\')) godot = path.resolve(godot);
 const version = spawnSync(godot, ['--version'], { encoding: 'utf8', windowsHide: true });
 if (!/^4\.7\.2\.stable\./m.test(version.stdout ?? '')) throw new Error(`Expected pinned Godot 4.7.2 stable; got ${(version.stdout ?? version.stderr ?? '').trim()}`);
-for (const name of ['--world', '--assets', '--capture', '--metrics', '--tour', '--stream-dir']) {
+for (const name of ['--world', '--assets', '--capture', '--metrics', '--tour', '--stream-dir', '--style-catalogue']) {
   const index = args.indexOf(name);
   if (index < 0) continue;
   if (!args[index + 1] || args[index + 1].startsWith('--')) throw new Error(`${name} requires a path.`);

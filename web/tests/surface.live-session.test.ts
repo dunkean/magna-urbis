@@ -6,6 +6,7 @@ import { decodeSurfaceBinary } from '../src/surface/binary';
 import type { SurfaceWorkerPacket } from '../src/surface/workerProtocol';
 import { registrationFieldFingerprint, type SurfaceRegistrationBinding } from '../src/surface/registrationBinding';
 import { exportSurfacePacket } from '../src/surface/adapters/export';
+import { magnaSurfacePresentation } from '../src/surface/presentation';
 
 function fixture(): Decor {
   const n = 8, height = new Float32Array(n * n).fill(100);
@@ -27,6 +28,17 @@ function provider(): TerrainProvider & { registrationBinding: SurfaceRegistratio
   } };
 }
 describe('Live context handoff', () => {
+  it('changes mapper presentation without regenerating the environment, occupation or population', async () => {
+    let style = 'parchment';
+    const session = createSurfaceLiveBinarySession(fixture(), undefined, provider(), () => true, { execution: 'synchronous-node', presentation: () => magnaSurfacePresentation(`style=${style}`) });
+    const signal = new AbortController().signal, region = { x: 20, y: 20, extent: 40, resolution: 16 };
+    const first = decodeSurfaceBinary<SurfaceWorkerPacket>(new Uint8Array(await session(region, signal)));
+    style = 'blueprint';
+    const next = decodeSurfaceBinary<SurfaceWorkerPacket>(new Uint8Array(await session({ ...region, knownContextId: first.world.canonicalContextRef!.id, knownSceneContextId: first.source.sceneContextId as string }, signal)));
+    expect(next.presentation?.mapStyle).toBe('blueprint'); expect(next.world.versions).toEqual(first.world.versions);
+    expect(next.source.compilation).toEqual({ canonicalBuildCount: 1 }); expect(next.urban).toBeUndefined();
+    expect(next.world.canonicalContext).toBeUndefined(); session.dispose();
+  });
   it('carries the original source hydrology in live and offline packets independently of physical wet cells', async () => {
     const d = fixture(); d.raster.riverIds[2] = 55; d.raster.riverWidth[2] = 7;
     const session = createSurfaceLiveBinarySession(d, undefined, provider(), () => true, { execution: 'synchronous-node' });

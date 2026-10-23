@@ -4,11 +4,12 @@ const Canopy = preload("res://adapters/surface_canopy.gd")
 const FAMILY_BUDGETS := {"tree":10000,"shrub":2500,"boulder":2000,"grass":1000,"debris":500}
 
 # Pure CPU query. Run on a worker, never sort the full population on the UI thread.
-static func prepare(packet: Dictionary, focus: Dictionary, width_m: float, viewport_width: float, oblique: bool) -> Dictionary:
+static func prepare(packet: Dictionary, focus: Dictionary, width_m: float, viewport_width: float, oblique: bool, geometry_enabled := true) -> Dictionary:
 	var candidates: Array = packet.get("candidates",packet.get("populations",[]))
 	var columns: Dictionary = packet.get("candidateColumns",{})
 	var count := int(columns.count) if not columns.is_empty() else candidates.size()
 	var families := {"tree":[],"shrub":[],"boulder":[],"grass":[],"debris":[]}
+	if not geometry_enabled: return {"families":families,"selectedCount":0,"candidateCount":count,"canopy":Canopy.prepare(packet,{}),"familyBudgets":FAMILY_BUDGETS}
 	var canopy_bounds: Dictionary = packet.get("candidateBounds",{})
 	var radius := clampf(width_m*(1.5 if oblique else 1.0),40.0,5000.0)
 	var query_radius := radius+float(packet.get("_maximumCrownRadiusM",0.0))

@@ -44,13 +44,13 @@ export function createSurfaceWorkerProcessor(prepare: (payload: unknown) => Prep
     const contextId = world.canonicalContextRef!.id;
     const parent = prepared.parentTerrain ? { ...prepared.parentTerrain, source: { ...prepared.parentTerrain.source, id: job.terrain.source.id, version: job.terrain.source.version } } : canonical.terrain;
     return { format: 'magna-surface-packet', version: 1,
-      presentation: prepared.sourceMetadata?.presentation as SurfaceWorkerPacket['presentation'],
+      presentation: job.presentation ?? prepared.sourceMetadata?.presentation as SurfaceWorkerPacket['presentation'],
       urbanId: prepared.urbanId,
       world: { ...world, canonicalContext: job.region.knownContextId === contextId ? undefined : world.canonicalContext },
       terrainParents: job.region.knownContextId === contextId ? undefined : [{ terrain: parent, bounds: canonical.bounds, canonicalContextId: contextId }],
       urban: job.region.knownSceneContextId === sceneContextId ? undefined : prepared.urban ?? {}, candidateColumns: packCandidateColumns(candidates), candidateBounds,
       source: { ...(job.region.knownSceneContextId === sceneContextId ? {} : prepared.sourceMetadata), originalSource: input.terrain.source, live: true, provider: binding?.providerId ?? prepared.providerId,
-        compilation: { canonicalBuildCount }, registrationBinding: binding, canonicalContextId: contextId, sceneContextId, sourceEpoch: job.sourceEpoch, sceneEpoch: job.sceneEpoch, request: { ...job.region } } };
+        presentation: job.presentation ?? prepared.sourceMetadata?.presentation, compilation: { canonicalBuildCount }, registrationBinding: binding, canonicalContextId: contextId, sceneContextId, sourceEpoch: job.sourceEpoch, sceneEpoch: job.sceneEpoch, request: { ...job.region } } };
   };
   return {
     /** Object result is exposed only for explicit synchronous Node/offline compatibility. */

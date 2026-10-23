@@ -2,6 +2,7 @@ class_name SurfaceScenePrepare
 extends RefCounted
 const Data = preload("res://adapters/surface_data.gd")
 const Population = preload("res://adapters/surface_population.gd")
+const Roads = preload("res://adapters/surface_roads.gd")
 
 # Prepare winding, normals and material batches without touching the scene tree.
 static func mesh_arrays(vertices: PackedVector3Array, normals: PackedVector3Array = PackedVector3Array()) -> Array:
@@ -21,7 +22,8 @@ static func mesh_arrays(vertices: PackedVector3Array, normals: PackedVector3Arra
 static func prepare(request: Dictionary) -> Dictionary:
 	var started := Time.get_ticks_usec()
 	var result := Data.prepare(request.world,request.origin,request.width,request.generation,request.packet,request.skipContext,request.displaySource,request.skipHeight,request.sceneRequest)
-	result.populations=Population.prepare(request.packet,request.focus,request.width,request.viewportWidth,request.oblique)
+	result.populations=Population.prepare(request.packet,request.focus,request.width,request.viewportWidth,request.oblique,not request.get("groundOnly",false))
+	if request.get("projectRoads",false) and not request.get("groundOnly",false): result.roadProjectors=Roads.prepareRoadProjectors(request.packet,request.world,request.origin,request.focus,request.width)
 	result.populations.buffers={}
 	var rock_colors: Dictionary = {}
 	for rock in request.world.geology.units: rock_colors[int(rock.id)]=rock.colorLinear

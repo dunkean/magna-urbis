@@ -17,6 +17,7 @@ export interface SurfaceWorkerJob extends Routing {
   kind: 'compile'; requestId: number; terrain: TerrainGrid; region: SurfaceWorkerRegion;
   maxCandidates?: number; maxCheckedSlots?: number; binaryBudgetBytes?: number; memoryBudgetBytes?: number;
   registrationBinding?: Readonly<SurfaceRegistrationBinding>;
+  presentation?: import('./presentation').SurfacePresentation;
 }
 export type SurfaceWorkerRequest = SurfaceWorkerInit | SurfaceWorkerJob;
 export type SurfaceWorkerResponse =

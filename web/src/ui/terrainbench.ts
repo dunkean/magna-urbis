@@ -2035,8 +2035,8 @@ if (import.meta.env.DEV) {
       if (pipelineStage === 'settlements' && decor.meta.pipeline?.urban?.buildingState?.cold && !scene) throw new Error('Chargez les bâtiments conservés avant leur rendu local.');
       appliedLiveRevision = revision;
       liveHandler = (async () => {
-        const [{ createInfiniteRefinementProvider }, { createSurfaceLiveBinarySession }] = await Promise.all([
-          import('../surface/adapters/infiniteRefinement'), import('./surfaceLiveSession'),
+        const [{ createInfiniteRefinementProvider }, { createSurfaceLiveBinarySession }, { magnaSurfacePresentation }] = await Promise.all([
+          import('../surface/adapters/infiniteRefinement'), import('./surfaceLiveSession'), import('../surface/presentation'),
         ]);
         const field = retained.field;
         const provider = await createInfiniteRefinementProvider(
@@ -2050,7 +2050,7 @@ if (import.meta.env.DEV) {
           const current = liveRevision();
           return terrain === retained && settings === applied && current.sourceEpoch === revision.sourceEpoch
             && current.sceneEpoch === revision.sceneEpoch && !overviewPending;
-        }, { ...revision, registrationBinding });
+        }, { ...revision, registrationBinding, presentation: () => magnaSurfacePresentation(shareQuery()) });
       })().catch(error => { if (appliedLiveRevision === revision) liveHandler = undefined; throw error; });
     }
     return (await liveHandler)(region, signal);

@@ -34,6 +34,8 @@ export function createSurfaceLiveSession(decor: Decor, scene: Building3dScene | 
 
 export interface SurfaceLiveCompilerOptions {
   sourceEpoch?: string; sceneEpoch?: string; registrationBinding?: Readonly<SurfaceRegistrationBinding>;
+  /** Mapper styles change independently of the cached physical context. */
+  presentation?: () => import('../surface/presentation').SurfacePresentation;
   /** Browser production defaults to a real worker. The synchronous path must be explicitly requested by Node/offline tests. */
   execution?: 'worker' | 'synchronous-node';
   workerFactory?: () => SurfaceCompilerWorker;
@@ -74,7 +76,7 @@ export function createSurfaceLiveBinarySession(decor: Decor, scene: Building3dSc
         worldVersion: compiler?.environmentVersion ?? environmentVersion ?? decor.meta.id, signal: controller.signal });
       assertCurrent(controller.signal, id);
       if (compiler) {
-        const result = await compiler.compile({ terrain, region, registrationBinding: bindingProvider.registrationBinding ?? options.registrationBinding }, controller.signal);
+        const result = await compiler.compile({ terrain, region, registrationBinding: bindingProvider.registrationBinding ?? options.registrationBinding, presentation: options.presentation?.() }, controller.signal);
         assertCurrent(controller.signal, id);
         return result.binary;
       }
@@ -84,7 +86,7 @@ export function createSurfaceLiveBinarySession(decor: Decor, scene: Building3dSc
         initialized = true;
       }
       const response = processor!.handle({ protocol: SURFACE_WORKER_PROTOCOL, kind: 'compile', sessionId: 'explicit-node-sync',
-        sourceEpoch: initialization.sourceEpoch, sceneEpoch: initialization.sceneEpoch, requestId: id, terrain, region, registrationBinding: bindingProvider.registrationBinding ?? options.registrationBinding });
+        sourceEpoch: initialization.sourceEpoch, sceneEpoch: initialization.sceneEpoch, requestId: id, terrain, region, registrationBinding: bindingProvider.registrationBinding ?? options.registrationBinding, presentation: options.presentation?.() });
       if (response.kind !== 'compiled') throw new Error(response.kind === 'error' ? response.error.message : 'No synchronous surface result');
       environmentVersion = response.environmentVersion;
       assertCurrent(controller.signal, id);

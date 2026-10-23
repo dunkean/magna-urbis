@@ -5,6 +5,7 @@ const Library = preload("res://adapters/material_library.gd")
 const ShaderSource = preload("res://adapters/surface_shader.gd")
 const Geometry = preload("res://adapters/surface_geometry.gd")
 const ScenePrepare = preload("res://adapters/surface_scene_prepare.gd")
+const Presentation = preload("res://adapters/surface_presentation.gd")
 var surface_shader_code := ""
 var world: Dictionary = {}
 var packet: Dictionary = {}
@@ -36,6 +37,8 @@ var packet_worker: Thread
 var packet_context: Dictionary = {}
 var canonical_contexts: Dictionary = {}
 var known_context_id := ""
+var known_scene_context_id := ""
+var scene_contexts: Dictionary = {}
 var context_textures: Dictionary = {}
 var prepared_context_key := ""
 var stream_requested_serial := -1
@@ -79,6 +82,10 @@ var canopy_info: Dictionary = {}
 var canopy_textures: Dictionary = {}
 var canopy_materials: Array[ShaderMaterial] = []
 var rendered_source: Dictionary = {}
+var road_texture: ImageTexture
+var road_projector_count := 0
+var presentation_mode := "aerial"
+var environment_settings: Environment
 
 func _ready() -> void:
 	_parse_options()
@@ -100,6 +107,11 @@ func _ready() -> void:
 		get_tree().quit(2)
 		return
 	packet = Data.read_json(world_path)
+	packet=Presentation.overrides(packet,str(options.get("--style","")),str(options.get("--style-catalogue","")))
+	presentation_mode=Presentation.profile(packet,str(options.get("--presentation","cartographic" if options.has("--style") else ""))).mode
+	if not _resolve_scene(packet):
+		get_tree().quit(2)
+		return
 	packet["_showProxies"]=options.has("--show-proxies")
 	world = Data.unpack_world(packet)
 	if world.is_empty():
@@ -118,7 +130,7 @@ func _ready() -> void:
 	if options.has("--z"): focus.y = float(options["--z"])
 	width_m = float(options.get("--width",maxf(float(b.maxX)-float(b.minX),float(b.maxZ)-float(b.minZ))))
 	diagnostic = int(options.get("--diagnostic",0))
-	oblique = not options.has("--top")
+	oblique = options.has("--oblique") or (not options.has("--top") and presentation_mode!="cartographic")
 	stream_directory = options.get("--stream-dir", "")
 	library.load_manifest(options.get("--assets", ""))
 	_setup_lighting()
@@ -157,6 +169,7 @@ func _parse_options() -> void:
 func _setup_lighting() -> void:
 	var environment := WorldEnvironment.new()
 	var settings := Environment.new()
+	environment_settings=settings
 	settings.background_mode = Environment.BG_SKY
 	settings.sky = Sky.new()
 	var sky := ProceduralSkyMaterial.new()
@@ -170,11 +183,13 @@ func _setup_lighting() -> void:
 	settings.reflected_light_source = 2
 	settings.tonemap_mode = Environment.TONE_MAPPER_FILMIC
 	settings.tonemap_exposure = 1.0
+	Presentation.configure_environment(settings,presentation_mode,packet)
 	environment.environment = settings
 	add_child(environment)
 	sun.rotation_degrees = Vector3(-48,-32,0)
 	sun.light_color = Color(1.0,0.95,0.85)
 	sun.light_energy = 1.5
+	sun.visible=presentation_mode!="cartographic"
 	sun.shadow_enabled = true
 	sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS
 	sun.directional_shadow_max_distance = 2000.0
@@ -206,7 +221,7 @@ func _begin_prepare() -> void:
 	var urban_key := Geometry.chunk_key(world,focus,width_m,"urban")
 	var scene_request := {"waterKey":water_key,"urbanKey":urban_key,"buildWater":not options.has("--ground-only") and not scene_mesh_cache.has(water_key),"buildUrban":not options.has("--ground-only") and not scene_mesh_cache.has(urban_key),"focus":focus.duplicate()}
 	worker = Thread.new()
-	worker.start(ScenePrepare.prepare.bind({"world":world,"origin":next_origin,"width":width_m,"generation":generation,"packet":packet,"skipContext":context_textures.has(prepared_context_key),"displaySource":height_source_cache.get(prepared_height_key,{}),"skipHeight":reuse_height,"sceneRequest":scene_request,"focus":focus.duplicate(),"viewportWidth":get_viewport().get_visible_rect().size.x,"oblique":oblique}))
+	worker.start(ScenePrepare.prepare.bind({"world":world,"origin":next_origin,"width":width_m,"generation":generation,"packet":packet,"skipContext":context_textures.has(prepared_context_key),"displaySource":height_source_cache.get(prepared_height_key,{}),"skipHeight":reuse_height,"sceneRequest":scene_request,"focus":focus.duplicate(),"viewportWidth":get_viewport().get_visible_rect().size.x,"oblique":oblique,"groundOnly":options.has("--ground-only"),"projectRoads":RenderingServer.get_current_rendering_method()=="forward_plus"}))
 	last_request_tick = Time.get_ticks_msec()
 
 func _apply_prepared(prepared: Dictionary) -> void:
@@ -271,6 +286,7 @@ func _apply_prepared(prepared: Dictionary) -> void:
 	_update_canopy_textures(prepared.populations.get("canopy",{}))
 	_build_scene_objects(prepared)
 	_apply_canopy_parameters(mat)
+	Presentation.configure_terrain(mat,packet,presentation_mode)
 	_update_camera()
 	prepare_times.append(float(prepared.prepareMs))
 	upload_times.append((Time.get_ticks_usec()-begin)/1000.0)
@@ -330,9 +346,7 @@ func _build_scene_objects(prepared: Dictionary) -> void:
 			water.layers=2
 			water.mesh=entry.mesh
 			water.position=Vector3(entry.anchor.x-origin.x,entry.anchor.y-origin.y,entry.anchor.z-origin.z)
-			var material := ShaderMaterial.new()
-			material.shader=load("res://shaders/water.gdshader")
-			material.render_priority=1
+			var material := Presentation.water_material(packet,presentation_mode)
 			material.set_shader_parameter("wave_phase",Vector2(fposmod(origin.x*0.32,TAU),fposmod(origin.z*0.27,TAU)))
 			material.set_shader_parameter("render_origin_y",float(origin.y))
 			material.set_shader_parameter("coverage_enabled",entry.has("coverageTexture"))
@@ -364,23 +378,17 @@ func _build_scene_objects(prepared: Dictionary) -> void:
 			city.position=position
 			city.set_meta("nativeMaterialId",batch.materialId)
 			city.set_meta("buildingIds",batch.buildingIds)
-			var material := StandardMaterial3D.new()
-			material.albedo_color=Color(0.63,0.56,0.44)
-			material.roughness=0.85
-			material.cull_mode=BaseMaterial3D.CULL_BACK
-			city.material_override=material
+			city.material_override=Presentation.building_material(batch.materialId,batch.slots,batch.surface,packet,presentation_mode)
 			objects.add_child(city)
-		if entry.roads.get_surface_count()>0:
+		if RenderingServer.get_current_rendering_method()!="forward_plus" and entry.roads.get_surface_count()>0:
 			var roads := MeshInstance3D.new()
 			roads.name="DrapedRoadBatch"
 			roads.layers=2
 			roads.mesh=entry.roads
 			roads.position=position
-			var material := ShaderMaterial.new()
-			material.shader=load("res://shaders/road.gdshader")
-			material.render_priority=2
-			roads.material_override=material
+			roads.material_override=Presentation.road_material(packet,presentation_mode)
 			objects.add_child(roads)
+	_build_road_projectors(prepared.get("roadProjectors",[]))
 	_build_populations(prepared.populations)
 	if diagnostic==5:
 		var normals := ShaderMaterial.new()
@@ -433,7 +441,8 @@ func _build_populations(populations: Dictionary) -> void:
 		mat.roughness = 0.91
 		var fade_material := ShaderMaterial.new()
 		fade_material.shader = load("res://shaders/canopy_instance.gdshader") if family=="tree" else load("res://shaders/surface_object.gdshader")
-		fade_material.set_shader_parameter("linear_tint",Vector3(0.055,0.105,0.036) if family=="tree" else Vector3.ONE)
+		fade_material.set_shader_parameter("linear_tint",Presentation.canopy_color(packet,presentation_mode) if family=="tree" else Vector3.ONE)
+		fade_material.set_shader_parameter("presentation_mode",1 if presentation_mode=="cartographic" else 0)
 		if family=="tree":
 			canopy_materials.append(fade_material)
 			_apply_canopy_parameters(fade_material)
@@ -461,6 +470,7 @@ func _build_populations(populations: Dictionary) -> void:
 			canopy_materials.append(trunk_mat)
 			_apply_canopy_parameters(trunk_mat)
 			trunk_mat.set_shader_parameter("linear_tint",Vector3(0.16,0.105,0.067))
+			trunk_mat.set_shader_parameter("presentation_mode",1 if presentation_mode=="cartographic" else 0)
 			trunk_mesh.material = trunk_mat
 			var trunks := MultiMesh.new()
 			trunks.transform_format = MultiMesh.TRANSFORM_3D
@@ -596,6 +606,7 @@ func _request_live() -> void:
 	var request_z := clampf(focus.y-extent*0.5,float(footprint.minZ),float(footprint.maxZ)-extent)
 	var payload := {"region":{"x":request_x,"y":request_z,"extent":extent,"resolution":512}}
 	if not known_context_id.is_empty() and canonical_contexts.has(known_context_id): payload.region.knownContextId = known_context_id
+	if not known_scene_context_id.is_empty() and scene_contexts.has(known_scene_context_id): payload.region.knownSceneContextId=known_scene_context_id
 	if options.has("--session-id"): payload.sessionId = options["--session-id"]
 	live_requested_serial = live_serial
 	live_busy = true
@@ -660,6 +671,8 @@ func _accept_packet(next: Dictionary, context: Dictionary) -> void:
 		last_stream_request=""
 		return
 	if next.has("baseWorldId") and next.baseWorldId!=context.get("baseWorldId",world.id) and next.baseWorldId!=known_context_id: return
+	next=Presentation.overrides(next,str(options.get("--style","")),str(options.get("--style-catalogue","")))
+	if not _resolve_scene(next): return
 	var next_world := Data.unpack_world(next)
 	if next_world.is_empty(): return
 	if next.has("source") and next.source.has("canonicalContextId") and next_world.has("canonicalContextRef") and next.source.canonicalContextId!=next_world.canonicalContextRef.id: return
@@ -695,6 +708,9 @@ func _accept_packet(next: Dictionary, context: Dictionary) -> void:
 	world_revision+=1
 	world = next_world
 	packet = next
+	presentation_mode=Presentation.profile(packet,str(options.get("--presentation","cartographic" if options.has("--style") else ""))).mode
+	Presentation.configure_environment(environment_settings,presentation_mode,packet)
+	sun.visible=presentation_mode!="cartographic"
 	if repeated_identity:
 		context_textures.erase(known_context_id)
 		height_source_cache.clear()
@@ -749,7 +765,7 @@ func _quantile(values: Array[float], fraction: float) -> Variant:
 	return sorted[mini(int(fraction*(sorted.size()-1)),sorted.size()-1)]
 
 func _write_metrics() -> void:
-	var metrics := {"godot":Engine.get_version_info().string,"terrain3d":"1.0.2","backend":RenderingServer.get_current_rendering_method(),"adapter":RenderingServer.get_video_adapter_name(),"worldId":world.id,"source":world.terrain.source,"resolution":[get_viewport().get_visible_rect().size.x,get_viewport().get_visible_rect().size.y],"frames":frame_times.size(),"frameWallMs":{"p50":_quantile(frame_times,0.5),"p95":_quantile(frame_times,0.95),"p99":_quantile(frame_times,0.99)},"navigationFrameWallMs":{"p50":_quantile(all_frame_times,0.5),"p95":_quantile(all_frame_times,0.95),"p99":_quantile(all_frame_times,0.99),"max":_quantile(all_frame_times,1.0)},"cpuScriptMs":{"p50":_quantile(process_times,0.5),"p95":_quantile(process_times,0.95),"p99":_quantile(process_times,0.99)},"prepareMs":prepare_times,"uploadAndObjectsMs":upload_times,"regionCounts":region_counts,"preparationSnapshots":preparation_snapshots,"videoMemoryBytes":Performance.get_monitor(Performance.RENDER_VIDEO_MEM_USED),"textureMemoryBytes":Performance.get_monitor(Performance.RENDER_TEXTURE_MEM_USED),"drawCalls":Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME),"objects":selected_candidates,"candidateCount":candidate_count,"cpuFrameMs":null,"cpuTimeNote":"cpuScriptMs measures this viewer script only; full engine CPU frame/pass timing is not available here.","gpuRenderMs":{"p50":_quantile(gpu_render_times,0.5),"p95":_quantile(gpu_render_times,0.95),"p99":_quantile(gpu_render_times,0.99)},"cpuRenderMs":{"p50":_quantile(cpu_render_times,0.5),"p95":_quantile(cpu_render_times,0.95)},"gpuTimeNote":"RenderingServer measured viewport render time; null when the backend returns no positive samples. Frame wall time separately includes vsync, uploads and driver stalls."}
+	var metrics := {"godot":Engine.get_version_info().string,"terrain3d":"1.0.2","backend":RenderingServer.get_current_rendering_method(),"adapter":RenderingServer.get_video_adapter_name(),"worldId":world.id,"source":world.terrain.source,"resolution":[get_viewport().get_visible_rect().size.x,get_viewport().get_visible_rect().size.y],"frames":frame_times.size(),"frameWallMs":{"p50":_quantile(frame_times,0.5),"p95":_quantile(frame_times,0.95),"p99":_quantile(frame_times,0.99)},"navigationFrameWallMs":{"p50":_quantile(all_frame_times,0.5),"p95":_quantile(all_frame_times,0.95),"p99":_quantile(all_frame_times,0.99),"max":_quantile(all_frame_times,1.0)},"cpuScriptMs":{"p50":_quantile(process_times,0.5),"p95":_quantile(process_times,0.95),"p99":_quantile(process_times,0.99)},"prepareMs":prepare_times,"uploadAndObjectsMs":upload_times,"regionCounts":region_counts,"preparationSnapshots":preparation_snapshots,"videoMemoryBytes":Performance.get_monitor(Performance.RENDER_VIDEO_MEM_USED),"textureMemoryBytes":Performance.get_monitor(Performance.RENDER_TEXTURE_MEM_USED),"drawCalls":Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME),"objects":selected_candidates,"roadProjectors":road_projector_count,"candidateCount":candidate_count,"cpuFrameMs":null,"cpuTimeNote":"cpuScriptMs measures this viewer script only; full engine CPU frame/pass timing is not available here.","gpuRenderMs":{"p50":_quantile(gpu_render_times,0.5),"p95":_quantile(gpu_render_times,0.95),"p99":_quantile(gpu_render_times,0.99)},"cpuRenderMs":{"p50":_quantile(cpu_render_times,0.5),"p95":_quantile(cpu_render_times,0.95)},"gpuTimeNote":"RenderingServer measured viewport render time; null when the backend returns no positive samples. Frame wall time separately includes vsync, uploads and driver stalls."}
 	var path: String = options.get("--metrics","res://captures/metrics.json")
 	path = ProjectSettings.globalize_path(path)
 	DirAccess.make_dir_recursive_absolute(path.get_base_dir())
@@ -778,7 +794,7 @@ func _update_canopy_textures(info: Dictionary) -> void:
 		canopy_textures={"coverageImage":info.coverageImage,"countsImage":info.countsImage,"coverage":ImageTexture.create_from_image(info.coverageImage),"counts":ImageTexture.create_from_image(info.countsImage)}
 
 func _apply_canopy_parameters(material: Object) -> void:
-	var values := {"canopy_enabled":canopy_info.get("available",false),"canopy_linear_albedo":Vector3(0.055,0.105,0.036),"canopy_reference_y":Data.height_at(world,focus.x,focus.y)-float(origin.y)}
+	var values := {"canopy_enabled":canopy_info.get("available",false),"canopy_linear_albedo":Presentation.canopy_color(packet,presentation_mode),"canopy_reference_y":Data.height_at(world,focus.x,focus.y)-float(origin.y)}
 	if canopy_info.get("available",false):
 		var b: Dictionary = canopy_info.bounds
 		values.merge({"canopy_coverage":canopy_textures.coverage,"canopy_counts":canopy_textures.counts,
@@ -788,3 +804,38 @@ func _apply_canopy_parameters(material: Object) -> void:
 	for key in values:
 		if material is ShaderMaterial: material.set_shader_parameter(key,values[key])
 		else: material.call("set_shader_param",key,values[key])
+
+func _build_road_projectors(records: Array) -> void:
+	road_projector_count=records.size()
+	if records.is_empty(): return
+	if road_texture==null:
+		var image := Image.create(8,8,false,Image.FORMAT_RGBA8)
+		image.fill(Color.WHITE)
+		road_texture=ImageTexture.create_from_image(image)
+	for record in records:
+		var projector := Decal.new()
+		projector.name="SourceRoad_"+str(record.sourceIndex)+"_"+str(record.segmentIndex)+"_"+str(record.chunkIndex)
+		projector.position=record.position; projector.rotation.y=record.yaw; projector.size=record.size
+		projector.cull_mask=1; projector.upper_fade=0.0; projector.lower_fade=0.0
+		projector.texture_albedo=road_texture
+		projector.modulate=Color(0.42,0.38,0.30,1.0)
+		projector.albedo_mix=0.72
+		projector.set_meta("sourceRoad",record.metadata)
+		objects.add_child(projector)
+
+func _resolve_scene(value: Dictionary) -> bool:
+	var source: Dictionary = value.get("source",{})
+	var id := str(source.get("sceneContextId",""))
+	if id.is_empty(): return true
+	if not value.has("urban") or value.urban==null:
+		if not scene_contexts.has(id):
+			push_warning("Scene context unavailable; requesting a complete scene on the next reply")
+			known_scene_context_id=""
+			return false
+		value.urban=scene_contexts[id].urban
+		var combined: Dictionary = scene_contexts[id].source.duplicate(false)
+		combined.merge(source,true); value.source=combined
+	scene_contexts[id]={"urban":value.urban,"source":value.source}
+	known_scene_context_id=id
+	while scene_contexts.size()>2: scene_contexts.erase(scene_contexts.keys()[0])
+	return true
