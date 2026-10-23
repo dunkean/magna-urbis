@@ -4,6 +4,7 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { readDecorFile } from '../src/ui/decorFile';
 import { exportSurfacePacket } from '../src/surface/adapters/export';
 import type { Building3dScene } from '../src/render/urbanBuildingGeometry';
+import { encodeSurfaceBinary } from '../src/surface/binary';
 
 const [input, output, ...args] = process.argv.slice(2);
 if (!input || !output) throw new Error('Usage: export_surface_world.ts INPUT.decor OUTPUT.json [--crop x,y,n] [--candidates all|centre] [--candidate-limit 100000] [--native-scene FILE.json]');
@@ -37,9 +38,14 @@ const candidateLimit = args.includes('--candidate-limit') ? Number(args[args.ind
 if (!Number.isInteger(candidateLimit) || candidateLimit < 0) throw new Error('Candidate limit must be a nonnegative integer.');
 const nativePath = args.includes('--native-scene') ? args[args.indexOf('--native-scene') + 1] : undefined;
 const nativeScene = nativePath ? JSON.parse(await readFile(nativePath, 'utf8')) as Building3dScene : undefined;
-const packet = exportSurfacePacket(decor, nativeScene, { terrainOriginX: originX, terrainOriginZ: originZ, candidateBounds: candidateMode === 'all' ? 'all' : undefined, candidateLimit });
+const requestedFormat = args.includes('--format') ? args[args.indexOf('--format') + 1] : output.endsWith('.json') ? 'json' : 'binary';
+if (!['json', 'binary'].includes(requestedFormat)) throw new Error('Format must be json or binary. Prefer binary for full-resolution worlds.');
+const packet = exportSurfacePacket(decor, nativeScene, { terrainOriginX: originX, terrainOriginZ: originZ, candidateBounds: candidateMode === 'all' ? 'all' : undefined, candidateLimit, encoding: requestedFormat as 'json' | 'binary' });
 if (nativePath) Object.assign(packet.source, { externalNativeScene: { file: nativePath, coordinates: 'unchanged source XY',
   relationshipToTerrain: 'Explicit external native-scene diagnostic. Matching terrain capture lineage is not asserted.' } });
-await writeFile(output, JSON.stringify(packet));
-console.log(JSON.stringify({ output, sourceId: decor.meta.id, sourceSeed: decor.meta.seed, terrain: packet.world.terrain,
-  buildings: packet.urban.buildings.length }, (key, value) => key === 'heights' ? '[retained source samples]' : value));
+const encoded = requestedFormat === 'binary' ? encodeSurfaceBinary(packet) : JSON.stringify(packet);
+await writeFile(output, encoded);
+const grid = packet.world.terrain;
+console.log(JSON.stringify({ output, format: requestedFormat, bytes: typeof encoded === 'string' ? Buffer.byteLength(encoded) : encoded.byteLength,
+  sourceId: decor.meta.id, sourceSeed: decor.meta.seed, terrain: { width: grid.width, height: grid.height,
+    originX: grid.originX, originZ: grid.originZ, spacingM: grid.spacingM, source: grid.source }, buildings: packet.urban.buildings.length }));
