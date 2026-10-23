@@ -440,6 +440,7 @@ func _build_scene_objects(prepared: Dictionary) -> void:
 		for key in data:
 			var value=data[key]
 			if value is String or value is bool or value is int or value is float and is_finite(value): entry.diagnostics[key]=value
+		if data.get("sourceVectorClipBounds") is Dictionary:entry.diagnostics["sourceVectorClipBounds"]=data.sourceVectorClipBounds.duplicate()
 		for key in ["coverageOrigin","coverageSpacingM","coverageSize","bedOrigin","bedSpacingM","bedSize","bedBounds","bedReconstruction","classOrigin","classSpacingM","classSize"]:
 			if data.has(key): entry[key]=data[key]
 		if data.has("coverageImage"): entry.coverageTexture=ImageTexture.create_from_image(data.coverageImage)
