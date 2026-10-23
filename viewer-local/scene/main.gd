@@ -85,6 +85,7 @@ var last_real_input_tick:=-1
 var quality_preview_active:=false
 var rendered_display_samples:=256
 var rendered_height_image_size:=0
+var rendered_height_range:=Vector2(NAN,NAN)
 var view_satisfied_serial:=-1
 var view_satisfaction:Dictionary={}
 var view_satisfaction_events:Array=[]
@@ -94,6 +95,14 @@ var last_live_applied_serial := -1
 var failed_live_serial := -1
 var region_counts: Array[int] = []
 var preparation_snapshots: Array = []
+const CanopyView=preload("res://adapters/surface_canopy_view.gd")
+var water_symbol_width_px:float=0.0
+var canopy_phase:float=0.0
+var canopy_view_state:Dictionary={}
+var canopy_transition_busy:bool=false
+var canopy_pending:Dictionary={}
+var canopy_pending_elapsed:float=0.0
+var canopy_pending_start_phase:float=0.0
 var canopy_info: Dictionary = {}
 var canopy_textures: Dictionary = {}
 var canopy_materials: Array[ShaderMaterial] = []
@@ -137,6 +146,17 @@ func _ready() -> void:
 	var addon = ClassDB.instantiate("Terrain3D")
 	assert(addon.get("version")=="1.0.2","Expected pinned Terrain3D 1.0.2")
 	addon.free()
+	var symbol_option=options.get("--water-symbol-width-px","0")
+	if not symbol_option is String or not symbol_option.is_valid_float() or not is_finite(float(symbol_option)) or float(symbol_option)<0.0 or float(symbol_option)>1.25:
+		push_error("--water-symbol-width-px requires a finite number from 0 to 1.25")
+		get_tree().quit(2);return
+	water_symbol_width_px=float(symbol_option)
+	if options.get("--water-mode","source-map") not in ["source-map","source-levels"]:
+		push_error("--water-mode must be source-map or source-levels")
+		get_tree().quit(2);return
+	if water_symbol_width_px>0 and options.get("--water-mode","source-map")=="source-levels":
+		push_error("Water symbols are a map presentation and cannot be applied to source-levels")
+		get_tree().quit(2);return
 	world_path = options.get("--world", "")
 	if world_path.is_empty():
 		push_error("Required: -- --world <SurfaceWorld.json> [--assets resolved.json]")
@@ -193,6 +213,7 @@ func _ready() -> void:
 	hud.add_theme_constant_override("shadow_outline_size",4)
 	canvas.add_child(hud)
 	hud.visible=options.has("--hud") or diagnostic>0
+	_update_camera()
 	_begin_prepare()
 	_request_live()
 	print(JSON.stringify({"event":"surface-viewer-start","godot":Engine.get_version_info().string,"terrain3d":"1.0.2","backend":RenderingServer.get_current_rendering_method(),"adapter":RenderingServer.get_video_adapter_name(),"source":world.terrain.source,"worldId":world.id,"pbrAssets":library.loaded_assets}))
@@ -251,7 +272,7 @@ func _begin_prepare() -> void:
 	requested_width = width_m
 	var display_samples=128 if _quality_preview() else 256
 	var spacing := Data.display_spacing(world.terrain,width_m,display_samples)
-	var expected_image_size=_expected_height_image_size(spacing,width_m)
+	var expected_image_size=_expected_height_image_size(spacing,width_m*(2.0 if oblique else 1.0))
 	var snap_step := spacing*64.0
 	var snapped_x: float = float(world.terrain.originX)+round((float(focus.x)-float(world.terrain.originX))/snap_step)*snap_step
 	var snapped_z: float = float(world.terrain.originZ)+round((float(focus.y)-float(world.terrain.originZ))/snap_step)*snap_step
@@ -267,7 +288,7 @@ func _begin_prepare() -> void:
 	water_world.versions=canonical.get("versions",world.get("versions",{}))
 	var water_key := Geometry.chunk_key(world,focus,width_m,"water")
 	var urban_key := Geometry.chunk_key(world,focus,width_m,"urban")
-	var scene_request := {"displaySamples":display_samples,"waterKey":water_key,"urbanKey":urban_key,"buildWater":not options.has("--ground-only") and not scene_mesh_cache.has(water_key),"buildUrban":not options.has("--ground-only") and not scene_mesh_cache.has(urban_key),"focus":focus.duplicate()}
+	var scene_request := {"heightCoverageExtentM":width_m*(4.0 if oblique else 2.0),"canopyAtlasBounds":_canopy_atlas_request(),"displaySamples":display_samples,"waterKey":water_key,"urbanKey":urban_key,"buildWater":not options.has("--ground-only") and not scene_mesh_cache.has(water_key),"buildUrban":not options.has("--ground-only") and not scene_mesh_cache.has(urban_key),"focus":focus.duplicate()}
 	worker = Thread.new()
 	worker.start(ScenePrepare.prepare.bind({"heightImageSize":expected_image_size,"displaySamples":display_samples,"physicalLineage":_physical_lineage(world,packet),"contextKey":prepared_context_key,"heightKey":prepared_height_key,"liveSerial":int(packet.get("_acceptedLiveSerial",-1)),"worldRevision":world_revision,"world":world,"origin":next_origin,"width":width_m,"generation":generation,"packet":packet,"skipContext":context_textures.has(prepared_context_key),"displaySource":height_source_cache.get(prepared_height_key,{}),"skipHeight":reuse_height,"sceneRequest":scene_request,"focus":focus.duplicate(),"viewportWidth":get_viewport().get_visible_rect().size.x,"oblique":oblique,"groundOnly":options.has("--ground-only"),"presentationMode":presentation_mode,"projectRoads":RenderingServer.get_current_rendering_method()=="forward_plus"}))
 	last_request_tick = Time.get_ticks_msec()
@@ -346,6 +367,7 @@ func _apply_prepared(prepared: Dictionary) -> void:
 		var terrain_data: Object = next_terrain.get("data")
 		for region in terrain_data.call("get_regions_active",true,false): terrain_data.call("remove_region",region,false)
 		rendered_height_image_size=prepared.height.get_width()
+		rendered_height_range=prepared.get("loadedHeightRangeWorld",Vector2(NAN,NAN))-Vector2(float(next_origin.y),float(next_origin.y))
 		var images: Array[Image] = [prepared.height,prepared.control,null]
 		next_terrain.get("data").call("import_images",images,prepared.localStart,0.0,1.0)
 	mat.set("show_checkered",false)
@@ -366,7 +388,9 @@ func _apply_prepared(prepared: Dictionary) -> void:
 	Presentation.configure_environment(environment_settings,rendered_presentation_mode,packet)
 	sun.visible=rendered_presentation_mode!="cartographic"
 	sun.light_energy=0.0 if rendered_presentation_mode=="cartographic" else 1.5
-	_update_canopy_textures(prepared.populations.get("canopy",{}))
+	var next_canopy:Dictionary=prepared.populations.get("canopy",{}).duplicate(false)
+	next_canopy["physicalLineage"]=prepared.get("physicalLineage","")
+	_update_canopy_textures(next_canopy)
 	_build_scene_objects(prepared)
 	_apply_canopy_parameters(mat)
 	_apply_geometry_detail(mat,prepared.get("geometryDetail",{}),next_origin)
@@ -382,7 +406,7 @@ func _apply_prepared(prepared: Dictionary) -> void:
 	region_counts.append(int(terrain.get("data").call("get_region_count")))
 	preparation_snapshots.append({"focus":requested_focus.duplicate(),"widthM":requested_width,"generation":prepared.generation,"sourceId":world.terrain.source.id})
 	rendered_tick_ms=Time.get_ticks_msec()
-	rendered_snapshot={"worldId":rendered_world_id,"source":rendered_source.duplicate(),"tileSource":world.terrain.source.duplicate(),"sourceActualAtFocus":rendered_source.duplicate(),"focusInsideSource":source_focus.focusInsideSource,"fineContributionWeight":source_focus.fineContributionWeight,"seamWeight":source_focus.seamWeight,"sourceContributionsAtFocus":source_focus.contributions,"sourceBounds":world.bounds.duplicate(),"focusAtApply":focus.duplicate(),"request":packet.get("source",{}).get("request",{}).duplicate(true),"deliveredGrid":{"width":int(world.terrain.width),"height":int(world.terrain.height),"spacingM":float(world.terrain.spacingM)},"displaySamples":rendered_display_samples,"heightImageSize":rendered_height_image_size,"liveSerial":rendered_live_serial,"appliedTickMs":rendered_tick_ms,"sourceEpoch":packet.get("source",{}).get("sourceEpoch"),"sceneEpoch":packet.get("source",{}).get("sceneEpoch"),"worldRevision":rendered_revision}
+	rendered_snapshot={"worldId":rendered_world_id,"source":rendered_source.duplicate(),"tileSource":world.terrain.source.duplicate(),"sourceActualAtFocus":rendered_source.duplicate(),"focusInsideSource":source_focus.focusInsideSource,"fineContributionWeight":source_focus.fineContributionWeight,"seamWeight":source_focus.seamWeight,"sourceContributionsAtFocus":source_focus.contributions,"sourceBounds":world.bounds.duplicate(),"focusAtApply":focus.duplicate(),"request":packet.get("source",{}).get("request",{}).duplicate(true),"deliveredGrid":{"width":int(world.terrain.width),"height":int(world.terrain.height),"spacingM":float(world.terrain.spacingM)},"displaySamples":rendered_display_samples,"heightImageSize":rendered_height_image_size,"loadedHeightRangeWorld":[float(rendered_height_range.x)+float(origin.y),float(rendered_height_range.y)+float(origin.y)],"liveSerial":rendered_live_serial,"appliedTickMs":rendered_tick_ms,"sourceEpoch":packet.get("source",{}).get("sourceEpoch"),"sceneEpoch":packet.get("source",{}).get("sceneEpoch"),"worldRevision":rendered_revision}
 	_update_view_satisfaction("rendered-source")
 	render_events.append(rendered_snapshot.duplicate(true))
 	while render_events.size()>128:render_events.pop_front()
@@ -420,6 +444,7 @@ func _update_camera() -> void:
 	for material in canopy_materials:
 		material.set_shader_parameter("canopy_reference_y",reference_y)
 		_set_canopy_main_camera(material,main_projection,main_size)
+	_update_canopy_phase(0.0)
 
 func _build_scene_objects(prepared: Dictionary) -> void:
 	var world:Dictionary=prepared.world
@@ -428,6 +453,15 @@ func _build_scene_objects(prepared: Dictionary) -> void:
 	scene_top_y=-INF
 	canopy_materials.clear()
 	for child in objects.get_children():
+		if not canopy_pending.is_empty() and child.get_meta("surfaceLayer","")=="trees" and not child.get_meta("canopyStaged",false):
+			var previous_origin:Dictionary=child.get_meta("canopyRenderOrigin",origin)
+			child.position+=Vector3(float(previous_origin.x)-float(origin.x),float(previous_origin.y)-float(origin.y),float(previous_origin.z)-float(origin.z))
+			child.set_meta("canopyRenderOrigin",origin.duplicate())
+			child.set_meta("canopyRetired",true)
+			var retained_material:ShaderMaterial=child.multimesh.mesh.surface_get_material(0)
+			retained_material.set_meta("canopyRetired",true)
+			canopy_materials.append(retained_material)
+			continue
 		child.visible=false
 		child.queue_free()
 	if options.has("--ground-only"): return
@@ -592,6 +626,7 @@ func _build_populations(populations: Dictionary) -> void:
 		fade_material.set_shader_parameter("linear_tint",Presentation.canopy_color(packet,presentation_mode) if family=="tree" else Vector3.ONE)
 		fade_material.set_shader_parameter("presentation_mode",1 if presentation_mode=="cartographic" else 0)
 		if family=="tree":
+			fade_material.set_meta("canopyStaged",not canopy_pending.is_empty())
 			canopy_materials.append(fade_material)
 			_apply_canopy_parameters(fade_material)
 		mesh.surface_set_material(0,fade_material)
@@ -604,9 +639,13 @@ func _build_populations(populations: Dictionary) -> void:
 		multi.buffer=populations.buffers[family]
 		var instance := MultiMeshInstance3D.new()
 		instance.name = family+"_bounded_instances"
+		instance.set_meta("populationFamily",family)
 		instance.set_meta("surfaceLayer","trees" if family=="tree" else "ground" if family=="boulder" else "lowCover")
 		instance.layers=2
-		if family=="tree":instance.cast_shadow=GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		if family=="tree":
+			instance.cast_shadow=GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			instance.set_meta("canopyStaged",not canopy_pending.is_empty())
+			instance.set_meta("canopyRenderOrigin",origin.duplicate())
 		instance.multimesh = multi
 		objects.add_child(instance)
 		if family=="tree":
@@ -617,6 +656,7 @@ func _build_populations(populations: Dictionary) -> void:
 			trunk_mesh.radial_segments = 5
 			var trunk_mat := ShaderMaterial.new()
 			trunk_mat.shader = load("res://shaders/canopy_instance.gdshader")
+			trunk_mat.set_meta("canopyStaged",not canopy_pending.is_empty())
 			canopy_materials.append(trunk_mat)
 			_apply_canopy_parameters(trunk_mat)
 			trunk_mat.set_shader_parameter("linear_tint",Presentation.canopy_trunk_color(packet,presentation_mode))
@@ -631,14 +671,18 @@ func _build_populations(populations: Dictionary) -> void:
 			trunks.buffer=populations.trunkBuffer
 			var trunk_instance := MultiMeshInstance3D.new()
 			trunk_instance.name = "tree_trunks"
+			trunk_instance.set_meta("populationFamily","trunk")
 			trunk_instance.set_meta("surfaceLayer","trees")
 			trunk_instance.layers=2
 			trunk_instance.cast_shadow=GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			trunk_instance.set_meta("canopyStaged",not canopy_pending.is_empty())
+			trunk_instance.set_meta("canopyRenderOrigin",origin.duplicate())
 			trunk_instance.multimesh = trunks
 			objects.add_child(trunk_instance)
 
 func _process(delta: float) -> void:
 	if world.is_empty(): return
+	_update_canopy_phase(delta)
 	_update_quality_state()
 	var tick := Time.get_ticks_usec()
 	var wall_ms := (tick-previous_frame_tick)/1000.0 if previous_frame_tick>0 else delta*1000.0
@@ -678,7 +722,7 @@ func _process(delta: float) -> void:
 			_request_live()
 		if not stream_directory.is_empty() and live_serial>stream_requested_serial and Time.get_ticks_msec()-last_stream_tick>400:
 			_request_source()
-	var scene_ready:bool=rendered_revision==world_revision and not water_projection_busy
+	var scene_ready:bool=rendered_revision==world_revision and not water_projection_busy and not canopy_transition_busy
 	var live_ready: bool = not options.has("--live-url") or (view_satisfied_serial==live_serial and not _quality_preview()) or failed_live_serial==live_serial
 	if options.has("--tour") and scene_ready and terrain != null and worker == null and not view_dirty and packet_worker==null and not live_busy and live_ready:
 		tour_settle += 1
@@ -950,7 +994,7 @@ func _capture(path: String) -> void:
 	var absolute := ProjectSettings.globalize_path(path)
 	DirAccess.make_dir_recursive_absolute(absolute.get_base_dir())
 	var result := get_viewport().get_texture().get_image().save_png(absolute)
-	print(JSON.stringify({"event":"capture","captureTickMs":Time.get_ticks_msec(),"surfaceLayers":rendered_surface_layers,"water":water_metrics,"urban":rendered_urban_metrics,"renderedWorldId":rendered_world_id,"renderedSource":rendered_source,"renderedLiveSerial":rendered_live_serial,"renderedSnapshot":rendered_snapshot,"viewSatisfiedSerial":view_satisfied_serial,"viewSatisfaction":view_satisfaction,"path":absolute,"error":result,"widthM":width_m,"metresPerPixel":width_m/get_viewport().get_visible_rect().size.x}))
+	print(JSON.stringify({"event":"capture","captureTickMs":Time.get_ticks_msec(),"populationInstances":population_instances(),"canopyView":canopy_view_state,"surfaceLayers":rendered_surface_layers,"water":water_metrics,"urban":rendered_urban_metrics,"renderedWorldId":rendered_world_id,"renderedSource":rendered_source,"renderedLiveSerial":rendered_live_serial,"renderedSnapshot":rendered_snapshot,"viewSatisfiedSerial":view_satisfied_serial,"viewSatisfaction":view_satisfaction,"path":absolute,"error":result,"widthM":width_m,"metresPerPixel":width_m/get_viewport().get_visible_rect().size.x}))
 
 func _quantile(values: Array[float], fraction: float) -> Variant:
 	if values.is_empty(): return null
@@ -976,7 +1020,9 @@ func _write_metrics() -> void:
 	metrics["water"]=water_metrics
 	metrics["urban"]=rendered_urban_metrics
 	metrics["surfaceLayers"]=rendered_surface_layers
-	metrics["canopy"]={"representation":"exact-inventory-local / calibrated-approximate-meso-outside-page","approximatePositionsClaimedAsInventory":false,"paintedCrownShadow":"total-C optical transfer for the entire canopy; native canopy/trunk casting disabled; buildings and terrain retain physical shadows","physicalForestShadowClaimed":false,"opticalDetailPixels":[1.25,3.0],"geometryDetailPixels":[3.0,8.0],"referenceCrownDiameterM":preload("res://adapters/surface_canopy.gd").REFERENCE_CROWN_DIAMETER_M,"referenceCrownCentreHeightM":preload("res://adapters/surface_canopy.gd").REFERENCE_CROWN_CENTRE_HEIGHT_M,"mesoCellM":preload("res://adapters/surface_canopy.gd").MESO_CELL_M,"paintedShadowTransmittance":[.25,.34,.50],"canonicalSeed":rendered_world.get("seed"),"atlasVersion":canopy_info.get("version",""),"paintBlendM":canopy_info.get("fallbackBlendM"),"geometryBlendM":canopy_info.get("geometryBlendM")}
+	metrics["populationInstances"]=population_instances()
+	metrics["canopyView"]=canopy_view_state
+	metrics["canopy"]={"representation":"whole-view exact inventory when complete page, atlas and resident terrain cover the frustum plus halo; otherwise whole-view calibrated meso","approximatePositionsClaimedAsInventory":false,"paintedCrownShadow":"total-C optical transfer for the entire canopy; native canopy/trunk casting disabled; buildings and terrain retain physical shadows","physicalForestShadowClaimed":false,"opticalDetailPixels":[1.25,3.0],"geometryDetailPixels":[3.0,8.0],"referenceCrownDiameterM":preload("res://adapters/surface_canopy.gd").REFERENCE_CROWN_DIAMETER_M,"referenceCrownCentreHeightM":preload("res://adapters/surface_canopy.gd").REFERENCE_CROWN_CENTRE_HEIGHT_M,"mesoCellM":preload("res://adapters/surface_canopy.gd").MESO_CELL_M,"paintedShadowTransmittance":[.25,.34,.50],"canonicalSeed":rendered_world.get("seed"),"atlasVersion":canopy_info.get("version",""),"paintBlendM":canopy_info.get("fallbackBlendM"),"geometryBlendM":canopy_info.get("geometryBlendM")}
 	var path: String = options.get("--metrics","res://captures/metrics.json")
 	path = ProjectSettings.globalize_path(path)
 	DirAccess.make_dir_recursive_absolute(path.get_base_dir())
@@ -999,17 +1045,51 @@ func _exit_tree() -> void:
 
 
 func _update_canopy_textures(info: Dictionary) -> void:
+	if is_same(canopy_info,info):return
+	if canopy_info.is_empty() or canopy_phase<=0.00001 or info.get("physicalLineage")!=canopy_info.get("physicalLineage"):
+		_install_canopy_textures(info)
+		return
+	# The old atlas remains bound while its WHOLE-VIEW optical response fades.
+	# New geometry is hidden until its matching atlas is installed at phase zero.
+	canopy_pending=info
+	canopy_pending_elapsed=0.0
+	canopy_pending_start_phase=canopy_phase
+
+func _install_canopy_textures(info:Dictionary)->void:
 	canopy_info=info
-	if not info.get("available",false): return
+	canopy_phase=0.0
+	canopy_pending={}
+	_retire_canopy_nodes()
+	for child in objects.get_children():
+		if child.get_meta("canopyStaged",false):child.set_meta("canopyStaged",false)
+	if not info.get("available",false):
+		canopy_textures={}
+		_refresh_canopy_bindings()
+		return
 	if not is_same(canopy_textures.get("coverageImage"),info.coverageImage) or not is_same(canopy_textures.get("countsImage"),info.countsImage):
 		canopy_textures={"coverageImage":info.coverageImage,"countsImage":info.countsImage,"coverage":ImageTexture.create_from_image(info.coverageImage),"counts":ImageTexture.create_from_image(info.countsImage)}
 		if info.has("normalImage"):canopy_textures["normals"]=ImageTexture.create_from_image(info.normalImage)
+	_refresh_canopy_bindings()
+
+func _canopy_material_geometry_weight(material:Object)->float:
+	if not canopy_pending.is_empty() and material is ShaderMaterial and not material.get_meta("canopyRetired",false):return 0.0
+	return maxf(0.0,canopy_phase-1.0)
+
+func _retire_canopy_nodes()->void:
+	for child in objects.get_children():
+		if child.get_meta("canopyRetired",false):child.visible=false;child.queue_free()
+	for i in range(canopy_materials.size()-1,-1,-1):
+		if canopy_materials[i].get_meta("canopyRetired",false):canopy_materials.remove_at(i)
+
+func _refresh_canopy_bindings()->void:
+	if terrain!=null:_apply_canopy_parameters(terrain.get("material"))
+	for material in canopy_materials:_apply_canopy_parameters(material)
 
 func _apply_canopy_parameters(material: Object) -> void:
 	var world:Dictionary=rendered_world if not rendered_world.is_empty() else self.world
 	var packet:Dictionary=rendered_packet if not rendered_packet.is_empty() else self.packet
 	var presentation_mode:String=rendered_presentation_mode
-	var values := {"canopy_shadow_use_total":true,"canopy_enabled":canopy_info.get("available",false),"canopy_linear_albedo":Presentation.canopy_color(packet,presentation_mode),"canopy_reference_y":Data.height_at(world,focus.x,focus.y)-float(origin.y)}
+	var values := {"canopy_exact_weight":minf(canopy_phase,1.0),"canopy_geometry_weight":_canopy_material_geometry_weight(material),"canopy_shadow_use_total":true,"canopy_enabled":canopy_info.get("available",false),"canopy_linear_albedo":Presentation.canopy_color(packet,presentation_mode),"canopy_reference_y":Data.height_at(world,focus.x,focus.y)-float(origin.y)}
 	values.merge(preload("res://adapters/surface_canopy.gd").meso_parameters(world,origin))
 	var to_light=sun.global_basis.z
 	values["canopy_shadow_offset"]=preload("res://adapters/surface_canopy.gd").shadow_offset(to_light,preload("res://adapters/surface_canopy.gd").REFERENCE_CROWN_CENTRE_HEIGHT_M)
@@ -1024,6 +1104,98 @@ func _apply_canopy_parameters(material: Object) -> void:
 	for key in values:
 		if material is ShaderMaterial: material.set_shader_parameter(key,values[key])
 		else: material.call("set_shader_param",key,values[key])
+
+func _canopy_guard(info:Dictionary)->Dictionary:
+	if not info.get("available",false):return {"safePhase":0.0,"reason":info.get("reason","No prepared complete tree atlas")}
+	var w:Dictionary=rendered_world if not rendered_world.is_empty() else world
+	var reference_y=Data.height_at(w,focus.x,focus.y)-float(origin.y)
+	var shadow=preload("res://adapters/surface_canopy.gd").shadow_offset(sun.global_basis.z,preload("res://adapters/surface_canopy.gd").REFERENCE_CROWN_CENTRE_HEIGHT_M)
+	var halo=maxf(3.0*float(packet.get("_maximumCrownRadiusM",7.56)),shadow.length()+2.0*float(info.spacingM)+7.56)
+	var safe_bounds=CanopyView.intersection(info.pageBounds,info.bounds)
+	var resident={}
+	if terrain!=null and rendered_height_image_size>0:
+		var spacing=float(terrain.get("vertex_spacing"));var extent=float(rendered_height_image_size)*spacing*.5
+		resident={"minX":float(origin.x)-extent+2*spacing,"minZ":float(origin.z)-extent+2*spacing,"maxX":float(origin.x)+extent-3*spacing,"maxZ":float(origin.z)+extent-3*spacing}
+		safe_bounds=CanopyView.intersection(safe_bounds,resident)
+	var guard=CanopyView.evaluate(camera,get_viewport().get_visible_rect().size,reference_y,origin,safe_bounds,halo,20.0,rendered_height_range if oblique else Vector2(NAN,NAN))
+	guard["residentTerrainBounds"]=resident
+	if float(guard.get("maximumPixelFootprintM",INF))/float(info.spacingM)>8.0:
+		guard.safePhase=minf(float(guard.safePhase),1.0)
+		guard["geometryFilterBudgetLimited"]=true
+	return guard
+
+func _canopy_atlas_request()->Dictionary:
+	var page=preload("res://adapters/surface_canopy.gd").tree_page(packet)
+	if page.is_empty():return {"disabled":true}
+	var reference_y=Data.height_at(world,focus.x,focus.y)-float(origin.y)
+	var guard=CanopyView.evaluate(camera,get_viewport().get_visible_rect().size,reference_y,origin,page.bounds,40.0,20.0,rendered_height_range if oblique else Vector2(NAN,NAN))
+	if float(guard.safePhase)<=0.0:return {"disabled":true}
+	return CanopyView.intersection(page.bounds,CanopyView.expanded(guard.frustumBounds,128.0))
+
+func _update_canopy_phase(delta:float)->void:
+	if camera==null:return
+	var guard=_canopy_guard(canopy_info)
+	var cap=float(guard.safePhase)
+	if not canopy_pending.is_empty():
+		canopy_pending_elapsed+=delta
+		canopy_phase=minf(cap,canopy_pending_start_phase*(1.0-smoothstep(0.0,0.70,canopy_pending_elapsed)))
+		if canopy_phase<=1.0:_retire_canopy_nodes()
+		if canopy_phase<=0.00001:
+			var next=canopy_pending
+			_install_canopy_textures(next)
+			guard=_canopy_guard(canopy_info);cap=float(guard.safePhase)
+	else:
+		# A safety cap can only fall immediately. Rise is smooth and time based.
+		canopy_phase=minf(canopy_phase,cap)
+		canopy_phase=lerpf(canopy_phase,cap,1.0-exp(-delta/0.20))
+		if absf(cap-canopy_phase)<0.001:canopy_phase=cap
+	canopy_transition_busy=not canopy_pending.is_empty() or absf(cap-canopy_phase)>0.001
+	canopy_view_state=guard.duplicate(true)
+	canopy_view_state.merge({"phase":canopy_phase,"exactWeight":minf(canopy_phase,1.0),"geometryWeight":maxf(0.0,canopy_phase-1.0),"activeAtlasWorldId":canopy_info.get("worldId",""),"activeAtlasHash":canopy_info.get("atlasHash",""),"activeAtlasSource":canopy_info.get("sourceDescriptor",{}),"transitionPending":not canopy_pending.is_empty(),"pendingAtlasHash":canopy_pending.get("atlasHash",""),"pendingAtlas":not canopy_pending.is_empty(),"treePage":canopy_info.get("page",{}),"atlasBounds":canopy_info.get("bounds",{}),"spatialBlend":"none; one phase for the whole viewport"},true)
+	var bindings={"canopy_exact_weight":canopy_view_state.exactWeight,"canopy_geometry_weight":canopy_view_state.geometryWeight}
+	if terrain!=null:
+		for key in bindings:terrain.get("material").call("set_shader_param",key,bindings[key])
+	for material in canopy_materials:
+		for key in bindings:material.set_shader_parameter(key,_canopy_material_geometry_weight(material) if key=="canopy_geometry_weight" else bindings[key])
+
+# Counts come from the actually submitted MultiMesh buffers and shader state.
+# They deliberately do not claim occlusion visibility or a GPU fragment count.
+func population_instances()->Dictionary:
+	var families={}
+	for family in ["tree","trunk","grass","shrub","debris","boulder"]:families[family]={"submitted":0,"nodeVisible":0,"alphaPositiveInFrustum":0}
+	var viewport_size=get_viewport().get_visible_rect().size
+	var projection=camera.get_camera_projection();var view=camera.get_camera_transform().affine_inverse()
+	var reference_y=Data.height_at(rendered_world if not rendered_world.is_empty() else world,focus.x,focus.y)-float(origin.y)
+	var vp=projection*Projection(view)
+	for child in objects.get_children():
+		if not child is MultiMeshInstance3D or child.is_queued_for_deletion() or not child.has_meta("populationFamily"):continue
+		var family=str(child.get_meta("populationFamily"));var multi=child.multimesh
+		var count=multi.instance_count if multi.visible_instance_count<0 else mini(multi.instance_count,multi.visible_instance_count)
+		families[family].submitted+=count
+		if not child.is_visible_in_tree() or (child.layers&camera.cull_mask)==0:continue
+		families[family].nodeVisible+=count
+		var buffer=multi.buffer
+		var material:ShaderMaterial=multi.mesh.surface_get_material(0)
+		var geometry_weight=float(material.get_shader_parameter("canopy_geometry_weight")) if family in ["tree","trunk"] else 1.0
+		if geometry_weight<=0:continue
+		for i in count:
+			var at=i*20;var position=child.global_transform*Vector3(buffer[at+3],buffer[at+7],buffer[at+11])
+			if not camera.is_position_in_frustum(position):continue
+			var alpha=0.0
+			if family in ["tree","trunk"]:
+				var clip=vp*Vector4(position.x,reference_y,position.z,1)
+				var east=vp*Vector4(position.x+1,reference_y,position.z,1);var south=vp*Vector4(position.x,reference_y,position.z+1,1)
+				var east_pixels=((Vector2(east.x,east.y)/east.w-Vector2(clip.x,clip.y)/clip.w)*viewport_size*.5).length()
+				var south_pixels=((Vector2(south.x,south.y)/south.w-Vector2(clip.x,clip.y)/clip.w)*viewport_size*.5).length()
+				var footprint=1.0/maxf(minf(east_pixels,south_pixels),.000001)
+				alpha=geometry_weight*preload("res://adapters/surface_canopy.gd").instance_weight(int(buffer[at+17]),footprint)
+			else:
+				var centre_view=view*position;var denominator=1.0 if projection.w.w>.5 else maxf(.001,-centre_view.z)
+				alpha=smoothstep(1.25,3.0,float(buffer[at+16])*absf(projection.y.y)*viewport_size.y/(2.0*denominator))
+			if alpha>0.000001:families[family].alphaPositiveInFrustum+=1
+	var material=terrain.get("material") if terrain!=null else null
+	var trees=bool(material.call("get_shader_param","show_trees")) if material!=null else false
+	return {"families":families,"treeResidualEnabled":trees,"treeOpticalShadowEnabled":trees and rendered_presentation_mode!="cartographic","scope":"submitted buffers, actual node/camera visibility, shader ALPHA>0 and centres in frustum; no GPU occlusion claim"}
 
 func _build_road_projectors(records: Array) -> void:
 	var packet:Dictionary=rendered_packet if not rendered_packet.is_empty() else self.packet
@@ -1094,7 +1266,7 @@ func _physical_lineage(value:Dictionary,scene_packet:Dictionary)->String:
 	var canonical_versions=[]
 	for key in ["environment","occupation","population","materialLibrary","surfaceState","hydrology","geology","surfaceLayers"]:canonical_versions.append(versions.get(key))
 	var profile=Presentation.profile(scene_packet,str(options.get("--presentation","cartographic" if options.has("--style") else "")))
-	return JSON.stringify(Library._canonical([identity.get("id"),identity.get("version"),source.get("sourceEpoch"),source.get("sceneEpoch"),value.get("canonicalContextRef",{}).get("id"),source.get("sceneContextId"),Geometry.city_identity(scene_packet),canonical_versions,profile.mode,profile.palette]))
+	return JSON.stringify(Library._canonical([value.get("seed"),identity.get("id"),identity.get("version"),source.get("sourceEpoch"),source.get("sceneEpoch"),value.get("canonicalContextRef",{}).get("id"),source.get("sceneContextId"),Geometry.city_identity(scene_packet),canonical_versions,profile.mode,profile.palette]))
 
 func _record_live_binding_rejection(reason:String,serial:int)->void:
 	var event={"tickMs":Time.get_ticks_msec(),"requestSerial":serial,"reason":reason}
@@ -1191,6 +1363,16 @@ func set_layer_visibility(ground:bool,low_cover:bool,trees:bool)->void:
 
 # Finish the immutable snapshot BEFORE applying any textures, origin or mesh.
 # One active bake; camera updates coalesce in view_dirty and prepare afterwards.
+func _water_source_covers(bounds:Dictionary,required_focus:Dictionary,required_width:float,source_world:Dictionary)->bool:
+	if bounds.is_empty():return false
+	var g:Dictionary=Data.context(source_world).grid
+	var half=float(g.spacingM)*0.5
+	var min_x=maxf(float(required_focus.x)-required_width*.5,float(g.originX)-half)
+	var min_z=maxf(float(required_focus.y)-required_width*.5,float(g.originZ)-half)
+	var max_x=minf(float(required_focus.x)+required_width*.5,float(g.originX)+(int(g.width)-1)*float(g.spacingM)+half)
+	var max_z=minf(float(required_focus.y)+required_width*.5,float(g.originZ)+(int(g.height)-1)*float(g.spacingM)+half)
+	return min_x>=max_x or min_z>=max_z or (float(bounds.get("minX",INF))<=min_x and float(bounds.get("minZ",INF))<=min_z and float(bounds.get("maxX",-INF))>=max_x and float(bounds.get("maxZ",-INF))>=max_z)
+
 func _complete_prepared(prepared:Dictionary)->void:
 	var geometry:Dictionary=prepared.get("waterGeometry",{})
 	if geometry.is_empty():
@@ -1208,17 +1390,19 @@ func _complete_prepared(prepared:Dictionary)->void:
 		var requested_focus:Dictionary=prepared.focus
 		var width=float(prepared.get("viewWidth",requested_width))
 		var coverage_width=width*(2.25 if prepared.get("oblique",oblique) else 1.0)
-		var source_key=str(prepared.sceneRequest.get("waterKey",""))
-		var style_key=JSON.stringify([mode,colors.river,colors.lake,colors.sea])
+		var source_key=str(prepared.sceneRequest.get("waterKey",""))+":contours:"+str(geometry.get("sourceContourSha256","none"))
+		var screen_mpp=coverage_width/get_viewport().get_visible_rect().size.x
+		var scale_policy="oblique-ground-scale-approximation" if prepared.get("oblique",oblique) else "orthographic-map-ground-scale"
+		var style_key=JSON.stringify([mode,colors.river,colors.lake,colors.sea,water_symbol_width_px,screen_mpp,scale_policy])
 		var projection:Dictionary={}
 		for cache_id in water_projection_cache:
 			var entry:Dictionary=water_projection_cache[cache_id]
 			var bounds:Dictionary=entry.bounds
-			if entry.get("binding","")==source_key+style_key and float(bounds.minX)<=float(requested_focus.x)-coverage_width*.5 and float(bounds.maxX)>=float(requested_focus.x)+coverage_width*.5 and float(bounds.minZ)<=float(requested_focus.y)-coverage_width*.5 and float(bounds.maxZ)>=float(requested_focus.y)+coverage_width*.5 and float(entry.diagnostics.get("metresPerTexel",INF))<=coverage_width/1024.0:
+			if entry.get("binding","")==source_key+style_key and _water_source_covers(entry.diagnostics.get("sourceVectorClipBounds",{}),requested_focus,coverage_width,prepared.world) and float(bounds.minX)<=float(requested_focus.x)-coverage_width*.5 and float(bounds.maxX)>=float(requested_focus.x)+coverage_width*.5 and float(bounds.minZ)<=float(requested_focus.y)-coverage_width*.5 and float(bounds.maxZ)>=float(requested_focus.y)+coverage_width*.5 and float(entry.diagnostics.get("metresPerTexel",INF))<=coverage_width/1024.0:
 				projection=entry.duplicate(false);projection.diagnostics=entry.diagnostics.duplicate();projection.diagnostics.cacheUsed=true;break
 		if projection.is_empty():
 			var projection_width=coverage_width*1.25
-			var bake_options={"sourceKey":source_key,"resolution":2048,"msaa":2,"minHeightM":-10000.0,"maxHeightM":10000.0}
+			var bake_options={"symbolWidthPx":water_symbol_width_px,"screenMetresPerPixel":screen_mpp,"screenScalePolicy":scale_policy,"sourceKey":source_key,"resolution":2048,"msaa":2,"minHeightM":-10000.0,"maxHeightM":10000.0}
 			projection=await WaterProjection.bake(self,geometry,prepared.origin,requested_focus,projection_width,colors,bake_options)
 			if not projection.has("error"):
 				projection.binding=source_key+style_key;projection.diagnostics.cacheUsed=false

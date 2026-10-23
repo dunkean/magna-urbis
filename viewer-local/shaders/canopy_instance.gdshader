@@ -19,6 +19,6 @@ void fragment() {
     ALBEDO=display_color(linear_tint);
     ROUGHNESS=presentation_mode==1?1.0:0.91;
     if(presentation_mode==1) SPECULAR=0.0;
-    ALPHA=canopy_instance_weight(canopy_class,footprint);
+    ALPHA=canopy_geometry_weight*canopy_instance_weight(canopy_class,footprint);
     ALPHA_HASH_SCALE=1.0;
 }

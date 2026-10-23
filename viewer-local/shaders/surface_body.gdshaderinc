@@ -171,7 +171,7 @@
     if(diagnostic==6) { ALBEDO=vec3(0.0); EMISSION=display_color(vec3(clamp(detail_slope/1.570796327,0.0,1.0),detail_exposure,detail_confidence)); NORMAL_MAP=vec3(0.5,0.5,1.0); }
 
     // Single-variable unlit probes isolate fields from illumination and normals.
-    if(diagnostic>=7 && diagnostic<=19) {
+    if(diagnostic>=7 && diagnostic<=20) {
         vec3 probe=raw_ground_mean;
         if(diagnostic==8) probe=vec3(low_alpha);
         if(diagnostic==9) probe=vec3(state.r);
@@ -185,5 +185,6 @@
         if(diagnostic==17) probe=mix(show_ground?raw_ground_mean:vec3(0.0),low_base,visible_low);
         if(diagnostic==18) probe=vec3(ROUGHNESS);
         if(diagnostic==19) probe=composed_normal;
+        if(diagnostic==20) probe=vec3(show_trees?surface_canopy_target(v_vertex.xz,canopy_main_pixel_footprint(v_vertex.xz,PROJECTION_MATRIX*VIEW_MATRIX,VIEWPORT_SIZE),state.r):0.0);
         ALBEDO=vec3(0.0); EMISSION=display_color(probe); ROUGHNESS=1.0; SPECULAR=0.0; NORMAL_MAP=vec3(0.5,0.5,1.0);
     }

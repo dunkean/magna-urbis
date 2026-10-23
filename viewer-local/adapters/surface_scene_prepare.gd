@@ -34,7 +34,7 @@ static func prepare(request: Dictionary) -> Dictionary:
 	result.geometryDetail=Detail.prepare(request.world)
 	var population_packet:Dictionary=Detail.population_packet(request.packet,request.world)
 	result.unsupportedTreeCount=population_packet._unsupportedTreeIDs.size()
-	result.populations=Population.prepare(population_packet,request.focus,request.width,request.viewportWidth,request.oblique,not request.get("groundOnly",false))
+	result.populations=Population.prepare(population_packet,request.focus,request.width,request.viewportWidth,request.oblique,not request.get("groundOnly",false),request.sceneRequest.get("canopyAtlasBounds",{}))
 	if request.get("presentationMode","")=="cartographic" and not request.get("groundOnly",false):
 		var palette:Dictionary=Presentation.profile(request.packet,"cartographic").palette.get("urban",{})
 		result.cityMap=CityMap.prepare(request.packet,request.origin,request.focus,request.width,maxf(0.0,float(palette.get("massEdgeW",0.04))))

@@ -135,6 +135,7 @@ static func _index_candidates(packet: Dictionary) -> bool:
 	var candidate_ids := {}
 	var buckets: Dictionary = {}
 	var maximum_crown := 0.0
+	var family_counts:Dictionary={}
 	for i in count:
 		var x: float = columns.positions[i*3] if not columns.is_empty() else float(candidates[i].x)
 		var z: float = columns.positions[i*3+2] if not columns.is_empty() else float(candidates[i].z)
@@ -147,6 +148,8 @@ static func _index_candidates(packet: Dictionary) -> bool:
 			for value in [columns.positions[i*3+1],columns.orientation[i],columns.rank[i]]:
 				if not (value is float or value is int) or not is_finite(float(value)): return false
 			if float(columns.rank[i])<0 or float(columns.rank[i])>=1 or (not is_nan(float(columns.crownRadiusM[i])) and (not is_finite(float(columns.crownRadiusM[i])) or float(columns.crownRadiusM[i])<=0)) or not _integer(columns.variant[i],0,255): return false
+		var family=str(columns.families[int(columns.family[i])]) if not columns.is_empty() else str(candidates[i].get("family",""))
+		family_counts[family]=int(family_counts.get(family,0))+1
 		var crown: float = columns.crownRadiusM[i] if not columns.is_empty() else float(candidates[i].get("crownRadiusM",size*0.42))
 		if is_finite(crown): maximum_crown=maxf(maximum_crown,crown)
 		var address := Vector2i(floori(x/128.0),floori(z/128.0))
@@ -154,7 +157,28 @@ static func _index_candidates(packet: Dictionary) -> bool:
 		buckets[address].append(i)
 	packet["_candidateBuckets"]=buckets
 	packet["_maximumCrownRadiusM"]=maximum_crown
+	return _validate_candidate_pages(packet,family_counts)
+
+static func _validate_candidate_pages(packet:Dictionary,family_counts:Dictionary)->bool:
+	if not packet.has("candidatePages"):return true
+	var pages=packet.candidatePages
+	if not pages is Dictionary or pages.get("version")!="surface-candidate-pages-1":return false
+	for family in ["tree","shrub","boulder","grass","debris"]:
+		var page=pages.get(family)
+		if not page is Dictionary or not _integer(page.get("count"),0,100000) or int(page.count)!=int(family_counts.get(family,0)):return false
+		if not page.get("complete") is bool or not page.get("includeOverhang") is bool or not _finite_number(page.get("retention")) or float(page.retention)<0 or float(page.retention)>1:return false
+		if page.get("limitedBy") not in ["none","candidate-budget","slot-budget"]:return false
+		for name in ["bounds","requestedBounds"]:
+			var bounds=page.get(name)
+			if not bounds is Dictionary:return false
+			for field in ["minX","minZ","maxX","maxZ"]:
+				if not _finite_number(bounds.get(field)):return false
+			if float(bounds.minX)>=float(bounds.maxX) or float(bounds.minZ)>=float(bounds.maxZ):return false
+		if float(page.bounds.minX)<float(page.requestedBounds.minX)-0.000001 or float(page.bounds.minZ)<float(page.requestedBounds.minZ)-0.000001 or float(page.bounds.maxX)>float(page.requestedBounds.maxX)+0.000001 or float(page.bounds.maxZ)>float(page.requestedBounds.maxZ)+0.000001:return false
 	return true
+
+static func _finite_number(value)->bool:
+	return (value is float or value is int) and is_finite(float(value))
 
 static func unpack_world(packet: Dictionary) -> Dictionary:
 	var value = packet.get("world", packet)
@@ -301,12 +325,13 @@ static func prepare(world: Dictionary, origin: Dictionary, view_width: float, se
 	# Terrain3D 1.0.2 import_images floors to 256-sample region origins.
 	# The symmetric start must therefore remain a multiple of 256 samples.
 	var size := 512
-	while size*spacing<view_width*2.0 and size<2048: size*=2
+	while size*spacing<float(scene_request.get("heightCoverageExtentM",view_width*2.0)) and size<2048: size*=2
 	# Region addresses stay local and exactly aligned to Terrain3D's region grid.
 	var local_start := Vector3(-size*0.5*spacing,0.0,-size*0.5*spacing)
 	var height := Image.create(size,size,false,Image.FORMAT_RF)
 	var control := Image.create(size,size,false,Image.FORMAT_RF)
 	var hole_bits := PackedByteArray([4,0,0,0]).decode_float(0)
+	var loaded_minimum=INF;var loaded_maximum=-INF
 	for z in (0 if skip_height else size):
 		for x in size:
 			var wx: float = origin.x+local_start.x+x*spacing
@@ -316,13 +341,14 @@ static func prepare(world: Dictionary, origin: Dictionary, view_width: float, se
 			# height_at, without scanning parent layers that cannot cover this point.
 			var altitude:=height_at(display_source,wx,wz) if has_source else Geometry.sample_height(display_source.terrain,wx,wz)
 			height.set_pixel(x,z,Color(altitude-origin.y,0,0,1))
+			if has_source:loaded_minimum=minf(loaded_minimum,altitude);loaded_maximum=maxf(loaded_maximum,altitude)
 			if not has_source:
 				control.set_pixel(x,z,Color(hole_bits,0,0,1))
 	# Native context resolution remains independent of the representation mesh.
 	var canonical := context(world)
 	terrain = canonical.grid
 	var fields: Dictionary = canonical.fields
-	var result := {"worldId":world.id,"world":world,"packet":packet,"generation":serial,"origin":origin,"spacing":spacing,"localStart":local_start,"height":null if skip_height else height,"control":null if skip_height else control,"contextGrid":terrain,"displaySource":display_source,"sceneRequest":scene_request}
+	var result := {"loadedHeightRangeWorld":Vector2(loaded_minimum-.01,loaded_maximum+.01),"worldId":world.id,"world":world,"packet":packet,"generation":serial,"origin":origin,"spacing":spacing,"localStart":local_start,"height":null if skip_height else height,"control":null if skip_height else control,"contextGrid":terrain,"displaySource":display_source,"sceneRequest":scene_request}
 	var layers=Layers.prepare(world,canonical)
 	result.surfaceLayers=layers
 	result.surfaceLayersMetadata=layers.get("metadata",{}).duplicate(true)

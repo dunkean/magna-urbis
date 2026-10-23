@@ -5,7 +5,7 @@ extends RefCounted
 const LINEAR_ALBEDO := Color(0.055,0.105,0.036,1.0)
 const RADII := [2.5,4.0,5.5,7.0]
 const HALO_M := 16.0
-const RESOLUTION := 1024
+const RESOLUTION := 2048
 const MESO_CELL_M:=16.0
 const REFERENCE_CROWN_DIAMETER_M:=11.4378640776699
 const REFERENCE_CROWN_CENTRE_HEIGHT_M:=9.80388349514563
@@ -13,6 +13,10 @@ static var _cached_packet: Dictionary = {}
 static var _cached_selection: Dictionary = {}
 static var _cached_atlas: Dictionary = {}
 static var _cached_unsupported: Dictionary = {}
+static var _cached_view_bounds: Dictionary = {}
+
+static func _power2(value:int)->int:
+	return int(pow(2.0,ceil(log(float(value))/log(2.0))))
 
 static func radius_class(radius: float) -> int:
 	var best := 0
@@ -20,33 +24,41 @@ static func radius_class(radius: float) -> int:
 		if absf(radius-float(RADII[i]))<absf(radius-float(RADII[best])): best=i
 	return best
 
-static func transition_widths(bounds:Dictionary)->Dictionary:
-	var extent=minf(float(bounds.maxX)-float(bounds.minX),float(bounds.maxZ)-float(bounds.minZ))
-	return {"paint":maxf(0.1,minf(48.0,extent*.12)),"geometry":maxf(0.1,minf(64.0,extent*.15))}
+static func tree_page(packet:Dictionary)->Dictionary:
+	var pages=packet.get("candidatePages",{})
+	if not pages is Dictionary or pages.get("version")!="surface-candidate-pages-1":return {}
+	var page=pages.get("tree",{})
+	if not page is Dictionary or page.get("complete")!=true or page.get("includeOverhang")!=true or page.get("retention")!=1:return {}
+	return page
 
-static func can_select(x: float,z: float,radius: float,bounds: Dictionary,rank:float=0.0) -> bool:
-	var widths=transition_widths(bounds)
-	var edge=minf(minf(x-float(bounds.minX),float(bounds.maxX)-x),minf(z-float(bounds.minZ),float(bounds.maxZ)-z))-radius-float(widths.paint)
-	# Geometry exists only where the exact painted atlas is fully authoritative.
-	# Stable rank thins an inner transition; counts contain these exact selected IDs.
-	return edge>0.0 and rank<smoothstep(0.0,float(widths.geometry),edge)
+# Whole-frustum safety replaces all local page-edge/rank transitions.
+static func transition_widths(_bounds:Dictionary)->Dictionary:
+	return {"paint":0.0,"geometry":0.0}
+
+static func can_select(x:float,z:float,radius:float,bounds:Dictionary,_rank:float=0.0)->bool:
+	return x+radius>=float(bounds.minX) and x-radius<=float(bounds.maxX) and z+radius>=float(bounds.minZ) and z-radius<=float(bounds.maxZ)
 
 static func instance_weight(bin: int,footprint: float) -> float:
-	return smoothstep(1.25,3.0,2.0*float(RADII[bin])/maxf(footprint,0.00001))
+	return smoothstep(3.0,8.0,2.0*float(RADII[bin])/maxf(footprint,0.00001))
 
 # Called on the population preparation worker; GPU texture creation stays on UI.
-static func prepare(packet: Dictionary,selected: Dictionary) -> Dictionary:
+static func prepare(packet: Dictionary,selected: Dictionary,view_bounds:Dictionary={}) -> Dictionary:
 	# Packets are immutable snapshots. A sequential preparation worker may reuse
 	# the exact atlas while panning if neither packet identity nor selected ids changed.
 	var unsupported: Dictionary = packet.get("_unsupportedTreeIDs",{})
-	if is_same(packet,_cached_packet) and selected==_cached_selection and unsupported==_cached_unsupported: return _cached_atlas
-	var bounds: Dictionary = packet.get("candidateBounds",{})
+	if is_same(packet,_cached_packet) and selected==_cached_selection and unsupported==_cached_unsupported and view_bounds==_cached_view_bounds: return _cached_atlas
+	var page=tree_page(packet)
+	if view_bounds.get("disabled",false):return {"available":false,"reason":"Complete tree page does not cover this view","page":page}
+	if page.is_empty():return {"available":false,"reason":"No declared complete tree page"}
+	var page_bounds:Dictionary=page.bounds
+	var bounds:Dictionary=page_bounds if view_bounds.is_empty() else preload("res://adapters/surface_canopy_view.gd").intersection(page_bounds,view_bounds)
 	if bounds.is_empty(): return {"available":false,"reason":"No declared candidate query bounds"}
 	var extent := maxf(float(bounds.maxX)-float(bounds.minX),float(bounds.maxZ)-float(bounds.minZ))
 	if extent<=0.0: return {"available":false,"reason":"Empty candidate query bounds"}
-	var spacing := extent/float(RESOLUTION)
-	var width := maxi(2,ceili((float(bounds.maxX)-float(bounds.minX))/spacing))
-	var height := maxi(2,ceili((float(bounds.maxZ)-float(bounds.minZ))/spacing))
+	var spacing := pow(2.0,ceil(log(maxf(extent/float(RESOLUTION-128),0.000001))/log(2.0)))
+	var base_x=floor(float(bounds.minX)/spacing/64.0)*64.0*spacing;var base_z=floor(float(bounds.minZ)/spacing/64.0)*64.0*spacing
+	var width := _power2(maxi(2,ceili((float(bounds.maxX)-base_x)/spacing)+1))
+	var height := _power2(maxi(2,ceili((float(bounds.maxZ)-base_z)/spacing)+1))
 	var coverage := PackedFloat32Array(); coverage.resize(width*height)
 	var counts := PackedFloat32Array(); counts.resize(width*height*4)
 	var normal_values:=PackedFloat32Array();normal_values.resize(width*height*4)
@@ -54,7 +66,7 @@ static func prepare(packet: Dictionary,selected: Dictionary) -> Dictionary:
 	var height_origin:=0.0;var has_height_origin:=false
 	# Keep absolute regional coordinates in scalar doubles. Vector2 is FP32;
 	# the UI creates a Vector2 only after subtracting its render origin.
-	var origin := {"x":float(bounds.minX)+spacing/2.0,"z":float(bounds.minZ)+spacing/2.0}
+	var origin := {"x":base_x+spacing/2.0,"z":base_z+spacing/2.0}
 	var candidates: Array = packet.get("candidates",packet.get("populations",[]))
 	var columns: Dictionary = packet.get("candidateColumns",{})
 	var count := int(columns.count) if not columns.is_empty() else candidates.size()
@@ -73,7 +85,7 @@ static func prepare(packet: Dictionary,selected: Dictionary) -> Dictionary:
 		if unsupported.has(id):
 			unsupported_trees+=1
 			continue
-		var is_selected := selected.has(id) and can_select(x,z,radius,bounds,float(columns.rank[i]) if not columns.is_empty() else float(candidates[i].get("rank",0.0)))
+		var is_selected := selected.has(id)
 		var bin := radius_class(radius)
 		trees+=1
 		if is_selected: selected_trees+=1
@@ -96,12 +108,18 @@ static func prepare(packet: Dictionary,selected: Dictionary) -> Dictionary:
 	coverage_image.generate_mipmaps() # Linear coverage, not sRGB and not overlap counts.
 	var normal_image:=Image.create_from_data(width,height,false,Image.FORMAT_RGBAF,normal_values.to_byte_array());normal_image.generate_mipmaps()
 	var counts_image := Image.create_from_data(width,height,false,Image.FORMAT_RGBAF,counts.to_byte_array())
-	var atlas := {"available":true,"version":"canopy-r4-physical-lod-spectrum","coverageImage":coverage_image,"countsImage":counts_image,"normalImage":normal_image,
-		"origin":origin,"spacingM":spacing,"gridSize":Vector2(width,height),"bounds":bounds,"fallbackBlendM":transition_widths(bounds).paint,"geometryBlendM":transition_widths(bounds).geometry,
+	var digest=HashingContext.new();digest.start(HashingContext.HASH_SHA256)
+	for image in [coverage_image,counts_image,normal_image]:digest.update(image.get_data())
+	var world:Dictionary=packet.get("world",{})
+	var source:Dictionary=packet.get("source",{})
+	var source_descriptor={"worldId":world.get("id"),"seed":world.get("seed"),"sourceEpoch":source.get("sourceEpoch"),"sceneEpoch":source.get("sceneEpoch"),"canonicalContextId":world.get("canonicalContextRef",{}).get("id",world.get("canonicalContext",{}).get("id")),"versions":world.get("versions",{}),"terrainSource":world.get("terrain",{}).get("source",{}),"completeTreePage":page}
+	var atlas := {"atlasHash":digest.finish().hex_encode(),"sourceDescriptor":source_descriptor,"available":true,"version":"canopy-r5-whole-frustum-phase","coverageImage":coverage_image,"countsImage":counts_image,"normalImage":normal_image,
+		"worldId":str(packet.get("world",{}).get("id","")),"page":page,"pageBounds":page_bounds,"origin":origin,"spacingM":spacing,"gridSize":Vector2(width,height),"bounds":bounds,"fallbackBlendM":transition_widths(bounds).paint,"geometryBlendM":transition_widths(bounds).geometry,
 		"linearAlbedo":LINEAR_ALBEDO,"treeCount":trees,"selectedTreeCount":selected_trees,"unsupportedTreeCount":unsupported_trees,
-		"scope":"Exact provided crown inventory inside its page; renderer-only calibrated approximate canopy outside, never candidate IDs"}
+		"scope":"Exact inventory only when the whole viewport and halo are covered; otherwise whole-view renderer-only meso, never candidate IDs"}
 	_cached_packet=packet
 	_cached_selection=selected.duplicate()
+	_cached_view_bounds=view_bounds.duplicate()
 	_cached_unsupported=unsupported.duplicate()
 	_cached_atlas=atlas
 	return atlas

@@ -4,13 +4,13 @@ const Canopy = preload("res://adapters/surface_canopy.gd")
 const FAMILY_BUDGETS := {"tree":10000,"shrub":2500,"boulder":2000,"grass":1000,"debris":500}
 
 # Pure CPU query. Run on a worker, never sort the full population on the UI thread.
-static func prepare(packet: Dictionary, focus: Dictionary, width_m: float, viewport_width: float, oblique: bool, geometry_enabled := true) -> Dictionary:
+static func prepare(packet: Dictionary, focus: Dictionary, width_m: float, viewport_width: float, oblique: bool, geometry_enabled := true,atlas_bounds:Dictionary={}) -> Dictionary:
 	var candidates: Array = packet.get("candidates",packet.get("populations",[]))
 	var columns: Dictionary = packet.get("candidateColumns",{})
 	var count := int(columns.count) if not columns.is_empty() else candidates.size()
 	var families := {"tree":[],"shrub":[],"boulder":[],"grass":[],"debris":[]}
-	if not geometry_enabled: return {"families":families,"selectedCount":0,"candidateCount":count,"canopy":Canopy.prepare(packet,{}),"familyBudgets":FAMILY_BUDGETS}
-	var canopy_bounds: Dictionary = packet.get("candidateBounds",{})
+	if not geometry_enabled: return {"families":families,"selectedCount":0,"candidateCount":count,"canopy":Canopy.prepare(packet,{},atlas_bounds),"familyBudgets":FAMILY_BUDGETS}
+	var canopy_bounds:Dictionary=Canopy.tree_page(packet).get("bounds",{})
 	var unsupported: Dictionary = packet.get("_unsupportedTreeIDs",{})
 	var radius := clampf(width_m*(1.5 if oblique else 1.0),40.0,5000.0)
 	var query_radius := radius+float(packet.get("_maximumCrownRadiusM",0.0))
@@ -30,6 +30,7 @@ static func prepare(packet: Dictionary, focus: Dictionary, width_m: float, viewp
 		if maxf(size,2.0*crown_radius)/width_m*viewport_width<1.25: continue
 		var candidate: Dictionary = candidates[i] if columns.is_empty() else {"stableId":columns.ids[i],"family":columns.families[int(columns.family[i])],"x":px,"y":columns.positions[i*3+1],"z":pz,"size":size,"orientation":columns.orientation[i],"rank":columns.rank[i],"variant":columns.variant[i],"crownRadiusM":crown_radius}
 		if str(candidate.family)=="tree":
+			if atlas_bounds.get("disabled",false):continue
 			if unsupported.has(str(candidate.stableId)): continue
 			if canopy_bounds.is_empty() or not Canopy.can_select(px,pz,crown_radius,canopy_bounds,float(candidate.get("rank",0.0))): continue
 			candidate=candidate.duplicate()
@@ -41,4 +42,4 @@ static func prepare(packet: Dictionary, focus: Dictionary, width_m: float, viewp
 		if families[candidate.family].size()>=int(FAMILY_BUDGETS[candidate.family]): continue
 		families[candidate.family].append(candidate); selected_count+=1
 		if str(candidate.family)=="tree": selected[str(candidate.stableId)]=true
-	return {"families":families,"selectedCount":selected_count,"candidateCount":count,"canopy":Canopy.prepare(packet,selected),"familyBudgets":FAMILY_BUDGETS}
+	return {"families":families,"selectedCount":selected_count,"candidateCount":count,"canopy":Canopy.prepare(packet,selected,atlas_bounds),"familyBudgets":FAMILY_BUDGETS}
