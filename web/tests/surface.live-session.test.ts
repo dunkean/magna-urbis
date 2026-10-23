@@ -5,6 +5,7 @@ import { createSurfaceLiveSession, createSurfaceLiveBinarySession } from '../src
 import { decodeSurfaceBinary } from '../src/surface/binary';
 import type { SurfaceWorkerPacket } from '../src/surface/workerProtocol';
 import { registrationFieldFingerprint, type SurfaceRegistrationBinding } from '../src/surface/registrationBinding';
+import { exportSurfacePacket } from '../src/surface/adapters/export';
 
 function fixture(): Decor {
   const n = 8, height = new Float32Array(n * n).fill(100);
@@ -26,6 +27,16 @@ function provider(): TerrainProvider & { registrationBinding: SurfaceRegistratio
   } };
 }
 describe('Live context handoff', () => {
+  it('carries the original source hydrology in live and offline packets independently of physical wet cells', async () => {
+    const d = fixture(); d.raster.riverIds[2] = 55; d.raster.riverWidth[2] = 7;
+    const session = createSurfaceLiveBinarySession(d, undefined, provider(), () => true, { execution: 'synchronous-node' });
+    const first = decodeSurfaceBinary<any>(new Uint8Array(await session({ x: 20, y: 20, extent: 40, resolution: 16 }, new AbortController().signal)));
+    const offline = exportSurfacePacket(d, undefined, { encoding: 'binary' });
+    expect(first.source.water).toStrictEqual(offline.source.water);
+    expect(first.source.water.riverIds[2]).toBe(55); expect(first.source.water.originConvention).toBe('first-sample-centre');
+    expect(first.source.water.originX).toBe(5); expect(first.source.water.cornerX).toBe(0);
+    session.dispose();
+  });
   it('exposes explicit Node binary fallback with the same context handshake as the browser worker', async () => {
     const session = createSurfaceLiveBinarySession(fixture(), undefined, provider(), () => true, { execution: 'synchronous-node' });
     expect(session.execution).toBe('synchronous-node');

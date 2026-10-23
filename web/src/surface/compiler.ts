@@ -5,6 +5,7 @@ import {
   type Bounds, type CanonicalSurfaceContext, type CanonicalSurfaceContextRef, type ClimateInput, type GeologyInput, type MaterialRecipe, type SurfaceGridGeometry, type TerrainGrid,
 } from './model';
 import { DEFAULT_ROCK_UNITS, SURFACE_MATERIALS, createMaterialIndex, dominantMaterialPair, materialColor, packMaterialMean, unpackMaterialMean, type MaterialComposition } from './materials';
+import { sampleTerrainHeight, type ReconstructedTerrain } from './heightSampling';
 
 /** Hash includes content and shape, not merely source labels (edit-safe cache invalidation). */
 export function fingerprint(value: unknown): string {
@@ -44,6 +45,8 @@ function legacyFingerprint(value: unknown): string {
 }
 
 function validateGrid(t: TerrainGrid): void {
+  const kernel = (t as ReconstructedTerrain).reconstruction;
+  if (kernel !== undefined && kernel !== 'bilinear-samples' && kernel !== 'cubic-bspline-controls') throw new Error('Unsupported terrain reconstruction kernel');
   if (!Number.isInteger(t.width) || !Number.isInteger(t.height) || t.width < 2 || t.height < 2 || t.width * t.height > 16_777_216) throw new Error('Terrain grid dimensions must be 2..16777216 samples');
   if (!Number.isFinite(t.spacingM) || t.spacingM <= 0 || !Number.isFinite(t.originX) || !Number.isFinite(t.originZ)) throw new Error('Terrain coordinates and spacing must be finite metres');
   if (t.heights.length !== t.width * t.height) throw new Error('Terrain heights length does not match grid');
@@ -448,7 +451,7 @@ export function sampleSurface(world: SurfaceWorld, x: number, z: number): Surfac
   const bilinear = sampler.continuous;
   const composition = sampleMaterialComposition(f, sampler.indices, sampler.weights);
   const rock = world.geology.units.find(r => r.id === f.bedrock[i])!;
-  return { x, z, heightM: gridSampler(world.terrain, x, z).continuous(world.terrain.heights), slope: bilinear(f.slope), aspect: f.aspect[i], curvature: bilinear(f.curvature),
+  return { x, z, heightM: sampleTerrainHeight(world.terrain, x, z), slope: bilinear(f.slope), aspect: f.aspect[i], curvature: bilinear(f.curvature),
     landform: f.landform[i], bedrock: rock, sourceRock: world.geology.units.find(r => r.id === f.sourceRock[i])!, depositOrigin: f.depositOrigin[i],
     depositDepthM: bilinear(f.depositDepthM), sand: bilinear(f.sand), silt: bilinear(f.silt), clay: bilinear(f.clay), organic: bilinear(f.organic),
     stoniness: bilinear(f.stoniness), soilDepthM: bilinear(f.soilDepthM), moisture: bilinear(f.moisture), contributingAreaM2: bilinear(f.contributingAreaM2),

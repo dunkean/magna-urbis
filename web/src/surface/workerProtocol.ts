@@ -6,7 +6,7 @@ export interface SurfaceWorkerEpochs { sourceEpoch: string; sceneEpoch: string }
 export interface SurfaceWorkerRegion { x: number; y: number; extent: number; resolution: number; knownContextId?: string; knownSceneContextId?: string }
 export interface SurfaceWorkerInitialization<Payload = unknown> extends SurfaceWorkerEpochs { payload: Payload }
 export interface PreparedSurfaceWorkerSource {
-  input: SurfaceCompileInput; providerId: string; urban?: unknown; urbanId?: string; sourceMetadata?: Record<string, unknown>;
+  input: SurfaceCompileInput; parentTerrain?: TerrainGrid; providerId: string; urban?: unknown; urbanId?: string; sourceMetadata?: Record<string, unknown>;
   /** Only an adapter that registered this exact retained source may bind its capture identity to a provider generation. */
   registrationBinding?: Readonly<SurfaceRegistrationBinding>;
   compileOptions?: Omit<CompileOptions, 'signal'>;

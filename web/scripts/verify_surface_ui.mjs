@@ -3,6 +3,7 @@ import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { existsSync } from 'node:fs';
 import { decodeSurfaceBinary } from '../src/surface/binary.ts';
+import { validateSurfacePacket } from '../src/surface/packet.ts';
 
 const args = process.argv.slice(2), option = (key, fallback) => args.includes(key) ? args[args.indexOf(key) + 1] : fallback;
 const base = option('--url', 'http://127.0.0.1:5197').replace(/\/$/, '');
@@ -36,10 +37,21 @@ try {
   await page.waitForFunction(() => window.magnaBenchContext?.ready(), undefined, { timeout: 120000 });
   await page.screenshot({ path: resolve(out, 'retained-source.png') });
   await page.locator('#pipelineTransfer details > summary').click();
+  if (args.includes('--cancel-export')) {
+    await page.locator('#pipelineSurface').click();
+    await page.waitForFunction(() => document.querySelector('#pipelineSurface').textContent.includes('Annuler'));
+    await page.locator('#pipelineSurface').click();
+    await page.waitForFunction(() => document.querySelector('#pipelineStatus').textContent.includes('annulé'));
+  }
+  await page.evaluate(() => { window.__surfaceExportFrames = 0; window.__surfaceExportRunning = true;
+    const tick = () => { if (window.__surfaceExportRunning) { window.__surfaceExportFrames++; requestAnimationFrame(tick); } }; requestAnimationFrame(tick); });
   const [file] = await Promise.all([page.waitForEvent('download', { timeout: 120000 }), page.locator('#pipelineSurface').click()]);
   const binaryPath = resolve(out, 'retained-source.surfacebin');
   await file.saveAs(binaryPath);
   const packet = decodeSurfaceBinary(await readFile(binaryPath));
+  validateSurfacePacket(packet);
+  const responsiveFrames = await page.evaluate(() => { window.__surfaceExportRunning = false; return window.__surfaceExportFrames; });
+  if (responsiveFrames < 2) throw new Error('Surface export did not leave the browser animation loop responsive');
   if (packet.world.terrain.width !== metadata.n || packet.world.terrain.height !== metadata.n) throw new Error('Source sample grid changed during UI export');
   if (packet.source.meta.id !== metadata.id || packet.source.meta.seed !== metadata.seed) throw new Error('Source identity changed during UI export');
   const sessions = await fetch(`${base}/surface-live/sessions`).then(r => r.json());
@@ -49,19 +61,28 @@ try {
     console.log('Requesting actual retained-source refinement through the compiler worker…');
     const centre = metadata.width / 2, extent = 40;
     const started = performance.now();
-    const response = await fetch(`${base}/surface-live/terrain`, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    const request = () => fetch(`${base}/surface-live/terrain`, { method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ sessionId: sessions.sessions.at(-1), region: { x: centre - extent / 2, y: centre - extent / 2, extent, resolution: 64 } }), signal: AbortSignal.timeout(120000) });
+    let obsolete = [];
+    if (args.includes('--burst-live')) {
+      for (let i = 0; i < 4; i++) { obsolete.push(request().then(async r => ({ status: r.status, body: r.ok ? null : await r.json() })));
+        await new Promise(resolve => setTimeout(resolve, 200)); }
+    }
+    const response = await request();
     if (!response.ok) throw new Error(`Actual live source failed: ${response.status} ${await response.text()}`);
     const liveBytes = new Uint8Array(await response.arrayBuffer()), livePacket = decodeSurfaceBinary(liveBytes);
+    validateSurfacePacket(livePacket);
+    obsolete = await Promise.all(obsolete);
+    if (args.includes('--burst-live') && (obsolete.some(r => r.status !== 409 || !r.body?.cancelled) || livePacket.source.compilation.canonicalBuildCount > 2)) throw new Error('Live supersession lost the durable canonical cache');
     const livePath = resolve(out, 'live-refinement.surfacebin'); await writeFile(livePath, liveBytes);
     if (!livePacket.world.terrain.source.sourceLODKnown || !livePacket.world.canonicalContext) throw new Error('Live source lost its real source level or initial context');
     live = { path: livePath, bytes: liveBytes.length, durationMs: performance.now() - started,
       source: livePacket.world.terrain.source, grid: { n: livePacket.world.terrain.width, spacingM: livePacket.world.terrain.spacingM },
-      contextId: livePacket.world.canonicalContextRef.id };
+      contextId: livePacket.world.canonicalContextRef.id, compilation: livePacket.source.compilation, obsolete };
   }
   const result = { source, metadata, binaryPath, bytes: (await readFile(binaryPath)).length,
     samples: packet.world.terrain.heights.length, sourceIdentity: packet.world.terrain.source,
-    buildings: packet.urban.buildings.length, liveSessions: sessions.sessions.length, live, errors };
+    buildings: packet.urban.buildings.length, responsiveFrames, cancelExportChecked: args.includes('--cancel-export'), liveSessions: sessions.sessions.length, live, errors };
   await writeFile(resolve(out, 'report.json'), JSON.stringify(result, null, 2));
   console.log(JSON.stringify(result));
   if (errors.length) throw new Error('Browser reported runtime errors');

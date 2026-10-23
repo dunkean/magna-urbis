@@ -4,11 +4,12 @@ import { decorToSurfaceInput } from '../surface/adapters/magna';
 import { occupationFromMagnaScene } from '../surface/adapters/occupation';
 import { magnaRoads, magnaUrbanIdentity, magnaUrbanPacket } from '../surface/adapters/magnaUrban';
 import type { PreparedSurfaceWorkerSource } from '../surface/workerProtocol';
-import { archiveSurfaceSource } from '../surface/adapters/sourceArchive';
+import { magnaSurfaceSource } from '../surface/adapters/magnaSource';
 import { assertSurfaceRegistrationBinding, type SurfaceRegistrationBinding } from '../surface/registrationBinding';
 import { magnaSurfacePresentation } from '../surface/presentation';
+import type { TerrainGrid } from '../surface/model';
 
-export interface SurfaceDecorWorkerSource { decor: Decor; scene?: Building3dScene; providerId: string; registrationBinding?: SurfaceRegistrationBinding }
+export interface SurfaceDecorWorkerSource { decor: Decor; scene?: Building3dScene; providerId: string; registrationBinding?: SurfaceRegistrationBinding; parentTerrain?: TerrainGrid }
 
 /** Runs inside the compiler worker: occupation rasters and urban geometry export do not block the UI. */
 export function prepareSurfaceDecorWorkerSource(value: unknown): PreparedSurfaceWorkerSource {
@@ -23,9 +24,9 @@ export function prepareSurfaceDecorWorkerSource(value: unknown): PreparedSurface
   input.occupation = occupationFromMagnaScene(input.terrain, buildings, roads, input.occupation);
   const urban = magnaUrbanPacket(decor, buildings, 0, 0, undefined, 'binary');
   const prepared: PreparedSurfaceWorkerSource & { registrationBinding?: SurfaceRegistrationBinding; urbanId: string } = {
-    input, providerId: registrationBinding?.providerId ?? payload.providerId, registrationBinding,
-    urban, urbanId: magnaUrbanIdentity(urban), sourceMetadata: archiveSurfaceSource({ meta: decor.meta, registrationBinding,
-      presentation: magnaSurfacePresentation(decor.meta.query) }),
+    input, parentTerrain: payload.parentTerrain, providerId: registrationBinding?.providerId ?? payload.providerId, registrationBinding,
+    urban, urbanId: magnaUrbanIdentity(urban), sourceMetadata: magnaSurfaceSource(decor, { encoding: 'binary', sourceWaterValidation: input.sourceWaterValidation,
+      extra: { registrationBinding, presentation: magnaSurfacePresentation(decor.meta.query) } }),
   };
   return prepared;
 }

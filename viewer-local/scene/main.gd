@@ -4,6 +4,7 @@ const Data = preload("res://adapters/surface_data.gd")
 const Library = preload("res://adapters/material_library.gd")
 const ShaderSource = preload("res://adapters/surface_shader.gd")
 const Geometry = preload("res://adapters/surface_geometry.gd")
+const ScenePrepare = preload("res://adapters/surface_scene_prepare.gd")
 var surface_shader_code := ""
 var world: Dictionary = {}
 var packet: Dictionary = {}
@@ -28,6 +29,8 @@ var warm_frames := 0
 var frame_times: Array[float] = []
 var all_frame_times: Array[float] = []
 var process_times: Array[float] = []
+var gpu_render_times: Array[float] = []
+var cpu_render_times: Array[float] = []
 var previous_frame_tick := 0
 var packet_worker: Thread
 var packet_context: Dictionary = {}
@@ -66,9 +69,16 @@ var live_requested_serial := 0
 var last_live_tick := 0
 var candidate_buckets: Dictionary = {}
 var indexed_packet: Dictionary = {}
+var view_dirty := true
+var rejected_files: Dictionary = {}
+var last_live_applied_serial := -1
+var failed_live_serial := -1
+var region_counts: Array[int] = []
+var preparation_snapshots: Array = []
 
 func _ready() -> void:
 	_parse_options()
+	RenderingServer.viewport_set_measure_render_time(get_viewport().get_viewport_rid(),true)
 	surface_shader_code = ShaderSource.build()
 	if options.has("--resolution"):
 		var dimensions: PackedStringArray = str(options["--resolution"]).split("x")
@@ -166,9 +176,11 @@ func _setup_lighting() -> void:
 	add_child(sun)
 
 func _begin_prepare() -> void:
-	generation += 1
 	if worker != null:
+		view_dirty = true
 		return
+	view_dirty = false
+	generation += 1
 	requested_focus = focus.duplicate()
 	requested_width = width_m
 	var spacing := Data.display_spacing(world.terrain,width_m)
@@ -189,11 +201,11 @@ func _begin_prepare() -> void:
 	var urban_key := Geometry.chunk_key(world,focus,width_m,"urban")
 	var scene_request := {"waterKey":water_key,"urbanKey":urban_key,"buildWater":not options.has("--ground-only") and not scene_mesh_cache.has(water_key),"buildUrban":not options.has("--ground-only") and not scene_mesh_cache.has(urban_key),"focus":focus.duplicate()}
 	worker = Thread.new()
-	worker.start(Data.prepare.bind(world,next_origin,width_m,generation,packet,context_textures.has(prepared_context_key),height_source_cache.get(prepared_height_key,{}),reuse_height,scene_request))
+	worker.start(ScenePrepare.prepare.bind({"world":world,"origin":next_origin,"width":width_m,"generation":generation,"packet":packet,"skipContext":context_textures.has(prepared_context_key),"displaySource":height_source_cache.get(prepared_height_key,{}),"skipHeight":reuse_height,"sceneRequest":scene_request,"focus":focus.duplicate(),"viewportWidth":get_viewport().get_visible_rect().size.x,"oblique":oblique}))
 	last_request_tick = Time.get_ticks_msec()
 
 func _apply_prepared(prepared: Dictionary) -> void:
-	if int(prepared.generation)!=generation or prepared.worldId != world.id:
+	if prepared.worldId != world.id:
 		return
 	var world: Dictionary = prepared.world
 	var packet: Dictionary = prepared.packet
@@ -239,6 +251,10 @@ func _apply_prepared(prepared: Dictionary) -> void:
 		var cb: Dictionary = packet.candidateBounds
 		mat.call("set_shader_param","candidate_bounds",Vector4(float(cb.minX)-next_origin.x,float(cb.minZ)-next_origin.z,float(cb.maxX)-next_origin.x,float(cb.maxZ)-next_origin.z))
 	if prepared.height!=null:
+		# A smaller import does not remove old Terrain3D regions automatically.
+		# Remove the previous active set before importing one coherent new window.
+		var terrain_data: Object = next_terrain.get("data")
+		for region in terrain_data.call("get_regions_active",true,false): terrain_data.call("remove_region",region,false)
 		var images: Array[Image] = [prepared.height,prepared.control,null]
 		next_terrain.get("data").call("import_images",images,prepared.localStart,0.0,1.0)
 	mat.set("show_checkered",false)
@@ -251,6 +267,8 @@ func _apply_prepared(prepared: Dictionary) -> void:
 	prepare_times.append(float(prepared.prepareMs))
 	upload_times.append((Time.get_ticks_usec()-begin)/1000.0)
 	warm_frames = 0
+	region_counts.append(int(terrain.get("data").call("get_region_count")))
+	preparation_snapshots.append({"focus":requested_focus.duplicate(),"widthM":requested_width,"generation":prepared.generation,"sourceId":world.terrain.source.id})
 	print(JSON.stringify({"event":"terrain-replaced","worldId":world.id,"origin":[origin.x,origin.y,origin.z],"sourceLOD":world.terrain.source.sourceLOD,"nativeSpacingM":world.terrain.source.nativeSpacingM,"displaySpacingM":prepared.spacing,"regions":terrain.get("data").call("get_region_count"),"prepareMs":prepared.prepareMs,"uploadAndObjectsMs":upload_times.back()}))
 
 func _update_camera() -> void:
@@ -282,10 +300,10 @@ func _build_scene_objects(prepared: Dictionary) -> void:
 	var request: Dictionary = prepared.sceneRequest
 	if prepared.has("waterGeometry"):
 		var data: Dictionary = prepared.waterGeometry
-		scene_mesh_cache[request.waterKey]={"mesh":Data.make_mesh(data.vertices),"anchor":data.anchor,"quads":data.quads,"sourceStride":data.sourceStride,"buildMs":data.buildMs}
+		scene_mesh_cache[request.waterKey]={"mesh":_mesh_from_arrays(prepared.waterArrays),"anchor":data.anchor,"quads":data.quads,"sourceStride":data.sourceStride,"buildMs":data.buildMs}
 	if prepared.has("urbanGeometry"):
 		var data: Dictionary = prepared.urbanGeometry
-		scene_mesh_cache[request.urbanKey]={"mesh":Data.make_mesh(data.vertices,data.normals),"roads":Data.make_mesh(data.roadVertices),"anchor":data.anchor,"nativeBuildings":data.nativeBuildings,"proxyBuildings":data.proxyBuildings,"budgetLimited":data.budgetLimited,"buildMs":data.buildMs}
+		scene_mesh_cache[request.urbanKey]={"batches":_urban_batch_meshes(prepared.urbanBatches),"roads":_mesh_from_arrays(prepared.roadArrays),"anchor":data.anchor,"nativeBuildings":data.nativeBuildings,"proxyBuildings":data.proxyBuildings,"budgetLimited":data.budgetLimited,"buildMs":data.buildMs}
 	while scene_mesh_cache.size()>8: scene_mesh_cache.erase(scene_mesh_cache.keys()[0])
 	if scene_mesh_cache.has(request.waterKey):
 		var entry: Dictionary = scene_mesh_cache[request.waterKey]
@@ -303,11 +321,14 @@ func _build_scene_objects(prepared: Dictionary) -> void:
 	if scene_mesh_cache.has(request.urbanKey):
 		var entry: Dictionary = scene_mesh_cache[request.urbanKey]
 		var position := Vector3(entry.anchor.x-origin.x,entry.anchor.y-origin.y,entry.anchor.z-origin.z)
-		if entry.mesh.get_surface_count()>0:
+		for batch in entry.batches:
+			if batch.mesh.get_surface_count()==0: continue
 			var city := MeshInstance3D.new()
-			city.name="NativeBuildingMeshes"
-			city.mesh=entry.mesh
+			city.name="NativeBuildingMeshes_"+str(batch.materialId)
+			city.mesh=batch.mesh
 			city.position=position
+			city.set_meta("nativeMaterialId",batch.materialId)
+			city.set_meta("buildingIds",batch.buildingIds)
 			var material := StandardMaterial3D.new()
 			material.albedo_color=Color(0.63,0.56,0.44)
 			material.roughness=0.85
@@ -324,47 +345,28 @@ func _build_scene_objects(prepared: Dictionary) -> void:
 			material.render_priority=2
 			roads.material_override=material
 			objects.add_child(roads)
-	_build_populations()
+	_build_populations(prepared.populations)
 	if diagnostic==5:
 		var normals := ShaderMaterial.new()
 		normals.shader=load("res://shaders/normals.gdshader")
 		for child in objects.get_children():
 			if child is GeometryInstance3D: child.material_override=normals
-func _build_populations() -> void:
-	var candidates: Array = packet.get("candidates",packet.get("populations",[]))
-	var columns: Dictionary = packet.get("candidateColumns",{})
-	candidate_count = int(columns.count) if not columns.is_empty() else candidates.size()
-	if not is_same(indexed_packet,packet):
-		candidate_buckets=packet.get("_candidateBuckets",{})
-		indexed_packet = packet
-	selected_candidates = 0
-	var families := {"tree":[],"shrub":[],"boulder":[],"grass":[],"debris":[]}
-	var radius := clampf(width_m*(1.5 if oblique else 1.0),40.0,5000.0)
-	var query_radius: float = radius+float(packet.get("_maximumCrownRadiusM",0.0))
-	var nearby: Array = []
-	for z in range(floori((focus.y-query_radius)/128.0),floori((focus.y+query_radius)/128.0)+1):
-		for x in range(floori((focus.x-query_radius)/128.0),floori((focus.x+query_radius)/128.0)+1):
-			nearby.append_array(candidate_buckets.get(Vector2i(x,z),[]))
-	var eligible: Array = []
-	for index in nearby:
-		var i := int(index)
-		var px: float = columns.positions[i*3] if not columns.is_empty() else float(candidates[i].x)
-		var pz: float = columns.positions[i*3+2] if not columns.is_empty() else float(candidates[i].z)
-		var size: float = columns.size[i] if not columns.is_empty() else float(candidates[i].size)
-		var crown_radius: float = columns.crownRadiusM[i] if not columns.is_empty() else float(candidates[i].get("crownRadiusM",size*0.42))
-		if not is_finite(crown_radius): crown_radius=size*0.42
-		var distance := Vector2(px-focus.x,pz-focus.y).length()
-		if distance>radius+crown_radius: continue
-		var projected := maxf(size,2.0*crown_radius)/width_m*get_viewport().get_visible_rect().size.x
-		if projected<1.25: continue
-		var candidate: Dictionary = candidates[i] if columns.is_empty() else {"stableId":columns.ids[i],"family":columns.families[int(columns.family[i])],"x":px,"y":columns.positions[i*3+1],"z":pz,"size":size,"orientation":columns.orientation[i],"rank":columns.rank[i],"variant":columns.variant[i],"crownRadiusM":crown_radius}
-		var family: String = candidate.family
-		if not families.has(family): continue
-		eligible.append(candidate)
-	eligible.sort_custom(func(a,b): return float(a.get("rank",0.0))<float(b.get("rank",0.0)))
-	if eligible.size()>16000: eligible.resize(16000)
-	for candidate in eligible: families[candidate.family].append(candidate)
-	selected_candidates=eligible.size()
+func _mesh_from_arrays(arrays: Array) -> ArrayMesh:
+	var mesh := ArrayMesh.new()
+	if arrays[Mesh.ARRAY_VERTEX].size()>0: mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,arrays)
+	return mesh
+
+func _urban_batch_meshes(batches: Array) -> Array:
+	var result: Array = []
+	for batch in batches:
+		var item: Dictionary = batch.duplicate(false)
+		item.mesh=_mesh_from_arrays(item.arrays); item.erase("arrays"); result.append(item)
+	return result
+
+func _build_populations(populations: Dictionary) -> void:
+	candidate_count=int(populations.candidateCount)
+	selected_candidates=int(populations.selectedCount)
+	var families: Dictionary = populations.families
 	for family in families:
 		var visible: Array = families[family]
 		if visible.is_empty(): continue
@@ -461,12 +463,17 @@ func _process(delta: float) -> void:
 		else:
 			push_warning("Terrain preparation failed; retaining parent. Navigate or reload to retry.")
 			applied_generation=generation
-	if worker==null and applied_generation!=generation and Time.get_ticks_msec()-last_request_tick>160:
+	if worker==null and (view_dirty or rendered_revision!=world_revision) and Time.get_ticks_msec()-last_request_tick>160:
 		_begin_prepare()
 	if terrain != null:
 		warm_frames += 1
 		if warm_frames>30:
 			frame_times.append(wall_ms)
+			var viewport_rid := get_viewport().get_viewport_rid()
+			var gpu_ms := RenderingServer.viewport_get_measured_render_time_gpu(viewport_rid)
+			var cpu_ms := RenderingServer.viewport_get_measured_render_time_cpu(viewport_rid)
+			if gpu_ms>0.0: gpu_render_times.append(gpu_ms)
+			if cpu_ms>0.0: cpu_render_times.append(cpu_ms)
 	if frames%15 == 0:
 		_poll_stream()
 		_update_hud()
@@ -474,7 +481,8 @@ func _process(delta: float) -> void:
 			_request_live()
 		if not stream_directory.is_empty() and live_serial>stream_requested_serial and Time.get_ticks_msec()-last_stream_tick>400:
 			_request_source()
-	if options.has("--tour") and terrain != null and worker == null:
+	var live_ready: bool = not options.has("--live-url") or last_live_applied_serial==live_serial or failed_live_serial==live_serial
+	if options.has("--tour") and terrain != null and worker == null and not view_dirty and packet_worker==null and not live_busy and live_ready:
 		tour_settle += 1
 		if tour_settle == 60:
 			_capture(options["--tour"].path_join("%02d_%dm_%s.png" % [tour_index,width_m,"oblique" if oblique else "top"]))
@@ -487,7 +495,9 @@ func _process(delta: float) -> void:
 				return
 			width_m = tour_widths[tour_index]
 			_update_camera()
+			live_serial+=1
 			_begin_prepare()
+			_request_live()
 	if options.has("--frames") and terrain != null and warm_frames>=int(options["--frames"]):
 		if options.has("--capture") and not capture_pending:
 			capture_pending = true
@@ -540,14 +550,14 @@ func _unhandled_input(event: InputEvent) -> void:
 			changed = true
 	if changed:
 		_update_camera()
-		generation += 1
+		view_dirty = true
 		if worker==null and Time.get_ticks_msec()-last_request_tick>160:
 			_begin_prepare()
 		live_serial += 1
 
 func _request_live() -> void:
 	if not options.has("--live-url") or live_busy: return
-	var extent := width_m*1.2
+	var extent := width_m*1.2+2.0*maxf(10.0,float(packet.get("_maximumCrownRadiusM",0.0)))
 	var footprint: Dictionary = Data.context(world).bounds
 	extent = minf(extent,minf(float(footprint.maxX)-float(footprint.minX),float(footprint.maxZ)-float(footprint.minZ)))
 	var request_x := clampf(focus.x-extent*0.5,float(footprint.minX),float(footprint.maxX)-extent)
@@ -569,6 +579,7 @@ func _live_completed(result: int, code: int, _headers: PackedStringArray, body: 
 		print("Discarded superseded live terrain response")
 		return
 	if result!=HTTPRequest.RESULT_SUCCESS or code<200 or code>=300:
+		failed_live_serial=live_requested_serial
 		push_warning("Live terrain unavailable, retaining parent: HTTP "+str(code)+" "+body.get_string_from_utf8().left(240))
 		return
 	if packet_worker!=null:
@@ -603,11 +614,13 @@ func _poll_stream() -> void:
 		var response := stream_directory.path_join("responses").path_join(last_stream_request+".json")
 		if FileAccess.file_exists(response): path = response
 	if path==world_path and FileAccess.get_modified_time(path)==world_modified: return
+	if rejected_files.get(path,-1)==FileAccess.get_modified_time(path): return
 	packet_context = {"kind":"file","path":path,"requestId":last_stream_request,"baseWorldId":last_stream_world_id if path!=world_path else world.id,"modified":FileAccess.get_modified_time(path)}
 	packet_worker = Thread.new()
 	packet_worker.start(Data.read_json.bind(path))
 
 func _accept_packet(next: Dictionary, context: Dictionary) -> void:
+	if context.get("kind")=="file": rejected_files[context.path]=int(context.modified)
 	if next.is_empty(): return
 	if context.kind=="live" and int(context.serial)!=live_serial: return
 	if context.kind=="file" and context.requestId!=last_stream_request: return
@@ -645,6 +658,7 @@ func _accept_packet(next: Dictionary, context: Dictionary) -> void:
 			unique.resize(5)
 			unique.append(coarsest)
 		next_world["_terrainParents"] = unique
+	if context.kind=="live": last_live_applied_serial=int(context.serial)
 	var repeated_identity: bool = next_world.id==world.id
 	world_revision+=1
 	world = next_world
@@ -683,11 +697,9 @@ func _resolve_context(value: Dictionary) -> bool:
 		canonical_contexts[canonical.id] = canonical
 		known_context_id = canonical.id
 	elif value.has("versions"):
-		var hash := 2166136261
-		for byte in (str(value.id)+":canonical-context-1").to_utf8_buffer(): hash=((hash^byte)*16777619)&0xffffffff
-		var id := "%08x"%hash
-		canonical_contexts[id] = {"id":id,"grid":value.terrain,"fields":value.fields,"bounds":value.bounds,"source":value.terrain.source,"versions":value.versions}
-		known_context_id = id
+		# An offline world has no server context reference. Never invent the
+		# provider's content hash; the first live response supplies the real id.
+		known_context_id = ""
 	while canonical_contexts.size()>2: canonical_contexts.erase(canonical_contexts.keys()[0])
 	return true
 
@@ -705,7 +717,7 @@ func _quantile(values: Array[float], fraction: float) -> Variant:
 	return sorted[mini(int(fraction*(sorted.size()-1)),sorted.size()-1)]
 
 func _write_metrics() -> void:
-	var metrics := {"godot":Engine.get_version_info().string,"terrain3d":"1.0.2","backend":RenderingServer.get_current_rendering_method(),"adapter":RenderingServer.get_video_adapter_name(),"worldId":world.id,"source":world.terrain.source,"resolution":[get_viewport().get_visible_rect().size.x,get_viewport().get_visible_rect().size.y],"frames":frame_times.size(),"frameWallMs":{"p50":_quantile(frame_times,0.5),"p95":_quantile(frame_times,0.95),"p99":_quantile(frame_times,0.99)},"navigationFrameWallMs":{"p50":_quantile(all_frame_times,0.5),"p95":_quantile(all_frame_times,0.95),"p99":_quantile(all_frame_times,0.99),"max":_quantile(all_frame_times,1.0)},"cpuScriptMs":{"p50":_quantile(process_times,0.5),"p95":_quantile(process_times,0.95),"p99":_quantile(process_times,0.99)},"prepareMs":prepare_times,"uploadAndObjectsMs":upload_times,"videoMemoryBytes":Performance.get_monitor(Performance.RENDER_VIDEO_MEM_USED),"textureMemoryBytes":Performance.get_monitor(Performance.RENDER_TEXTURE_MEM_USED),"drawCalls":Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME),"objects":selected_candidates,"candidateCount":candidate_count,"cpuFrameMs":null,"cpuTimeNote":"cpuScriptMs measures this viewer script only; full engine CPU frame/pass timing is not available here.","gpuTimeMs":null,"gpuTimeNote":"GPU timestamps unavailable through this compatibility backend; frame wall time includes vsync and driver."}
+	var metrics := {"godot":Engine.get_version_info().string,"terrain3d":"1.0.2","backend":RenderingServer.get_current_rendering_method(),"adapter":RenderingServer.get_video_adapter_name(),"worldId":world.id,"source":world.terrain.source,"resolution":[get_viewport().get_visible_rect().size.x,get_viewport().get_visible_rect().size.y],"frames":frame_times.size(),"frameWallMs":{"p50":_quantile(frame_times,0.5),"p95":_quantile(frame_times,0.95),"p99":_quantile(frame_times,0.99)},"navigationFrameWallMs":{"p50":_quantile(all_frame_times,0.5),"p95":_quantile(all_frame_times,0.95),"p99":_quantile(all_frame_times,0.99),"max":_quantile(all_frame_times,1.0)},"cpuScriptMs":{"p50":_quantile(process_times,0.5),"p95":_quantile(process_times,0.95),"p99":_quantile(process_times,0.99)},"prepareMs":prepare_times,"uploadAndObjectsMs":upload_times,"regionCounts":region_counts,"preparationSnapshots":preparation_snapshots,"videoMemoryBytes":Performance.get_monitor(Performance.RENDER_VIDEO_MEM_USED),"textureMemoryBytes":Performance.get_monitor(Performance.RENDER_TEXTURE_MEM_USED),"drawCalls":Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME),"objects":selected_candidates,"candidateCount":candidate_count,"cpuFrameMs":null,"cpuTimeNote":"cpuScriptMs measures this viewer script only; full engine CPU frame/pass timing is not available here.","gpuRenderMs":{"p50":_quantile(gpu_render_times,0.5),"p95":_quantile(gpu_render_times,0.95),"p99":_quantile(gpu_render_times,0.99)},"cpuRenderMs":{"p50":_quantile(cpu_render_times,0.5),"p95":_quantile(cpu_render_times,0.95)},"gpuTimeNote":"RenderingServer measured viewport render time; null when the backend returns no positive samples. Frame wall time separately includes vsync, uploads and driver stalls."}
 	var path: String = options.get("--metrics","res://captures/metrics.json")
 	path = ProjectSettings.globalize_path(path)
 	DirAccess.make_dir_recursive_absolute(path.get_base_dir())

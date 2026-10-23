@@ -42,14 +42,15 @@ export function createSurfaceWorkerProcessor(prepare: (payload: unknown) => Prep
     const candidateBounds = { minX: Math.max(b.minX, cx - radius), maxX: Math.min(b.maxX, cx + radius), minZ: Math.max(b.minZ, cz - radius), maxZ: Math.min(b.maxZ, cz + radius) };
     const candidates = generateSurfaceCandidates(world, candidateBounds, { maxCandidates: job.maxCandidates ?? 100000, maxCheckedSlots: job.maxCheckedSlots });
     const contextId = world.canonicalContextRef!.id;
+    const parent = prepared.parentTerrain ? { ...prepared.parentTerrain, source: { ...prepared.parentTerrain.source, id: job.terrain.source.id, version: job.terrain.source.version } } : canonical.terrain;
     return { format: 'magna-surface-packet', version: 1,
       presentation: prepared.sourceMetadata?.presentation as SurfaceWorkerPacket['presentation'],
       urbanId: prepared.urbanId,
       world: { ...world, canonicalContext: job.region.knownContextId === contextId ? undefined : world.canonicalContext },
-      terrainParents: job.region.knownContextId === contextId ? undefined : [{ terrain: canonical.terrain, bounds: canonical.bounds, canonicalContextId: contextId }],
+      terrainParents: job.region.knownContextId === contextId ? undefined : [{ terrain: parent, bounds: canonical.bounds, canonicalContextId: contextId }],
       urban: job.region.knownSceneContextId === sceneContextId ? undefined : prepared.urban ?? {}, candidateColumns: packCandidateColumns(candidates), candidateBounds,
       source: { ...(job.region.knownSceneContextId === sceneContextId ? {} : prepared.sourceMetadata), originalSource: input.terrain.source, live: true, provider: binding?.providerId ?? prepared.providerId,
-        registrationBinding: binding, canonicalContextId: contextId, sceneContextId, sourceEpoch: job.sourceEpoch, sceneEpoch: job.sceneEpoch, request: { ...job.region } } };
+        compilation: { canonicalBuildCount }, registrationBinding: binding, canonicalContextId: contextId, sceneContextId, sourceEpoch: job.sourceEpoch, sceneEpoch: job.sceneEpoch, request: { ...job.region } } };
   };
   return {
     /** Object result is exposed only for explicit synchronous Node/offline compatibility. */
@@ -62,6 +63,12 @@ export function createSurfaceWorkerProcessor(prepare: (payload: unknown) => Prep
           if (next.registrationBinding) {
             const t = next.input.terrain, b = next.registrationBinding;
             if (t.width !== t.height || registrationFieldFingerprint({ width: t.spacingM * t.width, n: t.width, data: t.heights }) !== b.canonicalFieldFingerprint) throw new Error('Canonical surface input does not match the registered field fingerprint');
+            if (next.parentTerrain) {
+              const p = next.parentTerrain;
+              if (p.width !== b.n || p.height !== b.n || p.source.id !== b.expectedSourceId || p.source.version !== b.sourceVersion
+                || registrationFieldFingerprint({ width: p.spacingM * p.width, n: p.width, data: p.heights }) !== b.fieldFingerprint) throw new Error('Parent terrain differs from the exact registered control field');
+              assertRefinementTerrainRegion(p, { minX: 0, minZ: 0, maxX: b.width, maxZ: b.width });
+            }
           }
           prepared = next; session = message; canonical = undefined; canonicalBuildCount = 0;
           if (prepared.urban && !prepared.urbanId) prepared.urbanId = magnaUrbanIdentity(prepared.urban as UrbanColumns | UrbanPacket);
