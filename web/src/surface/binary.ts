@@ -1,5 +1,6 @@
 /** MUFSURF1: a small JSON manifest followed by aligned little-endian typed arrays.
  * Numeric fields never become millions of decimal JSON strings. */
+import { SURFACE_PACKET_MAX_BYTES } from './limits';
 const MAGIC = 'MUFSURF1';
 const TYPES = {
   f32: Float32Array, f64: Float64Array, i32: Int32Array,
@@ -30,6 +31,8 @@ export function encodeSurfaceBinary(value: unknown, options: { maxBytes?: number
     }
     if (typeof node === 'number' && !Number.isFinite(node)) throw new Error(`Non-finite metadata at ${path.join('.')}; place numeric fields in typed arrays`);
     if (node && typeof node === 'object') {
+      if (!Array.isArray(node) && Object.getPrototypeOf(node) !== Object.prototype && Object.getPrototypeOf(node) !== null) throw new Error('Surface metadata must use plain objects, arrays or supported typed arrays');
+      if (Object.getOwnPropertySymbols(node).length) throw new Error('Surface metadata cannot contain symbol keys');
       if (parents.has(node)) throw new Error('Cyclic surface metadata'); parents.add(node);
       let result: unknown;
       if (Array.isArray(node)) result = node.map((entry, i) => walk(entry, [...path, i]));
@@ -50,7 +53,7 @@ export function encodeSurfaceBinary(value: unknown, options: { maxBytes?: number
   const header = new TextEncoder().encode(JSON.stringify(manifest));
   if (header.length > 16 * 1024 * 1024) throw new RangeError('Surface metadata exceeds 16 MiB; encode numeric source layers as typed arrays');
   const start = align(16 + header.length), total = start + payloadLength;
-  if (total > (options.maxBytes ?? 1024 ** 3) || total > 0xffffffff) throw new RangeError('Surface binary exceeds memory budget');
+  if (total > (options.maxBytes ?? SURFACE_PACKET_MAX_BYTES) || total > 0xffffffff) throw new RangeError('Surface binary exceeds memory budget');
   const bytes = new Uint8Array(total), view = new DataView(bytes.buffer);
   bytes.set(new TextEncoder().encode(MAGIC)); view.setUint32(8, header.length, true); view.setUint32(12, payloadLength, true); bytes.set(header, 16);
   for (const block of blocks) {
@@ -68,7 +71,7 @@ export function isSurfaceBinary(bytes: Uint8Array): boolean {
 }
 export function decodeSurfaceBinary<T = unknown>(bytes: Uint8Array, options: { maxBytes?: number } = {}): T {
   if (!isSurfaceBinary(bytes)) throw new Error('Expected MUFSURF1 binary surface');
-  if (bytes.byteLength > (options.maxBytes ?? 1024 ** 3)) throw new RangeError('Surface binary exceeds read memory budget');
+  if (bytes.byteLength > (options.maxBytes ?? SURFACE_PACKET_MAX_BYTES)) throw new RangeError('Surface binary exceeds read memory budget');
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength), manifestLength = view.getUint32(8, true), payloadLength = view.getUint32(12, true);
   const start = align(16 + manifestLength);
   if (manifestLength > 16 * 1024 * 1024 || start > bytes.length || start + payloadLength !== bytes.length) throw new Error('Invalid surface binary lengths');
@@ -81,7 +84,7 @@ export function decodeSurfaceBinary<T = unknown>(bytes: Uint8Array, options: { m
     const Ctor = TYPES[item.dtype], length = item.length, offset = item.offset, count = length * Ctor.BYTES_PER_ELEMENT;
     if (!Number.isSafeInteger(length) || length < 0 || !Number.isSafeInteger(offset) || offset < 0 || offset % Ctor.BYTES_PER_ELEMENT || offset + count > payloadLength) throw new Error('Surface array outside payload');
     allocated += count;
-    if (allocated > (options.maxBytes ?? 1024 ** 3)) throw new RangeError('Decoded surface arrays exceed memory budget');
+    if (allocated > (options.maxBytes ?? SURFACE_PACKET_MAX_BYTES)) throw new RangeError('Decoded surface arrays exceed memory budget');
     const key = JSON.stringify(item.path); if (paths.has(key)) throw new Error('Duplicate surface array path'); paths.add(key);
     let parent: any = manifest.value;
     for (const segment of item.path.slice(0, -1)) {
