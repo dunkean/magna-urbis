@@ -328,7 +328,7 @@ static func build_urban(packet: Dictionary, world: Dictionary, origin: Dictionar
 	var vertices := PackedVector3Array()
 	var normals := PackedVector3Array()
 	var roads := PackedVector3Array()
-	var result := {"vertices":vertices,"normals":normals,"roadVertices":roads,"anchor":origin.duplicate(),"buildingIds":[],"materialGroups":[],"omittedBuildingIds":[],"supportConflicts":[],"maximumSupportDeltaM":0.0,
+	var result := {"vertices":vertices,"normals":normals,"roadVertices":roads,"anchor":origin.duplicate(),"buildingIds":[],"materialGroups":[],"omittedBuildingIds":[],"supportConflicts":[],"supportObservations":[],"maximumSupportDeltaM":0.0,
 		"nativeBuildings":0,"proxyBuildings":0,"skippedProxies":0,"roadChunks":0,"roadPieces":0,"skippedDegenerates":0,"budgetLimited":false,"buildMs":0.0,"cityIdentity":city_identity(packet)}
 	var window := _window(focus,view_width)
 	if window.is_empty() or not _valid_origin(origin): return result
@@ -381,21 +381,37 @@ static func build_urban(packet: Dictionary, world: Dictionary, origin: Dictionar
 			vertices.append_array(PackedVector3Array(local_points))
 			normals.append_array(PackedVector3Array([normal,normal,normal]))
 		if vertices.size()>before:
-			# Read-only constraint diagnostic: foundations, stilts and edited source
-			# heights remain authoritative. Never translate native triangles to fit.
+			# groundHeightM is a native construction plane, not a promise that
+			# every terrain point under its footprint has exactly that elevation.
+			# Only explicit accepted bounds can establish a constraint violation.
 			var support := _finite(building.get("groundHeightM"))
-			var low := INF; var high := -INF; var support_samples := 0
+			var low := INF; var high := -INF; var baseline_low := INF; var baseline_high := -INF
+			var refined_low := INF; var refined_high := -INF; var support_samples := 0; var refined_samples := 0
+			var accepted_grid: Dictionary = world.get("_acceptedSourceTerrain",{})
+			var coupling_proven := not accepted_grid.is_empty()
+			if accepted_grid.is_empty():
+				var layers: Array = world.get("_heightLayers",prepare_height_layers(world))
+				if layers.size()>1: accepted_grid=layers.back().terrain
 			if is_finite(support):
 				for shape in building.get("footprint",[]):
 					for point in shape.get("outer",[]):
 						if support_samples>=128: break
-						var bed_height := raw_height_at(world,float(point.x),float(point.y))
-						if is_finite(bed_height):
-							var delta := bed_height-support
-							low=minf(low,delta); high=maxf(high,delta); support_samples+=1
+						var wx := float(point.x); var wz := float(point.y)
+						var bed_height := raw_height_at(world,wx,wz)
+						if not is_finite(bed_height): continue
+						low=minf(low,bed_height-support); high=maxf(high,bed_height-support); support_samples+=1
+						if not accepted_grid.is_empty():
+							var baseline := sample_height(accepted_grid,wx,wz)
+							if is_finite(baseline):
+								baseline_low=minf(baseline_low,baseline); baseline_high=maxf(baseline_high,baseline)
+								refined_low=minf(refined_low,bed_height-baseline); refined_high=maxf(refined_high,bed_height-baseline); refined_samples+=1
 				if support_samples>0:
 					result.maximumSupportDeltaM=maxf(float(result.maximumSupportDeltaM),maxf(absf(low),absf(high)))
-					if maxf(absf(low),absf(high))>0.05: result.supportConflicts.append({"buildingId":building.get("id",""),"sourceGroundHeightM":support,"minimumBedDeltaM":low,"maximumBedDeltaM":high,"samples":support_samples,"resolution":"native constraints preserved; potential support conflict"})
+					result.supportObservations.append({"buildingId":building.get("id",""),"sourceGroundHeightM":support,"sourceFootprintBedRangeM":[baseline_low,baseline_high] if refined_samples>0 else null,
+						"bedMinusConstructionPlaneRangeM":[low,high],"refinementDeltaRangeM":[refined_low,refined_high] if refined_samples>0 else null,"samples":support_samples,
+						"refinementReference":"accepted-source-capture" if coupling_proven else "coarsest-retained-parent" if refined_samples>0 else "unavailable",
+						"acceptedSourceCouplingProven":coupling_proven,"sourceConstraintChecks":"unavailable: exported construction plane has no accepted min/max bounds",
+						"resolution":"native source constraints and triangles preserved; natural footprint relief is not a violation"})
 			result.buildingIds.append(building.get("id",""))
 			if proxy: result.proxyBuildings+=1
 			else: result.nativeBuildings+=1

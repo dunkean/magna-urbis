@@ -50,5 +50,5 @@ func _initialize():
 	check(not D.validate_world(bad_world),"reject unknown reconstruction")
 	bad_world=world.duplicate(false); bad_world.terrain=world.terrain.duplicate(false); bad_world.terrain.heights=123
 	check(not D.validate_world(bad_world),"malformed numeric grid column rejected without indexing error")
-	print(JSON.stringify({"failures":errors,"nativeBuildings":urban.nativeBuildings,"vertices":urban.vertices.size(),"sourceDegenerateTriangles":urban.skippedDegenerates,"materialGroups":urban.materialGroups.size(),"supportConflicts":urban.supportConflicts.size(),"decodeBytes":bytes.size()}))
+	print(JSON.stringify({"failures":errors,"nativeBuildings":urban.nativeBuildings,"vertices":urban.vertices.size(),"sourceDegenerateTriangles":urban.skippedDegenerates,"materialGroups":urban.materialGroups.size(),"supportConflicts":urban.supportConflicts.size(),"supportObservations":urban.supportObservations.size(),"decodeBytes":bytes.size()}))
 	quit(0 if errors.is_empty() else 1)
