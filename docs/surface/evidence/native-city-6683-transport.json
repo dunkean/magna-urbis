@@ -1,0 +1,53 @@
+{
+  "sourceFile": "D:/workspace/self/magna-urbis/web/out/city-perf/native/city-01-river-plain-l-plans.json",
+  "sourceSha256": "78b9a0eb1d19bb9c553dcf632af113f8e16c0cd32347e1bec93a889f78facd92",
+  "originalNativeCount": 6683,
+  "selectedNativeCount": 6683,
+  "triangles": 236140,
+  "materials": 39,
+  "firstBuildingId": "layout-f9dab5910f08a8a2/block-2e866fd751005add/parcel-d89d0e7df9d9f197/building",
+  "lastBuildingId": "layout-f9dab5910f08a8a2/block-57a50a43592a95ad/parcel-11667eaa073b6c14/building",
+  "manifestContributions": {
+    "buildingsMetadataBytes": 7476773,
+    "occupationMetadataBytes": 6081024,
+    "candidateIDsBytes": 2988891
+  },
+  "cases": [
+    {
+      "candidateTransportStressCount": 0,
+      "manifestBytes": 13567344,
+      "payloadBytes": 30957152,
+      "arrayDescriptors": 13,
+      "encoded": true,
+      "totalBytes": 44524512,
+      "IDRoundtripExact": true,
+      "urbanDTORoundtripExact": true,
+      "nativeSourceLevelsExact": true,
+      "nativeMaterialCatalogExact": true,
+      "encodeMs": 3835.8001000000004
+    },
+    {
+      "candidateTransportStressCount": 100000,
+      "manifestBytes": 16557231,
+      "payloadBytes": 35157152,
+      "arrayDescriptors": 20,
+      "encoded": true,
+      "totalBytes": 51714400,
+      "IDRoundtripExact": true,
+      "urbanDTORoundtripExact": true,
+      "nativeSourceLevelsExact": true,
+      "nativeMaterialCatalogExact": true,
+      "encodeMs": 3355.4354999999996
+    }
+  ],
+  "loadAndPackMs": 4531.7164999999995,
+  "totalMs": 14318.6591,
+  "sourceFileUnchanged": true,
+  "peakRssBytes": 1488461824,
+  "limitations": [
+    "Read-only export of all6683 actual existing native architectural plans, no generation or translation.",
+    "Candidate100k case is synthetic transport stress only, not generated physical population.",
+    "Urban-only envelope: a complete terrain world adds further manifest/payload overhead.",
+    "No GPU, live renderer or all-city frame-time claim."
+  ]
+}
