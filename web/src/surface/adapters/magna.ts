@@ -16,7 +16,7 @@ export const metricToMagna = (x: number, altitude: number, z: number): [number, 
 export function terrainDataToGrid(data: TerrainData, source: SourceIdentity): TerrainGrid {
   const spacingM = data.width / data.resolution;
   return { width: data.resolution, height: data.resolution, originX: data.x + spacingM / 2,
-    originZ: data.y + spacingM / 2, spacingM, heights: data.height.slice(), source: { ...source } };
+    originZ: data.y + spacingM / 2, spacingM, heights: data.height.slice(), source: { ...source }, reconstruction: 'bilinear-samples' };
 }
 
 export interface InfiniteTerrainReply { terrain: TerrainData; source: SourceIdentity }
@@ -102,7 +102,7 @@ export function exportMagnaCity(world: World) {
 export function worldToSurfaceInput(world: World, source: SourceIdentity, climate: ClimateValues = MAGNA_CLIMATE_PRESETS.temperate): SurfaceCompileInput {
   const grid = world.terrain.height;
   const terrain = { width: grid.w, height: grid.h, originX: grid.cell / 2, originZ: grid.cell / 2,
-    spacingM: grid.cell, heights: grid.data.slice(), source: { ...source } };
+    spacingM: grid.cell, heights: grid.data.slice(), source: { ...source }, reconstruction: 'bilinear-samples' as const };
   return { seed: parseInt(hashString(world.seed), 16), terrain, occupation: occupationFromMagnaWorld(terrain, world),
     climate: magnaClimateToSurface(climate, `magna-world-climate:${JSON.stringify(climate)}`),
     hydrology: { version: source.version, provenance: 'Magna canonical routing from depression-filled source; heights retain the source physical terrain', boundary: 'external-inflows',
@@ -134,7 +134,7 @@ export function decorToSurfaceInput(decor: Decor): SurfaceCompileInput & { sourc
     waterClass[i] = 0;
   }
   return { seed: parseInt(hashString(decor.meta.seed), 16), terrain: { width: r.n, height: r.n,
-    originX: cell / 2, originZ: cell / 2, spacingM: cell, heights: r.height.slice(),
+    originX: cell / 2, originZ: cell / 2, spacingM: cell, heights: r.height.slice(), reconstruction: 'bilinear-samples',
     source: { id: decor.meta.id, version: decor.meta.created, sourceLOD: 0, sourceLODKnown: false,
       nativeSpacingM: display?.sourceCell ?? cell,
       provenance: `Retained Magna settlement raster (may be sampled from the displayed B-spline control grid); seed=${decor.meta.seed}; query=${decor.meta.query}; crop=${JSON.stringify(decor.meta.pipeline?.crop ?? null)}; offline capture (source LOD unrecorded)` } },
