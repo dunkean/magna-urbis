@@ -71,9 +71,11 @@ export function archiveSurfaceSource<T extends Record<string, unknown>>(source: 
     }
     parents.delete(value);
     if (path.length && !(path.length === 1 && path[0] === 'meta') && !typed && size > LIMIT) {
-      attachments.splice(start);
       const json = losslessJson(value);
-      if (json !== undefined) return attach(path, 'json-utf8', utf8.encode(json));
+      if (json !== undefined) {
+        attachments.splice(start);
+        return attach(path, 'json-utf8', utf8.encode(json));
+      }
     }
     return { value: out, size, typed };
   };
