@@ -290,7 +290,9 @@ static func prepare(world: Dictionary, origin: Dictionary, view_width: float, se
 	var terrain: Dictionary = world.terrain
 	var spacing := display_spacing(terrain,view_width)
 	if display_source.is_empty(): display_source=build_display_source(world,spacing)
-	var size := 512
+	# One complete Terrain3D region is sufficient; the unchanged coverage loop
+	# expands it whenever the visible window needs more physical support.
+	var size := 256
 	while size*spacing<view_width*2.0 and size<2048: size*=2
 	# Region addresses stay local and exactly aligned to Terrain3D's region grid.
 	var local_start := Vector3(-size*0.5*spacing,0.0,-size*0.5*spacing)
