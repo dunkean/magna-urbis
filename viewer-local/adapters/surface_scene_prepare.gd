@@ -26,6 +26,8 @@ static func prepare(request: Dictionary) -> Dictionary:
 	var started := Time.get_ticks_usec()
 	var result := Data.prepare(request.world,request.origin,request.width,request.generation,request.packet,request.skipContext,request.displaySource,request.skipHeight,request.sceneRequest)
 	result.worldRevision=request.get("worldRevision",0)
+	for key in ["physicalLineage","contextKey","heightKey","liveSerial","presentationMode"]:
+		if request.has(key):result[key]=request[key]
 	result.geometryDetail=Detail.prepare(request.world)
 	var population_packet:Dictionary=Detail.population_packet(request.packet,request.world)
 	result.unsupportedTreeCount=population_packet._unsupportedTreeIDs.size()
