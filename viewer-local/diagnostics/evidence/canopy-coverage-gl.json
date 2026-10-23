@@ -1,0 +1,48 @@
+{
+  "renderer": "NVIDIA GeForce RTX 5090",
+  "results": [
+    {
+      "absoluteError": 0.000313661638827512,
+      "actualCoverage": 0.0403079014459564,
+      "expectedCoverage": 0.0399942398071289,
+      "footprintM": 0.25
+    },
+    {
+      "absoluteError": 0.00328861703620653,
+      "actualCoverage": 0.0432828568433354,
+      "expectedCoverage": 0.0399942398071289,
+      "footprintM": 2.0
+    },
+    {
+      "absoluteError": 0.00494551232637619,
+      "actualCoverage": 0.0449397521335051,
+      "expectedCoverage": 0.0399942398071289,
+      "footprintM": 4.0
+    },
+    {
+      "absoluteError": 0.0000386956897564517,
+      "actualCoverage": 0.0399555441173725,
+      "expectedCoverage": 0.0399942398071289,
+      "footprintM": 6.0
+    },
+    {
+      "absoluteError": 0.000312740438518588,
+      "actualCoverage": 0.0396814993686103,
+      "expectedCoverage": 0.0399942398071289,
+      "footprintM": 9.0
+    },
+    {
+      "absoluteError": 0.00067266836239277,
+      "actualCoverage": 0.0393215714447361,
+      "expectedCoverage": 0.0399942398071289,
+      "footprintM": 12.0
+    },
+    {
+      "absoluteError": 0.01716870620014,
+      "actualCoverage": 0.0228255336069889,
+      "expectedCoverage": 0.0399942398071289,
+      "footprintM": 40.0
+    }
+  ],
+  "version": "canopy-r1"
+}

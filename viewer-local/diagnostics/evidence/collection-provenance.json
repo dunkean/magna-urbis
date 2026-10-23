@@ -1,0 +1,367 @@
+{
+  "format": "surface-existing-evidence-collection",
+  "version": 1,
+  "createdUtc": "2026-10-23T15:54:28.636499+00:00",
+  "rootHeadReadOnly": "e27e8310d67380c4d4f83fe1002c493bdb45a20a",
+  "policy": "Initial historical collection read/copied/hashed existing files only. After root confirmed V2 GPU stopped, ONLY the unchanged root normal_frame_probe.gd was explicitly authorized and newly run under Forward+/Vulkan and Compatibility/OpenGL. All outputs are in the adapters ignored out directory; no root tracked code, HEAD, probe or shader edits.",
+  "canopy": {
+    "persistedReportFound": true,
+    "originalReportPath": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-model-2026-10-23\\web\\out\\surface\\canopy-probe\\report.json",
+    "maximumAbsoluteError": 0.01716870620014,
+    "maximumErrorPercentagePoints": 1.716870620014,
+    "worstFootprintM": 40.0,
+    "rendererAdapterFromReport": "NVIDIA GeForce RTX 5090",
+    "renderingMethodFromStandaloneProject": "gl_compatibility",
+    "scope": "Existing isolated unlit canopy alpha-coverage probe, not photometric forest or end-to-end tour evidence.",
+    "sourceDifferenceInterpretation": "The original coverage probe, canopy alpha include and canopy CPU mask builder match frozen root after LF normalization. Population adds an optional geometry_enabled flag defaulting true. The instance shader changed color/presentation code; this historical alpha-coverage result is not claimed to validate those color changes."
+  },
+  "normalFrame": {
+    "persistedReportFound": false,
+    "originalReportPath": null,
+    "previouslyClaimedMaximumEncodedError": 0,
+    "claimedValueVerifiedByPersistedArtifact": false,
+    "probeSourcePath": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-viewer-2026-10-23\\viewer-local\\diagnostics\\normal_frame_probe.gd",
+    "searched": "adapters/model/viewer worktree out/surface and viewer-local/captures including ignored JSON/log files, plus filenames of text/stdout outputs",
+    "finding": "Probe prints JSON to stdout and has no report-file writer. No saved normal-frame result was found; do not fabricate a result from the claim or source code.",
+    "historicalReportFindingConfirmedByViewerAgent": "Historical error0 existed only in tool stdout; no persisted normal-frame report was written.",
+    "newSeparateMeasurements": [
+      {
+        "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-adapters-2026-10-23\\web\\out\\surface\\evidence-collect\\normal-new-forward.json",
+        "maximumEncodedError": 0.0,
+        "passed": true,
+        "rendererInitialization": "Vulkan 1.4.325 - Forward+ - Using Device #0: NVIDIA - NVIDIA GeForce RTX 4090"
+      },
+      {
+        "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-adapters-2026-10-23\\web\\out\\surface\\evidence-collect\\normal-new-gl.json",
+        "maximumEncodedError": 0.0,
+        "passed": true,
+        "rendererInitialization": "OpenGL API 3.3.0 NVIDIA 591.86 - Compatibility - Using Device: NVIDIA - NVIDIA GeForce RTX 5090"
+      }
+    ],
+    "sourceUnchangedDuringNewMeasurements": true
+  },
+  "originalVsFrozenRoot": [
+    {
+      "originalStandaloneSource": "probe.gd",
+      "frozenRootSource": "diagnostics/canopy_probe.gd",
+      "byteIdentical": false,
+      "lfNormalizedIdentical": true
+    },
+    {
+      "originalStandaloneSource": "adapters/surface_canopy.gd",
+      "frozenRootSource": "adapters/surface_canopy.gd",
+      "byteIdentical": false,
+      "lfNormalizedIdentical": true
+    },
+    {
+      "originalStandaloneSource": "adapters/surface_population.gd",
+      "frozenRootSource": "adapters/surface_population.gd",
+      "byteIdentical": false,
+      "lfNormalizedIdentical": false
+    },
+    {
+      "originalStandaloneSource": "shaders/canopy.gdshaderinc",
+      "frozenRootSource": "shaders/canopy.gdshaderinc",
+      "byteIdentical": false,
+      "lfNormalizedIdentical": true
+    },
+    {
+      "originalStandaloneSource": "shaders/canopy_instance.gdshader",
+      "frozenRootSource": "shaders/canopy_instance.gdshader",
+      "byteIdentical": false,
+      "lfNormalizedIdentical": false
+    }
+  ],
+  "files": [
+    {
+      "role": "existing GPU result",
+      "originalPath": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-model-2026-10-23\\web\\out\\surface\\canopy-probe\\report.json",
+      "collectedPath": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-adapters-2026-10-23\\web\\out\\surface\\evidence-collect\\canopy-original\\report.json",
+      "bytes": 1289,
+      "sha256": "0b4847065757ab15f1594314c738037b0a83c0884cd8a4c662677204aa15c8b4",
+      "lfNormalizedSha256": "0b4847065757ab15f1594314c738037b0a83c0884cd8a4c662677204aa15c8b4",
+      "sourceFileLastWriteUtc": "2026-10-23T14:36:34.184192+00:00"
+    },
+    {
+      "role": "original standalone probe source/dependency",
+      "originalPath": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-model-2026-10-23\\web\\out\\surface\\canopy-probe\\probe.gd",
+      "collectedPath": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-adapters-2026-10-23\\web\\out\\surface\\evidence-collect\\canopy-original\\probe.gd",
+      "bytes": 7072,
+      "sha256": "c760cb541c681e693c9c26c492240eb906ab1e9d07e5c075832aa25ac43fa494",
+      "lfNormalizedSha256": "c760cb541c681e693c9c26c492240eb906ab1e9d07e5c075832aa25ac43fa494",
+      "sourceFileLastWriteUtc": "2026-10-23T14:36:19.947793+00:00"
+    },
+    {
+      "role": "original standalone probe source/dependency",
+      "originalPath": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-model-2026-10-23\\web\\out\\surface\\canopy-probe\\project.godot",
+      "collectedPath": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-adapters-2026-10-23\\web\\out\\surface\\evidence-collect\\canopy-original\\project.godot",
+      "bytes": 99,
+      "sha256": "9402d3f9a9a91a74c1b328df55b3e6d84ef2cdfe3f51876b6e7d12a66d0ecc38",
+      "lfNormalizedSha256": "c8411707428b2985dd9d4476e4b8571551ae87588cc5020c08d403114dd8bdec",
+      "sourceFileLastWriteUtc": "2026-10-23T13:45:17.971271+00:00"
+    },
+    {
+      "role": "original standalone probe source/dependency",
+      "originalPath": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-model-2026-10-23\\web\\out\\surface\\canopy-probe\\adapters\\surface_canopy.gd",
+      "collectedPath": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-adapters-2026-10-23\\web\\out\\surface\\evidence-collect\\canopy-original\\adapters\\surface_canopy.gd",
+      "bytes": 4923,
+      "sha256": "0455170b019463b7dc0643c774dbca602b3471080363e5a1209197c1e0671673",
+      "lfNormalizedSha256": "0455170b019463b7dc0643c774dbca602b3471080363e5a1209197c1e0671673",
+      "sourceFileLastWriteUtc": "2026-10-23T14:36:19.947793+00:00"
+    },
+    {
+      "role": "original standalone probe source/dependency",
+      "originalPath": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-model-2026-10-23\\web\\out\\surface\\canopy-probe\\adapters\\surface_population.gd",
+      "collectedPath": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-adapters-2026-10-23\\web\\out\\surface\\evidence-collect\\canopy-original\\adapters\\surface_population.gd",
+      "bytes": 3364,
+      "sha256": "c7df21c5c5cbb75d9f01a5f6cd23ab222740ac0c68d88bbea1197d22f665e8d9",
+      "lfNormalizedSha256": "e317a2a8943a20113e0804984ef2d143815abdd7fcdbf5dfde9a4ff72f805c15",
+      "sourceFileLastWriteUtc": "2026-10-23T14:36:19.947793+00:00"
+    },
+    {
+      "role": "original standalone probe source/dependency",
+      "originalPath": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-model-2026-10-23\\web\\out\\surface\\canopy-probe\\shaders\\canopy.gdshaderinc",
+      "collectedPath": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-adapters-2026-10-23\\web\\out\\surface\\evidence-collect\\canopy-original\\shaders\\canopy.gdshaderinc",
+      "bytes": 3542,
+      "sha256": "062fa2b9c5c780c8b0cb3eb2c098ac3de14de00b4e8e260d3438895131a3c620",
+      "lfNormalizedSha256": "062fa2b9c5c780c8b0cb3eb2c098ac3de14de00b4e8e260d3438895131a3c620",
+      "sourceFileLastWriteUtc": "2026-10-23T13:42:17.367886+00:00"
+    },
+    {
+      "role": "original standalone probe source/dependency",
+      "originalPath": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-model-2026-10-23\\web\\out\\surface\\canopy-probe\\shaders\\canopy_instance.gdshader",
+      "collectedPath": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-adapters-2026-10-23\\web\\out\\surface\\evidence-collect\\canopy-original\\shaders\\canopy_instance.gdshader",
+      "bytes": 629,
+      "sha256": "695bf5cf66dfd5f9129290753ad319e639801a101d0bf075209a3c1ce73399fd",
+      "lfNormalizedSha256": "695bf5cf66dfd5f9129290753ad319e639801a101d0bf075209a3c1ce73399fd",
+      "sourceFileLastWriteUtc": "2026-10-23T13:42:17.367886+00:00"
+    },
+    {
+      "role": "current frozen root source snapshot; no GPU rerun",
+      "originalPath": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\viewer-local\\diagnostics\\normal_frame_probe.gd",
+      "collectedPath": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-adapters-2026-10-23\\web\\out\\surface\\evidence-collect\\root-readonly-snapshot\\diagnostics\\normal_frame_probe.gd",
+      "bytes": 1726,
+      "sha256": "7699113ca81154e390482838eefc0cece8b8060b83f8f314d6d043876df13b36",
+      "lfNormalizedSha256": "230fe73757572d4a30f23c5994355ec55a1dd5accdf2f083d6deddc9effc68ae",
+      "sourceFileLastWriteUtc": "2026-10-23T14:40:31.612786+00:00"
+    },
+    {
+      "role": "current frozen root source snapshot; no GPU rerun",
+      "originalPath": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\viewer-local\\diagnostics\\canopy_probe.gd",
+      "collectedPath": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-adapters-2026-10-23\\web\\out\\surface\\evidence-collect\\root-readonly-snapshot\\diagnostics\\canopy_probe.gd",
+      "bytes": 7172,
+      "sha256": "9f670a55cce5f177d879d2ad5ae6b5e46255c0198c60e3ad50b82ec931a28cc8",
+      "lfNormalizedSha256": "c760cb541c681e693c9c26c492240eb906ab1e9d07e5c075832aa25ac43fa494",
+      "sourceFileLastWriteUtc": "2026-10-23T14:40:31.381967+00:00"
+    },
+    {
+      "role": "current frozen root source snapshot; no GPU rerun",
+      "originalPath": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\viewer-local\\shaders\\normal_frame.gdshaderinc",
+      "collectedPath": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-adapters-2026-10-23\\web\\out\\surface\\evidence-collect\\root-readonly-snapshot\\shaders\\normal_frame.gdshaderinc",
+      "bytes": 260,
+      "sha256": "bbbdd7af06bbc462ac145b1ec4192f51b81a97f50186576be34afcc7dde30477",
+      "lfNormalizedSha256": "b295e8dc760c94fc083bfe92f9a680aadf438409042f1312903a65031bba74c0",
+      "sourceFileLastWriteUtc": "2026-10-23T14:15:47.657542+00:00"
+    },
+    {
+      "role": "current frozen root source snapshot; no GPU rerun",
+      "originalPath": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\viewer-local\\shaders\\canopy.gdshaderinc",
+      "collectedPath": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-adapters-2026-10-23\\web\\out\\surface\\evidence-collect\\root-readonly-snapshot\\shaders\\canopy.gdshaderinc",
+      "bytes": 3602,
+      "sha256": "8a27b0f5f52806cade4ac4b5f78c0b91a337ba6738f076862624995a700b899b",
+      "lfNormalizedSha256": "062fa2b9c5c780c8b0cb3eb2c098ac3de14de00b4e8e260d3438895131a3c620",
+      "sourceFileLastWriteUtc": "2026-10-23T13:48:54.577201+00:00"
+    },
+    {
+      "role": "current frozen root source snapshot; no GPU rerun",
+      "originalPath": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\viewer-local\\shaders\\canopy_instance.gdshader",
+      "collectedPath": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-adapters-2026-10-23\\web\\out\\surface\\evidence-collect\\root-readonly-snapshot\\shaders\\canopy_instance.gdshader",
+      "bytes": 816,
+      "sha256": "848d09d37dd227128f45873d1a82f3012eb5a47b503f17d7eccf1142bef46af5",
+      "lfNormalizedSha256": "369f8da81c2e0dd4ff3a37a7caa2afa7db08c2d60efa1c36b511695ddccbc9a6",
+      "sourceFileLastWriteUtc": "2026-10-23T14:44:27.096684+00:00"
+    },
+    {
+      "role": "current frozen root source snapshot; no GPU rerun",
+      "originalPath": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\viewer-local\\adapters\\surface_canopy.gd",
+      "collectedPath": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-adapters-2026-10-23\\web\\out\\surface\\evidence-collect\\root-readonly-snapshot\\adapters\\surface_canopy.gd",
+      "bytes": 5004,
+      "sha256": "84e82530e0b38ea935e9041ebbd28991bd10701140ad01db3ebca2bd0ddf8fe4",
+      "lfNormalizedSha256": "0455170b019463b7dc0643c774dbca602b3471080363e5a1209197c1e0671673",
+      "sourceFileLastWriteUtc": "2026-10-23T14:40:31.379956+00:00"
+    },
+    {
+      "role": "current frozen root source snapshot; no GPU rerun",
+      "originalPath": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\viewer-local\\adapters\\surface_population.gd",
+      "collectedPath": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-adapters-2026-10-23\\web\\out\\surface\\evidence-collect\\root-readonly-snapshot\\adapters\\surface_population.gd",
+      "bytes": 3553,
+      "sha256": "61435bc8026d75f5ed1364addc84fa5e5493ca1712e317dced3344df26e210d6",
+      "lfNormalizedSha256": "6cb0d5ea517498edf60cb9adfde95c058a79538fec6688ba808898a9f56c84fa",
+      "sourceFileLastWriteUtc": "2026-10-23T14:40:31.379956+00:00"
+    },
+    {
+      "role": "existing normal probe source only; output report not found",
+      "originalPath": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-viewer-2026-10-23\\viewer-local\\diagnostics\\normal_frame_probe.gd",
+      "collectedPath": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-adapters-2026-10-23\\web\\out\\surface\\evidence-collect\\viewer-old-source\\diagnostics\\normal_frame_probe.gd",
+      "bytes": 1693,
+      "sha256": "230fe73757572d4a30f23c5994355ec55a1dd5accdf2f083d6deddc9effc68ae",
+      "lfNormalizedSha256": "230fe73757572d4a30f23c5994355ec55a1dd5accdf2f083d6deddc9effc68ae",
+      "sourceFileLastWriteUtc": "2026-10-23T14:18:23.418727+00:00"
+    },
+    {
+      "role": "existing normal probe source only; output report not found",
+      "originalPath": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-viewer-2026-10-23\\viewer-local\\shaders\\normal_frame.gdshaderinc",
+      "collectedPath": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-adapters-2026-10-23\\web\\out\\surface\\evidence-collect\\viewer-old-source\\shaders\\normal_frame.gdshaderinc",
+      "bytes": 255,
+      "sha256": "b295e8dc760c94fc083bfe92f9a680aadf438409042f1312903a65031bba74c0",
+      "lfNormalizedSha256": "b295e8dc760c94fc083bfe92f9a680aadf438409042f1312903a65031bba74c0",
+      "sourceFileLastWriteUtc": "2026-10-23T13:56:58.655110+00:00"
+    },
+    {
+      "role": "new explicitly authorized normal GPU probe output",
+      "originalPath": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-adapters-2026-10-23\\web\\out\\surface\\evidence-collect\\normal-new-forward.stdout.log",
+      "collectedPath": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-adapters-2026-10-23\\web\\out\\surface\\evidence-collect\\normal-new-forward.stdout.log",
+      "bytes": 357,
+      "sha256": "f057babf2ac398d30d128a76c8e6977931f407e64466ec9daebafe838184972c",
+      "lfNormalizedSha256": "241930fb101a2b5996d12de42db2d84e1691816af14e818e9b047c83a9c4bfc9"
+    },
+    {
+      "role": "new explicitly authorized normal GPU probe output",
+      "originalPath": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-adapters-2026-10-23\\web\\out\\surface\\evidence-collect\\normal-new-forward.stderr.log",
+      "collectedPath": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-adapters-2026-10-23\\web\\out\\surface\\evidence-collect\\normal-new-forward.stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "lfNormalizedSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "role": "new explicitly authorized normal GPU probe output",
+      "originalPath": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-adapters-2026-10-23\\web\\out\\surface\\evidence-collect\\normal-new-forward.json",
+      "collectedPath": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-adapters-2026-10-23\\web\\out\\surface\\evidence-collect\\normal-new-forward.json",
+      "bytes": 1590,
+      "sha256": "93146a8f6e206bb3122dbefd968cb6bcc2ac132b8296c60c95d303608c8536d1",
+      "lfNormalizedSha256": "4b5f929a73e4e698671b944ece2f264fe44125dd298c5107791a69105e086065"
+    },
+    {
+      "role": "new explicitly authorized normal GPU probe output",
+      "originalPath": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-adapters-2026-10-23\\web\\out\\surface\\evidence-collect\\normal-new-gl.stdout.log",
+      "collectedPath": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-adapters-2026-10-23\\web\\out\\surface\\evidence-collect\\normal-new-gl.stdout.log",
+      "bytes": 375,
+      "sha256": "25320e6f9511367b2b57a4ff56c1819759f1bc8401b6219d829ee0134344f4a6",
+      "lfNormalizedSha256": "5a7b7db3ee23d19e7b07e91bbae934366bd73f171510823509a04ef7134ac2e7"
+    },
+    {
+      "role": "new explicitly authorized normal GPU probe output",
+      "originalPath": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-adapters-2026-10-23\\web\\out\\surface\\evidence-collect\\normal-new-gl.stderr.log",
+      "collectedPath": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-adapters-2026-10-23\\web\\out\\surface\\evidence-collect\\normal-new-gl.stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "lfNormalizedSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "role": "new explicitly authorized normal GPU probe output",
+      "originalPath": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-adapters-2026-10-23\\web\\out\\surface\\evidence-collect\\normal-new-gl.json",
+      "collectedPath": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-adapters-2026-10-23\\web\\out\\surface\\evidence-collect\\normal-new-gl.json",
+      "bytes": 1603,
+      "sha256": "6259dd5a025d42efece436b90c539988e85da2a5183e90e3adbc1f0f0bd5fd8c",
+      "lfNormalizedSha256": "3b9d2ec1282aa3b2034cbe5aadd493603e81a1e887f9a3ff4e4613299b8b6197"
+    },
+    {
+      "role": "CPU binding actual implementation/loader source snapshot",
+      "originalPath": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\viewer-local\\adapters\\surface_live_binding.gd",
+      "collectedPath": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-adapters-2026-10-23\\web\\out\\surface\\evidence-collect\\root-readonly-snapshot\\adapters\\surface_live_binding.gd",
+      "bytes": 7162,
+      "sha256": "29f251b2fb0b46b98423cfef59ca3f0c46d47cfd1bc227fbae925163d7ef6be0",
+      "lfNormalizedSha256": "29f251b2fb0b46b98423cfef59ca3f0c46d47cfd1bc227fbae925163d7ef6be0"
+    },
+    {
+      "role": "CPU binding actual implementation/loader source snapshot",
+      "originalPath": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\src\\surface\\registrationBinding.ts",
+      "collectedPath": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-adapters-2026-10-23\\web\\out\\surface\\evidence-collect\\root-readonly-snapshot\\registrationBinding.ts",
+      "bytes": 9162,
+      "sha256": "69c82a8879aa17b4340e74fe6e8bffc73a140005409187fa931fb1d0fb03716d",
+      "lfNormalizedSha256": "0f1efde0d0cd7b365d4bb951b3967ab0e605cfff38e3b97658f9dd47fe34cc83"
+    },
+    {
+      "role": "CPU binding actual implementation/loader source snapshot",
+      "originalPath": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-adapters-2026-10-23\\viewer-local\\adapters\\surface_data.gd",
+      "collectedPath": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-adapters-2026-10-23\\web\\out\\surface\\evidence-collect\\binding-loader-source\\surface_data.gd",
+      "bytes": 24428,
+      "sha256": "bd0bb0422cb8617dca3d97eef7712e788a28a7c34ab5f7888a0a451229a54abc",
+      "lfNormalizedSha256": "d8d7147a594963dbdc340be1b046f4dfe38676b99a3dd3e93f1314d27aba9000"
+    },
+    {
+      "role": "CPU existing real512 native content-binding check",
+      "originalPath": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-adapters-2026-10-23\\web\\out\\surface\\evidence-collect\\initial-source-512.f32",
+      "collectedPath": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-adapters-2026-10-23\\web\\out\\surface\\evidence-collect\\initial-source-512.f32",
+      "bytes": 1048576,
+      "sha256": "83f73301fe7c84a5cf396e98780b9b820ca66e99fd7a3a1abbc1d56142f94a0c",
+      "lfNormalizedSha256": "d23bd32dcbf35376759ceb8b92029247d5b67d7f13a73fa47b24297c16e64cc9"
+    },
+    {
+      "role": "CPU existing real512 native content-binding check",
+      "originalPath": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-adapters-2026-10-23\\web\\out\\surface\\evidence-collect\\initial-source-512-input.json",
+      "collectedPath": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-adapters-2026-10-23\\web\\out\\surface\\evidence-collect\\initial-source-512-input.json",
+      "bytes": 487,
+      "sha256": "aa39d17371a1ae004a39b25fd0fff0709db577b1f73be838717cf5141d50e1da",
+      "lfNormalizedSha256": "297404465161caa76c064dc40c5629c5dad56cedec6800aa4edcf0ef821cb792"
+    },
+    {
+      "role": "CPU existing real512 native content-binding check",
+      "originalPath": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-adapters-2026-10-23\\web\\out\\surface\\evidence-collect\\binding-ts-reference.ts",
+      "collectedPath": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-adapters-2026-10-23\\web\\out\\surface\\evidence-collect\\binding-ts-reference.ts",
+      "bytes": 912,
+      "sha256": "c3d651d6b56ebf152d1216fbc42dfe55d28e577ce00de9cdaf1b695bc7fd9e1a",
+      "lfNormalizedSha256": "6db6351beb80ea8bc529485038b4615a4a0ce08a9c50f82659b64391755f88de"
+    },
+    {
+      "role": "CPU existing real512 native content-binding check",
+      "originalPath": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-adapters-2026-10-23\\web\\out\\surface\\evidence-collect\\binding-ts-reference.json",
+      "collectedPath": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-adapters-2026-10-23\\web\\out\\surface\\evidence-collect\\binding-ts-reference.json",
+      "bytes": 654,
+      "sha256": "62ff84f111ddeba3d51522cbcf0c3e3087ca104cfd26a62db3bf33636f9638ee",
+      "lfNormalizedSha256": "62ff84f111ddeba3d51522cbcf0c3e3087ca104cfd26a62db3bf33636f9638ee"
+    },
+    {
+      "role": "CPU existing real512 native content-binding check",
+      "originalPath": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-adapters-2026-10-23\\web\\out\\surface\\evidence-collect\\binding-gd-probe.gd",
+      "collectedPath": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-adapters-2026-10-23\\web\\out\\surface\\evidence-collect\\binding-gd-probe.gd",
+      "bytes": 2172,
+      "sha256": "ef3bfab736a310d1b7924d3dbaa668e817382ff63c1026284b0e4900618c0572",
+      "lfNormalizedSha256": "5446db5151f23a41db82e36cc930b6fb186af83e77e503c01bf5ece206950835"
+    },
+    {
+      "role": "CPU existing real512 native content-binding check",
+      "originalPath": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-adapters-2026-10-23\\web\\out\\surface\\evidence-collect\\binding-gd-result.json",
+      "collectedPath": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-adapters-2026-10-23\\web\\out\\surface\\evidence-collect\\binding-gd-result.json",
+      "bytes": 700,
+      "sha256": "32162b18832e2d5ebc099aabc83e5b7509e10dc7cb718857e2deccdd7a188fb3",
+      "lfNormalizedSha256": "32162b18832e2d5ebc099aabc83e5b7509e10dc7cb718857e2deccdd7a188fb3"
+    },
+    {
+      "role": "CPU existing real512 native content-binding check",
+      "originalPath": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-adapters-2026-10-23\\web\\out\\surface\\evidence-collect\\binding-real-live-header.json",
+      "collectedPath": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-adapters-2026-10-23\\web\\out\\surface\\evidence-collect\\binding-real-live-header.json",
+      "bytes": 1598,
+      "sha256": "3aa12d8a366d259e14b7f0a7f20930152f36b1061c5e3f0d0e7f52b9a2936d01",
+      "lfNormalizedSha256": "3aa12d8a366d259e14b7f0a7f20930152f36b1061c5e3f0d0e7f52b9a2936d01"
+    }
+  ],
+  "rootHeadAfterNewMeasurements": "e27e8310d67380c4d4f83fe1002c493bdb45a20a",
+  "updatedUtc": "2026-10-23T15:59:23.085318+00:00",
+  "cpuContentBinding": {
+    "report": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-adapters-2026-10-23\\web\\out\\surface\\evidence-collect\\binding-gd-result.json",
+    "typeScriptReference": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-adapters-2026-10-23\\web\\out\\surface\\evidence-collect\\binding-ts-reference.json",
+    "initialN": 512,
+    "widthM": 40000.0,
+    "independentFingerprintMatches": true,
+    "fingerprint": "rf1-019b8aa8fc4b7a3a38e7adce2163d4ea",
+    "realExistingLiveHeaderAccepted": true,
+    "counterfactualWrongFingerprintRejected": "live canonical height content/shape differs from the loaded map",
+    "computeMs": 670.71,
+    "packetSha256Before": "9e30a65f7537ac22acf25354c2e692660b7a3d3f4753c8895bb5156e3787af88",
+    "packetSha256After": "9e30a65f7537ac22acf25354c2e692660b7a3d3f4753c8895bb5156e3787af88",
+    "packetUnchanged": true,
+    "scope": "CPU only; existing initial512 packet and existing live-header registration content identity. Not an E2E navigation or generation claim."
+  },
+  "rootHeadAtCompletion": "0470c72e8ff95310fd798c4b396871f905770296"
+}

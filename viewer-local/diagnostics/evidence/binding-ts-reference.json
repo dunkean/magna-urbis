@@ -1,0 +1,10 @@
+{
+  "packet": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\native-e2e-40km\\fresh-source.surfacebin",
+  "packetSha256": "9e30a65f7537ac22acf25354c2e692660b7a3d3f4753c8895bb5156e3787af88",
+  "n": 512,
+  "widthM": 40000,
+  "rawHeightSha256": "83f73301fe7c84a5cf396e98780b9b820ca66e99fd7a3a1abbc1d56142f94a0c",
+  "scope": "Read-only CPU content-binding verification of existing original512 source packet; no generation or GPU rerun.",
+  "fingerprint": "rf1-019b8aa8fc4b7a3a38e7adce2163d4ea",
+  "implementation": "actual TypeScript registrationFieldFingerprint, independently loaded exact packet payload bytes"
+}
