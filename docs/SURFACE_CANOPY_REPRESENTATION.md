@@ -43,6 +43,8 @@ mips). The UI only creates GPU textures and assigns uniforms:
 - `canopy_enabled=available`; `canopy_coverage`, `canopy_counts` from those images.
 - `canopy_origin=origin-currentWorldOrigin.xz`, `canopy_grid_size=gridSize`,
   `canopy_spacing_m=spacingM`, `canopy_fallback_blend_m=fallbackBlendM`.
+  Prepared `origin` is a dictionary `{x,z}` of scalar doubles: subtract the render
+  origin in doubles before constructing GPU Vector2 values.
 - `canopy_bounds` is `(minX,minZ,maxX,maxZ)` rebased by the same origin.
 - `canopy_reference_y` is the common display reference altitude minus origin.y;
   refresh for both terrain and tree/trunk materials whenever the camera changes.

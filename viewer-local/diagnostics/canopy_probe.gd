@@ -23,6 +23,14 @@ func run() -> void:
 	assert(atlas.available and atlas.treeCount==3 and atlas.selectedTreeCount==2)
 	assert(atlas.coverageImage.get_format()==Image.FORMAT_RF and atlas.coverageImage.has_mipmaps())
 	assert(atlas.countsImage.get_format()==Image.FORMAT_RGBAF and not atlas.countsImage.has_mipmaps())
+	# Translation by planetary-scale coordinates must preserve every crown texel.
+	var translated := packet.duplicate(true)
+	translated.candidateBounds={"minX":20000000.0,"minZ":-10000000.0,"maxX":20000064.0,"maxZ":-9999936.0}
+	for tree in translated.candidates: tree.x=float(tree.x)+20000000.0;tree.z=float(tree.z)-10000000.0
+	var translated_atlas: Dictionary = Canopy.prepare(translated,{"a":true,"b":true})
+	assert(translated_atlas.origin.x==20000000.03125 and translated_atlas.origin.z==-9999999.96875)
+	assert(translated_atlas.coverageImage.get_data()==atlas.coverageImage.get_data())
+	assert(translated_atlas.countsImage.get_data()==atlas.countsImage.get_data())
 	var viewport := SubViewport.new(); viewport.size=Vector2i(512,512);viewport.transparent_bg=true;viewport.disable_3d=true
 	viewport.render_target_update_mode=SubViewport.UPDATE_ALWAYS
 	root.add_child(viewport)
@@ -39,7 +47,7 @@ func run() -> void:
 	material.set_shader_parameter("canopy_enabled",true)
 	material.set_shader_parameter("canopy_coverage",ImageTexture.create_from_image(atlas.coverageImage))
 	material.set_shader_parameter("canopy_counts",ImageTexture.create_from_image(atlas.countsImage))
-	material.set_shader_parameter("canopy_origin",atlas.origin)
+	material.set_shader_parameter("canopy_origin",Vector2(float(atlas.origin.x),float(atlas.origin.z)))
 	material.set_shader_parameter("canopy_grid_size",atlas.gridSize)
 	material.set_shader_parameter("canopy_spacing_m",atlas.spacingM)
 	material.set_shader_parameter("canopy_bounds",Vector4(0,0,64,64))

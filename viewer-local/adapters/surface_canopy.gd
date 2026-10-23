@@ -30,7 +30,9 @@ static func prepare(packet: Dictionary,selected: Dictionary) -> Dictionary:
 	var height := maxi(2,ceili((float(bounds.maxZ)-float(bounds.minZ))/spacing))
 	var coverage := PackedFloat32Array(); coverage.resize(width*height)
 	var counts := PackedFloat32Array(); counts.resize(width*height*4)
-	var origin := Vector2(float(bounds.minX)+spacing/2.0,float(bounds.minZ)+spacing/2.0)
+	# Keep absolute regional coordinates in scalar doubles. Vector2 is FP32;
+	# the UI creates a Vector2 only after subtracting its render origin.
+	var origin := {"x":float(bounds.minX)+spacing/2.0,"z":float(bounds.minZ)+spacing/2.0}
 	var candidates: Array = packet.get("candidates",packet.get("populations",[]))
 	var columns: Dictionary = packet.get("candidateColumns",{})
 	var count := int(columns.count) if not columns.is_empty() else candidates.size()
@@ -47,10 +49,10 @@ static func prepare(packet: Dictionary,selected: Dictionary) -> Dictionary:
 		var bin := radius_class(radius)
 		trees+=1
 		if is_selected: selected_trees+=1
-		for iz in range(maxi(0,ceili((z-radius-origin.y)/spacing)),mini(height-1,floori((z+radius-origin.y)/spacing))+1):
-			var dz := origin.y+float(iz)*spacing-z
+		for iz in range(maxi(0,ceili((z-radius-float(origin.z))/spacing)),mini(height-1,floori((z+radius-float(origin.z))/spacing))+1):
+			var dz := float(origin.z)+float(iz)*spacing-z
 			var half := sqrt(maxf(0.0,radius*radius-dz*dz))
-			for ix in range(maxi(0,ceili((x-half-origin.x)/spacing)),mini(width-1,floori((x+half-origin.x)/spacing))+1):
+			for ix in range(maxi(0,ceili((x-half-float(origin.x))/spacing)),mini(width-1,floori((x+half-float(origin.x))/spacing))+1):
 				var index := iz*width+ix
 				coverage[index]=1.0
 				if is_selected: counts[index*4+bin]+=1.0
