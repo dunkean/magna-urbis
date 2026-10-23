@@ -1,0 +1,444 @@
+{
+  "format": "source-vector-water-symbol-gpu-control",
+  "version": 1,
+  "status": "passed",
+  "scope": "Actual retained source40km contours and original levels through production fill/vector outline/terrain-only projection, plus historical post-only operator at identical fill sampling; controlled flat receiver and blue palette. Not a fresh neural/Terrain3D/production-style/canopy/topology or constant-width perspective proof.",
+  "runtime": {
+    "backend": "forward_plus",
+    "adapter": "NVIDIA GeForce RTX 4090",
+    "godot": "4.7.2-stable",
+    "baseHead": "efbc073",
+    "gpuExitCode": 0,
+    "ownedProbeProcessExited": true,
+    "sourceDigests": {
+      "viewer-local/adapters/surface_hydrology.gd": "827a864e8d0b26d91c44b12190efc9ae67e039311e283ee1139fe9275b1a8790",
+      "viewer-local/adapters/surface_water_contours.gd": "72434901a3aae3100f146ea0d6aa218eabc2aa10283c6c1940bcbcac721bd065",
+      "viewer-local/adapters/surface_water_projection.gd": "d6bc3defb67e23ac7f673a30baf35151a224fc191f24d297540c40bc0e828bc4",
+      "viewer-local/adapters/surface_water_symbols.gd": "81f52d89f519dc408fa93a86cecbd690844ff0a237dc35a6a6663b16bf08ab4b",
+      "viewer-local/shaders/water_symbol_fill.gdshader": "da802896a7ad427e1e348fc9d3eac2f32fa2cb5739a01b48c10196c8bb2c14b2",
+      "viewer-local/shaders/water_vector_outline.gdshader": "612b55c34c970c5dca25310962c984cfe2193a1d58b41122ea8bc093c5309425",
+      "viewer-local/shaders/water_symbols.gdshader": "0e1faa01b2303390926ce9045d6b3e396f37311ad03ca5de27e80ca7ba94b82b",
+      "viewer-local/diagnostics/water_symbols_real_probe.gd": "0db9cd94f6311d227cc5a0c350170f3e7bf1dbd752d684216b867f5500c0db90"
+    },
+    "digestScope": "Post-run digests; these tested production modules/shaders and GPU probe were not edited during or after the GPU run"
+  },
+  "source": {
+    "packet": "D:/workspace/self/_worktrees/magna-urbis-surface-world-2026-10-23/web/out/surface/native-e2e-40km-v8/fresh-source.surfacebin",
+    "packetSha256": "c10d3c5ce4c05c82b1d9d3cd1aad647bb3a647a04f1e6dce4391066fcd4bf695",
+    "generation": "Retained actual V8 teacher40km source; not newly generated or refined for this control",
+    "unchanged": true,
+    "geometrySha256": "2576f6e465355fab344ccec883e3e84515379d8e99c808733b159085c517101e",
+    "contourSha256": "08d454bc84bf4a837894f0b26997e53fd8967a94412796fda5270e20e8bd07ad",
+    "clippedFloat64Points": 131679,
+    "clippedRings": 709
+  },
+  "display": {
+    "widthM": 40000,
+    "viewport": [
+      2048,
+      1280
+    ],
+    "screenMetresPerPixel": 19.53125,
+    "sourceReferencePixels": 129421,
+    "mode0Pixels": 114995,
+    "historicalPostOnlyPixels": 141730,
+    "vectorSymbolPixels": 149810,
+    "roofWaterPixels": 0,
+    "palette": "Controlled blue tint and flat grey terrain-layer1 receiver; red layer2 roof"
+  },
+  "sourceBankEvidence": {
+    "extraPixelsInsideTwoPixelSourceBankBand": 13392,
+    "extraVisiblePixels": 13392,
+    "oldPostOnlyVisibleSamples": 181872,
+    "recoveredExamples": [
+      {
+        "pixelX": 1983,
+        "pixelY": 15,
+        "sourceX": 38746.25,
+        "sourceZ": 7810.835
+      },
+      {
+        "pixelX": 1984,
+        "pixelY": 16,
+        "sourceX": 38750.31,
+        "sourceZ": 7814.9125
+      },
+      {
+        "pixelX": 225,
+        "pixelY": 33,
+        "sourceX": 4412.71166666667,
+        "sourceZ": 8159.31
+      },
+      {
+        "pixelX": 225,
+        "pixelY": 33,
+        "sourceX": 4406.615,
+        "sourceZ": 8153.21
+      },
+      {
+        "pixelX": 225,
+        "pixelY": 33,
+        "sourceX": 4400.51833333333,
+        "sourceZ": 8147.11
+      },
+      {
+        "pixelX": 224,
+        "pixelY": 32,
+        "sourceX": 4394.42166666667,
+        "sourceZ": 8141.01
+      },
+      {
+        "pixelX": 224,
+        "pixelY": 32,
+        "sourceX": 4388.325,
+        "sourceZ": 8134.91
+      },
+      {
+        "pixelX": 224,
+        "pixelY": 32,
+        "sourceX": 4382.22833333333,
+        "sourceZ": 8128.81
+      },
+      {
+        "pixelX": 224,
+        "pixelY": 31,
+        "sourceX": 4377.015,
+        "sourceZ": 8123.58
+      },
+      {
+        "pixelX": 223,
+        "pixelY": 31,
+        "sourceX": 4372.685,
+        "sourceZ": 8119.22
+      },
+      {
+        "pixelX": 223,
+        "pixelY": 31,
+        "sourceX": 4367.74,
+        "sourceZ": 8114.22
+      },
+      {
+        "pixelX": 223,
+        "pixelY": 31,
+        "sourceX": 4364.02,
+        "sourceZ": 8110.43
+      },
+      {
+        "pixelX": 223,
+        "pixelY": 31,
+        "sourceX": 4360.13875,
+        "sourceZ": 8106.31
+      },
+      {
+        "pixelX": 220,
+        "pixelY": 27,
+        "sourceX": 4298.46,
+        "sourceZ": 8043.475
+      },
+      {
+        "pixelX": 219,
+        "pixelY": 27,
+        "sourceX": 4292.5725,
+        "sourceZ": 8038.1175
+      },
+      {
+        "pixelX": 219,
+        "pixelY": 27,
+        "sourceX": 4287.5375,
+        "sourceZ": 8033.4925
+      },
+      {
+        "pixelX": 219,
+        "pixelY": 27,
+        "sourceX": 4282.4425,
+        "sourceZ": 8028.7775
+      },
+      {
+        "pixelX": 216,
+        "pixelY": 19,
+        "sourceX": 4222.3025,
+        "sourceZ": 7888.5575
+      },
+      {
+        "pixelX": 213,
+        "pixelY": 16,
+        "sourceX": 4164.50333333333,
+        "sourceZ": 7831.17166666667
+      },
+      {
+        "pixelX": 209,
+        "pixelY": 12,
+        "sourceX": 4086.32611111111,
+        "sourceZ": 7753.80444444444
+      },
+      {
+        "pixelX": 208,
+        "pixelY": 12,
+        "sourceX": 4080.12722222222,
+        "sourceZ": 7747.50888888889
+      },
+      {
+        "pixelX": 208,
+        "pixelY": 12,
+        "sourceX": 4073.92833333333,
+        "sourceZ": 7741.21333333333
+      },
+      {
+        "pixelX": 208,
+        "pixelY": 12,
+        "sourceX": 4067.72944444444,
+        "sourceZ": 7734.91777777778
+      },
+      {
+        "pixelX": 208,
+        "pixelY": 12,
+        "sourceX": 4063.68944444444,
+        "sourceZ": 7738.79611111111
+      },
+      {
+        "pixelX": 208,
+        "pixelY": 12,
+        "sourceX": 4069.90833333333,
+        "sourceZ": 7745.08833333333
+      },
+      {
+        "pixelX": 208,
+        "pixelY": 12,
+        "sourceX": 4076.12722222222,
+        "sourceZ": 7751.38055555556
+      },
+      {
+        "pixelX": 215,
+        "pixelY": 20,
+        "sourceX": 4218.6275,
+        "sourceZ": 7892.27
+      },
+      {
+        "pixelX": 218,
+        "pixelY": 27,
+        "sourceX": 4273.8525,
+        "sourceZ": 8027.61
+      },
+      {
+        "pixelX": 219,
+        "pixelY": 27,
+        "sourceX": 4279.0375,
+        "sourceZ": 8032.43
+      },
+      {
+        "pixelX": 219,
+        "pixelY": 27,
+        "sourceX": 4284.1575,
+        "sourceZ": 8037.1575
+      },
+      {
+        "pixelX": 219,
+        "pixelY": 27,
+        "sourceX": 4289.2125,
+        "sourceZ": 8041.7925
+      },
+      {
+        "pixelX": 219,
+        "pixelY": 28,
+        "sourceX": 4295.115,
+        "sourceZ": 8047.15
+      }
+    ],
+    "recoveredSourceBankSamples": 863,
+    "sampleBudget": 200000,
+    "sampleBudgetLimited": false,
+    "scope": "Actual Float64 clipped source polygon edges, sampled at half-screen-pixel spacing; 3x3 visibility query and two-pixel AA/filter band. Not a centreline, flow/topology proof or exact area measurement.",
+    "sourceBankSamples": 182735,
+    "vectorVisibleSamples": 182735
+  },
+  "roofImageControl": {
+    "CPUOnly": true,
+    "passed": true,
+    "roofRedBoundsPx": [
+      953,
+      613,
+      1003,
+      663
+    ],
+    "sameInteriorWaterAfterRoofPixels": 0,
+    "sameInteriorWaterBeforeRoofPixels": 103,
+    "scope": "Saved identical-camera GPU images, interior of the actual red roof bounds; confirms that terrain-only symbols are occluded by layer2 geometry. No additional GPU run."
+  },
+  "exactReplayChecks": {
+    "mode0PngSha256": "f3a88dd3c5d8dd5d592e8e15cf76834c0953e22bf70fe0745958f173670721b9",
+    "mode0MatchesHistoricalBytes": true,
+    "postOnlyMatchesHistoricalBytes": true,
+    "geometryHashMatchesHistorical": true
+  },
+  "images": [
+    {
+      "name": "source-reference.png",
+      "sha256": "35a75832155e6d3bf8f59bb530045a9918e90a5f0cd011272067e1dc00ec21da"
+    },
+    {
+      "name": "contours-mode0.png",
+      "sha256": "f3a88dd3c5d8dd5d592e8e15cf76834c0953e22bf70fe0745958f173670721b9"
+    },
+    {
+      "name": "post-only-reference.png",
+      "sha256": "c73640a68fc4a34b68ac1e411d666976360a6d55932d1e17666c879bec9e2ed6"
+    },
+    {
+      "name": "symbols-1_25.png",
+      "sha256": "0ce7cf273e92b6d75cf71a3e81d8c64590a8829a664c01f65ae7dd2e419eeb01"
+    },
+    {
+      "name": "symbols-roof.png",
+      "sha256": "501bd589471d2ebd3e253c31420dd348012d0eb8d9c85c9b753b394adf5f4f94"
+    }
+  ],
+  "original": {
+    "budgetLimited": false,
+    "buildMs": 281.586,
+    "metresPerTexel": 24.4140625,
+    "minimumRiverStrokeApplied": false,
+    "missingLevelTriangles": 0,
+    "paddingSymbolMetres": 0,
+    "physicalWaterSurfaceClaimed": false,
+    "projectionCullMask": 1,
+    "resolution": 2048,
+    "screenMetresPerPixel": 0,
+    "screenScalePolicy": "orthographic-map-ground-scale",
+    "sourceAuthority": "magna-urbis-fixed-hydrology",
+    "sourceContourBudgetLimited": false,
+    "sourceContourComplete": true,
+    "sourceContourPointCount": 131679,
+    "sourceContourPrecision": "float64-world-xz; subtract in double before renderer vectors",
+    "sourceContourRingCount": 709,
+    "sourceContourScope": "clipped retained lake/river polygon and hole boundaries; clip edges denote the data window, not surveyed banks",
+    "sourceContourSha256": "08d454bc84bf4a837894f0b26997e53fd8967a94412796fda5270e20e8bd07ad",
+    "sourceContourVersion": "source-water-contours-1",
+    "sourceCoverageImageSha256": "bb2b44d35be7c4dd53999752cf4290d708f461edd5d3a7652c37190189d7b5a7",
+    "sourceGeometrySha256": "2576f6e465355fab344ccec883e3e84515379d8e99c808733b159085c517101e",
+    "sourceGeometryUnchanged": true,
+    "sourceLevelBoundaryPolicy": "Only queries of float64-clipped vertices displaced outside source support by <= half an FP32 relative-coordinate ULP are clamped; source levels and mesh vertices stay unchanged",
+    "sourceLevelBoundaryQueriesResolved": 0,
+    "sourceLevelMaximumBoundaryQueryRoundoffM": 0,
+    "sourceLevelsUnchanged": true,
+    "sourceSeaSymbolPolicy": "original sea-cell union fill unchanged; no invented sea contours",
+    "sourceVectorAreaM2": 48038663.7534668,
+    "sourceVectorAreaScope": "input geometry clip window; projection camera may be narrower",
+    "sourceVectorClipBounds": {
+      "maxX": 40000,
+      "maxZ": 40000,
+      "minX": 0,
+      "minZ": 0
+    },
+    "sourceVectorCoverageComplete": true,
+    "sourceVectorMissingAreaM2": 0,
+    "sourceVectorRequestedAreaM2": 48038668.5275281,
+    "sourceVectorScanWork": 480887,
+    "sourceVertices": 719184,
+    "subpixelPolicy": "original contour coverage only; no minimum stroke or physical-width edits",
+    "symbolColorPolicy": "single declared fallback water tint; no river/lake class asserted for outline",
+    "symbolCoverageEstimatedImageBytes": 55924054,
+    "symbolCoverageImageBudgetBytes": 268435456,
+    "symbolCoverageSeparateFromSourceArea": true,
+    "symbolKernelRadiusTexels": 0,
+    "symbolRasterLimit": "vector rings are stroked before raster sampling; subpixel source fill may remain absent, while its declared boundary symbol is visible",
+    "symbolSeaPolicy": "original sea-cell union fill unchanged; no sea outlines synthesised without retained vector rings",
+    "symbolStrokeWidthBakePx": 0,
+    "symbolWidthMeaning": "stroke diameter on retained vector polygon boundaries, not a measured or edited physical water width",
+    "symbolWidthPx": 0,
+    "symbolicPhysicalWidthClaim": false,
+    "vectorBedDiagnosticBudget": 4096,
+    "vectorBedDiagnosticConflicts": 2670,
+    "vectorBedDiagnosticMaximumDeltaM": 46.0715800621301,
+    "vectorBedDiagnosticMissing": 0,
+    "vectorBedDiagnosticSamples": 4087,
+    "vectorBedDiagnosticToleranceM": 0.001,
+    "vertexBudget": 999996,
+    "waterPresentation": "source-map-terrain-projection",
+    "waterSymbolPolicy": "disabled-original-contours",
+    "waterSymbolVersion": "source-water-symbol-2"
+  },
+  "vector": {
+    "budgetLimited": false,
+    "buildMs": 593.475,
+    "metresPerTexel": 19.5255324209602,
+    "minimumRiverStrokeApplied": false,
+    "missingLevelTriangles": 0,
+    "paddingSymbolMetres": 12.20703125,
+    "physicalWaterSurfaceClaimed": false,
+    "projectionCullMask": 1,
+    "resolution": 2562,
+    "screenMetresPerPixel": 19.53125,
+    "screenScalePolicy": "orthographic-map-ground-scale",
+    "sourceAuthority": "magna-urbis-fixed-hydrology",
+    "sourceContourBudgetLimited": false,
+    "sourceContourComplete": true,
+    "sourceContourPointCount": 131679,
+    "sourceContourPrecision": "float64-world-xz; subtract in double before renderer vectors",
+    "sourceContourRingCount": 709,
+    "sourceContourScope": "clipped retained lake/river polygon and hole boundaries; clip edges denote the data window, not surveyed banks",
+    "sourceContourSha256": "08d454bc84bf4a837894f0b26997e53fd8967a94412796fda5270e20e8bd07ad",
+    "sourceContourVersion": "source-water-contours-1",
+    "sourceCoverageImageSha256": "c88e8e908ee5585ab50b4355544ed493b57cfa32160678940e3e904712794cf8",
+    "sourceGeometrySha256": "2576f6e465355fab344ccec883e3e84515379d8e99c808733b159085c517101e",
+    "sourceGeometryUnchanged": true,
+    "sourceLevelBoundaryPolicy": "Only queries of float64-clipped vertices displaced outside source support by <= half an FP32 relative-coordinate ULP are clamped; source levels and mesh vertices stay unchanged",
+    "sourceLevelBoundaryQueriesResolved": 0,
+    "sourceLevelMaximumBoundaryQueryRoundoffM": 0,
+    "sourceLevelsUnchanged": true,
+    "sourceSeaSymbolPolicy": "original sea-cell union fill unchanged; no invented sea contours",
+    "sourceVectorAreaM2": 48038663.7534668,
+    "sourceVectorAreaScope": "input geometry clip window; projection camera may be narrower",
+    "sourceVectorClipBounds": {
+      "maxX": 40000,
+      "maxZ": 40000,
+      "minX": 0,
+      "minZ": 0
+    },
+    "sourceVectorCoverageComplete": true,
+    "sourceVectorMissingAreaM2": 0,
+    "sourceVectorRequestedAreaM2": 48038668.5275281,
+    "sourceVectorScanWork": 480887,
+    "sourceVertices": 719184,
+    "subpixelPolicy": "declared source vector-ring outline before raster; original source contours, levels and physical area unchanged",
+    "symbolColorPolicy": "single declared fallback water tint; no river/lake class asserted for outline",
+    "symbolContourBudgetBytes": 268435456,
+    "symbolContourEstimatedBytes": 136291328,
+    "symbolCoverageEstimatedImageBytes": 87517920,
+    "symbolCoverageImageBudgetBytes": 268435456,
+    "symbolCoverageImageSha256": "9d4ee5b106ddb11925844318dafa858fa7b91c1d8a99466e958511ae1543ac4a",
+    "symbolCoverageSeparateFromSourceArea": true,
+    "symbolKernelRadiusTexels": 0.625183016105417,
+    "symbolRasterLimit": "vector rings are stroked before raster sampling; subpixel source fill may remain absent, while its declared boundary symbol is visible",
+    "symbolSeaPolicy": "original sea-cell union fill unchanged; no sea outlines synthesised without retained vector rings",
+    "symbolStrokeWidthBakePx": 1.25036603221083,
+    "symbolWidthMeaning": "stroke diameter on retained vector polygon boundaries, not a measured or edited physical water width",
+    "symbolWidthPx": 1.25,
+    "symbolicPhysicalWidthClaim": false,
+    "vectorBedDiagnosticBudget": 4096,
+    "vectorBedDiagnosticConflicts": 2670,
+    "vectorBedDiagnosticMaximumDeltaM": 46.0715800621301,
+    "vectorBedDiagnosticMissing": 0,
+    "vectorBedDiagnosticSamples": 4087,
+    "vectorBedDiagnosticToleranceM": 0.001,
+    "vertexBudget": 999996,
+    "waterPresentation": "source-map-terrain-projection",
+    "waterSymbolPolicy": "retained-vector-water-ring-outline",
+    "waterSymbolVersion": "source-water-symbol-2"
+  },
+  "validation": {
+    "nativeFailures": [],
+    "strictTsEvidenceBothModesPassed": true,
+    "CPU": "Float64 world1e9 rebasing, immutable source arrays, workspace/node budgets, contour hash/cache changes, original hydrology, empty/cache/plan contracts and negative TS matrices",
+    "pixelAlignment": "All13392 newly visible pixels inside independent two-pixel source bank band;182735 source-bank samples, no sample budget reached;863 previously absent under identical-fill post-only now visible"
+  },
+  "visualInspection": "Opened old-post-only and new-vector PNGs. Previously intermittent branches become visible along their original polygon banks. No routing, centreline, flow or survey-topology claim.",
+  "limits": [
+    "This is a production projection/outline module control using actual retained contours/levels and a controlled flat receiver/palette, not a fresh E2E/Terrain3D/full-style qualification.",
+    "The source-bank test queries a3x3 neighbourhood at half-screen-pixel spacing and a two-pixel AA/filter band; it does not measure physical width or certify topology.",
+    "All retained vector polygon/hole boundaries are outlined with a single declared tint; source sea-cell union fill is unchanged without vector sea rings.",
+    "Clipping edges denote a source data window, not surveyed banks.",
+    "The image and vector-workspace estimates exclude engine-owned GPU framebuffer/MSAA/depth attachments and the rest of the scene.",
+    "Perspective constant-width rendering is not claimed; oblique ground scale remains an explicit approximation.",
+    "Historical post-only evidence remains preserved."
+  ]
+}

@@ -53,8 +53,8 @@ export function verifyWaterCapture(capture:unknown,options:{requireSourceMap?:bo
     ||water.physicalWaterSurfaceClaimed!==false||water.minimumRiverStrokeApplied!==false||typeof water.subpixelPolicy!=='string'||!water.subpixelPolicy))
     throw new Error('Source-map projection hides physical edits, roof projection or subpixel stroke changes');
   if(expectedSymbol>0){
-    if(water.waterPresentation!=='source-map-terrain-projection'||water.waterSymbolVersion!=='source-water-symbol-1'
-      ||water.waterSymbolPolicy!=='all-water-source-coverage-aa-disk'||water.sourceGeometryUnchanged!==true||water.symbolicPhysicalWidthClaim!==false||water.symbolCoverageSeparateFromSourceArea!==true
+    if(water.waterPresentation!=='source-map-terrain-projection'||water.waterSymbolVersion!=='source-water-symbol-2'
+      ||water.waterSymbolPolicy!=='retained-vector-water-ring-outline'||water.sourceGeometryUnchanged!==true||water.symbolicPhysicalWidthClaim!==false||water.symbolCoverageSeparateFromSourceArea!==true
       ||!finite(water.screenMetresPerPixel)||water.screenMetresPerPixel<=0||!finite(water.paddingSymbolMetres)
       ||Math.abs(water.paddingSymbolMetres-expectedSymbol*water.screenMetresPerPixel*.5)>1e-9*Math.max(1,water.paddingSymbolMetres)
       ||!['orthographic-map-ground-scale','oblique-ground-scale-approximation'].includes(water.screenScalePolicy)
@@ -62,12 +62,19 @@ export function verifyWaterCapture(capture:unknown,options:{requireSourceMap?:bo
       ||!nonnegative(water.symbolCoverageEstimatedImageBytes)||water.symbolCoverageEstimatedImageBytes<water.resolution**2*4||!finite(water.symbolCoverageImageBudgetBytes)||water.symbolCoverageImageBudgetBytes<=0||water.symbolCoverageImageBudgetBytes>256*1024*1024||water.symbolCoverageEstimatedImageBytes>water.symbolCoverageImageBudgetBytes
       ||!finite(water.symbolKernelRadiusTexels)||water.symbolKernelRadiusTexels<0||water.symbolKernelRadiusTexels>4||Math.abs(water.symbolKernelRadiusTexels-water.paddingSymbolMetres/water.metresPerTexel)>1e-9
       ||typeof water.symbolRasterLimit!=='string'||!water.symbolRasterLimit||!/^([a-f0-9]{64})$/.test(water.sourceGeometrySha256))throw new Error('Symbolic water hides its footprint, source invariance or image budget');
+    if(water.sourceContourVersion!=='source-water-contours-1'||!Number.isSafeInteger(water.sourceContourPointCount)||water.sourceContourPointCount<0||water.sourceContourPointCount>500000
+      ||!Number.isSafeInteger(water.sourceContourRingCount)||water.sourceContourRingCount<0||water.sourceContourRingCount>8192||water.sourceContourComplete!==true||water.sourceContourBudgetLimited!==false
+      ||!/^[a-f0-9]{64}$/.test(water.sourceContourSha256)||water.sourceContourPrecision!=='float64-world-xz; subtract in double before renderer vectors'
+      ||typeof water.sourceContourScope!=='string'||!water.sourceContourScope||typeof water.symbolSeaPolicy!=='string'||!water.symbolSeaPolicy
+      ||!nonnegative(water.symbolContourEstimatedBytes)||water.symbolContourEstimatedBytes<water.sourceContourPointCount*16||!finite(water.symbolContourBudgetBytes)||water.symbolContourBudgetBytes<=0||water.symbolContourBudgetBytes>256*1024*1024||water.symbolContourEstimatedBytes>water.symbolContourBudgetBytes
+      ||!finite(water.symbolStrokeWidthBakePx)||Math.abs(water.symbolStrokeWidthBakePx-2*water.symbolKernelRadiusTexels)>1e-9
+      ||water.sourceVectorRequestedAreaM2>0&&(water.sourceContourPointCount<3||water.sourceContourRingCount<1))throw new Error('Symbolic water lacks complete source vector contours or a bounded vector stroke');
     if(water.sourceVertices>0&&(!/^[a-f0-9]{64}$/.test(water.sourceCoverageImageSha256)||!/^[a-f0-9]{64}$/.test(water.symbolCoverageImageSha256)))throw new Error('Symbolic coverage image is not distinguished from source coverage');
     const expectedMPP=options.screenMetresPerPixel??(water.screenScalePolicy==='orthographic-map-ground-scale'?capture.metresPerPixel:undefined);
     if(expectedMPP!==undefined&&(!finite(expectedMPP)||expectedMPP<=0||Math.abs(water.screenMetresPerPixel-expectedMPP)>1e-9*expectedMPP))throw new Error('Water symbol uses a stale or dishonest screen scale');
   }else if(water.sourceGeometryUnchanged===false||water.symbolicPhysicalWidthClaim===true
     ||water.waterSymbolPolicy!==undefined&&water.waterSymbolPolicy!=='disabled-original-contours'
-    ||water.waterSymbolVersion!==undefined&&water.waterSymbolVersion!=='source-water-symbol-1'
+    ||water.waterSymbolVersion!==undefined&&!['source-water-symbol-1','source-water-symbol-2'].includes(water.waterSymbolVersion)
     ||water.paddingSymbolMetres!==undefined&&water.paddingSymbolMetres!==0||water.symbolCoverageImageSha256!==undefined)throw new Error('Original contour mode hides symbols or claims physical source edits');
   const samples=water.vectorBedDiagnosticSamples,conflicts=water.vectorBedDiagnosticConflicts;
   if(samples!==undefined||conflicts!==undefined){

@@ -1,6 +1,7 @@
 extends SceneTree
 const Hydro=preload("res://adapters/surface_hydrology.gd")
 const Geometry=preload("res://adapters/surface_geometry.gd")
+const Contours=preload("res://adapters/surface_water_contours.gd")
 func _initialize(): call_deferred("run")
 func run():
 	var failures: Array=[]
@@ -18,6 +19,7 @@ func run():
 	if result.get("authority","")!="magna-urbis-fixed-hydrology": failures.append("source authority absent")
 	if absf(result.get("sourceVectorAreaM2",0.0)-152.0)>0.00001: failures.append("source widths or island hole area changed")
 	if result.has("coverageImage"): failures.append("coarse envelope would clip native vectors")
+	if Contours.info(result).has("error") or result.sourceContourRingCount!=3:failures.append("complete Float64 source bank rings absent")
 	if not result.has("classImage") or result.classImage.get_pixel(0,0).r!=2.0: failures.append("source lake category lost")
 	for p in result.vertices:
 		if p.y!=5.0: failures.append("source water level changed");break
@@ -34,6 +36,8 @@ func run():
 	var shifted_world=world.duplicate(false);shifted_world.terrain=shifted_grid
 	var rebased=Hydro.prepare({"source":shifted},shifted_world,{"x":20.0+tx,"y":0.0,"z":20.0+tz},{"x":20.0+tx,"y":20.0+tz},40.0,{})
 	if rebased.vertices!=result.vertices: failures.append("native water changes after common translation/rebase")
+	for i in result.sourceWaterContours.size():
+		if Contours.pixel_points(rebased.sourceWaterContours[i],{"x":20.+tx,"y":20.+tz},40.,400)!=Contours.pixel_points(result.sourceWaterContours[i],focus,40.,400):failures.append("source bank pixel coordinates change after common translation")
 	var unknown=source.duplicate(true);unknown.water.levelM.fill(NAN)
 	var absent=Hydro.prepare({"source":unknown},world,origin,focus,40.0,fallback)
 	if not absent.vertices.is_empty() or absent.get("missingLevelTriangles",0)==0: failures.append("missing source levels invented")

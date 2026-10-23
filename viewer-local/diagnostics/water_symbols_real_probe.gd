@@ -5,6 +5,7 @@ const D=preload("res://adapters/surface_data.gd")
 const G=preload("res://adapters/surface_geometry.gd")
 const H=preload("res://adapters/surface_hydrology.gd")
 const P=preload("res://adapters/surface_water_projection.gd")
+const S=preload("res://adapters/surface_water_symbols.gd")
 var failures:Array=[]
 func check(ok:bool,message:String):
 	if not ok:failures.append(message)
@@ -20,6 +21,45 @@ func blue_count(im:Image)->int:
 		for x in im.get_width():
 			if blue(im.get_pixel(x,z)):n+=1
 	return n
+
+func nearby_blue(im:Image,x:int,y:int)->bool:
+	for dz in range(-1,2):
+		for dx in range(-1,2):
+			if blue(im.get_pixel(x+dx,y+dz)):return true
+	return false
+
+func source_bank_evidence(geometry:Dictionary,old:Image,current:Image)->Dictionary:
+	var width=2048;var height=1280;var mpp=40000./width
+	var band=PackedByteArray();band.resize(width*height)
+	var samples=0;var old_visible=0;var new_visible=0;var recovered=0;var limited=false;var examples:Array=[]
+	for ring in geometry.sourceWaterContours:
+		var n=ring.size()/2
+		for i in n:
+			var j=(i+1)%n;var ax=ring[i*2];var az=ring[i*2+1];var bx=ring[j*2];var bz=ring[j*2+1]
+			var steps=maxi(1,int(ceil(sqrt((bx-ax)*(bx-ax)+(bz-az)*(bz-az))/(mpp*.5))))
+			for at in steps:
+				var f=(at+.5)/steps;var x=ax+(bx-ax)*f;var z=az+(bz-az)*f
+				var px=int(floor((x-20000.)/mpp+width*.5));var py=int(floor((z-20000.)/mpp+height*.5))
+				if px<3 or px>=width-3 or py<3 or py>=height-3:continue
+				if samples>=200000:limited=true;continue
+				samples+=1
+				# Independent CPU band from original bank segments, not from a raster
+				# dilation or an invented channel centreline. Covers AA/filter support.
+				for dy in range(-2,3):
+					for dx in range(-2,3):band[(py+dy)*width+px+dx]=1
+				var previous=nearby_blue(old,px,py);var visible=nearby_blue(current,px,py)
+				if previous:old_visible+=1
+				if visible:new_visible+=1
+				if not previous and visible:
+					recovered+=1
+					if examples.size()<32:examples.append({"sourceX":x,"sourceZ":z,"pixelX":px,"pixelY":py})
+	var extra=0;var aligned=0
+	for y in range(3,height-3):
+		for x in range(3,width-3):
+			if blue(current.get_pixel(x,y)) and not blue(old.get_pixel(x,y)):
+				extra+=1
+				if band[y*width+x]!=0:aligned+=1
+	return {"sourceBankSamples":samples,"sampleBudget":200000,"sampleBudgetLimited":limited,"oldPostOnlyVisibleSamples":old_visible,"vectorVisibleSamples":new_visible,"recoveredSourceBankSamples":recovered,"recoveredExamples":examples,"extraVisiblePixels":extra,"extraPixelsInsideTwoPixelSourceBankBand":aligned,"scope":"Actual Float64 clipped source polygon edges, sampled at half-screen-pixel spacing; 3x3 visibility query and two-pixel AA/filter band. Not a centreline, flow/topology proof or exact area measurement."}
 func run():
 	var args=OS.get_cmdline_user_args()
 	if args.size()!=2:push_error("Usage: packet.surfacebin output-directory");quit(2);return
@@ -34,7 +74,7 @@ func run():
 	var colors={"river":Vector3(.02,.25,.8),"lake":Vector3(.02,.25,.8),"sea":Vector3(.02,.25,.8),"fallback":Vector3(.02,.25,.8)}
 	var options={"sourceKey":"retained-real-source-symbol-control","resolution":2048,"msaa":2,"minHeightM":-10000.,"maxHeightM":10000.}
 	var original=await P.bake(root,geometry,origin,focus,50000.,colors,options)
-	options.symbolWidthPx=1.25;options.screenMetresPerPixel=40000./2048.;options.screenScalePolicy="orthographic-map-ground-scale"
+	options.symbolWidthPx=1.25;options.screenMetresPerPixel=40000./2048.;options.screenScalePolicy="orthographic-map-ground-scale";options.retainSourceImage=true
 	var symbolic=await P.bake(root,geometry,origin,focus,50000.,colors,options)
 	if original.has("error") or symbolic.has("error"):push_error(str([original.get("error"),symbolic.get("error")]));quit(1);return
 	check(geometry_hash==P._sha(geometry.vertices.to_byte_array()) and source_hash==P._sha(var_to_bytes(packet.source)),"source triangles, levels, hydro arrays and indices immutable")
@@ -51,6 +91,10 @@ func run():
 	var reference=await image(vp,args[1].path_join("source-reference.png"));source_item.visible=false
 	var decal=P.create_decal(original,origin);vp.add_child(decal)
 	var mode0=await image(vp,args[1].path_join("contours-mode0.png"));decal.queue_free();await process_frame
+	var post_image=await S.post_only_reference(root,symbolic.sourceImage,S.plan(50000.,options));post_image.generate_mipmaps()
+	var historical=symbolic.duplicate(false);historical.texture=ImageTexture.create_from_image(post_image)
+	decal=P.create_decal(historical,origin);vp.add_child(decal)
+	var post_only=await image(vp,args[1].path_join("post-only-reference.png"));decal.queue_free();await process_frame
 	decal=P.create_decal(symbolic,origin);vp.add_child(decal)
 	var mode125=await image(vp,args[1].path_join("symbols-1_25.png"))
 	var pixel=Vector2i(1024,640);var nearest=INF
@@ -66,7 +110,10 @@ func run():
 		for x in range(pixel.x-20,pixel.x+21):
 			if blue(roof_image.get_pixel(x,z)):roof_blue+=1
 	var baseline_count=blue_count(mode0);var symbolic_count=blue_count(mode125)
+	var bank_evidence=source_bank_evidence(geometry,post_only,mode125)
+	check(bank_evidence.recoveredSourceBankSamples>0,"previously raster-missed source bank samples reappear on their actual vector trace")
+	check(bank_evidence.extraVisiblePixels>0 and float(bank_evidence.extraPixelsInsideTwoPixelSourceBankBand)/bank_evidence.extraVisiblePixels>.98,"new visible pixels follow source vector banks rather than arbitrary dilation")
 	check(symbolic_count>baseline_count,"declared symbols increase visible source-water coverage")
 	check(roof_blue==0,"symbol projector never paints layer2 roof")
-	var report={"failures":failures,"backend":RenderingServer.get_current_rendering_method(),"adapter":RenderingServer.get_video_adapter_name(),"sourcePacket":args[0],"widthM":40000,"viewport":[2048,1280],"screenMetresPerPixel":40000./2048.,"sourceReferencePixels":blue_count(reference),"originalContourPixels":baseline_count,"symbolPixels":symbolic_count,"symbolRoofPixels":roof_blue,"sourceUnchanged":source_hash==P._sha(var_to_bytes(packet.source)),"geometrySha256":geometry_hash,"original":original.diagnostics,"symbolic":symbolic.diagnostics,"scope":"Actual retained source40km contours and original levels through production bake/symbol/terrain-only projection; controlled flat receiver and blue palette. Not a fresh neural/Terrain3D/production-style/canopy/topology or constant-width perspective proof."}
+	var report={"failures":failures,"backend":RenderingServer.get_current_rendering_method(),"adapter":RenderingServer.get_video_adapter_name(),"sourcePacket":args[0],"widthM":40000,"viewport":[2048,1280],"screenMetresPerPixel":40000./2048.,"sourceReferencePixels":blue_count(reference),"originalContourPixels":baseline_count,"oldPostOnlyPixels":blue_count(post_only),"symbolPixels":symbolic_count,"sourceBankEvidence":bank_evidence,"symbolRoofPixels":roof_blue,"sourceUnchanged":source_hash==P._sha(var_to_bytes(packet.source)),"geometrySha256":geometry_hash,"original":original.diagnostics,"symbolic":symbolic.diagnostics,"scope":"Actual retained source40km contours and original levels through production fill/vector outline/terrain-only projection, plus historical post-only operator at identical fill sampling; controlled flat receiver and blue palette. Not a fresh neural/Terrain3D/production-style/canopy/topology or constant-width perspective proof."}
 	var file=FileAccess.open(args[1].path_join("report.json"),FileAccess.WRITE);file.store_string(JSON.stringify(report,"  "));file.close();print(JSON.stringify(report));quit(0 if failures.is_empty() else 1)

@@ -2,6 +2,7 @@ class_name SurfaceHydrology
 extends RefCounted
 const Geometry = preload("res://adapters/surface_geometry.gd")
 const Sweep = preload("res://adapters/surface_hydrology_sweep.gd")
+const Contours=preload("res://adapters/surface_water_contours.gd")
 # Exact regional vectors can exceed the historical raster-quad cap. This bound
 # is still <12 MiB of packed positions; it never changes source water footprints.
 const MAX_VERTICES := 999996
@@ -170,6 +171,7 @@ static func prepare(packet: Dictionary, world: Dictionary, origin: Dictionary, f
 	var boundary_level_queries_resolved:=0;var maximum_boundary_query_roundoff:=0.0
 	var missing_area:=0.0; var requested_area:=0.0; var duplicate_groups:=0; var display_groups:=0; var seen_groups: Dictionary={}
 	var native_groups:=0;var sweep_groups:=0;var maximum_float_error:=0.0;var maximum_float_tolerance:=0.0
+	var source_contours:Array=[];var contour_points=0;var contour_rings=0;var contour_limited=false
 	for group in geometry.water:
 		if not group is Array: return _fallback(fallback,"invalid source water group")
 		for ring in group:
@@ -191,7 +193,15 @@ static func prepare(packet: Dictionary, world: Dictionary, origin: Dictionary, f
 				if not point is Dictionary or not _finite(point.get("x")) or not _finite(point.get("y")): return _fallback(fallback,"invalid retained vector water point")
 				translated.append({"x":float(point.x)+tx,"y":float(point.y)+tz})
 			var clipped:=_clip(translated,window)
-			if clipped.size()>=3: rings.append(clipped)
+			if clipped.size()>=3:
+				rings.append(clipped)
+				contour_points+=clipped.size();contour_rings+=1
+				if contour_points>Contours.MAX_POINTS or contour_rings>Contours.MAX_RINGS:
+					contour_limited=true;source_contours.clear()
+				if not contour_limited:
+					var coordinates=PackedFloat64Array();coordinates.resize(clipped.size()*2)
+					for i in clipped.size():coordinates[i*2]=float(clipped[i].x);coordinates[i*2+1]=float(clipped[i].y)
+					source_contours.append(coordinates)
 		if rings.is_empty(): continue
 		var mesh:=Sweep.triangulate(rings,origin,MAX_VERTICES-vertices.size(),MAX_SCAN_WORK-work)
 		work+=int(mesh.get("work",0))
@@ -242,6 +252,13 @@ static func prepare(packet: Dictionary, world: Dictionary, origin: Dictionary, f
 	var result:=fallback.duplicate(false)
 	result.erase("coverageImage"); result.erase("coverageOrigin"); result.erase("coverageSpacingM"); result.erase("coverageSize")
 	result.vertices=vertices; result.quads=int(ceil(vertices.size()/6.0)); result.sourceStride=1
+	result.sourceWaterContours=source_contours;result.sourceContourVersion=Contours.VERSION
+	result.sourceContourPointCount=contour_points;result.sourceContourRingCount=contour_rings
+	result.sourceContourComplete=not contour_limited;result.sourceContourBudgetLimited=contour_limited
+	result.sourceContourSha256="" if contour_limited else Contours.digest(source_contours)
+	result.sourceContourPrecision="float64-world-xz; subtract in double before renderer vectors"
+	result.sourceContourScope="clipped retained lake/river polygon and hole boundaries; clip edges denote the data window, not surveyed banks"
+	result.sourceSeaSymbolPolicy="original sea-cell union fill unchanged; no invented sea contours"
 	result.representation="Magna retained vector lakes/rivers and original sea-cell union"
 	result.authority="magna-urbis-fixed-hydrology"; result.sourceVectorAreaM2=area
 	result.fixedVectorDisplayAvailable=true

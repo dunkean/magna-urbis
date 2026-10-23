@@ -6,6 +6,7 @@ extends RefCounted
 const MAX_RESOLUTION := 4096
 const MAX_VERTICES := 999996
 const Symbols=preload("res://adapters/surface_water_symbols.gd")
+const Contours=preload("res://adapters/surface_water_contours.gd")
 
 static func _sha(bytes: PackedByteArray) -> String:
 	var context:=HashingContext.new();context.start(HashingContext.HASH_SHA256);
@@ -20,7 +21,8 @@ static func cache_key(geometry: Dictionary, focus: Dictionary, width_m: float, c
 	var vertices: PackedVector3Array=geometry.get("vertices",PackedVector3Array())
 	var class_hash: String=_sha(geometry.classImage.get_data()) if geometry.get("classImage") is Image else ""
 	var coverage_hash: String=_sha(geometry.coverageImage.get_data()) if geometry.get("coverageImage") is Image else ""
-	return _sha(var_to_bytes({"format":"magna-source-water-terrain-projection-1","symbolPlan":Symbols.plan(width_m,options),"sourceKey":str(options.get("sourceKey","")),"vertices":_sha(vertices.to_byte_array()),"anchor":geometry.get("anchor",{}),"focusX":float(focus.get("x",NAN)),"focusZ":float(focus.get("y",NAN)),"widthM":width_m,"resolution":clampi(int(options.get("resolution",1024)),64,MAX_RESOLUTION),"msaa":int(options.get("msaa",0)),"minHeightM":float(options.get("minHeightM",-10000.0)),"maxHeightM":float(options.get("maxHeightM",10000.0)),"classHash":class_hash,"classOrigin":geometry.get("classOrigin",{}),"classSpacingM":geometry.get("classSpacingM",0.0),"coverageHash":coverage_hash,"coverageOrigin":geometry.get("coverageOrigin",{}),"coverageSpacingM":geometry.get("coverageSpacingM",0.0),"colors":[_color(colors,"river",Vector3(.035,.17,.20)),_color(colors,"lake",Vector3(.028,.10,.115)),_color(colors,"sea",Vector3(.018,.095,.125)),_color(colors,"fallback",Vector3(.028,.10,.115))]}))
+	var contour_hash=Contours.digest(geometry.sourceWaterContours) if geometry.get("sourceWaterContours") is Array else "unavailable"
+	return _sha(var_to_bytes({"format":"magna-source-water-terrain-projection-1","symbolPlan":Symbols.plan(width_m,options),"contours":contour_hash,"sourceKey":str(options.get("sourceKey","")),"vertices":_sha(vertices.to_byte_array()),"anchor":geometry.get("anchor",{}),"focusX":float(focus.get("x",NAN)),"focusZ":float(focus.get("y",NAN)),"widthM":width_m,"resolution":clampi(int(options.get("resolution",1024)),64,MAX_RESOLUTION),"msaa":int(options.get("msaa",0)),"minHeightM":float(options.get("minHeightM",-10000.0)),"maxHeightM":float(options.get("maxHeightM",10000.0)),"classHash":class_hash,"classOrigin":geometry.get("classOrigin",{}),"classSpacingM":geometry.get("classSpacingM",0.0),"coverageHash":coverage_hash,"coverageOrigin":geometry.get("coverageOrigin",{}),"coverageSpacingM":geometry.get("coverageSpacingM",0.0),"colors":[_color(colors,"river",Vector3(.035,.17,.20)),_color(colors,"lake",Vector3(.028,.10,.115)),_color(colors,"sea",Vector3(.018,.095,.125)),_color(colors,"fallback",Vector3(.028,.10,.115))]}))
 
 # parent must be in a live SceneTree. Caller owns cache keyed by cache_key and
 # checks its request generation after awaiting bake. All color inputs are LINEAR
@@ -42,6 +44,10 @@ static func bake(parent: Node, geometry: Dictionary, origin: Dictionary, focus: 
 		if not is_finite(float(origin.get(key,NAN))): return {"error":"invalid render origin"}
 	var vertices=geometry.get("vertices")
 	if not vertices is PackedVector3Array or vertices.size()%3!=0 or vertices.size()>MAX_VERTICES: return {"error":"invalid or over-budget source vector triangles"}
+	var contour_info:Dictionary={}
+	if plan.widthPx>0.0:
+		contour_info=Contours.info(geometry)
+		if contour_info.has("error"):return contour_info
 	var anchor: Dictionary=geometry.get("anchor",origin)
 	var min_y:=INF;var max_y:=-INF
 	for point in vertices:
@@ -56,8 +62,11 @@ static func bake(parent: Node, geometry: Dictionary, origin: Dictionary, focus: 
 	result.diagnostics["sourceVectorAreaScope"]="input geometry clip window; projection camera may be narrower"
 	result.diagnostics["subpixelPolicy"]="original contour coverage only; no minimum stroke or physical-width edits"
 	result.diagnostics.merge(Symbols.diagnostics(plan),true)
+	for key in ["sourceContourVersion","sourceContourSha256","sourceContourPointCount","sourceContourRingCount","sourceContourComplete","sourceContourBudgetLimited","sourceContourPrecision","sourceContourScope","sourceSeaSymbolPolicy"]:
+		if geometry.has(key):result.diagnostics[key]=geometry[key]
+	if plan.widthPx>0.0:result.diagnostics["symbolContourEstimatedBytes"]=contour_info.estimatedBytes;result.diagnostics["symbolContourBudgetBytes"]=contour_info.budgetBytes
 	result.diagnostics["resolution"]=int(plan.resolution);result.diagnostics["metresPerTexel"]=width_m/int(plan.resolution)
-	if plan.widthPx>0.0:result.diagnostics["subpixelPolicy"]="declared all-water coverage symbol; original source contours, levels and physical area unchanged"
+	if plan.widthPx>0.0:result.diagnostics["subpixelPolicy"]="declared source vector-ring outline before raster; original source contours, levels and physical area unchanged"
 	if vertices.is_empty(): result.diagnostics["empty"]=true;return result
 	var resolution:=int(plan.resolution)
 	var viewport:=SubViewport.new();viewport.size=Vector2i(resolution,resolution);viewport.own_world_3d=true;viewport.transparent_bg=true;viewport.render_target_update_mode=SubViewport.UPDATE_ALWAYS
@@ -87,8 +96,9 @@ static func bake(parent: Node, geometry: Dictionary, origin: Dictionary, focus: 
 	viewport.queue_free()
 	if image==null or image.is_empty():return {"error":"source map texture readback unavailable"}
 	result.diagnostics["sourceCoverageImageSha256"]=_sha(image.get_data())
+	if options.get("retainSourceImage",false):result.sourceImage=image
 	if plan.widthPx>0.0:
-		image=await Symbols.apply(parent,image,plan)
+		image=await Symbols.apply(parent,image,plan,geometry,focus,colors)
 		if image==null or image.is_empty():return {"error":"symbolic source map texture readback unavailable"}
 		result.diagnostics["symbolCoverageImageSha256"]=_sha(image.get_data())
 	image.generate_mipmaps();result.texture=ImageTexture.create_from_image(image)
