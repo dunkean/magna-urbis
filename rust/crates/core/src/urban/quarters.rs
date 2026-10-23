@@ -2375,6 +2375,16 @@ pub(super) fn generate(
     surface: Surface<'_>,
     roads: &[Street],
 ) -> Result<Layout, String> {
+    // A stilt culture stands on its shore (geography.rs). Its shallow water
+    // becomes ground only once the programme sees that ground too
+    // (`generate_quarters`, OPUS_CITY.md request): until then, the shore.
+    let culture = if cfg.culture == "site" {
+        &site.culture
+    } else {
+        &cfg.culture
+    };
+    let stilt = super::geography::stilt_ground(site, culture, surface);
+    let site = stilt.as_ref().map_or(site, |g| &g.site);
     let first = generate_once(seed, site, cfg, m, surface, roads)?;
     let Some(p) = capacity::of(&first) else {
         return Ok(first);

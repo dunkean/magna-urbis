@@ -221,6 +221,145 @@ impl Geography {
     }
 }
 
+/// Ground of a stilt settlement (catalogue `render.stilts`: lagoon and marsh
+/// folk): the town stands on its shore, its centre moved to the nearest bank
+/// within reach, and the shallow water within `reach` of dry land counts as
+/// ground, so its walkways and houses on piles extend over the water, always
+/// joined to the land. Other cultures, and a site with no shore within
+/// reach, keep the ordinary ground (None).
+pub(super) struct StiltGround {
+    pub site: super::Site,
+    water: Vec<u8>,
+}
+impl StiltGround {
+    /// The raster ground with the stilt water dry (the vector geography, if
+    /// any, is replaced by this raster, which samples it). For
+    /// `generate_quarters`, plan and programme alike (OPUS_CITY.md request).
+    #[allow(dead_code)]
+    pub fn surface<'a>(&'a self, s: super::Surface<'a>) -> super::Surface<'a> {
+        super::Surface {
+            geometry: None,
+            water: &self.water,
+            ..s
+        }
+    }
+}
+/// Water a stilt town builds over, from the shore (m): half the town radius.
+fn stilt_reach(radius: f64) -> f64 {
+    (0.5 * radius).clamp(40.0, 160.0)
+}
+pub(super) fn stilt_ground(
+    site: &super::Site,
+    culture: &str,
+    surface: super::Surface<'_>,
+) -> Option<StiltGround> {
+    if super::catalogue()["cultures"][culture]["render"]["stilts"].as_bool() != Some(true)
+        || surface.n < 2
+        || surface.wet(site.center)
+    {
+        return None;
+    }
+    let n = surface.n as i64;
+    let cell = surface.width / surface.n as f64;
+    let centre = |i: i64, j: i64| Point {
+        x: (i as f64 + 0.5) * cell,
+        y: (j as f64 + 0.5) * cell,
+    };
+    let at = |p: Point| ((p.x / cell).floor() as i64, (p.y / cell).floor() as i64);
+    let dist = |a: Point, b: Point| (a.x - b.x).hypot(a.y - b.y);
+    // The nearest water within reach of the site (two radii, at least 400 m).
+    let search = (2.0 * site.radius).max(400.0);
+    let (ci, cj) = at(site.center);
+    let r = (search / cell).ceil() as i64;
+    let mut best: Option<(f64, Point)> = None;
+    for j in (cj - r).max(0)..=(cj + r).min(n - 1) {
+        for i in (ci - r).max(0)..=(ci + r).min(n - 1) {
+            let q = centre(i, j);
+            let d = dist(q, site.center);
+            if d <= search && best.is_none_or(|b| d < b.0) && surface.wet(q) {
+                best = Some((d, q));
+            }
+        }
+    }
+    let (d, water) = best?;
+    let toward = Point {
+        x: (site.center.x - water.x) / d.max(1e-9),
+        y: (site.center.y - water.y) / d.max(1e-9),
+    };
+    let bank = (0..=(d / 0.5) as usize)
+        .map(|k| Point {
+            x: water.x + toward.x * 0.5 * k as f64,
+            y: water.y + toward.y * 0.5 * k as f64,
+        })
+        .find(|&q| !surface.wet(q))?;
+    // Wet cells within reach of a dry cell (8-neighbour rings, a window of
+    // the town around the bank) become ground; the rest keeps its water.
+    let reach = stilt_reach(site.radius);
+    let steps = (reach / cell).ceil() as usize;
+    let (bi, bj) = at(bank);
+    let wr = ((1.5 * site.radius + reach) / cell).ceil() as i64;
+    let (i0, j0) = ((bi - wr).max(0), (bj - wr).max(0));
+    let (i1, j1) = ((bi + wr).min(n - 1), (bj + wr).min(n - 1));
+    let side = (i1 - i0 + 1) as usize;
+    let rows = (j1 - j0 + 1) as usize;
+    let mut wet = vec![false; side * rows];
+    let mut frontier = vec![];
+    for j in 0..rows {
+        for i in 0..side {
+            let w = surface.wet(centre(i0 + i as i64, j0 + j as i64));
+            wet[j * side + i] = w;
+            if !w {
+                frontier.push((i, j));
+            }
+        }
+    }
+    let mut water_mask = surface.water.to_vec();
+    let mut reached = vec![false; side * rows];
+    for _ in 0..steps {
+        let mut next = vec![];
+        for &(i, j) in &frontier {
+            for (di, dj) in [
+                (-1i64, -1i64),
+                (0, -1),
+                (1, -1),
+                (-1, 0),
+                (1, 0),
+                (-1, 1),
+                (0, 1),
+                (1, 1),
+            ] {
+                let (x, y) = (i as i64 + di, j as i64 + dj);
+                if x < 0 || y < 0 || x >= side as i64 || y >= rows as i64 {
+                    continue;
+                }
+                let k = y as usize * side + x as usize;
+                if wet[k] && !reached[k] {
+                    reached[k] = true;
+                    next.push((x as usize, y as usize));
+                }
+            }
+        }
+        frontier = next;
+    }
+    for j in 0..rows {
+        for i in 0..side {
+            let g = (j0 as usize + j) * surface.n + i0 as usize + i;
+            water_mask[g] = if wet[j * side + i] && !reached[j * side + i] {
+                water_mask[g].max(1)
+            } else {
+                0
+            };
+        }
+    }
+    Some(StiltGround {
+        site: super::Site {
+            center: bank,
+            ..site.clone()
+        },
+        water: water_mask,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -272,5 +411,47 @@ mod tests {
             Point { x: 700.0, y: 600.0 },
             0.12
         ));
+    }
+    /// A stilt town moves to its shore and builds over the water within
+    /// reach of the land; deeper water and other cultures keep their ground.
+    #[test]
+    fn a_stilt_town_stands_on_its_shore_over_shallow_water() {
+        let n = 200;
+        let cell = 1000.0 / n as f64;
+        let height = vec![0.0; n * n];
+        let water: Vec<u8> = (0..n * n)
+            .map(|k| u8::from(((k % n) as f64 + 0.5) * cell > 600.0))
+            .collect();
+        let surface = Surface {
+            geometry: None,
+            width: 1000.0,
+            n,
+            height: &height,
+            water: &water,
+        };
+        let site = crate::urban::Site {
+            key: "stilts".into(),
+            name: String::new(),
+            population: 2000,
+            culture: "stilt-town".into(),
+            center: Point { x: 400.0, y: 500.0 },
+            radius: 120.0,
+        };
+        let ground = stilt_ground(&site, "stilt-town", surface).unwrap();
+        assert!(
+            (ground.site.center.x - 600.0).abs() <= cell
+                && (ground.site.center.y - 500.0).abs() <= cell
+        );
+        let s = ground.surface(surface);
+        let reach = stilt_reach(site.radius);
+        assert!(!s.wet(Point {
+            x: 600.0 + reach - 2.0 * cell,
+            y: 500.0
+        }));
+        assert!(s.wet(Point {
+            x: 600.0 + reach + 2.0 * cell,
+            y: 500.0
+        }));
+        assert!(stilt_ground(&site, "european-organic", surface).is_none());
     }
 }

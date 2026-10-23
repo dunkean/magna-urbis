@@ -12,7 +12,10 @@ mod courts;
 mod families;
 mod landmark;
 mod occupation;
+mod organic;
 mod pressure;
+mod tidy;
+mod ruins;
 pub(super) use admission::{compact_fallback, witnessed_by};
 pub(super) use occupation::{
     Kind as OccupationKind, Occupancy, kind as occupation_kind, preview_parts as occupation_preview,
@@ -677,20 +680,29 @@ fn runs(fronts: &[Front]) -> Vec<Vec<Front>> {
             result[0] = last;
         }
     }
+    // Invariant (a lot follows the street that serves it): the main run is the
+    // best-ranked street among the runs that make a real front (at least
+    // `DOMINANT_RUN` of the longest one); a short end on a major street never
+    // turns the lot away from its long side.
+    let span = |r: &Vec<Front>| r.iter().map(|f| length(sub(f.b, f.a))).sum::<f64>();
+    let longest = result.iter().map(span).fold(0.0, f64::max);
+    let minor = |r: &Vec<Front>| span(r) < DOMINANT_RUN * longest;
     result.sort_by(|a, b| {
-        a.iter()
-            .map(|f| f.rank)
-            .min()
-            .cmp(&b.iter().map(|f| f.rank).min())
+        minor(a)
+            .cmp(&minor(b))
             .then_with(|| {
-                b.iter()
-                    .map(|f| length(sub(f.b, f.a)))
-                    .sum::<f64>()
-                    .total_cmp(&a.iter().map(|f| length(sub(f.b, f.a))).sum::<f64>())
+                a.iter()
+                    .map(|f| f.rank)
+                    .min()
+                    .cmp(&b.iter().map(|f| f.rank).min())
             })
+            .then_with(|| span(b).total_cmp(&span(a)))
     });
     result
 }
+/// A frontage run shorter than this share of the longest run is only a short
+/// end of the lot: it does not give the lot its orientation.
+const DOMINANT_RUN: f64 = 0.35;
 
 /// A frontage run cut at street bends, with the radial seams it shares with its
 /// neighbours on the same curve (`dot(p - point, m) >= 0` after `start`,
@@ -3597,7 +3609,13 @@ pub(super) fn generate(
         let shared_courts = matches!(cfg.operator.as_str(), "courtyard" | "compound")
             || super::culture::mapping(block_culture)
                 .is_some_and(|m| m.admissibility.shared_access);
+        // Organic tissue (catalogue `parcellation: organic`, elven groves): a
+        // relaxed Voronoi cut with footpaths, no frontage strips or depth bound.
+        let organic = cfg.operator == "culture" && organic::enabled(morph);
         let mut parcels = match morph.text("plotOp") {
+            _ if organic => {
+                organic::lots(&block.shape, bi, axis, &mut fronts, morph, zone, &mut rng)
+            }
             "garden" => {
                 let mut p = parcel(block.shape.clone(), bi, axis, &fronts, "garden");
                 p.reason = "intentional-garden".into();
@@ -3692,7 +3710,7 @@ pub(super) fn generate(
             }
             parcels = refined;
         }
-        if !matches!(morph.text("plotOp"), "compound" | "wholeBlock") {
+        if !organic && !matches!(morph.text("plotOp"), "compound" | "wholeBlock") {
             let depth = maximum_plot_depth(morph, zone);
             parcels = parcels
                 .into_iter()
@@ -3717,13 +3735,13 @@ pub(super) fn generate(
                 shared_access: true,
                 party_walls: true,
             });
-        if matches!(morph.text("plotOp"), "courtyard" | "compound") && shared_courts {
+        if organic || (matches!(morph.text("plotOp"), "courtyard" | "compound") && shared_courts) {
             admission.shared_access = true;
         }
         let family = families::family(morph.text("plotOp"));
         // Dense zones leave no empty land: leftovers are joined (`absorb`).
         let dense = matches!(zone.as_str(), "core" | "middle");
-        let depth_limit = (!matches!(morph.text("plotOp"), "compound" | "wholeBlock"))
+        let depth_limit = (!organic && !matches!(morph.text("plotOp"), "compound" | "wholeBlock"))
             .then(|| maximum_plot_depth(morph, zone));
         qualify(
             &mut parcels,
@@ -3778,7 +3796,9 @@ pub(super) fn generate(
             morph.number_or("courtPairShare", COURT_PAIR_SHARE),
             &mut rng.fork("court-pairs"),
         );
-        if let Some(c) = plan.filter(|c| c.densify > 0.0 || borrowed || c.vacancy < 0.999) {
+        if let Some(c) =
+            plan.filter(|c| !organic && (c.densify > 0.0 || borrowed || c.vacancy < 0.999))
+        {
             // The culture's own open land: its lot gardens as drawn, and off
             // the core the fringe fields the plan gave up (`vacancy` < 1).
             let fields = if zone == "core" {
@@ -3875,6 +3895,7 @@ pub(super) fn generate(
             }
             parcels = refined;
         }
+        tidy::tidy(&mut parcels, &fronts, layout, depth_limit, organic, dense);
         for p in &mut parcels {
             p.pressure = occupation;
             if p.use_kind == "plot" && backed(p) {

@@ -331,6 +331,38 @@ fn reduced_ring(r: &[Point], reduce: Reduce) -> Option<Vec<Coord<f64>>> {
             .collect(),
     )
 }
+/// The same ground without its hairlines: repeated vertices, out-and-back spikes
+/// and holes under 2 cm2 (the zero-width slits a join leaves, drawn as lines over
+/// the lot) are dropped; the coordinates that remain do not move. A shape that
+/// reduces to nothing is returned as it was.
+pub(super) fn cleaned(s: &Shape) -> Shape {
+    let ring = |r: &[Point]| {
+        reduced_ring(r, Reduce::Within(0.0))
+            .map(|c| c.into_iter().map(|p| Point { x: p.x, y: p.y }).collect::<Vec<_>>())
+    };
+    let Some(outer) = ring(&s.outer) else {
+        return s.clone();
+    };
+    let holes: Vec<Vec<Point>> = s
+        .holes
+        .iter()
+        .filter_map(|h| ring(h))
+        .filter(|h| signed(h).abs() >= 0.02)
+        .map(|mut h| {
+            h.reverse();
+            h
+        })
+        .collect();
+    // Nothing dropped: the lot stays bit for bit as it was (its identity is
+    // derived from its coordinates).
+    if outer.len() == s.outer.len()
+        && holes.len() == s.holes.len()
+        && holes.iter().zip(&s.holes).all(|(h, o)| h.len() == o.len())
+    {
+        return s.clone();
+    }
+    Shape { outer, holes }
+}
 /// The reduced overlay operand of a shape (holes clockwise); `None` without area.
 fn operand(s: &Shape, reduce: Reduce) -> Option<Polygon<f64>> {
     let line = |mut c: Vec<Coord<f64>>, hole: bool| {

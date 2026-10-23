@@ -323,15 +323,16 @@ pub(super) fn massing(
             t += 2.0 * r + 1.5;
         }
     } else if is("craft.mill") {
-        let (mw, md) = ((0.5 * w).clamp(7.0, 12.0), (0.5 * d).clamp(7.0, 12.0));
-        x.bar(m, mw, ta + 1.0, ta + 1.0 + md, "mill-house");
-        x.rect(
-            m + mw * 0.5,
-            m + mw * 0.5 + 1.5,
-            ta + 2.0,
-            ta + md - 1.0,
-            "wheel",
-        );
+        // The mill stands at the back of its lot, on the race (an isolated
+        // mill's plot backs onto the water, kinds.rs `bank`), its yard on the
+        // street; the wheel turns against its rear wall, its plane along the
+        // race (2 m wide: a 1.5 m strip fell under the structural minimum of
+        // `finish` and the wheel never showed).
+        let mw = (0.5 * w).clamp(7.0, 12.0);
+        let md = (0.5 * d).clamp(7.0, 12.0).min(d - 3.5);
+        let back = x.t1 - 0.3;
+        x.bar(m, mw, back - 2.0 - md, back - 2.0, "mill-house");
+        x.bar(m, (0.6 * mw).min(5.0), back - 2.0, back, "wheel");
     } else {
         return None;
     }

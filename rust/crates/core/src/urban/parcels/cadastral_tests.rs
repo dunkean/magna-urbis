@@ -1331,3 +1331,116 @@ fn dense_leftovers_are_joined_or_admitted_by_a_free_witness() {
     // Allocation asks the same question the cadastre answered.
     assert!(parcel_envelope(lot, small.min_frontage, small.min_depth, 0.8).is_some());
 }
+
+/// Invariant (clean ground): the zero-width spikes and hairline holes a join
+/// leaves are dropped, the ground and every other vertex stay, and a clean
+/// shape is returned bit for bit (its identity is derived from its coordinates).
+#[test]
+fn hairlines_are_cleaned_without_moving_anything_else() {
+    use super::super::geometry::{cleaned, signed};
+    let p = |x: f64, y: f64| Point { x, y };
+    let dirty = Shape {
+        outer: vec![
+            p(0.0, 0.0),
+            p(10.0, 0.0),
+            p(10.0, 0.0),
+            p(10.0, 8.0),
+            p(14.0, 8.0),
+            p(10.0, 8.0),
+            p(10.0, 10.0),
+            p(0.0, 10.0),
+        ],
+        holes: vec![vec![p(3.0, 3.0), p(5.0, 5.0), p(4.0, 4.0)]],
+    };
+    let clean = cleaned(&dirty);
+    assert_eq!(clean.outer.len(), 4, "{:?}", clean.outer);
+    assert!(clean.holes.is_empty());
+    assert!((area(&clean) - 100.0).abs() < 1e-9);
+    assert!(signed(&clean.outer) > 0.0);
+    assert_eq!(cleaned(&clean), clean);
+    let square = rectangle(0.0, 0.0, 7.0, 5.0);
+    assert_eq!(cleaned(&square), square);
+}
+
+/// Invariant (no needle tip, no sliver): a needle tip is cut and given to the
+/// neighbour it lies against, a lot far too thin for a house joins the lot
+/// beside it; the ground is conserved and no lot loses its witness.
+#[test]
+fn needle_tips_and_slivers_are_given_to_the_lot_beside() {
+    let axis = Point { x: 1.0, y: 0.0 };
+    let p = |x: f64, y: f64| Point { x, y };
+    let layout: Layout = serde_json::from_value(json!({
+        "key":"tidy","culture":"roman-core","center":{"x":10.0,"y":15.0},
+        "quarters":[],"warnings":[],"blocks":[{"shape":rectangle(0.0, 0.0, 60.0, 30.0),"quarter":0,"kind":"block","axis":{"x":1.0,"y":0.0},"zone":"core"}],
+        "streets":[{"widths":[6.0,6.0],"path":[{"x":-3.0,"y":-3.0},{"x":63.0,"y":-3.0}],"rank":1,"role":"street"}]
+    }))
+    .unwrap();
+    let fronts = [front((0.0, 0.0), (60.0, 0.0), 1, 0)];
+    let lot = |shape: Shape, kind: &str| {
+        let mut c = parcel(shape.clone(), 0, axis, &fronts, kind);
+        if kind == "plot" {
+            c.envelope = Some(rectangle(
+                shape.outer[0].x + 1.0,
+                shape.outer[0].y + 1.0,
+                shape.outer[0].x + 4.0,
+                shape.outer[0].y + 4.0,
+            ));
+            c.reason = "admissible-envelope".into();
+        }
+        c
+    };
+    // A garden ending in an 18 degree point against the lot P.
+    let tip = Shape {
+        outer: vec![p(20.0, 18.0), p(44.0, 18.0), p(20.0, 26.0)],
+        holes: vec![],
+    };
+    let mut cells = vec![
+        lot(rectangle(0.0, 0.0, 20.0, 30.0), "plot"),
+        lot(rectangle(20.0, 0.0, 60.0, 18.0), "plot"),
+        lot(tip, "garden"),
+    ];
+    let before: f64 = cells.iter().map(|c| area(&c.shape)).sum();
+    tidy::tidy(&mut cells, &fronts, &layout, None, false, false);
+    let after: f64 = cells.iter().map(|c| area(&c.shape)).sum();
+    assert!((before - after).abs() < 1e-6, "{before} {after}");
+    for c in &cells {
+        assert!(
+            tidy::pointed(&c.shape) > 25.0_f64.to_radians(),
+            "{:?}",
+            c.shape.outer
+        );
+        assert!(c.envelope.as_ref().is_none_or(|e| {
+            super::super::geometry::difference(e, &c.shape)
+                .iter()
+                .map(area)
+                .sum::<f64>()
+                < 1e-6
+        }));
+    }
+    // A 3.5 m wide, 40 m long lot beside a house lot joins it.
+    let mut cells = vec![
+        lot(rectangle(0.0, 0.0, 30.0, 30.0), "plot"),
+        lot(rectangle(30.0, 0.0, 33.5, 40.0), "plot"),
+    ];
+    tidy::tidy(&mut cells, &fronts, &layout, None, false, false);
+    assert_eq!(cells.len(), 1);
+    assert!((area(&cells[0].shape) - (900.0 + 140.0)).abs() < 1e-6);
+    assert!(cells[0].provenance.iter().any(|x| x == "sliver-merged"));
+}
+
+/// Invariant (a lot follows the street that serves it): a short end on a major
+/// street does not turn the main frontage run away from the long side.
+#[test]
+fn the_main_run_is_the_long_front_not_a_short_end_on_a_major_street() {
+    let fronts = [
+        front((0.0, 0.0), (5.0, 0.0), 1, 0),
+        front((5.0, 0.0), (5.0, 20.0), 3, 1),
+    ];
+    assert_eq!(runs(&fronts)[0][0].street, 1);
+    // A real front on the major street keeps the lead.
+    let fronts = [
+        front((0.0, 0.0), (12.0, 0.0), 1, 0),
+        front((12.0, 0.0), (12.0, 20.0), 3, 1),
+    ];
+    assert_eq!(runs(&fronts)[0][0].street, 0);
+}

@@ -9744,6 +9744,7 @@
         "streetOp": "organic",
         "closeOp": "none",
         "plotOp": "compound",
+        "parcellation": "organic",
         "buildingOp": "treeHouse",
         "orientation": "road",
         "laneSpacing": [
@@ -10028,6 +10029,7 @@
         "streetOp": "organic",
         "closeOp": "none",
         "plotOp": "compound",
+        "parcellation": "organic",
         "buildingOp": "treeHouse",
         "orientation": "road",
         "laneSpacing": [
@@ -10312,6 +10314,7 @@
         "streetOp": "organic",
         "closeOp": "none",
         "plotOp": "compound",
+        "parcellation": "organic",
         "buildingOp": "treeHouse",
         "orientation": "road",
         "laneSpacing": [
@@ -10596,6 +10599,7 @@
         "streetOp": "organic",
         "closeOp": "none",
         "plotOp": "compound",
+        "parcellation": "organic",
         "buildingOp": "treeHouse",
         "orientation": "road",
         "laneSpacing": [
@@ -70141,6 +70145,7 @@
         "streetOp": "organic",
         "closeOp": "none",
         "plotOp": "compound",
+        "parcellation": "organic",
         "buildingOp": "treeHouse",
         "orientation": "road",
         "laneSpacing": [
