@@ -1,0 +1,24 @@
+{
+  "elapsedMs": 10232,
+  "failures": [],
+  "maximumPremultipliedError": 0.00000000370644670510956,
+  "metadata": {
+    "canonicalFieldsVersion": "eebe1d15436a39a72b701465f1ccb275",
+    "groundAvailability": "explicit",
+    "legacyFallback": false,
+    "lowCoverAvailability": "explicit",
+    "projectedFieldsVersion": "eebe1d15436a39a72b701465f1ccb275",
+    "textureFieldsVersion": "eebe1d15436a39a72b701465f1ccb275",
+    "textureGrid": {
+      "height": 512.0,
+      "originX": 39.0625,
+      "originZ": 39.0625,
+      "spacingM": 78.125,
+      "width": 512.0
+    },
+    "textureSource": "world",
+    "version": "surface-layers-1"
+  },
+  "passed": true,
+  "scope": "Actual retained teacher migrated by compiler1.5.1; independent layer preparation/cache and numeric archive descriptors, CPU only"
+}

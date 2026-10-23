@@ -183,7 +183,7 @@ func configure(material: Object, world: Dictionary, origin: Dictionary) -> void:
 		var rgb: Array = recipe.colorLinear
 		colors.append(Vector4(float(rgb[0]),float(rgb[1]),float(rgb[2]),float(recipe.roughness)))
 		var family: String = recipe.family
-		var material_key: String = {"forest-litter":"litter","vegetation-litter":"grass","mineral-soil":"soil","alluvial-bars":"gravel","angular-talus":"gravel","fractured-bedrock":"rock","wind-ripple-sand":"sand"}.get(recipe.id,family)
+		var material_key: String = {"forest-litter":"litter","vegetation-litter":"grass","mineral-soil":"soil","organic-soil":"soil","alluvial-bars":"gravel","angular-talus":"gravel","fractured-bedrock":"rock","wind-ripple-sand":"sand"}.get(recipe.id,family)
 		if layers.has("recipe:"+str(recipe.id)): material_key="recipe:"+str(recipe.id)
 		var scale: float = scales.get(material_key,float(recipe.physicalExtentMetres))
 		material_scales.append(scale)

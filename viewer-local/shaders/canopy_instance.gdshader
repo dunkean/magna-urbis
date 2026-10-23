@@ -11,7 +11,7 @@ void vertex() {
     canopy_class=int(INSTANCE_CUSTOM.g+0.5);
 }
 void fragment() {
-    float footprint=canopy_pixel_footprint(canopy_world_position.xz,PROJECTION_MATRIX*VIEW_MATRIX,VIEWPORT_SIZE);
+    float footprint=canopy_main_pixel_footprint(canopy_world_position.xz,PROJECTION_MATRIX*VIEW_MATRIX,VIEWPORT_SIZE);
     ALBEDO=display_color(linear_tint);
     ROUGHNESS=presentation_mode==1?1.0:0.91;
     if(presentation_mode==1) SPECULAR=0.0;
