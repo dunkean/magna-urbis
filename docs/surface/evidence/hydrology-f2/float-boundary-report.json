@@ -1,0 +1,335 @@
+{
+  "hydrologyShaderAdapterSha256": "0748276cce53ca4e784f76d8813ad8ef88f2671dc2976d4acf2e48546fddd85f",
+  "passed": true,
+  "results": [
+    {
+      "boundedMissingAreaM2": 0.0,
+      "boundedMissingTriangles": 0,
+      "case": {
+        "tx": 0.0,
+        "tz": 0.0,
+        "width": 40000.0,
+        "x": 20038.9862060547,
+        "z": 20038.9862060547
+      },
+      "examples": [
+        {
+          "boundedLevel": 961.943908691406,
+          "canonicalX": -0.000122070301586064,
+          "canonicalZ": 4902.7918701172,
+          "halfUlpX": 0.0009765625,
+          "halfUlpZ": 0.00048828125,
+          "outsideSupportM": 0.000122070301586064,
+          "relativeX": -20038.986328125,
+          "relativeZ": -15136.1943359375
+        },
+        {
+          "boundedLevel": 961.943908691406,
+          "canonicalX": -0.000122070301586064,
+          "canonicalZ": 4960.9403076172,
+          "halfUlpX": 0.0009765625,
+          "halfUlpZ": 0.00048828125,
+          "outsideSupportM": 0.000122070301586064,
+          "relativeX": -20038.986328125,
+          "relativeZ": -15078.0458984375
+        },
+        {
+          "boundedLevel": 961.943908691406,
+          "canonicalX": -0.000122070301586064,
+          "canonicalZ": 4902.7918701172,
+          "halfUlpX": 0.0009765625,
+          "halfUlpZ": 0.00048828125,
+          "outsideSupportM": 0.000122070301586064,
+          "relativeX": -20038.986328125,
+          "relativeZ": -15136.1943359375
+        },
+        {
+          "boundedLevel": 961.943908691406,
+          "canonicalX": -0.000122070301586064,
+          "canonicalZ": 4902.7918701172,
+          "halfUlpX": 0.0009765625,
+          "halfUlpZ": 0.00048828125,
+          "outsideSupportM": 0.000122070301586064,
+          "relativeX": -20038.986328125,
+          "relativeZ": -15136.1943359375
+        },
+        {
+          "boundedLevel": 961.943908691406,
+          "canonicalX": -0.000122070301586064,
+          "canonicalZ": 4902.7918701172,
+          "halfUlpX": 0.0009765625,
+          "halfUlpZ": 0.00048828125,
+          "outsideSupportM": 0.000122070301586064,
+          "relativeX": -20038.986328125,
+          "relativeZ": -15136.1943359375
+        },
+        {
+          "boundedLevel": 961.943908691406,
+          "canonicalX": -0.000122070301586064,
+          "canonicalZ": 4902.7918701172,
+          "halfUlpX": 0.0009765625,
+          "halfUlpZ": 0.00048828125,
+          "outsideSupportM": 0.000122070301586064,
+          "relativeX": -20038.986328125,
+          "relativeZ": -15136.1943359375
+        },
+        {
+          "boundedLevel": 1183.66345214844,
+          "canonicalX": -0.000122070301586064,
+          "canonicalZ": 10731.9793701172,
+          "halfUlpX": 0.0009765625,
+          "halfUlpZ": 0.00048828125,
+          "outsideSupportM": 0.000122070301586064,
+          "relativeX": -20038.986328125,
+          "relativeZ": -9307.0068359375
+        },
+        {
+          "boundedLevel": 1183.66345214844,
+          "canonicalX": -0.000122070301586064,
+          "canonicalZ": 10742.1854248047,
+          "halfUlpX": 0.0009765625,
+          "halfUlpZ": 0.00048828125,
+          "outsideSupportM": 0.000122070301586064,
+          "relativeX": -20038.986328125,
+          "relativeZ": -9296.80078125
+        }
+      ],
+      "maximumHalfUlpM": 0.0009765625,
+      "maximumOutsideSupportM": 0.000122070301586064,
+      "productionBoundaryQueriesResolved": 51,
+      "productionMissingAreaM2": 0.0,
+      "productionMissingTriangles": 0,
+      "productionRoundoffM": 0.000122070301586064,
+      "sourceVertices": 719184,
+      "strictMissingAreaM2": 33242.4971079826,
+      "strictMissingTriangles": 43
+    },
+    {
+      "boundedMissingAreaM2": 0.0,
+      "boundedMissingTriangles": 0,
+      "case": {
+        "tx": 0.0,
+        "tz": 0.0,
+        "width": 10000.0,
+        "x": 20011.76953125,
+        "z": 20011.76953125
+      },
+      "examples": [],
+      "maximumHalfUlpM": 0.0,
+      "maximumOutsideSupportM": 0.0,
+      "productionBoundaryQueriesResolved": 0,
+      "productionMissingAreaM2": 0.0,
+      "productionMissingTriangles": 0,
+      "productionRoundoffM": 0.0,
+      "sourceVertices": 719184,
+      "strictMissingAreaM2": 0.0,
+      "strictMissingTriangles": 0
+    },
+    {
+      "boundedMissingAreaM2": 0.0,
+      "boundedMissingTriangles": 0,
+      "case": {
+        "tx": 0.0,
+        "tz": 0.0,
+        "width": 40000.0,
+        "x": 20102.9862060547,
+        "z": 20102.9862060547
+      },
+      "examples": [
+        {
+          "boundedLevel": 961.943908691406,
+          "canonicalX": -0.000122070301586064,
+          "canonicalZ": 4902.7918701172,
+          "halfUlpX": 0.0009765625,
+          "halfUlpZ": 0.00048828125,
+          "outsideSupportM": 0.000122070301586064,
+          "relativeX": -20102.986328125,
+          "relativeZ": -15200.1943359375
+        },
+        {
+          "boundedLevel": 961.943908691406,
+          "canonicalX": -0.000122070301586064,
+          "canonicalZ": 4960.9403076172,
+          "halfUlpX": 0.0009765625,
+          "halfUlpZ": 0.00048828125,
+          "outsideSupportM": 0.000122070301586064,
+          "relativeX": -20102.986328125,
+          "relativeZ": -15142.0458984375
+        },
+        {
+          "boundedLevel": 961.943908691406,
+          "canonicalX": -0.000122070301586064,
+          "canonicalZ": 4902.7918701172,
+          "halfUlpX": 0.0009765625,
+          "halfUlpZ": 0.00048828125,
+          "outsideSupportM": 0.000122070301586064,
+          "relativeX": -20102.986328125,
+          "relativeZ": -15200.1943359375
+        },
+        {
+          "boundedLevel": 961.943908691406,
+          "canonicalX": -0.000122070301586064,
+          "canonicalZ": 4902.7918701172,
+          "halfUlpX": 0.0009765625,
+          "halfUlpZ": 0.00048828125,
+          "outsideSupportM": 0.000122070301586064,
+          "relativeX": -20102.986328125,
+          "relativeZ": -15200.1943359375
+        },
+        {
+          "boundedLevel": 961.943908691406,
+          "canonicalX": -0.000122070301586064,
+          "canonicalZ": 4902.7918701172,
+          "halfUlpX": 0.0009765625,
+          "halfUlpZ": 0.00048828125,
+          "outsideSupportM": 0.000122070301586064,
+          "relativeX": -20102.986328125,
+          "relativeZ": -15200.1943359375
+        },
+        {
+          "boundedLevel": 961.943908691406,
+          "canonicalX": -0.000122070301586064,
+          "canonicalZ": 4902.7918701172,
+          "halfUlpX": 0.0009765625,
+          "halfUlpZ": 0.00048828125,
+          "outsideSupportM": 0.000122070301586064,
+          "relativeX": -20102.986328125,
+          "relativeZ": -15200.1943359375
+        },
+        {
+          "boundedLevel": 1183.66345214844,
+          "canonicalX": -0.000122070301586064,
+          "canonicalZ": 10731.9793701172,
+          "halfUlpX": 0.0009765625,
+          "halfUlpZ": 0.00048828125,
+          "outsideSupportM": 0.000122070301586064,
+          "relativeX": -20102.986328125,
+          "relativeZ": -9371.0068359375
+        },
+        {
+          "boundedLevel": 1183.66345214844,
+          "canonicalX": -0.000122070301586064,
+          "canonicalZ": 10742.1854248047,
+          "halfUlpX": 0.0009765625,
+          "halfUlpZ": 0.00048828125,
+          "outsideSupportM": 0.000122070301586064,
+          "relativeX": -20102.986328125,
+          "relativeZ": -9360.80078125
+        }
+      ],
+      "maximumHalfUlpM": 0.0009765625,
+      "maximumOutsideSupportM": 0.000122070301586064,
+      "productionBoundaryQueriesResolved": 51,
+      "productionMissingAreaM2": 0.0,
+      "productionMissingTriangles": 0,
+      "productionRoundoffM": 0.000122070301586064,
+      "sourceVertices": 719184,
+      "strictMissingAreaM2": 33242.4742655754,
+      "strictMissingTriangles": 43
+    },
+    {
+      "boundedMissingAreaM2": 0.0,
+      "boundedMissingTriangles": 0,
+      "case": {
+        "tx": 1000000000.0,
+        "tz": -1000000000.0,
+        "width": 40000.0,
+        "x": 1000020038.98621,
+        "z": -999979961.013794
+      },
+      "examples": [
+        {
+          "boundedLevel": 961.943908691406,
+          "canonicalX": 999999999.999878,
+          "canonicalZ": -999995097.20813,
+          "halfUlpX": 0.0009765625,
+          "halfUlpZ": 0.00048828125,
+          "outsideSupportM": 0.0001220703125,
+          "relativeX": -20038.986328125,
+          "relativeZ": -15136.1943359375
+        },
+        {
+          "boundedLevel": 961.943908691406,
+          "canonicalX": 999999999.999878,
+          "canonicalZ": -999995039.059692,
+          "halfUlpX": 0.0009765625,
+          "halfUlpZ": 0.00048828125,
+          "outsideSupportM": 0.0001220703125,
+          "relativeX": -20038.986328125,
+          "relativeZ": -15078.0458984375
+        },
+        {
+          "boundedLevel": 961.943908691406,
+          "canonicalX": 999999999.999878,
+          "canonicalZ": -999995097.20813,
+          "halfUlpX": 0.0009765625,
+          "halfUlpZ": 0.00048828125,
+          "outsideSupportM": 0.0001220703125,
+          "relativeX": -20038.986328125,
+          "relativeZ": -15136.1943359375
+        },
+        {
+          "boundedLevel": 961.943908691406,
+          "canonicalX": 999999999.999878,
+          "canonicalZ": -999995097.20813,
+          "halfUlpX": 0.0009765625,
+          "halfUlpZ": 0.00048828125,
+          "outsideSupportM": 0.0001220703125,
+          "relativeX": -20038.986328125,
+          "relativeZ": -15136.1943359375
+        },
+        {
+          "boundedLevel": 961.943908691406,
+          "canonicalX": 999999999.999878,
+          "canonicalZ": -999995097.20813,
+          "halfUlpX": 0.0009765625,
+          "halfUlpZ": 0.00048828125,
+          "outsideSupportM": 0.0001220703125,
+          "relativeX": -20038.986328125,
+          "relativeZ": -15136.1943359375
+        },
+        {
+          "boundedLevel": 961.943908691406,
+          "canonicalX": 999999999.999878,
+          "canonicalZ": -999995097.20813,
+          "halfUlpX": 0.0009765625,
+          "halfUlpZ": 0.00048828125,
+          "outsideSupportM": 0.0001220703125,
+          "relativeX": -20038.986328125,
+          "relativeZ": -15136.1943359375
+        },
+        {
+          "boundedLevel": 1183.66345214844,
+          "canonicalX": 999999999.999878,
+          "canonicalZ": -999989268.02063,
+          "halfUlpX": 0.0009765625,
+          "halfUlpZ": 0.00048828125,
+          "outsideSupportM": 0.0001220703125,
+          "relativeX": -20038.986328125,
+          "relativeZ": -9307.0068359375
+        },
+        {
+          "boundedLevel": 1183.66345214844,
+          "canonicalX": 999999999.999878,
+          "canonicalZ": -999989257.814575,
+          "halfUlpX": 0.0009765625,
+          "halfUlpZ": 0.00048828125,
+          "outsideSupportM": 0.0001220703125,
+          "relativeX": -20038.986328125,
+          "relativeZ": -9296.80078125
+        }
+      ],
+      "maximumHalfUlpM": 0.0009765625,
+      "maximumOutsideSupportM": 0.0001220703125,
+      "productionBoundaryQueriesResolved": 51,
+      "productionMissingAreaM2": 0.0,
+      "productionMissingTriangles": 0,
+      "productionRoundoffM": 0.0001220703125,
+      "sourceVertices": 719184,
+      "strictMissingAreaM2": 33242.4971079826,
+      "strictMissingTriangles": 43
+    }
+  ],
+  "scope": "CPU source polygons clipped in float64 before Sweep quantization; compare original measured wet-level queries against a half-FP32-ULP boundary correction only. Interior NaN and genuine out-of-domain remain absent.",
+  "sourcePacketSha256": "11df5d07eaaa526046b057619dcff035b182d94f39b08414edf0dc3fd6065ceb"
+}

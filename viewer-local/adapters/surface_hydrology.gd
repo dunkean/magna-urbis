@@ -94,6 +94,20 @@ static func _level(water: Dictionary, x: float, z: float) -> float:
 			if distance<best and distance<=6.25: best=distance; level=float(water.levelM[i])
 	return level
 
+# Sweep vertices are FP32 relative coordinates, after float64 source clipping.
+# Recover only a boundary query displaced by <= half an FP32 ULP. This does
+# not move the mesh, widen the wet search or replace absent interior levels.
+static func _half_float32_ulp(value:float)->float:
+	return pow(2.0,-150.0) if absf(value)<1.17549435082229e-38 else pow(2.0,floorf(log(absf(value))/log(2.0))-24.0)
+static func _level_at_clipped_vertex(water:Dictionary,origin:Dictionary,p:Vector3)->float:
+	var x=float(origin.x)+p.x;var z=float(origin.z)+p.z;var spacing=float(water.width)/int(water.n)
+	var low_x=float(water.originX)-spacing*.5;var low_z=float(water.originZ)-spacing*.5;var high_x=low_x+float(water.width);var high_z=low_z+float(water.width)
+	if x>=low_x and x<=high_x and z>=low_z and z<=high_z:return NAN
+	var eps_x=_half_float32_ulp(p.x)+absf(float(origin.x))*2.220446049250313e-16
+	var eps_z=_half_float32_ulp(p.z)+absf(float(origin.z))*2.220446049250313e-16
+	if x<low_x-eps_x or x>high_x+eps_x or z<low_z-eps_z or z>high_z+eps_z:return NAN
+	return _level(water,clampf(x,low_x,high_x),clampf(z,low_z,high_z))
+
 static func _fallback(value: Dictionary, reason: String) -> Dictionary:
 	var result:=value.duplicate(false)
 	result.fixedHydrologyFallbackReason=reason
@@ -153,6 +167,7 @@ static func prepare(packet: Dictionary, world: Dictionary, origin: Dictionary, f
 	var translation: Dictionary=source.get("sourceToWorldTranslation",{})
 	var tx:=float(translation.get("x",0.0)); var tz:=float(translation.get("z",0.0))
 	var vertices:=PackedVector3Array(); var missing:=0; var points:=0; var area:=0.0; var work:=0
+	var boundary_level_queries_resolved:=0;var maximum_boundary_query_roundoff:=0.0
 	var missing_area:=0.0; var requested_area:=0.0; var duplicate_groups:=0; var display_groups:=0; var seen_groups: Dictionary={}
 	var native_groups:=0;var sweep_groups:=0;var maximum_float_error:=0.0;var maximum_float_tolerance:=0.0
 	for group in geometry.water:
@@ -196,6 +211,12 @@ static func prepare(packet: Dictionary, world: Dictionary, origin: Dictionary, f
 			for i in 3:
 				var p: Vector3=triangles[at+i]
 				var level:=_level(water,float(origin.x)+p.x,float(origin.z)+p.z)
+				if not is_finite(level):
+					level=_level_at_clipped_vertex(water,origin,p)
+					if is_finite(level):
+						boundary_level_queries_resolved+=1
+						var x=float(origin.x)+p.x;var z=float(origin.z)+p.z
+						maximum_boundary_query_roundoff=maxf(maximum_boundary_query_roundoff,maxf(absf(x-clampf(x,float(window.minX),float(window.maxX))),absf(z-clampf(z,float(window.minZ),float(window.maxZ)))))
 				if not is_finite(level): valid=false; break
 				p.y=level-float(origin.y); triangle.append(p)
 			if valid:
@@ -234,6 +255,8 @@ static func prepare(packet: Dictionary, world: Dictionary, origin: Dictionary, f
 	result.classImage=Image.create_from_data(n,n,false,Image.FORMAT_RF,source_classes.to_byte_array())
 	result.classOrigin={"x":float(water.originX),"z":float(water.originZ)}
 	result.classSpacingM=spacing; result.classSize=Vector2i(n,n)
+	result.sourceLevelBoundaryQueriesResolved=boundary_level_queries_resolved;result.sourceLevelMaximumBoundaryQueryRoundoffM=maximum_boundary_query_roundoff
+	result.sourceLevelBoundaryPolicy="Only queries of float64-clipped vertices displaced outside source support by <= half an FP32 relative-coordinate ULP are clamped; source levels and mesh vertices stay unchanged"
 	result.missingLevelTriangles=missing; result.sourceVectorPoints=points
 	result.sourceVectorRequestedAreaM2=requested_area; result.sourceVectorMissingAreaM2=missing_area; result.sourceVectorCoverageComplete=missing==0
 	result.sourceGroups=geometry.water.size(); result.sourceDuplicateGroups=duplicate_groups; result.displayGroups=display_groups
