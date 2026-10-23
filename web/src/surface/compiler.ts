@@ -708,9 +708,14 @@ function gridSampler(t: SurfaceGridGeometry, x: number, z: number): { nearest: n
 function sampleMaterialComposition(fields: SurfaceFields, indices: number[], weights: number[], layer?:'ground'|'lowCover'): MaterialComposition & { mean: [number, number, number] } {
   const primary=layer?fields[`${layer}Material`]!:fields.material,secondary=layer?fields[`${layer}MaterialSecondary`]!:fields.materialSecondary,
     blends=layer?fields[`${layer}MaterialBlend`]!:fields.materialBlend,means=layer?fields[`${layer}MaterialMeanColor`]!:fields.materialMeanColor;
+  // Low cover is an RGBA layer. Transparent texels contribute neither colour
+  // nor recipe/roughness; normalise only after spatial*opacity accumulation.
+  const coverageWeights=layer==='lowCover'?weights.map((weight,corner)=>weight*fields.lowCoverOpacity![indices[corner]]):weights;
+  const coverageSum=coverageWeights.reduce((sum,weight)=>sum+weight,0);
+  if(layer==='lowCover'&&coverageSum===0)return{primary:primary[indices[0]],secondary:primary[indices[0]],blend:0,mean:[0,0,0]};
   const entries: Array<[number, number]> = [], mean: [number, number, number] = [0, 0, 0];
   for (let corner = 0; corner < 4; corner++) {
-    const i = indices[corner], weight = weights[corner], blend = blends[i];
+    const i = indices[corner], weight = layer==='lowCover'?coverageWeights[corner]/coverageSum:weights[corner], blend = blends[i];
     entries.push([primary[i], weight * (1 - blend)], [secondary[i], weight * blend]);
     const color = unpackMaterialMean(means[i]);
     for (let channel = 0; channel < 3; channel++) mean[channel] += color[channel] * weight;

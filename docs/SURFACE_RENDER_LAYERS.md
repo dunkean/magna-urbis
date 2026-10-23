@@ -1,6 +1,6 @@
 # Sol, couvert bas, arbres et représentation de canopée
 
-Le contrat `surface-layers-1` (compilateur `surface-1.5.0`) distingue trois
+Le contrat `surface-layers-1` (compilateur `surface-1.5.1`) distingue trois
 étages physiques. Leur représentation optique est un choix de rendu, séparé des
 données canoniques. La campagne V5 portait sur `surface-1.4.0` : elle **ne valide
 pas** ce nouveau contrat, son shader ni sa qualité visuelle.
@@ -55,6 +55,13 @@ Les recettes ont un rôle facultatif pour les anciens catalogues,
 intégrés l'annoncent explicitement. Normales, rugosité et palette cartographique
 doivent être résolues depuis **la recette de la couche concernée**. La famille
 legacy `vegetation` ne suffit pas à choisir entre herbe et litière.
+
+La couleur stockée de couvert bas est une moyenne non prémultipliée ; son alpha
+est distinct. Toute interpolation de couleur/IDs/rugosité/normales utilise les
+poids `bilerp*lowCoverOpacity`, puis normalise par la somme des alphas. Un texel
+transparent ne contribue jamais sa couleur de fallback. Le GPU doit multiplier
+le RGB linéaire par l'alpha **avant** filtrage/mipmaps, puis récupérer la couleur
+si l'alpha est positif. Une somme nulle reste neutre et invisible.
 
 ## Construction et invariants
 
