@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "name": "Magna Urbis initial natural surface library",
+  "license": "CC0-1.0",
+  "licenseUrl": "https://polyhaven.com/license",
+  "scalePolicy": "physicalExtentMetres and heightAmplitudeMetres are authored rendering parameters, not claims about capture dimensions. Original provider dimensions are retained in the resolved manifest.",
+  "materials": [
+    { "id": "rock", "assetId": "rocky_terrain_02", "physicalExtentMetres": 8, "heightAmplitudeMetres": 0.08, "families": ["bedrock", "gravity", "rocky-coast", "volcanic", "karst"] },
+    { "id": "soil", "assetId": "brown_mud", "physicalExtentMetres": 2, "heightAmplitudeMetres": 0.018, "families": ["mineral-plains", "arid-erosion", "wetland"] },
+    { "id": "litter", "assetId": "forest_ground_04", "physicalExtentMetres": 3, "heightAmplitudeMetres": 0.025, "families": ["vegetation"] },
+    { "id": "grass", "assetId": "aerial_grass_rock", "physicalExtentMetres": 12, "heightAmplitudeMetres": 0.025, "families": ["vegetation"] },
+    { "id": "sand", "assetId": "gravelly_sand", "physicalExtentMetres": 3, "heightAmplitudeMetres": 0.012, "families": ["aeolian", "sedimentary-coast", "marine"] },
+    { "id": "gravel", "assetId": "gravel_stones", "physicalExtentMetres": 3, "heightAmplitudeMetres": 0.045, "families": ["alluvial", "gravity"] }
+  ]
+}
