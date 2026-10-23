@@ -1,9 +1,10 @@
-/** Renderer-independent physical surface contract. X/Z horizontal, Y altitude, all in metres. */
+/** Renderer-independent physical surface contract. Right-handed frame: +X east, +Y up, +Z south (map +Y), all metres. */
 export const SURFACE_SCHEMA_VERSION = 1 as const;
-export const SURFACE_COMPILER_VERSION = 'surface-1.1.0';
+export const SURFACE_COMPILER_VERSION = 'surface-1.2.0';
 export const SURFACE_POPULATION_VERSION = 'population-1.1.0';
 export interface Bounds { minX: number; minZ: number; maxX: number; maxZ: number }
 export interface SourceIdentity {
+  /** sourceLOD is an opaque provider-specific label (some providers use negative finer LODs). Compare nativeSpacingM, never LODs across providers. */
   id: string; version: string; sourceLOD: number; nativeSpacingM: number;
   /** False for legacy exports whose generator LOD was never recorded. */
   sourceLODKnown?: boolean;
@@ -53,7 +54,9 @@ export interface ClimateInput {
   /** Optional physical fields on the canonical grid, e.g. adapted regional climate. */
   temperatureC?: Float32Array; precipitationMm?: Float32Array;
   seasonalAmplitudeC?: number; referenceElevationM?: number;
-  lapseRateCPerKm?: number; windRadians?: number;
+  lapseRateCPerKm?: number;
+  /** Direction TOWARD which wind blows, radians from +X toward +Z. Aspect uses the same angular frame, facing downslope. */
+  windRadians?: number;
   /** Already corrected imported climate must set this true to avoid a second lapse correction. */
   elevationCorrected?: boolean;
 }
@@ -68,7 +71,12 @@ export interface SurfaceCompileInput {
   seed: number; terrain: TerrainGrid; geology?: GeologyInput; hydrology?: HydrologyInput;
   climate?: ClimateInput; occupation?: OccupationInput; processes?: ProcessInput; state?: SurfaceState;
 }
-export interface CompileOptions { signal?: AbortSignal; topographicRadiiM?: number[] }
+export interface CompileOptions {
+  /** Synchronous compiler: AbortSignal supports pre-start cancellation; dispatch to a worker to interrupt long-running work. */
+  signal?: AbortSignal; topographicRadiiM?: number[]; memoryBudgetBytes?: number;
+  materialLibrary?: MaterialRecipe[];
+  riverAreaThresholdM2?: number; floodplainWidthM?: number; colluvialDecayLengthM?: number;
+}
 export type SurfaceFamily = 'mineral-plains' | 'bedrock' | 'aeolian' | 'arid-erosion' | 'gravity' |
   'karst' | 'volcanic' | 'alluvial' | 'inland-water' | 'wetland' | 'sedimentary-coast' |
   'rocky-coast' | 'marine' | 'vegetation' | 'snow-ice';
@@ -86,11 +94,17 @@ export interface SurfaceFields {
   slope: Float32Array; aspect: Float32Array; curvature: Float32Array;
   topographicPosition: Float32Array[]; landform: Uint8Array; bedrock: Uint16Array;
   downstream: Int32Array; contributingAreaM2: Float32Array; basin: Int32Array;
+  /** First downstream water cell in canonical grid, or -1 when unavailable. */
+  drainageCell: Int32Array;
+  /** 0 at source edges, 1 beyond the largest morphology radius; retained on geometry retargets. */
+  edgeConfidence: Float32Array;
   waterClass: Uint8Array; waterLevelM: Float32Array; distanceToWaterM: Float32Array;
   handM: Float32Array; twi: Float32Array; closedBasin: Uint8Array;
   depositOrigin: Uint8Array; depositDepthM: Float32Array; sourceRock: Uint16Array;
-  /** Per-unit transported source fractions, in world.geology.units order. */
+  /** Surface deposit provenance, in world.geology.units order. */
   provenance: Float32Array[];
+  /** Routed upstream mixtures, never overwritten by local surface/deposit classification. */
+  transportedProvenance: Float32Array[];
   sand: Float32Array; silt: Float32Array; clay: Float32Array; organic: Float32Array;
   stoniness: Float32Array; soilDepthM: Float32Array; moisture: Float32Array;
   temperatureC: Float32Array; precipitationMm: Float32Array;
@@ -132,12 +146,14 @@ export interface SurfaceSample {
   depositDepthM: number; sand: number; silt: number; clay: number; organic: number;
   stoniness: number; soilDepthM: number; moisture: number; contributingAreaM2: number;
   handM: number; distanceToWaterM: number; waterClass: WaterClass; waterLevelM: number;
+  drainageCell: number; edgeConfidence: number;
   temperatureC: number; precipitationMm: number; treeCover: number; grassCover: number;
   shrubCover: number; litter: number; occupation: Occupation; orientation: number;
   snow: number; wetness: number; material: MaterialRecipe; materialSecondary: MaterialRecipe; materialBlend: number;
   /** Canonical mean conserved independently of the local two-material approximation. Excludes seasonal snow. */
   materialMeanColorLinear: [number, number, number];
   provenance: Array<{ unitId: number; fraction: number }>;
+  transportedProvenance: Array<{ unitId: number; fraction: number }>;
 }
 export interface SurfaceCandidate {
   stableId: string; family: 'tree' | 'shrub' | 'grass' | 'boulder' | 'debris';

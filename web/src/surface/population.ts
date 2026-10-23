@@ -8,6 +8,8 @@ export interface PopulationOptions {
   /** Include objects whose support lies outside the requested box but whose radius intersects it. */
   includeOverhang?: boolean;
   maxCandidates?: number;
+  /** Bound work even when no candidates are accepted (e.g. huge desert queries). */
+  maxCheckedSlots?: number;
   signal?: AbortSignal;
 }
 const FAMILIES: Array<{ family: SurfaceCandidate['family']; cellM: number; slots: number; minSize: number; maxSize: number }> = [
@@ -25,12 +27,26 @@ function random(key: string, channel: number): number {
   return ((value ^ value >>> 16) >>> 0) / 4294967296;
 }
 
-/** Canonical world cells; independent of renderer pages, request order, camera and seasonal state. */
+/** Canonical world cells; independent of renderer pages, request order, camera and seasonal state.
+ * Synchronous operation: AbortSignal guarantees pre-start cancellation; use a worker for interruptible large queries. */
 export function generateSurfaceCandidates(world: SurfaceWorld, bounds: Bounds, options: PopulationOptions = {}): SurfaceCandidate[] {
   assertNotAborted(options.signal);
   if (![bounds.minX, bounds.minZ, bounds.maxX, bounds.maxZ].every(Number.isFinite) || bounds.minX > bounds.maxX || bounds.minZ > bounds.maxZ) throw new Error('Invalid population query bounds');
   const retention = clamp(options.retention ?? 1), maxCandidates = options.maxCandidates ?? 100_000;
   if (!Number.isInteger(maxCandidates) || maxCandidates < 0) throw new Error('maxCandidates must be a nonnegative integer');
+  const maxCheckedSlots = options.maxCheckedSlots ?? 2_000_000;
+  if (!Number.isInteger(maxCheckedSlots) || maxCheckedSlots < 0) throw new Error('maxCheckedSlots must be a nonnegative integer');
+  if (retention === 0) return [];
+  let slotsToCheck = 0;
+  for (const recipe of FAMILIES) {
+    if (options.families && !options.families.includes(recipe.family)) continue;
+    const halo = options.includeOverhang ? recipe.maxSize : 0;
+    const minX = Math.max(world.bounds.minX, bounds.minX - halo), minZ = Math.max(world.bounds.minZ, bounds.minZ - halo);
+    const maxX = Math.min(world.bounds.maxX, bounds.maxX + halo), maxZ = Math.min(world.bounds.maxZ, bounds.maxZ + halo);
+    if (minX > maxX || minZ > maxZ) continue;
+    slotsToCheck += (Math.floor(maxX / recipe.cellM) - Math.floor(minX / recipe.cellM) + 1) * (Math.floor(maxZ / recipe.cellM) - Math.floor(minZ / recipe.cellM) + 1) * recipe.slots;
+    if (slotsToCheck > maxCheckedSlots) throw new Error('Population query exceeds maxCheckedSlots; request smaller visible bounds');
+  }
   const result: SurfaceCandidate[] = [];
   let checked = 0;
   for (const recipe of FAMILIES) {
