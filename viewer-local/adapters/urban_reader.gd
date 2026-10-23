@@ -8,10 +8,13 @@ const SURFACE_KEYS := ["footprint","roofFootprint","floor","surface"]
 static func is_columns(urban: Dictionary) -> bool:
 	return urban.get("format","")=="magna-urban-columns"
 
+static func _numeric_sequence(value) -> bool:
+	return typeof(value) in [TYPE_ARRAY,TYPE_PACKED_BYTE_ARRAY,TYPE_PACKED_INT32_ARRAY,TYPE_PACKED_INT64_ARRAY,TYPE_PACKED_FLOAT32_ARRAY,TYPE_PACKED_FLOAT64_ARRAY]
+
 static func _offsets(values, end: int) -> bool:
-	if values==null or values.size()<1 or int(values[0])!=0 or int(values[values.size()-1])!=end: return false
+	if not _numeric_sequence(values) or values.size()<1 or int(values[0])!=0 or int(values[values.size()-1])!=end: return false
 	for i in range(1,values.size()):
-		if int(values[i])<int(values[i-1]) or int(values[i])>end: return false
+		if not is_finite(float(values[i])) or float(values[i])!=floorf(float(values[i])) or int(values[i])<int(values[i-1]) or int(values[i])>end: return false
 	return true
 
 static func validate(urban: Dictionary) -> bool:
@@ -19,13 +22,20 @@ static func validate(urban: Dictionary) -> bool:
 	if not is_columns(urban): return true
 	if urban.get("version",0)!=1: return false
 	for name in ["positions","normals","surfacePositions","roadPositions","buildingTriangleOffsets","triangleSlots","triangleMaterial","triangleMaterialPresence","triangleSurface","surfaceShapeOffsets","shapeRingOffsets","ringPointOffsets","roadPointOffsets"]:
-		if not urban.has(name) or urban[name]==null: return false
+		if not urban.has(name) or not _numeric_sequence(urban[name]): return false
+		if urban[name] is Array:
+			for value in urban[name]:
+				if not (value is int or value is float) or not is_finite(float(value)): return false
 	var count := int(urban.positions.size()/9)
 	if urban.positions.size()%9!=0 or urban.normals.size()!=count*3 or urban.surfacePositions.size()%2!=0 or urban.roadPositions.size()%2!=0: return false
 	if not _offsets(urban.buildingTriangleOffsets,count) or urban.buildingTriangleOffsets.size()!=urban.buildings.size()+1: return false
 	for name in ["triangleSlots","triangleMaterial","triangleMaterialPresence","triangleSurface"]:
 		if urban[name].size()!=count: return false
-	if not urban.get("materialSlotsTable") is Array or not urban.get("materialIds") is Array: return false
+	if not urban.get("materialSlotsTable") is Array or not urban.get("materialIds") is Array or not urban.get("occupationBuildings",[]) is Array: return false
+	for slots in urban.materialSlotsTable:
+		if not slots is Dictionary: return false
+	for id in urban.materialIds:
+		if not id is String: return false
 	if not _offsets(urban.surfaceShapeOffsets,urban.shapeRingOffsets.size()-1) or not _offsets(urban.shapeRingOffsets,urban.ringPointOffsets.size()-1): return false
 	if not _offsets(urban.ringPointOffsets,int(urban.surfacePositions.size()/2)) or not _offsets(urban.roadPointOffsets,int(urban.roadPositions.size()/2)) or urban.roadPointOffsets.size()!=urban.roads.size()+1: return false
 	for name in ["positions","normals","surfacePositions","roadPositions"]:
@@ -34,7 +44,7 @@ static func validate(urban: Dictionary) -> bool:
 	for i in count:
 		if int(urban.triangleSlots[i])<0 or int(urban.triangleSlots[i])>=urban.materialSlotsTable.size(): return false
 		if int(urban.triangleMaterial[i]) < -1 or int(urban.triangleMaterial[i])>=urban.materialIds.size(): return false
-		if int(urban.triangleSurface[i])>1 or int(urban.triangleMaterialPresence[i])>1 or (int(urban.triangleMaterial[i])>=0 and int(urban.triangleMaterialPresence[i])==0): return false
+		if int(urban.triangleSurface[i])<0 or int(urban.triangleSurface[i])>1 or int(urban.triangleMaterialPresence[i])<0 or int(urban.triangleMaterialPresence[i])>1 or (int(urban.triangleMaterial[i])>=0 and int(urban.triangleMaterialPresence[i])==0): return false
 	for record in urban.buildings:
 		if not record is Dictionary or not _validate_metadata(urban,record): return false
 	for record in urban.get("occupationBuildings",[]):

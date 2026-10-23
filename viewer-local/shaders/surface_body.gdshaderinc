@@ -71,8 +71,8 @@
         vec3 light_direction=normalize(vec3(-0.5,1.0,-0.5));
         float relief=mix(1.0,clamp(dot(w_normal,light_direction)/light_direction.y,0.55,1.15),clamp(map_relief_shade,0.0,1.0));
         vec3 mapped=mix(map_mean,canopy_linear_albedo,surface_canopy_residual(v_vertex.xz,canopy_pixel_footprint(v_vertex.xz,PROJECTION_MATRIX*VIEW_MATRIX,VIEWPORT_SIZE),state.r));
-        ALBEDO=vec3(0.0);
-        EMISSION=display_color(mapped*relief);
+        ALBEDO=display_color(mapped*relief);
+        EMISSION=vec3(0.0);
         NORMAL_MAP=vec3(0.5,0.5,1.0);
         ROUGHNESS=1.0;
         SPECULAR=0.0;
