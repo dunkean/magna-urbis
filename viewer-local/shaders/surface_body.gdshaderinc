@@ -54,12 +54,12 @@
     distant=max(distant,1.0-smoothstep(0.0,24.0,edge));
     ground=mix(ground,vec3(0.055,0.105,0.036)*(0.8+0.4*crown),canopy_pattern*distant);
     ground=mix(ground,vec3(0.79,0.83,0.87),state.b);
-    ALBEDO=clamp(ground,vec3(0.0),vec3(0.95));
+    ALBEDO=display_color(clamp(ground,vec3(0.0),vec3(0.95)));
     ROUGHNESS=clamp(mix(mean_palette.a,nr.a,0.7)-wet*0.28+state.b*0.05,0.12,1.0);
     NORMAL_MAP=mix(vec3(0.5,0.5,1.0),nr.xyz,fine*micro_strength*(1.0-state.b));
     NORMAL_MAP_DEPTH=0.75;
     AO=mix(1.0,0.78+0.22*ah.a,fine);
-    if(diagnostic==1) ALBEDO=base;
+    if(diagnostic==1) ALBEDO=display_color(base);
     if(diagnostic==2) ALBEDO=vec3(state.r,state.a,state.g);
     if(diagnostic==3) { float b=texture(surface_bedrock,source_uv).r; ALBEDO=vec3(fract(b*0.618),fract(b*0.371+0.2),fract(b*0.217+0.4)); }
     if(diagnostic==4) ALBEDO=vec3(state.b,wet,1.0-wet);

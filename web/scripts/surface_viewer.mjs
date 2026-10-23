@@ -4,6 +4,10 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 const project = fileURLToPath(new URL('../../viewer-local/', import.meta.url));
 const args = process.argv.slice(2);
+const rendering = args.indexOf('--renderer');
+const renderer = rendering >= 0 ? args[rendering + 1] : 'forward_plus';
+if (!['forward_plus', 'mobile', 'gl_compatibility'].includes(renderer)) throw new Error('Renderer must be forward_plus, mobile, or gl_compatibility.');
+if (rendering >= 0) args.splice(rendering, 2);
 const option = args.indexOf('--godot');
 let godot = process.env.GODOT;
 if (option >= 0) { godot = args[option + 1]; args.splice(option, 2); }
@@ -35,5 +39,5 @@ if (check >= 0) {
   process.exit(/(?:SCRIPT|SHADER) ERROR|ERROR:/.test((result.stdout ?? '') + (result.stderr ?? '')) ? 1 : result.status ?? 1);
 }
 if (!args.includes('--world')) throw new Error('Required: --world <surface-world.json>. Options: --assets <resolved.json> --top --width <metres> --live-url <url> --capture <png> --frames 120 --metrics <json> --tour <directory>.');
-const result = spawnSync(godot, ['--path', project, '--', ...args], { stdio: 'inherit', windowsHide: true });
+const result = spawnSync(godot, ['--path', project, '--rendering-method', renderer, '--', ...args], { stdio: 'inherit', windowsHide: true });
 process.exit(result.status ?? 1);

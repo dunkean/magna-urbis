@@ -17,7 +17,8 @@ uniform vec4 layer_mean[32];
 uniform vec4 palette[32];
 uniform float material_scales[32];
 uniform int material_layers[32];
-uniform sampler2DArray pbr_albedo_height : source_color, filter_linear_mipmap_anisotropic, repeat_enable;
+// RGB is linear half-float; alpha is normalized physical height. Mips are linear too.
+uniform sampler2DArray pbr_albedo_height : filter_linear_mipmap_anisotropic, repeat_enable;
 uniform sampler2DArray pbr_normal_rough : hint_normal, filter_linear_mipmap_anisotropic, repeat_enable;
 uniform int diagnostic = 0;
 uniform float micro_strength = 0.55;
@@ -25,6 +26,11 @@ uniform float instance_blend_distance = 180.0;
 uniform vec4 candidate_bounds = vec4(-1e8,-1e8,1e8,1e8);
 uniform float source_spacing_m = 15.0;
 uniform vec2 source_grid_size;
+
+vec3 display_color(vec3 linear_color) {
+    if(OUTPUT_IS_SRGB) return mix(linear_color*12.92,1.055*pow(max(linear_color,vec3(0.0)),vec3(1.0/2.4))-0.055,step(vec3(0.0031308),linear_color));
+    return linear_color;
+}
 
 float surface_hash(vec2 p) {
     uvec2 q=uvec2(ivec2(p));
