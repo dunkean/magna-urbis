@@ -14,6 +14,9 @@ export interface SourceIdentity {
 export interface TerrainGrid {
   width: number; height: number; originX: number; originZ: number; spacingM: number;
   heights: Float32Array; source: SourceIdentity;
+  /** Meaning of retained height values; absent legacy grids are bilinear samples.
+   * A sampled .decor raster is never silently relabelled as B-spline controls. */
+  reconstruction?: 'bilinear-samples' | 'cubic-bspline-controls';
 }
 export type Lithology = 'granite' | 'limestone' | 'sandstone' | 'mudstone' | 'basalt';
 export interface RockUnit {
