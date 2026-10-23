@@ -21,7 +21,23 @@ func grid(n:int,s:float,start:float,kernel:String)->Dictionary:
 	return {"width":n,"height":n,"originX":start,"originZ":start,"spacingM":s,"heights":values,"reconstruction":kernel}
 func _initialize():
 	var rng=RandomNumberGenerator.new();rng.seed=731
-	var count=0;var maximum=0.0
+	var count=0;var maximum=0.0;var sampler_count=0
+	for kernel in ["bilinear-samples","cubic-bspline-controls"]:
+		var source_grid=grid(33,0.5,0.0,kernel)
+		var packed:PackedFloat32Array=source_grid.heights;var generic=Array(packed)
+		for i in 2000:
+			var x=rng.randf_range(-4,20);var z=rng.randf_range(-4,20)
+			var old=G.sample_grid_values(source_grid,generic,x,z);var current=G.sample_grid_values(source_grid,packed,x,z)
+			if old!=current:failures.append("packed versus generic float64 kernel changed")
+			if PackedFloat32Array([old]).to_byte_array()!=PackedFloat32Array([current]).to_byte_array():failures.append("packed versus generic Float32 sample changed")
+			sampler_count+=1
+		for bad in [NAN,INF,-INF]:
+			var invalid=packed.duplicate();invalid[0]=bad
+			for coord in [0.0,0.01,0.5,1.0,16.0]:
+				var old=G.sample_grid_values(source_grid,Array(invalid),coord,coord);var current=G.sample_grid_values(source_grid,invalid,coord,coord)
+				if not (is_nan(old) and is_nan(current)) and old!=current:failures.append("non-finite source propagation changed")
+				sampler_count+=1
+
 	for child_kernel in ["bilinear-samples","cubic-bspline-controls"]:
 		for parent_kernel in ["bilinear-samples","cubic-bspline-controls"]:
 			var fine=grid(33,0.5,0.0,child_kernel);var parent=grid(33,2.0,-24.0,parent_kernel)
@@ -36,4 +52,4 @@ func _initialize():
 				if absf(a-b)>0.000000000001:failures.append("double height changed")
 				if PackedFloat32Array([a]).to_byte_array()!=PackedFloat32Array([b]).to_byte_array():failures.append("Float32 height changed")
 			if hash([fine.heights,parent.heights])!=snapshot:failures.append("source heights changed")
-	print(JSON.stringify({"failures":failures,"samples":count,"maximumDoubleError":maximum,"allFloat32Identical":failures.is_empty()}));quit(0 if failures.is_empty() else 1)
+	print(JSON.stringify({"failures":failures,"samples":count,"packedVsGenericSamples":sampler_count,"maximumDoubleError":maximum,"allFloat32Identical":failures.is_empty()}));quit(0 if failures.is_empty() else 1)

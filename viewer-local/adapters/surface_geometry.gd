@@ -69,6 +69,41 @@ static func sample_grid_values(grid: Dictionary, values, x: float, z: float) -> 
 	var ix := int(floor(u))
 	var iz := int(floor(v))
 	var reconstruction: String = grid.get("reconstruction","bilinear-samples")
+	if reconstruction=="cubic-bspline-controls" and values is PackedFloat32Array:
+		# Validated packed source samples promote to float64 scalars. Keep the
+		# original weight expressions and row-major addition order exactly, without
+		# allocating two weight arrays or dispatching sixteen generic finite calls.
+		var tx:=u-ix;var tz:=v-iz
+		var wx0:=pow(1.0-tx,3.0)/6.0
+		var wx1:=(3.0*tx*tx*tx-6.0*tx*tx+4.0)/6.0
+		var wx2:=(-3.0*tx*tx*tx+3.0*tx*tx+3.0*tx+1.0)/6.0
+		var wx3:=tx*tx*tx/6.0
+		var wz0:=pow(1.0-tz,3.0)/6.0
+		var wz1:=(3.0*tz*tz*tz-6.0*tz*tz+4.0)/6.0
+		var wz2:=(-3.0*tz*tz*tz+3.0*tz*tz+3.0*tz+1.0)/6.0
+		var wz3:=tz*tz*tz/6.0
+		var x0:=clampi(ix-1,0,width-1);var x1:=clampi(ix,0,width-1)
+		var x2:=clampi(ix+1,0,width-1);var x3:=clampi(ix+2,0,width-1)
+		var z0:=clampi(iz-1,0,height-1)*width;var z1:=clampi(iz,0,height-1)*width
+		var z2:=clampi(iz+1,0,height-1)*width;var z3:=clampi(iz+2,0,height-1)*width
+		var value:=0.0
+		value+=float(values[z0+x0])*wx0*wz0
+		value+=float(values[z0+x1])*wx1*wz0
+		value+=float(values[z0+x2])*wx2*wz0
+		value+=float(values[z0+x3])*wx3*wz0
+		value+=float(values[z1+x0])*wx0*wz1
+		value+=float(values[z1+x1])*wx1*wz1
+		value+=float(values[z1+x2])*wx2*wz1
+		value+=float(values[z1+x3])*wx3*wz1
+		value+=float(values[z2+x0])*wx0*wz2
+		value+=float(values[z2+x1])*wx1*wz2
+		value+=float(values[z2+x2])*wx2*wz2
+		value+=float(values[z2+x3])*wx3*wz2
+		value+=float(values[z3+x0])*wx0*wz3
+		value+=float(values[z3+x1])*wx1*wz3
+		value+=float(values[z3+x2])*wx2*wz3
+		value+=float(values[z3+x3])*wx3*wz3
+		return value if is_finite(value) else NAN
 	if reconstruction=="cubic-bspline-controls":
 		var wx := _bspline_weights(u-ix)
 		var wz := _bspline_weights(v-iz)
