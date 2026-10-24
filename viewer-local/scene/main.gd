@@ -190,6 +190,9 @@ func _ready() -> void:
 		push_error("--water-symbol-width-px requires a finite number from 0 to 1.25")
 		get_tree().quit(2);return
 	water_symbol_width_px=float(symbol_option)
+	var water_lighting_plan=WaterProjection.lighting_plan({"mapLighting":options.get("--water-map-lighting","terrain"),"waterMode":options.get("--water-mode","source-map")})
+	if water_lighting_plan.has("error"):
+		push_error(str(water_lighting_plan.error));get_tree().quit(2);return
 	water_vector_tint=str(options.get("--water-vector-tint","source-classes"))
 	if water_vector_tint not in ["source-classes","uniform"] or water_vector_tint=="uniform" and options.get("--water-mode","source-map")=="source-levels":
 		push_error("--water-vector-tint must be source-classes or uniform; uniform requires source-map")
@@ -616,8 +619,11 @@ func _build_scene_objects(prepared: Dictionary) -> void:
 		if prepared.has("waterProjection"):
 			var projection:Dictionary=prepared.waterProjection
 			water_metrics.merge(projection.get("diagnostics",{}),true)
-			var decal=WaterProjection.create_decal(projection,origin)
+			var decal=WaterProjection.create_decal(projection,origin,{"mapLighting":options.get("--water-map-lighting","terrain"),"waterMode":"source-map"})
+			water_metrics.merge(projection.get("diagnostics",{}),true)
 			if decal!=null:objects.add_child(decal)
+			elif options.get("--water-map-lighting","terrain")=="flat-map" and not projection.get("diagnostics",{}).get("empty",false):
+				push_error("flat-map water texture preparation failed: "+str(projection.get("diagnostics",{})));get_tree().quit(2);return
 		elif entry.mesh.get_surface_count()>0:
 			var water := MeshInstance3D.new()
 			water.name="ExplicitWater"
@@ -1717,6 +1723,8 @@ func _complete_prepared(prepared:Dictionary)->void:
 	if water_vector_tint=="uniform" and (requested_mode!="source-map" or not fixed):
 		push_error("Uniform vector tint requires retained fixed source-map polygons, not generic water fallback")
 		get_tree().quit(2);return
+	if options.get("--water-map-lighting","terrain")=="flat-map" and (requested_mode!="source-map" or not fixed):
+		push_error("flat-map lighting requires retained source-map projection, not physical/generic fallback");get_tree().quit(2);return
 	if requested_mode=="source-map" and fixed:
 		water_projection_busy=true
 		var snapshot_packet:Dictionary=prepared.packet
@@ -1740,7 +1748,7 @@ func _complete_prepared(prepared:Dictionary)->void:
 				projection=entry.duplicate(false);projection.diagnostics=entry.diagnostics.duplicate();projection.diagnostics.cacheUsed=true;break
 		if projection.is_empty():
 			var projection_width=coverage_width*1.25
-			var bake_options={"uniformVectorTint":water_vector_tint=="uniform","symbolWidthPx":water_symbol_width_px,"screenMetresPerPixel":screen_mpp,"screenScalePolicy":scale_policy,"sourceKey":source_key,"resolution":2048,"msaa":2,"minHeightM":-10000.0,"maxHeightM":10000.0}
+			var bake_options={"mapLighting":options.get("--water-map-lighting","terrain"),"uniformVectorTint":water_vector_tint=="uniform","symbolWidthPx":water_symbol_width_px,"screenMetresPerPixel":screen_mpp,"screenScalePolicy":scale_policy,"sourceKey":source_key,"resolution":2048,"msaa":2,"minHeightM":-10000.0,"maxHeightM":10000.0}
 			projection=await WaterProjection.bake(self,geometry,prepared.origin,requested_focus,projection_width,colors,bake_options)
 			if not projection.has("error"):
 				projection.binding=source_key+style_key;projection.diagnostics.cacheUsed=false

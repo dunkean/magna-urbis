@@ -5,6 +5,7 @@ extends RefCounted
 # terrain render layer1. No source coordinate, measured level or bank is edited.
 const MAX_RESOLUTION := 4096
 const MAX_VERTICES := 999996
+const MAX_FLAT_TEXTURE_BYTES := 96*1024*1024
 const Symbols=preload("res://adapters/surface_water_symbols.gd")
 const Contours=preload("res://adapters/surface_water_contours.gd")
 
@@ -38,6 +39,41 @@ static func vector_tint_plan(geometry:Dictionary,options:Dictionary={}) -> Dicti
 
 static func _rgb(value:Vector3)->Array:return [value.x,value.y,value.z]
 
+static func lighting_plan(options:Dictionary={}) -> Dictionary:
+	var mode=options.get("mapLighting","terrain")
+	if not mode is String or mode not in ["terrain","flat-map"]:return {"error":"water map lighting must be terrain or flat-map"}
+	if mode=="flat-map" and options.get("waterMode","source-map")!="source-map":return {"error":"flat-map lighting requires source-map display"}
+	return {"mode":mode,"version":"source-map-lighting-1","physicalWaterSurfaceClaimed":false}
+
+# RGBA8 is the projection viewport's stored format. C++ transforms the RGB;
+# no per-pixel GD loop, no conversion/quantization of the original alpha.
+static func black_albedo_image(source:Image,byte_budget:int=MAX_FLAT_TEXTURE_BYTES)->Dictionary:
+	if source==null or source.is_empty() or source.get_format()!=Image.FORMAT_RGBA8:return {"error":"flat-map requires the original uncompressed RGBA8 projection"}
+	if source.get_width()>MAX_RESOLUTION or source.get_height()>MAX_RESOLUTION or byte_budget<=0 or byte_budget>MAX_FLAT_TEXTURE_BYTES or source.get_data_size()>byte_budget:return {"error":"flat-map derived texture budget"}
+	var black:Image=source.duplicate()
+	var mipmaps=source.has_mipmaps()
+	black.clear_mipmaps();black.adjust_bcs(0.,1.,1.)
+	if mipmaps and black.generate_mipmaps()!=OK:return {"error":"flat-map mip generation failed"}
+	if black.get_data_size()>byte_budget:return {"error":"flat-map derived mip texture budget"}
+	return {"image":black,"bytes":black.get_data_size()}
+
+static func _flat_texture(projection:Dictionary,source:Image=null)->Dictionary:
+	var cached=projection.get("_flatMapTexture",{})
+	if cached is Dictionary and cached.get("source")==projection.texture and cached.get("texture") is Texture2D:return cached
+	if source==null:source=projection.texture.get_image()
+	var black=black_albedo_image(source)
+	if black.has("error"):return black
+	var result={"source":projection.texture,"texture":ImageTexture.create_from_image(black.image),"bytes":black.bytes}
+	projection["_flatMapTexture"]=result
+	return result
+
+static func _lighting_diagnostics(projection:Dictionary,plan:Dictionary,derived_bytes:int=0)->void:
+	if not projection.get("diagnostics") is Dictionary:projection.diagnostics={}
+	projection.diagnostics.merge({"waterMapLightingVersion":plan.version,"waterMapLighting":plan.mode,
+		"waterMapLightingScope":"renderer cartographic emission on terrain only; no physical surface, reflection or bathymetry claim" if plan.mode=="flat-map" else "legacy terrain-lit decal",
+		"flatMapAlphaPolicy":"original base alpha retained; same C++ mip reconstruction; emission RGB already premultiplied, no extra alpha multiplication" if plan.mode=="flat-map" else "legacy",
+		"flatMapDerivedTextureBytes":derived_bytes,"flatMapDerivedTextureBudgetBytes":MAX_FLAT_TEXTURE_BYTES},true)
+
 static func cache_key(geometry: Dictionary, focus: Dictionary, width_m: float, colors: Dictionary, options: Dictionary={}) -> String:
 	var vertices: PackedVector3Array=geometry.get("vertices",PackedVector3Array())
 	var class_hash: String=_sha(geometry.classImage.get_data()) if geometry.get("classImage") is Image else ""
@@ -51,6 +87,8 @@ static func cache_key(geometry: Dictionary, focus: Dictionary, width_m: float, c
 # canonical metres; renderer origin is subtracted only when creating the Decal.
 static func bake(parent: Node, geometry: Dictionary, origin: Dictionary, focus: Dictionary, width_m: float, colors: Dictionary, options: Dictionary={}) -> Dictionary:
 	var started:=Time.get_ticks_usec()
+	var lighting=lighting_plan(options)
+	if lighting.has("error"):return lighting
 	if not is_instance_valid(parent) or not parent.is_inside_tree(): return {"error":"projection parent must be in the scene tree"}
 	if str(options.get("sourceKey","")).is_empty():return {"error":"projection sourceKey is required"}
 	if RenderingServer.get_current_rendering_method()=="gl_compatibility": return {"error":"source-map terrain projection requires Forward+ or Mobile Decal support"}
@@ -91,7 +129,8 @@ static func bake(parent: Node, geometry: Dictionary, origin: Dictionary, focus: 
 	if plan.widthPx>0.0:result.diagnostics["symbolContourEstimatedBytes"]=contour_info.estimatedBytes;result.diagnostics["symbolContourBudgetBytes"]=contour_info.budgetBytes
 	result.diagnostics["resolution"]=int(plan.resolution);result.diagnostics["metresPerTexel"]=width_m/int(plan.resolution)
 	if plan.widthPx>0.0:result.diagnostics["subpixelPolicy"]="declared source vector-ring outline before raster; original source contours, levels and physical area unchanged"
-	if vertices.is_empty(): result.diagnostics["empty"]=true;return result
+	if vertices.is_empty():
+		result.diagnostics["empty"]=true;_lighting_diagnostics(result,lighting);return result
 	var resolution:=int(plan.resolution)
 	var viewport:=SubViewport.new();viewport.size=Vector2i(resolution,resolution);viewport.own_world_3d=true;viewport.transparent_bg=true;viewport.render_target_update_mode=SubViewport.UPDATE_ALWAYS
 	viewport.msaa_3d={2:Viewport.MSAA_2X,4:Viewport.MSAA_4X,8:Viewport.MSAA_8X}.get(int(plan.msaa),Viewport.MSAA_DISABLED)
@@ -128,12 +167,30 @@ static func bake(parent: Node, geometry: Dictionary, origin: Dictionary, focus: 
 		if image==null or image.is_empty():return {"error":"symbolic source map texture readback unavailable"}
 		result.diagnostics["symbolCoverageImageSha256"]=_sha(image.get_data())
 	image.generate_mipmaps();result.texture=ImageTexture.create_from_image(image)
+	var derived_bytes=0
+	if lighting.mode=="flat-map":
+		var derived=_flat_texture(result,image)
+		if derived.has("error"):return derived
+		derived_bytes=int(derived.bytes)
+	_lighting_diagnostics(result,lighting,derived_bytes)
 	result.diagnostics["resolution"]=resolution;result.diagnostics["metresPerTexel"]=width_m/resolution;result.diagnostics["buildMs"]=(Time.get_ticks_usec()-started)/1000.0
 	return result
 
-static func create_decal(projection: Dictionary, origin: Dictionary={}) -> Decal:
+static func create_decal(projection: Dictionary, origin: Dictionary={}, options:Dictionary={}) -> Decal:
 	if projection.has("error") or not projection.get("texture") is Texture2D:return null
+	var lighting=lighting_plan(options)
+	if lighting.has("error"):return null
 	var decal:=Decal.new();decal.name="SourceMapWaterTerrainOnly";decal.texture_albedo=projection.texture;decal.position=projection.position;decal.size=projection.size;decal.cull_mask=1;decal.albedo_mix=1.;decal.upper_fade=0.;decal.lower_fade=0.;decal.normal_fade=0.
+	var derived_bytes=0
+	if lighting.mode=="flat-map":
+		var derived=_flat_texture(projection)
+		if derived.has("error"):
+			_lighting_diagnostics(projection,lighting)
+			projection.diagnostics["waterMapLightingError"]=str(derived.error)
+			decal.free();return null
+		decal.texture_albedo=derived.texture;decal.texture_emission=projection.texture;decal.emission_energy=1.;decal.modulate=Color.WHITE
+		derived_bytes=int(derived.bytes)
+	_lighting_diagnostics(projection,lighting,derived_bytes)
 	if not origin.is_empty():
 		var center: Dictionary=projection.worldCenter
 		decal.position=Vector3(float(center.x)-float(origin.x),float(center.y)-float(origin.y),float(center.z)-float(origin.z))

@@ -1,0 +1,15 @@
+{
+  "alphaValues": 256,
+  "checks": 2826,
+  "failures": [],
+  "scope": "CPU image/mips/cache/decal properties; no GPU visual claim",
+  "sourceBytesUnchanged": true,
+  "format": "source-water-map-lighting-cpu-evidence",
+  "version": 1,
+  "baseCommit": "151cb319a8c0dc9e7e229f547d6096564e6ed63a",
+  "gpuExecuted": false,
+  "sourceFiles": {
+    "viewer-local\\adapters\\surface_water_projection.gd": "741869569348dbda9dfd676e74be9875030da1c4571e9750ab863f34154518a2",
+    "viewer-local\\tests\\surface_water_map_lighting_test.gd": "bb6cd1ed85f472a430dd1ca4f77579c46f6fc2cd1d995b54d58a773a3be90177"
+  }
+}
