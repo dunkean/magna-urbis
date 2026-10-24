@@ -67,13 +67,13 @@
     "findings": [
       {
         "id": "legacy-marine-rock-recipe",
-        "status": "Confirmed by owner; fix pending",
+        "status": "Confirmed on initial revisions; rejected after owner correction",
         "repro": "Change default fractured-bedrock.family to marine, delete surfaceRole, compile with that materialLibrary then binary encode/decode/hydrate: accepted. Recomputed materialLibrary versions remain internally consistent.",
         "impact": "Optional missing legacy role bypasses a required ground support category guard."
       },
       {
         "id": "json-float32-overflow",
-        "status": "Confirmed by owner; fix pending",
+        "status": "Confirmed on initial revisions; rejected after owner correction",
         "repro": "Set typed aridity[0]=Infinity, calculate response identity over those bytes, convert JSON value to finite1e100. hydrate validates before Float32 conversion then accepts Infinity with matching identity.",
         "impact": "Finite JSON numeric value does not guarantee finite Float32 storage."
       }
@@ -99,7 +99,52 @@
     }
   },
   "afterFix": {
-    "status": "Pending owner correction and independent rerun"
+    "status": "PASS CPU contract with stated scope; no artistic or GPU verdict",
+    "correctiveOwnerCommits": [
+      "d400b90a9a374c41f26ddeb6ff57375b14df3c7d",
+      "81eeb74bb5f1152edee03eabd245d4ae9f7468fc"
+    ],
+    "tests": {
+      "total": 43,
+      "passed": 43,
+      "failed": 0,
+      "files": 7,
+      "independentCases": 10
+    },
+    "nodeAndNearKnotMetrics": {
+      "scope": "Independent CPU contract audit; no GPU or artistic acceptance",
+      "canonicalKnots": 289,
+      "nearKnotSamples": 768,
+      "maximumNearKnotQuantizationDeltaLinear": 0.00186044270557148,
+      "identityOracleCases": 3
+    },
+    "actualLegacyReplayRepeated": {
+      "scope": "Actual compiler6820ff3 output roundtripped by new hydrator, exact old bytes; same fixture compiled by both cores preserves every previous field/version and candidate record",
+      "status": "PASS",
+      "baselineCommit": "6820ff3",
+      "oldCompilerVersion": "surface-1.5.3",
+      "newCompilerVersion": "surface-1.6.0",
+      "legacyBytes": 89004,
+      "legacyBinarySha256": "f2c7fce7e2178ddbb369b48fd5edaaa3785bea75a48bcd169cbc00a5be1eaf3b",
+      "legacyResponseInvented": false,
+      "oldFieldCount": 52,
+      "oldVersionCount": 9,
+      "candidates": 6422
+    },
+    "framingFinding": {
+      "before": "Source pairs id=a;string:b/version=c and id=a/version=b;string:c produced identical unframed SHA stream after d400. Expected-source check still rejected the mismatching source pair; no hydrator bypass was demonstrated.",
+      "after": "Owner81eeb74 uses explicit list/string/dtype/byte-length tags; independent Nodecrypto complete-message oracle passes three cases including delimiter-looking metadata, NUL, astral Unicode and \u00b11e9 fractional frame coordinates.",
+      "artifact": "web/out/surface/ground-response-audit/framing.ts (initial reproduction in tool stdout)"
+    },
+    "rawReport": "web\\out\\surface\\ground-response-audit\\tests-final.json",
+    "filesSha256Lf": {
+      "web/src/surface/groundResponse.ts": "9a99847e540ab7af23036d72a9fb7e27fc76f7a042404d89a5abd494c157dd55",
+      "web/src/surface/sha256.ts": "053e2f0562ac349b9e91e1816eaddc9b0f8d772c080a4b6419314b385b3a0588",
+      "web/src/surface/compiler.ts": "b27470e1afe19d76e3059232efdb074264697c31b0415f92d9c37c30d394a0a2",
+      "web/src/surface/model.ts": "8851892e77df45b53f71e9161e566315d5158230454c7098fe1adf5d73777c54",
+      "web/src/surface/packet.ts": "ea69c6ca467b4712e54b3ff94870675c44818f6abdee48875a5525a256de1319",
+      "web/tests/surface.ground-response-independent.test.ts": "73ad257130ee5dc34d444a05d3744b37d0fc5fd2a29c3035f87729d7e570fa5f"
+    }
   },
   "limits": [
     "Quantization at exact knots is intentionally stored-sRGB8; the measured near-knot delta is not zero and does not claim an analytically C1 color field.",
@@ -121,6 +166,10 @@
     "web\\out\\surface\\ground-response-audit\\legacy-actual-report.json",
     "web\\out\\surface\\ground-response-audit\\full-role.ts",
     "web\\out\\surface\\ground-response-audit\\overflow.ts",
-    "web\\out\\surface\\ground-response-audit\\actual-legacy.ts"
+    "web\\out\\surface\\ground-response-audit\\actual-legacy.ts",
+    "web\\out\\surface\\ground-response-audit\\tests-after.json",
+    "web\\out\\surface\\ground-response-audit\\tests-final.json",
+    "web\\out\\surface\\ground-response-audit\\independent-metrics-final.json",
+    "web\\out\\surface\\ground-response-audit\\framing.ts"
   ]
 }

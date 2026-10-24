@@ -1,4 +1,5 @@
 import {afterAll,describe,it,expect} from 'vitest';
+import {createHash} from 'node:crypto';
 import {writeFileSync} from 'node:fs';
 import {compileSurfaceWorld,hydrateSurfaceWorld,retargetSurfaceWorld,sampleSurface,serializeSurfaceWorld} from '../src/surface/compiler';
 import {hydrateGroundResponse,groundResponseIdentity} from '../src/surface/groundResponse';
@@ -9,10 +10,31 @@ import {surfaceLayerInput} from './fixtures/surfaceLayerInput';
 const base=compileSurfaceWorld(surfaceLayerInput(),{topographicRadiiM:[32,64,128]});
 const response=base.groundResponse!;
 const expected={grid:response.grid,source:response.source,environmentVersion:response.environmentVersion,materialLibraryVersion:response.materialLibraryVersion,materials:base.materials};
-const metrics={scope:'Independent CPU contract audit; no GPU or artistic acceptance',canonicalKnots:0,nearKnotSamples:0,maximumNearKnotQuantizationDeltaLinear:0};
+const metrics={scope:'Independent CPU contract audit; no GPU or artistic acceptance',canonicalKnots:0,nearKnotSamples:0,maximumNearKnotQuantizationDeltaLinear:0,identityOracleCases:0};
 afterAll(()=>{if(process.env.SURFACE_GROUND_AUDIT_REPORT)writeFileSync(process.env.SURFACE_GROUND_AUDIT_REPORT,JSON.stringify(metrics,null,2));});
 
 describe('independent GroundResponse boundary and physical compatibility',()=>{
+  it('frames metadata unambiguously and matches independent Node SHA256 bytes',()=>{
+    const left=structuredClone(response),right=structuredClone(response);
+    left.source.id='a;string:b';left.source.version='c';right.source.id='a';right.source.version='b;string:c';
+    expect(groundResponseIdentity(left)).not.toBe(groundResponseIdentity(right));
+    const unicode=structuredClone(response);unicode.source.id='源;string:\u0000😀';unicode.grid.originX=1e9+.125;unicode.grid.originZ=-1e9-.375;
+    for(const r of [left,right,unicode]){
+      const g=r.grid,s=r.source;
+      const parts:Buffer[]=[];const u32=(n:number)=>{const b=Buffer.alloc(4);b.writeUInt32LE(n);return b;};
+      const values=[
+        'gr-sha256-1',r.version,new Float64Array([g.width,g.height,g.originX,g.originZ,g.spacingM,s.sourceLOD,s.nativeSpacingM]),
+        s.id,s.version,s.sourceLODKnown===undefined?'unspecified':String(s.sourceLODKnown),s.provenance??'',r.environmentVersion,r.materialLibraryVersion,r.interpolation,r.quantization,
+        r.fields.alluvial,r.fields.gravity,r.fields.wind,r.fields.coastal,r.fields.aridity,r.fields.moisturePreSaturation,r.fields.rockRecipe,
+      ];
+      parts.push(Buffer.from([3]),u32(values.length));
+      for(const value of values){
+        if(typeof value==='string'){const bytes=Buffer.from(value,'utf16le');parts.push(Buffer.from([1]),u32(bytes.length),bytes);}
+        else{const type=value instanceof Float64Array?1:value instanceof Float32Array?2:3;const bytes=Buffer.from(value.buffer,value.byteOffset,value.byteLength);parts.push(Buffer.from([2,type]),u32(bytes.length),bytes);}
+      }
+      expect(groundResponseIdentity(r)).toBe('gr-sha256-1:'+createHash('sha256').update(Buffer.concat(parts)).digest('hex'));metrics.identityOracleCases++;
+    }
+  });
   it('rejects a legacy catalogue whose rock recipe belongs to marine family',()=>{
     const materialLibrary=structuredClone(base.materials),id=response.fields.rockRecipe[0];
     materialLibrary[id].family='marine';delete materialLibrary[id].surfaceRole;
