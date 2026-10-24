@@ -9,7 +9,7 @@ await mkdir(out,{recursive:true});const errors=[];const report={version:1,status
 let browser,interrupted=false,watchBusy=false;
 const timer=setInterval(()=>{if(watchBusy)return;watchBusy=true;try{if(activeDemo().length){interrupted=true;void browser?.close()}}finally{watchBusy=false}},1000);
 try{
- browser=await chromium.launch({headless:true,args:['--enable-webgl','--ignore-gpu-blocklist','--disable-software-rasterizer','--enable-gpu']});
+ browser=await chromium.launch({channel:get('--channel','msedge'),headless:true,args:['--enable-webgl','--ignore-gpu-blocklist','--disable-software-rasterizer','--enable-gpu']});
  const page=await browser.newPage({viewport:{width:1300,height:900},deviceScaleFactor:1});page.on('pageerror',e=>errors.push(String(e)));page.on('console',m=>{if(m.type()==='error')errors.push(m.text())});
  let folder=out;
  await page.exposeBinding('__saveOriginalFile',async(_,{file,base64})=>{const destination=path.resolve(folder,file);if(!destination.startsWith(folder+path.sep))throw Error('Fixture path outside output');await mkdir(path.dirname(destination),{recursive:true});await writeFile(destination,Buffer.from(base64,'base64'))});
