@@ -70,4 +70,24 @@ Direct Node retarget medians after reducing per-sample allocations were 84.262 m
 
 Native framed SHA alone measured 63.768 ms for 512², versus the previous interpreted four-lane hash microprobe at 1,331.455 ms. Full retained packet decode/validation measured 15,186.870 ms with the response and 14,909.644 ms for the legacy control; neither span is isolated response CPU. Cold image preparation measured 791.256 ms, while 100 known-context validate/prepare calls took 0.937 ms total with the same image references. These single-run measurements are retained as observations, not latency guarantees.
 
-The versioned CPU evidence records the exact replay hashes and measurements. V12's prior artistic failure remains historical evidence; this implementation does not retroactively qualify its images.
+## Bounded GPU control
+
+The frozen OWN snapshot `c8db2a642f5df72272c156723746441d2d2a7563` was then checked on the actual NVIDIA RTX 5090 reported by Godot/Vulkan. All 592 selected runtime file hashes, tracked status, source packet hashes and asset-manifest hash remained unchanged. Ten native processes exited successfully and no owned Godot process remained.
+
+The numerical probe runs the same pure GLSL function with the native adapter's RGBA32F textures and Float32 output buffers. It evaluates 2,573 points across canonical/refined grids and rebasing by ±10⁹ m, including every authored canonical knot and nearby points. It does not use an 8-bit screenshot as a numeric oracle.
+
+| Measurement | Maximum |
+| --- | --- |
+| Mean linear RGB norm error away from knots | 2.383e-7 |
+| Mean linear RGB norm error at/near quantized knots | 0.00212012, within the per-point stored sRGB8 half-step bound plus Float32 allowance |
+| Compact blend difference | 1.251e-6 |
+| Compact recipe ID mismatches | 0 |
+| Independent blue presentation palette channel difference | 2.384e-8 |
+
+The real Terrain3D adapter also produced four visibility states and diagnostic 7 for retained legacy and GR packets at both 10 km and 160 m, plus blueprint, aerial-oblique and a second 160 m same-category transect A/B. All 24 PNGs are 2048×1280. `--ground-only` deliberately excludes source-water meshes/Decals and all population instance meshes; these controls do not qualify actual tree/grass geometry. Terrain, ground arrays, geometry detail, inventories and instance-buffer fingerprints stay identical between toggles and between the corresponding A/B views. The new GR/context identity remains explicitly different.
+
+The 10 km A/B shows the earlier rectangular baked-colour steps becoming parameter-derived continuous contours. Coarse regional structure and actual categorical substrate contacts remain. Blueprint remains blue through its recipe presentation palette. Diagnostic 7 emits the intrinsic physical mean, but the existing aerial filmic display transform remains active before PNG8-bit output. Thus the PNGs compare displayed contour shape; the separate Float32 compute probe supplies linear numerical parity.
+
+No spatial script/shader error occurred. The isolated compute harness preserves an `OpArrayLength` reflection warning and three ObjectDB instances reported at process exit in its logs; this is not represented as production-renderer behaviour or silently removed. Known Terrain3D deprecation warnings are also retained. A subsequent independent audit identified a microscopic synthetic-slope Float32(PI/2) validation boundary; fix `b18d100` is separate and is not included in this frozen GPU snapshot.
+
+The versioned [bounded evidence](evidence/ground-response-v13.json) records exact replay/PNG hashes, CPU measurements, numerical outputs and limits. These checks qualify this response implementation's numerical/rendered behaviour within the stated controls. They are not a browser/native navigation campaign, a latency guarantee, observed fine-soil data, or independent artistic/full-production acceptance. V12's prior artistic failure remains historical evidence; this implementation does not retroactively qualify its images.

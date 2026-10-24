@@ -1,0 +1,764 @@
+{
+  "format": "surface-ground-response-bounded-evidence",
+  "version": 1,
+  "status": "technical-controls-pass",
+  "artisticAcceptance": "Pending independent regional/cartographic review; does not requalify V12 or establish full production/live QoS",
+  "snapshot": {
+    "head": "c8db2a642f5df72272c156723746441d2d2a7563",
+    "cleanBefore": true,
+    "cleanAfter": true,
+    "runtimeFileCount": 592,
+    "runtimeHashesUnchanged": true,
+    "filesDigest": "30e7accd295e36dcd6b9dc07ede0cbeb17d87bcf788cf956df8e983d9b72752e"
+  },
+  "source": {
+    "legacy": {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\native-e2e-40km-v12\\fresh-source.surfacebin",
+      "sha256": "fe28ffce5c4fb20824b1940276e91ea9946dc1da53a0ce06607a4312ef499570"
+    },
+    "response": {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-v13-model\\web\\out\\surface\\ground-v13\\retained-v12-response-r2\\packet.surfacebin",
+      "sha256": "18de678cc96bde9119a52a6ab3d991090a51963fc865c658f98ab87fa666782e"
+    },
+    "assets": {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface-assets\\resolved.json",
+      "sha256": "c9f5beb9d4cdbdb7eb5a83340d72d882f36322c73272244408374a260b7e8e26"
+    },
+    "kind": "Retained V12 replay, not fresh neural generation or registration",
+    "canonicalGrid": {
+      "width": 512,
+      "height": 512,
+      "spacingM": 78.125
+    },
+    "sourceNativeSpacingM": 39.0625,
+    "sourceLODKnown": false,
+    "previousFieldsUnchanged": 52,
+    "previousVersionsUnchanged": 9,
+    "replay": {
+      "format": "explicit-retained-ground-response-replay",
+      "version": 1,
+      "status": "PASS",
+      "source": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\native-e2e-40km-v12\\fresh-source.surfacebin",
+      "sourceSha256": "fe28ffce5c4fb20824b1940276e91ea9946dc1da53a0ce06607a4312ef499570",
+      "output": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-v13-model\\web\\out\\surface\\ground-v13\\retained-v12-response-r2\\packet.surfacebin",
+      "outputSha256": "18de678cc96bde9119a52a6ab3d991090a51963fc865c658f98ab87fa666782e",
+      "outputBytes": 91626289,
+      "declaredInputs": {
+        "externalProcessMasks": "explicit-none",
+        "floodplainWidthM": 150,
+        "colluvialDecayLengthM": 100
+      },
+      "responseId": "gr-sha256-1:797c1b88f9a2ceaf4bf3244c8b2ea4aadb99a02d5bd74ac7c6ba502c42a5d79a",
+      "oldContextId": "3a3874a9e2fb05a7e4e7f1014cafbbcd",
+      "newContextId": "d1ad83b58485a4fb9d6e50154a8f0f79",
+      "changedBindings": [
+        "candidatePages.support.canonicalContextId"
+      ],
+      "allOriginalArrayBytesAndRecordsUnchanged": true,
+      "unchangedFieldNames": [
+        "slope",
+        "aspect",
+        "curvature",
+        "contributingAreaM2",
+        "waterLevelM",
+        "distanceToWaterM",
+        "handM",
+        "twi",
+        "depositDepthM",
+        "sand",
+        "silt",
+        "clay",
+        "organic",
+        "stoniness",
+        "soilDepthM",
+        "moisture",
+        "temperatureC",
+        "precipitationMm",
+        "treeCover",
+        "grassCover",
+        "shrubCover",
+        "litter",
+        "orientation",
+        "snow",
+        "wetness",
+        "materialBlend",
+        "edgeConfidence",
+        "landform",
+        "waterClass",
+        "closedBasin",
+        "depositOrigin",
+        "occupation",
+        "bedrock",
+        "sourceRock",
+        "material",
+        "materialSecondary",
+        "downstream",
+        "basin",
+        "drainageCell",
+        "materialMeanColor",
+        "groundMaterial",
+        "groundMaterialSecondary",
+        "lowCoverMaterial",
+        "lowCoverMaterialSecondary",
+        "groundMaterialBlend",
+        "lowCoverMaterialBlend",
+        "lowCoverOpacity",
+        "groundMaterialMeanColor",
+        "lowCoverMaterialMeanColor",
+        "topographicPosition",
+        "provenance",
+        "transportedProvenance"
+      ],
+      "unchangedVersionNames": [
+        "terrain",
+        "hydrology",
+        "geology",
+        "environment",
+        "occupation",
+        "population",
+        "materialLibrary",
+        "surfaceState",
+        "surfaceLayers"
+      ],
+      "groundNodesExact": true,
+      "sourceHeightsUnchanged": true,
+      "originalPacketUnchanged": true,
+      "parameterProvenance": {
+        "alluvial": "retained HAND/distance-to-water/slope; original physical decay law",
+        "gravity": "retained downhill routing/source slopes/lithology; original colluvial decay law",
+        "wind": "zero: explicitly absent external aeolianSupply mask",
+        "coastal": "zero: explicitly absent external coastDistanceM mask",
+        "aridity": "retained precipitation/climate/lapse law and actual source heights",
+        "moisturePreSaturation": "retained TWI/soil fractions/slope plus reconstructed original alluvial/aridity",
+        "rockRecipe": "retained substrate/source fields and explicit absent external karst/volcanic/geothermal masks"
+      },
+      "scope": "Declared retained diagnostic replay only. Original canonical input byte stream is not claimed reconstructed. Node agreement is a required guard, not proof of unknown process absence. No generation, registration, source refinement, population regeneration or observed fine-soil claim."
+    }
+  },
+  "tests": {
+    "ownerVitest": {
+      "passed": 243,
+      "files": 45
+    },
+    "nativeAuthoredCpu": {
+      "assertions": 1935,
+      "maximumMeanChannelError": 5.68979787174406e-8,
+      "maximumBlendError": 5.55111512312578e-17
+    },
+    "independentAudit": {
+      "passed": 43,
+      "files": 7,
+      "nodes": 289,
+      "nearNodes": 768,
+      "legacyCandidateRecordsExact": 6422,
+      "commits": [
+        "0992673",
+        "bc0edc0"
+      ]
+    },
+    "privateTsc": {
+      "newErrors": 0,
+      "existingGeneratedWasmErrors": 10
+    },
+    "shaderParse": true,
+    "mainParse": true
+  },
+  "gpu": {
+    "actualDevice": "NVIDIA GeForce RTX5090 (Vulkan1.4.325, Godot4.7.2, Terrain3D1.0.2)",
+    "numeric": {
+      "failures": [],
+      "format": "ground-response-gpu-float32-proof",
+      "precision": "Actual Vulkan compute shader, RGBA32F input textures and Float32 output buffers; same pure GLSL function and native adapter textures. No sRGB framebuffer quantization. Canonical node means themselves retain original sRGB8 quantization.",
+      "records": [
+        {
+          "idMismatches": 0,
+          "maximumBlendError": 0.00000125012155849369,
+          "maximumMeanLinearNormError": 0.00212011213917906,
+          "maximumPresentationChannelError": 2.38418579323607e-8,
+          "maximumRegularMeanLinearNormError": 2.38285684162128e-7,
+          "quantizedKnotOrNearCount": 1159,
+          "renderOrigin": {
+            "x": 193,
+            "z": 277
+          },
+          "samples": 1242,
+          "world": "canonical"
+        },
+        {
+          "idMismatches": 0,
+          "maximumBlendError": 0.00000125012155849369,
+          "maximumMeanLinearNormError": 0.00206740286251973,
+          "maximumPresentationChannelError": 2.38418579323607e-8,
+          "maximumRegularMeanLinearNormError": 2.38285684162128e-7,
+          "quantizedKnotOrNearCount": 1159,
+          "renderOrigin": {
+            "x": 1000000193,
+            "z": -999999723
+          },
+          "samples": 1242,
+          "world": "rebased"
+        },
+        {
+          "idMismatches": 0,
+          "maximumBlendError": 3.34968809689862e-7,
+          "maximumMeanLinearNormError": 0.00199429866029464,
+          "maximumPresentationChannelError": 2.38418579323607e-8,
+          "maximumRegularMeanLinearNormError": 6.86222452155556e-8,
+          "quantizedKnotOrNearCount": 82,
+          "renderOrigin": {
+            "x": 193,
+            "z": 277
+          },
+          "samples": 89,
+          "world": "refined"
+        }
+      ],
+      "scope": "Physical response/binding/half-texel/rebasing and independent blue presentation numerical check; actual Terrain3D raster/style screenshots are a separate probe.",
+      "status": "PASS",
+      "version": 1
+    },
+    "groups": [
+      {
+        "name": "legacy-10000",
+        "widthM": 10000,
+        "views": 4,
+        "diagnostic": 7,
+        "physicalFingerprintsStable": true,
+        "fingerprints": {
+          "terrainVersion": "144b7ca5d6c2a3a1ae6446398a5f9ba7:1c5c115bf92fc6b1c6da2fe8ee1b612ccd0d8bacaf1f8a26eab358eece8278a9",
+          "canonicalContextFingerprint": "ec01b2fa8ba855509e29dc7430861c6dc93d4110a8f92c975c8fdc4ba5cb3fda",
+          "groundFieldsVersion": "38c9de0d6e98c906e63e37be85af5bb1292af89cd6b4d787a65e3df1cd77386f",
+          "projectedGroundFieldsVersion": "38c9de0d6e98c906e63e37be85af5bb1292af89cd6b4d787a65e3df1cd77386f",
+          "groundSampleFingerprint": "b9025a61e689ee21febfeb03a529d7ec1b557f189e9b1eedf68d6c42730a6c25",
+          "parentTerrainFingerprint": "a5ac6f6c9a28a6dd4399fb9e6208c289e00a2bd1622e9b885367c0560ae439f7",
+          "inventoryFingerprint": "45a148205ab0993e194fa901198eaa9f887f091e38dda341e4ae630990e78fac",
+          "geometryDetailFingerprint": "e1b4fe51da853b6ac5de1c046288e7861c3b2221ea2cdad099c0922634db1ca1",
+          "instanceBufferFingerprint": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "groundResponseFingerprint": "0c6ba5989a2aa82e91cdb9b0e5a8b1e8846ca365a065004290ba4b1ac9ddd294"
+        },
+        "groundResponse": {
+          "available": false,
+          "reason": "baked-color-legacy: physical response potentials were not retained"
+        },
+        "instanceBuffersEmptyByExplicitGroundOnly": true,
+        "waterGeometryOrDecal": false
+      },
+      {
+        "name": "legacy-160",
+        "widthM": 160,
+        "views": 4,
+        "diagnostic": 7,
+        "physicalFingerprintsStable": true,
+        "fingerprints": {
+          "terrainVersion": "144b7ca5d6c2a3a1ae6446398a5f9ba7:1c5c115bf92fc6b1c6da2fe8ee1b612ccd0d8bacaf1f8a26eab358eece8278a9",
+          "canonicalContextFingerprint": "ec01b2fa8ba855509e29dc7430861c6dc93d4110a8f92c975c8fdc4ba5cb3fda",
+          "groundFieldsVersion": "38c9de0d6e98c906e63e37be85af5bb1292af89cd6b4d787a65e3df1cd77386f",
+          "projectedGroundFieldsVersion": "38c9de0d6e98c906e63e37be85af5bb1292af89cd6b4d787a65e3df1cd77386f",
+          "groundSampleFingerprint": "cddbd67ed8efaab059c84a37fc13f88d10c475aeb4ed07f2e015b675c4374e25",
+          "parentTerrainFingerprint": "a5ac6f6c9a28a6dd4399fb9e6208c289e00a2bd1622e9b885367c0560ae439f7",
+          "inventoryFingerprint": "45a148205ab0993e194fa901198eaa9f887f091e38dda341e4ae630990e78fac",
+          "geometryDetailFingerprint": "e1b4fe51da853b6ac5de1c046288e7861c3b2221ea2cdad099c0922634db1ca1",
+          "instanceBufferFingerprint": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "groundResponseFingerprint": "0c6ba5989a2aa82e91cdb9b0e5a8b1e8846ca365a065004290ba4b1ac9ddd294"
+        },
+        "groundResponse": {
+          "available": false,
+          "reason": "baked-color-legacy: physical response potentials were not retained"
+        },
+        "instanceBuffersEmptyByExplicitGroundOnly": true,
+        "waterGeometryOrDecal": false
+      },
+      {
+        "name": "response-10000",
+        "widthM": 10000,
+        "views": 4,
+        "diagnostic": 7,
+        "physicalFingerprintsStable": true,
+        "fingerprints": {
+          "terrainVersion": "144b7ca5d6c2a3a1ae6446398a5f9ba7:1c5c115bf92fc6b1c6da2fe8ee1b612ccd0d8bacaf1f8a26eab358eece8278a9",
+          "canonicalContextFingerprint": "ec01b2fa8ba855509e29dc7430861c6dc93d4110a8f92c975c8fdc4ba5cb3fda",
+          "groundFieldsVersion": "38c9de0d6e98c906e63e37be85af5bb1292af89cd6b4d787a65e3df1cd77386f",
+          "projectedGroundFieldsVersion": "38c9de0d6e98c906e63e37be85af5bb1292af89cd6b4d787a65e3df1cd77386f",
+          "groundSampleFingerprint": "b9025a61e689ee21febfeb03a529d7ec1b557f189e9b1eedf68d6c42730a6c25",
+          "parentTerrainFingerprint": "a5ac6f6c9a28a6dd4399fb9e6208c289e00a2bd1622e9b885367c0560ae439f7",
+          "inventoryFingerprint": "45a148205ab0993e194fa901198eaa9f887f091e38dda341e4ae630990e78fac",
+          "geometryDetailFingerprint": "e1b4fe51da853b6ac5de1c046288e7861c3b2221ea2cdad099c0922634db1ca1",
+          "instanceBufferFingerprint": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "groundResponseFingerprint": "0f6655d1997807fbb343c8500d3fce41ddbbde2d3e1404cd425f81667bf74995"
+        },
+        "groundResponse": {
+          "available": true,
+          "id": "gr-sha256-1:797c1b88f9a2ceaf4bf3244c8b2ea4aadb99a02d5bd74ac7c6ba502c42a5d79a",
+          "imageBytes": 12582912,
+          "interpretation": "inferred regional parameters before recipes; no new observed fine soil",
+          "quantization": "float32-potentials; uint16-recipe; stored-srgb8-at-canonical-knots",
+          "sourceGrid": {
+            "height": 512,
+            "originX": 39.0625,
+            "originZ": 39.0625,
+            "spacingM": 78.125,
+            "width": 512
+          },
+          "sourceNativeSpacingM": 39.0625,
+          "version": "surface-ground-response-1"
+        },
+        "instanceBuffersEmptyByExplicitGroundOnly": true,
+        "waterGeometryOrDecal": false
+      },
+      {
+        "name": "response-160",
+        "widthM": 160,
+        "views": 4,
+        "diagnostic": 7,
+        "physicalFingerprintsStable": true,
+        "fingerprints": {
+          "terrainVersion": "144b7ca5d6c2a3a1ae6446398a5f9ba7:1c5c115bf92fc6b1c6da2fe8ee1b612ccd0d8bacaf1f8a26eab358eece8278a9",
+          "canonicalContextFingerprint": "ec01b2fa8ba855509e29dc7430861c6dc93d4110a8f92c975c8fdc4ba5cb3fda",
+          "groundFieldsVersion": "38c9de0d6e98c906e63e37be85af5bb1292af89cd6b4d787a65e3df1cd77386f",
+          "projectedGroundFieldsVersion": "38c9de0d6e98c906e63e37be85af5bb1292af89cd6b4d787a65e3df1cd77386f",
+          "groundSampleFingerprint": "cddbd67ed8efaab059c84a37fc13f88d10c475aeb4ed07f2e015b675c4374e25",
+          "parentTerrainFingerprint": "a5ac6f6c9a28a6dd4399fb9e6208c289e00a2bd1622e9b885367c0560ae439f7",
+          "inventoryFingerprint": "45a148205ab0993e194fa901198eaa9f887f091e38dda341e4ae630990e78fac",
+          "geometryDetailFingerprint": "e1b4fe51da853b6ac5de1c046288e7861c3b2221ea2cdad099c0922634db1ca1",
+          "instanceBufferFingerprint": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "groundResponseFingerprint": "0f6655d1997807fbb343c8500d3fce41ddbbde2d3e1404cd425f81667bf74995"
+        },
+        "groundResponse": {
+          "available": true,
+          "id": "gr-sha256-1:797c1b88f9a2ceaf4bf3244c8b2ea4aadb99a02d5bd74ac7c6ba502c42a5d79a",
+          "imageBytes": 12582912,
+          "interpretation": "inferred regional parameters before recipes; no new observed fine soil",
+          "quantization": "float32-potentials; uint16-recipe; stored-srgb8-at-canonical-knots",
+          "sourceGrid": {
+            "height": 512,
+            "originX": 39.0625,
+            "originZ": 39.0625,
+            "spacingM": 78.125,
+            "width": 512
+          },
+          "sourceNativeSpacingM": 39.0625,
+          "version": "surface-ground-response-1"
+        },
+        "instanceBuffersEmptyByExplicitGroundOnly": true,
+        "waterGeometryOrDecal": false
+      }
+    ],
+    "phases": [
+      {
+        "name": "import",
+        "pid": 203828,
+        "exitCode": 0,
+        "durationMs": 3505
+      },
+      {
+        "name": "numeric",
+        "pid": 203316,
+        "exitCode": 0,
+        "durationMs": 1971
+      },
+      {
+        "name": "legacy-10000",
+        "pid": 204436,
+        "exitCode": 0,
+        "durationMs": 32106
+      },
+      {
+        "name": "legacy-160",
+        "pid": 168648,
+        "exitCode": 0,
+        "durationMs": 37998
+      },
+      {
+        "name": "response-10000",
+        "pid": 203664,
+        "exitCode": 0,
+        "durationMs": 27651
+      },
+      {
+        "name": "response-160",
+        "pid": 203564,
+        "exitCode": 0,
+        "durationMs": 33893
+      },
+      {
+        "name": "blueprint",
+        "pid": 189976,
+        "exitCode": 0,
+        "durationMs": 22859
+      },
+      {
+        "name": "aerial-oblique",
+        "pid": 204536,
+        "exitCode": 0,
+        "durationMs": 55719
+      },
+      {
+        "name": "legacy",
+        "pid": 172692,
+        "exitCode": 0,
+        "durationMs": 25869
+      },
+      {
+        "name": "response",
+        "pid": 193184,
+        "exitCode": 0,
+        "durationMs": 26064
+      }
+    ],
+    "runtimeErrors": 0,
+    "warnings": [
+      {
+        "phase": "numeric",
+        "text": "OpArrayLength is not supported yet.\r\nWARNING: 3 ObjectDB instances were leaked at exit (run with `--verbose` for details).\r\n   at: cleanup (core/object/object.cpp:2536)\r\n"
+      },
+      {
+        "phase": "legacy-10000",
+        "text": "WARNING: instance_reset_physics_interpolation() is deprecated.\r\n   at: _instance_reset_physics_interpolation_bind_compat_104269 (servers/rendering/rendering_server.compat.inc:62)\r\n   GDScript backtrace (most recent call first):\r\n       [0] _apply_prepared (res://scene/main.gd:335)\r\n       [1] _complete_prepared (res://scene/main.gd:1482)\r\n       [2] _handle_prepared_result (res://scene/main.gd:1425)\r\n       [3] _process (res://scene/main.gd:716)\r\n"
+      },
+      {
+        "phase": "legacy-160",
+        "text": "WARNING: instance_reset_physics_interpolation() is deprecated.\r\n   at: _instance_reset_physics_interpolation_bind_compat_104269 (servers/rendering/rendering_server.compat.inc:62)\r\n   GDScript backtrace (most recent call first):\r\n       [0] _apply_prepared (res://scene/main.gd:335)\r\n       [1] _complete_prepared (res://scene/main.gd:1482)\r\n       [2] _handle_prepared_result (res://scene/main.gd:1425)\r\n       [3] _process (res://scene/main.gd:716)\r\n"
+      },
+      {
+        "phase": "response-10000",
+        "text": "WARNING: instance_reset_physics_interpolation() is deprecated.\r\n   at: _instance_reset_physics_interpolation_bind_compat_104269 (servers/rendering/rendering_server.compat.inc:62)\r\n   GDScript backtrace (most recent call first):\r\n       [0] _apply_prepared (res://scene/main.gd:335)\r\n       [1] _complete_prepared (res://scene/main.gd:1482)\r\n       [2] _handle_prepared_result (res://scene/main.gd:1425)\r\n       [3] _process (res://scene/main.gd:716)\r\n"
+      },
+      {
+        "phase": "response-160",
+        "text": "WARNING: instance_reset_physics_interpolation() is deprecated.\r\n   at: _instance_reset_physics_interpolation_bind_compat_104269 (servers/rendering/rendering_server.compat.inc:62)\r\n   GDScript backtrace (most recent call first):\r\n       [0] _apply_prepared (res://scene/main.gd:335)\r\n       [1] _complete_prepared (res://scene/main.gd:1482)\r\n       [2] _handle_prepared_result (res://scene/main.gd:1425)\r\n       [3] _process (res://scene/main.gd:716)\r\n"
+      },
+      {
+        "phase": "blueprint",
+        "text": "WARNING: instance_reset_physics_interpolation() is deprecated.\r\n   at: _instance_reset_physics_interpolation_bind_compat_104269 (servers/rendering/rendering_server.compat.inc:62)\r\n   GDScript backtrace (most recent call first):\r\n       [0] _apply_prepared (res://scene/main.gd:335)\r\n       [1] _complete_prepared (res://scene/main.gd:1482)\r\n       [2] _handle_prepared_result (res://scene/main.gd:1425)\r\n       [3] _process (res://scene/main.gd:716)\r\n"
+      },
+      {
+        "phase": "aerial-oblique",
+        "text": "WARNING: instance_reset_physics_interpolation() is deprecated.\r\n   at: _instance_reset_physics_interpolation_bind_compat_104269 (servers/rendering/rendering_server.compat.inc:62)\r\n   GDScript backtrace (most recent call first):\r\n       [0] _apply_prepared (res://scene/main.gd:335)\r\n       [1] _complete_prepared (res://scene/main.gd:1482)\r\n       [2] _handle_prepared_result (res://scene/main.gd:1425)\r\n       [3] _process (res://scene/main.gd:716)\r\n"
+      },
+      {
+        "phase": "legacy",
+        "text": "WARNING: instance_reset_physics_interpolation() is deprecated.\r\n   at: _instance_reset_physics_interpolation_bind_compat_104269 (servers/rendering/rendering_server.compat.inc:62)\r\n   GDScript backtrace (most recent call first):\r\n       [0] _apply_prepared (res://scene/main.gd:335)\r\n       [1] _complete_prepared (res://scene/main.gd:1482)\r\n       [2] _handle_prepared_result (res://scene/main.gd:1425)\r\n       [3] _process (res://scene/main.gd:716)\r\n"
+      },
+      {
+        "phase": "response",
+        "text": "WARNING: instance_reset_physics_interpolation() is deprecated.\r\n   at: _instance_reset_physics_interpolation_bind_compat_104269 (servers/rendering/rendering_server.compat.inc:62)\r\n   GDScript backtrace (most recent call first):\r\n       [0] _apply_prepared (res://scene/main.gd:335)\r\n       [1] _complete_prepared (res://scene/main.gd:1482)\r\n       [2] _handle_prepared_result (res://scene/main.gd:1425)\r\n       [3] _process (res://scene/main.gd:716)\r\n"
+      }
+    ],
+    "blueprint": {
+      "mapStyle": "blueprint",
+      "mode": "cartographic"
+    },
+    "aerial": {
+      "mode": "aerial"
+    },
+    "pngs": [
+      {
+        "path": "aerial-oblique.png",
+        "bytes": 1994879,
+        "sha256": "e301bc955efe73059fdcbc000c8e113c48cc4db143d77f7e1899660ef7aee07e",
+        "width": 2048,
+        "height": 1280
+      },
+      {
+        "path": "blueprint.png",
+        "bytes": 672019,
+        "sha256": "42b36c7d7c831574342b386d675f1d979830c08ec4c0b018380082cb7ac9a5d6",
+        "width": 2048,
+        "height": 1280
+      },
+      {
+        "path": "edge-legacy.png",
+        "bytes": 97506,
+        "sha256": "775f0ddf95a3e77ebe672c5773770b44457378772a858d583e0bb34e1e84842f",
+        "width": 2048,
+        "height": 1280
+      },
+      {
+        "path": "edge-response.png",
+        "bytes": 121047,
+        "sha256": "a0d135c51a96be784767ee4f84e3c947f5127301765813dfd3284f23b9c028a7",
+        "width": 2048,
+        "height": 1280
+      },
+      {
+        "path": "legacy-10000/all.png",
+        "bytes": 5345320,
+        "sha256": "91ea932fecda1511303095044945bb81ffcac5ef77b0af100c5f06c5777f2466",
+        "width": 2048,
+        "height": 1280
+      },
+      {
+        "path": "legacy-10000/ground-mean-unlit.png",
+        "bytes": 799951,
+        "sha256": "675638f496cdef8b76295c451657a9ab05d94b368c6f4974f3c178e8dd24a3fa",
+        "width": 2048,
+        "height": 1280
+      },
+      {
+        "path": "legacy-10000/ground.png",
+        "bytes": 1850819,
+        "sha256": "0a8d40ea8849415a27784c326bc9f1428e0cb9ce0464cbf39035c7ef1114caeb",
+        "width": 2048,
+        "height": 1280
+      },
+      {
+        "path": "legacy-10000/no-low-cover.png",
+        "bytes": 5517146,
+        "sha256": "1e2cfdb753280d6b48a561ce56176493ad925b71dd0a235f36ad6548b5a3665c",
+        "width": 2048,
+        "height": 1280
+      },
+      {
+        "path": "legacy-10000/no-trees.png",
+        "bytes": 1720118,
+        "sha256": "3e91b34245cb427e4ea0dea429d728530e56fc72d0a57ecf927c1271653f02ca",
+        "width": 2048,
+        "height": 1280
+      },
+      {
+        "path": "legacy-160/all.png",
+        "bytes": 2065582,
+        "sha256": "f6d177977f3bfc9fddd0e3b22013b4b101d18ae31457583bdb71a699eb26682e",
+        "width": 2048,
+        "height": 1280
+      },
+      {
+        "path": "legacy-160/ground-mean-unlit.png",
+        "bytes": 22917,
+        "sha256": "e2eb8d469b9bb5cc907dcd3be5bfa62083af5269972e20fff469c7b39302e56b",
+        "width": 2048,
+        "height": 1280
+      },
+      {
+        "path": "legacy-160/ground.png",
+        "bytes": 2015167,
+        "sha256": "78d2498a3e49ec6df676c3e4418a8fbb65d9b73f2ac335c6c3310f094d94bb55",
+        "width": 2048,
+        "height": 1280
+      },
+      {
+        "path": "legacy-160/no-low-cover.png",
+        "bytes": 2126149,
+        "sha256": "fefa21accb503a127a21610066fd1ba914bee4ab74cd7c0c5a2e755de516b03a",
+        "width": 2048,
+        "height": 1280
+      },
+      {
+        "path": "legacy-160/no-trees.png",
+        "bytes": 2000133,
+        "sha256": "e60f5eb440c9c97ed3555abb6148c279c7b0e13d3d7f5048ef69a6f781b1eb1a",
+        "width": 2048,
+        "height": 1280
+      },
+      {
+        "path": "response-10000/all.png",
+        "bytes": 5346855,
+        "sha256": "ff90a1672e023b9d289646760e0a97d3a9b2717df957f6fc3e078494b9a30c07",
+        "width": 2048,
+        "height": 1280
+      },
+      {
+        "path": "response-10000/ground-mean-unlit.png",
+        "bytes": 757828,
+        "sha256": "ebc8b720db6248d8e2143d4b8769da64466b47256f607633e1d9a9c44d9c4a04",
+        "width": 2048,
+        "height": 1280
+      },
+      {
+        "path": "response-10000/ground.png",
+        "bytes": 1852957,
+        "sha256": "3afdc8554c35f6b58f15e45c66aab17b548264c0c62eb723bcf46cbb61c9671d",
+        "width": 2048,
+        "height": 1280
+      },
+      {
+        "path": "response-10000/no-low-cover.png",
+        "bytes": 5519851,
+        "sha256": "c3cb8ad75737171b20004331fe696a09f2772a705b57983d00585286881892cd",
+        "width": 2048,
+        "height": 1280
+      },
+      {
+        "path": "response-10000/no-trees.png",
+        "bytes": 1721972,
+        "sha256": "a64fcf37fd2f5e73e0b6b9b98a59926d02d9e1929fc31d7197ffc3ba97f24db9",
+        "width": 2048,
+        "height": 1280
+      },
+      {
+        "path": "response-160/all.png",
+        "bytes": 2060449,
+        "sha256": "58a9134f3f12d0e50b294a0cc3ddfb0841bcb82911c65d5b054d134d45dbecaa",
+        "width": 2048,
+        "height": 1280
+      },
+      {
+        "path": "response-160/ground-mean-unlit.png",
+        "bytes": 41565,
+        "sha256": "149862911831c5dd8c45806a239b62e3dbbc9363ede0c6a07e95a2f61abce7a8",
+        "width": 2048,
+        "height": 1280
+      },
+      {
+        "path": "response-160/ground.png",
+        "bytes": 2014443,
+        "sha256": "7f1b2563c27c852eb276161371051386ed2a1f49345087f2000129029f9f6c13",
+        "width": 2048,
+        "height": 1280
+      },
+      {
+        "path": "response-160/no-low-cover.png",
+        "bytes": 2118005,
+        "sha256": "a3e2ba21f2d875606c5ff0d5310d65d9c212bc55c97bba40526b038d1e20feb4",
+        "width": 2048,
+        "height": 1280
+      },
+      {
+        "path": "response-160/no-trees.png",
+        "bytes": 1994862,
+        "sha256": "576f69ba950f55eac35fd6c7c22b00b87924bbf5ec360b46d5af17163f670db4",
+        "width": 2048,
+        "height": 1280
+      }
+    ],
+    "displayPrecision": "PNG8bit display output; diagnostic7 uses unlit physical EMISSION but existing aerial filmic tonemapping remains. A/B shapes are comparable; Float32 linear numerical parity comes from separate Vulkan RGBA32F/SSBO probe, not PNG byte equality.",
+    "sourceWaterAndInstancesExcluded": true,
+    "nearActualInstanceGeometryClaimed": false,
+    "edgeFocus": {
+      "x": 20820.3125,
+      "z": 22265.625
+    },
+    "processesCleanedUp": true
+  },
+  "cpuCost": {
+    "before": {
+      "format": "direct-ground-response-cpu-cost",
+      "version": 1,
+      "sourceGrid": 512,
+      "sourceFieldsExactlyEqual": true,
+      "responseCreationAndDigestMs": [
+        27.120699999999943,
+        27.048999999999978,
+        26.791299999999865
+      ],
+      "responseCreationMedianMs": 27.048999999999978,
+      "results": [
+        {
+          "width": 128,
+          "height": 128,
+          "sourceNativeSpacingM": 39.0625,
+          "gridSpacingM": 31.496062992125985,
+          "times": {
+            "legacy": [
+              85.42450000000008,
+              86.49860000000035,
+              85.42569999999978
+            ],
+            "response": [
+              116.7777000000001,
+              109.9360999999999,
+              110.67720000000008
+            ]
+          },
+          "medianLegacyMs": 85.42569999999978,
+          "medianResponseMs": 110.67720000000008
+        },
+        {
+          "width": 512,
+          "height": 512,
+          "sourceNativeSpacingM": 39.0625,
+          "gridSpacingM": 7.8277886497064575,
+          "times": {
+            "legacy": [
+              1329.6735000000008,
+              1313.2829999999994,
+              1317.0680999999986
+            ],
+            "response": [
+              1693.1447000000007,
+              1713.3696,
+              1716.1547999999984
+            ]
+          },
+          "medianLegacyMs": 1317.0680999999986,
+          "medianResponseMs": 1713.3696
+        }
+      ],
+      "scope": "Alternating direct Node wall spans, one discarded projection warmup. Real retained V12 canonical512 fields with an explicit derived response table; projection heights reconstruct that same stored source (no new learned detail). No original worker initializer or end-to-end latency claim. Browser/scheduler/GPU timings are not measured."
+    },
+    "after": {
+      "format": "direct-ground-response-cpu-cost",
+      "version": 1,
+      "sourceGrid": 512,
+      "sourceFieldsExactlyEqual": true,
+      "responseCreationAndDigestMs": [
+        32.80630000000019,
+        26.222000000000207,
+        26.6565999999998
+      ],
+      "responseCreationMedianMs": 26.6565999999998,
+      "results": [
+        {
+          "width": 128,
+          "height": 128,
+          "sourceNativeSpacingM": 39.0625,
+          "gridSpacingM": 31.496062992125985,
+          "times": {
+            "legacy": [
+              84.6853000000001,
+              86.38819999999987,
+              84.38810000000012
+            ],
+            "response": [
+              89.56809999999996,
+              83.96849999999995,
+              84.26200000000017
+            ]
+          },
+          "medianLegacyMs": 84.6853000000001,
+          "medianResponseMs": 84.26200000000017
+        },
+        {
+          "width": 512,
+          "height": 512,
+          "sourceNativeSpacingM": 39.0625,
+          "gridSpacingM": 7.8277886497064575,
+          "times": {
+            "legacy": [
+              1335.3595999999998,
+              1310.5524000000005,
+              1317.5175
+            ],
+            "response": [
+              1273.2640999999994,
+              1301.8217000000004,
+              1312.2200000000012
+            ]
+          },
+          "medianLegacyMs": 1317.5175,
+          "medianResponseMs": 1301.8217000000004
+        }
+      ],
+      "scope": "Alternating direct Node wall spans, one discarded projection warmup. Real retained V12 canonical512 fields with an explicit derived response table; projection heights reconstruct that same stored source (no new learned detail). No original worker initializer or end-to-end latency claim. Browser/scheduler/GPU timings are not measured."
+    },
+    "native512": {
+      "hashMs": 63.768,
+      "typedBytes": 6815744,
+      "previousFourLaneHashMs": 1331.455,
+      "responsePacketDecodeAndValidationMs": 15186.87,
+      "legacyPacketDecodeAndValidationMs": 14909.644,
+      "coldImagePrepareMs": 791.256,
+      "knownContextValidateAndPrepare100Ms": 0.937,
+      "knownContextImagesSame": true,
+      "scope": "Single sequential observations of retained512; full parser/legacy validation included. Not isolated response CPU or live latency."
+    }
+  },
+  "limits": [
+    "No observed fine soil/geology added; evidence remains coarse and fixed in world coordinates.",
+    "No new heights, hydrology, low-cover, canopy or candidate generation.",
+    "GPU numerical node deviations are bounded by recorded sRGB8 quantization plus declared Float32 allowance, not hidden by colour blur.",
+    "The fixed snapshot does not include subsequent independent native Float32(PI/2) boundary fix b18d100 for a microscopic synthetic terrain.",
+    "Isolated compute harness reports OpArrayLength reflector warning and3ObjectDB leaks at process exit; production spatial shader reports no script/shader errors. All owned processes exited.",
+    "No browser worker/navigation campaign, latency or artistic/full production claim."
+  ]
+}
