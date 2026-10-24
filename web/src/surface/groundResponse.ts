@@ -1,10 +1,15 @@
 import { clamp, Occupation, type SurfaceFields, type SurfaceGridGeometry, type SourceIdentity, type MaterialRecipe, type RockUnit } from './model';
 import { createMaterialIndex, dominantMaterialPair, materialColor, organicSoilFraction, unpackMaterialMean, type MaterialComposition } from './materials';
 import { fingerprint } from './hash';
+import { SurfaceSha256 } from './sha256';
 
 export const GROUND_RESPONSE_VERSION = 'surface-ground-response-1' as const;
 export const GROUND_RESPONSE_FLOAT_FIELDS = ['alluvial','gravity','wind','coastal','aridity','moisturePreSaturation'] as const;
 export const GROUND_RESPONSE_BYTES_PER_SAMPLE = 26;
+const ROCK_FAMILIES=['bedrock','gravity','karst','volcanic','rocky-coast'];
+export function assertGroundResponseRock(recipe:MaterialRecipe):void {
+  if(!recipe||recipe.surfaceRole&&recipe.surfaceRole!=='ground'||!ROCK_FAMILIES.includes(recipe.family))throw new Error('Ground response recipe has an incompatible rock family/role');
+}
 export interface GroundResponseFields {
   alluvial: Float32Array; gravity: Float32Array; wind: Float32Array; coastal: Float32Array;
   aridity: Float32Array; moisturePreSaturation: Float32Array; rockRecipe: Uint16Array;
@@ -44,9 +49,14 @@ export function groundResponseIdentity(response: Omit<SurfaceGroundResponse,'id'
   const g=response.grid,s=response.source;
   // Numeric metadata uses explicit IEEE754 bytes, avoiding cross-language
   // decimal formatting differences at large/rebased world coordinates.
-  return fingerprint(['ground-response-1',response.version,new Float64Array([g.width,g.height,g.originX,g.originZ,g.spacingM,s.sourceLOD,s.nativeSpacingM]),s.id,s.version,
+  const digest=new SurfaceSha256(),text=(value:string)=>{const bytes=new Uint8Array(value.length*2);for(let i=0;i<value.length;i++){const c=value.charCodeAt(i);bytes[i*2]=c&255;bytes[i*2+1]=c>>>8;}digest.update(bytes);};
+  text('[');
+  for(const value of ['gr-sha256-1',response.version,new Float64Array([g.width,g.height,g.originX,g.originZ,g.spacingM,s.sourceLOD,s.nativeSpacingM]),s.id,s.version,
     s.sourceLODKnown===undefined?'unspecified':String(s.sourceLODKnown),s.provenance??'',response.environmentVersion,response.materialLibraryVersion,response.interpolation,response.quantization,
-    ...GROUND_RESPONSE_FLOAT_FIELDS.map(key=>response.fields[key]),response.fields.rockRecipe]);
+    ...GROUND_RESPONSE_FLOAT_FIELDS.map(key=>response.fields[key]),response.fields.rockRecipe]){
+    if(typeof value==='string')text('string:'+value+';');else{text(value.constructor.name+':'+value.byteLength+':');digest.update(new Uint8Array(value.buffer,value.byteOffset,value.byteLength));}
+  }
+  text(']');return 'gr-sha256-1:'+digest.hex();
 }
 export function createGroundResponse(grid: SurfaceGridGeometry, source: SourceIdentity, environmentVersion: string, materialLibraryVersion: string, fields: GroundResponseFields): SurfaceGroundResponse {
   const value:Omit<SurfaceGroundResponse,'id'>={version:GROUND_RESPONSE_VERSION,grid:{...grid},source:{...source},environmentVersion,materialLibraryVersion,
@@ -68,10 +78,10 @@ export function hydrateGroundResponse(value: unknown, expected: {grid:SurfaceGri
   for(const key of [...GROUND_RESPONSE_FLOAT_FIELDS,'rockRecipe'] as const){
     const a=r.fields[key],Constructor=key==='rockRecipe'?Uint16Array:Float32Array;
     if(!Array.isArray(a)&&!(a instanceof Constructor)||a.length!==n)throw new Error('Invalid ground response dtype/shape '+key);
-    for(const v of a)if(!Number.isFinite(v)||v<0||key==='rockRecipe'&&(!Number.isInteger(v)||v>=expected.materials.length)||key!=='rockRecipe'&&key!=='aridity'&&v>1)throw new Error('Invalid ground response value '+key);
+    for(const v of a)if(!Number.isFinite(v)||v<0||key==='rockRecipe'&&(!Number.isInteger(v)||v>=expected.materials.length)||key!=='rockRecipe'&&(!Number.isFinite(Math.fround(v))||key!=='aridity'&&v>1))throw new Error('Invalid ground response value '+key);
     if(!(a instanceof Constructor))(r.fields as any)[key]=new Constructor(a);
   }
-  for(const id of r.fields.rockRecipe){const recipe=expected.materials[id];if(recipe.surfaceRole&&recipe.surfaceRole!=='ground'||['forest-litter','vegetation-litter','inland-water','marine-water','snow-ice'].includes(recipe.id))throw new Error('Ground response recipe has an incompatible role');}
+  for(const id of new Set(r.fields.rockRecipe))assertGroundResponseRock(expected.materials[id]);
   if(typeof r.id!=='string'||r.id!==groundResponseIdentity(r))throw new Error('Ground response version/hash mismatch');
   return r;
 }

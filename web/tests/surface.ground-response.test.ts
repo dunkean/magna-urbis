@@ -1,6 +1,6 @@
 import {describe,it,expect} from 'vitest';
 import {compileSurfaceWorld,hydrateSurfaceWorld,retargetSurfaceWorld,sampleSurface,serializeSurfaceWorld,deserializeSurfaceWorld,estimateSurfaceCompileBytes} from '../src/surface/compiler';
-import {allocateGroundResponseFields,createGroundResponse,createGroundResponseSampler,groundResponseWeights,hydrateGroundResponse,GROUND_RESPONSE_BYTES_PER_SAMPLE} from '../src/surface/groundResponse';
+import {allocateGroundResponseFields,createGroundResponse,createGroundResponseSampler,groundResponseWeights,groundResponseIdentity,hydrateGroundResponse,GROUND_RESPONSE_BYTES_PER_SAMPLE} from '../src/surface/groundResponse';
 import {createMaterialIndex,dominantMaterialPair,materialColor,packMaterialMean,unpackMaterialMean} from '../src/surface/materials';
 import {decodeSurfaceBinary,encodeSurfaceBinary} from '../src/surface/binary';
 import type {SurfaceGridGeometry} from '../src/surface/model';
@@ -47,11 +47,16 @@ describe('physical parameters before ground recipe response',()=>{
     const partial=clone();delete(partial.fields as any).wind;expect(()=>hydrateGroundResponse(partial,expected)).toThrow(/group/);
     const wrongType=clone();(wrongType.fields as any).wind=new Float64Array(4);expect(()=>hydrateGroundResponse(wrongType,expected)).toThrow(/dtype/);
     const edited=clone();edited.fields.aridity[0]+=.1;expect(()=>hydrateGroundResponse(edited,expected)).toThrow(/hash/);
+    const overflow=JSON.parse(JSON.stringify(response,(_,v)=>ArrayBuffer.isView(v)?Array.from(v as any):v)),infinity=clone();infinity.fields.aridity[0]=Infinity;overflow.id=groundResponseIdentity(infinity);overflow.fields.aridity[0]=1e100;
+    expect(()=>hydrateGroundResponse(overflow,expected)).toThrow(/value aridity/);
     expect(()=>hydrateGroundResponse(clone(),{...expected,source:{...expected.source,version:'other'}})).toThrow(/mismatched/);
     expect(()=>hydrateGroundResponse(clone(),{...expected,grid:{...grid,originX:1e9}})).toThrow(/mismatched/);
     expect(()=>hydrateGroundResponse(clone(),{...expected,environmentVersion:'edited'})).toThrow(/mismatched/);
     expect(()=>hydrateGroundResponse(clone(),expected,GROUND_RESPONSE_BYTES_PER_SAMPLE*4-1)).toThrow(/memoryBudget/);
     expect(()=>allocateGroundResponseFields(20_000_000)).toThrow(/budget/);
+    const badCatalogue=structuredClone(world.materials);delete badCatalogue[1].surfaceRole;badCatalogue[1].family='marine';
+    expect(()=>hydrateGroundResponse(clone(),{...expected,materials:badCatalogue})).toThrow(/family\/role/);
+    expect(()=>compileSurfaceWorld({seed:3,terrain:world.terrain},{materialLibrary:badCatalogue})).toThrow(/family\/role/);
   });
   it('keeps all original fields, physical versions, candidates and canonical knots exact while adding the versioned response',()=>{
     const input=surfaceLayerInput(),options={topographicRadiiM:[32,64,128]},base=compileSurfaceWorld(input,options),legacy=compileSurfaceWorld(input,{...options,groundResponse:false});
