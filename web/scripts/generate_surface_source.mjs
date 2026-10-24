@@ -10,12 +10,12 @@
  * --viewer-resolution 2048x1280. Browser/SSE/worker stay alive until the seven-level tour exits. */
 import { chromium } from 'playwright';
 import { mkdir, readFile, writeFile, readdir } from 'node:fs/promises';
-import { createWriteStream, existsSync,writeFileSync } from 'node:fs';
+import { existsSync,writeFileSync } from 'node:fs';
 import { dirname,resolve } from 'node:path';
 import { createHash } from 'node:crypto';
-import { spawn, spawnSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { finished } from 'node:stream/promises';
+import { spawnSurfaceFileLogged,parseSurfaceNativeLogs } from './surface_process_logs.mjs';
 import { decodeSurfaceBinary, encodeSurfaceBinary } from '../src/surface/binary.ts';
 import { compileSurfaceWorld } from '../src/surface/compiler.ts';
 import { hashString } from '../src/surface/model.ts';
@@ -113,21 +113,11 @@ async function runNativeTour(sessionId) {
     browserHeldOpen:true,sourcePacket:paths.source,manualPacketSwaps:false};
   report.status='native-tour';await save();
   console.log(`Native live tour: ${JSON.stringify(report.viewer.command)}`);
-  const stdout=createWriteStream(logPath),stderr=createWriteStream(errorPath),buffers={stdout:'',stderr:''};
-  const capture=(kind,chunk)=>{
-    (kind==='stdout'?stdout:stderr).write(chunk);buffers[kind]+=chunk.toString();
-    const lines=buffers[kind].split(/\r?\n/);buffers[kind]=lines.pop();
-    for(const line of lines){
-      if(/(?:SCRIPT|SHADER) ERROR|ERROR:|Live terrain unavailable/.test(line))nativeErrors.push({stream:kind,line,elapsedMs:Date.now()-began});
-      try{const event=JSON.parse(line);if(event.event){events.push({...event,elapsedMs:Date.now()-began});console.log(JSON.stringify({native:event}));}}catch{}
-    }
-  };
   let timeout,progressTimer;
   try{
     const completed=new Promise((done,fail)=>{
-      viewerProcess=spawn(process.execPath,command,{windowsHide:true,detached:process.platform!=='win32',stdio:['ignore','pipe','pipe']});
+      viewerProcess=spawnSurfaceFileLogged(process.execPath,command,{windowsHide:true,detached:process.platform!=='win32',stdoutPath:logPath,stderrPath:errorPath});
       report.viewer.processId=viewerProcess.pid;
-      viewerProcess.stdout.on('data',chunk=>capture('stdout',chunk));viewerProcess.stderr.on('data',chunk=>capture('stderr',chunk));
       viewerProcess.once('error',fail);
       viewerProcess.once('close',(code,signal)=>done({code,signal}));
       timeout=setTimeout(()=>{report.viewer.timedOut=true;stopViewer();},viewerTimeoutMs);
@@ -139,8 +129,12 @@ async function runNativeTour(sessionId) {
     if(report.viewer.timedOut)throw new Error(`Native tour exceeded ${viewerTimeoutMs}ms; its own process tree was stopped`);
     if(result.code!==0)throw new Error(`Native tour exited ${result.code}, signal=${result.signal}`);
   }finally{
-    clearTimeout(timeout);clearInterval(progressTimer);stopViewer();stdout.end();stderr.end();await Promise.all([finished(stdout),finished(stderr)]);
-    for(const kind of ['stdout','stderr'])if(buffers[kind]&&/(?:SCRIPT|SHADER) ERROR|ERROR:|Live terrain unavailable/.test(buffers[kind]))nativeErrors.push({stream:kind,line:buffers[kind]});
+    clearTimeout(timeout);clearInterval(progressTimer);stopViewer();
+    const raw=await Promise.all([readFile(logPath,'utf8'),readFile(errorPath,'utf8')]);
+    const parsed=parseSurfaceNativeLogs(...raw);
+    events.push(...parsed.events.map(event=>({...event,logObservation:'file-after-exit',observedAfterExitElapsedMs:Date.now()-began})));
+    nativeErrors.push(...parsed.errors);
+    report.viewer.logTransport='inherited-file-descriptors';
     report.viewer.elapsedMs=Date.now()-began-report.viewer.startedElapsedMs;
   }
   report.viewer.metrics=JSON.parse(await readFile(metricsPath,'utf8'));
@@ -202,17 +196,16 @@ async function runNativeNavigation(sessionId) {
     '--presentation','aerial','--water-mode',viewerWaterMode,'--water-symbol-width-px',String(viewerWaterSymbolWidthPx),'--layers','all','--metrics',paths.metrics,'--navigation-seconds',String(navigationSeconds),'--navigation-report',paths.report];
   if(!args.includes('--viewer-oblique'))command.push('--top');if(viewerAssets)command.push('--assets',resolve(viewerAssets));
   const phase={status:'running',startedElapsedMs:Date.now()-began,paths,command:[resolve(viewerGodot),...command],browserHeldOpen:true};report.navigation=phase;report.status='native-navigation';await save();
-  const stdout=createWriteStream(paths.stdout),stderr=createWriteStream(paths.stderr);let timeout;
+  let timeout;
   try{
     const completed=new Promise((done,fail)=>{
-      viewerProcess=spawn(resolve(viewerGodot),command,{windowsHide:true,detached:process.platform!=='win32',stdio:['ignore','pipe','pipe']});
+      viewerProcess=spawnSurfaceFileLogged(resolve(viewerGodot),command,{windowsHide:true,detached:process.platform!=='win32',stdoutPath:paths.stdout,stderrPath:paths.stderr});
       phase.processId=viewerProcess.pid;
-      viewerProcess.stdout.on('data',chunk=>stdout.write(chunk));viewerProcess.stderr.on('data',chunk=>stderr.write(chunk));
       viewerProcess.once('error',fail);viewerProcess.once('close',(code,signal)=>done({code,signal}));
       timeout=setTimeout(()=>{phase.timedOut=true;stopViewer();},viewerTimeoutMs);
     });
     Object.assign(phase,await completed);
-  }finally{clearTimeout(timeout);stopViewer();stdout.end();stderr.end();await Promise.all([finished(stdout),finished(stderr)]);}
+  }finally{clearTimeout(timeout);stopViewer();phase.logTransport='inherited-file-descriptors';}
   phase.elapsedMs=Date.now()-began-phase.startedElapsedMs;
   if(existsSync(paths.report))phase.result=JSON.parse(await readFile(paths.report,'utf8'));
   if(existsSync(paths.metrics))phase.metrics=JSON.parse(await readFile(paths.metrics,'utf8'));
@@ -258,14 +251,13 @@ async function runNativeLayerProbe(sessionId,widthM){
   if(!args.includes('--viewer-oblique'))command.push('--top');if(viewerAssets)command.push('--assets',resolve(viewerAssets));
   const phase={status:'running',widthM,requireInstances:widthM<=160,startedElapsedMs:Date.now()-began,paths,command:[resolve(viewerGodot),...command],browserHeldOpen:true};
   report.layerProbes??=[];report.layerProbes.push(phase);report.layerProbe??=phase;report.layerProbeStatus='running';report.status='native-layer-isolation';await save();
-  const stdout=createWriteStream(paths.stdout),stderr=createWriteStream(paths.stderr);let timeout;
+  let timeout;
   try{
     Object.assign(phase,await new Promise((done,fail)=>{
-      viewerProcess=spawn(resolve(viewerGodot),command,{windowsHide:true,detached:process.platform!=='win32',stdio:['ignore','pipe','pipe']});phase.processId=viewerProcess.pid;
-      viewerProcess.stdout.on('data',chunk=>stdout.write(chunk));viewerProcess.stderr.on('data',chunk=>stderr.write(chunk));
+      viewerProcess=spawnSurfaceFileLogged(resolve(viewerGodot),command,{windowsHide:true,detached:process.platform!=='win32',stdoutPath:paths.stdout,stderrPath:paths.stderr});phase.processId=viewerProcess.pid;
       viewerProcess.once('error',fail);viewerProcess.once('close',(code,signal)=>done({code,signal}));timeout=setTimeout(()=>{phase.timedOut=true;stopViewer();},viewerTimeoutMs);
     }));
-  }finally{clearTimeout(timeout);stopViewer();stdout.end();stderr.end();await Promise.all([finished(stdout),finished(stderr)]);}
+  }finally{clearTimeout(timeout);stopViewer();phase.logTransport='inherited-file-descriptors';}
   phase.elapsedMs=Date.now()-began-phase.startedElapsedMs;
   if(existsSync(paths.report))phase.result=JSON.parse(await readFile(paths.report,'utf8'));
   if(existsSync(paths.metrics))phase.metrics=JSON.parse(await readFile(paths.metrics,'utf8'));
