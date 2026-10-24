@@ -437,6 +437,10 @@ func _update_camera() -> void:
 		camera.projection = Camera3D.PROJECTION_ORTHOGONAL
 		camera.size = width_m/get_viewport().get_visible_rect().size.aspect()
 		var highest: float = maxf(float(world.get("_heightRange",Vector2(0,0)).y)-origin.y,scene_top_y)
+		# Explicit diagnostic clearance permits equal-camera asset/baseline A/B.
+		# Orthographic framing is unchanged; the normal default stays unchanged.
+		if options.has("--top-clearance-m"):highest=maxf(highest,target.y+clampf(float(options["--top-clearance-m"]),0.0,256.0))
+		if rendered_presentation_mode=="aerial" and not tree_library.cpu.is_empty():highest=maxf(highest,target.y+32.0)
 		# Keep the highest loaded source roof below both camera AND its near plane.
 		# Orthographic framing stays unchanged when camera elevation increases.
 		var required_distance=(highest-target.y+maxf(1.0,width_m*0.02))/0.99
@@ -1221,6 +1225,7 @@ func _apply_canopy_parameters(material: Object) -> void:
 	var asset_enabled=not tree_library.cpu.is_empty() and presentation_mode=="aerial"
 	values["canopy_asset_enabled"]=asset_enabled
 	values["canopy_shadow_angular_diameter_degrees"]=.53 if asset_enabled else 0.0
+	values["canopy_shadow_reconstruction_texels"]=2.0 if asset_enabled else 0.0
 	if asset_enabled:
 		values["canopy_optical_lut"]=tree_library.mean_texture
 		values["canopy_linear_albedo"]=Vector3(tree_library.cpu.meanLinear[0],tree_library.cpu.meanLinear[1],tree_library.cpu.meanLinear[2])
@@ -1287,6 +1292,7 @@ func _update_canopy_phase(delta:float)->void:
 	canopy_view_state=guard.duplicate(true)
 	canopy_view_state.merge({"phase":canopy_phase,"exactWeight":minf(canopy_phase,1.0),"geometryWeight":maxf(0.0,canopy_phase-1.0),"activeAtlasWorldId":canopy_info.get("worldId",""),"activeAtlasHash":canopy_info.get("atlasHash",""),"activeAtlasSource":canopy_info.get("sourceDescriptor",{}),"transitionPending":not canopy_pending.is_empty(),"pendingAtlasHash":canopy_pending.get("atlasHash",""),"pendingAtlas":not canopy_pending.is_empty(),"treePage":canopy_info.get("page",{}),"atlasBounds":canopy_info.get("bounds",{}),"spatialBlend":"none; one phase for the whole viewport"},true)
 	canopy_view_state["treeAssets"]=tree_asset_metrics
+	if tree_asset_metrics.get("enabled",false):tree_asset_metrics["shadowFiltering"]={"solarAngularDiameterDegrees":.53,"referenceHeightM":9.80388349514563,"reconstructionFootprintTexels":2.0,"policy":"shadow footprint=max(main pixel, declared solar penumbra, two active atlas texels); visibility C/V unchanged","physicalPenumbraClaimed":false}
 	var bindings={"canopy_exact_weight":canopy_view_state.exactWeight,"canopy_geometry_weight":canopy_view_state.geometryWeight}
 	if terrain!=null:
 		for key in bindings:terrain.get("material").call("set_shader_param",key,bindings[key])
