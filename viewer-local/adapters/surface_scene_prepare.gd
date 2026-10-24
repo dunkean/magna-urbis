@@ -45,6 +45,7 @@ static func prepare(request: Dictionary) -> Dictionary:
 		request.sceneRequest["canopyAtlasBounds"]=visibility_plan.atlasBounds
 		if visibility_plan.get("available",false):
 			request.sceneRequest["visibilityResidentImageSize"]=int(visibility_plan.residentImageSize)
+			request.sceneRequest["visibilityCameraSha256"]=visibility_plan.cameraSha256
 			request.origin=visibility_plan.residentOrigin
 			request.heightImageSize=int(visibility_plan.residentImageSize)
 			var old:Dictionary=request.get("renderedOrigin",{})
@@ -53,7 +54,7 @@ static func prepare(request: Dictionary) -> Dictionary:
 		else:request.skipHeight=false
 	phases["visibilityPlanMs"]=(Time.get_ticks_usec()-phase_tick)/1000.0;phase_tick=Time.get_ticks_usec()
 	var result := Data.prepare(request.world,request.origin,request.width,request.generation,request.packet,request.skipContext,request.displaySource,request.skipHeight,request.sceneRequest)
-	if result.get("cancelled",false):return result
+	if result.get("cancelled",false) or result.get("failed",false):return result
 	phases["dataMs"]=(Time.get_ticks_usec()-phase_tick)/1000.0;phase_tick=Time.get_ticks_usec()
 	result["prepareControl"]=control
 	result.worldRevision=request.get("worldRevision",0)

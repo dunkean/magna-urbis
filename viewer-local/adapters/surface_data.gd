@@ -6,6 +6,7 @@ const Geometry = preload("res://adapters/surface_geometry.gd")
 const UrbanReader = preload("res://adapters/urban_reader.gd")
 const Layers=preload("res://adapters/surface_layers.gd")
 const GroundResponse=preload("res://adapters/surface_ground_response.gd")
+const HeightBatch=preload("res://adapters/surface_height_batch.gd")
 const Detail=preload("res://adapters/surface_geometry_detail.gd")
 const MAX_PACKET_BYTES := 512*1024*1024
 
@@ -344,15 +345,26 @@ static func prepare(world: Dictionary, origin: Dictionary, view_width: float, se
 	if int(scene_request.get("visibilityResidentImageSize",0)) in [512,1024,2048,4096]:size=int(scene_request.visibilityResidentImageSize)
 	# Region addresses stay local and exactly aligned to Terrain3D's region grid.
 	var local_start := Vector3(-size*0.5*spacing,0.0,-size*0.5*spacing)
-	var height := Image.create(size,size,false,Image.FORMAT_RF)
-	var control := Image.create(size,size,false,Image.FORMAT_RF)
+	var batch:Dictionary={}
+	var batch_requested=not str(scene_request.get("heightBatchExecutable","")).is_empty()
+	var batch_eligible=not skip_height and size*size>=512*512
+	if batch_requested and batch_eligible:
+		var batch_options=scene_request.duplicate(false)
+		batch_options["heightBatchSourceEpoch"]=packet.get("source",{}).get("sourceEpoch")
+		batch_options["heightBatchSceneEpoch"]=packet.get("source",{}).get("sceneEpoch")
+		batch=HeightBatch.prepare(world,display_source,origin,local_start,spacing,size,serial,batch_options)
+		if batch.get("cancelled",false):return PrepareControl.result(control_token,"height-batch-poll",start)
+		if batch.get("failed",false):return batch
+	var no_image=skip_height and scene_request.has("visibilityResidentImageSize")
+	var height:Image=batch.height if not batch.is_empty() else null if no_image else Image.create(size,size,false,Image.FORMAT_RF)
+	var control:Image=batch.control if not batch.is_empty() else null if no_image else Image.create(size,size,false,Image.FORMAT_RF)
 	# This adapter authors hole bits ONLY outside validated height domains.
 	# No source cave/water raster is interpreted as a terrain cutout.
 	var hole_bits := PackedByteArray([4,0,0,0]).decode_float(0)
-	var loaded_minimum=INF;var loaded_maximum=-INF
+	var loaded_minimum=float(batch.minimumM) if not batch.is_empty() else INF;var loaded_maximum=float(batch.maximumM) if not batch.is_empty() else -INF
 	var edge_support_cache:Dictionary={}
 	var edge_sampler=func(x:float,z:float)->float:return height_at(display_source,x,z)
-	for z in (0 if skip_height else size):
+	for z in (0 if skip_height or not batch.is_empty() else size):
 		if z%8==0 and PrepareControl.hit(control_token,"height-rows"):return PrepareControl.result(control_token,"height-rows",start)
 		for x in size:
 			var wx: float = origin.x+local_start.x+x*spacing
@@ -375,6 +387,9 @@ static func prepare(world: Dictionary, origin: Dictionary, view_width: float, se
 	terrain = canonical.grid
 	var fields: Dictionary = canonical.fields
 	var result := {"loadedHeightRangeWorld":Vector2(loaded_minimum-.01,loaded_maximum+.01),"worldId":world.id,"world":world,"packet":packet,"generation":serial,"origin":origin,"spacing":spacing,"localStart":local_start,"height":null if skip_height else height,"control":null if skip_height else control,"sourceCoverageRects":SourceCoverage.rebased_rects(source_domains,origin),"sourceCoverageCount":source_domains.size(),"contextGrid":terrain,"displaySource":display_source,"sceneRequest":scene_request}
+	if not batch.is_empty():result["heightSampler"]=batch.metrics
+	elif batch_requested:result["heightSampler"]={"mode":"gd-scalar" if not skip_height else "resident-reused","requested":true,"used":false,"eligible":batch_eligible,"fallbackReason":"resident-reused" if skip_height else "below-262144-pixel-native-threshold"}
+	elif scene_request.has("visibilityResidentImageSize"):result["heightSampler"]={"mode":"resident-reused" if skip_height else "gd-scalar","nativeBatchRequested":false}
 	var layers=Layers.prepare(world,canonical)
 	if PrepareControl.hit(control_token,"layer-images"):return PrepareControl.result(control_token,"layer-images",start)
 	result.surfaceLayers=layers

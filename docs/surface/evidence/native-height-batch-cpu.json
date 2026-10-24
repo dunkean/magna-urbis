@@ -1,0 +1,273 @@
+{
+  "version": 1,
+  "status": "CPU-NUMERIC-PARITY-PASS; ENGINE-IMPORT/GPU/STREAMING-PENDING",
+  "scope": "Explicit retained V12 replay only; no Neural generation/registration, no source/world version or physical fields change, no interactive QoS/FPS claim.",
+  "basePlanCommit": "f20184e",
+  "coverageGuardCommit": "bc0ed9c",
+  "sourcePacketSha256": "e9646f0aadfc2d69cac78e64977389201ff8ef87360ff2f52f72bc37cb079d2c",
+  "physicalDecodedHeightAndFieldsSha256": "abdebbe32fc4abefa18f9d567283263adb39d2eebaca7c941a8aaf36cf448edc",
+  "physicalUnchanged": true,
+  "historicalScalarPrepareMs": 114913.702,
+  "fullImageComparison": {
+    "allControlRfBytesExact": true,
+    "allHeightRfBytesExact": true,
+    "allPixelsCompared": 16777216,
+    "controlBytes": 67108864,
+    "frozenReferenceDataSha256": "ef586a7a1b7c935b84509e920f0624184aae2d7c49e10b25dbbc807073431c3b",
+    "heightBytes": 67108864,
+    "loadedHeightRangeExact": true,
+    "loadedHeightRangeWorld": [
+      1624.75903320313,
+      2189.96655273438
+    ],
+    "maximumRfStorageErrorM": 1.42006049372867e-05,
+    "prepareMs": 2016.234,
+    "referencePrepareMs": 105863.442,
+    "rfFormatValidated": true,
+    "sampleChecks": 49,
+    "sampler": {
+      "eligible": true,
+      "executableSha256": "53843908e08eea34a7938af0bd0da2efbff7f5aaa27774c7f0535fe0780bbfee",
+      "holes": 0.0,
+      "mode": "explicit-native-batch",
+      "outputPayloadSha256": "778b82ea73c64530f8a407f4547dcedbfea5d8bee008d6b729f41fe0f39c540c",
+      "provenance": "Rust f64 scalar ordered16taps; no fast-math; GD positive-kernel seam policy",
+      "requested": true,
+      "sampleMs": 373.7307,
+      "sceneEpoch": "bench-scene-1",
+      "size": 4096,
+      "sourceEpoch": "bench-source-1",
+      "sourceInputSha256": "84c7de2d3df992eea4e96e2aa9e8bf8c987cb01b073cea7ddd938b27bfd5f52e",
+      "sourceSamples": 266240,
+      "sourceWorldId": "313a630904c50b372b0e38891af563a5",
+      "spacingM": 0.625,
+      "totalMs": 1396.75,
+      "used": true,
+      "version": "gd-height-batch-1"
+    },
+    "scope": "CPU Data.prepare only; no Terrain3D import/GPU or navigation latency claim",
+    "size": 4096,
+    "spacingM": 0.625
+  },
+  "referenceFiles": {
+    "reference-height.f32": {
+      "bytes": 67108864,
+      "sha256": "b7cd8d2ee609e9fe57685683090bf3ebd0332aad9e6b5009170df9652248fab6"
+    },
+    "reference-control.u32": {
+      "bytes": 67108864,
+      "sha256": "3b6a07d0d404fab4e23b6d34bc6696a6a312dd92821332385e5af7c01c421351"
+    }
+  },
+  "combinedHeightControlSha256": "778b82ea73c64530f8a407f4547dcedbfea5d8bee008d6b729f41fe0f39c540c",
+  "measuredSixFileSnapshotUnchanged": true,
+  "latestReleaseRevalidation": {
+    "executableSha256": "686c4988853149c6a08e7d690f02050a66f73274bc791a64423d9a264e777ec2",
+    "executableBytes": 402432,
+    "rustc": "rustc 1.99.0 (b940084d7 2026-09-28)",
+    "cargoFlags": "--release --offline; no RUSTFLAGS/CARGO_ENCODED_RUSTFLAGS; no fast-math",
+    "resident": {
+      "controlBytes": 67108864,
+      "heightBytes": 67108864,
+      "loadedHeightRangeWorld": [
+        1624.75903320313,
+        2189.96655273438
+      ],
+      "maximumRfStorageErrorM": 1.42006049372867e-05,
+      "prepareMs": 2172.63,
+      "rfFormatValidated": true,
+      "sampleChecks": 49,
+      "sampler": {
+        "eligible": true,
+        "executableSha256": "686c4988853149c6a08e7d690f02050a66f73274bc791a64423d9a264e777ec2",
+        "holes": 0.0,
+        "mode": "explicit-native-batch",
+        "outputPayloadSha256": "778b82ea73c64530f8a407f4547dcedbfea5d8bee008d6b729f41fe0f39c540c",
+        "provenance": "Rust f64 scalar ordered16taps; no fast-math; GD positive-kernel seam policy",
+        "requested": true,
+        "sampleMs": 377.7647,
+        "sceneEpoch": "bench-scene-1",
+        "size": 4096,
+        "sourceEpoch": "bench-source-1",
+        "sourceInputSha256": "5b6310d1fd367e1a59874cd22af3d33a68fef1c388d55bf2008111f8f1cd4ed6",
+        "sourceSamples": 266240,
+        "sourceWorldId": "313a630904c50b372b0e38891af563a5",
+        "spacingM": 0.625,
+        "totalMs": 1542.638,
+        "used": true,
+        "version": "gd-height-batch-1"
+      },
+      "scope": "CPU Data.prepare only; no Terrain3D import/GPU or navigation latency claim",
+      "size": 4096,
+      "spacingM": 0.625
+    },
+    "whole128MiBPayloadMatchesSavedFrozenReference": true,
+    "physicalUnchanged": true,
+    "note": "Initial full memcmp used executable53843908…; later existing-output guard and rustfmt release686c4988… rechecked against the complete saved128MiB reference SHA."
+  },
+  "smallCpuTest": {
+    "cancel": {
+      "cancelled": true,
+      "ownedProcessId": 202888,
+      "processRunningAfterCleanup": false,
+      "processWasRunningAtAbort": true,
+      "temporaryDirectory": "C:/Users/U108-N257/AppData/Roaming/Godot/app_userdata/Magna Urbis • SurfaceWorld/height-batch/202768-2-2662652",
+      "temporaryDirectoryRemoved": true
+    },
+    "cases": [
+      {
+        "allRfAndControlBytesExact": true,
+        "holes": 833,
+        "maximumF64ToRfErrorM": 0.0,
+        "name": "bilinear-f32-edge-padding",
+        "nativeSampleMs": 0.1027,
+        "nativeTotalMs": 380.101,
+        "pixels": 1089
+      },
+      {
+        "allRfAndControlBytesExact": true,
+        "holes": 3201,
+        "maximumF64ToRfErrorM": 3.77496098735719e-06,
+        "name": "cubic-f32-16tap",
+        "nativeSampleMs": 0.2591,
+        "nativeTotalMs": 407.027,
+        "pixels": 4225
+      },
+      {
+        "allRfAndControlBytesExact": true,
+        "holes": 3201,
+        "maximumF64ToRfErrorM": 3.80858818971319e-06,
+        "name": "cubic-f64-16tap",
+        "nativeSampleMs": 0.2647,
+        "nativeTotalMs": 399.107,
+        "pixels": 4225
+      },
+      {
+        "allRfAndControlBytesExact": true,
+        "holes": 833,
+        "maximumF64ToRfErrorM": 3.8105936255306e-06,
+        "name": "rebase-1e9-irregular-last-sample",
+        "nativeSampleMs": 0.0913,
+        "nativeTotalMs": 402.79,
+        "pixels": 1089
+      },
+      {
+        "allRfAndControlBytesExact": true,
+        "holes": 1521,
+        "maximumF64ToRfErrorM": 3.80964070245682e-06,
+        "name": "fine-child-cubic-parent-feather",
+        "nativeSampleMs": 0.2327,
+        "nativeTotalMs": 406.226,
+        "pixels": 4225
+      },
+      {
+        "allRfAndControlBytesExact": true,
+        "holes": 2273,
+        "maximumF64ToRfErrorM": 3.17891453960328e-06,
+        "name": "disjoint-domains-hidden-gap-nearest-tie",
+        "nativeSampleMs": 0.1704,
+        "nativeTotalMs": 370.896,
+        "pixels": 2401
+      }
+    ],
+    "checks": 29,
+    "failures": 0,
+    "result": "PASS",
+    "scope": "authored CPU kernel/whole-image F32 and hole-bit parity, process cancellation/timeout; no GPU",
+    "test": "native-height-batch",
+    "timeout": {
+      "failed": true,
+      "heightBatchError": "height batch process timeout",
+      "ownedProcessId": 201772,
+      "processRunningAfterCleanup": false,
+      "processWasRunningAtAbort": true,
+      "temporaryDirectory": "C:/Users/U108-N257/AppData/Roaming/Godot/app_userdata/Magna Urbis • SurfaceWorld/height-batch/202768-3-2682615",
+      "temporaryDirectoryRemoved": true
+    }
+  },
+  "topDefaultAndExplicitNativeTest": {
+    "checks": 26,
+    "nativeOptIn": {
+      "allSixImagesExact": true,
+      "prepareMs": 412.11,
+      "referenceMs": 1392.455,
+      "sampler": {
+        "eligible": true,
+        "executableSha256": "686c4988853149c6a08e7d690f02050a66f73274bc791a64423d9a264e777ec2",
+        "holes": 0.0,
+        "mode": "explicit-native-batch",
+        "outputPayloadSha256": "5aa68c0858fc3b1e39c67c84828b965058babb43e52204459cb78a09ed6d6d1d",
+        "provenance": "Rust f64 scalar ordered16taps; no fast-math; GD positive-kernel seam policy",
+        "requested": true,
+        "sampleMs": 4.7233,
+        "sceneEpoch": null,
+        "size": 512,
+        "sourceEpoch": null,
+        "sourceInputSha256": "3e0666b841157f0f84b9574cc576babd65e9f2313d3213a5ec95a6867c536e2b",
+        "sourceSamples": 289,
+        "sourceWorldId": "e753921217718d0cff170e4a11ae8b86",
+        "spacingM": 0.25,
+        "totalMs": 411.633,
+        "used": true,
+        "version": "gd-height-batch-1"
+      }
+    },
+    "result": "PASS",
+    "scope": "authored small world; frozen6ef Data.prepare vs current TOP default/optional explicit native; pixels/mips/source unchanged; no GPU",
+    "test": "visibility-top-parity"
+  },
+  "rustBoundaryTests": {
+    "passed": 2,
+    "coverage": [
+      "unsupported kernel/dtype/lineage/shape/domain",
+      "nonfinite controls",
+      "inputSHA refusal",
+      "known bilinear plane+hole bits",
+      "input untouched+atomic output"
+    ]
+  },
+  "visibilityCpuChecks": 877,
+  "mainParser": "PASS",
+  "launcherNodeSyntax": "PASS",
+  "stderrBytes": 0,
+  "limits": {
+    "inputBytes": 536870912,
+    "jsonBytes": 1048576,
+    "sourceSamples": 1572864,
+    "layers": 7,
+    "outputSide": 4096,
+    "outputBytes": 134217728,
+    "defaultProcessTimeoutMs": 30000,
+    "dataMinimumNativePixels": 262144
+  },
+  "processScope": "Only owned OS.create_process pid is polled/killed; cancellation and10ms timeout both observed running child, clean exit and temporary directory removal.",
+  "defaultTop": "GDScript path unchanged unless --height-batch executable is explicitly supplied; whole six-image/mipmap parity checked.",
+  "sourceResolutionCaveat": "4096 is renderer resampling only; parent controls78.125m, child native.46875m/grid.625m over~40m footprint.",
+  "knownLimitations": [
+    "Standalone wall-time samples are not isolated CPU-cycle measurements or QoS guarantees.",
+    "Native executable must be built/packaged/pinned separately; source-world packet512MiB limit is unchanged.",
+    "Process/file startup overhead~.4s dominates tiny direct fixtures; Data opts in only at262144 output pixels.",
+    "Oblique actual Terrain3D import/LOD/morph and C/V/native visibility still require separate retained-case GPU qualification.",
+    "Two preparation-proof hash helper errors (PackedByteArray/Array) occurred before any resident calculation and are preserved in the previous phase logs."
+  ],
+  "reports": {
+    "full": "web/out/surface/oblique-visibility/native-4096/report.json",
+    "latest": "web/out/surface/oblique-visibility/native-4096/release-native.json",
+    "small": "web/out/surface/oblique-visibility/native-4096/final-small.stdout.log",
+    "top": "web/out/surface/oblique-visibility/native-4096/final-top.stdout.log"
+  },
+  "sourceFilesSha256": {
+    "viewer-local/native-height/Cargo.toml": "89f7fa28f225ac8f91cb9feb206d07a8b3b182023e9e48365ffe9810a5d81920",
+    "viewer-local/native-height/Cargo.lock": "7bb3d7c579123a4c8c81cfe8ceb43e4ea153170ff3741d033e232e59fcf68c47",
+    "viewer-local/native-height/src/main.rs": "1323c34afa331e20d01f62a26ef0c9442ce453e37f9fac4e90e78def6f718340",
+    "viewer-local/adapters/surface_height_batch.gd": "364c68f995c323c9c3f877101ad3551d689970af3ef9a93b6815a8de888c1ddb",
+    "viewer-local/adapters/surface_data.gd": "e6e45f2d63a2adbe8c2825768c78aad19e158f13756c39d3fc732a7e309c4d2a",
+    "viewer-local/adapters/surface_scene_prepare.gd": "5fbe23017624d1eb4eb9bdaeef6c8d18b77c510d81c545ad7520d0d3e12cf64b",
+    "viewer-local/adapters/surface_geometry.gd": "f11cf971034b47a664aa07f8636a297891a7196963a5cebd56a96634fc0fa457",
+    "viewer-local/scene/main.gd": "4852d584eb198c8e752cc198795b4429e2355b9bbb3c86306f862caebb24d562",
+    "viewer-local/tests/surface_height_batch_test.gd": "4a57247fe98549370ce6b8938ec8b73d0364727dcfed9eaf852931bcfd923315",
+    "viewer-local/tests/oblique_visibility_retained_probe.gd": "89df93a3ad25a0b64cf58cb497aee2db6f91f65264450016483eecc9925b4939",
+    "viewer-local/tests/visibility_top_parity_test.gd": "3f6108ad7332d002cf62ef1e505aeed1c5d4f49b0d8634edee1bd5cfdf54852a",
+    "web/scripts/surface_viewer.mjs": "c22a36266acf5aef02ec37f8f44d22e4ffe6023080a4cfedef0f986eb7e6f6bb"
+  }
+}
