@@ -1,5 +1,39 @@
 # SurfaceWorld — état de l'implémentation
 
+La **campagne V15 passe techniquement** sur le runtime gelé `c53cd7e` :
+945 fichiers de code identiques avant/après, profil explicite `surface-v2`,
+82 fichiers de rendu/exécutable épinglés, navigation, sept zooms et deux séries
+de cinq images d'isolation. Le [bilan V15](evidence/NATIVE_V15.md) et sa
+[preuve compacte](evidence/native-e2e-v15.json) sont distincts des
+[captures et cartes urbaines V14](NATIVE_CITY419_V14.md).
+
+Deux mondes distincts sont affichés pendant les 20 s de déplacement : parent
+natif 30 m après 15,059 s, puis relief neuronal natif 0,46875 m après 18,995 s.
+La durée réelle est 20,013 s ; le drain dure ensuite 6,461 s. Cela qualifie ce
+parcours, sans démontrer une faible latence générale ni 60 FPS. La reconstruction
+pour l'écran ne change pas la résolution source : au cadre de 10 m, le pixel de
+4,8828 mm reste distinct du contexte environnemental de 78,125 m.
+
+Les [corrections V14](V14_CORRECTIONS.md) comprennent l'encodage couleur des
+feuilles, la sélection par support visible, le plan source commun en oblique,
+les pierres PBR et le cache de textures préparées. La
+[campagne fraîche V14 reste FAILED](evidence/NATIVE_V14.md) : la chaîne de
+parents dépassait une limite du batch natif. Le
+[correctif borné](evidence/HEIGHT_SOURCE_CHAIN_BUDGET.md) conserve tous les
+parents et les noyaux ; V15 valide ensuite les vraies chaînes à toutes les échelles.
+
+La [composition de carte](MAP_COMPOSITION.md) réutilise neuf palettes de
+surcouche, les polices et les primitives existantes, avec titre explicite,
+légende, noms disponibles, cadre et métrique TOP. La perspective utilise la
+vraie matrice native, sans fausse règle uniforme. Les 419 volumes urbains
+authentiques sont éprouvés séparément ; leur source legacy sans GR ne devient
+pas une ville fraîche raffinée. Les arbustes simplifiés, les ombres optiques,
+la diversité végétale, les styles complets et l'intégration du viewer Neural
+Earth restent partiels. Godot/Terrain3D reste un candidat, sans remplacement
+d'Infinite Generation. La revue indépendante de cette intégration est en préparation.
+
+## Historique V13 conservé
+
 La **campagne V13 passe techniquement** sur le gel `6ef8d3c`, compilateur
 `surface-1.6.0`, analyse physique `1.5.2`. Les 624 fichiers suivis sont identiques
 avant/après ; navigation, sept zooms et deux probes de couches sont complets.
