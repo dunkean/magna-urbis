@@ -10,7 +10,8 @@ export function verifyTreeAssetCapture(capture,manifest,{requireGeometry=false}=
   if(view.transitionPending!==false)fail('capture still has a pending atlas');
   if(!Number.isFinite(view.phase)||view.phase<0||view.phase>2)fail('invalid whole-view phase');
   if(view.phase>0&&view.activeAtlasSource?.rendererAssetDigest!==manifest.digest)fail('active atlas uses another renderer asset');
-  if(view.phase>1&&(!view.geometryFilterCompatible||!Number.isFinite(view.geometryFilterRatio)
+  if(view.phase>1&&(view.geometryFilterCompatible!==true||!Number.isFinite(view.geometryFilterRatio)||view.geometryFilterRatio<0
+    ||!Number.isFinite(view.geometryFilterMaximumRatio)||view.geometryFilterMaximumRatio<=0
     ||view.geometryFilterRatio>view.geometryFilterMaximumRatio||view.geometryFilterMaximumRatio>8))fail('geometry exceeds its common C/V filter certificate');
   const hasPlan=assets.retainedCount!==undefined;
   if(hasPlan){
@@ -23,7 +24,9 @@ export function verifyTreeAssetCapture(capture,manifest,{requireGeometry=false}=
       ||assets.highMinPixels!==manifest.highMinPixels||assets.highBudget!==manifest.highTriangleBudget)fail('tree identities or triangle budgets changed');
     if(capture.populationInstances?.families?.tree?.submitted!==assets.retainedCount)fail('plan differs from actually submitted tree buffers');
   }
-  if(requireGeometry&&(!hasPlan||view.phase<=1||capture.populationInstances?.families?.tree?.alphaPositiveInFrustum<=0))fail('near view does not exercise actual visible tree geometry');
+  const tree=capture.populationInstances?.families?.tree;
+  if(requireGeometry&&(!hasPlan||view.phase<=1||!Number.isSafeInteger(tree?.alphaPositiveInFrustum)
+    ||tree.alphaPositiveInFrustum<=0||tree.alphaPositiveInFrustum>tree.submitted))fail('near view does not exercise actual visible tree geometry');
   return {profile,phase:view.phase,highCount:assets.highCount??0,impostorCount:assets.impostorCount??0,retainedCount:assets.retainedCount??0,
     highTriangles:assets.highTriangles??0,impostorTriangles:assets.impostorTriangles??0,geometryFilterCompatible:view.geometryFilterCompatible,
     scope:'Displayed aerial asset and actual submitted buffers; no GPU occlusion, artistic or 3D optical equivalence claim'};
