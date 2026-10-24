@@ -11,6 +11,7 @@ const ScenePrepare = preload("res://adapters/surface_scene_prepare.gd")
 const ViewQuality=preload("res://adapters/surface_view_quality.gd")
 const LiveBinding=preload("res://adapters/surface_live_binding.gd")
 const WaterProjection=preload("res://adapters/surface_water_projection.gd")
+const MapProjection=preload("res://adapters/surface_map_projection.gd")
 const Presentation = preload("res://adapters/surface_presentation.gd")
 const GroundResponse=preload("res://adapters/surface_ground_response.gd")
 var surface_shader_code := ""
@@ -1125,7 +1126,10 @@ func _capture(path: String) -> void:
 	var absolute := ProjectSettings.globalize_path(path)
 	DirAccess.make_dir_recursive_absolute(absolute.get_base_dir())
 	var result := get_viewport().get_texture().get_image().save_png(absolute)
-	_emit_native({"event":"capture","captureTickMs":Time.get_ticks_msec(),"populationInstances":population_instances(),"canopyView":canopy_view_state,"surfaceLayers":rendered_surface_layers,"water":water_metrics,"urban":rendered_urban_metrics,"renderedWorldId":rendered_world_id,"renderedSource":rendered_source,"renderedLiveSerial":rendered_live_serial,"renderedSnapshot":rendered_snapshot,"viewSatisfiedSerial":view_satisfied_serial,"viewSatisfaction":view_satisfaction,"path":absolute,"error":result,"widthM":width_m,"metresPerPixel":width_m/get_viewport().get_visible_rect().size.x})
+	_emit_native({"event":"capture","captureTickMs":Time.get_ticks_msec(),"captureSha256":FileAccess.get_sha256(absolute) if result==OK else "","mapProjection":_map_projection(),"populationInstances":population_instances(),"canopyView":canopy_view_state,"surfaceLayers":rendered_surface_layers,"water":water_metrics,"urban":rendered_urban_metrics,"renderedWorldId":rendered_world_id,"renderedSource":rendered_source,"renderedLiveSerial":rendered_live_serial,"renderedSnapshot":rendered_snapshot,"viewSatisfiedSerial":view_satisfied_serial,"viewSatisfaction":view_satisfaction,"path":absolute,"error":result,"widthM":width_m,"metresPerPixel":width_m/get_viewport().get_visible_rect().size.x})
+
+func _map_projection()->Dictionary:
+	return MapProjection.capture(camera,get_viewport().get_visible_rect().size,origin,focus,rendered_world_id,not oblique,width_m)
 
 func _emit_native(event:Dictionary)->void:
 	var started=Time.get_ticks_usec()
@@ -1176,6 +1180,7 @@ func _write_metrics() -> void:
 	metrics["loadedLiveBinding"]=loaded_live_binding
 	metrics["liveBindingRejections"]=live_binding_rejections
 	metrics["renderedSnapshot"]=rendered_snapshot
+	metrics["mapProjection"]=_map_projection()
 	metrics["renderEvents"]=render_events
 	metrics["discardedPreparations"]=discarded_preparations
 	metrics["nativeLogTiming"]={"version":"native-log-timing-1" if native_logger==null else "native-log-timing-2","mode":native_log_mode,"maximaByEvent":native_log_maxima,"recent":native_log_timings,"writer":native_logger.snapshot() if native_logger!=null else null,"flushedBeforeSnapshot":native_logger!=null and may_flush,"flushBeforeSnapshotMs":flush_ms,"scope":"Main serialize/output wall spans; threaded enqueueMs is not writer printWallMs. Writer snapshot excludes the later metrics event itself."}
