@@ -29,6 +29,7 @@ import { registrationFieldFingerprint } from '../src/surface/registrationBinding
 import { isFinalQualityDisplay,sameDeliveredSpacing,verifyFinalDisplay,verifyMotionLiveDisplay,verifyTourQuality,verifyNavigationTiming } from './surface_navigation_evidence.ts';
 import { verifyExplicitLayerCapture,verifyWaterCapture,verifyLayerIsolationProbe } from './surface_render_evidence.ts';
 import { verifyNativeLogMode } from './surface_native_log_evidence.mjs';
+import { verifyTreeAssetCapture } from './surface_tree_evidence.mjs';
 import { hasExplicitSurfaceLayers } from '../src/surface/surfaceLayers.ts';
 import { captureSurfaceRepositorySnapshot,assertFrozenSurfaceSnapshots } from './surface_repository_snapshot.mjs';
 import { parseLayerProbeWidths,assertCompletedLayerProbeBatch } from './surface_layer_probe_batch.ts';
@@ -95,6 +96,7 @@ if(viewerGodot)report.requestedViewer={godot:resolve(viewerGodot),assets:viewerA
 if(viewerAssets)report.assets={manifest:resolve(viewerAssets),manifestSha256:createHash('sha256').update(await readFile(resolve(viewerAssets))).digest('hex'),scope:'Resolved asset manifest pinned separately from tracked source code; native asset digest identifies loaded maps.'};
 if(viewerVegetationAssets)report.vegetationAssets={manifest:resolve(viewerVegetationAssets),manifestSha256:createHash('sha256').update(await readFile(resolve(viewerVegetationAssets))).digest('hex'),scope:'Prepared CC0 vegetation manifest; source/product hashes and renderer digest validated by native library independently of soil recipes.'};
 if(viewerTreeAssets)report.treeAssets={manifest:resolve(viewerTreeAssets),manifestSha256:createHash('sha256').update(await readFile(resolve(viewerTreeAssets))).digest('hex'),scope:'Experimental CC0 tree derivative and shared optical mask; independent source/product hashes validated by native library. Does not change terrain or potential candidates.'};
+const treeAssetManifest=viewerTreeAssets?JSON.parse(await readFile(resolve(viewerTreeAssets),'utf8')):null;
 if(geologyScenario)report.requestedGeology={id:geologyScenario,queryParameter:'surface_geology',provenance:'Explicit authored preset, fixed world frame; not observed geological data or a terrain-height modification.'};
 if (decoderModel) report.requestedModels = { decoderModel };
 const snapshotRoot=resolve(dirname(viewerLauncher),'../..');
@@ -184,7 +186,7 @@ async function runNativeTour(sessionId) {
   if(captures.length!==7||captures.some((e,i)=>e.widthM!==widths[i]||e.error!==0))throw new Error('Native tour did not record seven successful new captures in the required scale order');
   const nativeAccepted=report.viewer.metrics.liveAcceptance??[],nativeRendered=report.viewer.metrics.renderEvents??[];
   report.viewer.cameraSatisfaction=verifyTourQuality(captures);
-  report.viewer.surfaceLayerEvidence=[];report.viewer.waterEvidence=[];
+  report.viewer.surfaceLayerEvidence=[];report.viewer.waterEvidence=[];report.viewer.treeAssetEvidence=[];
   for(const capture of captures){
     const display=capture.renderedSnapshot;
     const sourcePacket=packets.find(e=>e.packet?.worldId===display?.worldId)?.packet;
@@ -192,6 +194,7 @@ async function runNativeTour(sessionId) {
       ||!nativeRendered.some(e=>isFinalQualityDisplay(e)&&e.worldId===display.worldId&&e.liveSerial===display.liveSerial&&e.appliedTickMs===display.appliedTickMs)
       ||!packets.some(e=>e.packet?.worldId===display.worldId))throw new Error(`Native ${capture.widthM}m capture was not linked to a displayed live source packet`);
     if(!sameDeliveredSpacing(capture.viewSatisfaction.deliveredSpacingM,sourcePacket.terrain.spacingM))throw new Error(`Native ${capture.widthM}m cache density differed from the actual source grid`);
+    if(treeAssetManifest)report.viewer.treeAssetEvidence.push({widthM:capture.widthM,...verifyTreeAssetCapture(capture,treeAssetManifest,{requireGeometry:capture.widthM===160})});
     report.viewer.surfaceLayerEvidence.push({widthM:capture.widthM,...verifyExplicitLayerCapture(capture,sourcePacket)});
     report.viewer.waterEvidence.push({widthM:capture.widthM,...verifyWaterCapture(capture,{requireSourceMap:viewerWaterMode==='source-map'&&capture.widthM>=2560,waterSymbolWidthPx:viewerWaterSymbolWidthPx,waterVectorTint:viewerWaterVectorTint})});
   }
@@ -247,6 +250,7 @@ async function runNativeNavigation(sessionId) {
   phase.canonicalBuildCounts=[...new Set(packets.map(e=>e.canonicalBuildCount))];
   phase.requestQuality=packets.map(e=>({worldId:e.packet?.worldId,preview:e.packet?.source.request?.preview,requestedResolution:e.packet?.source.request?.resolution,
     deliveredGrid:e.packet?.terrain&&{width:e.packet.terrain.width,height:e.packet.terrain.height,spacingM:e.packet.terrain.spacingM},nativeSpacingM:e.packet?.terrain.source.nativeSpacingM}));
+  if(treeAssetManifest)phase.treeAssetEvidence=verifyTreeAssetCapture(phase.metrics,treeAssetManifest);
   const finalPacket=packets.find(e=>e.packet?.worldId===phase.metrics.renderedSnapshot?.worldId)?.packet;
   phase.surfaceLayerEvidence=verifyExplicitLayerCapture({renderedSnapshot:phase.metrics.renderedSnapshot,surfaceLayers:phase.metrics.surfaceLayers},finalPacket);
   phase.waterEvidence=verifyWaterCapture({renderedSnapshot:phase.metrics.renderedSnapshot,water:phase.metrics.water},{waterSymbolWidthPx:viewerWaterSymbolWidthPx,waterVectorTint:viewerWaterVectorTint,screenMetresPerPixel:viewerWaterSymbolWidthPx>0&&phase.metrics.water?.screenScalePolicy==='orthographic-map-ground-scale'?phase.result.final.widthM/phase.metrics.resolution[0]:undefined});
@@ -315,7 +319,8 @@ async function runNativeLayerProbe(sessionId,widthM){
     const packet=packets.find(e=>e.packet?.worldId===event?.renderedSnapshot?.worldId)?.packet;
     const layer=verifyExplicitLayerCapture(event,packet,view.visibility),water=verifyWaterCapture(event,{requireSourceMap:viewerWaterMode==='source-map',allowEmptySourceMap:widthM<2560,waterSymbolWidthPx:viewerWaterSymbolWidthPx,waterVectorTint:viewerWaterVectorTint});
     const png=await readFile(view.capturePath);if(png.subarray(0,8).toString('hex')!=='89504e470d0a1a0a'||png.readUInt32BE(16)!==Number(viewerResolution.split('x')[0])||png.readUInt32BE(20)!==Number(viewerResolution.split('x')[1]))throw new Error('Layer probe PNG dimensions differ');
-    phase.captures.push({path:view.capturePath,sha256:createHash('sha256').update(png).digest('hex'),surfaceLayers:layer,water});
+    const treeAssetEvidence=treeAssetManifest?verifyTreeAssetCapture(event,treeAssetManifest,{requireGeometry:widthM<=160&&view.visibility.trees}):undefined;
+    phase.captures.push({treeAssetEvidence,path:view.capturePath,sha256:createHash('sha256').update(png).digest('hex'),surfaceLayers:layer,water});
   }
   if(phase.timedOut||phase.code!==0||phase.result.status!=='complete'||logs.some(log=>/(?:SCRIPT|SHADER) ERROR|ERROR:|Live terrain unavailable/.test(log)))throw new Error('Native layer isolation failed; see its retained logs');
   phase.status='complete';await save();
