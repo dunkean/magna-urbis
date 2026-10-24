@@ -38,9 +38,9 @@ class SoilControls extends Node:
 		if elapsed<.25:return
 		elapsed=0.0;apply()
 		var world:Dictionary=scene.get("rendered_world")
-		if world.is_empty():label.text="Chargement du terrain retenuâ€¦";return
+		if world.is_empty():label.text="Chargement du terrain retenu…";return
 		var context:Dictionary=Data.context(world);var focus:Vector2=scene.get("focus")
-		label.text="SOLS R4 â€” EXPERIMENTAL Â· TOP Â· sans arbres/objets/ombres\n%.2f m Â· centre %.2f / %.2f\nF1 : detail %s Â· F2 : couvert bas %s Â· F3 : moyenne physique %s\nMolette : zoom Â· glisser : deplacer Â· 1â€“7 : echelles Â· Echap : quitter\n%s\nRelief retenu ; repartition procedurale, pas de sols fins observes."%[float(scene.get("width_m")),focus.x,focus.y,"actif" if detail else "ancien uniforme","actif" if low else "masque","seule" if mean_only else "PBR",weights(world,context,focus.x,focus.y)]
+		label.text="SOLS R4 — EXPERIMENTAL · TOP · sans arbres/objets/ombres\n%.2f m · centre %.2f / %.2f\nF1 : detail %s · F2 : couvert bas %s · F3 : moyenne physique %s\nMolette : zoom · glisser : deplacer · 1–7 : echelles · Echap : quitter\n%s\nRelief retenu ; repartition procedurale, pas de sols fins observes."%[float(scene.get("width_m")),focus.x,focus.y,"actif" if detail else "ancien uniforme","actif" if low else "masque","seule" if mean_only else "PBR",weights(world,context,focus.x,focus.y)]
 	func weights(world:Dictionary,context:Dictionary,x:float,z:float)->String:
 		if not context.get("groundResponse") is Dictionary:return "Poids physiques complets indisponibles : legacy explicite."
 		var grid:Dictionary=context.grid;var fields:Dictionary=context.fields;var response:Dictionary=context.groundResponse.fields
@@ -59,7 +59,7 @@ class SoilControls extends Node:
 			for i in values.size():
 				if values[i]>.0005:parts.append("%s %.1f%%"%[names[i],values[i]*100])
 		var alpha=Data.sample_grid(grid,fields.lowCoverOpacity,x,z)
-		return "Poids GR au centre (CPU arrondi) : "+", ".join(parts)+" Â· couvert bas %.1f%% Â· contexte %.3fm"%[alpha*100,float(grid.spacingM)]
+		return "Poids GR au centre (CPU arrondi) : "+", ".join(parts)+" · couvert bas %.1f%% · contexte %.3fm"%[alpha*100,float(grid.spacingM)]
 
 func _initialize()->void:call_deferred("run")
 func run()->void:

@@ -103,3 +103,24 @@ R4 removes the ordinal contour ribbons and C1 square cells. Its real PBR image
 still has broad camouflage-like green/brown patches. It remains an experimental
 soil renderer, not an accepted artistic result or a replacement for Render.
 Only this one pose was captured; no longer campaign or new terrain was used.
+
+
+## Isolated interactive preview (not the production Render view)
+
+`viewer-local/diagnostics/surface_soil_preview.gd` is an opt-in wrapper. It keeps
+TOP and masks objects, trees and engine shadows. Wheel/drag and1-7 scales remain.
+F1 toggles the old uniform/R4 arrangement; F2 masks the low-cover texture; F3
+shows the unchanged physical ground mean. The HUD reports CPU-rounded GR
+probabilities at the same focus. No extra scatter or neural request is made.
+Only parser validation has been run for this interactive wrapper. The native
+four-image proof uses the separate strict quality probe. R4 remains artistically
+unaccepted; the production Render view and user demoV15 are untouched.
+
+Run the local Godot executable with `--path viewer-local --script
+res://diagnostics/surface_soil_preview.gd --`, followed by the same explicit
+`--world`, `--assets`, `--height-batch`, `--style-catalogue` inputs as the native
+proof. Start with `--presentation aerial --top --width 40 --focus 20000,20000
+--resolution 1600x1000 --native-log-mode threaded --water-mode source-map
+--water-vector-tint uniform --water-symbol-width-px 1.25`.
+Use the saved packet at`web/out/surface/ground-cover-quality/retained-pages/packet.surfacebin`.
+Required source/assets are local retained inputs; the wrapper downloads nothing.
