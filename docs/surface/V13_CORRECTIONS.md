@@ -21,7 +21,30 @@ Les cinq tests de l'instrumentation et les contrôles de logs/rétention passent
 Cette instrumentation vise le délai encore non attribué de la preview V12 ;
 elle ne démontre pas sa cause et n'accélère pas à elle seule la génération.
 `processorTiming.synchronousMs` et les jalons restent des durées murales, pas des
-mesures de temps CPU. Aucun résultat V13 de navigation ou de rendu n'est annoncé.
+mesures de temps CPU.
+
+Le [diagnostic de trois parcours](evidence/navigation-repeat-v13.json) sur
+`d195068` garde une source fraîche et une session commune. Chaque fenêtre
+nominale de 20 s affiche deux nouveaux mondes : le parent natif 30 m après
+11,720 / 11,727 / 12,290 s, puis un raffinement neuronal de
+0,9375 / 1,875 / 0,9375 m après 17,111 / 16,899 / 17,334 s. Les trois
+vérifications temporelles/source passent. **Les trois phases strictes restent
+échouées** : deux erreurs WASAPI d'initialisation audio sont présentes à chaque
+démarrage. Le collecteur sort à zéro pour avoir collecté ses trois résultats ;
+ce n'est pas une qualification globale réussie.
+
+Les nouveaux jalons mesurent réception SSE → upload accepté en 914–1 039 ms
+pour les premiers mondes et 429–452 ms pour les raffinements affichés. Ce sont
+les durées de ces parcours, pas une explication rétrospective des 8,28 s HTTP
+de V12. L'ordre et les caches sont partagés, la charge de l'hôte diffère, et des
+gels de frame de 1,12–3,20 s persistent. Aucun gain causal ou 60 FPS n'est déduit.
+
+Le lanceur cartographique utilise désormais explicitement `--audio-driver Dummy` :
+aucune scène audio n'existe ici, donc le rendu ne doit pas dépendre d'un
+périphérique Windows, notamment en session distante. Les erreurs des anciennes
+mesures sont conservées ; cette configuration nécessite sa propre exécution.
+Le driver transmet aussi le manifeste de végétation par
+`--viewer-vegetation-assets` à chaque phase, avec hash initial/final séparé.
 
 ## Chantiers séparés en cours
 

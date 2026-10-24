@@ -1,0 +1,489 @@
+{
+  "format": "surface-navigation-repeat-v13-proof",
+  "status": "COLLECTED: three source/display gates pass; all three strict phases FAILED on WASAPI initialization errors; no full campaign qualification",
+  "report": {
+    "path": "web/out/surface/navigation-repeat-v13/report.json",
+    "sha256": "efd1ea6c104d1276137ab4f3ca8eb691d60ca45533dec5aed2bf4b5243ff605b",
+    "bytes": 2868748
+  },
+  "head": "d1950686a7d9bba608404c35875e201a36c1de25",
+  "runtimeCount": 584,
+  "snapshotIdentical": true,
+  "freshSourceGeneration": {
+    "sha256": "3c7c2f32e37844842f058208e21522543bcec69125348e115390f83d5b814159",
+    "bytes": 4194304,
+    "n": null,
+    "sourceStage": "raw Python neural response before Magna reconstruction/hydrology",
+    "meta": {
+      "backend": "python-cuda",
+      "precision": "bf16",
+      "profile": "coarse4-original-original",
+      "totalMs": 1387.5515999970958,
+      "coarseMs": 41.87056016921997,
+      "baseMs": 359.54069900512695,
+      "decoderMs": 819.0880603790283,
+      "reconstructionMs": 167.05228044372052,
+      "evaluations": [
+        4,
+        121,
+        36
+      ],
+      "land": 1,
+      "edited": false,
+      "sketchRegion": true,
+      "zoneConditioning": 1,
+      "selectedModels": {
+        "coarseModel": "coarse4",
+        "baseModel": "original",
+        "decoderModel": "original"
+      },
+      "modelIdentity": "a9288d7266cdde292e04b15619054476c04bcd17b06d646ba475381179547436:baseModel:original:9ef8030cb805b433b98ec25c5dddefbac07a9e26:decoderModel:original:9ef8030cb805b433b98ec25c5dddefbac07a9e26",
+      "modelRevision": "919550498b3fd7c9d4c53e575f6a2d5475f9be2d",
+      "experimental": false,
+      "neuralSeed": "2814899424497554030",
+      "neuralToken": "6e73a270c5ce46d692c03bc1acaeffd2"
+    }
+  },
+  "sharedSourcePacketSha256": "8a006c3a4553c8bd4b9cc3d7d4f29e1fc1e993bb4d45864c56c0b2626d5cfe8c",
+  "driver": {
+    "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\navigation-repeat-v13\\executed-driver.mjs",
+    "sha256": "dd22da0da79bafe4ee70d9f0d77e8c846b489f7684c08e864c17af21110a33cf"
+  },
+  "pageTiming": {
+    "version": "surface-page-timing-2",
+    "eventCount": 758,
+    "dropped": 0,
+    "phaseCounts": {
+      "page-long-task": 17,
+      "terrain-request": 33,
+      "refinement-start": 34,
+      "refinement-headers": 34,
+      "refinement-body": 33,
+      "worker-post": 34,
+      "worker-received": 33,
+      "upload-start": 180,
+      "upload-headers": 180,
+      "upload-ack": 180
+    }
+  },
+  "phases": [
+    {
+      "round": 1,
+      "strictPhaseStatus": "failed",
+      "failure": "Error: Continuous native navigation did not display verified live source during input: see native-navigation reports/logs",
+      "nativeStatus": "complete",
+      "nativeExit": 0,
+      "timing": {
+        "nominalDurationSeconds": 20,
+        "actualDurationSeconds": 20.231,
+        "overshootSeconds": 0.23100000000000165,
+        "maximumInputGapSeconds": 1.4370000000000012,
+        "terminalInputGapSeconds": 0.31400000000000006,
+        "maximumInputGapInterval": {
+          "fromElapsedSeconds": 12.084,
+          "toElapsedSeconds": 13.521,
+          "gapSeconds": 1.4370000000000012,
+          "terminal": false
+        },
+        "motionAcceptedCount": 7,
+        "motionActualAcceptedCount": 7
+      },
+      "sourceDisplayGatePassed": true,
+      "worlds": [
+        {
+          "worldId": "0909c251462671efc073ef51a79e76fd",
+          "liveSerial": 47,
+          "nativeSpacingM": 30,
+          "appliedAfterMotionStartMs": 11720,
+          "source": {
+            "id": "infinite:2814899424497554030:1599d6685767f92956ffdc6038144577",
+            "nativeSpacingM": 30,
+            "provenance": "Infinite retained refinement; seed=2814899424497554030; decoderUsed=false; registrationNativeMpp=30; fieldFingerprint=rf1-019b8aa8fc4b7a3a38e7adce2163d4ea; parent=cell-centred cubic B-spline control reconstruction (not interpolation through control centres); parentComparison={\"samples\":4096,\"parentCorrelation\":0.9999878300941302,\"transposedParentCorrelation\":-0.3619330085673209,\"maxAbsDeltaM\":9.596186660196736,\"rmsDeltaM\":1.1485961881824838,\"meanDeltaM\":0.008676816971620205,\"controlSmoothingMaxAbsM\":9.59623954693393,\"refinementResidualMaxAbsM\":0.00012205924576846883}",
+            "sourceLOD": 0,
+            "sourceLODKnown": true,
+            "version": "decoder-v12-nyquist-notch:magna-retained-v1:e2bf5473c0ff:f21afa261ed7"
+          },
+          "pageTimelineMs": {
+            "sse": 108416.70000001788,
+            "workerPost": 108438.5,
+            "workerReceived": 109123.70000001788,
+            "refinement-start": 108417.80000001192,
+            "refinement-headers": 108430.40000000596,
+            "refinement-body": 108430.80000001192,
+            "uploadStart": 109131,
+            "uploadAccepted": 109430.30000001192
+          },
+          "pageStageSpansMs": {
+            "dispatch": 1.0999999940395355,
+            "fetchToHeaders": 12.599999994039536,
+            "bodyRead": 0.4000000059604645,
+            "providerValidationBeforeWorker": 7.699999988079071,
+            "workerRoundtrip": 685.2000000178814,
+            "prepareUpload": 7.299999982118607,
+            "upload": 299.30000001192093,
+            "sseToAccepted": 1013.5999999940395
+          },
+          "processorWallMs": 684.3000000119209
+        },
+        {
+          "worldId": "f7470b0ed32681d052fcaa8e9fcaa622",
+          "liveSerial": 175,
+          "nativeSpacingM": 0.9375,
+          "appliedAfterMotionStartMs": 17111,
+          "source": {
+            "id": "infinite:2814899424497554030:1599d6685767f92956ffdc6038144577",
+            "nativeSpacingM": 0.9375,
+            "provenance": "Infinite retained refinement; seed=2814899424497554030; decoderUsed=true; registrationNativeMpp=30; fieldFingerprint=rf1-019b8aa8fc4b7a3a38e7adce2163d4ea; parent=cell-centred cubic B-spline control reconstruction (not interpolation through control centres); parentComparison={\"samples\":4096,\"parentCorrelation\":0.9993639273910471,\"transposedParentCorrelation\":0.9320914795907334,\"maxAbsDeltaM\":3.7476444051612816,\"rmsDeltaM\":1.3224072539664617,\"meanDeltaM\":-1.1168282080061278,\"controlSmoothingMaxAbsM\":3.0875012274341316,\"refinementResidualMaxAbsM\":0.9269235106485212}",
+            "sourceLOD": -5,
+            "sourceLODKnown": true,
+            "version": "decoder-v12-nyquist-notch:magna-retained-v1:e2bf5473c0ff:f21afa261ed7"
+          },
+          "pageTimelineMs": {
+            "sse": 115649.40000000596,
+            "workerPost": 115827.60000002384,
+            "workerReceived": 115930.30000001192,
+            "refinement-start": 115650.90000000596,
+            "refinement-headers": 115822.60000002384,
+            "refinement-body": 115823.10000002384,
+            "uploadStart": 115932,
+            "uploadAccepted": 116101.30000001192
+          },
+          "pageStageSpansMs": {
+            "dispatch": 1.5,
+            "fetchToHeaders": 171.7000000178814,
+            "bodyRead": 0.5,
+            "providerValidationBeforeWorker": 4.5,
+            "workerRoundtrip": 102.69999998807907,
+            "prepareUpload": 1.699999988079071,
+            "upload": 169.30000001192093,
+            "sseToAccepted": 451.90000000596046
+          },
+          "processorWallMs": 102.30000001192093
+        }
+      ],
+      "nativeErrors": [
+        "ERROR: Condition \"hr != ((HRESULT)0x00000000)\" is true. Returning: ERR_CANT_OPEN",
+        "ERROR: WASAPI: init_output_device error."
+      ],
+      "frameWallMs": {
+        "max": 3200.866,
+        "p50": 16.665,
+        "p95": 16.867,
+        "p99": 70.265
+      },
+      "nativeLogTiming": {
+        "live-http-completed": {
+          "characters": 297,
+          "count": 10,
+          "printMs": 365.884,
+          "serializeMs": 0.046
+        },
+        "live-packet-decoded": {
+          "characters": 138,
+          "count": 10,
+          "printMs": 383.985,
+          "serializeMs": 0.054
+        },
+        "live-tile-accepted": {
+          "characters": 159,
+          "count": 10,
+          "printMs": 120.413,
+          "serializeMs": 0.02
+        },
+        "terrain-replaced": {
+          "characters": 407,
+          "count": 9,
+          "printMs": 325.428,
+          "serializeMs": 0.051
+        },
+        "view-satisfied": {
+          "characters": 149,
+          "count": 10,
+          "printMs": 233.365,
+          "serializeMs": 0.018
+        }
+      }
+    },
+    {
+      "round": 2,
+      "strictPhaseStatus": "failed",
+      "failure": "Error: Continuous native navigation did not display verified live source during input: see native-navigation reports/logs",
+      "nativeStatus": "complete",
+      "nativeExit": 0,
+      "timing": {
+        "nominalDurationSeconds": 20,
+        "actualDurationSeconds": 20.011,
+        "overshootSeconds": 0.010999999999999233,
+        "maximumInputGapSeconds": 0.5510000000000002,
+        "terminalInputGapSeconds": 0.03399999999999892,
+        "maximumInputGapInterval": {
+          "fromElapsedSeconds": 11.447,
+          "toElapsedSeconds": 11.998,
+          "gapSeconds": 0.5510000000000002,
+          "terminal": false
+        },
+        "motionAcceptedCount": 8,
+        "motionActualAcceptedCount": 8
+      },
+      "sourceDisplayGatePassed": true,
+      "worlds": [
+        {
+          "worldId": "e608236389197c7d1ddc5c134b2ba33f",
+          "liveSerial": 49,
+          "nativeSpacingM": 30,
+          "appliedAfterMotionStartMs": 11727,
+          "source": {
+            "id": "infinite:2814899424497554030:1599d6685767f92956ffdc6038144577",
+            "nativeSpacingM": 30,
+            "provenance": "Infinite retained refinement; seed=2814899424497554030; decoderUsed=false; registrationNativeMpp=30; fieldFingerprint=rf1-019b8aa8fc4b7a3a38e7adce2163d4ea; parent=cell-centred cubic B-spline control reconstruction (not interpolation through control centres); parentComparison={\"samples\":1849,\"parentCorrelation\":0.999986928409842,\"transposedParentCorrelation\":-0.3671513049553431,\"maxAbsDeltaM\":12.461544578580742,\"rmsDeltaM\":1.189020912319965,\"meanDeltaM\":-0.009812296220622338,\"controlSmoothingMaxAbsM\":12.461552786286347,\"refinementResidualMaxAbsM\":0.0001220655394718051}",
+            "sourceLOD": 0,
+            "sourceLODKnown": true,
+            "version": "decoder-v12-nyquist-notch:magna-retained-v1:e2bf5473c0ff:f21afa261ed7"
+          },
+          "pageTimelineMs": {
+            "sse": 219095.40000000596,
+            "workerPost": 219111.40000000596,
+            "workerReceived": 219808.60000002384,
+            "refinement-start": 219096.60000002384,
+            "refinement-headers": 219107.80000001192,
+            "refinement-body": 219108.20000001788,
+            "uploadStart": 219815.60000002384,
+            "uploadAccepted": 220133.90000000596
+          },
+          "pageStageSpansMs": {
+            "dispatch": 1.2000000178813934,
+            "fetchToHeaders": 11.199999988079071,
+            "bodyRead": 0.4000000059604645,
+            "providerValidationBeforeWorker": 3.199999988079071,
+            "workerRoundtrip": 697.2000000178814,
+            "prepareUpload": 7.0,
+            "upload": 318.2999999821186,
+            "sseToAccepted": 1038.5
+          },
+          "processorWallMs": 696.7999999821186
+        },
+        {
+          "worldId": "4770ec2749253eb9b7ab38572839cebb",
+          "liveSerial": 176,
+          "nativeSpacingM": 1.875,
+          "appliedAfterMotionStartMs": 16899,
+          "source": {
+            "id": "infinite:2814899424497554030:1599d6685767f92956ffdc6038144577",
+            "nativeSpacingM": 1.875,
+            "provenance": "Infinite retained refinement; seed=2814899424497554030; decoderUsed=true; registrationNativeMpp=30; fieldFingerprint=rf1-019b8aa8fc4b7a3a38e7adce2163d4ea; parent=cell-centred cubic B-spline control reconstruction (not interpolation through control centres); parentComparison={\"samples\":1849,\"parentCorrelation\":0.9996356564522257,\"transposedParentCorrelation\":0.9413573714522196,\"maxAbsDeltaM\":4.57273924062747,\"rmsDeltaM\":1.5004855371630648,\"meanDeltaM\":-1.208146452803457,\"controlSmoothingMaxAbsM\":4.379900596204152,\"refinementResidualMaxAbsM\":1.4154135915532606}",
+            "sourceLOD": -4,
+            "sourceLODKnown": true,
+            "version": "decoder-v12-nyquist-notch:magna-retained-v1:e2bf5473c0ff:f21afa261ed7"
+          },
+          "pageTimelineMs": {
+            "sse": 225648.40000000596,
+            "workerPost": 225803.5,
+            "workerReceived": 225904.5,
+            "refinement-start": 225649.70000001788,
+            "refinement-headers": 225799.80000001192,
+            "refinement-body": 225800.80000001192,
+            "uploadStart": 225906.30000001192,
+            "uploadAccepted": 226077
+          },
+          "pageStageSpansMs": {
+            "dispatch": 1.300000011920929,
+            "fetchToHeaders": 150.09999999403954,
+            "bodyRead": 1.0,
+            "providerValidationBeforeWorker": 2.699999988079071,
+            "workerRoundtrip": 101.0,
+            "prepareUpload": 1.800000011920929,
+            "upload": 170.69999998807907,
+            "sseToAccepted": 428.59999999403954
+          },
+          "processorWallMs": 100.5
+        }
+      ],
+      "nativeErrors": [
+        "ERROR: Condition \"hr != ((HRESULT)0x00000000)\" is true. Returning: ERR_CANT_OPEN",
+        "ERROR: WASAPI: init_output_device error."
+      ],
+      "frameWallMs": {
+        "max": 1115.813,
+        "p50": 16.666,
+        "p95": 16.891,
+        "p99": 62.911
+      },
+      "nativeLogTiming": {
+        "live-http-completed": {
+          "characters": 297,
+          "count": 11,
+          "printMs": 287.385,
+          "serializeMs": 0.043
+        },
+        "live-packet-decoded": {
+          "characters": 137,
+          "count": 11,
+          "printMs": 320.636,
+          "serializeMs": 0.05
+        },
+        "live-tile-accepted": {
+          "characters": 158,
+          "count": 11,
+          "printMs": 41.58,
+          "serializeMs": 0.019
+        },
+        "terrain-replaced": {
+          "characters": 406,
+          "count": 8,
+          "printMs": 202.756,
+          "serializeMs": 0.048
+        },
+        "view-satisfied": {
+          "characters": 149,
+          "count": 12,
+          "printMs": 368.493,
+          "serializeMs": 0.016
+        }
+      }
+    },
+    {
+      "round": 3,
+      "strictPhaseStatus": "failed",
+      "failure": "Error: Continuous native navigation did not display verified live source during input: see native-navigation reports/logs",
+      "nativeStatus": "complete",
+      "nativeExit": 0,
+      "timing": {
+        "nominalDurationSeconds": 20,
+        "actualDurationSeconds": 20,
+        "overshootSeconds": 0,
+        "maximumInputGapSeconds": 0.6280000000000001,
+        "terminalInputGapSeconds": 0.01699999999999946,
+        "maximumInputGapInterval": {
+          "fromElapsedSeconds": 11.945,
+          "toElapsedSeconds": 12.573,
+          "gapSeconds": 0.6280000000000001,
+          "terminal": false
+        },
+        "motionAcceptedCount": 8,
+        "motionActualAcceptedCount": 8
+      },
+      "sourceDisplayGatePassed": true,
+      "worlds": [
+        {
+          "worldId": "7d7c89d6a3f63f2875d0fc1618f369fa",
+          "liveSerial": 49,
+          "nativeSpacingM": 30,
+          "appliedAfterMotionStartMs": 12290,
+          "source": {
+            "id": "infinite:2814899424497554030:1599d6685767f92956ffdc6038144577",
+            "nativeSpacingM": 30,
+            "provenance": "Infinite retained refinement; seed=2814899424497554030; decoderUsed=false; registrationNativeMpp=30; fieldFingerprint=rf1-019b8aa8fc4b7a3a38e7adce2163d4ea; parent=cell-centred cubic B-spline control reconstruction (not interpolation through control centres); parentComparison={\"samples\":4096,\"parentCorrelation\":0.9999861332398662,\"transposedParentCorrelation\":-0.3634080825681075,\"maxAbsDeltaM\":11.648724993894348,\"rmsDeltaM\":1.2286978657109555,\"meanDeltaM\":0.028093266682468365,\"controlSmoothingMaxAbsM\":11.648695116774206,\"refinementResidualMaxAbsM\":0.00012204566610307666}",
+            "sourceLOD": 0,
+            "sourceLODKnown": true,
+            "version": "decoder-v12-nyquist-notch:magna-retained-v1:e2bf5473c0ff:f21afa261ed7"
+          },
+          "pageTimelineMs": {
+            "sse": 327253.7000000179,
+            "workerPost": 327269.90000000596,
+            "workerReceived": 327893.40000000596,
+            "refinement-start": 327255.3000000119,
+            "refinement-headers": 327266,
+            "refinement-body": 327266.40000000596,
+            "uploadStart": 327898.7000000179,
+            "uploadAccepted": 328167.40000000596
+          },
+          "pageStageSpansMs": {
+            "dispatch": 1.5999999940395355,
+            "fetchToHeaders": 10.699999988079071,
+            "bodyRead": 0.4000000059604645,
+            "providerValidationBeforeWorker": 3.5,
+            "workerRoundtrip": 623.5,
+            "prepareUpload": 5.300000011920929,
+            "upload": 268.69999998807907,
+            "sseToAccepted": 913.6999999880791
+          },
+          "processorWallMs": 623.0999999940395
+        },
+        {
+          "worldId": "398d4162b6128c1c7d30cdc2f1fecf2e",
+          "liveSerial": 177,
+          "nativeSpacingM": 0.9375,
+          "appliedAfterMotionStartMs": 17334,
+          "source": {
+            "id": "infinite:2814899424497554030:1599d6685767f92956ffdc6038144577",
+            "nativeSpacingM": 0.9375,
+            "provenance": "Infinite retained refinement; seed=2814899424497554030; decoderUsed=true; registrationNativeMpp=30; fieldFingerprint=rf1-019b8aa8fc4b7a3a38e7adce2163d4ea; parent=cell-centred cubic B-spline control reconstruction (not interpolation through control centres); parentComparison={\"samples\":4096,\"parentCorrelation\":0.9994452359521478,\"transposedParentCorrelation\":0.9650353642666674,\"maxAbsDeltaM\":3.800141128024734,\"rmsDeltaM\":1.230239920683055,\"meanDeltaM\":-0.9921523785754595,\"controlSmoothingMaxAbsM\":3.1336838142256056,\"refinementResidualMaxAbsM\":0.8985471140008485}",
+            "sourceLOD": -5,
+            "sourceLODKnown": true,
+            "version": "decoder-v12-nyquist-notch:magna-retained-v1:e2bf5473c0ff:f21afa261ed7"
+          },
+          "pageTimelineMs": {
+            "sse": 334395.7000000179,
+            "workerPost": 334565,
+            "workerReceived": 334657.2000000179,
+            "refinement-start": 334397,
+            "refinement-headers": 334561.5,
+            "refinement-body": 334561.8000000119,
+            "uploadStart": 334658.90000000596,
+            "uploadAccepted": 334824.2000000179
+          },
+          "pageStageSpansMs": {
+            "dispatch": 1.2999999821186066,
+            "fetchToHeaders": 164.5,
+            "bodyRead": 0.30000001192092896,
+            "providerValidationBeforeWorker": 3.199999988079071,
+            "workerRoundtrip": 92.2000000178814,
+            "prepareUpload": 1.699999988079071,
+            "upload": 165.30000001192093,
+            "sseToAccepted": 428.5
+          },
+          "processorWallMs": 91.90000000596046
+        }
+      ],
+      "nativeErrors": [
+        "ERROR: Condition \"hr != ((HRESULT)0x00000000)\" is true. Returning: ERR_CANT_OPEN",
+        "ERROR: WASAPI: init_output_device error."
+      ],
+      "frameWallMs": {
+        "max": 1169.926,
+        "p50": 16.666,
+        "p95": 16.873,
+        "p99": 59.145
+      },
+      "nativeLogTiming": {
+        "live-http-completed": {
+          "characters": 297,
+          "count": 11,
+          "printMs": 305.107,
+          "serializeMs": 0.045
+        },
+        "live-packet-decoded": {
+          "characters": 138,
+          "count": 11,
+          "printMs": 325.1,
+          "serializeMs": 0.037
+        },
+        "live-tile-accepted": {
+          "characters": 159,
+          "count": 11,
+          "printMs": 36.889,
+          "serializeMs": 0.017
+        },
+        "terrain-replaced": {
+          "characters": 407,
+          "count": 9,
+          "printMs": 359.116,
+          "serializeMs": 0.048
+        },
+        "view-satisfied": {
+          "characters": 149,
+          "count": 11,
+          "printMs": 367.159,
+          "serializeMs": 0.017
+        }
+      }
+    }
+  ],
+  "limitations": [
+    "No tour, layer probe, city, artistic or full-global qualification. Diagnostic collector exit0 means collection finished, not that strict phases passed.",
+    "All repeated phases use same fresh source/session; caches are shared and order is fixed. Different host load from V12. No root cause or performance gain inferred from comparison.",
+    "Page spans are wall spans, not CPU attribution. A request/compiled-world join uses unique matching source region and Worker requestId, not CDP receipt latency.",
+    "Two other agents performed bounded CPU work during this diagnostic; no other owned GPU test ran.",
+    "WASAPI errors are preserved, not filtered. Later Dummy audio configuration requires separate evidence."
+  ]
+}
