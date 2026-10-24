@@ -387,5 +387,16 @@
     "Failed original NN214 tile BODY was not archived. The retained-relief diagnostic queries actual original512-square B-spline controls on logged region grids, then compares all262144 output samples/control bits to scalar GD. It does not claim the failed original NN samples were recovered.",
     "Measured total times include local file/process transport and are not interactive QoS, whole-process memory or FPS claims.",
     "The repair raises only a checked processing budget; production never resamples, prunes, replaces, coarsens or invents source parents."
-  ]
+  ],
+  "concurrencyDisclosure": {
+    "duringRootCampaign": "V15",
+    "rootCampaignAnnouncedStartUtc": "2026-10-24T08:54:00Z (minute precision supplied by parent)",
+    "ownSuccessfulRetainedTestApproxStartUtc": "2026-10-24T08:54:26.249Z",
+    "ownSuccessfulRetainedTestEndUtc": "2026-10-24T08:54:34.693Z",
+    "commandWallSeconds": 8.665,
+    "clockEvidence": "OWN fd stderr last-write at shell redirection08:54:26.2492037Z; stdout last-write08:54:34.6928561Z; result JSON created08:54:34.5818852Z",
+    "work": "six grids queried from retained B-spline controls (5.023s), GD512-square full-output comparison (2.015s), native batch520ms; no4096-square full-image reference, noGPU/NN/profiler",
+    "firstAttempt": "08:54:11 UTC, exit after0.73s on descriptor path type mismatch, before fixture construction",
+    "afterwards": "No further benchmarks/tests run during V15. Parent informed immediately when asked for concurrent-work timestamps."
+  }
 }
