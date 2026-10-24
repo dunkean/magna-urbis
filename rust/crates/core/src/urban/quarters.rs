@@ -2448,6 +2448,66 @@ fn serve_quarters(
     ))
 }
 
+/// Growth quarters left wholly vacant (every block a reserve: the capacity
+/// plan housed the town without them) return to the countryside: their
+/// blocks, the streets serving only them and their share of the footprint
+/// go, instead of empty quarters of gardens outside the town. Composition
+/// quarters (phase 0) keep their place and index.
+pub(super) fn drop_vacant_quarters(layout: &mut Layout) -> usize {
+    let q = layout.quarters.len();
+    let mut blocks_of = vec![0usize; q];
+    let mut reserves = vec![0usize; q];
+    for b in &layout.blocks {
+        if b.quarter < q {
+            blocks_of[b.quarter] += 1;
+            if b.kind == "reserve" {
+                reserves[b.quarter] += 1;
+            }
+        }
+    }
+    let drop: Vec<bool> = (0..q)
+        .map(|i| layout.quarters[i].phase > 0 && blocks_of[i] > 0 && reserves[i] == blocks_of[i])
+        .collect();
+    let dropped = drop.iter().filter(|&&d| d).count();
+    if dropped == 0 || dropped == q {
+        return 0;
+    }
+    let gone: Vec<Shape> = (0..q).filter(|&i| drop[i]).map(|i| layout.quarters[i].shape.clone()).collect();
+    let inside = |p: Point| gone.iter().any(|s| g::contains(s, p));
+    layout.streets.retain(|s| {
+        matches!(s.role.as_str(), "regional" | "outbound" | "bridge" | "crossing")
+            || !s.path.iter().all(|&p| inside(p))
+    });
+    let mut remap = vec![usize::MAX; q];
+    let mut next = 0;
+    for i in 0..q {
+        if !drop[i] {
+            remap[i] = next;
+            next += 1;
+        }
+    }
+    layout.blocks.retain(|b| b.quarter >= q || !drop[b.quarter]);
+    for b in &mut layout.blocks {
+        if b.quarter < q {
+            b.quarter = remap[b.quarter];
+        }
+    }
+    let mut k = 0;
+    layout.quarters.retain(|_| {
+        k += 1;
+        !drop[k - 1]
+    });
+    if let Some(st) = layout.structure.as_mut() {
+        for shape in &gone {
+            st.allocated = st.allocated.iter().flat_map(|a| g::difference(a, shape)).filter(|a| g::area(a) > 1.0).collect();
+        }
+        if let Some(c) = st.metrics.capacity.as_mut() {
+            c.borrowed_quarters = c.borrowed_quarters.iter().filter(|&&i| i < q && !drop[i]).map(|&i| remap[i]).collect();
+        }
+    }
+    dropped
+}
+
 /// Quarters of one site. Closed loop of the adaptive capacity: when the
 /// measure of the real blocks falls short of the plan by more than 5 % (the
 /// probe over-predicted the tissue), the site is drawn once more with the
@@ -2455,6 +2515,22 @@ fn serve_quarters(
 /// densification and any borrowing are sized on the measured yield. The
 /// better of the two drawings is kept; the shortfall stays explicit.
 pub(super) fn generate(
+    seed: &str,
+    site: &Site,
+    cfg: &LayoutConfig,
+    m: &Morph,
+    surface: Surface<'_>,
+    roads: &[Street],
+    stilt_grounded: bool,
+) -> Result<Layout, String> {
+    let mut layout = generate_planned(seed, site, cfg, m, surface, roads, stilt_grounded)?;
+    let dropped = drop_vacant_quarters(&mut layout);
+    if dropped > 0 {
+        layout.warnings.push(format!("{dropped} quartier(s) de croissance vacant(s) rendu(s) à la campagne."));
+    }
+    Ok(layout)
+}
+fn generate_planned(
     seed: &str,
     site: &Site,
     cfg: &LayoutConfig,

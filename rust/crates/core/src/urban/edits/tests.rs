@@ -347,9 +347,10 @@ fn lot_reshape_keeps_the_partition_and_gives_the_remainder_to_a_neighbour() {
     // The strip A left behind belongs to another lot of the block.
     let left = g::difference(&la.shape, &ea.shape);
     let left_area: f64 = left.iter().map(g::area).sum();
+    // A neighbour, or a garden lot of its own (`/reste-`), holds it all.
     let claimed: f64 = block_lots(&edited, b)
         .iter()
-        .filter(|x| x.id != a && !x.id.contains("/reste-"))
+        .filter(|x| x.id != a)
         .flat_map(|x| left.iter().flat_map(|l| g::intersection(&x.shape, l)))
         .map(|x| g::area(&x))
         .sum();
