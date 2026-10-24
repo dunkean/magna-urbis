@@ -17,19 +17,20 @@ func alpha_image(source:Image)->Image:
 func rgba(color:Color)->Array:return [color.r,color.g,color.b,color.a]
 func run():
 	var args=OS.get_cmdline_user_args()
-	if args.size()!=2:push_error("Usage: packet.surfacebin output-directory");quit(2);return
+	if args.size()<2 or args.size()>3 or args.size()==3 and args[2] not in ["source-classes","uniform"]:push_error("Usage: packet.surfacebin output-directory [source-classes|uniform]");quit(2);return
+	var vector_tint="source-classes" if args.size()==2 else args[2]
 	DirAccess.make_dir_recursive_absolute(args[1])
 	var packet=D.read_json(args[0]);var world=D.unpack_world(packet)
 	if world.is_empty():push_error("Real packet required");quit(2);return
 	var source_before=P._sha(var_to_bytes(packet.source))
-	var report={"format":"source-confluence-channels-1","scope":"Actual retained source fill and symbolic RGBA/alpha bakes, no terrain lighting or map-quality claim; image crop is a diagnostic camera window, not a source edit","sourcePacket":args[0],"sourceBefore":source_before,"referenceScreenMPP":10000.0/2048.0,"views":[]}
+	var report={"format":"source-confluence-channels-1","scope":"Actual retained source fill and symbolic RGBA/alpha bakes, no terrain lighting or map-quality claim; image crop is a diagnostic camera window, not a source edit","vectorTintPolicyRequested":vector_tint,"sourcePacket":args[0],"sourceBefore":source_before,"referenceScreenMPP":10000.0/2048.0,"views":[]}
 	var colors={"river":Vector3(.035,.17,.20),"lake":Vector3(.028,.10,.115),"sea":Vector3(.018,.095,.125),"fallback":Vector3(.028,.10,.115)}
 	for pixel in POINTS:
 		var focus={"x":15000.0+(pixel.x+.5)*10000.0/2048.0,"y":16875.0+(pixel.y+.5)*10000.0/2048.0}
 		var origin={"x":float(focus.x),"y":0.0,"z":float(focus.y)}
 		var geometry=H.prepare(packet,world,origin,focus,512.,G.build_water(world,origin,focus,512.));geometry.anchor=origin
 		var vertices_before=P._sha(geometry.vertices.to_byte_array())
-		var options={"sourceKey":"v12-confluence-%d-%d"%[pixel.x,pixel.y],"resolution":512,"msaa":4,"minHeightM":-10000.,"maxHeightM":10000.,"retainSourceImage":true,"symbolWidthPx":1.25,"screenMetresPerPixel":10000.0/2048.0,"screenScalePolicy":"orthographic-map-ground-scale"}
+		var options={"uniformVectorTint":vector_tint=="uniform","sourceKey":"v12-confluence-%d-%d"%[pixel.x,pixel.y],"resolution":512,"msaa":4,"minHeightM":-10000.,"maxHeightM":10000.,"retainSourceImage":true,"symbolWidthPx":1.25,"screenMetresPerPixel":10000.0/2048.0,"screenScalePolicy":"orthographic-map-ground-scale"}
 		var baked=await P.bake(root,geometry,origin,focus,512.,colors,options)
 		if baked.has("error"):push_error(str(baked.error));quit(1);return
 		var path=args[1].path_join("%d-%d"%[pixel.x,pixel.y])

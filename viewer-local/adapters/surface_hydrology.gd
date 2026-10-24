@@ -282,9 +282,11 @@ static func prepare(packet: Dictionary, world: Dictionary, origin: Dictionary, f
 	# adapter has multiple water batches, keep the already safe complete fallback.
 	if sea.get("requiresCoverageMask",false) or vertices.size()+sea.vertices.size()>MAX_VERTICES: return _fallback(fallback,"exact sea and vector batches exceed the shared geometry budget")
 	var bed_diagnostics:=vector_bed_diagnostics(vertices,world,origin)
+	var source_vector_vertex_count=vertices.size()
 	vertices.append_array(sea.vertices)
 	var result:=fallback.duplicate(false)
 	result.erase("coverageImage"); result.erase("coverageOrigin"); result.erase("coverageSpacingM"); result.erase("coverageSize")
+	result.sourceVectorVertexCount=source_vector_vertex_count;result.sourceSeaVertexCount=sea.vertices.size()
 	result.vertices=vertices; result.quads=int(ceil(vertices.size()/6.0)); result.sourceStride=1
 	result.sourceWaterContours=source_contours;result.sourceContourVersion=Contours.VERSION
 	result.sourceContourPointCount=contour_points;result.sourceContourRingCount=contour_rings

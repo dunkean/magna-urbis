@@ -7,6 +7,7 @@
  * --viewer-layer-probe adds four same-source visibility captures and unlit bare ground.
  * --viewer-layer-probe-widths 10000,160 also proves actual near-instance masking.
  * --viewer-water-mode source-map explicitly selects terrain-only retained-vector display.
+ * --viewer-water-vector-tint uniform opts into one untyped-vector fill/stroke tint; source-classes remains the default.
  * --viewer-water-symbol-width-px 1.25 explicitly opts into nonphysical all-water map symbols.
  * --viewer-resolution 2048x1280. Browser/SSE/worker stay alive until the seven-level tour exits. */
 import { chromium } from 'playwright';
@@ -49,6 +50,8 @@ const viewerLauncher = resolve(option('--viewer-launcher', fileURLToPath(new URL
 const viewerTimeoutMs = Number(option('--viewer-timeout-ms', '900000'));
 const viewerResolution = option('--viewer-resolution', '2048x1280');
 const viewerWaterMode=option('--viewer-water-mode','source-map');
+const viewerWaterVectorTint=option('--viewer-water-vector-tint','source-classes');
+if(!['source-classes','uniform'].includes(viewerWaterVectorTint)||viewerWaterVectorTint==='uniform'&&viewerWaterMode!=='source-map')throw new Error('Uniform vector tint requires source-map; choose source-classes or uniform');
 const viewerWaterSymbolWidthPx=Number(option('--viewer-water-symbol-width-px',option('--water-symbol-width-px','0')));
 if(!Number.isFinite(viewerWaterSymbolWidthPx)||viewerWaterSymbolWidthPx<0||viewerWaterSymbolWidthPx>1.25||viewerWaterSymbolWidthPx>0&&viewerWaterMode!=='source-map')throw new Error('Water symbol width must be0..1.25 pixels and requires source-map mode');
 const layerProbe=args.includes('--viewer-layer-probe');
@@ -74,7 +77,7 @@ const report = { format: 'magna-fresh-source-proof', version: 1, startedAt: new 
 report.browserEvents = browserEvents;
 report.retainVisualsAfterNavigationFailureRequested=retainVisualsAfterNavigationFailure;
 report.processorTimingDiagnostic = { enabled: true, requestFlag: 'diagnosticTiming', responseField: 'processorTiming', clock: 'surface-worker-processor-timing-1', pageReceiptBeforePacketSummary: true, cpuSampling: false, binaryChanged: false };
-report.requiredRenderContract={version:'surface-layers-1',waterMode:viewerWaterMode,waterSymbolWidthPx:viewerWaterSymbolWidthPx,layerProbeWidths:layerProbe?layerProbeWidths:[],physicalSourceChangesAllowed:false};
+report.requiredRenderContract={version:'surface-layers-1',waterMode:viewerWaterMode,waterVectorTint:viewerWaterVectorTint,waterSymbolWidthPx:viewerWaterSymbolWidthPx,layerProbeWidths:layerProbe?layerProbeWidths:[],physicalSourceChangesAllowed:false};
 report.nativePhaseOrder=viewerGodot?(navigationFirst?['navigation','tour']:['tour',...(navigationSeconds?['navigation']:[])]):[];
 if(layerProbe)report.nativePhaseOrder.push('layer-isolation');
 report.driverProcessId=process.pid;
@@ -113,7 +116,7 @@ async function runNativeTour(sessionId) {
   const logPath=resolve(directory,'stdout.log'),errorPath=resolve(directory,'stderr.log'),metricsPath=resolve(directory,'metrics.json');
   const widths=[40000,10000,2560,640,160,40,10],events=[],nativeErrors=[];
   const command=[viewerLauncher,'--godot',resolve(viewerGodot),'--world',paths.source,'--live-url',`${base}/surface-live/terrain`,
-    '--session-id',sessionId,'--tour',directory,'--metrics',metricsPath,'--width','40000','--resolution',viewerResolution,'--presentation','aerial','--water-mode',viewerWaterMode,'--water-symbol-width-px',String(viewerWaterSymbolWidthPx),'--layers','all'];
+    '--session-id',sessionId,'--tour',directory,'--metrics',metricsPath,'--width','40000','--resolution',viewerResolution,'--presentation','aerial','--water-mode',viewerWaterMode,'--water-vector-tint',viewerWaterVectorTint,'--water-symbol-width-px',String(viewerWaterSymbolWidthPx),'--layers','all'];
   if(!args.includes('--viewer-oblique'))command.push('--top');
   if(viewerAssets)command.push('--assets',resolve(viewerAssets));
   report.viewer={status:'running',startedAt:new Date().toISOString(),startedElapsedMs:Date.now()-began,sessionId,
@@ -201,7 +204,7 @@ async function runNativeNavigation(sessionId) {
   const paths={directory,stdout:resolve(directory,'stdout.log'),stderr:resolve(directory,'stderr.log'),metrics:resolve(directory,'metrics.json'),report:resolve(directory,'navigation-report.json')};
   const command=['--path',project,'--script','res://diagnostics/navigation_probe.gd','--','--world',report.paths.source,
     '--live-url',`${base}/surface-live/terrain`,'--session-id',sessionId,'--width','40000','--resolution',viewerResolution,
-    '--presentation','aerial','--water-mode',viewerWaterMode,'--water-symbol-width-px',String(viewerWaterSymbolWidthPx),'--layers','all','--metrics',paths.metrics,'--navigation-seconds',String(navigationSeconds),'--navigation-report',paths.report];
+    '--presentation','aerial','--water-mode',viewerWaterMode,'--water-vector-tint',viewerWaterVectorTint,'--water-symbol-width-px',String(viewerWaterSymbolWidthPx),'--layers','all','--metrics',paths.metrics,'--navigation-seconds',String(navigationSeconds),'--navigation-report',paths.report];
   if(!args.includes('--viewer-oblique'))command.push('--top');if(viewerAssets)command.push('--assets',resolve(viewerAssets));
   const phase={status:'running',startedElapsedMs:Date.now()-began,paths,command:[resolve(viewerGodot),...command],browserHeldOpen:true};report.navigation=phase;report.status='native-navigation';await save();
   let timeout;
@@ -261,7 +264,7 @@ async function runNativeLayerProbe(sessionId,widthM){
   const project=resolve(dirname(viewerLauncher),'../../viewer-local');
   const paths={directory,stdout:resolve(directory,'stdout.log'),stderr:resolve(directory,'stderr.log'),metrics:resolve(directory,'metrics.json'),report:resolve(directory,'layer-report.json')};
   const command=['--path',project,'--script','res://diagnostics/layer_probe.gd','--','--world',report.paths.source,'--live-url',`${base}/surface-live/terrain`,
-    '--session-id',sessionId,'--width',String(widthM),'--resolution',viewerResolution,'--presentation','aerial','--water-mode',viewerWaterMode,'--water-symbol-width-px',String(viewerWaterSymbolWidthPx),'--layers','all',
+    '--session-id',sessionId,'--width',String(widthM),'--resolution',viewerResolution,'--presentation','aerial','--water-mode',viewerWaterMode,'--water-vector-tint',viewerWaterVectorTint,'--water-symbol-width-px',String(viewerWaterSymbolWidthPx),'--layers','all',
     '--metrics',paths.metrics,'--layer-report',paths.report,'--layer-captures',directory];
   if(widthM<=160)command.push('--layer-require-instances');
   if(!args.includes('--viewer-oblique'))command.push('--top');if(viewerAssets)command.push('--assets',resolve(viewerAssets));
