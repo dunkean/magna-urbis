@@ -212,6 +212,22 @@ func configure(material: Object, world: Dictionary, origin: Dictionary) -> void:
 func _lattice_phase(u: float, v: float) -> Vector4:
 	return _cell_phase(u-0.577350269*v,1.154700538*v)
 
+# Shares the loaded arrays, registered means and authored physical texture scale.
+# Projection is anchored at each clast's centre, with a renderer-only variant phase.
+func configure_clast(material:ShaderMaterial,recipe_id:String,variant:int)->Dictionary:
+	var key="recipe:"+recipe_id
+	var exact=layers.has(key)
+	if not layers.has(key):key={"carbonate-karst":"karst","volcanic-crust":"volcanic"}.get(recipe_id,"rock")
+	if not layers.has(key):key="rock"
+	var layer=int(layers.get(key,0));var scale=maxf(float(scales.get(key,3.0)),.25)
+	var phase=Vector3(fposmod(float(variant*13),31),fposmod(float(variant*7),29),fposmod(float(variant*19),37))
+	var means=PackedVector4Array()
+	for i in 32:
+		var mean:Color=layer_means[mini(i,layer_means.size()-1)];means.append(Vector4(mean.r,mean.g,mean.b,mean.a))
+	var values={"pbr_albedo_height":albedo_height,"pbr_normal_rough":normal_rough,"layer_mean":means,"clast_layer":layer,"clast_scale_m":scale,"clast_phase":Vector3(fposmod(phase.x,1),fposmod(phase.y,1),fposmod(phase.z,1)),"clast_lattice_xz":_lattice_phase(phase.x,phase.z),"clast_lattice_zy":_lattice_phase(phase.z,phase.y),"clast_lattice_xy":_lattice_phase(phase.x,phase.y)}
+	for name in values:material.set_shader_parameter(name,values[name])
+	return {"recipeId":recipe_id,"recipeBindingExact":exact,"materialKey":key,"analyticFallback":layer==0,"assetId":loaded_assets[layer-1] if layer>0 else "analytic-neutral","layer":layer,"physicalExtentMetres":scale,"assetDigest":asset_digest,"projection":"centre-anchored world-oriented physical metres; stable renderer variant phase","heightUsage":"sampled registered channel; no displacement or source/pivot change"}
+
 func _cell_phase(u: float, v: float) -> Vector4:
 	return Vector4(fposmod(u,1.0),fposmod(v,1.0),floorf(u),floorf(v))
 

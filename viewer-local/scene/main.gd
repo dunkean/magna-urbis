@@ -4,6 +4,7 @@ const NativeLog=preload("res://adapters/surface_native_log.gd")
 const Data = preload("res://adapters/surface_data.gd")
 const Library = preload("res://adapters/material_library.gd")
 const VegetationLibrary=preload("res://adapters/surface_vegetation_library.gd")
+const Clasts=preload("res://adapters/surface_clast_library.gd")
 const TreeAssets=preload("res://adapters/surface_tree_library.gd")
 const ShaderSource = preload("res://adapters/surface_shader.gd")
 const Geometry = preload("res://adapters/surface_geometry.gd")
@@ -23,6 +24,9 @@ var sun := DirectionalLight3D.new()
 var library := Library.new()
 var vegetation_library:=VegetationLibrary.new()
 var vegetation_materials:Array=[]
+var clast_library=Clasts.new()
+var clast_materials:Array=[]
+var clast_metrics:Dictionary={"enabled":false}
 var tree_library:=TreeAssets.new()
 var tree_asset_metrics:Dictionary={"enabled":false}
 var terrain: Node3D
@@ -508,6 +512,7 @@ func _update_camera() -> void:
 			material.set_shader_parameter("tree_main_top",not oblique)
 			if material.get_meta("treeImpostor",false):material.set_shader_parameter("tree_camera_world_position",camera.global_position)
 	for material in vegetation_materials:_set_vegetation_main_camera(material)
+	for material in clast_materials:_set_vegetation_main_camera(material)
 	_update_canopy_phase(0.0)
 
 func _build_scene_objects(prepared: Dictionary) -> void:
@@ -517,6 +522,7 @@ func _build_scene_objects(prepared: Dictionary) -> void:
 	scene_top_y=-INF
 	canopy_materials.clear()
 	vegetation_materials.clear()
+	clast_materials.clear()
 	for child in objects.get_children():
 		if not canopy_pending.is_empty() and child.get_meta("surfaceLayer","")=="trees" and not child.get_meta("canopyStaged",false):
 			# A transition keeps old IDs/counts but demotes their expensive LOD to
@@ -670,10 +676,14 @@ func _build_populations(populations: Dictionary) -> void:
 	candidate_count=int(populations.candidateCount)
 	selected_candidates=int(populations.selectedCount)
 	var families: Dictionary = populations.families
+	clast_metrics={"enabled":presentation_mode=="aerial","version":Clasts.VERSION,"appliedInstances":0,"trianglesPerInstance":80,"batches":[],"scope":"renderer-only deterministic clast shapes, same legacy bounds/pivot/buffers; sourceRock geology determines texture recipe and source RGB; no new scatter or observed rock shape"}
 	tree_asset_metrics={"enabled":not tree_library.cpu.is_empty() and presentation_mode=="aerial","profile":tree_library.version}
 	for family in families:
 		var visible: Array = families[family]
 		if visible.is_empty(): continue
+		if family=="boulder" and presentation_mode=="aerial":
+			_build_clasts(visible,populations.buffers.boulder)
+			continue
 		if family=="tree" and presentation_mode=="aerial" and not tree_library.cpu.is_empty():
 			_build_asset_trees(visible)
 			continue
@@ -823,6 +833,23 @@ func _build_asset_grass(candidates:Array,buffer:PackedFloat32Array)->void:
 		instance.set_meta("populationFamily","grass");instance.set_meta("surfaceLayer","lowCover")
 		instance.set_meta("vegetationAsset",{"assetDigest":vegetation_library.version.digest,"variant":variant.id,"triangleCount":variant.triangleCount})
 		instance.layers=2;instance.multimesh=multi;objects.add_child(instance)
+
+func _build_clasts(candidates:Array,buffer:PackedFloat32Array)->void:
+	var world:Dictionary=rendered_world if not rendered_world.is_empty() else self.world
+	var units={}
+	for unit in world.geology.units:units[int(unit.id)]=unit
+	var source_rock=func(x:float,z:float)->Dictionary:return units.get(int(Data.field_at(world,"sourceRock",x,z,true)),{})
+	for batch in Clasts.partition(candidates,buffer,source_rock):
+		var mesh:Mesh=clast_library.mesh(batch.variant).duplicate()
+		var material=ShaderMaterial.new();material.shader=preload("res://shaders/clast_pbr.gdshader")
+		var binding=library.configure_clast(material,batch.recipeId,int(batch.variant))
+		clast_materials.append(material);_set_vegetation_main_camera(material);mesh.surface_set_material(0,material)
+		var multi=MultiMesh.new();multi.transform_format=MultiMesh.TRANSFORM_3D;multi.use_custom_data=true;multi.use_colors=true
+		multi.mesh=mesh;multi.instance_count=batch.ids.size();multi.buffer=batch.buffer;multi.custom_aabb=Clasts.buffer_bounds(batch.buffer,mesh.get_aabb())
+		var node=MultiMeshInstance3D.new();node.name="clast_"+batch.recipeId+"_"+str(batch.variant);node.multimesh=multi;node.layers=2
+		node.set_meta("populationFamily","boulder");node.set_meta("surfaceLayer","ground");objects.add_child(node)
+		clast_metrics.appliedInstances+=batch.ids.size()
+		clast_metrics.batches.append({"variant":batch.variant,"instances":batch.ids.size(),"sourceRockIds":batch.sourceRockIds.keys(),"binding":binding})
 
 func _process(delta: float) -> void:
 	if world.is_empty(): return
@@ -1413,7 +1440,7 @@ func population_instances()->Dictionary:
 	var material=terrain.get("material") if terrain!=null else null
 	var tree_uniform=material.call("get_shader_param","show_trees") if material!=null else null
 	var trees=tree_uniform==true
-	return {"families":families,"treeResidualEnabled":trees,"treeOpticalShadowEnabled":trees and rendered_presentation_mode!="cartographic","treeShaderUniformAvailable":tree_uniform is bool,"scope":"submitted buffers, actual node/camera visibility, shader ALPHA gate>0 and centres in frustum; no GPU occlusion or per-mask fragment claim"}
+	return {"families":families,"clasts":clast_metrics,"treeResidualEnabled":trees,"treeOpticalShadowEnabled":trees and rendered_presentation_mode!="cartographic","treeShaderUniformAvailable":tree_uniform is bool,"scope":"submitted buffers, actual node/camera visibility, shader ALPHA gate>0 and centres in frustum; no GPU occlusion or per-mask fragment claim"}
 
 func _build_road_projectors(records: Array) -> void:
 	var packet:Dictionary=rendered_packet if not rendered_packet.is_empty() else self.packet
