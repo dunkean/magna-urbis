@@ -1,6 +1,7 @@
 # Sol, couvert bas, arbres et représentation de canopée
 
-Le contrat `surface-layers-1` (compilateur `surface-1.5.2`) distingue trois
+Le contrat `surface-layers-1` (compilateur `surface-1.5.3`, analyse physique
+`surface-1.5.2`) distingue trois
 étages physiques. Leur représentation optique est un choix de rendu, séparé des
 données canoniques. La campagne V5 portait sur `surface-1.4.0` : elle **ne valide
 pas** ce nouveau contrat, son shader ni sa qualité visuelle. La campagne
@@ -83,6 +84,14 @@ pédologique calibrés. Ils ne dépendent ni du zoom ni d'un filtrage UV ajouté
 Les poids minéral/humus se répartissent le même support ; la moyenne conserve
 tous les poids avant réduction top2. Les champs physiques restent inchangés.
 
+Depuis 1.5.3, les cellules d'occupation Road, Yard et Built conservent ce support
+naturel. Leur emprise raster est une exclusion conservatrice, pas la preuve
+d'un revêtement posé sur toute la cellule. Les routes vectorielles et les
+bâtiments portent leurs matériaux propres. Les cultures explicites et les
+exclusions du couvert restent conservées. Le composite legacy reste identique,
+y compris ses anciennes matières d'infrastructure. Voir
+[la politique et la migration retenue](surface/URBAN_GROUND_SUPPORT.md).
+
 L'opacité basse prend successivement le support non rocheux, la litière, les
 arbustes puis les herbes. Cette priorité est une approximation déclarée de la
 projection de cet étage. Elle ne modifie pas ses champs physiques et ne débite
@@ -126,9 +135,12 @@ appuis, IDs et rangs. Ils vérifient aussi les toggles sans mutation, les rocher
 sous couvert, les exclusions, les saisons, les patches superposés, le binaire,
 le JSON, les budgets et les métadonnées legacy/malformées.
 
-L'intégration GD doit ajouter des diagnostics séparés **sol nu**, **herbes et
+L'intégration GD possède des diagnostics séparés **sol nu**, **herbes et
 litière**, **arbres** et **canopée optique**, avec contrôles de visibilité
-indépendants. Elle doit empêcher la disparition apparente des herbes/arbustes
-quand leurs géométries sont réduites, et distinguer cet objectif de la correction
-du carré de forêt distant. Les captures V5 ne qualifient ni ces nouvelles couches,
-ni les escaliers de couleur à la maille canonique, ni une scène urbaine construite.
+indépendants. V8 prouve leur isolation à 10 km ; elle ne prouve pas le masquage
+de véritables instances proches. Le harnais ajoute donc un second contrôle à
+160 m : lecture des buffers MultiMesh, alpha et frustum CPU, quatre visibilités
+et sol moyen sans éclairage, avec hashes des données physiques et des candidats.
+Ce contrôle distingue les instances soumises des pixels visibles après occlusion.
+Son existence dans le code ne constitue pas à elle seule une campagne réussie.
+Les captures V5 ne qualifient ni ces couches ni une scène urbaine construite.

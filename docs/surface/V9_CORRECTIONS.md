@@ -68,13 +68,25 @@ archives source sont identiques. Le nouvel inventaire de pages est ensuite une
 [requête retenue explicite](evidence/native419-pages-v9.json), sans altérer le
 monde ni inventer de hauteurs. Les anciens paquets et leurs preuves restent intacts.
 
-## Qualification intégrée restante
+## Qualification intégrée : échec V9 conservé
 
-Les tests du contrat, les contrôles CPU et les probes GPU isolés passent. La
-prochaine campagne doit encore réunir ces changements sur un même snapshot :
+Les tests du contrat, les contrôles CPU et les probes GPU isolés passent.
+Les [trois vues urbaines V9](evidence/native-current-419-v9-render.json) sont
+capturées sur le snapshot propre `ab3c499`, sans erreur ni omission d'eau,
+avec canopée convergée et les 419 vrais extérieurs natifs dans la vue d'ensemble.
+
+La [campagne fraîche V9](evidence/native-e2e-v9-negative.json) échoue : aucune
+nouvelle source n'est réellement affichée pendant les 20,004 secondes de mouvement.
+La preview est acceptée à la fin du mouvement, puis affichée après celui-ci.
+La compilation de sa réponse prend 13,928 s après le retour neural ; la
+préparation native suivante prend encore 3,7 s. L'upload de 9,35 Mo prend 0,618 s.
+La tournée et les probes ne sont pas exécutées. Les 560 fichiers runtime et le
+HEAD restent identiques avant/après ; aucun critère n'est assoupli.
+
+La prochaine campagne doit donc encore réunir ces changements sur un même snapshot :
 nouvelle source Infinite Generation, mouvement continu, sept échelles, symboles
 d'eau déclarés et isolation sol/herbes/arbres à 10 km **et** à 160 m avec de vraies
-instances. Les vues urbaines comparables et la revue Opus restent séparées.
+instances. La revue Opus reste une étape indépendante.
 
 Couronnes et petits objets restent des représentations stylisées, les ombres
 forestières sont optiques, et le sol canonique garde sa résolution physique.

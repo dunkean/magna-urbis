@@ -5,13 +5,22 @@ compilateur 1.5.3 et le renderer V9 en cours de qualification. Le bilan ci-desso
 conserve les mesures du snapshot V8 ; sa revue indépendante est
 [archivée séparément](reviews/phase06-followup-v8.md).
 
-État documentaire du 23 octobre 2026, renderer figé `984f488`, compilateur
-`surface-1.5.2`. **La campagne technique V8 complète passe.** La revue finale
-Opus 5.5 est en préparation ; ce résultat technique n'est pas une acceptation
-artistique ni une adoption définitive du moteur. Les échecs V1–V4, V6 et V7 et les
+État documentaire du 24 octobre 2026. Le bilan technique ci-dessous décrit le
+renderer V8 figé `984f488`, compilateur `surface-1.5.2`.
+**La campagne technique V8 complète passe.** Sa revue Opus 5.5 qualifie le
+prototype et refuse l'acceptation artistique ; elle ne décide pas de l'adoption
+définitive du moteur. Les échecs V1–V4, V6 et V7 et les
 verdicts de revue initiaux restent conservés. V5 qualifiait le code 1.4 ; V8
 qualifie les nouvelles couches sol, couvert bas et arbres, leur intégration native
 et le parcours live. La feuille de route complète n'est pas annoncée comme livrée.
+
+**V9 reste échouée**, sur le snapshot `ab3c499` / compilateur 1.5.3 : aucune
+nouvelle source n'a été affichée pendant les 20,004 s de déplacement. La preview
+acceptée n'apparaît qu'après l'arrêt. Les sept captures et les deux probes de
+couches n'ont donc pas été exécutées. Les trois vues urbaines séparées passent ;
+elles ne remplacent pas cette qualification live. Voir
+[la preuve négative](evidence/native-e2e-v9-negative.json) et
+[les captures urbaines V9](evidence/native-current-419-v9-render.json).
 
 ## Qualification du snapshot intégré
 
