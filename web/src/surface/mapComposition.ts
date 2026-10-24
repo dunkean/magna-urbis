@@ -32,12 +32,14 @@ export interface SurfaceMapLegendEntry {
   id: string; text: string; sourcePath: string;
   semantic: 'native-buildings' | 'roads' | 'water' | 'trees' | 'low-cover' | 'ground-recipe';
   count: number;
+  /** Scientific/count scope is metadata, separate from the visible caption. */
+  qualification?: string;
 }
 export interface SurfaceMapContent {
   sourcePacketSha256: string; worldId: string;
   labels: SurfaceMapLabel[]; legend: SurfaceMapLegendEntry[];
 }
-export interface SurfaceMapOptions { style?: MapStyle; gridMeters?: number }
+export interface SurfaceMapOptions { style?: MapStyle; gridMeters?: number; title?: string }
 const esc = (s: string) => s.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
 const hash = (bytes: Uint8Array) => new SurfaceSha256().update(bytes).hex();
 const finite = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
@@ -70,6 +72,7 @@ export function composeSurfaceMap(capture: SurfaceMapCapture, png: Uint8Array, c
   const style = options.style ?? capture.mapStyle;
   if (!isMapStyle(style) || !isMapStyle(capture.mapStyle)) fail('unknown shared palette');
   const pal = PALETTES[style], family = FONT_STACKS[style], W = capture.widthPx, H = capture.heightPx;
+  if(options.title!==undefined&&(!requireText(options.title,160)||!options.title.trim()||/[\u0000-\u001f]/.test(options.title)))fail('invalid authored presentation title');
   const projection = capture.projection, top = projection.kind === 'orthographic-top';
   let scale = 0, minX = 0, minZ = 0, maxX = 0, maxZ = 0;
   if (top) {
@@ -105,7 +108,8 @@ export function composeSurfaceMap(capture: SurfaceMapCapture, png: Uint8Array, c
   const legendIds=new Set<string>();
   for(const e of content.legend) {
     if(!requireText(e.id)||legendIds.has(e.id)||!requireText(e.text)||!requireText(e.sourcePath,2048)
-      || !Number.isSafeInteger(e.count)||e.count<=0 || !['native-buildings','roads','water','trees','low-cover','ground-recipe'].includes(e.semantic))fail('invalid source legend');
+      || !Number.isSafeInteger(e.count)||e.count<=0 || e.qualification!==undefined&&!requireText(e.qualification,2048)
+      || !['native-buildings','roads','water','trees','low-cover','ground-recipe'].includes(e.semantic))fail('invalid source legend');
     legendIds.add(e.id);
   }
   const parts:string[]=[];let gridLines=0;
@@ -127,8 +131,23 @@ export function composeSurfaceMap(capture: SurfaceMapCapture, png: Uint8Array, c
   });
   const reserves=[{x0:inset,y0:H-inset-legendH,x1:inset+side,y1:H-inset}];
   if(top)reserves.push({x0:W-120,y0:0,x1:W,y1:120},{x0:W-220,y0:H-85,x1:W,y1:H});
+  let titleReservedBounds:{x0:number;y0:number;x1:number;y1:number}|null=null;
+  let titleSvg='';
+  if(options.title!==undefined){
+    const titleW=Math.min(W-240,560),titleH=48;
+    if(titleW<80)fail('image too narrow for title');
+    const titleSize=Math.min(22,(titleW-24)/Math.max(1,estimateWidth(options.title,1,styleByKind.town)));
+    if(titleSize<8)fail('authored title does not fit');
+    const x=(W-titleW)/2,y=24;
+    titleReservedBounds={x0:x,y0:y,x1:x+titleW,y1:y+titleH};reserves.push(titleReservedBounds);
+    titleSvg=panelSvg({w:titleW,h:titleH,prims:[
+      {t:'rect',x:0,y:0,w:titleW,h:titleH,fill:pal.cart.fill,stroke:pal.cart.stroke,sw:1,op:pal.cart.op},
+      {t:'text',x:titleW/2,y:titleH/2+titleSize*.34,s:options.title,size:titleSize,anchor:'middle',fill:pal.lab.town,bold:true},
+    ]},x,y,1,family,'authored-title');
+  }
   const placed=placeMapLabels(labels,top?{cx:(minX+maxX)/2,cy:(minZ+maxZ)/2,scale}:{cx:W/2,cy:H/2,scale:1},W,H,estimateWidth,{reserved:reserves,maxLabels:500,margin:36});
   parts.push(placedMapLabelsSvg(placed,pal,1));
+  parts.push(titleSvg);
   parts.push(panelSvg(legend,inset,H-inset-legendH,1,family,'source-legend'));
   let scaleBar:{lengthM:number;pixels:number}|null=null;
   if(top){
@@ -144,6 +163,7 @@ export function composeSurfaceMap(capture: SurfaceMapCapture, png: Uint8Array, c
   parts.push(panelSvg({w:W,h:H,prims:frame},0,0,1,family,'map-frame'));
   const evidence={format:'surface-map-composition',version:1,capture,style,sourceLabelCount:content.labels.length,placedLabelIds:placed.map(l=>l.label.id),droppedLabels:dropped,
     legend:content.legend,gridMeters:options.gridMeters??null,gridLines,scaleBar,fontFamily:family,
+    title:options.title??null,titleSource:options.title===undefined?null:'Explicit authored presentation text; not an inferred source toponym',titleReservedBounds,
     coverage:{raster:'Pinned original PNG, unchanged',overlay:'Shared label placement, font stack, panel primitives, frame, north and palette tokens',style:'Overlay only; captured raster presentation is not restyled',perspective:top?null:'Explicit matrix, source point elevations only; no uniform metric scale, north or RPG grid'},
     unsupported:['SVG brush strokes, terrain hatching, labels absent from source, per-pixel occlusion and perspective path draping are not reconstructed']};
   const svg=`<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}"><metadata>${esc(JSON.stringify(evidence))}</metadata><image width="${W}" height="${H}" href="${pngDataUrl(png)}"/>${parts.join('')}</svg>`;
