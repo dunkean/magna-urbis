@@ -87,3 +87,21 @@ The images were opened and the recovered branches follow the original traces.
 This is a bounded display control, not a survey/topology or production-style
 claim. Exact digests and scope are in
 [the vector evidence](evidence/water-vector-symbols-v9-gpu.json).
+
+## Teinte des polygones non typés : option de comparaison
+
+`--water-vector-tint source-classes` reste le défaut. Il conserve la couleur de
+la grille de classes source et le fallback déclaré. Le mode explicite
+`--water-mode source-map --water-vector-tint uniform` applique ce même fallback
+aux remplissages des polygones retenus non typés et à leurs symboles de rive.
+Il ne leur invente aucune classe rivière/lac. L'union de cellules de mer conserve
+sa teinte de mer. Le harnais expose `--viewer-water-vector-tint uniform`.
+
+Le DTO distingue un préfixe de vertices vectoriels et un suffixe de mer,
+avec comptes explicites, bornés et divisibles par trois. L'option refuse une
+partition absente, partielle, incohérente ou un fallback générique ; elle est
+interdite en mode physique `source-levels`. Les cache keys et diagnostics
+`sourceVectorTintVersion:source-vector-tint-1` distinguent les deux politiques.
+Contours, niveaux, classes archivées, aire et support alluvial restent inchangés.
+Ce choix harmonise une représentation ; il n'est ni une correction hydrologique
+ni une preuve de débit. Sa comparaison GPU reste une preuve distincte.

@@ -106,6 +106,7 @@ var region_counts: Array[int] = []
 var preparation_snapshots: Array = []
 const CanopyView=preload("res://adapters/surface_canopy_view.gd")
 var water_symbol_width_px:float=0.0
+var water_vector_tint:String="source-classes"
 var canopy_phase:float=0.0
 var canopy_view_state:Dictionary={}
 var canopy_transition_busy:bool=false
@@ -160,6 +161,10 @@ func _ready() -> void:
 		push_error("--water-symbol-width-px requires a finite number from 0 to 1.25")
 		get_tree().quit(2);return
 	water_symbol_width_px=float(symbol_option)
+	water_vector_tint=str(options.get("--water-vector-tint","source-classes"))
+	if water_vector_tint not in ["source-classes","uniform"] or water_vector_tint=="uniform" and options.get("--water-mode","source-map")=="source-levels":
+		push_error("--water-vector-tint must be source-classes or uniform; uniform requires source-map")
+		get_tree().quit(2);return
 	if options.get("--water-mode","source-map") not in ["source-map","source-levels"]:
 		push_error("--water-mode must be source-map or source-levels")
 		get_tree().quit(2);return
@@ -1468,6 +1473,9 @@ func _complete_prepared(prepared:Dictionary)->void:
 		geometry=scene_mesh_cache.get(prepared.sceneRequest.get("waterKey",""),{}).get("geometry",{})
 	var fixed=geometry.get("fixedVectorDisplayAvailable",false)
 	var requested_mode=str(options.get("--water-mode","source-map" if fixed else "source-levels"))
+	if water_vector_tint=="uniform" and (requested_mode!="source-map" or not fixed):
+		push_error("Uniform vector tint requires retained fixed source-map polygons, not generic water fallback")
+		get_tree().quit(2);return
 	if requested_mode=="source-map" and fixed:
 		water_projection_busy=true
 		var snapshot_packet:Dictionary=prepared.packet
@@ -1482,7 +1490,7 @@ func _complete_prepared(prepared:Dictionary)->void:
 		var source_key=str(prepared.sceneRequest.get("waterKey",""))+":contours:"+str(geometry.get("sourceContourSha256","none"))
 		var screen_mpp=coverage_width/get_viewport().get_visible_rect().size.x
 		var scale_policy="oblique-ground-scale-approximation" if prepared.get("oblique",oblique) else "orthographic-map-ground-scale"
-		var style_key=JSON.stringify([mode,colors.river,colors.lake,colors.sea,water_symbol_width_px,screen_mpp,scale_policy])
+		var style_key=JSON.stringify([mode,colors.river,colors.lake,colors.sea,water_symbol_width_px,screen_mpp,scale_policy,water_vector_tint])
 		var projection:Dictionary={}
 		for cache_id in water_projection_cache:
 			var entry:Dictionary=water_projection_cache[cache_id]
@@ -1491,7 +1499,7 @@ func _complete_prepared(prepared:Dictionary)->void:
 				projection=entry.duplicate(false);projection.diagnostics=entry.diagnostics.duplicate();projection.diagnostics.cacheUsed=true;break
 		if projection.is_empty():
 			var projection_width=coverage_width*1.25
-			var bake_options={"symbolWidthPx":water_symbol_width_px,"screenMetresPerPixel":screen_mpp,"screenScalePolicy":scale_policy,"sourceKey":source_key,"resolution":2048,"msaa":2,"minHeightM":-10000.0,"maxHeightM":10000.0}
+			var bake_options={"uniformVectorTint":water_vector_tint=="uniform","symbolWidthPx":water_symbol_width_px,"screenMetresPerPixel":screen_mpp,"screenScalePolicy":scale_policy,"sourceKey":source_key,"resolution":2048,"msaa":2,"minHeightM":-10000.0,"maxHeightM":10000.0}
 			projection=await WaterProjection.bake(self,geometry,prepared.origin,requested_focus,projection_width,colors,bake_options)
 			if not projection.has("error"):
 				projection.binding=source_key+style_key;projection.diagnostics.cacheUsed=false
