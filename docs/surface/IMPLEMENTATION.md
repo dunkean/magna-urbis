@@ -21,8 +21,13 @@ proche et des imposteurs avec masque optique commun, activés explicitement par
 manifeste. Sol, herbes/litière et arbres restent indépendants. Le plan Blueprint
 conserve sa présentation ; les 419 volumes natifs sont éprouvés séparément sur
 une source urbaine legacy. Haute géométrie/imposteur, oblique, diversité végétale,
-styles finaux et coût de navigation gardent des limites déclarées. La revue
-artistique V13 reste distincte de ce succès technique.
+styles finaux et coût de navigation gardent des limites déclarées. La [revue indépendante Opus V13](reviews/phase06-followup-v13.md) confirme ce
+succès technique et refuse encore l'acceptation artistique/production : rupture
+high/imposteur, pauvreté des motifs proches, couverts primitifs, ombres et
+composition finale de carte. Elle valide la séparation des couches et la
+correction des marches non catégorielles du sol. Le
+[contrôle post-revue des 624 fichiers](evidence/v13-post-review-campaign-files.json)
+étend la vérification au HEAD lu par la revue sans en modifier le verdict.
 
 Les [corrections V13](V13_CORRECTIONS.md) conservent leurs preuves négatives.
 Deux correctifs ciblés ultérieurs sont préparés hors du gel : planification
