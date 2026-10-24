@@ -5,6 +5,19 @@ import type { NativeSurfaceMapProjection, SurfaceMapCapture, SurfaceMapContent, 
 import { surfaceMapMatrixValid } from '../mapComposition';
 import type { NameEntry } from '../../gen/names/types';
 
+const RECIPE_LABELS:Record<string,string>={
+  'mineral-soil':'Sol minéral','organic-soil':'Sol humifère','fractured-bedrock':'Roche fracturée',
+  'wind-ripple-sand':'Sable éolien','arid-reg':'Reg aride','angular-talus':'Éboulis','carbonate-karst':'Karst calcaire',
+  'volcanic-crust':'Roche volcanique','alluvial-bars':'Alluvions','inland-water':'Eaux intérieures',
+  'wetland-organic':'Sol de zone humide','coastal-sediment':'Sédiments littoraux','coastal-rock':'Roches littorales',
+  'marine-water':'Mer','vegetation-litter':'Litière végétale','forest-litter':'Litière forestière','snow-ice':'Neige et glace',
+  'compacted-road':'Sol compacté','cultivated-soil':'Sol cultivé','built-foundation':'Fondations',
+};
+export function surfaceRecipeDisplayName(recipe:{id:string;displayName?:unknown;label?:unknown;name?:unknown}):string {
+  for(const value of [recipe.displayName,recipe.label,recipe.name])if(typeof value==='string'&&value.trim())return value;
+  return RECIPE_LABELS[recipe.id]??recipe.id;
+}
+
 /** Join the actual native camera sidecar, never derive an oblique camera from
  * width/focus heuristics. The renderer origin is kept separate in float64. */
 export function nativeSurfaceMapCapture(identity:Pick<SurfaceMapCapture,'worldId'|'canonicalContextId'|'sourcePacketSha256'|'metricsSha256'|'imageSha256'|'presentation'|'mapStyle'>,
@@ -63,19 +76,19 @@ export function surfaceMapContent(packet: { world: SurfaceWorld; urban?: Record<
     if (f.grassCover[i] > 0 || f.shrubCover[i] > 0 || f.litter[i] > 0) low++;
     if (f.waterClass[i] > 0) water++;
   }
-  const add = (id: string, text: string, sourcePath: string, semantic: SurfaceMapLegendEntry['semantic'], count: number) => {
-    if (count) legend.push({ id, text, sourcePath, semantic, count });
+  const add = (id: string, text: string, sourcePath: string, semantic: SurfaceMapLegendEntry['semantic'], count: number, qualification:string) => {
+    if (count) legend.push({ id, text, sourcePath, semantic, count,qualification });
   };
   const buildings = packet.urban?.buildings ?? [];
   const native = buildings.filter((b: { representation?: string; nativeRealization?: boolean }) => b.representation === 'native' && b.nativeRealization === true).length;
-  add('native-buildings', 'Bâtiments natifs (source)', 'urban.buildings', 'native-buildings', native);
-  add('roads', 'Voirie (source)', 'urban.roads', 'roads', packet.urban?.roads?.length ?? 0);
-  add('water', 'Eau (contexte source)', 'world.canonicalContext.fields.waterClass', 'water', water);
-  add('trees', 'Arbres (potentiel)', 'world.canonicalContext.fields.treeCover', 'trees', trees);
-  add('low-cover', 'Couvert bas (potentiel)', 'world.canonicalContext.fields.grassCover/shrubCover/litter', 'low-cover', low);
+  add('native-buildings', 'Bâtiments', 'urban.buildings', 'native-buildings', native,'Native building records retained in source packet; not GPU visibility');
+  add('roads', 'Voirie', 'urban.roads', 'roads', packet.urban?.roads?.length ?? 0,'Road records retained in source packet');
+  add('water', 'Eau', 'world.canonicalContext.fields.waterClass', 'water', water,'Canonical source support nodes; not vector area or measured flow');
+  add('trees', 'Arbres', 'world.canonicalContext.fields.treeCover', 'trees', trees,'Canonical tree-cover potential support nodes; not rendered or observed tree counts');
+  add('low-cover', 'Couvert bas', 'world.canonicalContext.fields.grassCover/shrubCover/litter', 'low-cover', low,'Canonical low-cover potential support nodes; not rendered instances');
   for (const [index, count] of [...counts].sort((a, b) => a[0] - b[0])) {
     const recipe = world.materials[index]; if (!recipe) throw new Error('Invalid retained ground recipe index');
-    add(`recipe:${recipe.id}`, `Sol : ${recipe.id}`, `world.materials[${index}] / canonicalContext.fields.groundMaterial`, 'ground-recipe', count);
+    add(`recipe:${recipe.id}`, surfaceRecipeDisplayName(recipe), `world.materials[${index}] / canonicalContext.fields.groundMaterial`, 'ground-recipe', count,'Canonical ground recipe support nodes; not visible pixel area');
   }
   return { sourcePacketSha256: capture.sourcePacketSha256, worldId: world.id, labels, legend };
 }

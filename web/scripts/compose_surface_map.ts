@@ -51,7 +51,7 @@ if(binding.presentation==='cartographic'&&metrics.renderSourceVersion.presentati
 const requestedStyle=option('--style'),style=isMapStyle(requestedStyle)?requestedStyle:undefined;
 if(requestedStyle!==undefined&&style===undefined)throw Error('Unknown shared map style');
 const content=surfaceMapContent(packet as any,binding);
-const composition=composeSurfaceMap(binding,imageBytes,content,{style,gridMeters:option('--grid-m')===undefined?undefined:Number(option('--grid-m'))});
+const composition=composeSurfaceMap(binding,imageBytes,content,{style,title:option('--title'),gridMeters:option('--grid-m')===undefined?undefined:Number(option('--grid-m'))});
 const target=path.resolve(required('--out'));await mkdir(path.dirname(target),{recursive:true});
 const png=new Resvg(composition.svg,{font:{loadSystemFonts:true}}).render().asPng();
 await writeFile(target+'.svg',composition.svg);await writeFile(target+'.png',png);

@@ -6,7 +6,7 @@ import { generate } from '../src/gen/pipeline';
 import { makeOptions } from '../src/gen/options';
 import { SurfaceSha256 } from '../src/surface/sha256';
 import { composeSurfaceMap, type SurfaceMapCapture, type SurfaceMapContent } from '../src/surface/mapComposition';
-import { sourceMapLabels, surfaceMapContent, nativeSurfaceMapCapture } from '../src/surface/adapters/mapComposition';
+import { sourceMapLabels, surfaceMapContent, nativeSurfaceMapCapture, surfaceRecipeDisplayName } from '../src/surface/adapters/mapComposition';
 import { compileSurfaceWorld, getCanonicalSurfaceContext } from '../src/surface/compiler';
 
 const png=encodePng(new Uint8Array(640*400*3).fill(128),640,400);
@@ -47,6 +47,24 @@ describe('pinned raster map composition',()=>{
     const {capture,content}=fixture();content.labels=[];
     expect(composeSurfaceMap(capture,png,content).evidence.placedLabelIds).toEqual([]);
   });
+  it('renders only an explicitly authored title and reserves its space for labels',()=>{
+    const {capture,content}=fixture();content.labels[0].anchor.y=8235;
+    const plain=composeSurfaceMap(capture,png,content);
+    expect(plain.evidence.title).toBeNull();expect(plain.svg).not.toContain('class="authored-title"');
+    expect(plain.evidence.placedLabelIds).toEqual(['actual-name']);
+    const titled=composeSurfaceMap(capture,png,content,{title:'Plan <urbain>'});
+    expect(titled.svg).toContain('Plan &lt;urbain&gt;');expect(titled.evidence.title).toBe('Plan <urbain>');
+    expect(titled.evidence.titleSource).toContain('authored');expect(titled.evidence.titleReservedBounds).not.toBeNull();
+    expect(titled.evidence.placedLabelIds).toEqual([]);expect(content.labels[0].text).toBe('Source & <name>');
+    for(const title of ['', '   ', 'two\nlines', 'x'.repeat(161)])expect(()=>composeSurfaceMap(capture,png,content,{title})).toThrow();
+  });
+  it('uses readable recipe captions and preserves supplied names without guessing custom translations',()=>{
+    expect(surfaceRecipeDisplayName({id:'mineral-soil'})).toBe('Sol minéral');
+    expect(surfaceRecipeDisplayName({id:'custom-ground',displayName:'Limon du plateau'})).toBe('Limon du plateau');
+    expect(surfaceRecipeDisplayName({id:'custom-ground',label:'Sol local'})).toBe('Sol local');
+    expect(surfaceRecipeDisplayName({id:'custom-ground',name:'Authored name'})).toBe('Authored name');
+    expect(surfaceRecipeDisplayName({id:'custom-ground'})).toBe('custom-ground');
+  });
   it('translates source label paths once without mutating or renaming them',()=>{
     const entries=[{id:'name',text:'Old name',kind:'river' as const,rank:1,anchor:{x:2,y:3},path:[{x:1,y:2},{x:3,y:4}]}];
     const before=structuredClone(entries),out=sourceMapLabels(entries,'world.names',{x:100,z:-50});
@@ -80,6 +98,8 @@ describe('pinned raster map composition',()=>{
     const result=surfaceMapContent({world,source:{}},capture);expect(result.labels).toEqual([]);
     expect(result.legend.some(e=>e.id==='native-buildings')).toBe(false);expect(result.legend.some(e=>e.id==='water')).toBe(false);
     expect(result.legend.filter(e=>e.semantic==='ground-recipe').length).toBeGreaterThan(0);
+    expect(result.legend.every(e=>e.qualification&&e.sourcePath&&e.count>0)).toBe(true);
+    expect(result.legend.every(e=>!e.text.includes('(source)')&&!e.text.includes('(potentiel)'))).toBe(true);
     expect(new Uint8Array(world.fields.groundMaterial!.buffer)).toEqual(before);
   });
   it('keeps the existing SVG label serialization byte-identical after extraction',()=>{
