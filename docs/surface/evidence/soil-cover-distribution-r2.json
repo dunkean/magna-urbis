@@ -1,0 +1,740 @@
+{
+  "format": "surface-ground-cover-negative-probe",
+  "version": 2,
+  "status": "ARTISTIC_FAIL_DO_NOT_INTEGRATE",
+  "runtimeCommit": "992e0735c71271a23ea55ef9c5f858772a703683",
+  "scope": "Retained V15 paired native source only, no new generation/performance/observed soil claim. Statistical and source checks pass but do not qualify appearance.",
+  "supervisor": {
+    "scope": "Native retained-source A/B only; no fresh generation/live service/full navigation qualification",
+    "command": [
+      "D:/workspace/self/_surface-tools/godot-4.7.2/Godot_v4.7.2-stable_win64_console.exe",
+      "--audio-driver",
+      "Dummy",
+      "--path",
+      "D:\\workspace\\self\\_worktrees\\magna-urbis-ground-cover-quality\\viewer-local",
+      "--script",
+      "res://diagnostics/surface_detail_quality_probe.gd",
+      "--",
+      "--world",
+      "D:\\workspace\\self\\_worktrees\\magna-urbis-ground-cover-quality\\web\\out\\surface\\ground-cover-quality\\retained-pages\\packet.surfacebin",
+      "--assets",
+      "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface-assets\\resolved.json",
+      "--vegetation-assets",
+      "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\vegetation-assets\\resolved.json",
+      "--tree-assets",
+      "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\vegetation-tree-v14\\resolved.json",
+      "--height-batch",
+      "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\viewer-local\\native-height\\target\\release\\magna-surface-height-batch.exe",
+      "--style-catalogue",
+      "D:\\workspace\\self\\_worktrees\\magna-urbis-ground-cover-quality\\surface\\presentation\\palettes.json",
+      "--native-log-mode",
+      "threaded",
+      "--presentation",
+      "aerial",
+      "--water-mode",
+      "source-map",
+      "--water-vector-tint",
+      "uniform",
+      "--water-symbol-width-px",
+      "1.25",
+      "--top",
+      "--width",
+      "2560",
+      "--focus",
+      "20000,20000",
+      "--resolution",
+      "2048x1280",
+      "--metrics",
+      "D:\\workspace\\self\\_worktrees\\magna-urbis-ground-cover-quality\\web\\out\\surface\\ground-cover-quality\\native-r2\\metrics.json",
+      "--detail-report",
+      "D:\\workspace\\self\\_worktrees\\magna-urbis-ground-cover-quality\\web\\out\\surface\\ground-cover-quality\\native-r2\\report.json",
+      "--detail-captures",
+      "D:\\workspace\\self\\_worktrees\\magna-urbis-ground-cover-quality\\web\\out\\surface\\ground-cover-quality\\native-r2\\captures"
+    ],
+    "sourceSha256": "c3a285e38786a5fa938b06c7e79abebe656dff320ee9bb1d79c3e99f24ef0abf",
+    "startedUnix": 1792837873.2606058,
+    "stdoutTransport": "real child file descriptors",
+    "demoPath": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-demo-v15\\viewer-local",
+    "userWatchIntervalSeconds": 1.0,
+    "userWatch": [
+      {
+        "unix": 1792837873.6222517,
+        "demoPids": []
+      },
+      {
+        "unix": 1792837874.6296265,
+        "demoPids": []
+      },
+      {
+        "unix": 1792837875.6458602,
+        "demoPids": []
+      },
+      {
+        "unix": 1792837876.6601088,
+        "demoPids": []
+      },
+      {
+        "unix": 1792837877.6660585,
+        "demoPids": []
+      },
+      {
+        "unix": 1792837878.6821418,
+        "demoPids": []
+      },
+      {
+        "unix": 1792837879.6888409,
+        "demoPids": []
+      },
+      {
+        "unix": 1792837880.7099695,
+        "demoPids": []
+      },
+      {
+        "unix": 1792837881.724506,
+        "demoPids": []
+      },
+      {
+        "unix": 1792837882.7378454,
+        "demoPids": []
+      },
+      {
+        "unix": 1792837883.7477825,
+        "demoPids": []
+      },
+      {
+        "unix": 1792837884.7608218,
+        "demoPids": []
+      },
+      {
+        "unix": 1792837885.771723,
+        "demoPids": []
+      },
+      {
+        "unix": 1792837886.7837741,
+        "demoPids": []
+      },
+      {
+        "unix": 1792837887.7963183,
+        "demoPids": []
+      },
+      {
+        "unix": 1792837888.8111606,
+        "demoPids": []
+      },
+      {
+        "unix": 1792837889.822671,
+        "demoPids": []
+      },
+      {
+        "unix": 1792837890.8381763,
+        "demoPids": []
+      },
+      {
+        "unix": 1792837891.849925,
+        "demoPids": []
+      },
+      {
+        "unix": 1792837892.8658204,
+        "demoPids": []
+      },
+      {
+        "unix": 1792837893.8779767,
+        "demoPids": []
+      },
+      {
+        "unix": 1792837894.8968606,
+        "demoPids": []
+      },
+      {
+        "unix": 1792837895.9066398,
+        "demoPids": []
+      },
+      {
+        "unix": 1792837896.9157283,
+        "demoPids": []
+      },
+      {
+        "unix": 1792837897.9284408,
+        "demoPids": []
+      },
+      {
+        "unix": 1792837898.935274,
+        "demoPids": []
+      },
+      {
+        "unix": 1792837899.9437487,
+        "demoPids": []
+      },
+      {
+        "unix": 1792837900.9547482,
+        "demoPids": []
+      },
+      {
+        "unix": 1792837901.9600828,
+        "demoPids": []
+      },
+      {
+        "unix": 1792837902.9731138,
+        "demoPids": []
+      },
+      {
+        "unix": 1792837903.9825554,
+        "demoPids": []
+      },
+      {
+        "unix": 1792837904.9898055,
+        "demoPids": []
+      },
+      {
+        "unix": 1792837905.9942694,
+        "demoPids": []
+      },
+      {
+        "unix": 1792837907.008039,
+        "demoPids": []
+      },
+      {
+        "unix": 1792837908.019102,
+        "demoPids": []
+      },
+      {
+        "unix": 1792837909.0250258,
+        "demoPids": []
+      },
+      {
+        "unix": 1792837910.039398,
+        "demoPids": []
+      },
+      {
+        "unix": 1792837911.0585623,
+        "demoPids": []
+      },
+      {
+        "unix": 1792837912.0841753,
+        "demoPids": []
+      },
+      {
+        "unix": 1792837913.1030793,
+        "demoPids": []
+      },
+      {
+        "unix": 1792837914.1425295,
+        "demoPids": []
+      },
+      {
+        "unix": 1792837915.1918936,
+        "demoPids": []
+      },
+      {
+        "unix": 1792837916.2348707,
+        "demoPids": []
+      },
+      {
+        "unix": 1792837917.2756114,
+        "demoPids": []
+      },
+      {
+        "unix": 1792837918.4177024,
+        "demoPids": []
+      },
+      {
+        "unix": 1792837919.4813538,
+        "demoPids": []
+      },
+      {
+        "unix": 1792837920.536069,
+        "demoPids": []
+      },
+      {
+        "unix": 1792837921.6555882,
+        "demoPids": []
+      },
+      {
+        "unix": 1792837922.7312877,
+        "demoPids": []
+      },
+      {
+        "unix": 1792837923.8025157,
+        "demoPids": []
+      },
+      {
+        "unix": 1792837924.845288,
+        "demoPids": []
+      },
+      {
+        "unix": 1792837925.8863206,
+        "demoPids": []
+      },
+      {
+        "unix": 1792837926.9212098,
+        "demoPids": []
+      },
+      {
+        "unix": 1792837927.9418604,
+        "demoPids": []
+      },
+      {
+        "unix": 1792837928.955468,
+        "demoPids": []
+      },
+      {
+        "unix": 1792837929.9733841,
+        "demoPids": []
+      },
+      {
+        "unix": 1792837930.9837751,
+        "demoPids": []
+      },
+      {
+        "unix": 1792837932.0039613,
+        "demoPids": []
+      },
+      {
+        "unix": 1792837933.0241823,
+        "demoPids": []
+      },
+      {
+        "unix": 1792837934.0369961,
+        "demoPids": []
+      },
+      {
+        "unix": 1792837935.0451443,
+        "demoPids": []
+      },
+      {
+        "unix": 1792837936.0564847,
+        "demoPids": []
+      },
+      {
+        "unix": 1792837937.06173,
+        "demoPids": []
+      },
+      {
+        "unix": 1792837938.082003,
+        "demoPids": []
+      },
+      {
+        "unix": 1792837939.0941753,
+        "demoPids": []
+      },
+      {
+        "unix": 1792837940.106407,
+        "demoPids": []
+      },
+      {
+        "unix": 1792837941.1236968,
+        "demoPids": []
+      },
+      {
+        "unix": 1792837942.1388013,
+        "demoPids": []
+      },
+      {
+        "unix": 1792837943.1578906,
+        "demoPids": []
+      },
+      {
+        "unix": 1792837944.1692715,
+        "demoPids": []
+      },
+      {
+        "unix": 1792837945.1852276,
+        "demoPids": []
+      },
+      {
+        "unix": 1792837946.1983984,
+        "demoPids": []
+      },
+      {
+        "unix": 1792837947.217613,
+        "demoPids": []
+      },
+      {
+        "unix": 1792837948.2376502,
+        "demoPids": []
+      },
+      {
+        "unix": 1792837949.2607505,
+        "demoPids": []
+      },
+      {
+        "unix": 1792837950.2758644,
+        "demoPids": []
+      },
+      {
+        "unix": 1792837951.3029537,
+        "demoPids": []
+      },
+      {
+        "unix": 1792837952.322018,
+        "demoPids": []
+      },
+      {
+        "unix": 1792837953.3447104,
+        "demoPids": []
+      },
+      {
+        "unix": 1792837954.358604,
+        "demoPids": []
+      },
+      {
+        "unix": 1792837955.370411,
+        "demoPids": []
+      },
+      {
+        "unix": 1792837956.3840299,
+        "demoPids": []
+      },
+      {
+        "unix": 1792837957.3920481,
+        "demoPids": []
+      },
+      {
+        "unix": 1792837958.4047709,
+        "demoPids": []
+      },
+      {
+        "unix": 1792837959.4150755,
+        "demoPids": []
+      },
+      {
+        "unix": 1792837960.4373157,
+        "demoPids": []
+      },
+      {
+        "unix": 1792837961.448353,
+        "demoPids": []
+      },
+      {
+        "unix": 1792837962.4604924,
+        "demoPids": []
+      },
+      {
+        "unix": 1792837963.4900086,
+        "demoPids": []
+      },
+      {
+        "unix": 1792837964.509009,
+        "demoPids": []
+      }
+    ],
+    "demoPresentBeforeStart": [],
+    "ownedPid": 217588,
+    "exitCode": 0,
+    "status": "complete",
+    "durationMs": 92130.1953792572,
+    "sourceUnchanged": true,
+    "runtimeUnchanged": true
+  },
+  "ownedProcessCheck": {
+    "checkedAtUtc": "2026-10-24T10:35:26.612174+00:00",
+    "scope": "Godot processes with exact --path this OWN viewer-local; user app never terminated",
+    "survivors": []
+  },
+  "rawReport": {
+    "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-ground-cover-quality\\web\\out\\surface\\ground-cover-quality\\native-r2\\report.json",
+    "sha256": "c5af640dd52e852e6b1742322d61622f175de91ac2125b5176f4bbf795e99b7e",
+    "bytes": 216079
+  },
+  "distribution": {
+    "additionalImageBytes": 0,
+    "availability": "renderer-procedural",
+    "bandWeights": [
+      0.4,
+      0.35,
+      0.25
+    ],
+    "cellHashPeriodCells": 4096,
+    "cellSideRangeFactor": [
+      0.5,
+      1.0
+    ],
+    "filter": "circular rank-interval convolution, constant2x footprint guard for half-cell subdivisions; exact input fractions at the unresolved horizon",
+    "interpretation": "inferred metric patches, not observed fine soils or extra scatter",
+    "layoutSeed": 1905266606,
+    "meanAnchor": "original GR/low-cover source target, not asset means; one gamut gain from original probabilities/colours only; exact3m probability/alpha horizon",
+    "phaseUniformBytes": 48,
+    "populationChanged": false,
+    "probabilityMeasure": "area-preserving shears and exact homothetic-cell area rank; hashed patch centres only",
+    "repeatPolicy": "full multi-band pattern repeats only beyond the40km source; source parameters and registered PBR vary independently",
+    "scalesM": [
+      12.0,
+      1.7,
+      0.17
+    ],
+    "seedPolicy": "versioned FNV32(world.seed, band, lane), layout only, not a source/candidate identity; no camera/source request/world-id seed",
+    "sourceEvidence": "existing GR component weights and explicit low-cover fractions; native geometry support unchanged",
+    "sourceFieldsChanged": false,
+    "version": "surface-detail-distribution-2"
+  },
+  "technicalResult": {
+    "images": 28,
+    "allFourMeanPairsByteEqual": true,
+    "sourceUnchanged": true,
+    "runtimeUnchanged": true,
+    "demoObservedDuringRun": false
+  },
+  "findings": [
+    {
+      "severity": "artistic blocker",
+      "finding": "Curved cell construction still forms artificial ribbons/cellular contour bands at40m. The area calibration and corrected recipe merging are insufficient to give a plausible stationary landscape texture.",
+      "action": "Preserve R2 negative. Replace only the rank generator with variance-normalised interpolated Gaussian lattice +explicit normal CDF. Re-test seed-ensemble statistics and active mean target, then capture again with user-priority handoff."
+    }
+  ],
+  "stderr": {
+    "sha256": "26fab02bba702a20edb88e1cc0925b07b38ff47bdaaeef66e67e743756d5709a",
+    "bytes": 470,
+    "opVectorExtractDynamicMessages": 0,
+    "errorMarkers": 0
+  },
+  "views": [
+    {
+      "widthM": 2560,
+      "physicalFingerprints": {
+        "canonicalContextFingerprint": "d01947be46599043bd4da26e77230f67fb3575047270c6e67ed6ddbb759b59dd",
+        "canonicalContextId": "9aa813bd01736793a58f2f759884ae39",
+        "geometryDetailFingerprint": "0fc92e0adea7b1aa6af7b626bc4418809ddbcdfa99ccdaf5a2c67e81eb653e6c",
+        "groundFieldsVersion": "38c9de0d6e98c906e63e37be85af5bb1292af89cd6b4d787a65e3df1cd77386f",
+        "groundResponseFingerprint": "8a1290b4cdac6c0aa5879b2b025a5e5cc8e6da4b98b3b963e372f38af4be969a",
+        "instanceBufferFingerprint": "f545a50d2b2f99dc4873960615906841ea9ec07378bbf351389bb92f25cbfaab",
+        "inventoryFingerprint": "e21e9958346fda6f4438220207f9501b3acdf8f3fae8a0a68f416dd9ce01a9e6",
+        "parentTerrainFingerprint": "ab424c60a794de2dffc24e49ceb87c638f7fb95dba61abb522f5251515ad3e66",
+        "projectedGroundFieldsVersion": "6c12c9bbb5179f5b5b1cc698b0233b9615b35f8e2fff42717c3f75a65f3e84de",
+        "terrainVersion": "6063520208674d0882809842dbfc0b2a:21af4adfae230b232e85e40756a28dd291918ba5dd592ba8536b12974f7de354",
+        "worldId": "2f644bd02a2cb95ecbb66a8066d6496c"
+      },
+      "rawMeanPixelSha256": "256dccd20d52c7eb29f090ce325ef924013c265d55303a2061cad84c0bbec6fa",
+      "allSourceAndBufferFingerprintsEqual": true,
+      "images": [
+        {
+          "name": "before-all",
+          "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-ground-cover-quality\\web\\out\\surface\\ground-cover-quality\\native-r2\\captures/2560m/before-all.png",
+          "sha256": "a46a218b461a86fe7922741e2bdb7c8c9d933ff432dbf92d86082da4ac66d15c",
+          "pixelSha256": "1f6eb361e36e24a9540ae8b944dc4a0aa9a59080b7e4cc201171beeff95c5c29"
+        },
+        {
+          "name": "after-all",
+          "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-ground-cover-quality\\web\\out\\surface\\ground-cover-quality\\native-r2\\captures/2560m/after-all.png",
+          "sha256": "72ee336ea9342f2c923d6118fd490ae3aceaa6466d5d1d79a22eef17ff06511b",
+          "pixelSha256": "f3e4cdb1b74cdee56dd9f513e33c5a1473e6636a8d993ec91b917ffaa7790c62"
+        },
+        {
+          "name": "before-no-trees",
+          "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-ground-cover-quality\\web\\out\\surface\\ground-cover-quality\\native-r2\\captures/2560m/before-no-trees.png",
+          "sha256": "9a85176fd386da711d6318c11d57993d2ddbd923558bab4354c12bbf2590347a",
+          "pixelSha256": "3d2bf34912bef52a827d00e8871bdeec6c51fd36f0555bfc21c16d71e31ad5ea"
+        },
+        {
+          "name": "after-no-trees",
+          "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-ground-cover-quality\\web\\out\\surface\\ground-cover-quality\\native-r2\\captures/2560m/after-no-trees.png",
+          "sha256": "f37b3729d8de2bf387fcaa3c9829a8a9665fb9a1258cc4b97b4851371fa2d1c8",
+          "pixelSha256": "608d369bbbcfd9e5425866166804632bebea9f3527269b263fe198731ddd3d6f"
+        },
+        {
+          "name": "after-ground",
+          "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-ground-cover-quality\\web\\out\\surface\\ground-cover-quality\\native-r2\\captures/2560m/after-ground.png",
+          "sha256": "18fd9a5ef13aacd3e1dd2b2d4f6de2570d34e9325b45e44c7544798a7d0c7d99",
+          "pixelSha256": "047adc0063b1b1f7d3b0b692dcfba7dcb975796a5fc8d44e7171a512f2aa583b"
+        },
+        {
+          "name": "before-mean",
+          "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-ground-cover-quality\\web\\out\\surface\\ground-cover-quality\\native-r2\\captures/2560m/before-mean.png",
+          "sha256": "99df9889a7a9aad41c323e839d5488185be5118491feab26250e0cdf3f90fcee",
+          "pixelSha256": "256dccd20d52c7eb29f090ce325ef924013c265d55303a2061cad84c0bbec6fa"
+        },
+        {
+          "name": "after-mean",
+          "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-ground-cover-quality\\web\\out\\surface\\ground-cover-quality\\native-r2\\captures/2560m/after-mean.png",
+          "sha256": "99df9889a7a9aad41c323e839d5488185be5118491feab26250e0cdf3f90fcee",
+          "pixelSha256": "256dccd20d52c7eb29f090ce325ef924013c265d55303a2061cad84c0bbec6fa"
+        }
+      ]
+    },
+    {
+      "widthM": 160,
+      "physicalFingerprints": {
+        "canonicalContextFingerprint": "d01947be46599043bd4da26e77230f67fb3575047270c6e67ed6ddbb759b59dd",
+        "canonicalContextId": "9aa813bd01736793a58f2f759884ae39",
+        "geometryDetailFingerprint": "0fc92e0adea7b1aa6af7b626bc4418809ddbcdfa99ccdaf5a2c67e81eb653e6c",
+        "groundFieldsVersion": "38c9de0d6e98c906e63e37be85af5bb1292af89cd6b4d787a65e3df1cd77386f",
+        "groundResponseFingerprint": "8a1290b4cdac6c0aa5879b2b025a5e5cc8e6da4b98b3b963e372f38af4be969a",
+        "instanceBufferFingerprint": "832475348dad5ace461ae3496f4877647b3d46e4db22cfa53034d064a8acfd53",
+        "inventoryFingerprint": "e21e9958346fda6f4438220207f9501b3acdf8f3fae8a0a68f416dd9ce01a9e6",
+        "parentTerrainFingerprint": "ab424c60a794de2dffc24e49ceb87c638f7fb95dba61abb522f5251515ad3e66",
+        "projectedGroundFieldsVersion": "6c12c9bbb5179f5b5b1cc698b0233b9615b35f8e2fff42717c3f75a65f3e84de",
+        "terrainVersion": "6063520208674d0882809842dbfc0b2a:21af4adfae230b232e85e40756a28dd291918ba5dd592ba8536b12974f7de354",
+        "worldId": "2f644bd02a2cb95ecbb66a8066d6496c"
+      },
+      "rawMeanPixelSha256": "40d13d1eafb03fc05a61924b4e6589369d707c11aa23fba09256caf4130de64d",
+      "allSourceAndBufferFingerprintsEqual": true,
+      "images": [
+        {
+          "name": "before-all",
+          "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-ground-cover-quality\\web\\out\\surface\\ground-cover-quality\\native-r2\\captures/160m/before-all.png",
+          "sha256": "e7cc7a02da3dba780e412e13863ff00a6b66b3ae2969cc9dfb86d95dd2dc261a",
+          "pixelSha256": "7c995b41c1d9649450942c75e725f6d640d04021af3967dffd29e8bd5233c107"
+        },
+        {
+          "name": "after-all",
+          "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-ground-cover-quality\\web\\out\\surface\\ground-cover-quality\\native-r2\\captures/160m/after-all.png",
+          "sha256": "b835d093d2667c038c0eab274208bfda461c5abf142e373b0d1534458344e739",
+          "pixelSha256": "0071b54d558bfc8e8e6b925596e1318d04c1b199768f5208181a5475861bbb7e"
+        },
+        {
+          "name": "before-no-trees",
+          "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-ground-cover-quality\\web\\out\\surface\\ground-cover-quality\\native-r2\\captures/160m/before-no-trees.png",
+          "sha256": "fce4bf3e4964e30f8f10bb80cd75e9df8ae1ff2bfbeab46005fbdf6d3937f15f",
+          "pixelSha256": "86aedcd982a2b4320509e1c975c01dafc91e0c5b49d589e859d3b3322fac8414"
+        },
+        {
+          "name": "after-no-trees",
+          "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-ground-cover-quality\\web\\out\\surface\\ground-cover-quality\\native-r2\\captures/160m/after-no-trees.png",
+          "sha256": "c92d3d5c77a1d8deeabd69bf07d710c8a18a86f29d5027e90b5c59e99dabcc74",
+          "pixelSha256": "11312847a489975eef578cb7dd922908a10f2474caab60484ef131845e9748cf"
+        },
+        {
+          "name": "after-ground",
+          "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-ground-cover-quality\\web\\out\\surface\\ground-cover-quality\\native-r2\\captures/160m/after-ground.png",
+          "sha256": "30e3824094385e5a8c7ecc6e435c49e793890ef982f83f12e06feddcf81d93c1",
+          "pixelSha256": "05c1dbe29ffed48e1864a2b34b5c9a3196a4e959b2f663b426dd1b997b3be98e"
+        },
+        {
+          "name": "before-mean",
+          "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-ground-cover-quality\\web\\out\\surface\\ground-cover-quality\\native-r2\\captures/160m/before-mean.png",
+          "sha256": "149862911831c5dd8c45806a239b62e3dbbc9363ede0c6a07e95a2f61abce7a8",
+          "pixelSha256": "40d13d1eafb03fc05a61924b4e6589369d707c11aa23fba09256caf4130de64d"
+        },
+        {
+          "name": "after-mean",
+          "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-ground-cover-quality\\web\\out\\surface\\ground-cover-quality\\native-r2\\captures/160m/after-mean.png",
+          "sha256": "149862911831c5dd8c45806a239b62e3dbbc9363ede0c6a07e95a2f61abce7a8",
+          "pixelSha256": "40d13d1eafb03fc05a61924b4e6589369d707c11aa23fba09256caf4130de64d"
+        }
+      ]
+    },
+    {
+      "widthM": 40,
+      "physicalFingerprints": {
+        "canonicalContextFingerprint": "d01947be46599043bd4da26e77230f67fb3575047270c6e67ed6ddbb759b59dd",
+        "canonicalContextId": "9aa813bd01736793a58f2f759884ae39",
+        "geometryDetailFingerprint": "0fc92e0adea7b1aa6af7b626bc4418809ddbcdfa99ccdaf5a2c67e81eb653e6c",
+        "groundFieldsVersion": "38c9de0d6e98c906e63e37be85af5bb1292af89cd6b4d787a65e3df1cd77386f",
+        "groundResponseFingerprint": "8a1290b4cdac6c0aa5879b2b025a5e5cc8e6da4b98b3b963e372f38af4be969a",
+        "instanceBufferFingerprint": "e2b97e5b23b3e4b1a2b5f377d9beef4ac1e682767982049c6cb1e3a9d6aa9bc0",
+        "inventoryFingerprint": "e21e9958346fda6f4438220207f9501b3acdf8f3fae8a0a68f416dd9ce01a9e6",
+        "parentTerrainFingerprint": "ab424c60a794de2dffc24e49ceb87c638f7fb95dba61abb522f5251515ad3e66",
+        "projectedGroundFieldsVersion": "6c12c9bbb5179f5b5b1cc698b0233b9615b35f8e2fff42717c3f75a65f3e84de",
+        "terrainVersion": "6063520208674d0882809842dbfc0b2a:21af4adfae230b232e85e40756a28dd291918ba5dd592ba8536b12974f7de354",
+        "worldId": "2f644bd02a2cb95ecbb66a8066d6496c"
+      },
+      "rawMeanPixelSha256": "1ab68ae2a5953b13a00208eaab390b2565026a2c3284fe9fb2a4160a9ee8bde4",
+      "allSourceAndBufferFingerprintsEqual": true,
+      "images": [
+        {
+          "name": "before-all",
+          "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-ground-cover-quality\\web\\out\\surface\\ground-cover-quality\\native-r2\\captures/40m/before-all.png",
+          "sha256": "3e066d720dd0fdc0091476e238157915c4ce279dff37e66a09a4e12cfb5485d3",
+          "pixelSha256": "637cb2f2fad8ed88bb5e042d6eb1325e695fa6ed99ef5fb6c3c1707eb40dfe70"
+        },
+        {
+          "name": "after-all",
+          "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-ground-cover-quality\\web\\out\\surface\\ground-cover-quality\\native-r2\\captures/40m/after-all.png",
+          "sha256": "aaa51e652a3e318935b07fd0cf5314b4ff60efe36a3db8fad07c559071b5811d",
+          "pixelSha256": "205980a99c445ba8cdd879b3d89c8fdaf818f3fb5aad6501f28ca1ccaf9a9be7"
+        },
+        {
+          "name": "before-no-trees",
+          "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-ground-cover-quality\\web\\out\\surface\\ground-cover-quality\\native-r2\\captures/40m/before-no-trees.png",
+          "sha256": "71b1344e6030db41bc821d059390a9a8ece87831eee4d5db48739a43264aef2e",
+          "pixelSha256": "931bd1dcfb7c4820cb62acc1e63644262c903ee9e9408843d4e1cff7d5ed1fdf"
+        },
+        {
+          "name": "after-no-trees",
+          "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-ground-cover-quality\\web\\out\\surface\\ground-cover-quality\\native-r2\\captures/40m/after-no-trees.png",
+          "sha256": "dd2bcb18e504bd6176766dc1f0b8921b4fbed16d6e62bc930189cd4f82d2a32a",
+          "pixelSha256": "08d184d088755ef67619f451fd1bbae35bfa9777685e5abe7b7855ab7ca87ef9"
+        },
+        {
+          "name": "after-ground",
+          "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-ground-cover-quality\\web\\out\\surface\\ground-cover-quality\\native-r2\\captures/40m/after-ground.png",
+          "sha256": "765bbaf21cd1ea65a4bbc3255beda7812d54f36b08aae29cc62f9b9dae71af36",
+          "pixelSha256": "6e084117bcf946616c6ebc54ca75b70079eb45e1cca54352ecc501653ea4e52c"
+        },
+        {
+          "name": "before-mean",
+          "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-ground-cover-quality\\web\\out\\surface\\ground-cover-quality\\native-r2\\captures/40m/before-mean.png",
+          "sha256": "39a3098f40040557cfed6401d132a913873daafd4d9383f10d6bd079ee6f4fe4",
+          "pixelSha256": "1ab68ae2a5953b13a00208eaab390b2565026a2c3284fe9fb2a4160a9ee8bde4"
+        },
+        {
+          "name": "after-mean",
+          "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-ground-cover-quality\\web\\out\\surface\\ground-cover-quality\\native-r2\\captures/40m/after-mean.png",
+          "sha256": "39a3098f40040557cfed6401d132a913873daafd4d9383f10d6bd079ee6f4fe4",
+          "pixelSha256": "1ab68ae2a5953b13a00208eaab390b2565026a2c3284fe9fb2a4160a9ee8bde4"
+        }
+      ]
+    },
+    {
+      "widthM": 10,
+      "physicalFingerprints": {
+        "canonicalContextFingerprint": "d01947be46599043bd4da26e77230f67fb3575047270c6e67ed6ddbb759b59dd",
+        "canonicalContextId": "9aa813bd01736793a58f2f759884ae39",
+        "geometryDetailFingerprint": "0fc92e0adea7b1aa6af7b626bc4418809ddbcdfa99ccdaf5a2c67e81eb653e6c",
+        "groundFieldsVersion": "38c9de0d6e98c906e63e37be85af5bb1292af89cd6b4d787a65e3df1cd77386f",
+        "groundResponseFingerprint": "8a1290b4cdac6c0aa5879b2b025a5e5cc8e6da4b98b3b963e372f38af4be969a",
+        "instanceBufferFingerprint": "47f01ccdc3060cf73da5c27555d7de44035868690a6ae2d933282508373786a9",
+        "inventoryFingerprint": "e21e9958346fda6f4438220207f9501b3acdf8f3fae8a0a68f416dd9ce01a9e6",
+        "parentTerrainFingerprint": "ab424c60a794de2dffc24e49ceb87c638f7fb95dba61abb522f5251515ad3e66",
+        "projectedGroundFieldsVersion": "6c12c9bbb5179f5b5b1cc698b0233b9615b35f8e2fff42717c3f75a65f3e84de",
+        "terrainVersion": "6063520208674d0882809842dbfc0b2a:21af4adfae230b232e85e40756a28dd291918ba5dd592ba8536b12974f7de354",
+        "worldId": "2f644bd02a2cb95ecbb66a8066d6496c"
+      },
+      "rawMeanPixelSha256": "daa5ac85abf0262a32b75586435ca363f7f81ece4d12ece3128a7299108473a4",
+      "allSourceAndBufferFingerprintsEqual": true,
+      "images": [
+        {
+          "name": "before-all",
+          "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-ground-cover-quality\\web\\out\\surface\\ground-cover-quality\\native-r2\\captures/10m/before-all.png",
+          "sha256": "d1271632c529b2914dccd5a6db44ec2417e296b715ebbe637abb14ec4c2cb3dc",
+          "pixelSha256": "866633b4d06d9aaaded1195f9e3c9d1fcd0ab28254226a34f1e14f0de324bd79"
+        },
+        {
+          "name": "after-all",
+          "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-ground-cover-quality\\web\\out\\surface\\ground-cover-quality\\native-r2\\captures/10m/after-all.png",
+          "sha256": "2f5d8d3079a401a2c85e9a76d0571fcd92e2ad69806ff7e20bbbcabbd227ac21",
+          "pixelSha256": "ddf6674efabc0dddb68eb24538019f582480de483e975a568cbc84e76ef648aa"
+        },
+        {
+          "name": "before-no-trees",
+          "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-ground-cover-quality\\web\\out\\surface\\ground-cover-quality\\native-r2\\captures/10m/before-no-trees.png",
+          "sha256": "91fd39771522d098a2952f7caea20fb14e23a036f11ad441fef07ca1a08db8fd",
+          "pixelSha256": "8a3fcc5bb55286362a170679ee447d0fbfb1b54bf0c4c27650eb819b8dd54743"
+        },
+        {
+          "name": "after-no-trees",
+          "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-ground-cover-quality\\web\\out\\surface\\ground-cover-quality\\native-r2\\captures/10m/after-no-trees.png",
+          "sha256": "6724db7a391e046302f5e2216cc8c7bc462d87774518ca4d17b99fbb839a0fd3",
+          "pixelSha256": "1e7c9c97af242514c1ba5d267febe97ccc222ca1d982da5159da8fc11d84838a"
+        },
+        {
+          "name": "after-ground",
+          "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-ground-cover-quality\\web\\out\\surface\\ground-cover-quality\\native-r2\\captures/10m/after-ground.png",
+          "sha256": "48524a8f307b2e259828b846c91a7fc02c89e6e47622ca39c07c73ca0255f927",
+          "pixelSha256": "75140db92485fdf51eeb7aea7028753f6c0d699453e2a7e7fb5805b9d6878a0f"
+        },
+        {
+          "name": "before-mean",
+          "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-ground-cover-quality\\web\\out\\surface\\ground-cover-quality\\native-r2\\captures/10m/before-mean.png",
+          "sha256": "b20826cf724da4ac14f9a820d54af9b7c5fb9c3b2989971cdde80e5ceca33447",
+          "pixelSha256": "daa5ac85abf0262a32b75586435ca363f7f81ece4d12ece3128a7299108473a4"
+        },
+        {
+          "name": "after-mean",
+          "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-ground-cover-quality\\web\\out\\surface\\ground-cover-quality\\native-r2\\captures/10m/after-mean.png",
+          "sha256": "b20826cf724da4ac14f9a820d54af9b7c5fb9c3b2989971cdde80e5ceca33447",
+          "pixelSha256": "daa5ac85abf0262a32b75586435ca363f7f81ece4d12ece3128a7299108473a4"
+        }
+      ]
+    }
+  ]
+}
