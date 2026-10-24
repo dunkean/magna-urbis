@@ -50,16 +50,16 @@ if(metrics.renderSourceVersion.presentation.mode!==binding.presentation)throw Er
 if(binding.presentation==='cartographic'&&metrics.renderSourceVersion.presentation.mapStyle!==binding.mapStyle)throw Error('Capture palette binding mismatch');
 const requestedStyle=option('--style'),style=isMapStyle(requestedStyle)?requestedStyle:undefined;
 if(requestedStyle!==undefined&&style===undefined)throw Error('Unknown shared map style');
-const content=surfaceMapContent(packet as any,binding);
+const content=surfaceMapContent(packet as any,binding,metrics);
 const composition=composeSurfaceMap(binding,imageBytes,content,{style,title:option('--title'),gridMeters:option('--grid-m')===undefined?undefined:Number(option('--grid-m'))});
 const target=path.resolve(required('--out'));await mkdir(path.dirname(target),{recursive:true});
 const png=new Resvg(composition.svg,{font:{loadSystemFonts:true}}).render().asPng();
 await writeFile(target+'.svg',composition.svg);await writeFile(target+'.png',png);
-const result={format:'surface-map-export-proof',version:1,proofSource,sourcePath,imagePath,metricsPath,binding,
+const result={format:'surface-map-export-proof',version:2,proofSource,sourcePath,imagePath,metricsPath,binding,
   bindingProofSha256:sha(await readFile(proofSource)),sourcePacketBytes:sourceBytes.length,
   svgSha256:sha(Buffer.from(composition.svg)),pngSha256:sha(png),svgBytes:Buffer.byteLength(composition.svg),pngBytes:png.length,
   fontPolicy:'Existing shared system font stack, resolved locally by resvg; fonts are not embedded and pixel portability is not claimed.',
-  rasterPolicy:'Original PNG embedded unchanged, not recolored or regenerated.',sourceLegendScope:'Native/road records in source packet; ground/cover counts are canonical support nodes overlapping the TOP frame, not area or GPU visibility.',
+  rasterPolicy:'Original PNG embedded unchanged, not recolored or regenerated.',sourceLegendScope:'Canonical source context stays metadata only. Visible keys require a separately image/metrics-bound native glyph descriptor.',
   evidence:composition.evidence};
 await writeFile(target+'.json',JSON.stringify(result,null,2)+'\n');
-console.log(JSON.stringify({out:target,labels:content.labels.length,placed:composition.evidence.placedLabelIds.length,legendEntries:content.legend.length,pngSha256:result.pngSha256}));
+console.log(JSON.stringify({out:target,labels:content.labels.length,placed:composition.evidence.placedLabelIds.length,sourceContextEntries:content.legend.length,visualLegendEntries:content.visualLegend?.entries.length??0,pngSha256:result.pngSha256}));

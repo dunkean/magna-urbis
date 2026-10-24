@@ -1,7 +1,7 @@
 import type { SurfaceWorld } from '../model';
 import { getCanonicalSurfaceContext } from '../compiler';
 import { restoreSurfaceSource } from './sourceArchive';
-import type { NativeSurfaceMapProjection, SurfaceMapCapture, SurfaceMapContent, SurfaceMapLabel, SurfaceMapLegendEntry } from '../mapComposition';
+import type { NativeSurfaceMapProjection, SurfaceMapCapture, SurfaceMapContent, SurfaceMapLabel, SurfaceMapLegendEntry, SurfaceVisualLegend } from '../mapComposition';
 import { surfaceMapMatrixValid } from '../mapComposition';
 import type { NameEntry } from '../../gen/names/types';
 
@@ -40,6 +40,37 @@ export function nativeSurfaceMapCapture(identity:Pick<SurfaceMapCapture,'worldId
       {kind:'perspective',worldToClip:[...p.worldToClip],renderOrigin:{...p.renderOrigin},matrixLayout:'column-major',clipDepth:'minus-one-to-one'}};
 }
 
+/** Descriptors bind the current native cartographic primitives to the captured
+ * palette, image and metrics. Other modes are omitted, not guessed from soil
+ * recipes or canonical potential fields. */
+export function nativeVisualLegend(metrics:Record<string,any>,packet:{urban?:Record<string,any>},capture:SurfaceMapCapture):SurfaceVisualLegend {
+  const result:SurfaceVisualLegend={format:'surface-visual-legend',version:1,policy:'native-cartographic-glyphs-1',
+    worldId:capture.worldId,imageSha256:capture.imageSha256,metricsSha256:capture.metricsSha256,entries:[]};
+  if(metrics.worldId!==capture.worldId||metrics.renderedSnapshot?.worldId!==capture.worldId)throw Error('Native glyph metrics refer to another world');
+  const p=metrics.renderSourceVersion?.presentation;
+  if(capture.projection.kind!=='orthographic-top'||capture.presentation!=='cartographic'||p?.cartographic!==true||p.mapStyle!==capture.mapStyle){
+    result.omittedReason='No certified visual glyph key for this presentation; source semantics remain metadata only';return result;
+  }
+  const palette=p.palette??{},urban=palette.urban??{},paths='metrics.renderSourceVersion.presentation.palette';
+  if(metrics.cityMap?.representation==='cartographic-source-roof-overlay'&&metrics.cityMap.sourceRoofAreaM2>0&&metrics.urban?.nativeBuildings>0&&Number.isFinite(urban.massEdgeW)&&urban.massEdgeW>0){
+    const metresPerPixel=(capture.projection.bounds.maxX-capture.projection.bounds.minX)/capture.widthPx;
+    result.entries.push({id:'native-buildings',text:'Bâtiments',glyph:{kind:'outlined-building',fill:urban.mass,stroke:urban.massEdge,
+      strokeWidthPx:Math.min(8,Math.max(.25,urban.massEdgeW/metresPerPixel))},
+      sourcePath:paths+'.urban.mass/massEdge/massEdgeW; metrics.cityMap',qualification:'Prepared source roof overlay; representative outline/fill, not a GPU occlusion census'});
+  }
+  const roads=packet.urban?.roads??[],rural=(r:any)=>['track','path','way','headland','farm-track','rural-track'].includes(String(r.class??'').toLowerCase())||r.rural===true;
+  if(metrics.roadProjectors>0&&roads.length&&roads.every((r:any)=>rural(r)===rural(roads[0]))){
+    result.entries.push({id:'roads',text:rural(roads[0])?'Chemins':'Voirie',glyph:{kind:'double-edge-road',fill:rural(roads[0])?palette.trackFill:palette.roadFill,edge:palette.roadEdge,borderFraction:.125},
+      sourcePath:paths+'.roadFill/trackFill/roadEdge; urban.roads; metrics.roadProjectors',qualification:'Native border-inside-1of8-v1 road texture policy; schematic icon, not metric road width'});
+  }
+  if(metrics.canopyView?.phase>1&&metrics.canopyView?.treeAssets?.enabled===false&&metrics.populationInstances?.families?.tree?.alphaPositiveInFrustum>0){
+    result.entries.push({id:'trees',text:'Arbres',glyph:{kind:'tree-disc',fill:palette.treeFill},sourcePath:paths+'.treeFill; metrics.populationInstances.families.tree',
+      qualification:'Native cartographic procedural crown disc; alpha-positive centres in frame, not a per-pixel occlusion proof'});
+  }
+  if(!result.entries.length)result.omittedReason='No certified submitted cartographic glyph in this capture';
+  return result;
+}
+
 /** No naming grammar is invoked. A producer with a genuine World can preserve its
  * `world.names` as source.meta.names before archiving, or supply these entries
  * through this same adapter with an explicit source reference. */
@@ -54,7 +85,7 @@ export function sourceMapLabels(entries: readonly NameEntry[], sourcePath: strin
 /** Legend entries describe records or canonical support nodes, not inferred
  * POIs, measured areas or a GPU visibility census. Never unpack native meshes. */
 export function surfaceMapContent(packet: { world: SurfaceWorld; urban?: Record<string, any>; source?: Record<string, unknown> },
-  capture: SurfaceMapCapture): SurfaceMapContent {
+  capture: SurfaceMapCapture, metrics?:Record<string,any>): SurfaceMapContent {
   const world = packet.world, context = getCanonicalSurfaceContext(world);
   if (world.id !== capture.worldId || context.id !== capture.canonicalContextId) throw new Error('Capture does not refer to this packet world/context');
   const source = packet.source ? restoreSurfaceSource(packet.source) : {};
@@ -90,5 +121,5 @@ export function surfaceMapContent(packet: { world: SurfaceWorld; urban?: Record<
     const recipe = world.materials[index]; if (!recipe) throw new Error('Invalid retained ground recipe index');
     add(`recipe:${recipe.id}`, surfaceRecipeDisplayName(recipe), `world.materials[${index}] / canonicalContext.fields.groundMaterial`, 'ground-recipe', count,'Canonical ground recipe support nodes; not visible pixel area');
   }
-  return { sourcePacketSha256: capture.sourcePacketSha256, worldId: world.id, labels, legend };
+  return { sourcePacketSha256: capture.sourcePacketSha256, worldId: world.id, labels, legend, visualLegend:metrics?nativeVisualLegend(metrics,packet,capture):undefined };
 }

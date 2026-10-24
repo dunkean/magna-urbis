@@ -35,9 +35,20 @@ export interface SurfaceMapLegendEntry {
   /** Scientific/count scope is metadata, separate from the visible caption. */
   qualification?: string;
 }
+export type SurfaceMapGlyph =
+  | {kind:'outlined-building';fill:string;stroke:string;strokeWidthPx:number}
+  | {kind:'double-edge-road';fill:string;edge:string;borderFraction:number}
+  | {kind:'tree-disc';fill:string};
+export interface SurfaceVisualLegend {
+  format:'surface-visual-legend';version:1;worldId:string;imageSha256:string;metricsSha256:string;
+  policy:'native-cartographic-glyphs-1';
+  entries:Array<{id:string;text:string;glyph:SurfaceMapGlyph;sourcePath:string;qualification:string}>;
+  omittedReason?:string;
+}
 export interface SurfaceMapContent {
   sourcePacketSha256: string; worldId: string;
   labels: SurfaceMapLabel[]; legend: SurfaceMapLegendEntry[];
+  visualLegend?:SurfaceVisualLegend;
 }
 export interface SurfaceMapOptions { style?: MapStyle; gridMeters?: number; title?: string }
 const esc = (s: string) => s.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
@@ -121,51 +132,89 @@ export function composeSurfaceMap(capture: SurfaceMapCapture, png: Uint8Array, c
     for(let j=0;j<nz;j++){const y=((Math.ceil(minZ/step)+j)*step-minZ)*scale;d+=`M0 ${y}H${W}`;gridLines++;}
     parts.push(`<path class="rpg-grid" data-spacing-m="${step}" d="${d}" fill="none" stroke="${pal.grid?.color??pal.inkSoft}" stroke-opacity="${pal.grid?.opacity??.18}" stroke-width=".6"/>`);
   }
-  const side=Math.min(270,W*.3), inset=24, row=19, legendH=42+content.legend.length*row;
-  if(legendH>H-100)fail('legend does not fit; reduce source categories explicitly');
-  const legend:Panel={w:side,h:legendH,prims:[{t:'rect',x:0,y:0,w:side,h:legendH,fill:pal.cart.fill,stroke:pal.cart.stroke,sw:1,op:pal.cart.op},
-    {t:'text',x:12,y:22,s:'Légende',size:14,anchor:'start',fill:pal.ink,bold:true}]};
-  content.legend.forEach((e,i)=>{
-    const y=39+i*row,color=e.semantic==='ground-recipe'?'none':e.semantic==='water'?pal.riverFill:e.semantic==='native-buildings'?pal.urban.mass:e.semantic==='trees'?pal.treeFill:e.semantic==='roads'?pal.roadFill:pal.land.meadow;
-    legend.prims.push({t:'rect',x:12,y:y-9,w:14,h:10,fill:color,stroke:pal.ink,sw:.5},{t:'text',x:34,y,s:e.text,size:11,anchor:'start',fill:pal.ink});
-  });
-  const reserves=[{x0:inset,y0:H-inset-legendH,x1:inset+side,y1:H-inset}];
-  if(top)reserves.push({x0:W-120,y0:0,x1:W,y1:120},{x0:W-220,y0:H-85,x1:W,y1:H});
+  const visual=content.visualLegend;
+  const css=(v:unknown)=>typeof v==='string'&&/^#[0-9a-f]{6}$/i.test(v);
+  if(visual){
+    if(visual.format!=='surface-visual-legend'||visual.version!==1||visual.policy!=='native-cartographic-glyphs-1'
+      ||visual.worldId!==capture.worldId||visual.imageSha256!==capture.imageSha256||visual.metricsSha256!==capture.metricsSha256
+      ||!Array.isArray(visual.entries)||visual.entries.length>16)fail('visual legend binding mismatch');
+    const keys=new Set<string>();
+    for(const e of visual.entries){
+      if(!requireText(e.id)||keys.has(e.id)||!requireText(e.text)||!requireText(e.sourcePath,2048)||!requireText(e.qualification,2048))fail('invalid native glyph reference');keys.add(e.id);
+      const g=e.glyph;
+      if(!g||!css(g.fill)||!(g.kind==='tree-disc'||g.kind==='outlined-building'&&css(g.stroke)&&finite(g.strokeWidthPx)&&g.strokeWidthPx>0&&g.strokeWidthPx<=8
+        ||g.kind==='double-edge-road'&&css(g.edge)&&g.borderFraction===.125))fail('invalid native legend glyph');
+    }
+  }
+  const visualEntries=visual?.entries??[];
+  // Source semantics remain metadata. Without a certified glyph binding there
+  // is no visual key, rather than a row of fabricated material swatches.
+  const margin=pal.frameKind==='illuminated'?48:24,header=options.title===undefined?0:72;
+  const side=top||visualEntries.length?Math.max(240,Math.min(320,W*.25)):0,row=32,legendH=visualEntries.length?46+visualEntries.length*row:0;
+  const mapX=margin,mapY=margin+header,sideX=mapX+W+margin;
+  const infoH=legendH+(top?(legendH?24:0)+120+24+45:0);
+  const outputW=W+side+margin*(side?3:2),outputH=header+margin*2+Math.max(H,infoH);
+  const panels:Array<{kind:string;x:number;y:number;width:number;height:number}>=[];
+  const decorations:string[]=[];
   let titleReservedBounds:{x0:number;y0:number;x1:number;y1:number}|null=null;
-  let titleSvg='';
   if(options.title!==undefined){
-    const titleW=Math.min(W-240,560),titleH=48;
-    if(titleW<80)fail('image too narrow for title');
+    const titleW=Math.min(W,560),titleH=48;
     const titleSize=Math.min(22,(titleW-24)/Math.max(1,estimateWidth(options.title,1,styleByKind.town)));
     if(titleSize<8)fail('authored title does not fit');
-    const x=(W-titleW)/2,y=24;
-    titleReservedBounds={x0:x,y0:y,x1:x+titleW,y1:y+titleH};reserves.push(titleReservedBounds);
-    titleSvg=panelSvg({w:titleW,h:titleH,prims:[
+    const x=mapX+(W-titleW)/2,y=margin;
+    titleReservedBounds={x0:x,y0:y,x1:x+titleW,y1:y+titleH};
+    panels.push({kind:'title',x,y,width:titleW,height:titleH});
+    decorations.push(panelSvg({w:titleW,h:titleH,prims:[
       {t:'rect',x:0,y:0,w:titleW,h:titleH,fill:pal.cart.fill,stroke:pal.cart.stroke,sw:1,op:pal.cart.op},
       {t:'text',x:titleW/2,y:titleH/2+titleSize*.34,s:options.title,size:titleSize,anchor:'middle',fill:pal.lab.town,bold:true},
-    ]},x,y,1,family,'authored-title');
+    ]},x,y,1,family,'authored-title'));
   }
-  const placed=placeMapLabels(labels,top?{cx:(minX+maxX)/2,cy:(minZ+maxZ)/2,scale}:{cx:W/2,cy:H/2,scale:1},W,H,estimateWidth,{reserved:reserves,maxLabels:500,margin:36});
+  if(visualEntries.length){
+    const legend:Panel={w:side,h:legendH,prims:[{t:'rect',x:0,y:0,w:side,h:legendH,fill:pal.cart.fill,stroke:pal.cart.stroke,sw:1,op:pal.cart.op},
+      {t:'text',x:14,y:25,s:'Légende',size:15,anchor:'start',fill:pal.ink,bold:true}]};
+    visualEntries.forEach((e,i)=>{
+      const y=45+i*row,g=e.glyph;
+      if(g.kind==='outlined-building')legend.prims.push({t:'rect',x:17,y:y-5,w:27,h:17,fill:g.fill,stroke:g.stroke,sw:g.strokeWidthPx});
+      else if(g.kind==='tree-disc')legend.prims.push({t:'circle',x:30,y:y+3,r:9,fill:g.fill});
+      else{
+        legend.prims.push({t:'rect',x:13,y:y-3,w:36,h:12,fill:g.edge},
+          {t:'rect',x:13,y:y-3+12*g.borderFraction,w:36,h:12*(1-2*g.borderFraction),fill:g.fill});
+      }
+      legend.prims.push({t:'text',x:62,y:y+7,s:e.text,size:12,anchor:'start',fill:pal.ink});
+    });
+    decorations.push(panelSvg(legend,sideX,mapY,1,family,'native-visual-legend'));
+    panels.push({kind:'visual-legend',x:sideX,y:mapY,width:side,height:legendH});
+  }
+  // Placement is still performed in source raster pixels. No map space is
+  // reserved for panels: every panel is physically outside that rectangle.
+  const placed=placeMapLabels(labels,top?{cx:(minX+maxX)/2,cy:(minZ+maxZ)/2,scale}:{cx:W/2,cy:H/2,scale:1},W,H,estimateWidth,{maxLabels:500,margin:14});
   parts.push(placedMapLabelsSvg(placed,pal,1));
-  parts.push(titleSvg);
-  parts.push(panelSvg(legend,inset,H-inset-legendH,1,family,'source-legend'));
   let scaleBar:{lengthM:number;pixels:number}|null=null;
   if(top){
     let L=niceLength(scale,100);while(L*scale>125)L/=10;const bw=L*scale;
     scaleBar={lengthM:L,pixels:bw};
+    const northY=mapY+legendH+(legendH?24:0);
+    const north=frameModel(120,120,pal,true).map(p=>p.t==='text'&&p.s==='N'?{...p,s:'N (grille)',size:9}:p);
+    decorations.push(panelSvg({w:120,h:120,prims:north},sideX,northY,1,family,'local-grid-north'));
+    panels.push({kind:'north',x:sideX,y:northY,width:120,height:120});
     const panel:Panel={w:bw+28,h:45,prims:[{t:'rect',x:0,y:0,w:bw+28,h:45,fill:pal.cart.fill,op:pal.cart.op},
       {t:'text',x:10,y:15,s:L>=1000?`${L/1000} km`:`${Number(L.toPrecision(8))} m`,size:11,anchor:'start',fill:pal.ink}]};
     for(let i=0;i<4;i++)panel.prims.push({t:'rect',x:10+i*bw/4,y:23,w:bw/4,h:5,fill:i%2?pal.paper:pal.ink,stroke:pal.ink,sw:.6});
     if(options.gridMeters!==undefined)panel.prims.push({t:'text',x:10,y:40,s:`Grille : ${options.gridMeters} m`,size:9,anchor:'start',fill:pal.ink});
-    parts.push(panelSvg(panel,W-inset-panel.w,H-inset-panel.h,1,family,'metric-scale'));
+    const scaleY=northY+144;
+    decorations.push(panelSvg(panel,sideX,scaleY,1,family,'metric-scale'));
+    panels.push({kind:'scale',x:sideX,y:scaleY,width:panel.w,height:panel.h});
   }
-  const frame:Prim[]=frameModel(W,H,pal,top).map(p=>p.t==='text'&&p.s==='N'?{...p,s:'N (grille)',size:9}:p);
-  parts.push(panelSvg({w:W,h:H,prims:frame},0,0,1,family,'map-frame'));
-  const evidence={format:'surface-map-composition',version:1,capture,style,sourceLabelCount:content.labels.length,placedLabelIds:placed.map(l=>l.label.id),droppedLabels:dropped,
-    legend:content.legend,gridMeters:options.gridMeters??null,gridLines,scaleBar,fontFamily:family,
+  const frame:Prim[]=frameModel(outputW,outputH,pal,false);
+  decorations.push(panelSvg({w:outputW,h:outputH,prims:frame},0,0,1,family,'map-frame'));
+  const rasterBounds={x:mapX,y:mapY,width:W,height:H};
+  if(panels.some(p=>p.x<mapX+W&&p.x+p.width>mapX&&p.y<mapY+H&&p.y+p.height>mapY))fail('external panel overlaps source raster');
+  const evidence={format:'surface-map-composition',version:2,capture,style,sourceLabelCount:content.labels.length,placedLabelIds:placed.map(l=>l.label.id),droppedLabels:dropped,
+    legend:content.legend,visualLegend:visual??null,sourceContextLegendVisible:false,
+    canvas:{format:'surface-external-layout',version:1,widthPx:outputW,heightPx:outputH,rasterBounds,panels,pixelsPerSourcePixel:1,projectionCoordinates:'Raster-local; add rasterBounds.x/y once to obtain composed pixels'},gridMeters:options.gridMeters??null,gridLines,scaleBar,fontFamily:family,
     title:options.title??null,titleSource:options.title===undefined?null:'Explicit authored presentation text; not an inferred source toponym',titleReservedBounds,
     coverage:{raster:'Pinned original PNG, unchanged',overlay:'Shared label placement, font stack, panel primitives, frame, north and palette tokens',style:'Overlay only; captured raster presentation is not restyled',perspective:top?null:'Explicit matrix, source point elevations only; no uniform metric scale, north or RPG grid'},
     unsupported:['SVG brush strokes, terrain hatching, labels absent from source, per-pixel occlusion and perspective path draping are not reconstructed']};
-  const svg=`<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}"><metadata>${esc(JSON.stringify(evidence))}</metadata><image width="${W}" height="${H}" href="${pngDataUrl(png)}"/>${parts.join('')}</svg>`;
+  const svg=`<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${outputW}" height="${outputH}" viewBox="0 0 ${outputW} ${outputH}"><metadata>${esc(JSON.stringify(evidence))}</metadata><rect width="${outputW}" height="${outputH}" fill="${pal.paper}"/><defs><clipPath id="surface-raster-clip"><rect width="${W}" height="${H}"/></clipPath></defs><g class="source-raster-frame" transform="translate(${mapX} ${mapY})"><image width="${W}" height="${H}" href="${pngDataUrl(png)}"/><g clip-path="url(#surface-raster-clip)">${parts.join('')}</g></g>${decorations.join('')}</svg>`;
   return {svg,evidence};
 }

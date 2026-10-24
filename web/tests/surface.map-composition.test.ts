@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { Resvg } from '@resvg/resvg-js';
 import { encodePng } from '../src/render/raster';
 import { PALETTES, STYLE_LIST } from '../src/render/styles';
 import { labelsSvg, placeForExport, placedMapLabelsSvg } from '../src/render/svgLabels';
@@ -6,7 +7,7 @@ import { generate } from '../src/gen/pipeline';
 import { makeOptions } from '../src/gen/options';
 import { SurfaceSha256 } from '../src/surface/sha256';
 import { composeSurfaceMap, type SurfaceMapCapture, type SurfaceMapContent } from '../src/surface/mapComposition';
-import { sourceMapLabels, surfaceMapContent, nativeSurfaceMapCapture, surfaceRecipeDisplayName } from '../src/surface/adapters/mapComposition';
+import { sourceMapLabels, surfaceMapContent, nativeSurfaceMapCapture, surfaceRecipeDisplayName, nativeVisualLegend } from '../src/surface/adapters/mapComposition';
 import { compileSurfaceWorld, getCanonicalSurfaceContext } from '../src/surface/compiler';
 
 const png=encodePng(new Uint8Array(640*400*3).fill(128),640,400);
@@ -47,7 +48,7 @@ describe('pinned raster map composition',()=>{
     const {capture,content}=fixture();content.labels=[];
     expect(composeSurfaceMap(capture,png,content).evidence.placedLabelIds).toEqual([]);
   });
-  it('renders only an explicitly authored title and reserves its space for labels',()=>{
+  it('places authored title outside the raster without excluding source labels',()=>{
     const {capture,content}=fixture();content.labels[0].anchor.y=8235;
     const plain=composeSurfaceMap(capture,png,content);
     expect(plain.evidence.title).toBeNull();expect(plain.svg).not.toContain('class="authored-title"');
@@ -55,8 +56,45 @@ describe('pinned raster map composition',()=>{
     const titled=composeSurfaceMap(capture,png,content,{title:'Plan <urbain>'});
     expect(titled.svg).toContain('Plan &lt;urbain&gt;');expect(titled.evidence.title).toBe('Plan <urbain>');
     expect(titled.evidence.titleSource).toContain('authored');expect(titled.evidence.titleReservedBounds).not.toBeNull();
-    expect(titled.evidence.placedLabelIds).toEqual([]);expect(content.labels[0].text).toBe('Source & <name>');
+    expect(titled.evidence.placedLabelIds).toEqual(['actual-name']);
+    const box=titled.evidence.canvas.rasterBounds;
+    for(const p of titled.evidence.canvas.panels)expect(p.x>=box.x+box.width||p.x+p.width<=box.x||p.y>=box.y+box.height||p.y+p.height<=box.y).toBe(true);expect(content.labels[0].text).toBe('Source & <name>');
     for(const title of ['', '   ', 'two\nlines', 'x'.repeat(161)])expect(()=>composeSurfaceMap(capture,png,content,{title})).toThrow();
+  });
+  it('keys native glyphs rather than source potentials and rejects a stale visual key',()=>{
+    const {capture,content}=fixture();
+    const metrics={worldId:'world',renderedSnapshot:{worldId:'world'},renderSourceVersion:{presentation:{cartographic:true,mapStyle:'blueprint',palette:PALETTES.blueprint}},
+      cityMap:{representation:'cartographic-source-roof-overlay',sourceRoofAreaM2:20},urban:{nativeBuildings:1},roadProjectors:1,
+      canopyView:{phase:2,treeAssets:{enabled:false}},populationInstances:{families:{tree:{alphaPositiveInFrustum:1}}}};
+    content.legend.push({id:'wet',text:'Eau',sourcePath:'fields.waterClass',semantic:'water',count:100});
+    content.visualLegend=nativeVisualLegend(metrics,{urban:{roads:[{class:'main'}]}},capture);
+    expect(content.visualLegend.entries.map(e=>e.glyph.kind)).toEqual(['outlined-building','double-edge-road','tree-disc']);
+    const result=composeSurfaceMap(capture,png,content),body=result.svg.replace(/<metadata>[\s\S]*?<\/metadata>/,'');
+    expect(body).toContain('native-visual-legend');expect(body).toContain('<circle');expect(body).not.toContain('>Eau<');
+    expect(content.visualLegend.entries[0].glyph).toMatchObject({stroke:PALETTES.blueprint.urban.massEdge});
+    expect(content.visualLegend.entries[2].glyph).toMatchObject({fill:PALETTES.blueprint.treeFill});
+    content.visualLegend.imageSha256='c'.repeat(64);expect(()=>composeSurfaceMap(capture,png,content)).toThrow('binding');
+    const perspective={...capture,projection:{kind:'perspective' as const,worldToClip:[1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1],renderOrigin:{x:0,y:0,z:0},matrixLayout:'column-major' as const,clipDepth:'minus-one-to-one' as const},presentation:'aerial' as const};
+    expect(nativeVisualLegend(metrics,{},perspective).entries).toEqual([]);
+  });
+  it('enlarges the canvas by translation only, preserving source camera and scale',()=>{
+    const {capture,content}=fixture(),before=structuredClone(capture);
+    const result=composeSurfaceMap(capture,png,content,{title:'Plan',gridMeters:5}),layout=result.evidence.canvas;
+    expect(layout.pixelsPerSourcePixel).toBe(1);expect(layout.widthPx).toBeGreaterThan(capture.widthPx);expect(layout.heightPx).toBeGreaterThan(capture.heightPx);
+    expect(layout.rasterBounds).toMatchObject({width:capture.widthPx,height:capture.heightPx});
+    expect(result.svg).toContain(`transform="translate(${layout.rasterBounds.x} ${layout.rasterBounds.y})"`);
+    expect(result.evidence.scaleBar!.lengthM*640/400).toBe(result.evidence.scaleBar!.pixels);
+    expect(capture).toEqual(before);expect(result.evidence.version).toBe(2);
+  });
+  it('keeps every unannotated source raster pixel unchanged in the enlarged PNG',()=>{
+    const {capture,content}=fixture();content.labels=[];
+    const result=composeSurfaceMap(capture,png,content,{title:'Plan'}),b=result.evidence.canvas.rasterBounds;
+    const rendered=new Resvg(result.svg).render(),pixels=rendered.pixels,width=result.evidence.canvas.widthPx;
+    for(let y=0;y<b.height;y++)for(let x=0;x<b.width;x++){
+      const i=((y+b.y)*width+x+b.x)*4;
+      if(pixels[i]!==128||pixels[i+1]!==128||pixels[i+2]!==128||pixels[i+3]!==255)throw Error('Source raster pixel changed');
+    }
+    expect(rendered.width).toBe(result.evidence.canvas.widthPx);
   });
   it('uses readable recipe captions and preserves supplied names without guessing custom translations',()=>{
     expect(surfaceRecipeDisplayName({id:'mineral-soil'})).toBe('Sol minéral');
