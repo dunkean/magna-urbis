@@ -26,10 +26,11 @@ export function prepareSurfaceDecorWorkerSource(value: unknown): PreparedSurface
   const buildings = scene ?? { buildings: [] };
   input.occupation = occupationFromMagnaScene(input.terrain, buildings, roads, input.occupation);
   const urban = magnaUrbanPacket(decor, buildings, 0, 0, undefined, 'binary');
+  const presentation = magnaSurfacePresentation(decor.meta.query);
   const prepared: PreparedSurfaceWorkerSource & { registrationBinding?: SurfaceRegistrationBinding; urbanId: string } = {
     input, parentTerrain: payload.parentTerrain, providerId: registrationBinding?.providerId ?? payload.providerId, registrationBinding,
-    urban, urbanId: magnaUrbanIdentity(urban), sourceMetadata: magnaSurfaceSource(decor, { encoding: 'binary', sourceWaterValidation: input.sourceWaterValidation,
-      extra: { registrationBinding, presentation: magnaSurfacePresentation(decor.meta.query) } }),
+    urban, urbanId: magnaUrbanIdentity(urban), presentation, sourceMetadata: magnaSurfaceSource(decor, { encoding: 'binary', sourceWaterValidation: input.sourceWaterValidation,
+      extra: { registrationBinding, presentation } }),
   };
   return prepared;
 }
