@@ -5,9 +5,9 @@ import { fileURLToPath } from 'node:url';
 
 const repositoryRoot = fileURLToPath(new URL('../../', import.meta.url));
 const profilePaths = { 'surface-v2': 'viewer-local/profiles/surface-v2.json' };
-const pathKeys = ['assets', 'vegetationAssets', 'treeAssets', 'heightBatch'];
+const pathKeys = ['assets', 'vegetationAssets', 'treeAssets', 'heightBatch', 'canopyBatch'];
 const flags = {
-  assets: '--assets', vegetationAssets: '--vegetation-assets', treeAssets: '--tree-assets', heightBatch: '--height-batch',
+  assets: '--assets', vegetationAssets: '--vegetation-assets', treeAssets: '--tree-assets', heightBatch: '--height-batch', canopyBatch: '--canopy-batch',
   presentation: '--presentation', waterMode: '--water-mode', waterVectorTint: '--water-vector-tint',
   waterSymbolWidthPx: '--water-symbol-width-px', nativeLogMode: '--native-log-mode',
 };
@@ -52,8 +52,10 @@ export function loadSurfaceRenderProfile(id, { root = repositoryRoot, platform =
   try { definition = JSON.parse(bytes.toString('utf8').replace(/^\uFEFF/, '')); } catch { throw error(`invalid profile JSON: ${profilePath}`); }
   if (definition?.format !== 'magna-surface-render-profile' || definition.version !== 1 || definition.id !== id || !record(definition.defaults) || !/^[a-f0-9]{64}$/.test(definition.requirements?.treeDigest ?? '')) throw error(`invalid profile schema: ${profilePath}`);
   const defaults = { ...definition.defaults };
-  if (!record(defaults.heightBatch)) throw error(`invalid platform executable map: ${profilePath}`);
-  defaults.heightBatch = defaults.heightBatch[platform] ?? defaults.heightBatch.default;
+  for (const key of ['heightBatch','canopyBatch']) {
+    if (!record(defaults[key])) throw error(`invalid platform executable map: ${profilePath}`);
+    defaults[key] = defaults[key][platform] ?? defaults[key].default;
+  }
   for (const key of pathKeys) {
     if (typeof defaults[key] !== 'string' || !defaults[key]) throw error(`profile path ${key} is invalid: ${profilePath}`);
     defaults[key] = path.resolve(absoluteRoot, defaults[key]);

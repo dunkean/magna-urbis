@@ -1,5 +1,6 @@
 class_name SurfaceCanopy
 extends RefCounted
+const Batch=preload("res://adapters/surface_canopy_batch.gd")
 const TreeMask=preload("res://adapters/surface_tree_mask.gd")
 
 # canopy-r1: exact provided crown discs, no procedural noise. RGB is LINEAR.
@@ -16,6 +17,7 @@ static var _cached_atlas: Dictionary = {}
 static var _cached_unsupported: Dictionary = {}
 static var _cached_view_bounds: Dictionary = {}
 static var _cached_asset_digest:String=""
+static var _cached_sampler_key:String=""
 
 static func _power2(value:int)->int:
 	return int(pow(2.0,ceil(log(float(value))/log(2.0))))
@@ -44,12 +46,21 @@ static func instance_weight(bin: int,footprint: float) -> float:
 	return smoothstep(3.0,8.0,2.0*float(RADII[bin])/maxf(footprint,0.00001))
 
 # Called on the population preparation worker; GPU texture creation stays on UI.
-static func prepare(packet: Dictionary,selected: Dictionary,view_bounds:Dictionary={}) -> Dictionary:
+static func prepare(packet: Dictionary,selected: Dictionary,view_bounds:Dictionary={},options:Dictionary={}) -> Dictionary:
 	# Packets are immutable snapshots. A sequential preparation worker may reuse
 	# the exact atlas while panning if neither packet identity nor selected ids changed.
 	var unsupported: Dictionary = packet.get("_unsupportedTreeIDs",{})
 	var asset:Dictionary=packet.get("_treeAssetCPU",{})
-	if is_same(packet,_cached_packet) and selected==_cached_selection and unsupported==_cached_unsupported and view_bounds==_cached_view_bounds and str(asset.get("digest","legacy"))==_cached_asset_digest: return _cached_atlas
+	var executable=str(options.get("canopyBatchExecutable",""))
+	var native_requested=not executable.is_empty()
+	var sampler_key="gd:canopy-r6"
+	if native_requested:
+		var path=ProjectSettings.globalize_path(executable)
+		if not FileAccess.file_exists(path):return Batch.failed("explicit canopy batch executable missing")
+		var executable_hash=FileAccess.get_sha256(path)
+		if executable_hash.length()!=64 or not executable_hash.is_valid_hex_number():return Batch.failed("canopy executable hash unavailable")
+		sampler_key="native:"+executable_hash
+	if sampler_key==_cached_sampler_key and is_same(packet,_cached_packet) and selected==_cached_selection and unsupported==_cached_unsupported and view_bounds==_cached_view_bounds and str(asset.get("digest","legacy"))==_cached_asset_digest: return _cached_atlas
 	var page=tree_page(packet)
 	if view_bounds.get("disabled",false):return {"available":false,"reason":"Complete tree page does not cover this view","page":page}
 	if page.is_empty():return {"available":false,"reason":"No declared complete tree page"}
@@ -62,12 +73,16 @@ static func prepare(packet: Dictionary,selected: Dictionary,view_bounds:Dictiona
 	var base_x=floor(float(bounds.minX)/spacing/64.0)*64.0*spacing;var base_z=floor(float(bounds.minZ)/spacing/64.0)*64.0*spacing
 	var width := _power2(maxi(2,ceili((float(bounds.maxX)-base_x)/spacing)+1))
 	var height := _power2(maxi(2,ceili((float(bounds.maxZ)-base_z)/spacing)+1))
-	var coverage := PackedFloat32Array(); coverage.resize(width*height)
-	var counts := PackedFloat32Array(); counts.resize(width*height*4)
-	var normal_values:=PackedFloat32Array();normal_values.resize(width*height*4)
+	var coverage := PackedFloat32Array();
+	if not native_requested:coverage.resize(width*height)
+	var counts := PackedFloat32Array();
+	if not native_requested:counts.resize(width*height*4)
+	var normal_values:=PackedFloat32Array();
+	if not native_requested:normal_values.resize(width*height*4)
 	var color_values:=PackedFloat32Array()
-	if not asset.is_empty():color_values.resize(width*height*4)
-	var crown_heights:=PackedFloat32Array();crown_heights.resize(width*height);crown_heights.fill(-INF)
+	if not native_requested and not asset.is_empty():color_values.resize(width*height*4)
+	var crown_heights:=PackedFloat32Array();
+	if not native_requested:crown_heights.resize(width*height);crown_heights.fill(-INF)
 	var height_origin:=0.0;var has_height_origin:=false
 	# Keep absolute regional coordinates in scalar doubles. Vector2 is FP32;
 	# the UI creates a Vector2 only after subtracting its render origin.
@@ -76,52 +91,59 @@ static func prepare(packet: Dictionary,selected: Dictionary,view_bounds:Dictiona
 	var columns: Dictionary = packet.get("candidateColumns",{})
 	var count := int(columns.count) if not columns.is_empty() else candidates.size()
 	var trees := 0; var selected_trees := 0;var unsupported_trees := 0
-	for i in range(count):
-		var family: String = str(columns.families[int(columns.family[i])]) if not columns.is_empty() else str(candidates[i].family)
-		if family!="tree": continue
-		var x: float = float(columns.positions[i*3]) if not columns.is_empty() else float(candidates[i].x)
-		var z: float = float(columns.positions[i*3+2]) if not columns.is_empty() else float(candidates[i].z)
-		var radius: float = float(columns.crownRadiusM[i]) if not columns.is_empty() else float(candidates[i].get("crownRadiusM",float(candidates[i].size)*0.42))
-		if not is_finite(radius) or radius<=0.0: continue
-		var tree_y:float=float(columns.positions[i*3+1]) if not columns.is_empty() else float(candidates[i].y)
-		var tree_size:float=float(columns.size[i]) if not columns.is_empty() else float(candidates[i].size)
-		if not has_height_origin:height_origin=tree_y;has_height_origin=true
-		var id: String = str(columns.ids[i]) if not columns.is_empty() else str(candidates[i].stableId)
-		if unsupported.has(id):
-			unsupported_trees+=1
-			continue
-		var is_selected := selected.has(id)
-		var bin := radius_class(radius)
-		var angle:float=float(columns.orientation[i]) if not columns.is_empty() else float(candidates[i].get("orientation",0.0))
-		var cosine=cos(angle);var sine=sin(angle)
-		var support=radius if asset.is_empty() else radius*1.1
-		trees+=1
-		if is_selected: selected_trees+=1
-		for iz in range(maxi(0,ceili((z-support-float(origin.z))/spacing)),mini(height-1,floori((z+support-float(origin.z))/spacing))+1):
-			var dz := float(origin.z)+float(iz)*spacing-z
-			var half := sqrt(maxf(0.0,support*support-dz*dz))
-			for ix in range(maxi(0,ceili((x-half-float(origin.x))/spacing)),mini(width-1,floori((x+half-float(origin.x))/spacing))+1):
-				var index := iz*width+ix
-				var dx=float(origin.x)+float(ix)*spacing-x
-				var mask_location=Vector3.ZERO
-				if not asset.is_empty():
-					mask_location=TreeMask.address(asset,(cosine*dx-sine*dz)/radius,(sine*dx+cosine*dz)/radius)
-					if not TreeMask.inside(asset,mask_location):continue
-				coverage[index]=1.0
-				var top=sqrt(maxf(0.0,1.0-(dx*dx+dz*dz)/(radius*radius)))
-				var vertical_radius=tree_size*.33
-				var crown_height=tree_y-height_origin+tree_size*.72+top*vertical_radius
-				if not asset.is_empty():crown_height=tree_y-height_origin+tree_size*.5
-				if crown_height>crown_heights[index]:
-					crown_heights[index]=crown_height
-					var normal=Vector3(dx/radius,top*radius/maxf(vertical_radius,.01),dz/radius).normalized()
+	var sampler={"requested":false,"used":false,"version":"gd-canopy-raster-1"}
+	if native_requested:
+		var result=Batch.prepare(packet,selected,unsupported,asset,origin,spacing,width,height,options)
+		if result.get("failed",false) or result.get("cancelled",false):return result
+		coverage=result.coverage;counts=result.counts;normal_values=result.normals;color_values=result.colors
+		trees=result.trees;selected_trees=result.selected;unsupported_trees=result.unsupported;sampler=result.metrics
+	else:
+		for i in range(count):
+			var family: String = str(columns.families[int(columns.family[i])]) if not columns.is_empty() else str(candidates[i].family)
+			if family!="tree": continue
+			var x: float = float(columns.positions[i*3]) if not columns.is_empty() else float(candidates[i].x)
+			var z: float = float(columns.positions[i*3+2]) if not columns.is_empty() else float(candidates[i].z)
+			var radius: float = float(columns.crownRadiusM[i]) if not columns.is_empty() else float(candidates[i].get("crownRadiusM",float(candidates[i].size)*0.42))
+			if not is_finite(radius) or radius<=0.0: continue
+			var tree_y:float=float(columns.positions[i*3+1]) if not columns.is_empty() else float(candidates[i].y)
+			var tree_size:float=float(columns.size[i]) if not columns.is_empty() else float(candidates[i].size)
+			if not has_height_origin:height_origin=tree_y;has_height_origin=true
+			var id: String = str(columns.ids[i]) if not columns.is_empty() else str(candidates[i].stableId)
+			if unsupported.has(id):
+				unsupported_trees+=1
+				continue
+			var is_selected := selected.has(id)
+			var bin := radius_class(radius)
+			var angle:float=float(columns.orientation[i]) if not columns.is_empty() else float(candidates[i].get("orientation",0.0))
+			var cosine=cos(angle);var sine=sin(angle)
+			var support=radius if asset.is_empty() else radius*1.1
+			trees+=1
+			if is_selected: selected_trees+=1
+			for iz in range(maxi(0,ceili((z-support-float(origin.z))/spacing)),mini(height-1,floori((z+support-float(origin.z))/spacing))+1):
+				var dz := float(origin.z)+float(iz)*spacing-z
+				var half := sqrt(maxf(0.0,support*support-dz*dz))
+				for ix in range(maxi(0,ceili((x-half-float(origin.x))/spacing)),mini(width-1,floori((x+half-float(origin.x))/spacing))+1):
+					var index := iz*width+ix
+					var dx=float(origin.x)+float(ix)*spacing-x
+					var mask_location=Vector3.ZERO
 					if not asset.is_empty():
-						var n=TreeMask.response(asset,"normal",mask_location);var c=TreeMask.response(asset,"color",mask_location)
-						var local=(Vector3(n.r,n.g,n.b)/maxf(n.a,.00001)*2.0-Vector3.ONE)/Vector3(radius,tree_size,radius)
-						normal=Vector3(cosine*local.x+sine*local.z,local.y,-sine*local.x+cosine*local.z).normalized()
-						color_values[index*4]=c.r/maxf(c.a,.00001);color_values[index*4+1]=c.g/maxf(c.a,.00001);color_values[index*4+2]=c.b/maxf(c.a,.00001);color_values[index*4+3]=1.0
-					normal_values[index*4]=normal.x*.5+.5;normal_values[index*4+1]=normal.y*.5+.5;normal_values[index*4+2]=normal.z*.5+.5;normal_values[index*4+3]=1.0
-				if is_selected: counts[index*4+bin]+=1.0
+						mask_location=TreeMask.address(asset,(cosine*dx-sine*dz)/radius,(sine*dx+cosine*dz)/radius)
+						if not TreeMask.inside(asset,mask_location):continue
+					coverage[index]=1.0
+					var top=sqrt(maxf(0.0,1.0-(dx*dx+dz*dz)/(radius*radius)))
+					var vertical_radius=tree_size*.33
+					var crown_height=tree_y-height_origin+tree_size*.72+top*vertical_radius
+					if not asset.is_empty():crown_height=tree_y-height_origin+tree_size*.5
+					if crown_height>crown_heights[index]:
+						crown_heights[index]=crown_height
+						var normal=Vector3(dx/radius,top*radius/maxf(vertical_radius,.01),dz/radius).normalized()
+						if not asset.is_empty():
+							var n=TreeMask.response(asset,"normal",mask_location);var c=TreeMask.response(asset,"color",mask_location)
+							var local=(Vector3(n.r,n.g,n.b)/maxf(n.a,.00001)*2.0-Vector3.ONE)/Vector3(radius,tree_size,radius)
+							normal=Vector3(cosine*local.x+sine*local.z,local.y,-sine*local.x+cosine*local.z).normalized()
+							color_values[index*4]=c.r/maxf(c.a,.00001);color_values[index*4+1]=c.g/maxf(c.a,.00001);color_values[index*4+2]=c.b/maxf(c.a,.00001);color_values[index*4+3]=1.0
+						normal_values[index*4]=normal.x*.5+.5;normal_values[index*4+1]=normal.y*.5+.5;normal_values[index*4+2]=normal.z*.5+.5;normal_values[index*4+3]=1.0
+					if is_selected: counts[index*4+bin]+=1.0
 	var coverage_image := Image.create_from_data(width,height,false,Image.FORMAT_RF,coverage.to_byte_array())
 	coverage_image.generate_mipmaps() # Linear coverage, not sRGB and not overlap counts.
 	var normal_image:=Image.create_from_data(width,height,false,Image.FORMAT_RGBAF,normal_values.to_byte_array());normal_image.generate_mipmaps()
@@ -142,6 +164,8 @@ static func prepare(packet: Dictionary,selected: Dictionary,view_bounds:Dictiona
 	if not asset.is_empty():
 		atlas["assetDigest"]=asset.digest;atlas.version="canopy-r6-shared-asset-cutout-whole-frustum";atlas["colorImage"]=color_image
 		atlas.sourceDescriptor["rendererAssetDigest"]=asset.digest
+	atlas["rasterSampler"]=sampler
+	_cached_sampler_key=sampler_key
 	_cached_packet=packet
 	_cached_selection=selected.duplicate()
 	_cached_view_bounds=view_bounds.duplicate()

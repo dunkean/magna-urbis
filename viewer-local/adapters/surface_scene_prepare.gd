@@ -73,7 +73,9 @@ static func prepare(request: Dictionary) -> Dictionary:
 	result.unsupportedTreeCount=population_packet._unsupportedTreeIDs.size()
 	if PrepareControl.hit(control,"population"):return PrepareControl.result(control,"population",started)
 	phases["treeSupportMs"]=(Time.get_ticks_usec()-phase_tick)/1000.0;phase_tick=Time.get_ticks_usec()
-	result.populations=Population.prepare(population_packet,request.focus,request.width,request.viewportWidth,request.oblique,not request.get("groundOnly",false),request.sceneRequest.get("canopyAtlasBounds",{}))
+	result.populations=Population.prepare(population_packet,request.focus,request.width,request.viewportWidth,request.oblique,not request.get("groundOnly",false),request.sceneRequest.get("canopyAtlasBounds",{}),request.sceneRequest)
+	if result.populations.canopy.get("failed",false) or result.populations.canopy.get("cancelled",false):return result.populations.canopy
+	result["canopySampler"]=result.populations.canopy.get("rasterSampler",{"requested":request.sceneRequest.has("canopyBatchExecutable"),"used":false,"eligible":false,"reason":str(result.populations.canopy.get("reason","No available atlas")),"sourceWorldId":str(request.world.id)})
 	if request.oblique:
 		result.populations.canopy["visibilityPlan"]=visibility_plan
 		if not visibility_plan.get("available",false):result.populations.canopy["reason"]=visibility_plan.reason

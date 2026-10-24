@@ -14,7 +14,11 @@
     "waterMode": "source-map",
     "waterVectorTint": "uniform",
     "waterSymbolWidthPx": 1.25,
-    "nativeLogMode": "threaded"
+    "nativeLogMode": "threaded",
+    "canopyBatch": {
+      "win32": "viewer-local/native-height/target/release/magna-surface-canopy-batch.exe",
+      "default": "viewer-local/native-height/target/release/magna-surface-canopy-batch"
+    }
   },
   "requirements": {
     "treeDigest": "74edf966059a17fd44df22d24f4ee055f780d84196ee9c54703fa3b9e46ecbe9"

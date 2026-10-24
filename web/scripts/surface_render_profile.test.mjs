@@ -27,7 +27,7 @@ function fixture(t, platform = 'win32') {
   const trees = { format: 'magna-tree-render-assets', version: 1, digest: profile.metadata.requiredTreeDigest, sourceGeometry: { path: 'tree.glb', sha256: geometryHash }, mask: { path: 'mask.a8' }, lookup: { path: 'lookup.f32' }, albedoEncodingCorrection: { source16bitRGBExact: true, alphaNormalizedValuesExact: true, allOriginalBinBytesRetained: true, geometryAccessorsMeshesUVNormalsTangentsMaterialsUnchanged: true, outputGlbSha256: geometryHash }, views: Array.from({ length: 5 }, (_, i) => ({ name: `view${i}`, products: { color: { path: `color${i}.rgbah` }, normal: { path: `normal${i}.rgbah` } } })) };
   write(profile.defaults.treeAssets, trees); const directory = path.dirname(profile.defaults.treeAssets);
   for (const filename of ['mask.a8', 'lookup.f32', ...trees.views.flatMap(view => Object.values(view.products).map(item => item.path))]) write(path.join(directory, filename), 'authored-test-product');
-  write(path.join(directory, 'tree.glb'), geometry); write(profile.defaults.heightBatch, 'not-an-executable-no-engine-test');
+  write(path.join(directory, 'tree.glb'), geometry); write(profile.defaults.heightBatch, 'not-an-executable-no-engine-test'); write(profile.defaults.canopyBatch, 'canopy-authored-not-executable');
   return { root, profile, materials, trees, directory, options: { root, platform, cwd: root } };
 }
 
@@ -41,7 +41,7 @@ test('explicit surface-v2 resolves fixed paths and metadata without scanning cac
   const result = applySurfaceRenderProfile(['--world', 'source.surfacebin', '--render-profile', 'surface-v2'], f.options);
   assert.ok(!result.args.includes('--render-profile'));
   assert.equal(result.profile.metadata.treeEncodingCorrectionVerified, true);
-  assert.equal(result.profile.metadata.runtimeFileCount, 23); // Four manifests/exe, one PBR file, five grass files, thirteen tree files.
+  assert.equal(result.profile.metadata.runtimeFileCount, 24); // Five manifests/executables, one PBR file, five grass files, thirteen tree files.
   assert.match(result.profile.metadata.effectiveSha256, /^[a-f0-9]{64}$/);
 });
 
@@ -86,7 +86,7 @@ test('missing runtime artifacts fail descriptively before any engine invocation'
   const f = fixture(t);
   unlinkSync(path.join(f.directory, 'normal3.rgbah'));
   assert.throws(() => validateSurfaceRenderProfile(f.profile), /tree view3 normal is missing.*normal3\.rgbah/);
-  const args = ['--render-profile', 'surface-v2', '--godot', 'MISSING-GODOT-NOT-TO-BE-STARTED', ...Object.entries({ assets: '--assets', vegetationAssets: '--vegetation-assets', treeAssets: '--tree-assets', heightBatch: '--height-batch' }).flatMap(([key, flag]) => [flag, f.profile.defaults[key]])];
+  const args = ['--render-profile', 'surface-v2', '--godot', 'MISSING-GODOT-NOT-TO-BE-STARTED', ...Object.entries({ assets: '--assets', vegetationAssets: '--vegetation-assets', treeAssets: '--tree-assets', heightBatch: '--height-batch', canopyBatch: '--canopy-batch' }).flatMap(([key, flag]) => [flag, f.profile.defaults[key]])];
   const child = spawnSync(process.execPath, [path.join(repository, 'web/scripts/surface_viewer.mjs'), ...args], { encoding: 'utf8', windowsHide: true, timeout: 10000 });
   assert.equal(child.status, 1); assert.match(child.stderr, /tree view3 normal is missing/);
   assert.doesNotMatch(child.stderr, /Expected pinned Godot|spawnSync|Install pinned Terrain3D/);

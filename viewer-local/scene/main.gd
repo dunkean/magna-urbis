@@ -109,6 +109,7 @@ var rendered_display_samples:=256
 var rendered_height_image_size:=0
 var rendered_height_range:=Vector2(NAN,NAN)
 var rendered_height_sampler:Dictionary={}
+var rendered_canopy_sampler:Dictionary={}
 var view_satisfied_serial:=-1
 var view_satisfaction:Dictionary={}
 var view_satisfaction_events:Array=[]
@@ -341,6 +342,7 @@ func _begin_prepare() -> void:
 		var active_texels=int(canopy_info.gridSize.x)*int(canopy_info.gridSize.y) if canopy_info.get("available",false) else 0
 		prepare_request["visibilityOptions"]={"prepareControl":active_prepare_control,"crownHeightM":crown,"maximumCrownRadiusM":float(packet.get("_maximumCrownRadiusM",7.56)),"activeAtlasTexels":active_texels,"haloM":maxf(40.0,shadow.length()+2.0*spacing+7.56)}
 	if options.has("--height-batch"):scene_request["heightBatchExecutable"]=str(options["--height-batch"])
+	if options.has("--canopy-batch"):scene_request["canopyBatchExecutable"]=str(options["--canopy-batch"])
 	worker.start(ScenePrepare.prepare.bind(prepare_request))
 	last_request_tick = Time.get_ticks_msec()
 
@@ -358,6 +360,7 @@ func _apply_prepared(prepared: Dictionary) -> void:
 		return
 	var world: Dictionary = prepared.world
 	var packet: Dictionary = prepared.packet
+	rendered_canopy_sampler=prepared.get("canopySampler",{"requested":false,"used":false}).duplicate(true)
 	var context_key=str(prepared.get("contextKey",prepared_context_key))
 	var height_key=str(prepared.get("heightKey",prepared_height_key))
 	height_source_cache[height_key]=prepared.displaySource
@@ -1173,7 +1176,7 @@ func _capture(path: String) -> void:
 	var absolute := ProjectSettings.globalize_path(path)
 	DirAccess.make_dir_recursive_absolute(absolute.get_base_dir())
 	var result := get_viewport().get_texture().get_image().save_png(absolute)
-	_emit_native({"event":"capture","captureTickMs":Time.get_ticks_msec(),"heightSampler":rendered_height_sampler,"captureSha256":FileAccess.get_sha256(absolute) if result==OK else "","mapProjection":_map_projection(),"populationInstances":population_instances(),"canopyView":canopy_view_state,"surfaceLayers":rendered_surface_layers,"water":water_metrics,"urban":rendered_urban_metrics,"renderedWorldId":rendered_world_id,"renderedSource":rendered_source,"renderedLiveSerial":rendered_live_serial,"renderedSnapshot":rendered_snapshot,"viewSatisfiedSerial":view_satisfied_serial,"viewSatisfaction":view_satisfaction,"path":absolute,"error":result,"widthM":width_m,"metresPerPixel":width_m/get_viewport().get_visible_rect().size.x})
+	_emit_native({"event":"capture","captureTickMs":Time.get_ticks_msec(),"heightSampler":rendered_height_sampler,"canopySampler":rendered_canopy_sampler,"captureSha256":FileAccess.get_sha256(absolute) if result==OK else "","mapProjection":_map_projection(),"populationInstances":population_instances(),"canopyView":canopy_view_state,"surfaceLayers":rendered_surface_layers,"water":water_metrics,"urban":rendered_urban_metrics,"renderedWorldId":rendered_world_id,"renderedSource":rendered_source,"renderedLiveSerial":rendered_live_serial,"renderedSnapshot":rendered_snapshot,"viewSatisfiedSerial":view_satisfied_serial,"viewSatisfaction":view_satisfaction,"path":absolute,"error":result,"widthM":width_m,"metresPerPixel":width_m/get_viewport().get_visible_rect().size.x})
 
 func _map_projection()->Dictionary:
 	return MapProjection.capture(camera,get_viewport().get_visible_rect().size,origin,focus,rendered_world_id,not oblique,width_m)
@@ -1230,6 +1233,7 @@ func _write_metrics() -> void:
 	metrics["renderedSnapshot"]=rendered_snapshot
 	metrics["mapProjection"]=_map_projection()
 	metrics["heightSampler"]=rendered_height_sampler
+	metrics["canopySampler"]=rendered_canopy_sampler
 	metrics["renderEvents"]=render_events
 	metrics["discardedPreparations"]=discarded_preparations
 	metrics["nativeLogTiming"]={"version":"native-log-timing-1" if native_logger==null else "native-log-timing-2","mode":native_log_mode,"maximaByEvent":native_log_maxima,"recent":native_log_timings,"writer":native_logger.snapshot() if native_logger!=null else null,"flushedBeforeSnapshot":native_logger!=null and may_flush,"flushBeforeSnapshotMs":flush_ms,"scope":"Main serialize/output wall spans; threaded enqueueMs is not writer printWallMs. Writer snapshot excludes the later metrics event itself."}
@@ -1622,7 +1626,7 @@ func _water_source_covers(bounds:Dictionary,required_focus:Dictionary,required_w
 func _handle_prepared_result(prepared)->void:
 	if prepared is Dictionary and prepared.get("failed",false):
 		discarded_preparations.failed+=1
-		push_warning("Terrain preparation failed: "+str(prepared.get("heightBatchError","unknown native batch failure"))+"; previous rendered source retained")
+		push_warning("Terrain preparation failed: "+str(prepared.get("canopyBatchError",prepared.get("heightBatchError","unknown native batch failure")))+"; previous rendered source retained")
 		applied_generation=generation
 	elif prepared is Dictionary and prepared.get("cancelled",false):
 		discarded_preparations["cancelledSuperseded"]=int(discarded_preparations.get("cancelledSuperseded",0))+1

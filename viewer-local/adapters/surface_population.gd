@@ -4,12 +4,12 @@ const Canopy = preload("res://adapters/surface_canopy.gd")
 const FAMILY_BUDGETS := {"tree":10000,"shrub":2500,"boulder":2000,"grass":1000,"debris":500}
 
 # Pure CPU query. Run on a worker, never sort the full population on the UI thread.
-static func prepare(packet: Dictionary, focus: Dictionary, width_m: float, viewport_width: float, oblique: bool, geometry_enabled := true,atlas_bounds:Dictionary={}) -> Dictionary:
+static func prepare(packet: Dictionary, focus: Dictionary, width_m: float, viewport_width: float, oblique: bool, geometry_enabled := true,atlas_bounds:Dictionary={},options:Dictionary={}) -> Dictionary:
 	var candidates: Array = packet.get("candidates",packet.get("populations",[]))
 	var columns: Dictionary = packet.get("candidateColumns",{})
 	var count := int(columns.count) if not columns.is_empty() else candidates.size()
 	var families := {"tree":[],"shrub":[],"boulder":[],"grass":[],"debris":[]}
-	if not geometry_enabled: return {"families":families,"selectedCount":0,"candidateCount":count,"canopy":Canopy.prepare(packet,{},atlas_bounds),"familyBudgets":FAMILY_BUDGETS}
+	if not geometry_enabled: return {"families":families,"selectedCount":0,"candidateCount":count,"canopy":Canopy.prepare(packet,{},atlas_bounds,options),"familyBudgets":FAMILY_BUDGETS}
 	var canopy_bounds:Dictionary=Canopy.tree_page(packet).get("bounds",{})
 	var unsupported: Dictionary = packet.get("_unsupportedTreeIDs",{})
 	var radius := clampf(width_m*(1.5 if oblique else 1.0),40.0,5000.0)
@@ -49,4 +49,4 @@ static func prepare(packet: Dictionary, focus: Dictionary, width_m: float, viewp
 		if families[candidate.family].size()>=int(FAMILY_BUDGETS[candidate.family]): continue
 		families[candidate.family].append(candidate); selected_count+=1
 		if str(candidate.family)=="tree": selected[str(candidate.stableId)]=true
-	return {"families":families,"selectedCount":selected_count,"candidateCount":count,"canopy":Canopy.prepare(packet,selected,atlas_bounds),"familyBudgets":FAMILY_BUDGETS}
+	return {"families":families,"selectedCount":selected_count,"candidateCount":count,"canopy":Canopy.prepare(packet,selected,atlas_bounds,options),"familyBudgets":FAMILY_BUDGETS}
