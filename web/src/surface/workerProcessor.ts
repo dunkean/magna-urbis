@@ -42,13 +42,15 @@ export function createSurfaceWorkerProcessor(prepare: (payload: unknown) => Prep
     const parent = prepared.parentTerrain ? { ...prepared.parentTerrain, source: { ...prepared.parentTerrain.source, id: job.terrain.source.id, version: job.terrain.source.version } } : canonical.terrain;
     const {candidates,candidatePages,candidateBounds}=generateSurfaceCandidatePages(canonical,bounds,{canonicalContextId:contextId,fineTerrain:job.terrain,parentTerrain:parent,maxCandidates:job.maxCandidates,maxCheckedSlots:job.maxCheckedSlots});
     return { format: 'magna-surface-packet', version: 1,
-      presentation: job.presentation ?? prepared.sourceMetadata?.presentation as SurfaceWorkerPacket['presentation'],
+      presentation: job.presentation ?? prepared.presentation ?? (prepared.sourceMetadata?.presentation as SurfaceWorkerPacket['presentation'] | null) ?? undefined,
       urbanId: prepared.urbanId,
       world: { ...world, canonicalContext: job.region.knownContextId === contextId ? undefined : world.canonicalContext },
       terrainParents: job.region.knownContextId === contextId ? undefined : [{ terrain: parent, bounds: canonical.bounds, canonicalContextId: contextId }],
       urban: job.region.knownSceneContextId === sceneContextId ? undefined : prepared.urban ?? {}, candidateColumns: packCandidateColumns(candidates), candidateBounds,candidatePages,
       source: { ...(job.region.knownSceneContextId === sceneContextId ? {} : prepared.sourceMetadata), originalSource: input.terrain.source, live: true, provider: binding?.providerId ?? prepared.providerId,
-        presentation: job.presentation ?? prepared.sourceMetadata?.presentation, compilation: { canonicalBuildCount }, registrationBinding: binding, canonicalContextId: contextId, sceneContextId, sourceEpoch: job.sourceEpoch, sceneEpoch: job.sceneEpoch, request: { ...job.region } } };
+        // Source metadata may contain null attachment targets, including
+        // presentation. Per-job styles belong only to packet.presentation.
+        compilation: { canonicalBuildCount }, registrationBinding: binding, canonicalContextId: contextId, sceneContextId, sourceEpoch: job.sourceEpoch, sceneEpoch: job.sceneEpoch, request: { ...job.region } } };
   };
   return {
     /** Object result is exposed only for explicit synchronous Node/offline compatibility. */

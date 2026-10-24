@@ -7,6 +7,8 @@ export interface SurfaceWorkerRegion { x: number; y: number; extent: number; res
 export interface SurfaceWorkerInitialization<Payload = unknown> extends SurfaceWorkerEpochs { payload: Payload }
 export interface PreparedSurfaceWorkerSource {
   input: SurfaceCompileInput; parentTerrain?: TerrainGrid; providerId: string; urban?: unknown; urbanId?: string; sourceMetadata?: Record<string, unknown>;
+  /** Default mapper profile, outside sourceMetadata's reversible archive slots. */
+  presentation?: import('./presentation').SurfacePresentation;
   /** Only an adapter that registered this exact retained source may bind its capture identity to a provider generation. */
   registrationBinding?: Readonly<SurfaceRegistrationBinding>;
   compileOptions?: Omit<CompileOptions, 'signal'>;

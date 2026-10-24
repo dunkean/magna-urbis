@@ -31,7 +31,9 @@ const base64 = (bytes: Uint8Array) => {
 /** Binary-packet metadata projection. Small identities remain directly visible;
  * large source-only records become null slots with explicit attachment paths.
  * Use restoreSurfaceSource before accessing archived fields. No source or save
- * record is modified, and arbitrary opaque keys are never interpreted as tags. */
+ * record is modified, and arbitrary opaque keys are never interpreted as tags.
+ * Producers must keep these projected source slots intact; job presentation
+ * belongs to the packet namespace, never over an archived source placeholder. */
 export function archiveSurfaceSource<T extends Record<string, unknown>>(source: T): T & { $surfaceSourceArchive?: SurfaceSourceArchive } {
   if (Object.hasOwn(source, KEY)) throw new Error('Source already has the reserved archive field.');
   const attachments: SurfaceSourceAttachment[] = [], parents = new Set<object>();
