@@ -15,6 +15,7 @@ if (!$World) { $World = Join-Path $PSScriptRoot 'web/out/surface/ground-cover-qu
 if (!$Assets) { $Assets = Join-Path $shared 'web/out/surface-assets/resolved.json' }
 if (!$HeightBatch) { $HeightBatch = Join-Path $shared 'viewer-local/native-height/target/release/magna-surface-height-batch.exe' }
 $project = Join-Path $PSScriptRoot 'viewer-local'
+$captures = Join-Path $PSScriptRoot 'web/out/demo-sols/captures'
 $catalogue = Join-Path $PSScriptRoot 'surface/presentation/palettes.json'
 function Require-File([string]$Path) {
     if (!(Test-Path -LiteralPath $Path -PathType Leaf) -or (Get-Item -LiteralPath $Path).Length -eq 0) { throw "Fichier local absent ou vide : $Path. Aucun téléchargement automatique." }
@@ -55,11 +56,13 @@ $launch = @('--audio-driver','Dummy','--path',$project,'--script','res://diagnos
     '--world',$World,'--assets',$Assets,'--height-batch',$HeightBatch,'--style-catalogue',$catalogue,
     '--native-log-mode','threaded','--presentation',$mode,'--water-mode','source-map','--water-vector-tint','uniform',
     '--water-symbol-width-px','1.25','--top','--width',$Width.ToString('R',[Globalization.CultureInfo]::InvariantCulture),
-    '--x',$coordinates[0],'--z',$coordinates[1],'--resolution','1600x1000')
+    '--x',$coordinates[0],'--z',$coordinates[1],'--resolution','1600x1000','--soil-capture-dir',$captures)
 if ($Style -ne 'aerial') { $launch += @('--style',$Style) }
 Write-Host "Test sols R4 expérimental — largeur $Width m ; centre $Focus ; style $Style"
 Write-Host "F1 : détail R4/ancien uniforme ; F2 : couvert bas ; F3 : moyenne physique."
 Write-Host 'Molette : zoom ; glisser gauche : déplacer ; 1–7 : échelles ; Échap : quitter.'
+Write-Host 'Menu ou flèches gauche/droite : style ; S : capture PNG + fiche JSON.'
+Write-Host "Captures : $captures"
 Write-Host 'Un seul site retenu, sans génération fraîche ni sols fins observés. Arbres, objets et ombres masqués.'
 Write-Host "Entrées locales validées : paquet, moteur, Terrain3D, height-batch, catalogue, $mapCount cartes PBR."
 Write-Host 'Aucun manifeste arbre/végétation ajouté. Démo V15 et données source inchangées.'

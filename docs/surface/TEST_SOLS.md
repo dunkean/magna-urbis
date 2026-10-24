@@ -22,7 +22,13 @@ non acceptée.
 - F1 : répartition R4 / ancien mélange uniforme.
 - F2 : afficher ou masquer le couvert bas.
 - F3 : afficher la moyenne physique inchangée.
+- Menu en haut ou flèches gauche/droite : comparer les dix modes au même endroit.
+- S ou bouton Capture : enregistrer une image PNG et sa fiche JSON (style,
+  centre, largeur, couches et source) dans `web/out/demo-sols/captures/`.
 - Molette : zoom ; glisser gauche : déplacement ; 1–7 : échelles ; Échap : quitter.
+
+Après `7` (vue de 10 m), continuer avec la molette pour examiner les textures
+de plus près. Les boutons F1/F2/F3 sont aussi disponibles dans le panneau.
 
 Le wrapper masque les arbres, les objets et les ombres du moteur. Le lanceur
 omet les manifestes `--tree-assets` et `--vegetation-assets` ; il conserve les
