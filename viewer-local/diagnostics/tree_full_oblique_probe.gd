@@ -1,4 +1,14 @@
 extends "res://diagnostics/tree_solar_layer_probe.gd"
+func physical_snapshot()->Dictionary:
+	var result=super.physical_snapshot()
+	var buffers={}
+	for node in viewer.get("objects").get_children():
+		if node is MultiMeshInstance3D and node.has_meta("populationFamily") and str(node.get_meta("populationFamily")) not in ["tree","trunk"]:buffers[str(node.name)]=node.multimesh.buffer
+	var names=buffers.keys();names.sort()
+	result["nonTreeInstanceBufferSha256"]=digest_fields(buffers,names)
+	result["obliqueForest"]=viewer.get("forest_full_metrics").duplicate(true)
+	return result
+
 func run()->void:
 	var args=options()
 	if args.has("--layer-check-only"):print("SURFACE_LAYER_PROBE_PARSE_OK");quit();return
