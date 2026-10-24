@@ -119,3 +119,13 @@ void sample_surface_material(vec3 p, vec3 dx, vec3 dy, vec3 normal, vec3 tangent
 // Exact union of validated source/parent domains, in render-local metres.
 uniform int source_coverage_count = 0;
 uniform vec4 source_coverage_rects[7];
+
+bool surface_source_contains(vec2 position) {
+    bool covered=false;
+    for(int i=0;i<7;i++) {
+        if(i>=source_coverage_count) break;
+        vec4 bounds=source_coverage_rects[i];
+        covered=covered || (all(greaterThanEqual(position,bounds.xy)) && all(lessThanEqual(position,bounds.zw)));
+    }
+    return covered;
+}

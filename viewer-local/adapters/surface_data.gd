@@ -339,9 +339,12 @@ static func prepare(world: Dictionary, origin: Dictionary, view_width: float, se
 	var local_start := Vector3(-size*0.5*spacing,0.0,-size*0.5*spacing)
 	var height := Image.create(size,size,false,Image.FORMAT_RF)
 	var control := Image.create(size,size,false,Image.FORMAT_RF)
+	# This adapter authors hole bits ONLY outside validated height domains.
+	# No source cave/water raster is interpreted as a terrain cutout.
 	var hole_bits := PackedByteArray([4,0,0,0]).decode_float(0)
 	var loaded_minimum=INF;var loaded_maximum=-INF
 	var edge_support_cache:Dictionary={}
+	var edge_sampler=func(x:float,z:float)->float:return height_at(display_source,x,z)
 	for z in (0 if skip_height else size):
 		if z%8==0 and PrepareControl.hit(control_token,"height-rows"):return PrepareControl.result(control_token,"height-rows",start)
 		for x in size:
@@ -354,11 +357,7 @@ static func prepare(world: Dictionary, origin: Dictionary, view_width: float, se
 			if has_source:altitude=height_at(display_source,wx,wz)
 			else:
 				var sample_point=SourceCoverage.nearest_point(source_domains,wx,wz)
-				# Repeated off-domain rows/columns share boundary samples. The local
-				# cache key never replaces the double coordinates used for sampling.
-				var key=Vector2(float(sample_point.x)-float(origin.x),float(sample_point.z)-float(origin.z))
-				if not edge_support_cache.has(key):edge_support_cache[key]=height_at(display_source,float(sample_point.x),float(sample_point.z))
-				altitude=float(edge_support_cache[key])
+				altitude=SourceCoverage.cached_edge_height(edge_support_cache,float(sample_point.x),float(sample_point.z),edge_sampler)
 			height.set_pixel(x,z,Color(altitude-origin.y,0,0,1))
 			if has_source:loaded_minimum=minf(loaded_minimum,altitude);loaded_maximum=maxf(loaded_maximum,altitude)
 			if not has_source:

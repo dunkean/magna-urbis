@@ -447,7 +447,13 @@
     "pinnedShaderMechanism": "Terrain3D1.0.2 minimum shader sets NaN on any vertex whose native control hole bit is set; coarse triangles meeting that vertex disappear. Existing surface shader had no exact source-domain fragment clip.",
     "proposedFixCommit": "f947c82",
     "gpuStatus": "PENDING: CPU23assertions and native shader parse passed; no claim of visually corrected border yet",
-    "sourceSafety": "Native hole bits/collision preserved. Only display tessellation edge samples are clamped; source arrays/geometry/levels and actual source domain stay unchanged."
+    "sourceSafety": "Native hole bits/collision preserved. Only display tessellation edge samples are clamped; source arrays/geometry/levels and actual source domain stay unchanged.",
+    "reviewCorrections": {
+      "cacheKeys": "Nested Dictionary<float64 x, Dictionary<float64 z, altitude>>; distinct doubles below one FP32 ULP tested with different heights",
+      "nativeHolePolicy": "Data.prepare writes hole bits only outside actual height domains; cave/water source rasters never author terrain cutouts. Visual shader bypasses an off-domain hole only; any native hole inside a true source domain remains honoured.",
+      "cpuAssertions": 27,
+      "sourceInsideSafety": "Actual Data.prepare analytic-plane test keeps all inside heights exact, Float32 source bytes unchanged, and native hole control bits outside-only"
+    }
   },
   "channelProbe": {
     "script": "viewer-local/diagnostics/water_confluence_channels.gd",
