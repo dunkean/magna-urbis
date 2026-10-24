@@ -26,11 +26,11 @@ void fragment(){
  vec4 c=texture(source_albedo,UV)*source_factor;
  if(source_cutout && c.a<.5)discard;
  vec3 n=normalize(source_n);vec3 t=normalize(source_t-n*dot(n,source_t));
- vec3 cross_nt=normalize(cross(n,t));vec3 b=cross_nt*(dot(cross_nt,source_b)<0?-1:1);
+ vec3 cross_nt=normalize(cross(n,t));vec3 b=cross_nt*(dot(cross_nt,source_b)<0.0?-1.0:1.0);
  vec2 xy=(texture(source_normal,UV).rg*2.0-1.0)*normal_scale;
  vec3 mapped=normalize(vec3(xy,sqrt(max(.00001,1.0-dot(xy,xy)))));
  n=normalize(t*mapped.x+b*mapped.y+n*mapped.z)*(FRONT_FACING?1.0:-1.0);
- float r=clamp(dot(texture(source_roughness,UV),roughness_channel)*roughness_factor,.04,1);
+ float r=clamp(dot(texture(source_roughness,UV),roughness_channel)*roughness_factor,.04,1.0);
  if(channel==0){ALBEDO=c.rgb;ALPHA=1;}
  else if(channel==1){ALBEDO=n*.5+.5;ALPHA=r;}
  else if(channel==2){ALBEDO=vec3(dot(source_position-vec3(0,.5,0),view_direction)/1.6+.5,1,.25);ALPHA=1;}

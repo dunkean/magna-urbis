@@ -37,7 +37,7 @@ func run()->void:
 	var environment=WorldEnvironment.new();environment.environment=Environment.new();environment.environment.background_mode=Environment.BG_COLOR;environment.environment.background_color=Color.BLACK;environment.environment.tonemap_mode=Environment.TONE_MAPPER_LINEAR;environment.environment.ambient_light_source=Environment.AMBIENT_SOURCE_COLOR;environment.environment.ambient_light_color=Color(.5,.5,.5);environment.environment.ambient_light_energy=.3;scene.add_child(environment)
 	var sun=DirectionalLight3D.new();sun.rotation_degrees=Vector3(-48,-32,0);sun.light_energy=1.5;scene.add_child(sun)
 	camera=Camera3D.new();camera.projection=Camera3D.PROJECTION_ORTHOGONAL;camera.size=24;camera.near=.01;camera.far=100;camera.current=true;scene.add_child(camera)
-	assert(await views.bake(scene,library),"Physical view-grid bake failed")
+	if not await views.bake(scene,library):push_error("Physical view-grid bake failed");quit(1);return
 	var candidate={"stableId":"authored-horizon-control","family":"tree","x":0.0,"y":0.0,"z":0.0,"size":12.0,"crownRadiusM":5.04,"orientation":0.0,"rank":.27,"canopyClass":2}
 	var rows=[]
 	for degrees in [8.0,0.0,-10.0]:
