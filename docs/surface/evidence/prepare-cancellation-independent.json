@@ -1,0 +1,61 @@
+{
+  "format": "independent-prepare-cancellation-review",
+  "version": 1,
+  "status": "PASS_WITH_STATED_SCOPE",
+  "reviewedCommit": "82138721f76657ace9f7938f3e3a8fa6575d6b36",
+  "baselineProducerCommit": "f4d25e105195f9a57f2622b2ee7ea70f5e923940",
+  "filesSha256": {
+    "viewer-local/adapters/surface_prepare_control.gd": "3578e37209c5c5741dfcf8a8ceacc6f64e0305a3d56eef9ecd55f896ba28d573",
+    "viewer-local/adapters/surface_data.gd": "b4590311f5994875e7c9215f35eddb41b9dc7d8d1cd6cf28dab69d9004830d09",
+    "viewer-local/adapters/surface_scene_prepare.gd": "284267d577126f7e380cca9b7e3fa1ab961d9cffa5f7247cdd671acd45e1e27a",
+    "viewer-local/scene/main.gd": "6c7f1f4b4af06f41444cca6bd084909e6ec13162b9e2ce18a2be1bcc93fcd10b",
+    "viewer-local/tests/prepare_control_test.gd": "66318972e08de8976657af2e1b154d44c733dc63344ca88e71516e9979caa749"
+  },
+  "findings": [],
+  "review": {
+    "cancellationEligibility": "camera_only is frozen at spawn from matching job/displayed revision and worldId. New source accepted but not yet displayed has camera_only=false permanently for that job.",
+    "synchronization": "Cancellation request/reached/stage/timestamps are protected by Mutex. A request alone does not count as a reached checkpoint.",
+    "race": "A completed camera refresh superseded by an accepted revision is skipped before water bake and checked again after an awaited bake. A source job not yet displayed is not skipped.",
+    "progress": "When cancelled/obsolete camera work finishes, latest accepted world is scheduled immediately; the displayed snapshot remains intact. A stream of newer previews cannot keep cancelling an accepted-unrendered job.",
+    "preservedBehavior": "Physical lineage and older-than-displayed guards remain unchanged. Height/prefilter/colour arithmetic and population selection are unchanged on non-cancelled paths.",
+    "counters": "cancelledSuperseded records worker results returned after a real hit checkpoint; skippedCameraRefresh records the actual completion skip branch, not request_cancel calls.",
+    "instrumentation": "ScenePrepare phase names now identify the completed stage, including detailMs,treeSupportMs,populationMs,buffersMs,hydrologyMs andurbanArraysMs."
+  },
+  "verification": {
+    "engine": "Godot4.7.2 headless",
+    "gpuUsed": false,
+    "independentControlCases": {
+      "freshAcceptedRevisionsProtected": 197,
+      "checkpointOnlyAfterReach": true,
+      "completedCameraSkippedWithoutClaimingWorkerCancellation": true,
+      "wrongWorldAndInitialJobsProtected": true
+    },
+    "providedIntegrationTest": {
+      "checks": 32,
+      "rerunByIndependentReviewer": true,
+      "isolatedCopyMatchesReviewedFiles": true,
+      "concurrentRowCheckpoint": 5,
+      "nonCancelledImagesByteIdentical": [
+        "height",
+        "control",
+        "ids",
+        "state",
+        "rock",
+        "average"
+      ],
+      "nonCancelledMetadataUnchanged": [
+        "spacing",
+        "localStart",
+        "contextGrid",
+        "loadedHeightRangeWorld"
+      ],
+      "sourceHeightsUnchanged": true
+    },
+    "setup": "Fresh ignored minimal project initialized with headless editor class scan, then copied test run. Fixture and frozen baseline paths supplied explicitly. ROOT and viewer tracked files were read-only."
+  },
+  "limits": [
+    "CPU code/control/output equivalence only; no fresh neural generation, GPU rendering or20s navigation campaign was run.",
+    "The six image comparisons use the authored retained layer fixture; they are not a new terrain provenance claim.",
+    "Full pipeline latency and visible progress still require the original strict20s qualification and native/display ledgers. V9/V10FAILED are preserved."
+  ]
+}
