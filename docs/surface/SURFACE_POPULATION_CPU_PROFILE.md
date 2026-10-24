@@ -17,3 +17,6 @@ npx tsc --noEmit
 ```
 
 The source directory supplies the archived `live-refinement.surfacebin` and `fresh-source.surfacebin`. Child support samples are resampled from the same parent only to exercise transport/retarget paths; they are explicitly not new neural terrain. Input SHA hashes and output record/page/packet fingerprints are persisted by the benchmark.
+
+
+The later V10 review linked the native and observer clocks: the 13.928 s/15.306 s production-trace intervals above are Node/CDP observation delays, not isolated CPU or network durations. They must not be used to assign the cause of a stall. The direct Node/Chromium Worker CPU comparisons remain separately measured. See [the stdout diagnostic](NATIVE_STDOUT_DIAGNOSTIC.md).
