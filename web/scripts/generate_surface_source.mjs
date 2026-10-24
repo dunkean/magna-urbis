@@ -31,6 +31,7 @@ import { verifyExplicitLayerCapture,verifyWaterCapture,verifyLayerIsolationProbe
 import { verifyNativeLogMode } from './surface_native_log_evidence.mjs';
 import { verifyTreeAssetCapture } from './surface_tree_evidence.mjs';
 import { verifyHeightSampler } from './surface_height_evidence.mjs';
+import {loadSurfaceRenderProfile,validateSurfaceRenderProfile} from './surface_render_profile.mjs';
 import { hasExplicitSurfaceLayers } from '../src/surface/surfaceLayers.ts';
 import { captureSurfaceRepositorySnapshot,assertFrozenSurfaceSnapshots } from './surface_repository_snapshot.mjs';
 import { parseLayerProbeWidths,assertCompletedLayerProbeBatch } from './surface_layer_probe_batch.ts';
@@ -49,19 +50,22 @@ const geologyScenario = option('--geology-scenario', undefined);
 if(geologyScenario!==undefined&&geologyScenario!=='tilted-strata-v1')throw new Error('Only the explicit tilted-strata-v1 geological scenario is supported by this driver');
 const timeoutMs = Number(option('--timeout-ms', '900000'));
 const out = resolve(option('--out', 'out/surface/real40km'));
-const viewerGodot = option('--viewer-godot', undefined), viewerAssets = option('--viewer-assets', undefined);
-const viewerVegetationAssets=option('--viewer-vegetation-assets',undefined);
-const viewerTreeAssets=option('--viewer-tree-assets',undefined);
-const viewerHeightBatch=option('--viewer-height-batch',undefined);
 const viewerLauncher = resolve(option('--viewer-launcher', fileURLToPath(new URL('./surface_viewer.mjs', import.meta.url))));
+const viewerProfileId=option('--viewer-render-profile',undefined);
+const selectedViewerProfile=viewerProfileId?loadSurfaceRenderProfile(viewerProfileId,{root:resolve(dirname(viewerLauncher),'../..')}):null;
+const profileDefaults=selectedViewerProfile?.defaults??{};
+const viewerGodot=option('--viewer-godot',undefined),viewerAssets=option('--viewer-assets',profileDefaults.assets);
+const viewerVegetationAssets=option('--viewer-vegetation-assets',profileDefaults.vegetationAssets);
+const viewerTreeAssets=option('--viewer-tree-assets',profileDefaults.treeAssets);
+const viewerHeightBatch=option('--viewer-height-batch',profileDefaults.heightBatch);
 const viewerTimeoutMs = Number(option('--viewer-timeout-ms', '900000'));
 const viewerResolution = option('--viewer-resolution', '2048x1280');
-const viewerNativeLogMode=option('--viewer-native-log-mode','synchronous');
+const viewerNativeLogMode=option('--viewer-native-log-mode',profileDefaults.nativeLogMode??'synchronous');
 if(!['synchronous','threaded'].includes(viewerNativeLogMode))throw new Error('Native log mode must be synchronous or threaded');
-const viewerWaterMode=option('--viewer-water-mode','source-map');
-const viewerWaterVectorTint=option('--viewer-water-vector-tint','source-classes');
+const viewerWaterMode=option('--viewer-water-mode',profileDefaults.waterMode??'source-map');
+const viewerWaterVectorTint=option('--viewer-water-vector-tint',profileDefaults.waterVectorTint??'source-classes');
 if(!['source-classes','uniform'].includes(viewerWaterVectorTint)||viewerWaterVectorTint==='uniform'&&viewerWaterMode!=='source-map')throw new Error('Uniform vector tint requires source-map; choose source-classes or uniform');
-const viewerWaterSymbolWidthPx=Number(option('--viewer-water-symbol-width-px',option('--water-symbol-width-px','0')));
+const viewerWaterSymbolWidthPx=Number(option('--viewer-water-symbol-width-px',option('--water-symbol-width-px',String(profileDefaults.waterSymbolWidthPx??0))));
 if(!Number.isFinite(viewerWaterSymbolWidthPx)||viewerWaterSymbolWidthPx<0||viewerWaterSymbolWidthPx>1.25||viewerWaterSymbolWidthPx>0&&viewerWaterMode!=='source-map')throw new Error('Water symbol width must be0..1.25 pixels and requires source-map mode');
 const layerProbe=args.includes('--viewer-layer-probe');
 const layerProbeWidths=parseLayerProbeWidths(option('--viewer-layer-probe-widths','10000'));
@@ -74,12 +78,16 @@ const retainVisualsAfterNavigationFailure=args.includes('--viewer-retain-visuals
 if(retainVisualsAfterNavigationFailure&&!navigationSeconds)throw new Error('--viewer-retain-visuals-after-navigation-failure requires navigation');
 if(!Number.isFinite(navigationSeconds)||navigationSeconds!==0&&(navigationSeconds<5||navigationSeconds>120)||navigationSeconds&&!viewerGodot)throw new Error('Navigation requires --viewer-godot and duration5..120 seconds');
 if(navigationFirst&&!navigationSeconds)throw new Error('--viewer-navigation-first requires --viewer-navigation-seconds');
+if(selectedViewerProfile&&!viewerGodot)throw new Error('--viewer-render-profile requires --viewer-godot');
 if(viewerHeightBatch&&!viewerGodot)throw new Error('--viewer-height-batch requires --viewer-godot');
 if(viewerTreeAssets&&!viewerGodot)throw new Error('--viewer-tree-assets requires --viewer-godot');
 if(viewerVegetationAssets&&!viewerGodot)throw new Error('--viewer-vegetation-assets requires --viewer-godot');
 if (viewerGodot && (!existsSync(viewerGodot) || !existsSync(viewerLauncher) || viewerAssets && !existsSync(viewerAssets) || viewerVegetationAssets&&!existsSync(viewerVegetationAssets) || viewerTreeAssets&&!existsSync(viewerTreeAssets) || viewerHeightBatch&&!existsSync(viewerHeightBatch)
   || !/^\d+x\d+$/.test(viewerResolution) || Number(viewerResolution.split('x')[0]) < 2000 || !(viewerTimeoutMs > 0))) throw new Error('Invalid viewer executable/launcher/assets/resolution/timeout (width must be >=2000 pixels for the 10m/5mm proof)');
 if (!Number.isFinite(width) || width < 500 || width > 100000 || !(timeoutMs > 0)) throw new Error('Invalid source dimensions/timeout');
+const effectiveProfileDefaults={assets:viewerAssets,vegetationAssets:viewerVegetationAssets,treeAssets:viewerTreeAssets,heightBatch:viewerHeightBatch,presentation:'aerial',nativeLogMode:viewerNativeLogMode,waterMode:viewerWaterMode,waterVectorTint:viewerWaterVectorTint,waterSymbolWidthPx:viewerWaterSymbolWidthPx};
+const validatedViewerProfile=selectedViewerProfile?validateSurfaceRenderProfile(selectedViewerProfile,{defaults:effectiveProfileDefaults}):null;
+if(selectedViewerProfile&&!existsSync(resolve(selectedViewerProfile.metadata.root,'viewer-local/addons/terrain_3d/terrain.gdextension')))throw new Error('Explicit surface-v2 profile requires preinstalled pinned Terrain3D; no runtime bootstrap/download');
 await mkdir(out, { recursive: true });
 const began = Date.now(), errors = [], network = [], progress = [], sessions = [], browserEvents = [];
 const paths = { report: resolve(out, 'report.json'), progress: resolve(out, 'progress.json'), screenshot: resolve(out, 'fresh-source.png'),
@@ -88,6 +96,7 @@ const report = { format: 'magna-fresh-source-proof', version: 1, startedAt: new 
   requestedSource: 'neural-python', freshGeneration: true, paths, errors, network, progress, status: 'starting' };
 report.browserEvents = browserEvents;
 report.nativeLogModeRequested=viewerNativeLogMode;
+if(validatedViewerProfile)report.renderProfile=validatedViewerProfile.metadata;
 report.retainVisualsAfterNavigationFailureRequested=retainVisualsAfterNavigationFailure;
 report.processorTimingDiagnostic = { enabled: true, requestFlag: 'diagnosticTiming', responseField: 'processorTiming', clock: 'surface-worker-processor-timing-1', pageReceiptBeforePacketSummary: true, cpuSampling: false, binaryChanged: false };
 report.requiredRenderContract={version:'surface-layers-1',waterMode:viewerWaterMode,waterVectorTint:viewerWaterVectorTint,waterSymbolWidthPx:viewerWaterSymbolWidthPx,layerProbeWidths:layerProbe?layerProbeWidths:[],physicalSourceChangesAllowed:false};
@@ -571,6 +580,7 @@ try {
   if(viewerVegetationAssets){report.vegetationAssets.finalManifestSha256=createHash('sha256').update(await readFile(resolve(viewerVegetationAssets))).digest('hex');if(report.vegetationAssets.finalManifestSha256!==report.vegetationAssets.manifestSha256)throw new Error('Prepared vegetation manifest changed during the run');}
   if(viewerTreeAssets){report.treeAssets.finalManifestSha256=createHash('sha256').update(await readFile(resolve(viewerTreeAssets))).digest('hex');if(report.treeAssets.finalManifestSha256!==report.treeAssets.manifestSha256)throw new Error('Prepared tree manifest changed during the run');}
   if(viewerHeightBatch){report.heightBatch.finalExecutableSha256=createHash('sha256').update(await readFile(resolve(viewerHeightBatch))).digest('hex');if(report.heightBatch.finalExecutableSha256!==report.heightBatch.executableSha256)throw new Error('Height batch executable changed during the run');}
+  if(validatedViewerProfile){report.finalRenderProfile=validateSurfaceRenderProfile(selectedViewerProfile,{defaults:effectiveProfileDefaults}).metadata;if(report.finalRenderProfile.effectiveSha256!==report.renderProfile.effectiveSha256)throw new Error('Explicit render profile options or runtime asset bytes changed during the run');}
   assertNoRetainedNavigationFailure(report);
   report.finalService = await serviceStatus(); report.status = 'complete'; report.durationMs = Date.now() - began;
   await page.screenshot({ path: resolve(out, 'fresh-source-after-refinement.png') });

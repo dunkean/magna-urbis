@@ -73,8 +73,14 @@ export function validateSurfaceRenderProfile(profile, { defaults = profile.defau
   const materials = json(resolved.assets, 'PBR assets manifest');
   if (!Array.isArray(materials.materials) || !materials.materials.length) throw error('PBR assets manifest must contain prepared materials');
   const runtimeFiles = new Set(pathKeys.map(key => resolved[key]));
+  const declaredHashes = [];
   const required = (manifestPath, value, label) => {
-    const filename = reference(manifestPath, value, label); runtimeFiles.add(filename); return filename;
+    const filename = reference(manifestPath, value, label); runtimeFiles.add(filename);
+    if (record(value) && value.sha256 !== undefined) {
+      if (typeof value.sha256 !== 'string' || !/^[a-f0-9]{64}$/i.test(value.sha256)) throw error(`${label} has an invalid declared SHA256`);
+      declaredHashes.push({ filename, sha256: value.sha256.toLowerCase(), label });
+    }
+    return filename;
   };
   for (const material of materials.materials) {
     for (const role of ['baseColor', 'normal', 'roughness', 'height']) {
@@ -95,9 +101,20 @@ export function validateSurfaceRenderProfile(profile, { defaults = profile.defau
   for (const [role, value] of [['mask', trees.mask], ['lookup', trees.lookup]]) required(resolved.treeAssets, value, `tree ${role}`);
   if (!Array.isArray(trees.views) || trees.views.length !== 5) throw error('tree manifest must contain five prepared views');
   for (const view of trees.views) for (const role of ['color', 'normal']) required(resolved.treeAssets, view.products?.[role], `tree ${view.name ?? '?'} ${role}`);
+  const runtimeArtifacts = [];
+  let runtimeBytes = 0;
+  for (const filename of [...runtimeFiles].sort()) {
+    const bytes = statSync(filename).size;
+    runtimeBytes += bytes;
+    if (runtimeArtifacts.length >= 256 || runtimeBytes > 512 * 1024 * 1024) throw error('runtime artifact budget exceeds 256 files / 512 MiB');
+    runtimeArtifacts.push({ path: filename, bytes, sha256: sha(readFileSync(filename)) });
+  }
+  const actualHashes = new Map(runtimeArtifacts.map(item => [item.path, item.sha256]));
+  for (const item of declaredHashes) if (actualHashes.get(item.filename) !== item.sha256) throw error(`${item.label} SHA256 mismatch`);
+  const runtimeArtifactsSha256 = sha(JSON.stringify(runtimeArtifacts));
   const overrides = Object.keys(flags).filter(key => String(defaults[key]) !== String(profile.defaults[key]));
-  const effectiveSha256 = sha(JSON.stringify({ id: profile.metadata.id, profileSha256: profile.metadata.profileSha256, defaults: resolved, artifacts, treeDigest: trees.digest }));
-  return { defaults: { ...defaults }, metadata: { ...profile.metadata, effectiveSha256, effectiveDefaults: resolved, artifacts, treeDigest: trees.digest, treeEncodingCorrectionVerified: true, runtimeFileCount: runtimeFiles.size, overrides } };
+  const effectiveSha256 = sha(JSON.stringify({ id: profile.metadata.id, profileSha256: profile.metadata.profileSha256, defaults: resolved, artifacts, runtimeArtifactsSha256, treeDigest: trees.digest }));
+  return { defaults: { ...defaults }, metadata: { ...profile.metadata, effectiveSha256, effectiveDefaults: resolved, artifacts, treeDigest: trees.digest, treeEncodingCorrectionVerified: true, runtimeFileCount: runtimeFiles.size, runtimeBytes, runtimeArtifacts, runtimeArtifactsSha256, overrides } };
 }
 
 /** Expand only --render-profile; explicit caller values (including relative paths) win. */

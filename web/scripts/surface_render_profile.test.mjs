@@ -119,3 +119,15 @@ test('missing binary, unknown profile and ambiguous flags are rejected', t => {
   assert.throws(() => applySurfaceRenderProfile(['--render-profile', 'surface-v2', '--render-profile', 'surface-v2'], f.options), /only once/);
   assert.throws(() => applySurfaceRenderProfile(['--render-profile', 'surface-v2', '--assets', 'a', '--assets', 'b'], f.options), /duplicate --assets/);
 });
+
+
+test('all runtime bytes are pinned even when the asset manifest itself is unchanged', t => {
+  const f=fixture(t),first=validateSurfaceRenderProfile(f.profile);
+  assert.equal(first.metadata.runtimeArtifacts.length,first.metadata.runtimeFileCount);
+  const texture=path.join(path.dirname(f.profile.defaults.assets),'map.bin');
+  write(texture,'changed PBR bytes under an unchanged manifest');
+  const second=validateSurfaceRenderProfile(f.profile);
+  assert.equal(first.metadata.artifacts.assets.sha256,second.metadata.artifacts.assets.sha256);
+  assert.notEqual(first.metadata.runtimeArtifactsSha256,second.metadata.runtimeArtifactsSha256);
+  assert.notEqual(first.metadata.effectiveSha256,second.metadata.effectiveSha256);
+});

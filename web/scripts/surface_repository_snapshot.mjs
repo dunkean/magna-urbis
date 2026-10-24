@@ -3,7 +3,7 @@ import{readFile}from'node:fs/promises';
 import{resolve}from'node:path';
 import{createHash}from'node:crypto';
 
-const PATHS=['viewer-local/adapters','viewer-local/scene','viewer-local/shaders','viewer-local/diagnostics','viewer-local/project.godot',
+const PATHS=['viewer-local/adapters','viewer-local/scene','viewer-local/shaders','viewer-local/diagnostics','viewer-local/project.godot','viewer-local/profiles',
   'web/src','web/scripts','web/terrainbench.html','web/vite.config.ts','rust/bridge','viewer-local/native-height',
   'surface/materials/catalogue.json','surface/presentation/palettes.json','surface/vegetation/catalogue.json','surface/vegetation/tree-offline-source.json',
   'web/package.json','web/package-lock.json','viewer-local/bootstrap.ps1'];
