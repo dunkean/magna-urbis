@@ -25,12 +25,14 @@ export function surfaceColluvium(t:TerrainGrid,f:SurfaceFields,units:Map<number,
 }
 
 export interface NaturalGroundParameters{stoniness:number;bed:RockUnit;s:number;water:number;origin:number;coastDistance:number;alluvial:number;gravity:number;wind:number;coastal:number;aridity:number;moisture:number;organic:number;occupation:number;karst?:number;volcanic?:number;geothermal?:number}
+export function naturalGroundRockRecipe(p:NaturalGroundParameters,M:Record<string,number>):number{
+  return p.karst&&p.bed.lithology==='limestone'?M['carbonate-karst']:p.volcanic||p.geothermal?M['volcanic-crust']
+    :Math.abs(p.coastDistance)<40&&p.water===WaterClass.Dry&&p.origin!==DepositOrigin.Coastal?M['coastal-rock']:M['fractured-bedrock'];
+}
 /** Shared bare support policy; occupation blocks plants but is not a paving source. */
 export function naturalGroundWeights(p:NaturalGroundParameters,M:Record<string,number>):Array<[number,number]>{
   const{stoniness,bed,s,water,origin,coastDistance,alluvial,gravity,wind,coastal,aridity,moisture,organic,occupation,karst,volcanic,geothermal}=p;
-  const supportRock = karst && bed.lithology==='limestone' ? M['carbonate-karst']
-    : volcanic || geothermal ? M['volcanic-crust']
-    : Math.abs(coastDistance)<40 && water===WaterClass.Dry && origin!==DepositOrigin.Coastal ? M['coastal-rock'] : M['fractured-bedrock'];
+  const supportRock = naturalGroundRockRecipe(p,M);
   // Coarse occupation is an exclusion/support constraint, not evidence of laid
   // paving. Source roads/courts/buildings carry their own vector materials;
   // preserve the local mineral/organic substrate beneath all three.

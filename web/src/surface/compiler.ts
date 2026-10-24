@@ -1,4 +1,5 @@
-import{surfaceColluvium,naturalGroundWeights}from'./groundSupport';
+import{surfaceColluvium,naturalGroundWeights,naturalGroundRockRecipe}from'./groundSupport';
+import{allocateGroundResponseFields,createGroundResponse,createGroundResponseSampler,hydrateGroundResponse,GROUND_RESPONSE_BYTES_PER_SAMPLE}from'./groundResponse';
 import {
   SURFACE_COMPILER_VERSION, SURFACE_PHYSICAL_CONTEXT_VERSION, SURFACE_POPULATION_VERSION, SURFACE_SCHEMA_VERSION, DepositOrigin, Landform, Occupation, WaterClass,
   assertNotAborted, clamp, hashString, terrainBounds,
@@ -68,10 +69,10 @@ function createFields(n: number, radii: number, units: number, includeLayers = t
 }
 
 /** Conservative owned payload + compiler temporaries; excludes the caller's existing input buffers. */
-export function estimateSurfaceCompileBytes(grid: SurfaceGridGeometry, units: number, radii: number): number {
+export function estimateSurfaceCompileBytes(grid: SurfaceGridGeometry, units: number, radii: number, includeGroundResponse=true): number {
   const n = grid.width * grid.height;
   return n * (FLOAT_FIELDS.length * 4 + BYTE_FIELDS.length + SHORT_FIELDS.length * 2 + INT_FIELDS.length * 4 + 4 + SURFACE_LAYER_BYTES_PER_SAMPLE + (radii + units * 2) * 4 + 4 + 2 + 80 + 39)
-    + (grid.width + 1) * (grid.height + 1) * 8;
+    + (grid.width + 1) * (grid.height + 1) * 8 + (includeGroundResponse?n*GROUND_RESPONSE_BYTES_PER_SAMPLE:0);
 }
 function assertMemoryBudget(required: number, requested = 512 * 1024 * 1024): void {
   if (!Number.isFinite(requested) || requested <= 0) throw new Error('memoryBudgetBytes must be finite and positive');
@@ -250,6 +251,7 @@ function drainage(input: SurfaceCompileInput, f: SurfaceFields, ids: Map<number,
 
 export function compileSurfaceWorld(input: SurfaceCompileInput, options: CompileOptions = {}): SurfaceWorld {
   assertNotAborted(options.signal);
+  if(options.groundResponse!==undefined&&typeof options.groundResponse!=='boolean')throw new Error('groundResponse option must be boolean');
   if (!Number.isSafeInteger(input.seed)) throw new Error('Surface seed must be a safe integer');
   validateGrid(input.terrain);
   if (input.terrain.reconstruction === 'cubic-bspline-controls') throw new Error('Canonical environment analysis requires physical samples; reconstruct provider controls explicitly before compilation');
@@ -259,7 +261,7 @@ export function compileSurfaceWorld(input: SurfaceCompileInput, options: Compile
   for (const [name, value] of Object.entries({ riverAreaThresholdM2: options.riverAreaThresholdM2 ?? 1_000_000, floodplainWidthM: options.floodplainWidthM ?? 150, colluvialDecayLengthM: options.colluvialDecayLengthM ?? 100 })) {
     if (!Number.isFinite(value) || value <= 0) throw new Error(name + ' must be positive physical units');
   }
-  const requiredBytes = estimateSurfaceCompileBytes(input.terrain, input.geology?.units.length ?? 1, radii.length);
+  const requiredBytes = estimateSurfaceCompileBytes(input.terrain, input.geology?.units.length ?? 1, radii.length,options.groundResponse!==false);
   assertMemoryBudget(requiredBytes, options.memoryBudgetBytes);
   // Snapshot mutable generator buffers: a later streaming update cannot silently edit a versioned world.
   const t: TerrainGrid = { ...input.terrain, source: { ...input.terrain.source }, heights: new Float32Array(input.terrain.heights) };
@@ -279,6 +281,7 @@ export function compileSurfaceWorld(input: SurfaceCompileInput, options: Compile
   const materials = options.materialLibrary ?? SURFACE_MATERIALS, M = createMaterialIndex(materials);
   for (const required of SURFACE_MATERIALS) if (M[required.id] === undefined) throw new Error('Material catalogue missing required recipe ' + required.id);
   const f = createFields(n, radii.length, geology.units.length);
+  const responseFields=options.groundResponse===false?undefined:allocateGroundResponseFields(n);
   f.bedrock.set(geology.bedrock);
   morphology(t, f, radii, options.signal);
   const order = drainage(input, f, ids, options);
@@ -409,7 +412,10 @@ export function compileSurfaceWorld(input: SurfaceCompileInput, options: Compile
     // Three vertical layers. Build bare support BEFORE litter/live cover; the
     // legacy composite above is deliberately preserved byte-for-byte.
     const rockCover=clamp((f.stoniness[i]-.08)/.75);
-    const groundWeights=naturalGroundWeights({stoniness:f.stoniness[i],bed,s,water,origin,coastDistance,alluvial,gravity,wind,coastal,aridity,moisture,organic:f.organic[i],occupation,karst:input.processes?.karst?.[i],volcanic:input.processes?.volcanic?.[i],geothermal:input.processes?.geothermal?.[i]},M);
+    const groundParameters={stoniness:f.stoniness[i],bed,s,water,origin,coastDistance,alluvial,gravity,wind,coastal,aridity,moisture,organic:f.organic[i],occupation,karst:input.processes?.karst?.[i],volcanic:input.processes?.volcanic?.[i],geothermal:input.processes?.geothermal?.[i]};
+    const groundWeights=naturalGroundWeights(groundParameters,M);
+    if(responseFields){responseFields.alluvial[i]=alluvial;responseFields.gravity[i]=gravity;responseFields.wind[i]=wind;responseFields.coastal[i]=origin===DepositOrigin.Coastal?coastal:0;
+      responseFields.aridity[i]=aridity;responseFields.moisturePreSaturation[i]=moisture;responseFields.rockRecipe[i]=naturalGroundRockRecipe(groundParameters,M);}
     const groundComposition=dominantMaterialPair(groundWeights);
     const blocked=water!==WaterClass.Dry||occupation===Occupation.Road||occupation===Occupation.Yard||occupation===Occupation.Built;
     const deadLitter=blocked?0:clamp(f.litter[i]*1.35)*(1-rockCover);
@@ -431,14 +437,18 @@ export function compileSurfaceWorld(input: SurfaceCompileInput, options: Compile
   const environment = fingerprint([terrainVersion, hydrologyVersion, geologyVersion, climate, input.processes, radii, options.riverAreaThresholdM2 ?? 1_000_000, options.floodplainWidthM ?? 150, options.colluvialDecayLengthM ?? 100, materials.map(m => m.id), SURFACE_PHYSICAL_CONTEXT_VERSION]);
   const population = fingerprint([environment, occupationVersion, input.seed, SURFACE_POPULATION_VERSION].join(':'));
   const materialLibrary = fingerprint(materials), surfaceState = fingerprint(state), surfaceLayers=surfaceLayerFieldsVersion(f)!;
+  const responseGrid={width:t.width,height:t.height,originX:t.originX,originZ:t.originZ,spacingM:t.spacingM};
+  const groundResponse=responseFields?createGroundResponse(responseGrid,t.source,environment,materialLibrary,responseFields):undefined;
   let estimatedBytes = t.heights.byteLength;
   for (const v of Object.values(f)) estimatedBytes += Array.isArray(v) ? v.reduce((s, a) => s + a.byteLength, 0) : v.byteLength;
+  if(responseFields)estimatedBytes+=n*GROUND_RESPONSE_BYTES_PER_SAMPLE;
   assertNotAborted(options.signal);
   validateFieldFiniteness(f);
   const world: SurfaceWorld = { schemaVersion: SURFACE_SCHEMA_VERSION, compilerVersion: SURFACE_COMPILER_VERSION,
-    id: fingerprint([environment, occupationVersion, population, materialLibrary, surfaceState, input.seed, surfaceLayers].join(':')),
+    id: fingerprint([environment, occupationVersion, population, materialLibrary, surfaceState, input.seed, surfaceLayers,...(groundResponse?[groundResponse.id]:[])].join(':')),
     seed: input.seed, units: 'metres', crs: 'local-xz', bounds: terrainBounds(t),
-    versions: { terrain: terrainVersion, hydrology: hydrologyVersion, geology: geologyVersion, environment, occupation: occupationVersion, population, materialLibrary, surfaceState, surfaceLayers },
+    versions: { terrain: terrainVersion, hydrology: hydrologyVersion, geology: geologyVersion, environment, occupation: occupationVersion, population, materialLibrary, surfaceState, surfaceLayers,...(groundResponse?{groundResponse:groundResponse.id}:{}) },
+    ...(groundResponse?{groundResponse}:{}),
     surfaceLayers:{version:'surface-layers-1',groundAvailability:'explicit',lowCoverAvailability:'explicit',fieldsVersion:surfaceLayers},
     terrain: t, geology, climate, state, fields: f, materials: materials.map(m => ({ ...m, colorLinear: [...m.colorLinear], compatibleSubstrates: [...m.compatibleSubstrates], compatibleProcesses: [...m.compatibleProcesses] })), topographicRadiiM: [...radii],
     diagnostics: { warnings, assumptions, hydrologyBoundary: boundary, estimatedBytes } };
@@ -455,7 +465,7 @@ export function sampleSurface(world: SurfaceWorld, x: number, z: number): Surfac
   const bilinear = sampler.continuous;
   const composition = sampleMaterialComposition(f, sampler.indices, sampler.weights);
   const layersAvailable=hasExplicitSurfaceLayers(f);
-  const ground=layersAvailable?sampleMaterialComposition(f,sampler.indices,sampler.weights,'ground'):undefined;
+  const ground=layersAvailable?(context.groundResponse?createGroundResponseSampler(context.groundResponse,f,world.materials,world.geology.units)(sampler.indices,sampler.weights,i):sampleMaterialComposition(f,sampler.indices,sampler.weights,'ground')):undefined;
   const low=layersAvailable?sampleMaterialComposition(f,sampler.indices,sampler.weights,'lowCover'):undefined;
   const rock = world.geology.units.find(r => r.id === f.bedrock[i])!;
   const layerSample=(pair:NonNullable<typeof ground>)=>({material:world.materials[pair.primary],materialSecondary:world.materials[pair.secondary],materialBlend:pair.blend,meanColorLinear:pair.mean});
@@ -510,8 +520,8 @@ export function hydrateSurfaceWorld(value: unknown, options: SurfaceHydrationOpt
   if (!Number.isSafeInteger(w.seed) || !Array.isArray(w.topographicRadiiM) || !w.topographicRadiiM.length || w.topographicRadiiM.length > 16 || w.topographicRadiiM.some((r, i) => !Number.isFinite(r) || r <= 0 || i > 0 && r < w.topographicRadiiM[i - 1])) throw new Error('Invalid SurfaceWorld seed/radii');
   validateGridGeometry(w.terrain);
   if (w.canonicalContext) validateGridGeometry(w.canonicalContext.grid);
-  const canonicalBytes = w.canonicalContext ? estimateSurfaceCompileBytes(w.canonicalContext.grid, w.geology.units.length, w.topographicRadiiM.length) : 0;
-  assertMemoryBudget(estimateSurfaceCompileBytes(w.terrain, w.geology.units.length, w.topographicRadiiM.length) + canonicalBytes, options.memoryBudgetBytes);
+  const canonicalBytes = w.canonicalContext ? estimateSurfaceCompileBytes(w.canonicalContext.grid, w.geology.units.length, w.topographicRadiiM.length,w.canonicalContext.groundResponse!==undefined) : 0;
+  assertMemoryBudget(estimateSurfaceCompileBytes(w.terrain, w.geology.units.length, w.topographicRadiiM.length,w.groundResponse!==undefined) + canonicalBytes, options.memoryBudgetBytes);
   assertNumericArray(w.terrain.heights, w.terrain.width * w.terrain.height, 'terrain heights', v => Number.isFinite(v), 'Float32Array');
   w.terrain.heights = new Float32Array(w.terrain.heights);
   validateGrid(w.terrain);
@@ -525,12 +535,13 @@ export function hydrateSurfaceWorld(value: unknown, options: SurfaceHydrationOpt
     w.climate[key] = new Float32Array(w.climate[key]!);
   }
   if (!w.versions || ['terrain', 'hydrology', 'geology', 'environment', 'occupation', 'population', 'materialLibrary', 'surfaceState'].some(key => typeof w.versions[key as keyof typeof w.versions] !== 'string' || !w.versions[key as keyof typeof w.versions])) throw new Error('Malformed SurfaceWorld versions');
+  if(w.versions.groundResponse!==undefined&&(typeof w.versions.groundResponse!=='string'||!w.versions.groundResponse))throw new Error('Invalid ground response version');
   const legacy = /^surface-1\.[012]\./.test(w.compilerVersion);
   const contentHash = legacy ? legacyFingerprint : fingerprint, identityHash = legacy ? hashString : fingerprint;
   if (contentHash(w.terrain) !== w.versions.terrain) throw new Error('Terrain version mismatch: data was edited without invalidation');
   const expectedId = w.canonicalContextRef
     ? w.geometryDetail || w.versions.surfaceLayers ? refinedWorldIdentity(w) : identityHash([w.canonicalContextRef.id, w.versions.terrain, contentHash(w.bounds), 'geometry-retarget-1'].join(':'))
-    : identityHash([w.versions.environment, w.versions.occupation, w.versions.population, w.versions.materialLibrary, w.versions.surfaceState, w.seed,...(w.versions.surfaceLayers?[w.versions.surfaceLayers]:[])].join(':'));
+    : identityHash([w.versions.environment, w.versions.occupation, w.versions.population, w.versions.materialLibrary, w.versions.surfaceState, w.seed,...(w.versions.surfaceLayers?[w.versions.surfaceLayers]:[]),...(w.versions.groundResponse?[w.versions.groundResponse]:[])].join(':'));
   if (w.id !== expectedId) throw new Error('SurfaceWorld id/version mismatch');
   restoreFields(w.fields, w.terrain.heights.length, w);
   if (w.canonicalContext) {
@@ -538,7 +549,19 @@ export function hydrateSurfaceWorld(value: unknown, options: SurfaceHydrationOpt
     restoreFields(w.canonicalContext.fields, w.canonicalContext.grid.width * w.canonicalContext.grid.height, w);
   } else if (w.canonicalContextRef && options.resolveCanonicalContext) w.canonicalContext = options.resolveCanonicalContext(w.canonicalContextRef);
   if (w.canonicalContext) validateContextReference(w.canonicalContext, w.canonicalContextRef, w.versions);
+  const responseContext=w.canonicalContext??(!w.canonicalContextRef?{grid:w.terrain,source:w.terrain.source,groundResponse:w.groundResponse}:undefined);
+  if(w.canonicalContextRef&&w.groundResponse!==undefined)throw new Error('Projected ground response must resolve through the canonical context');
+  if(responseContext){
+    if((responseContext.groundResponse!==undefined)!==(w.versions.groundResponse!==undefined))throw new Error('Ground response group/version availability mismatch');
+    if(responseContext.groundResponse!==undefined){
+      const grid=responseContext.grid,geometry={width:grid.width,height:grid.height,originX:grid.originX,originZ:grid.originZ,spacingM:grid.spacingM};
+      responseContext.groundResponse=hydrateGroundResponse(responseContext.groundResponse,{grid:geometry,source:responseContext.source,environmentVersion:w.versions.environment,materialLibraryVersion:w.versions.materialLibrary,materials:w.materials},options.memoryBudgetBytes);
+      if(responseContext.groundResponse.id!==w.versions.groundResponse)throw new Error('Ground response canonical version mismatch');
+      if(!w.canonicalContextRef)w.groundResponse=responseContext.groundResponse;
+    }
+  }
   const layerVersion=surfaceLayerFieldsVersion(w.fields),metadata=w.surfaceLayers;
+  if(w.versions.groundResponse&&!layerVersion)throw new Error('Ground response requires explicit ground fields');
   if(layerVersion){
     if(!metadata||metadata.version!=='surface-layers-1'||metadata.groundAvailability!=='explicit'||metadata.lowCoverAvailability!=='explicit'
       ||metadata.fieldsVersion!==layerVersion||typeof w.versions.surfaceLayers!=='string'||!w.versions.surfaceLayers)throw new Error('Explicit surface layer metadata or field version mismatch');
@@ -723,7 +746,7 @@ function sampleMaterialComposition(fields: SurfaceFields, indices: number[], wei
 
 function contextReference(context: CanonicalSurfaceContext): CanonicalSurfaceContextRef {
   const v = context.versions;
-  return { id: context.id, environmentVersion: v.environment, occupationVersion: v.occupation, materialLibraryVersion: v.materialLibrary, surfaceStateVersion: v.surfaceState, populationVersion: v.population, ...(v.surfaceLayers?{surfaceLayersVersion:v.surfaceLayers}:{}) };
+  return { id: context.id, environmentVersion: v.environment, occupationVersion: v.occupation, materialLibraryVersion: v.materialLibrary, surfaceStateVersion: v.surfaceState, populationVersion: v.population, ...(v.surfaceLayers?{surfaceLayersVersion:v.surfaceLayers}:{}),...(v.groundResponse?{groundResponseVersion:v.groundResponse}:{}) };
 }
 
 function validateContextReference(context: CanonicalSurfaceContext, reference: CanonicalSurfaceContextRef | undefined, versions: SurfaceWorld['versions']): void {
@@ -731,7 +754,8 @@ function validateContextReference(context: CanonicalSurfaceContext, reference: C
     || context.versions.environment !== versions.environment || context.versions.occupation !== versions.occupation
     || context.versions.hydrology !== versions.hydrology || context.versions.geology !== versions.geology
     || context.versions.materialLibrary !== versions.materialLibrary || context.versions.surfaceState !== versions.surfaceState
-    || context.versions.population !== versions.population || context.versions.surfaceLayers!==versions.surfaceLayers) throw new Error('Canonical context identity/version mismatch');
+    || context.versions.population !== versions.population || context.versions.surfaceLayers!==versions.surfaceLayers||context.versions.groundResponse!==versions.groundResponse) throw new Error('Canonical context identity/version mismatch');
+  if((context.groundResponse!==undefined)!==(versions.groundResponse!==undefined)||context.groundResponse&&context.groundResponse.id!==versions.groundResponse)throw new Error('Canonical ground response availability/version mismatch');
 }
 
 /** The returned arrays are borrowed read-only. Missing references never silently fall back to approximate projected fields. */
@@ -742,7 +766,7 @@ export function getCanonicalSurfaceContext(world: SurfaceWorld): CanonicalSurfac
     return world.canonicalContext;
   }
   const { width, height, originX, originZ, spacingM, source } = world.terrain;
-  return { id: fingerprint([world.id, 'canonical-context-1'].join(':')), grid: { width, height, originX, originZ, spacingM }, bounds: { ...terrainBounds(world.terrain) }, source: { ...source }, versions: { ...world.versions }, fields: world.fields };
+  return { id: fingerprint([world.id, 'canonical-context-1'].join(':')), grid: { width, height, originX, originZ, spacingM }, bounds: { ...terrainBounds(world.terrain) }, source: { ...source }, versions: { ...world.versions }, fields: world.fields,...(world.groundResponse?{groundResponse:world.groundResponse}:{}) };
 }
 
 export interface RetargetSurfaceOptions {
@@ -777,6 +801,7 @@ export function retargetSurfaceWorld(baseWorld: SurfaceWorld, fineTerrain: Terra
   const n = terrain.width * terrain.height, sourceFields = context.fields;
   const fields = createFields(n, sourceFields.topographicPosition.length, sourceFields.provenance.length,hasExplicitSurfaceLayers(sourceFields));
   const sourceLayers=hasExplicitSurfaceLayers(sourceFields)?sourceFields:undefined,projectedLayers=hasExplicitSurfaceLayers(fields)?fields:undefined;
+  const groundSampler=context.groundResponse?createGroundResponseSampler(context.groundResponse,sourceFields,baseWorld.materials,baseWorld.geology.units):undefined;
   for (let i = 0; i < n; i++) {
     if (!(i % 4096)) assertNotAborted(options.signal);
     const x = terrain.originX + i % terrain.width * terrain.spacingM, z = terrain.originZ + Math.floor(i / terrain.width) * terrain.spacingM;
@@ -788,7 +813,7 @@ export function retargetSurfaceWorld(baseWorld: SurfaceWorld, fineTerrain: Terra
     fields.material[i] = composition.primary; fields.materialSecondary[i] = composition.secondary; fields.materialBlend[i] = composition.blend;
     fields.materialMeanColor[i] = packMaterialMean(composition.mean);
     if(sourceLayers&&projectedLayers){
-      for(const prefix of ['ground','lowCover'] as const){const pair=sampleMaterialComposition(sourceFields,sample.indices,sample.weights,prefix);
+      for(const prefix of ['ground','lowCover'] as const){const pair=prefix==='ground'&&groundSampler?groundSampler(sample.indices,sample.weights,j):sampleMaterialComposition(sourceFields,sample.indices,sample.weights,prefix);
         projectedLayers[`${prefix}Material`][i]=pair.primary;projectedLayers[`${prefix}MaterialSecondary`][i]=pair.secondary;projectedLayers[`${prefix}MaterialBlend`][i]=pair.blend;projectedLayers[`${prefix}MaterialMeanColor`][i]=packMaterialMean(pair.mean);}
       projectedLayers.lowCoverOpacity[i]=sample.continuous(sourceLayers.lowCoverOpacity);
     }
@@ -828,7 +853,7 @@ export function retargetSurfaceWorld(baseWorld: SurfaceWorld, fineTerrain: Terra
   if (fields.waterClass.some((water, i) => water !== WaterClass.Dry && terrain.heights[i] > fields.waterLevelM[i] + .001)) warnings.push('Refined bed rises above a canonical water level in some wet cells; canonical water is preserved and this support conflict requires source reconciliation.');
   if (fineBounds.minX < footprint.minX || fineBounds.maxX > footprint.maxX || fineBounds.minZ < footprint.minZ || fineBounds.maxZ > footprint.maxZ) warnings.push('Fine source contains padding outside canonical footprint; projected padding context is clamped and excluded from active bounds.');
   assertNotAborted(options.signal);
-  const result: SurfaceWorld = { ...baseWorld, compilerVersion: SURFACE_COMPILER_VERSION, id: '', geometryDetail: undefined,
+  const result: SurfaceWorld = { ...baseWorld, compilerVersion: SURFACE_COMPILER_VERSION, id: '', geometryDetail: undefined,groundResponse:undefined,
     bounds, terrain, fields, geology, climate, versions, surfaceLayers:surfaceLayerMetadata(fields), canonicalContext: context, canonicalContextRef: reference,
     state: { ...baseWorld.state }, topographicRadiiM: [...baseWorld.topographicRadiiM],
     diagnostics: { ...baseWorld.diagnostics, warnings, assumptions: [...baseWorld.diagnostics.assumptions,
@@ -852,6 +877,7 @@ function conditionedExposure(world:SurfaceWorld,detail:NonNullable<SurfaceWorld[
 function refinedWorldIdentity(world: SurfaceWorld): string {
   const prefix=[world.canonicalContextRef!.id,world.versions.terrain,fingerprint(world.bounds)];
   if(world.versions.surfaceLayers)prefix.push(world.surfaceLayers?.fieldsVersion??'');
+  if(world.versions.groundResponse)prefix.push(world.versions.groundResponse);
   const detail=world.geometryDetail;
   return fingerprint((detail ? [...prefix,detail.id,detail.surfaceConditioning?.version ?? '', 'geometry-retarget-2'] : [...prefix,'geometry-retarget-1']).join(':'));
 }

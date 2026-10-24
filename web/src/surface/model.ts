@@ -1,6 +1,6 @@
 /** Renderer-independent physical surface contract. Right-handed frame: +X east, +Y up, +Z south (map +Y), all metres. */
 export const SURFACE_SCHEMA_VERSION = 1 as const;
-export const SURFACE_COMPILER_VERSION = 'surface-1.5.3';
+export const SURFACE_COMPILER_VERSION = 'surface-1.6.0';
 /** Physical analysis/acceptance is unchanged by derived ground support policy. */
 export const SURFACE_PHYSICAL_CONTEXT_VERSION = 'surface-1.5.2';
 export const SURFACE_POPULATION_VERSION = 'population-1.2.0';
@@ -81,6 +81,9 @@ export interface CompileOptions {
   /** Synchronous compiler: AbortSignal supports pre-start cancellation; dispatch to a worker to interrupt long-running work. */
   signal?: AbortSignal; topographicRadiiM?: number[]; memoryBudgetBytes?: number;
   materialLibrary?: MaterialRecipe[];
+  /** New compilations retain a continuous physical ground response. False is an
+   * explicit legacy optical path; it does not change physical analysis. */
+  groundResponse?: boolean;
   riverAreaThresholdM2?: number; floodplainWidthM?: number; colluvialDecayLengthM?: number;
 }
 export type SurfaceFamily = 'mineral-plains' | 'bedrock' | 'aeolian' | 'arid-erosion' | 'gravity' |
@@ -154,17 +157,20 @@ export interface SurfaceVersions {
   occupation: string; population: string; materialLibrary: string; surfaceState: string;
   /** Canonical explicit layers only; absent for legacy mixed-only packets. */
   surfaceLayers?: string;
+  groundResponse?: string;
 }
 export type SurfaceGridGeometry = Pick<TerrainGrid, 'width' | 'height' | 'originX' | 'originZ' | 'spacingM'>;
 /** Borrowed immutable context: geometry refinements do not reclassify these canonical fields. */
 export interface CanonicalSurfaceContext {
   id: string; grid: SurfaceGridGeometry; bounds: Bounds; source: SourceIdentity;
   versions: SurfaceVersions; fields: SurfaceFields;
+  groundResponse?: import('./groundResponse').SurfaceGroundResponse;
 }
 export interface CanonicalSurfaceContextRef {
   id: string; environmentVersion: string; occupationVersion: string;
   materialLibraryVersion: string; surfaceStateVersion: string; populationVersion: string;
   surfaceLayersVersion?: string;
+  groundResponseVersion?: string;
 }
 export interface SurfaceWorld {
   schemaVersion: typeof SURFACE_SCHEMA_VERSION; compilerVersion: string; id: string; seed: number;
@@ -172,6 +178,9 @@ export interface SurfaceWorld {
   terrain: TerrainGrid; geology: GeologyInput; climate: ClimateInput; state: SurfaceState;
   geometryDetail?: import('./geometryDetail').SurfaceGeometryDetail;
   surfaceLayers?: SurfaceLayerMetadata;
+  /** Present on a canonical world. Refinements borrow it only through their
+   * canonicalContext; known-context transfers need not retransmit the table. */
+  groundResponse?: import('./groundResponse').SurfaceGroundResponse;
   fields: SurfaceFields; materials: MaterialRecipe[]; topographicRadiiM: number[];
   /** Present on geometry-only refinements. May be omitted from runtime transfer with an explicit reference. */
   canonicalContext?: CanonicalSurfaceContext;
