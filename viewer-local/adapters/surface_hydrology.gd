@@ -10,6 +10,14 @@ const MAX_SOURCE_POINTS := 500000
 const MAX_SCAN_WORK := 12000000
 const MAX_BED_DIAGNOSTIC_SAMPLES := 4096
 
+# One immutable source attachment and one valid byte-class column, not a mesh
+# or spatial/frame cache. Exact copied bytes are the keys; IDs are insufficient.
+# The decoded geometry is private read-only input: clipping builds fresh points.
+static var _source_cache_mutex=Mutex.new()
+static var _geometry_bytes:=PackedByteArray()
+static var _decoded_geometry:Dictionary={}
+static var _valid_class_bytes:=PackedByteArray()
+
 # Fixed-map water comes from Magna's retained polygons and measured levels.
 # This is a display adapter: no routing, flow threshold, channel generation,
 # river widening, source-level edits or bed carving occur here.
@@ -20,9 +28,36 @@ static func _geometry(source: Dictionary):
 	for item in archive.get("attachments",[]):
 		if item is Dictionary and item.get("path")==["geometry"] and item.get("encoding")=="json-utf8" and item.get("bytes") is PackedByteArray:
 			if item.bytes.size()>64*1024*1024: return null
+			_source_cache_mutex.lock()
+			if not _decoded_geometry.is_empty() and item.bytes==_geometry_bytes:
+				var cached=_decoded_geometry
+				_source_cache_mutex.unlock()
+				return cached
+			_source_cache_mutex.unlock()
 			var value=JSON.parse_string(item.bytes.get_string_from_utf8())
+			if value is Dictionary:
+				_source_cache_mutex.lock()
+				_geometry_bytes=item.bytes.duplicate();_decoded_geometry=value
+				_source_cache_mutex.unlock()
 			return value if value is Dictionary else null
 	return null
+
+# Only this pure column predicate is memoized. Shape, origin, width, levels,
+# translation, clipping and budgets are still checked/evaluated on every call.
+# Other accepted sequence types retain the original validation loop.
+static func _valid_classes(values)->bool:
+	if values is PackedByteArray:
+		_source_cache_mutex.lock()
+		var known=not _valid_class_bytes.is_empty() and values==_valid_class_bytes
+		_source_cache_mutex.unlock()
+		if known:return true
+	for value in values:
+		if not _finite(value) or floorf(float(value))!=float(value) or float(value)<0.0 or float(value)>3.0:return false
+	if values is PackedByteArray:
+		_source_cache_mutex.lock()
+		_valid_class_bytes=values.duplicate()
+		_source_cache_mutex.unlock()
+	return true
 
 # Only restore the explicitly addressed recipe string. Native metadata remains
 # archived; a long query must not hide cavern class-2 ambiguity.
@@ -149,8 +184,7 @@ static func prepare(packet: Dictionary, world: Dictionary, origin: Dictionary, f
 	if not water is Dictionary or not _finite(water.get("n")) or floorf(float(water.n))!=float(water.n) or not _finite(water.get("width")) or float(water.width)<=0.0: return _fallback(fallback,"invalid retained water grid shape")
 	var n:=int(water.n)
 	if n<2 or n>4096 or not _sequence(water.get("classes")) or water.classes.size()!=n*n or not _sequence(water.get("levelM")) or water.levelM.size()!=n*n: return _fallback(fallback,"missing or mis-sized retained water columns")
-	for value in water.classes:
-		if not _finite(value) or floorf(float(value))!=float(value) or float(value)<0.0 or float(value)>3.0: return _fallback(fallback,"invalid retained Magna water class")
+	if not _valid_classes(water.classes): return _fallback(fallback,"invalid retained Magna water class")
 	if not _finite(water.get("originX")) or not _finite(water.get("originZ")): return _fallback(fallback,"invalid retained first-sample water origin")
 	var window:=Geometry._window(focus,width)
 	if window.is_empty(): return _fallback(fallback,"invalid display window")
