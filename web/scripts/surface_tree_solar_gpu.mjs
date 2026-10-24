@@ -10,9 +10,10 @@ const files=execFileSync('git',['ls-files','viewer-local'],{cwd:root,encoding:'u
 const snapshot=async()=>Object.fromEntries(await Promise.all(files.sort().map(async p=>[p,sha(await readFile(path.join(root,p)))])));
 await mkdir(out,{recursive:true});
 let report={version:1,head:execFileSync('git',['rev-parse','HEAD'],{cwd:root,encoding:'utf8'}).trim(),clean:execFileSync('git',['status','--porcelain'],{cwd:root,encoding:'utf8'}).trim()==='',sourceSha256:sha(await readFile(world)),treeManifestSha256:sha(await readFile(trees)),heightExecutableSha256:sha(await readFile(height)),runs:[],scope:'Retained source replay, paired same source/camera/colour assets. Native shadow-only inventory differs; physical source and actual colour buffers must not.'};
-for(let [width,view]of[[160,'top'],[640,'top'],[160,'oblique']])for(let mode of['optical','native-solar']){
+const cases=args.includes('--only-oblique')?[[160,'oblique']]:[[160,'top'],[640,'top'],[160,'oblique']];
+for(let [width,view]of cases)for(let mode of['optical','native-solar']){
  const folder=path.join(out,`${width}-${view}-${mode}`);await mkdir(folder,{recursive:true});let before=await snapshot();
- let command=['--audio-driver','Dummy','--path',path.join(root,'viewer-local'),'--rendering-method','forward_plus','--gpu-index','0','--script','diagnostics/tree_solar_layer_probe.gd','--','--world',world,'--assets',assets,'--tree-assets',trees,'--height-batch',height,'--tree-shadow-mode',mode,'--native-log-mode','threaded','--presentation','aerial','--'+view,'--resolution','1600x1000','--width',String(width),'--x','20000','--z','20000','--water-mode','source-levels','--water-symbol-width-px','0','--layers','all','--layer-report',path.join(folder,'layer-report.json'),'--layer-captures',folder,'--metrics',path.join(folder,'metrics.json')];
+ let command=['--audio-driver','Dummy','--path',path.join(root,'viewer-local'),'--rendering-method','forward_plus','--gpu-index','0','--script','diagnostics/tree_solar_layer_probe.gd','--','--world',world,'--assets',assets,'--tree-assets',trees,'--height-batch',height,'--tree-shadow-mode',mode,'--native-log-mode','threaded','--presentation','aerial','--'+view,'--resolution','1600x1000','--width',String(width),'--x',view==='oblique'?'20006.7656233':'20000','--z',view==='oblique'?'19995.0289897':'20000','--water-mode','source-levels','--water-symbol-width-px','0','--layers','all','--layer-report',path.join(folder,'layer-report.json'),'--layer-captures',folder,'--metrics',path.join(folder,'metrics.json')];
  let stdout=openSync(path.join(folder,'stdout.log'),'w'),stderr=openSync(path.join(folder,'stderr.log'),'w'),start=Date.now();
  let code=await new Promise((resolve,reject)=>{let child=spawn(godot,command,{cwd:root,windowsHide:true,stdio:['ignore',stdout,stderr]});child.on('error',reject);child.on('exit',resolve);});closeSync(stdout);closeSync(stderr);
  let after=await snapshot();if(JSON.stringify(before)!==JSON.stringify(after))throw Error('Native runtime mutated');
@@ -24,7 +25,7 @@ for(let [width,view]of[[160,'top'],[640,'top'],[160,'oblique']])for(let mode of[
  await writeFile(path.join(out,'report.partial.json'),JSON.stringify(report,null,2));console.log(JSON.stringify({width,view,mode,solar:metrics.treeSolarShadows}));
 }
 report.comparisons=[];
-for(let[width,view]of[[160,'top'],[640,'top'],[160,'oblique']]){
+for(let[width,view]of cases){
  let a=report.runs.find(r=>r.width===width&&r.view===view&&r.mode==='optical'),b=report.runs.find(r=>r.width===width&&r.view===view&&r.mode==='native-solar');
  for(let i=0;i<a.layers.views.length;i++){
   let x=a.layers.views[i],y=b.layers.views[i];
