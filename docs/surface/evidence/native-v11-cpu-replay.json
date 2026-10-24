@@ -1,0 +1,507 @@
+{
+  "records": [
+    {
+      "atlasHash": "46a7a627a31e5a0199685370a5619623f055a86f2836abc0e59637687560c077",
+      "atlasRequest": {
+        "maxX": 20160.278875351,
+        "maxZ": 20133.1666374207,
+        "minX": 19841.6867523193,
+        "minZ": 19838.0465621948
+      },
+      "atlasSize": "(2048.0, 2048.0)",
+      "attempt": 0,
+      "candidateCount": 73817,
+      "canopy": {
+        "crownRasterMs": 1417.901,
+        "hashAndMetadataMs": 805.161,
+        "imageMipsMs": 53.566,
+        "setupArraysMs": 26.436
+      },
+      "data": {
+        "baseGeometryMs": 187.187,
+        "contextSkippedMs": 0.01,
+        "displaySourceMs": 0.028,
+        "heightImagesMs": 3590.662,
+        "layerImagesMs": 0.038
+      },
+      "heightImageSize": 512,
+      "hydrology": {
+        "bedDiagnosticsMs": 0.006,
+        "metadataAndClassImageMs": 50.278,
+        "seaUnionMs": 211.419,
+        "sourceGeometryDecodeMs": 165.644,
+        "vectorClipMeshLevelsMs": 325.072,
+        "waterValidationMs": 124.971,
+        "windowSetupMs": 0.033
+      },
+      "phases": {
+        "buffersMs": 15.548,
+        "cityMapMs": 0.004,
+        "dataMs": 3777.942,
+        "detailMs": 24.67,
+        "hydrologyMs": 937.62,
+        "metadataMs": 0.008,
+        "populationMs": 2318.351,
+        "roadsMs": 93.157,
+        "treeSupportMs": 986.857,
+        "urbanArraysMs": 0.014
+      },
+      "readDecodeMs": 2083.375,
+      "serial": 21.0,
+      "spacingM": 0.25688811320124,
+      "totalMs": 8154.202,
+      "waterGroups": 703,
+      "waterVertices": 0,
+      "widthM": 62.5921199841426,
+      "worldId": "50a44c926165882c92619fba3b10bb76"
+    },
+    {
+      "atlasHash": "46a7a627a31e5a0199685370a5619623f055a86f2836abc0e59637687560c077",
+      "atlasRequest": {
+        "maxX": 20160.278875351,
+        "maxZ": 20133.1666374207,
+        "minX": 19841.6867523193,
+        "minZ": 19838.0465621948
+      },
+      "atlasSize": "(2048.0, 2048.0)",
+      "attempt": 1,
+      "candidateCount": 73817,
+      "canopy": {},
+      "data": {
+        "baseGeometryMs": 177.181,
+        "contextSkippedMs": 0.01,
+        "displaySourceMs": 0.051,
+        "heightImagesMs": 3644.103,
+        "layerImagesMs": 0.037
+      },
+      "heightImageSize": 512,
+      "hydrology": {
+        "bedDiagnosticsMs": 0.006,
+        "metadataAndClassImageMs": 51.855,
+        "seaUnionMs": 217.014,
+        "sourceGeometryDecodeMs": 166.484,
+        "vectorClipMeshLevelsMs": 343.341,
+        "waterValidationMs": 133.462,
+        "windowSetupMs": 0.027
+      },
+      "phases": {
+        "buffersMs": 14.377,
+        "cityMapMs": 0.001,
+        "dataMs": 3821.404,
+        "detailMs": 0.005,
+        "hydrologyMs": 975.784,
+        "metadataMs": 0.009,
+        "populationMs": 9.416,
+        "roadsMs": 92.498,
+        "treeSupportMs": 0.004,
+        "urbanArraysMs": 0.014
+      },
+      "readDecodeMs": 2083.375,
+      "serial": 21.0,
+      "spacingM": 0.25688811320124,
+      "totalMs": 4914.218,
+      "waterGroups": 703,
+      "waterVertices": 0,
+      "widthM": 62.5921199841426,
+      "worldId": "50a44c926165882c92619fba3b10bb76"
+    },
+    {
+      "atlasHash": "aab7c93a3e769c5f8d2a4d111898545df7f946a22723bc36794374a94213ca88",
+      "atlasRequest": {
+        "maxX": 20134.7667045593,
+        "maxZ": 20116.9536399841,
+        "minX": 19867.7720451355,
+        "minZ": 19854.0819702149
+      },
+      "atlasSize": "(2048.0, 2048.0)",
+      "attempt": 0,
+      "candidateCount": 1155,
+      "canopy": {
+        "crownRasterMs": 635.94,
+        "hashAndMetadataMs": 799.138,
+        "imageMipsMs": 56.091,
+        "setupArraysMs": 24.303
+      },
+      "data": {
+        "baseGeometryMs": 181.888,
+        "contextSkippedMs": 0.01,
+        "displaySourceMs": 0.032,
+        "heightImagesMs": 4228.159,
+        "layerImagesMs": 0.038
+      },
+      "heightImageSize": 512,
+      "hydrology": {
+        "bedDiagnosticsMs": 0.006,
+        "metadataAndClassImageMs": 52.174,
+        "seaUnionMs": 215.412,
+        "sourceGeometryDecodeMs": 156.782,
+        "vectorClipMeshLevelsMs": 324.399,
+        "waterValidationMs": 136.123,
+        "windowSetupMs": 0.025
+      },
+      "phases": {
+        "buffersMs": 5.969,
+        "cityMapMs": 0.003,
+        "dataMs": 4410.145,
+        "detailMs": 21.669,
+        "hydrologyMs": 954.385,
+        "metadataMs": 0.008,
+        "populationMs": 1530.405,
+        "roadsMs": 94.915,
+        "treeSupportMs": 1.763,
+        "urbanArraysMs": 0.014
+      },
+      "readDecodeMs": 1434.094,
+      "serial": 204.0,
+      "spacingM": 0.252688350078593,
+      "totalMs": 7019.301,
+      "waterGroups": 703,
+      "waterVertices": 0,
+      "widthM": 10.9946619335637,
+      "worldId": "cdf21a01ebd00c1f3b787461dd013bcd"
+    },
+    {
+      "atlasHash": "aab7c93a3e769c5f8d2a4d111898545df7f946a22723bc36794374a94213ca88",
+      "atlasRequest": {
+        "maxX": 20134.7667045593,
+        "maxZ": 20116.9536399841,
+        "minX": 19867.7720451355,
+        "minZ": 19854.0819702149
+      },
+      "atlasSize": "(2048.0, 2048.0)",
+      "attempt": 1,
+      "candidateCount": 1155,
+      "canopy": {},
+      "data": {
+        "baseGeometryMs": 187.467,
+        "contextSkippedMs": 0.01,
+        "displaySourceMs": 0.065,
+        "heightImagesMs": 4243.899,
+        "layerImagesMs": 0.038
+      },
+      "heightImageSize": 512,
+      "hydrology": {
+        "bedDiagnosticsMs": 0.006,
+        "metadataAndClassImageMs": 50.486,
+        "seaUnionMs": 213.033,
+        "sourceGeometryDecodeMs": 153.428,
+        "vectorClipMeshLevelsMs": 330.705,
+        "waterValidationMs": 132.734,
+        "windowSetupMs": 0.027
+      },
+      "phases": {
+        "buffersMs": 5.897,
+        "cityMapMs": 0.001,
+        "dataMs": 4431.502,
+        "detailMs": 0.004,
+        "hydrologyMs": 941.0,
+        "metadataMs": 0.008,
+        "populationMs": 2.506,
+        "roadsMs": 100.611,
+        "treeSupportMs": 0.004,
+        "urbanArraysMs": 0.014
+      },
+      "readDecodeMs": 1434.094,
+      "serial": 204.0,
+      "spacingM": 0.252688350078593,
+      "totalMs": 5482.055,
+      "waterGroups": 703,
+      "waterVertices": 0,
+      "widthM": 10.9946619335637,
+      "worldId": "cdf21a01ebd00c1f3b787461dd013bcd"
+    },
+    {
+      "atlasHash": null,
+      "atlasRequest": {
+        "disabled": true
+      },
+      "atlasSize": null,
+      "attempt": 0,
+      "candidateCount": 1154,
+      "canopy": {},
+      "data": {
+        "baseGeometryMs": 196.052,
+        "contextSkippedMs": 0.012,
+        "displaySourceMs": 0.039,
+        "heightImagesMs": 4666.867,
+        "layerImagesMs": 0.047
+      },
+      "heightImageSize": 512,
+      "hydrology": {
+        "bedDiagnosticsMs": 0.007,
+        "metadataAndClassImageMs": 46.816,
+        "seaUnionMs": 222.867,
+        "sourceGeometryDecodeMs": 163.582,
+        "vectorClipMeshLevelsMs": 347.952,
+        "waterValidationMs": 129.075,
+        "windowSetupMs": 0.026
+      },
+      "phases": {
+        "buffersMs": 5.774,
+        "cityMapMs": 0.002,
+        "dataMs": 4863.035,
+        "detailMs": 27.926,
+        "hydrologyMs": 974.069,
+        "metadataMs": 0.008,
+        "populationMs": 2.082,
+        "roadsMs": 118.419,
+        "treeSupportMs": 2.066,
+        "urbanArraysMs": 0.014
+      },
+      "readDecodeMs": 1739.834,
+      "serial": 253.0,
+      "spacingM": 0.465668530859122,
+      "totalMs": 5993.417,
+      "waterGroups": 703,
+      "waterVertices": 0,
+      "widthM": 10.9946619335637,
+      "worldId": "3a6bc8170689f0c9b92c4e570897b1bb"
+    },
+    {
+      "atlasHash": null,
+      "atlasRequest": {
+        "disabled": true
+      },
+      "atlasSize": null,
+      "attempt": 1,
+      "candidateCount": 1154,
+      "canopy": {},
+      "data": {
+        "baseGeometryMs": 179.575,
+        "contextSkippedMs": 0.01,
+        "displaySourceMs": 0.068,
+        "heightImagesMs": 4716.089,
+        "layerImagesMs": 0.037
+      },
+      "heightImageSize": 512,
+      "hydrology": {
+        "bedDiagnosticsMs": 0.006,
+        "metadataAndClassImageMs": 46.861,
+        "seaUnionMs": 225.528,
+        "sourceGeometryDecodeMs": 152.679,
+        "vectorClipMeshLevelsMs": 338.97,
+        "waterValidationMs": 123.06,
+        "windowSetupMs": 0.026
+      },
+      "phases": {
+        "buffersMs": 5.527,
+        "cityMapMs": 0.001,
+        "dataMs": 4895.801,
+        "detailMs": 0.004,
+        "hydrologyMs": 947.552,
+        "metadataMs": 0.008,
+        "populationMs": 2.213,
+        "roadsMs": 108.16,
+        "treeSupportMs": 0.004,
+        "urbanArraysMs": 0.013
+      },
+      "readDecodeMs": 1739.834,
+      "serial": 253.0,
+      "spacingM": 0.465668530859122,
+      "totalMs": 5959.677,
+      "waterGroups": 703,
+      "waterVertices": 0,
+      "widthM": 10.9946619335637,
+      "worldId": "3a6bc8170689f0c9b92c4e570897b1bb"
+    }
+  ],
+  "scope": "CPU retained/reconstructed replay; no original BODY byte-exact claim, no GPU, no navigation proof. TOP camera reconstructed from production code at recorded focus/width and prior origin, cache warmup explicit.",
+  "warmup": {
+    "initialLayerImageMs": 1534.891,
+    "initialReadAndCachesMs": 7325.949
+  },
+  "format": "native-v11-cpu-replay-profile",
+  "version": 1,
+  "sourceRuntime": "176e77403152e9893f5f9303728db0e1ecd033e5",
+  "noGpu": true,
+  "limits": [
+    "The instrumented headless call runs on the main script thread without concurrent UI/NN/GPU; its wall costs are not replacements for actual V11 per-phase times.",
+    "Reconstructed retained replay BODYs reproduce terrain/world/versions/layers but are not archived byte-exact original network BODYs.",
+    "Recorded focus/width and TOP production camera were reconstructed; the original preceding camera/frame/atlas history is not fully archived.",
+    "Near204 atlas SHA matches actual V11 aab7c93a3e769c5f8d2a4d111898545df7f946a22723bc36794374a94213ca88. Case253 canopy guard was disabled and must not be represented as equivalent to actual g12 canopy.",
+    "Attempt1 is an immediate exact-request rerun with natural caches warm; it is not the historical navigation job or proof of small-pan reuse.",
+    "Two earlier probe setup failures (consumer not in viewport; default oblique) were discarded and never used as successful Population measurements."
+  ],
+  "config": {
+    "initial": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\native-e2e-40km-v11\\live-refinement.surfacebin",
+    "metrics": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\native-e2e-40km-v11\\native-navigation\\metrics.json",
+    "previousOrigin": {
+      "x": 20038.9862060547,
+      "y": 2170.00805664063,
+      "z": 20038.9862060547
+    },
+    "output": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-v11-viewer\\viewer-local\\captures\\native-v11-profile\\result.json",
+    "cases": [
+      {
+        "serial": 21,
+        "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-v11-model\\web\\out\\surface\\v11-preview-replay\\preview-21.surfacebin",
+        "focus": {
+          "x": 20000.9828128958,
+          "y": 19985.6064973675
+        },
+        "width": 62.5921199841426,
+        "samples": 128
+      },
+      {
+        "serial": 204,
+        "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-v11-model\\web\\out\\surface\\v11-preview-replay\\preview-204.surfacebin",
+        "focus": {
+          "x": 20001.269374443,
+          "y": 19985.5177019793
+        },
+        "width": 10.9946619335637,
+        "samples": 256
+      },
+      {
+        "serial": 253,
+        "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-v11-model\\web\\out\\surface\\v11-preview-replay\\preview-253.surfacebin",
+        "focus": {
+          "x": 20001.269374443,
+          "y": 19985.5177019793
+        },
+        "width": 10.9946619335637,
+        "samples": 256
+      }
+    ]
+  },
+  "replayEvidence": {
+    "report": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-v11-model\\web\\out\\surface\\v11-preview-replay\\report.json",
+    "initialCacheSha256": "39bd4cfbe14eab2745f9f0210daf3f80f49f43ee5ba94c25be44b2b68dfafd29",
+    "sourceGenerationRequested": false,
+    "registrationRequested": false,
+    "outputs": [
+      {
+        "serial": 21,
+        "originalTerrainHashMatched": true,
+        "originalWorldIdMatched": true,
+        "originalVersionsMatched": true,
+        "originalSurfaceLayerDescriptorMatched": true,
+        "candidateCount": 73817
+      },
+      {
+        "serial": 204,
+        "originalTerrainHashMatched": true,
+        "originalWorldIdMatched": true,
+        "originalVersionsMatched": true,
+        "originalSurfaceLayerDescriptorMatched": true,
+        "candidateCount": 1155
+      },
+      {
+        "serial": 253,
+        "originalTerrainHashMatched": true,
+        "originalWorldIdMatched": true,
+        "originalVersionsMatched": true,
+        "originalSurfaceLayerDescriptorMatched": true,
+        "candidateCount": 1154
+      }
+    ]
+  },
+  "productionFilesSha256": {
+    "viewer-local\\adapters\\surface_data.gd": "b4590311f5994875e7c9215f35eddb41b9dc7d8d1cd6cf28dab69d9004830d09",
+    "viewer-local\\adapters\\surface_scene_prepare.gd": "284267d577126f7e380cca9b7e3fa1ab961d9cffa5f7247cdd671acd45e1e27a",
+    "viewer-local\\adapters\\surface_population.gd": "96d72922c6a9b21403e9b80c4b1dd6c352188154be9f35c720b67270c2ef0440",
+    "viewer-local\\adapters\\surface_canopy.gd": "430b7656aa5851c86adf12813fccb8c29547deccd61e8f49bfe7be7407beeacb",
+    "viewer-local\\adapters\\surface_hydrology.gd": "827a864e8d0b26d91c44b12190efc9ae67e039311e283ee1139fe9275b1a8790",
+    "viewer-local\\adapters\\surface_geometry_detail.gd": "e895dd94cbb22bb3d901fe16963fe088d779680674754c932b50eba3e448f8d9"
+  },
+  "actualV11Reference": {
+    "scope": "Recorded concurrent runtime measurements, separate from this replay",
+    "freshJobs": [
+      {
+        "cpuPhasesMs": {
+          "buffersMs": 7.296,
+          "cityMapMs": 0.003,
+          "dataMs": 1508.208,
+          "detailMs": 0.004,
+          "hydrologyMs": 555.14,
+          "metadataMs": 0.013,
+          "populationMs": 1226.226,
+          "roadsMs": 51.352,
+          "treeSupportMs": 0.003,
+          "urbanArraysMs": 0.019
+        },
+        "focus": {
+          "x": 20000.9828128958,
+          "y": 19985.6064973675
+        },
+        "generation": 6,
+        "sourceId": "infinite:2814899424497554030:80c32ff0e57f86c3cb4ce9ebaf274312",
+        "widthM": 62.5921199841426
+      },
+      {
+        "cpuPhasesMs": {
+          "buffersMs": 2.933,
+          "cityMapMs": 0.003,
+          "dataMs": 1502.708,
+          "detailMs": 11.062,
+          "hydrologyMs": 478.51,
+          "metadataMs": 0.013,
+          "populationMs": 1190.894,
+          "roadsMs": 93.357,
+          "treeSupportMs": 394.967,
+          "urbanArraysMs": 0.013
+        },
+        "focus": {
+          "x": 20001.1140719857,
+          "y": 19985.3169328388
+        },
+        "generation": 8,
+        "sourceId": "infinite:2814899424497554030:80c32ff0e57f86c3cb4ce9ebaf274312",
+        "widthM": 10.9946619335637
+      },
+      {
+        "cpuPhasesMs": {
+          "buffersMs": 2.93,
+          "cityMapMs": 0.003,
+          "dataMs": 1864.434,
+          "detailMs": 11.555,
+          "hydrologyMs": 505.375,
+          "metadataMs": 0.013,
+          "populationMs": 817.226,
+          "roadsMs": 97.726,
+          "treeSupportMs": 0.929,
+          "urbanArraysMs": 0.014
+        },
+        "focus": {
+          "x": 20001.269374443,
+          "y": 19985.5177019793
+        },
+        "generation": 11,
+        "sourceId": "infinite:2814899424497554030:80c32ff0e57f86c3cb4ce9ebaf274312",
+        "widthM": 10.9946619335637
+      },
+      {
+        "cpuPhasesMs": {
+          "buffersMs": 2.991,
+          "cityMapMs": 0.002,
+          "dataMs": 1855.107,
+          "detailMs": 12.576,
+          "hydrologyMs": 487.186,
+          "metadataMs": 0.012,
+          "populationMs": 784.717,
+          "roadsMs": 97.598,
+          "treeSupportMs": 0.867,
+          "urbanArraysMs": 0.014
+        },
+        "focus": {
+          "x": 20001.269374443,
+          "y": 19985.5177019793
+        },
+        "generation": 12,
+        "sourceId": "infinite:2814899424497554030:80c32ff0e57f86c3cb4ce9ebaf274312",
+        "widthM": 10.9946619335637
+      }
+    ],
+    "cancelled": [
+      {
+        "cameraOnly": true,
+        "reached": true,
+        "reachedTickUs": 113184813,
+        "requested": true,
+        "requestedTickUs": 113137280,
+        "revision": 1,
+        "stage": "detail"
+      }
+    ]
+  }
+}
