@@ -22,6 +22,15 @@ elles ne remplacent pas cette qualification live. Voir
 [la preuve négative](evidence/native-e2e-v9-negative.json) et
 [les captures urbaines V9](evidence/native-current-419-v9-render.json).
 
+**V10 reste également échouée** sur `f4d25e1`. L'optimisation de population
+conserve exactement les sorties et réduit la première compilation live de
+13,928 s à 1,223 s. Un gel natif de 10,55 s et des délais observés d'ACK de
+9,8–11,1 s empêchent encore l'affichage d'un nouveau monde pendant le mouvement.
+Le mouvement nominal de 20 s dure réellement 27,015 s à cause du blocage ;
+ce dépassement n'est pas une augmentation volontaire du test. Tournée et probes
+ne sont pas exécutées. Voir [V10 négative](evidence/native-e2e-v10-negative.json)
+et [la comparaison de population](evidence/population-optimization-independent-v10.json).
+
 ## Qualification du snapshot intégré
 
 La [preuve V8](evidence/native-e2e-v8.json) porte sur une nouvelle génération

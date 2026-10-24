@@ -83,6 +83,17 @@ préparation native suivante prend encore 3,7 s. L'upload de 9,35 Mo prend 0,618
 La tournée et les probes ne sont pas exécutées. Les 560 fichiers runtime et le
 HEAD restent identiques avant/après ; aucun critère n'est assoupli.
 
+La [campagne suivante V10](evidence/native-e2e-v10-negative.json), sur `f4d25e1`,
+reste échouée. La correction bit-exact de population réduit le délai réel
+retour neural→compilation de 13,928 s à 1,223 s. La
+[vérification indépendante](evidence/population-optimization-independent-v10.json)
+conserve les sorties sur 480 requêtes et le corpus historique. Mais des délais
+de callback/ACK et un gel natif de 10,55 s empêchent encore l'affichage live
+pendant le mouvement. Le dépassement réel à 27,015 s, puis le drain final,
+ne qualifient pas le critère de 20 s nominales. L'origine du blocage suivant
+reste à mesurer avec les horloges et sous-phases séparées ; les délais d'ACK
+observés ne sont pas présentés comme un coût réseau causal prouvé.
+
 La prochaine campagne doit donc encore réunir ces changements sur un même snapshot :
 nouvelle source Infinite Generation, mouvement continu, sept échelles, symboles
 d'eau déclarés et isolation sol/herbes/arbres à 10 km **et** à 160 m avec de vraies
