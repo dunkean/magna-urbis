@@ -41,7 +41,12 @@ export function allocateGroundResponseFields(n: number): GroundResponseFields {
   return {...Object.fromEntries(GROUND_RESPONSE_FLOAT_FIELDS.map(key=>[key,new Float32Array(n)])),rockRecipe:new Uint16Array(n)} as GroundResponseFields;
 }
 export function groundResponseIdentity(response: Omit<SurfaceGroundResponse,'id'>): string {
-  return fingerprint(['ground-response-1',response.version,response.grid,response.source,response.environmentVersion,response.materialLibraryVersion,response.interpolation,response.quantization,response.fields]);
+  const g=response.grid,s=response.source;
+  // Numeric metadata uses explicit IEEE754 bytes, avoiding cross-language
+  // decimal formatting differences at large/rebased world coordinates.
+  return fingerprint(['ground-response-1',response.version,new Float64Array([g.width,g.height,g.originX,g.originZ,g.spacingM,s.sourceLOD,s.nativeSpacingM]),s.id,s.version,
+    s.sourceLODKnown===undefined?'unspecified':String(s.sourceLODKnown),s.provenance??'',response.environmentVersion,response.materialLibraryVersion,response.interpolation,response.quantization,
+    ...GROUND_RESPONSE_FLOAT_FIELDS.map(key=>response.fields[key]),response.fields.rockRecipe]);
 }
 export function createGroundResponse(grid: SurfaceGridGeometry, source: SourceIdentity, environmentVersion: string, materialLibraryVersion: string, fields: GroundResponseFields): SurfaceGroundResponse {
   const value:Omit<SurfaceGroundResponse,'id'>={version:GROUND_RESPONSE_VERSION,grid:{...grid},source:{...source},environmentVersion,materialLibraryVersion,
@@ -55,6 +60,9 @@ export function hydrateGroundResponse(value: unknown, expected: {grid:SurfaceGri
   const r=value as SurfaceGroundResponse,n=expected.grid.width*expected.grid.height;
   if(!Number.isFinite(memoryBudgetBytes)||memoryBudgetBytes<=0||n*GROUND_RESPONSE_BYTES_PER_SAMPLE>memoryBudgetBytes)throw new Error('Ground response exceeds memoryBudgetBytes');
   if(!r||typeof r!=='object'||r.version!==GROUND_RESPONSE_VERSION||r.interpolation!=='bilinear-physical-before-recipe'||r.quantization!=='float32-potentials; uint16-recipe; stored-srgb8-at-canonical-knots'
+    ||!r.source||typeof r.source.id!=='string'||!r.source.id||typeof r.source.version!=='string'||!r.source.version||!Number.isFinite(r.source.sourceLOD)||!Number.isFinite(r.source.nativeSpacingM)||r.source.nativeSpacingM<=0
+    ||r.source.sourceLODKnown!==undefined&&typeof r.source.sourceLODKnown!=='boolean'||r.source.provenance!==undefined&&typeof r.source.provenance!=='string'
+    ||typeof r.environmentVersion!=='string'||!r.environmentVersion||typeof r.materialLibraryVersion!=='string'||!r.materialLibraryVersion
     ||fingerprint(r.grid)!==fingerprint(expected.grid)||fingerprint(r.source)!==fingerprint(expected.source)||r.environmentVersion!==expected.environmentVersion||r.materialLibraryVersion!==expected.materialLibraryVersion
     ||!r.fields||Object.keys(r.fields).sort().join(',')!==[...GROUND_RESPONSE_FLOAT_FIELDS,'rockRecipe'].sort().join(','))throw new Error('Malformed or mismatched ground response group');
   for(const key of [...GROUND_RESPONSE_FLOAT_FIELDS,'rockRecipe'] as const){

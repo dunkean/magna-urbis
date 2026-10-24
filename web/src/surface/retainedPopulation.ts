@@ -27,8 +27,8 @@ export function recoverRetainedPopulationSampler(packet:{world:SurfaceWorld;terr
     if(terrain)break;
   }
   if(!terrain||!parent)throw new Error('No stored parent heightfield reproduces the exact canonical terrain hash; refusing inferred heights');
-  const v=c.versions,id=fingerprint([v.environment,v.occupation,v.population,v.materialLibrary,v.surfaceState,w.seed,v.surfaceLayers].join(':'));
+  const v=c.versions,id=fingerprint([v.environment,v.occupation,v.population,v.materialLibrary,v.surfaceState,w.seed,v.surfaceLayers,...(v.groundResponse?[v.groundResponse]:[])].join(':'));
   if(fingerprint([id,'canonical-context-1'].join(':'))!==c.id)throw new Error('Canonical identity cannot be recovered from stored versions');
-  const sampler:SurfaceWorld={...w,id,terrain,bounds:{...c.bounds},fields:c.fields,versions:{...v},geology:{...w.geology,bedrock:c.fields.bedrock},canonicalContext:undefined,canonicalContextRef:undefined,geometryDetail:undefined};
+  const sampler:SurfaceWorld={...w,id,terrain,bounds:{...c.bounds},fields:c.fields,versions:{...v},geology:{...w.geology,bedrock:c.fields.bedrock},canonicalContext:undefined,canonicalContextRef:undefined,geometryDetail:undefined,...(c.groundResponse?{groundResponse:c.groundResponse}:{})};
   return{sampler,parent,contextId:c.id,terrainHash:c.versions.terrain};
 }
