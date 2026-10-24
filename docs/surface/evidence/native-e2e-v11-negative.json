@@ -1,0 +1,941 @@
+{
+  "format": "surface-native-e2e-negative-evidence",
+  "version": 1,
+  "campaign": "V11",
+  "status": "FAILED",
+  "startedAt": "2026-10-24T01:52:52.002Z",
+  "durationMs": 263328,
+  "failure": "Error: Continuous native navigation did not display verified live source during input: Error: No fresh accepted live world was actually rendered during continuous input",
+  "scope": "Fresh teacher40km retained neural source and strict nominal20s navigation. No tour or10km/160m layer probe after navigation gate failed. No artistic,production,60FPS or complete-campaign qualification.",
+  "repository": {
+    "head": "176e77403152e9893f5f9303728db0e1ecd033e5",
+    "finalHead": "176e77403152e9893f5f9303728db0e1ecd033e5",
+    "initialStatus": "",
+    "finalStatus": "",
+    "runtimeFileCount": 573,
+    "allRuntimeHashesEqual": true
+  },
+  "assets": {
+    "manifestSha256": "c9f5beb9d4cdbdb7eb5a83340d72d882f36322c73272244408374a260b7e8e26",
+    "finalManifestSha256": "c9f5beb9d4cdbdb7eb5a83340d72d882f36322c73272244408374a260b7e8e26"
+  },
+  "configuration": {
+    "widthM": 40000,
+    "seed": "surface-native-e2e-40km",
+    "models": {
+      "decoderModel": "original"
+    },
+    "geology": {
+      "id": "tilted-strata-v1",
+      "queryParameter": "surface_geology",
+      "provenance": "Explicit authored preset, fixed world frame; not observed geological data or a terrain-height modification."
+    },
+    "waterMode": "source-map",
+    "waterSymbolWidthPx": 1.25,
+    "resolution": "2048x1280",
+    "navigationSeconds": 20,
+    "layerProbeWidthsM": [
+      10000,
+      160
+    ],
+    "driverAndNativeStdio": "Direct inherited file descriptors. Driver supervised separately; no tool or Node stream relay. Page direct timing enabled."
+  },
+  "source": {
+    "freshGeneration": true,
+    "buildings": 0,
+    "grid": {
+      "width": 512,
+      "height": 512,
+      "spacingM": 78.125
+    },
+    "sourceIdentity": {
+      "id": "mountains-surface-native-e2e-40km",
+      "version": "2026-10-24T01:53:37.776Z",
+      "sourceLOD": 0,
+      "sourceLODKnown": false,
+      "nativeSpacingM": 39.0625
+    },
+    "neuralToken": "5051c246ce7647c08c6d17c02566d4c1",
+    "rawHeightfieldSha256": "3c7c2f32e37844842f058208e21522543bcec69125348e115390f83d5b814159",
+    "profile": "coarse4-original-original",
+    "serviceTotalMs": 2980.1560000050813,
+    "retainedField": {
+      "format": "surface-retained-field",
+      "version": 1,
+      "n": 512,
+      "widthM": 40000,
+      "fingerprint": "rf1-019b8aa8fc4b7a3a38e7adce2163d4ea"
+    },
+    "artifact": {
+      "path": "ROOT/web/out/surface/native-e2e-40km-v11/fresh-source.surfacebin",
+      "bytes": 84802873,
+      "sha256": "09473691614946e0e4e14b112648171b3d88f6bc5f62fe2c34f5132e3603fb3c"
+    }
+  },
+  "live": {
+    "decoderUsed": true,
+    "source": {
+      "id": "infinite:2814899424497554030:80c32ff0e57f86c3cb4ce9ebaf274312",
+      "version": "decoder-v12-nyquist-notch:magna-retained-v1:e2bf5473c0ff:f21afa261ed7",
+      "sourceLOD": -6,
+      "sourceLODKnown": true,
+      "nativeSpacingM": 0.46875
+    },
+    "grid": {
+      "width": 64,
+      "height": 64,
+      "spacingM": 0.625
+    },
+    "contextId": "71ab92ae441552a02c21c12e3e3ce5c2",
+    "artifact": {
+      "path": "ROOT/web/out/surface/native-e2e-40km-v11/live-refinement.surfacebin",
+      "bytes": 69774425,
+      "sha256": "39bd4cfbe14eab2745f9f0210daf3f80f49f43ee5ba94c25be44b2b68dfafd29"
+    }
+  },
+  "navigation": {
+    "status": "failed",
+    "exitCode": 1,
+    "timingVersion": "navigation-timing-1",
+    "timingEvidence": {
+      "nominalDurationSeconds": 20,
+      "actualDurationSeconds": 20.014,
+      "overshootSeconds": 0.013999999999999346,
+      "maximumInputGapSeconds": 1.2850000000000001,
+      "terminalInputGapSeconds": 0.03200000000000003,
+      "maximumInputGapInterval": {
+        "fromElapsedSeconds": 10.818,
+        "toElapsedSeconds": 12.103,
+        "gapSeconds": 1.2850000000000001,
+        "terminal": false
+      },
+      "motionAcceptedCount": 1,
+      "motionActualAcceptedCount": 1
+    },
+    "nominalMotionSeconds": 20,
+    "motionStartTickMs": 96695,
+    "motionEndTickMs": 116695,
+    "actualMotionEndTickMs": 116709,
+    "motionActualWallSeconds": 20.014,
+    "warmupSeconds": 69.213,
+    "drainSeconds": 15.109,
+    "motionLiveAcceptedCount": 1,
+    "motionActualLiveAcceptedCount": 1,
+    "motionLiveDisplayCount": 0,
+    "sourceReplacedWhileMoving": false,
+    "counterSemantics": {
+      "motionActualLiveAcceptedCount": "retained acceptance ledger entries through actualMotionEndTickMs, not renderer applications",
+      "motionApplicationCount": "observed applied geometry generation changes",
+      "motionLiveAcceptedCount": "retained acceptance ledger entries in the nominal input interval, not renderer applications",
+      "motionLiveDisplayCount": "fresh verified renderer applications in the nominal input interval",
+      "version": "navigation-counters-1"
+    },
+    "compatibilityAliases": {
+      "motionLiveApplicationCount": "motionLiveAcceptedCount",
+      "snapshot.liveAppliedSerial": "snapshot.liveAcceptedSerial"
+    },
+    "frameWallMs": {
+      "max": 2343.101,
+      "p50": 31.232,
+      "p95": 40.366,
+      "p99": 70.266
+    },
+    "finalReady": true,
+    "finalRequest": {
+      "extent": 65.1935943202764,
+      "knownContextId": "71ab92ae441552a02c21c12e3e3ce5c2",
+      "knownSceneContextId": "2f8adc550f79773db21dac295fcd36bb",
+      "preview": false,
+      "resolution": 512,
+      "x": 19968.6725772828,
+      "y": 19952.9209048191
+    },
+    "finalGrid": {
+      "height": 140,
+      "spacingM": 0.465668530859122,
+      "width": 140
+    },
+    "finalNativeSpacingM": 0.46875,
+    "finalFineContributionWeight": 1,
+    "canonicalBuildCounts": [
+      1
+    ],
+    "workerErrors": [],
+    "discardedPreparations": {
+      "cancelledSuperseded": 1,
+      "failed": 0,
+      "obsoletePhysicalLineage": 0,
+      "olderThanDisplayed": 0
+    },
+    "cancellations": [
+      {
+        "cameraOnly": true,
+        "reached": true,
+        "reachedTickUs": 113184813,
+        "requested": true,
+        "requestedTickUs": 113137280,
+        "revision": 1,
+        "stage": "detail"
+      }
+    ],
+    "printTimings": {
+      "live-http-completed": {
+        "characters": 298,
+        "count": 4,
+        "printMs": 12.142,
+        "serializeMs": 0.034
+      },
+      "live-packet-decoded": {
+        "characters": 137,
+        "count": 4,
+        "printMs": 10.98,
+        "serializeMs": 0.032
+      },
+      "live-tile-accepted": {
+        "characters": 159,
+        "count": 4,
+        "printMs": 15.821,
+        "serializeMs": 0.012
+      },
+      "terrain-replaced": {
+        "characters": 404,
+        "count": 11,
+        "printMs": 13.23,
+        "serializeMs": 0.029
+      },
+      "view-satisfied": {
+        "characters": 149,
+        "count": 5,
+        "printMs": 12.127,
+        "serializeMs": 0.011
+      }
+    },
+    "nativeTimeline": [
+      {
+        "displaySpacingM": 78.125,
+        "event": "terrain-replaced",
+        "generation": 1,
+        "liveSerial": -1,
+        "nativeSpacingM": 39.0625,
+        "origin": [
+          20039.0625,
+          2170.75317382813,
+          20039.0625
+        ],
+        "prepareMs": 11885.351,
+        "regions": 16,
+        "requestedWorldId": "18e4be1a59a5b374276a73e206f93eae",
+        "sourceLOD": 0,
+        "tickMs": 40158,
+        "unixTimeMs": 1792806936674,
+        "uploadAndObjectsMs": 242.454,
+        "worldId": "18e4be1a59a5b374276a73e206f93eae"
+      },
+      {
+        "bodyBytes": 140658841,
+        "downloadChunkBytes": 1048576,
+        "downloadedBytes": 140658841,
+        "event": "live-http-completed",
+        "expectedBodyBytes": 140658841,
+        "httpCode": 200,
+        "requestElapsedMs": 29405,
+        "requestSerial": 0,
+        "resultCode": 0,
+        "tickMs": 56874,
+        "timeoutSeconds": 300,
+        "unixTimeMs": 1792806953390,
+        "useThreads": true
+      },
+      {
+        "decodeElapsedMs": 12961,
+        "event": "live-packet-decoded",
+        "requestSerial": 0,
+        "tickMs": 69847,
+        "unixTimeMs": 1792806966363,
+        "validPacket": true
+      },
+      {
+        "cameraSerial": 0,
+        "event": "live-tile-accepted",
+        "requestSerial": 0,
+        "tickMs": 69858,
+        "unixTimeMs": 1792806966374,
+        "worldId": "3814d6457ad4609b6d5e67a513fa8cc9"
+      },
+      {
+        "displaySpacingM": 77.972412109375,
+        "event": "terrain-replaced",
+        "generation": 2,
+        "liveSerial": 0,
+        "nativeSpacingM": 30,
+        "origin": [
+          20038.9862060547,
+          2170.00805664063,
+          20038.9862060547
+        ],
+        "prepareMs": 22002.988,
+        "regions": 64,
+        "requestedWorldId": "3814d6457ad4609b6d5e67a513fa8cc9",
+        "sourceLOD": 0,
+        "tickMs": 96040,
+        "unixTimeMs": 1792806992557,
+        "uploadAndObjectsMs": 222.267,
+        "worldId": "3814d6457ad4609b6d5e67a513fa8cc9"
+      },
+      {
+        "displaySpacingM": 77.972412109375,
+        "event": "terrain-replaced",
+        "generation": 3,
+        "liveSerial": 0,
+        "nativeSpacingM": 30,
+        "origin": [
+          20038.9862060547,
+          2170.00805664063,
+          20038.9862060547
+        ],
+        "prepareMs": 94.186,
+        "regions": 64,
+        "requestedWorldId": "3814d6457ad4609b6d5e67a513fa8cc9",
+        "sourceLOD": 0,
+        "tickMs": 97888,
+        "unixTimeMs": 1792806994405,
+        "uploadAndObjectsMs": 11.988,
+        "worldId": "3814d6457ad4609b6d5e67a513fa8cc9"
+      },
+      {
+        "displaySpacingM": 77.972412109375,
+        "event": "terrain-replaced",
+        "generation": 4,
+        "liveSerial": 0,
+        "nativeSpacingM": 30,
+        "origin": [
+          20038.9862060547,
+          2170.00805664063,
+          20038.9862060547
+        ],
+        "prepareMs": 94.772,
+        "regions": 64,
+        "requestedWorldId": "3814d6457ad4609b6d5e67a513fa8cc9",
+        "sourceLOD": 0,
+        "tickMs": 98830,
+        "unixTimeMs": 1792806995347,
+        "uploadAndObjectsMs": 12.405,
+        "worldId": "3814d6457ad4609b6d5e67a513fa8cc9"
+      },
+      {
+        "displaySpacingM": 77.972412109375,
+        "event": "terrain-replaced",
+        "generation": 5,
+        "liveSerial": 0,
+        "nativeSpacingM": 30,
+        "origin": [
+          20038.9862060547,
+          2170.00805664063,
+          20038.9862060547
+        ],
+        "prepareMs": 7927.258,
+        "regions": 64,
+        "requestedWorldId": "3814d6457ad4609b6d5e67a513fa8cc9",
+        "sourceLOD": 0,
+        "tickMs": 109053,
+        "unixTimeMs": 1792807005570,
+        "uploadAndObjectsMs": 104.35,
+        "worldId": "3814d6457ad4609b6d5e67a513fa8cc9"
+      },
+      {
+        "bodyBytes": 9594092,
+        "downloadChunkBytes": 1048576,
+        "downloadedBytes": 9594092,
+        "event": "live-http-completed",
+        "expectedBodyBytes": 9594092,
+        "httpCode": 200,
+        "requestElapsedMs": 12556,
+        "requestSerial": 21,
+        "resultCode": 0,
+        "tickMs": 112088,
+        "timeoutSeconds": 300,
+        "unixTimeMs": 1792807008606,
+        "useThreads": true
+      },
+      {
+        "displaySpacingM": 0.304579734802246,
+        "event": "terrain-replaced",
+        "generation": 6,
+        "liveSerial": 0,
+        "nativeSpacingM": 30,
+        "origin": [
+          20000,
+          2166.60577392578,
+          19980.5068969727
+        ],
+        "prepareMs": 3348.272,
+        "regions": 64,
+        "requestedWorldId": "3814d6457ad4609b6d5e67a513fa8cc9",
+        "sourceLOD": 0,
+        "tickMs": 113068,
+        "unixTimeMs": 1792807009586,
+        "uploadAndObjectsMs": 97.942,
+        "worldId": "3814d6457ad4609b6d5e67a513fa8cc9"
+      },
+      {
+        "decodeElapsedMs": 1017,
+        "event": "live-packet-decoded",
+        "requestSerial": 21,
+        "tickMs": 113117,
+        "unixTimeMs": 1792807009634,
+        "validPacket": true
+      },
+      {
+        "cameraSerial": 196,
+        "event": "live-tile-accepted",
+        "requestSerial": 21,
+        "tickMs": 113121,
+        "unixTimeMs": 1792807009638,
+        "worldId": "50a44c926165882c92619fba3b10bb76"
+      },
+      {
+        "displaySpacingM": 0.25688811320124,
+        "event": "terrain-replaced",
+        "generation": 8,
+        "liveSerial": 21,
+        "nativeSpacingM": 30,
+        "origin": [
+          19994.016799038,
+          2168.9860534668,
+          19988.0164771747
+        ],
+        "prepareMs": 3674.468,
+        "regions": 64,
+        "requestedWorldId": "50a44c926165882c92619fba3b10bb76",
+        "sourceLOD": 0,
+        "tickMs": 116952,
+        "unixTimeMs": 1792807013470,
+        "uploadAndObjectsMs": 31.1,
+        "worldId": "50a44c926165882c92619fba3b10bb76"
+      },
+      {
+        "displaySpacingM": 0.25688811320124,
+        "event": "terrain-replaced",
+        "generation": 9,
+        "liveSerial": 21,
+        "nativeSpacingM": 30,
+        "origin": [
+          19994.016799038,
+          2168.9860534668,
+          19988.0164771747
+        ],
+        "prepareMs": 1301.451,
+        "regions": 64,
+        "requestedWorldId": "50a44c926165882c92619fba3b10bb76",
+        "sourceLOD": 0,
+        "tickMs": 118975,
+        "unixTimeMs": 1792807015493,
+        "uploadAndObjectsMs": 12.641,
+        "worldId": "50a44c926165882c92619fba3b10bb76"
+      },
+      {
+        "displaySpacingM": 0.25688811320124,
+        "event": "terrain-replaced",
+        "generation": 10,
+        "liveSerial": 21,
+        "nativeSpacingM": 30,
+        "origin": [
+          19994.016799038,
+          2168.9860534668,
+          19988.0164771747
+        ],
+        "prepareMs": 98.099,
+        "regions": 64,
+        "requestedWorldId": "50a44c926165882c92619fba3b10bb76",
+        "sourceLOD": 0,
+        "tickMs": 119321,
+        "unixTimeMs": 1792807015838,
+        "uploadAndObjectsMs": 12.557,
+        "worldId": "50a44c926165882c92619fba3b10bb76"
+      },
+      {
+        "bodyBytes": 4367108,
+        "downloadChunkBytes": 1048576,
+        "downloadedBytes": 4367108,
+        "event": "live-http-completed",
+        "expectedBodyBytes": 4367108,
+        "httpCode": 200,
+        "requestElapsedMs": 10303,
+        "requestSerial": 204,
+        "resultCode": 0,
+        "tickMs": 123834,
+        "timeoutSeconds": 300,
+        "unixTimeMs": 1792807020352,
+        "useThreads": true
+      },
+      {
+        "decodeElapsedMs": 655,
+        "event": "live-packet-decoded",
+        "requestSerial": 204,
+        "tickMs": 124493,
+        "unixTimeMs": 1792807021011,
+        "validPacket": true
+      },
+      {
+        "cameraSerial": 253,
+        "event": "live-tile-accepted",
+        "requestSerial": 204,
+        "tickMs": 124497,
+        "unixTimeMs": 1792807021015,
+        "worldId": "cdf21a01ebd00c1f3b787461dd013bcd"
+      },
+      {
+        "bodyBytes": 5118272,
+        "downloadChunkBytes": 1048576,
+        "downloadedBytes": 5118272,
+        "event": "live-http-completed",
+        "expectedBodyBytes": 5118272,
+        "httpCode": 200,
+        "requestElapsedMs": 943,
+        "requestSerial": 253,
+        "resultCode": 0,
+        "tickMs": 125751,
+        "timeoutSeconds": 300,
+        "unixTimeMs": 1792807022269,
+        "useThreads": true
+      },
+      {
+        "decodeElapsedMs": 799,
+        "event": "live-packet-decoded",
+        "requestSerial": 253,
+        "tickMs": 126562,
+        "unixTimeMs": 1792807023079,
+        "validPacket": true
+      },
+      {
+        "cameraSerial": 253,
+        "event": "live-tile-accepted",
+        "requestSerial": 253,
+        "tickMs": 126565,
+        "unixTimeMs": 1792807023083,
+        "worldId": "3a6bc8170689f0c9b92c4e570897b1bb"
+      },
+      {
+        "displaySpacingM": 0.252688350078593,
+        "event": "terrain-replaced",
+        "generation": 11,
+        "liveSerial": 204,
+        "nativeSpacingM": 0.46875,
+        "origin": [
+          20001.0959295531,
+          2167.68359375,
+          19985.3470217022
+        ],
+        "prepareMs": 3300.212,
+        "regions": 64,
+        "requestedWorldId": "3a6bc8170689f0c9b92c4e570897b1bb",
+        "sourceLOD": -6,
+        "tickMs": 127869,
+        "unixTimeMs": 1792807024387,
+        "uploadAndObjectsMs": 31.376,
+        "worldId": "cdf21a01ebd00c1f3b787461dd013bcd"
+      },
+      {
+        "displaySpacingM": 0.465668530859122,
+        "event": "terrain-replaced",
+        "generation": 12,
+        "liveSerial": 253,
+        "nativeSpacingM": 0.46875,
+        "origin": [
+          19998.7081975232,
+          2167.88671875,
+          19982.9565250595
+        ],
+        "prepareMs": 3241.076,
+        "regions": 64,
+        "requestedWorldId": "3a6bc8170689f0c9b92c4e570897b1bb",
+        "sourceLOD": -6,
+        "tickMs": 131774,
+        "unixTimeMs": 1792807028292,
+        "uploadAndObjectsMs": 25.837,
+        "worldId": "3a6bc8170689f0c9b92c4e570897b1bb"
+      }
+    ],
+    "cpuPhases": [
+      {
+        "generation": 1,
+        "widthM": 40000,
+        "prepareMs": 11885.351,
+        "phases": {
+          "buffersMs": 0.019,
+          "cityMapMs": 0.002,
+          "dataMs": 5562.992,
+          "detailMs": 192.069,
+          "hydrologyMs": 5681.224,
+          "metadataMs": 0.016,
+          "populationMs": 39.662,
+          "roadsMs": 0.029,
+          "treeSupportMs": 409.314,
+          "urbanArraysMs": 0.015
+        }
+      },
+      {
+        "generation": 2,
+        "widthM": 40000,
+        "prepareMs": 22002.988,
+        "phases": {
+          "buffersMs": 0.021,
+          "cityMapMs": 0.002,
+          "dataMs": 18451.994,
+          "detailMs": 169.473,
+          "hydrologyMs": 2906.312,
+          "metadataMs": 0.011,
+          "populationMs": 39.439,
+          "roadsMs": 45.501,
+          "treeSupportMs": 390.214,
+          "urbanArraysMs": 0.015
+        }
+      },
+      {
+        "generation": 3,
+        "widthM": 40000,
+        "prepareMs": 94.186,
+        "phases": {
+          "buffersMs": 0.023,
+          "cityMapMs": 0.002,
+          "dataMs": 6.222,
+          "detailMs": 0.003,
+          "hydrologyMs": 0.001,
+          "metadataMs": 0.009,
+          "populationMs": 41.273,
+          "roadsMs": 46.645,
+          "treeSupportMs": 0.003,
+          "urbanArraysMs": 0.001
+        }
+      },
+      {
+        "generation": 4,
+        "widthM": 40000,
+        "prepareMs": 94.772,
+        "phases": {
+          "buffersMs": 0.022,
+          "cityMapMs": 0.002,
+          "dataMs": 6.753,
+          "detailMs": 0.004,
+          "hydrologyMs": 0.001,
+          "metadataMs": 0.014,
+          "populationMs": 40.798,
+          "roadsMs": 47.166,
+          "treeSupportMs": 0.003,
+          "urbanArraysMs": 0.002
+        }
+      },
+      {
+        "generation": 5,
+        "widthM": 24336,
+        "prepareMs": 7927.258,
+        "phases": {
+          "buffersMs": 0.021,
+          "cityMapMs": 0.002,
+          "dataMs": 4897.923,
+          "detailMs": 0.015,
+          "hydrologyMs": 2920.397,
+          "metadataMs": 0.012,
+          "populationMs": 64.547,
+          "roadsMs": 44.316,
+          "treeSupportMs": 0.004,
+          "urbanArraysMs": 0.016
+        }
+      },
+      {
+        "generation": 6,
+        "widthM": 62.5921199841426,
+        "prepareMs": 3348.272,
+        "phases": {
+          "buffersMs": 7.296,
+          "cityMapMs": 0.003,
+          "dataMs": 1508.208,
+          "detailMs": 0.004,
+          "hydrologyMs": 555.14,
+          "metadataMs": 0.013,
+          "populationMs": 1226.226,
+          "roadsMs": 51.352,
+          "treeSupportMs": 0.003,
+          "urbanArraysMs": 0.019
+        }
+      },
+      {
+        "generation": 8,
+        "widthM": 10.9946619335637,
+        "prepareMs": 3674.468,
+        "phases": {
+          "buffersMs": 2.933,
+          "cityMapMs": 0.003,
+          "dataMs": 1502.708,
+          "detailMs": 11.062,
+          "hydrologyMs": 478.51,
+          "metadataMs": 0.013,
+          "populationMs": 1190.894,
+          "roadsMs": 93.357,
+          "treeSupportMs": 394.967,
+          "urbanArraysMs": 0.013
+        }
+      },
+      {
+        "generation": 9,
+        "widthM": 10.9946619335637,
+        "prepareMs": 1301.451,
+        "phases": {
+          "buffersMs": 2.88,
+          "cityMapMs": 0.003,
+          "dataMs": 0.533,
+          "detailMs": 0.003,
+          "hydrologyMs": 0.001,
+          "metadataMs": 0.008,
+          "populationMs": 1205.569,
+          "roadsMs": 92.447,
+          "treeSupportMs": 0.003,
+          "urbanArraysMs": 0.001
+        }
+      },
+      {
+        "generation": 10,
+        "widthM": 10.9946619335637,
+        "prepareMs": 98.099,
+        "phases": {
+          "buffersMs": 2.936,
+          "cityMapMs": 0.002,
+          "dataMs": 0.536,
+          "detailMs": 0.003,
+          "hydrologyMs": 0.001,
+          "metadataMs": 0.007,
+          "populationMs": 2.79,
+          "roadsMs": 91.81,
+          "treeSupportMs": 0.003,
+          "urbanArraysMs": 0.001
+        }
+      },
+      {
+        "generation": 11,
+        "widthM": 10.9946619335637,
+        "prepareMs": 3300.212,
+        "phases": {
+          "buffersMs": 2.93,
+          "cityMapMs": 0.003,
+          "dataMs": 1864.434,
+          "detailMs": 11.555,
+          "hydrologyMs": 505.375,
+          "metadataMs": 0.013,
+          "populationMs": 817.226,
+          "roadsMs": 97.726,
+          "treeSupportMs": 0.929,
+          "urbanArraysMs": 0.014
+        }
+      },
+      {
+        "generation": 12,
+        "widthM": 10.9946619335637,
+        "prepareMs": 3241.076,
+        "phases": {
+          "buffersMs": 2.991,
+          "cityMapMs": 0.002,
+          "dataMs": 1855.107,
+          "detailMs": 12.576,
+          "hydrologyMs": 487.186,
+          "metadataMs": 0.012,
+          "populationMs": 784.717,
+          "roadsMs": 97.598,
+          "treeSupportMs": 0.867,
+          "urbanArraysMs": 0.014
+        }
+      }
+    ]
+  },
+  "page": {
+    "clock": "page-performance-now",
+    "timeOriginMs": 1792806773305,
+    "dropped": 0,
+    "limits": "worker-post to worker-received is an observed dedicated-worker round trip, not a breakdown of its internal phases. Page longtasks overlap but do not establish causality.",
+    "workerEvents": [
+      {
+        "sequence": 273,
+        "phase": "worker-post",
+        "atMs": 226366.80000001192,
+        "kind": "compile",
+        "requestId": 3,
+        "workerURL": "http://127.0.0.1:5197/surfaceCompiler.worker.ts?worker_file&type=module"
+      },
+      {
+        "sequence": 287,
+        "phase": "worker-received",
+        "atMs": 234893.19999998808,
+        "kind": "compiled",
+        "requestId": 3,
+        "workerURL": "http://127.0.0.1:5197/surfaceCompiler.worker.ts?worker_file&type=module",
+        "binaryBytes": 9594092
+      },
+      {
+        "sequence": 308,
+        "phase": "worker-post",
+        "atMs": 246581.80000001192,
+        "kind": "compile",
+        "requestId": 4,
+        "workerURL": "http://127.0.0.1:5197/surfaceCompiler.worker.ts?worker_file&type=module"
+      },
+      {
+        "sequence": 309,
+        "phase": "worker-received",
+        "atMs": 246826.09999999404,
+        "kind": "compiled",
+        "requestId": 4,
+        "workerURL": "http://127.0.0.1:5197/surfaceCompiler.worker.ts?worker_file&type=module",
+        "binaryBytes": 4367108
+      },
+      {
+        "sequence": 316,
+        "phase": "worker-post",
+        "atMs": 248419.80000001192,
+        "kind": "compile",
+        "requestId": 5,
+        "workerURL": "http://127.0.0.1:5197/surfaceCompiler.worker.ts?worker_file&type=module"
+      },
+      {
+        "sequence": 317,
+        "phase": "worker-received",
+        "atMs": 248744.30000001192,
+        "kind": "compiled",
+        "requestId": 5,
+        "workerURL": "http://127.0.0.1:5197/surfaceCompiler.worker.ts?worker_file&type=module",
+        "binaryBytes": 5118272
+      }
+    ],
+    "uploads": [
+      {
+        "id": "a31856ea-8360-4990-beed-822f39ccf6f1",
+        "bytes": 9594092,
+        "starts": [
+          234903.90000000596,
+          235031,
+          235233.19999998808
+        ],
+        "acks": [
+          {
+            "atMs": 235031,
+            "accepted": false,
+            "received": 4194304
+          },
+          {
+            "atMs": 235233.09999999404,
+            "accepted": false,
+            "received": 8388608
+          },
+          {
+            "atMs": 235291.30000001192,
+            "accepted": true
+          }
+        ]
+      },
+      {
+        "id": "1f899b88-eef8-48f4-80df-82f3e789dfd8",
+        "bytes": 4367108,
+        "starts": [
+          246829.80000001192,
+          247011.19999998808
+        ],
+        "acks": [
+          {
+            "atMs": 247011.19999998808,
+            "accepted": false,
+            "received": 4194304
+          },
+          {
+            "atMs": 247026.59999999404,
+            "accepted": true
+          }
+        ]
+      },
+      {
+        "id": "4ade7187-dadf-42f0-8a17-9d835c8f5302",
+        "bytes": 5118272,
+        "starts": [
+          248747.40000000596,
+          248917.30000001192
+        ],
+        "acks": [
+          {
+            "atMs": 248917.30000001192,
+            "accepted": false,
+            "received": 4194304
+          },
+          {
+            "atMs": 248961.30000001192,
+            "accepted": true
+          }
+        ]
+      }
+    ]
+  },
+  "notRun": {
+    "nativeTour": true,
+    "nativeTourPngCount": 0,
+    "layerProbe10km": true,
+    "layerProbe160m": true
+  },
+  "findings": {
+    "confirmed": [
+      "No fresh accepted world was rendered in the original nominal20s interval.",
+      "C timing validation passed: actual20.014s,maximum input gap1.285s,terminal gap0.032s.",
+      "Compact native logging maximum print15.821ms; V10 multi-second stdout freezes are not reproduced.",
+      "One eligible camera job reached the detail checkpoint47.533ms after cancellation request; accepted-but-unrendered jobs were not cancelled.",
+      "First preview Page worker round trip8526.4ms; real Page upload387.4ms. Near preview worker244.3ms and upload196.8ms.",
+      "First preview accepted16.426s after motion start, leaving3.574s before nominal end.",
+      "Old regional camera preparation7.927s consists mostly of Data4.898s and hydrology2.920s. Near source jobs spend approximately1.5–1.86s Data,0.8–1.2s population and0.48–0.55s hydrology."
+    ],
+    "unresolved": "The large first preview worker round trip remains to be profiled by internal worker stages. Frequent browser Page longtasks are recorded but cannot alone explain the dedicated-worker delay.",
+    "nextStep": "Bounded profile/replay of the actual first preview before another full campaign; preserve original20s display gate and all source/context/quality checks."
+  },
+  "cleanup": {
+    "driverExited": true,
+    "sourceBrowserClosedByFinally": true,
+    "noOwnedGodotOrDriverSurvivorFound": true,
+    "gpuReleased": true,
+    "rootServicesUntouched": true
+  },
+  "artifacts": [
+    {
+      "path": "ROOT/web/out/surface/native-e2e-40km-v11/report.json",
+      "bytes": 685133,
+      "sha256": "ed45ae5e12e6e23bd1893d0aeadaab56b9882fc8be146cac2c9c4e79fccc4675"
+    },
+    {
+      "path": "ROOT/web/out/surface/native-e2e-40km-v11/driver-process.json",
+      "bytes": 1912,
+      "sha256": "9b8c7db87c426de9e4156ef60e2ac832fa712216beebdbb3cc66b9e0ce91ba64"
+    },
+    {
+      "path": "ROOT/web/out/surface/native-e2e-40km-v11/driver-stdout.log",
+      "bytes": 7791,
+      "sha256": "9ff6fb953979c55c6e25de4a28c1c81a8dbb1f8108e4f2e41a417354fa73540c"
+    },
+    {
+      "path": "ROOT/web/out/surface/native-e2e-40km-v11/driver-stderr.log",
+      "bytes": 1181,
+      "sha256": "7229d5491778cd9cfa739a410be557e387e3c1e947b7a8493dd2cdbc59c4f2f3"
+    },
+    {
+      "path": "ROOT/web/out/surface/native-e2e-40km-v11/native-navigation/navigation-report.json",
+      "bytes": 113273,
+      "sha256": "5d484b28fd6c5efdf48a62f5e54042e6b8ed59801047351c23311dac90464617"
+    },
+    {
+      "path": "ROOT/web/out/surface/native-e2e-40km-v11/native-navigation/metrics.json",
+      "bytes": 186119,
+      "sha256": "8a08f9e58132e5d24b7b3dffc38f4dff1faba58a9807140dbf2894ede092943e"
+    },
+    {
+      "path": "ROOT/web/out/surface/native-e2e-40km-v11/native-navigation/stdout.log",
+      "bytes": 163096,
+      "sha256": "af4e5e285a48251168dcc3323e655fc342dc71609a4eb4e1e16a7f222b71423c"
+    },
+    {
+      "path": "ROOT/web/out/surface/native-e2e-40km-v11/native-navigation/stderr.log",
+      "bytes": 470,
+      "sha256": "78277fa276cdcb97d0f6ba92294c9feb62f16d8a188eb28ea72842c09fdc2d3d"
+    }
+  ]
+}
