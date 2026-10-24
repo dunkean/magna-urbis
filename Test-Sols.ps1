@@ -35,7 +35,7 @@ $null = Require-File (Join-Path $project 'diagnostics/surface_soil_preview.gd')
 $null = Require-File (Join-Path $project 'addons/terrain_3d/terrain.gdextension')
 $null = Require-File (Join-Path $project 'addons/terrain_3d/bin/libterrain.windows.debug.x86_64.dll')
 $styles = Get-Content -LiteralPath $catalogue -Raw -Encoding UTF8 | ConvertFrom-Json
-$validStyles = @('aerial') + @($styles.terrainStyles.PSObject.Properties.Name) + @($styles.palettes.PSObject.Properties.Name)
+$validStyles = @('aerial') + @($styles.palettes.PSObject.Properties.Name)
 if ($Style -notin $validStyles) { throw "Style inconnu '$Style'. Valeurs : $($validStyles -join ', ')" }
 $manifest = Get-Content -LiteralPath $Assets -Raw -Encoding UTF8 | ConvertFrom-Json
 if (!$manifest.materials -or $manifest.materials.Count -eq 0) { throw 'Le manifeste PBR ne contient aucun matériau.' }
