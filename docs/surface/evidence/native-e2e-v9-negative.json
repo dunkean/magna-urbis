@@ -1,0 +1,409 @@
+{
+  "format": "surface-native-e2e-negative-evidence",
+  "version": 1,
+  "campaign": "V9",
+  "status": "FAILED",
+  "startedAt": "2026-10-24T00:46:04.031Z",
+  "durationMs": 265929,
+  "failure": "Error: Continuous native navigation did not display verified live source during input: Error: No fresh accepted live world was actually rendered during continuous input",
+  "scope": "Fresh teacher40km neural source, native20s navigation. No native tour or layer probe was run after the navigation gate failed. No artistic, production,60FPS or whole-campaign acceptance.",
+  "repository": {
+    "head": "ab3c4996e16be503dbcc5e3f04cd5592e361009a",
+    "finalHead": "ab3c4996e16be503dbcc5e3f04cd5592e361009a",
+    "initialStatus": "",
+    "finalStatus": "",
+    "runtimeFileCount": 560,
+    "allRuntimeHashesEqual": true
+  },
+  "assets": {
+    "manifestSha256": "c9f5beb9d4cdbdb7eb5a83340d72d882f36322c73272244408374a260b7e8e26",
+    "finalManifestSha256": "c9f5beb9d4cdbdb7eb5a83340d72d882f36322c73272244408374a260b7e8e26"
+  },
+  "configuration": {
+    "widthM": 40000,
+    "seed": "surface-native-e2e-40km",
+    "models": {
+      "decoderModel": "original"
+    },
+    "geology": {
+      "id": "tilted-strata-v1",
+      "queryParameter": "surface_geology",
+      "provenance": "Explicit authored preset, fixed world frame; not observed geological data or a terrain-height modification."
+    },
+    "waterMode": "source-map",
+    "waterSymbolWidthPx": 1.25,
+    "requestedResolution": "2048x1280",
+    "navigationSeconds": 20,
+    "requestedLayerProbeWidthsM": [
+      10000,
+      160
+    ]
+  },
+  "source": {
+    "freshGeneration": true,
+    "buildings": 0,
+    "grid": {
+      "width": 512,
+      "height": 512,
+      "spacingM": 78.125
+    },
+    "sourceLODKnown": false,
+    "neuralToken": "b7390e041a9e47a0ad15f6b8b8e30a52",
+    "rawHeightfieldSha256": "3c7c2f32e37844842f058208e21522543bcec69125348e115390f83d5b814159",
+    "profile": "coarse4-original-original",
+    "serviceTotalMs": 2366.0031000035815,
+    "retainedField": {
+      "format": "surface-retained-field",
+      "version": 1,
+      "n": 512,
+      "widthM": 40000,
+      "fingerprint": "rf1-019b8aa8fc4b7a3a38e7adce2163d4ea"
+    },
+    "artifact": {
+      "path": "ROOT/web/out/surface/native-e2e-40km-v9/fresh-source.surfacebin",
+      "bytes": 84802873,
+      "sha256": "4ff6594cfa108eea00abe85fd14b713ea8b8ae92bdf3957be21fd64e11a64af7"
+    }
+  },
+  "live": {
+    "decoderUsed": true,
+    "source": {
+      "id": "infinite:2814899424497554030:9b49938308acaed37d0a1f3082e84435",
+      "version": "decoder-v12-nyquist-notch:magna-retained-v1:e2bf5473c0ff:f21afa261ed7",
+      "sourceLOD": -6,
+      "sourceLODKnown": true,
+      "nativeSpacingM": 0.46875,
+      "provenance": "Infinite retained refinement; seed=2814899424497554030; decoderUsed=true; registrationNativeMpp=30; fieldFingerprint=rf1-019b8aa8fc4b7a3a38e7adce2163d4ea; parent=cell-centred cubic B-spline control reconstruction (not interpolation through control centres); parentComparison={\"samples\":4096,\"parentCorrelation\":0.998382058896566,\"transposedParentCorrelation\":-0.9929963571086565,\"maxAbsDeltaM\":0.5784265781248905,\"rmsDeltaM\":0.23423732073587164,\"meanDeltaM\":-0.14524888992310991,\"controlSmoothingMaxAbsM\":0.5617818190412436,\"refinementResidualMaxAbsM\":0.4947925234214381}"
+    },
+    "grid": {
+      "width": 64,
+      "height": 64,
+      "spacingM": 0.625
+    },
+    "contextId": "0fbdbbb1fef585df4fcfa0b9f0c09935",
+    "artifact": {
+      "path": "ROOT/web/out/surface/native-e2e-40km-v9/live-refinement.surfacebin",
+      "bytes": 69774425,
+      "sha256": "25f93200da531bf73ba9b03a887281f0586dc460864894e24b4e1448b540925c"
+    }
+  },
+  "navigation": {
+    "status": "failed",
+    "exitCode": 1,
+    "motionActualWallSeconds": 20.004,
+    "motionStartTickMs": 103540,
+    "motionEndTickMs": 123540,
+    "motionApplicationCount": 6,
+    "motionLiveApplicationCount": 1,
+    "motionLiveDisplayCount": 0,
+    "sourceReplacedWhileMoving": false,
+    "warmupSeconds": 79.055,
+    "drainSeconds": 19.522,
+    "longestMotionApplicationGapSeconds": 8.757,
+    "maximumInputGapSeconds": 0.996,
+    "frameWallMs": {
+      "max": 3675.351,
+      "p50": 31.219,
+      "p95": 39.802,
+      "p99": 56.724
+    },
+    "finalReady": true,
+    "finalRequest": {
+      "extent": 65.1935943202764,
+      "knownContextId": "0fbdbbb1fef585df4fcfa0b9f0c09935",
+      "knownSceneContextId": "d7a45d8bd8dd0c7f4902ba87f7d6b151",
+      "preview": false,
+      "resolution": 512,
+      "x": 19818.5470192895,
+      "y": 19962.7214247789
+    },
+    "finalGrid": {
+      "height": 140,
+      "spacingM": 0.465668530859122,
+      "width": 140
+    },
+    "finalNativeSpacingM": 0.46875,
+    "finalFineContributionWeight": 1,
+    "discardedPreparations": {
+      "failed": 0,
+      "obsoletePhysicalLineage": 0,
+      "olderThanDisplayed": 0
+    },
+    "liveBindingRejections": [],
+    "canonicalBuildCounts": [
+      1
+    ],
+    "workerErrors": [],
+    "http": [
+      {
+        "bodyBytes": 140658841,
+        "downloadChunkBytes": 1048576,
+        "downloadedBytes": 140658841,
+        "event": "live-http-completed",
+        "expectedBodyBytes": 140658841,
+        "httpCode": 200,
+        "requestElapsedMs": 38403,
+        "requestSerial": 0,
+        "resultCode": 0,
+        "tickMs": 62887,
+        "timeoutSeconds": 300,
+        "useThreads": true
+      },
+      {
+        "bodyBytes": 9348380,
+        "downloadChunkBytes": 1048576,
+        "downloadedBytes": 9348380,
+        "event": "live-http-completed",
+        "expectedBodyBytes": 9348380,
+        "httpCode": 200,
+        "requestElapsedMs": 14416,
+        "requestSerial": 41,
+        "resultCode": 0,
+        "tickMs": 120986,
+        "timeoutSeconds": 300,
+        "useThreads": true
+      },
+      {
+        "bodyBytes": 4290068,
+        "downloadChunkBytes": 1048576,
+        "downloadedBytes": 4290068,
+        "event": "live-http-completed",
+        "expectedBodyBytes": 4290068,
+        "httpCode": 200,
+        "requestElapsedMs": 10921,
+        "requestSerial": 306,
+        "resultCode": 0,
+        "tickMs": 133291,
+        "timeoutSeconds": 300,
+        "useThreads": true
+      },
+      {
+        "bodyBytes": 5107856,
+        "downloadChunkBytes": 1048576,
+        "downloadedBytes": 5107856,
+        "event": "live-http-completed",
+        "expectedBodyBytes": 5107856,
+        "httpCode": 200,
+        "requestElapsedMs": 1342,
+        "requestSerial": 326,
+        "resultCode": 0,
+        "tickMs": 135666,
+        "timeoutSeconds": 300,
+        "useThreads": true
+      }
+    ],
+    "renderTimeline": [
+      {
+        "worldId": "5819ca4263ae3d8cf079402ae87d1aa6",
+        "appliedTickMs": 37827,
+        "requestSerial": -1,
+        "prepareMs": 9115.034,
+        "uploadAndObjectsMs": 229.231
+      },
+      {
+        "worldId": "68056a730bc000cd5208a7831ac68faf",
+        "appliedTickMs": 102843,
+        "requestSerial": 0,
+        "prepareMs": 21974.108,
+        "uploadAndObjectsMs": 196.613
+      },
+      {
+        "worldId": "68056a730bc000cd5208a7831ac68faf",
+        "appliedTickMs": 104603,
+        "requestSerial": 0,
+        "prepareMs": 93.588,
+        "uploadAndObjectsMs": 12.605
+      },
+      {
+        "worldId": "68056a730bc000cd5208a7831ac68faf",
+        "appliedTickMs": 104745,
+        "requestSerial": 0,
+        "prepareMs": 96.144,
+        "uploadAndObjectsMs": 12.604
+      },
+      {
+        "worldId": "68056a730bc000cd5208a7831ac68faf",
+        "appliedTickMs": 113504,
+        "requestSerial": 0,
+        "prepareMs": 7948.651,
+        "uploadAndObjectsMs": 101.7
+      },
+      {
+        "worldId": "68056a730bc000cd5208a7831ac68faf",
+        "appliedTickMs": 116953,
+        "requestSerial": 0,
+        "prepareMs": 3239.424,
+        "uploadAndObjectsMs": 137.272
+      },
+      {
+        "worldId": "68056a730bc000cd5208a7831ac68faf",
+        "appliedTickMs": 120300,
+        "requestSerial": 0,
+        "prepareMs": 3278.123,
+        "uploadAndObjectsMs": 27.446
+      },
+      {
+        "worldId": "68056a730bc000cd5208a7831ac68faf",
+        "appliedTickMs": 122272,
+        "requestSerial": 0,
+        "prepareMs": 1909.885,
+        "uploadAndObjectsMs": 14.334
+      },
+      {
+        "worldId": "fb0300a4d36324fae5a314dcb5924750",
+        "appliedTickMs": 126885,
+        "requestSerial": 41,
+        "prepareMs": 3700.093,
+        "uploadAndObjectsMs": 32.538
+      },
+      {
+        "worldId": "fb0300a4d36324fae5a314dcb5924750",
+        "appliedTickMs": 130930,
+        "requestSerial": 41,
+        "prepareMs": 1330.869,
+        "uploadAndObjectsMs": 22.992
+      },
+      {
+        "worldId": "78c703eba23c4b75dad1a843333d130f",
+        "appliedTickMs": 138031,
+        "requestSerial": 306,
+        "prepareMs": 3222.212,
+        "uploadAndObjectsMs": 29.817
+      },
+      {
+        "worldId": "64960e211e903f3f2ae8e2c18aac78ed",
+        "appliedTickMs": 142821,
+        "requestSerial": 326,
+        "prepareMs": 3256.936,
+        "uploadAndObjectsMs": 24.883
+      }
+    ],
+    "workerTimeline": [
+      {
+        "driverElapsedMs": 103930,
+        "requestId": 1,
+        "worldId": "e167520eec2870b04dd9429e191b62b2",
+        "bytes": 69774425,
+        "request": {
+          "x": 19980,
+          "y": 19980,
+          "extent": 40,
+          "resolution": 64
+        },
+        "canonicalBuildCount": 1
+      },
+      {
+        "driverElapsedMs": 160121,
+        "requestId": 2,
+        "worldId": "68056a730bc000cd5208a7831ac68faf",
+        "bytes": 140658841,
+        "request": {
+          "extent": 39921.875,
+          "preview": false,
+          "resolution": 512,
+          "x": 39.0625,
+          "y": 39.0625
+        },
+        "canonicalBuildCount": 1
+      },
+      {
+        "driverElapsedMs": 237710,
+        "requestId": 3,
+        "worldId": "fb0300a4d36324fae5a314dcb5924750",
+        "bytes": 9348380,
+        "request": {
+          "extent": 8483.47305035776,
+          "knownContextId": "0fbdbbb1fef585df4fcfa0b9f0c09935",
+          "knownSceneContextId": "d7a45d8bd8dd0c7f4902ba87f7d6b151",
+          "preview": true,
+          "resolution": 128,
+          "x": 15540.7587004105,
+          "y": 15692.600350382
+        },
+        "canonicalBuildCount": 1
+      },
+      {
+        "driverElapsedMs": 250240,
+        "requestId": 4,
+        "worldId": "78c703eba23c4b75dad1a843333d130f",
+        "bytes": 4290068,
+        "request": {
+          "extent": 62.2910035698156,
+          "knownContextId": "0fbdbbb1fef585df4fcfa0b9f0c09935",
+          "knownSceneContextId": "d7a45d8bd8dd0c7f4902ba87f7d6b151",
+          "preview": true,
+          "resolution": 128,
+          "x": 19820.0186567239,
+          "y": 19964.1982001778
+        },
+        "canonicalBuildCount": 1
+      },
+      {
+        "driverElapsedMs": 252587,
+        "requestId": 5,
+        "worldId": "64960e211e903f3f2ae8e2c18aac78ed",
+        "bytes": 5107856,
+        "request": {
+          "extent": 65.1935943202764,
+          "knownContextId": "0fbdbbb1fef585df4fcfa0b9f0c09935",
+          "knownSceneContextId": "d7a45d8bd8dd0c7f4902ba87f7d6b151",
+          "preview": false,
+          "resolution": 512,
+          "x": 19818.5470192895,
+          "y": 19962.7214247789
+        },
+        "canonicalBuildCount": 1
+      }
+    ]
+  },
+  "notRun": {
+    "nativeTour": true,
+    "nativeTourPngCount": 0,
+    "layerProbe10km": true,
+    "layerProbe160m": true
+  },
+  "diagnosis": {
+    "facts": [
+      "Preview41 returned9.348MB; HTTP completed120986tick, decoded/accepted122017tick.",
+      "An older parent preparation finished122272tick; preview preparation took3700.093ms and was first displayed126885tick,3345ms after motion ended.",
+      "Preview41 source response223782driver ms to worker result237710driver ms was13928ms; final upload took618ms.",
+      "No worker error, source failure, binding rejection or preparation discard was observed."
+    ],
+    "limits": "Saved run reports only total native prepareMs. Data,geometry detail,population and atlas sub-phases cannot be individually attributed from this run.",
+    "proposedBoundedFix": "Profile TS regional page selection and native preparation stages; cache immutable canonical inventory separately from fine-only Y support; prioritize accepted new-source preparation ahead of pending camera-only work. Any deferred/unavailable tree page must be explicitly declared and use whole-view meso, never falsely complete. Preserve20s,preview128,finalfalse512,inventory identity and source semantics."
+  },
+  "cleanup": {
+    "driverExited": true,
+    "sourceBrowserClosedByFinally": true,
+    "noOwnedGodotOrDriverSurvivorFound": true,
+    "gpuReleased": true,
+    "rootServicesUntouched": true
+  },
+  "artifacts": [
+    {
+      "path": "ROOT/web/out/surface/native-e2e-40km-v9/report.json",
+      "bytes": 634379,
+      "sha256": "e7ce783a5fcfc4039340cfc6d525f86c28ff3f577d2734e626469d081609b6cf"
+    },
+    {
+      "path": "ROOT/web/out/surface/native-e2e-40km-v9/native-navigation/navigation-report.json",
+      "bytes": 148656,
+      "sha256": "73ea4c0cb637d72307681e331aa11fac5de08eb41d3beec8358b14ceca4a8669"
+    },
+    {
+      "path": "ROOT/web/out/surface/native-e2e-40km-v9/native-navigation/metrics.json",
+      "bytes": 181118,
+      "sha256": "7f8f914725da1fbd581c7143039fd6a8da44e67954bcaa68ac1af33c088301f0"
+    },
+    {
+      "path": "ROOT/web/out/surface/native-e2e-40km-v9/native-navigation/stdout.log",
+      "bytes": 245597,
+      "sha256": "373d5b3ca5e1d8ff32e2323ec9b0ac2b944b5b832cd9fde0ef5ed9aeb3b55857"
+    },
+    {
+      "path": "ROOT/web/out/surface/native-e2e-40km-v9/native-navigation/stderr.log",
+      "bytes": 470,
+      "sha256": "a805a07428b9e7b2156c0924c12310b3c6774ec8f02f575765014c5c9b715cf8"
+    }
+  ]
+}
