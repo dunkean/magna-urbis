@@ -456,6 +456,16 @@ function compile(gl: WebGL2RenderingContext, vs: string, fs: string): WebGLProgr
   return program;
 }
 
+/** Exact composed source strings used by the original renderer, without a GPU. */
+export function renderOriginalShaderSources() {
+  return {
+    terrain: { vertex: TERRAIN_VS, fragment: TERRAIN_FS },
+    river: { vertex: RIVER_VS, fragment: RIVER_FS },
+    composite: { vertex: COMPOSITE_VS, fragment: COMPOSITE_FS },
+    renderWater: { vertex: COMPOSITE_VS, fragment: RENDER_WATER_FS },
+  };
+}
+
 interface GpuLayer { layer: HeightLayer; levels: Float32Array[]; texture: WebGLTexture; cave?: WebGLTexture; alpha: number; fadeStart: number }
 
 export class TerrainGl {
