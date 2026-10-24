@@ -16,6 +16,7 @@ import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { spawnSurfaceFileLogged,parseSurfaceNativeLogs } from './surface_process_logs.mjs';
+import { installSurfacePageTiming } from './surface_page_timing.mjs';
 import { decodeSurfaceBinary, encodeSurfaceBinary } from '../src/surface/binary.ts';
 import { compileSurfaceWorld } from '../src/surface/compiler.ts';
 import { hashString } from '../src/surface/model.ts';
@@ -296,8 +297,10 @@ const browser = await chromium.launch({ ...(cachedBrowser && existsSync(cachedBr
   headless: true, args: ['--use-angle=swiftshader'] });
 const interrupted = () => { report.interrupted = true; stopViewer(); void browser.close(); };
 process.once('SIGINT', interrupted); process.once('SIGTERM', interrupted);
+let proofPage;
 try {
   const page = await browser.newPage({ viewport: { width: 1440, height: 1000 }, acceptDownloads: true });
+  proofPage=page;
   // Other agents may edit the dev checkout during this proof. Ignore development hot reloads in this isolated tab only.
   report.suppressedDevelopmentUpdates = 0;
   await page.routeWebSocket(url => url.host === new URL(base).host, route => {
@@ -310,8 +313,8 @@ try {
   });
   await page.exposeFunction('recordFreshSurfaceSession', sessionId => { sessions.push(sessionId); console.log(`Live source session: ${sessionId}`); });
   await page.exposeFunction('recordFreshSurfaceEvent', event => { browserEvents.push({ elapsedMs: Date.now() - began, ...event }); });
-  await page.addInitScript(() => {
-    const emit = event => { void window.recordFreshSurfaceEvent(event).catch(() => {}); };
+  const initializeProofPage = () => {
+    const emit = event => { void window.recordFreshSurfaceEvent({observationClock:'node-driver-cdp-receipt',...event}).catch(() => {}); };
     const NativeEventSource = window.EventSource;
     window.EventSource = class extends NativeEventSource {
       constructor(...options) {
@@ -375,7 +378,8 @@ try {
         });
       }
     };
-  });
+  };
+  await page.addInitScript({content:`(${installSurfacePageTiming.toString()})();(${initializeProofPage.toString()})();`});
   page.on('pageerror', error => { errors.push({ type: 'pageerror', message: String(error), elapsedMs: Date.now() - began }); console.error(String(error)); });
   page.on('console', message => {
     if (message.type() === 'error') { errors.push({ type: 'console', message: message.text(), elapsedMs: Date.now() - began }); console.error(message.text()); }
@@ -387,7 +391,7 @@ try {
   page.on('response', async response => {
     if (response.url().startsWith(`${base}/surface-live/reply/`)) {
       const request=response.request();
-      browserEvents.push({kind:'broker-reply',elapsedMs:Date.now()-began,url:response.url(),status:response.status(),sessionId:request.headers()['x-surface-session'],
+      browserEvents.push({kind:'broker-reply',observationClock:'node-driver-cdp-receipt',elapsedMs:Date.now()-began,url:response.url(),status:response.status(),sessionId:request.headers()['x-surface-session'],
         contentType:request.headers()['content-type'],result:await response.json().catch(()=>undefined)});
       return;
     }
@@ -520,4 +524,6 @@ try {
   if(layerProbe&&report.layerProbeStatus!=='complete')report.layerProbeStatus='failed';
   report.status = 'failed'; report.failure = String(error); report.finalService = await serviceStatus(); report.durationMs = Date.now() - began;
   await save(); throw error;
-} finally { stopViewer();await browser.close();process.removeListener('SIGINT',interrupted);process.removeListener('SIGTERM',interrupted);process.removeListener('uncaughtExceptionMonitor',unexpectedFailure); }
+} finally { stopViewer();
+  try { if(proofPage&&!proofPage.isClosed())report.pageTiming=await proofPage.evaluate(()=>window.__surfacePageTimingSnapshot?.());await save(); }catch(error){report.pageTimingCollectionError=String(error);}
+  await browser.close();process.removeListener('SIGINT',interrupted);process.removeListener('SIGTERM',interrupted);process.removeListener('uncaughtExceptionMonitor',unexpectedFailure); }
