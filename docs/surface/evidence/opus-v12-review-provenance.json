@@ -23,5 +23,5 @@
   "rawReview": "web/out/surface-reviews/phase06-followup-v12-preserved.json",
   "rawReviewSha256": "69610245097cd3c01a3b54fda67898115d237a1216cd7eb8a426bbf650181d17",
   "markdown": "docs/surface/reviews/phase06-followup-v12.md",
-  "scope": "Actual CLI review; read-only Read/Glob/Grep; no shell/GPU. Original text preserved verbatim. Its statement71 images disagrees with its enumerated list55; root does not treat71 as verified count."
+  "scope": "Actual CLI review; read-only Read/Glob/Grep; no shell/GPU. Original text preserved verbatim. Root counts55 unique names in its enumerated image sets; the reported71 openings were not independently counted."
 }

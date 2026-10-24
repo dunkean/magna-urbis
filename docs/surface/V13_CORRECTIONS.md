@@ -48,12 +48,14 @@ Le driver transmet aussi le manifeste de végétation par
 
 ## Chantiers séparés en cours
 
-- Herbes CC0 légères puis arbres avec LOD et masque de canopée cohérent :
-  [préparation artistique](VEGETATION_ASSET_NEXT.md).
+- Herbes CC0 légères : ingestion et rendu intégrés, 52 assertions natives et
+  [six A/B GPU](evidence/vegetation-grass-v13/README.md) passent sous leurs limites.
+  Les arbres avec LOD et masque de canopée cohérent restent en préparation.
 - Sol : diagnostiquer les réponses des paramètres physiques continus avant une
   éventuelle révision du contexte ; aucune texture floutée pour cacher les 78 m.
-- Eau : distinguer support alluvial et composite d'eau dans les diagnostics.
-- Bord du domaine : corriger la couverture des triangles de représentation,
-  conserver le domaine réel et les requêtes de hauteur hors source invalides.
+- Eau : les [six canaux isolés](HYDROLOGY_V13_DIAGNOSTIC.md) distinguent support
+  alluvial et composite ; une option de teinte cohérente est encore en cours.
+- Bord : la [capture 40 km](evidence/source-edge-v13/40000m.png) vérifie une bande
+  de ciel de deux pixels conforme au domaine réel, sans étendre les hauteurs source.
 
 Ces lignes décrivent le travail actif, pas des capacités déjà qualifiées.
