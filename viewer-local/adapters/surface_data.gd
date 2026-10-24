@@ -325,7 +325,9 @@ static func prepare(world: Dictionary, origin: Dictionary, view_width: float, se
 	if PrepareControl.hit(control_token,"data-start"):return PrepareControl.result(control_token,"data-start",start)
 	var terrain: Dictionary = world.terrain
 	var source_domains=SourceCoverage.domains(world)
-	if source_domains.is_empty():return {"error":"Source rendering domains have invalid lineage or bounds"}
+	if source_domains.is_empty():
+		push_error("Source rendering domains have invalid lineage or bounds; retaining prior scene")
+		return PrepareControl.result(control_token,"invalid-source-domains",start)
 	var spacing := display_spacing(terrain,view_width,int(scene_request.get("displaySamples",256)))
 	if display_source.is_empty(): display_source=build_display_source(world,spacing,control_token)
 	if PrepareControl.hit(control_token,"display-source"):return PrepareControl.result(control_token,"display-source",start)
