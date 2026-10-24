@@ -5,6 +5,8 @@ import type { UrbanColdSceneResponse } from './urbanScene';
 import type { UrbanColdBuildingState } from './urbanBuildingsPanel';
 import { translateBuilding } from './urbanSnapshot';
 import type { BuildingChunkRead } from './urbanBuildingChunkStore';
+import { beginDerivedWrite, openDerivedCache } from './urbanBuildingDerivedCache';
+import { translateSiteVisuals, type UrbanSiteVisual } from './urbanSiteStore';
 
 export type ColdCityState = UrbanColdBuildingState;
 
@@ -71,7 +73,7 @@ export function replaceColdProjection(previous: NativeBuildingProjectionScene, r
 /** One committed city's real native records, with serial IO and a latest-only
  * pending selection. The renderer owns only the separate visual projection. */
 export async function openColdCitySession(backend: BuildingChunkBackend, state: ColdCityState,
-  options: { projection?: NativeBuildingProjectionScene; cancelled?(): boolean } = {}) {
+  options: { projection?: NativeBuildingProjectionScene; sites?: UrbanSiteVisual[]; cancelled?(): boolean } = {}) {
   const reader = await openUrbanBuildingChunks(backend, state.store.sceneId);
   const manifest = reader.manifest, counts = state.counts;
   if (manifest.fingerprint !== state.store.fingerprint || manifest.sourceFingerprint !== state.store.sourceFingerprint
@@ -79,9 +81,41 @@ export async function openColdCitySession(backend: BuildingChunkBackend, state: 
     || manifest.generator_version !== counts.generator_version || manifest.buildings !== counts.buildings
     || manifest.refusals !== counts.refusals || manifest.openSpaces !== counts.open_spaces) throw new Error('Cold city identity or counts changed.');
   let projection = options.projection;
+  let siteVisuals = options.sites, derived: Awaited<ReturnType<typeof openDerivedCache>> | undefined;
+  let derivedStatus = options.projection ? 'provided' : 'miss', derivedReason = '';
+  const check = () => { if (options.cancelled?.()) throw new DOMException('Ville remplacée', 'AbortError'); };
+  try {
+    check(); derived = await openDerivedCache(backend, manifest); check();
+    if (!projection) {
+      const accumulator = createColdProjectionAccumulator(), restoredSites: UrbanSiteVisual[] = [];
+      for await (const chunk of derived.chunks()) {
+        check(); accumulator.append(chunk.projection);
+        if (derived.manifest.origins === 'complete') restoredSites.push(...chunk.sites!);
+      }
+      projection = accumulator.scene; siteVisuals = derived.manifest.origins === 'complete' ? restoredSites : undefined;
+      derivedStatus = 'hit';
+    }
+  } catch (error) { check(); derived = undefined; derivedReason = String(error); }
   if (!projection) {
     const accumulator = createColdProjectionAccumulator();
-    for await (const chunk of iterateUrbanBuildingChunks(backend, manifest.sceneId, { cancelled: options.cancelled })) accumulator.append(projectNativeBuildingChunk(chunk));
+    let writer: Awaited<ReturnType<typeof beginDerivedWrite>>;
+    try { writer = await beginDerivedWrite(backend, manifest.sceneId, manifest.sourceFingerprint, manifest.totalRequests); }
+    catch (error) { derivedReason = String(error); }
+    let index = 0;
+    try {
+      for await (const chunk of iterateUrbanBuildingChunks(backend, manifest.sceneId, { cancelled: options.cancelled })) {
+        check(); const visual = projectNativeBuildingChunk(chunk), native = manifest.chunks[index++]; accumulator.append(visual);
+        if (writer) {
+          try { await writer.append(visual, native, options.sites?.slice(native.progress.start, native.progress.completed)); }
+          catch (error) { derivedReason = String(error); try { await writer.abort(); } catch {} writer = undefined; }
+        }
+      }
+      check(); if (writer) {
+        try { await writer.commit(manifest); derived = await openDerivedCache(backend, manifest); }
+        catch (error) { check(); derivedReason = String(error); try { await writer.abort(); } catch {} derived = undefined; }
+      }
+      derivedStatus = derived ? 'rebuilt' : 'rebuilt-uncached';
+    } catch (error) { try { await writer?.abort(); } catch {} throw error; }
     projection = accumulator.scene;
   }
   if (options.cancelled?.()) throw new DOMException('Ville remplacée', 'AbortError');
@@ -91,6 +125,7 @@ export async function openColdCitySession(backend: BuildingChunkBackend, state: 
   const dx = state.offset?.x ?? 0, dy = state.offset?.y ?? 0;
   if (![dx, dy].every(Number.isFinite)) throw new Error('Invalid cold city translation.');
   projection = translateColdProjection(projection, dx, dy);
+  if (siteVisuals) siteVisuals = translateSiteVisuals(siteVisuals, dx, dy);
   function translated(value: BuildingChunkRead): BuildingChunkRead {
     if (!dx && !dy) return value;
     const building = translateBuilding(value.building, dx, dy);
@@ -126,7 +161,10 @@ export async function openColdCitySession(backend: BuildingChunkBackend, state: 
     });
   }
   return {
-    state, projection,
+    state, projection, siteVisuals,
+    /** No native query/runtime is persisted or reactivated by this cache. */
+    originBinding: 'unbound' as const,
+    readOrigin(id: string) { return enqueue('edit', async () => derived?.origin(id)); },
     read(id: string, channel: 'detail' | 'selection' | 'inspector' | 'open' = 'detail') { return enqueue(channel, async () => {
       const value = await reader.readBuilding(id); return value && translated(value);
     }); },
@@ -141,7 +179,8 @@ export async function openColdCitySession(backend: BuildingChunkBackend, state: 
       for (const task of pending.splice(0)) task.reject(replaced());
       if (!active) reader.clearCache();
     },
-    get stats() { return { disposed, activeReads: active ? 1 : 0, queuedReads: pending.length, nativeCache: reader.stats }; },
+    get stats() { return { disposed, activeReads: active ? 1 : 0, queuedReads: pending.length, nativeCache: reader.stats,
+      derivedStatus, derivedReason, origins: siteVisuals ? 'complete' : 'unknown' }; },
   };
 }
 export type ColdCitySession = Awaited<ReturnType<typeof openColdCitySession>>;

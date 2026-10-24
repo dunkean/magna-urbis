@@ -2455,7 +2455,9 @@ pub(super) fn settle(layout: &mut super::Layout, surface: Surface<'_>) {
     if layout.enclosures.iter().all(|e| e.style.is_empty()) {
         return;
     }
+    #[cfg(not(target_arch = "wasm32"))]
     let tick = std::time::Instant::now();
+    #[cfg(not(target_arch = "wasm32"))]
     let blocks_before = layout.blocks.len();
     let streets: Vec<&Street> = layout
         .streets
@@ -2657,6 +2659,7 @@ pub(super) fn settle(layout: &mut super::Layout, surface: Surface<'_>) {
             .collect::<Vec<_>>()
     });
     layout.blocks = out.into_iter().flatten().collect();
+    #[cfg(not(target_arch = "wasm32"))]
     if std::env::var("URBAN_PROFILE").is_ok() {
         eprintln!(
             "  fortification settle: blocks {blocks_before} -> {}, {:.0} ms",

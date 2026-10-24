@@ -1,0 +1,345 @@
+{
+  "accesses": [
+    {
+      "id": "layout-f9dab5910f08a8a2/block-a2848c9e721f48be/parcel-a2848c9e721f48be/street/303",
+      "kind": "public",
+      "segment": [
+        {
+          "x": 6638.574546181312,
+          "y": 9035.506125669188
+        },
+        {
+          "x": 6638.574546181312,
+          "y": 8946.444094400114
+        }
+      ],
+      "width_m": 89.06203126907349
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-a2848c9e721f48be/parcel-a2848c9e721f48be/street/307",
+      "kind": "public",
+      "segment": [
+        {
+          "x": 6654.256125771156,
+          "y": 8946.444094400114
+        },
+        {
+          "x": 6654.256125771156,
+          "y": 9035.506125669188
+        }
+      ],
+      "width_m": 89.06203126907349
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-a2848c9e721f48be/parcel-a2848c9e721f48be/street/301",
+      "kind": "public",
+      "segment": [
+        {
+          "x": 6638.574546181312,
+          "y": 8946.444094400114
+        },
+        {
+          "x": 6654.256125771156,
+          "y": 8946.444094400114
+        }
+      ],
+      "width_m": 15.68157958984375
+    },
+    {
+      "id": "layout-f9dab5910f08a8a2/block-a2848c9e721f48be/parcel-a2848c9e721f48be/street/302",
+      "kind": "public",
+      "segment": [
+        {
+          "x": 6654.256125771156,
+          "y": 9035.506125669188
+        },
+        {
+          "x": 6638.574546181312,
+          "y": 9035.506125669188
+        }
+      ],
+      "width_m": 15.68157958984375
+    }
+  ],
+  "buildable": [
+    {
+      "holes": [],
+      "outer": [
+        {
+          "x": 6638.574546181312,
+          "y": 9035.506125669188
+        },
+        {
+          "x": 6638.574546181312,
+          "y": 8946.444094400114
+        },
+        {
+          "x": 6654.256125771156,
+          "y": 8946.444094400114
+        },
+        {
+          "x": 6654.256125771156,
+          "y": 9035.506125669188
+        }
+      ]
+    }
+  ],
+  "cadastral": [
+    {
+      "holes": [],
+      "outer": [
+        {
+          "x": 6638.574546181312,
+          "y": 9035.506125669188
+        },
+        {
+          "x": 6638.574546181312,
+          "y": 8946.444094400114
+        },
+        {
+          "x": 6654.256125771156,
+          "y": 8946.444094400114
+        },
+        {
+          "x": 6654.256125771156,
+          "y": 9035.506125669188
+        }
+      ]
+    }
+  ],
+  "config": {
+    "allow_late": false,
+    "count": 1,
+    "era": "any",
+    "mode": "historical_inspired",
+    "orientation_deg": 0.0,
+    "overrides": {
+      "bodies": null,
+      "cladding": null,
+      "coating": null,
+      "courtyard_ratio": null,
+      "floors": null,
+      "footprint": null,
+      "frame": null,
+      "infill": null,
+      "overhang_m": null,
+      "roof": null,
+      "roof_pitch_deg": null,
+      "site_slope_deg": null
+    },
+    "pack": "AS-ISL",
+    "recipe": null,
+    "schema_version": "2",
+    "seed": "city-tropical-island-l/layout-f9dab5910f08a8a2/block-a2848c9e721f48be/parcel-a2848c9e721f48be",
+    "size": 1.0,
+    "variation": 0.65,
+    "wealth": 0.24
+  },
+  "culture": {
+    "borrowing": null,
+    "culture": "javanese-courts",
+    "mode": "historical_inspired",
+    "pack": "AS-ISL"
+  },
+  "feasibility": {
+    "admissible_witnesses": 3,
+    "domain_m": [
+      15.1,
+      15.1
+    ],
+    "fitting_witnesses": 3,
+    "frontage_m": 89.06,
+    "recipes": [
+      "AS-ISL-B14",
+      "AS-ISL-B15",
+      "AS-ISL-B06"
+    ],
+    "version": "lot-feasibility-1"
+  },
+  "function": "domestic",
+  "id": "layout-f9dab5910f08a8a2/block-a2848c9e721f48be/parcel-a2848c9e721f48be/building",
+  "neighbors": [],
+  "occupation": {
+    "coverage": 0.35,
+    "depth_m": 11.0,
+    "frontage_m": 6.0
+  },
+  "parcel_id": "layout-f9dab5910f08a8a2/block-a2848c9e721f48be/parcel-a2848c9e721f48be",
+  "party_boundaries": [],
+  "placement_hint": [
+    {
+      "holes": [],
+      "outer": [
+        {
+          "x": 6638.574546181312,
+          "y": 8993.87511003465
+        },
+        {
+          "x": 6638.574546181312,
+          "y": 8988.075110034652
+        },
+        {
+          "x": 6645.874546181312,
+          "y": 8988.075110034652
+        },
+        {
+          "x": 6645.874546181312,
+          "y": 8993.87511003465
+        }
+      ]
+    }
+  ],
+  "preview": [
+    {
+      "holes": [],
+      "outer": [
+        {
+          "x": 6638.595296449209,
+          "y": 8980.508505973858
+        },
+        {
+          "x": 6638.595296449209,
+          "y": 8973.835974741052
+        },
+        {
+          "x": 6647.383521734452,
+          "y": 8973.835974741052
+        },
+        {
+          "x": 6647.383521734452,
+          "y": 8980.508505973858
+        }
+      ]
+    }
+  ],
+  "preview_parts": [
+    "building"
+  ],
+  "programme": {
+    "built_area_m2": 58.6,
+    "composition": "compound",
+    "district_role": "commoner",
+    "floors": [
+      1,
+      1
+    ],
+    "frontage_continuity": 0.5,
+    "households": 3.0,
+    "housing_floor_need": {
+      "allocated_households": 3.0,
+      "basis": "allocation_households_times_wealth_scaled_floor_allowance",
+      "model": {
+        "calibration": "not-culture-calibrated",
+        "effective_floor_m2_per_household": 53.519999999999996,
+        "family": "insular",
+        "floor_m2_per_household": 60.0,
+        "persons_per_household": 4.5,
+        "profile_provenance": "generic-compatibility-defaults",
+        "wealth": 0.24,
+        "wealth_factor": 0.8919999999999999
+      },
+      "requested_m2": 160.56,
+      "scope": "housing_in_body_levels",
+      "unit": "useful_floor_m2",
+      "version": "indicative-housing-floor-1"
+    },
+    "landmark": false,
+    "party_walls": false,
+    "role": "dwelling.tenement",
+    "wealth": 0.24
+  },
+  "reserves": [],
+  "roof_domain": [
+    {
+      "holes": [],
+      "outer": [
+        {
+          "x": 6638.574546181312,
+          "y": 9035.506125669188
+        },
+        {
+          "x": 6638.574546181312,
+          "y": 8946.444094400114
+        },
+        {
+          "x": 6654.256125771156,
+          "y": 8946.444094400114
+        },
+        {
+          "x": 6654.256125771156,
+          "y": 9035.506125669188
+        }
+      ]
+    }
+  ],
+  "seed": "city-tropical-island-l/layout-f9dab5910f08a8a2/block-a2848c9e721f48be/parcel-a2848c9e721f48be",
+  "terrain": {
+    "gradient": [
+      0.0913016004553856,
+      0.019154364374978285
+    ],
+    "grid": {
+      "elevations_m": [
+        139.97808837890625,
+        140.8009033203125,
+        141.26512145996094,
+        141.8292236328125,
+        141.9508514404297,
+        140.11251831054688,
+        140.79920959472656,
+        141.9134521484375,
+        143.05831909179688,
+        143.73947143554688,
+        140.87997436523438,
+        141.66192626953125,
+        142.50941467285156,
+        143.8363800048828,
+        144.4346160888672,
+        140.41506958007812,
+        141.6875762939453,
+        142.86119079589844,
+        144.17759704589844,
+        144.61241149902344,
+        139.84600830078125,
+        141.6565704345703,
+        143.32257080078125,
+        144.4527130126953,
+        145.3206787109375,
+        140.22486877441406,
+        141.60440063476562,
+        143.5506134033203,
+        145.09014892578125,
+        146.17074584960938,
+        140.5662841796875,
+        141.9698028564453,
+        144.10719299316406,
+        145.29405212402344,
+        146.50860595703125,
+        141.95692443847656,
+        143.8590087890625,
+        145.6732635498047,
+        146.45550537109375,
+        147.4142303466797,
+        143.7334442138672,
+        144.84799194335938,
+        145.73709106445312,
+        146.95611572265625,
+        148.17308044433594
+      ],
+      "height": 9,
+      "origin": {
+        "x": 6617.1875,
+        "y": 8929.6875
+      },
+      "step_m": 15.625,
+      "width": 5
+    },
+    "ground_z_m": 143.07610421840627,
+    "max_foundation_step_m": 0.75,
+    "origin": {
+      "x": 6646.415335976234,
+      "y": 8990.975110034651
+    },
+    "water_z_m": null
+  }
+}

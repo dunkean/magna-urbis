@@ -731,8 +731,10 @@ fn generate_modern(
         )?,
         &cfg.tissue,
     );
+    #[cfg(not(target_arch = "wasm32"))]
     let tick = std::time::Instant::now();
     let mut footprint = footprint::generate(seed, site, cfg, &morph, surface, roads, radius);
+    #[cfg(not(target_arch = "wasm32"))]
     if std::env::var("URBAN_PROFILE").is_ok() {
         eprintln!(
             "  footprint: {:.0} ms",
@@ -1455,6 +1457,7 @@ fn fortify(
     }
     // Style inside the kind: culture, population, period, site and relief
     // (`fortification::resolve`); the trace then follows the style.
+    #[cfg(not(target_arch = "wasm32"))]
     let tick = std::time::Instant::now();
     let base = Rng::new(&site.key).fork("fortification");
     let (relief, wet_share) = fortification::terrain(&walls, surface);
@@ -1619,6 +1622,7 @@ fn fortify(
     }
     // No quarter keeps land in a tower, a ditch or a glacis.
     fortification::yield_reserve(&mut plan.quarters, &plan.enclosures[first..]);
+    #[cfg(not(target_arch = "wasm32"))]
     if std::env::var("URBAN_PROFILE").is_ok() {
         eprintln!(
             "  fortification[{}]: relief {relief:.3}, wet {wet_share:.2}, {:.0} ms",

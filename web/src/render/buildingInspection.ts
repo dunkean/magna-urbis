@@ -3,6 +3,7 @@
 import type { BuildingStyleEntry, BuildingStyleIndex } from '../../../rust/bridge/buildingStyles';
 import type { MaterialSlots, Point, Surface } from '../../../rust/bridge/housesContract';
 import type { ArchitectureCulture, ArchitectureFunction, PlacedBuilding } from '../../../rust/bridge/urbanArchitecture';
+import { retainedProgrammeOutcome, type RetainedProgrammeOutcome } from './programmeOutcome';
 
 export type BuildingValidation = 'preview' | 'plan_only' | 'native';
 /** Optional city metadata; planned households are separate from native capacity. */
@@ -24,6 +25,8 @@ export interface BuildingInspection {
   culture: ArchitectureCulture;
   function: ArchitectureFunction;
   programme: BuildingInspectionProgramme | null;
+  /** Final native footprint report, independently of the current site's wish. */
+  programmeOutcome: RetainedProgrammeOutcome | null;
   validation: BuildingValidation;
   geometry: {
     /** Net plan areas: outer rings minus holes. Roof area is projected, not sloped. */
@@ -120,7 +123,8 @@ export function describeUrbanBuilding(building: PlacedBuilding, styles?: Buildin
   return {
     id: building.id, parcelId: building.parcel_id, recipeId: building.recipe_id, variantId: building.variant_id,
     label: style?.label ?? null, variantLabel: style?.variant_label ?? null, culture: { ...building.culture },
-    function: building.function, programme: extra.programme ? { ...extra.programme } : null, validation,
+    function: building.function, programme: extra.programme ? { ...extra.programme } : null,
+    programmeOutcome: preview ? null : retainedProgrammeOutcome(building.programme_outcome), validation,
     geometry: { footprintAreaM2: surfaceArea(building.footprint), roofAreaM2: surfaceArea(building.roof_footprint),
       perimeterM: perimeter(building.footprint), courtyardAreaM2: surfaceArea(building.courtyards),
       bodies: building.volumes.length, floors, heightM, ...localExtents(building) },

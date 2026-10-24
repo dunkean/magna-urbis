@@ -1,0 +1,5 @@
+# BYZ : correction limitée de conversion, indépendante de Core23 promotion
+
+Cause root prouvée natif+GEOS : raw12 valide → dedup11 invalide au croisement historique, trace ON/OFF exacte. Nouveau lot isolé `web/out/byzantine-conversion-topology-workspace-v1/DELIVERY.md`, manifeste 3e10c94bbe4b4cc1c4a4bdbf9499a5a2f057c98f8b5ca59356f1e8dfa76706e9. Un runtime geometry.rs, préimage identique au produit. Aucune validation sans suppression approchée distincte ; conserver le converti historique valide, sinon préserver le raw seulement s’il est valide. Aucun buffer/hull/drop/snap/EPS relâché.
+
+Huit tests préparés, hooks de fréquence test-only, vrai raw root en bits, replay entier BYZ et rapport GEOS/deltas jardins/besoins/allocations. Base433/candidat438 depuis Core23Native432, sans observers ; six seuls chemins proposés autonomes (runtime+test+fixtures), pas les Core23 ni exemple proof-only. Stages et produit/TODO courant protégés. Root seul tests/build/replay/mesure ; auteur sans exécution ni produit. Aucun ménage ni propriété indivise certifié. Créneau libéré.

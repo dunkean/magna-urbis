@@ -133,7 +133,8 @@ export async function editColdCityBuilding(options: ColdCityEditOptions): Promis
     const projection = projectNativeBuildingRecords([replacement], result.scene.materials);
     // Recheck cancellation after the stage's async fingerprint, immediately
     // before the actual commit transaction. The optional signal also aborts it.
-    const guardedBackend: BuildingChunkBackend = { begin: id => backend.begin(id), append: (id, chunk, entries) => backend.append(id, chunk, entries),
+    const guardedBackend: BuildingChunkBackend = { ...(backend.derived ? { derived: backend.derived } : {}),
+      begin: id => backend.begin(id), append: (id, chunk, entries) => backend.append(id, chunk, entries),
       active: () => backend.active(), manifest: id => backend.manifest(id), chunk: (id, index) => backend.chunk(id, index),
       building: (id, building) => backend.building(id, building), tile: (id, tile, limit) => backend.tile(id, tile, limit), discard: id => backend.discard(id),
       commit: (manifest, expected, commitOptions) => { check(); return backend.commit(manifest, expected, commitOptions); } };
@@ -150,7 +151,8 @@ export async function editColdCityBuilding(options: ColdCityEditOptions): Promis
       const archive = delta.plan_archives?.[newArchiveId];
       if (archive !== undefined && archive !== newArchive) throw new Error('La nouvelle archive contredit une archive conservée.');
       const at = delta.buildings.findIndex(b => b.id === original.id);
-      if (at < 0) await stage.appendStored(record.stored);
+      const originalSites = session.siteVisuals?.slice(record.descriptor.progress.start, record.descriptor.progress.completed);
+      if (at < 0) await stage.appendStored(record.stored, originalSites);
       else {
         if (++replaced !== 1 || record.descriptor.index !== selected.chunkIndex || delta.buildings[at].parcel_id !== original.parcel_id)
           throw new Error('La position du bâtiment dans le stockage froid a changé.');
@@ -162,7 +164,7 @@ export async function editColdCityBuilding(options: ColdCityEditOptions): Promis
         }
         const materials = new Map((delta.materials ?? []).map(m => [m.id, m]));
         for (const [id, material] of definitions) if (!materials.has(id)) materials.set(id, material);
-        await stage.append({ ...delta, buildings, plan_archives: archives, ...(materials.size ? { materials: [...materials.values()] } : {}) }, record.descriptor.progress);
+        await stage.append({ ...delta, buildings, plan_archives: archives, ...(materials.size ? { materials: [...materials.values()] } : {}) }, record.descriptor.progress, originalSites);
       }
     }
     if (replaced !== 1) throw new Error('Le bâtiment sélectionné a disparu du stockage froid.');

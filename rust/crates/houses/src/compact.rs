@@ -52,7 +52,7 @@ pub struct CompactArchitecture {
 // JSON parsers (including JS) are free to round decimal doubles by an ulp.
 // Exact roof junctions must survive cold storage; encode retained f64 bits only
 // in this opaque format, without changing the project's historical JSON parser.
-fn encode_floats(value: &mut Value) {
+pub(crate) fn encode_floats(value: &mut Value) {
     match value {
         Value::Number(n) if n.is_f64() => {
             *value = serde_json::json!({"$f64": format!("{:016x}", n.as_f64().unwrap().to_bits())});
@@ -62,7 +62,7 @@ fn encode_floats(value: &mut Value) {
         _ => {}
     }
 }
-fn decode_floats(value: &mut Value) -> Result<(), String> {
+pub(crate) fn decode_floats(value: &mut Value) -> Result<(), String> {
     match value {
         Value::Object(o) if o.len() == 1 && o.contains_key("$f64") => {
             let hex = o["$f64"].as_str().ok_or("Invalid retained double.")?;

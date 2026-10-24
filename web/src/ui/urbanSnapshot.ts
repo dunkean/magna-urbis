@@ -14,10 +14,10 @@ export function applyWorkshopPopulation<T extends { key: string; population: num
   if (!key || population === undefined || !Number.isInteger(population) || population < 1 || population > 5_000_000) return sites;
   return sites.map(site => site.key === key ? { ...site, population } : site);
 }
-export function buildingSettings(state?: UrbanBuildingState): Omit<UrbanBuildingState, 'scene' | 'cold'> | undefined {
+export function buildingSettings(state?: UrbanBuildingState): Omit<UrbanBuildingState, 'scene' | 'cold' | 'parent'> | undefined {
   if (!state) return undefined;
-  const { scene, cold, ...settings } = state;
-  return { ...settings, generated: settings.generated ?? !!(scene || cold) };
+  const { scene, cold, parent, parentSelected: _parentSelected, ...settings } = state;
+  return { ...settings, generated: settings.generated ?? !!(scene || cold || parent) };
 }
 export function workshopSettings(state: WorkshopState): Omit<WorkshopState, 'layouts' | 'partitions'> {
   const { layouts: _layouts, partitions: _partitions, ...settings } = state;
@@ -28,7 +28,7 @@ export function workshopSettings(state: WorkshopState): Omit<WorkshopState, 'lay
 export function appliedWorkshopSnapshot(state: WorkshopState): WorkshopState {
   const settings = structuredClone(workshopSettings(state));
   return { ...settings, layouts: state.layouts?.slice(), partitions: state.partitions?.slice(),
-    buildingState: settings.buildingState && { ...settings.buildingState, scene: state.buildingState?.scene, cold: state.buildingState?.cold } };
+    buildingState: settings.buildingState && { ...settings.buildingState, scene: state.buildingState?.scene, cold: state.buildingState?.cold, parent: state.buildingState?.parent } };
 }
 const point = <T extends Point>(p: T, dx: number, dy: number): T => ({ ...p, x: p.x + dx, y: p.y + dy });
 const shape = (s: Shape, dx: number, dy: number): Shape => ({ ...s,
@@ -71,6 +71,7 @@ export function translateWorkshopState(state: WorkshopState, dx: number, dy: num
   const built = state.buildingState;
   return { ...state, layouts: translateLand(state.layouts, dx, dy), partitions: translateLand(state.partitions, dx, dy),
     buildingState: built && { ...built, camera: built.camera && point(built.camera, dx, dy),
+      parent: built.parent && { ...built.parent, offset: { x: (built.parent.offset?.x ?? 0) + dx, y: (built.parent.offset?.y ?? 0) + dy } },
       cold: built.cold && { ...built.cold, offset: { x: (built.cold.offset?.x ?? 0) + dx, y: (built.cold.offset?.y ?? 0) + dy } },
       scene: built.scene && translateBuildingScene(built.scene, dx, dy) } };
 }
@@ -93,6 +94,7 @@ function hasSceneContent(scene: PlacementBatch | undefined): boolean {
 }
 export function cityWorkshopState(state: WorkshopState, key: string): WorkshopState {
   const ids = parcelIds(state, key), settings = state.citySettings?.[key], built = state.buildingState;
+  if (built?.parent && (built.parent.cityKey ?? (state.layouts?.length === 1 ? state.layouts[0].key : undefined)) !== key) throw new Error('Les archives parent doivent appartenir à la ville sélectionnée.');
   if (built?.cold && (built.cold.cityKey ?? (state.layouts?.length === 1 ? state.layouts[0].key : undefined)) !== key)
     throw new Error('Le stockage des maisons doit appartenir à la ville sélectionnée.');
   if (built?.scene && (built.scene.buildings.length || built.scene.refusals.length || built.scene.open_spaces.length) && ids.size === 0) throw new Error('La scène bâtie exige les identifiants des parcelles appliquées pour transférer cette ville.');
@@ -106,6 +108,14 @@ export function mergeCityWorkshop(previous: WorkshopState | undefined, incoming:
   }
   const moved = dx === 0 && dy === 0 ? incoming : translateWorkshopState(incoming, dx, dy), oldScene = previous?.buildingState?.scene;
   const ids = new Set([...(previous ? parcelIds(previous, key) : []), ...parcelIds(moved, key)]);
+  const previousParent = previous?.buildingState?.parent, incomingParent = moved.buildingState?.parent;
+  if (previousParent || incomingParent) {
+    if ((incomingParent?.cityKey ?? previousParent?.cityKey) !== key || previous?.layouts?.some(l => l.key !== key)
+      || moved.layouts?.some(l => l.key !== key) || previous?.buildingState?.cold || moved.buildingState?.cold)
+      throw new Error('La fusion multi-ville ou mixte des archives parent n’est pas prise en charge ; aucun parent n’est supprimé silencieusement.');
+    return { ...moved, citySettings: { ...previous?.citySettings, ...moved.citySettings },
+      buildingState: moved.buildingState && { ...moved.buildingState, ...(incomingParent ? { parent: { ...incomingParent, cityKey: key }, scene: undefined, cold: undefined } : {}) } };
+  }
   const previousCold = previous?.buildingState?.cold, incomingCold = moved.buildingState?.cold;
   if (previousCold && (previousCold.cityKey ?? (previous?.layouts?.length === 1 ? previous.layouts[0].key : undefined)) !== key)
     throw new Error('La fusion de plusieurs stockages de maisons distincts doit être conservée avant remplacement.');

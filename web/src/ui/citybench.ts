@@ -300,4 +300,5 @@ else if (artifact) {
     save(); restoreSituation();
   }).catch(error => status(String(error))).finally(() => { ready = true; });
 } else { ready = true; showView(); }
-window.magnaBenchContext = { ready: () => ready, capture: () => ({ view }), restore: saved => { if (saved?.view) setView(saved.view); }, comparison: settlements.urban.comparison };
+window.magnaBenchContext = { ready: () => ready, capture: () => ({ view }), restore: saved => { if (saved?.view) setView(saved.view); }, comparison: settlements.urban.comparison,
+  coldViewport: () => settlements.urban.coldViewportEvidence };

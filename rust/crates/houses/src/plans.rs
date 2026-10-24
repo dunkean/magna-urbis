@@ -23,7 +23,22 @@ use std::collections::{BTreeMap, BTreeSet};
 // scene merging cannot mix legacy house archives and newly certified entries.
 pub const PLAN_VERSION: &str = "architectural-plans-2";
 
-#[derive(Clone, Deserialize)]
+#[path = "native_assembly.rs"]
+pub mod assembly;
+
+#[path="native_parent_batch.rs"]
+pub mod parent_batch;
+
+#[path="native_parent_session.rs"]
+pub mod parent_session;
+
+#[path = "plan_programme_outcome.rs"]
+mod plan_programme_outcome;
+pub use plan_programme_outcome::{BodyFootprintAttainment, BodyFootprintOutcome,
+    HouseholdCapacityStatus, HouseholdProgrammeOutcome, PlanProgrammeOutcome,
+    HousingFloorOutcome, NecessaryHousingAreaStatus};
+
+#[derive(Clone, Serialize, Deserialize)]
 pub struct PlanBatchRequest {
     pub schema_version: String,
     pub requests: Vec<PlacementRequest>,
@@ -63,6 +78,10 @@ pub struct PlanBuilding {
     pub useful_area_m2: f64,
     /// Unknown until the native programme/access is certified; never reconciled.
     pub domestic_units: u32,
+    /// Optional additive report on the FINAL retained geometry. Old saved plans
+    /// remain unreported; this never credits requested households as housed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub programme_outcome: Option<PlanProgrammeOutcome>,
     pub simplification: String,
     pub diagnostics: Vec<String>,
     pub cartographic: CartographicRoof,
@@ -269,6 +288,10 @@ impl<'a> PreparedPlan<'a> {
     fn foundation(&self) -> Result<&crate::engine::FoundationPreparation, String> {
         self.foundation
             .get_or_init(|| {
+                #[cfg(test)]
+                single_incumbent_growth::record_preparation();
+                #[cfg(test)]
+                single_need_continuation::record_preparation();
                 if self.retain_native_entry {
                     crate::engine::prepare_foundation_and_entry(self.resolved)
                 } else {
@@ -421,6 +444,10 @@ fn frame(r: &PlacementRequest, domain: &Surface) -> Transform {
 pub(crate) fn validate_request(r: &PlacementRequest) -> Result<(), String> {
     if let Some(programme) = &r.programme {
         programme.validate()?;
+        if programme.housing_floor_need.is_some()
+            && !matches!(r.function, ArchitectureFunction::Domestic | ArchitectureFunction::Mixed) {
+            return Err("programme.housing_floor_need applies only to domestic/mixed housing in body levels.".into());
+        }
     }
     if !valid_surface(&r.cadastral)
         || !valid_surface(&r.buildable)
@@ -542,7 +569,7 @@ fn proposed_access(
 
 /// A cap on the actual facade/street edge preserves clear corridor width at
 /// oblique approaches. A cap perpendicular to the path penetrates the house by
-/// w²*tan(angle)/8 even when its centre is exactly on the facade.
+/// wÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â²*tan(angle)/8 even when its centre is exactly on the facade.
 fn edge_capped_corridor(
     entry: Point,
     contact: Point,
@@ -646,13 +673,13 @@ fn proposed_access_with_facade(
     candidates.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.3.cmp(&b.3)));
     for (_, entry, contact, id, facade, street) in candidates.into_iter().take(64) {
         let path = corridor(entry, contact, 0.8);
-        if contains(&walk, &path) && area(&intersection(&path, footprint)) < 0.002 {
+        if contains(&walk, &path) && area(&intersection(&path, footprint)) < 0.002 && parent_session::land_clear(&r.id,&path).is_ok() {
             return Ok((entry, id, path, contact));
         }
         if align_caps
             && let Some(path) = edge_capped_corridor(entry, contact, facade, street)
-            && contains(&walk, &path)
-            && area(&intersection(&path, footprint)) < 0.002
+            && contains(&walk, &path) && area(&intersection(&path, footprint)) < 0.002
+            && parent_session::land_clear(&r.id,&path).is_ok()
         {
             return Ok((entry, id, path, contact));
         }
@@ -695,28 +722,47 @@ fn proposed_native_access_with_entry(
     occupied: &Surface,
     one_bend: Option<native_one_bend_access::OneBendContext<'_>>,
 ) -> Result<(Point, String, Surface, Point), String> {
+    let targets: Vec<_> = r.accesses.iter()
+        .filter(|a| matches!(a.kind.as_str(), "public" | "collective" | "private"))
+        .map(|a| NativeConnectionTarget { id:a.id.clone(), segment:a.segment, width_m:a.width_m }).collect();
+    proposed_native_access_to_targets(r,native,local_solids,transform,footprint,occupied,one_bend,&targets,None)
+}
+
+#[derive(Clone)]
+struct NativeConnectionTarget { id:String, segment:[Point;2], width_m:f64 }
+
+fn native_opening_world(opening:[Point;2],transform:&Transform)->([Point;2],Point){
+    let opening=opening.map(|p|transform_point(p,transform));
+    let entry=Point{x:(opening[0].x+opening[1].x)*0.5,y:(opening[0].y+opening[1].y)*0.5};
+    (opening,entry)
+}
+
+fn proposed_native_access_to_targets(
+    r: &PlacementRequest,
+    native: &crate::access::StructuralEntrance,
+    local_solids: &Surface,
+    transform: &Transform,
+    footprint: &Surface,
+    occupied: &Surface,
+    one_bend: Option<native_one_bend_access::OneBendContext<'_>>,
+    targets: &[NativeConnectionTarget],
+    bend_support_world: Option<&Surface>,
+) -> Result<(Point, String, Surface, Point), String> {
     if native.width_m < 0.8 || (native.from_z_m - native.to_z_m).abs() > 0.001 {
         return Err("Native budget entrance requires a different access operator.".into());
     }
-    let opening = native.opening.map(|p| transform_point(p, transform));
-    let entry = Point {
-        x: (opening[0].x + opening[1].x) * 0.5,
-        y: (opening[0].y + opening[1].y) * 0.5,
-    };
+    let (opening, entry) = native_opening_world(native.opening, transform);
     let passage = map_surface(&native.passage, transform);
     let walk = difference(&difference(&r.cadastral, &r.reserves), occupied);
     let solids = map_surface(local_solids, transform);
-    if !contains(&walk, &passage) || area(&intersection(&passage, &solids)) > 0.0001 {
+    if !contains(&walk, &passage) || area(&intersection(&passage, &solids)) > 0.0001 || parent_session::land_clear(&r.id,&passage).is_err() {
         return Err(
             "Native budget passage crosses a reserve, neighbour or structural support.".into(),
         );
     }
-    let mut candidates: Vec<_> = r
-        .accesses
-        .iter()
+    let mut candidates: Vec<_> = targets.iter()
         .filter(|a| {
-            matches!(a.kind.as_str(), "public" | "collective" | "private")
-                && a.width_m.is_finite()
+            a.width_m.is_finite()
                 && a.width_m >= 0.8
                 && a.segment.iter().all(|p| p.x.is_finite() && p.y.is_finite())
                 && libm::hypot(
@@ -774,6 +820,7 @@ fn proposed_native_access_with_entry(
                     && area(&intersection(&path, &solids)) < 0.0001
                     && area(&difference(&intersection(&path, footprint), &passage)) < 0.002
                     && area(&intersection(&path, &passage)) > 0.005
+                    && parent_session::land_clear(&r.id,&union(&path,&passage)).is_ok()
                 {
                     return Ok((entry, access.id.clone(), union(&path, &passage), contact));
                 }
@@ -786,11 +833,19 @@ fn proposed_native_access_with_entry(
     // elbow sampling, alternative portal, source draw or rigid-pose change.
     if let Some(context) = one_bend.filter(|context| context.matches_site(native)) {
         let local_frame = inverse(transform);
+        // The real retained roof is world-space; the constructive door/body
+        // frame is local. This guide does not replace any world-space guard.
+        let bend_support_local=bend_support_world.map(|surface|map_surface(surface,&local_frame));
         for (_, access, _) in candidates.iter().take(64) {
             let street = access.segment.map(|p| transform_point(p, &local_frame));
-            let Ok(route) = native_one_bend_access::one_bend_on_support_line(
-                native.opening, context.body_local, local_solids, street, 0.8,
-            ) else { continue };
+            let route = if let Some(support)=bend_support_local.as_ref(){
+                native_one_bend_access::one_bend_on_support_line_with_support(
+                    native.opening,context.body_local,local_solids,Some(support),street,0.8)
+            }else{
+                native_one_bend_access::one_bend_on_support_line(
+                    native.opening,context.body_local,local_solids,street,0.8)
+            };
+            let Ok(route)=route else {continue};
             let path = map_surface(&route.path, transform);
             // Same complete-world-surface guards as the straight connectors.
             // The native passage was checked before any candidate and remains
@@ -799,6 +854,7 @@ fn proposed_native_access_with_entry(
                 && area(&intersection(&path, &solids)) < 0.0001
                 && area(&difference(&intersection(&path, footprint), &passage)) < 0.002
                 && area(&intersection(&path, &passage)) > 0.005
+                && parent_session::land_clear(&r.id,&union(&path,&passage)).is_ok()
             {
                 return Ok((entry, access.id.clone(), union(&path, &passage),
                     transform_point(route.contact, transform)));
@@ -1276,6 +1332,26 @@ fn visual_with_front_access_prepared_reported(
     align_access_caps: bool,
     terrain_failure: Option<&mut Option<initial_terrain_recovery::TerrainFailure>>,
 ) -> Result<PlanBuilding, String> {
+    visual_with_connection_prepared_reported(r,prepared,transform,occupied,programme_automatic,
+        functional_hall,front,align_access_caps,terrain_failure,None)
+}
+
+fn visual_with_connection_prepared_reported(
+    r: &PlacementRequest,
+    prepared: &PreparedPlan<'_>,
+    transform: Transform,
+    occupied: &Surface,
+    programme_automatic: bool,
+    functional_hall: bool,
+    front: Option<&ArchitectureAccess>,
+    align_access_caps: bool,
+    terrain_failure: Option<&mut Option<initial_terrain_recovery::TerrainFailure>>,
+    internal: Option<&assembly::InternalAccessTarget<'_>>,
+) -> Result<PlanBuilding, String> {
+    #[cfg(test)]
+    single_incumbent_growth::record_admission();
+    #[cfg(test)]
+    single_need_continuation::record_admission();
     let resolved = prepared.resolved;
     let footprint = map_surface(&prepared.body_local, &transform);
     let all = map_surface(&prepared.plan_local, &transform);
@@ -1296,6 +1372,13 @@ fn visual_with_front_access_prepared_reported(
     } else {
         None
     };
+    let _prefix_candidate=parent_session::candidate_land(&r.id,||{
+        let mut parts=vec![all.clone()];
+        if let Some(physical)=native_foundation{
+            parts.extend(physical.occupation_parts.iter().map(|s|map_surface(s,&transform)));
+            if let Some(entry)=physical.entry.as_ref(){parts.extend(entry.retained_passages.iter().map(|s|map_surface(s,&transform)));}
+        }unite(&parts)
+    })?;
     let bearing = if let Some(physical) = native_foundation {
         // The native constructor may add required gallery posts or walls that
         // a lightweight plan has not stored yet. Their occupied land must pass
@@ -1352,7 +1435,11 @@ fn visual_with_front_access_prepared_reported(
     }
     let prepared_entry = native_foundation.and_then(|physical| physical.entry.as_ref());
     let native_entry = prepared_entry.is_some() || align_access_caps && resolved.entrance.is_some();
-    let (entrance, access_id, path, contact) = if let Some(entry) = prepared_entry {
+    let (entrance, access_id, path, contact) = if let Some(target) = internal {
+        let entry = prepared_entry.ok_or("Assembly requires a prepared native portal")?;
+        assembly::connect_internal(r,&entry.site_entry,&entry.site_solids,&transform,&footprint,
+            native_one_bend_access::OneBendContext {body_entry:&entry.body_entry,body_local:&prepared.body_local},target)?
+    } else if let Some(entry) = prepared_entry {
         proposed_native_access_with_entry(
             r,
             &entry.site_entry,
@@ -1481,7 +1568,9 @@ fn visual_with_front_access_prepared_reported(
     if native_foundation.is_some() {
         diagnostics.push("Native ground-strip foundation: actual body levels and native gallery/posts determine the physical footing; bare courts/paths retain their cadastral reservation without being treated as a level foundation. All native structures were checked against cadastral, reserve and neighbour rights. Foundation-step and slope limits are unchanged; household capacity remains unknown.".into());
     }
-    if prepared_entry.is_some() {
+    if internal.is_some() {
+        diagnostics.push("Native assembly member: structural portal retained, with a typed internal connection to the parent-owned public circulation branch. No internal segment is a public access; household capacity is unknown.".into());
+    } else if prepared_entry.is_some() {
         diagnostics.push("Native planning entrance: the structural body portal is retained in the compact archive; its whole site passage and public connector were checked against cadastral, reserve, neighbour and support rights. Interior room subdivision remains deferred and must preserve this portal.".into());
     }
     if let Some(p) = &r.programme
@@ -1583,7 +1672,7 @@ fn visual_with_front_access_prepared_reported(
         parts.extend(entry.retained_passages.iter().map(|s| map_surface(s, &transform)));
         circulation = unite(&parts);
     }
-    Ok(PlanBuilding {
+    let admitted=PlanBuilding {
         id: r.id.clone(),
         parcel_id: r.parcel_id.clone(),
         function: r.function,
@@ -1602,6 +1691,7 @@ fn visual_with_front_access_prepared_reported(
         structural_features,
         useful_area_m2: useful_area,
         domestic_units: 0,
+        programme_outcome: None,
         simplification: "architectural_plan".into(),
         diagnostics,
         cartographic: CartographicRoof {
@@ -1615,7 +1705,9 @@ fn visual_with_front_access_prepared_reported(
         } else {
             prepared.packed()?
         },
-    })
+    };
+    parent_batch::admission_guard(&admitted)?;
+    Ok(admitted)
 }
 
 /// Give a simple ground-supported source its actual programme before admission.
@@ -2490,7 +2582,25 @@ fn plan_one_initial_pass(
     Err(error)
 }
 
+#[path = "single_incumbent_growth.rs"]
+mod single_incumbent_growth;
+#[path = "single_need_continuation.rs"]
+mod single_need_continuation;
+
 fn plan_one(
+    r: &PlacementRequest,
+    occupied: &Surface,
+    target: Option<&Surface>,
+    exact: bool,
+) -> Result<PlanBuilding, String> {
+    let building = plan_one_before_incumbent_growth(r, occupied, target, exact)?;
+    if single_incumbent_growth::enabled() {
+        return Ok(single_incumbent_growth::finish(r, occupied, building, target, exact));
+    }
+    Ok(building)
+}
+
+fn plan_one_before_incumbent_growth(
     r: &PlacementRequest,
     occupied: &Surface,
     target: Option<&Surface>,
@@ -3381,6 +3491,9 @@ fn improve_domestic_budget_selection(
 }
 
 pub fn plan_batch(input: PlanBatchRequest) -> Result<PlanBatch, String> {
+    // Preserve the complete old batch before the optional deferred pass.
+    let deferred_input = (single_need_continuation::enabled()
+        && single_need_continuation::supported_batch(&input)).then(|| input.clone());
     if input.schema_version != "1" {
         return Err("Unsupported plan request schema.".into());
     }
@@ -3394,6 +3507,8 @@ pub fn plan_batch(input: PlanBatchRequest) -> Result<PlanBatch, String> {
     };
     let mut ids = BTreeSet::new();
     let mut occupied = OccupationIndex::default();
+    let prior_land=parent_batch::prior_land();
+    if !prior_land.is_empty(){occupied.insert(prior_land);}
     for mut r in input.requests {
         if !ids.insert(r.id.clone()) {
             return Err("Duplicate architectural identity.".into());
@@ -3450,7 +3565,12 @@ pub fn plan_batch(input: PlanBatchRequest) -> Result<PlanBatch, String> {
             input.footprints.get(&r.id),
             exact,
         ) {
-            Ok(b) => {
+            Ok(mut b) => {
+                // This boundary receives every successful plan_one path,
+                // including native-minimum, terrain recovery, budget selection
+                // and final entrance fallback. Never report an intermediate.
+                b.programme_outcome = Some(PlanProgrammeOutcome::from_final_plan(&r, &b));
+                parent_batch::record_finalized(&b)?;
                 let mut parts = vec![
                     b.footprint.clone(),
                     b.courtyards.clone(),
@@ -3468,6 +3588,9 @@ pub fn plan_batch(input: PlanBatchRequest) -> Result<PlanBatch, String> {
                 attempts: 0,
             }),
         }
+    }
+    if let Some(deferred) = deferred_input {
+        single_need_continuation::after_complete_batch(&deferred, &mut result)?;
     }
     Ok(result)
 }
@@ -4083,7 +4206,7 @@ mod tests {
             );
             if i == 0 {
                 // The previous perpendicular cap enters this oblique facade
-                // by about 0.00917 m². Preserve the 0.002 guard and move the
+                // by about 0.00917 mÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â². Preserve the 0.002 guard and move the
                 // cap onto the actual facade, never cut the house itself.
                 assert!(proposed_access(r, &new.footprint, &vec![]).is_err());
                 let (_, _, path, _) =

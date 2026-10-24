@@ -2,6 +2,7 @@
 //! network between them. Placement and routing are separate calls on one [`Terrain`]:
 //! road options never move a settlement, and a moved settlement only reroutes.
 //! No buildings or urban geometry are generated.
+pub mod demographics;
 mod grid;
 mod placement;
 pub mod roads;
@@ -453,15 +454,7 @@ pub fn extent_gap(a: u32, b: u32) -> f64 {
     a + b + 60.0 + 0.25 * a.max(b)
 }
 fn class_of(pop: u32) -> &'static str {
-    match pop {
-        0..15 => "farmstead",
-        15..150 => "hamlet",
-        150..1000 => "village",
-        1000..20000 => "town",
-        20000..100000 => "city",
-        100000..1000000 => "metropolis",
-        _ => "megacity",
-    }
+    demographics::class_of(pop)
 }
 fn smooth(v: f64, lo: f64, hi: f64) -> f64 {
     let t = ((v - lo) / (hi - lo)).clamp(0.0, 1.0);

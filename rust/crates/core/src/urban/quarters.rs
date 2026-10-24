@@ -2168,7 +2168,11 @@ fn serve_quarters(
     surface: Surface<'_>,
     rng: &mut Rng,
 ) -> Option<String> {
+    #[cfg(not(target_arch = "wasm32"))]
     let tick = std::time::Instant::now();
+    #[cfg(target_arch = "wasm32")]
+    let lap = |_: &str| {};
+    #[cfg(not(target_arch = "wasm32"))]
     let lap = |label: &str| {
         if std::env::var("URBAN_PROFILE").is_ok() {
             eprintln!(
@@ -2377,23 +2381,15 @@ pub(super) fn generate(
     m: &Morph,
     surface: Surface<'_>,
     roads: &[Street],
+    stilt_grounded: bool,
 ) -> Result<Layout, String> {
-    // A stilt culture stands on its shore (geography.rs). Its shallow water
-    // becomes ground only once the programme sees that ground too
-    // (`generate_quarters`, OPUS_CITY.md request): until then, the shore.
-    // Otherwise a port moves to its harbour shore (`harbour::sited`).
-    let culture = if cfg.culture == "site" {
-        &site.culture
-    } else {
-        &cfg.culture
-    };
-    let stilt = super::geography::stilt_ground(site, culture, surface);
-    let unsited = stilt.as_ref().map_or(site, |g| &g.site);
-    let harboured = stilt
-        .is_none()
+    // The common entry already owns the stilt site/surface. Preserve the
+    // existing priority of that shore over a second harbour relocation.
+    let harboured = (!stilt_grounded)
         .then(|| macroplan::harbour::sited(site, cfg, surface))
         .flatten();
-    let site = harboured.as_ref().unwrap_or(unsited);
+    let unsited = site;
+    let site = harboured.as_ref().unwrap_or(site);
     let first = generate_once(seed, site, cfg, m, surface, roads)?;
     // A harbour site whose land cannot hold the town (half its households,
     // 60 % of its planned land) is compared with the town's own place: the
@@ -2482,7 +2478,11 @@ fn generate_once(
     };
     let cfg = &effective;
     let rng = Rng::new(seed).fork(&format!("urban-layout:{}", site.key));
+    #[cfg(not(target_arch = "wasm32"))]
     let tick = std::time::Instant::now();
+    #[cfg(target_arch = "wasm32")]
+    let lap = |_: &str| {};
+    #[cfg(not(target_arch = "wasm32"))]
     let lap = |label: &str| {
         if std::env::var("URBAN_PROFILE").is_ok() {
             eprintln!("  {label}: {:.0} ms", tick.elapsed().as_secs_f64() * 1000.0);
@@ -3002,9 +3002,11 @@ fn generate_once(
         if !phases.is_empty() {
             local_cfg.zone = q.zone.clone();
         }
+        #[cfg(not(target_arch = "wasm32"))]
         let quarter_tick = std::time::Instant::now();
         let mut own = vec![];
         let pcs = split_quarter(q, &local_field, &local_cfg, &mut own, &mut qr);
+        #[cfg(not(target_arch = "wasm32"))]
         if std::env::var("URBAN_PROFILE").is_ok() && quarter_tick.elapsed().as_millis() > 200 {
             eprintln!(
                 "    quarter {i}: {:.0} ms, {:.1} ha, {} pieces, {} outer vertices",
@@ -4358,8 +4360,8 @@ mod tests {
             "quarters",
         )
         .unwrap();
-        let a = generate("small-radius-regression", &site, &cfg, &m, surface, &[]).unwrap();
-        let b = generate("small-radius-regression", &site, &cfg, &m, surface, &[]).unwrap();
+        let a = generate("small-radius-regression", &site, &cfg, &m, surface, &[], false).unwrap();
+        let b = generate("small-radius-regression", &site, &cfg, &m, surface, &[], false).unwrap();
         assert_eq!(
             serde_json::to_string(&a).unwrap(),
             serde_json::to_string(&b).unwrap()
@@ -4395,6 +4397,7 @@ mod tests {
             &m,
             surface,
             &[],
+            false,
         )
         .unwrap();
         assert_eq!(tiny.quarters.len(), 8);
@@ -4419,6 +4422,7 @@ mod tests {
             &m,
             dry_surface,
             &[],
+            false,
         )
         .unwrap();
         assert_eq!(dense.quarters.len(), 64);

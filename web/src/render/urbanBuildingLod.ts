@@ -201,7 +201,7 @@ function appendRings(sink: PathSink, rings: readonly RingPath[]): void {
     sink.closePath();
   }
 }
-function geometryPath(surface: Surface, metrics: BuildingRenderMetrics): GeometryPath {
+function geometryPath(surface: Surface, metrics: Pick<BuildingRenderMetrics, 'preparedVertices'>): GeometryPath {
   const rings: RingPath[] = [];
   let vertices = 0;
   for (const polygon of surface) {
@@ -451,6 +451,19 @@ export class UrbanBuildingLodRenderer<B extends CompactBuildingVisual = PlacedBu
     const {records} = this.candidates({minX: point.x, minY: point.y, maxX: point.x, maxY: point.y});
     for (let i = records.length - 1; i >= 0; i--) if (buildingSurfaceContains(roofSurface(records[i].building), point)) return records[i].building;
     return undefined;
+  }
+
+  /** Same real roof/hole outline as vector/raster selection, without repainting
+   * a partial prefix over the complete overview (which would reorder roofs). */
+  drawSelection(ctx: CanvasRenderingContext2D, id: string, metresPerPixel: number): boolean {
+    const record = this.byId.get(id); if (!record) return false;
+    if (!Number.isFinite(metresPerPixel) || metresPerPixel <= 0) throw new Error('Invalid selection scale.');
+    const outline = geometryPath(roofSurface(record.building), { preparedVertices: 0 });
+    ctx.save(); try {
+      ctx.strokeStyle = '#197ea4'; ctx.lineWidth = 2 * metresPerPixel; ctx.lineJoin = 'round';
+      if (outline.path) ctx.stroke(outline.path); else { ctx.beginPath(); appendGeometry(ctx, outline); ctx.stroke(); }
+    } finally { ctx.restore(); }
+    return true;
   }
 
   private geometry(building: CompactBuildingVisual, metrics: BuildingRenderMetrics): CachedGeometry {
@@ -707,6 +720,12 @@ const PAINTED_SILHOUETTE: Record<string, string> = {
 const PAINTED_SHADOW = 'rgba(22, 18, 10, 0.3)', PAINTED_EDGE = '#241d15', PAINTED_LANDMARK_EDGE = '#d9c79a';
 /** Ground shadow offsets (metres) of low (< 6 m), mid and tall (≥ 12 m, landmarks) buildings. */
 const PAINTED_SHADOW_M = [1.1, 2, 3.4];
+/** Conservative support of THIS painter's shadows/strokes/access markers, not
+ * architectural geometry. Used only to frame a complete persisted raster. */
+export function urbanOverviewInkPadding(painted: boolean, access: boolean): { world: number; pixels: number } {
+  return { world: painted ? Math.max(...PAINTED_SHADOW_M) : 0,
+    pixels: Math.max(1, access ? 2.2 : 0, painted ? 3 * .7 + 1.4 / 2 : 0) };
+}
 function isLandmark(building: CompactBuildingVisual): boolean {
   return !!(building as { programme?: { landmark?: boolean | null } }).programme?.landmark;
 }

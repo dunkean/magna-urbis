@@ -68,7 +68,7 @@ impl Sessions {
                 Some(key) => {
                     self.entries.remove(&key);
                 }
-                None => return Err("Toutes les sessions locales sont occupées. Réessayez.".into()),
+                None => return Err("Toutes les sessions locales sont occupÃƒÆ’Ã‚Â©es. RÃƒÆ’Ã‚Â©essayez.".into()),
             }
         }
         let entry = self.entries.entry(id.into()).or_default();
@@ -146,7 +146,7 @@ fn terrain_reply(input: TerrainRequest, state: &mut Session) -> ApiResult<Reply>
         .as_deref()
         .is_some_and(|source| source != "procedural")
     {
-        return Err("Le neuronal utilise son service GPU dédié ; ce point d’entrée prépare le terrain procédural.".into());
+        return Err("Le neuronal utilise son service GPU dÃƒÆ’Ã‚Â©diÃƒÆ’Ã‚Â© ; ce point dÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢entrÃƒÆ’Ã‚Â©e prÃƒÆ’Ã‚Â©pare le terrain procÃƒÆ’Ã‚Â©dural.".into());
     }
     let key = serde_json::to_string(&input.settings).map_err(|e| e.to_string())?;
     let started = Instant::now();
@@ -196,7 +196,7 @@ fn terrain_reply(input: TerrainRequest, state: &mut Session) -> ApiResult<Reply>
             }
         } else if settings.sketch.is_some() {
             return Err(
-                "L’esquisse doit être appliquée après la génération native par l’adaptateur."
+                "LÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢esquisse doit ÃƒÆ’Ã‚Âªtre appliquÃƒÆ’Ã‚Â©e aprÃƒÆ’Ã‚Â¨s la gÃƒÆ’Ã‚Â©nÃƒÆ’Ã‚Â©ration native par lÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢adaptateur."
                     .into(),
             );
         } else {
@@ -319,7 +319,7 @@ fn raster_upload(body: &[u8], sessions: &Mutex<Sessions>) -> ApiResult<Reply> {
         .n
         .checked_mul(header.n)
         .filter(|_| (16..=1024).contains(&header.n))
-        .ok_or("Résolution invalide.")?;
+        .ok_or("RÃƒÆ’Ã‚Â©solution invalide.")?;
     let data = body
         .get(end..)
         .filter(|data| data.len() == count * 17)
@@ -363,7 +363,7 @@ fn settlement_reply(input: Value, state: &Session) -> ApiResult<Reply> {
     let terrain = state
         .settlements
         .as_ref()
-        .ok_or("Générez le terrain avant les lieux et routes.")?;
+        .ok_or("GÃƒÆ’Ã‚Â©nÃƒÆ’Ã‚Â©rez le terrain avant les lieux et routes.")?;
     let seed = input["seed"].as_str().ok_or("Graine absente.")?;
     let mut sites = input
         .get("sites")
@@ -640,7 +640,7 @@ fn urban_reply(input: Value, state: &mut Session, session: &str) -> ApiResult<Re
         let terrain = state
             .settlements
             .as_ref()
-            .ok_or("Générez le terrain avant les quartiers.")?;
+            .ok_or("GÃƒÆ’Ã‚Â©nÃƒÆ’Ã‚Â©rez le terrain avant les quartiers.")?;
         let sites = input
             .get("sites")
             .map(value::<Vec<urban::Site>>)
@@ -664,7 +664,7 @@ fn urban_reply(input: Value, state: &mut Session, session: &str) -> ApiResult<Re
         json_reply(result)
     } else if input["kind"] == "parcels" {
         if state.settlements.is_none() {
-            return Err("Générez le terrain avant les quartiers.".into());
+            return Err("GÃƒÆ’Ã‚Â©nÃƒÆ’Ã‚Â©rez le terrain avant les quartiers.".into());
         }
         let explicit: Option<Vec<urban::Layout>> = input.get("layouts").map(value).transpose()?;
         let layouts = match explicit {
@@ -675,7 +675,7 @@ fn urban_reply(input: Value, state: &mut Session, session: &str) -> ApiResult<Re
                     .layouts
                     .as_ref()
                     .filter(|(id, _)| Some(*id) == input["layoutsId"].as_u64())
-                    .ok_or("Le plan a changé. Régénérez les quartiers avant les parcelles.")?
+                    .ok_or("Le plan a changÃƒÆ’Ã‚Â©. RÃƒÆ’Ã‚Â©gÃƒÆ’Ã‚Â©nÃƒÆ’Ã‚Â©rez les quartiers avant les parcelles.")?
                     .1,
             ),
         };
@@ -751,11 +751,23 @@ fn urban_reply(input: Value, state: &mut Session, session: &str) -> ApiResult<Re
         let output = urban::programme::reallocate(&layouts, &partitions)?;
         json_reply(json!({"id": input["id"], "partitions": output, "ms": millis(started)}))
     } else {
-        Err("Étape urbaine inconnue.".into())
+        Err("ÃƒÆ’Ã¢â‚¬Â°tape urbaine inconnue.".into())
     }
 }
 
 fn houses_reply(path: &str, body: &[u8]) -> ApiResult<Reply> {
+    use magna_urbis_houses::plans::parent_session::{self,ParentSessionOperation as Op};
+    let operation=match path{
+        "/houses/begin-parent-session"=>Some(Op::Begin),"/houses/plan-parent-session"=>Some(Op::Plan),
+        "/houses/ack-parent-session"=>Some(Op::Ack),"/houses/abort-parent-session"=>Some(Op::Abort),
+        "/houses/release-parent-session"=>Some(Op::Release),_=>None,
+    };
+    if let Some(operation)=operation{
+        // Exact cached native reply, BEFORE historical Value/json_reply.
+        let raw=parent_session::host_runtime().json(operation,body,parent_session::host_clock_ms());
+        return Ok(Reply{kind:"application/json",body:(*raw).clone()});
+    }
+
     let result = (|| -> ApiResult<Value> {
         match path {
             "/houses/catalogue" => Ok(
@@ -775,6 +787,42 @@ fn houses_reply(path: &str, body: &[u8]) -> ApiResult<Reply> {
                 let input = decode(body)?;
                 serde_json::to_value(magna_urbis_houses::plans::plan_batch(input)?)
                     .map_err(|e| e.to_string())
+            }
+            "/houses/plan-parent-batch" => {
+                if body.len()>32*1024*1024{return Err("Native parent input exceeds32MiB".into());}
+                let input=magna_urbis_houses::plans::assembly::transport::parse_parent_batch_request(body)?;
+                serde_json::to_value(magna_urbis_houses::plans::parent_batch::plan_parent_batch(input)?).map_err(|e|e.to_string())
+            }
+            "/houses/unpack-parent" => {
+                if body.len()>32*1024*1024{return Err("Native parent input exceeds32MiB".into());}
+                let input=magna_urbis_houses::plans::assembly::transport::parse_parent_archive(body)?;
+                serde_json::to_value(magna_urbis_houses::plans::parent_batch::unpack_parent(input)?).map_err(|e|e.to_string())
+            }
+            "/houses/realize-parent" => {
+                if body.len()>32*1024*1024{return Err("Native parent input exceeds32MiB".into());}
+                let input=magna_urbis_houses::plans::assembly::transport::parse_parent_realize_request(body)?;
+                serde_json::to_value(magna_urbis_houses::plans::parent_batch::realize_parent(input)?).map_err(|e|e.to_string())
+            }
+            "/houses/unpack-parent-batch" => {
+                if body.len()>32*1024*1024{return Err("Native parent input exceeds32MiB".into());}
+                let input=magna_urbis_houses::plans::assembly::transport::parse_parent_unpack_batch_request(body)?;
+                serde_json::to_value(magna_urbis_houses::plans::parent_batch::unpack_parent_batch(input)?).map_err(|e|e.to_string())
+            }
+            "/houses/native-assembly-capability" => Ok(json!(magna_urbis_houses::plans::assembly::ASSEMBLY_CAPABILITY)),
+            "/houses/assemble-pair" => {
+                if body.len()>32*1024*1024{return Err("Native assembly input exceeds 32 MiB".into());}
+                let input=magna_urbis_houses::plans::assembly::transport::parse_pair_request(body)?;
+                serde_json::to_value(magna_urbis_houses::plans::assembly::assemble_pair(input)?).map_err(|e|e.to_string())
+            }
+            "/houses/unpack-assembly" => {
+                if body.len()>32*1024*1024{return Err("Native assembly archive exceeds 32 MiB".into());}
+                let input=magna_urbis_houses::plans::assembly::transport::parse_archive(body)?;
+                serde_json::to_value(magna_urbis_houses::plans::assembly::unpack_assembly(input)?).map_err(|e|e.to_string())
+            }
+            "/houses/realize-assembly" => {
+                if body.len()>32*1024*1024{return Err("Native assembly archive exceeds 32 MiB".into());}
+                let input=magna_urbis_houses::plans::assembly::transport::parse_realize_request(body)?;
+                serde_json::to_value(magna_urbis_houses::plans::assembly::realize_assembly(input)?).map_err(|e|e.to_string())
             }
             "/houses/realize-plan" => {
                 let input = decode(body)?;
@@ -800,11 +848,17 @@ fn houses_reply(path: &str, body: &[u8]) -> ApiResult<Reply> {
                 serde_json::to_value(magna_urbis_houses::generate_batch(config)?)
                     .map_err(|e| e.to_string())
             }
-            _ => Err("Opération maisons inconnue.".into()),
+            _ => Err("OpÃƒÆ’Ã‚Â©ration maisons inconnue.".into()),
         }
     })();
     match result {
-        Ok(data) => json_reply(json!({"ok": true, "data": data})),
+        Ok(data) => {
+            let reply=json_reply(json!({"ok": true, "data": data}))?;
+            if (path.ends_with("assembly") || path=="/houses/assemble-pair" || matches!(path,"/houses/plan-parent-batch"|"/houses/unpack-parent"|"/houses/realize-parent"|"/houses/unpack-parent-batch"|"/houses/begin-parent-session"|"/houses/plan-parent-session"|"/houses/ack-parent-session"|"/houses/abort-parent-session"|"/houses/release-parent-session")) && reply.body.len()>64*1024*1024 {
+                return json_reply(json!({"ok":false,"error":{"code":"output_budget","field":null,"message":"Native assembly response exceeds 64 MiB"}}));
+            }
+            Ok(reply)
+        },
         Err(message) => json_reply(
             json!({"ok": false, "error": {"code": "native_error", "field": null, "message": message}}),
         ),
@@ -815,8 +869,8 @@ fn dispatch(path: &str, body: &[u8], sessions: &Mutex<Sessions>) -> ApiResult<Re
     if path == "/status" {
         return json_reply(
             json!({"ok": true, "service": "magna-urbis-local", "backend": "rust-native", "version": 1,
-                "capabilities": ["urban.programme", "urban.building-sites", "urban.building-site-pages", "urban.building-site-read", "urban.built-capacity", "urban.architecture-culture", "urban.retained-source", "urban.display-buffers",
-                    "houses.placement", "houses.profiles", "houses.enrich", "houses.config-template", "houses.workshop-template", "houses.parcel-fit", "houses.compact-plans", "houses.style-index", "houses.native-minimum-candidates-v1", "houses.functional-choices-v1"]}),
+                "capabilities": ["urban.programme", "urban.programme-functions-v1", "urban.building-sites", "urban.building-site-pages", "urban.building-site-read", "urban.built-capacity", "urban.architecture-culture", "urban.retained-source", "urban.display-buffers",
+                    "houses.placement", "houses.profiles", "houses.enrich", "houses.config-template", "houses.workshop-template", "houses.parcel-fit", "houses.compact-plans", "houses.style-index", "houses.native-minimum-candidates-v1", "houses.functional-choices-v1", "houses.native-assembly-pair-1", "houses.native-assembly-std-json-v1", "houses.native-parent-batch-1", "houses.native-parent-session-1"]}),
         );
     }
     if path == "/raster" {
@@ -826,6 +880,10 @@ fn dispatch(path: &str, body: &[u8], sessions: &Mutex<Sessions>) -> ApiResult<Re
         return houses_reply(path, body);
     }
     let input: Value = decode(body)?;
+    if path == "/urban" && input["kind"] != "quarters"
+        && input.pointer("/layoutConfig/programme/functions").is_some_and(|value| !value.is_null()) {
+        return Err("Les fonctions du lieu se rÃƒÆ’Ã‚Â¨glent en rÃƒÆ’Ã‚Â©gÃƒÆ’Ã‚Â©nÃƒÆ’Ã‚Â©rant les quartiers ; cette ÃƒÆ’Ã‚Â©tape ne peut pas appliquer un nouveau programme de plan.".into());
+    }
     let source = input
         .get("source")
         .map(value::<UrbanSourceHandle>)
@@ -894,7 +952,7 @@ fn dispatch(path: &str, body: &[u8], sessions: &Mutex<Sessions>) -> ApiResult<Re
         "/terrain" => terrain_reply(value(&input)?, &mut state),
         "/settlements" => settlement_reply(input, &state),
         "/urban" => urban_reply(input, &mut state, &id),
-        _ => Err("Point d’entrée local inconnu.".into()),
+        _ => Err("Point dÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢entrÃƒÆ’Ã‚Â©e local inconnu.".into()),
     }
 }
 
@@ -937,6 +995,11 @@ fn respond(
     }
     write!(stream, "\r\n")?;
     stream.write_all(&reply.body)
+}
+const MAX_NATIVE_ASSEMBLY_BODY:usize=32*1024*1024;
+fn native_assembly_body_budget(path:&str,length:usize)->bool {
+    !matches!(path,"/houses/assemble-pair"|"/houses/unpack-assembly"|"/houses/realize-assembly"|"/houses/native-assembly-capability"|"/houses/plan-parent-batch"|"/houses/unpack-parent"|"/houses/realize-parent"|"/houses/unpack-parent-batch"|"/houses/begin-parent-session"|"/houses/plan-parent-session"|"/houses/ack-parent-session"|"/houses/abort-parent-session"|"/houses/release-parent-session")
+        ||length<=MAX_NATIVE_ASSEMBLY_BODY
 }
 fn handle(mut stream: TcpStream, sessions: &Mutex<Sessions>) {
     let _ = stream.set_read_timeout(Some(Duration::from_secs(120)));
@@ -1002,6 +1065,14 @@ fn handle(mut stream: TcpStream, sessions: &Mutex<Sessions>) {
                 body: vec![],
             },
         );
+        return;
+    }
+    // Route-specific limit BEFORE reading/allocating the complete body or
+    // JSON extraction. Only the bounded header/prefetch buffer exists here.
+    if !native_assembly_body_budget(path,length) {
+        if let Ok(reply)=json_reply(json!({"ok":false,"error":{"code":"input_budget","field":null,"message":"Native assembly HTTP body exceeds 32 MiB"}})) {
+            let _=respond(&mut stream,"413 Payload Too Large",origin,reply);
+        }
         return;
     }
     if length > MAX_BODY || !matches!(method, "GET" | "POST") {
@@ -1088,4 +1159,75 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         });
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod native_assembly_boundary_tests {
+    use super::*;
+    fn request_signature(v:&Value)->std::collections::BTreeMap<String,String>{
+        fn walk(v:&Value,path:&str,out:&mut std::collections::BTreeMap<String,String>){
+            let scalar=match v{
+                Value::Number(n) if n.is_f64()=>Some(format!("f64:{:016x}",n.as_f64().unwrap().to_bits())),
+                Value::Number(n)=>Some(format!("integer:{n}")),
+                Value::String(s)=>Some(format!("string:{s}")),Value::Bool(b)=>Some(format!("bool:{b}")),Value::Null=>Some("null".into()),
+                Value::Array(a)=>{out.insert(path.into(),format!("array:{}",a.len()));for (i,v) in a.iter().enumerate(){walk(v,&format!("{path}/{i}"),out);}None},
+                Value::Object(a)=>{out.insert(path.into(),format!("object:{}",a.len()));for (k,v) in a{walk(v,&format!("{path}/{}",k.replace('~',"~0").replace('/',"~1")),out);}None},
+            };if let Some(s)=scalar{out.insert(path.into(),s);}
+        }
+        let mut out=std::collections::BTreeMap::new();walk(v,"",&mut out);out
+    }
+    #[test]
+    fn native_assembly_local_capability_and_archive_gate_are_explicit(){
+        let legacy:Value=decode(br#"{"x":100.00000000119209}"#).unwrap();
+        assert_eq!(legacy["x"].as_f64().unwrap().to_bits(),0x40590000000147ad);
+        assert!(!native_assembly_body_budget("/houses/assemble-pair",MAX_NATIVE_ASSEMBLY_BODY+1));
+        assert!(native_assembly_body_budget("/houses/plans",MAX_NATIVE_ASSEMBLY_BODY+1));
+        let reply=dispatch("/status",b"{}",&Mutex::new(Sessions::default())).unwrap();
+        let status:Value=serde_json::from_slice(&reply.body).unwrap();
+        assert!(status["capabilities"].as_array().unwrap().iter().any(|v|v.as_str()==Some("houses.native-assembly-pair-1")));
+        assert!(status["capabilities"].as_array().unwrap().iter().any(|v|v.as_str()==Some("houses.native-assembly-std-json-v1")));
+        let reply=houses_reply("/houses/native-assembly-capability",b"{}").unwrap();
+        let value:Value=serde_json::from_slice(&reply.body).unwrap();
+        assert_eq!(value["data"],"native-assembly-pair-1");
+        let bad=br#"{"format":"old-single","sha256":"not-a-signature","payload":null}"#;
+        let reply=houses_reply("/houses/unpack-assembly",bad).unwrap();
+        let value:Value=serde_json::from_slice(&reply.body).unwrap();
+        assert_eq!(value["ok"],false);assert!(value["data"].is_null());
+    }
+    #[test]
+    fn native_assembly_local_public_std_positive_is_standalone(){
+        // Small root-validated native records on a SYNTHETIC site; this is a
+        // public protocol regression, never a Java/capacity benchmark.
+        let sessions=Mutex::new(Sessions::default());
+        let status:Value=serde_json::from_slice(&dispatch("/status",b"{}",&sessions).unwrap().body).unwrap();
+        for cap in ["houses.native-assembly-pair-1","houses.native-assembly-std-json-v1"]{
+            assert!(status["capabilities"].as_array().unwrap().iter().any(|v|v.as_str()==Some(cap)));
+        }
+        let bytes=include_bytes!("../../houses/tests/fixtures/native-assembly-public-input.json");
+        let expected_signature:Value=serde_json::from_slice(include_bytes!("../../houses/tests/fixtures/native-assembly-public-signature.json")).unwrap();
+        let parsed=magna_urbis_houses::plans::assembly::transport::parse_pair_request(bytes).unwrap();
+        assert_eq!(serde_json::to_value(request_signature(&serde_json::to_value(&parsed).unwrap())).unwrap(),expected_signature);
+        let reply=dispatch("/houses/assemble-pair",bytes,&sessions).unwrap();
+        let result:Value=serde_json::from_slice(&reply.body).unwrap();
+        assert_eq!(result["ok"],true);assert_eq!(result["data"]["outcome"],"assembled");
+        let data=&result["data"];assert_eq!(data["assembly"]["members"].as_array().unwrap().len(),2);
+        assert_eq!(data["assembly"]["circulation"]["branches"][1]["target"]["kind"],"member_branch_cap");
+        assert!(data["assembly"]["outcome"]["housed_households"].is_null());
+        assert!(data["assembly"]["outcome"]["actual_useful_m2"].is_null());
+        let archive=data["archive"].clone();
+        let expected:Value=serde_json::from_slice(include_bytes!("../../houses/tests/fixtures/native-assembly-public-archive.json")).unwrap();
+        assert_eq!(archive,expected,"whole native authority, not a projection, must match");
+        let unpack=dispatch("/houses/unpack-assembly",&serde_json::to_vec(&archive).unwrap(),&sessions).unwrap();
+        let unpack:Value=serde_json::from_slice(&unpack.body).unwrap();assert_eq!(unpack["ok"],true);
+        assert_eq!(unpack["data"]["members"].as_array().unwrap().len(),2);
+        let detail=dispatch("/houses/realize-assembly",&serde_json::to_vec(&json!({"assembly":archive,"interiors":true})).unwrap(),&sessions).unwrap();
+        let detail:Value=serde_json::from_slice(&detail.body).unwrap();assert_eq!(detail["ok"],true,"{detail}");
+        assert_eq!(detail["data"]["members"].as_array().unwrap().len(),2);
+        for member in detail["data"]["members"].as_array().unwrap(){
+            let units=member["architecture"]["units"].as_array().unwrap();assert_eq!(units.len(),1);
+            assert!(!units[0]["access"]["portals"].as_array().unwrap().is_empty());
+            assert!(!units[0]["roofs"]["faces"].as_array().unwrap().is_empty());
+        }
+    }
+
 }

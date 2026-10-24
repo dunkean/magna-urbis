@@ -11,6 +11,8 @@
 //! that fits the lot ranks first for them in houses' shortlist. Houses stays
 //! the judge of the final plan; this only removes requests the city already
 //! knows to be infeasible, instead of letting houses draw and refuse them.
+#[path = "feasibility_foundation.rs"]
+mod foundation;
 use super::super::geometry;
 use super::super::{Parcel, Point, Shape, Surface};
 
@@ -573,8 +575,21 @@ fn pose_lower_bound_step(
     stop_below: f64,
     step: f64,
 ) -> f64 {
+    let indexed = !std::env::var("URBAN_FOUNDATION_INDEX").is_ok_and(|v| v=="off");
+    pose_lower_bound_step_mode(surface,lot,dirs,w,stop_below,step,indexed)
+}
+fn pose_lower_bound_step_mode(
+    surface: Surface<'_>, lot:&Shape, dirs:&[Point], w:&Witness,
+    stop_below:f64, step:f64, indexed:bool,
+) -> f64 {
+    // Small lots keep the original path; indexing cannot change admission.
+    // The index borrows this exact immutable contour, no id/cache reuse.
+    let points=lot.outer.len()+lot.holes.iter().map(Vec::len).sum::<usize>();
+    let mut trace=foundation::Trace::new(lot,w,false);
+    let index=(indexed && points>=64).then(||foundation::build_index(lot,&mut trace)).flatten();
+    foundation::indexed(&mut trace,index.is_some());
     let Some([width, depth]) = w.footing() else {
-        return 0.0;
+        return foundation::finish(trace,0.0);
     };
     let half = step * 0.5;
     // Round 6 sampled a court ring 1 m inside its nominal extent; its footing
@@ -591,6 +606,7 @@ fn pose_lower_bound_step(
     let (n, corners) = (if ring && !super::round7() { 1 } else { 4 }, ring);
     let mut best = f64::INFINITY;
     for &u in dirs {
+        foundation::count(&mut trace,|c|c.directions+=1);
         let v = Point { x: -u.y, y: u.x };
         let (mut u0, mut u1, mut v0, mut v1) = (
             f64::INFINITY,
@@ -605,6 +621,7 @@ fn pose_lower_bound_step(
         if u1 - u0 < width || v1 - v0 < depth {
             continue;
         }
+        foundation::count(&mut trace,|c|c.fitting_directions+=1);
         let at = |a: f64, b: f64| Point {
             x: u.x * a + v.x * b,
             y: u.y * a + v.y * b,
@@ -618,9 +635,11 @@ fn pose_lower_bound_step(
         while a + width <= u1 + half + 1e-9 {
             let mut b = v0 - half;
             while b + depth <= v1 + half + 1e-9 {
-                if rect_within(lot, at(a + half, b + half), u, v, sw, sd) {
+                foundation::count(&mut trace,|c|c.positions+=1);
+                if rect_within_search(lot, at(a + half, b + half), u, v, sw, sd, index.as_ref(), &mut trace) {
+                    foundation::count(&mut trace,|c|c.contained+=1);
                     if w.bearing == Bearing::Extent {
-                        return 0.0;
+                        return foundation::finish(trace,0.0);
                     }
                     let (mut lo, mut hi) = (f64::INFINITY, f64::NEG_INFINITY);
                     for i in 0..=n {
@@ -628,6 +647,7 @@ fn pose_lower_bound_step(
                             if corners && i != 0 && i != n && j != 0 && j != n {
                                 continue;
                             }
+                            foundation::count(&mut trace,|c|c.height_samples+=1);
                             let h = surface.height_at(at(
                                 a + inset + iw * i as f64 / n as f64,
                                 b + inset + id * j as f64 / n as f64,
@@ -638,7 +658,7 @@ fn pose_lower_bound_step(
                     }
                     best = best.min(hi - lo);
                     if best <= stop_below {
-                        return best;
+                        return foundation::finish(trace,best);
                     }
                 }
                 b += step;
@@ -646,7 +666,7 @@ fn pose_lower_bound_step(
             a += step;
         }
     }
-    best
+    foundation::finish(trace,best)
 }
 
 /// Frozen native minimum of a single rectangular body, from Codex's witness
@@ -738,7 +758,23 @@ fn rect_step(surface: Surface<'_>, o: Point, u: Point, v: Point, w: f64, d: f64)
 
 /// Exact convex-rectangle containment in the lot, holes included (the
 /// Liang-Barsky test of the cadastral witness search).
+fn rect_center(a:Point,u:Point,v:Point,width:f64,depth:f64) -> Point {
+    Point { x:a.x+u.x*width*0.5+v.x*depth*0.5, y:a.y+u.y*width*0.5+v.y*depth*0.5 }
+}
 fn rect_within(shape: &Shape, a: Point, u: Point, v: Point, width: f64, depth: f64) -> bool {
+    rect_within_search(shape,a,u,v,width,depth,None,&mut None)
+}
+fn rect_within_search(shape:&Shape,a:Point,u:Point,v:Point,width:f64,depth:f64,index:Option<&foundation::PointIndex<'_>>,trace:&mut Option<foundation::Trace>) -> bool {
+    // The centre predicate was already required at the end. Evaluate that
+    // same expression first only when its exact row index is available.
+    if let Some(index)=index {
+        foundation::count(trace,|c|c.point_tests+=1);
+        if !index.contains(rect_center(a,u,v,width,depth),trace) {
+            foundation::count(trace,|c|c.outside_center+=1);
+            return false;
+        }
+    }
+    foundation::count(trace,|c|c.boundary_tests+=1);
     const EPS: f64 = 1e-4;
     let (s0, s1, t0, t1) = (EPS, width - EPS, EPS, depth - EPS);
     let local = |p: Point| {
@@ -751,6 +787,7 @@ fn rect_within(shape: &Shape, a: Point, u: Point, v: Point, width: f64, depth: f
             .zip(ring.iter().cycle().skip(1))
             .take(ring.len())
         {
+            foundation::count(trace,|c|c.boundary_edges+=1);
             let ((px, py), (qx, qy)) = (local(p), local(q));
             if px.max(qx) <= s0 || px.min(qx) >= s1 || py.max(qy) <= t0 || py.min(qy) >= t1 {
                 continue;
@@ -775,13 +812,10 @@ fn rect_within(shape: &Shape, a: Point, u: Point, v: Point, width: f64, depth: f
             }
         }
     }
-    geometry::contains(
-        shape,
-        Point {
-            x: a.x + u.x * width * 0.5 + v.x * depth * 0.5,
-            y: a.y + u.y * width * 0.5 + v.y * depth * 0.5,
-        },
-    )
+    if index.is_some() { true } else {
+        foundation::count(trace,|c|c.point_tests+=1);
+        geometry::contains(shape,rect_center(a,u,v,width,depth))
+    }
 }
 
 /// Up to four direct poses of a frozen native witness on the real lot
@@ -905,3 +939,7 @@ pub(super) fn minimum_candidates(
     }
     out.into_iter().map(|(_, c)| c).collect()
 }
+
+#[cfg(test)]
+#[path = "feasibility_foundation_tests.rs"]
+mod foundation_index_tests;

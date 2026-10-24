@@ -264,6 +264,12 @@ fn programme_of(
     // it does not size the bodies yet (CODEX_JAVANESE_HOUSES.md).
     if allocation.households > 0.0 && allocation.households.is_finite() {
         programme["households"] = json!((allocation.households * 100.0).round() / 100.0);
+        // Copy only a model frozen by the actual allocator. In particular,
+        // an old saved allocation never receives today's catalogue model.
+        if matches!(allocation.function.as_str(), "domestic" | "mixed")
+            && let Some(need) = &allocation.housing_floor_need {
+            programme["housing_floor_need"] = json!(need);
+        }
     }
     if let Some(state) = state {
         programme["state"] = json!(state);
@@ -371,6 +377,9 @@ pub(super) fn recipe_foundable(
 }
 fn deficit_message(cause: &str) -> &'static str {
     match cause {
+        "source_absente" => {
+            "Déficit de couverture architecturale : aucune source fonctionnelle admissible déclarée pour ce rôle ; l'assise d'un modèle résidentiel ne prouve pas l'impossibilité de l'équipement."
+        }
         "pente" => {
             "Déficit urbain : pente trop forte pour l'assise de tout bâtiment natif admissible (marche > 0,75 m) ; lot laissé ouvert."
         }
@@ -382,22 +391,24 @@ fn deficit_message(cause: &str) -> &'static str {
 /// The urban-deficit warning of a set of site requests (counts by cause and
 /// households not lodged), in French, or `None` when every lot is buildable.
 pub fn deficit_warning(requests: &[Value]) -> Option<String> {
-    let (mut shape, mut slope, mut households) = (0usize, 0usize, 0.0f64);
+    let (mut shape, mut slope, mut source, mut households) = (0usize, 0usize, 0usize, 0.0f64);
     for r in requests {
         let d = &r["programme"]["deficit"];
         match d["cause"].as_str() {
             Some("pente") => slope += 1,
+            Some("source_absente") => source += 1,
             Some(_) => shape += 1,
             None => continue,
         }
         households += d["households"].as_f64().unwrap_or(0.0);
     }
-    (shape + slope > 0).then(|| {
+    (shape + slope + source > 0).then(|| {
         format!(
-            "Déficit urbain : {} lot(s) sans bâtiment natif admissible ({} par la pente, {} par la forme) ; {:.1} ménage(s) non logé(s), aucun remplacement par un bâtiment plus petit.",
-            shape + slope,
+            "Déficit urbain : {} lot(s) sans bâtiment natif admissible ({} par la pente, {} par la forme, {} par une source fonctionnelle absente) ; {:.1} ménage(s) non logé(s), aucun remplacement par un bâtiment plus petit.",
+            shape + slope + source,
             slope,
             shape,
+            source,
             households
         )
     })
@@ -1022,8 +1033,16 @@ impl BuildingSiteIndex {
                 composition,
                 mode,
             );
+        let source_gap=super::culture::functional_source_gap(building_culture,
+            &culture.architecture_pack,&role,&allocation.function,&pr.context.period,mode);
+        if let Some(gap)=source_gap {
+            programme["source_coverage"]=json!({"version":"functional-source-coverage-1",
+                "status":"missing","requirement":gap.id,"reason":gap.reason,
+                "role":role,"pack":culture.architecture_pack,"function":allocation.function,
+                "functional_footing_tested":false,"residential_fallback_is_functional_source":false});
+        }
         let admission_recipe = functional.map(|p| p.recipe_id.as_str()).or_else(|| {
-            (!domestic && !registered).then_some(culture.admissibility.recipe_id.as_str())
+            (!domestic && !registered && source_gap.is_none()).then_some(culture.admissibility.recipe_id.as_str())
         });
         // A registered functional envelope draws only its declared simple
         // sources: the built target stays inside the body-area range their
@@ -1053,7 +1072,7 @@ impl BuildingSiteIndex {
         // facility) is not sent to houses to be drawn and refused, and no
         // smaller building stands for its programme: it stays open land and
         // its households are stated.
-        let drawable: Vec<&NativeProfile> = if !feasibility_enabled() || function == "open_space" {
+        let drawable: Vec<&NativeProfile> = if source_gap.is_some() || !feasibility_enabled() || function == "open_space" {
             Vec::new()
         } else if feasible {
             feasibility::drawable(
@@ -1072,7 +1091,8 @@ impl BuildingSiteIndex {
         } else {
             Vec::new()
         };
-        let deficit = lot_deficit(&drawable, surface, &parcel.shape, &dirs, gradient);
+        let deficit = if source_gap.is_some() { Some("source_absente") }
+            else { lot_deficit(&drawable, surface, &parcel.shape, &dirs, gradient) };
         if let Some(cause) = deficit {
             programme["deficit"] = json!({"cause":cause,"households":allocation.households.max(0.0),
                 "message":deficit_message(cause)});
@@ -1097,7 +1117,7 @@ impl BuildingSiteIndex {
             "mode":mode,"era":if pr.context.period.is_empty(){"any"}else{&pr.context.period},"allow_late":false,
             "count":1,"size":1.0,"variation":0.65,"wealth":wealth,"orientation_deg":0.0,
             "overrides":{"footprint":null,"roof":null,"frame":null,"infill":null,"coating":null,"cladding":null,
-                "floors":if domestic || functional.is_some() || registered {None} else {Some(floors)},"bodies":null,"courtyard_ratio":null,"overhang_m":null,"roof_pitch_deg":null,"site_slope_deg":null}});
+                "floors":if domestic || functional.is_some() || registered || source_gap.is_some() {None} else {Some(floors)},"bodies":null,"courtyard_ratio":null,"overhang_m":null,"roof_pitch_deg":null,"site_slope_deg":null}});
         // Direct native poses (Codex's `native_minimum_candidates`), only
         // where houses' contract takes them: an automatic inspired home or
         // shop with default controls (wealth 0.5 included), a witness whose
@@ -1965,20 +1985,64 @@ mod tests {
         assert!(site["config"]["recipe"].is_null());
     }
 
-    /// Invariant: a facility whose pinned native recipe (Roman horreum on the
-    /// MED-ANT atrium court, 26 m) cannot be founded on its lot by any street
-    /// pose is an explicit urban deficit, not a request houses refuses.
+    /// Missing architectural source coverage cannot become a slope proof on
+    /// a pinned domestic recipe, even on a physically level lot.
     #[test]
-    fn a_facility_its_pinned_recipe_cannot_found_is_an_explicit_deficit() {
+    fn an_uncovered_facility_is_not_a_domestic_slope_or_shape_deficit() {
         let lots = [("horreum", 0., 45., 45., "warehouse", "storage.horreum")];
-        let steep = lot_sites("roman-core", "MED-ANT", &lots, 0.06);
-        let site = site_of(&steep, "horreum");
-        assert!(site["config"]["recipe"].is_string(), "{}", site["config"]);
-        assert_eq!(site["function"], "open_space", "{}", site["programme"]);
-        assert_eq!(site["programme"]["deficit"]["cause"], "pente");
-        let level = lot_sites("roman-core", "MED-ANT", &lots, 0.0);
-        let site = site_of(&level, "horreum");
-        assert_eq!(site["function"], "warehouse");
-        assert!(site["programme"].get("deficit").is_none());
+        for grade in [0.0,0.06] {
+            let sites=lot_sites("roman-core","MED-ANT",&lots,grade);
+            let site=site_of(&sites,"horreum");
+            assert_eq!(site["function"],"open_space");
+            assert!(site["config"]["recipe"].is_null(),"{}",site["config"]);
+            assert!(site["config"]["overrides"]["floors"].is_null());
+            assert_eq!(site["programme"]["deficit"]["cause"],"source_absente");
+            assert_eq!(site["programme"]["source_coverage"]["status"],"missing");
+            assert_eq!(site["programme"]["source_coverage"]["functional_footing_tested"],false);
+            let warning=deficit_warning(std::slice::from_ref(site)).unwrap();
+            assert!(warning.contains("0 par la pente, 0 par la forme, 1 par une source"),"{warning}");
+        }
     }
+    #[test]
+    fn a_declared_storage_envelope_keeps_its_real_footing_gate() {
+        let lots=[("granary",0.,45.,45.,"warehouse","storage.granary")];
+        let flat=lot_sites("javanese-courts","AS-ISL",&lots,0.0);
+        let request=site_of(&flat,"granary");
+        assert_eq!(request["function"],"warehouse");
+        assert!(request["programme"].get("source_coverage").is_none());
+        assert!(request["programme"].get("deficit").is_none());
+        let steep=lot_sites("javanese-courts","AS-ISL",&lots,0.25);
+        let request=site_of(&steep,"granary");
+        assert_eq!(request["function"],"open_space");
+        assert_eq!(request["programme"]["deficit"]["cause"],"pente");
+        assert!(request["programme"].get("source_coverage").is_none());
+    }
+    #[test]
+    fn housing_floor_need_core_old_allocation_stays_unknown_and_export_never_remodels() {
+        let f: Value = serde_json::from_str(include_str!("../../tests/fixtures/occupancy-c1358-origin.json")).unwrap();
+        let mut a: super::super::programme::Allocation = serde_json::from_value(f["allocation"].clone()).unwrap();
+        let mut parcel: Parcel = serde_json::from_value(f["parcel"].clone()).unwrap();
+        parcel.block = 0;
+        let layout: Layout = serde_json::from_value(json!({"key":"frozen-origin","culture":"javanese-courts",
+            "center":{"x":0.,"y":0.},"quarters":[],"streets":[],"warnings":[],
+            "blocks":[{"shape":parcel.shape.clone(),"quarter":0,"kind":"block","axis":{"x":1.,"y":0.}}]})).unwrap();
+        let districts = BTreeMap::from([(0, ("commoner".to_owned(), Some(0.9)))]);
+        let old = programme_of(&a, &parcel, &layout, &districts);
+        assert!(old.get("housing_floor_need").is_none());
+        assert_eq!(old["households"], 3.);
+        a.households = 2.345;
+        a.housing_floor_need = super::super::roles::indicative_housing_floor_need(&a.culture, a.households, 0.25);
+        let new = programme_of(&a, &parcel, &layout, &districts);
+        assert_eq!(new["households"], 2.35); // old rounded field is untouched
+        assert_eq!(new["wealth"], 0.9); // appearance is deliberately different
+        assert_eq!(new["housing_floor_need"]["allocated_households"], 2.345);
+        assert_eq!(new["housing_floor_need"]["model"]["wealth"], 0.25);
+        assert!((new["housing_floor_need"]["requested_m2"].as_f64().unwrap()-2.345*54.).abs()<1e-10);
+        // Editing the current allocation's display wealth cannot rewrite a
+        // model already captured with its original provenance.
+        a.wealth = 0.8;
+        assert_eq!(programme_of(&a, &parcel, &layout, &districts)["housing_floor_need"], new["housing_floor_need"]);
+        assert_eq!(f["request"]["programme"]["built_area_m2"], 617.9);
+    }
+
 }

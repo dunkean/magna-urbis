@@ -1,3 +1,5 @@
+import type { PlacementBatch, PlacementBatchRequest, PlacementRequest } from '../../../rust/bridge/urbanArchitecture';
+import { prepareUrbanOpenDeficits } from '../../../rust/bridge/urbanOpenDeficits';
 import SceneWorker from './urbanSceneWorker?worker&inline';
 import { createUrbanEngine } from '../../../rust/bridge/urban';
 import type { SettlementRaster } from '../../../rust/bridge/settlements';
@@ -106,12 +108,13 @@ export function createUrbanSceneClient() {
           totalRequests: progress.total, expectedActive });
         if (!live(item, source)) return;
       }
-      await cold.stage.append(delta, progress); if (!live(item, source)) return;
+      const projectedSites = sites.map(siteProjection);
+      await cold.stage.append(delta, progress, projectedSites); if (!live(item, source)) return;
       // Only child outlines/metadata can reach the preview consumer. No growing
       // PlacementBatch accumulator is constructed anywhere on this branch.
-      if (cold.onProjection) await Promise.race([cold.onProjection(projectNativeBuildingChunk(delta), { ...progress }), item.superseded]);
+      if (cold.onProjection) await Promise.race([cold.onProjection(cold.stage.lastProjection ?? projectNativeBuildingChunk(delta), { ...progress }), item.superseded]);
       if (!live(item, source)) return;
-      if (cold.sites) cold.sites.push(...sites.map(siteProjection));
+      if (cold.sites) cold.sites.push(...projectedSites);
       cold.receivedSites = progress.completed;
       source?.postMessage({ ack: { id: response.id, completed: progress.completed } });
       return;
@@ -193,19 +196,23 @@ export function createUrbanSceneClient() {
       const requests = (sites.placementRequests ?? []) as CityPlacementRequest[];
       const sitesMs = performance.now() - start, placementStart = performance.now(), mode = sceneMode(request);
       if (mode === 'silhouette') { await receive({ id: request.id, scene: silhouetteScene(requests), timing: { sites: sitesMs, placement: performance.now() - placementStart } }); return; }
+      let deficitJoin: ReturnType<typeof prepareUrbanOpenDeficits> | undefined;
+      const carryEagerDeficits = (delta: PlacementBatch, page: readonly PlacementRequest[]): PlacementBatch =>
+        delta.open_spaces.length ? (deficitJoin ??= prepareUrbanOpenDeficits(request.partitions ?? []))(delta, page) : delta;
       const options: ArchitectureBatchOptions = { cancelled,
         progress: (completed, total) => { void receive({ id: request.id, progress: { completed, total } }); },
-        ...(request.progressive ? { onBatch: (delta, progress) => receive({ id: request.id,
-          batch: { delta, progress, requests: requests.slice(progress.start, progress.completed) } }) } : {}) };
+        ...(request.progressive ? { onBatch: (delta, progress, actualRequests) => receive({ id: request.id,
+          batch: { delta: compact ? delta : carryEagerDeficits(delta, actualRequests), progress, requests: requests.slice(progress.start, progress.completed) } }) } : {}) };
       const { placeUrbanBuildings, planUrbanBuildings } = await import('../../../rust/bridge/architecture');
       if (cancelled()) return;
       const compact = usesCompactPlans(request);
-      const scene = await (compact ? planUrbanBuildings : placeUrbanBuildings)(
-        { schema_version: '1', requests: applyHouseEdits(requests, request.buildingOverrides), settings: request.settings }, request.runtime, options);
+      const planInput: PlacementBatchRequest = { schema_version: '1', requests: applyHouseEdits(requests, request.buildingOverrides), settings: request.settings };
+      let scene = await (compact ? planUrbanBuildings : placeUrbanBuildings)(planInput, request.runtime, options);
       if (cancelled()) return;
       const placementMs = performance.now() - placementStart;
       let partitions: UrbanSceneResponse['partitions'];
       if (!compact) {
+        scene = carryEagerDeficits(scene, planInput.requests);
         const balance = await engine.run({ id: request.id, kind: 'builtCapacity', seed: request.seed, runtime: request.runtime, partitions: request.partitions, scene });
         if (cancelled()) return;
         if (balance.error) throw new Error(balance.error);
@@ -268,7 +275,10 @@ export function createUrbanSceneClient() {
     run(input: Omit<UrbanSceneRequest, 'id' | 'progressive'>,
       progress?: (completed: number, total: number) => void, onBatch?: UrbanSceneBatchCallback): Promise<UrbanSceneResponse> {
       let request: UrbanSceneRequest;
-      try { request = urbanSceneTransport({ ...input, id: nextId + 1, progressive: Boolean(onBatch) }); }
+      try {
+        if (input.parentSession) throw new Error('Native parent city generation requires the parent source receiver; legacy Single consumer refused.');
+        request = urbanSceneTransport({ ...input, id: nextId + 1, progressive: Boolean(onBatch) });
+      }
       catch (error) { return Promise.reject(error); }
       const replacing = Boolean(current);
       if (current) stop(current, new DOMException('Calcul remplacé', 'AbortError'));

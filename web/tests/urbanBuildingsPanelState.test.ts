@@ -53,7 +53,7 @@ it('shows actual cold refusal messages once available, distinguishes archive-onl
 it('keeps legacy scene selection/open/export and rejects an absent legacy ID without a cold read', async () => {
   const readColdBuilding = vi.fn(), exportScene = vi.fn(), open = vi.fn().mockResolvedValue(undefined);
   const model = createUrbanBuildingPanelState({ ...initial(), scene: chunks[0] }, { readColdBuilding, exportScene });
-  expect(urbanBuildingPanelSummary(model.state)).toBe('2 bâtiments · 1 refus · 0 espaces libres voulus');
+  expect(urbanBuildingPanelSummary(model.state)).toBe('2 bâtiments · 1 refus · 0 issues ouvertes');
   expect(model.select('absent')).toBe(false); expect(model.state.selected).toBeUndefined();
   expect(model.select(chunks[0].buildings[0].id)).toBe(true); await model.openSelected(open);
   expect(open).toHaveBeenCalledWith(chunks[0].buildings[0]); expect(readColdBuilding).not.toHaveBeenCalled();
@@ -64,7 +64,7 @@ it('reports cold global counts and unknown capacity without collecting native pl
   const readColdBuilding = vi.fn(), model = createUrbanBuildingPanelState(initial(), { readColdBuilding });
   const runtimeExtra = { ...cold, parent: chunks, store: { ...cold.store, parent: chunks[0] }, counts: { ...cold.counts, parent: chunks[1] } };
   model.replaceCold(runtimeExtra); expect(model.state.scene).toBeUndefined(); noNativeParent(model.state.cold);
-  expect(urbanBuildingPanelSummary(model.state)).toBe('6 plans de bâtiments · 3 refus · 0 espaces libres voulus · capacité non évaluée');
+  expect(urbanBuildingPanelSummary(model.state)).toBe('6 plans de bâtiments · 3 refus · 0 issues ouvertes · capacité non évaluée');
   expect(urbanBuildingPanelCapacity(model.state, chunks[0].buildings[0])).toBe('capacité non évaluée');
   const programme = { demands: [{ builtCapacity: 1000, openCapacity: 100 }] } as unknown as UrbanProgramme;
   expect(urbanBuildingPanelEvidence(model.state)(programme)).toBe('not_calculated'); expect(readColdBuilding).not.toHaveBeenCalled();

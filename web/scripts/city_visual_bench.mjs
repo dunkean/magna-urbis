@@ -13,6 +13,11 @@ import os from 'node:os';
 import { tsImport } from 'tsx/esm/api';
 import { createArchitectureBenchEvidence, recordDetailHttpFailure } from './architecture_bench_evidence.mjs';
 import { settlementIdentity } from './city_bench_identity.mjs';
+import { cityVisualCoverage } from './city_visual_coverage.mjs';
+import { prepareExactVisualInput } from './city_visual_exact_input.mjs';
+import { PROGRAMME_UI_PROOF_SELECTORS, programmeUiEvidence } from './city_programme_ui_evidence.mjs';
+import { createCaptureSettlingBarrier, assessCaptureReadiness, parentCaptureReceipt, captureGenerationCompletion,
+  classifyCaptureDetail, captureDetailUsage, captureDetailBudget } from './city_capture_readiness.mjs';
 
 const detailEvidenceByCase = new Map();
 
@@ -27,7 +32,7 @@ const option = (key, fallback) => {
   return args[i + 1];
 };
 if (has('help')) {
-  console.log('city_visual_bench.mjs [--manifest path] [--only id,id-or-prefix*] [--limit 1] [--gate p0|specialized|million|all] [--dry-run]\n  [--server URL] [--bench URL] [--out path] [--timeout-ms 180000] [--detail-timeout-ms 30000] [--p0-report path] [--headed]\n  [--require-comparison-detail] requires a native cached exterior before any auxiliary comparison.\nDefaults: one P0 case, existing :8810 runtime. Million requires explicit --gate million/all; --p0-report is optional evidence. No server lifecycle.');
+  console.log('city_visual_bench.mjs [--manifest path] [--only id,id-or-prefix*] [--limit 1] [--gate p0|specialized|million|all] [--dry-run]\n  [--server URL] [--bench URL] [--out path] [--timeout-ms 180000] [--detail-timeout-ms 30000] [--p0-report path] [--headed]\n  [--architecture-proof parent|legacy] defaults to parent; legacy is explicitly scoped Single evidence.\n  [--detail-member-budget 64] counts physical members (parent Single 1, assembly pair 2), active ceiling 2.\n  [--require-comparison-detail] requires a native cached exterior before any auxiliary comparison.\nDefaults: one P0 case, existing :8810 runtime. Million requires explicit --gate million/all; --p0-report is optional evidence. No server lifecycle.');
   process.exit(0);
 }
 const positive = (key, fallback) => {
@@ -36,6 +41,11 @@ const positive = (key, fallback) => {
   return n;
 };
 const dry = has('dry-run'), requireComparisonDetail = has('require-comparison-detail'), limit = positive('limit', 1), timeoutMs = positive('timeout-ms', 180000), detailTimeoutMs = positive('detail-timeout-ms', 30000);
+// Capture policy only: never changes a manifest, raw URL, recipe or camera.
+// Old runtimes need explicit qualification; a missing parent marker is no proof.
+const architectureProof = option('architecture-proof', 'parent');
+if (!['parent', 'legacy'].includes(architectureProof)) throw new Error('--architecture-proof must be parent or legacy');
+const detailMemberBudget = positive('detail-member-budget', 64);
 const manifestPath = resolve(option('manifest', resolve(root, '_agents_blackboard/CITY_VISUAL_BENCH_50.json')));
 const output = resolve(option('out', resolve(root, 'web/out/city-visual-bench')));
 const server = option('server', 'http://127.0.0.1:8810').replace(/\/$/, '');
@@ -101,6 +111,7 @@ for (const item of selected) { const key = item.pairedWith ?? item.id; if (!grou
 const ordered = [...groups.values()].flatMap(items => items.sort((a, b) => Number(Boolean(a.pairedWith)) - Number(Boolean(b.pairedWith))));
 const catalogue = JSON.parse(await readFile(resolve(root, 'web/decors/index.json'), 'utf8')).decors;
 const cultures = JSON.parse(await readFile(resolve(root, 'rust/crates/core/src/urban/catalogue.json'), 'utf8')).cultures;
+const coverageAudit = cityVisualCoverage(manifest, cultures, selected);
 const decorModule = await tsImport('../src/ui/decor.ts', import.meta.url), { decodeDecor } = decorModule.decodeDecor ? decorModule : decorModule.default;
 const configModule = await tsImport('../../rust/bridge/urbanConfig.ts', import.meta.url), configs = configModule.defaultLayoutConfig ? configModule : configModule.default;
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -118,6 +129,7 @@ const codeFor = (query, item, view) => 'MU1.' + deflateRawSync(Buffer.from(JSON.
 // explicit final options instead of racing history.replaceState(). MU1 is a
 // version-dependent regeneration recipe, not an archive of native geometry.
 function replayQuery(input, item, complete) {
+  if (input.exactInputIdentity && complete) return new URLSearchParams(input.intendedQuery);
   const query = stripRuntime(new URLSearchParams(input.intendedQuery));
   const urban = JSON.parse(query.get('urban'));
   urban.architecture = item.architecture;
@@ -173,18 +185,27 @@ function assessCapture(report) {
   const cameraMatches = viewKnown && (requested.kind === 'overview' || Math.abs(actual.cx - requested.cx) < 1e-6
     && Math.abs(actual.cy - requested.cy) < 1e-6 && Math.abs(actual.scale - 1 / requested.mpp) < 1e-6);
   const nativeRequired = report.architecture !== 'silhouette';
-  const accepted = probe?.accepted ?? null, refused = probe?.refused ?? null;
-  const visible = report.ui?.frameData?.buildingsPainted === undefined ? null : Number(report.ui.frameData.buildingsPainted);
-  const captureOk = Boolean(report.complete && report.image && report.settled && !report.errors.length && !probe?.errors?.length);
+  const parent = report.parentExpected || report.parentObserved;
+  const parentReceipt = parent ? parentCaptureReceipt(report.ui, { previousParentKey: report.previousParentKey, expectedParentKey: report.parentGenerationKey }) : undefined;
+  const accepted = parent ? parentReceipt?.counts?.admitted_parents ?? null : probe?.accepted ?? null;
+  const refused = parent ? parentReceipt?.counts?.refusals ?? null : probe?.refused ?? null;
+  const readiness = assessCaptureReadiness(report.ui, report.architecture, report.visualSettling,
+    { nativePlansExpected: report.expectsNativePlans === true && report.complete === true, renderView: report.renderView,
+      parentExpected: !!parent, previousParentKey: report.previousParentKey, expectedParentKey: report.parentGenerationKey });
+  const visible = readiness.paintedInCamera;
+  const captureOk = Boolean(report.complete && report.image && report.settled && readiness.visualComplete && !report.errors.length && !probe?.errors?.length);
   const technicalOk = captureOk && cameraMatches && report.ui?.architecture === report.architecture && (!nativeRequired || report.nativeEvidence?.verified === true);
-  const warnings = [];
+  const warnings = [...readiness.warnings];
+  if (parent) warnings.push('Parent evidence is the authenticated consumer/store attestation; this runner does not independently reread native archives, receipts or all chunks. Legacy worker/material counters are not parent counts.');
+  else if (nativeRequired) warnings.push('Explicit legacy capture qualification; no native parent-session proof is claimed.');
+  if (report.exactInputIdentity) warnings.push('Frozen exact user options are requested; observed parcel_fit/settings and coordinated runtime binary SHA still require explicit attestation. Technical completion alone does not certify exact regression identity.');
   if (refused > 0) warnings.push(`${refused} native plan refusals; inspect their reasons and scenario expectations.`);
   if (accepted === 0) warnings.push('No building accepted: this capture cannot demonstrate residential architecture.');
   if (visible === 0) warnings.push('No building reported painted in this camera; the scene may be outside the viewport.');
-  if (visible === null) warnings.push('Painted-building count unavailable; pixel content is not independently classified.');
-  if (report.architecture === 'detailed' && !(Number(report.ui?.frameData.detailCached) > 0)) warnings.push('No native exterior detail observed in cache; this image cannot demonstrate detailed architecture.');
+  if (report.architecture === 'detailed' && (parent ? readiness.visual.nativeExteriorDemonstrated !== true : !(Number(report.ui?.frameData.detailCached) > 0))) warnings.push('No visible native exterior detail demonstrated in this current draw; coarse LOD or zero eligible parents do not demonstrate detailed architecture.');
   if (report.auxiliaryViews?.count && report.auxiliaryViews.technicalOk !== true) warnings.push('Auxiliary comparisons have their own reports and are not yet all technically verified; primary counts exclude them.');
   const status = !report.complete || !report.settled ? 'incomplete' : !report.image ? 'capture_failed'
+    : !readiness.visualComplete ? 'captured_visual_incomplete'
     : !captureOk ? 'captured_with_errors' : !cameraMatches ? 'captured_camera_mismatch'
     : report.ui?.architecture !== report.architecture ? 'captured_mode_mismatch'
     : nativeRequired && !report.nativeEvidence?.verified ? 'captured_native_unverified'
@@ -192,11 +213,17 @@ function assessCapture(report) {
     : refused > 0 ? 'captured_with_refusals' : nativeRequired ? 'captured_review_required' : 'captured_preview';
   return { captureOk, technicalOk, ok: technicalOk, status, warnings,
     cameraApplied: viewKnown ? { cx: actual.cx, cy: actual.cy, mpp: 1 / actual.scale } : null, cameraMatches,
-    completion: { plansComplete: report.complete, accepted, refused, openSpaces: probe?.openSpaces ?? null, paintedInCamera: visible,
-      nativePlansVerified: report.nativeEvidence?.verified === true, nativeExteriorCached: Number(report.ui?.frameData.detailCached ?? 0) },
-    materials: { catalogueMaterialCount: Object.keys(probe?.catalogueMaterials ?? {}).length,
-      usedMaterialIds: probe?.materialUsage?.buildingsWithRefs > 0 ? Object.keys(probe.usedMaterials ?? {}).sort() : null,
-      usage: { ...probe?.materialUsage, scope: 'explicit references in retained base-plan volumes, levels, roof meshes and structural features; not pixel coverage or on-demand detail' } } };
+    completion: { plansComplete: report.complete, accepted, refused, openSpaces: parent ? parentReceipt?.counts?.open_spaces ?? null : probe?.openSpaces ?? null, paintedInCamera: visible,
+      countScope: parent ? 'native admitted parents; physical members separate; capacity unknown' : 'legacy Single plans',
+      paintedCountScope: parent ? 'physical native members in this camera, never parents or households' : 'legacy buildings in this camera',
+      physicalMembers: parentReceipt?.counts?.physical_members ?? null, parentSource: parentReceipt ?? null,
+      viewport: readiness.visual,
+      nativePlansVerified: report.nativeEvidence?.verified === true, nativeExteriorCached: parent ? null : Number(report.ui?.frameData.detailCached ?? 0),
+      parentNativeExterior: parent ? { visibleEligible: readiness.visual.detailVisibleEligible ?? null, demonstrated: readiness.visual.nativeExteriorDemonstrated === true, scope: 'current draw only, not a global cache count' } : null },
+    materials: { catalogueMaterialCount: parent ? null : Object.keys(probe?.catalogueMaterials ?? {}).length,
+      usedMaterialIds: !parent && probe?.materialUsage?.buildingsWithRefs > 0 ? Object.keys(probe.usedMaterials ?? {}).sort() : null,
+      usage: parent ? { scope: 'Parent material usage unobserved; legacy Single material counters cannot substitute.' }
+        : { ...probe?.materialUsage, scope: 'explicit references in retained base-plan volumes, levels, roof meshes and structural features; not pixel coverage or on-demand detail' } } };
 }
 const preparations = new Map(), metas = new Map();
 for (const item of ordered) {
@@ -209,30 +236,45 @@ for (const item of ordered) {
     const path = resolve(root, 'web/decors', entry.file), bytes = await readFile(path), decor = decodeDecor(new Uint8Array(bytes));
     metas.set(entry.id, { meta: decor.meta, width: decor.raster.width, bytes: bytes.length, modified: (await stat(path)).mtime.toISOString(), sha256: createHash('sha256').update(bytes).digest('hex') });
   }
-  const source = metas.get(entry.id), query = stripRuntime(new URLSearchParams(source.meta.query));
+  const source = metas.get(entry.id);
+  let exact;
+  if (item.exactInput) {
+    const raw = await readFile(resolve(root, item.exactInput.path), 'utf8');
+    if (createHash('sha256').update(raw).digest('hex') !== item.exactInput.sha256) throw new Error(`${item.id}: frozen URL hash changed`);
+    exact = prepareExactVisualInput(item, raw);
+  }
+  const query = exact ? new URLSearchParams(exact.query) : stripRuntime(new URLSearchParams(source.meta.query));
   const saved = key => { const value = query.get(key); return value ? JSON.parse(value) : {}; };
-  const settlements = saved('settlements');
-  if (!object(settlements.config)) throw new Error(`${item.id}: decor has no recorded settlement configuration`);
-  const oldSpec = settlements.config.list?.[0] ?? settlements.config.main ?? {};
-  const sceneTitle = manifest.cases.find(base => base.id === item.pairedWith)?.title ?? item.title;
-  const spec = merge(oldSpec, { ...item.settlement, key: 'city', name: sceneTitle, population: item.population, culture: item.culture });
-  if (!Object.hasOwn(item.settlement ?? {}, 'position')) delete spec.position;
-  settlements.config = merge(settlements.config, { mode: 'list', list: [spec], main: { ...spec, key: 'main' }, counts: { city: 0, town: 0, village: 0, hamlet: 0, farmstead: 0 } });
-  settlements.enabled = true; settlements.showPoints = true;
-  const urban = merge({ layoutConfig: configs.defaultLayoutConfig(), parcelConfig: configs.defaultParcelConfig() }, saved('urban'));
-  Object.assign(urban, merge(urban, item.urban));
-  Object.assign(urban, { enabled: true, parcelEnabled: true, target: 'city', architecture: item.architecture === 'silhouette' ? 'silhouette' : 'compact' });
-  urban.render = merge(urban.render, { view: 'parcels' });
-  urban.buildingState = merge(urban.buildingState, { visible: true, generated: false, appearance: { style: 'cartographic', diagnostic: 'none' } });
-  delete urban.buildingState.scene; delete urban.buildingState.selected; delete urban.edits;
-  query.set('artifact', item.artifact); query.set('settlements', JSON.stringify(settlements)); query.set('urban', JSON.stringify(urban)); query.set('standalone', '1');
+  let settlements, urban;
+  if (exact) ({ settlements, urban } = exact.settings);
+  else {
+    // Original 50-case preparation stays in the legacy branch, unchanged.
+    settlements = saved('settlements');
+    if (!object(settlements.config)) throw new Error(`${item.id}: decor has no recorded settlement configuration`);
+    const oldSpec = settlements.config.list?.[0] ?? settlements.config.main ?? {};
+    const sceneTitle = manifest.cases.find(base => base.id === item.pairedWith)?.title ?? item.title;
+    const spec = merge(oldSpec, { ...item.settlement, key: 'city', name: sceneTitle, population: item.population, culture: item.culture });
+    if (!Object.hasOwn(item.settlement ?? {}, 'position')) delete spec.position;
+    settlements.config = merge(settlements.config, { mode: 'list', list: [spec], main: { ...spec, key: 'main' }, counts: { city: 0, town: 0, village: 0, hamlet: 0, farmstead: 0 } });
+    settlements.enabled = true; settlements.showPoints = true;
+    urban = merge({ layoutConfig: configs.defaultLayoutConfig(), parcelConfig: configs.defaultParcelConfig() }, saved('urban'));
+    Object.assign(urban, merge(urban, item.urban));
+    Object.assign(urban, { enabled: true, parcelEnabled: true, target: 'city', architecture: item.architecture === 'silhouette' ? 'silhouette' : 'compact' });
+    urban.render = merge(urban.render, { view: 'parcels' });
+    urban.buildingState = merge(urban.buildingState, { visible: true, generated: false, appearance: { style: 'cartographic', diagnostic: 'none' } });
+    delete urban.buildingState.scene; delete urban.buildingState.selected; delete urban.edits;
+    query.set('artifact', item.artifact); query.set('settlements', JSON.stringify(settlements)); query.set('urban', JSON.stringify(urban)); query.set('standalone', '1');
+  }
   // A retained urban snapshot would overwrite the query inside restoreDecor().
   if (source.meta.pipeline?.urban?.layouts?.length) throw new Error(`${item.id}: decor carries an applied urban snapshot; use an unmodified terrain catalogue decor`);
   const fingerprint = createHash('sha256').update(query.toString()).digest('hex');
-  const intended = new URLSearchParams(query); intended.set('urban', JSON.stringify({ ...urban, architecture: item.architecture, render: { ...urban.render, view: 'buildings' } }));
+  const intended = exact ? new URLSearchParams(exact.intendedQuery) : new URLSearchParams(query);
+  if (!exact) intended.set('urban', JSON.stringify({ ...urban, architecture: item.architecture, render: { ...urban.render, view: 'buildings' } }));
   const view = item.camera.kind === 'fixed' ? { cx: item.camera.cx, cy: item.camera.cy, scale: 1 / item.camera.mpp } : undefined;
   preparations.set(item.id, { id: item.id, artifact: item.artifact, culture: item.culture, population: item.population, gate: item.gate ?? 'p0', camera: item.camera,
     query: query.toString(), intendedQuery: intended.toString(), situation: codeFor(intended, item, view), fingerprint, settings: { settlements, urban },
+    exactInputIdentity: exact?.identity ?? null,
+    exactInputPreparation: exact?.proof ?? null,
     source: { width: source.width, seed: source.meta.seed, file: entry.file, bytes: source.bytes, modified: source.modified, sha256: source.sha256 },
     limitations: item.limitations, regressionReference: item.regressionReference,
     auxiliaryViews: { count: item.auxiliaryViews?.length ?? 0, supported: true, requiresHook: 'magnaBenchContext.comparison',
@@ -242,7 +284,9 @@ for (const item of ordered) {
 for (const item of ordered) if (item.pairedWith && preparations.has(item.pairedWith) && preparations.get(item.id).fingerprint !== preparations.get(item.pairedWith).fingerprint) throw new Error(`${item.id}: pairedWith changes generation inputs`);
 await mkdir(output, { recursive: true });
 const prepared = { version: 1, dryRun: dry, nativeRequests: 0, manifest: manifestPath, manifestSha256: createHash('sha256').update(rawManifest).digest('hex'),
+  coverageAudit,
   selectedIds: selected.map(item => item.id), executionOrder: ordered.map(item => item.id), gates: [...gates], timeoutMs, detailTimeoutMs,
+  detailMemberBudget, activeDetailMemberLimit: 2,
   cases: ordered.map(item => preparations.get(item.id)) };
 await writeFile(resolve(output, 'prepared.json'), JSON.stringify(prepared, null, 2));
 if (dry) { console.log(JSON.stringify({ dryRun: true, nativeRequests: 0, browserStarted: false, cases: ordered.length, executionOrder: prepared.executionOrder, output: resolve(output, 'prepared.json') }, null, 2)); process.exit(0); }
@@ -260,7 +304,8 @@ const nativeStatus = await statusResponse.json();
 if (!statusResponse.ok || !nativeStatus.capabilities?.includes('houses.compact-plans')) throw new Error('Existing runtime must report houses.compact-plans');
 const { chromium } = await import('playwright');
 const browser = await chromium.launch({ headless: !has('headed'), channel: process.env.PLAYWRIGHT_CHANNEL ?? (process.platform === 'win32' ? 'msedge' : undefined), args: ['--disable-gpu'] });
-const suite = { version: 1, measurementSchema: 2, started: new Date().toISOString(), manifest: manifestPath, manifestSha256: prepared.manifestSha256, server, bench, nativeStatus, p0Evidence,
+const suite = { version: 1, measurementSchema: 2, architectureProof, detailMemberBudget, activeDetailMemberLimit: 2, started: new Date().toISOString(), manifest: manifestPath, manifestSha256: prepared.manifestSha256, server, bench, nativeStatus, p0Evidence,
+  coverageAudit,
   sourceHead, browser: browser.version(), machine: { platform: process.platform, cpu: os.cpus()[0]?.model, logicalCpus: os.cpus().length, totalMemory: os.totalmem(), freeMemoryBefore: os.freemem(), loadAverage: os.loadavg() },
   measurementCaveats: ['Shared development machine; no isolation guarantee.', 'Worker observation aggregates metadata only; observed first visible means the application published a painted-building count, not independently classified pixels.', 'Full JSON parse/transfer duration, parcel geometry distributions, raster pending count and detail queued count are not exposed by current UI; reported null, not invented.', 'Captures await quiet UI/native work; this cannot prove pixel-perfect raster completion without a published pending metric.'],
   executionOrder: prepared.executionOrder, cases: [], auxiliaryCaptures: [] };
@@ -340,16 +385,33 @@ function probeInstall(createEvidence) {
   requestAnimationFrame(tick);
 }
 async function snapshot() {
-  return page.evaluate(() => {
+  const observed = await page.evaluate(selectors => {
     const frame = document.querySelector('[data-city-frame]'), counts = document.querySelector('[data-city-building-counts]'), canvas = document.querySelector('[data-city-canvas] canvas');
+    const intent = document.querySelector(selectors.intent), custom = document.querySelector(selectors.custom), fieldset = document.querySelector(selectors.fieldset), draft = document.querySelector(selectors.draft);
+    const values = selector => Array.from(document.querySelectorAll(selector)).slice(0, 24).map(node => node.textContent);
+    const hook = window.magnaBenchContext?.coldViewport;
+    let coldViewport, coldViewportError;
+    try { if (typeof hook === 'function') coldViewport = hook.call(window.magnaBenchContext); }
+    catch (error) { coldViewportError = String(error); }
+    const comparison = window.magnaBenchContext?.comparison?.snapshot?.();
     return { architecture: document.querySelector('[data-city-architecture]')?.value, busy: document.querySelector('[data-buildings-generate]')?.getAttribute('aria-busy') === 'true',
       status: document.querySelector('[data-buildings-status]')?.textContent, frame: frame?.textContent, frameData: { ...frame?.dataset }, counts: counts?.textContent, countsData: { ...counts?.dataset },
       view: window.magnaBenchContext?.capture()?.view, viewBox: document.querySelector('#map')?.getAttribute('viewBox'), now: performance.now(),
+      coldViewportHook: typeof hook === 'function', coldViewport, coldViewportError,
+      renderView: comparison?.active ? comparison.renderView : document.querySelector('[data-urban-view][aria-pressed="true"]')?.dataset.urbanView,
+      appearance: { style: document.querySelector('[data-building-style]')?.value, diagnostic: document.querySelector('[data-building-diagnostic]')?.value },
+      backgroundStyle: window.magnaCityBackground?.style?.() ?? document.documentElement.dataset.cityBackground,
       probe: { ...window.__cityVisualBench, architectureEvidence: window.__cityVisualBenchEvidence.snapshot() },
       canvas: canvas && { width: canvas.width, height: canvas.height }, svgBuildingNodes: document.querySelectorAll('[data-urban-building]').length,
       stageStatus: Object.fromEntries(['urbanQuarterStage', 'urbanParcelStage', 'roadStage'].map(id => [id, document.querySelector(`#${id} [data-status]`)?.textContent])),
+      programmeFunctions: { controlsPresent: !!intent && !!custom && !!fieldset, intent: intent?.value, custom: custom?.checked,
+        fieldsetDisabled: fieldset?.disabled, fieldsetHidden: fieldset?.hidden,
+        weights: Array.from(document.querySelectorAll(selectors.weights)).slice(0, 24).map(node => ({ key: node.getAttribute('data-programme-function'), value: node.value, disabled: node.matches(':disabled') })),
+        draftVisible: draft ? !draft.hidden : undefined, draftMessage: draft?.textContent,
+        note: document.querySelector(selectors.note)?.textContent, effects: values(selectors.effects), applied: values(selectors.applied), warnings: values(selectors.warnings) },
       renderMetrics: { rasterPending: null, detailQueued: null, parseMs: null, transferMs: null } };
-  });
+  }, PROGRAMME_UI_PROOF_SELECTORS);
+  return { ...observed, programmeFunctions: programmeUiEvidence(observed.programmeFunctions) };
 }
 async function until(check, label, deadline) {
   while (performance.now() < deadline) { if (current?.errors.some(e => e.startsWith('BLOCKED'))) throw new Error(current.errors.at(-1)); if (await check()) return; await pause(150); }
@@ -372,7 +434,7 @@ async function openPage() {
     let data; try { data = JSON.parse(String(message)); } catch { /* Pass through. */ }
     if (data?.type === 'update' || data?.type === 'full-reload') { current?.ignoredHmr.push({ atMs: elapsed(), type: data.type }); return; } socket.send(message);
   }); });
-  await context.route(url => url.origin === serverOrigin || ['/urban', '/raster', '/raster/upload', '/houses/plans', '/houses/realize-plan', '/houses/placement', '/houses/generate', '/houses/enrich'].includes(url.pathname), async route => {
+  await context.route(url => url.origin === serverOrigin || ['/urban', '/raster', '/raster/upload', '/houses/plans', '/houses/realize-plan', '/houses/realize-parent', '/houses/placement', '/houses/generate', '/houses/enrich'].includes(url.pathname), async route => {
     const request = route.request(), url = new URL(request.url()), path = url.pathname;
     if (request.method() !== 'POST') return route.continue();
     if (comparisonGuard) {
@@ -385,19 +447,27 @@ async function openPage() {
     if (stopFuture) return route.fulfill({ status: 409, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: '{"error":"Benchmark budget finished; new work stopped."}' });
     if (url.origin !== serverOrigin) return reject(`Native request escaped selected runtime: ${url.origin}`);
     if (['/houses/placement', '/houses/generate', '/houses/enrich'].includes(path)) return reject(`Legacy eager route ${path}`);
-    const inspectBody = path === '/urban' || path === '/houses/realize-plan';
+    const inspectBody = path === '/urban' || path === '/houses/realize-plan' || path === '/houses/realize-parent';
     const body = inspectBody ? request.postDataBuffer() : null;
     // Never decode binary rasters or stringify the whole partition merely to read its kind.
     const text = body?.subarray(0, 4096).toString('utf8') ?? '';
-    const detail = path === '/houses/realize-plan';
-    if (detail && !/"interiors"\s*:\s*false/.test(body.toString('utf8'))) return reject('Exterior realization must explicitly request interiors:false');
-    if (detail && [...active.values()].filter(e => e.detail).length >= 2) return reject('More than two physical detail calls');
-    if (detail && current.requests.filter(e => e.detail).length >= 64) { current.detailBudgetReached = true; return route.fulfill({ status: 429, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: '{"error":"Benchmark detail request budget64 reached."}' }); }
+    const classification = classifyCaptureDetail(path, body?.toString('utf8')), detail = classification.detail;
+    const activeUsage = detail ? captureDetailUsage([...active.values()]) : undefined;
+    const usedUsage = detail ? captureDetailUsage(current.requests) : undefined;
+    const decision = captureDetailBudget(classification, { activeMembers: activeUsage?.members, usedMembers: usedUsage?.members, maxMembers: detailMemberBudget });
+    if (!decision.allowed) {
+      if (!decision.totalExceeded) return reject(decision.reason);
+      current.detailBudgetReached = true;
+      return route.fulfill({ status: 429, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: JSON.stringify({ error: decision.reason }) });
+    }
     const declaredRequestBytes = Number(request.headers()['content-length']);
-    const entry = { path, kind: path === '/urban' ? /"kind"\s*:\s*"([^"]+)"/.exec(text)?.[1] : undefined, detail, startMs: elapsed(), requestBytes: body?.length ?? (declaredRequestBytes > 0 ? declaredRequestBytes : null) };
+    const entry = { path, kind: path === '/urban' ? /"kind"\s*:\s*"([^"]+)"/.exec(text)?.[1] : undefined, detail, detailMembers: decision.members,
+      startMs: elapsed(), requestBytes: body?.length ?? (declaredRequestBytes > 0 ? declaredRequestBytes : null) };
     if (['buildingSites', 'buildingSitesBegin', 'buildingSitesPage'].includes(entry.kind)) entry.sourcePayload = sourcePayloadEvidence(body);
     current.requests.push(entry); active.set(request, entry);
     current.detailPeakPhysical = Math.max(current.detailPeakPhysical, [...active.values()].filter(e => e.detail).length);
+    if (detail) { current.detailMembersAttempted = usedUsage.members + decision.members;
+      current.detailPeakActiveMembers = Math.max(current.detailPeakActiveMembers, activeUsage.members + decision.members); }
     if (entry.kind === 'quarters' && body) {
       // Preserve the authorized replay fixture, omitting only the runtime token.
       const fixture = JSON.parse(body.toString('utf8')); delete fixture.session;
@@ -469,6 +539,10 @@ async function captureAuxiliaries(item, deadline) {
   };
   if (!current.technicalOk || !current.nativeEvidence?.verified || active.size) {
     for (const record of records) { record.status = 'skipped_primary_unverified'; record.errors.push('Primary native scene did not finish and verify; comparison was not attempted.'); }
+    await save(); return;
+  }
+  if (current.parentExpected || current.parentObserved) {
+    for (const record of records) { record.status = 'parent_comparison_unsupported'; record.errors.push('Applied native parent comparison is unsupported by this UI contract; no legacy comparison or regeneration attempted.'); }
     await save(); return;
   }
   const available = await page.evaluate(() => {
@@ -569,10 +643,17 @@ try {
   for (const item of ordered) {
     const input = preparations.get(item.id), begin = performance.now();
     current = { id: item.id, title: item.title, population: item.population, culture: item.culture, artifact: item.artifact, architecture: item.architecture,
+      renderView: JSON.parse(new URLSearchParams(input.intendedQuery).get('urban')).render?.view,
+      expectsNativePlans: item.architecture !== 'silhouette' && JSON.parse(new URLSearchParams(input.intendedQuery).get('urban')).render?.view === 'buildings',
+      architectureProof,
+      parentExpected: architectureProof === 'parent' && item.architecture !== 'silhouette' && JSON.parse(new URLSearchParams(input.intendedQuery).get('urban')).render?.view === 'buildings',
       gate: item.gate ?? 'p0', camera: item.camera, expectations: item.expectations, limitations: item.limitations, declaredCapacityExceeded: input.declaredCapacityExceeded,
       auxiliaryViews: { ...input.auxiliaryViews }, regressionReference: item.regressionReference,
+      exactInputIdentity: input.exactInputIdentity,
+      exactInputPreparation: input.exactInputPreparation,
       measurementSchema: 2, status: 'running', ok: false, technicalOk: false, captureOk: false,
-      complete: false, settled: false, visualVerdict: 'not_reviewed', requests: [], requestFailures: [], detailPeakPhysical: 0, errors: [], consoleErrors: [], ignoredHmr: [], startedMs: elapsed() };
+      complete: false, settled: false, visualVerdict: 'not_reviewed', requests: [], requestFailures: [], detailPeakPhysical: 0, detailPeakActiveMembers: 0, detailMembersAttempted: 0,
+      errors: [], consoleErrors: [], ignoredHmr: [], startedMs: elapsed() };
     suite.cases.push(current); stopFuture = false;
     const reusable = page && retained?.fingerprint === input.fingerprint && retained?.complete;
     try {
@@ -610,35 +691,67 @@ try {
         // Initial camera always overview while compact planning starts. Close detail follows completion.
         await page.locator('[data-city-architecture]').selectOption(item.camera.kind === 'overview' ? item.architecture : item.architecture === 'silhouette' ? 'silhouette' : 'compact');
         await page.evaluate(() => { window.__cityVisualBench.generationStarted = performance.now(); });
+        const beforeGeneration = parentCaptureReceipt(await snapshot());
+        current.previousParentKey = beforeGeneration.ready ? beforeGeneration.generationKey : undefined;
         current.generationClickMs = elapsed(); await expose('[data-buildings-generate]'); await page.locator('[data-buildings-generate]').click();
         // Labels may say "plans de bâtiments" or "silhouettes": completion is
         // protocol/data-attribute based, never parsed from translated UI text.
-        await until(async () => { const s = await snapshot(); return Boolean(s.probe.final) && !s.busy && s.countsData.planning !== 'true'; }, 'complete building plan', deadline);
+        await until(async () => {
+          const s = await snapshot(); current.parentObserved ||= s.frameData.parentEvidence !== undefined;
+          const completion = captureGenerationCompletion(s, { parentExpected: current.parentExpected || current.parentObserved, previousParentKey: current.previousParentKey });
+          if (completion.parent) { current.parentIncompleteReason = completion.receipt.reason;
+            if (completion.complete) current.parentGenerationKey = completion.receipt.generationKey; }
+          return completion.complete;
+        }, 'complete building plan with requested source contract', deadline);
         current.complete = true; current.plansCompleteMs = elapsed(); retained = { fingerprint: input.fingerprint, complete: true, id: item.id, documentOrigin: current.documentOrigin, settlementIdentity: current.settlementIdentity };
-      } else { current.complete = true; current.reusedFrom = retained.id; current.documentOrigin = retained.documentOrigin; current.generationClickMs = null; current.settlementIdentity = structuredClone(retained.settlementIdentity); }
+      } else { current.complete = true; current.reusedFrom = retained.id; current.documentOrigin = retained.documentOrigin; current.generationClickMs = null; current.settlementIdentity = structuredClone(retained.settlementIdentity);
+        current.parentGenerationKey = retained.parentGenerationKey; current.parentObserved = retained.parentObserved; }
       await applyCamera(item);
       await page.locator('[data-city-architecture]').selectOption(item.architecture);
       const quietDeadline = Math.min(begin + timeoutMs, performance.now() + detailTimeoutMs);
+      const visualBarrier = createCaptureSettlingBarrier({ architecture: item.architecture,
+        nativePlansExpected: current.expectsNativePlans && current.complete, renderView: current.renderView,
+        parentExpected: current.parentExpected || current.parentObserved, previousParentKey: current.previousParentKey, expectedParentKey: current.parentGenerationKey });
       await until(async () => {
         const s = await snapshot();
         if (Number(s.frameData.detailCached ?? 0) > 64 || Number(s.frameData.detailCacheBytes ?? 0) > 16 * 1024 * 1024) throw new Error('Detail cache exceeded documented bounds');
-        return active.size === 0 && Number(s.frameData.detailInFlight ?? 0) === 0 && s.now - s.probe.lastChange >= 900;
+        current.visualSettling = visualBarrier.observe(s, active.size);
+        return current.visualSettling.settled;
       }, 'visible detail/render settling', quietDeadline);
       current.ui = await snapshot();
+      current.visualSettling = visualBarrier.observe(current.ui, active.size);
+      if (!current.visualSettling.settled) throw new Error(`Final render changed after settling: ${current.visualSettling.reason ?? 'identity, generation, viewport or active work changed'}`);
       if (current.documentOrigin !== undefined && current.documentOrigin !== current.ui.probe.documentOrigin) throw new Error('Page reloaded during the measured generation');
       current.settled = true;
       if (current.ui.probe.errors.length) current.errors.push(...current.ui.probe.errors);
     } catch (error) { stopFuture = true; current.errors.push(error.stack ?? String(error)); current.status = 'incomplete'; current.ok = false; retained = undefined; }
     // Exactly one primary image, including incomplete states, when a page exists.
     if (page) {
-      try { current.ui ??= await snapshot(); current.image = `${item.id}.png`; await page.locator('#viewport').screenshot({ path: resolve(output, current.image), timeout: 15000 }); }
+      try {
+        current.ui ??= await snapshot(); current.image = `${item.id}.png`;
+        await page.locator('#viewport').screenshot({ path: resolve(output, current.image), timeout: 15000 });
+        if (current.settled && current.visualSettling?.required) {
+          const after = await snapshot(), readiness = assessCaptureReadiness(after, item.architecture, current.visualSettling,
+            { nativePlansExpected: current.expectsNativePlans && current.complete, renderView: current.renderView,
+              parentExpected: current.parentExpected || current.parentObserved, previousParentKey: current.previousParentKey, expectedParentKey: current.parentGenerationKey });
+          current.viewportAfterCapture = readiness.visual;
+          if (!readiness.visualComplete || active.size !== 0 || Number(after.frameData.detailInFlight ?? 0) !== 0) {
+            current.settled = false; current.errors.push('Cold source, generation, camera or active work changed during the single primary screenshot.'); retained = undefined;
+          }
+        }
+      }
       catch (error) { current.errors.push(`Capture: ${String(error)}`); current.image = null; current.ok = false; }
     }
-    current.nativeEvidence = current.reusedFrom ? { ...retained?.nativeEvidence, inheritedFrom: current.reusedFrom }
+    current.nativeEvidence = current.parentExpected || current.parentObserved
+      ? { ...parentCaptureReceipt(current.ui, { previousParentKey: current.previousParentKey, expectedParentKey: current.parentGenerationKey }),
+        verified: current.complete && parentCaptureReceipt(current.ui, { previousParentKey: current.previousParentKey, expectedParentKey: current.parentGenerationKey }).ready,
+        source: 'committed parent DOM consumer attestation; no legacy /houses/plans receipt substitution' }
+      : current.reusedFrom ? { ...retained?.nativeEvidence, inheritedFrom: current.reusedFrom }
       : { verified: current.requests.some(r => r.path === '/houses/plans' && r.status >= 200 && r.status < 300 && r.finishedMs !== undefined && r.startMs >= current.generationClickMs),
         source: 'completed /houses/plans HTTP response during this generation', generatorVersions: Object.keys(current.ui?.probe?.generatorVersions ?? {}) };
     if (current.nativeEvidence.generatorVersions?.includes('silhouette')) current.nativeEvidence.verified = false;
-    if (retained && !current.reusedFrom) retained.nativeEvidence = current.nativeEvidence;
+    if (retained && !current.reusedFrom) { retained.nativeEvidence = current.nativeEvidence;
+      retained.parentGenerationKey = current.parentGenerationKey; retained.parentObserved = current.parentObserved; }
     const query = replayQuery(input, item, current.complete);
     const situation = codeFor(query, item, current.ui?.view);
     current.replay = { configSource: 'validated manifest/decor inputs with explicit final architecture and generated flag', querySha256: createHash('sha256').update(query.toString()).digest('hex'),

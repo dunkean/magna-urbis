@@ -118,6 +118,38 @@ pub(super) fn cut_out(cell: Shape, raw: &[(Shape, (f64, f64, f64, f64))]) -> Vec
     pieces
 }
 
+/// Keep the original small segment/join cutters, except for clipped caps
+/// excluded from the actual path parcels. No new property or repair face is
+/// created: excluded land stays in the original Voronoi/camp cell.
+fn retained_cutters(pieces: Vec<Shape>, retained: &[Shape], rejected: &[Shape]) -> Vec<(Shape, (f64, f64, f64, f64))> {
+    // Protect retained path land even if overlay pieces share a seam/overlap:
+    // remove only rejected ground that no retained path parcel owns.
+    let excluded: Vec<Shape> = rejected.iter().flat_map(|cap| {
+        let mut rest = vec![cap.clone()];
+        for path in retained {
+            let pb = bbox(path);
+            rest = rest.into_iter().flat_map(|q| {
+                if boxes_overlap(bbox(&q), pb) { difference(&q, path) }
+                else { vec![q] }
+            }).collect();
+            if rest.is_empty() { break; }
+        }
+        rest
+    }).collect();
+    let rejected: Vec<_> = excluded.iter().map(|p| (p, bbox(p))).collect();
+    pieces.into_iter().flat_map(|p| {
+        let mut kept = vec![p];
+        for (cap, cb) in &rejected {
+            kept = kept.into_iter().flat_map(|q| {
+                if boxes_overlap(bbox(&q), *cb) { difference(&q, cap) }
+                else { vec![q] }
+            }).collect();
+            if kept.is_empty() { break; }
+        }
+        kept
+    }).map(|p| { let b=bbox(&p); (p,b) }).collect()
+}
+
 fn ring_shape(ring: &[Point]) -> Shape {
     Shape {
         outer: ring.to_vec(),
@@ -475,11 +507,10 @@ pub(super) fn footpaths(
             pieces.push(disc(p, 0.5 * width));
         }
     }
-    let paths: Vec<Shape> = union(&pieces)
+    let (paths, rejected): (Vec<Shape>, Vec<Shape>) = union(&pieces)
         .iter()
         .flat_map(|p| intersection(p, shape))
-        .filter(|p| area(p) > 0.5)
-        .collect();
+        .partition(|p| area(p) > 0.5);
     let mut shared = Vec::new();
     for path in &paths {
         let f = routes
@@ -500,13 +531,10 @@ pub(super) fn footpaths(
             }
         }
     }
-    let raw = pieces
-        .into_iter()
-        .map(|p| {
-            let b = bbox(&p);
-            (p, b)
-        })
-        .collect();
+    // A rejected clipped cap is not a path parcel. Do not still carve that
+    // cap out of its original cell: retained path land and the cell-cut mask
+    // must describe the same ground. Keep segment-sized cutters for cost.
+    let raw = retained_cutters(pieces, &paths, &rejected);
     (paths, raw, shared)
 }
 
@@ -584,3 +612,7 @@ mod tests {
         assert!(var.sqrt() / mean < 0.45, "cv {}", var.sqrt() / mean);
     }
 }
+
+#[cfg(test)]
+#[path = "organic_retained_cutters_tests.rs"]
+mod retained_cutters_tests;

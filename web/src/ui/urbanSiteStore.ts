@@ -31,6 +31,7 @@ export interface UrbanSiteStore {
   readonly stats: { cached: number; bytes: number; inFlight: number; disposed: boolean };
 }
 type StoreOptions = { maxEntries?: number; maxBytes?: number;
+  originLookup?(id: string): Promise<{ offset: number; parcelId: string } | undefined>;
   read?(query: UrbanBuildingSiteQuery, runtime: ExecutionRuntime, offset: number, id: string, total: number): Promise<PlacementRequest> };
 /** One committed scene's sites; callers keep this store on rollback and dispose
  * it only on replacement/invalidation. No request is retained for drawing. */
@@ -57,7 +58,15 @@ export function createNativeSiteStore(visuals: UrbanSiteVisual[], descriptor: Ur
       if (inFlight.size >= 2) throw new Error('Deux lectures de sites sont déjà en cours.');
       const work = Promise.resolve().then(async () => {
         check();
-        const request = await (options.read ?? readUrbanBuildingSite)(query, runtime, site.offset, id, visuals.length);
+        // Only this live worker query is a constraint capability. A derivative
+        // lookup can confirm its offset, never manufacture a restored query.
+        let origin: { offset: number; parcelId: string } | undefined;
+        if (options.originLookup) {
+          try { origin = await options.originLookup(id); } catch { /* Disposable cache miss: retain the already-live original site. */ }
+        }
+        if (origin && (origin.offset !== site.offset || origin.parcelId !== site.parcel_id)) throw new Error('Derived site offset differs from the live original site.');
+        check();
+        const request = await (options.read ?? readUrbanBuildingSite)(query, runtime, origin?.offset ?? site.offset, id, visuals.length);
         check();
         if (request.id !== id || request.parcel_id !== site.parcel_id) throw new Error('Retained building-site identity changed.');
         const cost = new TextEncoder().encode(JSON.stringify(request)).byteLength;
@@ -74,6 +83,21 @@ export function createNativeSiteStore(visuals: UrbanSiteVisual[], descriptor: Ur
     dispose() { disposed = true; cache.clear(); bytes = 0; byId.clear(); },
     get stats() { return { cached: cache.size, bytes, inFlight: inFlight.size, disposed }; },
   };
+}
+
+/** Restored projected metadata is display-only until an actual CURRENT native
+ * query is bound. URL/revision values recovered from storage cannot do that. */
+export function createUnboundSiteStore(visuals: UrbanSiteVisual[]): UrbanSiteStore {
+  let disposed = false; const ids = new Set(visuals.map(site => site.id));
+  return { visuals, has: id => !disposed && ids.has(id), matchesRuntime: () => false,
+    async read() { throw new Error('Origine native actuelle non liée : les surfaces projetées ne sont pas des contraintes d’édition.'); },
+    dispose() { disposed = true; ids.clear(); }, get stats() { return { cached: 0, bytes: 0, inFlight: 0, disposed }; } };
+}
+export function translateSiteVisuals(visuals: UrbanSiteVisual[], dx: number, dy: number): UrbanSiteVisual[] {
+  if (!dx && !dy) return visuals;
+  const point = (p: Point): Point => ({ x: p.x + dx, y: p.y + dy });
+  return visuals.map(site => ({ ...site, entrance: point(site.entrance),
+    surface: site.surface.map(shape => ({ outer: shape.outer.map(point), holes: shape.holes.map(ring => ring.map(point)) })) }));
 }
 /** Compatibility path for old servers/WASM. These already delivered full sites. */
 export function createLegacySiteStore(requests: PlacementRequest[]): UrbanSiteStore {

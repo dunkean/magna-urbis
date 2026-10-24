@@ -1,5 +1,8 @@
 export interface ProgrammeContext {
   role: 'auto' | ProgrammeIsolatedRole | 'agricultural' | 'crossroads' | 'artisan' | 'riverine' | 'port' | 'capital';
+  /** Missing/null retains the exact legacy role behaviour. An explicit empty
+   * object means no specialization; non-isolated legacy role is then ignored. */
+  functions?: ProgrammeFunctionWeights | null;
   resources: string[]; period: string; mode: 'strict' | 'inspired' | 'fantasy';
   /** Explicit navigable access, never derived from visible water. */
   navigableAccess: boolean; lore: string[];
@@ -11,6 +14,21 @@ export interface ProgrammeContext {
 /** A single structure without a town: one intent on one unsubdivided domain. */
 export type ProgrammeIsolatedRole = 'isolated-farm' | 'roadside-temple' | 'isolated-shrine' | 'isolated-mill' | 'isolated-inn' | 'isolated-tower';
 export type ProgrammeState = 'thriving' | 'declining' | 'abandoned' | 'ruined';
+export const PROGRAMME_FUNCTIONS = ['agricultural', 'commerce', 'artisan', 'riverine', 'port', 'capital'] as const;
+export type ProgrammeFunction = typeof PROGRAMME_FUNCTIONS[number];
+export type ProgrammeFunctionWeights = Partial<Record<ProgrammeFunction, number>>;
+/** Reject unsupported keys/weights explicitly, never clamp or drop an intent. */
+export function normalizeProgrammeFunctions(value: unknown): ProgrammeFunctionWeights {
+  if (!value || typeof value !== 'object' || Array.isArray(value) || ![Object.prototype, null].includes(Object.getPrototypeOf(value))) throw new Error('Fonctions urbaines invalides : objet de poids requis.');
+  const result: ProgrammeFunctionWeights = {};
+  for (const key of Object.keys(value)) {
+    if (!(PROGRAMME_FUNCTIONS as readonly string[]).includes(key)) throw new Error(`Fonction urbaine inconnue : ${key}.`);
+    const weight = (value as Record<string, unknown>)[key];
+    if (typeof weight !== 'number' || !Number.isFinite(weight) || weight < 0 || weight > 1) throw new Error(`Poids de ${key} invalide : nombre fini entre 0 et 1 requis.`);
+    result[key as ProgrammeFunction] = weight;
+  }
+  return result;
+}
 export const defaultProgrammeContext = (): ProgrammeContext => ({ role: 'auto', resources: [], period: '', mode: 'inspired', navigableAccess: false, lore: [] });
 /** Pure configuration boundary; the legacy web editor must not load Rust/WASM. */
 export interface ParcelConfig { preset: string; culture?: string; recipe: string; zone: string; density: number; params: Record<string, unknown>; operator: 'culture' | 'strips' | 'oriented' | 'compact' | 'inherited' | 'courtyard' | 'frontage' | 'compound' | 'wholeBlock' | 'garden';
@@ -64,7 +82,7 @@ export interface LayoutConfig extends Omit<ParcelConfig, 'operator'> {
   siteArchetype?: string;
   footprint: FootprintConfig; tissue: 'culture' | 'grid' | 'organic' | 'radial' | 'terraces' | 'dendritic' | 'clusters'; accessMode: 'adaptive' | 'cultural' | 'none'; accessDepth: number; accessBudget: number;
 }
-/** Settlement kinds (Rust `urban::kinds::Kind`), from a lone building to a metropolis of wards. */
+/** Native plan grammars (Rust `urban::kinds::Kind`), distinct from demographic classes. */
 export type SettlementKind = 'single' | 'ruin' | 'farmstead' | 'camp' | 'hamlet' | 'street-village' | 'nucleated-village' | 'market-town' | 'walled-town' | 'city' | 'metropolis';
 export const defaultFootprintConfig = (): FootprintConfig => ({ mechanism: 'auto', family: 'auto', budget: 'population', grossDensity: 0, aspect: 1.4, orientation: 0, nuclei: 3, irregularity: 0.2, anisotropy: 0.65, separation: 1.3, epochs: 3, cohesion: 0.85, satellites: 0.15, branchDepth: 0.2, gapSize: 60 });
 export const defaultLayoutConfig = (): LayoutConfig => ({ programme: defaultProgrammeContext(), axisAlignment: 'regional', mixCulture: '', mixMode: 'phases', mixShare: 0.5, mixAngle: 0, exitTreatment: 'adaptive', peripheralRoad: 'auto', siteAdaptation: 1, composition: 'settlement', settlementForm: 'auto', suburbs: 'auto', phases: 0, preset: 'culture', culture: 'site', recipe: 'auto', zone: 'auto', density: 1, count: 4, rings: 1, radius: 0, radiusScale: 1, placement: 'center', params: {}, monument: 'none', fortification: 'culture', fortificationStyle: 'auto', maxStreetGrade: 0.12, maxLaneGrade: 0.18, maxStairGrade: 0.65, allowStairs: true, footprint: defaultFootprintConfig(), tissue: 'culture', accessMode: 'adaptive', accessDepth: 0, accessBudget: 4 });
@@ -83,8 +101,11 @@ export function normalizeLayoutConfig(saved?: Partial<Omit<LayoutConfig, 'footpr
   const config = contractFields(defaults, saved as Partial<LayoutConfig>);
   config.programme = contractFields(defaultProgrammeContext(), saved?.programme);
   // Optional fields reach Rust only when set, so older links keep their payload.
-  if (saved?.programme?.state) config.programme.state = saved.programme.state;
-  if (typeof saved?.programme?.decay === 'number') config.programme.decay = saved.programme.decay;
+  // Preserve explicit null/0 and imported values for native validation; only
+  // absent/undefined fields remain omitted. Never coerce optional inputs.
+  if (saved?.programme?.state !== undefined) config.programme.state = saved.programme.state;
+  if (saved?.programme?.decay !== undefined) config.programme.decay = saved.programme.decay;
+  if (saved?.programme?.functions !== undefined) config.programme.functions = saved.programme.functions === null ? null : normalizeProgrammeFunctions(saved.programme.functions);
   if (saved?.siteArchetype) config.siteArchetype = saved.siteArchetype;
   config.footprint = contractFields(defaults.footprint, saved?.footprint);
   // Missing controls in an existing scene retain the former geometry.

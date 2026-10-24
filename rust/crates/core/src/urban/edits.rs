@@ -194,6 +194,7 @@ pub(super) fn with_quarter_edits(
         finish(&mut layout)?;
         return Ok(layout);
     }
+    #[cfg(not(target_arch = "wasm32"))]
     let tick = std::time::Instant::now();
     let mut warnings = vec![];
     let mut l0 = plan(&stripped(cfg))?;
@@ -243,6 +244,7 @@ pub(super) fn with_quarter_edits(
     if let Some(c) = spliced.config.as_mut() {
         c.overrides = cfg.overrides.clone();
     }
+    #[cfg(not(target_arch = "wasm32"))]
     if std::env::var("URBAN_PROFILE").is_ok() {
         eprintln!(
             "  edits.quarters: {:.0} ms ({} edited)",

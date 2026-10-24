@@ -1,0 +1,47 @@
+{
+  "version": 1,
+  "classes": {
+    "farmstead": {
+      "minimum": 0,
+      "shortcut": 10,
+      "label": "Farmstead",
+      "labelFr": "Ferme"
+    },
+    "hamlet": {
+      "minimum": 15,
+      "shortcut": 40,
+      "label": "Hamlet",
+      "labelFr": "Hameau"
+    },
+    "village": {
+      "minimum": 150,
+      "shortcut": 300,
+      "label": "Village",
+      "labelFr": "Village"
+    },
+    "town": {
+      "minimum": 1000,
+      "shortcut": 3000,
+      "label": "Town",
+      "labelFr": "Bourg"
+    },
+    "city": {
+      "minimum": 20000,
+      "shortcut": 30000,
+      "label": "City",
+      "labelFr": "Ville"
+    },
+    "metropolis": {
+      "minimum": 100000,
+      "shortcut": 250000,
+      "label": "Metropolis",
+      "labelFr": "Métropole"
+    },
+    "megacity": {
+      "minimum": 1000000,
+      "shortcut": 1500000,
+      "label": "Megacity",
+      "labelFr": "Mégapole"
+    }
+  }
+}

@@ -542,6 +542,45 @@ fn track(surface: Surface<'_>, from: Point, to: Point, grade: f64) -> Vec<Point>
         .unwrap_or_else(|| vec![from, to])
 }
 
+/// Share of its planned area a roadside isolated plot keeps to count whole.
+const WHOLE_PLOT: f64 = 0.85;
+/// How far an isolated mill seeks water from its site (m).
+const MILL_REACH: f64 = 1000.0;
+
+/// The bank nearest to `p` within `reach`: the first dry point stepping
+/// from the nearest water toward `p`, and that direction (inland). None when
+/// no water lies within reach.
+fn bank(surface: &Surface<'_>, p: Point, reach: f64) -> Option<(Point, Point)> {
+    let cell = surface.width / surface.n as f64;
+    let r = (reach / cell).ceil() as i64;
+    let (ci, cj) = ((p.x / cell) as i64, (p.y / cell) as i64);
+    let last = surface.n as i64 - 1;
+    let mut best: Option<(f64, Point)> = None;
+    for j in (cj - r).max(0)..=(cj + r).min(last) {
+        for i in (ci - r).max(0)..=(ci + r).min(last) {
+            let q = Point {
+                x: (i as f64 + 0.5) * cell,
+                y: (j as f64 + 0.5) * cell,
+            };
+            let d = dist(p, q);
+            if d <= reach && best.is_none_or(|b| d < b.0) && surface.wet(q) {
+                best = Some((d, q));
+            }
+        }
+    }
+    let (d, water) = best?;
+    let inland = unit(water, p);
+    let mut t = 0.0;
+    while t <= d {
+        let q = at(water, inland, t);
+        if !surface.wet(q) {
+            return Some((q, inland));
+        }
+        t += 0.5;
+    }
+    None
+}
+
 /// Plot size of one building: front × depth (m).
 fn plot_size(kind: Kind, role: &str, rng: &mut Rng) -> (f64, f64) {
     let base = match (kind, role) {
@@ -856,34 +895,59 @@ fn homestead(
     rng: &mut Rng,
 ) -> Option<Plan> {
     let (w, d) = plot_size(kind, &cfg.programme.role, rng);
-    let c = site.center;
-    if let Some(n) = near {
+    // A mill stands on its race: on the nearest bank within reach, its plot
+    // backing onto the water (dry-clipped to the bank by `settle`).
+    let bank = (cfg.programme.role == "isolated-mill")
+        .then(|| bank(&surface, site.center, MILL_REACH))
+        .flatten();
+    let c = bank.map_or(site.center, |(q, inland)| at(q, inland, d * 0.5 - 3.0));
+    if bank.is_none()
+        && let Some(n) = near
+    {
         let half = road_half(n);
         if n.distance <= d * 0.5 + half + 40.0 {
-            let path = slice(
-                &roads[n.road].path,
-                n.station - w * 0.5,
-                n.station + w * 0.5,
-            );
             let toward = (c.x - n.point.x) * -n.tangent.y + (c.y - n.point.y) * n.tangent.x > 0.0;
-            for left in [toward, !toward] {
-                if let Some(plot) =
-                    side(&path, half, d, left).and_then(|p| settle(&p, obstacles, &surface, 0.6))
-                {
-                    return Some(Plan {
-                        center: g::interior_point(&plot),
-                        blocks: vec![(plot, "block")],
-                        streets: vec![],
-                        axis: n.tangent,
-                    });
+            let plan = |plot: Shape| Plan {
+                center: g::interior_point(&plot),
+                blocks: vec![(plot, "block")],
+                streets: vec![],
+                axis: n.tangent,
+            };
+            // The whole planned plot first (« un bâtiment isolé a son
+            // terrain »): stations stepped along the road away from the
+            // junction that would cut it, then the best partial plot.
+            let mut partial = None;
+            for k in [0.0, 1.0, -1.0, 2.0, -2.0] {
+                let station = n.station + k * w;
+                let path = slice(&roads[n.road].path, station - w * 0.5, station + w * 0.5);
+                for left in [toward, !toward] {
+                    let Some(plot) = side(&path, half, d, left)
+                        .and_then(|p| settle(&p, obstacles, &surface, 0.6))
+                    else {
+                        continue;
+                    };
+                    if g::area(&plot) >= WHOLE_PLOT * w * d {
+                        return Some(plan(plot));
+                    }
+                    if k == 0.0 && partial.is_none() {
+                        partial = Some(plot);
+                    }
                 }
+            }
+            if let Some(plot) = partial {
+                return Some(plan(plot));
             }
         }
     }
-    // The front faces the road; a farm track runs along it.
-    let toward = near
-        .as_ref()
-        .map_or(Point { x: 0.0, y: 1.0 }, |n| unit(c, n.point));
+    // The front faces the road (a mill's faces inland, its back on the
+    // water); a farm track runs along it.
+    let toward = bank.map_or_else(
+        || {
+            near.as_ref()
+                .map_or(Point { x: 0.0, y: 1.0 }, |n| unit(c, n.point))
+        },
+        |(_, inland)| inland,
+    );
     let along = perp(toward);
     let half = 1.5;
     let front = at(c, toward, d * 0.5 + half);
@@ -1268,6 +1332,74 @@ mod tests {
         (layouts[0].clone(), partitions[0].clone())
     }
 
+    /// An isolated structure keeps its whole plot even at a road junction,
+    /// and an isolated mill stands on the nearest bank, its plot backing onto
+    /// the water (« un moulin est sur son bief »).
+    #[test]
+    fn isolated_structures_have_their_whole_plot_and_a_mill_its_bank() {
+        let n = 256;
+        let height = vec![0.0; n * n];
+        // A river band 40 m wide, 300 m east of the site.
+        let cell = 2000.0 / n as f64;
+        let water: Vec<u8> = (0..n * n)
+            .map(|k| {
+                let x = ((k % n) as f64 + 0.5) * cell;
+                u8::from((1300.0..1340.0).contains(&x))
+            })
+            .collect();
+        let surface = Surface {
+            geometry: None,
+            width: 2000.0,
+            n,
+            height: &height,
+            water: &water,
+        };
+        let p = |x: f64, y: f64| Point { x, y };
+        let road = |a: Point, b: Point| Street {
+            path: vec![a, b],
+            widths: vec![6.0, 6.0],
+            rank: 1,
+            role: "regional".into(),
+        };
+        // Three roads meeting at the site.
+        let roads = [
+            road(p(1000.0, 1000.0), p(400.0, 1000.0)),
+            road(p(1000.0, 1000.0), p(1200.0, 1000.0)),
+            road(p(1000.0, 1000.0), p(1000.0, 400.0)),
+        ];
+        let site = Site {
+            key: "isolated".into(),
+            name: String::new(),
+            population: 12,
+            culture: "european-organic".into(),
+            center: p(1004.0, 1004.0),
+            radius: 30.0,
+        };
+        for (role, planned) in [
+            ("isolated-shrine", 16.0 * 20.0),
+            ("isolated-mill", 30.0 * 40.0),
+        ] {
+            let mut cfg = LayoutConfig::default();
+            cfg.programme.role = role.into();
+            let l = &generate_quarters(
+                "isolated",
+                std::slice::from_ref(&site),
+                &cfg,
+                surface,
+                &roads,
+            )
+            .unwrap()[0];
+            let plot = &l.blocks[0].shape;
+            assert!(
+                g::area(plot) >= WHOLE_PLOT * 0.9 * 0.92 * planned,
+                "{role}: {}",
+                g::area(plot)
+            );
+            let near_water = plot.outer.iter().any(|q| (1290.0..1300.5).contains(&q.x));
+            assert_eq!(near_water, role == "isolated-mill", "{role}");
+        }
+    }
+
     /// A plot strip along a bending road is one piece on the requested side,
     /// even when a bend lies close to the end of a short slice.
     #[test]
@@ -1346,5 +1478,54 @@ mod tests {
             m.streets.iter().any(|s| s.role == "ring"),
             "old wall line as boulevard"
         );
+    }
+}
+
+#[cfg(test)]
+mod demographic_morphology_tests {
+    use super::*;
+    fn site(population: u32) -> Site {
+        Site { key: "demographic-morphology".into(), name: String::new(), population,
+            culture: "european-organic".into(), center: Point { x: 4000.0, y: 4000.0 }, radius: 200.0 }
+    }
+    #[test]
+    fn demographic_morphology_boundaries_are_distinct_without_changing_population() {
+        let cfg = LayoutConfig::default();
+        for (population, class, kind) in [(12,"farmstead",Kind::Farmstead),(13,"farmstead",Kind::Hamlet),(14,"farmstead",Kind::Hamlet),(15,"hamlet",Kind::Hamlet),(149,"hamlet",Kind::Hamlet),(150,"village",Kind::NucleatedVillage),(100000,"metropolis",Kind::City),(199999,"metropolis",Kind::City),(200000,"metropolis",Kind::Metropolis),(1000000,"megacity",Kind::Metropolis)] {
+            let s = site(population);
+            assert_eq!(crate::settlements::demographics::class_of(s.population), class);
+            assert_eq!(resolve(&s, &cfg, &[]), kind, "{population}");
+            let (applied, resolved) = effective(&s, &cfg, &[]);
+            assert_eq!(resolved, kind);
+            assert_eq!(applied.settlement_form, kind.id());
+            assert_eq!(s.population, population);
+            assert_eq!(cfg.settlement_form, "auto");
+        }
+    }
+    #[test]
+    fn demographic_morphology_preserves_cultural_camps_and_isolated_intents() {
+        let mut cfg = LayoutConfig::default();
+        let mut s = site(300); s.culture = "nomad-camp".into();
+        assert_eq!(resolve(&s, &cfg, &[]), Kind::Camp);
+        for role in ["isolated-mill","isolated-inn","isolated-tower","isolated-shrine","roadside-temple"] {
+            cfg.programme.role = role.into();
+            assert_eq!(resolve(&site(100000), &cfg, &[]), Kind::Single);
+        }
+        cfg.programme.role = "isolated-farm".into();
+        assert_eq!(resolve(&s, &cfg, &[]), Kind::Farmstead);
+        cfg.programme.state = "ruined".into();
+        assert_eq!(resolve(&s, &cfg, &[]), Kind::Ruin);
+    }
+    #[test]
+    fn demographic_morphology_all_explicit_ids_and_old_village_preferences_keep_their_meaning() {
+        let s = site(300);
+        for expected in ALL {
+            let mut cfg = LayoutConfig::default(); cfg.settlement_form = expected.id().into(); cfg.programme.role = "isolated-mill".into();
+            assert_eq!(resolve(&s, &cfg, &[]), expected);
+        }
+        let mut cfg = LayoutConfig::default(); cfg.settlement_form = "ribbon".into();
+        assert_eq!(resolve(&s, &cfg, &[]), Kind::StreetVillage);
+        cfg.settlement_form = "nucleated".into(); assert_eq!(resolve(&s, &cfg, &[]), Kind::NucleatedVillage);
+        cfg.settlement_form = "ribbon".into(); assert_eq!(resolve(&site(100000), &cfg, &[]), Kind::City);
     }
 }

@@ -636,9 +636,22 @@ struct FunctionalChoiceRule {
 struct FunctionalChoiceSource {
     style_id: String,
     #[serde(default)]
+    recipe_id: Option<String>,
+    #[serde(default)]
+    inspired_only: bool,
+    #[serde(default)]
+    temporal: Option<FunctionalSourceTemporal>,
+    #[serde(default)]
     nominal_width_m: Option<[f64; 2]>,
     #[serde(default)]
     nominal_depth_m: Option<[f64; 2]>,
+}
+#[derive(Deserialize)]
+struct FunctionalSourceTemporal {
+    #[serde(default)]
+    eras: Vec<String>,
+    #[serde(default)]
+    late_only: bool,
 }
 /// The declared sources of the functional-choice rule houses resolves for
 /// this programme: their style ids and the body-area range their nominal
@@ -673,6 +686,75 @@ pub(super) fn functional_choice_sources(
     let styles = rule.sources.iter().map(|s| s.style_id.as_str()).collect();
     (range[0] <= range[1]).then_some((styles, range))
 }
+/// Versioned requirements identify roles for which a residential admission
+/// fallback cannot prove functional construction. Availability is always queried
+/// from Houses' exported registries; adding a real source clears the gap here
+/// for both reservation and site production, without another role hardcode.
+#[derive(Deserialize)]
+struct FunctionalSourceCoverage {
+    version: String,
+    requirements: Vec<FunctionalSourceRequirement>,
+}
+#[derive(Deserialize)]
+pub(super) struct FunctionalSourceRequirement {
+    pub id: String,
+    culture_id: String,
+    pack_id: String,
+    urban_role: String,
+    function: String,
+    composition: String,
+    pub reason: String,
+}
+fn functional_source_coverage() -> &'static FunctionalSourceCoverage {
+    static COVERAGE: OnceLock<FunctionalSourceCoverage> = OnceLock::new();
+    COVERAGE.get_or_init(|| {
+        let coverage:FunctionalSourceCoverage=serde_json::from_str(include_str!("functional-source-coverage.json"))
+            .expect("versioned functional source requirements");
+        assert_eq!(coverage.version,"functional-source-coverage-1");
+        coverage
+    })
+}
+pub(super) fn requires_functional_source(role:&str,function:&str)->bool {
+    functional_source_coverage().requirements.iter().any(|r|r.urban_role==role && r.function==function)
+}
+pub(super) fn functional_source_gap(
+    culture: &str, pack: &str, role: &str, function: &str, period: &str, mode: &str,
+) -> Option<&'static FunctionalSourceRequirement> {
+    functional_source_gap_in(functional_source_coverage(), admission_catalogue(),
+        culture, pack, role, function, period, mode)
+}
+/// The exact same decision runs on the exported production registry and on an
+/// injected test registry. The latter never registers or constructs a building.
+fn functional_source_gap_in<'a>(
+    coverage: &'a FunctionalSourceCoverage, catalogue: &AdmissionCatalogue,
+    culture: &str, pack: &str, role: &str, function: &str, period: &str, mode: &str,
+) -> Option<&'a FunctionalSourceRequirement> {
+    let requirement = coverage.requirements.iter().find(|r|
+        r.culture_id == culture && r.pack_id == pack && r.urban_role == role && r.function == function)?;
+    let in_era = |eras: &[String]| period.is_empty() || period == "any" || eras.iter().any(|era| era == period);
+    // The legacy minimum table contains residential default witnesses only.
+    // Neither its absence nor a refused/differently dated default can decide
+    // coverage of a separately declared functional source/variant.
+    let programme = catalogue.functional_programmes.version == "functional-programmes-1"
+        && catalogue.functional_programmes.programmes.iter().any(|p|
+            p.pack_id == pack && p.function == function && p.composition == requirement.composition
+                && p.urban_roles.iter().any(|r| r == role) && p.modes.iter().any(|m| m == mode)
+                && !p.late_only && in_era(&p.eras) && !p.recipe_id.trim().is_empty());
+    let valid_range = |range: Option<[f64; 2]>| range.is_some_and(|r|
+        r[0].is_finite() && r[1].is_finite() && r[0] > 0.0 && r[1] >= r[0]);
+    let choice = catalogue.functional_choices.rules.iter().any(|r|
+        r.culture_id == culture && r.pack_id == pack && r.urban_role == role && r.function == function
+            && r.composition == requirement.composition && r.modes.iter().any(|m| m == mode)
+            && r.sources.iter().any(|source|
+                source.recipe_id.as_deref().is_some_and(|recipe|
+                    !recipe.trim().is_empty() && source.style_id.strip_prefix(recipe).is_some_and(|suffix|suffix.starts_with("::")))
+                    && !(mode == "historical_strict" && source.inspired_only)
+                    && valid_range(source.nominal_width_m) && valid_range(source.nominal_depth_m)
+                    && source.temporal.as_ref().is_some_and(|t| !t.late_only
+                        && (in_era(&t.eras) || (source.inspired_only && t.eras.is_empty() && mode!="historical_strict")))));
+    (!programme && !choice).then_some(requirement)
+}
+
 /// Whether houses resolves this role itself (any functional programme or
 /// functional-choice rule of the pack): the city then pins no admission recipe.
 pub(super) fn functional_role_resolved(
@@ -1319,6 +1401,129 @@ mod tests {
         assert!(!functional_choice_registered(
             "javanese-courts", "AS-ISL", "worship.shrine", "collective", "religious", "historical_inspired"
         ));
+    }
+    #[test]
+    fn functional_source_requirements_are_exact_and_registry_driven() {
+        assert!(requires_functional_source("storage.horreum","warehouse"));
+        assert!(functional_source_gap("roman-core","MED-ANT","storage.horreum","warehouse","","historical_inspired").is_some());
+        assert!(functional_source_gap("roman-core","MED-ANT","storage.horreum","warehouse","A","historical_strict").is_some());
+        for (culture,pack,role,function) in [
+            ("roman-core","MED-ANT","dwelling.house","domestic"),
+            ("roman-core","MED-ANT","commerce.emporium","market"),
+            ("javanese-courts","AS-ISL","storage.granary","warehouse"),
+            ("roman-core","AS-ISL","storage.horreum","warehouse"),
+        ] {
+            assert!(functional_source_gap(culture,pack,role,function,"","historical_inspired").is_none());
+        }
+        // Existence of the source is read from the existing registry; this
+        // versioned row declares a requirement, not a permanent missing flag.
+        assert!(!functional_choice_registered("roman-core","MED-ANT","storage.horreum","warehouse","hall","historical_inspired"));
+    }
+    fn injected_coverage_registry() -> serde_json::Value {
+        // Decision-only fixture: this ID has no geometry, source attribution,
+        // native realization or claimed historical/storage capacity.
+        serde_json::json!({
+            "profiles":[{"recipe_id":"test-only-functional-source","pack":"MED-ANT",
+                "layout":"single","min_envelope_m":[6.0,10.0],"min_access_width_m":1.0,
+                "status":"supported","floors":[1,1],"eras":["A"],"inspired_only":false}],
+            "functional_programmes":{"version":"functional-programmes-1","programmes":[]},
+            "functional_choices":{"rules":[{
+                "culture_id":"roman-core","pack_id":"MED-ANT","urban_role":"storage.horreum",
+                "function":"warehouse","composition":"hall","modes":["historical_inspired"],
+                "sources":[{"style_id":"test-only-functional-source::default",
+                    "recipe_id":"test-only-functional-source","nominal_width_m":[6.0,10.0],
+                    "nominal_depth_m":[10.0,14.0],"temporal":{"eras":["A"],"late_only":false}}]
+            }]}
+        })
+    }
+    fn injected_gap(value:serde_json::Value,period:&str,mode:&str)->bool {
+        let catalogue:AdmissionCatalogue=serde_json::from_value(value).unwrap();
+        functional_source_gap_in(functional_source_coverage(),&catalogue,
+            "roman-core","MED-ANT","storage.horreum","warehouse",period,mode).is_some()
+    }
+    #[test]
+    fn an_admissible_injected_functional_choice_lifts_the_same_source_gap() {
+        let mut empty=injected_coverage_registry();
+        empty["functional_choices"]["rules"]=serde_json::json!([]);
+        assert!(injected_gap(empty,"A","historical_inspired"));
+        // Only the registry changes: role, culture, pack, composition, mode and
+        // requested era are the same. No production registry is mutated.
+        assert!(!injected_gap(injected_coverage_registry(),"A","historical_inspired"));
+        let mut non_residential=injected_coverage_registry();
+        non_residential["profiles"]=serde_json::json!([]);
+        assert!(!injected_gap(non_residential,"A","historical_inspired"),"A functional source needs no residential admission profile");
+        assert!(injected_gap(injected_coverage_registry(),"A","historical_strict"));
+        assert!(injected_gap(injected_coverage_registry(),"M","historical_inspired"));
+        for (field,value) in [
+            ("culture_id",serde_json::json!("different-culture")),
+            ("pack_id",serde_json::json!("different-pack")),
+            ("urban_role",serde_json::json!("storage.other")),
+            ("function",serde_json::json!("collective")),
+            ("composition",serde_json::json!("courtyard")),
+            ("modes",serde_json::json!(["historical_strict"])),
+            ("sources",serde_json::json!([])),
+        ] {
+            let mut v=injected_coverage_registry();v["functional_choices"]["rules"][0][field]=value;
+            assert!(injected_gap(v,"A","historical_inspired"),"wrong {field} cleared a source gap");
+        }
+        for (field,value) in [
+            ("recipe_id",serde_json::json!("no-admitted-source")),
+            ("nominal_width_m",serde_json::json!([0.0,10.0])),
+            ("nominal_depth_m",serde_json::json!([14.0,10.0])),
+            ("temporal",serde_json::json!({"eras":["M"],"late_only":false})),
+            ("temporal",serde_json::json!({"eras":["A"],"late_only":true})),
+            ("temporal",serde_json::Value::Null),
+        ] {
+            let mut v=injected_coverage_registry();v["functional_choices"]["rules"][0]["sources"][0][field]=value;
+            assert!(injected_gap(v,"A","historical_inspired"),"unusable source {field} cleared a gap");
+        }
+        let mut inspired=injected_coverage_registry();
+        inspired["functional_choices"]["rules"][0]["modes"]=serde_json::json!(["historical_strict","historical_inspired"]);
+        inspired["functional_choices"]["rules"][0]["sources"][0]["inspired_only"]=serde_json::json!(true);
+        assert!(injected_gap(inspired.clone(),"A","historical_strict"));
+        inspired["functional_choices"]["rules"][0]["sources"][0]["temporal"]["eras"]=serde_json::json!([]);
+        inspired["profiles"][0]["inspired_only"]=serde_json::json!(true);
+        inspired["profiles"][0]["eras"]=serde_json::json!([]);
+        assert!(!injected_gap(inspired,"A","historical_inspired"),"An explicitly inspired undated envelope does not pretend a historical era");
+        let mut irrelevant_residential=injected_coverage_registry();
+        irrelevant_residential["profiles"][0]["pack"]=serde_json::json!("different-pack");
+        irrelevant_residential["profiles"][0]["status"]=serde_json::json!("refused");
+        irrelevant_residential["profiles"][0]["eras"]=serde_json::json!(["M"]);
+        assert!(!injected_gap(irrelevant_residential,"A","historical_inspired"),
+            "A residential default is not the declared functional source's compatibility decision");
+    }
+    #[test]
+    fn an_admissible_injected_functional_programme_lifts_the_same_source_gap() {
+        let mut registry=injected_coverage_registry();
+        registry["functional_choices"]["rules"]=serde_json::json!([]);
+        registry["functional_programmes"]["programmes"]=serde_json::json!([{
+            "recipe_id":"test-only-functional-source","pack_id":"MED-ANT","function":"warehouse",
+            "composition":"hall","urban_roles":["storage.horreum"],"eras":["A"],
+            "late_only":false,"modes":["historical_inspired"]}]);
+        assert!(!injected_gap(registry.clone(),"A","historical_inspired"));
+        let mut non_residential=registry.clone();non_residential["profiles"]=serde_json::json!([]);
+        assert!(!injected_gap(non_residential,"A","historical_inspired"),"A true functional programme is not a residential recipe");
+        let mut irrelevant_residential=registry.clone();
+        irrelevant_residential["profiles"][0]["status"]=serde_json::json!("refused");
+        irrelevant_residential["profiles"][0]["eras"]=serde_json::json!(["M"]);
+        assert!(!injected_gap(irrelevant_residential,"A","historical_inspired"));
+        assert!(injected_gap(registry.clone(),"M","historical_inspired"));
+        assert!(injected_gap(registry.clone(),"A","historical_strict"));
+        for (field,value) in [
+            ("pack_id",serde_json::json!("different-pack")),
+            ("function",serde_json::json!("collective")),
+            ("composition",serde_json::json!("courtyard")),
+            ("urban_roles",serde_json::json!(["storage.other"])),
+            ("eras",serde_json::json!(["M"])),
+            ("modes",serde_json::json!(["historical_strict"])),
+            ("recipe_id",serde_json::json!("")),
+            ("late_only",serde_json::json!(true)),
+        ] {
+            let mut v=registry.clone();v["functional_programmes"]["programmes"][0][field]=value;
+            assert!(injected_gap(v,"A","historical_inspired"),"unusable programme {field} cleared a gap");
+        }
+        registry["functional_programmes"]["version"]=serde_json::json!("unsupported-version");
+        assert!(injected_gap(registry,"A","historical_inspired"));
     }
     #[test]
     fn a_palette_mapped_culture_admits_only_its_tradition() {

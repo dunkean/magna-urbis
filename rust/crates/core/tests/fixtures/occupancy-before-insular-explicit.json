@@ -1,0 +1,166 @@
+{
+  "cultures": {
+    "european-organic": "european",
+    "bastide": "european",
+    "hanseatic": "european",
+    "venetian-lagoon": "european",
+    "halfling": "european",
+    "byzantine-greek": "european",
+    "russian-kremlin": "european",
+    "medina": "islamic",
+    "persian": "islamic",
+    "ottoman": "islamic",
+    "ksar-oasis": "islamic",
+    "oasis-caravan": "islamic",
+    "swahili-stone-town": "islamic",
+    "sahel": "islamic",
+    "chinese": "chinese",
+    "korean": "chinese",
+    "japanese-jokamachi": "japanese",
+    "indian-temple": "indian",
+    "khmer": "indian",
+    "javanese-courts": "insular",
+    "himalayan-terraces": "indian",
+    "newar": "indian",
+    "aztec": "mesoamerican",
+    "maya": "mesoamerican",
+    "inca": "andean",
+    "barbarian": "norse",
+    "barbarian-celtic": "norse",
+    "barbarian-norse": "norse",
+    "norse-ringfort": "norse",
+    "celtic-oppidum": "norse",
+    "orcish": "norse",
+    "nomad-camp": "steppe",
+    "yoruba": "african",
+    "kraal": "african",
+    "native-iroquoian": "native",
+    "native-plains": "native",
+    "native-pueblo": "native",
+    "mississippian": "native",
+    "al-andalus": "islamic",
+    "hausa-kano": "islamic",
+    "hadhrami-tower": "islamic",
+    "italian-comune": "european",
+    "flemish-cloth-town": "european",
+    "rynek-town": "european",
+    "slavic-gord": "european",
+    "caucasian-highland": "european",
+    "ethiopian-highland": "african",
+    "great-zimbabwe": "african",
+    "rajput-fort": "indian",
+    "dravidian-temple": "indian",
+    "bagan": "indian",
+    "tibetan-monastery": "indian",
+    "vietnamese-citadel": "chinese",
+    "mongol-ordu": "steppe",
+    "maori-pa": "clan",
+    "pnw-plank-village": "clan",
+    "inuit-camp": "clan",
+    "siberian-camp": "clan",
+    "guarani-village": "clan",
+    "budj-bim": "clan",
+    "lizardfolk-swamp": "fantasy",
+    "merfolk-tidal": "fantasy",
+    "giant-hold": "fantasy",
+    "goblin-warren": "fantasy",
+    "roman-core": "classical",
+    "egyptian-planned": "ancient",
+    "nubian-fortified": "ancient",
+    "mesopotamian": "ancient",
+    "levantine-tell": "ancient",
+    "indus-planned": "ancient",
+    "elven": "fantasy",
+    "dwarven": "fantasy",
+    "wizard-city": "fantasy",
+    "gnomish": "fantasy",
+    "drow-enclave": "fantasy",
+    "duergar-hold": "fantasy",
+    "myconid-colony": "fantasy",
+    "necropolis": "fantasy",
+    "stilt-town": "fantasy"
+  },
+  "occupancy": {
+    "_doc": "householdSize = persons per domestic unit; floorPerHousehold = useful floor m2 per unit; maxPerPlot caps tenements.",
+    "european": {
+      "householdSize": 4.5,
+      "floorPerHousehold": 55,
+      "maxPerPlot": 6
+    },
+    "islamic": {
+      "householdSize": 7,
+      "floorPerHousehold": 70,
+      "maxPerPlot": 4
+    },
+    "chinese": {
+      "householdSize": 6.5,
+      "floorPerHousehold": 70,
+      "maxPerPlot": 5
+    },
+    "japanese": {
+      "householdSize": 5,
+      "floorPerHousehold": 45,
+      "maxPerPlot": 6
+    },
+    "indian": {
+      "householdSize": 7,
+      "floorPerHousehold": 60,
+      "maxPerPlot": 5
+    },
+    "mesoamerican": {
+      "householdSize": 6.5,
+      "floorPerHousehold": 60,
+      "maxPerPlot": 4
+    },
+    "andean": {
+      "householdSize": 6,
+      "floorPerHousehold": 50,
+      "maxPerPlot": 6
+    },
+    "norse": {
+      "householdSize": 8,
+      "floorPerHousehold": 90,
+      "maxPerPlot": 3
+    },
+    "steppe": {
+      "householdSize": 5.5,
+      "floorPerHousehold": 35,
+      "maxPerPlot": 3
+    },
+    "african": {
+      "householdSize": 8,
+      "floorPerHousehold": 60,
+      "maxPerPlot": 4
+    },
+    "native": {
+      "householdSize": 7,
+      "floorPerHousehold": 55,
+      "maxPerPlot": 8
+    },
+    "classical": {
+      "householdSize": 5,
+      "floorPerHousehold": 45,
+      "maxPerPlot": 12
+    },
+    "ancient": {
+      "householdSize": 6,
+      "floorPerHousehold": 50,
+      "maxPerPlot": 4
+    },
+    "fantasy": {
+      "householdSize": 5,
+      "floorPerHousehold": 60,
+      "maxPerPlot": 6
+    },
+    "clan": {
+      "householdSize": 8,
+      "floorPerHousehold": 40,
+      "maxPerPlot": 6
+    }
+  },
+  "fallback": {
+    "householdSize": 4.5,
+    "floorPerHousehold": 60.0,
+    "maxPerPlot": 4.0
+  }
+}

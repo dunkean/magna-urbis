@@ -1,0 +1,27 @@
+{
+  "diagnosticLiteral": {
+    "from": "TEST-ONLY indicative-need Single continuation:",
+    "to": "Indicative-need Single continuation:"
+  },
+  "batches": {
+    "0002": {
+      "requestSha256": "dc14407d58e00f4968e949dc3959e42db6ea208aff41d416045ecccdcc1b2968",
+      "expectedCandidateSha256": "053c9570ff2d2c22a18cb3e008d8cb8a854895001349e423bd12c7b649115826",
+      "referenceCandidateSha256": "d86883a75c82b3453095dc837d51dababb92d9a0e7e43584132e4f04efa07819",
+      "diagnosticOccurrences": 9,
+      "referencePath": "D:\\workspace\\self\\magna-urbis\\web\\out\\java100k-single-need-cumulative-proof-v2\\stage2-v2-candidate\\batches\\0002",
+      "expectedBaselineSha256": "490601d40e9d49187068a237a7cb66f11eb3feafd071533d89e9b222d31e8c0f"
+    },
+    "0080": {
+      "requestSha256": "fb3045e998638504914a4e582bd1df5524c2bd062155796d3d70e0565a0b187f",
+      "expectedCandidateSha256": "208b16288b342152722f6a1350dde281f40daa7067a756c4b65c785439a80639",
+      "referenceCandidateSha256": "89a48de9666cf542d4ca9636108b54e635cc15eefd515fbe9a47ad41f064e407",
+      "diagnosticOccurrences": 12,
+      "referencePath": "D:\\workspace\\self\\magna-urbis\\web\\out\\java100k-single-need-cumulative-proof-v2\\stage2-v2-candidate\\batches\\0080"
+    }
+  },
+  "globalAudit": {
+    "path": "web/out/java100k-single-need-global-audit-proof-v3/run-01/summary.json",
+    "sha256": "d149f69630ffdc1922218bb27278b1c53059622cfe1dd77892e664c8a6fae391"
+  }
+}

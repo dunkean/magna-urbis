@@ -1,5 +1,17 @@
 use super::*;
 
+#[test]
+fn programme_functions_capability_announces_consumed_native_weights() {
+    let sessions = Mutex::new(Sessions::default());
+    let status: Value = decode(&dispatch("/status", b"", &sessions).unwrap().body).unwrap();
+    assert!(status["capabilities"].as_array().unwrap().contains(&json!("urban.programme-functions-v1")));
+    let context: urban::programme::ProgrammeContext = serde_json::from_value(json!({"functions":{"capital":1.0,"port":0.5,"artisan":1.0}})).unwrap();
+    assert_eq!(context.functions.unwrap().port, 0.5);
+    assert_eq!(urban::programme::PROGRAMME_FUNCTIONS_VERSION, 1);
+    let misplaced = serde_json::to_vec(&json!({"kind":"parcels","layoutConfig":{"programme":{"functions":{}}}})).unwrap();
+    assert!(dispatch("/urban", &misplaced, &sessions).err().unwrap().contains("régénérant les quartiers"));
+}
+
 fn same_json(left: &Value, right: &Value, path: &str) {
     match (left, right) {
         (Value::Object(a), Value::Object(b)) => {

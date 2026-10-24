@@ -281,11 +281,14 @@ fn run(
         "parcels",
     )
     .ok()?;
+    #[cfg(not(target_arch = "wasm32"))]
     let tick = std::time::Instant::now();
     let mut partition =
         super::super::parcels::generate(seed, &layout, &parcel_cfg, &fallback).ok()?;
+    #[cfg(not(target_arch = "wasm32"))]
     let cut = tick.elapsed().as_secs_f64() * 1000.0;
     super::super::programme::allocate(&layout, &mut partition);
+    #[cfg(not(target_arch = "wasm32"))]
     if std::env::var("URBAN_PROFILE").is_ok() {
         eprintln!(
             "    capacity.run: {} blocks, cut {cut:.0} ms, allocate {:.0} ms",
@@ -629,12 +632,15 @@ fn reserved_land(
     let role = cfg.programme.role.as_str();
     let communal =
         super::super::culture::mapping(culture).is_some_and(|m| m.functional_profile == "communal");
-    let commons = (f64::from(population)
-        * if communal || role == "agricultural" || population < 500 {
+    let functions = cfg.programme.functions.unwrap_or_else(|| super::super::programme::ProgrammeFunctions::from_legacy_role(role));
+    let commons_rate = if cfg.programme.functions.is_some() {
+        functions.commons_per_capita(communal)
+    } else { if communal || role == "agricultural" || population < 500 {
             2.0
         } else {
             0.5
-        })
+        } };
+    let commons = (f64::from(population) * commons_rate)
     .max(30.0);
     let module = composition::phase_morph(
         culture,
@@ -654,7 +660,7 @@ fn reserved_land(
     let minimum = super::super::culture::mapping_for(culture, &cfg.programme.period)
         .map_or(0.0, |m| m.admissibility.min_area);
     let module = module.max(minimum);
-    roles::services(culture, population, role)
+    roles::services_with_functions(culture, population, functions)
         .iter()
         .filter(|n| roles::reserves_block(&n.entry))
         .map(|n| n.sites as f64 * module.min(n.area.max(minimum)))

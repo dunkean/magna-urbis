@@ -6,6 +6,7 @@ export interface BenchContextHook {
   refresh?(): void;
   /** City Bench: same-input comparison API (see web/src/ui/cityComparison.ts). */
   comparison?: import('./cityComparison').ComparisonApi;
+  coldViewport?(): unknown;
 }
 declare global { interface Window { magnaBenchContext?: BenchContextHook } }
 export interface BenchUiContext {

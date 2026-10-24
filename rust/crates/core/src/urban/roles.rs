@@ -190,6 +190,11 @@ pub fn reserves_block(e: &ServiceEntry) -> bool {
 /// Services for a settlement, with the cultural nucleus promoted to the central
 /// landmark (`catalogue.json` cultures[c].nucleus.kind / area).
 pub fn services(culture: &str, population: u32, context_role: &str) -> Vec<ServiceNeed> {
+    services_with_functions(culture, population, super::programme::ProgrammeFunctions::from_legacy_role(context_role))
+}
+/// Combinable effects are applied once per catalogue entry. Shared count
+/// effects use their maximum; no Cartesian duplicate service demands.
+pub fn services_with_functions(culture: &str, population: u32, functions: super::programme::ProgrammeFunctions) -> Vec<ServiceNeed> {
     let pop = f64::from(population);
     let cat = catalogue();
     let mut entries = cat
@@ -241,24 +246,13 @@ pub fn services(culture: &str, population: u32, context_role: &str) -> Vec<Servi
     entries
         .into_iter()
         .filter_map(|mut e| {
-            let mut mult = 1.0;
-            match context_role {
-                "crossroads" if e.role.starts_with("commerce.") && e.function == "collective" => {
-                    mult = 2.0
-                }
-                "crossroads" if e.function == "market" => e.per_capita *= 3.0,
-                "capital"
-                    if ["elite.", "civic.", "defence."]
-                        .iter()
-                        .any(|p| e.role.starts_with(p)) =>
-                {
-                    e.min_pop *= 0.25
-                }
-                "riverine" if e.role == "craft.mill" => mult = 2.0,
-                "artisan" if e.role.starts_with("craft.") => mult = 2.0,
-                "agricultural" if e.role.starts_with("storage.") => mult = 2.0,
-                _ => {}
-            }
+            let mut mult: f64 = 1.0;
+            if e.role.starts_with("commerce.") && e.function == "collective" { mult = 1.0 + functions.commerce; }
+            if e.function == "market" { e.per_capita *= 1.0 + 2.0 * functions.commerce; }
+            if ["elite.", "civic.", "defence."].iter().any(|p| e.role.starts_with(p)) { e.min_pop *= 1.0 - 0.75 * functions.capital; }
+            if e.role == "craft.mill" { mult = mult.max(1.0 + functions.riverine); }
+            if e.role.starts_with("craft.") { mult = mult.max(1.0 + functions.artisan); }
+            if e.role.starts_with("storage.") { mult = mult.max(1.0 + functions.agricultural); }
             if pop < e.min_pop {
                 return None;
             }
@@ -267,7 +261,9 @@ pub fn services(culture: &str, population: u32, context_role: &str) -> Vec<Servi
             } else {
                 1.0
             };
-            let sites = ((base * mult) as usize).clamp(1, e.max.max(1) * mult as usize);
+            // Buildings are indivisible: floor after applying intensity to
+            // both count and cap. A tiny positive weight never doubles a site.
+            let sites = ((base * mult).floor() as usize).clamp(1, (e.max.max(1) as f64 * mult).floor() as usize);
             let area = if e.per_capita > 0.0 {
                 (pop * e.per_capita / sites as f64).clamp(e.area[0], e.area[1])
             } else {
@@ -1771,3 +1767,12 @@ parcels {} demands {:?}; quarters {quarters_ms} ms, parcels+alloc {parcels_ms} m
         }
     }
 }
+
+#[cfg(test)]
+#[path = "roles_occupancy_tests.rs"]
+mod occupancy_profile_tests;
+
+#[path = "housing_floor_need.rs"]
+mod housing_floor_need;
+pub(crate) use housing_floor_need::indicative_housing_floor_need;
+pub use housing_floor_need::{HousingFloorModel, HousingFloorNeed};

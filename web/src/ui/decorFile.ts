@@ -1,3 +1,4 @@
+import { decorHasParents } from './decor';
 import { decodeDecorBounded, decorColdStates, encodeDecorAsync, type Decor } from './decor';
 import { createIndexedDbBuildingChunkBackend } from './urbanBuildingChunkIndexedDb';
 import { exportUrbanBuildingChunks, importUrbanBuildingChunks, type BuildingChunkBackend, type BuildingChunkManifest } from './urbanBuildingChunkStore';
@@ -55,6 +56,7 @@ function rewriteReferences(decor: Decor, manifest: BuildingChunkManifest): Decor
 /** Terrain gzip stays the legacy format. Cold cities prepend one bounded header
  * and then the existing exact native chunk frames, with stream backpressure. */
 export async function* exportDecorFile(decor: Decor, options: DecorFileOptions = {}): AsyncGenerator<Uint8Array> {
+  if (decorHasParents(decor)) throw new Error('Export complet du décor avec parents non pris en charge : utilisez l’export natif dans Bâtiments.');
   const states = decorColdStates(decor).map(state => structuredClone(state));
   if (states.length) validateSnapshots(decor);
   // The codec captures metadata/raster synchronously before its worker starts.
@@ -84,6 +86,7 @@ export async function readDecorFile(file: Blob, options: DecorReadOptions = {}):
     assert(file.size <= DECOR_FILE_MEMORY_LIMIT, 'Legacy decor exceeds import byte budget.');
     const decor = decodeDecorBounded(new Uint8Array(await file.arrayBuffer()), RAW_TERRAIN_LIMIT);
     options.signal?.throwIfAborted();
+    assert(!decorHasParents(decor), 'Incomplete parent decor: authoritative archives are missing.');
     assert(!decorColdStates(decor).length, 'Incomplete cold decor: native building frames are missing.');
     options.validate?.(decor);
     return decor;

@@ -1,0 +1,260 @@
+{
+  "format": "urban-control-relevance-native-projection-1",
+  "cases": [
+    {
+      "origin": {
+        "path": "web/out/core-wasm-clock-root-proof-v1/matrix/nomad-camp/layouts.json",
+        "sha256": "d0da0a871679a723461306e3ed9db68ce226f1a1d7556bcdf748bea906a2d59f",
+        "scope": "actual root CoreWasm output on SYNTHETIC terrain; only retained control-path metadata extracted, no geometry/admission/capacity proof"
+      },
+      "layout": {
+        "key": "probe",
+        "archetype": "camp",
+        "config": {
+          "programme": {
+            "role": "auto",
+            "resources": [],
+            "period": "",
+            "mode": "inspired",
+            "navigableAccess": false,
+            "lore": [],
+            "state": "thriving",
+            "decay": null
+          },
+          "axisAlignment": "regional",
+          "siteAdaptation": 1.0,
+          "mixCulture": "",
+          "mixMode": "phases",
+          "mixShare": 0.5,
+          "mixAngle": 0.0,
+          "exitTreatment": "adaptive",
+          "peripheralRoad": "auto",
+          "footprint": {
+            "mechanism": "auto",
+            "family": "auto",
+            "budget": "population",
+            "grossDensity": 0.0,
+            "aspect": 1.4,
+            "orientation": 0.0,
+            "nuclei": 3,
+            "irregularity": 0.2,
+            "anisotropy": 0.65,
+            "separation": 1.3,
+            "epochs": 3,
+            "cohesion": 0.85,
+            "satellites": 0.15,
+            "branchDepth": 0.2,
+            "gapSize": 60.0
+          },
+          "tissue": "culture",
+          "accessMode": "adaptive",
+          "accessDepth": 0.0,
+          "accessBudget": 4,
+          "composition": "settlement",
+          "settlementForm": "auto",
+          "siteArchetype": "",
+          "suburbs": "auto",
+          "phases": 0,
+          "culture": "site",
+          "preset": "culture",
+          "recipe": "auto",
+          "zone": "auto",
+          "density": 1.0,
+          "count": 4,
+          "rings": 1,
+          "radius": 0.0,
+          "radiusScale": 1.0,
+          "placement": "center",
+          "monument": "none",
+          "fortification": "culture",
+          "fortificationStyle": "auto",
+          "maxStreetGrade": 0.12,
+          "maxLaneGrade": 0.18,
+          "maxStairGrade": 0.65,
+          "allowStairs": true,
+          "params": {},
+          "overrides": {
+            "quarters": {}
+          }
+        },
+        "structure": {
+          "mechanism": "kind",
+          "family": "camp"
+        }
+      }
+    },
+    {
+      "origin": {
+        "path": "web/out/core-wasm-clock-root-proof-v1/european-organic/layouts.json",
+        "sha256": "72ead5a155f5ab46737a398ddd27f6ce22a162f99399e7e62b47a8c7bd39d509",
+        "scope": "actual root CoreWasm output on SYNTHETIC terrain; only retained control-path metadata extracted, no geometry/admission/capacity proof"
+      },
+      "layout": {
+        "key": "probe",
+        "archetype": "nucleated-village",
+        "config": {
+          "programme": {
+            "role": "auto",
+            "resources": [],
+            "period": "",
+            "mode": "inspired",
+            "navigableAccess": false,
+            "lore": [],
+            "state": "thriving",
+            "decay": null
+          },
+          "axisAlignment": "regional",
+          "siteAdaptation": 1.0,
+          "mixCulture": "",
+          "mixMode": "phases",
+          "mixShare": 0.5,
+          "mixAngle": 0.0,
+          "exitTreatment": "adaptive",
+          "peripheralRoad": "auto",
+          "footprint": {
+            "mechanism": "auto",
+            "family": "auto",
+            "budget": "population",
+            "grossDensity": 0.0,
+            "aspect": 1.4,
+            "orientation": 0.0,
+            "nuclei": 3,
+            "irregularity": 0.2,
+            "anisotropy": 0.65,
+            "separation": 1.3,
+            "epochs": 3,
+            "cohesion": 0.85,
+            "satellites": 0.15,
+            "branchDepth": 0.2,
+            "gapSize": 60.0
+          },
+          "tissue": "culture",
+          "accessMode": "adaptive",
+          "accessDepth": 0.0,
+          "accessBudget": 4,
+          "composition": "settlement",
+          "settlementForm": "auto",
+          "siteArchetype": "",
+          "suburbs": "auto",
+          "phases": 0,
+          "culture": "site",
+          "preset": "culture",
+          "recipe": "auto",
+          "zone": "auto",
+          "density": 1.0,
+          "count": 4,
+          "rings": 1,
+          "radius": 0.0,
+          "radiusScale": 1.0,
+          "placement": "center",
+          "monument": "none",
+          "fortification": "culture",
+          "fortificationStyle": "auto",
+          "maxStreetGrade": 0.12,
+          "maxLaneGrade": 0.18,
+          "maxStairGrade": 0.65,
+          "allowStairs": true,
+          "params": {},
+          "overrides": {
+            "quarters": {}
+          }
+        },
+        "structure": {
+          "mechanism": "accessibility",
+          "family": "compact"
+        }
+      }
+    },
+    {
+      "origin": {
+        "path": "web/out/core-wasm-clock-root-proof-v1/branches/edited-village/layouts.json",
+        "sha256": "b35a83dd12fca6c9a9f43818aeb399fc71c340fb86bbc6da13c556da94c55e4c",
+        "scope": "actual root CoreWasm output on SYNTHETIC terrain; only retained control-path metadata extracted, no geometry/admission/capacity proof"
+      },
+      "layout": {
+        "key": "probe",
+        "archetype": "nucleated-village",
+        "config": {
+          "programme": {
+            "role": "auto",
+            "resources": [],
+            "period": "",
+            "mode": "inspired",
+            "navigableAccess": false,
+            "lore": [],
+            "state": "thriving",
+            "decay": null
+          },
+          "axisAlignment": "regional",
+          "siteAdaptation": 1.0,
+          "mixCulture": "",
+          "mixMode": "phases",
+          "mixShare": 0.5,
+          "mixAngle": 0.0,
+          "exitTreatment": "adaptive",
+          "peripheralRoad": "auto",
+          "footprint": {
+            "mechanism": "auto",
+            "family": "auto",
+            "budget": "population",
+            "grossDensity": 0.0,
+            "aspect": 1.4,
+            "orientation": 0.0,
+            "nuclei": 3,
+            "irregularity": 0.2,
+            "anisotropy": 0.65,
+            "separation": 1.3,
+            "epochs": 3,
+            "cohesion": 0.85,
+            "satellites": 0.15,
+            "branchDepth": 0.2,
+            "gapSize": 60.0
+          },
+          "tissue": "culture",
+          "accessMode": "adaptive",
+          "accessDepth": 0.0,
+          "accessBudget": 4,
+          "composition": "settlement",
+          "settlementForm": "auto",
+          "siteArchetype": "",
+          "suburbs": "auto",
+          "phases": 0,
+          "culture": "site",
+          "preset": "culture",
+          "recipe": "auto",
+          "zone": "auto",
+          "density": 1.0,
+          "count": 4,
+          "rings": 1,
+          "radius": 0.0,
+          "radiusScale": 1.0,
+          "placement": "center",
+          "monument": "none",
+          "fortification": "culture",
+          "fortificationStyle": "auto",
+          "maxStreetGrade": 0.12,
+          "maxLaneGrade": 0.18,
+          "maxStairGrade": 0.65,
+          "allowStairs": true,
+          "params": {},
+          "overrides": {
+            "quarters": {
+              "0": {
+                "role": null,
+                "wealth": null,
+                "culture": null,
+                "tissue": null,
+                "density": null,
+                "deleted": true
+              }
+            }
+          }
+        },
+        "structure": {
+          "mechanism": "accessibility",
+          "family": "compact"
+        }
+      }
+    }
+  ]
+}

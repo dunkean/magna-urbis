@@ -12,10 +12,18 @@ use serde::{Deserialize, Serialize};
 use std::cmp::Reverse;
 use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashMap};
 
+#[path = "programme_functions.rs"]
+mod functions;
+pub use functions::{ProgrammeFunctions, PROGRAMME_FUNCTIONS_VERSION};
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase", deny_unknown_fields)]
 pub struct ProgrammeContext {
     pub role: String,
+    /// Optional explicit function weights. None = original exclusive role;
+    /// Some(empty) = no functional specialization, independently of old role.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub functions: Option<ProgrammeFunctions>,
     pub resources: Vec<String>,
     pub period: String,
     pub mode: String,
@@ -31,6 +39,7 @@ impl Default for ProgrammeContext {
     fn default() -> Self {
         Self {
             role: "auto".into(),
+            functions: None,
             resources: vec![],
             period: String::new(),
             mode: "inspired".into(),
@@ -109,6 +118,10 @@ pub struct Allocation {
     /// Households housed on this plot (0 for non-domestic uses).
     #[serde(default)]
     pub households: f64,
+    /// Frozen model generated only during an actual allocation. Old saved
+    /// allocations stay without a model; never infer one on request export.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub housing_floor_need: Option<roles::HousingFloorNeed>,
     #[serde(default)]
     pub district_role: String,
     #[serde(default)]
@@ -263,6 +276,7 @@ pub fn prepare(
     .contains(&context.role.as_str())
         || roles::is_isolated(&context.role))
         || roles::state(&context.state).is_none()
+        || context.functions.is_some_and(|f| !f.valid())
         || context
             .decay
             .is_some_and(|d| !d.is_finite() || !(0.0..=1.0).contains(&d))
@@ -297,7 +311,9 @@ pub fn prepare(
         })
         .collect::<Vec<_>>();
     let n = f64::from(population);
-    let role = if context.role == "auto" {
+    let role = if context.functions.is_some() && !roles::is_isolated(&context.role) {
+        "combined"
+    } else if context.role == "auto" {
         if population < 500 || cultural_functions == "communal" {
             "agricultural"
         } else {
@@ -306,14 +322,17 @@ pub fn prepare(
     } else {
         &context.role
     };
+    let functions = context.functions.unwrap_or_else(|| ProgrammeFunctions::from_legacy_role(role));
+    if context.functions.is_some_and(ProgrammeFunctions::active) && roles::is_isolated(&context.role) {
+        warnings.push("Les fonctions urbaines sont conservées mais non applicables à un établissement isolé ; seule son intention est appliquée.".into());
+    }
+    if context.functions.is_some() && functions.port > 0.0 && !context.navigable_access && !roles::is_isolated(&context.role) {
+        warnings.push("Fonction portuaire demandée sans accès navigable déclaré : le besoin de stockage reste demandé et ne peut pas être alloué. La fonction ne crée ni eau, ni chenal, ni quai.".into());
+    }
     // A hamlet has no shop: its few households farm.
     let mixed_share = if population < 150 {
         0.0
-    } else if matches!(role, "crossroads" | "port" | "capital") {
-        0.25
-    } else {
-        0.08
-    };
+    } else { functions.mixed_share(population) };
     let occupancy = roles::occupancy(&layout.culture);
     // Households of the cultural size (extended families in courtyard cultures).
     let households = n / occupancy.household_size;
@@ -339,11 +358,7 @@ pub fn prepare(
     demands.push(demand(
         &layout.key,
         "common",
-        (n * if role == "agricultural" || cultural_functions == "communal" {
-            2.0
-        } else {
-            0.5
-        })
+        (n * functions.commons_per_capita(cultural_functions == "communal"))
         .max(30.0),
         false,
         format!("role:{role}; culture profile:{cultural_functions}; open common, no building"),
@@ -354,11 +369,11 @@ pub fn prepare(
         .filter(|r| ["timber", "stone", "ore", "clay"].contains(&r.as_str()))
         .cloned()
         .collect::<Vec<_>>();
-    if role == "artisan" || !known_work.is_empty() {
+    if let Some(work_area) = functions.workshop_area(population, !known_work.is_empty()) {
         let mut d = demand(
             &layout.key,
             "workshop",
-            (n * if role == "artisan" { 3.5 } else { 1.0 }).max(80.0),
+            work_area,
             false,
             format!("role:{role}; known resources:{}", known_work.join(",")),
         );
@@ -369,11 +384,16 @@ pub fn prepare(
         demands.push(d);
     }
     // A river or sea pixel never creates this demand or its access evidence.
-    if role == "port" || context.navigable_access {
+    // Legacy scenes kept the old navigation->warehouse implication. Explicit
+    // functions separate the requested port activity from this declared fact.
+    let warehouse_area = if context.functions.is_none() && context.navigable_access {
+        Some((n * 2.0).max(180.0))
+    } else { functions.warehouse_area(population) };
+    if let Some(warehouse_area) = warehouse_area {
         demands.push(demand(
             &layout.key,
             "warehouse",
-            (n * 2.0).max(180.0),
+            warehouse_area,
             false,
             format!(
                 "explicit navigableAccess:{}; role:{role}",
@@ -401,7 +421,7 @@ pub fn prepare(
     let isolated = isolated_rule.is_some();
     if !isolated {
         // Data-driven building roles, landmarks first so they win central land.
-        let mut needs = roles::services(&layout.culture, population, role);
+        let mut needs = roles::services_with_functions(&layout.culture, population, functions);
         needs.sort_by_key(|s| !s.entry.landmark);
         for need in needs {
             let e = &need.entry;
@@ -499,8 +519,15 @@ pub fn prepare(
         if d.role.is_empty() {
             d.role = default_role(&d.function).into();
         }
+        if context.functions.is_some() && !isolated {
+            d.provenance.push(format!("Explicit combined functions:{}; non-isolated legacy role is not used as a specialization", serde_json::to_string(&functions).expect("validated finite function weights")));
+        }
     }
+    #[cfg(not(target_arch = "wasm32"))]
     let tick = std::time::Instant::now();
+    #[cfg(target_arch = "wasm32")]
+    let lap = |_: &str| {};
+    #[cfg(not(target_arch = "wasm32"))]
     let lap = |label: &str| {
         if std::env::var("URBAN_PROFILE").is_ok() {
             eprintln!(
@@ -641,9 +668,26 @@ pub fn prepare(
             .iter()
             .any(|r| r == "navigableAccess" || r == "waterfront");
         let class = function_class(&d.function);
+        // A missing functional source is not an unsuccessful domestic footing.
+        // Query the same versioned coverage decision as site production before
+        // reserving land through a residential admission profile. Other roles
+        // retain the cached envelope/foundation path and its performance.
+        let missing_source:Vec<bool> = if !isolated && super::culture::requires_functional_source(&d.role,&d.function) {
+            let mode=match context.mode.as_str(){"strict"=>"historical_strict","fantasy"=>"fantasy_mix",_=>"historical_inspired"};
+            layout.blocks.iter().enumerate().map(|(bi,_)|
+                super::culture::functional_source_gap(block_culture(layout,bi),
+                    &profile_pack(layout,bi,&d.function,&context.period),&d.role,&d.function,&context.period,mode).is_some()
+            ).collect()
+        } else { Vec::new() };
+        let source_missing_count=missing_source.iter().filter(|&&missing|missing).count();
+        if source_missing_count>0 {
+            d.reasons.push(format!("source_absente: Functional architectural source coverage missing in {source_missing_count} block context(s); no residential recipe certifies or excludes this facility's footing"));
+        }
+        if !missing_source.is_empty() && source_missing_count==missing_source.len() { continue; }
         let (layout_ref, used_ref, demand) = (&*layout, &used, &*d);
         let mut options = super::par::map(&layout_ref.blocks, |bi, b| {
             let (layout, used, d) = (layout_ref, used_ref, demand);
+            if missing_source.get(bi)==Some(&true) { return None; }
             if needs_water && !environment[bi].waterfront {
                 return None;
             }
@@ -912,6 +956,10 @@ pub fn prepare(
     });
     Ok(())
 }
+
+#[cfg(test)]
+#[path = "programme_functions_tests.rs"]
+mod programme_functions_tests;
 /// A coastal contour can lie a few micrometres outside the exact land after
 /// clipping. A wet boundary vertex alone must not disqualify an otherwise dry
 /// block. Only these suspicious blocks need a boolean clip; interiors retain
@@ -1393,7 +1441,11 @@ fn household_capacity(
 /// Priority bands: reserved institutions, then sited trades, then shops scaled to
 /// the land actually left, then housing, then explicit gardens on the remainder.
 pub fn allocate(layout: &Layout, partition: &mut Partition) {
+    #[cfg(not(target_arch = "wasm32"))]
     let tick = std::time::Instant::now();
+    #[cfg(target_arch = "wasm32")]
+    let lap = |_: &str| {};
+    #[cfg(not(target_arch = "wasm32"))]
     let lap = |label: &str| {
         if std::env::var("URBAN_PROFILE").is_ok() {
             eprintln!(
@@ -2104,6 +2156,9 @@ pub fn allocate(layout: &Layout, partition: &mut Partition) {
             label: String::new(),
             role,
             households: held,
+            housing_floor_need: if dwelling && matches!(d.function.as_str(), "domestic" | "mixed") {
+                roles::indicative_housing_floor_need(&c.culture, held, district.map_or(0.5, |x| x.wealth))
+            } else { None },
             district_role: district.map_or_else(String::new, |x| x.role.clone()),
             wealth: district.map_or(0.5, |x| x.wealth),
         });
@@ -2173,13 +2228,13 @@ pub fn allocate(layout: &Layout, partition: &mut Partition) {
                 if bounded {
                     "le terrain ou les bornes de la culture limitent la capacité"
                 } else {
-                    "les îlots réels logent moins que la prévision du tissu"
+                    "l’estimation parcellaire sur les îlots réels est inférieure à la prévision du tissu"
                 }
             ));
         }
         if !steps.is_empty() {
             partition.warnings.push(format!(
-                "Capacité : {} — {} % des ménages logés.",
+                "Capacité parcellaire estimée après affectation : {} — {} % du besoin en ménages couvert selon le modèle. Capacité habitante non évaluée.",
                 steps.join(", "),
                 (share * 100.0).floor()
             ));
@@ -2428,6 +2483,7 @@ fn decay(pr: &mut UrbanProgramme, parcels: &[Parcel], facts: &[SiteFacts], locke
         let a = &mut pr.allocations[ai];
         a.role.push_str(&rule.suffix);
         a.households = 0.0;
+        a.housing_floor_need = None;
         if a.unit == "domesticUnits" {
             a.capacity = 0.0;
         }
@@ -2536,26 +2592,131 @@ pub fn reallocate(layouts: &[Layout], partitions: &[Partition]) -> Result<Vec<Pa
     Ok(out)
 }
 
+/// A declaration transported from an actual open Core request, not a proof of
+/// terrain impossibility and never an architectural capacity certificate.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct BuiltDeficit {
+    pub version: String,
+    pub request_id: String,
+    pub demand_id: String,
+    pub original_function: String,
+    pub role: String,
+    pub cause: String,
+    pub households: f64,
+    pub message: String,
+}
+
+type AppliedOutcome<'a> = (&'a Allocation, &'a Parcel, &'a UrbanProgramme);
+fn applied_outcomes(partitions: &[Partition]) -> Result<BTreeMap<&str, AppliedOutcome<'_>>, String> {
+    let mut applied = BTreeMap::new();
+    for partition in partitions {
+        if let Some(programme) = &partition.programme {
+            let parcels = partition.parcels.iter().map(|p| (p.id.as_str(), p)).collect::<BTreeMap<_, _>>();
+            for allocation in &programme.allocations {
+                let parcel = *parcels.get(allocation.parcel_id.as_str()).ok_or("Applied allocation has no cadastral parcel")?;
+                if applied.insert(allocation.parcel_id.as_str(), (allocation, parcel, programme)).is_some() {
+                    return Err("Applied allocations must be unique per parcel".into());
+                }
+            }
+        }
+    }
+    Ok(applied)
+}
+
+fn validate_open_deficit(allocation: &Allocation, programme: &UrbanProgramme, space: &BuiltOpenSpace, deficit: &BuiltDeficit) -> Result<(), String> {
+    let demand = programme.demands.iter().find(|d| d.id == allocation.demand_id).ok_or("Architectural deficit has no retained demand")?;
+    if deficit.version != "architectural-deficit-1"
+        || deficit.request_id.is_empty() || space.id.as_deref() != Some(deficit.request_id.as_str())
+        || deficit.demand_id != allocation.demand_id || deficit.original_function != allocation.function
+        || !matches!(allocation.function.as_str(), "domestic" | "mixed" | "workshop" | "warehouse" | "collective")
+        || deficit.role.is_empty() || deficit.role != allocation.role || demand.role != allocation.role
+        || demand.function != allocation.function || demand.unit != allocation.unit
+        || !matches!(deficit.cause.as_str(), "pente" | "forme" | "source_absente")
+        || deficit.message.trim().is_empty() || !deficit.households.is_finite() || deficit.households < 0.
+        || !allocation.households.is_finite() || allocation.households < 0.
+        || deficit.households != allocation.households {
+        return Err("Architectural deficit identity, origin, role, function or quantity differs from its applied allocation and demand".into());
+    }
+    Ok(())
+}
+
+/// Join three retained facts: actual Core open request, actual Houses open
+/// outcome, and its applied allocation/demand. An allocation alone cannot create
+/// a deficit. This transports an existing declaration; it reruns no feasibility
+/// test and changes no geometry, requested programme or capacity.
+pub fn carry_open_deficits(partitions: &[Partition], scene: &BuiltScene, requests: &[serde_json::Value]) -> Result<BuiltScene, String> {
+    let applied = applied_outcomes(partitions)?;
+    let mut source = BTreeMap::new();
+    for request in requests {
+        let parcel = request["parcel_id"].as_str().ok_or("Deficit source request has no parcel identity")?;
+        if source.insert(parcel, request).is_some() { return Err("Deficit source requests must be unique per parcel".into()); }
+    }
+    let mut carried = scene.clone();
+    for space in &mut carried.open_spaces {
+        let (allocation, _, programme) = applied.get(space.parcel_id.as_str()).ok_or("Open space has no applied allocation")?;
+        if matches!(allocation.function.as_str(), "market" | "common") {
+            if space.deficit.is_some() { return Err("An intended open allocation cannot claim an architectural deficit".into()); }
+            continue;
+        }
+        let request = *source.get(space.parcel_id.as_str()).ok_or("Open architectural deficit requires its actual Core source request")?;
+        let request_id = request["id"].as_str().ok_or("Deficit source request has no architectural identity")?;
+        let p = &request["programme"];
+        let d = &p["deficit"];
+        if request["function"].as_str() != Some("open_space") || space.id.as_deref() != Some(request_id)
+            || p["role"].as_str() != Some(allocation.role.as_str()) {
+            return Err("Open outcome does not match its actual deficit source request".into());
+        }
+        let deficit = BuiltDeficit {
+            version: "architectural-deficit-1".into(), request_id: request_id.into(),
+            demand_id: allocation.demand_id.clone(), original_function: allocation.function.clone(), role: allocation.role.clone(),
+            cause: d["cause"].as_str().ok_or("Actual Core request has no architectural deficit cause")?.into(),
+            households: d["households"].as_f64().ok_or("Actual Core deficit has no allocated household quantity")?,
+            message: d["message"].as_str().ok_or("Actual Core deficit has no message")?.into(),
+        };
+        validate_open_deficit(allocation, programme, space, &deficit)?;
+        if deficit.cause == "source_absente" {
+            let coverage = &p["source_coverage"];
+            if coverage["version"] != "functional-source-coverage-1" || coverage["status"] != "missing"
+                || coverage["role"].as_str() != Some(allocation.role.as_str())
+                || coverage["function"].as_str() != Some(allocation.function.as_str())
+                || coverage["functional_footing_tested"] != false
+                || coverage["residential_fallback_is_functional_source"] != false {
+                return Err("Missing functional source deficit requires its actual coverage declaration, not a residential footing inference".into());
+            }
+        }
+        if space.deficit.as_ref().is_some_and(|old| old != &deficit) {
+            return Err("Stored architectural deficit differs from its actual source request".into());
+        }
+        space.deficit = Some(deficit);
+    }
+    Ok(carried)
+}
+
 /// Only accepted architectural results contribute to completed capacity. This
 /// coarse boundary deliberately does not depend on the houses crate or renderer.
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct BuiltCapacity {
     pub parcel_id: String,
     pub function: String,
     pub useful_area_m2: f64,
     pub domestic_units: f64,
 }
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct BuiltRefusal {
     pub parcel_id: String,
     pub message: String,
 }
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct BuiltOpenSpace {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
     pub parcel_id: String,
     pub surface: Vec<Shape>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub deficit: Option<BuiltDeficit>,
 }
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct BuiltScene {
     pub buildings: Vec<BuiltCapacity>,
     pub refusals: Vec<BuiltRefusal>,
@@ -2566,27 +2727,7 @@ pub fn reconcile_built(
     partitions: &[Partition],
     scene: &BuiltScene,
 ) -> Result<Vec<Partition>, String> {
-    let mut applied = BTreeMap::new();
-    for partition in partitions {
-        if let Some(programme) = &partition.programme {
-            let parcels = partition
-                .parcels
-                .iter()
-                .map(|p| (p.id.as_str(), p))
-                .collect::<BTreeMap<_, _>>();
-            for allocation in &programme.allocations {
-                let parcel = *parcels
-                    .get(allocation.parcel_id.as_str())
-                    .ok_or("Applied allocation has no cadastral parcel")?;
-                if applied
-                    .insert(allocation.parcel_id.as_str(), (allocation, parcel))
-                    .is_some()
-                {
-                    return Err("Applied allocations must be unique per parcel".into());
-                }
-            }
-        }
-    }
+    let applied = applied_outcomes(partitions)?;
     let buildings = scene
         .buildings
         .iter()
@@ -2610,7 +2751,7 @@ pub fn reconcile_built(
                     .into(),
             );
         }
-        let (allocation, _) = applied
+        let (allocation, _, _) = applied
             .get(building.parcel_id.as_str())
             .ok_or("Accepted building has no applied allocation")?;
         if building.function != allocation.function
@@ -2627,15 +2768,22 @@ pub fn reconcile_built(
         }
     }
     let mut open_areas = BTreeMap::new();
+    let mut open_deficits = BTreeMap::new();
     for space in &scene.open_spaces {
         if !identities.insert(space.parcel_id.as_str()) {
             return Err("Open outcomes must be unique per parcel".into());
         }
-        let (allocation, parcel) = applied
+        let (allocation, parcel, programme) = applied
             .get(space.parcel_id.as_str())
             .ok_or("Open space has no applied allocation")?;
-        if !matches!(allocation.function.as_str(), "market" | "common") {
-            return Err("Open space does not match an applied open function".into());
+        if matches!(allocation.function.as_str(), "market" | "common") {
+            if space.deficit.is_some() {
+                return Err("An intended open allocation cannot claim an architectural deficit".into());
+            }
+        } else {
+            let deficit = space.deficit.as_ref().ok_or("Open space does not match an applied open function")?;
+            validate_open_deficit(allocation, programme, space, deficit)?;
+            open_deficits.insert(space.parcel_id.as_str(), deficit);
         }
         if space.surface.is_empty()
             || space.surface.iter().any(|shape| {
@@ -2667,7 +2815,9 @@ pub fn reconcile_built(
                 "Open capacity must be disjoint and remain inside its applied parcel".into(),
             );
         }
-        open_areas.insert(space.parcel_id.as_str(), merged);
+        if !open_deficits.contains_key(space.parcel_id.as_str()) {
+            open_areas.insert(space.parcel_id.as_str(), merged);
+        }
     }
     let mut result = partitions.to_vec();
     for partition in &mut result {
@@ -2679,7 +2829,8 @@ pub fn reconcile_built(
             demand.open_capacity = 0.0;
             demand
                 .reasons
-                .retain(|reason| !reason.starts_with("Building refusal: "));
+                .retain(|reason| !reason.starts_with("Building refusal: ")
+                    && !reason.starts_with("Architectural deficit: "));
         }
         for allocation in &programme.allocations {
             let Some(demand) = programme
@@ -2703,6 +2854,12 @@ pub fn reconcile_built(
                 && let Some(open_area) = open_areas.get(allocation.parcel_id.as_str())
             {
                 demand.open_capacity += open_area;
+            }
+            if let Some(deficit) = open_deficits.get(allocation.parcel_id.as_str()) {
+                demand.reasons.push(format!(
+                    "Architectural deficit: cause={}; original_function={}; role={}; demand={}; allocated_households={}: {}",
+                    deficit.cause, deficit.original_function, deficit.role, deficit.demand_id, deficit.households, deficit.message,
+                ));
             }
             if let Some(refusal) = refusals.get(allocation.parcel_id.as_str()) {
                 demand
@@ -3198,6 +3355,8 @@ mod tests {
                     assert_eq!(parcel.use_kind, "reserve");
                     assert!(public_open_access(parcel, 0.8));
                     BuiltOpenSpace {
+                        id: None,
+                        deficit: None,
                         parcel_id: a.parcel_id.clone(),
                         surface: vec![parcel.shape.clone()],
                     }
@@ -3259,6 +3418,7 @@ mod tests {
                 label: String::new(),
                 landmark: false,
                 households: 0.0,
+                housing_floor_need: None,
                 district_role: String::new(),
                 wealth: 0.5,
             },
@@ -3276,6 +3436,7 @@ mod tests {
                 label: String::new(),
                 landmark: false,
                 households: 0.0,
+                housing_floor_need: None,
                 district_role: String::new(),
                 wealth: 0.5,
             },
@@ -3293,6 +3454,7 @@ mod tests {
                 label: String::new(),
                 landmark: false,
                 households: 0.0,
+                housing_floor_need: None,
                 district_role: String::new(),
                 wealth: 0.5,
             },
@@ -3313,6 +3475,8 @@ mod tests {
                 message: "no compatible foundation".into(),
             }],
             open_spaces: vec![BuiltOpenSpace {
+                id: None,
+                deficit: None,
                 parcel_id: "lot/2".into(),
                 surface: vec![p.parcels[2].shape.clone()],
             }],
@@ -3705,4 +3869,70 @@ mod tests {
         assert_eq!(spread.iter().sum::<f64>(), 11.0);
         assert!(spread[0] > spread[1] && spread[4] == 1.0, "{spread:?}");
     }
+    #[test]
+    fn housing_floor_need_core_is_frozen_only_by_actual_allocation() {
+        let mut l = prepare_case("crossroads", false, "javanese-courts");
+        for block in &mut l.blocks { block.kind = "block".into(); }
+        let pr = l.programme.as_mut().unwrap();
+        pr.reservations.clear();
+        pr.demands.retain(|d| d.function == "domestic");
+        pr.demands[0].requested = 3.;
+        let population = pr.population;
+        let mut p = partition(&l);
+        allocate(&l, &mut p);
+        let pr = p.programme.as_ref().unwrap();
+        assert_eq!(pr.population, population);
+        assert_eq!(pr.demands[0].requested, 3.);
+        assert_eq!(pr.demands[0].built_capacity, 0.);
+        let homes: Vec<_> = pr.allocations.iter().filter(|a| a.function == "domestic").collect();
+        assert!(!homes.is_empty());
+        for a in homes {
+            let need = a.housing_floor_need.as_ref().expect("actual allocation freezes its own model");
+            assert_eq!(need.allocated_households.to_bits(), a.households.to_bits());
+            assert_eq!(need.model.wealth.to_bits(), a.wealth.clamp(0., 1.).to_bits());
+            assert!((need.requested_m2 - a.households*60.*(0.7+0.8*a.wealth)).abs() < 1e-10);
+            assert_eq!(need.model.calibration, "not-culture-calibrated");
+            let mut old = serde_json::to_value(a).unwrap();
+            old.as_object_mut().unwrap().remove("housingFloorNeed");
+            let old_allocation: Allocation = serde_json::from_value(old.clone()).unwrap();
+            assert!(old_allocation.housing_floor_need.is_none());
+            assert_eq!(serde_json::to_value(old_allocation).unwrap(), old);
+        }
+    }
+
+
+    #[test]
+    fn parcel_capacity_warning_never_claims_housed_households() {
+        for requested in [1., 300.] {
+            let mut l = prepare_case("crossroads", false, "european-organic");
+            for block in &mut l.blocks { block.kind = "block".into(); }
+            let pr = l.programme.as_mut().unwrap();
+            pr.reservations.clear();
+            pr.demands.retain(|d| d.function == "domestic");
+            pr.demands[0].requested = requested;
+            let mut without_plan = partition(&l);
+            allocate(&l, &mut without_plan);
+            // This metadata forces the explanatory warning, without modifying
+            // any densification/allocation input. No Houses call is made.
+            l.structure = Some(serde_json::from_value(json!({"metrics":{"capacity":{
+                "densify":0.0,"extension":1.10,"vacancy":1.0
+            }}})).unwrap());
+            let mut with_plan = partition(&l);
+            allocate(&l, &mut with_plan);
+            assert_eq!(serde_json::to_value(&with_plan.programme).unwrap(),
+                serde_json::to_value(&without_plan.programme).unwrap());
+            let pr = with_plan.programme.as_ref().unwrap();
+            assert!(pr.demands.iter().all(|d| d.built_capacity == 0. && d.open_capacity == 0.));
+            let warning = with_plan.warnings.iter().find(|w| w.starts_with("Capacité parcellaire estimée après affectation :"))
+                .expect("parcel estimate must state its planning scope");
+            assert!(warning.contains("du besoin en ménages couvert selon le modèle"), "{warning}");
+            assert!(warning.contains("Capacité habitante non évaluée"), "{warning}");
+            assert!(!warning.contains("ménages logés"), "{warning}");
+            if requested == 1. { assert!(warning.contains("100 %"), "{warning}"); }
+        }
+    }
 }
+
+#[cfg(test)]
+#[path = "programme_open_deficit_tests.rs"]
+mod open_deficit_tests;

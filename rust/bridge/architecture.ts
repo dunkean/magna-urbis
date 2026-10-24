@@ -1,3 +1,7 @@
+import { NATIVE_PARENT_SESSION_CAPABILITY, NATIVE_PARENT_SESSION_SCHEMA, type NativeParentSessionApi, type NativeParentEngineStatus } from './nativeParentSessionContract';
+import { NATIVE_PARENT_CAPABILITY, NATIVE_PARENT_SCHEMA, type NativeParentApi } from './nativeParentContract';
+import { parentWire, PARENT_LIMITS } from './nativeParentBudget';
+import { NATIVE_ASSEMBLY_CAPABILITY, NATIVE_ASSEMBLY_RUNTIME_CAPABILITY, NATIVE_ASSEMBLY_TRANSPORT_CAPABILITY, type NativeAssemblyApi } from './nativeAssemblyContract';
 import init, * as wasm from '../pkg/houses/magna_urbis_houses_wasm.js';
 import { compileHousesModule } from './houses';
 import { nativeRequest } from './nativeEngine';
@@ -40,18 +44,68 @@ async function requireNativeArchitecture(runtime: ExecutionRuntime, input: unkno
   } catch (error) { nativeCapabilities.delete(runtime.server); throw error; }
 }
 /** Coarse native calls; this adapter neither chooses recipes nor moves geometry. */
-type ArchitectureCall = 'placement' | 'profiles' | 'enrich' | 'plans' | 'realize-plan' | 'style-index';
+type ArchitectureCall = 'placement' | 'profiles' | 'enrich' | 'plans' | 'realize-plan' | 'style-index' | 'assemble-pair' | 'unpack-assembly' | 'realize-assembly' | 'plan-parent-batch' | 'unpack-parent' | 'unpack-parent-batch' | 'realize-parent';
+const isAssemblyCall = (kind: ArchitectureCall) => kind === 'assemble-pair' || kind === 'unpack-assembly' || kind === 'realize-assembly';
+const isParentCall = (kind: ArchitectureCall) => kind === 'plan-parent-batch' || kind === 'unpack-parent' || kind === 'unpack-parent-batch' || kind === 'realize-parent';
+/** Fresh capability check, never borrowed from a cached Single status. This is
+ * also called before reading a selected site's native constraints. */
+export async function requireNativeAssemblyCapability(runtime?: ExecutionRuntime, parent = false, session = false, qualified?: (value: NativeParentEngineStatus) => void): Promise<void> {
+  if (runtime?.profile === 'local') {
+    const response = await fetch(`${runtime.server.replace(/\/+$/, '')}/status`, { signal: AbortSignal.timeout(4000) });
+    if (!response.ok) throw new Error('Moteur natif inaccessible pour les assemblages.');
+    const status = await response.json() as { service?: string; capabilities?: unknown };
+    if (status.service !== 'magna-urbis-local' || !Array.isArray(status.capabilities)
+      || !status.capabilities.includes(NATIVE_ASSEMBLY_RUNTIME_CAPABILITY) || !status.capabilities.includes(NATIVE_ASSEMBLY_TRANSPORT_CAPABILITY)
+      || parent && !status.capabilities.includes(NATIVE_PARENT_CAPABILITY)
+      || session && !status.capabilities.includes(NATIVE_PARENT_SESSION_CAPABILITY))
+      throw new Error(`Moteur ancien : capabilities ${NATIVE_ASSEMBLY_RUNTIME_CAPABILITY} et ${NATIVE_ASSEMBLY_TRANSPORT_CAPABILITY}${parent ? ` et ${NATIVE_PARENT_CAPABILITY}` : ''}${session ? ` et ${NATIVE_PARENT_SESSION_CAPABILITY}` : ''} requises ; aucun appel d’assemblage effectué.`);
+    const pair = await fetch(`${runtime.server.replace(/\/+$/, '')}/houses/native-assembly-capability`, { signal: AbortSignal.timeout(4000) });
+    if (!pair.ok || parseArchitectureResult<string>(await pair.text()) !== NATIVE_ASSEMBLY_CAPABILITY)
+      throw new Error(`Contrat natif incohérent : ${NATIVE_ASSEMBLY_CAPABILITY} attendu ; aucune lecture/assemblage effectué.`);
+    qualified?.({ profile: 'local', service: status.service ?? null, capabilities: status.capabilities.filter((v: unknown): v is string => typeof v === 'string') });
+    return;
+  }
+  ready ??= compileHousesModule().then(module => init({ module_or_path: module }));
+  await ready;
+  const api = wasm as ArchitectureWasm;
+  const capabilities: unknown = typeof api.architecture_capabilities_json === 'function'
+    ? parseArchitectureResult<unknown>(api.architecture_capabilities_json()) : undefined;
+  if (!Array.isArray(capabilities) || !capabilities.includes(NATIVE_ASSEMBLY_RUNTIME_CAPABILITY)
+    || !capabilities.includes(NATIVE_ASSEMBLY_TRANSPORT_CAPABILITY)
+    || parent && (!capabilities.includes(NATIVE_PARENT_CAPABILITY) || typeof api.plan_parent_batch_json !== 'function'
+      || typeof api.unpack_parent_json !== 'function' || typeof api.unpack_parent_batch_json !== 'function' || typeof api.realize_parent_json !== 'function')
+    || session && (!capabilities.includes(NATIVE_PARENT_SESSION_CAPABILITY) || typeof api.begin_parent_session_json !== 'function'
+      || typeof api.plan_parent_session_json !== 'function' || typeof api.ack_parent_session_json !== 'function'
+      || typeof api.abort_parent_session_json !== 'function' || typeof api.release_parent_session_json !== 'function')
+    || typeof api.native_assembly_capability_json !== 'function' || typeof api.assemble_pair_json !== 'function'
+    || typeof api.unpack_assembly_json !== 'function' || typeof api.realize_assembly_json !== 'function'
+    || parseArchitectureResult<string>(api.native_assembly_capability_json()) !== NATIVE_ASSEMBLY_CAPABILITY)
+    throw new Error(`Module maisons ancien : ${NATIVE_ASSEMBLY_RUNTIME_CAPABILITY} et ${NATIVE_ASSEMBLY_TRANSPORT_CAPABILITY}${parent ? ` et ${NATIVE_PARENT_CAPABILITY}` : ''}${session ? ` et ${NATIVE_PARENT_SESSION_CAPABILITY}` : ''} requis ; aucun appel d’assemblage effectué.`);
+  qualified?.({ profile: 'web', service: null, capabilities: capabilities.filter((v: unknown): v is string => typeof v === 'string') });
+}
 export interface ArchitectureCallOptions { signal?: AbortSignal }
 export async function callArchitecture<T>(kind: ArchitectureCall, input: unknown, runtime?: ExecutionRuntime, options: ArchitectureCallOptions = {}): Promise<T> {
   options.signal?.throwIfAborted();
+  let parentJson: string | undefined;
+  if (isParentCall(kind)) {
+    await requireNativeAssemblyCapability(runtime, true); options.signal?.throwIfAborted();
+    const wire = parentWire(input);
+    if (wire.bytes > PARENT_LIMITS.bytes || wire.floatSlots > PARENT_LIMITS.floatSlots || wire.rewrittenBytes > PARENT_LIMITS.rewrittenBytes)
+      throw new Error('Native parent input exceeds scoped transport budgets; complete call refused.');
+    parentJson = wire.json;
+  }
+  if (isAssemblyCall(kind)) {
+    if (new TextEncoder().encode(JSON.stringify(input)).byteLength > 32 * 1024 * 1024) throw new Error('Native assembly input exceeds 32 MiB.');
+    await requireNativeAssemblyCapability(runtime); options.signal?.throwIfAborted();
+  }
   if (kind === 'placement' && hasNativeMinimumCandidates(input)) throw new Error('Les poses natives précalculées nécessitent la route de plans architecturaux.');
   if (runtime?.profile === 'local') {
-    await requireNativeArchitecture(runtime, input, kind);
+    if (!isAssemblyCall(kind) && !isParentCall(kind)) await requireNativeArchitecture(runtime, input, kind);
     options.signal?.throwIfAborted();
     // Closing fetch does not cancel native geometry. Let a dispatched call drain
     // before releasing its scheduler slot, then discard superseded output. This
     // bounds actual server work during rapid camera/selection changes.
-    const json = await (await nativeRequest(runtime, `/houses/${kind}`, JSON.stringify(input))).text();
+    const json = await (await nativeRequest(runtime, `/houses/${kind}`, parentJson ?? JSON.stringify(input))).text();
     options.signal?.throwIfAborted();
     return parseArchitectureResult<T>(json);
   }
@@ -67,9 +121,12 @@ export async function callArchitecture<T>(kind: ArchitectureCall, input: unknown
   }
   const method = kind === 'placement' ? api.place_buildings_json : kind === 'profiles' ? api.architecture_profiles_json
     : kind === 'plans' ? api.plan_buildings_json : kind === 'realize-plan' ? api.realize_plan_json
-    : kind === 'style-index' ? api.architecture_style_index_json : api.enrich_placement_json;
+    : kind === 'style-index' ? api.architecture_style_index_json : kind === 'assemble-pair' ? api.assemble_pair_json
+    : kind === 'unpack-assembly' ? api.unpack_assembly_json : kind === 'realize-assembly' ? api.realize_assembly_json
+    : kind === 'plan-parent-batch' ? api.plan_parent_batch_json : kind === 'unpack-parent' ? api.unpack_parent_json
+    : kind === 'unpack-parent-batch' ? api.unpack_parent_batch_json : kind === 'realize-parent' ? api.realize_parent_json : api.enrich_placement_json;
   if (typeof method !== 'function') throw new Error('Module d’architecture ancien. Reconstruisez le module maisons puis rechargez.');
-  return parseArchitectureResult<T>(method(JSON.stringify(input)));
+  return parseArchitectureResult<T>(method(parentJson ?? JSON.stringify(input)));
 }
 export const placeUrbanBuildings = (input: PlacementBatchRequest, runtime?: ExecutionRuntime,
   options?: Parameters<typeof placeArchitectureBatches>[2]): Promise<PlacementBatch> =>
@@ -99,3 +156,76 @@ export const realizeUrbanBuilding = async (building: PlacedBuilding, runtime?: E
 export const enrichUrbanBuilding = (building: PlacedBuilding, runtime?: ExecutionRuntime, scene?: PlanArchiveScene): Promise<EnrichedPlacement> =>
   building.simplification === 'architectural_plan' ? realizeUrbanBuilding(building, runtime, true, scene) : callArchitecture('enrich', building, runtime);
 export const architecturalStyleIndex = (runtime?: ExecutionRuntime): Promise<import('./buildingStyles').BuildingStyleIndex> => callArchitecture('style-index', {}, runtime);
+
+/** Explicit experimental contract. A group never enters realize-plan/enrich. */
+export function nativeAssemblyApi(runtime?: ExecutionRuntime): NativeAssemblyApi {
+  return { require: () => requireNativeAssemblyCapability(runtime),
+    assemble: input => callArchitecture('assemble-pair', input, runtime),
+    unpack: archive => callArchitecture('unpack-assembly', archive, runtime),
+    realize: archive => callArchitecture('realize-assembly', { assembly: archive, interiors: false }, runtime) };
+}
+
+/** Actual city parent API. New archives remain authoritative for world Singles too. */
+export function nativeParentApi(runtime?: ExecutionRuntime): NativeParentApi {
+  return { require: () => requireNativeAssemblyCapability(runtime, true),
+    plan: input => callArchitecture('plan-parent-batch', input, runtime),
+    unpack: archive => callArchitecture('unpack-parent', archive, runtime),
+    unpackBatch: archives => callArchitecture('unpack-parent-batch', { schema_version: NATIVE_PARENT_SCHEMA, archives }, runtime),
+    realize: (archive, interiors = false) => callArchitecture('realize-parent', { parent: archive, interiors }, runtime) };
+}
+
+/** One new API per generation run. Qualification is fresh before begin only;
+ * all pages are pinned to the native incarnation+run nonce. No reconnect/rebegin
+ * or legacy downgrade after failure; close calls ignore UI cancellation. */
+export function nativeParentSessionApi(runtime?: ExecutionRuntime): NativeParentSessionApi {
+  let qualification: Promise<void> | undefined, engine: NativeParentEngineStatus | null = null;
+  const require = () => qualification ??= requireNativeAssemblyCapability(runtime, true, true, value => { engine = value; });
+  const call = async <T>(kind: 'begin' | 'plan' | 'ack' | 'abort' | 'release', input: unknown): Promise<T> => {
+    await require(); const wire = parentWire(input);
+    if (wire.bytes > PARENT_LIMITS.bytes || wire.floatSlots > PARENT_LIMITS.floatSlots || wire.rewrittenBytes > PARENT_LIMITS.rewrittenBytes)
+      throw new Error('Native parent session input exceeds transport limits; complete call refused.');
+    if (runtime?.profile === 'local') {
+      const response = await nativeRequest(runtime, `/houses/${kind}-parent-session`, wire.json);
+      // Bound BEFORE decoding/parsing; close does not abort dispatched Rust CPU.
+      const reader = response.body?.getReader(); if (!reader) throw new Error('Empty native parent session response.');
+      const decoder = new TextDecoder('utf-8', { fatal: true }); let bytes = 0, text = '';
+      try { for (;;) { const piece = await reader.read(); if (piece.done) break;
+        bytes += piece.value.byteLength; if (bytes > 64 * 1024 * 1024) { await reader.cancel(); throw new Error('Native parent session output exceeds64MiB.'); }
+        text += decoder.decode(piece.value, { stream: true });
+      } text += decoder.decode(); } finally { reader.releaseLock(); }
+      return parseArchitectureResult<T>(text);
+    }
+    const api = wasm as ArchitectureWasm;
+    const method = kind === 'begin' ? api.begin_parent_session_json : kind === 'plan' ? api.plan_parent_session_json
+      : kind === 'ack' ? api.ack_parent_session_json : kind === 'abort' ? api.abort_parent_session_json : api.release_parent_session_json;
+    if (typeof method !== 'function') throw new Error('Native parent session export is unavailable.');
+    return parseArchitectureResult<T>(method(wire.json));
+  };
+  return { require, qualification: () => engine && { ...engine, capabilities: [...engine.capabilities] },
+    begin: input => call('begin', input), plan: input => call('plan', input),
+    ack: receipt => call('ack', { schema_version: NATIVE_PARENT_SESSION_SCHEMA, receipt }),
+    abort: input => call('abort', input), release: input => call('release', input) };
+}
+
+/** Auto-routing probe only; missing capabilities are qualified legacy support,
+ * while inaccessible/incoherent engines remain errors (no silent downgrade). */
+export async function nativeParentSessionSupport(runtime?: ExecutionRuntime): Promise<{ supported: boolean; reason: string }> {
+  const required = [NATIVE_ASSEMBLY_RUNTIME_CAPABILITY, NATIVE_ASSEMBLY_TRANSPORT_CAPABILITY, NATIVE_PARENT_CAPABILITY, NATIVE_PARENT_SESSION_CAPABILITY];
+  if (runtime?.profile === 'local') {
+    const response = await fetch(`${runtime.server.replace(/\/+$/, '')}/status`, { signal: AbortSignal.timeout(4000) });
+    if (!response.ok) throw new Error('Moteur local inaccessible pour qualifier la génération architecturale.');
+    const status = await response.json() as { service?: string; capabilities?: unknown };
+    if (status.service !== 'magna-urbis-local' || !Array.isArray(status.capabilities)) throw new Error('Statut natif invalide ; aucune génération de remplacement.');
+    const capabilities = status.capabilities;
+    const missing = required.filter(value => !capabilities.includes(value));
+    if (missing.length) return { supported: false, reason: `Moteur sans ${missing.join(', ')} : génération héritée sans contrat d’assemblage des villes.` };
+    return { supported: true, reason: 'Contrat parent/session natif disponible ; qualification figée à l’ouverture du run.' };
+  }
+  ready ??= compileHousesModule().then(module => init({ module_or_path: module })); await ready;
+  const api = wasm as ArchitectureWasm;
+  const capabilities: unknown = typeof api.architecture_capabilities_json === 'function' ? parseArchitectureResult(api.architecture_capabilities_json()) : [];
+  if (!Array.isArray(capabilities)) throw new Error('Catalogue de capacités du module maisons invalide.');
+  const missing = required.filter(value => !capabilities.includes(value));
+  return missing.length ? { supported: false, reason: `Module sans ${missing.join(', ')} : génération héritée, assemblages de villes non pris en charge.` }
+    : { supported: true, reason: 'Contrat parent/session du module disponible.' };
+}

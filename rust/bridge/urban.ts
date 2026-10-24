@@ -1,4 +1,5 @@
-import { normalizeLayoutConfig, normalizeParcelConfig, type LayoutConfig, type ParcelConfig } from './urbanConfig';
+import type { HousingFloorNeed } from './urbanArchitecture';
+import { normalizeLayoutConfig, normalizeParcelConfig, type LayoutConfig, type ParcelConfig, type ProgrammeContext } from './urbanConfig';
 export * from './urbanConfig';
 import init, { SettlementTerrain } from '../pkg/wasm/magna_urbis_wasm.js';
 import wasmUrl from '../pkg/wasm/magna_urbis_wasm_bg.wasm?url&inline';
@@ -6,6 +7,7 @@ import type { Point, RoadOutput, RoadSite, SettlementRaster } from './settlement
 import type { ExecutionRuntime } from '../../web/src/ui/executionProfile';
 import { nativeJson, nativeRasterClient } from './nativeEngine';
 import { validateUrbanSource, type UrbanSourceHandle } from './urbanSource';
+import { requiresProgrammeFunctions, requireLocalProgrammeFunctions, requireWasmProgrammeFunctions } from './urbanProgrammeSupport';
 export type { UrbanSourceHandle } from './urbanSource';
 export type { Point } from './settlements';
 
@@ -43,8 +45,8 @@ export interface Partition { config?: ParcelConfig; programme?: UrbanProgramme; 
 export interface ParcelContact { a: Point; b: Point; street: number; rank: number; length: number; kind: string }
 export interface UrbanAdmissibility { recipeId: string; nativeLayout: string; floors: [number, number]; eras: string[]; minFrontage: number; minAccessWidth: number; minArea: number; minDepth: number; maxSlope: number; sharedAccess: boolean; partyWalls: boolean }
 export interface CultureMapping { culture: string; family: string; functionalProfile: string; architectureFamily: string; architecturePack: string; coverage: string; borrowing: string; admissibility: UrbanAdmissibility }
-export interface UrbanDemand { id: string; function: string; unit: 'domesticUnits' | 'usefulAreaM2'; requested: number; targetArea: number; targetFrontage: number; provenance: string[]; requires: string[]; parcelCapacity: number; builtCapacity: number; openCapacity?: number; deficit: number; reasons: string[] }
-export interface UrbanAllocation { parcelId: string; demandId: string; function: string; culture: string; architecturePack: string; capacity: number; unit: 'domesticUnits' | 'usefulAreaM2'; score: number; reasons: string[] }
+export interface UrbanDemand { id: string; role?: string; function: string; unit: 'domesticUnits' | 'usefulAreaM2'; requested: number; targetArea: number; targetFrontage: number; provenance: string[]; requires: string[]; parcelCapacity: number; builtCapacity: number; openCapacity?: number; deficit: number; reasons: string[] }
+export interface UrbanAllocation { parcelId: string; demandId: string; role?: string; households?: number; function: string; culture: string; architecturePack: string; capacity: number; unit: 'domesticUnits' | 'usefulAreaM2'; score: number; reasons: string[]; housingFloorNeed?: HousingFloorNeed }
 export interface UrbanProgramme {
   version: 1; population: number; context: import('./urbanConfig').ProgrammeContext; cultures: CultureMapping[]; demands: UrbanDemand[];
   reservations: { id: string; demandId: string; block: number; shape: Shape; street: number; frontage: number }[];
@@ -108,18 +110,34 @@ export interface UrbanEngine { run(request: UrbanRequest): UrbanResponse | Promi
  * strict engines remain usable; explicit styles must still reach their validator.
  * UI settings, saved links and returned layouts retain their original config. */
 function nativeLayoutConfig(config: LayoutConfig) {
-  if (config.fortificationStyle !== 'auto') return config;
+  const programme = nativeProgrammeContext(config.programme);
+  if (config.fortificationStyle !== 'auto') return programme === config.programme ? config : { ...config, programme };
   const { fortificationStyle: _automatic, ...input } = config;
+  return programme === config.programme ? input : { ...input, programme };
+}
+/** Null has the same automatic meaning as absence, including on older strict
+ * decoders. Never omit an explicit object, even an empty/zero-valued one. */
+function nativeProgrammeContext(context: ProgrammeContext): ProgrammeContext {
+  if (context.functions !== null) return context;
+  const { functions: _automatic, ...input } = context;
   return input;
 }
 function nativeLayouts(layouts: Layout[]) {
-  return layouts.map(layout => layout.config?.fortificationStyle === 'auto'
-    ? { ...layout, config: nativeLayoutConfig(layout.config) } : layout);
+  return layouts.map(layout => {
+    const config = layout.config ? nativeLayoutConfig(layout.config) : undefined;
+    const programme = layout.programme?.context?.functions === null ? { ...layout.programme, context: nativeProgrammeContext(layout.programme.context) } : layout.programme;
+    return config !== layout.config || programme !== layout.programme ? { ...layout, ...(config ? { config } : {}), ...(programme ? { programme } : {}) } : layout;
+  });
+}
+function nativePartitions(partitions: Partition[]) {
+  return partitions.map(partition => partition.programme?.context?.functions === null
+    ? { ...partition, programme: { ...partition.programme, context: nativeProgrammeContext(partition.programme.context) } } : partition);
 }
 function nativeUrbanInput(request: UrbanRequest) {
   return { ...request,
     ...(request.layoutConfig ? { layoutConfig: nativeLayoutConfig(request.layoutConfig) } : {}),
     ...(request.layouts ? { layouts: nativeLayouts(request.layouts) } : {}),
+    ...(request.partitions ? { partitions: nativePartitions(request.partitions) } : {}),
   };
 }
 
@@ -149,18 +167,21 @@ export async function createUrbanEngine(runtime?: ExecutionRuntime): Promise<Urb
         const { runtime: _runtime, ...input } = nativeUrbanInput(request);
         // The handle belongs to the urban worker's session, not this engine's
         // private raster client. A missing/stale source must remain an error.
-        return nativeJson<UrbanResponse>(request.runtime, '/urban', { ...input, session: request.source.session })
+        const read = () => nativeJson<UrbanResponse>(request.runtime!, '/urban', { ...input, session: request.source!.session });
+        return (requiresProgrammeFunctions(request) ? requireLocalProgrammeFunctions(request.runtime, request).then(read) : read())
           .catch(error => ({ id: request.id, error: String(error) }));
       } catch (error) { return { id: request.id, error: String(error) }; }
     }
     if (request.runtime?.profile === 'local') {
-      return native<UrbanResponse>('/urban', { ...nativeUrbanInput(request), runtime: request.runtime,
+      const run = () => native<UrbanResponse>('/urban', { ...nativeUrbanInput(request), runtime: request.runtime!,
         ...(request.kind === 'builtCapacity' ? { scene: capacityInput(request.scene) } : {}),
         ...(request.kind === 'quarters' ? { layoutConfig: nativeLayoutConfig(normalizeLayoutConfig(request.layoutConfig, true)) }
           : { parcelConfig: normalizeParcelConfig(request.parcelConfig) }),
-      }).catch(error => ({ id: request.id, error: String(error) }));
+      });
+      return (requiresProgrammeFunctions(request) ? requireLocalProgrammeFunctions(request.runtime, request).then(run) : run()).catch(error => ({ id: request.id, error: String(error) }));
     }
     try {
+      if (requiresProgrammeFunctions(request)) requireWasmProgrammeFunctions(SettlementTerrain, request);
       if (request.raster) {
         const r = request.raster;
         retainedLayouts = undefined;
@@ -186,11 +207,11 @@ export async function createUrbanEngine(runtime?: ExecutionRuntime): Promise<Urb
         : retainedLayouts?.id === request.layoutsId ? retainedLayouts.json : undefined;
       if (layoutsJson === undefined) throw new Error('Le plan des quartiers a changé. Régénérez les quartiers avant les parcelles.');
       if (request.kind === 'builtCapacity') {
-        const partitions = JSON.parse(terrain.urban_built_capacity(JSON.stringify(request.partitions ?? []), JSON.stringify(capacityInput(request.scene)))) as Partition[];
+        const partitions = JSON.parse(terrain.urban_built_capacity(JSON.stringify(nativePartitions(request.partitions ?? [])), JSON.stringify(capacityInput(request.scene)))) as Partition[];
         return { id: request.id, partitions, ms: performance.now() - start };
       }
       if (request.kind === 'programme') {
-        const partitions = JSON.parse(terrain.urban_programme(layoutsJson, JSON.stringify(request.partitions ?? []))) as Partition[];
+        const partitions = JSON.parse(terrain.urban_programme(layoutsJson, JSON.stringify(nativePartitions(request.partitions ?? [])))) as Partition[];
         return { id: request.id, partitions, ms: performance.now() - start };
       }
       if (request.kind === 'buildingSites') {

@@ -58,6 +58,17 @@ pub(super) fn one_bend_on_support_line(
     street: [Point; 2],
     width: f64,
 ) -> Result<ConstructedBend, &'static str> {
+    one_bend_on_support_line_with_support(opening,body,solids,None,street,width)
+}
+
+/// Same single support-line construction. Only an internal member connector
+/// supplies its actual incumbent roof as additional supporting geometry.
+/// It is guidance, never permission to traverse it: complete world-space
+/// path/body/roof/rights and exact prefix guards remain authoritative.
+pub(super) fn one_bend_on_support_line_with_support(
+    opening:[Point;2], body:&Surface, solids:&Surface,
+    support_obstacles:Option<&Surface>, street:[Point;2], width:f64,
+)->Result<ConstructedBend,&'static str>{
     let vector = |a: Point, b: Point| [b.x - a.x, b.y - a.y];
     let dot = |a: [f64; 2], b: [f64; 2]| a[0] * b[0] + a[1] * b[1];
     let at = |p: Point, v: [f64; 2], t: f64| Point { x: p.x + v[0] * t, y: p.y + v[1] * t };
@@ -91,7 +102,7 @@ pub(super) fn one_bend_on_support_line(
     if projection <= 0. {
         return Err("Door ray cannot reach a supporting line parallel to the second leg");
     }
-    let support = body.iter().chain(solids).flat_map(|p| &p.outer)
+    let support = body.iter().chain(solids).chain(support_obstacles.into_iter().flatten()).flat_map(|p| &p.outer)
         .map(|p| dot([p.x - entry.x, p.y - entry.y], clearance_normal))
         .fold(f64::NEG_INFINITY, f64::max);
     let distance = (support + half) / projection;

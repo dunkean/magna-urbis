@@ -23,6 +23,8 @@ export interface ComparisonSnapshot {
   counts: { blocks: number; parcels: number; streets: number; buildings: number } | null;
 }
 export interface ComparisonApi {
+  /** Optional explicit cold-store materialization; never triggered by ordinary 2D painting. */
+  prepare?(): Promise<void>;
   begin(): ComparisonSnapshot; show(mode: { renderView: ComparisonView; architecture: ComparisonArchitecture }): ComparisonSnapshot;
   snapshot(): ComparisonSnapshot; end(): ComparisonSnapshot;
 }

@@ -79,11 +79,15 @@ export function decorColdStates(decor: Decor) {
   return [decor.meta.pipeline?.urban?.buildingState?.cold, decor.meta.pipeline?.urbanDraft?.buildingState?.cold]
     .filter((state): state is NonNullable<typeof state> => !!state);
 }
+export function decorHasParents(decor: Decor): boolean {
+  return !!(decor.meta.pipeline?.urban?.buildingState?.parent || decor.meta.pipeline?.urbanDraft?.buildingState?.parent);
+}
 export interface DecorCodecOptions {
   /** Same-origin history or the metadata header of a complete cold export only. */
   localReferences?: true;
 }
 function requirePortable(decor: Decor, options?: DecorCodecOptions): void {
+  if (decorHasParents(decor) && !options?.localReferences) throw new Error('Les archives parent nécessitent leur export natif dédié ; ce décor portable ne les contient pas.');
   if (!options?.localReferences && decorColdStates(decor).length)
     throw new Error('Une ville conservée à froid doit être exportée avec ses blocs natifs via downloadDecorFile.');
 }

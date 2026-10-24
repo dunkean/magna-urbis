@@ -1,0 +1,36 @@
+{
+  "originalRequest": {
+    "path": "web\\out\\planches\\req\\city-14-oceanic-archipelago-s-quarters-request.json",
+    "sha256": "115f5d23ffaab6290491039e62f62906ab6627f884f437c05fbf01698ebde1c5"
+  },
+  "transformation": "dump2.mjs P29 operations on original request: culture=stilt-town; radius *= sqrt(2000 / original population) in f64; population=2000; all remaining fields retained. No historical output identity asserted.",
+  "transformedRequestSha256": "fb25a0472ac8358745600dbd459e0127bc4fa453147fd10374cefbeb92def218",
+  "sources": {
+    "web\\out\\ctx\\r14.json": {
+      "sha256": "5e0bfa35ef1a09933fb80d0d2eb628ff9df46c1d7ffe99913fd74f2fc7b9f01d",
+      "copiedAs": "p29.json",
+      "bytes": 76
+    },
+    "web\\out\\ctx\\r14.height": {
+      "sha256": "0f079b86b67c7ae075d216178483f84373bf89759a0760d05ac2557185e71bd5",
+      "copiedAs": "p29.height",
+      "bytes": 4194304
+    },
+    "web\\out\\ctx\\r14.water": {
+      "sha256": "c441d8172a71ac695d7117fc87488cfd9beb38e82a238b2028226b3fba47b07f",
+      "copiedAs": "p29.water",
+      "bytes": 1048576
+    },
+    "web\\out\\ctx\\r14.level": {
+      "sha256": "ef87a869805cdde7e79590b9c20dcf0f7e84c5ce7b531e84edead063b9ee50ad",
+      "copiedAs": "p29.level",
+      "bytes": 4194304
+    }
+  },
+  "archivedMirrorCountsAreHistoricalOnly": {
+    "lotsOnWater": 150,
+    "allocatedOnWater": 145,
+    "requestsWithWaterZ": 143
+  },
+  "constructionEvidence": false
+}

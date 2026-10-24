@@ -1,3 +1,5 @@
+import type { ParentSessionSource } from '../../../rust/bridge/nativeParentSessionContract';
+import type { UrbanParentWorkerBegin, UrbanParentWorkerBatch, UrbanParentWorkerCompletion, UrbanParentWorkerAck, UrbanParentWorkerDrained, UrbanParentAcknowledged } from './urbanParentSceneProtocol';
 import type { Layout, Partition, UrbanRequest } from '../../../rust/bridge/urban';
 import { validateUrbanSource, type UrbanSourceHandle } from '../../../rust/bridge/urbanSource';
 import type { SettlementRaster } from '../../../rust/bridge/settlements';
@@ -9,7 +11,9 @@ import type { UrbanSceneBatch, UrbanSceneCompletion } from './urbanSceneProgress
  * client so the inline worker does not import the module that bundles it. */
 /** City Bench architecture: lot silhouettes, compact native plans or detailed houses. */
 export type UrbanSceneMode = 'silhouette' | 'compact' | 'detailed';
-export interface UrbanSceneRequest { id: number; layouts?: Layout[]; partitions?: Partition[];
+export interface UrbanSceneRequest { id: number;
+  /** Versioned applied-city generation path, never a standalone proposal. */
+  parentSession?: ParentSessionSource; layouts?: Layout[]; partitions?: Partition[];
   /** Runtime-only native snapshot, with city keys in its original layout order. */
   source?: UrbanSourceHandle; keys?: string[];
   /** Omitted when the worker already retains the same raster. */
@@ -24,7 +28,8 @@ export interface UrbanSceneRequest { id: number; layouts?: Layout[]; partitions?
   requireProjectedSiteStream?: true;
   /** City Bench house edits by building id, applied to their placement requests before planning. */
   buildingOverrides?: Record<string, import('./cityEdits').HouseEdit> }
-export interface UrbanSceneResponse { id: number; scene?: PlacementBatch; partitions?: Partition[];
+export interface UrbanSceneResponse { id: number;
+  parentAcknowledged?: UrbanParentAcknowledged; parentDrained?: UrbanParentWorkerDrained; parentBegin?: UrbanParentWorkerBegin; parentBatch?: UrbanParentWorkerBatch; parentComplete?: UrbanParentWorkerCompletion; scene?: PlacementBatch; partitions?: Partition[];
   batch?: UrbanSceneBatch;
   /** Streamed runs finish with counts instead of another copy of the scene. */
   complete?: UrbanSceneCompletion;
@@ -37,7 +42,7 @@ export interface UrbanSceneResponse { id: number; scene?: PlacementBatch; partit
    * consumer ACK waits but excludes paged site reads. */
   timing?: { sites: number; placement: number; sitesPrepare?: number; sitesRead?: number; paged?: boolean };
   progress?: { completed: number; total: number }; error?: string }
-export type UrbanSceneWorkerMessage = UrbanSceneRequest | { cancel: number } | { ack: { id: number; completed: number } };
+export type UrbanSceneWorkerMessage = UrbanSceneRequest | { parentAck: UrbanParentWorkerAck } | { cancel: number } | { ack: { id: number; completed: number } };
 /** Worker reply when it holds no raster; the client resends it. */
 export const RASTER_MISSING = 'urban-scene:raster-missing';
 export const sceneMode = (request: Pick<UrbanSceneRequest, 'mode' | 'silhouettes'>): UrbanSceneMode => request.mode ?? (request.silhouettes ? 'silhouette' : 'detailed');
@@ -58,6 +63,10 @@ export const sceneRuntimeKey = (runtime?: ExecutionRuntime): string => `${runtim
  * never clone or upload those arrays into the architecture worker. */
 export function urbanSceneTransport(request: UrbanSceneRequest, omitRaster = false): UrbanSceneRequest {
   validateProjectedSiteStream(request);
+  if (request.parentSession && (!usesCompactPlans(request) || request.progressive !== true
+    || request.parentSession.coordinate_space !== 'world-metres' || !/^[a-f0-9]{64}$/.test(request.parentSession.fingerprint)
+    || typeof request.parentSession.revision !== 'string' || !request.parentSession.revision))
+    throw new Error('Native parent city generation requires a frozen source identity, explicit native mode and durable ACK stream.');
   if (request.source) {
     validateUrbanSource(request.source);
     if (request.runtime?.profile !== 'local' || !(usesCompactPlans(request) || sceneMode(request) === 'silhouette')) {

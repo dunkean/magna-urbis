@@ -82,11 +82,17 @@ pub(in super::super) fn params(culture: &str) -> Harbour {
     }
 }
 
-/// A port: its role, its archetype, declared navigable access. Waterfront cultures (`plan.waterfront`) build quays as well.
+/// A port: its role, its archetype, declared navigable access or a port
+/// function. Waterfront cultures (`plan.waterfront`) build quays as well.
 pub(in super::super) fn port_town(cfg: &LayoutConfig) -> bool {
     cfg.programme.role == "port"
         || matches!(cfg.site_archetype.as_str(), "harbor" | "lakeshore")
         || cfg.programme.navigable_access
+        || cfg
+            .programme
+            .functions
+            .as_ref()
+            .is_some_and(|f| f.port > 0.0)
 }
 
 fn code(surface: Surface<'_>, p: Point) -> u8 {

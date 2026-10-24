@@ -1,0 +1,7 @@
+PNW — candidat constructif séparé, pas de produit
+
+Root a prouvé la perte : fondation 23 960,899537 m² → macroplan un quartier / zéro rue → service sans cible / retrait. Le mécanisme résolu ribbon était en mode auto, donc le constructeur ribbon existant n’était pas appelé ; guide linear absent, armature Camp désactivée. La réserve prévisionnelle ne sert pas de causalité supposée.
+
+`web/out/pnw-resolved-ribbon-workspace-v1/DELIVERY.md`, manifest SHA `681117be418e446cdc657837ebf8cfc2488d4b8454d32ecdc9d6db6ee7ed1b5e`. Copie Core 14 V3 + clock 8 exacte (426 sources), 429 entrées candidat. Un seul runtime modifié : footprint.rs. Booléen résolu commun, constructeur ribbon réutilisé, son véritable axe interne conservé uniquement après validation domaines/trous/stroke sec/grade par primitives existantes et Geo Relate. Routes entrantes non dupliquées ; serve_quarters intact, aucune connexion externe revendiquée.
+
+Cinq tests préparés : auto/explicite, route existante, trou de stroke, barrière terrain, replay public exact PNW avec neuf besoins figés en bits et mesure blocs/parcelles/sites. Entrée roads[] / terrain / seed / quotas / étages inchangés. PNW/Iroquoian sont les deux sélecteurs auto concernés ; Kraal et son timeout sont une autre branche, city_quality coordonné. Staging 14 et première trace PNW intacts. Root seul exécutera ; aucun test/build/Node/Wasm/natif/serveur/navigateur/produit par lod. Capacité et population logée inconnues ; créneau libéré.

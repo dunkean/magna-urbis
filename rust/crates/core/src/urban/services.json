@@ -131,6 +131,7 @@
     "chinese": { "householdSize": 6.5, "floorPerHousehold": 70, "maxPerPlot": 5 },
     "japanese": { "householdSize": 5, "floorPerHousehold": 45, "maxPerPlot": 6 },
     "indian": { "householdSize": 7, "floorPerHousehold": 60, "maxPerPlot": 5 },
+    "insular": { "householdSize": 4.5, "floorPerHousehold": 60, "maxPerPlot": 4, "provenance": "generic-compatibility-defaults", "calibration": "not-culture-calibrated", "_doc": "Explicitly retains the former generic fallback values; not a historical or native habitation norm." },
     "mesoamerican": { "householdSize": 6.5, "floorPerHousehold": 60, "maxPerPlot": 4 },
     "andean": { "householdSize": 6, "floorPerHousehold": 50, "maxPerPlot": 6 },
     "norse": { "householdSize": 8, "floorPerHousehold": 90, "maxPerPlot": 3 },

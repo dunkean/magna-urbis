@@ -174,3 +174,36 @@ fn one_bend_upgrades_real_11976_at_identical_pose_and_replays_both_details() {
     }
     assert!(found);
 }
+
+
+#[test]
+fn internal_roof_support_real_cap_avoids_measured_b14_failure_without_new_attempts(){
+    // Explicit synthetic coordinate frame matching the fixed automatic B14
+    // geometry; full pipeline positive remains unchanged in parent_batch tests.
+    let body=rectangle(0.,0.,15.,22.);
+    let opening=[point(0.5720000000000001,22.),point(1.422,22.)];
+    let roof=rectangle(15.35099998903275,-0.35100001096725,15.7020000219345,22.7020000219345);
+    let cap=[point(16.29900002384187,166.49999994182588),point(16.29900002384187,22.199999989509593)];
+    assert!(one_bend_on_support_line(opening,&body,&vec![],cap,0.8).is_err(),"old own-body support cannot reach the actual cap interior");
+    let route=super::native_one_bend_access::one_bend_on_support_line_with_support(opening,&body,&vec![],Some(&roof),cap,0.8).unwrap();
+    assert!(route.bend.y>22.7&&route.bend.y<22.8);
+    assert!(area(&intersection(&route.path,&roof))<0.0001);
+    let passage=rectangle(0.572,21.653,0.85,0.547);
+    assert!(area(&difference(&intersection(&route.path,&body),&passage))<0.002);
+    assert!(area(&intersection(&route.path,&passage))>0.005);
+    let too_short=[point(cap[0].x,22.2),point(cap[0].x,22.7)];
+    assert!(super::native_one_bend_access::one_bend_on_support_line_with_support(opening,&body,&vec![],Some(&roof),too_short,0.8).is_err(),"never extend the actual cap");
+}
+
+#[test]
+fn internal_roof_support_lower_pose_remains_refused(){
+    let mut r:PlanBatchRequest=serde_json::from_str(include_str!("../tests/fixtures/native-strip-entry-eight.json")).unwrap();
+    let mut r=r.requests.remove(0);r.cadastral=rectangle(-2.,-2.,80.,220.);r.reserves.clear();
+    let body=rectangle(0.,0.,15.,22.);let roof=rectangle(-0.351,22.351,15.702,22.702);
+    let native=StructuralEntrance{opening:[point(0.572,22.),point(1.422,22.)],passage:rectangle(0.572,21.653,0.85,0.547),width_m:0.85,from_z_m:0.,to_z_m:0.};
+    let caps=[NativeConnectionTarget{id:"actual-lower-pose-cap".into(),segment:[point(1.397,44.902),point(1.397,189.202)],width_m:0.8}];
+    let t=Transform{origin:point(0.,0.),orientation_deg:0.};let empty=vec![];
+    let result=proposed_native_access_to_targets(&r,&native,&empty,&t,&body,&roof,
+        Some(OneBendContext{body_entry:&native,body_local:&body}),&caps,Some(&roof));
+    assert!(result.is_err(),"support guidance must not turn the blocked lower pose into an admitted connection");
+}

@@ -1,3 +1,4 @@
+import { demographicClass, DEMOGRAPHIC_CLASS_FLOORS, type DemographicClass } from '../../../rust/bridge/settlementDemography';
 import type { NameFamily } from './names/types';
 import { expandMapQuery, encodeMapId } from './mapId';
 import { NAME_FAMILIES } from './names/types';
@@ -124,7 +125,7 @@ export interface Options {
 }
 
 /** Settlement classes of the planner (farmstead → megacity), derived continuously from the population. */
-export type SettlementClass = 'farmstead' | 'hamlet' | 'village' | 'town' | 'city' | 'metropolis' | 'megacity';
+export type SettlementClass = DemographicClass;
 /** Classes that can be requested by count (secondary settlements). */
 export type CountClass = 'city' | 'town' | 'village' | 'hamlet' | 'farmstead';
 export const COUNT_CLASSES: CountClass[] = ['city', 'town', 'village', 'hamlet', 'farmstead'];
@@ -168,13 +169,8 @@ export const MAP_SIZE_MIN = 600, MAP_SIZE_MAX = 40000;
 export const POP_MIN = 10, POP_MAX = 5000000;
 
 /** Population thresholds of the classes (lower bounds). */
-export const CLASS_FLOOR: [SettlementClass, number][] = [
-  ['megacity', 1000000], ['metropolis', 100000], ['city', 20000], ['town', 1000], ['village', 150], ['hamlet', 15], ['farmstead', 0],
-];
-export function classOfPop(pop: number): SettlementClass {
-  for (const [c, lo] of CLASS_FLOOR) if (pop >= lo) return c;
-  return 'farmstead';
-}
+export const CLASS_FLOOR: [SettlementClass, number][] = DEMOGRAPHIC_CLASS_FLOORS;
+export const classOfPop = demographicClass;
 /** Legacy size class used by the stages that are tuned per preset (site reserve, road count, tracks...). */
 export function sizeForPop(pop: number): SizeName {
   return pop < 200 ? 'hamlet' : pop < 1200 ? 'village' : pop < 8000 ? 'town' : pop < 30000 ? 'city' : 'capital';

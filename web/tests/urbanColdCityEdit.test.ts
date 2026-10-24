@@ -7,6 +7,8 @@ import { beginUrbanBuildingStage, iterateUrbanBuildingChunkRecords, iterateUrban
 import { openColdCitySession, type ColdCityState } from '../src/ui/urbanColdCitySession';
 import { coldArchitectureEditBounds, editColdCityBuilding } from '../src/ui/urbanColdCityEdit';
 import { ColdTestBackend, deferred } from './helpers/urbanBuildingColdTestBackend';
+import { DerivedTestBackend } from './helpers/urbanDerivedTestBackend';
+import { projectUrbanSite } from '../src/ui/urbanSiteStore';
 
 const native = vi.hoisted(() => ({ generate: vi.fn(async () => { throw new Error('Unexpected real generator path in CPU tests'); }) }));
 vi.mock('../../rust/bridge/architecture', () => ({ planUrbanBuildings: native.generate }));
@@ -67,6 +69,23 @@ it('replaces one native record/archive in order and copies every other authentic
   expect(input.backend.stages.get('old')!.chunks).toEqual(old); expect(JSON.stringify(input.session.projection)).toBe(oldGraph);
   expect(input.state).toEqual(beforeState); expect(JSON.stringify(input.original)).toBe(original); expect(JSON.stringify(input.edited)).toBe(edited);
   input.session.dispose();
+});
+
+it('keeps exact untouched native payloads and persists visual/origin derivatives through the guarded edit backend', async () => {
+  const backend = new DerivedTestBackend(), sites = siteFixture.chunks.map((chunk, index) => chunk.requests.map((request, i) => projectUrbanSite(request as unknown as PlacementRequest, fixture.chunks[index].progress.start + i)));
+  const stage = await beginUrbanBuildingStage(backend, { sceneId: 'old-derived', sourceFingerprint: fixture.cliSha256, totalRequests: 9 });
+  for (let i = 0; i < chunks.length; i++) await stage.append(chunks[i], fixture.chunks[i].progress, sites[i]);
+  const manifest = await stage.commit(), state = descriptor(manifest), session = await openColdCitySession(backend, state);
+  const unchanged = structuredClone(backend.stages.get(manifest.sceneId)!.chunks);
+  // Existing injected native edit fixture, not a new admission/pose claim.
+  const result = await editColdCityBuilding({ backend, session, original: structuredClone(site), edited: structuredClone(site),
+    sourceFingerprint: 'b'.repeat(64), generate: async () => structuredClone(approved) });
+  expect(result.applied).toBe(true); if (!result.applied) throw new Error(result.message);
+  expect(backend.stages.get(result.state.store.sceneId)!.chunks.slice(1)).toEqual(unchanged.slice(1));
+  expect(backend.caches.get(result.state.store.sceneId)!.manifest).toMatchObject({ origins: 'complete', parentFingerprint: result.state.store.fingerprint });
+  backend.reads = []; const restored = await openColdCitySession(backend, result.state);
+  expect(backend.reads).toEqual([]); expect(restored.siteVisuals).toEqual(sites.flat());
+  expect((await restored.readOrigin(chunks[1].buildings[0].id))!.offset).toBe(3); restored.dispose(); session.dispose();
 });
 
 it('uses the exact admission AABB including roof domain and access half-width', () => {

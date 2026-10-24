@@ -29,6 +29,8 @@ mod quarters;
 #[cfg(test)]
 mod refonte_tests;
 #[cfg(test)]
+mod stilt_ground_tests;
+#[cfg(test)]
 mod regression;
 pub mod roles;
 mod routing;
@@ -952,6 +954,9 @@ pub fn generate_quarters(
     surface: Surface<'_>,
     roads: &[Street],
 ) -> Result<Vec<Layout>, String> {
+    if config.programme.functions.is_some_and(|f| !f.valid()) {
+        return Err("Poids des fonctions urbaines invalides : nombres finis entre 0 et 1 requis".into());
+    }
     if !["regional", "culture"].contains(&config.axis_alignment.as_str())
         || !config.site_adaptation.is_finite()
         || !(0.0..=2.0).contains(&config.site_adaptation)
@@ -1096,6 +1101,12 @@ pub fn generate_quarters(
         } else {
             &config.culture
         };
+        // Resolve the effective shore once for every plan/finish path, including
+        // small kinds and quarter edits. The programme must see the same ground.
+        let stilt = geography::stilt_ground(site, culture, surface);
+        let (site, surface) = stilt
+            .as_ref()
+            .map_or((site, surface), |ground| (&ground.site, ground.surface(surface)));
         let morph = resolve(
             culture,
             &config.preset,
@@ -1119,7 +1130,9 @@ pub fn generate_quarters(
                 .flatten();
             let mut layout = match small {
                 Some(layout) => layout,
-                None => quarters::generate(&key_seed, site, config, &morph, surface, roads)?,
+                None => quarters::generate(
+                    &key_seed, site, config, &morph, surface, roads, stilt.is_some(),
+                )?,
             };
             kinds::stamp(&mut layout, kind, original);
             access::refine(&mut layout, config, &morph, surface);

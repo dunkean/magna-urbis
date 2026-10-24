@@ -1,0 +1,10 @@
+{
+  "source": "web/out/stilt-ground-shared-entry-proof-v4/urban-suite-stderr.log",
+  "sourceSha256": "93896b6035e987e082afc957f3245c64dadb8337e384b13ddb81142ac2dfcc4d",
+  "note": "Actual archived Core V4 test warning. Planning/allocation estimate only; no Houses generation or inhabited capacity was evaluated. Printed counters were rounded by the existing native test log; they are retained as strings, not exact unrounded totals.",
+  "culture": "halfling",
+  "population": 20000,
+  "warning": "Capacité : tissu Halfling shire densifié à 86 % de ses bornes (jardins 50 → 41 %), champs de lisière réduits à 4 %, emprise ×1,10 — 100 % des ménages logés.",
+  "printedDemand": "4089",
+  "printedParcelEstimate": "4089"
+}

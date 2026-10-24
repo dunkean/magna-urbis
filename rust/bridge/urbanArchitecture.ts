@@ -23,7 +23,31 @@ export interface ArchitectureProgramme {
   floors?: [number, number] | null;
   /** Projected body footprint target, excluding courts and roof overhangs; not useful floor area. */
   built_area_m2?: number | null;
+  /** Frozen allocation-model useful allowance, never a geometry control. */
+  housing_floor_need?: HousingFloorNeed | null;
+  /** Actual Core deficit declaration; retained for the three-source outcome join. */
+  deficit?: { cause: 'pente' | 'forme' | 'source_absente'; households: number; message: string };
+  source_coverage?: { version: 'functional-source-coverage-1'; status: string; role: string; function: string;
+    functional_footing_tested: boolean; residential_fallback_is_functional_source: boolean };
   frontage_continuity?: number | null; party_walls?: boolean | null;
+}
+export interface HousingFloorModel {
+  family: string; profile_provenance: string; calibration: string;
+  floor_m2_per_household: number; wealth: number; wealth_factor: number;
+  effective_floor_m2_per_household: number; persons_per_household: number;
+}
+export interface HousingFloorNeed {
+  version: 'indicative-housing-floor-1'; unit: 'useful_floor_m2'; scope: 'housing_in_body_levels';
+  requested_m2: number; allocated_households: number;
+  basis: 'allocation_households_times_wealth_scaled_floor_allowance'; model: HousingFloorModel;
+}
+export interface HousingFloorOutcome {
+  version: 'plan-housing-floor-outcome-1'; scope: 'housing_in_body_levels'; need_model: HousingFloorNeed;
+  requested_useful_m2: number; gross_floor_m2: number | null;
+  measurement: 'retained_level_footprint_union_per_exact_elevation';
+  inventory_status: 'retained_plan_levels' | 'unknown'; inventory_limitation?: string | null;
+  necessary_area_status: 'insufficient_gross' | 'not_disproved_by_gross' | 'unknown';
+  useful_shortfall_lower_bound_m2: number | null; actual_useful_m2: null; functional_certification: 'unknown';
 }
 export interface ArchitectureAccess { id: string; segment: [Point, Point]; kind: 'public' | 'collective' | 'private'; width_m: number }
 export interface ArchitectureNeighbor { id: string; footprint: Surface; height_m: number }
@@ -81,6 +105,9 @@ export interface PlacedBuilding {
   recipe_id: string; variant_id: string; transform: { origin: Point; orientation_deg: number }; ground_z_m: number;
   footprint: Surface; roof_footprint: Surface; courtyards: Surface; circulation: Surface; entrance: Point; access_id: string;
   volumes: ArchitectureVolume[]; useful_area_m2: number; domestic_units: number;
+  /** Additive PLAN accounting, populated from final retained geometry. Missing
+   * on old saved plans means unreported; never infer housed counts from wishes. */
+  programme_outcome?: PlanProgrammeOutcome | null;
   structural_features: Feature[];
   structural_foundations?: {footprint: Surface; z_min_m: number; z_max_m: number}[];
   simplification: 'recipe_volumes' | 'architectural_plan'; diagnostics: string[];
@@ -89,10 +116,38 @@ export interface PlacedBuilding {
   /** Complete resolved recipe/parameters/layout, no interiors or mesh. Never edit or regenerate. */
   resolved: unknown;
 }
+/** Proposed metadata only. Area attainment is NOT whole-programme, historical,
+ * functional, native-entry, roof or household-capacity certification. */
+export interface PlanProgrammeOutcome {
+  version: 'plan-programme-outcome-1';
+  housing_floor?: HousingFloorOutcome | null;
+  body_footprint: {
+    /** Projected body footprint; excludes courts, eaves and summed floor area. */
+    requested_m2: number | null;
+    /** Final authoritative union already retained as building.footprint. */
+    actual_m2: number;
+    tolerance_fraction: number;
+    attainment: 'not_requested' | 'within_tolerance' | 'deficit' | 'excess';
+    /** Exact differences, even inside tolerance; null without a target. */
+    deficit_m2: number | null;
+    excess_m2: number | null;
+  };
+  households: {
+    requested: number | null;
+    housed: null;
+    capacity_status: 'unknown';
+  };
+}
+/** Transported declaration, not a physical impossibility or capacity certificate. */
+export interface ArchitecturalDeficit {
+  version: 'architectural-deficit-1'; request_id: string; demand_id: string;
+  original_function: string; role: string; cause: 'pente' | 'forme' | 'source_absente'; households: number; message: string;
+}
+export interface ArchitectureOpenSpace { id: string; parcel_id: string; surface: Surface; deficit?: ArchitecturalDeficit }
 export interface PlacementRefusal { id: string; parcel_id: string; code: string; message: string; attempts: number }
 export interface PlacementBatch {
   schema_version: '1'; generator_version: string; materials?: HouseMaterial[]; buildings: PlacedBuilding[]; refusals: PlacementRefusal[];
-  open_spaces: { id: string; parcel_id: string; surface: Surface }[];
+  open_spaces: ArchitectureOpenSpace[];
   /** Lossless compressed retained plans, stored once per bounded transport chunk. */
   plan_archives?: Record<string, string>;
 }
@@ -114,6 +169,19 @@ export interface ArchitectureWasm {
   plan_buildings_json?(input: string): string;
   realize_plan_json?(input: string): string;
   architecture_style_index_json?(): string;
+  native_assembly_capability_json?(): string;
+  begin_parent_session_json?(input: string): string;
+  plan_parent_session_json?(input: string): string;
+  ack_parent_session_json?(input: string): string;
+  abort_parent_session_json?(input: string): string;
+  release_parent_session_json?(input: string): string;
+  plan_parent_batch_json?(input: string): string;
+  unpack_parent_json?(input: string): string;
+  unpack_parent_batch_json?(input: string): string;
+  realize_parent_json?(input: string): string;
+  assemble_pair_json?(input: string): string;
+  unpack_assembly_json?(input: string): string;
+  realize_assembly_json?(input: string): string;
 }
 export function parseArchitectureResult<T>(json: string): T {
   if (new TextEncoder().encode(json).byteLength > 64 * 1024 * 1024) throw new Error('Architecture response exceeds 64 MiB.');

@@ -1,7 +1,11 @@
+import { produceUrbanParentScene } from './urbanParentSceneProducer';
+import { sameParentSessionReceipt } from '../../../rust/bridge/nativeParentSessionContract';
+import type { UrbanParentWorkerAck } from './urbanParentSceneProtocol';
+import { prepareUrbanOpenDeficits } from '../../../rust/bridge/urbanOpenDeficits';
 import { createUrbanEngine } from '../../../rust/bridge/urban';
 import type { SettlementRaster } from '../../../rust/bridge/settlements';
 import type { ArchitectureBatchOptions } from '../../../rust/bridge/architectureBatch';
-import type { PlacementRequest } from '../../../rust/bridge/urbanArchitecture';
+import type { PlacementBatch, PlacementRequest } from '../../../rust/bridge/urbanArchitecture';
 import { beginUrbanBuildingPages, URBAN_BUILDING_PAGE_LIMIT } from '../../../rust/bridge/urbanBuildingPages';
 import { RASTER_MISSING, sceneMode, usesCompactPlans, validateProjectedSiteStream, sceneRuntimeKey, urbanBuildingSitesRequest, type UrbanSceneRequest, type UrbanSceneResponse, type UrbanSceneWorkerMessage } from './urbanSceneProtocol';
 import { urbanSceneCompletion } from './urbanSceneProgress';
@@ -15,11 +19,21 @@ let engine: ReturnType<typeof createUrbanEngine> | undefined, raster: Settlement
 let engineRuntime: string | undefined;
 let pending: UrbanSceneRequest | undefined, running = false, cancelledThrough = 0;
 let acknowledgement: { id: number; completed: number; resolve(): void; reject(error: Error): void } | undefined;
+let parentAcknowledgement: { expected: UrbanParentWorkerAck; resolve(): void; reject(error: Error): void } | undefined;
 function cancelAcknowledgement(): void {
+  const parentWaiting = parentAcknowledgement; parentAcknowledgement = undefined;
+  parentWaiting?.reject(new DOMException('Native parent city replaced', 'AbortError'));
   const waiting = acknowledgement; acknowledgement = undefined;
   waiting?.reject(new DOMException('Calcul remplacé', 'AbortError'));
 }
 self.onmessage = (event: MessageEvent<UrbanSceneWorkerMessage>) => {
+  if ('parentAck' in event.data) {
+    const actual = event.data.parentAck, waiting = parentAcknowledgement;
+    if (waiting && actual.id === waiting.expected.id && actual.sessionId === waiting.expected.sessionId
+      && (actual.receipt === null && waiting.expected.receipt === null || actual.receipt && waiting.expected.receipt
+        && sameParentSessionReceipt(actual.receipt, waiting.expected.receipt))) { parentAcknowledgement = undefined; waiting.resolve(); }
+    return;
+  }
   if ('ack' in event.data) {
     const ack = event.data.ack;
     if (acknowledgement?.id === ack.id && acknowledgement.completed === ack.completed) {
@@ -29,11 +43,12 @@ self.onmessage = (event: MessageEvent<UrbanSceneWorkerMessage>) => {
   }
   if ('cancel' in event.data) {
     cancelledThrough = Math.max(cancelledThrough, event.data.cancel);
-    if (acknowledgement && acknowledgement.id <= cancelledThrough) cancelAcknowledgement();
+    if (acknowledgement && acknowledgement.id <= cancelledThrough || parentAcknowledgement && parentAcknowledgement.expected.id <= cancelledThrough) cancelAcknowledgement();
     return;
   }
+  if (pending?.parentSession && pending.id !== event.data.id) self.postMessage({ id: pending.id, parentDrained: { state: 'not_started' } } satisfies UrbanSceneResponse);
   pending = event.data;
-  if (acknowledgement && acknowledgement.id !== pending.id) cancelAcknowledgement();
+  if (acknowledgement && acknowledgement.id !== pending.id || parentAcknowledgement && parentAcknowledgement.expected.id !== pending.id) cancelAcknowledgement();
   if (!running) void drain();
 };
 async function drain(): Promise<void> {
@@ -41,9 +56,32 @@ async function drain(): Promise<void> {
   while (pending) {
     const request = pending; pending = undefined;
     const cancelled = (): boolean => request.id <= cancelledThrough || Boolean(pending && pending.id !== request.id);
-    if (cancelled()) continue;
+    if (cancelled()) {
+      if (request.parentSession) self.postMessage({ id: request.id, parentDrained: { state: 'not_started' } } satisfies UrbanSceneResponse);
+      continue;
+    }
     try {
       validateProjectedSiteStream(request);
+      if (request.parentSession) {
+        let terminalError: string | undefined;
+        try { await produceUrbanParentScene(request, { cancelled,
+          acknowledged: parentAcknowledged => { if (!cancelled()) self.postMessage({ id: request.id, parentAcknowledged } satisfies UrbanSceneResponse); },
+          begin: parentBegin => { if (!cancelled()) self.postMessage({ id: request.id, parentBegin } satisfies UrbanSceneResponse); },
+          batch: parentBatch => new Promise<void>((resolve, reject) => {
+            if (cancelled()) { reject(new DOMException('Native parent city replaced', 'AbortError')); return; }
+            parentAcknowledgement = { expected: { id: request.id, sessionId: parentBatch.sessionId, receipt: parentBatch.receipt }, resolve, reject };
+            try { self.postMessage({ id: request.id, parentBatch } satisfies UrbanSceneResponse); }
+            catch (e) { parentAcknowledgement = undefined; reject(e); }
+          }),
+          complete: parentComplete => { if (!cancelled()) self.postMessage({ id: request.id, parentComplete } satisfies UrbanSceneResponse); },
+        }); } catch (error) { terminalError = String(error); throw error; }
+        finally {
+          // Cancellation/staleness MUST NOT suppress this lifecycle receipt.
+          // Native calls have settled and their finally has attempted cleanup.
+          self.postMessage({ id: request.id, parentDrained: { state: 'settled', ...(terminalError ? { error: terminalError } : {}) } } satisfies UrbanSceneResponse);
+        }
+        continue;
+      }
       if (engineRuntime !== sceneRuntimeKey(request.runtime)) { engine = undefined; raster = undefined; engineRuntime = sceneRuntimeKey(request.runtime); }
       const pipelineStart = performance.now();
       if (request.source && request.runtime?.profile === 'local' && usesCompactPlans(request) && request.progressive) {
@@ -106,13 +144,16 @@ async function drain(): Promise<void> {
       const sitesMs = performance.now() - start, placementStart = performance.now(), mode = sceneMode(request);
       if (mode === 'silhouette') { self.postMessage({ id: request.id, scene: silhouetteScene(requests), timing: { sites: sitesMs, placement: performance.now() - placementStart } } satisfies UrbanSceneResponse); continue; }
       const progress = (completed: number, total: number): void => self.postMessage({ id: request.id, progress: { completed, total } } satisfies UrbanSceneResponse);
+      let deficitJoin: ReturnType<typeof prepareUrbanOpenDeficits> | undefined;
+      const carryEagerDeficits = (delta: PlacementBatch, page: readonly PlacementRequest[]): PlacementBatch =>
+        delta.open_spaces.length ? (deficitJoin ??= prepareUrbanOpenDeficits(request.partitions ?? []))(delta, page) : delta;
       const options: ArchitectureBatchOptions = { cancelled, progress,
-        ...(request.progressive ? { onBatch: (delta, progress) => new Promise<void>((resolve, reject) => {
+        ...(request.progressive ? { onBatch: (delta, progress, actualRequests) => new Promise<void>((resolve, reject) => {
           if (cancelled()) { reject(new DOMException('Calcul remplacé', 'AbortError')); return; }
           // Only one chunk can be waiting: the bridge awaits this callback before
           // dispatching the next native request. Cancellation releases this wait.
           acknowledgement = { id: request.id, completed: progress.completed, resolve, reject };
-          try { self.postMessage({ id: request.id, batch: { delta, progress,
+          try { self.postMessage({ id: request.id, batch: { delta: compact ? delta : carryEagerDeficits(delta, actualRequests), progress,
             requests: requests.slice(progress.start, progress.completed) } } satisfies UrbanSceneResponse); }
           catch (error) { acknowledgement = undefined; reject(error); }
         }) } : {}) };
@@ -132,12 +173,13 @@ async function drain(): Promise<void> {
       }
       // Both explicit City modes retain native plans. Detailed display realizes
       // visible/selected houses lazily; a plan does not certify built capacity.
-      const scene = await (compact ? planUrbanBuildings : placeUrbanBuildings)(
+      let scene = await (compact ? planUrbanBuildings : placeUrbanBuildings)(
         planInput, request.runtime, options);
       if (cancelled()) continue;
       const placementMs = performance.now() - placementStart;
       let partitions: UrbanSceneResponse['partitions'];
       if (!compact) {
+        scene = carryEagerDeficits(scene, planInput.requests);
         const balance = await (await engine).run({ id: request.id, kind: 'builtCapacity', seed: request.seed, runtime: request.runtime, partitions: request.partitions, scene });
         if (cancelled()) continue;
         if (balance.error) throw new Error(balance.error);

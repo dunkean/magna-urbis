@@ -9,3 +9,4 @@ rust/scripts/*house*.mjs text eol=lf
 rust/scripts/*house*.py text eol=lf
 web/scripts/houses*.mjs text eol=lf
 web/src/ui/house* text eol=lf
+web/src/vendor/polygonClipping.ts text eol=lf

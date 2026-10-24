@@ -1,0 +1,19 @@
+{
+  "scope": "offline expected value for review; not compiled Rust output",
+  "programme_outcome": {
+    "version": "plan-programme-outcome-1",
+    "body_footprint": {
+      "requested_m2": 617.9,
+      "actual_m2": 4.060225002401684,
+      "tolerance_fraction": 0.1,
+      "attainment": "deficit",
+      "deficit_m2": 613.8397749975983,
+      "excess_m2": 0
+    },
+    "households": {
+      "requested": 3,
+      "housed": null,
+      "capacity_status": "unknown"
+    }
+  }
+}

@@ -5,6 +5,10 @@ use crate::model::HouseConfig;
 use crate::style_index::{Morphology, StyleEntry, morphology};
 use magna_urbis_random::Rng;
 use serde::{Deserialize, Serialize};
+#[path = "housing_floor_need.rs"]
+mod housing_floor_need;
+pub use housing_floor_need::{HousingFloorModel, HousingFloorNeed};
+pub(crate) use housing_floor_need::accounting_close;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -82,6 +86,10 @@ pub struct ArchitectureProgramme {
     pub wealth: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub households: Option<f64>,
+    /// Indicative useful-floor allocation model, separate from massing wishes.
+    /// Never a dimension control or a claim about actual useful/housed capacity.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub housing_floor_need: Option<HousingFloorNeed>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub state: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -144,6 +152,9 @@ impl ArchitectureProgramme {
             || self.households.is_some_and(|v| !v.is_finite() || v < 0.)
         {
             return Err("Invalid programme wealth or household metadata.".into());
+        }
+        if let Some(need) = &self.housing_floor_need {
+            need.validate(self.households)?;
         }
         Ok(())
     }
@@ -252,6 +263,10 @@ mod tests {
     fn physical(b: &PlanBuilding) -> serde_json::Value {
         let mut value = serde_json::to_value(b).unwrap();
         value.as_object_mut().unwrap().remove("diagnostics");
+        // These tests compare retained physical plans under different wishes.
+        // The additive accounting must report those distinct wishes; it is
+        // checked separately below, never counted as a geometry difference.
+        value.as_object_mut().unwrap().remove("programme_outcome");
         value
     }
 
@@ -281,7 +296,11 @@ mod tests {
             party_walls: Some(true),
             ..Default::default()
         });
-        assert_eq!(physical(&explicit), physical(&one(&pinned)));
+        let advisory = one(&pinned);
+        assert_eq!(physical(&explicit), physical(&advisory));
+        assert_eq!(explicit.programme_outcome.as_ref().unwrap().body_footprint.requested_m2, None);
+        assert_eq!(advisory.programme_outcome.as_ref().unwrap().body_footprint.requested_m2, Some(200.));
+        assert_eq!(advisory.programme_outcome.as_ref().unwrap().households.housed, None);
         r.programme = Some(ArchitectureProgramme {
             composition: Some(ProgrammeComposition::Civic),
             ..Default::default()
@@ -336,7 +355,10 @@ mod tests {
         assert!(b.diagnostics.iter().any(|d| d.contains("target advisory")));
         let mut without_target = r.clone();
         without_target.programme.as_mut().unwrap().built_area_m2 = None;
-        assert_eq!(physical(&b), physical(&one(&without_target)));
+        let unrequested = one(&without_target);
+        assert_eq!(physical(&b), physical(&unrequested));
+        assert_eq!(b.programme_outcome.as_ref().unwrap().body_footprint.requested_m2, Some(180.));
+        assert_eq!(unrequested.programme_outcome.as_ref().unwrap().body_footprint.requested_m2, None);
         let mut pinned_variant = r.clone();
         pinned_variant.config.as_mut().unwrap().recipe = Some("EUR-MED-B02".into());
         pinned_variant.config.as_mut().unwrap().overrides.variant = Some(
@@ -461,6 +483,8 @@ mod tests {
         });
         let b = one(&r);
         assert_eq!(physical(&legacy), physical(&b));
+        assert_eq!(legacy.programme_outcome.as_ref().unwrap().body_footprint.requested_m2, None);
+        assert_eq!(b.programme_outcome.as_ref().unwrap().body_footprint.requested_m2, Some(600.));
         assert!(
             b.diagnostics
                 .iter()

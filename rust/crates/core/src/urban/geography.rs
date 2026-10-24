@@ -235,7 +235,6 @@ impl StiltGround {
     /// The raster ground with the stilt water dry (the vector geography, if
     /// any, is replaced by this raster, which samples it). For
     /// `generate_quarters`, plan and programme alike (OPUS_CITY.md request).
-    #[allow(dead_code)]
     pub fn surface<'a>(&'a self, s: super::Surface<'a>) -> super::Surface<'a> {
         super::Surface {
             geometry: None,

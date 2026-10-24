@@ -97,7 +97,17 @@ async function generateCase(entry) {
   await editor().locator('#parcels').click(); await done();
   }
   if (programmeRole) {
-    await editor().locator('[data-programme="role"]').selectOption(programmeRole);
+    const isolated = ['isolated-farm', 'roadside-temple', 'isolated-shrine', 'isolated-mill', 'isolated-inn', 'isolated-tower'].includes(programmeRole);
+    await editor().locator('[data-programme-intent]').selectOption(isolated ? programmeRole : 'settlement');
+    if (!isolated) {
+      await editor().locator('[data-programme-functions-auto]').click();
+      if (programmeRole !== 'auto') {
+        const key = programmeRole === 'crossroads' ? 'commerce' : programmeRole;
+        assert.ok(['agricultural', 'commerce', 'artisan', 'riverine', 'port', 'capital'].includes(key), `Unsupported role alias: ${programmeRole}`);
+        await editor().locator('[data-programme-custom-functions]').check();
+        await editor().locator(`[data-programme-function="${key}"]`).fill('1');
+      }
+    }
     if (programmeRole === 'port') await editor().locator('[data-programme="navigableAccess"]').check();
     await editor().locator('[data-programme-apply]').click(); await done();
     await editor().locator('#parcels').click(); await done();

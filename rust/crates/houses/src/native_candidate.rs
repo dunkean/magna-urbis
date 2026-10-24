@@ -113,7 +113,9 @@ pub(crate) fn try_plan(
         );
         let mut failures = Vec::new();
         for (i, candidate) in r.native_minimum_candidates.iter().enumerate() {
-            match checked_plan(r, candidate, &neighbors) {
+            match checked_plan(r, candidate, &neighbors).and_then(|b| {
+                crate::plans::parent_batch::admission_guard(&b)?;Ok(b)
+            }) {
                 Ok(mut b) => {
                     b.diagnostics.push(format!("Direct native minimum: {}/{} supplied poses checked; cached canonical source retained, no dimension or pose search. Source seed {}. Household capacity remains unknown.",i+1,r.native_minimum_candidates.len(),candidate.identity.seed));
                     return Ok(b);
@@ -413,6 +415,7 @@ fn checked_plan(
             .flat_map(|b| b.levels.iter().map(|l| area(&l.footprint)))
             .sum(),
         domestic_units: 0,
+        programme_outcome: None,
         simplification: "architectural_plan".into(),
         diagnostics,
         cartographic: CartographicRoof {

@@ -1,3 +1,6 @@
+import { bindControlRelevance, controlRelevanceControlsHtml } from './urbanControlRelevance';
+import { retainSelectValue } from './retainedSelectValue';
+import { bindCityPlanCulture, withCityPlanCulture } from './cityPlanCulture';
 import UrbanWorker from './urbanWorker?worker&inline';
 import catalogueJson from '../../../rust/crates/core/src/urban/catalogue.json';
 import { defaultLayoutConfig, defaultParcelConfig, layoutExtent, normalizeLayoutConfig, normalizeParcelConfig, regionalStreets, runUrbanRequest, type Layout, type LayoutConfig, type ParcelConfig, type Partition, type Point, type Shape, type Street, type UrbanRequest, type UrbanResponse } from '../../../rust/bridge/urban';
@@ -7,16 +10,32 @@ import type { TerrainData } from '../../../rust/bridge/terrain';
 import { terrainGeography } from '../../../rust/bridge/urbanGeography';
 import { streetSurfacePath } from '../../../rust/bridge/urbanStreetSurface';
 import { createUrbanSceneClient, type UrbanSceneMode } from './urbanScene';
+import { publishParentUiTask } from './urbanParentUiTasks';
+import { createUrbanParentSceneClient } from './urbanParentScene';
+import { nativeParentApi, nativeParentSessionSupport } from '../../../rust/bridge/architecture';
+import { parentGenerationIdentity } from './urbanParentIdentity';
+import { openParentViewport } from './urbanParentViewport';
+import { sameParentBuildingState, type UrbanParentBuildingState } from './urbanParentState';
+import { createParentStreamWindow } from './urbanParentStreamWindow';
+import type { ParentMemberVisual, ParentVisualRecords } from './urbanParentVisual';
+import { paintParentContexts } from './urbanParentPaint';
+import { nativeParentInspectionHtml } from './urbanParentInspector';
+import { downloadParentBuildings, readParentBuildings } from './urbanParentFiles';
 import { createIndexedDbBuildingChunkBackend } from './urbanBuildingChunkIndexedDb';
-import { createColdProjectionAccumulator, openColdCitySession, replaceColdProjection, type ColdCitySession, type ColdCityState } from './urbanColdCitySession';
+import { openColdCitySession, replaceColdProjection, type ColdCitySession, type ColdCityState } from './urbanColdCitySession';
 import { coldCityFingerprint } from './urbanColdCityFingerprint';
+import { openColdCityViewport, type ColdCityViewport } from './urbanColdCityViewport';
+import { createColdStreamWindow } from './urbanColdStreamWindow';
+import { createColdViewportSlot } from './urbanColdViewportSlot';
+import { repairColdDerivedCache } from './urbanColdDerivedRepair';
+import { urbanCapacityWarningText } from './urbanCapacityWording';
 import { downloadColdBuildings } from './urbanColdDownloads';
 import { waitForArchitectureInputs } from './urbanArchitectureInputs';
 import type { NativeBuildingProjection, NativeBuildingProjectionScene } from './urbanBuildingProjection';
 import { createUrbanSourceBinding } from './urbanSourceBinding';
 import { createCityComparison } from './cityComparison';
 import { siteVisualScene } from './urbanSilhouettes';
-import { createNativeSiteStore, createLegacySiteStore, type UrbanSiteStore, type UrbanSiteVisual } from './urbanSiteStore';
+import { createNativeSiteStore, createLegacySiteStore, createUnboundSiteStore, type UrbanSiteStore, type UrbanSiteVisual } from './urbanSiteStore';
 import { CityGlCanvasLayer, type CityGlHostFrame } from '../render/cityGlHost';
 import { cityGlOverlayLayers } from '../render/cityGl';
 import { cityWallSvg } from '../render/cityWalls'; // walls hook
@@ -26,6 +45,7 @@ import { UrbanBuildingDetailController, type BuildingDetailView } from '../rende
 import type { ArchitectureBatchProgress } from '../../../rust/bridge/architectureBatch';
 import type { PlacementBatch, PlacedBuilding } from '../../../rust/bridge/urbanArchitecture';
 import { createUrbanBuildingsPanel } from './urbanBuildingsPanel';
+import { morphologyOptions, morphologyEvidenceHtml, resetMorphology, MORPHOLOGY_HINT } from './urbanMorphology';
 import { urbanBuildingsSvg } from '../render/urbanBuildings';
 import { openUrbanHouseCase } from './urbanHouseTransfer';
 import { parcelInspectionHtml } from './urbanInspector';
@@ -164,12 +184,12 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
     } catch { return false; }
   }
   restoreState(new URLSearchParams(location.search).get('urban'));
-  // The City Bench chooses the culture once, on the city itself.
-  // Its maps are exported with the plan off; the plan and parcels are what this bench is for.
-  if (options.city) { layoutConfig.culture = 'site'; enabled = parcelEnabled = true; }
+  // Missing profiles already default to 'site' in normalizeLayoutConfig.
+  // CityBench enables its stages without changing an explicit restored override.
+  if (options.city) { enabled = parcelEnabled = true; }
   const stages = document.querySelector('.stages')!;
-  const common = (kind: Kind): string => `<label>Culture<select data-config="culture"><option value="site">Culture de chaque settlement</option>${Object.entries(catalogue.cultures).map(([id, c]) => `<option value="${esc(id)}">${esc(c.label)}</option>`).join('')}</select></label>
-    <label>Recettes<select data-config="recipe"></select></label><label>Préréglage<select data-config="preset"><option value="culture">Recettes culturelles</option>${Object.entries(catalogue.presets).map(([id, p]) => `<option value="${esc(id)}">${esc(p.label)}</option>`).join('')}</select></label>
+  const common = (kind: Kind): string => `<label>Profil culturel urbain<select data-config="culture"><option value="site">Culture de chaque settlement</option>${Object.entries(catalogue.cultures).map(([id, c]) => `<option value="${esc(id)}">${esc(c.label)}</option>`).join('')}</select></label>
+    <label>Recette de plan / parcellaire<select data-config="recipe"></select></label><label>Préréglage<select data-config="preset"><option value="culture">Recettes culturelles</option>${Object.entries(catalogue.presets).map(([id, p]) => `<option value="${esc(id)}">${esc(p.label)}</option>`).join('')}</select></label>
     <label>Zones<select data-config="zone"><option value="auto">Du centre vers la campagne</option>${Object.entries({ core: 'Cœur', middle: 'Quartiers intermédiaires', edge: 'Périphérie', faubourg: 'Faubourgs', village: 'Village' }).map(([id, label]) => `<option value="${id}">${label}</option>`).join('')}</select></label><label>Multiplicateur de densité<input data-config="density" type="number" min="0.1" max="10" step="any"></label>`;
   const number = (key: string, label: string, min: number, max: number, step = 1): string => `<label>${label}<input data-config="${key}" type="number" min="${min}" max="${max}" step="${step}"></label>`;
   const select = (key: string, label: string, values: Record<string, string>, footprint = false): string => `<label>${label}<select data-${footprint ? 'footprint' : 'config'}="${key}">${Object.entries(values).map(([id, text]) => `<option value="${id}">${esc(text)}</option>`).join('')}</select></label>`;
@@ -186,7 +206,7 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
       <label><input data-enabled type="checkbox">Générer ${kind === 'quarters' ? 'les quartiers' : 'les parcelles'}</label>
       ${kind === 'quarters' ? '<label>Settlement ciblé<select id="urbanTarget"></select></label><button type="button" id="urbanFocus">Centrer sur la sélection</button>' : '<small>Les parcelles utilisent les îlots du bloc 6, sans régénérer les rues.</small>'}
       <details class="advanced"><summary>Graine</summary><label>Graine ${kind === 'quarters' ? 'quartiers' : 'parcelles'}<input data-seed type="text" placeholder="Graine de la carte"></label></details>
-      ${kind === 'quarters' ? `<div class="urban-composition-controls"><label>Génération<select data-config="composition"><option value="settlement">Agglomération complète</option><option value="district">Secteur isolé · ancien banc</option></select></label><small data-mode-hint></small><div data-settlement-settings>${footprintControls}<details class="advanced" data-legacy-settings><summary>Composition historique</summary><label>Composition du lieu<select data-config="settlementForm"><option value="auto">Selon population, culture et accès</option><option value="nucleated">Noyau groupé et faubourgs</option><option value="ribbon">Village-rue</option></select></label><label>Faubourgs<select data-config="suburbs"><option value="auto">Croissance variable</option><option value="none">Aucun</option><option value="few">Quelques faubourgs</option><option value="many">Faubourgs étendus</option></select></label>${number('phases', 'Phases du noyau (0 = culture)', 0, 5)}</details></div>${tissueControls}</div>${enclosureControls}${influenceControls}<details class="advanced"><summary>Diagnostic du plan</summary><div data-composition class="urban-composition" aria-live="polite"></div></details>` : `${select('operator', 'Opérateur parcellaire', parcelOperators)}<small>« Par phase » conserve les recettes du noyau, des extensions et des faubourgs du plan affiché.</small><div data-parcel-diagnostics class="urban-diagnostics" aria-live="polite"></div>`}
+      ${kind === 'quarters' ? `<div class="urban-composition-controls"><label>Génération<select data-config="composition"><option value="settlement">Agglomération complète</option><option value="district">Secteur isolé · ancien banc</option></select></label><small data-mode-hint></small><div data-settlement-resolution aria-live="polite"></div><div data-settlement-settings><label>Grammaire morphologique<select data-config="settlementForm">${morphologyOptions()}</select></label><button type="button" data-morphology-auto>Grammaire automatique</button><small>${MORPHOLOGY_HINT}</small>${footprintControls}<details class="advanced" data-legacy-settings><summary>Composition historique</summary><label>Faubourgs<select data-config="suburbs"><option value="auto">Croissance variable</option><option value="none">Aucun</option><option value="few">Quelques faubourgs</option><option value="many">Faubourgs étendus</option></select></label>${number('phases', 'Phases du noyau (0 = culture)', 0, 5)}</details></div>${tissueControls}</div>${enclosureControls}${influenceControls}<details class="advanced"><summary>Diagnostic du plan</summary><div data-composition class="urban-composition" aria-live="polite"></div></details>` : `${select('operator', 'Opérateur parcellaire', parcelOperators)}<small>« Par phase » conserve les recettes du noyau, des extensions et des faubourgs du plan affiché.</small><div data-parcel-diagnostics class="urban-diagnostics" aria-live="polite"></div>`}
       <details class="advanced"><summary>Recettes et dimensions avancées</summary><div class="control-group">${common(kind)}${kind === 'quarters' ? number('count', 'Secteurs de calcul visés', 3, 8) + `<div data-fixture-settings>${number('rings', 'Anneaux de la scène', 1, 2)}<label>Disposition<select data-config="placement"><option value="center">Plan culturel adapté au terrain</option><option value="rectangle">Rectangle</option><option value="skew">Oblique</option><option value="notched">Avec encoche</option></select></label></div>` + number('radius', 'Rayon d’emprise (m · 0 = lieu)', 0, 25000) + number('radiusScale', 'Échelle de l’emprise', 0.1, 5, 0.1) + '<label>Réservation monument<input data-config="monument" type="text" list="urbanMonuments"></label><datalist id="urbanMonuments"><option value="none"><option value="cathedral"><option value="great-mosque"><option value="temple"><option value="castle"><option value="palace"></datalist>' : ''}</div></details>
       ${kind === 'quarters' ? `<details class="advanced"><summary>Rues et relief</summary><div class="control-group">${number('maxStreetGrade', 'Pente maximale des rues (m/m)', 0.02, 0.3, 0.01)}${number('maxLaneGrade', 'Pente maximale des ruelles (m/m)', 0.02, 0.4, 0.01)}<label><input data-config="allowStairs" type="checkbox">Autoriser les escaliers piétons</label>${number('maxStairGrade', 'Pente maximale des escaliers (m/m)', 0.02, 1, 0.01)}</div><small>0,12 = 12 % : 12 m de montée pour 100 m au sol. Les rues cherchent un passage praticable ; les escaliers sont dessinés avec des marches. Les ponts régionaux conservent leur franchissement.</small></details>` : ''}
       <details class="advanced"><summary>Tous les paramètres natifs</summary><div data-fields class="urban-fields"></div><label>Overrides JSON<textarea data-json rows="4" spellcheck="false" placeholder="{}"></textarea></label><small>Les valeurs modifiées remplacent la recette. Les mesures géométriques sont en mètres (surfaces en m²).${kind === 'quarters' ? ' En progression automatique, les valeurs par zone affichées sont celles du cœur ; sélectionnez une zone pour modifier ses valeurs, puis revenez à la progression automatique.' : ''}</small><button data-reset type="button">Réinitialiser les paramètres</button></details>
@@ -203,6 +223,8 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
   const all = <T extends Element>(kind: Kind, selector: string): T[] => roots[kind].flatMap(root => Array.from(root.querySelectorAll<T>(selector)));
   let styleHost: Element = quarterPanel.querySelector('.stage-controls')!, displayHost: Element = parcelPanel.querySelector('.stage-controls')!;
   let displaySection: HTMLElement | undefined;
+  let cityPlanCulture: ReturnType<typeof bindCityPlanCulture> | undefined;
+  let controlRelevance: ReturnType<typeof bindControlRelevance> | undefined;
   // Native keys read by both stages are edited once, on the plan, and applied to both.
   const sharedFields = options.city ? catalogue.fields.quarters.filter(key => catalogue.fields.parcels.includes(key)) : [];
   const hiddenFields: Record<Kind, string[]> = options.city ? { quarters: ['accessDepth'], parcels: sharedFields } : { quarters: [], parcels: [] };
@@ -232,7 +254,13 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
     const composition = from('.urban-composition-controls');
     const diagnostic = from('[data-composition]').closest('details')!; retitle(diagnostic, 'Diagnostic du plan');
     plan.controls.append(from('.urban-actions'), from('[data-draft-state]'), label('[data-enabled]'), target, group(seed, focus), explorerControls(),
-      label('[data-config="composition"]'), from('[data-mode-hint]'), diagnostic, from('[data-warnings]'));
+      label('[data-config="composition"]'), from('[data-mode-hint]'), from('[data-settlement-resolution]'), diagnostic, from('[data-warnings]'));
+    const planCulture = advanced('Profil culturel du plan · surcharge', [label('[data-config="culture"]')]);
+    planCulture.dataset.planCultureOverride = '';
+    planCulture.insertAdjacentHTML('beforeend', '<button type="button" data-plan-culture-site>Plan : comme le lieu</button><small data-plan-culture-note role="status"></small>');
+    from<HTMLSelectElement>('[data-config="culture"]', planCulture).options[0].textContent = 'Comme le profil du lieu';
+    plan.controls.append(planCulture);
+    plan.controls.insertAdjacentHTML('beforeend', controlRelevanceControlsHtml());
     seedBox.remove();
     // 4 · Footprint and growth, then the isolated-sector scene of the former bench.
     const fixture = from('[data-fixture-settings]');
@@ -257,8 +285,8 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
     const parcelSeed = label('[data-seed]', parcelPanel), parcelSeedBox = parcelSeed.closest('details')!;
     label('[data-enabled]', parcelPanel).after(parcelSeed); parcelSeedBox.remove();
     const parcelNote = parcelPanel.querySelector('.stage-controls > small:not([data-draft-state])'); if (parcelNote) parcelNote.textContent = 'Les parcelles découpent les îlots du plan sans régénérer les rues.';
-    for (const [key, text] of [['culture', 'Culture du parcellaire'], ['recipe', 'Recette du parcellaire'], ['preset', 'Préréglage du parcellaire'], ['zone', 'Zones du parcellaire'], ['density', 'Densité du parcellaire']]) label(`[data-config="${key}"]`, parcelPanel).firstChild!.textContent = text;
-    from<HTMLSelectElement>('[data-config="culture"]', parcelPanel).options[0].textContent = 'Comme la ville';
+    for (const [key, text] of [['culture', 'Profil culturel du parcellaire'], ['recipe', 'Recette du parcellaire'], ['preset', 'Préréglage du parcellaire'], ['zone', 'Zones du parcellaire'], ['density', 'Densité du parcellaire']]) label(`[data-config="${key}"]`, parcelPanel).firstChild!.textContent = text;
+    from<HTMLSelectElement>('[data-config="culture"]', parcelPanel).options[0].textContent = 'Comme le plan · cultures des phases';
     retitle(from('[data-config="recipe"]', parcelPanel).closest('details')!, 'Recettes du parcellaire');
     retitle(from('[data-fields]', parcelPanel).closest('details')!, 'Paramètres natifs du parcellaire');
     label('[data-json]', streets.box).firstChild!.textContent = 'Surcharges JSON des rues et îlots';
@@ -276,6 +304,13 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
     const site = settlements?.settlements.find(s => s.key === target) ?? settlements?.settlements.slice().sort((a, b) => b.population - a.population)[0];
     return (kind === 'parcels' ? layouts?.find(l => l.key === site?.key)?.culture : undefined) ?? site?.culture ?? 'european-organic';
   }
+  function syncCityPlanCulture(): void {
+    if (!cityPlanCulture) return;
+    const site = settlements?.settlements.find(s => s.key === target);
+    const retained = layouts?.find(l => l.key === target);
+    cityPlanCulture.sync({ requested: layoutConfig.culture, place: site?.culture,
+      ...(retained ? { retained: { key: retained.key, culture: retained.culture } } : {}) });
+  }
   function baseline(config: Omit<ParcelConfig, 'operator'>): Record<string, unknown> {
     const c = catalogue.cultures[config.culture && config.culture !== 'site' ? config.culture : siteCulture(config === parcelConfig ? 'parcels' : 'quarters')];
     const recipe = c?.recipes.find(r => r.id === config.recipe) ?? c?.recipes[0];
@@ -284,6 +319,7 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
   function generationControls(): void {
     const complete = layoutConfig.composition === 'settlement';
     const legacy = layoutConfig.footprint.mechanism === 'legacy';
+    one<HTMLButtonElement>('quarters', '[data-morphology-auto]').disabled = !complete;
     for (const [selector, active] of [['[data-settlement-settings]', complete], ['[data-fixture-settings]', !complete], ['[data-legacy-settings]', complete && legacy]] as const) {
       const group = one<HTMLElement>('quarters', selector); group.hidden = !active;
       for (const e of Array.from(group.querySelectorAll<HTMLInputElement | HTMLSelectElement>('input,select'))) e.disabled = !active;
@@ -302,6 +338,7 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
     const hint = complete ? '' : 'Secteur isolé : sa disposition impose le contour, indépendamment de la culture et du maillage des rues. Choisissez « Agglomération complète » pour une ville adaptée au site.';
     const preset = layoutConfig.preset === 'culture' ? '' : ` Préréglage imposé : ${catalogue.presets[layoutConfig.preset]?.label ?? layoutConfig.preset}. Il remplace les recettes culturelles.`;
     one('quarters', '[data-mode-hint]').textContent = hint + preset;
+    controlRelevance?.sync(layoutConfig, layouts);
   }
   function populate(kind: Kind): void {
     const config = getConfig(kind);
@@ -309,16 +346,19 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
     one<HTMLInputElement>(kind, '[data-seed]').value = kind === 'quarters' ? quarterSeed : parcelSeed;
     const culture = catalogue.cultures[config.culture && config.culture !== 'site' ? config.culture : siteCulture(kind)];
     const recipe = one<HTMLSelectElement>(kind, '[data-config="recipe"]');
-    recipe.replaceChildren(new Option('Par phase · culture du lieu', 'auto'), ...(culture?.recipes ?? [{ id: 'core', label: 'Cœur', zone: 'core', preset: '' }]).map(r => new Option(r.label, r.id)));
+    recipe.replaceChildren(new Option(kind === 'quarters' ? 'Par phase · profil du plan' : 'Par phase · plan conservé', 'auto'), ...(culture?.recipes ?? [{ id: 'core', label: 'Cœur', zone: 'core', preset: '' }]).map(r => new Option(r.label, r.id)));
     // A shared recipe may be valid for another settlement culture; Rust validates it per site.
-    if (!Array.from(recipe.options).some(o => o.value === config.recipe)) recipe.add(new Option(config.recipe, config.recipe));
+    if (!Array.from(recipe.options).some(o => o.value === config.recipe)) retainSelectValue(recipe, config.recipe, 'Recette conservée hors du profil courant');
+    if (kind === 'quarters') one<HTMLSelectElement>(kind, '[data-config="settlementForm"]').innerHTML = morphologyOptions(layoutConfig.settlementForm);
     for (const c of Array.from(all<HTMLInputElement | HTMLSelectElement>(kind, '[data-config]'))) {
       const value = (config as unknown as Record<string, unknown>)[c.dataset.config!];
-      if (c instanceof HTMLInputElement && c.type === 'checkbox') c.checked = Boolean(value); else c.value = String(value ?? '');
+      if (c instanceof HTMLInputElement && c.type === 'checkbox') c.checked = Boolean(value);
+      else if (c instanceof HTMLSelectElement) retainSelectValue(c, String(value ?? ''), 'Choix conservé hors du catalogue UI');
+      else c.value = String(value ?? '');
     }
     if (kind === 'quarters') {
       for (const c of Array.from(all<HTMLInputElement | HTMLSelectElement>(kind, '[data-footprint]'))) c.value = String(layoutConfig.footprint[c.dataset.footprint as keyof LayoutConfig['footprint']]);
-      generationControls();
+      generationControls(); syncCityPlanCulture();
     }
     const base = baseline(config), fields = one<HTMLElement>(kind, '[data-fields]'); fields.replaceChildren();
     for (const key of catalogue.fields[kind]) {
@@ -379,6 +419,24 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
   let lastBuiltScene: import('../../../rust/bridge/urbanArchitecture').PlacementBatch | undefined;
   let lastBuiltCold: ColdCityState | undefined;
   const sceneClient = createUrbanSceneClient();
+  const parentClient = createUrbanParentSceneClient();
+  const frameInfo = document.createElement('small'); frameInfo.className = 'city-frame'; frameInfo.dataset.cityFrame = '';
+  let lastBuiltParent: UrbanParentBuildingState | undefined;
+  type ParentView = Awaited<ReturnType<typeof openParentViewport>>;
+  let parentView: ParentView | undefined, parentOpening: Promise<ParentView> | undefined, parentFailed = '', parentGenerationAbort: AbortController | undefined;
+  const parentKey = (state: UrbanParentBuildingState) => JSON.stringify([state.store, state.cityKey, state.offset, executionRuntime]);
+  const parentSlot = createColdViewportSlot<UrbanParentBuildingState, ParentView>(parentKey, async (state, signal) => {
+    const backend = (await getColdBackend()).parents; signal.throwIfAborted();
+    return openParentViewport(backend, state, nativeParentApi(executionRuntime), { signal, changed: () => { cityLayer?.request(); buildingPanel.refreshReport(); } });
+  });
+  const boundedParent = () => sameParentBuildingState(parentView?.state, buildingPanel.state.parent) ? parentView : undefined;
+  function clearParentView() { parentSlot.clear(); parentView = undefined; parentOpening = undefined; parentFailed = ''; }
+  async function ensureParentView(state: UrbanParentBuildingState): Promise<ParentView> {
+    const task = parentSlot.ensure(state); parentOpening = task;
+    try { const view = await task; if (parentSlot.current !== view) throw new DOMException('Parent source replaced', 'AbortError'); parentView = view; parentFailed = ''; return view; }
+    catch (e) { if (parentOpening === task && (e as Error).name !== 'AbortError') parentFailed = parentKey(state); throw e; }
+    finally { if (parentOpening === task) parentOpening = undefined; }
+  }
   let coldBackend: ReturnType<typeof createIndexedDbBuildingChunkBackend> | undefined;
   const getColdBackend = () => {
     if (coldBackend) return coldBackend;
@@ -392,19 +450,51 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
     && a.store.sourceFingerprint === b.store.sourceFingerprint && JSON.stringify(a.counts) === JSON.stringify(b.counts);
   const coldKey = (state: ColdCityState) => JSON.stringify([state.store, state.counts, state.cityKey, state.offset?.x ?? 0, state.offset?.y ?? 0]);
   let coldSession: ColdCitySession | undefined, coldLoadKey = '', coldFailedKey = '', coldLoadEpoch = 0;
+  let coldView: ColdCityViewport | undefined, coldViewLoad: Promise<ColdCityViewport> | undefined, coldViewKey = '', coldViewEpoch = 0;
+  let coldRepairAbort: AbortController | undefined, coldRepairState: ColdCityState | undefined;
+  const boundedCold = () => sameCold(coldView?.state, buildingPanel.state.cold) ? coldView : undefined;
+  const coldViewportSlot = createColdViewportSlot<ColdCityState, ColdCityViewport>(coldKey, async (state, signal) => {
+    const backend = await getColdBackend(); signal.throwIfAborted();
+    return openColdCityViewport(backend, state, { signal,
+      realize: async (building, context) => { const { realizeUrbanBuilding } = await import('../../../rust/bridge/architecture');
+        return realizeUrbanBuilding(building, executionRuntime, false, context.scene); },
+      onChange: () => { if (sameCold(coldView?.state, state)) { cityLayer?.request(); reportSelectedDetail(); for (const listener of detailListeners) listener(); } },
+    });
+  });
+  function clearColdView(): void { ++coldViewEpoch; coldViewLoad = undefined; coldViewKey = ''; coldViewportSlot.clear(); coldView = undefined; }
+  async function ensureColdView(state: ColdCityState): Promise<ColdCityViewport> {
+    if (coldRepairAbort && !coldRepairAbort.signal.aborted && sameCold(coldRepairState, state)) throw new Error('Reconstruction de l’aperçu en cours.');
+    const key = coldKey(state);
+    if (sameCold(coldView?.state, state)) {
+      if (coldViewLoad && coldViewKey !== key) { ++coldViewEpoch; coldViewLoad = undefined; coldViewKey = ''; }
+      await coldViewportSlot.ensure(state); return coldView!;
+    }
+    if (coldViewKey === key && coldViewLoad) return coldViewLoad;
+    const epoch = ++coldViewEpoch; coldViewKey = key; const task = coldViewportSlot.ensure(state); coldViewLoad = task;
+    try { const next = await task; if (epoch !== coldViewEpoch || coldViewportSlot.current !== next) throw new DOMException('Ville remplacée', 'AbortError');
+      coldView = next; coldFailedKey = ''; return next;
+    } catch (e) { if (epoch === coldViewEpoch && (e as Error).name !== 'AbortError') coldFailedKey = key; throw e; }
+    finally { if (coldViewLoad === task) { coldViewLoad = undefined; coldViewKey = ''; } }
+  }
   let coldEditAbort: AbortController | undefined;
   let coldLoad: Promise<ColdCitySession> | undefined;
   async function ensureColdSession(state: ColdCityState): Promise<ColdCitySession> {
+    if (coldRepairAbort && !coldRepairAbort.signal.aborted && sameCold(coldRepairState, state)) throw new Error('Reconstruction de l’aperçu en cours.');
     if (sameCold(coldSession?.state, state)) return coldSession!;
     const key = coldKey(state);
     if (coldLoadKey === key && coldLoad) return coldLoad;
     const epoch = ++coldLoadEpoch; coldLoadKey = key;
-    const task = getColdBackend().then(backend => openColdCitySession(backend, state, { cancelled: () => epoch !== coldLoadEpoch }));
+    const task = getColdBackend().then(backend => openColdCitySession(backend, state, { ...(sitesCurrent() ? { sites: sceneRequestList } : {}), cancelled: () => epoch !== coldLoadEpoch }));
     coldLoad = task;
     try {
       const next = await task;
       if (epoch !== coldLoadEpoch) { next.dispose(); throw new DOMException('Ville remplacée', 'AbortError'); }
-      coldSession?.dispose(); coldSession = next; coldFailedKey = ''; return next;
+      coldSession?.dispose(); coldSession = next; coldFailedKey = '';
+      if (next.siteVisuals && !sitesCurrent()) {
+        sceneSites?.dispose(); sceneSites = createUnboundSiteStore(next.siteVisuals);
+        sceneRequestList = next.siteVisuals; sceneRequestScene = state;
+      }
+      return next;
     } catch (error) { if (epoch === coldLoadEpoch) coldFailedKey = key; throw error; }
     finally { if (coldLoad === task) { coldLoad = undefined; coldLoadKey = ''; } }
   }
@@ -415,20 +505,29 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
   // A progressive prefix is display-only. History, exports and scoped edits keep
   // the last completed scene until the worker validates the complete stream.
   type ArchitecturePreview = { layouts: Layout[]; partitions: Partition[]; scene?: PlacementBatch;
+    parent?: { records: ParentVisualRecords; renderer: UrbanBuildingLodRenderer<ParentMemberVisual>; counts: import('../../../rust/bridge/nativeParentContract').NativeParentCounts;
+      source: import('../../../rust/bridge/nativeParentSessionContract').ParentSessionSource; sessionId: string; durableCompleted: number; nativeAckedCompleted: number };
     coldProjection?: NativeBuildingProjectionScene; buildings?: number; refusals?: number; openSpaces?: number;
     completed: number; total: number; errors: number; selected?: string };
   let architecturePreview: ArchitecturePreview | undefined, architectureEpoch = 0;
+  function deactivateParentPaint(): void {
+    // An invalidated marker is intentionally not an attestation of a new paint.
+    if (frameInfo.dataset.parentEvidence) frameInfo.dataset.parentEvidence = JSON.stringify({ version: 'parent-city-viewport-evidence-1', phase: 'invalidated', active: false, complete: false });
+  }
   function invalidateArchitecture(): void {
-    ++architectureEpoch; architecturePreview = undefined; sceneClient.invalidate();
+    deactivateParentPaint();
+    ++architectureEpoch; architecturePreview?.parent?.renderer.clearCaches(); architecturePreview = undefined; sceneClient.invalidate();
+    parentClient.invalidate(); parentGenerationAbort?.abort(new DOMException('Plan remplacé', 'AbortError')); clearParentView(); coldRepairAbort?.abort(new DOMException('Plan remplacé', 'AbortError'));
     ++coldLoadEpoch; coldLoad = undefined; coldLoadKey = ''; coldFailedKey = '';
     coldEditAbort?.abort(new DOMException('Plan remplacé', 'AbortError'));
-    coldSession?.dispose(); coldSession = undefined;
+    coldSession?.dispose(); coldSession = undefined; clearColdView();
     sceneRequestScene = undefined; sceneRequestList = []; sceneSites?.dispose(); sceneSites = undefined;
   }
   const buildingPanel = createUrbanBuildingsPanel({ host: stages, silhouettes: options.city,
     getProgramme: () => appliedLayout.programme,
-    applyProgramme: programme => { layoutConfig.programme = clone(programme); appliedLayout = { ...clone(appliedLayout), programme: clone(programme) }; request('quarters'); options.onChange(); },
+    applyProgramme: programme => { layoutConfig.programme = clone(programme); controlRelevance?.sync(layoutConfig, layouts); appliedLayout = { ...clone(appliedLayout), programme: clone(programme) }; request('quarters'); options.onChange(); },
     generate: async (seed, settings, onProgress) => {
+      coldRepairAbort?.abort(new DOMException('Nouveau calcul', 'AbortError'));
       const epoch = ++architectureEpoch, active = () => epoch === architectureEpoch;
       // Roads, plan and parcels must be applied first: a late regional road result
       // would re-run the plan and invalidate architecture already in progress.
@@ -448,34 +547,73 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
         ? { layouts: inputLayouts, partitions: inputPartitions, completed: 0, total: 0, errors: 0 } : undefined;
       architecturePreview = preview;
       try {
+        let generationNote: string | undefined;
+        if (preview) {
+          const support = await nativeParentSessionSupport(executionRuntime);
+          if (!support.supported && buildingPanel.state.architectureContract === 'parent-session-1') throw new Error(`Ce replay exige le flux parents natifs : ${support.reason}`);
+          if (!support.supported) generationNote = `Ancien moteur, flux de plans historiques : ${support.reason}`;
+          if (support.supported) {
+            if (typeof indexedDB === 'undefined') throw new Error('Le flux parents natifs nécessite le stockage transactionnel IndexedDB.');
+            const stillCurrent = () => active() && architecturePreview === preview && layouts === inputLayouts && partitions === inputPartitions;
+            const actualSeed = seed || appliedParcelSeed || options.getSeed(), backend = (await getColdBackend()).parents;
+            const residentFingerprint = retained ? undefined : await coldCityFingerprint({ layouts: selectedLayouts, partitions: selectedPartitions,
+              raster: 'n' in source ? source : settlementRaster(source, 1024), seed: actualSeed, settings, buildingOverrides: edits.buildings });
+            const identity = await parentGenerationIdentity({ source: retained?.source, residentFingerprint, keys: selectedLayouts.map(l => l.key), seed: actualSeed,
+              settings, buildingOverrides: edits.buildings, runtime: executionRuntime });
+            if (!stillCurrent()) throw new DOMException('Plan remplacé', 'AbortError');
+            comparison.api.end(); architectureView = '2d';
+            const abort = new AbortController(); parentGenerationAbort?.abort(); parentGenerationAbort = abort;
+            const sample = createParentStreamWindow(), renderer = new UrbanBuildingLodRenderer<ParentMemberVisual>({ buildings: [] }, { raster: false });
+            const counts = { requests: 0, admitted_parents: 0, single_parents: 0, assembly_parents: 0, physical_members: 0, refusals: 0, open_spaces: 0 };
+            const response = await parentClient.run({ raster, layouts: selectedLayouts, partitions: selectedPartitions, ...retained, seed: actualSeed, settings,
+              runtime: executionRuntime, mode: architectureMode === 'detailed' ? 'detailed' : 'compact', buildingOverrides: edits.buildings, parentSession: identity },
+              { backend, sourceFingerprint: identity.fingerprint, signal: abort.signal, progress: onProgress,
+                onBatch: (batch, message) => {
+                  if (!stillCurrent()) throw new DOMException('Plan remplacé', 'AbortError');
+                  const box = options.map.viewBox.baseVal, records = sample.append(batch, [box.x, box.y, box.x + box.width, box.y + box.height]);
+                  for (const key of Object.keys(counts) as (keyof typeof counts)[]) counts[key] += batch.counts[key];
+                  renderer.replaceScene({ buildings: records.members, materials: records.materials });
+                  preview.parent = { records, renderer, counts: { ...counts }, source: identity, sessionId: message.sessionId,
+                    durableCompleted: message.progress.completed, nativeAckedCompleted: preview.parent?.nativeAckedCompleted ?? 0 };
+                  preview.completed = message.progress.completed; preview.total = message.progress.total; draw();
+                }, onAcknowledged: value => {
+                  if (!stillCurrent() || !preview.parent || preview.parent.sessionId !== value.receipt.session_id) throw new DOMException('Préfixe remplacé', 'AbortError');
+                  preview.parent.nativeAckedCompleted = value.reply.completed; cityLayer?.request();
+                } });
+            if (!stillCurrent()) throw new DOMException('Plan remplacé', 'AbortError');
+            const state: UrbanParentBuildingState = { store: response.store, counts: response.counts, generation: response.generation, cityKey: selectedLayouts[0].key, binding: 'generated' };
+            // Publication comes only after source/index/cache CAS and native release.
+            await ensureParentView(state); if (!stillCurrent()) throw new DOMException('Plan remplacé', 'AbortError');
+            sample.clear(); renderer.clearCaches(); architecturePreview = undefined; parentGenerationAbort = undefined;
+            return { parent: state, timing: response.timing };
+          }
+        }
         if (preview && retained && executionRuntime.profile === 'local' && layouts.length === 1 && typeof indexedDB !== 'undefined') {
           const stillCurrent = () => active() && architecturePreview === preview && layouts === inputLayouts && partitions === inputPartitions;
           const actualSeed = seed || appliedParcelSeed || options.getSeed(), backend = await getColdBackend();
           const fingerprint = await coldCityFingerprint({ layouts: selectedLayouts, partitions: selectedPartitions,
             raster: 'n' in source ? source : settlementRaster(source, 1024), seed: actualSeed, settings, buildingOverrides: edits.buildings });
           if (!stillCurrent()) throw new DOMException('Plan remplacé', 'AbortError');
-          const projection = createColdProjectionAccumulator();
+          const streamWindow = createColdStreamWindow();
           const response = await sceneClient.runCold({ ...retained, seed: actualSeed, settings,
             runtime: { ...executionRuntime, profile: 'local' }, mode: architectureMode === 'detailed' ? 'detailed' : 'compact', buildingOverrides: edits.buildings },
           { backend, sourceFingerprint: fingerprint, progress: onProgress, onProjection: (chunk, progress) => {
             if (!stillCurrent()) throw new DOMException('Plan remplacé', 'AbortError');
-            projection.append(chunk); preview.coldProjection ??= projection.scene;
+            const box = options.map.viewBox.baseVal;
+            preview.coldProjection = streamWindow.append(chunk, [box.x, box.y, box.x + box.width, box.y + box.height]);
             publishColdArchitectureBatch(preview, chunk, progress);
           } });
           if (!stillCurrent()) throw new DOMException('Plan remplacé', 'AbortError');
           const state: ColdCityState = { store: response.store, counts: response.counts, cityKey: selectedLayouts[0].key };
-          const session = await openColdCitySession(backend, state, { projection: projection.scene, cancelled: () => !stillCurrent() });
-          if (!stillCurrent()) { session.dispose(); throw new DOMException('Plan remplacé', 'AbortError'); }
+          const view = await ensureColdView(state);
+          if (!stillCurrent()) { view.dispose(); throw new DOMException('Plan remplacé', 'AbortError'); }
           const nextSites = response.siteData.kind === 'native-sites'
-            ? createNativeSiteStore(response.siteData.visuals, response.siteData.query, executionRuntime) : undefined;
-          ++coldLoadEpoch; coldSession?.dispose(); coldSession = session; coldFailedKey = '';
+            ? createNativeSiteStore(response.siteData.visuals, response.siteData.query, executionRuntime, { originLookup: id => view.readOrigin(id) }) : undefined;
+          ++coldLoadEpoch; coldSession?.dispose(); coldSession = undefined; coldFailedKey = '';
           sceneSites?.dispose(); sceneSites = nextSites; sceneRequestList = nextSites?.visuals ?? []; sceneRequestScene = state;
-          // Reuse the growing visual index; only the native detail loader changes.
-          if (cityProjectionOf === preview.coldProjection && cityRenderer) {
-            cityProjectionOf = session.projection; configureColdDetails(session);
-          }
+          streamWindow.clear(); cityRenderer?.clearCaches(); cityRenderer = undefined; cityProjectionOf = undefined;
           architecturePreview = undefined;
-          return { cold: state, timing: response.timing };
+          return { cold: state, timing: response.timing, generationNote };
         }
         const response = await sceneClient.run({ raster, layouts: selectedLayouts, partitions: selectedPartitions, ...retained, seed: seed || appliedParcelSeed || options.getSeed(), settings, runtime: executionRuntime, silhouettes: options.city, mode: options.city ? architectureMode : undefined, buildingOverrides: options.city ? edits.buildings : undefined }, onProgress,
           preview ? (delta, progress, scene) => {
@@ -496,30 +634,41 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
         }
         sceneSites?.dispose(); sceneSites = nextSites; sceneRequestList = nextSites.visuals; sceneRequestScene = scene;
         if (architecturePreview === preview) architecturePreview = undefined;
-        return { scene, timing: response.timing };
+        return { scene, timing: response.timing, generationNote };
       } catch (error) {
-        if (architecturePreview === preview) { architecturePreview = undefined; draw(); }
+        if (architecturePreview === preview) { preview?.parent?.renderer.clearCaches(); architecturePreview = undefined; draw(); }
         throw error;
       }
     },
     onChange: state => {
       const coldChanged = !sameCold(state.cold, lastBuiltCold) && (state.cold !== undefined || lastBuiltCold !== undefined);
-      const changedScene = state.scene !== lastBuiltScene || coldChanged;
+      const parentChanged = !sameParentBuildingState(state.parent, lastBuiltParent) && (!!state.parent || !!lastBuiltParent);
+      if (parentChanged && !sameParentBuildingState(parentView?.state, state.parent)) clearParentView();
+      const changedScene = state.scene !== lastBuiltScene || coldChanged || parentChanged;
+      if (parentChanged) deactivateParentPaint();
+      if (coldChanged && !sameCold(coldView?.state, state.cold)) clearColdView();
       if (coldChanged && !sameCold(coldSession?.state, state.cold)) {
         ++coldLoadEpoch; coldLoad = undefined; coldLoadKey = ''; coldFailedKey = '';
         coldSession?.dispose(); coldSession = undefined;
       }
       const appearance = JSON.stringify({ visible: state.visible, appearance: state.appearance });
-      if ((state.scene || state.cold) && changedScene && render.view !== 'roles') render.view = 'buildings';
+      if ((state.scene || state.cold || state.parent) && changedScene && render.view !== 'roles') render.view = 'buildings';
       const changedAppearance = appearance !== lastBuildingAppearance;
-      lastBuiltScene = state.scene; lastBuiltCold = state.cold; lastBuildingAppearance = appearance;
+      lastBuiltScene = state.scene; lastBuiltCold = state.cold; lastBuiltParent = state.parent; lastBuildingAppearance = appearance;
       if (target !== 'all') rememberCities([target]); draw(); options.onChange();
       if (changedScene || changedAppearance) options.onPlanChange?.();
     }, onOpen: (building, context) => openUrbanHouseCase(building, context ?? buildingPanel.state.scene),
-    readColdBuilding: async (state, id) => (await ensureColdSession(state)).read(id, 'selection'),
+    ...(options.city ? { onAssembly: openSelectedAssembly } : {}),
+    readColdBuilding: async (state, id) => (await ensureColdView(state)).read(id, 'selection'),
+    loadColdRefusals: async state => { await ensureColdSession(state); },
     getColdRefusals: state => sameCold(coldSession?.state, state) ? coldSession?.projection.refusals : undefined,
     exportCold: state => downloadColdBuildings(getColdBackend(), state),
-    onProjection: active => { const applied = options.onProjection?.(active, buildingPanel.state.camera); if (typeof applied === 'boolean') buildingPanel.state.projection = applied; },
+    readParentBuilding: async (state, id) => (await ensureParentView(state)).read(id),
+    exportParent: state => downloadParentBuildings(getColdBackend().then(b => b.parents), state),
+    importParent: async file => { if (buildingPanel.busy) throw new Error('Attendez la génération en cours.');
+      const state = await readParentBuildings(file, (await getColdBackend()).parents, nativeParentApi(executionRuntime), { expectedCityKey: target === 'all' ? undefined : target });
+      invalidateArchitecture(); await ensureParentView(state); return state; },
+    onProjection: active => { if (active && buildingPanel.state.parent) { inspectorNote('La vue 3D des parents natifs n’est pas encore prise en charge.'); return; } const applied = options.onProjection?.(active, buildingPanel.state.camera); if (typeof applied === 'boolean') buildingPanel.state.projection = applied; },
   });
   if (options.before) options.before.before(buildingPanel.programme, buildingPanel.panel, ...(displaySection ? [displaySection] : []));
   // City Bench has no backend anchor: the display section follows the building panel.
@@ -527,6 +676,45 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
   const architectureNames: Record<UrbanSceneMode, string> = { silhouette: 'Silhouettes (aperçu)', compact: 'Plan compact', detailed: 'Détaillé' };
   const architectureActions: Record<UrbanSceneMode, string> = { silhouette: 'Tracer les silhouettes', compact: 'Planifier les bâtiments', detailed: 'Planifier et détailler la vue' };
   const architectureLabel = document.createElement('label'), cityCounts = document.createElement('small');
+  const cacheRepair = document.createElement('details'); cacheRepair.className = 'advanced'; cacheRepair.dataset.coldRepair = ''; cacheRepair.hidden = true;
+  cacheRepair.innerHTML = '<summary>Reconstruire l’aperçu</summary><small>Les plans sont conservés. Reconstruit seulement leur affichage, sans modifier les bâtiments.</small><button type="button" data-cold-repair-start>Reconstruire l’aperçu</button><button type="button" data-cold-repair-cancel hidden>Annuler</button><small data-cold-repair-status role="status"></small>';
+  const repairStart = cacheRepair.querySelector<HTMLButtonElement>('[data-cold-repair-start]')!, repairCancel = cacheRepair.querySelector<HTMLButtonElement>('[data-cold-repair-cancel]')!;
+  const repairStatus = cacheRepair.querySelector<HTMLElement>('[data-cold-repair-status]')!;
+  repairCancel.onclick = () => { coldRepairAbort?.abort(new DOMException('Réparation annulée', 'AbortError')); repairCancel.disabled = true; repairStatus.textContent = 'Annulation : attente de la lecture déjà engagée…'; };
+  repairStart.onclick = () => { void (async () => {
+    const parent = buildingPanel.state.parent;
+    if (parent) { if (coldRepairAbort) return; const abort = new AbortController(); coldRepairAbort = abort;
+      repairStart.disabled = true; repairCancel.disabled = false; repairCancel.hidden = false; repairStatus.textContent = 'Relecture native des seules archives pour reconstruire les affichages…';
+      try { await (await ensureParentView(parent)).repair(abort.signal); repairStatus.textContent = 'Affichage reconstruit, plans inchangés.'; draw(); }
+      catch (e) { repairStatus.textContent = String(e); }
+      finally { if (coldRepairAbort === abort) coldRepairAbort = undefined; repairStart.disabled = false; repairCancel.hidden = true; }
+      return;
+    }
+    const state = buildingPanel.state.cold; if (!state || coldRepairAbort) return;
+    const abort = new AbortController(), epoch = architectureEpoch; coldRepairAbort = abort; coldRepairState = state;
+    clearColdView(); ++coldLoadEpoch; coldLoad = undefined; coldLoadKey = ''; coldSession?.dispose(); coldSession = undefined; coldFailedKey = coldKey(state);
+    repairStart.disabled = true; repairCancel.disabled = false; repairCancel.hidden = false; cacheRepair.setAttribute('aria-busy', 'true');
+    const current = () => epoch === architectureEpoch && sameCold(state, buildingPanel.state.cold);
+    repairStatus.textContent = 'Préparation de l’aperçu des plans conservés…'; draw();
+    try {
+      const backend = await getColdBackend();
+      await repairColdDerivedCache(backend, state, { signal: abort.signal, current,
+        progress: p => { if (current()) repairStatus.textContent = `${p.phase === 'complete' ? 'Aperçu préparé' : 'Reconstruction de l’aperçu'} : ${p.completed.toLocaleString()}/${p.total.toLocaleString()} lots`; } });
+      if (!current()) throw new DOMException('Plan remplacé', 'AbortError');
+      coldFailedKey = ''; coldRepairAbort = undefined; coldRepairState = undefined; repairCancel.hidden = true; repairCancel.disabled = true;
+      await ensureColdView(state); repairStatus.textContent = 'Affichage proche disponible. L’aperçu global continue de se préparer.';
+      buildingPanel.refreshReport(); draw(); options.onChange();
+    } catch (e) {
+      if (current()) { coldFailedKey = coldKey(state); cacheRepair.dataset.diagnostic = String(e);
+        repairStatus.textContent = abort.signal.aborted ? 'Reconstruction annulée. Les plans n’ont pas été modifiés ; vous pouvez réessayer.'
+          : /quota/i.test(String(e)) ? 'Espace disponible insuffisant pour reconstruire l’aperçu. Les plans sont conservés ; libérez du stockage puis réessayez.'
+          : 'L’aperçu n’a pas pu être reconstruit. Les archives n’ont pas été modifiées ; vous pouvez réessayer.'; }
+    } finally {
+      if (coldRepairAbort === abort) { coldRepairAbort = undefined; coldRepairState = undefined; }
+      repairStart.disabled = !buildingPanel.state.cold; repairCancel.hidden = true; cacheRepair.removeAttribute('aria-busy');
+    }
+  })(); };
+
   function architectureTitles(): void {
     if (!options.city) return;
     buildingPanel.panel.querySelector('summary')!.textContent = `9 · Bâtiments · ${architectureNames[architectureMode].toLowerCase()}`;
@@ -538,7 +726,7 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
     architectureLabel.innerHTML = `Architecture<select data-city-architecture>${Object.entries(architectureNames).map(([id, label]) => `<option value="${id}">${label}</option>`).join('')}</select>`;
     const select = architectureLabel.querySelector('select')!; select.value = architectureMode;
     cityCounts.dataset.cityBuildingCounts = ''; cityCounts.setAttribute('role', 'status');
-    buildingPanel.panel.querySelector('.urban-actions')!.after(architectureLabel, cityCounts);
+    buildingPanel.panel.querySelector('.urban-actions')!.after(architectureLabel, cityCounts, cacheRepair);
     select.onchange = () => {
       const previous = architectureMode;
       architectureMode = select.value as UrbanSceneMode; architectureTitles(); options.onChange();
@@ -580,7 +768,7 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
   const editsBox = document.createElement('div'); editsBox.className = 'city-edits'; editsBox.dataset.cityEdits = '';
   // City Bench: legend of the roles view and frame statistics of the canvas.
   const legend = document.createElement('div'); legend.className = 'city-legend'; legend.dataset.cityLegend = '';
-  const frameInfo = document.createElement('small'); frameInfo.className = 'city-frame'; frameInfo.dataset.cityFrame = '';
+
   if (options.city) { views.after(legend); inspection.before(editsBox); displayHost.append(frameInfo); }
   options.map.addEventListener('click', event => {
     if (options.city) { cityClick(event); return; }
@@ -644,7 +832,7 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
     const hint = one(kind, '[data-draft-state]'); hint.hidden = false;
     hint.textContent = options.getAuto?.() ? 'Modifications en attente · application automatique…' : `Modifications non appliquées · cliquez sur « ${kind === 'quarters' ? 'Régénérer la ville' : 'Régénérer les parcelles'} ».`;
     clearTimeout(draftTimers[kind]);
-    try { read(kind, false); options.map.dispatchEvent(new CustomEvent('urban:settings', { detail: { layoutConfig: clone(layoutConfig), parcelConfig: clone(parcelConfig), quarterSeed: one<HTMLInputElement>('quarters', '[data-seed]').value, parcelSeed: one<HTMLInputElement>('parcels', '[data-seed]').value } })); } catch { /* Keep invalid drafts local. */ }
+    try { read(kind, false); if (kind === 'quarters') controlRelevance?.sync(layoutConfig, layouts); options.map.dispatchEvent(new CustomEvent('urban:settings', { detail: { layoutConfig: clone(layoutConfig), parcelConfig: clone(parcelConfig), quarterSeed: one<HTMLInputElement>('quarters', '[data-seed]').value, parcelSeed: one<HTMLInputElement>('parcels', '[data-seed]').value } })); } catch { /* Keep invalid drafts local. */ }
     if (options.getAuto?.()) draftTimers[kind] = setTimeout(() => {
       if (options.getAuto?.()) apply(kind);
     }, 220);
@@ -716,7 +904,7 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
       invalidateArchitecture(); buildingPanel.invalidate();
       layouts = merged.layouts; layoutsId = response.id; retainedLayouts = response.layouts; partitions = merged.partitions; buildingPanel.replaceScene(merged.buildingState?.scene); lastBuiltScene = buildingPanel.state.scene;
       rememberCities(response.layouts.map(layout => layout.key));
-      populate('parcels');
+      populate('parcels'); syncCityPlanCulture();
       const count = (layouts ?? []).reduce((n, l) => n + l.blocks.length, 0);
       status('quarters', `Rust · ${layouts?.length ?? 0} settlement(s) · ${count} îlots · ${response.ms?.toFixed(0)} ms`);
       one('quarters', '[data-state]').textContent = `${count} îlots`;
@@ -741,7 +929,7 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
       const count = (partitions ?? []).reduce((n, p) => n + p.parcels.length, 0);
       status('parcels', `Rust · ${count} parcelles · ${response.ms?.toFixed(0)} ms`);
       one('parcels', '[data-state]').textContent = `${count} parcelles`;
-      one('parcels', '[data-warnings]').textContent = warningText((partitions ?? []).flatMap(p => p.warnings.map(w => `${p.key} : ${w}`)));
+      one('parcels', '[data-warnings]').textContent = warningText((partitions ?? []).flatMap(p => p.warnings.map(w => `${p.key} : ${urbanCapacityWarningText(w)}`)));
       if (completeGeneration) {
         completeGeneration = false; initialBuildingState = undefined;
         if (target === 'all' && layouts!.length > 1) status('parcels', 'Plan prêt · choisissez une ville pour implanter ses bâtiments.');
@@ -759,6 +947,7 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
     if (reportedLayouts === layouts && compositionEnabled === enabled) return;
     reportedLayouts = layouts; compositionEnabled = enabled;
     const box = one<HTMLElement>('quarters', '[data-composition]');
+    one<HTMLElement>('quarters', '[data-settlement-resolution]').innerHTML = morphologyEvidenceHtml(enabled ? layouts : undefined);
     if (!enabled || !layouts) { box.replaceChildren(); return; }
     const names: Record<string, string> = { town: 'Bourg / ville', 'nucleated-village': 'Village groupé', 'street-village': 'Village-rue', hamlet: 'Hameau', district: 'Secteur isolé' };
     const hectares = (a: number): string => `${(a / 1e4).toFixed(2)} ha`;
@@ -940,6 +1129,7 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
   let comparisonBuilt: [PlacementBatch, CityScene | undefined, CityBuildings | undefined] | undefined;
   const comparison = createCityComparison({
     current: () => {
+      if (buildingPanel.state.parent || architecturePreview?.parent) throw new Error('La comparaison legacy des parents natifs n’est pas encore prise en charge.');
       const scene = buildingPanel.state.scene;
       if (!architecturePreview && layouts && partitions && sitesCurrent() && sceneRequestList.length
         && sameCold(coldSession?.state, buildingPanel.state.cold)) return { layouts, partitions, scene: coldSession!.projection, requests: sceneRequestList };
@@ -950,7 +1140,7 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
     // Codex `suspend()`) before any frame, including begin() and camera moves.
     repaint: () => {
       if (comparison.state()) cityDetails?.suspend();
-      cityLayer?.request();
+      draw(); cityLayer?.request();
     },
   });
   function displayedArchitecture(): PlacementBatch | undefined {
@@ -974,7 +1164,7 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
   function displayedColdProjection(): NativeBuildingProjectionScene | undefined {
     if (architecturePreview?.coldProjection && architecturePreview.layouts === layouts && architecturePreview.partitions === partitions)
       return architecturePreview.coldProjection;
-    return sameCold(coldSession?.state, buildingPanel.state.cold) ? coldSession?.projection : undefined;
+    return (architectureView === '3d' || render.view === 'roles' || !!comparison.state()) && sameCold(coldSession?.state, buildingPanel.state.cold) ? coldSession?.projection : undefined;
   }
   function configureColdDetails(session: ColdCitySession): void {
     cityDetails?.dispose(); cityDetails = undefined;
@@ -998,10 +1188,10 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
     preview.openSpaces = (preview.openSpaces ?? 0) + chunk.metrics.openSpaces; preview.errors += chunk.metrics.errors;
     if (!cityRenderer || cityProjectionOf !== preview.coldProjection) {
       cityRenderer?.clearCaches(); cityDetails?.dispose(); cityDetails = undefined;
-      cityRenderer = new UrbanBuildingLodRenderer<CityVisual>(chunk); cityProjectionOf = preview.coldProjection;
+      cityRenderer = new UrbanBuildingLodRenderer<CityVisual>(preview.coldProjection!); cityProjectionOf = preview.coldProjection;
       refusedParcels = new Set();
-    } else cityRenderer.appendScene(chunk);
-    for (const refusal of chunk.refusals ?? []) refusedParcels?.add(refusal.parcel_id);
+    } else cityRenderer.replaceScene(preview.coldProjection!);
+    refusedParcels = new Set((chunk.refusals ?? []).map(r => r.parcel_id));
     cityBuilt = undefined; cityBuiltOf = undefined;
     draw(); cityLayer?.request();
   }
@@ -1018,7 +1208,7 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
   }
   function drawCityLayer(layer: SVGGElement): void {
     const scene = displayedArchitecture();
-    compositionReport(); parcelReport();
+    compositionReport(); parcelReport(); controlRelevance?.sync(layoutConfig, layouts);
     if (drawnLayouts !== layouts || drawnPartitions !== partitions || drawnScene !== scene) {
       drawnLayouts = layouts; drawnPartitions = partitions; drawnScene = scene; drawnLayer = layer; selectedParcel = undefined;
       if (!architecturePreview) options.onPlanChange?.();
@@ -1034,18 +1224,32 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
       cityPlan = buildCityScene(layouts, visiblePartitions ?? []); cityPlanOf = [layouts, visiblePartitions];
       if (!architecturePreview?.scene) cityBuiltOf = null;
     }
+    const parentState = buildingPanel.state.parent;
+    cacheRepair.hidden = !parentState && !buildingPanel.state.cold;
+    if (!architecturePreview && parentState && !boundedParent() && !parentOpening && parentFailed !== parentKey(parentState))
+      void publishParentUiTask(ensureParentView(parentState), () => !architecturePreview && sameParentBuildingState(parentState, buildingPanel.state.parent),
+        () => { draw(); options.onPlanChange?.(); }, e => { inspectorNote(String(e)); cityCounts.textContent = String(e); });
     const coldState = buildingPanel.state.cold;
-    if (!architecturePreview && coldState && !sameCold(coldSession?.state, coldState)) {
+    if (!architecturePreview && coldState && !sameCold(coldView?.state, coldState)) {
       const key = coldKey(coldState);
-      if (coldFailedKey !== key && coldLoadKey !== key) {
-        const loading = ensureColdSession(coldState), epoch = coldLoadEpoch;
+      if (!coldRepairAbort && coldFailedKey !== key && coldViewKey !== key) {
+        const loading = ensureColdView(coldState), epoch = coldViewEpoch;
         void loading.then(() => {
-          if (epoch === coldLoadEpoch && sameCold(coldState, buildingPanel.state.cold)) { draw(); buildingPanel.refreshReport(); options.onChange(); options.onPlanChange?.(); }
-        }, error => { if (epoch === coldLoadEpoch && sameCold(coldState, buildingPanel.state.cold)) cityCounts.textContent = `Plans conservés indisponibles : ${String(error)}`; });
+          if (epoch === coldViewEpoch && sameCold(coldState, buildingPanel.state.cold)) { draw(); buildingPanel.refreshReport(); options.onChange(); options.onPlanChange?.(); }
+        }, error => { if (epoch === coldViewEpoch && sameCold(coldState, buildingPanel.state.cold)) { cacheRepair.dataset.diagnostic = String(error); cityCounts.textContent = /derived|cache/i.test(String(error))
+          ? 'Plans conservés, aperçu à reconstruire. Utilisez « Reconstruire l’aperçu » ci-dessous.'
+          : 'Lecture de l’affichage conservé indisponible. Vous pouvez tenter « Reconstruire l’aperçu » ci-dessous.'; } });
       }
     }
+    if (!architecturePreview && coldState && (architectureView === '3d' || render.view === 'roles') && !sameCold(coldSession?.state, coldState) && !coldLoad) {
+      void ensureColdSession(coldState).then(() => { draw(); options.onPlanChange?.(); }, e => inspectorNote(String(e)));
+    }
+    const parentSource = !!parentState || !!architecturePreview?.parent;
+    const bounded = parentSource || !architecturePreview && architectureView === '2d' && render.view === 'buildings' && !!coldState && !comparison.state();
     const projection = displayedColdProjection();
-    if (projection) {
+    if (bounded) { cityBuilt = undefined; cityBuiltOf = undefined; cityDetails?.dispose(); cityDetails = undefined;
+      cityRenderer?.replaceScene({ buildings: [] }); cityRenderer = undefined; cityProjectionOf = undefined; }
+    else if (projection) {
       cityBuiltOf = undefined; cityBuilt = undefined;
       if (cityProjectionOf !== projection || !cityRenderer) {
         cityRenderer?.clearCaches(); cityRenderer = new UrbanBuildingLodRenderer<CityVisual>(projection); cityProjectionOf = projection;
@@ -1087,48 +1291,83 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
     const view = compare ? compare.renderView : render.view;
     if (compare && silhouetteCompare && (comparisonBuilt?.[0] !== compare.silhouette || comparisonBuilt[1] !== cityPlan)) comparisonBuilt = [compare.silhouette, cityPlan, buildCityBuildings(compare.silhouette, cityPlan)];
     const appearance = { style: (compare ? silhouetteCompare : architectureMode === 'silhouette') ? 'silhouette' as const : 'cartographic' as const, diagnostic: buildingPanel.state.appearance.diagnostic };
-    const native = (compare ? !silhouetteCompare && view === 'buildings' : buildingPanel.state.visible && render.view === 'buildings') ? cityRenderer : undefined;
-    const detail = architectureView === '2d' ? cityDetails?.update({ viewport: frame.viewport, metresPerPixel: frame.mpp, selectedId: selected,
+    const viewport = !compare && !architecturePreview && architectureView === '2d' && view === 'buildings' && buildingPanel.state.visible ? boundedCold() : undefined;
+    viewport?.ensureViewport([frame.viewport.minX, frame.viewport.minY, frame.viewport.maxX, frame.viewport.maxY]);
+    const parent = !compare && !architecturePreview && architectureView === '2d' && view === 'buildings' && buildingPanel.state.visible ? boundedParent() : undefined;
+    const parentPreview = !compare && buildingPanel.state.visible && view === 'buildings' ? architecturePreview?.parent : undefined;
+    const parentOwned = !!buildingPanel.state.parent || !!architecturePreview?.parent;
+    const native = viewport ?? ((compare ? !silhouetteCompare && view === 'buildings' : buildingPanel.state.visible && render.view === 'buildings') ? cityRenderer : undefined);
+    const detail = viewport ? viewport.details?.stats : architectureView === '2d' ? cityDetails?.update({ viewport: frame.viewport, metresPerPixel: frame.mpp, selectedId: selected,
       enabled: !compare && architectureMode === 'detailed' && !!native }) : cityDetails?.stats;
     // WebGL once its upload is done; comparisons and the parchment ink (hatching) keep Canvas 2D.
     const drawGl = !compare && glReady === cityPlan && (render.palette as string) !== 'parchment' ? frame.drawGl : undefined;
     const refused = appearance.diagnostic === 'access' ? refusedParcels : undefined;
     const glFrame = drawGl?.({ viewport: frame.viewport, metresPerPixel: frame.mpp, lod: cityLod, view, palette: render.palette, layers: render, selectedId: selected, selectedParcel,
-      buildingsVisible: buildingPanel.state.visible && !native, diagnostic: appearance.diagnostic, refusedParcels: refused });
+      buildingsVisible: buildingPanel.state.visible && !native && !parentOwned, diagnostic: appearance.diagnostic, refusedParcels: refused });
     cityFrame = drawCity(ctx, cityPlan, { ...frame, lod: cityLod, view, palette: render.palette, width: render.width, layers: glFrame ? cityGlOverlayLayers(render) : render,
       buildings: compare ? (silhouetteCompare ? comparisonBuilt?.[2] : native ? landmarkOverlay() : cityBuilt) : native ? landmarkOverlay() : cityBuilt,
-      buildingsVisible: compare ? view === 'buildings' : buildingPanel.state.visible && (!glFrame || !!native), appearance,
+      buildingsVisible: !parentOwned && (compare ? view === 'buildings' : buildingPanel.state.visible && (!glFrame || !!native)), appearance,
       selectedBuilding: selected, selectedParcel, refusedParcels: refused });
     // Native plans have their own screen-size LOD and bounded overview tiles.
     // They must remain visible while the first chunks arrive, even at city scale.
     if (native) {
       // A comparison shows the retained compact plans only, never cached native exteriors.
-      const metrics = native.draw(ctx, { viewport: frame.viewport, metresPerPixel: frame.mpp, appearance, selectedId: selected, useDetails: !compare });
-      cityFrame.pending ||= metrics.rasterTilesPending > 0; cityFrame.buildings = metrics.visibleBuildings;
+      if (viewport) {
+        const result = viewport.draw(ctx, { viewport: frame.viewport, metresPerPixel: frame.mpp, appearance, selectedId: selected }, architectureMode === 'detailed');
+        cityFrame.buildings = result.visibleBuildings ?? 0;
+        frameInfo.dataset.coldCoverage = result.coverage; frameInfo.dataset.coldTotal = String(viewport.totals.buildings);
+        frameInfo.dataset.coldResident = String(viewport.stats.residentBuildings);
+      } else {
+        const metrics = (native as UrbanBuildingLodRenderer<CityVisual>).draw(ctx, { viewport: frame.viewport, metresPerPixel: frame.mpp, appearance, selectedId: selected, useDetails: !compare });
+        cityFrame.pending ||= metrics.rasterTilesPending > 0; cityFrame.buildings = metrics.visibleBuildings;
+      }
     }
+    if (parent) {
+      const result = parent.draw(ctx, { viewport: frame.viewport, metresPerPixel: frame.mpp, appearance }, architectureMode === 'detailed');
+      cityFrame.buildings = result.visibleMembers ?? 0; cityFrame.pending ||= result.pending;
+      frameInfo.dataset.parentEvidence = JSON.stringify({ ...parent.evidence(), active: sameParentBuildingState(parent.state, buildingPanel.state.parent) && !architecturePreview, cityPalette: render.palette });
+    } else if (parentPreview) {
+      paintParentContexts(ctx, parentPreview.records.contexts, parentPreview.records.materials);
+      const metrics = parentPreview.renderer.draw(ctx, { viewport: frame.viewport, metresPerPixel: frame.mpp, appearance, useDetails: false });
+      cityFrame.buildings = metrics.visibleBuildings; cityFrame.pending = true;
+      frameInfo.dataset.parentEvidence = JSON.stringify({ version: 'parent-city-viewport-evidence-1', phase: 'staging', active: false, complete: false, coverage: 'partial',
+        sourceFingerprint: parentPreview.source.fingerprint, sourceRevision: parentPreview.source.revision, nativeSession: parentPreview.sessionId,
+        durableCompleted: parentPreview.durableCompleted, nativeAckedCompleted: parentPreview.nativeAckedCompleted, counts: parentPreview.counts });
+    } else if (parentOwned) frameInfo.dataset.parentEvidence = JSON.stringify({ version: 'parent-city-viewport-evidence-1', phase: 'loading', active: false, complete: false });
+    else delete frameInfo.dataset.parentEvidence;
     cityFrame.ms = performance.now() - start;
     comparison.painted(cityFrame.pending, { blocks: cityFrame.blocks, parcels: cityFrame.parcels, streets: cityFrame.streets, buildings: cityFrame.buildings });
     frameInfo.dataset.detailCached = String(detail?.cached ?? 0); frameInfo.dataset.detailInFlight = String(detail?.globalInFlight ?? 0);
     frameInfo.dataset.detailCacheBytes = String(detail?.cacheBytes ?? 0);
-    frameInfo.dataset.buildingsPainted = String(cityFrame.buildings);
+    frameInfo.dataset.buildingsPainted = viewport?.stats.coverage === 'complete-native-contours' ? 'unknown' : String(cityFrame.buildings);
     frameInfo.dataset.renderer = glFrame ? 'webgl2' : 'canvas2d';
     frameInfo.textContent = `Vue ${lodNames[cityFrame.lod]} · ${frame.mpp < 1 ? frame.mpp.toFixed(2) : frame.mpp.toFixed(1)} m/px · ${glFrame ? `WebGL2 · ${glFrame.drawCalls} appels, ${(glFrame.triangles / 1000).toFixed(0)} k triangles` : `${cityFrame.blocks} îlots, ${cityFrame.parcels} parcelles, ${cityFrame.streets} rues`}${cityFrame.buildings ? `, ${cityFrame.buildings} bâtiments` : ''} · ${cityFrame.ms.toFixed(1)} ms${architectureMode === 'detailed' && detail ? ` · ${detail.cached} extérieurs détaillés, ${detail.inFlight} en calcul` : ''}`;
+    if (viewport) frameInfo.textContent += ` · ${viewport.statusText}`;
+    else if (architecturePreview?.coldProjection) { frameInfo.textContent += ' · contours partiels pendant l’implantation'; frameInfo.dataset.coldCoverage = 'partial-native-contours'; }
     return cityFrame.pending;
   }
   /** Real buildings, refusals and errors, never mixed with the population target. */
   function cityCountsReport(): void {
     if (!options.city) return;
     const scene = displayedArchitecture(), site = settlements?.settlements.find(s => s.key === target);
+    const parentPreview = architecturePreview?.parent, parent = buildingPanel.state.parent;
+    if (parentPreview || parent) {
+      const c = parentPreview?.counts ?? parent!.counts;
+      cityCounts.dataset.planning = String(!!parentPreview); cityCounts.dataset.completed = String(parentPreview?.durableCompleted ?? c.requests); cityCounts.dataset.total = String(architecturePreview?.total ?? c.requests);
+      cityCounts.textContent = `${c.admitted_parents.toLocaleString()} résultats parents · ${c.physical_members.toLocaleString()} membres natifs · ${c.assembly_parents} assemblages · ${c.refusals} refus · ${c.open_spaces} espaces libres · capacité résidentielle inconnue${parentPreview ? ` · aperçu provisoire ${parentPreview.durableCompleted}/${architecturePreview!.total}, acquitté ${parentPreview.nativeAckedCompleted}` : ''}${site ? ` — population cible ${site.population.toLocaleString()} hab.` : ''}`;
+      return;
+    }
     const coldPreview = architecturePreview?.coldProjection ? architecturePreview : undefined, cold = buildingPanel.state.cold;
     if (coldPreview || cold) {
       const buildings = coldPreview?.buildings ?? cold!.counts.buildings, refused = coldPreview?.refusals ?? cold!.counts.refusals;
-      const open = coldPreview?.openSpaces ?? cold!.counts.open_spaces, errors = coldPreview?.errors ?? coldSession?.projection.metrics.errors ?? 0;
+      const open = coldPreview?.openSpaces ?? cold!.counts.open_spaces, errors = coldPreview?.errors ?? coldSession?.projection.metrics.errors;
       const key = `cold/${cold?.store.sceneId}/${buildings}/${refused}/${open}/${errors}/${coldPreview?.completed}/${site?.population}`;
       if (countsKey === key && countsScene === undefined) return;
       countsKey = key; countsScene = undefined;
-      cityCounts.dataset.planning = String(!!coldPreview); cityCounts.dataset.completed = String(coldPreview?.completed ?? 0);
-      cityCounts.dataset.total = String(coldPreview?.total ?? 0);
-      cityCounts.textContent = `${buildings.toLocaleString()} plans de bâtiments${coldPreview ? ` · affichage progressif ${coldPreview.completed.toLocaleString()}/${coldPreview.total.toLocaleString()} lots` : ''} · ${Math.max(0, refused - errors)} refus · ${errors} erreurs · ${open} espaces libres · capacité habitante non évaluée${site ? ` — population cible ${site.population.toLocaleString()} hab.` : ''}`;
+      const total = cold ? cold.counts.buildings + cold.counts.refusals + cold.counts.open_spaces : 0;
+      cityCounts.dataset.planning = String(!!coldPreview); cityCounts.dataset.completed = String(coldPreview?.completed ?? total);
+      cityCounts.dataset.total = String(coldPreview?.total ?? total);
+      cityCounts.textContent = `${buildings.toLocaleString()} plans de bâtiments${coldPreview ? ` · affichage progressif ${coldPreview.completed.toLocaleString()}/${coldPreview.total.toLocaleString()} lots` : ''} · ${errors === undefined ? `${refused} refus et erreurs (détail conservé)` : `${Math.max(0, refused - errors)} refus · ${errors} erreurs`} · ${open} espaces libres · capacité habitante non évaluée${site ? ` — population cible ${site.population.toLocaleString()} hab.` : ''}`;
       return;
     }
     const preview = architecturePreview?.scene === scene ? architecturePreview : undefined;
@@ -1170,22 +1409,50 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
   /** Picks the quarter, lot and house at `p` and renders the inspector; returns the house id. */
   function inspectAt(p: Point): string | undefined {
     if (!cityPlan) { inspection.replaceChildren(); return undefined; }
+    if (architecturePreview?.parent) { inspection.textContent = 'Aperçu provisoire du préfixe conservé ; sélection disponible après validation complète.'; return undefined; }
+    if (buildingPanel.state.parent && buildingPanel.state.visible && render.view === 'buildings') {
+      const view = boundedParent(); if (!view) { inspection.textContent = 'Lecture des archives natives en cours…'; return undefined; }
+      const show = (found: import('./urbanParentColdWindow').ParentMapPick) => {
+        if (boundedParent() !== view || inspected?.x !== p.x || inspected?.y !== p.y) return;
+        if (found.status !== 'exact') { inspection.textContent = 'Lecture partielle : aucun vide ne peut être conclu.'; return; }
+        view.select(found.selection); if (!found.selection) { inspection.textContent = 'Aucun membre ni contexte natif à cet endroit.'; return; }
+        buildingPanel.selectParent(found.selection); inspection.textContent = 'Lecture du parent natif…';
+        const pick = found.selection;
+        void publishParentUiTask(view.read(pick.parent_id), () => boundedParent() === view && !architecturePreview
+          && inspected?.x === p.x && inspected?.y === p.y && JSON.stringify(buildingPanel.state.parentSelected) === JSON.stringify(pick),
+          value => { inspection.innerHTML = nativeParentInspectionHtml(value, pick); }, e => { inspection.textContent = String(e); });
+      };
+      const picked = view.pick(p); if (picked.status === 'pending') { inspection.textContent = 'Lecture exacte du parent à cet endroit…';
+        void publishParentUiTask(view.pickAt(p), () => boundedParent() === view && !architecturePreview && inspected?.x === p.x && inspected?.y === p.y,
+          show, e => { inspection.textContent = String(e); }); }
+      else show(picked);
+      return undefined;
+    }
     const buildingsShown = buildingPanel.state.visible && (render.view === 'buildings' || render.view === 'roles') && (cityLod === 'near' || cityLod === 'close');
-    const native = buildingsShown && cityRenderer && render.view === 'buildings' ? cityRenderer : undefined;
+    const viewport = !architecturePreview && !comparison.state() && render.view === 'buildings' ? boundedCold() : undefined;
+    const native = buildingsShown && render.view === 'buildings' ? viewport?.renderer ?? cityRenderer : undefined;
     const hit = pickCity(cityPlan, buildingsShown && !native ? cityBuilt : undefined, p);
-    const buildingId = native?.pick(p)?.id ?? hit.building?.id;
+    const boundedHit = viewport?.pick(p);
+    if (viewport && boundedHit?.status === 'pending') {
+      renderCityInspector(inspection, hit, cityPlan, inspectorHooks); const pending = document.createElement('small');
+      pending.textContent = 'Lecture exacte du bâtiment à cet endroit…'; pending.setAttribute('role', 'status'); inspection.append(pending);
+      void viewport.pickAt(p).then(found => { if (boundedCold() === viewport && inspected?.x === p.x && inspected?.y === p.y) {
+        if (found.status === 'exact') { const id = inspectAt(p); if (id) buildingPanel.select(id); } else pending.textContent = 'Lecture exacte encore partielle : aucun vide ne peut être conclu.';
+      } }, e => { pending.textContent = String(e); }); return undefined;
+    }
+    const buildingId = boundedHit?.status === 'exact' ? boundedHit.building?.id : native?.pick(p)?.id ?? hit.building?.id;
     const built = buildingId !== undefined ? native?.getBuilding(buildingId) ?? cityBuilt?.items[cityBuilt.byId.get(buildingId) ?? -1]?.building : undefined;
     selectedParcel = hit.parcel ? cityPlan.parcels.indexOf(hit.parcel) : undefined;
     if (built && 'projection' in built) {
-      const session = coldSession, point = { ...p }, plan = cityPlan;
+      const session = viewport ?? coldSession, point = { ...p }, plan = cityPlan;
       renderCityInspector(inspection, hit, plan, inspectorHooks);
       const pending = document.createElement('small'); pending.textContent = 'Lecture du plan natif…'; pending.setAttribute('role', 'status'); inspection.append(pending);
-      if (!architecturePreview && session && sameCold(session.state, buildingPanel.state.cold)) void session.read(built.id, 'inspector').then(value => {
-        if (!value || coldSession !== session || cityPlan !== plan || inspected?.x !== point.x || inspected?.y !== point.y) return;
+      if (!architecturePreview && session && sameCold(session.state, buildingPanel.state.cold)) void (viewport ? viewport.read(built.id, 'inspector', built as NativeBuildingProjection) : session.read(built.id, 'inspector')).then(value => {
+        if (!value || (viewport ? boundedCold() !== viewport : coldSession !== session) || cityPlan !== plan || inspected?.x !== point.x || inspected?.y !== point.y) return;
         renderCityInspector(inspection, { ...hit, built: value.building }, plan, inspectorHooks);
         appendArchitectureOutcome(hit.parcel?.source.id, value.building);
         inspection.insertAdjacentHTML('beforeend', '<div data-city-realized></div>'); reportSelectedDetail();
-      }, error => { if (coldSession === session && inspected?.x === point.x && inspected?.y === point.y) pending.textContent = String(error); });
+      }, error => { if ((viewport ? boundedCold() === viewport : coldSession === session) && inspected?.x === point.x && inspected?.y === point.y) pending.textContent = String(error); });
       return buildingId;
     }
     renderCityInspector(inspection, { ...hit, built }, cityPlan, inspectorHooks);
@@ -1204,7 +1471,8 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
     const target = sceneRequestList.find(site => site.id === building.id)?.programme?.built_area_m2;
     if (typeof target !== 'number' || !Number.isFinite(target) || target <= 0) return;
     const actual = building.footprint.reduce((sum, polygon) => sum + shapeArea(polygon), 0), note = document.createElement('small');
-    note.textContent = `Emprise du plan : ${actual.toFixed(1)} m² pour ${target.toFixed(1)} m² demandés (${(actual / target * 100).toFixed(1)} %). La capacité habitante reste non évaluée.`;
+    const targetScope = sceneSites?.matchesRuntime(executionRuntime) ? 'demande actuelle du site' : 'demande de site conservée (origine native non liée)';
+    note.textContent = `Emprise du plan : ${actual.toFixed(1)} m²; ${targetScope} : ${target.toFixed(1)} m² (${(actual / target * 100).toFixed(1)} %). La capacité habitante reste non évaluée.`;
     inspection.append(note);
   }
   function inspectorNote(text: string): void { if (!options.city) return; const note = document.createElement('small'); note.setAttribute('role', 'status'); note.className = 'city-edit-refusal'; note.textContent = text; inspection.prepend(note); }
@@ -1223,6 +1491,7 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
   }
   // ---- edits hook (cityShapeEditor.ts): shape editor, deleted items, dormant edits, engine echo.
   function startShapeEdit(scope: 'quarter' | 'lot', key: string, ring: ShapePt[], snap?: ShapePt[]): void {
+    if (buildingPanel.state.parent) { inspectorNote('L’édition partielle des parents natifs n’est pas encore prise en charge. Régénérez le plan complet.'); return; }
     shapeEditor ??= createShapeEditor(options.map, options.map.closest<HTMLElement>('#viewport') ?? options.map.parentElement!);
     shapeEditOf = [layouts, partitions];
     const commit = (outer: ShapePt[]): void => { const shape = { outer, holes: [] }; if (scope === 'quarter') inspectorHooks.editQuarter(key, { shape }); else inspectorHooks.editLot(key, { shape }); };
@@ -1285,6 +1554,7 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
   /** Native replan of one house from its authoritative site; the whole edit is
    * atomic and a refusal keeps the previous scene (Codex `editArchitectureScene`). */
   async function restyleHouse(id: string, value: CityEdits['buildings'][string] | undefined): Promise<string | undefined> {
+    if (buildingPanel.state.parent) { inspectorNote('L’édition partielle des parents natifs n’est pas encore prise en charge.'); return undefined; }
     if (buildingPanel.state.cold) return restyleColdHouse(id, value);
     const sites = sceneSites, previous = buildingPanel.state.scene;
     if (!sites?.has(id) || !sites.matchesRuntime(executionRuntime) || !previous || sceneRequestScene !== previous || architecturePreview) return 'site d’implantation absent ou remplacé';
@@ -1314,8 +1584,44 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
       return undefined;
     } catch (error) { return String(error); }
   }
+  /** Selected-parent experiment. Native assembly storage is separate; this never
+   * inserts group members into the Single city scene or changes its programme. */
+  async function openSelectedAssembly(building: PlacedBuilding, context?: import('../../../rust/bridge/compactPlanArchive').PlanArchiveScene): Promise<void> {
+    const { openNativeAssemblyBench } = await import('./nativeAssemblyBench');
+    const sites = sceneSites, warm = buildingPanel.state.scene, cold = buildingPanel.state.cold, epoch = architectureEpoch;
+    const current = () => epoch === architectureEpoch && sceneSites === sites && buildingPanel.state.scene === warm
+      && buildingPanel.state.cold === cold && buildingPanel.state.selected === building.id && !architecturePreview && sitesCurrent() && sites?.matchesRuntime(executionRuntime);
+    await openNativeAssemblyBench({ runtime: executionRuntime, parentId: building.id, isCurrent: () => Boolean(current()), async load() {
+      if (!current() || !sites?.has(building.id) || building.simplification !== 'architectural_plan')
+        throw new Error('Site natif absent ou périmé ; aucun assemblage ne peut être inféré depuis un aperçu.');
+      if (cold && ((cold.offset?.x ?? 0) !== 0 || (cold.offset?.y ?? 0) !== 0))
+        throw new Error('L’essai d’assemblage des villes translatées exige un site natif dans les mêmes coordonnées.');
+      const [{ resolveArchivedPlan }, { coldArchitectureEditBounds }, { assemblyNeighborParts, readBoundedAssemblyNeighbors }, original] = await Promise.all([
+        import('../../../rust/bridge/compactPlanArchive'), import('./urbanColdCityEdit'), import('./nativeAssemblyNeighbors'), sites.read(building.id),
+      ]);
+      if (!current()) throw new DOMException('Scène remplacée', 'AbortError');
+      const site = styledRequest(original, edits.buildings[building.id]), bounds = coldArchitectureEditBounds(site);
+      let neighbors: PlacedBuilding[];
+      if (cold) {
+        neighbors = await readBoundedAssemblyNeighbors(await getColdBackend(), cold, bounds);
+      } else {
+        if (!warm || sceneRequestScene !== warm) throw new Error('Scène native remplacée.');
+        // Roof-only display bins cannot prove absence of an external circulation
+        // surface. Scan the already retained native list under a strict bound.
+        neighbors = warm.buildings;
+      }
+      const { occupied_parts, occupied_roof_parts } = assemblyNeighborParts(neighbors, building.id, bounds);
+      const resolved = await resolveArchivedPlan(building, context ?? warm);
+      if (!current()) throw new DOMException('Scène remplacée', 'AbortError');
+      return { site, occupied_parts, occupied_roof_parts, incumbent: { ...building, resolved } };
+    } });
+  }
   async function restyleColdHouse(id: string, value: CityEdits['buildings'][string] | undefined): Promise<string | undefined> {
-    const previous = buildingPanel.state.cold, session = coldSession, sites = sceneSites;
+    const previous = buildingPanel.state.cold, sites = sceneSites;
+    let session = coldSession;
+    if (previous && !sameCold(session?.state, previous) && sites?.matchesRuntime(executionRuntime)) {
+      try { session = await ensureColdSession(previous); } catch (e) { return String(e); }
+    }
     if (!previous || !session || !sameCold(session.state, previous) || !sitesCurrent() || !sites?.has(id)
       || !sites.matchesRuntime(executionRuntime) || architecturePreview) return 'site d’implantation absent ou remplacé';
     if (coldEditAbort) return 'Une modification de maison est déjà en cours.';
@@ -1341,7 +1647,7 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
       if (!current()) return 'scène remplacée pendant le calcul';
       if (!result.applied) return result.message;
       const projection = replaceColdProjection(session.projection, result.replacement);
-      const next = await openColdCitySession(backend, result.state, { projection, cancelled: () => !current() });
+      const next = await openColdCitySession(backend, result.state, { projection, sites: session.siteVisuals, cancelled: () => !current() });
       if (!current()) { next.dispose(); return 'scène remplacée pendant la publication'; }
       ++coldLoadEpoch; session.dispose(); coldSession = next; coldFailedKey = ''; sceneRequestScene = result.state;
       edits = nextEdits; editsReport(); buildingPanel.replaceCold(result.state); lastBuiltScene = undefined; lastBuiltCold = result.state;
@@ -1354,7 +1660,7 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
     const id = architecturePreview?.selected ?? buildingPanel.state.selected;
     const box = inspection.querySelector<HTMLElement>('[data-city-realized]');
     if (!box || !id || architectureMode !== 'detailed') { if (box) box.textContent = ''; return; }
-    const building = cityRenderer?.getBuilding(id), status = cityDetails?.status(id);
+    const view = boundedCold(), building = view?.selected(id) ?? cityRenderer?.getBuilding(id), status = view?.details?.status(id) ?? cityDetails?.status(id);
     if (!building || !status) return;
     const text = status.state === 'ready' ? 'Extérieur natif réalisé.' : status.state === 'refused' ? `Extérieur non réalisé : ${status.message}. Le plan est conservé.`
       : status.state === 'loading' ? 'Calcul de l’extérieur…' : status.state === 'queued' ? 'Extérieur en attente…' : 'Plan conservé ; détail selon la vue.';
@@ -1365,7 +1671,7 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
     const open = document.createElement('button'); open.type = 'button'; open.textContent = 'Ouvrir dans Maisons';
     open.onclick = () => { void (async () => {
       if ('projection' in building) {
-        const value = await coldSession?.read(building.id, 'open'); if (!value) throw new Error('Plan natif absent ou remplacé.');
+        const value = await (boundedCold()?.read(building.id, 'open') ?? coldSession?.read(building.id, 'open')); if (!value) throw new Error('Plan natif absent ou remplacé.');
         await openUrbanHouseCase(value.building, value.scene);
       } else await openUrbanHouseCase(building, displayedArchitecture());
     })().catch(error => { box.textContent = String(error); }); };
@@ -1429,16 +1735,24 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
       if (c.dataset.config === 'recipe' && config.zone !== 'auto') config.zone = catalogue.cultures[config.culture && config.culture !== 'site' ? config.culture : siteCulture(kind)]?.recipes.find(r => r.id === config.recipe)?.zone ?? config.zone;
       populate(kind);
     };
+    if (kind === 'quarters') one<HTMLButtonElement>(kind, '[data-morphology-auto]').onclick = () => { layoutConfig = resetMorphology(layoutConfig); populate(kind); changed(kind); };
     one<HTMLButtonElement>(kind, '[data-reset]').onclick = () => { getConfig(kind).params = {}; one<HTMLTextAreaElement>(kind, '[data-json]').value = ''; populate(kind); changed(kind); };
     for (const root of roots[kind]) {
       root.addEventListener('change', event => {
-        if ((event.target as Element).closest('[data-config], [data-footprint], [data-fields], [data-json], [data-seed]')) changed(kind);
+        const control = event.target as Element;
+        // This select's own binding already records the independent plan draft.
+        if (options.city && kind === 'quarters' && control.matches('[data-config="culture"]')) return;
+        if (control.closest('[data-config], [data-footprint], [data-fields], [data-json], [data-seed]')) changed(kind);
       });
       root.addEventListener('input', event => {
         if ((event.target as Element).matches('[data-json], [data-seed]')) changed(kind);
       });
     }
   }
+  if (options.city) controlRelevance = bindControlRelevance(one<HTMLElement>('quarters', '[data-control-relevance]'));
+  if (options.city) cityPlanCulture = bindCityPlanCulture(
+    one<HTMLDetailsElement>('quarters', '[data-plan-culture-override]'), one<HTMLSelectElement>('quarters', '[data-config="culture"]'),
+    value => { layoutConfig = withCityPlanCulture(layoutConfig, value); populate('quarters'); changed('quarters'); });
   // Exploration draws replace the applied plan settings; each draw can be undone.
   const draws: { layout: LayoutConfig; parcels: ParcelConfig; quarterSeed: string; parcelSeed: string }[] = [];
   function explore(action: 'seed' | 'plan' | 'back'): void {
@@ -1483,6 +1797,7 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
       quarterSeed = draft?.quarterSeed ?? saved.quarterSeed; parcelSeed = draft?.parcelSeed ?? saved.parcelSeed;
       dirty.quarters = draft?.dirty.quarters ?? false; dirty.parcels = draft?.dirty.parcels ?? false;
     }
+    if (buildingPanel.state.parent && buildingPanel.state.parent.cityKey !== target) buildingPanel.replaceParent(undefined);
     buildingPanel.restore({ ...buildingPanel.state, ...(saved?.building ?? { seed: '', settings: undefined, generated: false }), selected: undefined });
     buildingPanel.restoreDraft(draft?.building);
     for (const kind of ['quarters', 'parcels'] as const) { status(kind, layouts?.some(layout => target === 'all' || layout.key === target) ? 'Plan conservé · sélection seule.' : 'Plan absent pour cette sélection.'); populate(kind); }
@@ -1508,13 +1823,6 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
         if (dirty[kind]) hint.textContent = 'Modifications non appliquées · utilisez le bouton de régénération.';
       }
     },
-    /** The city's culture changed: restore that culture's recipes, as the culture choice of the plan does. */
-    adoptSiteCulture(): void {
-      const next = applySettlementStyle('culture', layoutConfig, 'site');
-      layoutConfig = next.layout; parcelConfig = next.parcels;
-      buildingPanel.setBuildingDraft({ ...buildingPanel.state, settings: undefined }); resetBuildingDefaults = true;
-      for (const kind of ['quarters', 'parcels'] as const) { clearTimeout(draftTimers[kind]); one<HTMLTextAreaElement>(kind, '[data-json]').value = ''; populate(kind); read(kind); }
-    },
     get target(): string { return target; },
     get generationPending(): boolean { return buildingPanel.busy || (['quarters', 'parcels'] as const).some(kind => one(kind, '[data-apply]').getAttribute('aria-busy') === 'true'); },
     selectCity(key: string): void { if (target !== key) { targetSelect.value = key; targetSelect.dispatchEvent(new Event('change')); } },
@@ -1530,9 +1838,9 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
       // The imported geometries are already applied. Enable their stages so
       // the default Settlements parcel toggle cannot hide or discard them.
       enabled = !!layouts?.length; parcelEnabled = partitions !== undefined;
-      buildingPanel.restore(state.buildingState && { ...clone(buildingSettings(state.buildingState)!), scene: state.buildingState.scene, cold: state.buildingState.cold });
+      buildingPanel.restore(state.buildingState && { ...clone(buildingSettings(state.buildingState)!), scene: state.buildingState.scene, cold: state.buildingState.cold, parent: state.buildingState.parent });
       for (const layout of layouts ?? []) if (!citySettings[layout.key]) rememberCities([layout.key]);
-      render.view = state.view ?? (state.buildingState?.scene || state.buildingState?.cold ? 'buildings' : 'parcels'); lastBuiltScene = state.buildingState?.scene; lastBuiltCold = state.buildingState?.cold;
+      render.view = state.view ?? (state.buildingState?.scene || state.buildingState?.cold || state.buildingState?.parent ? 'buildings' : 'parcels'); lastBuiltScene = state.buildingState?.scene; lastBuiltCold = state.buildingState?.cold;
       for (const kind of ['quarters', 'parcels'] as const) { clearTimeout(draftTimers[kind]); dirty[kind] = false; populate(kind); }
       status('quarters', `Plan conservé · ${layouts?.length ?? 0} ville(s)`);
       status('parcels', partitions ? 'Parcelles conservées.' : 'Parcelles non calculées.');
@@ -1562,29 +1870,34 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
     /** Regional road pieces (with their bridge/ford/causeway roles), memoized per road output. */
     get regionalStreets(): Street[] { if (regionalOf !== roads) { regionalOf = roads; regional = regionalStreets(roads); } return regional; },
     get buildingState() { return buildingPanel.state; },
+    get parentViewportEvidence() { return architecturePreview?.parent ? { phase: 'staging', complete: false, source: architecturePreview.parent.source, counts: architecturePreview.parent.counts, durableCompleted: architecturePreview.parent.durableCompleted, nativeAckedCompleted: architecturePreview.parent.nativeAckedCompleted } : boundedParent()?.evidence(); },
+    get coldViewportEvidence() { return boundedCold()?.evidence; },
     get buildingProjection(): NativeBuildingProjectionScene | undefined {
       return sameCold(coldSession?.state, buildingPanel.state.cold) ? coldSession?.projection : undefined;
     },
     /** Both cameras share native work and the bounded exterior cache. Changing
      * the active camera prevents background 2D paints from replacing 3D demand. */
     buildingDetails: {
-      setActiveView(view: '2d' | '3d'): void { architectureView = view; cityLayer?.request(); },
+      setActiveView(view: '2d' | '3d'): void { if (view === '3d' && buildingPanel.state.parent) throw new Error('La vue 3D des parents natifs n’est pas encore prise en charge.'); architectureView = view;
+        const state = buildingPanel.state.cold; if (view === '3d' && state) void ensureColdSession(state).then(() => { draw(); options.onPlanChange?.(); }, e => inspectorNote(String(e)));
+        cityLayer?.request(); },
       // A comparison never asks for native work, from either camera.
       update(view: BuildingDetailView) { return architectureView === '3d' && !comparison.state() ? cityDetails?.update(view) : cityDetails?.stats; },
       getDetail(id: string) { return cityDetails?.getDetail(id); },
       status(id: string) { return cityDetails?.status(id); },
       cached() { return cityDetails?.cachedDetails() ?? []; },
       subscribe(listener: () => void): () => void { detailListeners.add(listener); return () => { detailListeners.delete(listener); }; },
-      get scene() { return displayedColdProjection() ?? cityBuiltOf ?? undefined; },
+      get scene() { if (buildingPanel.state.parent) throw new Error('Le consommateur Single n’accepte pas les parents natifs.'); return displayedColdProjection() ?? cityBuiltOf ?? undefined; },
       get stats() { return cityDetails?.stats; },
     },
     get buildingView(): boolean { return render.view === 'buildings'; },
     /** Same-input lots / silhouettes / compact plans comparison (Visual50 runner). */
-    comparison: comparison.api,
+    comparison: { ...comparison.api, async prepare() { if (buildingPanel.state.parent) throw new Error('La comparaison legacy des parents natifs n’est pas encore prise en charge.'); const state = buildingPanel.state.cold; if (state) await ensureColdSession(state); draw(); } },
     /** Map clicks belong to the inspector (City Bench roles view too), not to settlement markers. */
     get inspecting(): boolean { return render.view === 'buildings' || !!options.city && render.view === 'roles'; },
     get buildingVisible(): boolean { return buildingPanel.state.visible && render.view === 'buildings'; },
-    selectBuilding: (id: string): void => buildingPanel.select(id),
+    selectBuilding: (id: string): void => { if (buildingPanel.state.parent) throw new Error('Utilisez une sélection parent/membre explicite.'); buildingPanel.select(id); },
+    selectParent: (pick: import('./urbanParentColdWindow').ParentMapSelection): void => { boundedParent()?.select(pick); buildingPanel.selectParent(pick); },
     get extent() { return layoutExtent(layouts); },
     workshopDraft(): Omit<import('./testbenchUrban').WorkshopState, 'layouts' | 'partitions'> | undefined {
       if (!dirty.quarters && !dirty.parcels) return undefined;

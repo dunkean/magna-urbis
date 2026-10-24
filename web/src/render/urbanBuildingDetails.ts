@@ -96,7 +96,10 @@ function assertRetainedBody(local: Surface, world: Surface, map: (point: Point) 
 /** Exact native local → world conversion. The complete roof mesh is installed
  * once on the first retained volume (faces retain their body/group/material IDs)
  * to avoid duplicating shared roof vertices. No footprint is regenerated. */
-export function nativeExteriorDetail(base: PlacedBuilding, result: HouseBatch, maxVertices = DEFAULTS.maxCachedVertices): DetailEntry {
+export type NativeExteriorGeometryBase = Pick<PlacedBuilding, 'recipe_id' | 'variant_id' | 'transform' | 'ground_z_m' | 'volumes'>;
+/** Native geometry conversion shared by real legacy plans and real member plans.
+ * No programme/capacity/Single identity is manufactured by this helper. */
+export function nativeExteriorGeometry(base: NativeExteriorGeometryBase, result: HouseBatch, maxVertices = DEFAULTS.maxCachedVertices) {
   if (result.units.length !== 1) throw new Error('Native detail must contain exactly one retained unit.');
   const unit: HouseUnit = result.units[0];
   if (unit.recipe_id !== base.recipe_id || unit.variant_id !== base.variant_id || unit.bodies.length !== base.volumes.length || !unit.bodies.length) {
@@ -148,13 +151,16 @@ export function nativeExteriorDetail(base: PlacedBuilding, result: HouseBatch, m
     roof_height_m: Math.max(0, (tops.get(unit.bodies[i].id) ?? volume.z_m + volume.wall_height_m + volume.roof_height_m) - volume.z_m - volume.wall_height_m),
     roof_mesh: i === 0 ? worldMesh : EMPTY_MESH }));
   const diagnostics = [...unit.diagnostics, ...result.diagnostics];
-  const building: PlacedBuilding = { ...base, volumes, structural_features: features,
-    // Native edges supersede proxy ridges, while simplification/capacity and the
-    // retained plan/archive remain unchanged and do not gain certification.
-    cartographic: undefined, diagnostics: [...base.diagnostics, ...diagnostics] };
   const geometryBytes = vertices * 64 + indices * 8 + mesh.faces.length * 192 + mesh.edges.length * 80
     + mesh.groups.length * 128 + features.length * 192 + diagnostics.reduce((n, line) => n + line.length * 2, 0);
-  return { building, geometryBytes, vertices, diagnostics };
+  return { volumes, structural_features: features, geometryBytes, vertices, diagnostics };
+}
+/** Legacy wrapper retains its exact old plan/programme/report semantics. */
+export function nativeExteriorDetail(base: PlacedBuilding, result: HouseBatch, maxVertices = DEFAULTS.maxCachedVertices): DetailEntry {
+  const detail = nativeExteriorGeometry(base, result, maxVertices);
+  const building: PlacedBuilding = { ...base, volumes: detail.volumes, structural_features: detail.structural_features,
+    cartographic: undefined, diagnostics: [...base.diagnostics, ...detail.diagnostics] };
+  return { building, geometryBytes: detail.geometryBytes, vertices: detail.vertices, diagnostics: detail.diagnostics };
 }
 
 function sameSurface(a: Surface, b: Surface): boolean {

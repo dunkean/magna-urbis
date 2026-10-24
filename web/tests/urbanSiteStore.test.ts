@@ -75,6 +75,36 @@ it('bounds the selected-site LRU, coalesces reads, snapshots the descriptor and 
   await tiny.read('a'); expect(tiny.stats.cached).toBe(0);
 });
 
+it('keeps origin lookups coalesced and inside the existing two-read limit', async () => {
+  const originals = [site('a'), site('b'), site('c')];
+  const releases = new Map<string, (value: { offset: number; parcelId: string }) => void>();
+  const lookups: string[] = [], offsets: number[] = [];
+  const store = createNativeSiteStore(originals.map(projectUrbanSite), query(), runtime, {
+    originLookup: id => { lookups.push(id); return new Promise(done => releases.set(id, done)); },
+    read: async (_query, _runtime, offset) => { offsets.push(offset); return originals[offset]; },
+  });
+  const a = store.read('a'), same = store.read('a'), b = store.read('b');
+  await Promise.resolve(); expect(lookups).toEqual(['a', 'b']); expect(store.stats.inFlight).toBe(2);
+  await expect(store.read('c')).rejects.toThrow('Deux lectures'); expect(lookups).toEqual(['a', 'b']); expect(offsets).toEqual([]);
+  releases.get('a')!({ offset: 0, parcelId: originals[0].parcel_id }); releases.get('b')!({ offset: 1, parcelId: originals[1].parcel_id });
+  const [first, duplicate, second] = await Promise.all([a, same, b]);
+  expect(first).toBe(duplicate); expect(second).toBe(originals[1]); expect(offsets).toEqual([0, 1]); expect(store.stats.inFlight).toBe(0); store.dispose();
+});
+
+it('invalidates pending origin lookups before any true constraint read, even if the disposable lookup fails', async () => {
+  for (const result of ['resolve', 'reject']) {
+    const original = site('a'); let release!: () => void; let reads = 0;
+    const store = createNativeSiteStore([projectUrbanSite(original, 0)], query(), runtime, {
+      originLookup: () => new Promise((resolve, reject) => { release = () => result === 'resolve'
+        ? resolve({ offset: 0, parcelId: original.parcel_id }) : reject(new Error('Cache disappeared')); }),
+      read: async () => { reads++; return original; },
+    });
+    const pending = store.read('a'), rejected = expect(pending).rejects.toThrow('périmé');
+    await Promise.resolve(); expect(typeof release).toBe('function'); store.dispose(); release(); await rejected;
+    expect(reads).toBe(0); expect(store.stats).toMatchObject({ disposed: true, cached: 0, bytes: 0, inFlight: 0 });
+  }
+});
+
 it('keeps original config and the committed store usable after a refused scoped edit', async () => {
   const original = site(), store = createNativeSiteStore([projectUrbanSite(original, 0)], query(), runtime, { read: async () => original });
   const previous = siteVisualScene(store.visuals), fetched = await store.read('a');

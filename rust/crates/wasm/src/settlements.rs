@@ -11,6 +11,11 @@ pub struct SettlementTerrain {
 
 #[wasm_bindgen]
 impl SettlementTerrain {
+    /// Feature handshake before a caller sends explicit composable weights.
+    /// Old generated JS/WASM lacks this static method and must fail closed.
+    pub fn urban_programme_functions_version() -> u32 {
+        magna_urbis_core::urban::programme::PROGRAMME_FUNCTIONS_VERSION
+    }
     pub fn set_urban_geometry(&mut self, geometry: &str) -> Result<(), JsValue> {
         let input =
             serde_json::from_str(geometry).map_err(|e| JsValue::from_str(&e.to_string()))?;

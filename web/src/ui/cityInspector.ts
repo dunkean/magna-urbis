@@ -7,6 +7,8 @@ import type { PlacedBuilding } from '../../../rust/bridge/urbanArchitecture';
 import type { BuildingStyleEntry, BuildingStyleIndex } from '../../../rust/bridge/buildingStyles';
 import services from '../../../rust/crates/core/src/urban/services.json';
 import { describeUrbanBuilding } from '../render/buildingInspection';
+import { programmeOutcomeRows } from '../render/programmeOutcome';
+import { retainedBodyInventoryRows } from '../render/retainedBuildingInventory';
 import { DISTRICT_ROLES, districtRoleLabel, type CityParcel, type CityPick, type CityScene } from '../render/cityCanvas';
 import { functionLabel, lotRoleChoices, roleLabel, streetLabel } from '../render/cityRoles';
 import type { CityEdits, HouseEdit, LotEdit, QuarterEdit } from './cityEdits';
@@ -194,7 +196,7 @@ function houseSection(target: CityInspectorTarget, hooks: CityInspectorHooks): s
     ['Validation', VALIDATION[info.validation] ?? info.validation],
     ['Modèle', info.validation === 'preview' ? undefined : `${info.label ?? info.recipeId}${info.variantLabel ? ` · ${info.variantLabel}` : info.variantId !== 'default' ? ` · ${info.variantId}` : ''}`],
     ['Culture / pack', `${hooks.cultures[info.culture.culture] ?? info.culture.culture} · ${info.culture.pack}`],
-    ['Typologie', style ? `${TYPOLOGY[style.typology] ?? style.typology} · ${style.morphology} · ${style.profile}` : undefined],
+    ['Typologie du catalogue (référence)', style ? `${TYPOLOGY[style.typology] ?? style.typology} · ${style.morphology} · ${style.profile}` : undefined],
     ['Toiture', info.roofSystems.join(', ') || undefined],
     ['Matériaux', materials || undefined],
     ['Niveaux / hauteur', g.floors !== null || g.heightM !== null ? `${g.floors ?? '?'} niveau(x) · ${g.heightM !== null ? `${g.heightM.toFixed(1)} m` : 'hauteur inconnue'}` : undefined],
@@ -202,6 +204,8 @@ function houseSection(target: CityInspectorTarget, hooks: CityInspectorHooks): s
     ['Toit projeté / cours', info.validation === 'preview' ? undefined : `${m2(g.roofAreaM2)} / ${g.courtyardAreaM2 > 0 ? m2(g.courtyardAreaM2) : 'aucune'}`],
     ['Corps', info.validation === 'preview' ? undefined : String(g.bodies)],
     ['Capacité', capacity],
+    ...programmeOutcomeRows(info.programmeOutcome),
+    ...retainedBodyInventoryRows(building),
   ]);
   const locked = hooks.houseLocked(building);
   let fields: string;

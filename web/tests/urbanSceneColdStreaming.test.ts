@@ -7,6 +7,8 @@ import { beginUrbanBuildingStage, openUrbanBuildingChunks } from '../src/ui/urba
 import { projectUrbanSite } from '../src/ui/urbanSiteStore';
 import type { UrbanSceneResponse, UrbanSceneWorkerMessage } from '../src/ui/urbanSceneProtocol';
 import { ColdTestBackend, deferred } from './helpers/urbanBuildingColdTestBackend';
+import { DerivedTestBackend } from './helpers/urbanDerivedTestBackend';
+import { openColdCitySession } from '../src/ui/urbanColdCitySession';
 
 interface FakeWorker { messages: UrbanSceneWorkerMessage[]; onmessage?: (event: MessageEvent<UrbanSceneResponse>) => void;
   onerror?: (event: ErrorEvent) => void; terminate(): void }
@@ -228,4 +230,28 @@ it('handles native empty metadata chunks and rejects invalid cold inputs without
   // @ts-expect-error Explicit cold result has no fake native PlacementBatch.
   const notAScene: PlacementBatch = completed; void notAScene;
   client.dispose();
+});
+
+it('writes authenticated visuals and actual ordered site origins before ACK and restores them without native archive reads', async () => {
+  const backend = new DerivedTestBackend(), client = createUrbanSceneClient();
+  const result = client.runCold(input, { backend, sceneId: 'derived-stream', sourceFingerprint: fixture.cliSha256 });
+  const worker = await workerStarted(1);
+  for (let i = 0; i < chunks.length; i++) {
+    await append(worker, 1, i); const cache = backend.caches.get('derived-stream')!;
+    expect(cache.chunks.size).toBe(i + 1); expect(cache.origins.size).toBe(fixture.chunks[i].progress.completed);
+    expect(cache.manifest).toBeUndefined();
+  }
+  emit(worker, { id: 1, complete: completion(), siteQuery: query() }); const response = await result;
+  expect(backend.caches.get('derived-stream')!.manifest).toMatchObject({ origins: 'complete', parentFingerprint: response.store.fingerprint });
+  backend.reads = []; const session = await openColdCitySession(backend, { store: response.store, counts: response.counts, cityKey: 'city' });
+  expect(backend.reads).toEqual([]); expect(session.siteVisuals).toHaveLength(9); expect(session.originBinding).toBe('unbound');
+  session.dispose(); client.dispose();
+});
+
+it('keeps the normal cold stream/ACK/native commit when only derivative quota fails', async () => {
+  const backend = new DerivedTestBackend(); backend.derivedFail = 'append'; const client = createUrbanSceneClient();
+  const result = client.runCold(input, { backend, sceneId: 'quota-cache-only', sourceFingerprint: fixture.cliSha256 });
+  const worker = await workerStarted(1); await allChunks(worker); emit(worker, { id: 1, complete: completion(), siteQuery: query() });
+  const response = await result; expect(response.counts).toMatchObject({ buildings: 6, refusals: 3 }); expect(backend.activeId).toBe('quota-cache-only');
+  expect(backend.caches.get('quota-cache-only')).toBeUndefined(); client.dispose();
 });

@@ -3,6 +3,7 @@
 import type { HouseMaterial, MaterialSlots, Surface } from '../../../rust/bridge/housesContract';
 import type { ArchitectureCulture, PlacementBatch, PlacedBuilding, PlacementRefusal } from '../../../rust/bridge/urbanArchitecture';
 import type { BuildingLodScene, CompactBuildingVisual } from '../render/urbanBuildingLod';
+import { retainedProgrammeOutcome, type RetainedProgrammeOutcome } from '../render/programmeOutcome';
 
 export interface NativeBuildingProjection extends CompactBuildingVisual {
   readonly projection: 'native-building-visual-1';
@@ -10,6 +11,8 @@ export interface NativeBuildingProjection extends CompactBuildingVisual {
   readonly parcel_id: string; readonly recipe_id: string; readonly variant_id: string;
   readonly culture: ArchitectureCulture;
   readonly useful_area_m2: number; readonly domestic_units: number;
+  /** Optional native scalar report; it never certifies household capacity. */
+  readonly programme_outcome?: RetainedProgrammeOutcome;
   readonly height_m: number; readonly ground_z_m: number;
   /** Exact child surfaces used by the existing forest exclusion contract. */
   readonly occupation_surfaces: readonly Surface[];
@@ -46,12 +49,14 @@ export function projectNativeBuilding(building: PlacedBuilding): NativeBuildingP
     Math.max(n, v.z_m + v.wall_height_m + v.roof_height_m - building.ground_z_m), 0);
   if (![height, building.ground_z_m, building.useful_area_m2, building.domestic_units].every(Number.isFinite)) throw new Error('Invalid native projection metrics.');
   const c = building.culture, cartography = building.cartographic, material = building.volumes[0]?.materials;
+  const programmeOutcome = retainedProgrammeOutcome(building.programme_outcome);
   return Object.freeze({ projection: 'native-building-visual-1', nativeRealization: false,
     id: building.id, parcel_id: building.parcel_id, recipe_id: building.recipe_id, variant_id: building.variant_id,
     culture: Object.freeze({ culture: c.culture, pack: c.pack, mode: c.mode, borrowing: c.borrowing }), function: building.function,
     footprint: building.footprint, roof_footprint: building.roof_footprint,
     entrance: Object.freeze({ x: building.entrance.x, y: building.entrance.y }), ground_z_m: building.ground_z_m, height_m: height,
     useful_area_m2: building.useful_area_m2, domestic_units: building.domestic_units,
+    ...(programmeOutcome ? { programme_outcome: programmeOutcome } : {}),
     occupation_surfaces: Object.freeze([...buildingOccupationSurfaces(building)]),
     ground_constraints: Object.freeze(buildingGroundConstraints(building).map(c => Object.freeze({ footprint: c.footprint, height_m: c.height_m }))),
     ...(material ? { materials: slots(material) } : {}),

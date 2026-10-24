@@ -1,0 +1,14 @@
+{
+  "version": "functional-source-coverage-1",
+  "requirements": [
+    {
+      "id": "roman-horreum-native-source",
+      "culture_id": "roman-core",
+      "pack_id": "MED-ANT",
+      "urban_role": "storage.horreum",
+      "function": "warehouse",
+      "composition": "hall",
+      "reason": "A horreum needs an explicitly declared functional source; a domestic atrium is not a universal warehouse feasibility witness."
+    }
+  ]
+}

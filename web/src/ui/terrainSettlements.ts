@@ -1,3 +1,5 @@
+import { retainSelectValue } from './retainedSelectValue';
+import { bindCityPlaceCulture } from './cityPlanCulture';
 import { urbanOptionSync } from './urbanOptionSync';
 import type { Relief } from '../gen/options';
 import SettlementWorker from './settlementWorker?worker&inline';
@@ -6,7 +8,8 @@ import type { TerrainData, TerrainSettings } from '../../../rust/bridge/terrain'
 import type { View } from '../render/view';
 import { CULTURES, getCulture } from '../gen/urban/culture';
 import { SITE_ARCHETYPES, classOfPop } from '../gen/options';
-import { SETTLEMENT_KINDS } from './settlementKinds';
+import { settlementPopulationChoices } from './settlementKinds';
+import { demographicLabel } from '../../../rust/bridge/settlementDemography';
 import { createTerrainRoads } from './terrainRoads';
 import { createTerrainUrban } from './terrainUrban';
 import { captureDecorData } from './decorCapture';
@@ -201,7 +204,7 @@ export function createTerrainSettlements(options: {
   }
   function controls(): void {
     input('setEnabled').checked = enabled; mode.value = config.mode; distribution.value = config.distribution;
-    input('setMainPop').value = String(config.main.population); input('setMainPop').disabled = config.mode === 'list'; culture.value = config.main.culture;
+    input('setMainPop').value = String(config.main.population); input('setMainPop').disabled = config.mode === 'list'; retainSelectValue(culture, config.main.culture, 'Profil conservé hors catalogue UI');
     el('setCounts').hidden = config.mode !== 'counts';
     for (const e of Array.from(panel.querySelectorAll<HTMLElement>('[data-show]'))) e.hidden = e.dataset.show === 'auto' ? config.mode !== 'auto' : config.distribution !== e.dataset.show;
     input('setShowPoints').checked = showPoints;
@@ -287,7 +290,7 @@ export function createTerrainSettlements(options: {
       const button = document.createElement('button'); button.type = 'button'; button.dataset.key = s.key;
       button.className = 'terrain-place'; button.setAttribute('aria-pressed', String(selection === s.key));
       const result = output?.settlements.find(p => p.key === s.key);
-      button.innerHTML = `<b>${esc(s.name || s.key)}</b><small>${classOfPop(s.population)} · ${s.population.toLocaleString()} · ${result ? `${esc(result.archetype)} · score ${result.scores.total.toFixed(2)}` : 'awaiting placement'}</small>`;
+      button.innerHTML = `<b>${esc(s.name || s.key)}</b><small>${esc(demographicLabel(s.population))} · ${s.population.toLocaleString()} · ${result ? `${esc(result.archetype)} · score ${result.scores.total.toFixed(2)}` : 'awaiting placement'}</small>`;
       button.onclick = () => { selection = s.key; urban.selectCity(s.key); setPicking(); list(); editor(); draw(); };
       return button;
     }));
@@ -304,9 +307,10 @@ export function createTerrainSettlements(options: {
     const host = el('setEditor'); host.replaceChildren(); if (!spec) return;
     host.innerHTML = `<div class="settlement-editor"><b>Properties</b>
       <label>Name <input id="setName" type="text" maxlength="60"></label>
-      <label>Class <select id="setClass">${SETTLEMENT_KINDS.map(c => `<option value="${c.kind}">${c.label}</option>`).join('')}</select></label>
+      <label>Classe démographique · raccourci de population <select id="setClass">${settlementPopulationChoices().map(c => `<option value="${c.kind}">${c.label}</option>`).join('')}</select></label><small>La classe est déduite de la population. Ce raccourci ne choisit pas une grammaire de plan ; les valeurs affichées ne sont pas les seuils des classes.</small>
       <label>Population <input id="setPopulation" type="number" min="1" max="${options.city ? maxPopulation() : 5000000}" step="1"></label>
-      <label>Culture <select id="setPlaceCulture">${options.city ? cityCultures.map(c => `<option value="${esc(c.id)}">${esc(c.label)}</option>`).join('') : culture.innerHTML}</select></label>${options.city ? '<div class="settlement-actions"><button id="setCulturePrevious" type="button" title="Culture précédente">◀ Culture</button><button id="setCultureNext" type="button" title="Culture suivante">Culture ▶</button></div>' : ''}
+      <label>${options.city ? 'Profil culturel urbain' : 'Culture'} <select id="setPlaceCulture">${options.city ? cityCultures.map(c => `<option value="${esc(c.id)}">${esc(c.label)}</option>`).join('') : culture.innerHTML}</select></label>${options.city ? '<div class="settlement-actions"><button id="setCulturePrevious" type="button" title="Profil précédent">◀ Profil</button><button id="setCultureNext" type="button" title="Profil suivant">Profil ▶</button></div>' : ''}
+      ${options.city ? '<small>Les profils nommés combinent parfois tradition, organisation urbaine et thème. Leur présence au catalogue ne certifie pas une époque ni une taille historique. Les recettes appliquées se lisent dans le programme.</small>' : ''}
       <label>Role (label) <input id="setKind" type="text" maxlength="60"></label>
       <label>Site preference <select id="setSite"><option value="auto">Automatic</option>${SITE_ARCHETYPES.map(s => `<option value="${s}">${s}</option>`).join('')}</select></label>
       <label>X (m) <input id="setX" type="number" min="0" step="1" placeholder="auto"></label><label>Y (m) <input id="setY" type="number" min="0" step="1" placeholder="auto"></label>
@@ -314,7 +318,7 @@ export function createTerrainSettlements(options: {
       <details><summary>Site preferences</summary><label>Mountain face <input id="setMountain" type="number" min="0" max="10" step="0.1"></label><label>Woodland <input id="setWood" type="number" min="0" max="10" step="0.1"></label><label>Hilltop weight <input id="setHill" type="number" min="0" max="10" step="0.1"></label></details>
       <div id="setScore"></div></div>`;
     input('setName').value = spec.name; input('setPopulation').value = String(spec.population);
-    el<HTMLSelectElement>('setClass').value = classOfPop(spec.population); el<HTMLSelectElement>('setPlaceCulture').value = spec.culture;
+    el<HTMLSelectElement>('setClass').value = classOfPop(spec.population); retainSelectValue(el<HTMLSelectElement>('setPlaceCulture'), spec.culture, 'Profil importé hors catalogue UI');
     input('setKind').value = spec.kind; el<HTMLSelectElement>('setSite').value = spec.siteType;
     input('setX').value = spec.position ? String(Math.round(spec.position.x)) : ''; input('setY').value = spec.position ? String(Math.round(spec.position.y)) : '';
     input('setX').max = input('setY').max = String((options.getTerrain()?.width ?? 100000) - 1);
@@ -323,7 +327,7 @@ export function createTerrainSettlements(options: {
     input('setName').onchange = event => edit(s => { s.name = (event.target as HTMLInputElement).value.trim(); });
     input('setKind').onchange = event => edit(s => { s.kind = (event.target as HTMLInputElement).value.trim(); });
     input('setPopulation').onchange = event => { const c = event.target as HTMLInputElement; if (c.reportValidity()) edit(s => { s.population = Math.round(Number(c.value)); }); };
-    el<HTMLSelectElement>('setClass').onchange = event => edit(s => { const kind = SETTLEMENT_KINDS.find(k => k.kind === (event.target as HTMLSelectElement).value); if (kind && classOfPop(s.population) !== kind.kind) s.population = kind.population; });
+    el<HTMLSelectElement>('setClass').onchange = event => edit(s => { const kind = settlementPopulationChoices(options.city ? maxPopulation() : 5000000).find(k => k.kind === (event.target as HTMLSelectElement).value); if (kind && classOfPop(s.population) !== kind.kind) s.population = kind.population; });
     el<HTMLSelectElement>('setPlaceCulture').onchange = event => edit(s => { s.culture = (event.target as HTMLSelectElement).value; s.sitePrefs = {}; });
     el<HTMLSelectElement>('setSite').onchange = event => edit(s => { s.siteType = (event.target as HTMLSelectElement).value; });
     for (const [name, key] of [['setMountain', 'mountainFace'], ['setWood', 'woodland'], ['setHill', 'hilltop']]) input(name).onchange = event => {
@@ -337,7 +341,7 @@ export function createTerrainSettlements(options: {
     };
     input('setX').onchange = input('setY').onchange = positionChanged;
     if (options.city) {
-      el<HTMLSelectElement>('setClass').replaceChildren(...SETTLEMENT_KINDS.filter(k => k.population <= maxPopulation()).map(k => new Option(k.label, k.kind)));
+      el<HTMLSelectElement>('setClass').replaceChildren(...settlementPopulationChoices(maxPopulation()).map(k => new Option(k.label, k.kind)));
       el<HTMLSelectElement>('setClass').value = classOfPop(spec.population);
       el('setKind').closest('label')!.hidden = true;
       // Implantation: a fixed position (map centre by default) or a site found by the placement strategy.
@@ -353,7 +357,8 @@ export function createTerrainSettlements(options: {
       };
       el('setRemove').hidden = true; el('setMountain').closest('details')!.hidden = true;
       const cultureSelect = el<HTMLSelectElement>('setPlaceCulture');
-      cultureSelect.onchange = () => { urban.adoptSiteCulture(); edit(s => { s.culture = cultureSelect.value; s.sitePrefs = {}; }); };
+      // A place profile change preserves the independent plan, parcel and architecture overrides.
+      bindCityPlaceCulture(cultureSelect, edit);
       const step = (delta: number): void => { cultureSelect.selectedIndex = (cultureSelect.selectedIndex + delta + cultureSelect.options.length) % cultureSelect.options.length; cultureSelect.dispatchEvent(new Event('change')); };
       el('setCulturePrevious').onclick = () => step(-1); el('setCultureNext').onclick = () => step(1);
       el('setCentre').onclick = () => {

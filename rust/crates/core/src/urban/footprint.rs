@@ -1997,8 +1997,10 @@ pub(super) fn generate(
     // Adaptive capacity: the footprint is sized for the households its own
     // tissue can hold (densified first, then extended within a bound).
     let plan_epochs = capacity_epochs(site, cfg, morph, nominal, surface);
+    #[cfg(not(target_arch = "wasm32"))]
     let tick = std::time::Instant::now();
     let mut plan = capacity::plan(site, cfg, &plan_epochs, nominal, None);
+    #[cfg(not(target_arch = "wasm32"))]
     if std::env::var("URBAN_PROFILE").is_ok() {
         eprintln!(
             "  capacity.plan: {:.0} ms",

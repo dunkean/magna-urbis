@@ -1,9 +1,14 @@
+import type { ParentChunkBackend } from './urbanParentChunkStore';
 /** Cold retained architecture. This module does not publish UI state or ACKs.
  * Await stage.append before ACK; await stage.commit before replacing a scene.
  * Budgets below count encoded bytes, never measured JS heap. */
 import type { PlacementBatch, PlacedBuilding } from '../../../rust/bridge/urbanArchitecture';
 import type { ArchitectureBatchProgress, ArchitectureStreamSummary } from '../../../rust/bridge/architectureBatch';
 import { isArchivedPlan, registerPlanArchives } from '../../../rust/bridge/compactPlanArchive';
+import { beginDerivedWrite, type DerivedBackend } from './urbanBuildingDerivedCache';
+import { projectNativeBuildingChunk, type NativeBuildingProjectionScene } from './urbanBuildingProjection';
+import type { UrbanSiteVisual } from './urbanSiteStore';
+import type { ColdOverviewBackend } from './urbanColdOverviewCache';
 
 export const BUILDING_CHUNK_SCENE_FORMAT = 'urban-building-chunks-1';
 export const BUILDING_CHUNK_TILE_M = 256;
@@ -32,6 +37,12 @@ export interface BuildingChunkIndex {
   bounds: ChunkBounds; tiles: string[];
 }
 export interface BuildingChunkBackend {
+  /** Versioned real parent source sharing the active generation pointer. */
+  parents?: ParentChunkBackend;
+  /** Optional authenticated raster/count child cache; excluded from native export. */
+  overview?: ColdOverviewBackend;
+  /** Optional disposable derivative. Never included in native export/import. */
+  derived?: DerivedBackend;
   begin(sceneId: string): Promise<void>;
   /** Atomic add: duplicate index/id or quota failure must roll back all writes. */
   append(sceneId: string, chunk: StoredBuildingChunk, entries: BuildingChunkIndex[]): Promise<void>;
@@ -166,9 +177,17 @@ export async function beginUrbanBuildingStage(backend: BuildingChunkBackend, inp
   assert(sceneId.length > 0 && sceneId.length <= 128 && !sceneId.includes('\0') && hashPattern.test(input.sourceFingerprint) && integer(input.totalRequests), 'Invalid building stage identity.');
   const expectedActive = input.expectedActive === undefined ? (await backend.active())?.sceneId ?? null : input.expectedActive;
   await backend.begin(sceneId);
+  let derived: Awaited<ReturnType<typeof beginDerivedWrite>>, derivedReason = backend.derived ? 'pending' : 'unsupported';
+  try { derived = await beginDerivedWrite(backend, sceneId, input.sourceFingerprint, input.totalRequests); }
+  catch (error) { derivedReason = String(error); }
+  let lastProjection: NativeBuildingProjectionScene | undefined;
+  async function loseDerived(error: unknown): Promise<void> {
+    derivedReason = String(error); const previous = derived; derived = undefined;
+    try { await previous?.abort(); } catch { /* Cache cleanup cannot invalidate native storage. */ }
+  }
   const chunks: BuildingChunkDescriptor[] = [];
   let completed = 0, schema: '1' | undefined, generator: string | undefined, failed = false, committed = false, busy = false;
-  async function writeStored(chunk: StoredBuildingChunk): Promise<void> {
+  async function writeStored(chunk: StoredBuildingChunk, sites?: UrbanSiteVisual[]): Promise<void> {
     try {
       assert(chunk.index === chunks.length && chunk.progress.start === completed && chunk.progress.total === input.totalRequests
         && integer(chunk.progress.completed) && chunk.progress.completed <= input.totalRequests && chunk.progress.completed - completed <= 64
@@ -181,22 +200,27 @@ export async function beginUrbanBuildingStage(backend: BuildingChunkBackend, inp
       // This is the ACK boundary: no local counter changes before durable success.
       await backend.append(sceneId, chunk, entries);
       schema = delta.schema_version; generator = delta.generator_version; completed = chunk.progress.completed; chunks.push(descriptor(chunk));
+      lastProjection = undefined;
+      if (derived) {
+        try { lastProjection = projectNativeBuildingChunk(delta); await derived.append(lastProjection, descriptor(chunk), sites); }
+        catch (error) { await loseDerived(error); }
+      }
     } catch (error) { failed = true; throw error; }
   }
-  async function appendStored(chunk: StoredBuildingChunk): Promise<void> {
+  async function appendStored(chunk: StoredBuildingChunk, sites?: UrbanSiteVisual[]): Promise<void> {
     assert(!failed && !committed && !busy, 'Building stage is failed, committed or busy.'); busy = true;
-    try { await writeStored(chunk); } finally { busy = false; }
+    try { await writeStored(chunk, sites); } finally { busy = false; }
   }
   return {
     sceneId,
-    async append(delta: PlacementBatch, progress: ArchitectureBatchProgress): Promise<void> {
+    async append(delta: PlacementBatch, progress: ArchitectureBatchProgress, sites?: UrbanSiteVisual[]): Promise<void> {
       assert(!failed && !committed && !busy, 'Building stage is failed, committed or busy.'); busy = true;
       try {
         validateDelta(delta); const data = encode(delta), text = payload(data), size = bytes(text);
         assert(size <= BUILDING_CHUNK_MAX_BYTES, 'Building chunk exceeds storage byte budget.');
         const chunk: StoredBuildingChunk = { ...data, index: chunks.length, sha256: await digest(text), bytes: size, progress: { ...progress },
           buildings: delta.buildings.length, refusals: delta.refusals.length, openSpaces: delta.open_spaces.length };
-        await writeStored(chunk);
+        await writeStored(chunk, sites);
       } catch (error) { failed = true; throw error; } finally { busy = false; }
     },
     /** Import/copy-on-write: exact stored payload, without a new codec/compression pass. */
@@ -218,11 +242,19 @@ export async function beginUrbanBuildingStage(backend: BuildingChunkBackend, inp
         expected.signal?.throwIfAborted();
         await backend.commit(manifest, expectedActive, { signal: expected.signal });
         // Cancellation after the durable transaction is too late to undo it.
-        committed = true; return freeze(manifest);
+        committed = true;
+        if (derived) {
+          try { await derived.commit(manifest, expected.signal); derivedReason = 'ready'; }
+          catch (error) { await loseDerived(error); }
+        }
+        return freeze(manifest);
       } catch (error) { failed = true; throw error; } finally { busy = false; }
     },
-    async abort(): Promise<void> { assert(!busy && !committed, 'Building stage is busy or committed.'); failed = true; await backend.discard(sceneId); },
+    async abort(): Promise<void> { assert(!busy && !committed, 'Building stage is busy or committed.'); failed = true; await loseDerived('aborted'); await backend.discard(sceneId); },
     get progress() { return { completed, total: input.totalRequests, chunks: chunks.length, failed, committed }; },
+    get lastDescriptor() { return chunks.length ? descriptor(chunks[chunks.length - 1]) : undefined; },
+    get lastProjection() { return lastProjection; },
+    get derivedStatus() { return derivedReason; },
   };
 }
 
@@ -328,6 +360,7 @@ export async function* iterateUrbanBuildingChunkRecords(backend: BuildingChunkBa
     assert(expected.bytes <= cap, 'Retained chunk exceeds traversal byte budget.');
     const chunk = await backend.chunk(sceneId, expected.index);
     assert(chunk && JSON.stringify(descriptor(chunk)) === JSON.stringify(expected), 'Retained chunk descriptor mismatch.');
+    if (options.cancelled?.()) throw new DOMException('Building traversal replaced', 'AbortError');
     const delta = freeze(await decode(chunk));
     if (options.cancelled?.()) throw new DOMException('Building traversal replaced', 'AbortError');
     yield { descriptor: expected, stored: freeze(chunk), delta };
