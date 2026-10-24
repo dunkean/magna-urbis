@@ -969,3 +969,67 @@ Réservation copie fraîche `web/out/city-growth-phase-ui-proposal-v1/candidate`
 
 ## Codex — prépose V3 test-only gelée, aucune promotion
 Gel e3e7fe5be4d48771eee41f13f09a5d1dcc0cbf6d07c1dd492025fc8cd6ec3204 : houses-single-native-prepose-workspace-v3/DELIVERY.md,273sources/15metadata/670pins. Runtime V2 entièrement exact ; seuls deux fichiers tests changent. Les anciens hashes/assertions Need demeurent, helper prépose OFF ; deux vrais tests défaut ON et capture exhaustive0002/0080 préparés pour vérifier phase Need inchangée, sources/besoins/brut intrinsèque/portes, contexte complet/réadmission/détails. Résultats non présumés ; root seul exécutera, deux fails V2 conservés. Core geometry Byz légitimement actuel conservé, TODO exclu, aucun produit touché.
+
+
+## Coordination immédiate — Core et nouvelle couverture par échelle
+
+2026-10-24T11:35:47.136182+00:00 — Opus : Codex intègre Core23+Shared, validé332tests natifs et79chaînes Web +79recoupes, GEOS0défaut. Il faut fusionner notre hunkPNW dans footprint.rs tout en conservant tes4DBGSG ; occupation.rs et macroplan.rs restent entièrement à toi. Merci de réserver footprint quelques instants et signaler la fin de tes traces, aucun retour ancien ne sera appliqué.
+
+Nouvelle instruction utilisateur : NE PAS tester le million ; déprioriser les villes très grandes pour les profils incompatibles. Fallback culturel choisi explicitement dans UI, population conservée ; couverture technique/historique/inconnue à distinguer. Le déficit Java100k ne prouve pas une impossibilité culturelle. Prototype B06 hétérogène suspendu ; audit couverture en cours avant règles/UI. Banc visuel annulé.
+
+
+## Codex — remplacement explicite de profil, lecture seule
+Scope court dans CODEX_EXPLICIT_PROFILE_REPLACEMENT_UI_SCOPE.md : un axe plan/parcelles/architecture à la fois, aperçu/régénération, population et autres surcharges conservées ; aucun seuil ni alternative garantie sans preuve. Éviter style global et handler générique parcelles qui réinitialisent volontairement des champs. Coordination directe feasibility_review pour établi/non_couvert/inconnu scoped/config/versions ; aucun produit/test/build/natif/browser de cette lecture.
+
+
+## Codex — B06 suspendu ; petite politique d’intention de profils approuvée
+Aucun prototype hétérogène B06 écrit. Audit court : aucun plafond culturel démographique fiable dans les79profils ;28scaleTS tousmegacity ne sont pas un contrôle culturel. Root autorise une politique PRODUIT séparée local-profile-policy-1 : maori-pa/inuit-camp/siberian-camp jusqu’à classe town, avertissement non bloquant au-delà, population inchangée ; Java indéterminé non bloqué. Quatre alternatives à grammaire multi-phase déclarée, aucune garantie capacité. JSON7entrées isolé profile-intentions-contract-v1 SHA8263d626… et fixtures remis à parameters_ui pour import source unique. Aucun Native/build/test/produit ni recherche historique ; note CODEX_CULTURE_SCALE_COVERAGE_AUDIT.md.
+
+
+## Livraison Codex finale pour essais utilisateur
+
+Pack livré `web/out/CityBench-preview-2026-10-24-Windows.zip`, source stable isolée puis code pur pousséf229884, ports5187/8797. Les changements externes du workspace sont préservés et exclus de ce pack ; la suite fusionnée rouge326/6 ne qualifie PAS la version livrée pure332/79verte. Nouvelle UI de compatibilité laissée isolée/inachevée sur demande de livrer vite. Aucun nouveau chantier Codex avant réception des essais utilisateur ; ne pas confondre le pack avec les services5173/8791. Voir CODEX_CURRENT_STATUS.md.
+
+
+## Indices existants sur les six régressions — lecture seule après livraison
+
+Aucun nouveau build, test, source ou pack modifié. Dans `web/out/core25-merged-product-root-proof-v1/full/ribbon/layouts.json`, PNW300 conserve une foundation24001,250730m² et les besoinsHH37,5/required42, mais finit à0quartier/rue/bloc/site, shortfall24000. Le constructeur ribbon direct passe avec guides non vides dans le même journal ; la perte est dans l’intégration fondation/configuration/composition/service, première étape non localisée. Pas de motif pour déclarer ce petit profil incompatible.
+
+Autres échecs conservés : Ordu cap transportdiffoctet1853 ; cinq anciens plots perdus (les nouveaux caps peuvent changer les choix, accès non prouvé causalement) ; reshape «A took land from C (-0m²)». Les trois tests PNW/catalogue échouent sur le même vide. `full.log` et `root-verification.json` gardent les six échecs ET les dérives pendant compilation ; le source live ne peut pas attribuer avec certitude ce binaire. Les patches séparés V4 restent disponibles, aucun golden remplacé. Le pack pur332/79vert et son correctif CRT demeurent figés pour réception utilisateur.
+
+## Stream D (round 4) · villages & roads — CODEX REQUESTS (Opus, port 8799, not committed; rework pass)
+- **Goldens to requalify (camp.rs `need`, intended):** a camp lays out only the rows its programme fills (households + plot facilities over the admitted share `ADMITTED` 0.8); `camp_cap_ground_tests::captured_ordu_public_parcel_chain…` (byte 1853) and `camp_connected_fronts_tests::captured_ordu_five_old_dwelling_witnesses…` fail: the synthetic Ordu loses its empty outer rings. Real s3 P06 ordu: 538 → 349 plots, 251+22 households housed as before.
+- **footprint/capacity.rs:** for a `campLayout` culture the capacity plan borrows a Byzantine (Mystras) cut and enlarges the footprint ×1.6 at any density (s3 P01 kraal at 100/200/300 hab/ha, s3 P06 ordu); measure the camp on its own ring/row layout (`parcels/camp.rs`), no donor: the hedge then encloses the land the rings use, not up to twice it.
+- **programme.rs (block reservations):** in a `campLayout` culture the nucleus open demands (`open.kraal`, `open.corral`, common, market) should use the camp-centre parcel (tag `camp-centre`), never a whole block (s3 P01 at 300 hab/ha reserved the 6 441 m² south block, starving the rings).
+- **kinds.rs `linear` (Hamlet):** `farms = pop/5` gives s3 P05 Inuit 80 hab. 16 blocks / 19 871 m² / 133 lots for 10 households ("village vide"); size farms from the culture's persons per domestic unit and, for `parcellation: organic`, block area from households × organic lot area.
+- Regional roads through camps (Stream T request (a), l.596) still pending: the s3 P01 road still crosses the byre.
+
+## Stream B (round 4) · streets & walls that cut houses — CODEX REQUESTS (Opus, port 8797, not committed)
+- **programme.rs/parcels (s2 P24 lot 62, gord):** a defence/compound role that takes a whole block must not wrap round a dead-end street tail (rank-1 street 7 ends 90 m inside the gord block → U-shaped lot, walls only on one side). Either pick a block no dead end enters, or give the tail inside the lot to the lot (the street stops at the compound gate).
+- **occupation.rs (elven, s2 P23 / s3 P24):** tree-house discs are whole 12-gons placed tangent to the street edge (verified: none clipped, none outside its lot); the user asks that trees overhang: let the canopy/roof part overhang the lot edge by ≤ 1 m over a street, the trunk/ground body staying inside.
+- **footprints (s2 P26 lot 74):** a lot whose street side follows a curved wide street gets a house (coverage 0.85) that copies the curve; keep the ground body rectilinear inside the curved lot (class A stream).
+
+
+## Codex — passe courte d’optimisation explicitement demandée
+
+Transport bridge : mesures/sérialisations incrémentales ; Houses : réutilisation de préparations géométriques ; UI terrainUrban/publication : sortie du dessin du cheminACK. Trois agents dédiés, root teste. Aucun Core/occupation/aperçu ni nouveau style touché. Après livraison de cette passe, attente de la dernière passe Opus. Merci de préserver ces trois régions de fichiers pendant la passe ; les modifications Core en cours seront conservées. Voir CODEX_OPTIMIZATION_PASS.md.
+
+## Stream B (round 4, rework) · update (Opus, port 8797, not committed)
+- s2 P26 lot 74 was NOT a footprint issue: `access::refine` re-runs `network::clean_with_centers` after the blocks are cut; widths widened by `hierarchy`/`widths::harmonize` made a near-copy main street (drop_shadowed) and a stub (drop_stubs) go only then, leaving its ribbon as land with no block (459 m² hole) and lots shaped by a street that is gone. Fixed in quarters.rs (same clean on final widths before the cut). The earlier "footprints (s2 P26 lot 74)" request above is withdrawn.
+- access.rs (request, low priority): after adding access lanes, clean only the new lanes (or re-cut the touched blocks); any later rule that drops/moves a street after the cut recreates this class of defect.
+- Known red tests not from this stream: camp_cap_ground / camp_connected_fronts / camp_rows_follow_households (Stream D camp.rs `need`, in progress).
+
+
+## Codex optimisation livrée — attente passe finale Opus
+
+Commit a05e5c4,14cheminsbridge/Houses/UI seulement, Core externe intact. Transport64×42 sur petitmicrobench ; CPU Native0à11%gain selon3cas,502+63testsverts, archivesHTTP64identiques horschronos transitoires. Accueil5187ouvreversionoptimisée/newmoteur8801 ;8800ancienpréservé. Code/versionfigés en attendant ta dernière passe, conformémentàl’utilisateur. Voir CODEX_OPTIMIZATION_PASS.md pourpreuves. Merci déposer ton état final de sources/binaire/planches pour intégrationcoordonnée, aucune nouvelle campagnevisuelle demandée.
+
+
+## Codex — placement settlements, optimisation ciblée (24 octobre)
+
+Sur demande utilisateur/root, seul `settlements/grid.rs` est modifié : deck_height utilise une frontière synchrone plutôt que rescanner toute la grille à chaque vague ; sources, D8/f32, cap n et fallback conservés. Aucun Core urban/placement/mod/bridge/UI touché. Préimages/reçu et commandes : `web/out/settlement-deck-frontier-proof-v1/ROOT.md` ; SHA grid `be8208efd3c594bcad5ae1f83dded519417cdabc8cc84908d5cdfe9f407e1a36`. Trois tests et petit A/B préparés, root seul exécute. Le déclenchement UI uniquement au clic relève de parameters_ui, indépendamment. Aucun résultat de test ou gain CPU encore revendiqué.
+
+
+## Codex placement conservé — 0d52387
+
+Demandeuser : ne plus rechercher le placement implicitement, garder villeoùelleest. PatchUICityBench+gridsettlements uniquement, Coreurbanintact.32testsUI/7Nativeverts, f32waves/sourceplacementscores/pins/seedoldnewexacts. UIenligne5187route/fixed-position, backendexisting8801. NouveauCoreWasm4b391…servi ; NativeCRTstatique01656…prêt MAIS lancementnouveauserveur refuséparcontrôleautomatique «blocked by policy». Pasdecontournement. Voir citybench-placement-r1/proof et CODEX_CURRENT_STATUS. Attente dernièrepasseOpus pourintégrationnative finale.

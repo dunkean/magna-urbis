@@ -557,14 +557,7 @@ pub(super) fn resolve_exits(
         && !inner_ends.is_empty()
         && !std::env::var("URBAN_WALL_ROUTES").is_ok_and(|v| v == "legacy" || v == "outer")
     {
-        let (kept, dropped) = inner_ring(
-            streets,
-            &curtains,
-            &inner_ends,
-            surface,
-            cfg,
-            &mut rng.fork("inner-ring"),
-        );
+        let (kept, dropped) = inner_ring(streets, &curtains, &inner_ends, surface, cfg);
         if std::env::var("URBAN_RING_DEBUG").is_ok() {
             eprintln!(
                 "INNER_RING ends={} kept={kept:.0} dropped={dropped:.0}",
@@ -904,7 +897,9 @@ const LANE_REACH: f64 = 14.0;
 /// A section is the lane line itself (what `enclosure_lanes` lays; stretches
 /// it already covers are left alone), moved inward past a tower or ditch end,
 /// always inside the circuit, off every reserve tile and gate passage; a
-/// section no clear route serves keeps its dead ends. Returns the kept and
+/// section no clear route serves keeps its dead ends. Every section is laid,
+/// whatever the peripheral setting: a stretch of wall foot left to the lots
+/// between two lanes reads as an unfinished wall. Returns the kept and
 /// dropped section lengths (measurement).
 fn inner_ring(
     streets: &mut Vec<Street>,
@@ -912,7 +907,6 @@ fn inner_ring(
     ends: &[(usize, bool)],
     surface: super::Surface<'_>,
     cfg: &super::LayoutConfig,
-    rng: &mut crate::rng::Rng,
 ) -> (f64, f64) {
     use super::{geometry as g, routing};
     struct Anchor {
@@ -1002,7 +996,6 @@ fn inner_ring(
     let (mut kept, mut dropped) = (0.0, 0.0);
     let mut used: BTreeSet<(usize, bool)> = BTreeSet::new();
     let mut anchored: Vec<Anchor> = vec![];
-    let auto = cfg.peripheral_road == "auto";
     let wall_lanes: Vec<_> = streets
         .iter()
         .filter(|s| s.role == "wall-lane")
@@ -1023,9 +1016,6 @@ fn inner_ring(
             // Two ends make two arcs of the same ring; one is enough when
             // they meet.
             if distance(a.at, b.at) < if n == 2 { 2.0 * hw } else { 1.0 } {
-                continue;
-            }
-            if auto && !rng.chance(0.8) {
                 continue;
             }
             // Forward along the ring from `a` to `b`.
@@ -1052,9 +1042,9 @@ fn inner_ring(
                     wall_lanes.iter().any(|n| n.distance(p, p) < 1.0)
                 })
             });
-            let route = (!covered)
-                .then(|| curtains.lane_route(&path, hw))
-                .flatten()
+            let routed = (!covered).then(|| curtains.lane_route(&path, hw)).flatten();
+            let route = routed
+                .clone()
                 .filter(|p| routing::path_clear(surface, p, cfg.max_street_grade));
             match route {
                 Some(p) => {
@@ -1068,7 +1058,26 @@ fn inner_ring(
                     });
                 }
                 None if covered => used.extend([(a.street, a.end), (b.street, b.end)]),
-                None => dropped += length,
+                None => {
+                    dropped += length;
+                    // Water or a slope on the way: the lane still runs from
+                    // each end up to it (a dead end along the wall foot), so
+                    // the wall is not left with a strip of lot along it.
+                    let Some(p) = routed else { continue };
+                    let [head, tail] = clear_spurs(&p, surface, cfg.max_street_grade);
+                    for (spur, end) in [(head, (a.street, a.end)), (tail, (b.street, b.end))] {
+                        if let Some(spur) = spur {
+                            kept += spur.windows(2).map(|w| distance(w[0], w[1])).sum::<f64>();
+                            used.insert(end);
+                            sections.push(Street {
+                                widths: vec![lane.width; spur.len()],
+                                path: spur,
+                                rank: 2,
+                                role: "wall-lane".into(),
+                            });
+                        }
+                    }
+                }
             }
         }
         anchored.extend(group);
@@ -1103,6 +1112,106 @@ fn inner_ring(
     }
     streets.extend(sections);
     (kept, dropped)
+}
+/// Dead ends of each street ([start, end]): an end no other street meets.
+pub(super) fn dead_ends(streets: &[Street]) -> Vec<[bool; 2]> {
+    let mut degree: BTreeMap<Key, usize> = BTreeMap::new();
+    for s in streets {
+        for &p in &s.path {
+            *degree.entry(key(p)).or_default() += 1;
+        }
+    }
+    streets
+        .iter()
+        .map(|s| match (s.path.first(), s.path.last()) {
+            (Some(&a), Some(&b)) if s.path.len() >= 2 => {
+                [degree[&key(a)] == 1, degree[&key(b)] == 1]
+            }
+            _ => [false, false],
+        })
+        .collect()
+}
+/// Invariant (square dead end): a dead-end street's land stops on the line
+/// square to its last segment through its end. The round joint of the
+/// vertex before a short last segment would otherwise bulge past the end
+/// and bite a round notch into the block it points at.
+pub(super) fn square_ends(
+    pieces: Vec<super::Shape>,
+    path: &[Point],
+    widths: &[f64],
+    dead: [bool; 2],
+) -> Vec<super::Shape> {
+    use super::geometry as g;
+    let n = path.len();
+    if n < 3 {
+        return pieces;
+    }
+    let reach = 2.0 * widths.iter().copied().fold(1.0, f64::max);
+    let mut beyond = vec![];
+    for (on, end, prev) in [
+        (dead[0], path[0], path[1]),
+        (dead[1], path[n - 1], path[n - 2]),
+    ] {
+        let l = distance(prev, end);
+        if !on || l < EPS {
+            continue;
+        }
+        let (dx, dy) = ((end.x - prev.x) / l, (end.y - prev.y) / l);
+        let at = |a: f64, b: f64| Point {
+            x: end.x + dx * a - dy * b,
+            y: end.y + dy * a + dx * b,
+        };
+        beyond.push(g::normalized(super::Shape {
+            outer: vec![
+                at(0.0, -reach),
+                at(reach, -reach),
+                at(reach, reach),
+                at(0.0, reach),
+            ],
+            holes: vec![],
+        }));
+    }
+    if beyond.is_empty() {
+        return pieces;
+    }
+    pieces
+        .into_iter()
+        .flat_map(|p| {
+            beyond.iter().fold(vec![p], |acc, b| {
+                acc.iter().flat_map(|p| g::difference(p, b)).collect()
+            })
+        })
+        .filter(|p| g::area(p) > 1e-3)
+        .collect()
+}
+/// Shortest wall-lane dead end worth laying (m).
+const MIN_SPUR: f64 = 10.0;
+/// The clear runs of a blocked lane route from each end ([from the start,
+/// to the end]), each kept when at least `MIN_SPUR` long.
+fn clear_spurs(
+    path: &[Point],
+    surface: super::Surface<'_>,
+    max_grade: f64,
+) -> [Option<Vec<Point>>; 2] {
+    let clear = |a: Point, b: Point| super::routing::segment_clear(surface, a, b, max_grade);
+    let n = path.len();
+    let head = (0..n - 1)
+        .take_while(|&k| clear(path[k], path[k + 1]))
+        .count();
+    let tail = (1..n)
+        .rev()
+        .take_while(|&k| clear(path[k - 1], path[k]))
+        .count();
+    let long = |p: &[Point]| p.windows(2).map(|w| distance(w[0], w[1])).sum::<f64>() >= MIN_SPUR;
+    if head + 1 >= n {
+        return [None, None];
+    }
+    let first = path[..=head].to_vec();
+    let last = path[n - 1 - tail..].to_vec();
+    [
+        (head >= 1 && long(&first)).then_some(first),
+        (tail >= 1 && head < n - 1 - tail && long(&last)).then_some(last),
+    ]
 }
 fn private(s: &Street) -> bool {
     matches!(
@@ -1715,6 +1824,37 @@ impl Graph {
 /// network keeps every junction. Protected roads are never removed. Sampling
 /// is every 2 m against a 32 m bucket grid of segments.
 fn drop_shadowed(streets: &mut Vec<Street>) {
+    drop_shadowed_within(streets, 0.0, &[]);
+}
+/// Narrowest land between two parallel streets that still holds a lot (m).
+pub(super) const MIN_LAND: f64 = 4.0;
+/// Invariant (no sliver between two streets): a street running within
+/// `MIN_LAND` of the ribbon of a more important one along at least 90 % of
+/// its length leaves between them a strip too thin for any lot; it doubles
+/// that street and is removed (`drop_shadowed`, with the strip counted as
+/// shared land), its junctions carried onto the survivor. A curtain between
+/// the two keeps both: each serves its own side of the wall. Returns whether
+/// a street went (the network is then planarized again).
+pub(super) fn drop_narrow_doubles(
+    streets: &mut Vec<Street>,
+    enclosures: &[super::Enclosure],
+    radius: f64,
+) -> bool {
+    let walls: Vec<(Point, Point)> = enclosures
+        .iter()
+        .flat_map(|e| e.path.windows(2).map(|w| (w[0], w[1])))
+        .collect();
+    let before = streets.len();
+    drop_shadowed_within(streets, MIN_LAND, &walls);
+    let changed = streets.len() < before;
+    if changed {
+        planarize(streets, radius);
+    }
+    changed
+}
+/// `drop_shadowed` counting as covered the samples within `gap` of the
+/// dominating ribbon when no `walls` segment runs between them.
+fn drop_shadowed_within(streets: &mut Vec<Street>, gap: f64, walls: &[(Point, Point)]) {
     const CELL: f64 = 32.0;
     let rank_key = |i: usize, s: &Street| {
         let w = s.widths.iter().copied().fold(0.0_f64, f64::max);
@@ -1771,7 +1911,13 @@ fn drop_shadowed(streets: &mut Vec<Street>) {
                     }
                     // Ribbons that overlap leave no land between them.
                     let half = 0.5 * width(t, seg).max(width(t, seg + 1)) + 0.5 * own;
-                    if super::geometry::distance(p, t.path[seg], t.path[seg + 1]).0 <= half {
+                    let (d, _, q) = super::geometry::distance(p, t.path[seg], t.path[seg + 1]);
+                    if d <= half
+                        || d <= half + gap
+                            && !walls
+                                .iter()
+                                .any(|&(a, b)| super::geometry::segment_hit(p, q, a, b).is_some())
+                    {
                         hit.insert(j);
                     }
                 }
@@ -2031,7 +2177,7 @@ fn trim_end(s: &mut Street, graph: &Graph, center: Point, radius: f64) {
 /// street it meets (else to the nearest street within `reach`), at street grade,
 /// so the crossing joins the network and divides the block it enters.
 pub(super) fn join_crossings(
-    streets: &mut [Street],
+    streets: &mut Vec<Street>,
     surface: super::Surface<'_>,
     max_grade: f64,
     reach: f64,
@@ -2044,6 +2190,7 @@ pub(super) fn join_crossings(
         .flat_map(|s| [s.path[0], *s.path.last().unwrap()])
         .collect();
     if abutments.is_empty() {
+        footbridges(streets, surface, max_grade);
         return;
     }
     snap_to_abutments(streets, surface, max_grade);
@@ -2114,6 +2261,95 @@ pub(super) fn join_crossings(
                 s.widths.push(w);
             }
         }
+    }
+    footbridges(streets, surface, max_grade);
+}
+
+/// Longest footbridge a town lays over a brook (m).
+const FOOTBRIDGE: f64 = 16.0;
+/// Invariant (a brook is crossed where its streets meet it): two streets
+/// ending loose on opposite banks of narrow water, each heading for the
+/// other a few metres away, are one way the stream cuts, and a footbridge
+/// joins them. A brook gets the crossings its streets need: neither a pair
+/// of dead ends facing each other across it, nor a crossing within 30 m of
+/// another one.
+fn footbridges(streets: &mut Vec<Street>, surface: super::Surface<'_>, max_grade: f64) {
+    use super::{geometry as g, routing};
+    let span = |s: &Street| matches!(s.role.as_str(), "bridge" | "ford" | "causeway");
+    // Loose ends on dry ground: (street, at its last point, end, heading).
+    let mut ends = vec![];
+    for (i, s) in streets.iter().enumerate() {
+        if span(s) || private(s) || s.path.len() < 2 {
+            continue;
+        }
+        for at_end in [false, true] {
+            let n = s.path.len();
+            let (o, before) = if at_end {
+                (s.path[n - 1], s.path[n - 2])
+            } else {
+                (s.path[0], s.path[1])
+            };
+            let l = distance(before, o);
+            let loose = !streets.iter().enumerate().any(|(j, t)| {
+                j != i && t.path.windows(2).any(|w| g::distance(o, w[0], w[1]).0 < 0.5)
+            });
+            if l > EPS && loose && !surface.wet(o) {
+                let heading = Point {
+                    x: (o.x - before.x) / l,
+                    y: (o.y - before.y) / l,
+                };
+                ends.push((i, at_end, o, heading));
+            }
+        }
+    }
+    let mut pairs = vec![];
+    for (x, a) in ends.iter().enumerate() {
+        for (y, b) in ends.iter().enumerate().skip(x + 1) {
+            let d = distance(a.2, b.2);
+            if a.0 == b.0 || !(1.0..=FOOTBRIDGE).contains(&d) {
+                continue;
+            }
+            let u = Point {
+                x: (b.2.x - a.2.x) / d,
+                y: (b.2.y - a.2.y) / d,
+            };
+            // Each street heads for the other (within 60 degrees), water
+            // lies between them.
+            let facing = a.3.x * u.x + a.3.y * u.y > 0.5 && -(b.3.x * u.x + b.3.y * u.y) > 0.5;
+            let wet = (1..20).any(|k| surface.wet(lerp(a.2, b.2, k as f64 / 20.0)));
+            if facing && wet && !routing::segment_clear(surface, a.2, b.2, max_grade) {
+                pairs.push((d, x, y));
+            }
+        }
+    }
+    pairs.sort_by(|p, q| p.0.total_cmp(&q.0).then(p.1.cmp(&q.1)));
+    let mut crossings: Vec<Point> = streets
+        .iter()
+        .filter(|s| span(s))
+        .flat_map(|s| s.path.iter().copied())
+        .collect();
+    let mut used = BTreeSet::new();
+    for (_, x, y) in pairs {
+        let (a, b) = (ends[x], ends[y]);
+        let mid = lerp(a.2, b.2, 0.5);
+        if used.contains(&x)
+            || used.contains(&y)
+            || crossings.iter().any(|&p| distance(p, mid) < 30.0)
+        {
+            continue;
+        }
+        used.extend([x, y]);
+        crossings.push(mid);
+        let end_width = |i: usize, at_end: bool| {
+            width(&streets[i], if at_end { streets[i].path.len() - 1 } else { 0 })
+        };
+        let w = end_width(a.0, a.1).min(end_width(b.0, b.1));
+        streets.push(Street {
+            path: vec![a.2, b.2],
+            widths: vec![w; 2],
+            rank: streets[a.0].rank.max(streets[b.0].rank),
+            role: "bridge".into(),
+        });
     }
 }
 
@@ -2674,6 +2910,76 @@ mod tests {
         );
     }
 
+    /// Every wall-lane section is laid, also with the "auto" peripheral
+    /// setting: ten street ends along a curtain face leave no stretch of wall
+    /// foot between them without the lane.
+    #[test]
+    fn auto_wall_lane_leaves_no_stretch_between_street_ends() {
+        use super::super::{Enclosure, LayoutConfig, Quarter, Surface, geometry as g};
+        let height = vec![20.0; 64 * 64];
+        let water = vec![0; height.len()];
+        let surface = Surface {
+            geometry: None,
+            width: 1000.0,
+            n: 64,
+            height: &height,
+            water: &water,
+        };
+        let wall: Vec<Point> = [
+            (195.0, 195.0),
+            (400.0, 195.0),
+            (400.0, 605.0),
+            (195.0, 605.0),
+            (195.0, 195.0),
+        ]
+        .iter()
+        .map(|&(x, y)| Point { x, y })
+        .collect();
+        let enclosure = Enclosure {
+            path: wall,
+            kind: "palisade".into(),
+            reserve: vec![g::rectangle(400.0, 195.0, 401.5, 605.0)],
+            ..Default::default()
+        };
+        let quarters = [Quarter {
+            shape: g::rectangle(195.0, 195.0, 400.0, 605.0),
+            phase: 1,
+            zone: "core".into(),
+        }];
+        let ys: Vec<f64> = (0..10).map(|k| 240.0 + 35.0 * k as f64).collect();
+        let mut streets: Vec<Street> = ys
+            .iter()
+            .map(|&y| street(&[(300.0, y), (399.9, y)], "street"))
+            .collect();
+        streets.push(street(&[(300.0, 240.0), (300.0, 555.0)], "street"));
+        let cfg = LayoutConfig {
+            peripheral_road: "auto".into(),
+            ..Default::default()
+        };
+        resolve_exits(
+            &mut streets,
+            &quarters,
+            &[],
+            std::slice::from_ref(&enclosure),
+            surface,
+            &cfg,
+            &mut crate::rng::Rng::new("inner-ring-auto"),
+        );
+        let lanes: Vec<&Street> = streets.iter().filter(|s| s.role == "wall-lane").collect();
+        let mut y = 245.0;
+        while y < 550.0 {
+            let p = Point { x: 400.0, y };
+            assert!(
+                lanes.iter().any(|l| l
+                    .path
+                    .windows(2)
+                    .any(|w| g::distance(p, w[0], w[1]).0 < 10.0)),
+                "wall foot at y = {y} without its lane"
+            );
+            y += 5.0;
+        }
+    }
+
     /// Invariant (gate passages): inside a land gatehouse a street is at most
     /// the passage width less one metre; away from the gate it keeps its width.
     #[test]
@@ -2874,6 +3180,37 @@ mod tests {
         assert_eq!(graph.degree(Point { x: 300.0, y: 300.0 }), 2);
     }
 
+    /// Invariant: two streets ending face to face across a brook get one
+    /// footbridge; a pair 20 m from it shares that crossing, and ends that
+    /// do not head for each other stay dead ends.
+    #[test]
+    fn facing_dead_ends_across_a_brook_get_one_footbridge() {
+        let (n, width) = (64, 640.0);
+        let height = vec![10.0_f32; n * n];
+        // A 10 m brook: x in [300, 310).
+        let water: Vec<u8> = (0..n * n).map(|i| if i % n == 30 { 3 } else { 0 }).collect();
+        let surface = super::super::Surface {
+            geometry: None,
+            width,
+            n,
+            height: &height,
+            water: &water,
+        };
+        let mut streets = vec![
+            street(&[(250.0, 300.0), (298.0, 300.0)], "street"),
+            street(&[(360.0, 300.0), (313.0, 300.0)], "street"),
+            street(&[(250.0, 320.0), (298.0, 320.0)], "street"),
+            street(&[(360.0, 320.0), (313.0, 320.0)], "street"),
+            street(&[(250.0, 400.0), (298.0, 400.0)], "street"),
+            street(&[(313.0, 450.0), (313.0, 402.0)], "street"),
+        ];
+        join_crossings(&mut streets, surface, 0.12, 40.0);
+        let bridges: Vec<_> = streets.iter().filter(|s| s.role == "bridge").collect();
+        assert_eq!(bridges.len(), 1, "{bridges:?}");
+        assert_eq!(bridges[0].path[0], Point { x: 298.0, y: 300.0 });
+        assert_eq!(bridges[0].path[1], Point { x: 313.0, y: 300.0 });
+    }
+
     #[test]
     fn a_copy_inside_a_wider_corridor_is_removed_and_its_side_street_reattached() {
         // The 01-l bridge approach: a 14 m street with a lane copy 2-3 m off
@@ -3020,5 +3357,119 @@ mod tests {
             .sum();
         assert!((length - 140.0).abs() < 1e-8);
         assert_eq!(Graph::new(&streets).length.len(), 1);
+    }
+
+    /// A dead end whose last segment is shorter than its half width ends
+    /// square: no land past the line square to that segment through the end
+    /// (the joint's round would bite a notch into the block ahead), while a
+    /// street end on a junction keeps its ribbon.
+    #[test]
+    fn dead_end_ribbons_end_square() {
+        use super::super::geometry as g;
+        let mut streets = vec![
+            street(&[(0.0, 0.0), (50.0, 0.0), (51.0, 0.0)], "street"),
+            street(&[(0.0, -20.0), (0.0, 0.0), (0.0, 20.0)], "street"),
+        ];
+        for s in &mut streets {
+            s.widths = vec![8.0; s.path.len()];
+        }
+        let dead = dead_ends(&streets);
+        assert_eq!(dead, vec![[false, true], [true, true]]);
+        let s = &streets[0];
+        let raw = g::ribbon(&s.path, &s.widths);
+        let past = |pieces: &[super::super::Shape]| {
+            pieces
+                .iter()
+                .flat_map(|p| p.outer.iter())
+                .map(|p| p.x)
+                .fold(f64::NEG_INFINITY, f64::max)
+        };
+        assert!(past(&raw) > 53.0, "the joint bulges past the end");
+        let square = square_ends(raw, &s.path, &s.widths, dead[0]);
+        assert!(past(&square) <= 51.0 + 1e-6);
+        // The start, on the cross street, is not a dead end: untouched.
+        let start = square
+            .iter()
+            .flat_map(|p| p.outer.iter())
+            .map(|p| p.x)
+            .fold(f64::INFINITY, f64::min);
+        assert!(start.abs() < 1e-6);
+    }
+
+    /// A wall-lane section blocked by water on the way still runs from each
+    /// end up to the water: two dead ends, each clear of it.
+    #[test]
+    fn blocked_wall_lane_runs_up_to_the_water() {
+        let h = vec![20.0; 64 * 64];
+        let mut water = vec![0u8; 64 * 64];
+        // A river over x in [187.5, 212.5) (cells 30..34, 6.25 m each).
+        for y in 0..64 {
+            for x in 30..34 {
+                water[y * 64 + x] = 1;
+            }
+        }
+        let surface = super::super::Surface {
+            geometry: None,
+            width: 400.0,
+            n: 64,
+            height: &h,
+            water: &water,
+        };
+        let path: Vec<Point> = (0..=40)
+            .map(|k| Point {
+                x: 100.0 + 5.0 * k as f64,
+                y: 100.0,
+            })
+            .collect();
+        let [head, tail] = clear_spurs(&path, surface, 0.1);
+        let (head, tail) = (
+            head.expect("lane from the start"),
+            tail.expect("lane to the end"),
+        );
+        assert_eq!(head[0], path[0]);
+        assert_eq!(*tail.last().unwrap(), *path.last().unwrap());
+        assert!(super::super::routing::path_clear(surface, &head, 0.1));
+        assert!(super::super::routing::path_clear(surface, &tail, 0.1));
+        assert!(head.last().unwrap().x <= 187.5 && tail[0].x >= 212.5);
+        assert!(head.last().unwrap().x >= 180.0 && tail[0].x <= 220.0);
+    }
+
+    /// A lane running 2.5 m from a street's ribbon leaves a strip no lot
+    /// fits: it is removed. The same lane 8 m away, or with a curtain
+    /// between the two, stays.
+    #[test]
+    fn a_lane_leaving_a_sliver_beside_a_street_is_removed() {
+        let pair = |gap: f64| {
+            let mut main = street(&[(0.0, 0.0), (100.0, 0.0)], "street");
+            main.rank = 1;
+            main.widths = vec![4.0; 2];
+            let y = 2.0 + 1.5 + gap;
+            let mut lane = street(&[(5.0, y), (95.0, y)], "lane");
+            lane.rank = 3;
+            lane.widths = vec![3.0; 2];
+            vec![main, lane]
+        };
+        let mut streets = pair(2.5);
+        assert!(drop_narrow_doubles(&mut streets, &[], 200.0));
+        assert!(streets.iter().all(|s| s.role != "lane"));
+        let mut streets = pair(8.0);
+        assert!(!drop_narrow_doubles(&mut streets, &[], 200.0));
+        let wall = super::super::Enclosure {
+            path: [
+                (-10.0, 3.0),
+                (110.0, 3.0),
+                (110.0, 50.0),
+                (-10.0, 50.0),
+                (-10.0, 3.0),
+            ]
+            .iter()
+            .map(|&(x, y)| Point { x, y })
+            .collect(),
+            kind: "wall".into(),
+            ..Default::default()
+        };
+        let mut streets = pair(2.5);
+        assert!(!drop_narrow_doubles(&mut streets, &[wall], 200.0));
+        assert_eq!(streets.len(), 2);
     }
 }

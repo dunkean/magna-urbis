@@ -45027,11 +45027,11 @@
         },
         "courtyardMin": 9,
         "density": {
-          "core": 100,
-          "middle": 100,
-          "edge": 100,
-          "faubourg": 100,
-          "village": 100
+          "core": 200,
+          "middle": 200,
+          "edge": 200,
+          "faubourg": 200,
+          "village": 200
         },
         "campLayout": "ring",
         "campOpening": "road",
@@ -45326,11 +45326,11 @@
         },
         "courtyardMin": 9,
         "density": {
-          "core": 100,
-          "middle": 100,
-          "edge": 100,
-          "faubourg": 100,
-          "village": 100
+          "core": 200,
+          "middle": 200,
+          "edge": 200,
+          "faubourg": 200,
+          "village": 200
         },
         "campLayout": "ring",
         "campOpening": "road",
@@ -45625,11 +45625,11 @@
         },
         "courtyardMin": 9,
         "density": {
-          "core": 100,
-          "middle": 100,
-          "edge": 100,
-          "faubourg": 100,
-          "village": 100
+          "core": 200,
+          "middle": 200,
+          "edge": 200,
+          "faubourg": 200,
+          "village": 200
         },
         "campLayout": "ring",
         "campOpening": "road",

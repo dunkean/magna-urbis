@@ -662,7 +662,11 @@ pub(in super::super) fn quays(
                             .fold(f64::INFINITY, f64::min);
                         let path = g::simplify(&std::mem::take(piece), 0.4, |_| false);
                         let river = river_side(surface, &path);
-                        pieces.push(Piece { path, near, river });
+                        // A brook or ditch is a bank, not a harbour front:
+                        // no boat berths where the water is not navigable.
+                        if h.fondamenta || channel_width(surface, &path) >= NAVIGABLE {
+                            pieces.push(Piece { path, near, river });
+                        }
                     } else {
                         piece.clear();
                     }
@@ -832,6 +836,41 @@ fn sea_near(regions: &[Shape], surface: Surface<'_>) -> bool {
             })
         })
     })
+}
+
+/// Narrowest water a quay may front (m): two barges' beams and the way
+/// between them. A stream narrower than this is crossed and banked, not
+/// berthed.
+const NAVIGABLE: f64 = 10.0;
+
+/// Width of the water beside a quay (m): across the first water met within
+/// 15 m and two raster cells of the path, square to it, at a quarter, half and three quarters of
+/// its length; the median of the three (the open sea counts as wide).
+fn channel_width(surface: Surface<'_>, path: &[Point]) -> f64 {
+    // The quay stands back from the raster shore by up to a cell or two.
+    let reach = 15.0 + 2.0 * surface.width / surface.n as f64;
+    let l = length(path);
+    let mut widths: Vec<f64> = [0.25, 0.5, 0.75]
+        .iter()
+        .filter_map(|&f| {
+            let at = sub_path(path, 0.0, l * f);
+            let (&p, &q) = (at.last()?, at.get(at.len().checked_sub(2)?)?);
+            let n = left(unit(q, p));
+            let across = |s: f64| {
+                let first = (1..=(2.0 * reach) as usize)
+                    .map(|k| k as f64 * 0.5)
+                    .find(|&d| surface.wet(add(p, n, s * d)))?;
+                let mut d = first;
+                while d < first + 200.0 && surface.wet(add(p, n, s * (d + 0.5))) {
+                    d += 0.5;
+                }
+                Some(d + 0.5 - first)
+            };
+            across(1.0).into_iter().chain(across(-1.0)).reduce(f64::max)
+        })
+        .collect();
+    widths.sort_by(f64::total_cmp);
+    widths.get(widths.len() / 2).copied().unwrap_or(0.0)
 }
 
 /// Whether the water beside a quay (within 15 m of its middle) is a river.
@@ -1250,6 +1289,62 @@ mod tests {
         );
         assert!(!streets.iter().any(|s| s.role == "quay"));
     }
+    /// Invariant: a port's quays front navigable water. Beside a 4 m brook
+    /// (one raster cell) the bank stays a bank; beside a 24 m river the same
+    /// port lines it with a quay.
+    #[test]
+    fn a_brook_is_banked_not_quayed() {
+        let n = 64;
+        let height = vec![1.0; n * n];
+        let site = Site {
+            key: "port".into(),
+            name: String::new(),
+            population: 2000,
+            culture: "european-organic".into(),
+            center: Point { x: 170.0, y: 128.0 },
+            radius: 200.0,
+        };
+        let mut cfg = LayoutConfig::default();
+        cfg.programme.role = "port".into();
+        let road = Street {
+            path: vec![Point { x: 175.0, y: 42.0 }, Point { x: 175.0, y: 214.0 }],
+            widths: vec![5.0; 2],
+            rank: 1,
+            role: "street".into(),
+        };
+        let quayed = |x0: f64| {
+            // River water (code 3) over x in [x0, 140).
+            let water: Vec<u8> = (0..n * n)
+                .map(|i| {
+                    let x = ((i % n) as f64 + 0.5) * 4.0;
+                    if x >= x0 && x < 140.0 { 3 } else { 0 }
+                })
+                .collect();
+            let surface = Surface {
+                geometry: None,
+                width: 256.0,
+                n,
+                height: &height,
+                water: &water,
+            };
+            let mut streets = vec![road.clone()];
+            // The land east of the water, 30 m clear of the map edge.
+            let region = g::rectangle(140.0, 40.0, 210.0, 216.0);
+            quays(
+                &[region],
+                &mut streets,
+                surface,
+                &cfg,
+                &site,
+                "european-organic",
+                true,
+            );
+            streets.iter().any(|s| s.role == "quay")
+        };
+        assert!(!quayed(136.0), "a quay along a 4 m brook");
+        assert!(quayed(116.0), "no quay along a 24 m river");
+    }
+
     /// A domain stopping short of its water joins the waterline across a
     /// gentle gap, not down a cliff.
     #[test]

@@ -18,6 +18,9 @@ pub struct Geography {
     water_index: Vec<g::ContainmentIndex>,
     edges: Vec<(Point, Point)>,
     bins: BTreeMap<(i64, i64), Vec<usize>>,
+    /// Water shapes by coarse bin of their box: a tiled shoreline holds
+    /// thousands of pieces, and a point or a clip only meets a few.
+    water_bins: BTreeMap<(i64, i64), Vec<usize>>,
     cell: f64,
     /// Fine cells: 3 = crossed by a land/water edge (exact test), 0 = not yet
     /// known, 1 = dry, 2 = wet. A cell no edge crosses lies wholly on one side,
@@ -61,6 +64,11 @@ impl Geography {
                 .flat_map(even_odd)
                 .collect::<Vec<_>>(),
         );
+        Ok(Self::build(land, water, width))
+    }
+    /// Index already resolved land and water shapes. Water shapes may share
+    /// edges (tiles of one body); containment and clipping treat them as a union.
+    fn build(land: Vec<Shape>, water: Vec<Shape>, width: f64) -> Self {
         let mut result = Self {
             land_index: land.iter().map(g::ContainmentIndex::new).collect(),
             water_index: water.iter().map(g::ContainmentIndex::new).collect(),
@@ -68,12 +76,21 @@ impl Geography {
             water,
             edges: vec![],
             bins: BTreeMap::new(),
+            water_bins: BTreeMap::new(),
             cell: width / 64.0,
             states: vec![],
             fine: (width / 1024.0).max(2.0),
             side: 0,
         };
         result.side = (width / result.fine).ceil() as usize;
+        for (id, w) in result.water.iter().enumerate() {
+            let (x0, y0, x1, y1) = g::bbox(w);
+            for y in (y0 / result.cell).floor() as i64..=(y1 / result.cell).floor() as i64 {
+                for x in (x0 / result.cell).floor() as i64..=(x1 / result.cell).floor() as i64 {
+                    result.water_bins.entry((x, y)).or_default().push(id);
+                }
+            }
+        }
         result.states = (0..result.side * result.side)
             .map(|_| std::sync::atomic::AtomicU8::new(0))
             .collect();
@@ -116,11 +133,41 @@ impl Geography {
                 }
             }
         }
-        Ok(result)
+        result
+    }
+    /// This geography as the surface's water; height and raster stay.
+    pub(super) fn surface<'a>(&'a self, s: super::Surface<'a>) -> super::Surface<'a> {
+        super::Surface {
+            geometry: Some(self),
+            ..s
+        }
     }
     fn exact_wet(&self, p: Point) -> bool {
+        let bin = (
+            (p.x / self.cell).floor() as i64,
+            (p.y / self.cell).floor() as i64,
+        );
         !self.land_index.iter().any(|s| s.contains(p))
-            || self.water_index.iter().any(|s| s.contains(p))
+            || self
+                .water_bins
+                .get(&bin)
+                .is_some_and(|ids| ids.iter().any(|&i| self.water_index[i].contains(p)))
+    }
+    /// Water shapes whose box meets this box, in index order.
+    fn water_near(&self, bb: (f64, f64, f64, f64)) -> BTreeSet<usize> {
+        let mut ids = BTreeSet::new();
+        for y in (bb.1 / self.cell).floor() as i64..=(bb.3 / self.cell).floor() as i64 {
+            for x in (bb.0 / self.cell).floor() as i64..=(bb.2 / self.cell).floor() as i64 {
+                if let Some(bin) = self.water_bins.get(&(x, y)) {
+                    ids.extend(bin);
+                }
+            }
+        }
+        ids.retain(|&i| {
+            let w = g::bbox(&self.water[i]);
+            w.0 <= bb.2 && w.2 >= bb.0 && w.1 <= bb.3 && w.3 >= bb.1
+        });
+        ids
     }
     pub(super) fn wet(&self, p: Point) -> bool {
         use std::sync::atomic::Ordering::Relaxed;
@@ -211,14 +258,130 @@ impl Geography {
             .iter()
             .flat_map(|s| g::intersection(shape, s))
             .collect();
-        for water in &self.water {
+        for i in self.water_near(bb) {
             land = land
                 .into_iter()
-                .flat_map(|s| g::difference(&s, water))
+                .flat_map(|s| g::difference(&s, &self.water[i]))
                 .collect();
         }
         land
     }
+}
+
+/// Contour level of the raster water: the share of the four cells around a
+/// cell corner that are wet. Below a quarter every wet cell lies wholly inside
+/// the contour, so the smoothed shore never puts raster water on land; it
+/// gives up at most 0.6 of a cell of bank.
+const SHORE_LEVEL: f64 = 0.2;
+/// Cells per side of a shoreline tile: bounded overlay work per union.
+const SHORE_TILE: usize = 32;
+
+/// The water of a raster-only surface as its contour at the cell scale
+/// (marching squares on the cell corners). Shores, and the blocks and lots
+/// clipped against them, then follow the bank instead of the raster's
+/// right-angle staircase. None when vector geography exists or nothing is wet.
+pub(super) fn raster_shoreline(surface: &super::Surface<'_>) -> Option<Geography> {
+    let n = surface.n;
+    if surface.geometry.is_some() || n == 0 || !surface.water.iter().any(|&w| w != 0) {
+        return None;
+    }
+    let cell = surface.width / n as f64;
+    let wet = |x: usize, y: usize| surface.water[y * n + x] != 0;
+    // Corner (a, b) touches cells a-1..=a by b-1..=b (those inside the raster).
+    let level: Vec<f64> = (0..(n + 1) * (n + 1))
+        .map(|i| {
+            let (a, b) = (i % (n + 1), i / (n + 1));
+            let (mut count, mut total) = (0usize, 0usize);
+            for y in b.saturating_sub(1)..(b + 1).min(n) {
+                for x in a.saturating_sub(1)..(a + 1).min(n) {
+                    total += 1;
+                    count += wet(x, y) as usize;
+                }
+            }
+            count as f64 / total as f64
+        })
+        .collect();
+    let corner = |a: usize, b: usize| Point {
+        x: a as f64 * cell,
+        y: b as f64 * cell,
+    };
+    let mut water = vec![];
+    for ty in (0..n).step_by(SHORE_TILE) {
+        for tx in (0..n).step_by(SHORE_TILE) {
+            let mut pieces = vec![];
+            for y in ty..(ty + SHORE_TILE).min(n) {
+                let mut run: Option<usize> = None;
+                for x in tx..=(tx + SHORE_TILE).min(n) {
+                    let corners = [(x, y), (x + 1, y), (x + 1, y + 1), (x, y + 1)];
+                    let full = x < (tx + SHORE_TILE).min(n)
+                        && corners
+                            .iter()
+                            .all(|&(a, b)| level[b * (n + 1) + a] > SHORE_LEVEL);
+                    if full {
+                        run.get_or_insert(x);
+                        continue;
+                    }
+                    if let Some(start) = run.take() {
+                        pieces.push(g::rectangle(
+                            start as f64 * cell,
+                            y as f64 * cell,
+                            x as f64 * cell,
+                            (y + 1) as f64 * cell,
+                        ));
+                    }
+                    if x == (tx + SHORE_TILE).min(n) {
+                        break;
+                    }
+                    let v = corners.map(|(a, b)| level[b * (n + 1) + a]);
+                    let inside = v.map(|v| v > SHORE_LEVEL);
+                    if !inside.iter().any(|&i| i) {
+                        continue;
+                    }
+                    let p = corners.map(|(a, b)| corner(a, b));
+                    let cross = |k: usize| {
+                        let j = (k + 1) % 4;
+                        let t = (SHORE_LEVEL - v[k]) / (v[j] - v[k]);
+                        Point {
+                            x: p[k].x + (p[j].x - p[k].x) * t,
+                            y: p[k].y + (p[j].y - p[k].y) * t,
+                        }
+                    };
+                    // A dry cell between two diagonal wet corners keeps them
+                    // apart (a wet cell is always whole).
+                    if inside[0] == inside[2] && inside[1] == inside[3] && inside[0] != inside[1] {
+                        for k in (0..4).filter(|&k| inside[k]) {
+                            pieces.push(Shape {
+                                outer: vec![cross((k + 3) % 4), p[k], cross(k)],
+                                holes: vec![],
+                            });
+                        }
+                        continue;
+                    }
+                    let mut outer = vec![];
+                    for k in 0..4 {
+                        if inside[k] {
+                            outer.push(p[k]);
+                        }
+                        if inside[k] != inside[(k + 1) % 4] {
+                            outer.push(cross(k));
+                        }
+                    }
+                    pieces.push(g::normalized(Shape {
+                        outer,
+                        holes: vec![],
+                    }));
+                }
+            }
+            if !pieces.is_empty() {
+                water.extend(g::union(&pieces));
+            }
+        }
+    }
+    Some(Geography::build(
+        vec![g::rectangle(0.0, 0.0, surface.width, surface.width)],
+        water,
+        surface.width,
+    ))
 }
 
 /// Ground of a stilt settlement (catalogue `render.stilts`: lagoon and marsh
@@ -410,6 +573,92 @@ mod tests {
             Point { x: 700.0, y: 600.0 },
             0.12
         ));
+    }
+    /// Right-angle vertices whose neighbour along a short edge is one too:
+    /// the raster staircase, not the isolated corners of a clipping box.
+    fn staircase(ring: &[Point], short: f64) -> usize {
+        let n = ring.len();
+        let right = |i: usize| {
+            let (a, b, c) = (ring[(i + n - 1) % n], ring[i], ring[(i + 1) % n]);
+            let axial = |p: Point, q: Point| (p.x - q.x).abs() < 1e-6 || (p.y - q.y).abs() < 1e-6;
+            axial(a, b)
+                && axial(b, c)
+                && ((b.x - a.x) * (c.x - b.x) + (b.y - a.y) * (c.y - b.y)).abs() < 1e-6
+        };
+        (0..n)
+            .filter(|&i| {
+                right(i)
+                    && right((i + 1) % n)
+                    && (ring[i].x - ring[(i + 1) % n].x).hypot(ring[i].y - ring[(i + 1) % n].y)
+                        < short
+            })
+            .count()
+    }
+    /// A raster-only river crossing a block diagonally: the block is clipped
+    /// along the contour of the water mask, not its cell staircase, and the
+    /// contour holds every wet cell while giving up less than a cell of bank.
+    #[test]
+    fn raster_water_clips_along_its_contour_not_its_cell_staircase() {
+        let (n, width) = (64, 640.0);
+        let cell = width / n as f64;
+        let water: Vec<u8> = (0..n * n)
+            .map(|i| u8::from(((i % n) as i64 - (i / n) as i64 / 2 - 16).abs() <= 1))
+            .collect();
+        let h = vec![10.0; n * n];
+        let raster = Surface {
+            geometry: None,
+            width,
+            n,
+            height: &h,
+            water: &water,
+        };
+        let block = g::rectangle(100.0, 100.0, 540.0, 540.0);
+        let stairs = |shapes: &[Shape]| {
+            shapes
+                .iter()
+                .flat_map(|s| std::iter::once(&s.outer).chain(&s.holes))
+                .map(|r| staircase(r, cell * 2.5))
+                .sum::<usize>()
+        };
+        assert!(stairs(&g::dry_clip(&raster, &block)) > 20);
+        let shoreline = raster_shoreline(&raster).unwrap();
+        let surface = shoreline.surface(raster);
+        let clipped = g::dry_clip(&surface, &block);
+        assert_eq!(stairs(&clipped), 0);
+        for i in 0..n * n {
+            let (x, y) = ((i % n) as f64 * cell, (i / n) as f64 * cell);
+            let wet = water[i] != 0;
+            for (dx, dy) in [
+                (0.01, 0.01),
+                (0.99, 0.01),
+                (0.5, 0.5),
+                (0.01, 0.99),
+                (0.99, 0.99),
+            ] {
+                let p = Point {
+                    x: x + dx * cell,
+                    y: y + dy * cell,
+                };
+                if wet {
+                    assert!(surface.wet(p), "raster water on land at {p:?}");
+                    assert!(!clipped.iter().any(|s| g::contains(s, p)));
+                }
+            }
+            // A dry cell with no wet neighbour keeps all of its ground.
+            let (cx, cy) = (i % n, i / n);
+            let near = (cx.saturating_sub(1)..(cx + 2).min(n))
+                .any(|x| (cy.saturating_sub(1)..(cy + 2).min(n)).any(|y| water[y * n + x] != 0));
+            if !wet && !near {
+                assert!(!surface.wet(Point {
+                    x: x + cell * 0.5,
+                    y: y + cell * 0.5
+                }));
+            }
+        }
+        // Both banks of a 490 m reach give up less than a cell each.
+        let area = |shapes: &[Shape]| shapes.iter().map(g::area).sum::<f64>();
+        let lost = area(&g::dry_clip(&raster, &block)) - area(&clipped);
+        assert!(lost > 0.0 && lost < 2.0 * 490.0 * cell, "bank lost {lost}");
     }
     /// A stilt town moves to its shore and builds over the water within
     /// reach of the land; deeper water and other cultures keep their ground.

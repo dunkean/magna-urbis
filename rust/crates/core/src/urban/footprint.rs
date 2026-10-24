@@ -1050,6 +1050,14 @@ fn smooth_growth(
             .zip(ring.iter().cycle().skip(1))
             .all(|(a, b)| (a.x - b.x).abs() < 1e-6 || (a.y - b.y).abs() < 1e-6)
     };
+    // A smoothed corner that grazes a channel cuts off dry crumbs far below a
+    // growth cell; they are not land of the town and must not veto the outline.
+    let dry_main = |s: &Shape| -> Vec<Shape> {
+        g::dry_clip(&surface, s)
+            .into_iter()
+            .filter(|p| g::area(p) >= (step * step).min(g::area(s)) * 0.25)
+            .collect()
+    };
     let mut candidates = vec![];
     for original in shapes {
         let outline = g::normalized(Shape {
@@ -1064,7 +1072,7 @@ fn smooth_growth(
             candidates.push(original.clone());
             continue;
         }
-        let mut clipped = g::dry_clip(&surface, &outline);
+        let mut clipped = dry_main(&outline);
         if clipped.len() != 1
             || clipped[0].holes.len() != original.holes.len()
             || !g::polygon(&clipped[0]).is_valid()
@@ -1074,41 +1082,50 @@ fn smooth_growth(
         }
         // Preserve an isolated boundary cell locally instead of restoring the
         // staircase of the entire district when one smoothing corner clips it.
+        // Raster water holes are lattice rings too: their rounded corners can
+        // swallow a cell centre and are pushed back the same way.
         let mut repaired = clipped[0].clone();
         let mut moved = false;
         for &p in anchors.iter().filter(|&&p| g::contains(original, p)) {
             if g::contains(&repaired, p) {
                 continue;
             }
-            let closest = repaired
-                .outer
-                .iter()
+            let closest = std::iter::once(&repaired.outer)
+                .chain(&repaired.holes)
                 .enumerate()
-                .map(|(i, &a)| {
-                    let (d, t, q) =
-                        g::distance(p, a, repaired.outer[(i + 1) % repaired.outer.len()]);
-                    (i, d, t, q)
+                .flat_map(|(r, ring)| {
+                    (0..ring.len()).map(move |i| {
+                        let (d, t, q) = g::distance(p, ring[i], ring[(i + 1) % ring.len()]);
+                        (r, i, d, t, q)
+                    })
                 })
-                .min_by(|a, b| a.1.total_cmp(&b.1));
-            let Some((i, d, t, q)) = closest else {
+                .min_by(|a, b| a.2.total_cmp(&b.2));
+            let Some((r, i, d, t, q)) = closest else {
                 continue;
             };
-            if d <= 1.0e-9 || d > step * 0.45 {
+            // Simplification (0.55 cell) and rounding (0.45 cell) together can
+            // pass a full cell inside a boundary centre; push back that far.
+            if d <= 1.0e-9 || d > step {
                 continue;
             }
             moved = true;
+            let ring = if r == 0 {
+                &mut repaired.outer
+            } else {
+                &mut repaired.holes[r - 1]
+            };
             if t > 1.0e-6 && t < 1.0 - 1.0e-6 {
-                repaired.outer.insert(i + 1, q);
+                ring.insert(i + 1, q);
             }
             let shift = (d + step * 0.02) / d;
-            for v in &mut repaired.outer {
+            for v in ring.iter_mut() {
                 let weight = (1.0 - distance(*v, q) / (step * 2.0)).max(0.0).powi(2);
                 v.x += (p.x - q.x) * shift * weight;
                 v.y += (p.y - q.y) * shift * weight;
             }
         }
         if moved && g::polygon(&repaired).is_valid() {
-            let next = g::dry_clip(&surface, &repaired);
+            let next = dry_main(&repaired);
             if next.len() == 1
                 && next[0].holes.len() == original.holes.len()
                 && g::polygon(&next[0]).is_valid()
@@ -1154,7 +1171,7 @@ fn smooth_growth(
                 adjusted.outer[i].y += my / m * offset * miter;
             }
             if offset.abs() <= step * 0.45 && g::polygon(&adjusted).is_valid() {
-                let next = g::dry_clip(&surface, &adjusted);
+                let next = dry_main(&adjusted);
                 if next.len() == 1
                     && next[0].holes.len() == original.holes.len()
                     && g::polygon(&next[0]).is_valid()
@@ -1176,14 +1193,16 @@ fn smooth_growth(
             .copied()
             .filter(|&p| g::contains(original, p));
         // Boundary displacement scales with perimeter and grid spacing, not
-        // just total area. An area-only 1% cap rejected valid smoothing of small
-        // or elongated districts and restored their entire raw staircase.
+        // just total area. An area cap (1%, then 8%) rejected valid smoothing of
+        // small or elongated districts (two-cell faubourg arms move a fifth of
+        // their area) and restored their whole staircase; boundary cell centres
+        // and the net area bound below already protect the land.
         let perimeter: f64 = std::iter::once(&original.outer)
             .chain(&original.holes)
             .flat_map(|r| r.iter().zip(r.iter().cycle().skip(1)).take(r.len()))
             .map(|(&a, &b)| distance(a, b))
             .sum();
-        let accepted = changed_area <= (perimeter * step * 0.6).min(original_area * 0.08) + 0.001
+        let accepted = changed_area <= perimeter * step * 0.6 + 0.001
             && (g::area(candidate) - original_area).abs() <= original_area * 0.02 + 0.001
             && g::contains(candidate, g::interior_point(original))
             && protected.into_iter().all(|p| g::contains(candidate, p));
@@ -2977,6 +2996,130 @@ mod tests {
             serde_json::to_string(&smooth).unwrap(),
             serde_json::to_string(&smooth_growth(&raw, grid.step, surface, &anchors)).unwrap()
         );
+    }
+
+    /// Consecutive axis-parallel right angles a growth cell or two apart: the
+    /// lattice staircase (isolated box corners do not count).
+    fn lattice_stairs(shapes: &[Shape], step: f64) -> usize {
+        let mut count = 0;
+        for r in shapes
+            .iter()
+            .flat_map(|s| std::iter::once(&s.outer).chain(&s.holes))
+        {
+            let k = r.len();
+            let right = |i: usize| {
+                let (a, b, c) = (r[(i + k - 1) % k], r[i], r[(i + 1) % k]);
+                let axial =
+                    |p: Point, q: Point| (p.x - q.x).abs() < 1e-6 || (p.y - q.y).abs() < 1e-6;
+                axial(a, b) && axial(b, c)
+            };
+            count += (0..k)
+                .filter(|&i| {
+                    right(i) && right((i + 1) % k) && distance(r[i], r[(i + 1) % k]) < step * 2.5
+                })
+                .count();
+        }
+        count
+    }
+
+    /// A three-cell faubourg arm grown along a diagonal road (P29, P30): its
+    /// rounded staircase moves a sixth of its area while every boundary cell
+    /// centre stays, so an area cap must not restore its whole staircase.
+    #[test]
+    fn a_narrow_diagonal_arm_loses_its_lattice_staircase() {
+        let grid = Grid {
+            x0: 0.0,
+            y0: 0.0,
+            step: 10.0,
+            nx: 64,
+            ny: 64,
+        };
+        let mask: Vec<_> = (0..grid.nx * grid.ny)
+            .map(|i| {
+                let (x, y) = ((i % grid.nx) as i64, (i / grid.nx) as i64);
+                (x - y).abs() <= 1 && (8..56).contains(&x)
+            })
+            .collect();
+        let h = vec![0.0; 64 * 64];
+        let w = vec![0; h.len()];
+        let surface = Surface {
+            geometry: None,
+            width: 640.0,
+            n: 64,
+            height: &h,
+            water: &w,
+        };
+        let raw = grid.contours(&mask);
+        let anchors = grid.boundary_centers(&mask);
+        let smooth = smooth_growth(&raw, grid.step, surface, &anchors);
+        assert_eq!(smooth.len(), 1);
+        assert!(lattice_stairs(&raw, grid.step) > 80);
+        assert_eq!(
+            lattice_stairs(&smooth, grid.step),
+            0,
+            "arm kept its staircase"
+        );
+        assert!((area(&smooth) - area(&raw)).abs() < area(&raw) * 0.02);
+        assert!(anchors.iter().all(|&p| g::contains(&smooth[0], p)));
+    }
+
+    /// A thin river hugging the inner corner of an L-shaped town (P29): the
+    /// rounded corner crosses it and leaves dry crumbs on the far bank, far
+    /// below a growth cell. They are dropped; they must not restore the
+    /// staircase of the whole outline.
+    #[test]
+    fn dry_crumbs_across_a_river_do_not_restore_the_lattice() {
+        let grid = Grid {
+            x0: 0.0,
+            y0: 0.0,
+            step: 10.0,
+            nx: 64,
+            ny: 64,
+        };
+        let mask: Vec<_> = (0..grid.nx * grid.ny)
+            .map(|i| {
+                let (x, y) = (i % grid.nx, i / grid.nx);
+                ((10..30).contains(&x) && (10..50).contains(&y)
+                    || (10..50).contains(&x) && (10..30).contains(&y))
+                    && x + y >= 30
+            })
+            .collect();
+        let n = 512;
+        let cell = 640.0 / n as f64;
+        let water: Vec<u8> = (0..n * n)
+            .map(|i| {
+                let (x, y) = (
+                    (i % n) as f64 * cell + cell * 0.5,
+                    (i / n) as f64 * cell + cell * 0.5,
+                );
+                u8::from(x > 300.0 && y > 300.0 && (x - 300.0).min(y - 300.0) < cell)
+            })
+            .collect();
+        let h = vec![0.0; n * n];
+        let raster = Surface {
+            geometry: None,
+            width: 640.0,
+            n,
+            height: &h,
+            water: &water,
+        };
+        let shoreline = super::super::geography::raster_shoreline(&raster).unwrap();
+        let surface = shoreline.surface(raster);
+        let raw = dry(surface, &grid.contours(&mask));
+        let anchors: Vec<_> = grid
+            .boundary_centers(&mask)
+            .into_iter()
+            .filter(|&p| raw.iter().any(|s| g::contains(s, p)))
+            .collect();
+        let smooth = smooth_growth(&raw, grid.step, surface, &anchors);
+        assert_eq!(smooth.len(), 1);
+        assert!(lattice_stairs(&raw, grid.step) > 15);
+        assert_eq!(
+            lattice_stairs(&smooth, grid.step),
+            0,
+            "river crumbs restored the staircase"
+        );
+        assert!(anchors.iter().all(|&p| g::contains(&smooth[0], p)));
     }
 
     #[test]

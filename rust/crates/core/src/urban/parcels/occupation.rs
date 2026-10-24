@@ -599,10 +599,17 @@ fn square_backed(
     }
     let (a, z) = (run.first()?.a, run.last()?.b);
     let chord = length(sub(z, a));
-    let bent = run.iter().any(|f| {
-        let l = length(sub(f.b, f.a));
-        l > 0.5 && dot(sub(f.b, f.a), main.u).abs() / l < 8f64.to_radians().cos()
-    });
+    // A cadastral jog (under 1.5 m) at a run's end is no bend of the street,
+    // nor a gentle curve whose vertices stand within a tenth of the range's
+    // depth (1 m at most) of its chord: the back wall stays square to the
+    // party walls (« des trapèzes plutôt que des parallélogrammes »).
+    let (a, z) = (run.first()?.a, run.last()?.b);
+    let sag = (0.1 * to).clamp(0.3, 1.0);
+    let bent = run
+        .iter()
+        .flat_map(|f| [f.a, f.b])
+        .any(|p| distance(p, a, z) > sag)
+        || dot(unit(sub(z, a)), main.u).abs() < 8f64.to_radians().cos();
     if bent || chord < wing {
         return None;
     }
@@ -728,8 +735,15 @@ fn front_range_why(
     }
     // A side-street range ends on whatever closes the lot behind the main
     // range: a sharp corner there is cut square, the street wall is kept.
+    let whole = ring_area(&r).abs();
     if !partial {
         r = blunted(r, wing);
+    } else {
+        // A street range running into the lot's own tip (a street meeting
+        // a lot side under 45 degrees) stops square short of it: the tip
+        // is a constraint of the lot, not a reason to drop the street wall
+        // for a rectangle fitted somewhere in the lot (review series 3 P18).
+        r = blunted_at(r, wing, 45.0);
     }
     let n = r.len();
     let square = (0..n).all(|i| {
@@ -763,10 +777,53 @@ fn front_range_why(
     if partial && ring_area(&r) < 0.5 * run_length.min(40.0) * to {
         return Err("partial");
     }
+    // A range whose tip was cut, or ending in a sharp corner between two
+    // streets, is a trapezoid of the lot, not its triangle (« pas de maison
+    // triangulaire quand un rectangle rentre »): it keeps its full depth
+    // along a stretch of the street (a third of the run, two wings at
+    // least); else the lot keeps a rectangle.
+    if partial && (ring_area(&r).abs() < whole - 0.5 || sharpest(&r) < 70.0) {
+        let (a, z) = (run[0].a, run[run.len() - 1].b);
+        let f = frame_along(sub(z, a));
+        if full_stretch(&r, &f) < (2.0 * wing).max(run_length / 3.0) {
+            return Err("tip");
+        }
+    }
     if thickness(&r, None) < wing - 1e-6 {
         return Err("thin");
     }
     Ok(r)
+}
+
+/// Length of the stretch of `ring` along `f.u` where its depth across (the
+/// solid on a line along `f.n`) is at least nine tenths of its deepest.
+fn full_stretch(ring: &[Point], f: &Frame) -> f64 {
+    let pts: Vec<(f64, f64)> = ring.iter().map(|&p| (f.s(p), f.t(p))).collect();
+    let (lo, hi) = pts
+        .iter()
+        .fold((f64::INFINITY, f64::NEG_INFINITY), |(l, h), &(s, _)| {
+            (l.min(s), h.max(s))
+        });
+    const STEP: f64 = 0.25;
+    let n = pts.len();
+    let depths: Vec<f64> = (0..((hi - lo) / STEP) as usize)
+        .map(|k| {
+            let x = lo + (k as f64 + 0.5) * STEP;
+            let mut ts: Vec<f64> = (0..n)
+                .filter_map(|i| {
+                    let ((sa, ta), (sb, tb)) = (pts[i], pts[(i + 1) % n]);
+                    ((sa <= x) != (sb <= x)).then(|| ta + (tb - ta) * (x - sa) / (sb - sa))
+                })
+                .collect();
+            ts.sort_by(f64::total_cmp);
+            ts.chunks(2)
+                .filter(|c| c.len() == 2)
+                .map(|c| c[1] - c[0])
+                .sum()
+        })
+        .collect();
+    let deepest = depths.iter().copied().fold(0.0, f64::max);
+    STEP * depths.iter().filter(|&&d| d >= 0.9 * deepest).count() as f64
 }
 
 /// The ring without vertices lying within `tolerance` of the line through
@@ -838,7 +895,11 @@ fn opened(ring: &[Point], wing: f64) -> Vec<Vec<Point>> {
 /// The ring with every corner sharper than 70 degrees cut square to its
 /// bisector where the wedge is `wing` wide: an opening keeps acute tips, and
 /// a tip is a sliver a body cannot use.
-fn blunted(mut ring: Vec<Point>, wing: f64) -> Vec<Point> {
+fn blunted(ring: Vec<Point>, wing: f64) -> Vec<Point> {
+    blunted_at(ring, wing, 70.0)
+}
+/// `blunted` for corners sharper than `limit` degrees.
+fn blunted_at(mut ring: Vec<Point>, wing: f64, limit: f64) -> Vec<Point> {
     if ring_area(&ring) < 0.0 {
         ring.reverse();
     }
@@ -853,7 +914,7 @@ fn blunted(mut ring: Vec<Point>, wing: f64) -> Vec<Point> {
             let (le, lf) = (length(e), length(f));
             let convex = (v.x - a.x) * (c.y - v.y) - (v.y - a.y) * (c.x - v.x) > 0.0;
             let cos = dot(e, f) / (le * lf).max(1e-12);
-            (convex && le > 1e-6 && lf > 1e-6 && cos > 70f64.to_radians().cos()).then(|| {
+            (convex && le > 1e-6 && lf > 1e-6 && cos > limit.to_radians().cos()).then(|| {
                 let half = 0.5 * cos.clamp(-1.0, 1.0).acos();
                 let b = unit(add(scale(e, 1.0 / le), scale(f, 1.0 / lf)));
                 let d = 0.5 * wing / half.tan().max(1e-6);
@@ -1186,6 +1247,7 @@ fn legible_pieces(
     frames: &[Frame],
     wing: f64,
     absorb: bool,
+    attached: bool,
     streets: &[Front],
 ) -> Vec<Piece> {
     const SMALL: f64 = 60.0;
@@ -1228,16 +1290,25 @@ fn legible_pieces(
             None => out.push(p),
         }
     }
-    if !absorb || out.is_empty() {
+    if out.is_empty() {
         return out;
     }
-    // Invariant (« remplir le côté »): no unbuilt strip under 2.5 m lies
-    // between a wall and the lot's edge. A wall whose whole stretch of
-    // unbuilt ground in front of it ends within 2.5 m (at the lot's edge or
-    // another house) moves onto that edge; wider ground stays yard (a court
-    // keeps at least 3 m, a yard 3 m). Walls are taken one by one, the
-    // largest houses first, the ground they take leaving the unbuilt rest.
+    // Invariant (« remplir le côté », attached tissues): no unbuilt strip
+    // under 2.5 m lies between a wall and the lot's edge. A wall whose whole
+    // stretch of unbuilt ground in front of it ends within 2.5 m (at the
+    // lot's edge or another house) moves onto that edge; wider ground stays
+    // yard (a court keeps at least 3 m, a yard 3 m).
+    // Invariant (« pas d'impasse en angle aigu », every tissue): no unbuilt
+    // wedge is left between a wall and the edge closing on it at an acute
+    // angle (the lot's side, another house of the lot): ground in front of
+    // a wall that tapers to nothing at one end and ends within `WEDGE` (and
+    // within the wall's length, 45 degrees) is built with that house, whose
+    // wall then follows the edge: a right trapezoid instead of a rectangle
+    // and a triangular court no one can use (review series 1-3, class A).
+    // Walls are taken one by one, the largest houses first, the ground they
+    // take leaving the unbuilt rest.
     const STRIP: f64 = 2.5;
+    const WEDGE: f64 = 6.0;
     let mut rest = vec![Shape {
         outer: b.to_vec(),
         holes: vec![],
@@ -1249,6 +1320,8 @@ fn legible_pieces(
         };
         rest = rest.iter().flat_map(|s| difference(s, &cut)).collect();
     }
+    // The houses as composed, before any ground joined them.
+    let first: Vec<Vec<Point>> = out.iter().map(|p| p.0.clone()).collect();
     // A small house keeps its practicable rectangle.
     let mut order: Vec<usize> = (0..out.len())
         .filter(|&i| out[i].2 == "building" && ring_area(&out[i].0).abs() >= SMALL)
@@ -1282,45 +1355,243 @@ fn legible_pieces(
                 let s = slab(d);
                 rest.iter().flat_map(|g| intersection(g, &s)).collect()
             };
-            let near = ground(STRIP);
-            let gained: f64 = near.iter().map(area).sum();
-            if gained < 0.3 {
-                continue;
-            }
-            let far: f64 = ground(2.0 * STRIP).iter().map(area).sum();
-            if far > gained + 0.05 * length(e) {
-                continue;
-            }
-            let mut body = Shape {
-                outer: ring.clone(),
-                holes: vec![],
+            let len = length(e);
+            // The ground in front of the wall within `d`, when it ends there.
+            let bounded = |d: f64| -> Option<Vec<Shape>> {
+                let near = ground(d);
+                let gained: f64 = near.iter().map(area).sum();
+                let far: f64 = ground(d + STRIP).iter().map(area).sum();
+                (gained >= 0.3 && far <= gained + 0.05 * len).then_some(near)
             };
-            let mut ok = true;
-            for g in &near {
-                match super::super::geometry::union(&[body.clone(), g.clone()]).as_slice() {
-                    [u] if u.holes.is_empty() => body = u.clone(),
-                    _ => ok = false,
+            // Depth of the unbuilt ground in front of the wall near `p`.
+            let u = unit(e);
+            let depth = |p: Point| -> f64 {
+                let q = add(p, scale(u, 0.2));
+                let s = Shape {
+                    outer: vec![p, q, add(q, scale(m, WEDGE)), add(p, scale(m, WEDGE))],
+                    holes: vec![],
+                };
+                rest.iter()
+                    .flat_map(|g| intersection(g, &s))
+                    .map(|g| area(&g))
+                    .sum::<f64>()
+                    / 0.2
+            };
+            let wedge = || -> Option<Vec<Shape>> {
+                if len < 2.0 || !attached {
+                    return None;
                 }
-            }
-            let r = dedup(body.outer);
+                let near = bounded(WEDGE.min(len))?;
+                let (da, dc) = (depth(add(a, scale(u, 0.05))), depth(sub(c, scale(u, 0.25))));
+                // It closes on the lot's edge or on another house of the
+                // lot, never on open yard.
+                let domain = Shape {
+                    outer: b.to_vec(),
+                    holes: vec![],
+                };
+                let closed = near.iter().any(|g| {
+                    offset(&g.outer, 0.05).into_iter().any(|r| {
+                        let r = Shape {
+                            outer: r,
+                            holes: vec![],
+                        };
+                        difference(&r, &domain).iter().map(area).sum::<f64>() > 0.01
+                            || (0..out.len()).filter(|&j| j != i).any(|j| {
+                                let q = Shape {
+                                    outer: out[j].0.clone(),
+                                    holes: vec![],
+                                };
+                                intersection(&r, &q).iter().map(area).sum::<f64>() > 0.01
+                            })
+                    })
+                });
+                (closed && da.min(dc) < 0.5 && da.max(dc) > 1.0).then_some(near)
+            };
+            let strip = absorb.then(|| bounded(STRIP)).flatten();
+            let Some(near) = strip.or_else(wedge) else {
+                continue;
+            };
             // A wall moves onto the lot's edge only where the house keeps
             // open corners: never a diamond along steep party walls.
-            if !ok
-                || r.len() < 3
-                || !simple(&r)
-                || !sound(&r, out[i].1.as_deref())
-                || (open_corners_at(&out[i].0, streets) && !open_corners_at(&r, streets))
-            {
+            // Invariant (« pas de maison triangulaire sans contrainte »): the
+            // ground joins a house only as a right trapezoid of it: no more
+            // corners, and none further from square, than the house had
+            // before any ground joined it, none sharper than 60 degrees
+            // unless it had one (a wedge lot keeps its rectangles, never one
+            // body following every bend of the lot).
+            let joined = |j: usize| {
+                let (house, hole) = (&out[j].0, out[j].1.as_deref());
+                welded(house, &near, b).filter(|r| {
+                    r.len() >= 3
+                        && simple(r)
+                        && sound(r, hole)
+                        && !(open_corners_at(house, streets) && !open_corners_at(r, streets))
+                        && odd_corners(r) <= odd_corners(&first[j])
+                        && corners(r) <= corners(&first[j])
+                        && sharpest(r) >= sharpest(&first[j]).min(60.0) - 1.0
+                })
+            };
+            let Some(r) = joined(i) else {
                 continue;
-            }
+            };
+            // Ground between two houses of the lot joins the one it squares
+            // (« des trapèzes plutôt que des parallélogrammes »): a street
+            // range keeps its back wall square to the lot's sides and the
+            // rear house reaches it, rather than the range taking the rear
+            // house's skew.
+            let other = (0..out.len())
+                .filter(|&j| j != i && out[j].2 == "building" && touches(&out[j].0, &near))
+                .find_map(|j| joined(j).map(|r| (j, r)));
+            let (target, r) = match other {
+                Some((j, rj)) if skew(&rj) + skew(&ring) + 1.0 < skew(&r) + skew(&out[j].0) => {
+                    (j, rj)
+                }
+                _ => (i, r),
+            };
             for g in &near {
                 rest = rest.iter().flat_map(|s| difference(s, g)).collect();
             }
-            out[i].0 = r;
-            k = 0;
+            out[target].0 = r;
+            if target == i {
+                k = 0;
+            }
         }
     }
     out
+}
+
+/// `house` with the ground `near` built in, as one simple ring. Boolean noise
+/// (millimetre slivers and pin holes along shared edges) is no ground: it
+/// neither joins nor blocks the wall. Ground cut along a wall can stand a
+/// hair off it after the booleans: the union is closed by a centimetre
+/// (grown, then shrunk back) so that the two weld into one body.
+fn welded(house: &[Point], near: &[Shape], b: &[Point]) -> Option<Vec<Point>> {
+    let mut parts = vec![Shape {
+        outer: house.to_vec(),
+        holes: vec![],
+    }];
+    parts.extend(near.iter().filter(|g| area(g) >= 0.05).cloned());
+    let mut u = super::super::geometry::union(&parts);
+    u.retain(|s| area(s) >= 0.05);
+    if u.iter()
+        .any(|s| s.holes.iter().any(|h| ring_area(h).abs() >= 0.05))
+    {
+        return None;
+    }
+    // Closed in every case: a seam of the lot crossed by the new wall would
+    // otherwise stay a slit in the body.
+    let grown: Vec<Shape> = u
+        .iter()
+        .flat_map(|s| offset(&s.outer, 0.01))
+        .map(|r| Shape {
+            outer: r,
+            holes: vec![],
+        })
+        .collect();
+    let joined = super::super::geometry::union(&grown);
+    let [one] = joined.as_slice() else {
+        return None;
+    };
+    let shrunk = offset(&one.outer, -0.01);
+    let [r] = shrunk.as_slice() else {
+        return None;
+    };
+    // Kept in the domain: the closing never leaves the lot.
+    let outer = largest(clip_inside(r, b));
+    let r = dedup(outer);
+    (r.len() >= 3).then_some(r)
+}
+
+/// Whether some of the ground `near` lies against `house` (within 5 cm).
+fn touches(house: &[Point], near: &[Shape]) -> bool {
+    offset(house, 0.05).into_iter().any(|r| {
+        let r = Shape {
+            outer: r,
+            holes: vec![],
+        };
+        near.iter()
+            .any(|g| intersection(&r, g).iter().map(area).sum::<f64>() > 0.01)
+    })
+}
+
+/// Corners of a ring (walls of 0.8 m or more) neither within 25 degrees of
+/// square, nor of a straight joint, nor of a reflex right corner.
+fn odd_corners(ring: &[Point]) -> usize {
+    let mut r = smoothed(&dedup(ring.to_vec()), 0.12);
+    if ring_area(&r) < 0.0 {
+        r.reverse();
+    }
+    let n = r.len();
+    (0..n)
+        .filter(|&i| {
+            let (a, v, c) = (r[(i + n - 1) % n], r[i], r[(i + 1) % n]);
+            let (e, f) = (sub(v, a), sub(c, v));
+            if length(e) < 0.8 || length(f) < 0.8 {
+                return false;
+            }
+            let turn = (e.x * f.y - e.y * f.x).atan2(dot(e, f)).to_degrees().abs();
+            turn.min((turn - 90.0).abs()) > 25.0
+        })
+        .count()
+}
+
+/// Corners of a ring: turns over 10 degrees between walls of 0.8 m or more
+/// (sub-decimetre jogs smoothed away).
+fn corners(ring: &[Point]) -> usize {
+    let mut r = smoothed(&dedup(ring.to_vec()), 0.12);
+    if ring_area(&r) < 0.0 {
+        r.reverse();
+    }
+    let n = r.len();
+    (0..n)
+        .filter(|&i| {
+            let (a, v, c) = (r[(i + n - 1) % n], r[i], r[(i + 1) % n]);
+            let (e, f) = (sub(v, a), sub(c, v));
+            let turn = (e.x * f.y - e.y * f.x).atan2(dot(e, f)).to_degrees().abs();
+            length(e) >= 0.8 && length(f) >= 0.8 && turn > 10.0
+        })
+        .count()
+}
+
+/// The sharpest convex corner of a ring in degrees (walls of 0.8 m or more,
+/// sub-decimetre jogs smoothed away); 180 for a ring without one.
+fn sharpest(ring: &[Point]) -> f64 {
+    let mut r = smoothed(&dedup(ring.to_vec()), 0.12);
+    if ring_area(&r) < 0.0 {
+        r.reverse();
+    }
+    let n = r.len();
+    (0..n)
+        .filter_map(|i| {
+            let (a, v, c) = (r[(i + n - 1) % n], r[i], r[(i + 1) % n]);
+            let (e, f) = (sub(v, a), sub(c, v));
+            let turn = (e.x * f.y - e.y * f.x).atan2(dot(e, f)).to_degrees();
+            (length(e) >= 0.8 && length(f) >= 0.8 && turn > 0.0).then_some(180.0 - turn)
+        })
+        .fold(180.0, f64::min)
+}
+
+/// How far a ring's corners stand from square, in degrees summed over its
+/// walls of 0.8 m or more (a straight joint, a right or a reflex right
+/// corner count nothing): rectangles score 0, trapezoids less than
+/// parallelograms of the same lean.
+fn skew(ring: &[Point]) -> f64 {
+    let mut r = smoothed(&dedup(ring.to_vec()), 0.12);
+    if ring_area(&r) < 0.0 {
+        r.reverse();
+    }
+    let n = r.len();
+    (0..n)
+        .map(|i| {
+            let (a, v, c) = (r[(i + n - 1) % n], r[i], r[(i + 1) % n]);
+            let (e, f) = (sub(v, a), sub(c, v));
+            if length(e) < 0.8 || length(f) < 0.8 {
+                return 0.0;
+            }
+            let turn = (e.x * f.y - e.y * f.x).atan2(dot(e, f)).to_degrees().abs();
+            turn.min((turn - 90.0).abs()).min((180.0 - turn).abs())
+        })
+        .sum()
 }
 
 /// Structural minimum thickness of a piece (outer ring and optional hole):
@@ -1477,9 +1748,27 @@ impl Lay<'_> {
         self.pieces.push((ring, None, label));
         a
     }
+    /// Invariant (one lot, separate bodies): a piece slid sideways to fit
+    /// the lot never lands on a piece already placed; it is dropped instead
+    /// (review series 2 P21: two houses stacked on one spot).
     fn put(&mut self, s0: f64, s1: f64, t0: f64, t1: f64, anchor: f64) -> f64 {
         self.place(s0, s1, t0, t1, anchor)
+            .filter(|&r| self.clear(&self.rect(r)))
             .map_or(0.0, |r| self.add(r, "building"))
+    }
+    /// Whether `ring` overlaps no placed piece (by more than half a m²).
+    fn clear(&self, ring: &[Point]) -> bool {
+        let r = Shape {
+            outer: ring.to_vec(),
+            holes: vec![],
+        };
+        self.pieces.iter().all(|(q, _, _)| {
+            let q = Shape {
+                outer: q.clone(),
+                holes: vec![],
+            };
+            intersection(&q, &r).iter().map(area).sum::<f64>() < 0.5
+        })
     }
     /// The lot band `t0..t1` itself, when its walls lean 25 degrees at most and it is thick enough.
     fn band(&self, t0: f64, t1: f64) -> Option<Vec<Point>> {
@@ -1571,6 +1860,18 @@ fn preview_form(p: &Parcel, o: &Occupancy) -> (Vec<(Shape, &'static str)>, Kind)
         .into_iter()
         .filter(|r| length(sub(r.last().unwrap().b, r[0].a)) >= 2.0)
         .collect();
+    // Invariant (« le grand côté, pas le petit »): the house fronts its
+    // lot's long side. A run under `LONG_SIDE` of the longest one is a short
+    // end of the lot, whatever its street's rank: it never sets the main
+    // frame (review series 2 P10 42, P19 24; series 3 P04 longhouses). The
+    // cadastral order (`runs`) is kept among the long sides.
+    let mut street_runs = street_runs;
+    {
+        const LONG_SIDE: f64 = 0.6;
+        let span = |r: &Vec<Front>| r.iter().map(|f| length(sub(f.b, f.a))).sum::<f64>();
+        let longest = street_runs.iter().map(span).fold(0.0, f64::max);
+        street_runs.sort_by_key(|r| span(r) < LONG_SIDE * longest);
+    }
     let mut frames: Vec<Frame> = street_runs.iter().map(|r| frame_of(r, &shape)).collect();
     if frames.is_empty() {
         let u = unit(p.axis);
@@ -2041,13 +2342,61 @@ fn preview_form(p: &Parcel, o: &Occupancy) -> (Vec<(Shape, &'static str)>, Kind)
                     depth.min(width * 0.6)
                 };
                 let end = (rear_from + 2.0 * depth).min(t1);
-                let back = largest(clip_parts(lay.b, &[main.above(rear_from), main.below(end)]));
-                let side = second_i
-                    .and_then(|i| street_runs.get(i))
-                    .filter(|_| attached && back.len() >= 3)
-                    .and_then(|run| {
-                        front_range_why(&back, run, f.n, setback + d2, wing, false, lay.fronts).ok()
-                    });
+                // The side range starts on the main range's own back wall
+                // (square to the lot's sides, or along the street), not on
+                // the frame level through its deepest corner: no wedge of
+                // yard is left between the two ranges (P25 7).
+                let behind = range_i.map(|i| {
+                    let r = &lay.pieces[i].0;
+                    let near = r.iter().map(|&q| main.t(q)).fold(f64::INFINITY, f64::min);
+                    let range = Shape {
+                        outer: r.clone(),
+                        holes: vec![],
+                    };
+                    clip_parts(lay.b, &[main.above(near), main.below(end)])
+                        .into_iter()
+                        .flat_map(|g| {
+                            difference(
+                                &Shape {
+                                    outer: g,
+                                    holes: vec![],
+                                },
+                                &range,
+                            )
+                        })
+                        .filter(|s| s.holes.is_empty())
+                        .map(|s| dedup(s.outer))
+                        .collect::<Vec<_>>()
+                });
+                let plain = largest(clip_parts(lay.b, &[main.above(rear_from), main.below(end)]));
+                let back = behind.map(largest).filter(|r| r.len() >= 3 && simple(r));
+                let side_of = |back: &[Point]| {
+                    second_i
+                        .and_then(|i| street_runs.get(i))
+                        .filter(|_| attached && back.len() >= 3)
+                        .and_then(|run| {
+                            front_range_why(back, run, f.n, setback + d2, wing, false, lay.fronts)
+                                .ok()
+                        })
+                };
+                // Started on the back wall only where the side range keeps
+                // as few corners, none further from square, as started on
+                // the frame level: never a polygon chasing the lot's bends.
+                let plain_side = side_of(&plain);
+                let side = match back.as_deref().and_then(side_of) {
+                    Some(r)
+                        if match &plain_side {
+                            Some(p) => {
+                                corners(&r) <= corners(p) && odd_corners(&r) <= odd_corners(p)
+                            }
+                            None => odd_corners(&r) == 0,
+                        } =>
+                    {
+                        Some(r)
+                    }
+                    Some(_) => plain_side,
+                    None => plain_side,
+                };
                 let (lo, hi) = if dot(f.n, main.u) < 0.0 {
                     (s1 - d2, s1)
                 } else {
@@ -2216,71 +2565,104 @@ fn preview_form(p: &Parcel, o: &Occupancy) -> (Vec<(Shape, &'static str)>, Kind)
         Kind::Detached | Kind::Farm | Kind::Long => {
             // On a lot leaning off its street the house and its outbuildings
             // stand square to the lot's sides (« alignées sur la parcelle »,
-            // P03 21), the house's front corner at the street.
-            let (s0, s1, tf, t1) = if dot(lf.n, main.n) < LEAN {
-                lay.f = lf;
-                lf.range(&b)
-            } else {
-                (s0, s1, tf, t1)
+            // P03 21), the house's front corner at the street; unless the
+            // house holds there under four fifths of what it holds square to
+            // its street (a long lot whose ends lean, a wedge-shaped lot):
+            // its long side then follows the lot's long side, never a
+            // shrunken house askew (review series 3 P04, series 2 P21 101).
+            let site = |lay: &Lay, f: Frame, rng: &mut Rng| {
+                let (s0, s1, tf, t1) = if f.n == main.n {
+                    (s0, s1, tf, t1)
+                } else {
+                    f.range(&b)
+                };
+                let (width, plot_depth) = (s1 - s0, t1 - tf);
+                let (house_w, house_d) = match kind {
+                    Kind::Long => (rng.range(14.0, 28.0), rng.range(5.0, 7.5)),
+                    Kind::Farm => (rng.range(10.0, 16.0), rng.range(7.0, 10.0)),
+                    _ => (
+                        rng.range(7.0, 12.0) * (0.85 + 0.3 * o.wealth),
+                        depth.min(rng.range(8.0, 11.0)),
+                    ),
+                };
+                // A camp's long house (Iroquoian longhouse, maloca, plank
+                // house) fills its lot's length at the culture's width
+                // (`campHouse`: [width, longest]), its long side along the
+                // lot's longer side.
+                let (house_w, house_d) = match o.morph.pair("campHouse") {
+                    [w, longest]
+                        if kind == Kind::Long
+                            && w > 0.0
+                            && !o.morph.text("campLayout").is_empty() =>
+                    {
+                        let along = (width.max(plot_depth) - 3.0).min(longest).max(w);
+                        let across = w.min(width.min(plot_depth) - 2.0).max(4.0);
+                        if width >= plot_depth {
+                            (along, across)
+                        } else {
+                            (across, along)
+                        }
+                    }
+                    _ => (house_w, house_d),
+                };
+                // A long house turns its gable to a narrow street frontage.
+                let (house_w, house_d) = if kind == Kind::Long && house_w > width * 1.05 {
+                    (house_d, house_w)
+                } else {
+                    (house_w, house_d)
+                };
+                let hw = house_w.min(width);
+                let slack = (width - hw).max(0.0);
+                let at = s0 + slack * rng.range(0.2, 0.8);
+                // On a narrow lot the house keeps to one side, the passage on
+                // the other (« coller les bords »), and keeps its width by
+                // stepping back from an oblique street rather than narrowing.
+                let at = if slack < 4.0 && rng.chance(0.5) {
+                    s0
+                } else if slack < 4.0 {
+                    s0 + slack
+                } else {
+                    at
+                };
+                let hd = house_d.min(plot_depth);
+                let house = (0..=8)
+                    .find_map(|j| {
+                        let start = tf + 0.5 * j as f64;
+                        let (l, r) = fit_any(&b, &f, start, start + hd, at + hw * 0.5)?;
+                        (r - l >= 0.9 * hw && hd >= wing).then(|| {
+                            let w = hw.min(r - l);
+                            let a = at.min(r - w).max(l);
+                            [a, a + w, start, start + hd]
+                        })
+                    })
+                    .or_else(|| lay.place(at, at + hw, tf, tf + hd, at + hw * 0.5));
+                ((s0, s1, tf, t1), (house_w, house_d, hw, at), house)
             };
+            let size = |h: &Option<[f64; 4]>| h.map_or(0.0, |r| (r[1] - r[0]) * (r[3] - r[2]));
+            let mut square = rng.clone();
+            let street_site = site(&lay, main, &mut square);
+            let chosen = (dot(lf.n, main.n) < LEAN)
+                .then(|| {
+                    let mut leaning = rng.clone();
+                    lay.f = lf;
+                    let s = site(&lay, lf, &mut leaning);
+                    lay.f = main;
+                    (s, leaning)
+                })
+                .filter(|(s, _)| size(&s.2) >= 0.8 * size(&street_site.2));
+            let (((s0, s1, tf, t1), (_, house_d, hw, at), house), frame) = match chosen {
+                Some((s, leaning)) => {
+                    rng = leaning;
+                    (s, lf)
+                }
+                None => {
+                    rng = square;
+                    (street_site, main)
+                }
+            };
+            lay.f = frame;
             let (width, plot_depth) = (s1 - s0, t1 - tf);
             let farm = kind == Kind::Farm;
-            let (house_w, house_d) = match kind {
-                Kind::Long => (rng.range(14.0, 28.0), rng.range(5.0, 7.5)),
-                Kind::Farm => (rng.range(10.0, 16.0), rng.range(7.0, 10.0)),
-                _ => (
-                    rng.range(7.0, 12.0) * (0.85 + 0.3 * o.wealth),
-                    depth.min(rng.range(8.0, 11.0)),
-                ),
-            };
-            // A camp's long house (Iroquoian longhouse, maloca, plank house)
-            // fills its lot's length at the culture's width (`campHouse`:
-            // [width, longest]), its long side along the lot's longer side.
-            let (house_w, house_d) = match o.morph.pair("campHouse") {
-                [w, longest]
-                    if kind == Kind::Long && w > 0.0 && !o.morph.text("campLayout").is_empty() =>
-                {
-                    let along = (width.max(plot_depth) - 3.0).min(longest).max(w);
-                    let across = w.min(width.min(plot_depth) - 2.0).max(4.0);
-                    if width >= plot_depth {
-                        (along, across)
-                    } else {
-                        (across, along)
-                    }
-                }
-                _ => (house_w, house_d),
-            };
-            // A long house turns its gable to a narrow street frontage.
-            let (house_w, house_d) = if kind == Kind::Long && house_w > width * 1.05 {
-                (house_d, house_w)
-            } else {
-                (house_w, house_d)
-            };
-            let hw = house_w.min(width);
-            let slack = (width - hw).max(0.0);
-            let at = s0 + slack * rng.range(0.2, 0.8);
-            // On a narrow lot the house keeps to one side, the passage on
-            // the other (« coller les bords »), and keeps its width by
-            // stepping back from an oblique street rather than narrowing.
-            let at = if slack < 4.0 && rng.chance(0.5) {
-                s0
-            } else if slack < 4.0 {
-                s0 + slack
-            } else {
-                at
-            };
-            let hd = house_d.min(plot_depth);
-            let house = (0..=8)
-                .find_map(|j| {
-                    let start = tf + 0.5 * j as f64;
-                    let (l, r) = fit_any(&b, &lay.f, start, start + hd, at + hw * 0.5)?;
-                    (r - l >= 0.9 * hw && hd >= wing).then(|| {
-                        let w = hw.min(r - l);
-                        let a = at.min(r - w).max(l);
-                        [a, a + w, start, start + hd]
-                    })
-                })
-                .or_else(|| lay.place(at, at + hw, tf, tf + hd, at + hw * 0.5));
             let house_end = house.map_or(tf + house_d.min(plot_depth), |r| r[3]);
             let (hx0, hx1) = house.map_or((at, at + hw), |r| (r[0], r[1]));
             if let Some(r) = house {
@@ -2321,6 +2703,9 @@ fn preview_form(p: &Parcel, o: &Occupancy) -> (Vec<(Shape, &'static str)>, Kind)
                 if barn <= 0.0 {
                     // Beside the house, a yard between them.
                     let gapx = rng.range(4.0, 8.0);
+                    // As long as the room beside the house allows: never
+                    // slid back onto the house.
+                    let bl = bl.min((s1 - hx1).max(hx0 - s0) - gapx).max(wing);
                     let (lo, hi) = if s1 - hx1 >= hx0 - s0 {
                         (hx1 + gapx, hx1 + gapx + bl)
                     } else {
@@ -2761,7 +3146,7 @@ fn preview_form(p: &Parcel, o: &Occupancy) -> (Vec<(Shape, &'static str)>, Kind)
     let pieces = if kind == Kind::Round {
         pieces
     } else {
-        legible_pieces(pieces, &b, &[main, lf], wing, absorb, &fronts)
+        legible_pieces(pieces, &b, &[main, lf], wing, absorb, attached, &fronts)
     };
     let built = finish(&shape, ruined(o, pieces, &mut rng), wing);
     if !built.is_empty() || matches!(kind, Kind::Round) {
@@ -4133,6 +4518,7 @@ mod tests {
             &[frame_along(pt(1.0, 0.0))],
             3.0,
             false,
+            false,
             &[],
         );
         assert_eq!(out.len(), 2, "{out:?}");
@@ -4164,6 +4550,7 @@ mod tests {
             &b,
             &[frame_along(pt(1.0, 0.0))],
             3.0,
+            true,
             true,
             &[],
         );
@@ -4230,5 +4617,314 @@ mod tests {
                 .count();
         }
         assert!(ls >= 1, "no pseudo-L built on a narrow through-lot");
+    }
+
+    /// Invariant (« pas d'impasse en angle aigu », review series 2 P27 27):
+    /// the wedge of yard two houses of a lot leave between them, a street
+    /// range's back wall square to the lot's sides and the corner range's
+    /// wall square to the street, is built: no open remainder of the lot
+    /// keeps a corner under 45 degrees, whether the side strips are filled
+    /// or not (party-wall tissues).
+    #[test]
+    fn acute_wedges_between_walls_are_built() {
+        let pts = |v: &[(f64, f64)]| -> Vec<Point> {
+            v.iter()
+                .map(|&(x, y)| Point {
+                    x: x - 2050.0,
+                    y: y - 2030.0,
+                })
+                .collect()
+        };
+        let b = pts(&[
+            (2051.63, 2040.98),
+            (2051.62, 2038.72),
+            (2060.27, 2038.57),
+            (2065.29, 2038.49),
+            (2078.42, 2038.26),
+            (2081.67, 2053.03),
+            (2085.31, 2069.58),
+            (2067.95, 2073.41),
+            (2054.23, 2076.43),
+            (2052.67, 2064.16),
+            (2051.78, 2052.49),
+        ]);
+        let range = pts(&[
+            (2051.62, 2038.72),
+            (2060.27, 2038.57),
+            (2067.95, 2073.41),
+            (2054.23, 2076.43),
+            (2052.67, 2064.16),
+            (2051.78, 2052.49),
+        ]);
+        let corner = pts(&[
+            (2067.95, 2073.41),
+            (2065.29, 2038.49),
+            (2078.42, 2038.26),
+            (2081.67, 2053.03),
+            (2085.31, 2069.58),
+        ]);
+        let f = frame_along(Point { x: -0.08, y: -1.0 });
+        for absorb in [true, false] {
+            let out = legible_pieces(
+                vec![
+                    (range.clone(), None, "building"),
+                    (corner.clone(), None, "building"),
+                ],
+                &b,
+                &[f],
+                3.0,
+                absorb,
+                true,
+                &[],
+            );
+            // The ground joins the house it squares: no piece is left more
+            // skewed than the two were.
+            let before = skew(&range) + skew(&corner);
+            let after: f64 = out.iter().map(|(r, _, _)| skew(r)).sum();
+            assert!(
+                after <= before + 1.0,
+                "absorb {absorb}: skew {before:.1} -> {after:.1}"
+            );
+            let mut rest = vec![Shape {
+                outer: b.clone(),
+                holes: vec![],
+            }];
+            for (r, _, _) in &out {
+                let cut = Shape {
+                    outer: r.clone(),
+                    holes: vec![],
+                };
+                rest = rest.iter().flat_map(|s| difference(s, &cut)).collect();
+            }
+            for g in rest.iter().filter(|g| area(g) > 1.0) {
+                let mut r = smoothed(&dedup(g.outer.clone()), 0.12);
+                if ring_area(&r) < 0.0 {
+                    r.reverse();
+                }
+                let n = r.len();
+                for i in 0..n {
+                    let (a, v, c) = (r[(i + n - 1) % n], r[i], r[(i + 1) % n]);
+                    let (e, f) = (sub(a, v), sub(c, v));
+                    let convex = (v.x - a.x) * (c.y - v.y) - (v.y - a.y) * (c.x - v.x) > 0.0;
+                    let cos = dot(e, f) / (length(e) * length(f));
+                    assert!(
+                        !convex || cos < 45f64.to_radians().cos(),
+                        "absorb {absorb}: acute open corner at {v:?} in {:?}",
+                        g.outer
+                    );
+                }
+            }
+        }
+    }
+
+    /// Invariant (« le grand côté, pas le petit », review series 2 P10 42,
+    /// P19 24): a corner lot whose short end lies on the better street
+    /// still fronts its long side: one street body runs along the long
+    /// frontage instead of a short range on the end and a side range.
+    #[test]
+    fn a_corner_lot_fronts_its_long_side() {
+        let mut p = lot(
+            poly(&[(0.0, 0.0), (30.0, 0.0), (30.0, 12.0), (0.0, 12.0)]),
+            [Point { x: 0.0, y: 12.0 }, Point { x: 0.0, y: 0.0 }],
+            0.8,
+        );
+        p.contacts[0].rank = 0;
+        let mut c = p.contacts[0].clone();
+        (c.a, c.b, c.street, c.rank, c.length) = (
+            Point { x: 0.0, y: 0.0 },
+            Point { x: 30.0, y: 0.0 },
+            1,
+            2,
+            30.0,
+        );
+        p.contacts.push(c);
+        let morph = tissue("streetFrontRow", "gabled-row-house");
+        for k in 0..6 {
+            let seed = format!("corner/parcel-{k}");
+            let fp = preview(&p, &home(&morph, "dwelling.row", &seed));
+            let wall = fp
+                .iter()
+                .flat_map(|s| {
+                    let r = &s.outer;
+                    (0..r.len()).map(move |i| (r[i], r[(i + 1) % r.len()]))
+                })
+                .filter(|(a, b)| a.y < 0.5 && b.y < 0.5)
+                .map(|(a, b)| (a.x - b.x).abs())
+                .fold(0.0, f64::max);
+            assert!(
+                wall >= 20.0,
+                "{seed}: long frontage built in pieces ({wall:.1} m) {fp:?}"
+            );
+        }
+    }
+
+    /// Invariant (review series 2 P21 101, series 3 P04): a free-standing
+    /// house stands square to its lot's sides only where it keeps four
+    /// fifths of the house it holds square to its street; on a wedge lot
+    /// whose side leans 25 degrees it fronts its street as a rectangle,
+    /// never the lot's triangle.
+    #[test]
+    fn a_wedge_lot_keeps_a_rectangular_house_on_its_street() {
+        let p = lot(
+            poly(&[
+                (6.68, 4.12),
+                (0.0, 0.0),
+                (7.74, 1.24),
+                (11.65, -23.16),
+                (20.23, -17.88),
+            ]),
+            [
+                Point { x: 7.74, y: 1.24 },
+                Point {
+                    x: 11.65,
+                    y: -23.16,
+                },
+            ],
+            0.3,
+        );
+        let morph = Morph {
+            value: json!({"buildingOp":"farmstead","plotOp":"croft","arch":{"typology":"farmhouse"},
+                "coverage":{"core":[0.2,0.3]},"buildDepth":{"core":[8.0,10.0]},
+                "setback":{"core":[1.0,2.0]},"sideGap":{"core":[1.0,2.0]},"roomDepth":[4.5,6.0]}),
+        };
+        for k in 0..6 {
+            let seed = format!("wedge/parcel-{k}");
+            let fp = preview(&p, &home(&morph, "dwelling.farm", &seed));
+            let house = fp
+                .iter()
+                .max_by(|a, b| area(a).total_cmp(&area(b)))
+                .expect("a house");
+            assert!(
+                rectangular(&house.outer) && area(house) >= 30.0,
+                "{seed}: {house:?}"
+            );
+        }
+    }
+
+    /// Invariant (review series 3 P18): a lot whose side meets its street
+    /// under 45 degrees keeps its street range along the street, its tip
+    /// cut square, rather than a rectangle fitted away from the street.
+    #[test]
+    fn a_lot_tip_on_the_street_keeps_the_street_range() {
+        let p = lot(
+            poly(&[(0.0, 0.0), (30.0, 0.0), (30.0, 12.0), (17.0, 12.0)]),
+            [Point { x: 0.0, y: 0.0 }, Point { x: 30.0, y: 0.0 }],
+            0.8,
+        );
+        let morph = tissue("streetFrontRow", "gabled-row-house");
+        for k in 0..6 {
+            let seed = format!("tip/parcel-{k}");
+            let fp = preview(&p, &home(&morph, "dwelling.row", &seed));
+            let wall = fp
+                .iter()
+                .flat_map(|s| {
+                    let r = &s.outer;
+                    (0..r.len()).map(move |i| (r[i], r[(i + 1) % r.len()]))
+                })
+                .filter(|(a, b)| a.y < 0.5 && b.y < 0.5)
+                .map(|(a, b)| (a.x - b.x).abs())
+                .fold(0.0, f64::max);
+            assert!(wall >= 22.0, "{seed}: street wall {wall:.1} m {fp:?}");
+        }
+    }
+
+    /// Invariant (« pas de maison triangulaire sans contrainte », review
+    /// series 2 P18/P19, series 1 P04): ground joins a house only as a right
+    /// trapezoid of it; a strip under a bent lot edge stays yard rather than
+    /// turning the house into a pentagon following the bend.
+    #[test]
+    fn joined_ground_never_adds_a_corner_to_the_house() {
+        let pt = |x: f64, y: f64| Point { x, y };
+        let b = vec![
+            pt(0.0, 0.0),
+            pt(20.0, 0.0),
+            pt(20.0, 8.0),
+            pt(10.0, 9.2),
+            pt(0.0, 8.0),
+        ];
+        let house = vec![pt(0.0, 0.0), pt(20.0, 0.0), pt(20.0, 7.0), pt(0.0, 7.0)];
+        let out = legible_pieces(
+            vec![(house.clone(), None, "building")],
+            &b,
+            &[frame_along(pt(1.0, 0.0))],
+            3.0,
+            true,
+            true,
+            &[],
+        );
+        assert_eq!(out.len(), 1);
+        assert!(corners(&out[0].0) <= 4, "{:?}", out[0].0);
+        // A strip along a straight edge is still built (« remplir le côté »).
+        let b = vec![pt(0.0, 0.0), pt(20.0, 0.0), pt(20.0, 8.0), pt(0.0, 8.0)];
+        let out = legible_pieces(
+            vec![(house, None, "building")],
+            &b,
+            &[frame_along(pt(1.0, 0.0))],
+            3.0,
+            true,
+            true,
+            &[],
+        );
+        assert!(
+            (ring_area(&out[0].0).abs() - 160.0).abs() < 0.5,
+            "{:?}",
+            out[0].0
+        );
+    }
+
+    /// Invariant (review series 2 P18): a street range cut at its lot's tip
+    /// keeps its full depth along a stretch of the street, else it is the
+    /// lot's triangle, and no range is built (a rectangle fits instead).
+    #[test]
+    fn a_tip_cut_range_keeps_a_full_depth_stretch() {
+        let pt = |x: f64, y: f64| Point { x, y };
+        let run = [Front {
+            a: pt(0.0, 0.0),
+            b: pt(24.0, 0.0),
+            rank: 0,
+            street: 0,
+            shared: false,
+            gate: false,
+        }];
+        // A triangle-like lot shallower than the range all along its run.
+        let wedge = vec![pt(0.0, 0.0), pt(24.0, 0.0), pt(24.0, 10.0)];
+        assert_eq!(
+            front_range_why(&wedge, &run, pt(0.0, 1.0), 8.0, 3.0, true, &run),
+            Err("tip")
+        );
+        // A trapezoid lot whose side meets the street at 35 degrees.
+        let lot = vec![pt(0.0, 0.0), pt(24.0, 0.0), pt(24.0, 10.0), pt(14.3, 10.0)];
+        assert!(front_range_why(&lot, &run, pt(0.0, 1.0), 8.0, 3.0, true, &run).is_ok());
+    }
+
+    /// Invariant (one lot, separate bodies, review series 2 P21): the
+    /// pieces of a lot never stand on one another.
+    #[test]
+    fn pieces_of_a_lot_never_overlap() {
+        let p = |x: f64, y: f64| Point { x, y };
+        let morph = tissue("streetFrontRow", "gabled-row-house");
+        for shape in [
+            rectangle(0.0, 0.0, 30.0, 40.0),
+            rectangle(0.0, 0.0, 34.0, 16.0),
+            rectangle(0.0, 0.0, 18.0, 30.0),
+        ] {
+            let w = shape.outer[1].x;
+            let site = lot(shape, [p(0.0, 0.0), p(w, 0.0)], 0.3);
+            for role in ["dwelling.farm", "dwelling.house"] {
+                for k in 0..8 {
+                    let seed = format!("overlap/parcel-{k}");
+                    let fp = preview(&site, &home(&morph, role, &seed));
+                    for i in 0..fp.len() {
+                        for j in i + 1..fp.len() {
+                            let o: f64 = intersection(&fp[i], &fp[j]).iter().map(area).sum();
+                            assert!(
+                                o < 0.5,
+                                "{role} {seed}: pieces {i} and {j} overlap by {o:.1} m2"
+                            );
+                        }
+                    }
+                }
+            }
+        }
     }
 }

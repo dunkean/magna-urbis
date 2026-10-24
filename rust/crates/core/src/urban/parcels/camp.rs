@@ -195,6 +195,42 @@ impl Frame {
     }
 }
 
+/// Share of a camp's laid dwelling cells that end as admitted hut plots: a
+/// cell clipped by the hedge or a road, cut by a footpath or merged with its
+/// neighbour to hold the culture's compact house is lost (about a third on a
+/// kraal crossed by its road, measured on the s3 P01 replays).
+const ADMITTED: f64 = 0.8;
+
+/// Dwelling cells the camp's programme fills: its households (one per cell,
+/// or as many as a cell of `nominal` m² holds at the programme's own area per
+/// household) and its facilities sited on a plot, over the `ADMITTED` share.
+/// The camp lays out no more rows than this: the land beyond stays open
+/// ground, never rings of empty lots. `None` without a programme (a capacity
+/// probe): the land sets the rows.
+fn need(layout: &Layout, nominal: f64) -> Option<usize> {
+    let programme = layout.programme.as_ref()?;
+    let mut cells = 0.0;
+    for d in &programme.demands {
+        if d.unit == "domesticUnits" {
+            if d.requested > 0.0 {
+                let per = (d.target_area / d.requested).max(1.0);
+                cells += (d.requested / (nominal / per).floor().max(1.0)).ceil();
+            }
+        } else if d.placement == "parcel" {
+            cells += d.sites.max(1) as f64;
+        }
+    }
+    (cells > 0.0).then(|| (cells / ADMITTED).ceil() as usize + 1)
+}
+
+/// Whether `p` stands on the camp's land (one of the layout's blocks).
+fn on_land(layout: &Layout, p: Point) -> bool {
+    layout
+        .blocks
+        .iter()
+        .any(|b| b.kind == "block" && super::super::geometry::contains(&b.shape, p))
+}
+
 /// Bearing of the camp's opening: a compass point, or toward the nearest
 /// regional road (the kraal opens to its approach).
 fn opening(frame: &Frame, morph: &Morph, layout: &Layout) -> f64 {
@@ -237,16 +273,37 @@ fn ring(frame: &Frame, morph: &Morph, layout: &Layout) -> (Vec<Tile>, Vec<Shape>
     let head = morph.text("campHead");
     let beta = opening(frame, morph, layout);
     // The centre: a share of the camp; where the land already rings an open
-    // centre (a camp drawn as a band), the first row starts at the land.
-    let centre_r = if frame.inner > path {
+    // centre (a camp drawn as a band), the first row starts at the land. A
+    // road through the middle is no open centre: the gap is its ribbon, and
+    // the byre or ground still takes its share of the camp across it.
+    let road_through = layout
+        .streets
+        .iter()
+        .flat_map(|s| s.path.windows(2))
+        .any(|w| distance(frame.centre, w[0], w[1]) < frame.inner + 0.5);
+    let centre_r = if frame.inner > path && !road_through {
         frame.inner - path
     } else {
         morph.number_or("campCentre", 0.3) * frame.equivalent
     }
     .max(6.0);
+    let mean = 0.5 * (arc_lo + arc_hi);
+    let span = TAU - gap;
+    let gap1 = beta + 0.5 * gap;
+    // Rows go out until they hold the programme's dwellings (cells on land).
+    let need = need(layout, depth * mean);
+    let mut held = 0;
     let mut radii = vec![centre_r];
     let mut r = centre_r;
-    while r + path + 0.5 * depth < frame.reach && (max_rows == 0 || radii.len() <= max_rows) {
+    while r + path + 0.5 * depth < frame.reach
+        && (max_rows == 0 || radii.len() <= max_rows)
+        && need.is_none_or(|n| held < n)
+    {
+        let mid = r + path + 0.5 * depth;
+        let n = ((span * mid / mean).floor() as usize).max(3);
+        held += (0..n)
+            .filter(|&i| on_land(layout, frame.at(gap1 + (i as f64 + 0.5) * span / n as f64, mid)))
+            .count();
         r += path + depth;
         radii.push(r);
     }
@@ -285,9 +342,9 @@ fn ring(frame: &Frame, morph: &Morph, layout: &Layout) -> (Vec<Tile>, Vec<Shape>
         // and its footpath are distinct parcels in the same exact partition.
         cut: lanes > 0,
     }];
-    let (gap0, gap1) = (beta - 0.5 * gap, beta + 0.5 * gap);
-    let span = TAU - gap;
-    let mean = 0.5 * (arc_lo + arc_hi);
+    let gap0 = beta - 0.5 * gap;
+    // Dwelling cells: (row, angle from the back, tile, middle).
+    let mut dwellings = vec![];
     for k in 0..radii.len() - 1 {
         // The ring path on the inner side of row k, then the row itself.
         let (ri, ro) = (radii[k] + path, radii[k + 1]);
@@ -320,6 +377,12 @@ fn ring(frame: &Frame, morph: &Morph, layout: &Layout) -> (Vec<Tile>, Vec<Shape>
             } else {
                 Hold::Dwelling
             };
+            if hold == Hold::Dwelling {
+                let a = 0.5 * (w[0] + w[1]);
+                let from_back = (a - beta - PI).rem_euclid(TAU);
+                let at = frame.at(a, 0.5 * (ri + ro));
+                dwellings.push((k, from_back.min(TAU - from_back), tiles.len(), at));
+            }
             tiles.push(Tile {
                 shape: frame.sector(ri, ro, w[0], w[1]),
                 hold,
@@ -337,6 +400,16 @@ fn ring(frame: &Frame, morph: &Morph, layout: &Layout) -> (Vec<Tile>, Vec<Shape>
                     cut: crossed(a0, a1, ri),
                 });
             }
+        }
+    }
+    // The rows hold the programme's dwellings, the inner rows first, then
+    // the last row from the back toward the opening: its horns beyond the
+    // need are open ground, never empty lots.
+    if let Some(n) = need {
+        dwellings.retain(|d| on_land(layout, d.3));
+        dwellings.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.total_cmp(&b.1)));
+        for d in dwellings.iter().skip(n) {
+            tiles[d.2].hold = Hold::Open;
         }
     }
     // Land beyond the last row: open ground inside the camp's fence.
@@ -452,6 +525,23 @@ fn rows(frame: &Frame, morph: &Morph, layout: &Layout) -> (Vec<Tile>, Vec<Shape>
         let t0 = t_lo + j as f64 * across;
         paths.push(rect(-reach - path, reach + path, t0, t0 + path));
     }
+    // The lots nearest the centre hold the programme's dwellings; the rest
+    // of the lattice is open ground (the fields inside the palisade).
+    let mean = 0.5 * (len_lo + len_hi) * (across - path);
+    if let Some(n) = need(layout, mean) {
+        let mut lots: Vec<(f64, usize)> = tiles
+            .iter()
+            .enumerate()
+            .filter(|(_, t)| t.hold == Hold::Dwelling)
+            .map(|(i, t)| (super::super::geometry::centroid(&t.shape), i))
+            .filter(|&(c, _)| on_land(layout, c))
+            .map(|(c, i)| (length(sub(c, frame.centre)), i))
+            .collect();
+        lots.sort_by(|a, b| a.0.total_cmp(&b.0));
+        for &(_, i) in lots.iter().skip(n) {
+            tiles[i].hold = Hold::Open;
+        }
+    }
     let (first, last) = (bounds[0], *bounds.last().unwrap());
     tiles.push(Tile {
         shape: rect(first - reach, first, -reach, reach),
@@ -510,7 +600,8 @@ fn connected_path_fronts(
         if !difference(p,block).is_empty() {continue;}
         let entries=native_contacts(p);
         let anchor=entries.iter().enumerate().filter(|(_,f)|!f.shared)
-            .filter(|(i,_)| { let (lo,hi)=contacts::support_span(&entries,*i);hi-lo>=required_width })
+            .filter(|(i,_)| { let (lo,hi)=contacts::support_span(&entries,*i);hi-lo>=required_width
+                || contact_run(&entries,*i)>=required_width })
             .min_by_key(|(_,f)|(f.rank,f.street)).map(|(_,f)|*f);
         let Some(anchor)=anchor else {continue;};
         result.extend(contacts::boundary_contacts(&reversed(p),eligible).into_iter().map(|f|Front{
@@ -518,6 +609,30 @@ fn connected_path_fronts(
         }));
     }
     result
+}
+/// Length of the run of contacts with one street through `anchor`, its
+/// pieces joined across hair gaps (≤ 5 cm). A block vertex on the street
+/// edge splits a path's contact into pieces a few millimetres apart, or a
+/// zero-length piece without direction: each alone narrower than the path,
+/// they would leave a ring crossing the road unanchored, its row unserved.
+fn contact_run(entries:&[Front], anchor:usize)->f64 {
+    const HAIR:f64=0.05;
+    let f=entries[anchor];
+    let same=|g:&Front| g.street==f.street && g.rank==f.rank && !g.shared;
+    let mut run=vec![anchor];
+    let mut k=0;
+    while k<run.len() {
+        let c=entries[run[k]];
+        for (j,g) in entries.iter().enumerate() {
+            if !run.contains(&j) && same(g)
+                && [(c.a,g.a),(c.a,g.b),(c.b,g.a),(c.b,g.b)].iter().any(|&(p,q)| length(sub(p,q))<=HAIR)
+            {
+                run.push(j);
+            }
+        }
+        k+=1;
+    }
+    run.iter().map(|&j| length(sub(entries[j].b,entries[j].a))).sum()
 }
 fn without_existing_paths(links:Vec<Shape>, paths:&[Shape])->Vec<Shape> {
     links.into_iter().flat_map(|link| {
@@ -825,6 +940,108 @@ mod tests {
             let c = super::super::super::geometry::centroid(&p.shape);
             !(c.y < -20.0 && c.x.abs() < 0.2 * c.y.abs())
         }));
+    }
+
+    /// Invariant: a camp lays out the rows its households fill, not its whole
+    /// land. 20 households and two facility plots ask for 29 dwelling cells
+    /// (22 over the admitted share, and one):
+    /// the rings stop there (the last one from the back toward the opening),
+    /// the land beyond is one open ground, never rings of empty lots.
+    #[test]
+    fn camp_rows_follow_households_and_leave_the_rest_open() {
+        let shape = rectangle(-75.0, -78.0, 75.0, 75.0);
+        let mut l = layout(&shape);
+        let demand =
+            |id: &str, unit: &str, requested: f64, area: f64, placement: &str, sites: usize| {
+                serde_json::json!({"id": id, "function": id, "unit": unit, "requested": requested,
+                "targetArea": area, "targetFrontage": 4.0, "provenance": [], "requires": [],
+                "parcelCapacity": 0.0, "builtCapacity": 0.0, "deficit": requested, "reasons": [],
+                "placement": placement, "sites": sites})
+            };
+        l.programme = Some(
+            serde_json::from_value(serde_json::json!({
+                "version": 1, "population": 160, "context": {}, "cultures": [],
+                "demands": [demand("domestic", "domesticUnits", 20.0, 1400.0, "", 0),
+                    demand("granary", "usefulAreaM2", 190.0, 95.0, "parcel", 2),
+                    demand("kraal", "usefulAreaM2", 1650.0, 1650.0, "block", 1)],
+                "reservations": [], "allocations": [], "adjacency": [], "environment": [],
+                "reconciliationPasses": 0, "warnings": []
+            }))
+            .unwrap(),
+        );
+        let r = &shape.outer;
+        let mut fronts: Vec<Front> = vec![Front {
+            a: r[0],
+            b: r[1],
+            rank: 0,
+            street: 0,
+            shared: false,
+            gate: false,
+        }];
+        let morph = Morph {
+            value: serde_json::json!({"campLayout":"ring","campRow":9.5,"campArc":[9.0,10.5],
+                "campPath":2.5,"campGap":50.0,"campCentre":0.3,"campHead":"back","campCentreUse":"byre"}),
+        };
+        let lots = lots(&shape, 0, Point { x: 1.0, y: 0.0 }, &mut fronts, &morph, &l);
+        let total: f64 = lots.iter().map(|p| area(&p.shape)).sum();
+        assert!(
+            (total - area(&shape)).abs() < 1e-4 * area(&shape),
+            "{total}"
+        );
+        let huts = lots
+            .iter()
+            .filter(|p| p.provenance[0] == "camp-dwelling")
+            .count();
+        assert!((25..=29).contains(&huts), "{huts} hut lots for 29 cells");
+        // The land beyond the rows is open ground, most of the block.
+        let open: f64 = lots
+            .iter()
+            .filter(|p| p.provenance[0] == "camp-open")
+            .map(|p| area(&p.shape))
+            .sum();
+        assert!(open > 0.4 * area(&shape), "{open}");
+    }
+
+    /// Invariant: a road through the camp's middle is no open centre ringed
+    /// by its land: the byre keeps its share of the camp across the road,
+    /// not the 6 m disc a band camp's empty middle would leave it.
+    #[test]
+    fn a_road_through_the_middle_leaves_the_byre_its_share() {
+        let mut l = layout(&rectangle(-75.0, 4.0, 75.0, 75.0));
+        l.streets[0].path = vec![Point { x: -200.0, y: 0.0 }, Point { x: 200.0, y: 0.0 }];
+        l.streets[0].widths = vec![8.0, 8.0];
+        let mut south = l.blocks[0].clone();
+        south.shape = rectangle(-75.0, -75.0, 75.0, -4.0);
+        l.blocks.push(south);
+        let frame = Frame::of(&l);
+        assert!(frame.inner > 3.0, "the middle lies in the road");
+        let morph = Morph {
+            value: serde_json::json!({"campLayout":"ring","campRow":9.5,"campArc":[9.0,10.5],
+                "campPath":2.5,"campGap":50.0,"campCentre":0.3,"campHead":"back","campCentreUse":"byre"}),
+        };
+        let (tiles, _) = ring(&frame, &morph, &l);
+        let centre = tiles.iter().find(|t| t.hold == Hold::Centre).unwrap();
+        let r = (area(&centre.shape) / PI).sqrt();
+        assert!(r > 0.25 * frame.equivalent, "{r} of {}", frame.equivalent);
+    }
+
+    /// Invariant: a path's contact with a street, split by block vertices
+    /// into a zero-length piece and hair gaps, still counts whole.
+    #[test]
+    fn a_contact_split_by_block_vertices_counts_whole() {
+        let f = |ax: f64, bx: f64| Front {
+            a: Point { x: ax, y: 0.0 },
+            b: Point { x: bx, y: 0.0 },
+            rank: 0,
+            street: 0,
+            shared: false,
+            gate: false,
+        };
+        let entries = vec![f(0.0, 2.1), f(2.1, 2.1), f(2.1003, 2.5), f(30.0, 30.5)];
+        let (lo, hi) = contacts::support_span(&entries, 0);
+        assert!(hi - lo < 2.5, "the split run alone is narrower than the path");
+        assert!((contact_run(&entries, 0) - 2.5).abs() < 1e-3);
+        assert!((contact_run(&entries, 3) - 0.5).abs() < 1e-9);
     }
 }
 

@@ -968,6 +968,34 @@ pub(super) struct Predicted {
     /// faubourg lean-to is laid at least this size, so it can be built.
     pub dwelling: [f64; 2],
 }
+/// Street centre segments within `reach` of the curtain (wall-lanes aside).
+fn street_segments(path: &[Point], streets: &[Street], reach: f64) -> Vec<(Point, Point)> {
+    let near = Near::new(path, reach);
+    streets
+        .iter()
+        .filter(|s| s.role != "wall-lane")
+        .flat_map(|s| s.path.windows(2).map(|w| (w[0], w[1])))
+        .filter(|&(a, b)| near.distance(a, b).is_finite())
+        .collect()
+}
+/// A berm, ditch or glacis piece that a street separates from the curtain:
+/// the way from inside it to the nearest curtain point crosses a street centre
+/// line. The fortification stops at that street (a street running along the
+/// ditch has filled it); the land beyond belongs to the town, so no sliver of
+/// ditch is left on the town side of the street to bite into its lots.
+fn severed(piece: &Shape, path: &[Point], streets: &[(Point, Point)]) -> bool {
+    let p = g::interior_point(piece);
+    let Some((_, _, c)) = path
+        .windows(2)
+        .map(|w| g::distance(p, w[0], w[1]))
+        .min_by(|a, b| a.0.total_cmp(&b.0))
+    else {
+        return false;
+    };
+    streets
+        .iter()
+        .any(|&(a, b)| g::segment_hit(p, c, a, b).is_some())
+}
 /// Street ribbons (+1 m) within `reach` of the curtain.
 fn street_clear(
     path: &[Point],
@@ -1079,6 +1107,7 @@ pub(super) fn build(
     let reach =
         face + style.berm + dw + 25.0 + style.court_radius[1].max(style.outer_gap[1] + 16.0) + 45.0;
     let clear = Cut::new(street_clear(&path, streets, reach, predicted));
+    let street_lines = street_segments(&path, streets, reach);
     let clip = |s: Shape| clear.from(inner_core.from(vec![s]));
     let dry_points =
         |s: &Shape| !s.outer.iter().any(|&p| surface.wet(p)) && !surface.wet(g::centroid(s));
@@ -2140,6 +2169,9 @@ pub(super) fn build(
         }
     }
     // No ditch along steep or water-side runs, nor at a faubourg gate front.
+    // A run's no-ditch zone stops square at its ends: the ditch of the next,
+    // dry and level run goes on round the corner up to the water or the
+    // slope instead of stopping tens of metres short of it.
     let no_ditch = Cut::new(
         (0..n_seg)
             .filter(|&i| steep[i] || wet[i])
@@ -2147,7 +2179,7 @@ pub(super) fn build(
                 let (a, b) = (path[i], path[i + 1]);
                 let t = dir(a, b);
                 let wd = face + berm + dw + 30.0;
-                quad(a, t, ns[i], [-wd, dist(a, b) + wd], [-wd, wd])
+                quad(a, t, ns[i], [0.0, dist(a, b)], [-wd, wd])
             })
             .chain(fronts)
             .collect(),
@@ -2161,7 +2193,12 @@ pub(super) fn build(
             .iter()
             .flat_map(|o| g::difference(o, &poly))
             .collect();
-        extra_reserve.extend(clear.from(no_ditch.from(tiles(berm_land, TILE))));
+        extra_reserve.extend(
+            clear
+                .from(no_ditch.from(tiles(berm_land, TILE)))
+                .into_iter()
+                .filter(|s| !severed(s, &path, &street_lines)),
+        );
         let mut band: Vec<Shape> = outer_ring
             .iter()
             .flat_map(|o| {
@@ -2176,7 +2213,7 @@ pub(super) fn build(
         let band = g::union(&clear.from(no_ditch.from(inner_core.from(band))));
         for p in band {
             for d in g::dry_clip(&surface, &p) {
-                if g::area(&d) > 20.0 {
+                if g::area(&d) > 20.0 && !severed(&d, &path, &street_lines) {
                     ditch.push(Work {
                         kind: kind.into(),
                         shape: d,
@@ -2202,7 +2239,7 @@ pub(super) fn build(
                 glacis.extend(
                     g::dry_clip(&surface, &p)
                         .into_iter()
-                        .filter(|d| g::area(d) > 20.0),
+                        .filter(|d| g::area(d) > 20.0 && !severed(d, &path, &street_lines)),
                 );
             }
         }
@@ -2439,6 +2476,180 @@ fn fronted(shape: &Shape, segs: &[(Point, Point, f64)]) -> bool {
     })
 }
 
+/// Invariant (a street stops at the wall face): a street end that no other
+/// street meets (a dead end) on the curtain body or in the reserve (berm,
+/// ditch, glacis, a tower's foot) is cut back to where the street leaves
+/// them. Only a street through a gate crosses the curtain, so no dead end
+/// carves a slot into the wall or the ditch; a lane ending beside an outer
+/// lean-to serves it and keeps its end, and a street that crosses the curtain
+/// before ending in the outer reserve is a gate street (its causeway): it is
+/// never cut back through the wall, which would close its gate. The corridor
+/// freed on the curtain body returns to the reserve.
+fn stop_at_curtains(streets: &mut Vec<Street>, enclosures: &mut [Enclosure]) {
+    struct Zone {
+        near: Near,
+        half: f64,
+        reserve: Vec<(Shape, Box2)>,
+        lean: Vec<Shape>,
+        body: Vec<Shape>,
+        ring: Shape,
+    }
+    let zones: Vec<Option<Zone>> = enclosures
+        .iter()
+        .map(|e| {
+            (!e.style.is_empty() && e.path.len() >= 4).then(|| {
+                let half = ribbon_half(&e.kind);
+                Zone {
+                    near: Near::new(&e.path, 8.0),
+                    half,
+                    reserve: e.reserve.iter().map(|s| (s.clone(), g::bbox(s))).collect(),
+                    lean: e
+                        .attached
+                        .iter()
+                        .filter(|a| a.side == "out")
+                        .map(|a| a.shape.clone())
+                        .collect(),
+                    body: g::ribbon(&e.path, &[2.0 * half]),
+                    ring: g::normalized(Shape {
+                        outer: e.path[..e.path.len() - 1].to_vec(),
+                        holes: vec![],
+                    }),
+                }
+            })
+        })
+        .collect();
+    let inside = |z: &Zone, p: Point| {
+        z.near.distance(p, p) < z.half - 1e-6
+            || z.reserve.iter().any(|(s, b)| {
+                p.x >= b.0 && p.x <= b.2 && p.y >= b.1 && p.y <= b.3 && g::contains(s, p)
+            })
+    };
+    let key = |p: Point| ((p.x * 100.0).round() as i64, (p.y * 100.0).round() as i64);
+    let mut degree: std::collections::HashMap<(i64, i64), usize> = Default::default();
+    for s in streets.iter() {
+        for &p in &s.path {
+            *degree.entry(key(p)).or_default() += 1;
+        }
+    }
+    let mut freed: Vec<(usize, Vec<Point>, Vec<f64>)> = vec![];
+    let mut gone = vec![false; streets.len()];
+    for (i, s) in streets.iter_mut().enumerate() {
+        if matches!(
+            s.role.as_str(),
+            "wall-lane" | "bridge" | "ford" | "causeway" | "quay" | "pier" | "landing" | "mole"
+        ) || s.path.len() < 2
+        {
+            continue;
+        }
+        if s.widths.len() != s.path.len() {
+            let last = s.widths.last().copied().unwrap_or(4.0);
+            s.widths.resize(s.path.len(), last);
+        }
+        for end in [true, false] {
+            if gone[i] {
+                break;
+            }
+            let p = if end {
+                *s.path.last().unwrap()
+            } else {
+                s.path[0]
+            };
+            let hw = s.widths[if end { s.path.len() - 1 } else { 0 }] * 0.5;
+            let Some(z) = zones
+                .iter()
+                .position(|z| z.as_ref().is_some_and(|z| inside(z, p)))
+            else {
+                continue;
+            };
+            let zone = zones[z].as_ref().unwrap();
+            if degree.get(&key(p)).copied().unwrap_or(0) != 1
+                || zone.lean.iter().any(|l| {
+                    g::contains(l, p)
+                        || (0..l.outer.len()).any(|k| {
+                            let (a, b) = (l.outer[k], l.outer[(k + 1) % l.outer.len()]);
+                            g::distance(p, a, b).0 < hw + 2.0
+                        })
+                })
+            {
+                continue;
+            }
+            if !end {
+                s.path.reverse();
+                s.widths.reverse();
+            }
+            // Walk back from the end, every 0.25 m, to the first point out.
+            let n = s.path.len();
+            let mut cut = None;
+            'walk: for k in (0..n - 1).rev() {
+                let (a, b) = (s.path[k], s.path[k + 1]);
+                let steps = (dist(a, b) / 0.25).ceil().max(1.0) as usize;
+                for j in 1..=steps {
+                    let t = 1.0 - j as f64 / steps as f64;
+                    let q = pt(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t);
+                    if !inside(zone, q) {
+                        let w = s.widths[k] + (s.widths[k + 1] - s.widths[k]) * t;
+                        cut = Some((k, q, w));
+                        break 'walk;
+                    }
+                }
+            }
+            // A street through the curtain ending in the outer reserve
+            // passes a gate (the causeway over the ditch): it keeps its gate.
+            if let Some((_, q, _)) = cut
+                && zone.near.distance(p, p) >= zone.half
+                && g::contains(&zone.ring, q) != g::contains(&zone.ring, p)
+            {
+                if !end {
+                    s.path.reverse();
+                    s.widths.reverse();
+                }
+                continue;
+            }
+            match cut {
+                Some((k, q, w)) => {
+                    let mut out = vec![q];
+                    out.extend_from_slice(&s.path[k + 1..]);
+                    let mut ws = vec![w];
+                    ws.extend_from_slice(&s.widths[k + 1..]);
+                    freed.push((z, out, ws));
+                    s.path.truncate(k + 1);
+                    s.widths.truncate(k + 1);
+                    if dist(*s.path.last().unwrap(), q) > 1e-3 {
+                        s.path.push(q);
+                        s.widths.push(w);
+                    }
+                    if s.path.len() < 2 {
+                        gone[i] = true;
+                    }
+                }
+                None => {
+                    freed.push((z, s.path.clone(), s.widths.clone()));
+                    gone[i] = true;
+                }
+            }
+            if !end {
+                s.path.reverse();
+                s.widths.reverse();
+            }
+        }
+    }
+    let mut k = 0;
+    streets.retain(|_| {
+        k += 1;
+        !gone[k - 1]
+    });
+    for (z, path, widths) in freed {
+        let body = &zones[z].as_ref().unwrap().body;
+        let ws: Vec<f64> = widths.iter().map(|w| w + 1.0).collect();
+        let back: Vec<Shape> = g::ribbon(&path, &ws)
+            .iter()
+            .flat_map(|r| body.iter().flat_map(|b| g::intersection(r, b)))
+            .filter(|s| g::area(s) > 0.5)
+            .collect();
+        enclosures[z].reserve.extend(back);
+    }
+}
+
 /// Final pass, once streets, blocks and access lanes are final
 /// (`generate_quarters`): `build`'s rules against the final town, so they
 /// hold on the layout that is drawn, whatever later stages added or pruned.
@@ -2455,6 +2666,7 @@ pub(super) fn settle(layout: &mut super::Layout, surface: Surface<'_>) {
     if layout.enclosures.iter().all(|e| e.style.is_empty()) {
         return;
     }
+    stop_at_curtains(&mut layout.streets, &mut layout.enclosures);
     #[cfg(not(target_arch = "wasm32"))]
     let tick = std::time::Instant::now();
     #[cfg(not(target_arch = "wasm32"))]
@@ -3488,5 +3700,107 @@ mod tests {
                 .iter()
                 .any(|gh| dist(e.gates[gh.gate], q) < 1.0)
         }));
+    }
+
+    /// A street running in the ditch zone, along the curtain: the ditch and
+    /// berm stop at it, and no piece of them is left beyond it on the town
+    /// side (the land the faubourg lots then reach up to the street).
+    #[test]
+    fn no_ditch_is_left_beyond_a_street_along_the_curtain() {
+        let path = octagon();
+        let (a, b) = (path[0], path[1]);
+        let t = dir(a, b);
+        let n = (t.1, -t.0);
+        // Counter-clockwise ring: (t.1, -t.0) points outward.
+        assert!(dot(n, (a.x - 1000.0, a.y - 1000.0)) > 0.0);
+        let off = 9.75;
+        let along = |s: f64| add(add(a, t, s), n, off);
+        let mut list = streets();
+        list.push(street(
+            &[
+                (along(-25.0).x, along(-25.0).y),
+                (along(dist(a, b) + 25.0).x, along(dist(a, b) + 25.0).y),
+            ],
+            3,
+            3.0,
+        ));
+        let (e, _) = built_with("gord", "palisade", &vec![0; N * N], 3000, list);
+        let side = |s: &Shape| {
+            let p = g::interior_point(s);
+            let v = (p.x - a.x, p.y - a.y);
+            (dot(v, t), dot(v, n))
+        };
+        let front = |s: &&Shape| (0.0..dist(a, b)).contains(&side(s).0);
+        let ditch: Vec<&Shape> = e.ditch.iter().map(|d| &d.shape).filter(front).collect();
+        assert!(
+            ditch.iter().any(|d| side(d).1 < off),
+            "the ditch still runs between the curtain and the street"
+        );
+        for s in ditch.iter().copied().chain(e.reserve.iter().filter(front)) {
+            assert!(
+                side(s).1 < off,
+                "a fortification piece beyond the street: {:?}",
+                side(s)
+            );
+        }
+    }
+
+    /// Dead ends stop at the wall face: a street from the town ending on the
+    /// curtain axis, and one from outside ending in the reserve, are cut back
+    /// to the inner face and the reserve edge; a street through the curtain
+    /// (a gate), even one ending in the berm beyond, and a street with a
+    /// junction on the curtain are untouched.
+    #[test]
+    fn dead_ends_stop_at_the_wall_face() {
+        let square: Vec<Point> = [
+            (0.0, 0.0),
+            (200.0, 0.0),
+            (200.0, 200.0),
+            (0.0, 200.0),
+            (0.0, 0.0),
+        ]
+        .iter()
+        .map(|&(x, y)| pt(x, y))
+        .collect();
+        // Reserve: the curtain body and a 10 m berm outside the east front.
+        let reserve = vec![g::rectangle(200.0, -5.0, 210.0, 205.0)];
+        let mut enclosures = vec![Enclosure {
+            path: square,
+            kind: "wall".into(),
+            style: "curtain".into(),
+            reserve,
+            ..Default::default()
+        }];
+        let mut streets = vec![
+            street(&[(100.0, 50.0), (200.0, 50.0)], 2, 4.0),
+            street(&[(260.0, 100.0), (204.0, 100.0)], 2, 4.0),
+            street(&[(100.0, 150.0), (300.0, 150.0)], 2, 4.0),
+            street(&[(100.0, 120.0), (200.0, 120.0)], 2, 4.0),
+            street(&[(200.0, 120.0), (200.0, 130.0), (150.0, 130.0)], 3, 3.0),
+            // Through the curtain, ending on the causeway in the berm.
+            street(&[(100.0, 180.0), (206.0, 180.0)], 2, 4.0),
+        ];
+        let before = streets.clone();
+        stop_at_curtains(&mut streets, &mut enclosures);
+        let end = |s: &Street| *s.path.last().unwrap();
+        assert!(
+            (end(&streets[0]).x - 198.5).abs() < 0.3,
+            "{:?}",
+            end(&streets[0])
+        );
+        assert!(
+            (end(&streets[1]).x - 210.0).abs() < 0.3,
+            "{:?}",
+            end(&streets[1])
+        );
+        assert_eq!(streets[2].path, before[2].path);
+        assert_eq!(streets[3].path, before[3].path);
+        assert_eq!(streets[4].path, before[4].path);
+        assert_eq!(
+            streets[5].path, before[5].path,
+            "a gate street keeps its gate"
+        );
+        // The corridor freed on the curtain body is the fortification's again.
+        assert!(enclosures[0].reserve.len() > 1);
     }
 }

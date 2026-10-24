@@ -217,6 +217,73 @@ impl Bins {
 /// Observe frontage to the retained street network; its physical validity was
 /// checked upstream. A carved street can face a hole boundary as well as the
 /// outer boundary. A hole alone supplies no access and does not create a street.
+/// Length of every ring of a shape.
+fn perimeter(s: &Shape) -> f64 {
+    std::iter::once(&s.outer)
+        .chain(&s.holes)
+        .map(|r| {
+            r.iter()
+                .zip(r.iter().cycle().skip(1))
+                .map(|(a, b)| (a.x - b.x).hypot(a.y - b.y))
+                .sum::<f64>()
+        })
+        .sum()
+}
+/// Invariant (no sliver block): a block thinner on average than a lot can
+/// be (`2 area / perimeter` under `network::MIN_LAND`) lies between a street
+/// and the trace of a cut whose street was dropped later (a double of a
+/// main street): it rejoins the block of its quarter and phase it touches
+/// along the longest seam (at least `MIN_LAND`), whose kind it takes, so no
+/// strip of land is parcelled on its own along the street. One that touches
+/// none and is under a metre wide on average is the gap between two street
+/// ribbons, not land: it goes.
+fn rejoin_slivers(blocks: &mut Vec<Block>) {
+    let thin = |s: &Shape| 2.0 * g::area(s) < network::MIN_LAND * perimeter(s);
+    let slit = |s: &Shape| 2.0 * g::area(s) < perimeter(s);
+    let mut boxes: Vec<_> = blocks.iter().map(|b| g::bbox(&b.shape)).collect();
+    let mut gone = vec![false; blocks.len()];
+    for i in 0..blocks.len() {
+        if gone[i] || !thin(&blocks[i].shape) {
+            continue;
+        }
+        let bb = boxes[i];
+        let own = perimeter(&blocks[i].shape);
+        let best = (0..blocks.len())
+            .filter(|&j| {
+                let o = boxes[j];
+                j != i
+                    && !gone[j]
+                    && blocks[j].quarter == blocks[i].quarter
+                    && blocks[j].phase == blocks[i].phase
+                    && o.0 <= bb.2 + 0.5
+                    && bb.0 <= o.2 + 0.5
+                    && o.1 <= bb.3 + 0.5
+                    && bb.1 <= o.3 + 0.5
+            })
+            .filter_map(|j| {
+                let mut merged = g::union(&[blocks[j].shape.clone(), blocks[i].shape.clone()]);
+                if merged.len() != 1 {
+                    return None;
+                }
+                let shape = merged.pop()?;
+                let seam = 0.5 * (own + perimeter(&blocks[j].shape) - perimeter(&shape));
+                (seam >= network::MIN_LAND).then_some((j, seam, shape))
+            })
+            .max_by(|a, b| a.1.total_cmp(&b.1).then(b.0.cmp(&a.0)));
+        if let Some((j, _, shape)) = best {
+            blocks[j].shape = shape;
+            boxes[j] = g::bbox(&blocks[j].shape);
+            gone[i] = true;
+        } else if slit(&blocks[i].shape) {
+            gone[i] = true;
+        }
+    }
+    let mut index = 0;
+    blocks.retain(|_| {
+        index += 1;
+        !gone[index - 1]
+    });
+}
 fn block_boundary_served(shape: &Shape, streets: &[Street], all: &Bins, reach: f64) -> bool {
     shape.outer.iter().chain(shape.holes.iter().flatten()).any(|&p| {
         all.around(p, reach).any(|(i, j)| {
@@ -2396,6 +2463,10 @@ pub(super) fn generate(
     roads: &[Street],
     stilt_grounded: bool,
 ) -> Result<Layout, String> {
+    // Raster-only callers clip against the water's cell-scale contour, not its
+    // right-angle staircase (geography.rs; vector geography is kept as given).
+    let shoreline = super::geography::raster_shoreline(&surface);
+    let surface = shoreline.as_ref().map_or(surface, |s| s.surface(surface));
     // The common entry already owns the stilt site/surface. Preserve the
     // existing priority of that shore over a second harbour relocation.
     let harboured = (!stilt_grounded)
@@ -3185,6 +3256,7 @@ fn generate_once(
             &centers,
         )
     });
+    network::drop_narrow_doubles(&mut streets, &enclosures, radius);
     if open_edge && cfg.exit_treatment != "legacy" {
         network::resolve_exits(
             &mut streets,
@@ -3238,6 +3310,20 @@ fn generate_once(
     lap("hierarchy");
     super::widths::harmonize(&mut streets);
     network::cap_gate_passages(&mut streets, &enclosures);
+    // Invariant (the network that cuts the blocks is final): the width-bound
+    // clean rules run again on the final widths, before the ribbons cut the
+    // blocks. A main street widened by the hierarchy can now overlap a near
+    // copy, or outgrow a stub; a later clean (access lanes) would drop them
+    // after the cut, leaving their ribbons as land with neither block nor
+    // street and lots shaped by a street that is gone.
+    network::drop_narrow_doubles(&mut streets, &enclosures, radius);
+    warnings.extend(network::clean_with_centers(
+        &mut streets,
+        center,
+        radius,
+        true,
+        &centers,
+    ));
     if open_edge
         && cfg.composition == "settlement"
         && cfg.exit_treatment != "legacy"
@@ -3342,14 +3428,19 @@ fn generate_once(
             )
         }))
         .collect();
-    let ribbons: Vec<_> = super::par::map(&ribbon_sources, |_, (path, widths)| {
-        g::ribbon(path, widths)
-            .into_iter()
-            .map(|p| {
-                let bb = g::bbox(&p);
-                (g::polygon(&p), bb)
-            })
-            .collect::<Vec<_>>()
+    let dead = network::dead_ends(&streets);
+    let ribbons: Vec<_> = super::par::map(&ribbon_sources, |i, (path, widths)| {
+        let pieces = g::ribbon(path, widths);
+        match dead.get(i) {
+            Some(&ends) => network::square_ends(pieces, path, widths, ends),
+            None => pieces,
+        }
+        .into_iter()
+        .map(|p| {
+            let bb = g::bbox(&p);
+            (g::polygon(&p), bb)
+        })
+        .collect::<Vec<_>>()
     })
     .into_iter()
     .flatten()
@@ -3633,6 +3724,7 @@ fn generate_once(
         index += 1;
         !gone[index - 1]
     });
+    rejoin_slivers(&mut blocks);
     if closed > 0 {
         warnings.push(format!(
             "{closed} îlot(s) sans façade sur rue laissé(s) en espace ouvert."
@@ -4496,6 +4588,23 @@ mod tests {
                 .zip(r.iter().cycle().skip(1))
                 .all(|(a, b)| (a.x - b.x).abs() < 1e-6 || (a.y - b.y).abs() < 1e-6)
         };
+        // A gate tower standing on a straight (axis-parallel) road is a built
+        // hole, not a growth-lattice one.
+        let tower = |r: &[Point]| {
+            let bb = g::bbox(&Shape {
+                outer: r.to_vec(),
+                holes: vec![],
+            });
+            base.enclosures
+                .iter()
+                .flat_map(|e| &e.gatehouses)
+                .flat_map(|h| &h.masses)
+                .any(|m| {
+                    let mb = g::bbox(m);
+                    (mb.0 - bb.0).abs().max((mb.1 - bb.1).abs()) < 0.01
+                        && (mb.2 - bb.2).abs().max((mb.3 - bb.3).abs()) < 0.01
+                })
+        };
         for (i, q) in base.quarters.iter().enumerate() {
             let bb = g::bbox(&q.shape);
             assert!(
@@ -4505,7 +4614,7 @@ mod tests {
                 "quarter {i} has no street"
             );
             assert!(
-                !q.shape.holes.iter().any(|h| lattice(h)),
+                !q.shape.holes.iter().any(|h| lattice(h) && !tower(h)),
                 "lattice hole in {i}"
             );
         }
@@ -4796,6 +4905,35 @@ mod tests {
         );
         assert!(lanes < 0.15, "lanes off the axes: {lanes:.2}");
         assert!(mean > 2500.0, "core blocks of {mean:.0} m²");
+    }
+
+    /// A 2 m strip left along a street by a dropped cut rejoins the block it
+    /// touches; the same strip across a street ribbon (no seam), or in
+    /// another quarter, stays a block of its own; a 0.5 m slit touching
+    /// nothing goes.
+    #[test]
+    fn a_sliver_block_rejoins_the_block_it_touches() {
+        let block = |shape: Shape, quarter: usize| Block {
+            shape,
+            quarter,
+            kind: "block".into(),
+            axis: Point { x: 1.0, y: 0.0 },
+            zone: "core".into(),
+            phase: None,
+        };
+        let mut blocks = vec![
+            block(g::rectangle(0.0, 0.0, 50.0, 40.0), 0),
+            block(g::rectangle(0.0, 40.0, 50.0, 42.0), 0),
+            block(g::rectangle(0.0, 48.0, 50.0, 50.0), 0),
+            block(g::rectangle(50.0, 0.0, 52.0, 40.0), 1),
+            block(g::rectangle(0.0, 60.0, 50.0, 60.5), 0),
+        ];
+        rejoin_slivers(&mut blocks);
+        assert_eq!(blocks.len(), 3, "the 0.5 m slit between two ribbons goes");
+        assert!((g::area(&blocks[0].shape) - 2100.0).abs() < 1e-6);
+        assert!((g::bbox(&blocks[0].shape).3 - 42.0).abs() < 1e-9);
+        assert!((g::area(&blocks[1].shape) - 100.0).abs() < 1e-6);
+        assert_eq!(blocks[2].quarter, 1);
     }
 }
 
