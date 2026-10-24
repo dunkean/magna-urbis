@@ -111,18 +111,20 @@ class SoilControls extends Node:
 			var px=x+float(delta[0]);var pz=z+float(delta[1]);var height=Data.height_at(world,px,pz) if not world.is_empty() else NAN
 			probes.append({"x":px,"z":pz,"covered":not world.is_empty() and Data.covered(world,px,pz),"heightM":height if is_finite(height) else null,"finiteHeight":is_finite(height)})
 		return {"settled":settled(),"sourceCoverage":{"scope":"focus and four TOP viewport corners; not a continuous domain certificate","probes":probes,"allProbesFinite":probes.all(func(p):return p.covered and p.finiteHeight)},"mapProjection":scene.call("_map_projection") if scene.get("terrain")!=null else {},"style":current_style(),"focus":{"x":float(focus.get("x",0)),"z":float(focus.get("y",0))},"widthM":float(scene.get("width_m")),"detail":detail,"lowCover":low,"meanOnly":mean_only,"component":"surface-detail-distribution-4","objectsVisible":false,"treesVisible":false,"engineShadows":false,"worldId":world.get("id",""),"canonicalContextId":context.get("id",""),"groundResponseId":context.get("groundResponse",{}).get("id",""),"source":world.get("terrain",{}).get("source",{}),"scope":"native soil/palette preview; no Canvas brush, no new source/generation"}
+	func capture_signature()->PackedByteArray:
+		return var_to_bytes([style_index,detail,low,mean_only,scene.get("focus"),scene.get("width_m"),scene.get("applied_generation"),scene.get("rendered_world_id"),scene.get("origin"),scene.get("camera").global_transform])
 	func capture_view()->Dictionary:
 		if capturing or not settled():return {"status":"not-ready","reason":"terrain/source preparation pending"}
 		capturing=true;capture_button.disabled=true;apply()
 		for frame in 2:await get_tree().process_frame
 		if not settled():capturing=false;apply();return {"status":"not-ready","reason":"view changed before capture"}
-		var record=snapshot();var stamp=Time.get_datetime_string_from_system().replace(":","-")
+		var record=snapshot();var signature=capture_signature();var stamp=Time.get_datetime_string_from_system().replace(":","-")
 		var directory=str(scene.get("options").get("--soil-capture-dir","user://soil-preview-r4"))
 		directory=ProjectSettings.globalize_path(directory);DirAccess.make_dir_recursive_absolute(directory)
 		var filename="soil-%s-x%.2f-z%.2f-w%.2f-%s-%d"%[record.style.id,record.focus.x,record.focus.z,record.widthM,stamp,Time.get_ticks_msec()]
 		var image_path=directory.path_join(filename+".png");await scene.call("_capture",image_path)
-		record["captureStatus"]="complete" if settled() and FileAccess.file_exists(image_path) else "unstable-or-failed"
-		record["format"]="surface-soil-user-capture";record["version"]=1;record["imagePath"]=image_path;record["imageSha256"]=FileAccess.get_sha256(image_path)
+		record["captureStatus"]="complete" if settled() and signature==capture_signature() and FileAccess.file_exists(image_path) else "unstable-or-failed"
+		record["format"]="surface-soil-user-capture";record["version"]=1;record["imagePath"]=image_path;record["imageSha256"]=FileAccess.get_sha256(image_path) if FileAccess.file_exists(image_path) else ""
 		var json_path=directory.path_join(filename+".json");var output=FileAccess.open(json_path,FileAccess.WRITE)
 		if output!=null:output.store_string(JSON.stringify(record,"  "));output=null
 		else:push_error("Cannot save soil capture metadata: "+json_path)
