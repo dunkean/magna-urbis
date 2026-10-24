@@ -1,0 +1,2088 @@
+{
+  "format": "native-city419-v14-retained-static-proof",
+  "version": 1,
+  "status": "COMPLETE_RETAINED_CAPTURE_AND_COMPOSITION",
+  "rootHead": "763081706cb199c1e7a157d5e2de3c49d38f1aa1",
+  "runtimeSnapshotFileCount": 945,
+  "cleanBeforeAndAfter": true,
+  "snapshotsIdentical": true,
+  "runtimeAssetsIdentical": true,
+  "source": {
+    "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\native-current-419-v12-final\\source.surfacebin",
+    "bytes": 251582841,
+    "sha256": "54616775da71a5fb94e32d1cce13b59cad38f79f410f04525be72bc14edf589e"
+  },
+  "sourceScope": "419 authentic current native realizations; 81 explicit planning refusals retained as plots. Retained Magna parent terrain 15.625m, source LOD unrecorded; decoderUsed=false in retained child provenance. No fresh neural generation, new city, fine-detail or performance qualification.",
+  "nativeRealizations": 419,
+  "nativePlanningRefusals": 81,
+  "occupationPlots": 500,
+  "groundResponse": "Unavailable legacy1.5.3, not a fresh city or a new GR/fine-source result.",
+  "renderProfile": {
+    "id": "surface-v2",
+    "version": 1,
+    "format": "magna-surface-render-profile",
+    "profilePath": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\viewer-local\\profiles\\surface-v2.json",
+    "profileSha256": "6beb12f12daa71dd596577128087aa145169340fe89724742b8c2a8efeaa2c92",
+    "root": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23",
+    "platform": "win32",
+    "requiredTreeDigest": "74edf966059a17fd44df22d24f4ee055f780d84196ee9c54703fa3b9e46ecbe9",
+    "effectiveSha256": "366056c90cddc861d1b56961cfd4167df3dbfd9a8656f855ffa273b9016e4f94",
+    "effectiveDefaults": {
+      "assets": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface-assets\\resolved.json",
+      "vegetationAssets": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\vegetation-assets\\resolved.json",
+      "treeAssets": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\vegetation-tree-v14\\resolved.json",
+      "heightBatch": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\viewer-local\\native-height\\target\\release\\magna-surface-height-batch.exe",
+      "presentation": "aerial",
+      "waterMode": "source-map",
+      "waterVectorTint": "uniform",
+      "waterSymbolWidthPx": 1.25,
+      "nativeLogMode": "threaded"
+    },
+    "artifacts": {
+      "assets": {
+        "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface-assets\\resolved.json",
+        "sha256": "c9f5beb9d4cdbdb7eb5a83340d72d882f36322c73272244408374a260b7e8e26"
+      },
+      "vegetationAssets": {
+        "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\vegetation-assets\\resolved.json",
+        "sha256": "245fdbc786ff5806998075657a9194af767ef13f372670db5a11010c9d4099c1"
+      },
+      "treeAssets": {
+        "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\vegetation-tree-v14\\resolved.json",
+        "sha256": "2c0286061d797330c848fd6f2ed01a573fbbc767fe1af5fdc2aec0c756ab60be"
+      },
+      "heightBatch": {
+        "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\viewer-local\\native-height\\target\\release\\magna-surface-height-batch.exe",
+        "sha256": "1d2c1652ff6711c1a6c78677d3c6158bd497c93e1fad5a5609c952aef7a4f6ec"
+      }
+    },
+    "treeDigest": "74edf966059a17fd44df22d24f4ee055f780d84196ee9c54703fa3b9e46ecbe9",
+    "treeEncodingCorrectionVerified": true,
+    "runtimeFileCount": 82,
+    "runtimeBytes": 274146927,
+    "runtimeArtifactsSha256": "03c4329c7ce102211d5c168f39d49c754978abc9240199ff41f4ee6581631df2",
+    "overrides": []
+  },
+  "verifiedRuntimeAssets": [
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\viewer-local\\native-height\\target\\release\\magna-surface-height-batch.exe",
+      "bytes": 402432,
+      "sha256": "1d2c1652ff6711c1a6c78677d3c6158bd497c93e1fad5a5609c952aef7a4f6ec"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface-assets\\aerial_grass_rock\\baseColor-1k.jpg",
+      "bytes": 666655,
+      "sha256": "57b8041bfe0d0f01430e4dbaad45e7ddddf0a9fc97317f90dbc51f7b0d9e1b5d"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface-assets\\aerial_grass_rock\\height-1k.png",
+      "bytes": 1951317,
+      "sha256": "f8600ff2054d11c57d32ec5634b3b6b6ba3f5f1bc68366a981f0be1fe4736908"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface-assets\\aerial_grass_rock\\normal-1k.png",
+      "bytes": 6366521,
+      "sha256": "23bf3adc3f0d2a59eac317718377ca681dab9398fe824eb89925f89a2469f62e"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface-assets\\aerial_grass_rock\\roughness-1k.jpg",
+      "bytes": 362214,
+      "sha256": "b9f3f76aba74007f708333c0dbe73c52eb83ea0c4187a13e2e994f888a25114a"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface-assets\\brown_mud\\baseColor-1k.jpg",
+      "bytes": 501955,
+      "sha256": "df3f135c899f10a3b018738343b222cbc67d13e7c76c5d8da834a3d34c984417"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface-assets\\brown_mud\\height-1k.png",
+      "bytes": 666247,
+      "sha256": "7f46370448ce670cd2bcb9f2f19832dccb8e13180448030f2a0eede2596b52f0"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface-assets\\brown_mud\\normal-1k.png",
+      "bytes": 2449515,
+      "sha256": "58fd36c8e5bc2c5722f5e1a53bc7f56858a163b85775447e3bb16531d4d35916"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface-assets\\brown_mud\\roughness-1k.jpg",
+      "bytes": 340815,
+      "sha256": "ae9fb57c1173ccb4579f40edf8321a30bdca815042ffd72015a2a707c7e2e7ba"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface-assets\\brown_mud_03\\baseColor-1k.jpg",
+      "bytes": 526262,
+      "sha256": "6da4fbd6fc5d21044dcbdbd96e098fb464ed544b42c982e72ce8ccd1d53686c5"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface-assets\\brown_mud_03\\height-1k.png",
+      "bytes": 2261996,
+      "sha256": "f2809248e8e11a6a43f89570732396e0c47be4d0b471312c400dfd19447bfcce"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface-assets\\brown_mud_03\\normal-1k.png",
+      "bytes": 2364901,
+      "sha256": "87d3c0e883850dc0ab8c6eba5d6e84dc9fb8aae5c146e1382799975373171441"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface-assets\\brown_mud_03\\roughness-1k.jpg",
+      "bytes": 287221,
+      "sha256": "e1eff4cb387ab1211b473df6c1e3e280e4d18defdcc8b68ca0791bcd9f3c22da"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface-assets\\cliff_side\\baseColor-1k.jpg",
+      "bytes": 859756,
+      "sha256": "5c6858541108fc34e5726ecf4d8d942d6301155c489e7341619260f2909570c5"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface-assets\\cliff_side\\height-1k.png",
+      "bytes": 1486936,
+      "sha256": "2861630bab9f8a17014915ff624be83281185b04ff3f4b64a123db60d5e160d3"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface-assets\\cliff_side\\normal-1k.png",
+      "bytes": 5658685,
+      "sha256": "a55291598da38138d516c3701ff67a7ce30d4979930d30d6ab3c5e8667432f7e"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface-assets\\cliff_side\\roughness-1k.jpg",
+      "bytes": 422579,
+      "sha256": "9d62079c5fc52d1a0dc659d2ad7f807e489dea18b5cb1a130bcea276fdc9f550"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface-assets\\coast_sand_02\\baseColor-1k.jpg",
+      "bytes": 923953,
+      "sha256": "6854bc49936d7b2971b579095c21342ad2c8fd1495aa3382b840335202964f53"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface-assets\\coast_sand_02\\height-1k.png",
+      "bytes": 2329271,
+      "sha256": "4343d2dc8e722864c66723c20d6fd913bd750f5698e5e3557d083476fa13cf87"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface-assets\\coast_sand_02\\normal-1k.png",
+      "bytes": 2282509,
+      "sha256": "0376cafdb8998f1421bae8901fea72b30cd2a3ef2911c8017651701fed731409"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface-assets\\coast_sand_02\\roughness-1k.jpg",
+      "bytes": 479959,
+      "sha256": "f2b99b9f81c7bd467107f61551ab6517cfa090efcdb10cc19bc2fc4ea347fd7f"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface-assets\\dark_rock\\baseColor-1k.jpg",
+      "bytes": 533128,
+      "sha256": "7e1148b1749b2200de463b943d4c8994bb24467c96418aa3c283bf65c30e7300"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface-assets\\dark_rock\\height-1k.png",
+      "bytes": 1555163,
+      "sha256": "fbddc142d497cb0b836787da94f60c75230fcab18c866d7ae6c9e51444e69c3c"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface-assets\\dark_rock\\normal-1k.png",
+      "bytes": 6474633,
+      "sha256": "aca9a92043899e28245a8df617e1896cf1ad02813d2fa4cf359629b77723cb40"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface-assets\\dark_rock\\roughness-1k.jpg",
+      "bytes": 585646,
+      "sha256": "7a029c1eaba573aff8f977803ee9c78df201dfb80ab51741fb7359f18ae1f94b"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface-assets\\dry_mud_field_001\\baseColor-1k.jpg",
+      "bytes": 339575,
+      "sha256": "fa527aa4eb6151c7dab4f0a7b31722d0aa180f728af694594439d106e76f6c6d"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface-assets\\dry_mud_field_001\\height-1k.png",
+      "bytes": 2386917,
+      "sha256": "3875ab199dbd5463cf06fc5d6b9743f98ae2126b6f3b24bb5057be8053dba052"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface-assets\\dry_mud_field_001\\normal-1k.png",
+      "bytes": 6122707,
+      "sha256": "70fee818a705b08d77544d8a1fecf190c36cdd98d755fe4f0ca4dde210144997"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface-assets\\dry_mud_field_001\\roughness-1k.jpg",
+      "bytes": 272484,
+      "sha256": "1be004ed66347e81cac1f05d1ea7f81b953c148e7082f280bed1aa3530195cc5"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface-assets\\farm_soil\\baseColor-1k.jpg",
+      "bytes": 735837,
+      "sha256": "bfa2850109d1018ecb25342d9f17a5a81e826f7c67edfcaa7c878b60e62cc010"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface-assets\\farm_soil\\height-1k.png",
+      "bytes": 1781725,
+      "sha256": "3fbe7f063f21c6cc816984c43c230e79b328f7d24d1d9524178192bebe4291db"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface-assets\\farm_soil\\normal-1k.png",
+      "bytes": 7129440,
+      "sha256": "8cf1b9569b403a531a635759b91457fd9cf2c2cf2576ca8edb61d5dfab50e4d9"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface-assets\\farm_soil\\roughness-1k.jpg",
+      "bytes": 279247,
+      "sha256": "e20991112d705bfb0fce2fe2e8f770b5ec62dfd31c5636aa096b9e0dd2765c17"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface-assets\\forest_ground_04\\baseColor-1k.jpg",
+      "bytes": 1113899,
+      "sha256": "50a4dda30875020c64385261aa7e00e2155b592302fa6794165f58fae73cbd2c"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface-assets\\forest_ground_04\\height-1k.png",
+      "bytes": 1548354,
+      "sha256": "d96e043c2b97120897b53414be520fd6a1ac6dcbb29b06f90ac4acff9c1e85df"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface-assets\\forest_ground_04\\normal-1k.png",
+      "bytes": 2537954,
+      "sha256": "dc30ffdf75d28b2f02831201b377cf8cce4594d86bbcf46ba711dfcd35a5fcf0"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface-assets\\forest_ground_04\\roughness-1k.jpg",
+      "bytes": 627507,
+      "sha256": "89d4d50395eb92824a64132c4bc8a5a09009071e0b325ab66dc3104c7a3090ed"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface-assets\\forest_leaves_03\\baseColor-1k.jpg",
+      "bytes": 1000751,
+      "sha256": "9e6604b5958dfa46a6353a8358774e0d35dc0b8dd4c926570eef3134d7d9d92c"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface-assets\\forest_leaves_03\\height-1k.png",
+      "bytes": 1729426,
+      "sha256": "8ac25913e5a0aaf904083d67a4df763d4c60efd0595ee7331d9e6e92db1ea5dd"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface-assets\\forest_leaves_03\\normal-1k.png",
+      "bytes": 6006847,
+      "sha256": "8909699f80627af6cbce74caddb0aca73fde7c1f849aadd7182188776c7c8ab7"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface-assets\\forest_leaves_03\\roughness-1k.jpg",
+      "bytes": 806440,
+      "sha256": "cfb813d68cceff30343356592b54e54920318ad08c395b7b22af1fbd0f9f1707"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface-assets\\gravel_stones\\baseColor-1k.jpg",
+      "bytes": 802344,
+      "sha256": "b77a4c0824f4c860b9230949baca764fdb0651fa0016b2644cd07490f82fac43"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface-assets\\gravel_stones\\height-1k.png",
+      "bytes": 1828650,
+      "sha256": "7634297793498b08ad097447ad11c5ad801660b56edf0ab7d8dea657f2a7a2ee"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface-assets\\gravel_stones\\normal-1k.png",
+      "bytes": 7039766,
+      "sha256": "afc9158b3a11958c43d2b598d524243241781c4660b37533e293eeab66bbffa2"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface-assets\\gravel_stones\\roughness-1k.jpg",
+      "bytes": 643561,
+      "sha256": "874b326f617f4ce59b3522871482dfc569d37624d1948f521a46d7668bdef950"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface-assets\\gravelly_sand\\baseColor-1k.jpg",
+      "bytes": 1062525,
+      "sha256": "bc1624594ce807f04eaa023f6f9df93ffefd20904570cd46ca302b954ef80eec"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface-assets\\gravelly_sand\\height-1k.png",
+      "bytes": 1694619,
+      "sha256": "93805cebcf5e360140ae2583167a6e64102c53dc48ee3ba52997ac3bb1191f52"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface-assets\\gravelly_sand\\normal-1k.png",
+      "bytes": 6086837,
+      "sha256": "a2c4abfb02e82659d2ed1a325e6336e62116088e57e86e8a258fe9f0cc5526ab"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface-assets\\gravelly_sand\\roughness-1k.jpg",
+      "bytes": 419895,
+      "sha256": "57188f62c17950f96a5f2b8ce11bc9776e2b5bff8eff5c903402d89553ba3654"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface-assets\\resolved.json",
+      "bytes": 41395,
+      "sha256": "c9f5beb9d4cdbdb7eb5a83340d72d882f36322c73272244408374a260b7e8e26"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface-assets\\rocky_terrain_02\\baseColor-1k.jpg",
+      "bytes": 843188,
+      "sha256": "d570c10b1d5302f4fde9e0e94f4cbab0d5e112fc3fe2b3b91c38a98bd3ddaf4b"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface-assets\\rocky_terrain_02\\height-1k.png",
+      "bytes": 1572373,
+      "sha256": "3f25944cf2aa4e05a7fb4037ff9bbfd53c4c37467cf679bba5a9742f76177326"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface-assets\\rocky_terrain_02\\normal-1k.png",
+      "bytes": 6484633,
+      "sha256": "1cedbca3a5fb723345d361ebb93494f395af49c804c2b1779b5526014f682ef7"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface-assets\\rocky_terrain_02\\roughness-1k.jpg",
+      "bytes": 437094,
+      "sha256": "8652ee05de206888eb77f84df7c8080f6ffef27afadb7917127726570b66c45d"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface-assets\\sand_02\\baseColor-1k.jpg",
+      "bytes": 981243,
+      "sha256": "1429b1930308f623f3d9ff56315b0c894004731c239019353ff9bfefabe70ee9"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface-assets\\sand_02\\height-1k.png",
+      "bytes": 1712868,
+      "sha256": "3bf0e5091188f0e8422c5b0f2ead96b1ebe3d8659ed37f50df1f83a4b7f25fc5"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface-assets\\sand_02\\normal-1k.png",
+      "bytes": 5919568,
+      "sha256": "2b434ba4e4e50aa45cada350d21304bd6e4da49a8f3032f4d373ef2f976bc682"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface-assets\\sand_02\\roughness-1k.jpg",
+      "bytes": 396186,
+      "sha256": "686ed8a31d58a3227ad6c7fa42f94000abf622fce9c662d5af55b77c57340c14"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface-assets\\snow_02\\baseColor-1k.jpg",
+      "bytes": 325497,
+      "sha256": "523a4e69c90b96d787dd69b897f29a2b3761a017024405c60aa630d1e8e9009a"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface-assets\\snow_02\\height-1k.png",
+      "bytes": 1889438,
+      "sha256": "7ea857f5b1f4c3f4cf99471fbd9e4b5885d25e5e79296a9d9aedd39bbf7035c4"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface-assets\\snow_02\\normal-1k.png",
+      "bytes": 2118417,
+      "sha256": "110f8f0b4668c780412480a459d1276a52633f2d0af6c3eb30fd7ef90c6426fa"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface-assets\\snow_02\\roughness-1k.jpg",
+      "bytes": 146089,
+      "sha256": "b6dea8039ac2a5beaed6fd41834fb55540cc76b492edd1d48ba2da2f30f1cb75"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\vegetation-assets\\polyhaven-grass-medium-01-tiny.meshes.json",
+      "bytes": 38532,
+      "sha256": "0672054e08a7486eb768c8bb82de67a11fcd07ea3b2992d5cd02e70b2ae28bce"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\vegetation-assets\\resolved.json",
+      "bytes": 4942,
+      "sha256": "245fdbc786ff5806998075657a9194af767ef13f372670db5a11010c9d4099c1"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\vegetation-assets\\source\\grass_medium_01_alpha_1k.png",
+      "bytes": 648718,
+      "sha256": "711a8e49af758d6a6ce1f610db858899a27be19da6d1866bd35c13bc7b8ffeff"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\vegetation-assets\\source\\grass_medium_01_arm_1k.jpg",
+      "bytes": 679518,
+      "sha256": "9a3a30f72bc02f4398967c5b08f2d20cce30bd423a2613b42a727034296fa3ae"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\vegetation-assets\\source\\grass_medium_01_diff_1k.jpg",
+      "bytes": 395673,
+      "sha256": "71495bd6a11fddcab0aaff38246fea1a7b802a705483f1c7cbca53955daa8050"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\vegetation-assets\\source\\grass_medium_01_nor_gl_1k.jpg",
+      "bytes": 956166,
+      "sha256": "cae298d3d1d7ff7c7e210ad8ac772b96706e356f9315a6b04fde373ce01ccf1e"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\vegetation-tree-v14\\near-top-alpha.a8",
+      "bytes": 1048576,
+      "sha256": "d8003443e128493539055f6add11b11e7176aa2cfdc1316d982f3c4d7b864cec"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\vegetation-tree-v14\\near.glb",
+      "bytes": 38905400,
+      "sha256": "b6d29721da4b47dcbe7cab34c4180ee18c766558fe0341bc9a2889992a3eb93b"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\vegetation-tree-v14\\oblique-0-color.rgbah",
+      "bytes": 11184808,
+      "sha256": "d71291c470a4230c35e34009deaf414ebbaed04a679fc4a6d15ba809f32a40f4"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\vegetation-tree-v14\\oblique-0-normal.rgbah",
+      "bytes": 11184808,
+      "sha256": "98a34e5faa2368d03424b60c799b7f5068ee83d643671043512c3864a037a7e3"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\vegetation-tree-v14\\oblique-1-color.rgbah",
+      "bytes": 11184808,
+      "sha256": "c75ba93c73f174991170863dc59f25d68eaa40aa29181660996247bffd920e7a"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\vegetation-tree-v14\\oblique-1-normal.rgbah",
+      "bytes": 11184808,
+      "sha256": "6823a2b8cb6d561303b86ec6534b5185ceb313235c4a66063ecad7769e7a83ee"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\vegetation-tree-v14\\oblique-2-color.rgbah",
+      "bytes": 11184808,
+      "sha256": "3caed21d45e48b7d765facaf952ad52a3f64ee04782de71a9cb8d55b0378e0d4"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\vegetation-tree-v14\\oblique-2-normal.rgbah",
+      "bytes": 11184808,
+      "sha256": "64f193f73393d42dc6a6fd4688dbc6f15b88b19aaae52f1f97f8c2051cd2d810"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\vegetation-tree-v14\\oblique-3-color.rgbah",
+      "bytes": 11184808,
+      "sha256": "790da324acb394c40cf2b106d91fb3ee766fb2350e84daf3d16b682bc4aba655"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\vegetation-tree-v14\\oblique-3-normal.rgbah",
+      "bytes": 11184808,
+      "sha256": "46cd814de8c26fff3de6067089e0f014788117fe09356c275ec2b05e69ca8922"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\vegetation-tree-v14\\optical-mean.f32",
+      "bytes": 1028,
+      "sha256": "9416a33d91c2a1ad29266b3ffff0e75e51581fcc286e538e133ba81faea5575e"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\vegetation-tree-v14\\resolved.json",
+      "bytes": 14729,
+      "sha256": "2c0286061d797330c848fd6f2ed01a573fbbc767fe1af5fdc2aec0c756ab60be"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\vegetation-tree-v14\\top-color.rgbah",
+      "bytes": 11184808,
+      "sha256": "2c38128d7ddd30e9a3dc431152381956842a6d75df533db4e2342273205639a9"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\vegetation-tree-v14\\top-normal.rgbah",
+      "bytes": 11184808,
+      "sha256": "39ad050be271074067f5999fa693a23dde4c12c4f1111c03bbed7de540fd268a"
+    }
+  ],
+  "godotExecutable": {
+    "path": "D:\\workspace\\self\\_surface-tools\\godot-4.7.2\\Godot_v4.7.2-stable_win64_console.exe",
+    "bytes": 198152,
+    "sha256": "c8f0a6bc45a19b33541501e57f6f7cd972ab18453743266339d495cbbe846643"
+  },
+  "views": [
+    {
+      "name": "blueprint-native-close-top",
+      "command": [
+        "C:\\Program Files\\nodejs\\node.EXE",
+        "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\scripts\\surface_viewer.mjs",
+        "--godot",
+        "D:/workspace/self/_surface-tools/godot-4.7.2/Godot_v4.7.2-stable_win64_console.exe",
+        "--renderer",
+        "forward_plus",
+        "--world",
+        "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\native-current-419-v12-final\\source.surfacebin",
+        "--x",
+        "6536.4762957318035",
+        "--z",
+        "8462.943018929407",
+        "--width",
+        "400",
+        "--frames",
+        "32",
+        "--capture",
+        "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\native-current-419-v14-final\\blueprint-native-close-top.png",
+        "--metrics",
+        "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\native-current-419-v14-final\\blueprint-native-close-top.json",
+        "--presentation",
+        "cartographic",
+        "--style",
+        "blueprint",
+        "--top",
+        "--render-profile",
+        "surface-v2"
+      ],
+      "code": 0,
+      "durationMs": 38433,
+      "adapter": "NVIDIA GeForce RTX 5090",
+      "backend": "forward_plus",
+      "runtimeErrors": 0,
+      "knownTerrain3dDeprecationWarning": true,
+      "warmFramesRequested": 32,
+      "metricsFrames": 48,
+      "captureSha256": "c69ecb23fc11944e7553908834b1fa934634869b9ef121ce8068e909fb0d2452",
+      "mapProjection": {
+        "clipRange": [
+          -1,
+          1
+        ],
+        "focus": {
+          "x": 6536.4762957318,
+          "z": 8462.94301892941
+        },
+        "format": "surface-map-projection",
+        "precision": "rebased float32 camera matrix; subtract Float64 renderOrigin before multiplying; TOP scale is the horizontal map reference frame",
+        "projectionMode": "orthographic-top",
+        "renderOrigin": {
+          "x": 6507.8125,
+          "y": 50.8608436584473,
+          "z": 8445.3125
+        },
+        "uniformMetricScale": {
+          "bounds": {
+            "maxX": 6736.4762957318,
+            "maxZ": 8587.94301892941,
+            "minX": 6336.4762957318,
+            "minZ": 8337.94301892941
+          },
+          "metresPerPixel": 0.3125,
+          "north": "local-negative-z"
+        },
+        "version": 1,
+        "viewportPixels": {
+          "height": 800,
+          "width": 1280
+        },
+        "worldId": "0de1e8948131f56a677a8e24e8ecbac8",
+        "worldToClip": [
+          0.00499999988824129,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          -3.49691109402528e-10,
+          -0.00125313282478601,
+          0.0,
+          0.0,
+          -0.00800000037997961,
+          5.47761766500621e-11,
+          0.0,
+          -0.143318980932236,
+          0.141045093536377,
+          -0.504260182380676,
+          1.0
+        ]
+      },
+      "urban": {
+        "budgetLimited": false,
+        "materialBatches": 15,
+        "nativeBuildings": 254,
+        "proxyBuildings": 0,
+        "scope": "prepared submitted mesh batches; not a GPU visibility or occlusion count",
+        "worldId": "0de1e8948131f56a677a8e24e8ecbac8",
+        "buildingIdCount": 254,
+        "buildingIdsSha256": "d28e013e3f44b6fe3836e40750e58c5a4e2706dbe21d0b7c9c8a8a5b0440029c"
+      },
+      "cityMap": {
+        "budgetLimited": false,
+        "missingRoofFootprintIds": [],
+        "omittedBuildingIds": [],
+        "representation": "cartographic-source-roof-overlay",
+        "sourceRoofAreaM2": 12864.9122342673
+      },
+      "roadProjectors": 90,
+      "actualSourceAtFocus": {
+        "id": "infinite:47:e6f0c520536077f7cdd3284dbd1ce85e",
+        "nativeSpacingM": 15.625,
+        "sourceLOD": 0.0,
+        "sourceLODKnown": false,
+        "version": "decoder-v12-nyquist-notch:magna-retained-v1:e2bf5473c0ff:f21afa261ed7"
+      },
+      "fineContributionWeight": 0,
+      "surfaceLayers": {
+        "canonicalFieldsVersion": "f10d130472641a2c13bec4e8ca4eacf2",
+        "canonicalVersion": "f10d130472641a2c13bec4e8ca4eacf2",
+        "fieldsVersion": "d0ad060649253b0035de84de3683e2aa",
+        "groundAvailability": "explicit",
+        "groundResponse": {
+          "available": false,
+          "reason": "baked-color-legacy: physical response potentials were not retained"
+        },
+        "legacyFallback": false,
+        "lowCoverAvailability": "explicit",
+        "projectedFieldsVersion": "d0ad060649253b0035de84de3683e2aa",
+        "renderMode": "three-physical-layers",
+        "textureFieldsVersion": "f10d130472641a2c13bec4e8ca4eacf2",
+        "textureGrid": {
+          "height": 1024.0,
+          "originX": 7.8125,
+          "originZ": 7.8125,
+          "spacingM": 15.625,
+          "width": 1024.0
+        },
+        "textureSource": "canonical",
+        "version": "surface-layers-1",
+        "visibility": {
+          "ground": true,
+          "lowCover": true,
+          "trees": true
+        },
+        "worldId": "0de1e8948131f56a677a8e24e8ecbac8"
+      },
+      "viewSatisfaction": {
+        "covered": false,
+        "preview": false,
+        "reason": "finer source density required",
+        "serial": 0
+      },
+      "pbrCache": {
+        "enabled": true,
+        "hits": 0,
+        "loadMs": 7898.036,
+        "misses": 15,
+        "sourceChanged": 0,
+        "version": "surface-pbr-prepared-1",
+        "writeSkipped": {},
+        "writes": 15
+      },
+      "heightSampler": {
+        "eligible": true,
+        "executableSha256": "1d2c1652ff6711c1a6c78677d3c6158bd497c93e1fad5a5609c952aef7a4f6ec",
+        "holes": 0.0,
+        "mode": "explicit-native-batch",
+        "outputPayloadSha256": "c670d5c991baf33a9396838bcdcd319700f23681b33267e4d21fed00bdfdba35",
+        "provenance": "Rust f64 scalar ordered16taps; no fast-math; GD positive-kernel seam policy",
+        "requested": true,
+        "sampleMs": 20.2781,
+        "sceneEpoch": "aedc389ec426c1a0e2e5fa7e20dfd7d2",
+        "size": 1024,
+        "sourceEpoch": "616b184bc65c7343e8150b0195dfb20c319e1953a20a7032d3c1d324583b02be",
+        "sourceInputSha256": "38242aafd9c158c6b4826866660a143fdb10d049d8099b7a8d5563a2037740a9",
+        "sourceSamples": 1052672,
+        "sourceWorldId": "0de1e8948131f56a677a8e24e8ecbac8",
+        "spacingM": 0.9765625,
+        "totalMs": 554.541,
+        "used": true,
+        "version": "gd-height-batch-1"
+      },
+      "canopy": {
+        "phase": 2.0,
+        "reason": "complete-frustum-plus-halo",
+        "pendingAtlas": false,
+        "transitionPending": false,
+        "treeAssets": {
+          "enabled": false,
+          "profile": {
+            "albedoEncodingPolicy": "pinned16bit sRGB RGB exact, normalized cutout alpha8 expanded exactly to16bit; append-only GLB BIN image replacement",
+            "available": true,
+            "cpuOnly": false,
+            "digest": "74edf966059a17fd44df22d24f4ee055f780d84196ee9c54703fa3b9e46ecbe9",
+            "impostorTriangles": 2,
+            "pipelineVersion": "tree-render-cpu-packed-v1",
+            "scope": "experimental; shared top cutout C/V; oblique view-indexed planar depth approximation",
+            "sourceAssetDigest": "448060befa93602b93cab63e08419335b75d651a0eab3dee9b7819f19761148c",
+            "triangles": 134295.0,
+            "views": 5
+          }
+        }
+      },
+      "population": {
+        "clasts": {
+          "appliedInstances": 0,
+          "batches": [],
+          "enabled": false,
+          "scope": "renderer-only deterministic clast shapes, same legacy bounds/pivot/buffers; sourceRock geology determines texture recipe and source RGB; no new scatter or observed rock shape",
+          "trianglesPerInstance": 80,
+          "version": "renderer-clast-icosa80-pbr-v1"
+        },
+        "families": {
+          "boulder": {
+            "alphaPositiveInFrustum": 22,
+            "nodeVisible": 57,
+            "submitted": 57
+          },
+          "debris": {
+            "alphaPositiveInFrustum": 64,
+            "nodeVisible": 220,
+            "submitted": 220
+          },
+          "grass": {
+            "alphaPositiveInFrustum": 305,
+            "nodeVisible": 1000,
+            "submitted": 1000
+          },
+          "shrub": {
+            "alphaPositiveInFrustum": 74,
+            "nodeVisible": 225,
+            "submitted": 225
+          },
+          "tree": {
+            "alphaPositiveInFrustum": 158,
+            "nodeVisible": 1504,
+            "submitted": 1504
+          },
+          "trunk": {
+            "alphaPositiveInFrustum": 158,
+            "nodeVisible": 1504,
+            "submitted": 1504
+          }
+        },
+        "scope": "submitted buffers, actual node/camera visibility, shader ALPHA gate>0 and centres in frustum; no GPU occlusion or per-mask fragment claim",
+        "treeOpticalShadowEnabled": false,
+        "treeResidualEnabled": true,
+        "treeShaderUniformAvailable": true
+      },
+      "water": {
+        "waterPresentation": "source-map-terrain-projection",
+        "authority": "magna-urbis-fixed-hydrology",
+        "uniformVectorTint": true,
+        "sourceVectorTintPolicy": "uniform-untyped-vectors-explicit-sea",
+        "symbolWidthPx": 1.25,
+        "symbolicPhysicalWidthClaim": false,
+        "sourceVectorRequestedAreaM2": 7555.2953585289,
+        "sourceVectorMissingAreaM2": 0.0,
+        "sourceVectorCoverageComplete": true,
+        "missingLevelTriangles": 0,
+        "budgetLimited": false
+      },
+      "presentation": {
+        "cartographic": true,
+        "coverage": "native geometry, palette, material groups and orthographic preview; SVG/Canvas retain brush effects, labels and final layout",
+        "mapStyle": "blueprint",
+        "mode": "cartographic",
+        "source": {}
+      },
+      "vegetationApplied": false,
+      "nativeLog": {
+        "mode": "threaded",
+        "version": "native-log-timing-2",
+        "accepted": 2,
+        "written": 2,
+        "rejected": 0,
+        "pending": 0
+      }
+    },
+    {
+      "name": "aerial-native-close-oblique",
+      "command": [
+        "C:\\Program Files\\nodejs\\node.EXE",
+        "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\scripts\\surface_viewer.mjs",
+        "--godot",
+        "D:/workspace/self/_surface-tools/godot-4.7.2/Godot_v4.7.2-stable_win64_console.exe",
+        "--renderer",
+        "forward_plus",
+        "--world",
+        "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\native-current-419-v12-final\\source.surfacebin",
+        "--x",
+        "6530.0539967287295",
+        "--z",
+        "8494.492978230568",
+        "--width",
+        "600",
+        "--frames",
+        "32",
+        "--capture",
+        "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\native-current-419-v14-final\\aerial-native-close-oblique.png",
+        "--metrics",
+        "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\native-current-419-v14-final\\aerial-native-close-oblique.json",
+        "--presentation",
+        "aerial",
+        "--oblique",
+        "--render-profile",
+        "surface-v2"
+      ],
+      "code": 0,
+      "durationMs": 37512,
+      "adapter": "NVIDIA GeForce RTX 5090",
+      "backend": "forward_plus",
+      "runtimeErrors": 0,
+      "knownTerrain3dDeprecationWarning": true,
+      "warmFramesRequested": 32,
+      "metricsFrames": 38,
+      "captureSha256": "0d491e0fea1a856cedd11956dcfca68bed600988208f366ea2276855b918d824",
+      "mapProjection": {
+        "clipRange": [
+          -1,
+          1
+        ],
+        "focus": {
+          "x": 6530.05399672873,
+          "z": 8494.49297823057
+        },
+        "format": "surface-map-projection",
+        "precision": "rebased float32 camera matrix; subtract Float64 renderOrigin before multiplying; TOP scale is the horizontal map reference frame",
+        "projectionMode": "perspective",
+        "renderOrigin": {
+          "x": 6507.8125,
+          "y": 51.3937606811523,
+          "z": 8382.8125
+        },
+        "uniformMetricScale": null,
+        "version": 1,
+        "viewportPixels": {
+          "height": 800,
+          "width": 1280
+        },
+        "worldId": "0de1e8948131f56a677a8e24e8ecbac8",
+        "worldToClip": [
+          1.40377295017242,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          1.53090679645538,
+          -0.734501600265503,
+          -0.731721580028534,
+          0.0,
+          -1.64347362518311,
+          -0.684193253517151,
+          -0.681603610515594,
+          -31.2220115661621,
+          185.964889526367,
+          489.542755126953,
+          496.096557617188
+        ]
+      },
+      "urban": {
+        "budgetLimited": false,
+        "materialBatches": 15,
+        "nativeBuildings": 335,
+        "proxyBuildings": 0,
+        "scope": "prepared submitted mesh batches; not a GPU visibility or occlusion count",
+        "worldId": "0de1e8948131f56a677a8e24e8ecbac8",
+        "buildingIdCount": 335,
+        "buildingIdsSha256": "60f93e6ea84db59bf7c91d36008d93d94dde93987eb0f23ded9ea49f110eabe9"
+      },
+      "cityMap": {},
+      "roadProjectors": 210,
+      "actualSourceAtFocus": {
+        "id": "infinite:47:e6f0c520536077f7cdd3284dbd1ce85e",
+        "nativeSpacingM": 15.625,
+        "sourceLOD": 0.0,
+        "sourceLODKnown": false,
+        "version": "decoder-v12-nyquist-notch:magna-retained-v1:e2bf5473c0ff:f21afa261ed7"
+      },
+      "fineContributionWeight": 0,
+      "surfaceLayers": {
+        "canonicalFieldsVersion": "f10d130472641a2c13bec4e8ca4eacf2",
+        "canonicalVersion": "f10d130472641a2c13bec4e8ca4eacf2",
+        "fieldsVersion": "d0ad060649253b0035de84de3683e2aa",
+        "groundAvailability": "explicit",
+        "groundResponse": {
+          "available": false,
+          "reason": "baked-color-legacy: physical response potentials were not retained"
+        },
+        "legacyFallback": false,
+        "lowCoverAvailability": "explicit",
+        "projectedFieldsVersion": "d0ad060649253b0035de84de3683e2aa",
+        "renderMode": "three-physical-layers",
+        "textureFieldsVersion": "f10d130472641a2c13bec4e8ca4eacf2",
+        "textureGrid": {
+          "height": 1024.0,
+          "originX": 7.8125,
+          "originZ": 7.8125,
+          "spacingM": 15.625,
+          "width": 1024.0
+        },
+        "textureSource": "canonical",
+        "version": "surface-layers-1",
+        "visibility": {
+          "ground": true,
+          "lowCover": true,
+          "trees": true
+        },
+        "worldId": "0de1e8948131f56a677a8e24e8ecbac8"
+      },
+      "viewSatisfaction": {
+        "covered": false,
+        "preview": false,
+        "reason": "finer source density required",
+        "serial": 0
+      },
+      "pbrCache": {
+        "enabled": true,
+        "hits": 15,
+        "loadMs": 2236.592,
+        "misses": 0,
+        "sourceChanged": 0,
+        "version": "surface-pbr-prepared-1",
+        "writeSkipped": {},
+        "writes": 0
+      },
+      "heightSampler": {
+        "eligible": true,
+        "executableSha256": "1d2c1652ff6711c1a6c78677d3c6158bd497c93e1fad5a5609c952aef7a4f6ec",
+        "holes": 0.0,
+        "mode": "explicit-native-batch",
+        "outputPayloadSha256": "6725cfa1e8e0c12e7476c3c44572cca8d5f5d4fd16a9bae906a9b16a799db9ce",
+        "provenance": "Rust f64 scalar ordered16taps; no fast-math; GD positive-kernel seam policy",
+        "requested": true,
+        "sampleMs": 20.4214,
+        "sceneEpoch": "aedc389ec426c1a0e2e5fa7e20dfd7d2",
+        "size": 1024,
+        "sourceEpoch": "616b184bc65c7343e8150b0195dfb20c319e1953a20a7032d3c1d324583b02be",
+        "sourceInputSha256": "9b660e491041f95b52da897c723cbad9c7fdadc5b1601e9a7ed83c26af6d41b1",
+        "sourceSamples": 1052672,
+        "sourceWorldId": "0de1e8948131f56a677a8e24e8ecbac8",
+        "spacingM": 1.953125,
+        "totalMs": 554.703,
+        "used": true,
+        "version": "gd-height-batch-1"
+      },
+      "canopy": {
+        "phase": 2.0,
+        "reason": "planned-source-support-plus-halo",
+        "pendingAtlas": false,
+        "transitionPending": false,
+        "treeAssets": {
+          "droppedCount": 0,
+          "enabled": true,
+          "highBudget": 2000000.0,
+          "highCentresInFrustum": 0,
+          "highCentresOutsideFrustum": 0,
+          "highCount": 0,
+          "highEligibility": "physical diameter>=500px and conservative transformed high+five-impostor AABB intersects frustum; not centre visibility or GPU occlusion",
+          "highMinPixels": 500.0,
+          "highSupportIntersecting": 0,
+          "highSupportTested": 0,
+          "highTriangles": 0,
+          "impostorCount": 5371,
+          "impostorTriangles": 10742,
+          "profile": {
+            "albedoEncodingPolicy": "pinned16bit sRGB RGB exact, normalized cutout alpha8 expanded exactly to16bit; append-only GLB BIN image replacement",
+            "available": true,
+            "cpuOnly": false,
+            "digest": "74edf966059a17fd44df22d24f4ee055f780d84196ee9c54703fa3b9e46ecbe9",
+            "impostorTriangles": 2,
+            "pipelineVersion": "tree-render-cpu-packed-v1",
+            "scope": "experimental; shared top cutout C/V; oblique view-indexed planar depth approximation",
+            "sourceAssetDigest": "448060befa93602b93cab63e08419335b75d651a0eab3dee9b7819f19761148c",
+            "triangles": 134295.0,
+            "views": 5
+          },
+          "retainedCount": 5371,
+          "scope": "top shared-mask C/V; oblique view-indexed planar-depth approximation; no source edits",
+          "shadowFiltering": {
+            "physicalPenumbraClaimed": false,
+            "policy": "shadow footprint=max(main pixel, declared solar penumbra, two active atlas texels); visibility C/V unchanged",
+            "reconstructionFootprintTexels": 2.0,
+            "referenceHeightM": 9.80388349514563,
+            "solarAngularDiameterDegrees": 0.53
+          }
+        }
+      },
+      "population": {
+        "clasts": {
+          "appliedInstances": 45,
+          "batches": [
+            {
+              "binding": {
+                "analyticFallback": false,
+                "assetDigest": "f09e0208a3cfe0beae93940bbe00a85b237ac2ab449b532305918249eeada57c",
+                "assetId": "rock",
+                "heightUsage": "sampled registered channel; no displacement or source/pivot change",
+                "layer": 1,
+                "materialKey": "recipe:fractured-bedrock",
+                "physicalExtentMetres": 8.0,
+                "projection": "centre-anchored world-oriented physical metres; stable renderer variant phase",
+                "recipeBindingExact": true,
+                "recipeId": "fractured-bedrock"
+              },
+              "instances": 8,
+              "sourceRockIds": [
+                "1.0"
+              ],
+              "variant": 2
+            },
+            {
+              "binding": {
+                "analyticFallback": false,
+                "assetDigest": "f09e0208a3cfe0beae93940bbe00a85b237ac2ab449b532305918249eeada57c",
+                "assetId": "rock",
+                "heightUsage": "sampled registered channel; no displacement or source/pivot change",
+                "layer": 1,
+                "materialKey": "recipe:fractured-bedrock",
+                "physicalExtentMetres": 8.0,
+                "projection": "centre-anchored world-oriented physical metres; stable renderer variant phase",
+                "recipeBindingExact": true,
+                "recipeId": "fractured-bedrock"
+              },
+              "instances": 6,
+              "sourceRockIds": [
+                "1.0"
+              ],
+              "variant": 0
+            },
+            {
+              "binding": {
+                "analyticFallback": false,
+                "assetDigest": "f09e0208a3cfe0beae93940bbe00a85b237ac2ab449b532305918249eeada57c",
+                "assetId": "rock",
+                "heightUsage": "sampled registered channel; no displacement or source/pivot change",
+                "layer": 1,
+                "materialKey": "recipe:fractured-bedrock",
+                "physicalExtentMetres": 8.0,
+                "projection": "centre-anchored world-oriented physical metres; stable renderer variant phase",
+                "recipeBindingExact": true,
+                "recipeId": "fractured-bedrock"
+              },
+              "instances": 9,
+              "sourceRockIds": [
+                "1.0"
+              ],
+              "variant": 5
+            },
+            {
+              "binding": {
+                "analyticFallback": false,
+                "assetDigest": "f09e0208a3cfe0beae93940bbe00a85b237ac2ab449b532305918249eeada57c",
+                "assetId": "rock",
+                "heightUsage": "sampled registered channel; no displacement or source/pivot change",
+                "layer": 1,
+                "materialKey": "recipe:fractured-bedrock",
+                "physicalExtentMetres": 8.0,
+                "projection": "centre-anchored world-oriented physical metres; stable renderer variant phase",
+                "recipeBindingExact": true,
+                "recipeId": "fractured-bedrock"
+              },
+              "instances": 10,
+              "sourceRockIds": [
+                "1.0"
+              ],
+              "variant": 3
+            },
+            {
+              "binding": {
+                "analyticFallback": false,
+                "assetDigest": "f09e0208a3cfe0beae93940bbe00a85b237ac2ab449b532305918249eeada57c",
+                "assetId": "rock",
+                "heightUsage": "sampled registered channel; no displacement or source/pivot change",
+                "layer": 1,
+                "materialKey": "recipe:fractured-bedrock",
+                "physicalExtentMetres": 8.0,
+                "projection": "centre-anchored world-oriented physical metres; stable renderer variant phase",
+                "recipeBindingExact": true,
+                "recipeId": "fractured-bedrock"
+              },
+              "instances": 5,
+              "sourceRockIds": [
+                "1.0"
+              ],
+              "variant": 4
+            },
+            {
+              "binding": {
+                "analyticFallback": false,
+                "assetDigest": "f09e0208a3cfe0beae93940bbe00a85b237ac2ab449b532305918249eeada57c",
+                "assetId": "rock",
+                "heightUsage": "sampled registered channel; no displacement or source/pivot change",
+                "layer": 1,
+                "materialKey": "recipe:fractured-bedrock",
+                "physicalExtentMetres": 8.0,
+                "projection": "centre-anchored world-oriented physical metres; stable renderer variant phase",
+                "recipeBindingExact": true,
+                "recipeId": "fractured-bedrock"
+              },
+              "instances": 7,
+              "sourceRockIds": [
+                "1.0"
+              ],
+              "variant": 1
+            }
+          ],
+          "enabled": true,
+          "scope": "renderer-only deterministic clast shapes, same legacy bounds/pivot/buffers; sourceRock geology determines texture recipe and source RGB; no new scatter or observed rock shape",
+          "trianglesPerInstance": 80,
+          "version": "renderer-clast-icosa80-pbr-v1"
+        },
+        "families": {
+          "boulder": {
+            "alphaPositiveInFrustum": 35,
+            "nodeVisible": 45,
+            "submitted": 45
+          },
+          "debris": {
+            "alphaPositiveInFrustum": 46,
+            "nodeVisible": 109,
+            "submitted": 109
+          },
+          "grass": {
+            "alphaPositiveInFrustum": 210,
+            "nodeVisible": 620,
+            "submitted": 620
+          },
+          "shrub": {
+            "alphaPositiveInFrustum": 158,
+            "nodeVisible": 218,
+            "submitted": 218
+          },
+          "tree": {
+            "alphaPositiveInFrustum": 1411,
+            "nodeVisible": 5371,
+            "submitted": 5371
+          },
+          "trunk": {
+            "alphaPositiveInFrustum": 0,
+            "nodeVisible": 0,
+            "submitted": 0
+          }
+        },
+        "scope": "submitted buffers, actual node/camera visibility, shader ALPHA gate>0 and centres in frustum; no GPU occlusion or per-mask fragment claim",
+        "treeOpticalShadowEnabled": true,
+        "treeResidualEnabled": true,
+        "treeShaderUniformAvailable": true
+      },
+      "water": {
+        "waterPresentation": "source-map-terrain-projection",
+        "authority": "magna-urbis-fixed-hydrology",
+        "uniformVectorTint": true,
+        "sourceVectorTintPolicy": "uniform-untyped-vectors-explicit-sea",
+        "symbolWidthPx": 1.25,
+        "symbolicPhysicalWidthClaim": false,
+        "sourceVectorRequestedAreaM2": 195616.91151938,
+        "sourceVectorMissingAreaM2": 0.0,
+        "sourceVectorCoverageComplete": true,
+        "missingLevelTriangles": 0,
+        "budgetLimited": false
+      },
+      "presentation": {
+        "cartographic": false,
+        "coverage": "native geometry, palette, material groups and orthographic preview; SVG/Canvas retain brush effects, labels and final layout",
+        "mapStyle": "unspecified",
+        "mode": "aerial",
+        "source": {}
+      },
+      "vegetationApplied": true,
+      "nativeLog": {
+        "mode": "threaded",
+        "version": "native-log-timing-2",
+        "accepted": 4,
+        "written": 4,
+        "rejected": 0,
+        "pending": 0
+      }
+    },
+    {
+      "name": "aerial-native-overall-top",
+      "command": [
+        "C:\\Program Files\\nodejs\\node.EXE",
+        "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\scripts\\surface_viewer.mjs",
+        "--godot",
+        "D:/workspace/self/_surface-tools/godot-4.7.2/Godot_v4.7.2-stable_win64_console.exe",
+        "--renderer",
+        "forward_plus",
+        "--world",
+        "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\native-current-419-v12-final\\source.surfacebin",
+        "--x",
+        "6846.66",
+        "--z",
+        "8024.22",
+        "--width",
+        "8400",
+        "--frames",
+        "32",
+        "--capture",
+        "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\native-current-419-v14-final\\aerial-native-overall-top.png",
+        "--metrics",
+        "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\native-current-419-v14-final\\aerial-native-overall-top.json",
+        "--presentation",
+        "aerial",
+        "--top",
+        "--render-profile",
+        "surface-v2"
+      ],
+      "code": 0,
+      "durationMs": 38740,
+      "adapter": "NVIDIA GeForce RTX 5090",
+      "backend": "forward_plus",
+      "runtimeErrors": 0,
+      "knownTerrain3dDeprecationWarning": true,
+      "warmFramesRequested": 32,
+      "metricsFrames": 2,
+      "captureSha256": "6fc3f01ad2fdc0fa07006ee45ce8de48e449a40932072b418e14a50409140f2b",
+      "mapProjection": {
+        "clipRange": [
+          -1,
+          1
+        ],
+        "focus": {
+          "x": 6846.66,
+          "z": 8024.22
+        },
+        "format": "surface-map-projection",
+        "precision": "rebased float32 camera matrix; subtract Float64 renderOrigin before multiplying; TOP scale is the horizontal map reference frame",
+        "projectionMode": "orthographic-top",
+        "renderOrigin": {
+          "x": 6757.8125,
+          "y": 43.3186950683594,
+          "z": 7507.8125
+        },
+        "uniformMetricScale": {
+          "bounds": {
+            "maxX": 11046.66,
+            "maxZ": 10649.22,
+            "minX": 2646.66,
+            "minZ": 5399.22
+          },
+          "metresPerPixel": 6.5625,
+          "north": "local-negative-z"
+        },
+        "version": 1,
+        "viewportPixels": {
+          "height": 800,
+          "width": 1280
+        },
+        "worldId": "0de1e8948131f56a677a8e24e8ecbac8",
+        "worldToClip": [
+          0.000238095235545188,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          -1.66519575905966e-11,
+          -5.96729914832395e-05,
+          0.0,
+          0.0,
+          -0.000380952376872301,
+          2.60838919907691e-12,
+          0.0,
+          -0.0211541671305895,
+          0.196726843714714,
+          -0.503447532653809,
+          1.0
+        ]
+      },
+      "urban": {
+        "budgetLimited": false,
+        "materialBatches": 15,
+        "nativeBuildings": 419,
+        "proxyBuildings": 0,
+        "scope": "prepared submitted mesh batches; not a GPU visibility or occlusion count",
+        "worldId": "0de1e8948131f56a677a8e24e8ecbac8",
+        "buildingIdCount": 419,
+        "buildingIdsSha256": "eb067475108a1811d8d1ee68a4dbd38e1464ffc228bfa95309aaeb6550237cd5"
+      },
+      "cityMap": {},
+      "roadProjectors": 256,
+      "actualSourceAtFocus": {
+        "id": "infinite:47:e6f0c520536077f7cdd3284dbd1ce85e",
+        "nativeSpacingM": 15.625,
+        "sourceLOD": 0.0,
+        "sourceLODKnown": false,
+        "version": "decoder-v12-nyquist-notch:magna-retained-v1:e2bf5473c0ff:f21afa261ed7"
+      },
+      "fineContributionWeight": 0,
+      "surfaceLayers": {
+        "canonicalFieldsVersion": "f10d130472641a2c13bec4e8ca4eacf2",
+        "canonicalVersion": "f10d130472641a2c13bec4e8ca4eacf2",
+        "fieldsVersion": "d0ad060649253b0035de84de3683e2aa",
+        "groundAvailability": "explicit",
+        "groundResponse": {
+          "available": false,
+          "reason": "baked-color-legacy: physical response potentials were not retained"
+        },
+        "legacyFallback": false,
+        "lowCoverAvailability": "explicit",
+        "projectedFieldsVersion": "d0ad060649253b0035de84de3683e2aa",
+        "renderMode": "three-physical-layers",
+        "textureFieldsVersion": "f10d130472641a2c13bec4e8ca4eacf2",
+        "textureGrid": {
+          "height": 1024.0,
+          "originX": 7.8125,
+          "originZ": 7.8125,
+          "spacingM": 15.625,
+          "width": 1024.0
+        },
+        "textureSource": "canonical",
+        "version": "surface-layers-1",
+        "visibility": {
+          "ground": true,
+          "lowCover": true,
+          "trees": true
+        },
+        "worldId": "0de1e8948131f56a677a8e24e8ecbac8"
+      },
+      "viewSatisfaction": {
+        "covered": false,
+        "preview": false,
+        "reason": "final 512 source request required",
+        "serial": 0
+      },
+      "pbrCache": {
+        "enabled": true,
+        "hits": 15,
+        "loadMs": 2336.979,
+        "misses": 0,
+        "sourceChanged": 0,
+        "version": "surface-pbr-prepared-1",
+        "writeSkipped": {},
+        "writes": 0
+      },
+      "heightSampler": {
+        "eligible": true,
+        "executableSha256": "1d2c1652ff6711c1a6c78677d3c6158bd497c93e1fad5a5609c952aef7a4f6ec",
+        "holes": 786432.0,
+        "mode": "explicit-native-batch",
+        "outputPayloadSha256": "94c069e53e4526ab8946e097b60cc99a6cf4fc717fdeffe6564075ffd4437809",
+        "provenance": "Rust f64 scalar ordered16taps; no fast-math; GD positive-kernel seam policy",
+        "requested": true,
+        "sampleMs": 35.2819,
+        "sceneEpoch": "aedc389ec426c1a0e2e5fa7e20dfd7d2",
+        "size": 1024,
+        "sourceEpoch": "616b184bc65c7343e8150b0195dfb20c319e1953a20a7032d3c1d324583b02be",
+        "sourceInputSha256": "cad13c6c8f2c90564ea646f8ee6161a57d721ff427e25e492f275ee079390096",
+        "sourceSamples": 264258,
+        "sourceWorldId": "0de1e8948131f56a677a8e24e8ecbac8",
+        "spacingM": 31.25,
+        "totalMs": 476.343,
+        "used": true,
+        "version": "gd-height-batch-1"
+      },
+      "canopy": {
+        "phase": 0.0,
+        "reason": "Complete tree page does not cover this view",
+        "pendingAtlas": false,
+        "transitionPending": false,
+        "treeAssets": {
+          "enabled": true,
+          "profile": {
+            "albedoEncodingPolicy": "pinned16bit sRGB RGB exact, normalized cutout alpha8 expanded exactly to16bit; append-only GLB BIN image replacement",
+            "available": true,
+            "cpuOnly": false,
+            "digest": "74edf966059a17fd44df22d24f4ee055f780d84196ee9c54703fa3b9e46ecbe9",
+            "impostorTriangles": 2,
+            "pipelineVersion": "tree-render-cpu-packed-v1",
+            "scope": "experimental; shared top cutout C/V; oblique view-indexed planar depth approximation",
+            "sourceAssetDigest": "448060befa93602b93cab63e08419335b75d651a0eab3dee9b7819f19761148c",
+            "triangles": 134295.0,
+            "views": 5
+          },
+          "shadowFiltering": {
+            "physicalPenumbraClaimed": false,
+            "policy": "shadow footprint=max(main pixel, declared solar penumbra, two active atlas texels); visibility C/V unchanged",
+            "reconstructionFootprintTexels": 2.0,
+            "referenceHeightM": 9.80388349514563,
+            "solarAngularDiameterDegrees": 0.53
+          }
+        }
+      },
+      "population": {
+        "clasts": {
+          "appliedInstances": 0,
+          "batches": [],
+          "enabled": true,
+          "scope": "renderer-only deterministic clast shapes, same legacy bounds/pivot/buffers; sourceRock geology determines texture recipe and source RGB; no new scatter or observed rock shape",
+          "trianglesPerInstance": 80,
+          "version": "renderer-clast-icosa80-pbr-v1"
+        },
+        "families": {
+          "boulder": {
+            "alphaPositiveInFrustum": 0,
+            "nodeVisible": 0,
+            "submitted": 0
+          },
+          "debris": {
+            "alphaPositiveInFrustum": 0,
+            "nodeVisible": 0,
+            "submitted": 0
+          },
+          "grass": {
+            "alphaPositiveInFrustum": 0,
+            "nodeVisible": 0,
+            "submitted": 0
+          },
+          "shrub": {
+            "alphaPositiveInFrustum": 0,
+            "nodeVisible": 0,
+            "submitted": 0
+          },
+          "tree": {
+            "alphaPositiveInFrustum": 0,
+            "nodeVisible": 0,
+            "submitted": 0
+          },
+          "trunk": {
+            "alphaPositiveInFrustum": 0,
+            "nodeVisible": 0,
+            "submitted": 0
+          }
+        },
+        "scope": "submitted buffers, actual node/camera visibility, shader ALPHA gate>0 and centres in frustum; no GPU occlusion or per-mask fragment claim",
+        "treeOpticalShadowEnabled": true,
+        "treeResidualEnabled": true,
+        "treeShaderUniformAvailable": true
+      },
+      "water": {
+        "waterPresentation": "source-map-terrain-projection",
+        "authority": "magna-urbis-fixed-hydrology",
+        "uniformVectorTint": true,
+        "sourceVectorTintPolicy": "uniform-untyped-vectors-explicit-sea",
+        "symbolWidthPx": 1.25,
+        "symbolicPhysicalWidthClaim": false,
+        "sourceVectorRequestedAreaM2": 2716542.16819078,
+        "sourceVectorMissingAreaM2": 0.0,
+        "sourceVectorCoverageComplete": true,
+        "missingLevelTriangles": 0,
+        "budgetLimited": false
+      },
+      "presentation": {
+        "cartographic": false,
+        "coverage": "native geometry, palette, material groups and orthographic preview; SVG/Canvas retain brush effects, labels and final layout",
+        "mapStyle": "unspecified",
+        "mode": "aerial",
+        "source": {}
+      },
+      "vegetationApplied": true,
+      "nativeLog": {
+        "mode": "threaded",
+        "version": "native-log-timing-2",
+        "accepted": 2,
+        "written": 2,
+        "rejected": 0,
+        "pending": 0
+      }
+    }
+  ],
+  "compositions": [
+    {
+      "name": "blueprint-map",
+      "boundCapture": "blueprint-native-close-top",
+      "binding": {
+        "format": "surface-map-capture",
+        "version": 1,
+        "sourcePacketSha256": "54616775da71a5fb94e32d1cce13b59cad38f79f410f04525be72bc14edf589e",
+        "metricsSha256": "cf3c954aae3b208099b0968b637b34a28223a8353aa2afba43b62ceeb8c70ca5",
+        "imageSha256": "c69ecb23fc11944e7553908834b1fa934634869b9ef121ce8068e909fb0d2452",
+        "worldId": "0de1e8948131f56a677a8e24e8ecbac8",
+        "canonicalContextId": "00eb9ae088b9342e0ce55680861edf6c",
+        "widthPx": 1280,
+        "heightPx": 800,
+        "projection": {
+          "kind": "orthographic-top",
+          "bounds": {
+            "maxX": 6736.4762957318,
+            "maxZ": 8587.94301892941,
+            "minX": 6336.4762957318,
+            "minZ": 8337.94301892941
+          },
+          "north": "local-negative-z"
+        },
+        "presentation": "cartographic",
+        "mapStyle": "blueprint",
+        "nativeProjection": {
+          "clipRange": [
+            -1,
+            1
+          ],
+          "focus": {
+            "x": 6536.4762957318,
+            "z": 8462.94301892941
+          },
+          "format": "surface-map-projection",
+          "precision": "rebased float32 camera matrix; subtract Float64 renderOrigin before multiplying; TOP scale is the horizontal map reference frame",
+          "projectionMode": "orthographic-top",
+          "renderOrigin": {
+            "x": 6507.8125,
+            "y": 50.8608436584473,
+            "z": 8445.3125
+          },
+          "uniformMetricScale": {
+            "bounds": {
+              "maxX": 6736.4762957318,
+              "maxZ": 8587.94301892941,
+              "minX": 6336.4762957318,
+              "minZ": 8337.94301892941
+            },
+            "metresPerPixel": 0.3125,
+            "north": "local-negative-z"
+          },
+          "version": 1,
+          "viewportPixels": {
+            "height": 800,
+            "width": 1280
+          },
+          "worldId": "0de1e8948131f56a677a8e24e8ecbac8",
+          "worldToClip": [
+            0.00499999988824129,
+            0,
+            0,
+            0,
+            0,
+            -3.49691109402528e-10,
+            -0.00125313282478601,
+            0,
+            0,
+            -0.00800000037997961,
+            5.47761766500621e-11,
+            0,
+            -0.143318980932236,
+            0.141045093536377,
+            -0.504260182380676,
+            1
+          ]
+        }
+      },
+      "evidence": {
+        "format": "surface-map-composition",
+        "version": 1,
+        "capture": {
+          "format": "surface-map-capture",
+          "version": 1,
+          "sourcePacketSha256": "54616775da71a5fb94e32d1cce13b59cad38f79f410f04525be72bc14edf589e",
+          "metricsSha256": "cf3c954aae3b208099b0968b637b34a28223a8353aa2afba43b62ceeb8c70ca5",
+          "imageSha256": "c69ecb23fc11944e7553908834b1fa934634869b9ef121ce8068e909fb0d2452",
+          "worldId": "0de1e8948131f56a677a8e24e8ecbac8",
+          "canonicalContextId": "00eb9ae088b9342e0ce55680861edf6c",
+          "widthPx": 1280,
+          "heightPx": 800,
+          "projection": {
+            "kind": "orthographic-top",
+            "bounds": {
+              "maxX": 6736.4762957318,
+              "maxZ": 8587.94301892941,
+              "minX": 6336.4762957318,
+              "minZ": 8337.94301892941
+            },
+            "north": "local-negative-z"
+          },
+          "presentation": "cartographic",
+          "mapStyle": "blueprint",
+          "nativeProjection": {
+            "clipRange": [
+              -1,
+              1
+            ],
+            "focus": {
+              "x": 6536.4762957318,
+              "z": 8462.94301892941
+            },
+            "format": "surface-map-projection",
+            "precision": "rebased float32 camera matrix; subtract Float64 renderOrigin before multiplying; TOP scale is the horizontal map reference frame",
+            "projectionMode": "orthographic-top",
+            "renderOrigin": {
+              "x": 6507.8125,
+              "y": 50.8608436584473,
+              "z": 8445.3125
+            },
+            "uniformMetricScale": {
+              "bounds": {
+                "maxX": 6736.4762957318,
+                "maxZ": 8587.94301892941,
+                "minX": 6336.4762957318,
+                "minZ": 8337.94301892941
+              },
+              "metresPerPixel": 0.3125,
+              "north": "local-negative-z"
+            },
+            "version": 1,
+            "viewportPixels": {
+              "height": 800,
+              "width": 1280
+            },
+            "worldId": "0de1e8948131f56a677a8e24e8ecbac8",
+            "worldToClip": [
+              0.00499999988824129,
+              0,
+              0,
+              0,
+              0,
+              -3.49691109402528e-10,
+              -0.00125313282478601,
+              0,
+              0,
+              -0.00800000037997961,
+              5.47761766500621e-11,
+              0,
+              -0.143318980932236,
+              0.141045093536377,
+              -0.504260182380676,
+              1
+            ]
+          }
+        },
+        "style": "blueprint",
+        "sourceLabelCount": 0,
+        "placedLabelIds": [],
+        "droppedLabels": [],
+        "legend": [
+          {
+            "id": "native-buildings",
+            "text": "B\u00e2timents",
+            "sourcePath": "urban.buildings",
+            "semantic": "native-buildings",
+            "count": 419,
+            "qualification": "Native building records retained in source packet; not GPU visibility"
+          },
+          {
+            "id": "roads",
+            "text": "Voirie",
+            "sourcePath": "urban.roads",
+            "semantic": "roads",
+            "count": 6,
+            "qualification": "Road records retained in source packet"
+          },
+          {
+            "id": "trees",
+            "text": "Arbres",
+            "sourcePath": "world.canonicalContext.fields.treeCover",
+            "semantic": "trees",
+            "count": 228,
+            "qualification": "Canonical tree-cover potential support nodes; not rendered or observed tree counts"
+          },
+          {
+            "id": "low-cover",
+            "text": "Couvert bas",
+            "sourcePath": "world.canonicalContext.fields.grassCover/shrubCover/litter",
+            "semantic": "low-cover",
+            "count": 228,
+            "qualification": "Canonical low-cover potential support nodes; not rendered instances"
+          },
+          {
+            "id": "recipe:mineral-soil",
+            "text": "Sol min\u00e9ral",
+            "sourcePath": "world.materials[0] / canonicalContext.fields.groundMaterial",
+            "semantic": "ground-recipe",
+            "count": 486,
+            "qualification": "Canonical ground recipe support nodes; not visible pixel area"
+          }
+        ],
+        "gridMeters": 5,
+        "gridLines": 130,
+        "scaleBar": {
+          "lengthM": 25,
+          "pixels": 80
+        },
+        "fontFamily": "'Segoe UI', 'Helvetica Neue', Arial, 'Liberation Sans', sans-serif",
+        "title": "Plan urbain",
+        "titleSource": "Explicit authored presentation text; not an inferred source toponym",
+        "titleReservedBounds": {
+          "x0": 360,
+          "y0": 24,
+          "x1": 920,
+          "y1": 72
+        },
+        "coverage": {
+          "raster": "Pinned original PNG, unchanged",
+          "overlay": "Shared label placement, font stack, panel primitives, frame, north and palette tokens",
+          "style": "Overlay only; captured raster presentation is not restyled",
+          "perspective": null
+        },
+        "unsupported": [
+          "SVG brush strokes, terrain hatching, labels absent from source, per-pixel occlusion and perspective path draping are not reconstructed"
+        ]
+      },
+      "pngSha256": "c6ef6d7bc4656456c62c9e07a2ee2e5d85fe9aab1857fcd19f23fef6885fbc13",
+      "svgSha256": "7ad7bf9e41f3ece51c3c7fcd60d5953bad1055ce62fad2b58460d76aa165a03d",
+      "bindingProofSha256": "5832f1d5a92d6c7d19e5fefaae953d9b16593d142f50c176dbcbab4ae326cc41",
+      "fontPolicy": "Existing shared system font stack, resolved locally by resvg; fonts are not embedded and pixel portability is not claimed.",
+      "rasterPolicy": "Original PNG embedded unchanged, not recolored or regenerated.",
+      "sourceLegendScope": "Native/road records in source packet; ground/cover counts are canonical support nodes overlapping the TOP frame, not area or GPU visibility."
+    },
+    {
+      "name": "oblique-map",
+      "boundCapture": "aerial-native-close-oblique",
+      "binding": {
+        "format": "surface-map-capture",
+        "version": 1,
+        "sourcePacketSha256": "54616775da71a5fb94e32d1cce13b59cad38f79f410f04525be72bc14edf589e",
+        "metricsSha256": "9ec0bdb1aebbde8692e293fc807a8dfefb8a40ab4b5814d22fbb912f72101933",
+        "imageSha256": "0d491e0fea1a856cedd11956dcfca68bed600988208f366ea2276855b918d824",
+        "worldId": "0de1e8948131f56a677a8e24e8ecbac8",
+        "canonicalContextId": "00eb9ae088b9342e0ce55680861edf6c",
+        "widthPx": 1280,
+        "heightPx": 800,
+        "projection": {
+          "kind": "perspective",
+          "worldToClip": [
+            1.40377295017242,
+            0,
+            0,
+            0,
+            0,
+            1.53090679645538,
+            -0.734501600265503,
+            -0.731721580028534,
+            0,
+            -1.64347362518311,
+            -0.684193253517151,
+            -0.681603610515594,
+            -31.2220115661621,
+            185.964889526367,
+            489.542755126953,
+            496.096557617188
+          ],
+          "renderOrigin": {
+            "x": 6507.8125,
+            "y": 51.3937606811523,
+            "z": 8382.8125
+          },
+          "matrixLayout": "column-major",
+          "clipDepth": "minus-one-to-one"
+        },
+        "presentation": "aerial",
+        "mapStyle": "atlas",
+        "nativeProjection": {
+          "clipRange": [
+            -1,
+            1
+          ],
+          "focus": {
+            "x": 6530.05399672873,
+            "z": 8494.49297823057
+          },
+          "format": "surface-map-projection",
+          "precision": "rebased float32 camera matrix; subtract Float64 renderOrigin before multiplying; TOP scale is the horizontal map reference frame",
+          "projectionMode": "perspective",
+          "renderOrigin": {
+            "x": 6507.8125,
+            "y": 51.3937606811523,
+            "z": 8382.8125
+          },
+          "uniformMetricScale": null,
+          "version": 1,
+          "viewportPixels": {
+            "height": 800,
+            "width": 1280
+          },
+          "worldId": "0de1e8948131f56a677a8e24e8ecbac8",
+          "worldToClip": [
+            1.40377295017242,
+            0,
+            0,
+            0,
+            0,
+            1.53090679645538,
+            -0.734501600265503,
+            -0.731721580028534,
+            0,
+            -1.64347362518311,
+            -0.684193253517151,
+            -0.681603610515594,
+            -31.2220115661621,
+            185.964889526367,
+            489.542755126953,
+            496.096557617188
+          ]
+        }
+      },
+      "evidence": {
+        "format": "surface-map-composition",
+        "version": 1,
+        "capture": {
+          "format": "surface-map-capture",
+          "version": 1,
+          "sourcePacketSha256": "54616775da71a5fb94e32d1cce13b59cad38f79f410f04525be72bc14edf589e",
+          "metricsSha256": "9ec0bdb1aebbde8692e293fc807a8dfefb8a40ab4b5814d22fbb912f72101933",
+          "imageSha256": "0d491e0fea1a856cedd11956dcfca68bed600988208f366ea2276855b918d824",
+          "worldId": "0de1e8948131f56a677a8e24e8ecbac8",
+          "canonicalContextId": "00eb9ae088b9342e0ce55680861edf6c",
+          "widthPx": 1280,
+          "heightPx": 800,
+          "projection": {
+            "kind": "perspective",
+            "worldToClip": [
+              1.40377295017242,
+              0,
+              0,
+              0,
+              0,
+              1.53090679645538,
+              -0.734501600265503,
+              -0.731721580028534,
+              0,
+              -1.64347362518311,
+              -0.684193253517151,
+              -0.681603610515594,
+              -31.2220115661621,
+              185.964889526367,
+              489.542755126953,
+              496.096557617188
+            ],
+            "renderOrigin": {
+              "x": 6507.8125,
+              "y": 51.3937606811523,
+              "z": 8382.8125
+            },
+            "matrixLayout": "column-major",
+            "clipDepth": "minus-one-to-one"
+          },
+          "presentation": "aerial",
+          "mapStyle": "atlas",
+          "nativeProjection": {
+            "clipRange": [
+              -1,
+              1
+            ],
+            "focus": {
+              "x": 6530.05399672873,
+              "z": 8494.49297823057
+            },
+            "format": "surface-map-projection",
+            "precision": "rebased float32 camera matrix; subtract Float64 renderOrigin before multiplying; TOP scale is the horizontal map reference frame",
+            "projectionMode": "perspective",
+            "renderOrigin": {
+              "x": 6507.8125,
+              "y": 51.3937606811523,
+              "z": 8382.8125
+            },
+            "uniformMetricScale": null,
+            "version": 1,
+            "viewportPixels": {
+              "height": 800,
+              "width": 1280
+            },
+            "worldId": "0de1e8948131f56a677a8e24e8ecbac8",
+            "worldToClip": [
+              1.40377295017242,
+              0,
+              0,
+              0,
+              0,
+              1.53090679645538,
+              -0.734501600265503,
+              -0.731721580028534,
+              0,
+              -1.64347362518311,
+              -0.684193253517151,
+              -0.681603610515594,
+              -31.2220115661621,
+              185.964889526367,
+              489.542755126953,
+              496.096557617188
+            ]
+          }
+        },
+        "style": "atlas",
+        "sourceLabelCount": 0,
+        "placedLabelIds": [],
+        "droppedLabels": [],
+        "legend": [
+          {
+            "id": "native-buildings",
+            "text": "B\u00e2timents",
+            "sourcePath": "urban.buildings",
+            "semantic": "native-buildings",
+            "count": 419,
+            "qualification": "Native building records retained in source packet; not GPU visibility"
+          },
+          {
+            "id": "roads",
+            "text": "Voirie",
+            "sourcePath": "urban.roads",
+            "semantic": "roads",
+            "count": 6,
+            "qualification": "Road records retained in source packet"
+          },
+          {
+            "id": "water",
+            "text": "Eau",
+            "sourcePath": "world.canonicalContext.fields.waterClass",
+            "semantic": "water",
+            "count": 9980,
+            "qualification": "Canonical source support nodes; not vector area or measured flow"
+          },
+          {
+            "id": "trees",
+            "text": "Arbres",
+            "sourcePath": "world.canonicalContext.fields.treeCover",
+            "semantic": "trees",
+            "count": 1033899,
+            "qualification": "Canonical tree-cover potential support nodes; not rendered or observed tree counts"
+          },
+          {
+            "id": "low-cover",
+            "text": "Couvert bas",
+            "sourcePath": "world.canonicalContext.fields.grassCover/shrubCover/litter",
+            "semantic": "low-cover",
+            "count": 1043864,
+            "qualification": "Canonical low-cover potential support nodes; not rendered instances"
+          },
+          {
+            "id": "recipe:mineral-soil",
+            "text": "Sol min\u00e9ral",
+            "sourcePath": "world.materials[0] / canonicalContext.fields.groundMaterial",
+            "semantic": "ground-recipe",
+            "count": 1007275,
+            "qualification": "Canonical ground recipe support nodes; not visible pixel area"
+          },
+          {
+            "id": "recipe:fractured-bedrock",
+            "text": "Roche fractur\u00e9e",
+            "sourcePath": "world.materials[1] / canonicalContext.fields.groundMaterial",
+            "semantic": "ground-recipe",
+            "count": 16,
+            "qualification": "Canonical ground recipe support nodes; not visible pixel area"
+          },
+          {
+            "id": "recipe:alluvial-bars",
+            "text": "Alluvions",
+            "sourcePath": "world.materials[7] / canonicalContext.fields.groundMaterial",
+            "semantic": "ground-recipe",
+            "count": 41285,
+            "qualification": "Canonical ground recipe support nodes; not visible pixel area"
+          }
+        ],
+        "gridMeters": null,
+        "gridLines": 0,
+        "scaleBar": null,
+        "fontFamily": "'Segoe UI', 'Helvetica Neue', Helvetica, Arial, 'Liberation Sans', sans-serif",
+        "title": "Vue urbaine",
+        "titleSource": "Explicit authored presentation text; not an inferred source toponym",
+        "titleReservedBounds": {
+          "x0": 360,
+          "y0": 24,
+          "x1": 920,
+          "y1": 72
+        },
+        "coverage": {
+          "raster": "Pinned original PNG, unchanged",
+          "overlay": "Shared label placement, font stack, panel primitives, frame, north and palette tokens",
+          "style": "Overlay only; captured raster presentation is not restyled",
+          "perspective": "Explicit matrix, source point elevations only; no uniform metric scale, north or RPG grid"
+        },
+        "unsupported": [
+          "SVG brush strokes, terrain hatching, labels absent from source, per-pixel occlusion and perspective path draping are not reconstructed"
+        ]
+      },
+      "pngSha256": "f5a62dc5f95edd3b63a8fc45cc0899c9cac64f6131687ae63edab4a15ff573bd",
+      "svgSha256": "f5e23fdc5fa8bcc958808d02941ea6505ad3347c4a39751b529ecee6dbfd7d88",
+      "bindingProofSha256": "5832f1d5a92d6c7d19e5fefaae953d9b16593d142f50c176dbcbab4ae326cc41",
+      "fontPolicy": "Existing shared system font stack, resolved locally by resvg; fonts are not embedded and pixel portability is not claimed.",
+      "rasterPolicy": "Original PNG embedded unchanged, not recolored or regenerated.",
+      "sourceLegendScope": "Native/road records in source packet; ground/cover counts are canonical support nodes overlapping the TOP frame, not area or GPU visibility."
+    }
+  ],
+  "copiedBlueprint": {
+    "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-v14-map-composition\\docs\\surface\\evidence\\native-city419-v14-blueprint.png",
+    "bytes": 273164,
+    "sha256": "c6ef6d7bc4656456c62c9e07a2ee2e5d85fe9aab1857fcd19f23fef6885fbc13"
+  },
+  "artifacts": [
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\native-current-419-v14-final\\capture-run.json",
+      "bytes": 338865,
+      "sha256": "5832f1d5a92d6c7d19e5fefaae953d9b16593d142f50c176dbcbab4ae326cc41"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\native-current-419-v14-final\\snapshot-before.json",
+      "bytes": 99763,
+      "sha256": "6265bbea825c2fb9b4bfd5c46f6c72d1f5cd99f84fae193b15c41d16bcf2b968"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\native-current-419-v14-final\\snapshot-after.json",
+      "bytes": 99763,
+      "sha256": "6265bbea825c2fb9b4bfd5c46f6c72d1f5cd99f84fae193b15c41d16bcf2b968"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\native-current-419-v14-final\\capture.py",
+      "bytes": 3873,
+      "sha256": "2daf6de5ad8a006e0a0f1544d153d581e44b47af82e0c8db0623cac8b45e4b62"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\native-current-419-v14-final\\blueprint-native-close-top.png",
+      "bytes": 88896,
+      "sha256": "c69ecb23fc11944e7553908834b1fa934634869b9ef121ce8068e909fb0d2452"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\native-current-419-v14-final\\blueprint-native-close-top.json",
+      "bytes": 131554,
+      "sha256": "cf3c954aae3b208099b0968b637b34a28223a8353aa2afba43b62ceeb8c70ca5"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\native-current-419-v14-final\\blueprint-native-close-top.stdout.log",
+      "bytes": 172281,
+      "sha256": "d69bb889347ae1440fb61c81ba703b850b433a2c777862097d9363fc7e6c0f07"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\native-current-419-v14-final\\blueprint-native-close-top.stderr.log",
+      "bytes": 470,
+      "sha256": "c5b2cb6ed43020d538861693b659678c20993158307d91b13fb81c90a666472d"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\native-current-419-v14-final\\aerial-native-close-oblique.png",
+      "bytes": 1230895,
+      "sha256": "0d491e0fea1a856cedd11956dcfca68bed600988208f366ea2276855b918d824"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\native-current-419-v14-final\\aerial-native-close-oblique.json",
+      "bytes": 139452,
+      "sha256": "9ec0bdb1aebbde8692e293fc807a8dfefb8a40ab4b5814d22fbb912f72101933"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\native-current-419-v14-final\\aerial-native-close-oblique.stdout.log",
+      "bytes": 199040,
+      "sha256": "05832df54c56d5f9927175c8dfa53142f942ed229707756232aa9c2680dd6405"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\native-current-419-v14-final\\aerial-native-close-oblique.stderr.log",
+      "bytes": 470,
+      "sha256": "c5b2cb6ed43020d538861693b659678c20993158307d91b13fb81c90a666472d"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\native-current-419-v14-final\\aerial-native-overall-top.png",
+      "bytes": 1373875,
+      "sha256": "6fc3f01ad2fdc0fa07006ee45ce8de48e449a40932072b418e14a50409140f2b"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\native-current-419-v14-final\\aerial-native-overall-top.json",
+      "bytes": 110964,
+      "sha256": "7386b02b100739361ded4ccef2e1b34f4b9dd95fa303aeda831263b3b1f152c8"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\native-current-419-v14-final\\aerial-native-overall-top.stdout.log",
+      "bytes": 167683,
+      "sha256": "9c23eecc53f0ca337ba46eaad60328d1165aad353a6994677ff4f21e94e60237"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\native-current-419-v14-final\\aerial-native-overall-top.stderr.log",
+      "bytes": 470,
+      "sha256": "c5b2cb6ed43020d538861693b659678c20993158307d91b13fb81c90a666472d"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\native-current-419-v14-final\\blueprint-map.svg",
+      "bytes": 139551,
+      "sha256": "7ad7bf9e41f3ece51c3c7fcd60d5953bad1055ce62fad2b58460d76aa165a03d"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\native-current-419-v14-final\\blueprint-map.png",
+      "bytes": 273164,
+      "sha256": "c6ef6d7bc4656456c62c9e07a2ee2e5d85fe9aab1857fcd19f23fef6885fbc13"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\native-current-419-v14-final\\blueprint-map.json",
+      "bytes": 8333,
+      "sha256": "2d347151bb882efd36e9abc4ae46ca4e6a3a16edcdb8aa04232a348aa77f146a"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\native-current-419-v14-final\\oblique-map.svg",
+      "bytes": 1649985,
+      "sha256": "f5e23fdc5fa8bcc958808d02941ea6505ad3347c4a39751b529ecee6dbfd7d88"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\native-current-419-v14-final\\oblique-map.png",
+      "bytes": 1584018,
+      "sha256": "f5a62dc5f95edd3b63a8fc45cc0899c9cac64f6131687ae63edab4a15ff573bd"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\native-current-419-v14-final\\oblique-map.json",
+      "bytes": 9616,
+      "sha256": "8bb55fb7bc88dd1dd067728948d8ecd9348a14b2081e2f2c4df61498a4d2dd11"
+    }
+  ],
+  "limits": [
+    "Static retained source, not fresh generation or navigation/performance qualification.",
+    "All three viewSatisfaction.covered remain false: finer source density / final512request required; image readiness is distinct from final source quality.",
+    "Urban counts254 / 335 / 419 are submitted batches, not GPU occlusion counts.",
+    "Oblique phase 2 uses5371 impostors and0 high-poly trees; overall phase 0 declares missing complete4 km page coverage.",
+    "PBR cache fixed-order cold/warm observations do not prove causal speedup or 60 FPS.",
+    "Native height interpolation image spacings do not increase the15.625 m source information.",
+    "The real rebased camera matrix is float32; renderOrigin stays float64 and is subtracted first.",
+    "Perspective composition has no uniform ruler/grid/north; there are 0 retained names, not invented labels.",
+    "Nine shared overlay palettes do not constitute qualification of 15 fully restyled native maps.",
+    "No artistic acceptance, physical-water widening, geodetic north or universal font portability claim."
+  ],
+  "compositionLegendScopes": {
+    "blueprint": "Canonical support nodes overlapping the exact TOP frame, plus native/road source records.",
+    "oblique": "Canonical context support nodes as a whole, plus native/road source records; eight entries do not imply every recipe is visible in the oblique image."
+  }
+}
