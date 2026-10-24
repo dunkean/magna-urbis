@@ -84,9 +84,10 @@ func _sampler(settings:Dictionary)->RID:
 	state.mag_filter=RenderingDevice.SAMPLER_FILTER_LINEAR if settings.get("mag")=="LINEAR" else RenderingDevice.SAMPLER_FILTER_NEAREST
 	state.mip_filter=RenderingDevice.SAMPLER_FILTER_LINEAR if str(settings.get("min","")).ends_with("MIPMAP_LINEAR") else RenderingDevice.SAMPLER_FILTER_NEAREST
 	if not str(settings.get("min","")).contains("MIPMAP"):state.max_lod=0.0
-	if settings.get("wrapS","CLAMP_TO_EDGE")!="CLAMP_TO_EDGE" or settings.get("wrapT","CLAMP_TO_EDGE")!="CLAMP_TO_EDGE":
+	var modes={"CLAMP_TO_EDGE":RenderingDevice.SAMPLER_REPEAT_MODE_CLAMP_TO_EDGE,"REPEAT":RenderingDevice.SAMPLER_REPEAT_MODE_REPEAT,"MIRRORED_REPEAT":RenderingDevice.SAMPLER_REPEAT_MODE_MIRRORED_REPEAT}
+	if not modes.has(settings.get("wrapS","CLAMP_TO_EDGE")) or not modes.has(settings.get("wrapT","CLAMP_TO_EDGE")):
 		_gpu_fail("Original sampler wrap mode is not supported");return RID()
-	state.repeat_u=RenderingDevice.SAMPLER_REPEAT_MODE_CLAMP_TO_EDGE;state.repeat_v=state.repeat_u;state.repeat_w=state.repeat_u
+	state.repeat_u=modes[settings.get("wrapS","CLAMP_TO_EDGE")];state.repeat_v=modes[settings.get("wrapT","CLAMP_TO_EDGE")];state.repeat_w=RenderingDevice.SAMPLER_REPEAT_MODE_CLAMP_TO_EDGE
 	return keep(rd.sampler_create(state))
 
 func _active_bindings(spirv:RDShaderSPIRV)->Dictionary:
@@ -112,6 +113,7 @@ func _initialize_gpu()->void:
 		var bytes=FileAccess.get_file_as_bytes(path)
 		textures[key]=_texture(int(info.width),int(info.height),str(info.format),maxi(1,info.get("mips",[]).size()),bytes)
 		samplers[key]=_sampler(info.get("sampler",{}))
+		if not samplers[key].is_valid():return
 		if not textures[key].is_valid():_gpu_fail("Could not upload original raster: "+str(key));return
 	textures["empty"]=_texture(1,1,"R8",1,PackedByteArray([0]));samplers["empty"]=_sampler({})
 	var array_format:=RDTextureFormat.new();array_format.width=1;array_format.height=1
@@ -120,7 +122,12 @@ func _initialize_gpu()->void:
 	textures["empty-array"]=keep(rd.texture_create(array_format,RDTextureView.new(),[PackedByteArray([0,0,0,0])]))
 	samplers["empty-array"]=samplers["empty"]
 	var output_key=str(scene.get("outputTarget","screen"))
+	var needed_targets:Dictionary={output_key:true}
+	for draw in scene.draws:
+		needed_targets[str(draw.get("target","screen"))]=true
+		for key in draw.get("textures",{}).values():needed_targets[str(key)]=true
 	for key in scene.get("targets",{}):
+		if not needed_targets.has(key):continue
 		textures[key]=_texture(size.x,size.y,"RGBA8",1,PackedByteArray(),true)
 		samplers[key]=_sampler({"min":"LINEAR","mag":"LINEAR"})
 		targets[key]=keep(rd.framebuffer_create([textures[key]]))
