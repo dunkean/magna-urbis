@@ -2,6 +2,9 @@ extends SceneTree
 const Vegetation=preload("res://adapters/surface_vegetation_library.gd")
 const Prepare=preload("res://adapters/surface_scene_prepare.gd")
 var checks:=0
+func mip_pixel(image:Image)->Color:
+	var offset=image.get_mipmap_offset(1)
+	return Image.create_from_data(1,1,false,Image.FORMAT_RGBAH,image.get_data().slice(offset,offset+8)).get_pixel(0,0)
 class TestViewer:
 	extends "res://scene/main.gd"
 	func _ready()->void:pass
@@ -36,7 +39,17 @@ func _run()->void:
 	var second=Vegetation.new();check(second.load_manifest(args[0]),second.last_error)
 	check(second.version.digest==library.version.digest,"repeat load same digest")
 	var mat=library.material();check(mat.shader.get_shader_uniform_list().size()>0,"shader parser, not GPU compilation")
-	for role in ["baseColor","normal","arm","alpha"]:check(mat.get_shader_parameter(role+"_texture")!=null,"all maps bound")
+	for role in ["baseColor","normal","arm"]:check(mat.get_shader_parameter(role+"_texture")!=null,"all packed maps bound")
+	var probe_maps={}
+	for role in ["baseColor","normal","arm","alpha"]:probe_maps[role]=Image.create(2,2,false,Image.FORMAT_RGBAF)
+	probe_maps.baseColor.fill(Color(.5,.5,.5,1));probe_maps.alpha.fill(Color(1,1,1,1));probe_maps.normal.fill(Color(.5,.5,1,1));probe_maps.arm.fill(Color(1,.7,0,1))
+	probe_maps.baseColor.set_pixel(0,0,Color(1,0,0,1));probe_maps.alpha.set_pixel(0,0,Color(0,0,0,1))
+	var packed=Vegetation.prepare_maps(probe_maps);var expected=Color(.5,.5,.5).srgb_to_linear().r
+	var last=mip_pixel(packed.images.baseColor)
+	check(absf(last.a-.75)<.001 and absf(last.r/last.a-expected)<.001,"mip colour linear and alpha weighted, invisible red excluded")
+	var response=mip_pixel(packed.images.arm)
+	check(absf(response.g/response.a-.7)<.001,"roughness coverage aware")
+	check(absf(packed.meanLinear.x-expected)<.000001,"full-source linear mean")
 	var viewer=TestViewer.new();viewer.vegetation_library=library
 	root.add_child(viewer);viewer.set_process(false);viewer.add_child(viewer.camera);viewer.add_child(viewer.objects)
 	viewer.rendered_presentation_mode="aerial";viewer._build_populations({"candidateCount":7,"selectedCount":7,"families":{"grass":candidates},"buffers":{"grass":buffer}})

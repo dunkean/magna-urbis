@@ -43,7 +43,7 @@ node web/scripts/surface_viewer.mjs --world world.surfacebin --assets web/out/su
 ```
 
 The aerial grass path uses three real-mesh MultiMeshes, source albedo/NormalGL/
-ARM/alpha maps, a measured alpha-weighted linear texture mean and the existing
+ARM/alpha maps, a full-source alpha-weighted linear texture mean and the existing
 candidate mean tint and physical pixel fade. The same main-camera fade applies
 in shadow passes. Source candidate buffers remain byte-identical, merely
 partitioned by `candidate.variant % 3`. No grass is added or removed. Low-cover
@@ -52,6 +52,17 @@ source-palette glyph path; a missing optional manifest retains the old prototype
 explicitly, while an explicitly supplied invalid manifest fails startup.
 `renderSourceVersion.vegetationAssets` records the loaded geometry/map hashes,
 normalization, variant counts and renderer pipeline digest.
+
+All three response textures are packed as linear RGBAH, with RGB premultiplied by
+the source alpha. Mipmaps are generated **after** base-colour sRGB decoding and
+premultiplication. The shader divides by filtered alpha, then normalizes the
+normal and applies the mean tint. It does not request a second source-colour
+decode. ARM and normal filtering also exclude invisible atlas texels. The TBN
+uses an orthogonal cross-product binormal and measured handedness under
+nonuniform transforms. This startup preparation is performed once per manifest
+load, not during population refreshes; its real startup/VRAM cost is not yet
+qualified. A two-load headless test takes approximately four seconds on this
+machine; that is not a GPU or end-to-end benchmark.
 
 CPU extraction/hash/parity and pinned-engine headless ArrayMesh/buffer/layer/
 shader-parser tests are qualified. Rendering, alpha filtering, normal response

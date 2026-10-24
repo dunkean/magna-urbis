@@ -1,7 +1,7 @@
 class_name SurfaceVegetationLibrary
 extends RefCounted
 
-const PIPELINE_VERSION="grass-textured-linear-tbn-hash-v1"
+const PIPELINE_VERSION="grass-linear-premul-rgbah-mips-orthogonal-tbn-v2"
 var variants:Array=[]
 var textures:Dictionary={}
 var mean_linear:=Vector3.ONE
@@ -41,25 +41,34 @@ func load_manifest(path:String)->bool:
 		var image=Image.new()
 		if image.load(source_path)!=OK or image.is_empty() or image.get_width()>2048 or image.get_height()>2048:return _fail("invalid vegetation map: "+role)
 		images[role]=image;hashes[role]=source.sha256
-	# Normalize the source texture around its alpha-weighted linear mean. The existing
-	# candidate colour stays a mean-response tint; photographic detail is not multiplied
-	# by the already dark mean a second time. This affects renderer response only.
-	var sum:=Vector3.ZERO;var weight:=0.0
-	var base:Image=images.baseColor;var alpha:Image=images.alpha
-	if base.get_size()!=alpha.get_size():return _fail("vegetation alpha dimensions mismatch")
-	for y in range(0,base.get_height(),8):
-		for x in range(0,base.get_width(),8):
-			var a=alpha.get_pixel(x,y).r;var color=base.get_pixel(x,y).srgb_to_linear()
-			sum+=Vector3(color.r,color.g,color.b)*a;weight+=a
-	if weight<=0:return _fail("empty vegetation alpha")
-	mean_linear=(sum/weight).max(Vector3(.0001,.0001,.0001))
-	for role in images:
-		var image:Image=images[role];image.generate_mipmaps(role=="normal")
-		textures[role]=ImageTexture.create_from_image(image)
-	var descriptor={"pipelineVersion":PIPELINE_VERSION,"assetId":asset.id,"license":asset.license,"hashes":hashes,"variantPolicy":asset.variantPolicy,"sourceMeanLinear":[mean_linear.x,mean_linear.y,mean_linear.z],"meanSamplingStride":8,"variants":[]}
+	var packed=prepare_maps(images)
+	if packed.is_empty():return _fail("invalid vegetation alpha/map dimensions")
+	mean_linear=packed.meanLinear
+	for role in packed.images:textures[role]=ImageTexture.create_from_image(packed.images[role])
+	var descriptor={"pipelineVersion":PIPELINE_VERSION,"assetId":asset.id,"license":asset.license,"hashes":hashes,"variantPolicy":asset.variantPolicy,"sourceMeanLinear":[mean_linear.x,mean_linear.y,mean_linear.z],"meanSamplingStride":1,"texturePacking":"RGBAH premultiplied RGB / source alpha; linear mipmaps; albedo manually decoded before packing; no sampler source_color","variants":[]}
 	for item in variants:descriptor.variants.append({"id":item.id,"triangleCount":item.triangleCount,"normalization":item.normalization})
 	descriptor["available"]=true;descriptor["digest"]=JSON.stringify(descriptor).sha256_text();version=descriptor
 	return true
+
+# Filter all response channels with coverage. Transparent atlas pixels must not
+# pollute colour, roughness or the normal when a blade becomes subpixel. A single
+# alpha participates in both numerator and divisor at every mip/filter level.
+static func prepare_maps(images:Dictionary)->Dictionary:
+	var base:Image=images.baseColor;var alpha:Image=images.alpha
+	for role in ["alpha","normal","arm"]:
+		if images[role].get_size()!=base.get_size():return {}
+	var packed={};var sum:=Vector3.ZERO;var weight:=0.0
+	for role in ["baseColor","normal","arm"]:packed[role]=Image.create(base.get_width(),base.get_height(),false,Image.FORMAT_RGBAH)
+	for y in base.get_height():
+		for x in base.get_width():
+			var a=alpha.get_pixel(x,y).r;var color=base.get_pixel(x,y).srgb_to_linear()
+			sum+=Vector3(color.r,color.g,color.b)*a;weight+=a
+			packed.baseColor.set_pixel(x,y,Color(color.r*a,color.g*a,color.b*a,a))
+			for role in ["normal","arm"]:
+				var value=images[role].get_pixel(x,y);packed[role].set_pixel(x,y,Color(value.r*a,value.g*a,value.b*a,a))
+	if weight<=0:return {}
+	for role in packed:packed[role].generate_mipmaps()
+	return {"images":packed,"meanLinear":(sum/weight).max(Vector3(.0001,.0001,.0001))}
 
 static func validate_variant(value)->bool:
 	if not value is Dictionary:return false
