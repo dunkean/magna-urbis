@@ -1,0 +1,1578 @@
+{
+  "format": "magna-tree-albedo-encoding-correction",
+  "version": 1,
+  "status": "measured-encoding-error-corrected-in-control",
+  "offlineProof": {
+    "policy": "pinned16bit sRGB RGB exact, normalized cutout alpha8 expanded exactly to16bit; append-only GLB BIN image replacement",
+    "sourceDiffuse": {
+      "path": "textures/tree_small_02_leaves_diff_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Models/png/1k/tree_small_02/tree_small_02_leaves_diff_1k.png",
+      "bytes": 2338424,
+      "sha256": "d3fc48522c76aa1f91076c6b86f302669822ebe4e2acabd67d42c4d57eaa5ba0"
+    },
+    "inputGlbSha256": "e1126e5bc1e8074ec262083a0323ceb03ec177fb7b111b980415e9626e628889",
+    "outputGlbSha256": "b6d29721da4b47dcbe7cab34c4180ee18c766558fe0341bc9a2889992a3eb93b",
+    "inputEmbeddedPngSha256": "15472e49ef078351bddcd76f4dbe0faac82a96fafc96148627f03838d0521fab",
+    "outputEmbeddedPngSha256": "b009396e3de9def4edda3342594586f818d4f7e9dbc21fde0c4b1791880d4573",
+    "originalBinPrefixSha256": "a3b77b29427d7579ed049eaba837b6eae931ceffc70f624cba763ed8a19e5ccc",
+    "allOriginalBinBytesRetained": true,
+    "geometryAccessorsMeshesUVNormalsTangentsMaterialsUnchanged": true,
+    "source16bitRGBExact": true,
+    "alpha8PlaneByteExact": true,
+    "alphaNormalizedValuesExact": true,
+    "originalEncodedRGBMean": [
+      0.4008446582519512,
+      0.46741336785499366,
+      0.22949935983630804
+    ],
+    "inputEmbeddedEncodedRGBMean": [
+      0.13754996277518464,
+      0.1833861118908545,
+      0.0432205234266722
+    ],
+    "sourceDecodedLinearMean": [
+      0.1433699952172984,
+      0.19193702139048777,
+      0.045414284014582196
+    ],
+    "inputEmbeddedMeanAbsoluteErrorToSourceLinear": [
+      0.006392290075910196,
+      0.009647025026348769,
+      0.003043565810011663
+    ],
+    "negativeProductPreserved": "D:\\workspace\\self\\_worktrees\\magna-urbis-vegetation-assets-2026-10-24\\web\\out\\vegetation-tree\\prepared-root-pivot-1024",
+    "scope": "Offline encoding correction only. Source texture/canonical fields/candidates/CVmask/lookup/geometry unchanged. Does not fix roughness or normal-response differences.",
+    "imageTool": {
+      "name": "OpenCV",
+      "version": "4.13.0",
+      "threads": 1,
+      "operations": "CPU PNG decode/encode only; no GPU"
+    }
+  },
+  "correctedManifest": {
+    "albedoEncodingCorrection": {
+      "allOriginalBinBytesRetained": true,
+      "alpha8PlaneByteExact": true,
+      "alphaNormalizedValuesExact": true,
+      "geometryAccessorsMeshesUVNormalsTangentsMaterialsUnchanged": true,
+      "imageTool": {
+        "name": "OpenCV",
+        "operations": "CPU PNG decode/encode only; no GPU",
+        "threads": 1.0,
+        "version": "4.13.0"
+      },
+      "inputEmbeddedEncodedRGBMean": [
+        0.13754996277518464,
+        0.1833861118908545,
+        0.0432205234266722
+      ],
+      "inputEmbeddedMeanAbsoluteErrorToSourceLinear": [
+        0.00639229007591019,
+        0.00964702502634876,
+        0.00304356581001166
+      ],
+      "inputEmbeddedPngSha256": "15472e49ef078351bddcd76f4dbe0faac82a96fafc96148627f03838d0521fab",
+      "inputGlbSha256": "e1126e5bc1e8074ec262083a0323ceb03ec177fb7b111b980415e9626e628889",
+      "negativeProductPreserved": "D:\\workspace\\self\\_worktrees\\magna-urbis-vegetation-assets-2026-10-24\\web\\out\\vegetation-tree\\prepared-root-pivot-1024",
+      "originalBinPrefixSha256": "a3b77b29427d7579ed049eaba837b6eae931ceffc70f624cba763ed8a19e5ccc",
+      "originalEncodedRGBMean": [
+        0.4008446582519512,
+        0.46741336785499366,
+        0.22949935983630804
+      ],
+      "outputEmbeddedPngSha256": "b009396e3de9def4edda3342594586f818d4f7e9dbc21fde0c4b1791880d4573",
+      "outputGlbSha256": "b6d29721da4b47dcbe7cab34c4180ee18c766558fe0341bc9a2889992a3eb93b",
+      "policy": "pinned16bit sRGB RGB exact, normalized cutout alpha8 expanded exactly to16bit; append-only GLB BIN image replacement",
+      "scope": "Offline encoding correction only. Source texture/canonical fields/candidates/CVmask/lookup/geometry unchanged. Does not fix roughness or normal-response differences.",
+      "source16bitRGBExact": true,
+      "sourceDecodedLinearMean": [
+        0.1433699952172984,
+        0.19193702139048777,
+        0.04541428401458219
+      ],
+      "sourceDiffuse": {
+        "bytes": 2338424.0,
+        "path": "textures/tree_small_02_leaves_diff_1k.png",
+        "sha256": "d3fc48522c76aa1f91076c6b86f302669822ebe4e2acabd67d42c4d57eaa5ba0",
+        "url": "https://dl.polyhaven.org/file/ph-assets/Models/png/1k/tree_small_02/tree_small_02_leaves_diff_1k.png"
+      }
+    },
+    "digest": "74edf966059a17fd44df22d24f4ee055f780d84196ee9c54703fa3b9e46ecbe9",
+    "experimental": true,
+    "format": "magna-tree-render-assets",
+    "highMaxInstances": 14.0,
+    "highMinPixels": 500.0,
+    "highTriangleBudget": 2000000.0,
+    "license": "CC0-1.0",
+    "lookup": {
+      "length": 257.0,
+      "opticalCalibrationDigest": "123d9a583a81bb4052a8cf07d5b25a302dcfa1881f873ce21ca2093d204178f3",
+      "path": "optical-mean.f32",
+      "sha256": "9416a33d91c2a1ad29266b3ffff0e75e51581fcc286e538e133ba81faea5575e"
+    },
+    "mask": {
+      "antialiasSamples": 8.0,
+      "bytes": 1048576.0,
+      "coordinateSystem": "x-east,y-up,z-map-y; row0=minZ; centered normalized crown",
+      "format": "linear-coverage-u8",
+      "height": 1024.0,
+      "originX": -1.0989257812500002,
+      "originZ": -1.0989257812500002,
+      "path": "near-top-alpha.a8",
+      "sha256": "d8003443e128493539055f6add11b11e7176aa2cfdc1316d982f3c4d7b864cec",
+      "source": "this exact prepared mesh and cutout policy, not a crown disc",
+      "sourceLeafAlphaScissorThreshold": 0.5,
+      "spacing": 0.0021484375,
+      "width": 1024.0
+    },
+    "meanLinear": [
+      0.08989705710331986,
+      0.1429378069224048,
+      0.04478493843826035
+    ],
+    "normalization": {
+      "physicalBinding": "height=candidate.size; horizontal radius=candidate.crownRadiusM; root=candidate position",
+      "pivotPolicy": "median XY of source vertices in bottom1% of measured height; Z=min; no crown-bbox recentering",
+      "preparedCrownRadius": 1.0,
+      "preparedHeight": 1.0,
+      "sourceBottomPivot": [
+        0.00592995714396238,
+        0.01249235868453979,
+        -0.02419423125684261
+      ],
+      "sourceCoordinates": "Blender horizontal X/Y, Z-up; export glTF x-east,y-up,z=-BlenderY",
+      "sourceCrownRadius": 2.939949990382095,
+      "sourceHeight": 4.564037313684821,
+      "sourceSupportVertexCount": 52.0
+    },
+    "pipelineVersion": "tree-render-cpu-packed-v1",
+    "scope": "experimental; shared top cutout C/V; oblique view-indexed planar depth approximation",
+    "sourceAssetDigest": "448060befa93602b93cab63e08419335b75d651a0eab3dee9b7819f19761148c",
+    "sourceGeometry": {
+      "actualNormalizedBounds": {
+        "max": [
+          0.5471552014350891,
+          0.4677751958370209,
+          1.0003167390823364
+        ],
+        "maximumHorizontalRadius": 0.9999999848737432,
+        "min": [
+          -0.4480854868888855,
+          -0.9944528341293336,
+          -9.32112834561849e-06
+        ]
+      },
+      "actualTriangles": 134295.0,
+      "budget": 134295.0,
+      "bytes": 38905400.0,
+      "decimationPassTriangles": [
+        7991.0
+      ],
+      "lod": "near",
+      "path": "near.glb",
+      "prepareSeconds": 10.632548299996415,
+      "sha256": "b6d29721da4b47dcbe7cab34c4180ee18c766558fe0341bc9a2889992a3eb93b",
+      "surfaces": 3.0,
+      "views": [
+        {
+          "alphaAreaToCanonicalDisc": 0.21483661727733153,
+          "alphaMaskPolicy": "alpha channel of this same albedo product; no independent procedural silhouette",
+          "alphaWeightedMeanLinear": [
+            0.08989705710331986,
+            0.1429378069224048,
+            0.04478493843826035
+          ],
+          "binaryAlphaAreaToCanonicalDisc": 0.22157018313215385,
+          "binaryAlphaScissorThreshold": 0.5,
+          "cameraPosition": [
+            0.0,
+            0.0,
+            5.5
+          ],
+          "name": "top",
+          "orthoScale": 2.2,
+          "products": {
+            "albedo": {
+              "bytes": 1239650.0,
+              "colorSpace": "srgb",
+              "path": "near-top-albedo.png",
+              "sha256": "ec8576ac7bbbaee9e614014592b663b7a5f8afad1a0bcc844f1f890b6b18f74d"
+            },
+            "normal": {
+              "bytes": 1280284.0,
+              "colorSpace": "linear-world-normal-encoded",
+              "path": "near-top-normal.png",
+              "sha256": "0ee09f67df33e21deea5b2b35e5f35c94ec162d4fa1e6f7b99af1371b51d54f0"
+            }
+          },
+          "resolution": 1024.0,
+          "sharedMask": {
+            "antialiasSamples": 8.0,
+            "bytes": 1048576.0,
+            "coordinateSystem": "x-east,y-up,z-map-y; row0=minZ; centered normalized crown",
+            "format": "linear-coverage-u8",
+            "height": 1024.0,
+            "originX": -1.0989257812500002,
+            "originZ": -1.0989257812500002,
+            "path": "near-top-alpha.a8",
+            "sha256": "d8003443e128493539055f6add11b11e7176aa2cfdc1316d982f3c4d7b864cec",
+            "source": "this exact prepared mesh and cutout policy, not a crown disc",
+            "sourceLeafAlphaScissorThreshold": 0.5,
+            "spacing": 0.0021484375,
+            "width": 1024.0
+          },
+          "target": [
+            0.0,
+            0.0,
+            0.5
+          ]
+        },
+        {
+          "cameraPosition": [
+            3.5350000858306885,
+            0.0,
+            4.034999847412109
+          ],
+          "name": "oblique-0",
+          "orthoScale": 2.2,
+          "products": {
+            "albedo": {
+              "bytes": 1105530.0,
+              "colorSpace": "srgb",
+              "path": "near-oblique-0-albedo.png",
+              "sha256": "0a77138a62607820942a18792cbea6a954ab572a57df053d0ca4f8360a35f1f4"
+            },
+            "normal": {
+              "bytes": 1142514.0,
+              "colorSpace": "linear-world-normal-encoded",
+              "path": "near-oblique-0-normal.png",
+              "sha256": "ee226750305bd1a3c0d57605a5e63209811003d4cd942fb2ed54223498adf5a5"
+            }
+          },
+          "resolution": 1024.0,
+          "target": [
+            0.0,
+            0.0,
+            0.5
+          ]
+        },
+        {
+          "cameraPosition": [
+            2.1645631829041086e-16,
+            3.5350000858306885,
+            4.034999847412109
+          ],
+          "name": "oblique-1",
+          "orthoScale": 2.2,
+          "products": {
+            "albedo": {
+              "bytes": 1058992.0,
+              "colorSpace": "srgb",
+              "path": "near-oblique-1-albedo.png",
+              "sha256": "1bb571c2fcf22404e92f8b0c341cbaec42be8cda3ae5b691279f806ef154d665"
+            },
+            "normal": {
+              "bytes": 1094682.0,
+              "colorSpace": "linear-world-normal-encoded",
+              "path": "near-oblique-1-normal.png",
+              "sha256": "b9e003b3895e33b9a10212878535134f0736f52a9b32d26d2cd98920ec920591"
+            }
+          },
+          "resolution": 1024.0,
+          "target": [
+            0.0,
+            0.0,
+            0.5
+          ]
+        },
+        {
+          "cameraPosition": [
+            -3.5350000858306885,
+            4.3291263658082172e-16,
+            4.034999847412109
+          ],
+          "name": "oblique-2",
+          "orthoScale": 2.2,
+          "products": {
+            "albedo": {
+              "bytes": 1072914.0,
+              "colorSpace": "srgb",
+              "path": "near-oblique-2-albedo.png",
+              "sha256": "4e4a4c19ab99c4586bc62341cb59644582bac4494e3ebf5c64defeadb8a73ae4"
+            },
+            "normal": {
+              "bytes": 1108772.0,
+              "colorSpace": "linear-world-normal-encoded",
+              "path": "near-oblique-2-normal.png",
+              "sha256": "559d72ac0e923aa7f3db23a18f560ddd257551b35d274a965f2da483e7061ef1"
+            }
+          },
+          "resolution": 1024.0,
+          "target": [
+            0.0,
+            0.0,
+            0.5
+          ]
+        },
+        {
+          "cameraPosition": [
+            -6.493689681061224e-16,
+            -3.5350000858306885,
+            4.034999847412109
+          ],
+          "name": "oblique-3",
+          "orthoScale": 2.2,
+          "products": {
+            "albedo": {
+              "bytes": 973593.0,
+              "colorSpace": "srgb",
+              "path": "near-oblique-3-albedo.png",
+              "sha256": "0cab871159da55fa5d711f0b42f37ce864517ed64207951642070e48ee59d83e"
+            },
+            "normal": {
+              "bytes": 1008263.0,
+              "colorSpace": "linear-world-normal-encoded",
+              "path": "near-oblique-3-normal.png",
+              "sha256": "396ce2e32d31d26c5bc07b1ac715717a654ee240f6f563c98828c8316f273d58"
+            }
+          },
+          "resolution": 1024.0,
+          "target": [
+            0.0,
+            0.0,
+            0.5
+          ]
+        }
+      ]
+    },
+    "version": 1.0,
+    "views": [
+      {
+        "cameraPosition": [
+          0.0,
+          0.0,
+          5.5
+        ],
+        "name": "top",
+        "orthoScale": 2.2,
+        "products": {
+          "color": {
+            "bytes": 11184808.0,
+            "format": "linear-premultiplied-rgba16f",
+            "height": 1024.0,
+            "mipmaps": true,
+            "path": "top-color.rgbah",
+            "sha256": "2c38128d7ddd30e9a3dc431152381956842a6d75df533db4e2342273205639a9",
+            "width": 1024.0
+          },
+          "normal": {
+            "bytes": 11184808.0,
+            "format": "linear-premultiplied-rgba16f",
+            "height": 1024.0,
+            "mipmaps": true,
+            "path": "top-normal.rgbah",
+            "sha256": "39ad050be271074067f5999fa693a23dde4c12c4f1111c03bbed7de540fd268a",
+            "width": 1024.0
+          }
+        },
+        "target": [
+          0.0,
+          0.0,
+          0.5
+        ]
+      },
+      {
+        "cameraPosition": [
+          3.5350000858306885,
+          0.0,
+          4.034999847412109
+        ],
+        "name": "oblique-0",
+        "orthoScale": 2.2,
+        "products": {
+          "color": {
+            "bytes": 11184808.0,
+            "format": "linear-premultiplied-rgba16f",
+            "height": 1024.0,
+            "mipmaps": true,
+            "path": "oblique-0-color.rgbah",
+            "sha256": "d71291c470a4230c35e34009deaf414ebbaed04a679fc4a6d15ba809f32a40f4",
+            "width": 1024.0
+          },
+          "normal": {
+            "bytes": 11184808.0,
+            "format": "linear-premultiplied-rgba16f",
+            "height": 1024.0,
+            "mipmaps": true,
+            "path": "oblique-0-normal.rgbah",
+            "sha256": "98a34e5faa2368d03424b60c799b7f5068ee83d643671043512c3864a037a7e3",
+            "width": 1024.0
+          }
+        },
+        "target": [
+          0.0,
+          0.0,
+          0.5
+        ]
+      },
+      {
+        "cameraPosition": [
+          2.1645631829041086e-16,
+          3.5350000858306885,
+          4.034999847412109
+        ],
+        "name": "oblique-1",
+        "orthoScale": 2.2,
+        "products": {
+          "color": {
+            "bytes": 11184808.0,
+            "format": "linear-premultiplied-rgba16f",
+            "height": 1024.0,
+            "mipmaps": true,
+            "path": "oblique-1-color.rgbah",
+            "sha256": "c75ba93c73f174991170863dc59f25d68eaa40aa29181660996247bffd920e7a",
+            "width": 1024.0
+          },
+          "normal": {
+            "bytes": 11184808.0,
+            "format": "linear-premultiplied-rgba16f",
+            "height": 1024.0,
+            "mipmaps": true,
+            "path": "oblique-1-normal.rgbah",
+            "sha256": "6823a2b8cb6d561303b86ec6534b5185ceb313235c4a66063ecad7769e7a83ee",
+            "width": 1024.0
+          }
+        },
+        "target": [
+          0.0,
+          0.0,
+          0.5
+        ]
+      },
+      {
+        "cameraPosition": [
+          -3.5350000858306885,
+          4.3291263658082172e-16,
+          4.034999847412109
+        ],
+        "name": "oblique-2",
+        "orthoScale": 2.2,
+        "products": {
+          "color": {
+            "bytes": 11184808.0,
+            "format": "linear-premultiplied-rgba16f",
+            "height": 1024.0,
+            "mipmaps": true,
+            "path": "oblique-2-color.rgbah",
+            "sha256": "3caed21d45e48b7d765facaf952ad52a3f64ee04782de71a9cb8d55b0378e0d4",
+            "width": 1024.0
+          },
+          "normal": {
+            "bytes": 11184808.0,
+            "format": "linear-premultiplied-rgba16f",
+            "height": 1024.0,
+            "mipmaps": true,
+            "path": "oblique-2-normal.rgbah",
+            "sha256": "64f193f73393d42dc6a6fd4688dbc6f15b88b19aaae52f1f97f8c2051cd2d810",
+            "width": 1024.0
+          }
+        },
+        "target": [
+          0.0,
+          0.0,
+          0.5
+        ]
+      },
+      {
+        "cameraPosition": [
+          -6.493689681061224e-16,
+          -3.5350000858306885,
+          4.034999847412109
+        ],
+        "name": "oblique-3",
+        "orthoScale": 2.2,
+        "products": {
+          "color": {
+            "bytes": 11184808.0,
+            "format": "linear-premultiplied-rgba16f",
+            "height": 1024.0,
+            "mipmaps": true,
+            "path": "oblique-3-color.rgbah",
+            "sha256": "790da324acb394c40cf2b106d91fb3ee766fb2350e84daf3d16b682bc4aba655",
+            "width": 1024.0
+          },
+          "normal": {
+            "bytes": 11184808.0,
+            "format": "linear-premultiplied-rgba16f",
+            "height": 1024.0,
+            "mipmaps": true,
+            "path": "oblique-3-normal.rgbah",
+            "sha256": "46cd814de8c26fff3de6067089e0f014788117fe09356c275ec2b05e69ca8922",
+            "width": 1024.0
+          }
+        },
+        "target": [
+          0.0,
+          0.0,
+          0.5
+        ]
+      }
+    ]
+  },
+  "before": {
+    "adapter": "NVIDIA GeForce RTX 5090",
+    "assetDigest": "e3243d0df97653ccdaecf9e9a22e49d488fdc9a6e5253813bff76ed384ef4bde",
+    "backend": "forward_plus",
+    "camera": {
+      "projection": "orthographic-top",
+      "resolution": [
+        768,
+        768
+      ],
+      "treeDiameterPixels": 522.35518464,
+      "widthM": 20
+    },
+    "comparisons": {
+      "albedo": {
+        "commonVisiblePixels": 45033,
+        "meanAbsoluteLinearRGB": [
+          0.0801179260015488,
+          0.124037064611912,
+          0.0412799939513206
+        ],
+        "meanNormalAngleDegrees": 0.0
+      },
+      "lit": {
+        "commonVisiblePixels": 45033,
+        "meanAbsoluteLinearRGB": [
+          0.0741607025265694,
+          0.103846326470375,
+          0.0268117729574442
+        ],
+        "meanNormalAngleDegrees": 0.0
+      },
+      "normal": {
+        "commonVisiblePixels": 45033,
+        "meanAbsoluteLinearRGB": [
+          0.136418923735619,
+          0.0947524458169937,
+          0.137214779853821
+        ],
+        "meanNormalAngleDegrees": 29.072416232815
+      },
+      "normal-no-face-flip": {
+        "commonVisiblePixels": 45033,
+        "meanAbsoluteLinearRGB": [
+          0.146453842520714,
+          0.107271417975426,
+          0.145600467920303
+        ],
+        "meanNormalAngleDegrees": 32.4545476807217
+      },
+      "roughness": {
+        "commonVisiblePixels": 45033,
+        "meanAbsoluteLinearRGB": [
+          0.420723617076874,
+          0.420723617076874,
+          0.420723617076874
+        ],
+        "meanNormalAngleDegrees": 0.0
+      }
+    },
+    "format": "tree-common-transform-brdf-diagnostic",
+    "importedMaterial": [
+      {
+        "albedoFactor": "(1.0, 1.0, 1.0, 1.0)",
+        "name": "tree_small_02_branches",
+        "normalScale": 1.0,
+        "roughnessChannel": 1,
+        "roughnessFactor": 1.0,
+        "uvOffset": "(0.0, 0.4, 0.0)",
+        "uvScale": "(3.0, 0.6, 1.0)"
+      },
+      {
+        "albedoFactor": "(1.0, 1.0, 1.0, 1.0)",
+        "name": "tree_small_02_leaves-prepared-cutout",
+        "normalScale": 1.0,
+        "roughnessChannel": 1,
+        "roughnessFactor": 1.0,
+        "uvOffset": "(0.0, 0.0, 0.0)",
+        "uvScale": "(1.0, 1.0, 1.0)"
+      },
+      {
+        "albedoFactor": "(1.0, 1.0, 1.0, 1.0)",
+        "name": "tree_small_02_trunk",
+        "normalScale": 1.0,
+        "roughnessChannel": 1,
+        "roughnessFactor": 1.0,
+        "uvOffset": "(0.0, 0.0, 0.0)",
+        "uvScale": "(1.0, 1.0, 1.0)"
+      }
+    ],
+    "lightDirection": [
+      -0.354585230350494,
+      0.743144869804382,
+      0.567454993724823
+    ],
+    "readbackCalibration": {
+      "decodedLinear": [
+        0.250158280134201,
+        0.502886474132538,
+        0.752942204475403
+      ],
+      "encoded": [
+        0.537254929542542,
+        0.737254917621613,
+        0.882352948188782
+      ]
+    },
+    "scope": "Same actual MultiMesh high/impostor transforms. Production shaders with explicit diagnostic channel overrides; fixed neutral ambient plus source sun, linear tone mapping. Direct sky/GI/optical ground shadow not reproduced. Diagnostic, no artistic pass verdict.",
+    "summaries": {
+      "albedo": {
+        "high": {
+          "downwardNormalPixels": 0,
+          "frontPixels": 0,
+          "meanLinearRGB": [
+            0.0181823037564754,
+            0.0283371936529875,
+            0.00826842244714499
+          ],
+          "meanNormal": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "meanPositiveDotSun": 0.0,
+          "normalMeanLength": 0.0,
+          "pixels": 45035,
+          "secondMomentRGB": [
+            0.00174254795098604,
+            0.00163509300708824,
+            0.000574927818660031
+          ]
+        },
+        "impostor": {
+          "downwardNormalPixels": 0,
+          "frontPixels": 0,
+          "meanLinearRGB": [
+            0.0951569005846977,
+            0.151219263672829,
+            0.0472550988197327
+          ],
+          "meanNormal": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "meanPositiveDotSun": 0.0,
+          "normalMeanLength": 0.0,
+          "pixels": 47243,
+          "secondMomentRGB": [
+            0.00958985000299317,
+            0.0233646758845226,
+            0.00237901245657219
+          ]
+        }
+      },
+      "coverage": {
+        "high": {
+          "downwardNormalPixels": 0,
+          "frontPixels": 0,
+          "meanLinearRGB": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "meanNormal": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "meanPositiveDotSun": 0.0,
+          "normalMeanLength": 0.0,
+          "pixels": 45035,
+          "secondMomentRGB": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "impostor": {
+          "downwardNormalPixels": 0,
+          "frontPixels": 0,
+          "meanLinearRGB": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "meanNormal": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "meanPositiveDotSun": 0.0,
+          "normalMeanLength": 0.0,
+          "pixels": 47243,
+          "secondMomentRGB": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "face": {
+        "high": {
+          "downwardNormalPixels": 0,
+          "frontPixels": 43323,
+          "meanLinearRGB": [
+            0.961985111236572,
+            0.0,
+            0.0380148775875568
+          ],
+          "meanNormal": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "meanPositiveDotSun": 0.0,
+          "normalMeanLength": 0.0,
+          "pixels": 45035,
+          "secondMomentRGB": [
+            0.961985122682358,
+            0.0,
+            0.0380148773176418
+          ]
+        },
+        "impostor": {
+          "downwardNormalPixels": 0,
+          "frontPixels": 47243,
+          "meanLinearRGB": [
+            1.0,
+            0.0,
+            0.0
+          ],
+          "meanNormal": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "meanPositiveDotSun": 0.0,
+          "normalMeanLength": 0.0,
+          "pixels": 47243,
+          "secondMomentRGB": [
+            1.0,
+            0.0,
+            0.0
+          ]
+        }
+      },
+      "lit": {
+        "high": {
+          "downwardNormalPixels": 0,
+          "frontPixels": 0,
+          "meanLinearRGB": [
+            0.016628323122859,
+            0.0228575579822063,
+            0.00663195503875613
+          ],
+          "meanNormal": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "meanPositiveDotSun": 0.0,
+          "normalMeanLength": 0.0,
+          "pixels": 45035,
+          "secondMomentRGB": [
+            0.00126620301451735,
+            0.00119899895025223,
+            0.000230685018389289
+          ]
+        },
+        "impostor": {
+          "downwardNormalPixels": 0,
+          "frontPixels": 0,
+          "meanLinearRGB": [
+            0.0878342837095261,
+            0.124918088316917,
+            0.032012440264225
+          ],
+          "meanNormal": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "meanPositiveDotSun": 0.0,
+          "normalMeanLength": 0.0,
+          "pixels": 47243,
+          "secondMomentRGB": [
+            0.0101581631058437,
+            0.0200291019469816,
+            0.00132262618692663
+          ]
+        }
+      },
+      "normal": {
+        "high": {
+          "downwardNormalPixels": 1136,
+          "frontPixels": 0,
+          "meanLinearRGB": [
+            0.514167487621307,
+            0.817546248435974,
+            0.499513238668442
+          ],
+          "meanNormal": [
+            0.0285376328974962,
+            0.635589301586151,
+            -0.000778448709752411
+          ],
+          "meanPositiveDotSun": 0.499736791877509,
+          "normalMeanLength": 0.636230111122131,
+          "pixels": 45035,
+          "secondMomentRGB": [
+            0.330622926959587,
+            0.687065181941823,
+            0.313152075295603
+          ]
+        },
+        "impostor": {
+          "downwardNormalPixels": 1,
+          "frontPixels": 0,
+          "meanLinearRGB": [
+            0.518241107463837,
+            0.880203545093536,
+            0.494074016809464
+          ],
+          "meanNormal": [
+            0.0366895161569119,
+            0.760935962200165,
+            -0.0117001384496689
+          ],
+          "meanPositiveDotSun": 0.556475114323452,
+          "normalMeanLength": 0.76190984249115,
+          "pixels": 47243,
+          "secondMomentRGB": [
+            0.319056754274443,
+            0.782374091796668,
+            0.290624446015812
+          ]
+        }
+      },
+      "normal-no-face-flip": {
+        "high": {
+          "downwardNormalPixels": 2449,
+          "frontPixels": 0,
+          "meanLinearRGB": [
+            0.511921763420105,
+            0.80390191078186,
+            0.500916659832001
+          ],
+          "meanNormal": [
+            0.0240450222045183,
+            0.608299553394318,
+            0.00202963012270629
+          ],
+          "meanPositiveDotSun": 0.491196401120911,
+          "normalMeanLength": 0.60877799987793,
+          "pixels": 45035,
+          "secondMomentRGB": [
+            0.32837664889114,
+            0.673437716845231,
+            0.314556538490896
+          ]
+        },
+        "impostor": {
+          "downwardNormalPixels": 1,
+          "frontPixels": 0,
+          "meanLinearRGB": [
+            0.518241107463837,
+            0.880203545093536,
+            0.494074016809464
+          ],
+          "meanNormal": [
+            0.0366895161569119,
+            0.760935962200165,
+            -0.0117001384496689
+          ],
+          "meanPositiveDotSun": 0.556475114323452,
+          "normalMeanLength": 0.76190984249115,
+          "pixels": 47243,
+          "secondMomentRGB": [
+            0.319056754274443,
+            0.782374091796668,
+            0.290624446015812
+          ]
+        }
+      },
+      "roughness": {
+        "high": {
+          "downwardNormalPixels": 0,
+          "frontPixels": 0,
+          "meanLinearRGB": [
+            0.475533574819565,
+            0.475533574819565,
+            0.475533574819565
+          ],
+          "meanNormal": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "meanPositiveDotSun": 0.0,
+          "normalMeanLength": 0.0,
+          "pixels": 45035,
+          "secondMomentRGB": [
+            0.233635991451094,
+            0.233635991451094,
+            0.233635991451094
+          ]
+        },
+        "impostor": {
+          "downwardNormalPixels": 0,
+          "frontPixels": 0,
+          "meanLinearRGB": [
+            0.896019160747528,
+            0.896019160747528,
+            0.896019160747528
+          ],
+          "meanNormal": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "meanPositiveDotSun": 0.0,
+          "normalMeanLength": 0.0,
+          "pixels": 47243,
+          "secondMomentRGB": [
+            0.80332180494994,
+            0.80332180494994,
+            0.80332180494994
+          ]
+        }
+      }
+    },
+    "version": 1
+  },
+  "after": {
+    "adapter": "NVIDIA GeForce RTX 5090",
+    "assetDigest": "74edf966059a17fd44df22d24f4ee055f780d84196ee9c54703fa3b9e46ecbe9",
+    "backend": "forward_plus",
+    "camera": {
+      "projection": "orthographic-top",
+      "resolution": [
+        768,
+        768
+      ],
+      "treeDiameterPixels": 522.35518464,
+      "widthM": 20
+    },
+    "comparisons": {
+      "albedo": {
+        "commonVisiblePixels": 45033,
+        "meanAbsoluteLinearRGB": [
+          0.0359744988381863,
+          0.0392298512160778,
+          0.0145505238324404
+        ],
+        "meanNormalAngleDegrees": 0.0
+      },
+      "lit": {
+        "commonVisiblePixels": 45033,
+        "meanAbsoluteLinearRGB": [
+          0.0452463440597057,
+          0.0543943233788013,
+          0.015197834931314
+        ],
+        "meanNormalAngleDegrees": 0.0
+      },
+      "normal": {
+        "commonVisiblePixels": 45033,
+        "meanAbsoluteLinearRGB": [
+          0.136418923735619,
+          0.0947524458169937,
+          0.137214779853821
+        ],
+        "meanNormalAngleDegrees": 29.072416232815
+      },
+      "normal-no-face-flip": {
+        "commonVisiblePixels": 45033,
+        "meanAbsoluteLinearRGB": [
+          0.146453842520714,
+          0.107271417975426,
+          0.145600467920303
+        ],
+        "meanNormalAngleDegrees": 32.4545476807217
+      },
+      "roughness": {
+        "commonVisiblePixels": 45033,
+        "meanAbsoluteLinearRGB": [
+          0.420723617076874,
+          0.420723617076874,
+          0.420723617076874
+        ],
+        "meanNormalAngleDegrees": 0.0
+      }
+    },
+    "format": "tree-common-transform-brdf-diagnostic",
+    "importedMaterial": [
+      {
+        "albedoFactor": "(1.0, 1.0, 1.0, 1.0)",
+        "name": "tree_small_02_branches",
+        "normalScale": 1.0,
+        "roughnessChannel": 1,
+        "roughnessFactor": 1.0,
+        "uvOffset": "(0.0, 0.4, 0.0)",
+        "uvScale": "(3.0, 0.6, 1.0)"
+      },
+      {
+        "albedoFactor": "(1.0, 1.0, 1.0, 1.0)",
+        "name": "tree_small_02_leaves-prepared-cutout",
+        "normalScale": 1.0,
+        "roughnessChannel": 1,
+        "roughnessFactor": 1.0,
+        "uvOffset": "(0.0, 0.0, 0.0)",
+        "uvScale": "(1.0, 1.0, 1.0)"
+      },
+      {
+        "albedoFactor": "(1.0, 1.0, 1.0, 1.0)",
+        "name": "tree_small_02_trunk",
+        "normalScale": 1.0,
+        "roughnessChannel": 1,
+        "roughnessFactor": 1.0,
+        "uvOffset": "(0.0, 0.0, 0.0)",
+        "uvScale": "(1.0, 1.0, 1.0)"
+      }
+    ],
+    "lightDirection": [
+      -0.354585230350494,
+      0.743144869804382,
+      0.567454993724823
+    ],
+    "readbackCalibration": {
+      "decodedLinear": [
+        0.250158280134201,
+        0.502886474132538,
+        0.752942204475403
+      ],
+      "encoded": [
+        0.537254929542542,
+        0.737254917621613,
+        0.882352948188782
+      ]
+    },
+    "scope": "Same actual MultiMesh high/impostor transforms. Production shaders with explicit diagnostic channel overrides; fixed neutral ambient plus source sun, linear tone mapping. Direct sky/GI/optical ground shadow not reproduced. Diagnostic, no artistic pass verdict.",
+    "summaries": {
+      "albedo": {
+        "high": {
+          "downwardNormalPixels": 0,
+          "frontPixels": 0,
+          "meanLinearRGB": [
+            0.105736531317234,
+            0.166495934128761,
+            0.052325926721096
+          ],
+          "meanNormal": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "meanPositiveDotSun": 0.0,
+          "normalMeanLength": 0.0,
+          "pixels": 45035,
+          "secondMomentRGB": [
+            0.015149587159206,
+            0.0325524185399203,
+            0.00365102722838834
+          ]
+        },
+        "impostor": {
+          "downwardNormalPixels": 0,
+          "frontPixels": 0,
+          "meanLinearRGB": [
+            0.0951569005846977,
+            0.151219263672829,
+            0.0472550988197327
+          ],
+          "meanNormal": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "meanPositiveDotSun": 0.0,
+          "normalMeanLength": 0.0,
+          "pixels": 47243,
+          "secondMomentRGB": [
+            0.00958985000299317,
+            0.0233646758845226,
+            0.00237901245657219
+          ]
+        }
+      },
+      "coverage": {
+        "high": {
+          "downwardNormalPixels": 0,
+          "frontPixels": 0,
+          "meanLinearRGB": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "meanNormal": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "meanPositiveDotSun": 0.0,
+          "normalMeanLength": 0.0,
+          "pixels": 45035,
+          "secondMomentRGB": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "impostor": {
+          "downwardNormalPixels": 0,
+          "frontPixels": 0,
+          "meanLinearRGB": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "meanNormal": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "meanPositiveDotSun": 0.0,
+          "normalMeanLength": 0.0,
+          "pixels": 47243,
+          "secondMomentRGB": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "face": {
+        "high": {
+          "downwardNormalPixels": 0,
+          "frontPixels": 43323,
+          "meanLinearRGB": [
+            0.961985111236572,
+            0.0,
+            0.0380148775875568
+          ],
+          "meanNormal": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "meanPositiveDotSun": 0.0,
+          "normalMeanLength": 0.0,
+          "pixels": 45035,
+          "secondMomentRGB": [
+            0.961985122682358,
+            0.0,
+            0.0380148773176418
+          ]
+        },
+        "impostor": {
+          "downwardNormalPixels": 0,
+          "frontPixels": 47243,
+          "meanLinearRGB": [
+            1.0,
+            0.0,
+            0.0
+          ],
+          "meanNormal": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "meanPositiveDotSun": 0.0,
+          "normalMeanLength": 0.0,
+          "pixels": 47243,
+          "secondMomentRGB": [
+            1.0,
+            0.0,
+            0.0
+          ]
+        }
+      },
+      "lit": {
+        "high": {
+          "downwardNormalPixels": 0,
+          "frontPixels": 0,
+          "meanLinearRGB": [
+            0.0883498564362526,
+            0.124757006764412,
+            0.0325707755982876
+          ],
+          "meanNormal": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "meanPositiveDotSun": 0.0,
+          "normalMeanLength": 0.0,
+          "pixels": 45035,
+          "secondMomentRGB": [
+            0.0142685436283932,
+            0.0249472659502678,
+            0.00185067240453606
+          ]
+        },
+        "impostor": {
+          "downwardNormalPixels": 0,
+          "frontPixels": 0,
+          "meanLinearRGB": [
+            0.0878342837095261,
+            0.124918088316917,
+            0.032012440264225
+          ],
+          "meanNormal": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "meanPositiveDotSun": 0.0,
+          "normalMeanLength": 0.0,
+          "pixels": 47243,
+          "secondMomentRGB": [
+            0.0101581631058437,
+            0.0200291019469816,
+            0.00132262618692663
+          ]
+        }
+      },
+      "normal": {
+        "high": {
+          "downwardNormalPixels": 1136,
+          "frontPixels": 0,
+          "meanLinearRGB": [
+            0.514167487621307,
+            0.817546248435974,
+            0.499513238668442
+          ],
+          "meanNormal": [
+            0.0285376328974962,
+            0.635589301586151,
+            -0.000778448709752411
+          ],
+          "meanPositiveDotSun": 0.499736791877509,
+          "normalMeanLength": 0.636230111122131,
+          "pixels": 45035,
+          "secondMomentRGB": [
+            0.330622926959587,
+            0.687065181941823,
+            0.313152075295603
+          ]
+        },
+        "impostor": {
+          "downwardNormalPixels": 1,
+          "frontPixels": 0,
+          "meanLinearRGB": [
+            0.518241107463837,
+            0.880203545093536,
+            0.494074016809464
+          ],
+          "meanNormal": [
+            0.0366895161569119,
+            0.760935962200165,
+            -0.0117001384496689
+          ],
+          "meanPositiveDotSun": 0.556475114323452,
+          "normalMeanLength": 0.76190984249115,
+          "pixels": 47243,
+          "secondMomentRGB": [
+            0.319056754274443,
+            0.782374091796668,
+            0.290624446015812
+          ]
+        }
+      },
+      "normal-no-face-flip": {
+        "high": {
+          "downwardNormalPixels": 2449,
+          "frontPixels": 0,
+          "meanLinearRGB": [
+            0.511921763420105,
+            0.80390191078186,
+            0.500916659832001
+          ],
+          "meanNormal": [
+            0.0240450222045183,
+            0.608299553394318,
+            0.00202963012270629
+          ],
+          "meanPositiveDotSun": 0.491196401120911,
+          "normalMeanLength": 0.60877799987793,
+          "pixels": 45035,
+          "secondMomentRGB": [
+            0.32837664889114,
+            0.673437716845231,
+            0.314556538490896
+          ]
+        },
+        "impostor": {
+          "downwardNormalPixels": 1,
+          "frontPixels": 0,
+          "meanLinearRGB": [
+            0.518241107463837,
+            0.880203545093536,
+            0.494074016809464
+          ],
+          "meanNormal": [
+            0.0366895161569119,
+            0.760935962200165,
+            -0.0117001384496689
+          ],
+          "meanPositiveDotSun": 0.556475114323452,
+          "normalMeanLength": 0.76190984249115,
+          "pixels": 47243,
+          "secondMomentRGB": [
+            0.319056754274443,
+            0.782374091796668,
+            0.290624446015812
+          ]
+        }
+      },
+      "roughness": {
+        "high": {
+          "downwardNormalPixels": 0,
+          "frontPixels": 0,
+          "meanLinearRGB": [
+            0.475533574819565,
+            0.475533574819565,
+            0.475533574819565
+          ],
+          "meanNormal": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "meanPositiveDotSun": 0.0,
+          "normalMeanLength": 0.0,
+          "pixels": 45035,
+          "secondMomentRGB": [
+            0.233635991451094,
+            0.233635991451094,
+            0.233635991451094
+          ]
+        },
+        "impostor": {
+          "downwardNormalPixels": 0,
+          "frontPixels": 0,
+          "meanLinearRGB": [
+            0.896019160747528,
+            0.896019160747528,
+            0.896019160747528
+          ],
+          "meanNormal": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "meanPositiveDotSun": 0.0,
+          "normalMeanLength": 0.0,
+          "pixels": 47243,
+          "secondMomentRGB": [
+            0.80332180494994,
+            0.80332180494994,
+            0.80332180494994
+          ]
+        }
+      }
+    },
+    "version": 1
+  },
+  "unchangedGpuPngs": {
+    "coverage-high.png": {
+      "sha256": "961508bf9811de9d9e6518725006dd10046d8e63025c3fe4d98fc1e7f5a64e8c",
+      "equal": true
+    },
+    "coverage-impostor.png": {
+      "sha256": "24b92b15ec2ed5e3b180aff9b6bf3e75f40609bf5f3d53137fd2feafc5119ee0",
+      "equal": true
+    },
+    "normal-high.png": {
+      "sha256": "7242221fc4fde830c3be5537894c3123bc075fb11a9b5b9d4b5163cfcbb686f1",
+      "equal": true
+    },
+    "normal-impostor.png": {
+      "sha256": "5877f467c140576535e4b29511b4a0c7ab353e99d06eb2a440912c3ab913ff3b",
+      "equal": true
+    },
+    "roughness-high.png": {
+      "sha256": "5f64cdf67be92e8a84ba0a6a5eaae48e0071fd336aa2a259bdebebf8a768504c",
+      "equal": true
+    },
+    "roughness-impostor.png": {
+      "sha256": "1282cd2ca0c043229b09960a52faae073c5f78482de16ff05239fd300222f21b",
+      "equal": true
+    },
+    "albedo-impostor.png": {
+      "sha256": "fb20f95fd64d6438ae16db091377d64ab685a422d635ffd28c5b9baa0555d7e7",
+      "equal": true
+    },
+    "lit-impostor.png": {
+      "sha256": "11caa09f19c46f2a6f9c00e5386ba36c072bf4bb3d066d08239c2de00e532059",
+      "equal": true
+    }
+  },
+  "artifacts": [
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-vegetation-assets-2026-10-24\\web\\out\\tree-brdf-diagnostic\\albedo-high.png",
+      "sha256": "2d26b0fd68a448004eeb940c63e28bd942645055f53551d3b6770a2b47ebd348",
+      "bytes": 129526
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-vegetation-assets-2026-10-24\\web\\out\\tree-brdf-diagnostic\\albedo-impostor.png",
+      "sha256": "fb20f95fd64d6438ae16db091377d64ab685a422d635ffd28c5b9baa0555d7e7",
+      "bytes": 115654
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-vegetation-assets-2026-10-24\\web\\out\\tree-brdf-diagnostic\\coverage-high.png",
+      "sha256": "961508bf9811de9d9e6518725006dd10046d8e63025c3fe4d98fc1e7f5a64e8c",
+      "bytes": 13969
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-vegetation-assets-2026-10-24\\web\\out\\tree-brdf-diagnostic\\coverage-impostor.png",
+      "sha256": "24b92b15ec2ed5e3b180aff9b6bf3e75f40609bf5f3d53137fd2feafc5119ee0",
+      "bytes": 11570
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-vegetation-assets-2026-10-24\\web\\out\\tree-brdf-diagnostic\\face-high.png",
+      "sha256": "e5be883c9710ef427a1c9045c1649984835f6234faef390960ca34e3060635f6",
+      "bytes": 16365
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-vegetation-assets-2026-10-24\\web\\out\\tree-brdf-diagnostic\\face-impostor.png",
+      "sha256": "8442f70b0198a35d9cd840ec5a5aeebc2b270846dce537c9221fc71257e68f44",
+      "bytes": 11328
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-vegetation-assets-2026-10-24\\web\\out\\tree-brdf-diagnostic\\lit-high.png",
+      "sha256": "fc6186e69ca68a9129e4c8f5fcf19e0d025195d39116f63870e703e31cdab15c",
+      "bytes": 133988
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-vegetation-assets-2026-10-24\\web\\out\\tree-brdf-diagnostic\\lit-impostor.png",
+      "sha256": "11caa09f19c46f2a6f9c00e5386ba36c072bf4bb3d066d08239c2de00e532059",
+      "bytes": 131892
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-vegetation-assets-2026-10-24\\web\\out\\tree-brdf-diagnostic\\normal-high.png",
+      "sha256": "7242221fc4fde830c3be5537894c3123bc075fb11a9b5b9d4b5163cfcbb686f1",
+      "bytes": 151896
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-vegetation-assets-2026-10-24\\web\\out\\tree-brdf-diagnostic\\normal-impostor.png",
+      "sha256": "5877f467c140576535e4b29511b4a0c7ab353e99d06eb2a440912c3ab913ff3b",
+      "bytes": 132040
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-vegetation-assets-2026-10-24\\web\\out\\tree-brdf-diagnostic\\normal-no-face-flip-high.png",
+      "sha256": "f4d7ae55b058f9755b647dfad9c0237b6a4a0a2d30004210bfba9360fc66ae76",
+      "bytes": 152265
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-vegetation-assets-2026-10-24\\web\\out\\tree-brdf-diagnostic\\normal-no-face-flip-impostor.png",
+      "sha256": "5877f467c140576535e4b29511b4a0c7ab353e99d06eb2a440912c3ab913ff3b",
+      "bytes": 132040
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-vegetation-assets-2026-10-24\\web\\out\\tree-brdf-diagnostic\\report.json",
+      "sha256": "837300d44f9e806afcade8047bb5f4f821e2262f09f5010ee8ffbc3cf82e990f",
+      "bytes": 10318
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-vegetation-assets-2026-10-24\\web\\out\\tree-brdf-diagnostic\\roughness-high.png",
+      "sha256": "5f64cdf67be92e8a84ba0a6a5eaae48e0071fd336aa2a259bdebebf8a768504c",
+      "bytes": 107122
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-vegetation-assets-2026-10-24\\web\\out\\tree-brdf-diagnostic\\roughness-impostor.png",
+      "sha256": "1282cd2ca0c043229b09960a52faae073c5f78482de16ff05239fd300222f21b",
+      "bytes": 11503
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-vegetation-assets-2026-10-24\\web\\out\\tree-brdf-albedo-fixed\\albedo-high.png",
+      "sha256": "1f6e34ba282d6fa0247fd9629c50082b118a0e86ccf23cd736cd0e94ea7ac199",
+      "bytes": 149013
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-vegetation-assets-2026-10-24\\web\\out\\tree-brdf-albedo-fixed\\albedo-impostor.png",
+      "sha256": "fb20f95fd64d6438ae16db091377d64ab685a422d635ffd28c5b9baa0555d7e7",
+      "bytes": 115654
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-vegetation-assets-2026-10-24\\web\\out\\tree-brdf-albedo-fixed\\coverage-high.png",
+      "sha256": "961508bf9811de9d9e6518725006dd10046d8e63025c3fe4d98fc1e7f5a64e8c",
+      "bytes": 13969
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-vegetation-assets-2026-10-24\\web\\out\\tree-brdf-albedo-fixed\\coverage-impostor.png",
+      "sha256": "24b92b15ec2ed5e3b180aff9b6bf3e75f40609bf5f3d53137fd2feafc5119ee0",
+      "bytes": 11570
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-vegetation-assets-2026-10-24\\web\\out\\tree-brdf-albedo-fixed\\face-high.png",
+      "sha256": "e5be883c9710ef427a1c9045c1649984835f6234faef390960ca34e3060635f6",
+      "bytes": 16365
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-vegetation-assets-2026-10-24\\web\\out\\tree-brdf-albedo-fixed\\face-impostor.png",
+      "sha256": "8442f70b0198a35d9cd840ec5a5aeebc2b270846dce537c9221fc71257e68f44",
+      "bytes": 11328
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-vegetation-assets-2026-10-24\\web\\out\\tree-brdf-albedo-fixed\\lit-high.png",
+      "sha256": "c93416311556436331cfb61040d9e99eed53323c88d6c930d6eaae270bf9a8e4",
+      "bytes": 154150
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-vegetation-assets-2026-10-24\\web\\out\\tree-brdf-albedo-fixed\\lit-impostor.png",
+      "sha256": "11caa09f19c46f2a6f9c00e5386ba36c072bf4bb3d066d08239c2de00e532059",
+      "bytes": 131892
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-vegetation-assets-2026-10-24\\web\\out\\tree-brdf-albedo-fixed\\normal-high.png",
+      "sha256": "7242221fc4fde830c3be5537894c3123bc075fb11a9b5b9d4b5163cfcbb686f1",
+      "bytes": 151896
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-vegetation-assets-2026-10-24\\web\\out\\tree-brdf-albedo-fixed\\normal-impostor.png",
+      "sha256": "5877f467c140576535e4b29511b4a0c7ab353e99d06eb2a440912c3ab913ff3b",
+      "bytes": 132040
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-vegetation-assets-2026-10-24\\web\\out\\tree-brdf-albedo-fixed\\normal-no-face-flip-high.png",
+      "sha256": "f4d7ae55b058f9755b647dfad9c0237b6a4a0a2d30004210bfba9360fc66ae76",
+      "bytes": 152265
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-vegetation-assets-2026-10-24\\web\\out\\tree-brdf-albedo-fixed\\normal-no-face-flip-impostor.png",
+      "sha256": "5877f467c140576535e4b29511b4a0c7ab353e99d06eb2a440912c3ab913ff3b",
+      "bytes": 132040
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-vegetation-assets-2026-10-24\\web\\out\\tree-brdf-albedo-fixed\\report.json",
+      "sha256": "082b1ed9d5e8faeddfc8520e86d48cfdb4b7f2676b6f415c8fc346270b9817d1",
+      "bytes": 10307
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-vegetation-assets-2026-10-24\\web\\out\\tree-brdf-albedo-fixed\\roughness-high.png",
+      "sha256": "5f64cdf67be92e8a84ba0a6a5eaae48e0071fd336aa2a259bdebebf8a768504c",
+      "bytes": 107122
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-vegetation-assets-2026-10-24\\web\\out\\tree-brdf-albedo-fixed\\roughness-impostor.png",
+      "sha256": "1282cd2ca0c043229b09960a52faae073c5f78482de16ff05239fd300222f21b",
+      "bytes": 11503
+    }
+  ],
+  "runtimeHashTiming": "Microprobe did not record a runtime start/end snapshot; source is OWN d708 plus only diagnostic channel overrides and version metadata changes. Full scene artistic follow-up records snapshots separately.",
+  "scope": "One common-transform TOP768x768/20m control, calibrated readback, neutral ambient and fixed source sun. No sky/GI/optical ground shadow, not a full scene or all-light normal/BRDF oracle."
+}
