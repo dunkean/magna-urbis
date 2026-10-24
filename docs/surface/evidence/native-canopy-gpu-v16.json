@@ -1,0 +1,624 @@
+{
+  "format": "native-canopy-gpu-v16-backend-pair",
+  "version": 1,
+  "status": "COMPLETE_IDENTICAL_PNG_PAIR",
+  "scope": "One retained160m TOP camera, scalar versus explicit native canopy backend. No fresh generation,E2E,FPS,artistic or Solar qualification.",
+  "frozenHead": "151cb319a8c0dc9e7e229f547d6096564e6ed63a",
+  "sourceSnapshotFileCount": 953,
+  "cleanBeforeAndAfter": true,
+  "sourceSnapshotsIdentical": true,
+  "snapshotScope": "Code snapshots; no exe/wasm/resolved.json entries. Loaded asset identity is separately attested by equal renderSourceVersion; native executable identity by sampler metadata and prior retained binary proof.",
+  "source": {
+    "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\native-e2e-40km-v15\\live-refinement.surfacebin",
+    "bytes": 76589841,
+    "sha256": "f9bdb75671c21ceb402a817cc244a076487f7b88c267773b785f4de942055874"
+  },
+  "worldId": "2f644bd02a2cb95ecbb66a8066d6496c",
+  "pngSha256": "1c5f40b4d1959eb544dc6527a5927fc9469faca19c8e9655ebfd48fa6402b1e0",
+  "pngBytes": 1490219,
+  "fullPngBytesEqual": true,
+  "camera": {
+    "focusX": 20000,
+    "focusZ": 20000,
+    "widthM": 160,
+    "resolutionPixels": [
+      1600,
+      1000
+    ],
+    "presentation": "aerial",
+    "projection": "TOP",
+    "warmFramesRequested": 48
+  },
+  "watcher": {
+    "intervalSeconds": 1,
+    "checks": 31,
+    "scope": "run.py checks for a user demo Godot command containing magna-urbis-surface-demo-v15, yielding if present; these are not periodic code/asset rehashes."
+  },
+  "equalMetricComponents": [
+    "surfaceLayers",
+    "renderSourceVersion",
+    "canopyView",
+    "populationInstances",
+    "urban",
+    "regionCounts",
+    "objects",
+    "drawCalls",
+    "candidateCount",
+    "worldId",
+    "source"
+  ],
+  "equalityEvidence": {
+    "surfaceLayers": "383bfd60a360d8d7972d1923d2011d2996c277f314f3ebf7e40d8f220dec5a21",
+    "renderSourceVersion": "f27dff9a1e3ccdfa062d448c1241d54b38fe9fa96e555a9b4a16f57fece78246",
+    "canopyView": "1ffcb7827547d2062b80b896a7a75d91f1c4844b7542f7968a8a211ee7711f97",
+    "populationInstances": "d935cec36c1c2bffec846d8d3b9ceb0422cea56a2889385b947ee38556651d82",
+    "urban": "e68c2be519af27725776acf4518daa9784e55b85c2fcc3fba3fd92ec46736731",
+    "regionCounts": "46b1884167c4edd308bcf0c04163dd02d05c9742b35e86b57b5f7ed1b82f3850",
+    "objects": "353767b239099863e13ca954e20a66c9d75f777baf239f56e399958de49bf79d",
+    "drawCalls": "dc371291bd7ac8a21624e3efa75d0a882d2d8d5a8a66befac962c2d1721076af",
+    "candidateCount": "12051e9967d26fabc3b319b06be4bb57b504c40ac47edc24b5b335f64e71b4e1",
+    "worldId": "8163a4e9d3dfeed76304d834d3355086ae5e0a047703ec8af4e7214c1201ef92",
+    "source": "c4f56c3eb1e7f76b55d643754a9976e79048961f9677ef9f0b5cf006579fb01d"
+  },
+  "invariantScope": "Source packet byte identity preserves input fields/candidates; submitted counts and source version/geometry descriptors match. No separate per-instance GPU-buffer fingerprint is exported, so no independent GPU buffer-byte claim is made.",
+  "atlasHash": "4affcf651582ff34eb0aaa590dff6675102a70117136dee2c26a98f3ee46808f",
+  "atlasSourceDescriptor": {
+    "canonicalContextId": "9aa813bd01736793a58f2f759884ae39",
+    "completeTreePage": {
+      "bounds": {
+        "maxX": 20240.0,
+        "maxZ": 20240.0,
+        "minX": 19760.0,
+        "minZ": 19760.0
+      },
+      "complete": true,
+      "count": 1004.0,
+      "includeOverhang": true,
+      "limitedBy": "none",
+      "requestedBounds": {
+        "maxX": 20240.0,
+        "maxZ": 20240.0,
+        "minX": 19760.0,
+        "minZ": 19760.0
+      },
+      "retention": 1.0
+    },
+    "rendererAssetDigest": "74edf966059a17fd44df22d24f4ee055f780d84196ee9c54703fa3b9e46ecbe9",
+    "sceneEpoch": "bench-scene-1",
+    "seed": 1905266606.0,
+    "sourceEpoch": "bench-source-1",
+    "terrainSource": {
+      "id": "infinite:2814899424497554030:99dc65e7033324ee8d70b46d29b066e0",
+      "nativeSpacingM": 0.46875,
+      "provenance": "Infinite retained refinement; seed=2814899424497554030; decoderUsed=true; registrationNativeMpp=30; fieldFingerprint=rf1-019b8aa8fc4b7a3a38e7adce2163d4ea; parent=cell-centred cubic B-spline control reconstruction (not interpolation through control centres); parentComparison={\"samples\":4096,\"parentCorrelation\":0.998382058896566,\"transposedParentCorrelation\":-0.9929963571086565,\"maxAbsDeltaM\":0.5784265781248905,\"rmsDeltaM\":0.23423732073587164,\"meanDeltaM\":-0.14524888992310991,\"controlSmoothingMaxAbsM\":0.5617818190412436,\"refinementResidualMaxAbsM\":0.4947925234214381}",
+      "sourceLOD": -6.0,
+      "sourceLODKnown": true,
+      "version": "decoder-v12-nyquist-notch:magna-retained-v1:e2bf5473c0ff:f21afa261ed7"
+    },
+    "versions": {
+      "environment": "c5bf75c829cf8e966e68c958e5bd10f4",
+      "geology": "8bd3bb76f8694708ff61364ee78b5042",
+      "groundResponse": "gr-sha256-1:4762ee766f0723f1366dbf8b00c1c95690fc269d78a088e65bff43a9aeaa042d",
+      "hydrology": "2ea5ce3aa394a6ec52da91024e345fc6",
+      "materialLibrary": "dcbc2046e7bedd286bfec31699d0e1fa",
+      "occupation": "70e5d5bb5ee15be5dd153f8351b52fcf",
+      "population": "dffb6f0458ff00ba844def24dd672a48",
+      "surfaceLayers": "70533423386cea0d08667aa3e2d535af",
+      "surfaceState": "bff43cd574c24f4bcfae0375a382b719",
+      "terrain": "6063520208674d0882809842dbfc0b2a"
+    },
+    "worldId": "2f644bd02a2cb95ecbb66a8066d6496c"
+  },
+  "surfaceLayers": {
+    "canonicalFieldsVersion": "70533423386cea0d08667aa3e2d535af",
+    "canonicalVersion": "70533423386cea0d08667aa3e2d535af",
+    "fieldsVersion": "8c9b6db64e35987afbb1993a989f3a3c",
+    "groundAvailability": "explicit",
+    "groundResponse": {
+      "available": true,
+      "id": "gr-sha256-1:4762ee766f0723f1366dbf8b00c1c95690fc269d78a088e65bff43a9aeaa042d",
+      "imageBytes": 12582912,
+      "interpretation": "inferred regional parameters before recipes; no new observed fine soil",
+      "quantization": "float32-potentials; uint16-recipe; stored-srgb8-at-canonical-knots",
+      "sourceGrid": {
+        "height": 512.0,
+        "originX": 39.0625,
+        "originZ": 39.0625,
+        "spacingM": 78.125,
+        "width": 512.0
+      },
+      "sourceNativeSpacingM": 39.0625,
+      "version": "surface-ground-response-1"
+    },
+    "legacyFallback": false,
+    "lowCoverAvailability": "explicit",
+    "projectedFieldsVersion": "8c9b6db64e35987afbb1993a989f3a3c",
+    "renderMode": "three-physical-layers",
+    "textureFieldsVersion": "70533423386cea0d08667aa3e2d535af",
+    "textureGrid": {
+      "height": 512.0,
+      "originX": 39.0625,
+      "originZ": 39.0625,
+      "spacingM": 78.125,
+      "width": 512.0
+    },
+    "textureSource": "canonical",
+    "version": "surface-layers-1",
+    "visibility": {
+      "ground": true,
+      "lowCover": true,
+      "trees": true
+    },
+    "worldId": "2f644bd02a2cb95ecbb66a8066d6496c"
+  },
+  "populationInstances": {
+    "clasts": {
+      "appliedInstances": 5,
+      "batches": [
+        {
+          "binding": {
+            "analyticFallback": false,
+            "assetDigest": "f09e0208a3cfe0beae93940bbe00a85b237ac2ab449b532305918249eeada57c",
+            "assetId": "rock",
+            "heightUsage": "sampled registered channel; no displacement or source/pivot change",
+            "layer": 1,
+            "materialKey": "recipe:fractured-bedrock",
+            "physicalExtentMetres": 8.0,
+            "projection": "centre-anchored world-oriented physical metres; stable renderer variant phase",
+            "recipeBindingExact": true,
+            "recipeId": "fractured-bedrock"
+          },
+          "instances": 2,
+          "sourceRockIds": [
+            "4.0"
+          ],
+          "variant": 3
+        },
+        {
+          "binding": {
+            "analyticFallback": false,
+            "assetDigest": "f09e0208a3cfe0beae93940bbe00a85b237ac2ab449b532305918249eeada57c",
+            "assetId": "rock",
+            "heightUsage": "sampled registered channel; no displacement or source/pivot change",
+            "layer": 1,
+            "materialKey": "recipe:fractured-bedrock",
+            "physicalExtentMetres": 8.0,
+            "projection": "centre-anchored world-oriented physical metres; stable renderer variant phase",
+            "recipeBindingExact": true,
+            "recipeId": "fractured-bedrock"
+          },
+          "instances": 1,
+          "sourceRockIds": [
+            "4.0"
+          ],
+          "variant": 5
+        },
+        {
+          "binding": {
+            "analyticFallback": false,
+            "assetDigest": "f09e0208a3cfe0beae93940bbe00a85b237ac2ab449b532305918249eeada57c",
+            "assetId": "rock",
+            "heightUsage": "sampled registered channel; no displacement or source/pivot change",
+            "layer": 1,
+            "materialKey": "recipe:fractured-bedrock",
+            "physicalExtentMetres": 8.0,
+            "projection": "centre-anchored world-oriented physical metres; stable renderer variant phase",
+            "recipeBindingExact": true,
+            "recipeId": "fractured-bedrock"
+          },
+          "instances": 1,
+          "sourceRockIds": [
+            "4.0"
+          ],
+          "variant": 0
+        },
+        {
+          "binding": {
+            "analyticFallback": false,
+            "assetDigest": "f09e0208a3cfe0beae93940bbe00a85b237ac2ab449b532305918249eeada57c",
+            "assetId": "rock",
+            "heightUsage": "sampled registered channel; no displacement or source/pivot change",
+            "layer": 1,
+            "materialKey": "recipe:fractured-bedrock",
+            "physicalExtentMetres": 8.0,
+            "projection": "centre-anchored world-oriented physical metres; stable renderer variant phase",
+            "recipeBindingExact": true,
+            "recipeId": "fractured-bedrock"
+          },
+          "instances": 1,
+          "sourceRockIds": [
+            "4.0"
+          ],
+          "variant": 2
+        }
+      ],
+      "enabled": true,
+      "scope": "renderer-only deterministic clast shapes, same legacy bounds/pivot/buffers; sourceRock geology determines texture recipe and source RGB; no new scatter or observed rock shape",
+      "trianglesPerInstance": 80,
+      "version": "renderer-clast-icosa80-pbr-v1"
+    },
+    "families": {
+      "boulder": {
+        "alphaPositiveInFrustum": 5,
+        "nodeVisible": 5,
+        "submitted": 5
+      },
+      "debris": {
+        "alphaPositiveInFrustum": 5,
+        "nodeVisible": 5,
+        "submitted": 5
+      },
+      "grass": {
+        "alphaPositiveInFrustum": 44,
+        "nodeVisible": 44,
+        "submitted": 44
+      },
+      "shrub": {
+        "alphaPositiveInFrustum": 1,
+        "nodeVisible": 1,
+        "submitted": 1
+      },
+      "tree": {
+        "alphaPositiveInFrustum": 64,
+        "nodeVisible": 402,
+        "submitted": 402
+      },
+      "trunk": {
+        "alphaPositiveInFrustum": 0,
+        "nodeVisible": 0,
+        "submitted": 0
+      }
+    },
+    "scope": "submitted buffers, actual node/camera visibility, shader ALPHA gate>0 and centres in frustum; no GPU occlusion or per-mask fragment claim",
+    "treeNativeSolarShadowEnabled": false,
+    "treeOpticalShadowEnabled": true,
+    "treeResidualEnabled": true,
+    "treeShaderUniformAvailable": true
+  },
+  "urban": {
+    "budgetLimited": false,
+    "buildingIds": [],
+    "materialBatches": 0,
+    "nativeBuildings": 0,
+    "proxyBuildings": 0,
+    "scope": "prepared submitted mesh batches; not a GPU visibility or occlusion count",
+    "worldId": "2f644bd02a2cb95ecbb66a8066d6496c"
+  },
+  "loadedAssets": {
+    "terrainDigest": "f09e0208a3cfe0beae93940bbe00a85b237ac2ab449b532305918249eeada57c",
+    "grassDigest": "2164daf367e44704795bba98add4cf7ee8b51404f06dfd60dec623a74768a0e3",
+    "grassApplied": true,
+    "treeProfile": {
+      "albedoEncodingPolicy": "pinned16bit sRGB RGB exact, normalized cutout alpha8 expanded exactly to16bit; append-only GLB BIN image replacement",
+      "available": true,
+      "cpuOnly": false,
+      "digest": "74edf966059a17fd44df22d24f4ee055f780d84196ee9c54703fa3b9e46ecbe9",
+      "impostorTriangles": 2,
+      "pipelineVersion": "tree-render-cpu-packed-v1",
+      "scope": "experimental; shared top cutout C/V; oblique view-indexed planar depth approximation",
+      "sourceAssetDigest": "448060befa93602b93cab63e08419335b75d651a0eab3dee9b7819f19761148c",
+      "triangles": 134295.0,
+      "views": 5
+    }
+  },
+  "shadowMode": {
+    "active": false,
+    "bake": {},
+    "colourRetentionCapApplies": false,
+    "completeInventoryCount": 0,
+    "guard": {
+      "reason": "no-compatible-complete-source-solar-inventory",
+      "weight": 0.0
+    },
+    "mode": "optical",
+    "opticalFallbackWeight": 1.0,
+    "sceneEpoch": null,
+    "scope": "native backend shared with terrain/buildings; quantized solar cutout/depth, complete page with source-height halo; whole-view fallback, no physical transport exactness claim",
+    "sourceEpoch": null,
+    "sourceInventorySha256": "",
+    "submittedTriangles": 0,
+    "targetWeight": 0.0,
+    "treeLayerVisible": true,
+    "weight": 0.0,
+    "worldId": ""
+  },
+  "opticalShadowEnabled": true,
+  "nativeSolarShadowEnabled": false,
+  "views": [
+    {
+      "name": "scalar",
+      "command": [
+        "C:\\Program Files\\nodejs\\node.EXE",
+        "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\scripts\\surface_viewer.mjs",
+        "--godot",
+        "D:/workspace/self/_surface-tools/godot-4.7.2/Godot_v4.7.2-stable_win64_console.exe",
+        "--world",
+        "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\native-e2e-40km-v15\\live-refinement.surfacebin",
+        "--assets",
+        "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface-assets\\resolved.json",
+        "--vegetation-assets",
+        "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\vegetation-assets\\resolved.json",
+        "--tree-assets",
+        "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\vegetation-tree-v14\\resolved.json",
+        "--height-batch",
+        "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\viewer-local\\native-height\\target\\release\\magna-surface-height-batch.exe",
+        "--water-mode",
+        "source-map",
+        "--water-vector-tint",
+        "uniform",
+        "--water-symbol-width-px",
+        "1.25",
+        "--native-log-mode",
+        "threaded",
+        "--tree-shadow-mode",
+        "optical",
+        "--presentation",
+        "aerial",
+        "--top",
+        "--x",
+        "20000",
+        "--z",
+        "20000",
+        "--width",
+        "160",
+        "--resolution",
+        "1600x1000",
+        "--frames",
+        "48",
+        "--capture",
+        "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\canopy-gpu-v16\\scalar.png",
+        "--metrics",
+        "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\canopy-gpu-v16\\scalar.json"
+      ],
+      "pid": 209576,
+      "exitCode": 0,
+      "durationIncludingStartupMs": 28426,
+      "canopySampler": {
+        "requested": false,
+        "used": false,
+        "version": "gd-canopy-raster-1"
+      },
+      "prepareMs": [
+        12545.87
+      ],
+      "heightSampler": {
+        "eligible": true,
+        "executableSha256": "c77ca0d0b2a4409832e068d0862c760a995cc846e76b838493d2c9a2843ad104",
+        "holes": 0.0,
+        "mode": "explicit-native-batch",
+        "nativeKnownBufferUpperBytes": 38995696.0,
+        "outputPayloadSha256": "1c9446a842fcd65e5df4630c4ce7e775a4583bb7d8cedc24e6072f9bb2b763a2",
+        "provenance": "Rust f64 scalar ordered16taps; no fast-math; GD positive-kernel seam policy",
+        "requested": true,
+        "sampleMs": 6.3751,
+        "sceneEpoch": "bench-scene-1",
+        "size": 512,
+        "sourceBudgetVersion": "height-source-chain-2",
+        "sourceBytes": 1064960,
+        "sourceEpoch": "bench-source-1",
+        "sourceInputSha256": "8d5f0b2439936af7183480971990baba59b3e951c5b78cf2607a107ace81a5c7",
+        "sourceLayers": 2,
+        "sourceSampleBudget": 7340032,
+        "sourceSamples": 266240,
+        "sourceWorldId": "2f644bd02a2cb95ecbb66a8066d6496c",
+        "spacingM": 0.625,
+        "totalMs": 558.598,
+        "used": true,
+        "version": "gd-height-batch-1"
+      },
+      "cpuScriptMs": {
+        "max": 561.917,
+        "p50": 0.063,
+        "p95": 0.327,
+        "p99": 0.349,
+        "samples": 450,
+        "scope": "entire viewer _process including initial and first30 post-apply frames; engine/input callbacks excluded; wall/GPU metrics reported separately"
+      },
+      "frameWallMs": {
+        "p50": 31.055,
+        "p95": 32.43,
+        "p99": 32.43
+      },
+      "runtimeErrors": 0,
+      "knownDeprecationWarning": true
+    },
+    {
+      "name": "native",
+      "command": [
+        "C:\\Program Files\\nodejs\\node.EXE",
+        "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\scripts\\surface_viewer.mjs",
+        "--godot",
+        "D:/workspace/self/_surface-tools/godot-4.7.2/Godot_v4.7.2-stable_win64_console.exe",
+        "--world",
+        "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\native-e2e-40km-v15\\live-refinement.surfacebin",
+        "--assets",
+        "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface-assets\\resolved.json",
+        "--vegetation-assets",
+        "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\vegetation-assets\\resolved.json",
+        "--tree-assets",
+        "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\vegetation-tree-v14\\resolved.json",
+        "--height-batch",
+        "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\viewer-local\\native-height\\target\\release\\magna-surface-height-batch.exe",
+        "--water-mode",
+        "source-map",
+        "--water-vector-tint",
+        "uniform",
+        "--water-symbol-width-px",
+        "1.25",
+        "--native-log-mode",
+        "threaded",
+        "--tree-shadow-mode",
+        "optical",
+        "--presentation",
+        "aerial",
+        "--top",
+        "--x",
+        "20000",
+        "--z",
+        "20000",
+        "--width",
+        "160",
+        "--resolution",
+        "1600x1000",
+        "--frames",
+        "48",
+        "--capture",
+        "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\canopy-gpu-v16\\native.png",
+        "--metrics",
+        "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\canopy-gpu-v16\\native.json",
+        "--canopy-batch",
+        "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\viewer-local\\native-height\\target\\release\\magna-surface-canopy-batch.exe"
+      ],
+      "pid": 221212,
+      "exitCode": 0,
+      "durationIncludingStartupMs": 32768,
+      "canopySampler": {
+        "assetDigest": "74edf966059a17fd44df22d24f4ee055f780d84196ee9c54703fa3b9e46ecbe9",
+        "eligible": true,
+        "executableSha256": "b855cc3780947752a9eeaa3ddada435fe47965820998600f0feeb6a9bc4e005c",
+        "height": 2048,
+        "nativeKnownBufferUpperBytes": 303103352.0,
+        "outputPayloadSha256": "7d178833074f1f70a1f675a9ca9c27441f72a2092ba74225f1ab10d2f9ec995b",
+        "requested": true,
+        "sampleMs": 304.6268,
+        "sceneEpoch": "bench-scene-1",
+        "sourceEpoch": "bench-source-1",
+        "sourceInputSha256": "fafade0c27e2f661c040a65d4b03e1d5de0c5f83d36e60dbc2cd8d049e7dadff",
+        "sourceWorldId": "2f644bd02a2cb95ecbb66a8066d6496c",
+        "totalMs": 2438.947,
+        "treeCount": 1004,
+        "used": true,
+        "version": "native-canopy-raster-1",
+        "width": 2048
+      },
+      "prepareMs": [
+        8025.184
+      ],
+      "heightSampler": {
+        "eligible": true,
+        "executableSha256": "c77ca0d0b2a4409832e068d0862c760a995cc846e76b838493d2c9a2843ad104",
+        "holes": 0.0,
+        "mode": "explicit-native-batch",
+        "nativeKnownBufferUpperBytes": 38995696.0,
+        "outputPayloadSha256": "1c9446a842fcd65e5df4630c4ce7e775a4583bb7d8cedc24e6072f9bb2b763a2",
+        "provenance": "Rust f64 scalar ordered16taps; no fast-math; GD positive-kernel seam policy",
+        "requested": true,
+        "sampleMs": 6.1813,
+        "sceneEpoch": "bench-scene-1",
+        "size": 512,
+        "sourceBudgetVersion": "height-source-chain-2",
+        "sourceBytes": 1064960,
+        "sourceEpoch": "bench-source-1",
+        "sourceInputSha256": "8d5f0b2439936af7183480971990baba59b3e951c5b78cf2607a107ace81a5c7",
+        "sourceLayers": 2,
+        "sourceSampleBudget": 7340032,
+        "sourceSamples": 266240,
+        "sourceWorldId": "2f644bd02a2cb95ecbb66a8066d6496c",
+        "spacingM": 0.625,
+        "totalMs": 462.447,
+        "used": true,
+        "version": "gd-height-batch-1"
+      },
+      "cpuScriptMs": {
+        "max": 477.373,
+        "p50": 0.067,
+        "p95": 0.338,
+        "p99": 0.375,
+        "samples": 304,
+        "scope": "entire viewer _process including initial and first30 post-apply frames; engine/input callbacks excluded; wall/GPU metrics reported separately"
+      },
+      "frameWallMs": {
+        "p50": 31.832,
+        "p95": 34.945,
+        "p99": 34.945
+      },
+      "runtimeErrors": 0,
+      "knownDeprecationWarning": true
+    }
+  ],
+  "timingScope": "Process wall times include startup/assets/IO/warmframes; sampler.totalMs includes packing/process/decode but excludes later GD mip/hash. Fixed-order pair, not a causal performance comparison or FPS result.",
+  "cleanup": {
+    "checkedAtUtc": "2026-10-24T10:51:28.0013959Z",
+    "recordedLaunchPids": [
+      209576,
+      221212
+    ],
+    "survivors": [],
+    "matchingGodotCanopyRunOrRootCanary": [],
+    "scope": "Exact recorded launcher PIDs plus named Godot command markers canopy-gpu-v16 / RootCanary. No process stopped."
+  },
+  "artifacts": [
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\canopy-gpu-v16\\report.json",
+      "bytes": 151537,
+      "sha256": "91932920f0af3113dd8691a67fed275ff1d7c9a3a0e1c2716a9428821b456167"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\canopy-gpu-v16\\before.json",
+      "bytes": 100698,
+      "sha256": "84a8736ea5d27cbe47ee7222595a0b099847813729eb6734962fbf41d91b974d"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\canopy-gpu-v16\\after.json",
+      "bytes": 100698,
+      "sha256": "84a8736ea5d27cbe47ee7222595a0b099847813729eb6734962fbf41d91b974d"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\canopy-gpu-v16\\run.py",
+      "bytes": 4933,
+      "sha256": "389f4acab71993824ada17705cacc19b5bc070efe5f4262892480fcd6eadb985"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\canopy-gpu-v16\\scalar.png",
+      "bytes": 1490219,
+      "sha256": "1c5f40b4d1959eb544dc6527a5927fc9469faca19c8e9655ebfd48fa6402b1e0"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\canopy-gpu-v16\\scalar.json",
+      "bytes": 92637,
+      "sha256": "dd651ed992153e2e3a3a4a468538163c14d46f074a5be51416c77f1fbcaca6d5"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\canopy-gpu-v16\\scalar.stdout.log",
+      "bytes": 93370,
+      "sha256": "c0a0bd38407d0459937360ae00d790e98a4b9a4947a6846ba5a0487f424b2a16"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\canopy-gpu-v16\\scalar.stderr.log",
+      "bytes": 451,
+      "sha256": "96e354e4d73d012a84de9d105423688e4ad24274b21f84d10a2d0ed41dd57fe1"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\canopy-gpu-v16\\native.png",
+      "bytes": 1490219,
+      "sha256": "1c5f40b4d1959eb544dc6527a5927fc9469faca19c8e9655ebfd48fa6402b1e0"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\canopy-gpu-v16\\native.json",
+      "bytes": 93327,
+      "sha256": "f7bb61db6fae6e0a27b2710b09ba24cf609d79f9d6e92be32c387d103afa0a33"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\canopy-gpu-v16\\native.stdout.log",
+      "bytes": 94572,
+      "sha256": "a0f46546e99078db3f2c4200335f8c868c190afa58ef543234996c41753b1d1c"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\canopy-gpu-v16\\native.stderr.log",
+      "bytes": 451,
+      "sha256": "96e354e4d73d012a84de9d105423688e4ad24274b21f84d10a2d0ed41dd57fe1"
+    }
+  ],
+  "limits": [
+    "Only this retained camera and exact parameter set are tested.",
+    "No native Solar/deltaSolar validation: optical mode was explicit and Solar remained inactive.",
+    "PNG equality does not constitute artistic acceptance or a fresh campaign result.",
+    "Archived before/after attest the151cb31run; ROOT was thawed later, and no currentHEAD equality is claimed."
+  ],
+  "gpuEnvironment": {
+    "adapter": "NVIDIA GeForce RTX 4090",
+    "backend": "forward_plus",
+    "godot": "4.7.2-stable (official)",
+    "terrain3d": "1.0.2"
+  }
+}

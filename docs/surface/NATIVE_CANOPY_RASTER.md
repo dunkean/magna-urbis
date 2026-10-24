@@ -50,3 +50,24 @@ Trois findings de la revue statique ont été corrigés :
 Le protocole limite chaque axe d’atlas à une puissance de deux entre **2 et 2048**, le masque à **1024**, les arbres à **100 000**, le travail à **64 Mi pixels visités**, le wire à **256 MiB** et le manifeste à **1 MiB**. Le plafond connu du processus natif est **384 MiB** ; l’estimation du cas retenu vaut **303 103 360 octets**. Elle n’est pas le RSS global de Godot. Le plan garde **240 octets par pixel d’atlas** pour les tableaux/copies/images/uploads et ajoute une réserve fixe de **80 MiB** pour le batch ; caches, ancien atlas et processus natif restent des postes distincts. Ces bornes ne sont pas une mesure RSS et ne suppriment pas les refus si un budget est dépassé.
 
 Le flag explicite et le profil épinglé incluent le helper (83 artefacts runtime). Cela ne constitue pas une qualification V16 E2E ou GPU. Le transfert d’ombre reste **legacy optical par défaut** ; `deltaSolar` est une option séparée. Aucun résultat de rendu ou artistique n’est attribué à ce test CPU.
+
+
+## Annexe — comparaison GPU isolée à 160 m
+
+La [preuve GPU scalaire/natif](evidence/native-canopy-gpu-v16.json) archive un seul couple réel sur le runtime gelé `151cb319a8c0dc9e7e229f547d6096564e6ed63a`. Les snapshots propres avant/après sont identiques, avec **953 empreintes de code**. La source retenue `f9bdb756…` reste inchangée. Le ROOT a été libéré après ce run ; aucune identité de son HEAD courant n’est déduite de ces snapshots.
+
+Les deux captures utilisent le TOP centré sur **20 000 / 20 000 m**, largeur **160 m**, résolution **1 600 × 1 000**, présentation aérienne, PBR/herbe/produit arbre `74edf966…` et 48 images de préchauffage demandées. L’unique switch de backend est `--canopy-batch` pour le second processus. L’ombre est explicitement **`--tree-shadow-mode optical`** dans les deux commandes : Solar reste inactif, sa pondération nulle. Ce couple ne qualifie ni `deltaSolar` ni le rendu d’ombre natif solaire.
+
+Les deux processus sortent avec le code 0, sans erreur de script ou shader ; la dépréciation Terrain3D reste dans les logs. Les PNG de **1 490 219 octets** sont identiques à l’octet près :
+
+```text
+1c5f40b4d1959eb544dc6527a5927fc9469faca19c8e9655ebfd48fa6402b1e0
+```
+
+L’atlas partagé est `4affcf651582ff34eb0aaa590dff6675102a70117136dee2c26a98f3ee46808f`. Le job natif B855 est effectivement demandé et utilisé à 2048², sur le monde `2f644bd02a2cb95ecbb66a8066d6496c`, epochs `bench-source-1` / `bench-scene-1`. Les SHA de son entrée et de son payload de sortie sont joints dans la preuve. L’égalité du paquet source conserve les données d’entrée ; les `surfaceLayers`, `renderSourceVersion`, `canopyView`, populations, descripteurs urbains, régions et comptes d’objets sont égaux. Les 402 arbres soumis comprennent 64 centres alpha-positifs dans le frustum. Ces métriques n’exportent pas un fingerprint individuel des buffers GPU : aucun contrôle indépendant de leurs octets n’est inventé.
+
+Les identités des assets effectivement chargés sont attestées par les mêmes descripteurs `renderSourceVersion`, et le helper par les métadonnées du sampler et le binaire B855 épinglé dans la preuve CPU. Les 953 entrées des snapshots de code ne contiennent pas ces fichiers `.exe`, `.wasm` ou `resolved.json`. Les **31 contrôles à intervalle de 1 s** du runner sont le watcher d’un éventuel demo utilisateur ; ils ne sont pas présentés comme 31 rehashs de code ou d’assets.
+
+Le processus scalaire dure 28 426 ms et le natif 32 768 ms, démarrage, assets, IO et préchauffage compris. Le sampler natif rapporte 304,6268 ms de calcul/vérification et 2 438,947 ms pour le wrapper batch, hors mipmaps/hash GD ultérieurs. Cet ordre fixe et ces périmètres différents ne prouvent ni une cause de différence, ni un gain ou une perte de FPS. Le couple valide seulement l’identité du résultat rendu sur cette caméra retenue.
+
+Le contrôle CIM ultérieur vise les deux PID de lancement **209576 et 221212** : aucun survivant. Aucun Godot portant les marqueurs `canopy-gpu-v16` ou `RootCanary` n’est trouvé ; aucun processus n’a été arrêté par cet archivage. Aucune génération fraîche, campagne E2E, acceptation artistique ou qualification de tous les cadres n’est ajoutée.
