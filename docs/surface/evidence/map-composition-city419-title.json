@@ -1,0 +1,150 @@
+{
+  "format": "surface-map-composition-presentation-polish",
+  "version": 1,
+  "compositionCommit": "02e4b722eca6122135fd780f433424419637c1df",
+  "scope": "CPU-only composition over the retained V13 CITY419 capture; no V14 native GPU projection qualification.",
+  "binding": {
+    "format": "surface-map-capture",
+    "version": 1,
+    "sourcePacketSha256": "54616775da71a5fb94e32d1cce13b59cad38f79f410f04525be72bc14edf589e",
+    "metricsSha256": "ae906228aac53e5d0615613652c4cc8bc1b699ce63583bef9252d8baefb62a5d",
+    "imageSha256": "c69ecb23fc11944e7553908834b1fa934634869b9ef121ce8068e909fb0d2452",
+    "worldId": "0de1e8948131f56a677a8e24e8ecbac8",
+    "canonicalContextId": "00eb9ae088b9342e0ce55680861edf6c",
+    "widthPx": 1280,
+    "heightPx": 800,
+    "projection": {
+      "kind": "orthographic-top",
+      "bounds": {
+        "minX": 6336.4762957318035,
+        "maxX": 6736.4762957318035,
+        "minZ": 8337.943018929407,
+        "maxZ": 8587.943018929407
+      },
+      "north": "local-negative-z"
+    },
+    "presentation": "cartographic",
+    "mapStyle": "blueprint"
+  },
+  "evidence": {
+    "format": "surface-map-composition",
+    "version": 1,
+    "capture": {
+      "format": "surface-map-capture",
+      "version": 1,
+      "sourcePacketSha256": "54616775da71a5fb94e32d1cce13b59cad38f79f410f04525be72bc14edf589e",
+      "metricsSha256": "ae906228aac53e5d0615613652c4cc8bc1b699ce63583bef9252d8baefb62a5d",
+      "imageSha256": "c69ecb23fc11944e7553908834b1fa934634869b9ef121ce8068e909fb0d2452",
+      "worldId": "0de1e8948131f56a677a8e24e8ecbac8",
+      "canonicalContextId": "00eb9ae088b9342e0ce55680861edf6c",
+      "widthPx": 1280,
+      "heightPx": 800,
+      "projection": {
+        "kind": "orthographic-top",
+        "bounds": {
+          "minX": 6336.4762957318035,
+          "maxX": 6736.4762957318035,
+          "minZ": 8337.943018929407,
+          "maxZ": 8587.943018929407
+        },
+        "north": "local-negative-z"
+      },
+      "presentation": "cartographic",
+      "mapStyle": "blueprint"
+    },
+    "style": "blueprint",
+    "sourceLabelCount": 0,
+    "placedLabelIds": [],
+    "droppedLabels": [],
+    "legend": [
+      {
+        "id": "native-buildings",
+        "text": "B\u00e2timents",
+        "sourcePath": "urban.buildings",
+        "semantic": "native-buildings",
+        "count": 419,
+        "qualification": "Native building records retained in source packet; not GPU visibility"
+      },
+      {
+        "id": "roads",
+        "text": "Voirie",
+        "sourcePath": "urban.roads",
+        "semantic": "roads",
+        "count": 6,
+        "qualification": "Road records retained in source packet"
+      },
+      {
+        "id": "trees",
+        "text": "Arbres",
+        "sourcePath": "world.canonicalContext.fields.treeCover",
+        "semantic": "trees",
+        "count": 228,
+        "qualification": "Canonical tree-cover potential support nodes; not rendered or observed tree counts"
+      },
+      {
+        "id": "low-cover",
+        "text": "Couvert bas",
+        "sourcePath": "world.canonicalContext.fields.grassCover/shrubCover/litter",
+        "semantic": "low-cover",
+        "count": 228,
+        "qualification": "Canonical low-cover potential support nodes; not rendered instances"
+      },
+      {
+        "id": "recipe:mineral-soil",
+        "text": "Sol min\u00e9ral",
+        "sourcePath": "world.materials[0] / canonicalContext.fields.groundMaterial",
+        "semantic": "ground-recipe",
+        "count": 486,
+        "qualification": "Canonical ground recipe support nodes; not visible pixel area"
+      }
+    ],
+    "gridMeters": 5,
+    "gridLines": 130,
+    "scaleBar": {
+      "lengthM": 25,
+      "pixels": 80
+    },
+    "fontFamily": "'Segoe UI', 'Helvetica Neue', Arial, 'Liberation Sans', sans-serif",
+    "title": "Plan urbain",
+    "titleSource": "Explicit authored presentation text; not an inferred source toponym",
+    "titleReservedBounds": {
+      "x0": 360,
+      "y0": 24,
+      "x1": 920,
+      "y1": 72
+    },
+    "coverage": {
+      "raster": "Pinned original PNG, unchanged",
+      "overlay": "Shared label placement, font stack, panel primitives, frame, north and palette tokens",
+      "style": "Overlay only; captured raster presentation is not restyled",
+      "perspective": null
+    },
+    "unsupported": [
+      "SVG brush strokes, terrain hatching, labels absent from source, per-pixel occlusion and perspective path draping are not reconstructed"
+    ]
+  },
+  "embeddedRasterSha256": "c69ecb23fc11944e7553908834b1fa934634869b9ef121ce8068e909fb0d2452",
+  "artifacts": [
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-v14-map-composition\\web\\out\\surface\\map-composition\\city419-blueprint-titled.svg",
+      "bytes": 138404,
+      "sha256": "c5aa4b2f223f403fdf0c68f7aa8d92b7cae2eaa004a1171e4004a496737c018b"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-v14-map-composition\\web\\out\\surface\\map-composition\\city419-blueprint-titled.png",
+      "bytes": 273164,
+      "sha256": "c6ef6d7bc4656456c62c9e07a2ee2e5d85fe9aab1857fcd19f23fef6885fbc13"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-v14-map-composition\\web\\out\\surface\\map-composition\\city419-blueprint-titled.json",
+      "bytes": 5637,
+      "sha256": "f49499b373d0323e2fc389bc2eb5debc5a7f9a9164c8988b06aba4e9beff18ff"
+    }
+  ],
+  "tests": {
+    "targeted": 11,
+    "fullTypeScript": "PASS",
+    "standaloneCliTypeScript": "PASS"
+  },
+  "sourcePolicy": "419 native realizations and 81 refusals unchanged; title is explicitly authored generic presentation text, not a generated toponym; zero source names available/added."
+}

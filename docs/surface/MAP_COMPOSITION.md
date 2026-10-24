@@ -4,7 +4,7 @@ Le bridge `web/src/surface/mapComposition.ts` compose un SVG autonome sur un PNG
 
 ## Entrées et API
 
-`composeSurfaceMap(capture, pngBytes, content, { style?, gridMeters? })` retourne `{ svg, evidence }`. Le binding `SurfaceMapCapture` lie les SHA256 du paquet source, des métriques et du PNG aux identifiants de monde et de contexte canonique. Le PNG est vérifié et embarqué dans le SVG avec ses octets originaux. Le CLI vérifie aussi les octets du paquet et des métriques ; aucune URL de raster externe n’est acceptée.
+`composeSurfaceMap(capture, pngBytes, content, { style?, gridMeters?, title? })` retourne `{ svg, evidence }`. Le binding `SurfaceMapCapture` lie les SHA256 du paquet source, des métriques et du PNG aux identifiants de monde et de contexte canonique. Le PNG est vérifié et embarqué dans le SVG avec ses octets originaux. Le CLI vérifie aussi les octets du paquet et des métriques ; aucune URL de raster externe n’est acceptée.
 
 Le TOP est un rectangle métrique exact dans le repère du paquet, jamais dans l’origine de rendu locale. Son rapport largeur/hauteur doit correspondre au PNG. L’échelle est en mètres ou kilomètres ; une grille JDR optionnelle est ancrée sur les coordonnées métriques source, avec un budget de 2 048 lignes. Le nord est explicitement le nord de grille local, `-Z`, sans prétention géodésique.
 
@@ -48,3 +48,7 @@ node --import tsx scripts/compose_surface_map.ts `
 La [preuve CITY](evidence/map-composition-city419.json) conserve le paquet de 419 réalisations natives et 81 refus, le parent retenu à 15,625 m et le sol legacy 1.5.3. Elle produit un plan de 400 m avec cadre blueprint, nord de grille, barre de 25 m, grille de 5 m et cinq entrées de légende. Le paquet n’archive aucun nom à l’emplacement prévu : zéro toponyme et zéro POI sont ajoutés. Le SHA du raster embarqué est exactement `c69ecb23fc11944e7553908834b1fa934634869b9ef121ce8068e909fb0d2452`. Le PNG composé est `75621009d8f089f98e7949f152ea2af9cff72b00dfbf4d0a6c32263aa98fbb26`.
 
 Neuf palettes de carte sont partagées (`styles.ts`), distinctes des quinze terrain styles. Les tests exercent les neuf surcouches ; ils ne qualifient pas quinze réalisations natives finales. Changer la palette du cadre ne repeint pas le raster. Les pinceaux SVG, hachures de relief et noms absents ne sont pas inventés. Les polices utilisent les piles système existantes et ne sont pas embarquées : aucune identité PNG entre machines n’est promise. Cette preuve est une composition CPU sur une capture retenue, sans nouveau rendu GPU, génération neuronale, acceptation artistique globale ou promesse de FPS.
+
+## Finition de présentation
+
+`--title "Plan urbain"` ajoute un titre explicitement fourni, avec la palette et la police communes. Son espace est réservé avant placement des labels ; sans option, aucun titre n’est inventé. Les légendes visibles utilisent des libellés lisibles (Bâtiments, Voirie, Arbres, Couvert bas, Sol minéral). Les qualifications de source et de potentiel, les comptes et chemins restent dans les métadonnées. Les noms de recette fournis (`displayName`, `label`, `name`) sont prioritaires ; une recette inconnue sans nom fourni conserve son identifiant. La [preuve avec titre](evidence/map-composition-city419-title.json) est une composition CPU du même raster V13, distincte d’une future capture native V14.
