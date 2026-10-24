@@ -89,6 +89,7 @@ func physical_snapshot()->Dictionary:
 	return {"visibility":visibility.duplicate(),"worldId":world.id,"widthM":width,"focus":{"x":float(focus.x),"y":float(focus.y)},"oblique":bool(viewer.get("oblique")),"terrainVersion":str(world.versions.terrain)+":"+digest_fields(world.terrain,["heights"]),
 		"canonicalContextId":world.get("canonicalContextRef",{}).get("id",world.id),"groundFieldsVersion":digest_fields(fields,ground_keys),
 		"canonicalContextFingerprint":digest_fields(canonical,["grid","bounds","source","versions","fields"]),"parentTerrainFingerprint":physical_parent_digest(world),
+		"groundResponseFingerprint":digest_fields(canonical.get("groundResponse",{}),["version","id","grid","source","fields"]),
 		"projectedGroundFieldsVersion":digest_fields(world.fields,ground_keys),"geometryDetailFingerprint":digest_fields(detail,detail_keys),"instanceBufferFingerprint":instance_buffer_digest(),
 		"inventoryFingerprint":inventory_digest(packet),"geometryDetailId":world.get("geometryDetail",{}).get("id",""),
 		"groundSampleFingerprint":digest_fields({"samples":samples},["samples"]),"lowCoverOpacity":low if visibility.lowCover else 0.0,
@@ -112,7 +113,7 @@ func run()->void:
 	var world:Dictionary=viewer.get("rendered_world")
 	if world.get("surfaceLayers",{}).get("groundAvailability")!="explicit" or world.get("surfaceLayers",{}).get("lowCoverAvailability")!="explicit":
 		push_error("Legacy composite cannot qualify bare ground");quit(1);return
-	var report={"format":"magna-layer-isolation-proof","version":2,"status":"running","widthM":float(viewer.get("width_m")),"requireInstances":require_instances,"views":[],
+	var report={"format":"magna-layer-isolation-proof","version":2,"status":"running","widthM":float(viewer.get("width_m")),"requireInstances":require_instances,"groundOnlyObjectsExcluded":args.has("--ground-only"),"views":[],
 		"scope":"Four production visibility states at one fixed camera/source snapshot, actual binary source/context/ground/geometry/inventory/instance-buffer hashes, shader uniforms and central image digests. Near views additionally require actual submitted/visible/alpha-positive-in-frustum instances. Counts are not GPU occlusion or per-pixel crown areas; potential cover diagnostics remain explicitly separate."}
 	var cases=[{"name":"all","ground":true,"lowCover":true,"trees":true},{"name":"no-low-cover","ground":true,"lowCover":false,"trees":true},{"name":"no-trees","ground":true,"lowCover":true,"trees":false},{"name":"ground","ground":true,"lowCover":false,"trees":false}]
 	for test in cases:

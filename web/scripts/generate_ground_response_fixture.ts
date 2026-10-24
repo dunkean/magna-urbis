@@ -16,6 +16,11 @@ const moved=surfaceLayerInput();moved.terrain.originX+=1e9;moved.terrain.originZ
 const rebased=compileSurfaceWorld(moved,options),legacy=compileSurfaceWorld(surfaceLayerInput(),{...options,groundResponse:false});
 const points:Array<[number,number]>=[[0,0],[32,32],[112.3,215.7],[128,160],[255.5,180.25],[511.5,511.5]];
 for(let i=0;i<80;i++)points.push([i*73%512+.125,i*137%512+.25]);
+for(let z=0;z<17;z++)for(let x=0;x<17;x++){
+  points.push([x*32,z*32]);
+  const dx=x===16?-1e-8:1e-8,dz=z===16?-1e-8:1e-8;
+  points.push([x*32+dx,z*32],[x*32,z*32+dz],[x*32+dx,z*32+dz]);
+}
 const expected:any={scope:'Authored two-substrate physical fixture; no neural generation/observed fine soils claimed',worlds:{}};
 expected.framingCases=[['a;string:b','c'],['a','b;string:c'],['a\0b','c'],['a','\0bc'],['é🌲','\0;string:x']].map(values=>{
   const h=createHash('sha256'),u32=(n:number)=>{const b=Buffer.alloc(4);b.writeUInt32LE(n);h.update(b);};h.update(Buffer.from([3]));u32(values.length);
