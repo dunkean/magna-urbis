@@ -13,7 +13,10 @@ const INPUT: &[u8; 8] = b"MUHIN001";
 const OUTPUT: &[u8; 8] = b"MUHOUT01";
 const VERSION: &str = "gd-height-batch-1";
 const MAX_BODY: usize = 512 * 1024 * 1024;
-const MAX_SOURCE_SAMPLES: usize = 1_572_864;
+const MAX_SOURCE_LAYERS: usize = 7;
+const MAX_SOURCE_SAMPLES: usize = MAX_SOURCE_LAYERS * 1024 * 1024;
+const SOURCE_BUDGET_VERSION: &str = "height-source-chain-2";
+const MAX_KNOWN_BUFFERS: usize = 384 * 1024 * 1024;
 type Result<T> = std::result::Result<T, String>;
 
 #[derive(Clone, Deserialize, Serialize, PartialEq)]
@@ -240,7 +243,7 @@ fn decode(bytes: &[u8]) -> Result<(Request, Vec<Grid>)> {
         || request.domains.is_empty()
         || request.domains.len() > 7
         || request.layers.is_empty()
-        || request.layers.len() > 7
+        || request.layers.len() > MAX_SOURCE_LAYERS
     {
         return Err("request shape/version".into());
     }
@@ -332,6 +335,16 @@ fn decode(bytes: &[u8]) -> Result<(Request, Vec<Grid>)> {
     if end != pl {
         return Err("unused source payload".into());
     }
+    // Preflight before promoting any source controls or allocating output/taps.
+    // Includes a 32 MiB reserve for decoded JSON/metadata; not a process RSS claim.
+    let known = bytes.len()
+        + total * 8
+        + request.width * request.height * 8
+        + (request.width + request.height) * request.layers.len() * std::mem::size_of::<Tap>()
+        + 32 * 1024 * 1024;
+    if known > MAX_KNOWN_BUFFERS {
+        return Err("native known buffer budget".into());
+    }
     for layer in &request.layers {
         let stride = if layer.dtype == "f32" { 4 } else { 8 };
         let mut values = Vec::with_capacity(layer.length);
@@ -376,6 +389,16 @@ fn run(input: &Path, output: &Path, expected: &str) -> Result<()> {
     }
     let started = Instant::now();
     let (r, grids) = decode(&bytes)?;
+    let source_samples: usize = grids.iter().map(|g| g.values.len()).sum();
+    let source_bytes: usize = grids
+        .iter()
+        .map(|g| g.values.len() * if g.meta.dtype == "f32" { 4 } else { 8 })
+        .sum();
+    let known = bytes.len()
+        + source_samples * 8
+        + r.width * r.height * 8
+        + (r.width + r.height) * grids.len() * std::mem::size_of::<Tap>()
+        + 32 * 1024 * 1024;
     let xs: Vec<Vec<Tap>> = grids
         .iter()
         .map(|g| {
@@ -459,7 +482,7 @@ fn run(input: &Path, output: &Path, expected: &str) -> Result<()> {
     digest.update(&heights);
     digest.update(&controls);
     let payload_hash = format!("{:x}", digest.finalize());
-    let manifest=serde_json::to_vec(&serde_json::json!({"version":VERSION,"job":r.job,"inputSha256":input_hash,"payloadSha256":payload_hash,"width":r.width,"height":r.height,"heightBytes":heights.len(),"controlBytes":controls.len(),"minimumM":low,"maximumM":high,"holes":holes,"sampleMs":started.elapsed().as_secs_f64()*1000.,"provenance":"Rust f64 scalar ordered16taps; no fast-math; GD positive-kernel seam policy"})).map_err(|e|e.to_string())?;
+    let manifest=serde_json::to_vec(&serde_json::json!({"version":VERSION,"job":r.job,"inputSha256":input_hash,"payloadSha256":payload_hash,"width":r.width,"height":r.height,"heightBytes":heights.len(),"controlBytes":controls.len(),"minimumM":low,"maximumM":high,"holes":holes,"sampleMs":started.elapsed().as_secs_f64()*1000.,"sourceSamples":source_samples,"sourceBytes":source_bytes,"sourceLayers":grids.len(),"sourceSampleBudget":MAX_SOURCE_SAMPLES,"sourceBudgetVersion":SOURCE_BUDGET_VERSION,"nativeKnownBufferUpperBytes":known,"provenance":"Rust f64 scalar ordered16taps; no fast-math; GD positive-kernel seam policy"})).map_err(|e|e.to_string())?;
     let temporary = output.with_extension(format!("partial-{}", std::process::id()));
     let result = (|| -> Result<()> {
         let mut file = File::create(&temporary).map_err(|e| e.to_string())?;
@@ -574,8 +597,69 @@ mod tests {
             }
         }
         assert_eq!(header["holes"], 7);
+        assert_eq!(header["sourceSamples"], 9);
+        assert_eq!(header["sourceLayers"], 1);
+        assert_eq!(header["sourceBytes"], 36);
+        assert_eq!(header["sourceSampleBudget"], MAX_SOURCE_SAMPLES);
+        assert_eq!(header["sourceBudgetVersion"], SOURCE_BUDGET_VERSION);
         fs::remove_file(input).unwrap();
         fs::remove_file(output).unwrap();
         fs::remove_dir(directory).unwrap();
+    }
+
+    #[test]
+    fn seven_full_grids_and_sample_budget_are_checked_before_promotion() {
+        let make = |extra: usize, layers: usize| {
+            let mut m: serde_json::Value = serde_json::from_slice(
+                &fixture(|_| {})[16..16
+                    + u32::from_le_bytes(fixture(|_| {})[8..12].try_into().unwrap()) as usize],
+            )
+            .unwrap();
+            let prototype = m["layers"][0].clone();
+            let mut offset = 0usize;
+            m["layers"] = serde_json::json!([]);
+            m["domains"] = serde_json::json!([]);
+            for index in 0..layers {
+                let mut layer = prototype.clone();
+                let width = 1024 + if index == layers - 1 { extra } else { 0 };
+                let spacing = index + 1;
+                layer["width"] = width.into();
+                layer["height"] = 1024.into();
+                layer["length"] = (width * 1024).into();
+                layer["offset"] = offset.into();
+                layer["spacingM"] = spacing.into();
+                layer["bounds"]["maxX"] = ((width - 1) * spacing).into();
+                layer["bounds"]["maxZ"] = (1023 * spacing).into();
+                m["domains"]
+                    .as_array_mut()
+                    .unwrap()
+                    .push(layer["bounds"].clone());
+                m["layers"].as_array_mut().unwrap().push(layer);
+                offset += width * 1024 * 4;
+            }
+            let metadata = serde_json::to_vec(&m).unwrap();
+            let start = (16 + metadata.len()).div_ceil(8) * 8;
+            let mut bytes = vec![0u8; start + offset];
+            bytes[..8].copy_from_slice(INPUT);
+            bytes[8..12].copy_from_slice(&(metadata.len() as u32).to_le_bytes());
+            bytes[12..16].copy_from_slice(&(offset as u32).to_le_bytes());
+            bytes[16..16 + metadata.len()].copy_from_slice(&metadata);
+            bytes
+        };
+        let bytes = make(0, 7);
+        let (_, grids) = decode(&bytes).unwrap();
+        assert_eq!(grids.len(), 7);
+        assert_eq!(
+            grids.iter().map(|g| g.values.len()).sum::<usize>(),
+            MAX_SOURCE_SAMPLES
+        );
+        assert_eq!(height(&grids, 1., 1., 1., None).to_bits(), 0f64.to_bits());
+        drop(grids);
+        drop(bytes);
+        assert_eq!(
+            decode(&make(1, 7)).err().unwrap(),
+            "invalid source grid/lineage/budget/kernel/order"
+        );
+        assert_eq!(decode(&make(0, 8)).err().unwrap(), "request shape/version");
     }
 }
