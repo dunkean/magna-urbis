@@ -448,8 +448,10 @@ function compile(gl: WebGL2RenderingContext, vs: string, fs: string): WebGLProgr
   const program = gl.createProgram()!;
   for (const [type, source] of [[gl.VERTEX_SHADER, vs], [gl.FRAGMENT_SHADER, fs]] as const) {
     const shader = gl.createShader(type)!;
+    if(new URLSearchParams(location.search).has('compile-log'))console.log('ORIGINAL_COMPILE_BEGIN '+type+' '+source.length);
     gl.shaderSource(shader, source); gl.compileShader(shader);
     if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) throw new Error(`Shader : ${gl.getShaderInfoLog(shader)}`);
+    if(new URLSearchParams(location.search).has('compile-log'))console.log('ORIGINAL_COMPILE_END '+type+' '+source.length);
     gl.attachShader(program, shader);
   }
   gl.linkProgram(program);

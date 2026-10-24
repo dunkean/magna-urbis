@@ -22,6 +22,8 @@ const sourceReady=(async()=>{
 function view(widthM:number,x:number,z:number){if(![widthM,x,z].every(Number.isFinite)||widthM<=0)throw Error('Vue invalide');return{cx:x,cy:z,scale:1024/widthM}}
 async function init(){
  if(gpu)return;const{source,heights}=await sourceReady;
+ const context=canvas.getContext('webgl2',{alpha:false,antialias:false,depth:false,stencil:false,preserveDrawingBuffer:false,powerPreference:'high-performance'});
+ if(!context)throw Error('WebGL2 indisponible');const debug=context.getExtension('WEBGL_debug_renderer_info');console.log('ORIGINAL_CONTEXT '+(debug?context.getParameter(debug.UNMASKED_RENDERER_WEBGL):context.getParameter(context.RENDERER)));
  gpu=new TerrainGl(canvas);
  gpu.setBase({x:source.height.x,y:source.height.y,width:source.height.width,n:source.height.n,data:heights});
  gpu.setLook({...source.look,layers:{...source.look.layers,water:false}} as TerrainLook);
