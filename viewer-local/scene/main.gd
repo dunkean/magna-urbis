@@ -1442,11 +1442,10 @@ func _update_canopy_phase(delta:float)->void:
 		for key in bindings:material.set_shader_parameter(key,_canopy_material_geometry_weight(material) if key=="canopy_geometry_weight" else bindings[key])
 
 func _update_tree_solar(delta:float,view:Dictionary)->bool:
-	var source:Dictionary=rendered_packet.get("source",{})
-	var validity=tree_shadow_mode=="native-solar" and rendered_presentation_mode=="aerial" and tree_solar_node!=null and is_instance_valid(tree_solar_node) and tree_solar_data.get("available",false) and tree_solar_data.get("worldId","")==rendered_world_id and tree_solar_data.get("sourceEpoch")==source.get("sourceEpoch") and tree_solar_data.get("sceneEpoch")==source.get("sceneEpoch") and tree_solar.descriptor.get("assetDigest","")==tree_library.cpu.get("digest") and tree_solar.direction.distance_to(sun.global_basis.z.normalized())<.000001
-	var state:Dictionary={"weight":0.0,"reason":"no-compatible-complete-source-solar-inventory"}
+	var validity=tree_shadow_mode=="native-solar" and rendered_presentation_mode=="aerial" and tree_solar_node!=null and is_instance_valid(tree_solar_node) and TreeSolar.binding_matches(tree_solar_data,rendered_world,rendered_packet,tree_solar.descriptor,str(tree_library.cpu.get("digest",""))) and tree_solar.direction.distance_to(sun.global_basis.z.normalized())<.000001
+	var state:Dictionary={"weight":0.0,"reason":tree_solar_data.get("reason","no-compatible-complete-source-solar-inventory")}
 	if validity:state=TreeSolar.guard(tree_solar_data,view.get("frustumBounds",{}),float(rendered_height_range.x)+float(origin.y),sun.global_basis.z.normalized())
-	var cap=float(state.weight)
+	var cap=float(state.weight)*minf(1.0,minf(canopy_phase,float(view.get("safePhase",0))))
 	# Unsafe modes/coverage fall immediately, rise only after a compatible source.
 	tree_solar_weight=minf(tree_solar_weight,cap)
 	tree_solar_weight=lerpf(tree_solar_weight,cap,1.0-exp(-delta/.20))
@@ -1454,7 +1453,7 @@ func _update_tree_solar(delta:float,view:Dictionary)->bool:
 	if tree_solar_node!=null and is_instance_valid(tree_solar_node):
 		tree_solar_node.multimesh.mesh.surface_get_material(0).set_shader_parameter("solar_weight",tree_solar_weight)
 		tree_solar_node.visible=layer_visibility.trees and validity
-	tree_solar_metrics={"mode":tree_shadow_mode,"weight":tree_solar_weight,"targetWeight":cap,"opticalFallbackWeight":1.0-tree_solar_weight,"active":tree_solar_weight>0,"completeInventoryCount":tree_solar_data.get("count",0),"submittedTriangles":int(tree_solar_data.get("count",0))*2 if validity else 0,"colourRetentionCapApplies":false,"worldId":tree_solar_data.get("worldId",""),"sourceInventorySha256":tree_solar_data.get("sourceInventorySha256",""),"sourceEpoch":tree_solar_data.get("sourceEpoch"),"sceneEpoch":tree_solar_data.get("sceneEpoch"),"guard":state,"bake":tree_solar.descriptor,"treeLayerVisible":layer_visibility.trees,"scope":"native backend shared with terrain/buildings; quantized solar cutout/depth, complete page with source-height halo; whole-view fallback, no physical transport exactness claim"}
+	tree_solar_metrics={"mode":tree_shadow_mode,"weight":tree_solar_weight,"targetWeight":cap,"opticalFallbackWeight":1.0-tree_solar_weight,"active":tree_solar_weight>0 and layer_visibility.trees and validity,"completeInventoryCount":tree_solar_data.get("count",0),"submittedTriangles":int(tree_solar_data.get("count",0))*2 if validity else 0,"colourRetentionCapApplies":false,"worldId":tree_solar_data.get("worldId",""),"sourceInventorySha256":tree_solar_data.get("sourceInventorySha256",""),"sourceEpoch":tree_solar_data.get("sourceEpoch"),"sceneEpoch":tree_solar_data.get("sceneEpoch"),"guard":state,"bake":tree_solar.descriptor,"treeLayerVisible":layer_visibility.trees,"scope":"native backend shared with terrain/buildings; quantized solar cutout/depth, complete page with source-height halo; whole-view fallback, no physical transport exactness claim"}
 	return absf(tree_solar_weight-cap)>.001
 
 # Counts come from the actually submitted MultiMesh buffers and shader state.
@@ -1606,6 +1605,7 @@ func _cache_scene_top_y()->void:
 	scene_top_y=-INF
 	for child in objects.get_children():
 		if not child.visible or not (child is MeshInstance3D or child is MultiMeshInstance3D):continue
+		if child.cast_shadow==GeometryInstance3D.SHADOW_CASTING_SETTING_SHADOWS_ONLY:continue
 		var bounds:AABB=child.transform*child.get_aabb()
 		if bounds.position.is_finite() and bounds.size.is_finite():scene_top_y=maxf(scene_top_y,bounds.end.y)
 

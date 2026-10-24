@@ -17,6 +17,15 @@ func _initialize()->void:
 	check(data.count==1 and data.triangles==2,"no selected geometry cap")
 	check(var_to_bytes(packet)==unchanged,"source immutable")
 	check(data.values[1]==2012.125,"root altitude unchanged")
+	var bake={"available":true,"assetDigest":"asset-one"}
+	check(Solar.binding_matches(data,world,packet,bake,"asset-one"),"matching world/source/scene/asset binding")
+	for key in ["id","sourceEpoch","sceneEpoch","sourceVersion","asset"]:
+		var modified_data=data.duplicate(true);var modified_bake=bake.duplicate(true)
+		if key=="id":modified_data.worldId="stale-world"
+		elif key=="sourceVersion":modified_data.source.version="stale-source"
+		elif key=="asset":modified_bake.assetDigest="stale-asset"
+		else:modified_data[key]="stale-epoch"
+		check(not Solar.binding_matches(modified_data,world,packet,modified_bake,"asset-one"),"reject stale"+key)
 	for direction in [Vector3(.35,.75,.56).normalized(),Vector3(-.6,.4,-.5).normalized()]:
 		var basis=Solar.solar_basis(direction)
 		check(absf(basis.determinant()-1)<.00001,"right-handed solar frame")
@@ -35,12 +44,25 @@ func _initialize()->void:
 		var view={"minX":1e9-50,"maxX":1e9+50,"minZ":-1e9-50,"maxZ":-1e9+50}
 		var guard=Solar.guard(data,view,1980,direction)
 		check(guard.weight==1,"whole view and upstream shadow halo covered")
-		check(guard.maximumCasterY==2118,"actual source height bound+declared catalogue max")
+		check(absf(guard.maximumCasterY-2123.4)<.00001,"actual source height bound+conservative asset support, not constant offset")
 		check(Solar.guard(data,view,-10000,direction).weight==0,"missing offscreen upstream casters disableswholeview")
 	var bad=packet.duplicate(true);bad.candidates[0].crownRadiusM=6
 	check(not Solar.prepare(bad,world,origin).available,"reject unsupported anisotropy; never stretch wrongmask")
 	bad=packet.duplicate(true);bad.candidatePages.tree.count=2
 	check(not Solar.prepare(bad,world,origin).available,"reject falsely complete inventory count")
+	bad=packet.duplicate(true);bad.candidates[0].size=18.01
+	check(not Solar.prepare(bad,world,origin).available,"reject source exceeding declared size catalogue")
+	bad=packet.duplicate(true);bad.candidates[0].rank=NAN
+	check(not Solar.prepare(bad,world,origin).available,"reject nonfinite rank")
+	var many=packet.duplicate(true);many.candidates=[]
+	for i in 10001:
+		var record=candidate.duplicate();record.stableId="complete-tree-"+str(i);many.candidates.append(record)
+	many.candidatePages.tree.count=10001
+	check(Solar.prepare(many,world,origin).count==10001,"complete shadow inventory is not colour-capped10000")
+	bad=packet.duplicate(true);bad._unsupportedTreeIDs={candidate.stableId:true}
+	var filtered=Solar.prepare(bad,world,origin)
+	check(filtered.available and filtered.count==0 and filtered.unsupportedTreeCount==1 and filtered.declaredSourceTreeCount==1,"same private physical support rejection as C/V; source count intact")
+	check(filtered.sourceInventorySha256!=data.sourceInventorySha256,"private support change invalidates shadow binding")
 	for i in range(-200,201):
 		var angle=float(i)*.127;var bin=Solar.yaw_bin(angle);var delta=wrapf(angle-float(bin)*TAU/Solar.YAW_BINS,-PI,PI)
 		check(absf(delta)<=PI/Solar.YAW_BINS+.000001,"bounded yaw quantization")
