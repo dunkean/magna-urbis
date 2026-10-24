@@ -1,0 +1,566 @@
+{
+  "format": "native-canopy-cpu-v16-evidence",
+  "version": 1,
+  "scope": "CPU-only exact raster/mipmap parity and authored rejection/cancellation tests. No native GPU/E2E/FPS/artistic qualification.",
+  "coreCommit": "8e06d9d",
+  "archiveObservedRootHead": "79bc0e8157e4e53643b72979552356d0953d2b53",
+  "source": {
+    "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\native-e2e-40km-v15\\live-refinement.surfacebin",
+    "bytes": 76589841,
+    "sha256": "f9bdb75671c21ceb402a817cc244a076487f7b88c267773b785f4de942055874"
+  },
+  "candidateColumnsCount": 1059,
+  "treeCount": 1004,
+  "selectedDiagnosticCount": 335,
+  "selectionPolicy": "Every third existing tree in original source order, explicitly diagnostic; no source edits",
+  "worldId": "2f644bd02a2cb95ecbb66a8066d6496c",
+  "viewBounds": {
+    "maxX": 20100.0,
+    "maxZ": 20100.0,
+    "minX": 19900.0,
+    "minZ": 19900.0
+  },
+  "assetDigest": "74edf966059a17fd44df22d24f4ee055f780d84196ee9c54703fa3b9e46ecbe9",
+  "reference": {
+    "frozenCommit": "c53cd7e6de1b8efa8b7ea8d5d747505b87e6f237",
+    "frozenSourceLfSha256": "b987c4c9afa921e91db5bdc87af93775926f7742121bcf6918bc4d886369809b",
+    "productionReference": {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\canopy-cpu-v16\\production-reference.gd",
+      "bytes": 11164,
+      "sha256": "80559969ca6565bb125ebbbbc13094b40ca7b7390805db8ee2d8a6da6c531a72"
+    },
+    "productionChange": "Class rename only, independently compared after LF normalization; RESOLUTION2048 retained.",
+    "smallFixtureReference": {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\canopy-cpu-v16\\reference.gd",
+      "bytes": 11321,
+      "sha256": "9834bf337cb6b773f6af972d4fb639827df36b96a144594935b7cdd4e411c72a"
+    },
+    "smallFixtureChange": "Class rename and only RESOLUTION2048->256, independently compared after LF normalization."
+  },
+  "originalRun": {
+    "assetDigest": "74edf966059a17fd44df22d24f4ee055f780d84196ee9c54703fa3b9e46ecbe9",
+    "atlasHash": "4c0d3bc39cfdef9fd1dd6c9ffd0f97da2defa4c3089c9fc4383f677c7be6c923",
+    "failures": 0,
+    "format": "native-canopy-retained-parity",
+    "images": {
+      "colorImage": {
+        "bytes": 89478480,
+        "dimensions": [
+          2048,
+          2048
+        ],
+        "mipmaps": true,
+        "nativeSha256": "47682045c5fed70f5a771148b6511a9ea27a2bc8e8851083b33569cc3b169c0d",
+        "same": true,
+        "sha256": "47682045c5fed70f5a771148b6511a9ea27a2bc8e8851083b33569cc3b169c0d"
+      },
+      "countsImage": {
+        "bytes": 67108864,
+        "dimensions": [
+          2048,
+          2048
+        ],
+        "mipmaps": false,
+        "nativeSha256": "b8ecc8100a5a7dc5c2a4f3f219d8421e3c9927462a167dd271503fcedd9bf699",
+        "same": true,
+        "sha256": "b8ecc8100a5a7dc5c2a4f3f219d8421e3c9927462a167dd271503fcedd9bf699"
+      },
+      "coverageImage": {
+        "bytes": 22369620,
+        "dimensions": [
+          2048,
+          2048
+        ],
+        "mipmaps": true,
+        "nativeSha256": "454d9da71a2390ab736c3de1ad13949d97ec01aa50cf71c13105a44901697983",
+        "same": true,
+        "sha256": "454d9da71a2390ab736c3de1ad13949d97ec01aa50cf71c13105a44901697983"
+      },
+      "normalImage": {
+        "bytes": 89478480,
+        "dimensions": [
+          2048,
+          2048
+        ],
+        "mipmaps": true,
+        "nativeSha256": "6137143c028efcd8d762d0cb71df6d39b7e18487cdfbf9f0908200ce03271fe2",
+        "same": true,
+        "sha256": "6137143c028efcd8d762d0cb71df6d39b7e18487cdfbf9f0908200ce03271fe2"
+      }
+    },
+    "nativeWholeCanopyWallMs": 2541.664,
+    "pixels": 4194304,
+    "rasterSampler": {
+      "assetDigest": "74edf966059a17fd44df22d24f4ee055f780d84196ee9c54703fa3b9e46ecbe9",
+      "eligible": true,
+      "executableSha256": "cc16070cc8aebfc673c0711b6fbae07b4903af2eccc08ff9204843def9785b56",
+      "height": 2048,
+      "nativeKnownBufferUpperBytes": 303103360.0,
+      "outputPayloadSha256": "0665105c1c898650f1234211d85a2595ed8ad30ff1bf4f5668f98cb5f2d69ac9",
+      "requested": true,
+      "sampleMs": 312.6046,
+      "sceneEpoch": "bench-scene-1",
+      "sourceEpoch": "bench-source-1",
+      "sourceInputSha256": "3495d9e022be5aa0d492a2f01c4a41f072b7b231fb0056188a47ef5a5883017a",
+      "sourceWorldId": "2f644bd02a2cb95ecbb66a8066d6496c",
+      "totalMs": 1838.708,
+      "treeCount": 1004,
+      "used": true,
+      "version": "native-canopy-raster-1",
+      "width": 2048
+    },
+    "scalarWallMs": 4845.373,
+    "scope": "Actual retained V15 source and corrected product, all full-resolution image bytes/mips; CPU wall observations only, no GPU/FPS/city/fresh-generation/artistic claim",
+    "selectedCount": 335,
+    "selectionPolicy": "Every third existing tree in original source order, explicitly diagnostic; no source edits",
+    "sourcePath": "D:/workspace/self/_worktrees/magna-urbis-surface-world-2026-10-23/web/out/surface/native-e2e-40km-v15/live-refinement.surfacebin",
+    "sourceSha256": "f9bdb75671c21ceb402a817cc244a076487f7b88c267773b785f4de942055874",
+    "status": "PASS",
+    "treeCount": 1004,
+    "viewBounds": {
+      "maxX": 20100.0,
+      "maxZ": 20100.0,
+      "minX": 19900.0,
+      "minZ": 19900.0
+    },
+    "worldId": "2f644bd02a2cb95ecbb66a8066d6496c"
+  },
+  "finalRun": {
+    "assetDigest": "74edf966059a17fd44df22d24f4ee055f780d84196ee9c54703fa3b9e46ecbe9",
+    "atlasHash": "4c0d3bc39cfdef9fd1dd6c9ffd0f97da2defa4c3089c9fc4383f677c7be6c923",
+    "failures": 0,
+    "format": "native-canopy-retained-parity",
+    "images": {
+      "colorImage": {
+        "bytes": 89478480,
+        "dimensions": [
+          2048,
+          2048
+        ],
+        "mipmaps": true,
+        "nativeSha256": "47682045c5fed70f5a771148b6511a9ea27a2bc8e8851083b33569cc3b169c0d",
+        "same": true,
+        "sha256": "47682045c5fed70f5a771148b6511a9ea27a2bc8e8851083b33569cc3b169c0d"
+      },
+      "countsImage": {
+        "bytes": 67108864,
+        "dimensions": [
+          2048,
+          2048
+        ],
+        "mipmaps": false,
+        "nativeSha256": "b8ecc8100a5a7dc5c2a4f3f219d8421e3c9927462a167dd271503fcedd9bf699",
+        "same": true,
+        "sha256": "b8ecc8100a5a7dc5c2a4f3f219d8421e3c9927462a167dd271503fcedd9bf699"
+      },
+      "coverageImage": {
+        "bytes": 22369620,
+        "dimensions": [
+          2048,
+          2048
+        ],
+        "mipmaps": true,
+        "nativeSha256": "454d9da71a2390ab736c3de1ad13949d97ec01aa50cf71c13105a44901697983",
+        "same": true,
+        "sha256": "454d9da71a2390ab736c3de1ad13949d97ec01aa50cf71c13105a44901697983"
+      },
+      "normalImage": {
+        "bytes": 89478480,
+        "dimensions": [
+          2048,
+          2048
+        ],
+        "mipmaps": true,
+        "nativeSha256": "6137143c028efcd8d762d0cb71df6d39b7e18487cdfbf9f0908200ce03271fe2",
+        "same": true,
+        "sha256": "6137143c028efcd8d762d0cb71df6d39b7e18487cdfbf9f0908200ce03271fe2"
+      }
+    },
+    "nativeWholeCanopyWallMs": 2543.688,
+    "pixels": 4194304,
+    "rasterSampler": {
+      "assetDigest": "74edf966059a17fd44df22d24f4ee055f780d84196ee9c54703fa3b9e46ecbe9",
+      "eligible": true,
+      "executableSha256": "b855cc3780947752a9eeaa3ddada435fe47965820998600f0feeb6a9bc4e005c",
+      "height": 2048,
+      "nativeKnownBufferUpperBytes": 303103360.0,
+      "outputPayloadSha256": "0665105c1c898650f1234211d85a2595ed8ad30ff1bf4f5668f98cb5f2d69ac9",
+      "requested": true,
+      "sampleMs": 319.284,
+      "sceneEpoch": "bench-scene-1",
+      "sourceEpoch": "bench-source-1",
+      "sourceInputSha256": "78a078e22461c7712150a3ef53d34a0a088ab819154b59ab88fb8696d8011930",
+      "sourceWorldId": "2f644bd02a2cb95ecbb66a8066d6496c",
+      "totalMs": 1832.458,
+      "treeCount": 1004,
+      "used": true,
+      "version": "native-canopy-raster-1",
+      "width": 2048
+    },
+    "savedScalarOracle": {
+      "originalScalarWallMs": 4845.373,
+      "path": "D:/workspace/self/_worktrees/magna-urbis-surface-world-2026-10-23/web/out/surface/canopy-cpu-v16/retained.json",
+      "scalarRecomputed": false,
+      "sha256": "97e41245a4833dab0cfeee023c626578100de90d3366d405c723998c28a5915f"
+    },
+    "scalarWallMs": null,
+    "scope": "Actual retained V15 source and corrected product, all full-resolution image bytes/mips; CPU wall observations only, no GPU/FPS/city/fresh-generation/artistic claim",
+    "selectedCount": 335,
+    "selectionPolicy": "Every third existing tree in original source order, explicitly diagnostic; no source edits",
+    "sourcePath": "D:/workspace/self/_worktrees/magna-urbis-surface-world-2026-10-23/web/out/surface/native-e2e-40km-v15/live-refinement.surfacebin",
+    "sourceSha256": "f9bdb75671c21ceb402a817cc244a076487f7b88c267773b785f4de942055874",
+    "status": "PASS",
+    "treeCount": 1004,
+    "viewBounds": {
+      "maxX": 20100.0,
+      "maxZ": 20100.0,
+      "minX": 19900.0,
+      "minZ": 19900.0
+    },
+    "worldId": "2f644bd02a2cb95ecbb66a8066d6496c"
+  },
+  "originalExecutedBinary": {
+    "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\canopy-cpu-v16\\executed-canopy-batch.exe",
+    "bytes": 365568,
+    "sha256": "cc16070cc8aebfc673c0711b6fbae07b4903af2eccc08ff9204843def9785b56"
+  },
+  "finalExecutedBinary": {
+    "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\viewer-local\\native-height\\target\\release\\magna-surface-canopy-batch.exe",
+    "bytes": 365568,
+    "sha256": "b855cc3780947752a9eeaa3ddada435fe47965820998600f0feeb6a9bc4e005c"
+  },
+  "binaryChangeScope": {
+    "parentReported": "Rebuild after cfg(test)-only additions; production code unchanged.",
+    "independentlyEstablished": "Both binaries are pinned by exact SHA and both full-resolution results match all four original scalar image hashes and atlas hash. Original source snapshot of the pre-test build is not asserted from the binary."
+  },
+  "timingScope": {
+    "scalarOriginalWholeWallMs": 4845.373,
+    "nativeOriginalWholeWallMs": 2541.664,
+    "nativeFinalWholeWallMs": 2543.688,
+    "nativeRasterAndValidationOriginalMs": 312.6046,
+    "nativeRasterAndValidationFinalMs": 319.284,
+    "nativeBatchFinalTotalMs": 1832.458,
+    "wholeMeaning": "SurfaceCanopy.prepare including GD image creation/mipmaps/hash; CPU wall observation, not sampledCPU.",
+    "batchMeaning": "Input packing/process/output decode; excludes later GD image/mipmap/hash work. sampleMs also includes native allocation and output hash/extrema work.",
+    "finalScalarRecomputed": false,
+    "wallComparisonCausality": "Fixed input observations only, no statistical/system-load isolation or whole-chain speed/FPS claim."
+  },
+  "realGdTestRun": {
+    "command": [
+      "D:/workspace/self/_surface-tools/godot-4.7.2/Godot_v4.7.2-stable_win64_console.exe",
+      "--audio-driver",
+      "Dummy",
+      "--headless",
+      "--path",
+      "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\viewer-local",
+      "--script",
+      "tests/surface_canopy_batch_test.gd",
+      "--",
+      "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\viewer-local\\native-height\\target\\release\\magna-surface-canopy-batch.exe",
+      "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\canopy-cpu-v16\\reference.gd"
+    ],
+    "exitCode": 0,
+    "result": {
+      "cancel": {
+        "cancelled": true,
+        "ownedProcessId": 212836,
+        "processRunningAfterCleanup": false,
+        "processWasRunningAtAbort": true,
+        "temporaryDirectoryRemoved": true
+      },
+      "cases": [
+        {
+          "allBaseAndMipBytesExact": {
+            "counts": true,
+            "coverage": true,
+            "normals": true
+          },
+          "maximumErrors": {
+            "counts": {
+              "maximumError": 0.0,
+              "mismatches": 0
+            },
+            "coverage": {
+              "maximumError": 0.0,
+              "mismatches": 0
+            },
+            "normals": {
+              "maximumError": 0.0,
+              "mismatches": 0
+            }
+          },
+          "mode": 0,
+          "offset": 0.0,
+          "pixelCount": 65536,
+          "sampler": {
+            "assetDigest": "legacy",
+            "eligible": true,
+            "executableSha256": "b855cc3780947752a9eeaa3ddada435fe47965820998600f0feeb6a9bc4e005c",
+            "height": 256,
+            "nativeKnownBufferUpperBytes": 36177840.0,
+            "outputPayloadSha256": "564a5e81d313479cda2ba635650f664b9a041cde9d667b911319bd72843e9f4e",
+            "requested": true,
+            "sampleMs": 2.9268,
+            "sceneEpoch": "test-scene",
+            "sourceEpoch": "test-source",
+            "sourceInputSha256": "e47ef1219f7cc259586252ba44a66b9fb7d7eb69b1a2ffe57d1a8958c63ef6d6",
+            "sourceWorldId": "canopy-fixture-0",
+            "totalMs": 437.151,
+            "treeCount": 24,
+            "used": true,
+            "version": "native-canopy-raster-1",
+            "width": 256
+          }
+        },
+        {
+          "allBaseAndMipBytesExact": {
+            "colors": true,
+            "counts": true,
+            "coverage": true,
+            "normals": true
+          },
+          "maximumErrors": {
+            "colors": {
+              "maximumError": 0.0,
+              "mismatches": 0
+            },
+            "counts": {
+              "maximumError": 0.0,
+              "mismatches": 0
+            },
+            "coverage": {
+              "maximumError": 0.0,
+              "mismatches": 0
+            },
+            "normals": {
+              "maximumError": 0.0,
+              "mismatches": 0
+            }
+          },
+          "mode": 1,
+          "offset": 0.0,
+          "pixelCount": 65536,
+          "sampler": {
+            "assetDigest": "authored-mask-8",
+            "eligible": true,
+            "executableSha256": "b855cc3780947752a9eeaa3ddada435fe47965820998600f0feeb6a9bc4e005c",
+            "height": 256,
+            "nativeKnownBufferUpperBytes": 37228616.0,
+            "outputPayloadSha256": "2ccc6be6096bd842a5c59574486d1008d3a47b9df479fe30a0ae4baa2b60c092",
+            "requested": true,
+            "sampleMs": 5.0637,
+            "sceneEpoch": "test-scene",
+            "sourceEpoch": "test-source",
+            "sourceInputSha256": "5a0eb6626bcc69823f313cae23548b29ae9677924cee1fda2a52fccfde71ebe4",
+            "sourceWorldId": "canopy-fixture-1",
+            "totalMs": 458.727,
+            "treeCount": 24,
+            "used": true,
+            "version": "native-canopy-raster-1",
+            "width": 256
+          }
+        },
+        {
+          "allBaseAndMipBytesExact": {
+            "colors": true,
+            "counts": true,
+            "coverage": true,
+            "normals": true
+          },
+          "maximumErrors": {
+            "colors": {
+              "maximumError": 0.0,
+              "mismatches": 0
+            },
+            "counts": {
+              "maximumError": 0.0,
+              "mismatches": 0
+            },
+            "coverage": {
+              "maximumError": 0.0,
+              "mismatches": 0
+            },
+            "normals": {
+              "maximumError": 0.0,
+              "mismatches": 0
+            }
+          },
+          "mode": 2,
+          "offset": 1000000000.0,
+          "pixelCount": 65536,
+          "sampler": {
+            "assetDigest": "authored-mask-8",
+            "eligible": true,
+            "executableSha256": "b855cc3780947752a9eeaa3ddada435fe47965820998600f0feeb6a9bc4e005c",
+            "height": 256,
+            "nativeKnownBufferUpperBytes": 37228648.0,
+            "outputPayloadSha256": "327c58aaae7e018819cf72d0d635bab8b50eef1ef8444f3ce8c544818d99a22b",
+            "requested": true,
+            "sampleMs": 5.0749,
+            "sceneEpoch": "test-scene",
+            "sourceEpoch": "test-source",
+            "sourceInputSha256": "78aee7c0e19fb8c3e399dce6b8675da0a2b83adfb9772aa77428241a02162376",
+            "sourceWorldId": "canopy-fixture-2",
+            "totalMs": 613.591,
+            "treeCount": 24,
+            "used": true,
+            "version": "native-canopy-raster-1",
+            "width": 256
+          }
+        },
+        {
+          "allBaseAndMipBytesExact": {
+            "colors": true,
+            "counts": true,
+            "coverage": true,
+            "normals": true
+          },
+          "maximumErrors": {
+            "colors": {
+              "maximumError": 0.0,
+              "mismatches": 0
+            },
+            "counts": {
+              "maximumError": 0.0,
+              "mismatches": 0
+            },
+            "coverage": {
+              "maximumError": 0.0,
+              "mismatches": 0
+            },
+            "normals": {
+              "maximumError": 0.0,
+              "mismatches": 0
+            }
+          },
+          "mode": 3,
+          "offset": 0.0,
+          "pixelCount": 65536,
+          "sampler": {
+            "assetDigest": "authored-mask-8",
+            "eligible": true,
+            "executableSha256": "b855cc3780947752a9eeaa3ddada435fe47965820998600f0feeb6a9bc4e005c",
+            "height": 256,
+            "nativeKnownBufferUpperBytes": 37227080.0,
+            "outputPayloadSha256": "fc77dda0e6e0aaf12128f8c7749f5b934cf0574a024b08db8ea774fd3ca36900",
+            "requested": true,
+            "sampleMs": 4.1496,
+            "sceneEpoch": "test-scene",
+            "sourceEpoch": "test-source",
+            "sourceInputSha256": "dd0fbd28ff589a446df523a694028b8254d38542bf3c8aee1db47f87d95542f3",
+            "sourceWorldId": "canopy-fixture-3",
+            "totalMs": 460.908,
+            "treeCount": 0,
+            "used": true,
+            "version": "native-canopy-raster-1",
+            "width": 256
+          }
+        }
+      ],
+      "checks": 47,
+      "failures": 0,
+      "scope": "CPU authored trees/cutout/response versus frozen V15 scalar implementation; sizing constant only changed to256; decoder rejects malformed types; real cancellation/timeout; no GPU or artistic qualification",
+      "test": "native-canopy-frozen-v15-parity",
+      "timeout": {
+        "canopyBatchError": "canopy process timeout",
+        "failed": true,
+        "ownedProcessId": 216860,
+        "processRunningAfterCleanup": false,
+        "processWasRunningAtAbort": true,
+        "temporaryDirectoryRemoved": true
+      }
+    },
+    "stdout": {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\canopy-cpu-v16\\final-tests.stdout.log",
+      "bytes": 4347,
+      "sha256": "a529e2b23849251c6f5bb17fd6b558cea45002a115a7e576a3126760af49a031"
+    },
+    "stderr": {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\canopy-cpu-v16\\final-tests.stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "json": {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\canopy-cpu-v16\\final-tests.json",
+      "bytes": 7457,
+      "sha256": "efe9abe1e249543dec891b711c73e544f37750943ae72651531917040899b4ab"
+    }
+  },
+  "otherChecksParentReported": {
+    "rustUnitTests": 4,
+    "nodeCanopyEvidenceTests": 3,
+    "nodeProfileTests": 10,
+    "status": "PASS reported by parent; no raw logs for these suites in this artifact folder, not rerun or fabricated."
+  },
+  "bounds": {
+    "atlasSide": {
+      "min": 2,
+      "max": 2048,
+      "powerOfTwo": true
+    },
+    "maskSideMax": 1024,
+    "treesMax": 100000,
+    "visitedRasterPixelsMax": 67108864,
+    "wireBytesMax": 268435456,
+    "manifestBytesMax": 1048576,
+    "knownNativeBytesMax": 402653184,
+    "observedKnownNativeBytes": 303103360.0,
+    "visibilityPlanAtlasBytesPerPixel": 240,
+    "visibilityPlanFixedExtraBytes": 83886080,
+    "memoryScope": "Plan budgets, not measured processRSS. GD decode arrays/images/mips and retained caches remain distinct from the native-only bound."
+  },
+  "reviewCorrections": [
+    "Output extrema/sampleMs/counters are strictly typed and bounded; trees+unsupported==input and selected<=trees.",
+    "Abort waits up to2s for the owned child; if still alive it returns failed/abortIncomplete and does not claim cleanup/cancellation success.",
+    "Cache keys distinguish gd:canopy-r6 and native:<valid64hexSHA>; missing/invalid executable hash fails before reuse."
+  ],
+  "profileStatus": "Explicit native canopy flag/profile artifact exists (83runtime artifacts with helper). No V16 end-to-end or GPU qualification from these CPU results. Shadow transfer remains legacy optical by default; deltaSolar is separately opt-in.",
+  "artifacts": [
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\canopy-cpu-v16\\retained.json",
+      "bytes": 3181,
+      "sha256": "97e41245a4833dab0cfeee023c626578100de90d3366d405c723998c28a5915f"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\canopy-cpu-v16\\retained-final.json",
+      "bytes": 3482,
+      "sha256": "4f1c4548a2212a7a5ec5e74ae94b928b4e7f002b00a275d8c4eb78bae8f456f4"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\canopy-cpu-v16\\reference.gd",
+      "bytes": 11321,
+      "sha256": "9834bf337cb6b773f6af972d4fb639827df36b96a144594935b7cdd4e411c72a"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\canopy-cpu-v16\\production-reference.gd",
+      "bytes": 11164,
+      "sha256": "80559969ca6565bb125ebbbbc13094b40ca7b7390805db8ee2d8a6da6c531a72"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\canopy-cpu-v16\\executed-canopy-batch.exe",
+      "bytes": 365568,
+      "sha256": "cc16070cc8aebfc673c0711b6fbae07b4903af2eccc08ff9204843def9785b56"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\canopy-cpu-v16\\final-tests.json",
+      "bytes": 7457,
+      "sha256": "efe9abe1e249543dec891b711c73e544f37750943ae72651531917040899b4ab"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\canopy-cpu-v16\\final-tests.stdout.log",
+      "bytes": 4347,
+      "sha256": "a529e2b23849251c6f5bb17fd6b558cea45002a115a7e576a3126760af49a031"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\canopy-cpu-v16\\final-tests.stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ],
+  "finalBinaryArchiveCopy": {
+    "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-v16-map-quality\\web\\out\\surface\\canopy-doc-proof\\executed-canopy-batch-final.exe",
+    "bytes": 365568,
+    "sha256": "b855cc3780947752a9eeaa3ddada435fe47965820998600f0feeb6a9bc4e005c",
+    "tracked": false
+  }
+}
