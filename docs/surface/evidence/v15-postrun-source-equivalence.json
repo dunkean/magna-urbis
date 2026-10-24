@@ -1,0 +1,20 @@
+{
+  "format": "v15-postrun-source-equivalence",
+  "campaignHead": "c53cd7e6de1b8efa8b7ea8d5d747505b87e6f237",
+  "comparedHead": "8c681c06ead97fea63aea74bef13c2834f371052",
+  "campaignFileCount": 945,
+  "comparedFileCount": 945,
+  "added": [],
+  "missing": [],
+  "changed": [],
+  "allExistingRuntimeHashesUnchanged": true,
+  "scope": "Same 945 source files; HEAD and documentation differ. New diagnostic test is outside production snapshot paths. This is source equivalence, not an identical full git snapshot.",
+  "laterChangedPaths": [
+    "docs/surface/IMPLEMENTATION.md",
+    "docs/surface/evidence/HEIGHT_SOURCE_CHAIN_BUDGET.md",
+    "docs/surface/evidence/NATIVE_V15.md",
+    "docs/surface/evidence/height-source-chain-budget.json",
+    "docs/surface/evidence/native-e2e-v15.json",
+    "viewer-local/tests/surface_height_chain_retained_test.gd"
+  ]
+}
