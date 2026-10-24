@@ -133,13 +133,20 @@ func run()->void:
 			if not issue.is_empty():push_error(issue);quit(1);return
 		report.views.append(view)
 		await viewer.call("_capture",view.capturePath)
-	# A single-variable unlit support diagnostic, still using the exact same data.
+	# Raw terrain mean only: source-map/road Decals otherwise add ALBEDO lighting
+	# over the diagnostic EMISSION and are not a measurement of the ground field.
+	var scene_objects:Node3D=viewer.get("objects")
+	var objects_were_visible=scene_objects.visible
+	scene_objects.visible=false
 	viewer.call("set_layer_visibility",true,false,false);viewer.set("diagnostic",7)
 	var terrain:Node=viewer.get("terrain");terrain.get("material").call("set_shader_param","diagnostic",7)
 	await process_frame;await process_frame;await RenderingServer.frame_post_draw
 	var bare=physical_snapshot();bare.diagnostic=int(terrain.get("material").call("get_shader_param","diagnostic"))
+	bare.diagnosticLayers={"terrain":true,"groundMean":true,"lowCover":false,"canopy":false,"projectedWater":false,"roads":false,"urban":false,"candidateMeshes":false}
+	bare.diagnosticScope="Unlit canonical ground mean on terrain only; all objects, including Decals and physical water, hidden without editing source fields or instance buffers"
 	bare.capturePath=str(args["--layer-captures"]).path_join("ground-mean-unlit.png")
 	report.bareGroundMean=bare;await viewer.call("_capture",bare.capturePath)
+	scene_objects.visible=objects_were_visible
 	viewer.set("diagnostic",0);terrain.get("material").call("set_shader_param","diagnostic",0)
 	viewer.call("set_layer_visibility",true,true,true);await process_frame
 	var restore_started=Time.get_ticks_msec()
