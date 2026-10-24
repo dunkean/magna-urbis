@@ -191,10 +191,4 @@
 
     // Evaluate all derivatives first. No fragment outside the real source union
     // is displayed, even though tessellation needs edge-clamped support there.
-    bool source_covered=false;
-    for(int i=0;i<7;i++) {
-        if(i>=source_coverage_count) break;
-        vec4 bounds=source_coverage_rects[i];
-        source_covered=source_covered || (all(greaterThanEqual(v_vertex.xz,bounds.xy)) && all(lessThanEqual(v_vertex.xz,bounds.zw)));
-    }
-    if(!source_covered) discard;
+    if(!surface_source_contains(v_vertex.xz)) discard;

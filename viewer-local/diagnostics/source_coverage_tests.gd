@@ -42,6 +42,17 @@ func _initialize():
 	invalid=world.duplicate(true)
 	for i in 6:invalid._terrainParents.append({"terrain":grid,"bounds":b})
 	check(Coverage.domains(invalid).is_empty(),"reject over-budget source domain union")
+	var cache:Dictionary={}
+	var samples:Array=[]
+	var sampler=func(x:float,z:float)->float:samples.append([x,z]);return (x-131072.0)*10000.0+z
+	var x1=131072.0001;var x2=131072.0002
+	check(Vector2(x1,3)==Vector2(x2,3),"test points really alias in FP32")
+	var h1=Coverage.cached_edge_height(cache,x1,3.0,sampler)
+	var h2=Coverage.cached_edge_height(cache,x2,3.0,sampler)
+	check(h1!=h2 and samples.size()==2,"distinct float64 x samples keep distinct heights")
+	check(Coverage.cached_edge_height(cache,x1,3.0,sampler)==h1 and samples.size()==2,"identical float64 point reuses exact sample")
+	var z1=131072.0001;var z2=131072.0002
+	check(Coverage.cached_edge_height(cache,5.0,z1,sampler)!=Coverage.cached_edge_height(cache,5.0,z2,sampler),"distinct float64 z samples keep distinct heights")
 	# Real Data.prepare on an analytic source plane. No synthetic generation claim:
 	# this fixture checks representation buffers and retained native hole controls.
 	var heights=PackedFloat32Array([10,11,12,12,13,14,14,15,16])

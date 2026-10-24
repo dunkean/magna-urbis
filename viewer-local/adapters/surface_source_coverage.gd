@@ -46,3 +46,11 @@ static func nearest_point(bounds:Array,x:float,z:float)->Dictionary:
 		var distance=(px-x)*(px-x)+(pz-z)*(pz-z)
 		if distance<best:best=distance;result={"x":px,"z":pz}
 	return result
+
+# Float64 dictionary keys must remain exact: an FP32 render vector may alias two
+# distinct source-edge samples. The sampler always receives original doubles.
+static func cached_edge_height(cache:Dictionary,x:float,z:float,sampler:Callable)->float:
+	if not cache.has(x):cache[x]={}
+	var column:Dictionary=cache[x]
+	if not column.has(z):column[z]=float(sampler.call(x,z))
+	return float(column[z])
