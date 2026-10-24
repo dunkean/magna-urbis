@@ -44,7 +44,7 @@ class SoilControls extends Node:
 		for entry in styles:picker.add_item(entry.label)
 		picker.selected=style_index;picker.item_selected.connect(select_style);picker.custom_minimum_size.x=265;navigation.add_child(picker)
 		var following:=Button.new();following.text=">";following.tooltip_text="Palette suivante (fleche droite)";following.pressed.connect(func():select_style(style_index+1));navigation.add_child(following)
-		capture_button.text="Capture PNG + JSON (S)";capture_button.pressed.connect(capture_view);navigation.add_child(capture_button)
+		capture_button.disabled=true;capture_button.text="Capture PNG + JSON (S)";capture_button.pressed.connect(capture_view);navigation.add_child(capture_button)
 		var toggles:=HBoxContainer.new();column.add_child(toggles)
 		detail_button.pressed.connect(toggle_detail);low_button.pressed.connect(toggle_low);mean_button.pressed.connect(toggle_mean)
 		for button in [detail_button,low_button,mean_button]:toggles.add_child(button)
@@ -69,6 +69,11 @@ class SoilControls extends Node:
 				KEY_O,KEY_D:pass # fixed TOP, explicit diagnostic only
 				_:return
 			get_viewport().set_input_as_handled()
+	func settled()->bool:
+		if scene.get("terrain")==null or scene.get("worker")!=null or scene.get("packet_worker")!=null:return false
+		if bool(scene.get("view_dirty")) or bool(scene.get("water_projection_busy")) or bool(scene.get("canopy_transition_busy")):return false
+		var shown:Dictionary=scene.get("rendered_world");var requested:Dictionary=scene.get("world")
+		return not shown.is_empty() and shown.get("id")==requested.get("id")
 	func apply()->void:
 		if scene.get("terrain")==null or styles.is_empty():return
 		scene.call("set_layer_visibility",true,low,false)
@@ -95,25 +100,33 @@ class SoilControls extends Node:
 		detail_button.disabled=current_style().mode!="aerial"
 		low_button.text="F2 Couvert bas : "+("ON" if low else "OFF")
 		mean_button.text="F3 Moyenne physique : "+("ON" if mean_only else "OFF")
+		capture_button.disabled=capturing or not settled()
 	func snapshot()->Dictionary:
 		var focus:Dictionary=scene.get("focus")
 		var world:Dictionary=scene.get("rendered_world")
 		var context:Dictionary=Data.context(world) if not world.is_empty() else {}
-		return {"style":current_style(),"focus":{"x":float(focus.get("x",0)),"z":float(focus.get("y",0))},"widthM":float(scene.get("width_m")),"detail":detail,"lowCover":low,"meanOnly":mean_only,"component":"surface-detail-distribution-4","objectsVisible":false,"treesVisible":false,"engineShadows":false,"worldId":world.get("id",""),"canonicalContextId":context.get("id",""),"groundResponseId":context.get("groundResponse",{}).get("id",""),"source":world.get("terrain",{}).get("source",{}),"scope":"native soil/palette preview; no Canvas brush, no new source/generation"}
+		var x=float(focus.get("x",0));var z=float(focus.get("y",0));var width=float(scene.get("width_m"));var size=scene.get_viewport().get_visible_rect().size
+		var half_z=width*float(size.y)/maxf(1,float(size.x))*.5;var probes=[]
+		for delta in [[0.0,0.0],[-width*.5,-half_z],[width*.5,-half_z],[-width*.5,half_z],[width*.5,half_z]]:
+			var px=x+float(delta[0]);var pz=z+float(delta[1]);var height=Data.height_at(world,px,pz) if not world.is_empty() else NAN
+			probes.append({"x":px,"z":pz,"covered":not world.is_empty() and Data.covered(world,px,pz),"heightM":height if is_finite(height) else null,"finiteHeight":is_finite(height)})
+		return {"settled":settled(),"sourceCoverage":{"scope":"focus and four TOP viewport corners; not a continuous domain certificate","probes":probes,"allProbesFinite":probes.all(func(p):return p.covered and p.finiteHeight)},"mapProjection":scene.call("_map_projection") if scene.get("terrain")!=null else {},"style":current_style(),"focus":{"x":float(focus.get("x",0)),"z":float(focus.get("y",0))},"widthM":float(scene.get("width_m")),"detail":detail,"lowCover":low,"meanOnly":mean_only,"component":"surface-detail-distribution-4","objectsVisible":false,"treesVisible":false,"engineShadows":false,"worldId":world.get("id",""),"canonicalContextId":context.get("id",""),"groundResponseId":context.get("groundResponse",{}).get("id",""),"source":world.get("terrain",{}).get("source",{}),"scope":"native soil/palette preview; no Canvas brush, no new source/generation"}
 	func capture_view()->Dictionary:
-		if capturing or scene.get("terrain")==null:return {}
+		if capturing or not settled():return {"status":"not-ready","reason":"terrain/source preparation pending"}
 		capturing=true;capture_button.disabled=true;apply()
 		for frame in 2:await get_tree().process_frame
+		if not settled():capturing=false;apply();return {"status":"not-ready","reason":"view changed before capture"}
 		var record=snapshot();var stamp=Time.get_datetime_string_from_system().replace(":","-")
 		var directory=str(scene.get("options").get("--soil-capture-dir","user://soil-preview-r4"))
 		directory=ProjectSettings.globalize_path(directory);DirAccess.make_dir_recursive_absolute(directory)
 		var filename="soil-%s-x%.2f-z%.2f-w%.2f-%s-%d"%[record.style.id,record.focus.x,record.focus.z,record.widthM,stamp,Time.get_ticks_msec()]
 		var image_path=directory.path_join(filename+".png");await scene.call("_capture",image_path)
+		record["captureStatus"]="complete" if settled() and FileAccess.file_exists(image_path) else "unstable-or-failed"
 		record["format"]="surface-soil-user-capture";record["version"]=1;record["imagePath"]=image_path;record["imageSha256"]=FileAccess.get_sha256(image_path)
 		var json_path=directory.path_join(filename+".json");var output=FileAccess.open(json_path,FileAccess.WRITE)
 		if output!=null:output.store_string(JSON.stringify(record,"  "));output=null
 		else:push_error("Cannot save soil capture metadata: "+json_path)
-		record["jsonPath"]=json_path;captures.append(record);last_capture=json_path;capturing=false;capture_button.disabled=false;return record
+		record["jsonPath"]=json_path;captures.append(record);last_capture=json_path.get_file();capturing=false;capture_button.disabled=false;return record
 	func _process(delta:float)->void:
 		elapsed+=delta
 		if elapsed<.25:return
