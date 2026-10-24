@@ -1,5 +1,6 @@
 import{clamp,Occupation,WaterClass,DepositOrigin,type TerrainGrid,type SurfaceFields,type GeologyInput,type ClimateInput,type ProcessInput,type MaterialRecipe,type RockUnit}from'./model';
-import{createMaterialIndex,dominantMaterialPair,materialColor,organicSoilFraction,packMaterialMean}from'./materials';
+import{createMaterialIndex,dominantMaterialPair,materialColor,packMaterialMean}from'./materials';
+import{groundResponseWeights}from'./groundResponse';
 
 /** Pure reconstruction of the same routed colluvial potential used by compilation. */
 export function surfaceColluvium(t:TerrainGrid,f:SurfaceFields,units:Map<number,RockUnit>,order:Int32Array,options:{colluvialDecayLengthM?:number}={}){
@@ -27,20 +28,13 @@ export interface NaturalGroundParameters{stoniness:number;bed:RockUnit;s:number;
 /** Shared bare support policy; occupation blocks plants but is not a paving source. */
 export function naturalGroundWeights(p:NaturalGroundParameters,M:Record<string,number>):Array<[number,number]>{
   const{stoniness,bed,s,water,origin,coastDistance,alluvial,gravity,wind,coastal,aridity,moisture,organic,occupation,karst,volcanic,geothermal}=p;
-  const rockCover=clamp((stoniness-.08)/.75);
   const supportRock = karst && bed.lithology==='limestone' ? M['carbonate-karst']
     : volcanic || geothermal ? M['volcanic-crust']
     : Math.abs(coastDistance)<40 && water===WaterClass.Dry && origin!==DepositOrigin.Coastal ? M['coastal-rock'] : M['fractured-bedrock'];
-  const supportSediment:Array<[number,number]>=[[M['alluvial-bars'],alluvial],[M['angular-talus'],gravity],[M['wind-ripple-sand'],wind],[M['coastal-sediment'],origin===DepositOrigin.Coastal?coastal:0]];
-  const supportSum=supportSediment.reduce((sum,[,v])=>sum+v,0),supportScale=Math.max(1,supportSum),soilRest=(1-rockCover)*(1-Math.min(1,supportSum));
-  const dryFraction=clamp((.65-aridity)/.4),humus=organicSoilFraction(moisture,s,organic);
-  const soilWeight=soilRest*(1-dryFraction);
-  let groundWeights:Array<[number,number]>=[[supportRock,rockCover],[M['mineral-soil'],soilWeight*(1-humus)],[M['organic-soil'],soilWeight*humus],[M['arid-reg'],soilRest*dryFraction],...supportSediment.map(([id,v])=>[id,v/supportScale*(1-rockCover)] as [number,number])];
   // Coarse occupation is an exclusion/support constraint, not evidence of laid
   // paving. Source roads/courts/buildings carry their own vector materials;
   // preserve the local mineral/organic substrate beneath all three.
-  if(occupation===Occupation.Crop)groundWeights=[[M['cultivated-soil'],1]];
-  return groundWeights;
+  return groundResponseWeights({stoniness,slopeRadians:s,organic,rockRecipe:supportRock,occupation,alluvial,gravity,wind,coastal:origin===DepositOrigin.Coastal?coastal:0,aridity,moisturePreSaturation:moisture},M);
 }
 
 /** Rebuild derived bare-ground arrays from retained physical context, never legacy composite.
