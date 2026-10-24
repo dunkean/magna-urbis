@@ -6,6 +6,9 @@ describe('bare-ground derivation from retained physical context',()=>{
    if(custom){input.processes={aeolianSupply:Float32Array.from({length:n},(_,i)=>(i%9)/8),coastDistanceM:Float32Array.from({length:n},(_,i)=>1000+(i%17)*7),volcanic:Uint8Array.from({length:n},(_,i)=>Number(i%13===0))};input.climate={...input.climate!,temperatureC:Float32Array.from({length:n},(_,i)=>13.321+i*.0023),precipitationMm:Float32Array.from({length:n},(_,i)=>801.123+i*.47)};}
    const world=compileSurfaceWorld(input),before=fingerprint(world.fields),rebuilt=deriveNaturalGroundFields(world.terrain,world.fields,world.geology,world.climate,world.materials,{processes:input.processes});
    for(const key of Object.keys(rebuilt)as(keyof typeof rebuilt)[])expect(rebuilt[key]).toEqual(world.fields[key]);expect(fingerprint(world.fields)).toBe(before);
+   expect(Object.keys(rebuilt)).toHaveLength(4);
+   const response=deriveNaturalGroundFields(world.terrain,world.fields,world.geology,world.climate,world.materials,{processes:input.processes,groundResponse:true});
+   expect(response.responseFields).toEqual(world.groundResponse!.fields);expect(fingerprint(world.fields)).toBe(before);
   }
  });
  it('rejects missing aligned support and invalid source routing without editing the source',()=>{

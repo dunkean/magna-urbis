@@ -1,6 +1,6 @@
 import{clamp,Occupation,WaterClass,DepositOrigin,type TerrainGrid,type SurfaceFields,type GeologyInput,type ClimateInput,type ProcessInput,type MaterialRecipe,type RockUnit}from'./model';
 import{createMaterialIndex,dominantMaterialPair,materialColor,packMaterialMean}from'./materials';
-import{groundResponseWeights}from'./groundResponse';
+import{groundResponseWeights,allocateGroundResponseFields,assertGroundResponseCatalogue,type GroundResponseFields}from'./groundResponse';
 
 /** Pure reconstruction of the same routed colluvial potential used by compilation. */
 export function surfaceColluvium(t:TerrainGrid,f:SurfaceFields,units:Map<number,RockUnit>,order:Int32Array,options:{colluvialDecayLengthM?:number}={}){
@@ -42,9 +42,16 @@ export function naturalGroundWeights(p:NaturalGroundParameters,M:Record<string,n
 /** Rebuild derived bare-ground arrays from retained physical context, never legacy composite.
  * Original climate/process parameters and physical samples must be supplied explicitly.
  * Other source fields are read-only; no drainage/terrain/occupation field is replaced. */
-export function deriveNaturalGroundFields(t:TerrainGrid,f:SurfaceFields,geology:GeologyInput,climate:ClimateInput,materials:MaterialRecipe[],options:{processes?:ProcessInput;floodplainWidthM?:number;colluvialDecayLengthM?:number}={}){
+type NaturalGroundFields={groundMaterial:Uint16Array;groundMaterialSecondary:Uint16Array;groundMaterialBlend:Float32Array;groundMaterialMeanColor:Uint32Array};
+type NaturalGroundOptions={processes?:ProcessInput;floodplainWidthM?:number;colluvialDecayLengthM?:number};
+export function deriveNaturalGroundFields(t:TerrainGrid,f:SurfaceFields,geology:GeologyInput,climate:ClimateInput,materials:MaterialRecipe[],options:NaturalGroundOptions&{groundResponse:true}):NaturalGroundFields&{responseFields:GroundResponseFields};
+export function deriveNaturalGroundFields(t:TerrainGrid,f:SurfaceFields,geology:GeologyInput,climate:ClimateInput,materials:MaterialRecipe[],options?:NaturalGroundOptions&{groundResponse?:false}):NaturalGroundFields;
+export function deriveNaturalGroundFields(t:TerrainGrid,f:SurfaceFields,geology:GeologyInput,climate:ClimateInput,materials:MaterialRecipe[],options:NaturalGroundOptions&{groundResponse?:boolean}={}):NaturalGroundFields&{responseFields?:GroundResponseFields}{
   const n=t.width*t.height,units=new Map(geology.units.map(u=>[u.id,u])),M=createMaterialIndex(materials);
   if(f.slope.length!==n||f.downstream.length!==n||f.bedrock.length!==n)throw Error('Ground reconstruction requires aligned retained physical context');
+  if(options.groundResponse&&n*56>512*1024*1024)throw Error('Retained ground response derivation exceeds the owned memory budget');
+  if(options.groundResponse)assertGroundResponseCatalogue(materials);
+  const responseFields=options.groundResponse?allocateGroundResponseFields(n):undefined;
   const incoming=new Uint32Array(n),order=new Int32Array(n);let tail=0;
   for(let i=0;i<n;i++){const j=f.downstream[i];if(j>=n||j< -1||j===i)throw Error('Invalid retained ground routing');if(j>=0)incoming[j]++;}
   for(let i=0;i<n;i++)if(!incoming[i])order[tail++]=i;
@@ -61,12 +68,14 @@ export function deriveNaturalGroundFields(t:TerrainGrid,f:SurfaceFields,geology:
     const temp=(climate.temperatureC?.[i]??climate.meanAnnualTempC)-(climate.elevationCorrected?0:(t.heights[i]-(climate.referenceElevationM??0))*(climate.lapseRateCPerKm??6.5)/1000);
     const aridity=f.precipitationMm[i]/Math.max(180,450+Math.max(0,temp)*30);
     const moisture=clamp(aridity*.45+clamp((f.twi[i]-5)/14)*.23+alluvial*.28+f.clay[i]*.18-f.sand[i]*.12-s*.2);
-    const weights=naturalGroundWeights({stoniness:f.stoniness[i],bed,s,water:f.waterClass[i],origin:f.depositOrigin[i],coastDistance,alluvial,gravity,wind,coastal,aridity,moisture,organic:f.organic[i],occupation:f.occupation[i],karst:options.processes?.karst?.[i],volcanic:options.processes?.volcanic?.[i],geothermal:options.processes?.geothermal?.[i]},M);
+    const parameters={stoniness:f.stoniness[i],bed,s,water:f.waterClass[i],origin:f.depositOrigin[i],coastDistance,alluvial,gravity,wind,coastal,aridity,moisture,organic:f.organic[i],occupation:f.occupation[i],karst:options.processes?.karst?.[i],volcanic:options.processes?.volcanic?.[i],geothermal:options.processes?.geothermal?.[i]};
+    const weights=naturalGroundWeights(parameters,M);
+    if(responseFields){responseFields.alluvial[i]=alluvial;responseFields.gravity[i]=gravity;responseFields.wind[i]=wind;responseFields.coastal[i]=parameters.origin===DepositOrigin.Coastal?coastal:0;responseFields.aridity[i]=aridity;responseFields.moisturePreSaturation[i]=moisture;responseFields.rockRecipe[i]=naturalGroundRockRecipe(parameters,M);}
     const pair=dominantMaterialPair(weights);out.groundMaterial[i]=pair.primary;out.groundMaterialSecondary[i]=pair.secondary;out.groundMaterialBlend[i]=pair.blend;
     const total=weights.reduce((sum,[,v])=>sum+v,0),mean=[0,0,0];
     for(const[id,v]of weights){const recipe=materials[id],color=materialColor(recipe,recipe.family!=='gravity'?bed:source);for(let c=0;c<3;c++)mean[c]+=color[c]*v/total;}
     out.groundMaterialMeanColor[i]=packMaterialMean(mean);
   }
-  return out;
+  return {...out,...(responseFields?{responseFields}:{})};
 }
 
