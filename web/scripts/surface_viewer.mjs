@@ -2,8 +2,15 @@ import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
+import { applySurfaceRenderProfile } from './surface_render_profile.mjs';
 const project = fileURLToPath(new URL('../../viewer-local/', import.meta.url));
-const args = process.argv.slice(2);
+// Explicit profile validation happens BEFORE Godot version/bootstrap/engine calls.
+const expanded = applySurfaceRenderProfile(process.argv.slice(2));
+const args = expanded.args;
+if (expanded.profile && !existsSync(path.join(project, 'addons/terrain_3d/terrain.gdextension'))) {
+  throw new Error('Render profile surface-v2 requires preinstalled pinned Terrain3D. Run viewer-local/bootstrap.ps1 explicitly before launching; profiles perform no runtime downloads.');
+}
+if (expanded.profile) console.log(JSON.stringify({ event: 'surface-render-profile', ...expanded.profile.metadata }));
 if (!args.includes('--style-catalogue')) args.push('--style-catalogue', fileURLToPath(new URL('../../surface/presentation/palettes.json', import.meta.url)));
 const rendering = args.indexOf('--renderer');
 const renderer = rendering >= 0 ? args[rendering + 1] : 'forward_plus';
