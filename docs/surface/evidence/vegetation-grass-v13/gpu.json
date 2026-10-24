@@ -1,0 +1,774 @@
+{
+  "format": "cc0-grass-gpu-evidence",
+  "version": 1,
+  "runtimeCommit": "157c93df7067334d15f21f2d617674a5fbb2b289",
+  "runtimeFiles": {
+    "viewer-local/scene/main.gd": "cd6698c92fe5f112a7f5c956a7e58cdad2dd638dbe4dfa5a37f93db47f54d720",
+    "viewer-local/adapters/surface_vegetation_library.gd": "fca2b869fdad2e0c09d64310d9e33eae3701eaa0c47e7c58942c160989bae765",
+    "viewer-local/shaders/vegetation_grass.gdshader": "79d49ecbfb2145b386774c6eb140a29118dfe5039aa464aba8cb37a3b06176da",
+    "surface/vegetation/catalogue.json": "a4a5a46773a6a51280e84f7c13dd63a14bdfa012e25db6f884ac0559afaed8a0",
+    "web/scripts/surface_vegetation_assets.mjs": "9dc24a20adc3c7b36ec58af5a6cb49f3dbd351ade820140a68b84fb8abe03d01"
+  },
+  "status": "TECHNICAL_AB_PASS_ARTISTIC_SCOPE_LIMITED",
+  "summaries": [
+    {
+      "report": "vegetation-gpu",
+      "status": "complete",
+      "sourceSha256": "a66c390b3b16c25058628fe178d671060f941d0a5bef452894cdcedde0dd122e",
+      "vegetationManifestSha256": "245fdbc786ff5806998075657a9194af767ef13f372670db5a11010c9d4099c1",
+      "comparisons": [
+        {
+          "width": 160,
+          "physicalHashesExact": true,
+          "instanceCountsExact": true,
+          "groundPixelsExact": true
+        },
+        {
+          "width": 10,
+          "physicalHashesExact": true,
+          "instanceCountsExact": true,
+          "groundPixelsExact": true
+        }
+      ],
+      "runs": [
+        {
+          "widthM": 160,
+          "profile": "baseline",
+          "adapter": "NVIDIA GeForce RTX 5090",
+          "backend": "forward_plus",
+          "elapsedMs": 23253,
+          "worldId": "313a630904c50b372b0e38891af563a5",
+          "source": {
+            "id": "infinite:2814899424497554030:86cac2e9a1d86c7ff5581213cabb3cc0",
+            "nativeSpacingM": 0.46875,
+            "provenance": "Infinite retained refinement; seed=2814899424497554030; decoderUsed=true; registrationNativeMpp=30; fieldFingerprint=rf1-019b8aa8fc4b7a3a38e7adce2163d4ea; parent=cell-centred cubic B-spline control reconstruction (not interpolation through control centres); parentComparison={\"samples\":4096,\"parentCorrelation\":0.998382058896566,\"transposedParentCorrelation\":-0.9929963571086565,\"maxAbsDeltaM\":0.5784265781248905,\"rmsDeltaM\":0.23423732073587164,\"meanDeltaM\":-0.14524888992310991,\"controlSmoothingMaxAbsM\":0.5617818190412436,\"refinementResidualMaxAbsM\":0.4947925234214381}",
+            "sourceLOD": -6,
+            "sourceLODKnown": true,
+            "version": "decoder-v12-nyquist-notch:magna-retained-v1:e2bf5473c0ff:f21afa261ed7"
+          },
+          "populationInstances": {
+            "families": {
+              "boulder": {
+                "alphaPositiveInFrustum": 5,
+                "nodeVisible": 5,
+                "submitted": 5
+              },
+              "debris": {
+                "alphaPositiveInFrustum": 5,
+                "nodeVisible": 5,
+                "submitted": 5
+              },
+              "grass": {
+                "alphaPositiveInFrustum": 44,
+                "nodeVisible": 44,
+                "submitted": 44
+              },
+              "shrub": {
+                "alphaPositiveInFrustum": 1,
+                "nodeVisible": 1,
+                "submitted": 1
+              },
+              "tree": {
+                "alphaPositiveInFrustum": 64,
+                "nodeVisible": 402,
+                "submitted": 402
+              },
+              "trunk": {
+                "alphaPositiveInFrustum": 64,
+                "nodeVisible": 402,
+                "submitted": 402
+              }
+            },
+            "scope": "submitted buffers, actual node/camera visibility, shader ALPHA>0 and centres in frustum; no GPU occlusion claim",
+            "treeOpticalShadowEnabled": true,
+            "treeResidualEnabled": true
+          },
+          "vegetationAssets": {
+            "available": false,
+            "reason": "no prepared vegetation manifest"
+          },
+          "images": [
+            {
+              "name": "all",
+              "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-vegetation-assets-2026-10-24\\web\\out\\vegetation-gpu\\160m-baseline/all.png",
+              "sha256": "de735610ba6d062adbdbc32f0db4cfc6860f3e97f3259fade2fbed1b50c4f827"
+            },
+            {
+              "name": "no-low-cover",
+              "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-vegetation-assets-2026-10-24\\web\\out\\vegetation-gpu\\160m-baseline/no-low-cover.png",
+              "sha256": "8a748158a1edcdb6c208af725d20f2da5565dc005a81965720287db7dcf0d091"
+            },
+            {
+              "name": "no-trees",
+              "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-vegetation-assets-2026-10-24\\web\\out\\vegetation-gpu\\160m-baseline/no-trees.png",
+              "sha256": "2a8851334c35af33fed980a980a0899a5772f7f70b3bbe1633a7fd32a5369b86"
+            },
+            {
+              "name": "ground",
+              "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-vegetation-assets-2026-10-24\\web\\out\\vegetation-gpu\\160m-baseline/ground.png",
+              "sha256": "909c1fa824c309aff6e139675e8575d82f67c1d04d1789537094051595a9c88d"
+            },
+            {
+              "name": "ground-mean-unlit",
+              "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-vegetation-assets-2026-10-24\\web\\out\\vegetation-gpu\\160m-baseline/ground-mean-unlit.png",
+              "sha256": "ef0ff5b6582a85c9a6a87b08e3ef0f78402b37cdfc59e443f67b22ccab36f247"
+            }
+          ]
+        },
+        {
+          "widthM": 160,
+          "profile": "cc0-grass",
+          "adapter": "NVIDIA GeForce RTX 5090",
+          "backend": "forward_plus",
+          "elapsedMs": 24911,
+          "worldId": "313a630904c50b372b0e38891af563a5",
+          "source": {
+            "id": "infinite:2814899424497554030:86cac2e9a1d86c7ff5581213cabb3cc0",
+            "nativeSpacingM": 0.46875,
+            "provenance": "Infinite retained refinement; seed=2814899424497554030; decoderUsed=true; registrationNativeMpp=30; fieldFingerprint=rf1-019b8aa8fc4b7a3a38e7adce2163d4ea; parent=cell-centred cubic B-spline control reconstruction (not interpolation through control centres); parentComparison={\"samples\":4096,\"parentCorrelation\":0.998382058896566,\"transposedParentCorrelation\":-0.9929963571086565,\"maxAbsDeltaM\":0.5784265781248905,\"rmsDeltaM\":0.23423732073587164,\"meanDeltaM\":-0.14524888992310991,\"controlSmoothingMaxAbsM\":0.5617818190412436,\"refinementResidualMaxAbsM\":0.4947925234214381}",
+            "sourceLOD": -6,
+            "sourceLODKnown": true,
+            "version": "decoder-v12-nyquist-notch:magna-retained-v1:e2bf5473c0ff:f21afa261ed7"
+          },
+          "populationInstances": {
+            "families": {
+              "boulder": {
+                "alphaPositiveInFrustum": 5,
+                "nodeVisible": 5,
+                "submitted": 5
+              },
+              "debris": {
+                "alphaPositiveInFrustum": 5,
+                "nodeVisible": 5,
+                "submitted": 5
+              },
+              "grass": {
+                "alphaPositiveInFrustum": 44,
+                "nodeVisible": 44,
+                "submitted": 44
+              },
+              "shrub": {
+                "alphaPositiveInFrustum": 1,
+                "nodeVisible": 1,
+                "submitted": 1
+              },
+              "tree": {
+                "alphaPositiveInFrustum": 64,
+                "nodeVisible": 402,
+                "submitted": 402
+              },
+              "trunk": {
+                "alphaPositiveInFrustum": 64,
+                "nodeVisible": 402,
+                "submitted": 402
+              }
+            },
+            "scope": "submitted buffers, actual node/camera visibility, shader ALPHA>0 and centres in frustum; no GPU occlusion claim",
+            "treeOpticalShadowEnabled": true,
+            "treeResidualEnabled": true
+          },
+          "vegetationAssets": {
+            "assetId": "polyhaven-grass-medium-01-tiny",
+            "available": true,
+            "digest": "2164daf367e44704795bba98add4cf7ee8b51404f06dfd60dec623a74768a0e3",
+            "hashes": {
+              "alpha": "711a8e49af758d6a6ce1f610db858899a27be19da6d1866bd35c13bc7b8ffeff",
+              "arm": "9a3a30f72bc02f4398967c5b08f2d20cce30bd423a2613b42a727034296fa3ae",
+              "baseColor": "71495bd6a11fddcab0aaff38246fea1a7b802a705483f1c7cbca53955daa8050",
+              "normal": "cae298d3d1d7ff7c7e210ad8ac772b96706e356f9315a6b04fde373ce01ccf1e",
+              "product": "0672054e08a7486eb768c8bb82de67a11fcd07ea3b2992d5cd02e70b2ae28bce"
+            },
+            "license": "CC0-1.0",
+            "meanSamplingStride": 1,
+            "pipelineVersion": "grass-linear-premul-rgbah-mips-orthogonal-tbn-v2",
+            "sourceMeanLinear": [
+              0.084093265235424,
+              0.0834381058812141,
+              0.0250466763973236
+            ],
+            "texturePacking": "RGBAH premultiplied RGB / source alpha; linear mipmaps; albedo manually decoded before packing; no sampler source_color",
+            "variantPolicy": "candidate.variant modulo variant count; no camera/world-id input",
+            "variants": [
+              {
+                "id": "grass_medium_01_tiny_b_LOD0",
+                "normalization": {
+                  "pivot": [
+                    0.00761061115190386,
+                    -0.00229678605683147,
+                    -0.0169350132782711
+                  ],
+                  "positionUnits": "candidate-size",
+                  "preparedBottom": -0.5,
+                  "preparedHeight": 1,
+                  "preparedTop": 0.5,
+                  "uniformScale": 16.6089560511805
+                },
+                "triangleCount": 28
+              },
+              {
+                "id": "grass_medium_01_tiny_c_LOD0",
+                "normalization": {
+                  "pivot": [
+                    0.00598354591056704,
+                    -0.00152770464774221,
+                    0.0138408204657026
+                  ],
+                  "positionUnits": "candidate-size",
+                  "preparedBottom": -0.5,
+                  "preparedHeight": 1,
+                  "preparedTop": 0.5,
+                  "uniformScale": 12.1375869170704
+                },
+                "triangleCount": 40
+              },
+              {
+                "id": "grass_medium_01_tiny_a_LOD0",
+                "normalization": {
+                  "pivot": [
+                    0.0103727793321013,
+                    -0.00265430868603289,
+                    -0.0141221322119236
+                  ],
+                  "positionUnits": "candidate-size",
+                  "preparedBottom": -0.5,
+                  "preparedHeight": 1,
+                  "preparedTop": 0.5,
+                  "uniformScale": 8.89257685159565
+                },
+                "triangleCount": 79
+              }
+            ]
+          },
+          "images": [
+            {
+              "name": "all",
+              "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-vegetation-assets-2026-10-24\\web\\out\\vegetation-gpu\\160m-cc0-grass/all.png",
+              "sha256": "f8d42201ac528b4946df75c730b2f745f1a26b9c9c2f45e3f5b0a2baa2bba846"
+            },
+            {
+              "name": "no-low-cover",
+              "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-vegetation-assets-2026-10-24\\web\\out\\vegetation-gpu\\160m-cc0-grass/no-low-cover.png",
+              "sha256": "8a748158a1edcdb6c208af725d20f2da5565dc005a81965720287db7dcf0d091"
+            },
+            {
+              "name": "no-trees",
+              "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-vegetation-assets-2026-10-24\\web\\out\\vegetation-gpu\\160m-cc0-grass/no-trees.png",
+              "sha256": "5026762551d217cbadb0ae8518c78a4b0bcfce0bf787cba14c5e36512d3172f6"
+            },
+            {
+              "name": "ground",
+              "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-vegetation-assets-2026-10-24\\web\\out\\vegetation-gpu\\160m-cc0-grass/ground.png",
+              "sha256": "909c1fa824c309aff6e139675e8575d82f67c1d04d1789537094051595a9c88d"
+            },
+            {
+              "name": "ground-mean-unlit",
+              "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-vegetation-assets-2026-10-24\\web\\out\\vegetation-gpu\\160m-cc0-grass/ground-mean-unlit.png",
+              "sha256": "ef0ff5b6582a85c9a6a87b08e3ef0f78402b37cdfc59e443f67b22ccab36f247"
+            }
+          ]
+        },
+        {
+          "widthM": 10,
+          "profile": "baseline",
+          "adapter": "NVIDIA GeForce RTX 5090",
+          "backend": "forward_plus",
+          "elapsedMs": 20152,
+          "worldId": "313a630904c50b372b0e38891af563a5",
+          "source": {
+            "id": "infinite:2814899424497554030:86cac2e9a1d86c7ff5581213cabb3cc0",
+            "nativeSpacingM": 0.46875,
+            "provenance": "Infinite retained refinement; seed=2814899424497554030; decoderUsed=true; registrationNativeMpp=30; fieldFingerprint=rf1-019b8aa8fc4b7a3a38e7adce2163d4ea; parent=cell-centred cubic B-spline control reconstruction (not interpolation through control centres); parentComparison={\"samples\":4096,\"parentCorrelation\":0.998382058896566,\"transposedParentCorrelation\":-0.9929963571086565,\"maxAbsDeltaM\":0.5784265781248905,\"rmsDeltaM\":0.23423732073587164,\"meanDeltaM\":-0.14524888992310991,\"controlSmoothingMaxAbsM\":0.5617818190412436,\"refinementResidualMaxAbsM\":0.4947925234214381}",
+            "sourceLOD": -6,
+            "sourceLODKnown": true,
+            "version": "decoder-v12-nyquist-notch:magna-retained-v1:e2bf5473c0ff:f21afa261ed7"
+          },
+          "populationInstances": {
+            "families": {
+              "boulder": {
+                "alphaPositiveInFrustum": 0,
+                "nodeVisible": 5,
+                "submitted": 5
+              },
+              "debris": {
+                "alphaPositiveInFrustum": 0,
+                "nodeVisible": 5,
+                "submitted": 5
+              },
+              "grass": {
+                "alphaPositiveInFrustum": 3,
+                "nodeVisible": 44,
+                "submitted": 44
+              },
+              "shrub": {
+                "alphaPositiveInFrustum": 0,
+                "nodeVisible": 1,
+                "submitted": 1
+              },
+              "tree": {
+                "alphaPositiveInFrustum": 0,
+                "nodeVisible": 0,
+                "submitted": 0
+              },
+              "trunk": {
+                "alphaPositiveInFrustum": 0,
+                "nodeVisible": 0,
+                "submitted": 0
+              }
+            },
+            "scope": "submitted buffers, actual node/camera visibility, shader ALPHA>0 and centres in frustum; no GPU occlusion claim",
+            "treeOpticalShadowEnabled": true,
+            "treeResidualEnabled": true
+          },
+          "vegetationAssets": {
+            "available": false,
+            "reason": "no prepared vegetation manifest"
+          },
+          "images": [
+            {
+              "name": "all",
+              "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-vegetation-assets-2026-10-24\\web\\out\\vegetation-gpu\\10m-baseline/all.png",
+              "sha256": "a2302dcad83d4029aabff06bcb8b25760473f47bbe38b06b326f4963e3ed9d1f"
+            },
+            {
+              "name": "no-low-cover",
+              "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-vegetation-assets-2026-10-24\\web\\out\\vegetation-gpu\\10m-baseline/no-low-cover.png",
+              "sha256": "b777b7a1c88f3974c45307818300451359c232ce75e9505a37a289399102fc45"
+            },
+            {
+              "name": "no-trees",
+              "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-vegetation-assets-2026-10-24\\web\\out\\vegetation-gpu\\10m-baseline/no-trees.png",
+              "sha256": "f10c7e2003627af76df396eb36462203d60b762bc290c4aa8e315b65f41f1f85"
+            },
+            {
+              "name": "ground",
+              "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-vegetation-assets-2026-10-24\\web\\out\\vegetation-gpu\\10m-baseline/ground.png",
+              "sha256": "d3539328e4669014d142eff8a1f789c9461b64fb24d77e1ad73eb13edcc0a0cb"
+            },
+            {
+              "name": "ground-mean-unlit",
+              "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-vegetation-assets-2026-10-24\\web\\out\\vegetation-gpu\\10m-baseline/ground-mean-unlit.png",
+              "sha256": "89fdd628ee33d6228be6290051a16128b7c676a6bad9f9388087b8721bf33990"
+            }
+          ]
+        },
+        {
+          "widthM": 10,
+          "profile": "cc0-grass",
+          "adapter": "NVIDIA GeForce RTX 5090",
+          "backend": "forward_plus",
+          "elapsedMs": 21616,
+          "worldId": "313a630904c50b372b0e38891af563a5",
+          "source": {
+            "id": "infinite:2814899424497554030:86cac2e9a1d86c7ff5581213cabb3cc0",
+            "nativeSpacingM": 0.46875,
+            "provenance": "Infinite retained refinement; seed=2814899424497554030; decoderUsed=true; registrationNativeMpp=30; fieldFingerprint=rf1-019b8aa8fc4b7a3a38e7adce2163d4ea; parent=cell-centred cubic B-spline control reconstruction (not interpolation through control centres); parentComparison={\"samples\":4096,\"parentCorrelation\":0.998382058896566,\"transposedParentCorrelation\":-0.9929963571086565,\"maxAbsDeltaM\":0.5784265781248905,\"rmsDeltaM\":0.23423732073587164,\"meanDeltaM\":-0.14524888992310991,\"controlSmoothingMaxAbsM\":0.5617818190412436,\"refinementResidualMaxAbsM\":0.4947925234214381}",
+            "sourceLOD": -6,
+            "sourceLODKnown": true,
+            "version": "decoder-v12-nyquist-notch:magna-retained-v1:e2bf5473c0ff:f21afa261ed7"
+          },
+          "populationInstances": {
+            "families": {
+              "boulder": {
+                "alphaPositiveInFrustum": 0,
+                "nodeVisible": 5,
+                "submitted": 5
+              },
+              "debris": {
+                "alphaPositiveInFrustum": 0,
+                "nodeVisible": 5,
+                "submitted": 5
+              },
+              "grass": {
+                "alphaPositiveInFrustum": 3,
+                "nodeVisible": 44,
+                "submitted": 44
+              },
+              "shrub": {
+                "alphaPositiveInFrustum": 0,
+                "nodeVisible": 1,
+                "submitted": 1
+              },
+              "tree": {
+                "alphaPositiveInFrustum": 0,
+                "nodeVisible": 0,
+                "submitted": 0
+              },
+              "trunk": {
+                "alphaPositiveInFrustum": 0,
+                "nodeVisible": 0,
+                "submitted": 0
+              }
+            },
+            "scope": "submitted buffers, actual node/camera visibility, shader ALPHA>0 and centres in frustum; no GPU occlusion claim",
+            "treeOpticalShadowEnabled": true,
+            "treeResidualEnabled": true
+          },
+          "vegetationAssets": {
+            "assetId": "polyhaven-grass-medium-01-tiny",
+            "available": true,
+            "digest": "2164daf367e44704795bba98add4cf7ee8b51404f06dfd60dec623a74768a0e3",
+            "hashes": {
+              "alpha": "711a8e49af758d6a6ce1f610db858899a27be19da6d1866bd35c13bc7b8ffeff",
+              "arm": "9a3a30f72bc02f4398967c5b08f2d20cce30bd423a2613b42a727034296fa3ae",
+              "baseColor": "71495bd6a11fddcab0aaff38246fea1a7b802a705483f1c7cbca53955daa8050",
+              "normal": "cae298d3d1d7ff7c7e210ad8ac772b96706e356f9315a6b04fde373ce01ccf1e",
+              "product": "0672054e08a7486eb768c8bb82de67a11fcd07ea3b2992d5cd02e70b2ae28bce"
+            },
+            "license": "CC0-1.0",
+            "meanSamplingStride": 1,
+            "pipelineVersion": "grass-linear-premul-rgbah-mips-orthogonal-tbn-v2",
+            "sourceMeanLinear": [
+              0.084093265235424,
+              0.0834381058812141,
+              0.0250466763973236
+            ],
+            "texturePacking": "RGBAH premultiplied RGB / source alpha; linear mipmaps; albedo manually decoded before packing; no sampler source_color",
+            "variantPolicy": "candidate.variant modulo variant count; no camera/world-id input",
+            "variants": [
+              {
+                "id": "grass_medium_01_tiny_b_LOD0",
+                "normalization": {
+                  "pivot": [
+                    0.00761061115190386,
+                    -0.00229678605683147,
+                    -0.0169350132782711
+                  ],
+                  "positionUnits": "candidate-size",
+                  "preparedBottom": -0.5,
+                  "preparedHeight": 1,
+                  "preparedTop": 0.5,
+                  "uniformScale": 16.6089560511805
+                },
+                "triangleCount": 28
+              },
+              {
+                "id": "grass_medium_01_tiny_c_LOD0",
+                "normalization": {
+                  "pivot": [
+                    0.00598354591056704,
+                    -0.00152770464774221,
+                    0.0138408204657026
+                  ],
+                  "positionUnits": "candidate-size",
+                  "preparedBottom": -0.5,
+                  "preparedHeight": 1,
+                  "preparedTop": 0.5,
+                  "uniformScale": 12.1375869170704
+                },
+                "triangleCount": 40
+              },
+              {
+                "id": "grass_medium_01_tiny_a_LOD0",
+                "normalization": {
+                  "pivot": [
+                    0.0103727793321013,
+                    -0.00265430868603289,
+                    -0.0141221322119236
+                  ],
+                  "positionUnits": "candidate-size",
+                  "preparedBottom": -0.5,
+                  "preparedHeight": 1,
+                  "preparedTop": 0.5,
+                  "uniformScale": 8.89257685159565
+                },
+                "triangleCount": 79
+              }
+            ]
+          },
+          "images": [
+            {
+              "name": "all",
+              "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-vegetation-assets-2026-10-24\\web\\out\\vegetation-gpu\\10m-cc0-grass/all.png",
+              "sha256": "3a6c90771fdc766f4f1a742a0b504cd9277e4e4872687c9bbebf289f0b7bfa4a"
+            },
+            {
+              "name": "no-low-cover",
+              "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-vegetation-assets-2026-10-24\\web\\out\\vegetation-gpu\\10m-cc0-grass/no-low-cover.png",
+              "sha256": "b777b7a1c88f3974c45307818300451359c232ce75e9505a37a289399102fc45"
+            },
+            {
+              "name": "no-trees",
+              "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-vegetation-assets-2026-10-24\\web\\out\\vegetation-gpu\\10m-cc0-grass/no-trees.png",
+              "sha256": "6133dd26b12ebf38f096232d8892b96acf94e9968d3331596462414c5f791a58"
+            },
+            {
+              "name": "ground",
+              "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-vegetation-assets-2026-10-24\\web\\out\\vegetation-gpu\\10m-cc0-grass/ground.png",
+              "sha256": "d3539328e4669014d142eff8a1f789c9461b64fb24d77e1ad73eb13edcc0a0cb"
+            },
+            {
+              "name": "ground-mean-unlit",
+              "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-vegetation-assets-2026-10-24\\web\\out\\vegetation-gpu\\10m-cc0-grass/ground-mean-unlit.png",
+              "sha256": "89fdd628ee33d6228be6290051a16128b7c676a6bad9f9388087b8721bf33990"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "report": "vegetation-gpu-oblique",
+      "status": "complete",
+      "sourceSha256": "a66c390b3b16c25058628fe178d671060f941d0a5bef452894cdcedde0dd122e",
+      "vegetationManifestSha256": "245fdbc786ff5806998075657a9194af767ef13f372670db5a11010c9d4099c1",
+      "comparisons": [
+        {
+          "width": 10,
+          "physicalHashesExact": true,
+          "instanceCountsExact": true,
+          "groundPixelsExact": true
+        }
+      ],
+      "runs": [
+        {
+          "widthM": 10,
+          "profile": "baseline",
+          "adapter": "NVIDIA GeForce RTX 5090",
+          "backend": "forward_plus",
+          "elapsedMs": 20919,
+          "worldId": "313a630904c50b372b0e38891af563a5",
+          "source": {
+            "id": "infinite:2814899424497554030:86cac2e9a1d86c7ff5581213cabb3cc0",
+            "nativeSpacingM": 0.46875,
+            "provenance": "Infinite retained refinement; seed=2814899424497554030; decoderUsed=true; registrationNativeMpp=30; fieldFingerprint=rf1-019b8aa8fc4b7a3a38e7adce2163d4ea; parent=cell-centred cubic B-spline control reconstruction (not interpolation through control centres); parentComparison={\"samples\":4096,\"parentCorrelation\":0.998382058896566,\"transposedParentCorrelation\":-0.9929963571086565,\"maxAbsDeltaM\":0.5784265781248905,\"rmsDeltaM\":0.23423732073587164,\"meanDeltaM\":-0.14524888992310991,\"controlSmoothingMaxAbsM\":0.5617818190412436,\"refinementResidualMaxAbsM\":0.4947925234214381}",
+            "sourceLOD": -6,
+            "sourceLODKnown": true,
+            "version": "decoder-v12-nyquist-notch:magna-retained-v1:e2bf5473c0ff:f21afa261ed7"
+          },
+          "populationInstances": {
+            "families": {
+              "boulder": {
+                "alphaPositiveInFrustum": 1,
+                "nodeVisible": 5,
+                "submitted": 5
+              },
+              "debris": {
+                "alphaPositiveInFrustum": 0,
+                "nodeVisible": 5,
+                "submitted": 5
+              },
+              "grass": {
+                "alphaPositiveInFrustum": 7,
+                "nodeVisible": 44,
+                "submitted": 44
+              },
+              "shrub": {
+                "alphaPositiveInFrustum": 0,
+                "nodeVisible": 1,
+                "submitted": 1
+              },
+              "tree": {
+                "alphaPositiveInFrustum": 0,
+                "nodeVisible": 0,
+                "submitted": 0
+              },
+              "trunk": {
+                "alphaPositiveInFrustum": 0,
+                "nodeVisible": 0,
+                "submitted": 0
+              }
+            },
+            "scope": "submitted buffers, actual node/camera visibility, shader ALPHA>0 and centres in frustum; no GPU occlusion claim",
+            "treeOpticalShadowEnabled": true,
+            "treeResidualEnabled": true
+          },
+          "vegetationAssets": {
+            "available": false,
+            "reason": "no prepared vegetation manifest"
+          },
+          "images": [
+            {
+              "name": "all",
+              "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-vegetation-assets-2026-10-24\\web\\out\\vegetation-gpu-oblique\\10m-baseline/all.png",
+              "sha256": "6f5757aec108d9e2b3596e93011165c046f4c37c8d53d176a911aee61efcc43f"
+            },
+            {
+              "name": "no-low-cover",
+              "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-vegetation-assets-2026-10-24\\web\\out\\vegetation-gpu-oblique\\10m-baseline/no-low-cover.png",
+              "sha256": "cce364b437aa7882bafddbad7d8cb0099a12867146d4f7f0f4bde3790f189ea0"
+            },
+            {
+              "name": "no-trees",
+              "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-vegetation-assets-2026-10-24\\web\\out\\vegetation-gpu-oblique\\10m-baseline/no-trees.png",
+              "sha256": "1f60e11e474905800eb54008d42ee7ea4c3111b17ff1dd9fdf48e0763cdfbe1f"
+            },
+            {
+              "name": "ground",
+              "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-vegetation-assets-2026-10-24\\web\\out\\vegetation-gpu-oblique\\10m-baseline/ground.png",
+              "sha256": "671d24b6501e26e0e84b7572d5dd6620405ae3874c35d2680aa07140fcc20681"
+            },
+            {
+              "name": "ground-mean-unlit",
+              "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-vegetation-assets-2026-10-24\\web\\out\\vegetation-gpu-oblique\\10m-baseline/ground-mean-unlit.png",
+              "sha256": "b2491314ebb6edc6cfe3b947d09ad46f7da12c9c694da195caec742fc58a310e"
+            }
+          ]
+        },
+        {
+          "widthM": 10,
+          "profile": "cc0-grass",
+          "adapter": "NVIDIA GeForce RTX 5090",
+          "backend": "forward_plus",
+          "elapsedMs": 21646,
+          "worldId": "313a630904c50b372b0e38891af563a5",
+          "source": {
+            "id": "infinite:2814899424497554030:86cac2e9a1d86c7ff5581213cabb3cc0",
+            "nativeSpacingM": 0.46875,
+            "provenance": "Infinite retained refinement; seed=2814899424497554030; decoderUsed=true; registrationNativeMpp=30; fieldFingerprint=rf1-019b8aa8fc4b7a3a38e7adce2163d4ea; parent=cell-centred cubic B-spline control reconstruction (not interpolation through control centres); parentComparison={\"samples\":4096,\"parentCorrelation\":0.998382058896566,\"transposedParentCorrelation\":-0.9929963571086565,\"maxAbsDeltaM\":0.5784265781248905,\"rmsDeltaM\":0.23423732073587164,\"meanDeltaM\":-0.14524888992310991,\"controlSmoothingMaxAbsM\":0.5617818190412436,\"refinementResidualMaxAbsM\":0.4947925234214381}",
+            "sourceLOD": -6,
+            "sourceLODKnown": true,
+            "version": "decoder-v12-nyquist-notch:magna-retained-v1:e2bf5473c0ff:f21afa261ed7"
+          },
+          "populationInstances": {
+            "families": {
+              "boulder": {
+                "alphaPositiveInFrustum": 1,
+                "nodeVisible": 5,
+                "submitted": 5
+              },
+              "debris": {
+                "alphaPositiveInFrustum": 0,
+                "nodeVisible": 5,
+                "submitted": 5
+              },
+              "grass": {
+                "alphaPositiveInFrustum": 7,
+                "nodeVisible": 44,
+                "submitted": 44
+              },
+              "shrub": {
+                "alphaPositiveInFrustum": 0,
+                "nodeVisible": 1,
+                "submitted": 1
+              },
+              "tree": {
+                "alphaPositiveInFrustum": 0,
+                "nodeVisible": 0,
+                "submitted": 0
+              },
+              "trunk": {
+                "alphaPositiveInFrustum": 0,
+                "nodeVisible": 0,
+                "submitted": 0
+              }
+            },
+            "scope": "submitted buffers, actual node/camera visibility, shader ALPHA>0 and centres in frustum; no GPU occlusion claim",
+            "treeOpticalShadowEnabled": true,
+            "treeResidualEnabled": true
+          },
+          "vegetationAssets": {
+            "assetId": "polyhaven-grass-medium-01-tiny",
+            "available": true,
+            "digest": "2164daf367e44704795bba98add4cf7ee8b51404f06dfd60dec623a74768a0e3",
+            "hashes": {
+              "alpha": "711a8e49af758d6a6ce1f610db858899a27be19da6d1866bd35c13bc7b8ffeff",
+              "arm": "9a3a30f72bc02f4398967c5b08f2d20cce30bd423a2613b42a727034296fa3ae",
+              "baseColor": "71495bd6a11fddcab0aaff38246fea1a7b802a705483f1c7cbca53955daa8050",
+              "normal": "cae298d3d1d7ff7c7e210ad8ac772b96706e356f9315a6b04fde373ce01ccf1e",
+              "product": "0672054e08a7486eb768c8bb82de67a11fcd07ea3b2992d5cd02e70b2ae28bce"
+            },
+            "license": "CC0-1.0",
+            "meanSamplingStride": 1,
+            "pipelineVersion": "grass-linear-premul-rgbah-mips-orthogonal-tbn-v2",
+            "sourceMeanLinear": [
+              0.084093265235424,
+              0.0834381058812141,
+              0.0250466763973236
+            ],
+            "texturePacking": "RGBAH premultiplied RGB / source alpha; linear mipmaps; albedo manually decoded before packing; no sampler source_color",
+            "variantPolicy": "candidate.variant modulo variant count; no camera/world-id input",
+            "variants": [
+              {
+                "id": "grass_medium_01_tiny_b_LOD0",
+                "normalization": {
+                  "pivot": [
+                    0.00761061115190386,
+                    -0.00229678605683147,
+                    -0.0169350132782711
+                  ],
+                  "positionUnits": "candidate-size",
+                  "preparedBottom": -0.5,
+                  "preparedHeight": 1,
+                  "preparedTop": 0.5,
+                  "uniformScale": 16.6089560511805
+                },
+                "triangleCount": 28
+              },
+              {
+                "id": "grass_medium_01_tiny_c_LOD0",
+                "normalization": {
+                  "pivot": [
+                    0.00598354591056704,
+                    -0.00152770464774221,
+                    0.0138408204657026
+                  ],
+                  "positionUnits": "candidate-size",
+                  "preparedBottom": -0.5,
+                  "preparedHeight": 1,
+                  "preparedTop": 0.5,
+                  "uniformScale": 12.1375869170704
+                },
+                "triangleCount": 40
+              },
+              {
+                "id": "grass_medium_01_tiny_a_LOD0",
+                "normalization": {
+                  "pivot": [
+                    0.0103727793321013,
+                    -0.00265430868603289,
+                    -0.0141221322119236
+                  ],
+                  "positionUnits": "candidate-size",
+                  "preparedBottom": -0.5,
+                  "preparedHeight": 1,
+                  "preparedTop": 0.5,
+                  "uniformScale": 8.89257685159565
+                },
+                "triangleCount": 79
+              }
+            ]
+          },
+          "images": [
+            {
+              "name": "all",
+              "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-vegetation-assets-2026-10-24\\web\\out\\vegetation-gpu-oblique\\10m-cc0-grass/all.png",
+              "sha256": "0df31a76966f44823053a19e5f1fbc17547a25fe24be4dad4e11f21589dbc825"
+            },
+            {
+              "name": "no-low-cover",
+              "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-vegetation-assets-2026-10-24\\web\\out\\vegetation-gpu-oblique\\10m-cc0-grass/no-low-cover.png",
+              "sha256": "cce364b437aa7882bafddbad7d8cb0099a12867146d4f7f0f4bde3790f189ea0"
+            },
+            {
+              "name": "no-trees",
+              "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-vegetation-assets-2026-10-24\\web\\out\\vegetation-gpu-oblique\\10m-cc0-grass/no-trees.png",
+              "sha256": "1ab75181913eb8e9d031c06b69494fc1e13aefbf4f5bed16fd5ee72e2dad2b40"
+            },
+            {
+              "name": "ground",
+              "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-vegetation-assets-2026-10-24\\web\\out\\vegetation-gpu-oblique\\10m-cc0-grass/ground.png",
+              "sha256": "671d24b6501e26e0e84b7572d5dd6620405ae3874c35d2680aa07140fcc20681"
+            },
+            {
+              "name": "ground-mean-unlit",
+              "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-vegetation-assets-2026-10-24\\web\\out\\vegetation-gpu-oblique\\10m-cc0-grass/ground-mean-unlit.png",
+              "sha256": "b2491314ebb6edc6cfe3b947d09ad46f7da12c9c694da195caec742fc58a310e"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "scope": "Offline retained V12 packet, not fresh generation or navigation qualification; shader compiled on actual RTX5090; no claim of independent GPU normal oracle, VRAM, GPU occlusion or final art quality",
+  "headless": {
+    "checks": 52,
+    "status": "PASS",
+    "scope": "real extraction and ArrayMesh/20-float buffers/layers/premultiplied mip and shader parse"
+  },
+  "observations": [
+    "Real slender blades replace green prisms at10m, without changing source size/density.",
+    "The source view has only3 alpha-positive grass centres at10m,44at160m; no invented dense ground cover.",
+    "Other shrubs/debris/boulders and spherical trees are unchanged.",
+    "Ground/no-low-cover central pixel hashes and source data match baseline; all instance counts match.",
+    "Only existing Terrain3D interpolation deprecation warnings occurred; no shader/runtime ERROR."
+  ]
+}
