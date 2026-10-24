@@ -30,6 +30,11 @@ export function placeForExport(world: World, pal: Palette, measure: Measure = (t
 export function labelsSvg(world: World, pal: Palette, measure?: Measure, legend = false): string {
   if (!world.names) return '';
   const { placed, scale } = placeForExport(world, pal, measure, legend);
+  return placedMapLabelsSvg(placed, pal, scale);
+}
+
+/** Shared serializer: placement may come from the normal map or a pinned raster view. */
+export function placedMapLabelsSvg(placed: PlacedMapLabel[], pal: Palette, scale = 1): string {
   if (!placed.length) return '';
   const k = 1 / scale; // screen px -> meters
   const family = FONT_STACKS[pal.name] ?? pal.fontFamily;
