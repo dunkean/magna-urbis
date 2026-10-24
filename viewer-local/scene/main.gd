@@ -359,7 +359,10 @@ func _begin_prepare() -> void:
 		var active_texels=int(canopy_info.gridSize.x)*int(canopy_info.gridSize.y) if canopy_info.get("available",false) else 0
 		prepare_request["visibilityOptions"]={"prepareControl":active_prepare_control,"crownHeightM":crown,"maximumCrownRadiusM":float(packet.get("_maximumCrownRadiusM",7.56)),"activeAtlasTexels":active_texels,"haloM":maxf(40.0,shadow.length()+2.0*spacing+7.56)}
 		if tree_shadow_mode=="native-solar" and presentation_mode=="aerial":
-			prepare_request.visibilityOptions["extraKnownFeatureBytes"]=TreeSolar.known_feature_bytes(int(preload("res://adapters/surface_canopy.gd").tree_page(packet).get("count",TreeSolar.MAX_TREES)))
+			# Bound from the actual validated input length, not a page's count claim:
+			# even a packet later refused by Solar may allocate before that rejection.
+			var input_count=int(packet.candidateColumns.count) if packet.has("candidateColumns") else packet.get("candidates",[]).size()
+			prepare_request.visibilityOptions["extraKnownFeatureBytes"]=TreeSolar.known_feature_bytes(input_count)
 	if options.has("--height-batch"):scene_request["heightBatchExecutable"]=str(options["--height-batch"])
 	worker.start(ScenePrepare.prepare.bind(prepare_request))
 	last_request_tick = Time.get_ticks_msec()
