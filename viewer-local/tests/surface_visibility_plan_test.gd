@@ -22,6 +22,14 @@ func run()->void:
 	var page={"complete":true,"bounds":{"minX":-500.0,"minZ":-500.0,"maxX":500.0,"maxZ":500.0}}
 	var plan=Plan.build(w,w,snap,origin,.625,page,{"crownHeightM":32.0,"haloM":40.0})
 	verify(plan.available,"small oblique source has a bounded plan")
+	var ledger={"solarTexture":128*1024*1024,"nativeFixedTransient":80*1024*1024}
+	var reserved=Plan.build(w,w,snap,origin,.625,page,{"crownHeightM":32.0,"haloM":40.0,"extraKnownFeatureBytes":ledger})
+	verify(reserved.available,"valid additive known-feature ledger")
+	verify(reserved.memoryBudget.estimatedKnownPeakBytes-plan.memoryBudget.estimatedKnownPeakBytes==208*1024*1024,"ledger sums instead of replacing resident/atlas costs")
+	verify(reserved.memoryBudget.knownFeatureLedger==ledger,"ledger names and exact amounts retained")
+	verify(Plan.build(w,w,snap,origin,.625,page,{"extraKnownFeatureBytes":{"tooLarge":Plan.MAX_ESTIMATED_WORKING_BYTES}}).reason=="estimated-working-memory-budget","extra feature budget fails closed under same2GiB ceiling")
+	for bad in [{"negative":-1},{"fractional":.5},{"nonfinite":INF},{"boolean":true},{"":1},[-1],{"a":Plan.MAX_ESTIMATED_WORKING_BYTES,"b":1}]:
+		verify(Plan.build(w,w,snap,origin,.625,page,{"extraKnownFeatureBytes":bad}).reason=="invalid-known-feature-budget-ledger","malformed/overflowing ledger never undercounts")
 	verify(plan.heightEnvelopeWorld[0]>-100.0,"offscreen valley is not substituted as a global infinite height plane")
 	verify(plan.residentImageSize in [512,1024,2048],"resident size preserves Terrain3D region alignment")
 	verify(Plan._encloses(plan.residentBounds,plan.atlasBounds),"same job resident contains atlas and padding")
