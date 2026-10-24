@@ -26,6 +26,14 @@ export function verifyExplicitLayerCapture(capture:unknown,packet:unknown,visibi
     const descriptor=packet.layerFieldDescriptors[name];
     if(!record(descriptor)||descriptor.dtype!==dtype||descriptor.length!==n)throw new Error('Invalid explicit surface-layer array '+name);
   }
+  const response=layer.groundResponse,version=packet.versions.groundResponse;
+  if(version!==undefined){
+    if(typeof version!=='string'||!/^gr-sha256-1:[a-f0-9]{64}$/.test(version)||!record(response)||response.available!==true||response.version!=='surface-ground-response-1'||response.id!==version
+      ||response.quantization!=='float32-potentials; uint16-recipe; stored-srgb8-at-canonical-knots'||!record(response.sourceGrid)
+      ||['width','height','originX','originZ','spacingM'].some(key=>!finite(response.sourceGrid[key])||Math.abs(response.sourceGrid[key]-grid[key])>1e-7)
+      ||!finite(response.sourceNativeSpacingM)||response.sourceNativeSpacingM<=0||response.imageBytes!==grid.width*grid.height*48)
+      throw new Error('Rendered ground response is unavailable, stale or uses a different canonical physical grid');
+  }else if(record(response)&&response.available===true)throw new Error('Legacy packet claims an unavailable physical ground response');
   return layer;
 }
 

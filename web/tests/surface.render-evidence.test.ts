@@ -19,6 +19,19 @@ function fixture(){
 }
 describe('new rendered layer and fixed source-map evidence',()=>{
   it('joins actual layer usage and canonical texture source to exact nine typed packet descriptors',()=>{const f=fixture();expect(verifyExplicitLayerCapture(f.capture,f.packet)).toBe(f.capture.surfaceLayers);});
+  it('requires the rendered continuous response when the packet advertises it, while preserving honest legacy absence',()=>{
+    const f:any=fixture(),version='gr-sha256-1:'+'a'.repeat(64);
+    f.packet.versions.groundResponse=version;
+    expect(()=>verifyExplicitLayerCapture(f.capture,f.packet)).toThrow(/ground response/);
+    f.capture.surfaceLayers.groundResponse={available:true,version:'surface-ground-response-1',id:version,sourceGrid:{...f.packet.canonicalGrid},sourceNativeSpacingM:39.0625,
+      quantization:'float32-potentials; uint16-recipe; stored-srgb8-at-canonical-knots',imageBytes:512*512*48};
+    expect(verifyExplicitLayerCapture(f.capture,f.packet)).toBe(f.capture.surfaceLayers);
+    for(const alter of [(r:any)=>r.available=false,(r:any)=>r.id='gr-sha256-1:'+'b'.repeat(64),(r:any)=>r.sourceGrid.originX+=1,(r:any)=>r.quantization='unknown',(r:any)=>r.imageBytes=1]){
+      const bad=structuredClone(f);alter(bad.capture.surfaceLayers.groundResponse);expect(()=>verifyExplicitLayerCapture(bad.capture,bad.packet)).toThrow(/ground response/);
+    }
+    delete f.packet.versions.groundResponse;expect(()=>verifyExplicitLayerCapture(f.capture,f.packet)).toThrow(/Legacy/);
+    delete f.capture.surfaceLayers.groundResponse;expect(verifyExplicitLayerCapture(f.capture,f.packet)).toBe(f.capture.surfaceLayers);
+  });
   it('rejects legacy/unavailable layers, stale application metadata, wrong array lengths/types and hidden layers',()=>{
     for(const alter of[(f:any)=>f.capture.surfaceLayers.groundAvailability='legacy-composite-unavailable',(f:any)=>f.packet.surfaceLayers.lowCoverAvailability='legacy-composite-unavailable',
       (f:any)=>f.capture.surfaceLayers.worldId='requested-but-not-rendered',(f:any)=>f.capture.surfaceLayers.textureFieldsVersion='old-canonical',
