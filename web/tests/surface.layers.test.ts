@@ -96,7 +96,7 @@ describe('explicit soil, low-cover and tree layers',()=>{
     for(const key of SURFACE_LAYER_FIELDS){expect(hydrated.fields[key]).toBe(original[key]);expect(hydrated.fields[key]).toEqual(world.fields[key]);}
     const json=deserializeSurfaceWorld(serializeSurfaceWorld(world));expect(json.surfaceLayers).toEqual(world.surfaceLayers);
     expect(sampleSurface(json,112.3,215.7).surfaceLayers).toEqual(sampleSurface(world,112.3,215.7).surfaceLayers);
-    expect(estimateSurfaceCompileBytes(world.terrain,2,3)-baseline.compileBytes).toBe(28*world.terrain.heights.length);
+    expect(estimateSurfaceCompileBytes(world.terrain,2,3)-baseline.compileBytes).toBe((28+26)*world.terrain.heights.length);
     expect(()=>compileSurfaceWorld(surfaceLayerInput(),{topographicRadiiM:[32,64,128],memoryBudgetBytes:baseline.compileBytes})).toThrow(/memoryBudget/);
   });
   it('rejects partial, truncated, wrong-type, wrong-role, unbounded or edited layer fields and metadata',()=>{
@@ -110,7 +110,7 @@ describe('explicit soil, low-cover and tree layers',()=>{
     const typed=structuredClone(world);typed.fields.groundMaterial=new Uint32Array(world.fields.groundMaterial!) as any;expect(()=>hydrateSurfaceWorld(typed)).toThrow();
   });
   it('announces legacy mixed-only input rather than inventing bare ground, including refined packets',()=>{
-    const value=JSON.parse(serializeSurfaceWorld(compile()));for(const key of SURFACE_LAYER_FIELDS)delete value.fields[key];
+    const value=JSON.parse(serializeSurfaceWorld(compileSurfaceWorld(surfaceLayerInput(),{topographicRadiiM:[32,64,128],groundResponse:false})));for(const key of SURFACE_LAYER_FIELDS)delete value.fields[key];
     delete value.surfaceLayers;delete value.versions.surfaceLayers;value.compilerVersion='surface-1.4.0';
     value.id=fingerprint([value.versions.environment,value.versions.occupation,value.versions.population,value.versions.materialLibrary,value.versions.surfaceState,value.seed].join(':'));
     const legacy=hydrateSurfaceWorld(value);expect(legacy.surfaceLayers?.groundAvailability).toBe('legacy-composite-unavailable');

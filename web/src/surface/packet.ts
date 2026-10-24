@@ -2,6 +2,7 @@ import { validateCandidateColumns } from './candidateColumns';
 import { validateSurfaceCandidatePages } from './candidatePages';
 import { validateUrbanColumns } from './urbanColumns';
 import { SURFACE_SCHEMA_VERSION, type SurfaceWorld, type TerrainGrid } from './model';
+import { hydrateGroundResponse } from './groundResponse';
 
 /** Structural boundary validation without cloning hundreds of MB of typed fields.
  * Scientific/value validation and JSON migration are available through hydrateSurfaceWorld.
@@ -45,6 +46,17 @@ export function validateSurfacePacket(value: unknown): asserts value is {
     if(c&&(c.version!=='surface-conditioning-1'||c.canonicalEnvironmentVersion!==w.versions.environment||!(c.bedrockExposure instanceof Float32Array)||c.bedrockExposure.length!==n))throw new Error('Invalid packet surface conditioning');
   }
   const c = w.canonicalContext, r = w.canonicalContextRef;
+  if(w.versions.groundResponse!==undefined&&(typeof w.versions.groundResponse!=='string'||!w.versions.groundResponse))throw new Error('Invalid packet ground response version');
+  if(r&&r.groundResponseVersion!==w.versions.groundResponse)throw new Error('Packet ground response reference mismatch');
+  if(r&&w.groundResponse!==undefined)throw new Error('Packet projected response must resolve canonical context');
+  const responseSource=c??(!r?{grid:w.terrain,source:w.terrain.source,groundResponse:w.groundResponse}:undefined);
+  if(responseSource){
+    if((responseSource.groundResponse!==undefined)!==(w.versions.groundResponse!==undefined))throw new Error('Packet ground response availability mismatch');
+    if(responseSource.groundResponse!==undefined){const g=responseSource.grid;
+      const response=hydrateGroundResponse(responseSource.groundResponse,{grid:{width:g.width,height:g.height,originX:g.originX,originZ:g.originZ,spacingM:g.spacingM},source:responseSource.source,environmentVersion:w.versions.environment,materialLibraryVersion:w.versions.materialLibrary,materials:w.materials});
+      if(response.id!==w.versions.groundResponse)throw new Error('Packet ground response canonical version mismatch');
+    }
+  }
   if (c) {
     fields(c.fields, grid(c.grid as TerrainGrid));
     if (r && (c.id !== r.id || c.versions.environment !== r.environmentVersion || c.versions.occupation !== r.occupationVersion || c.versions.materialLibrary !== r.materialLibraryVersion || c.versions.surfaceState !== r.surfaceStateVersion || c.versions.population !== r.populationVersion)) throw new Error('Packet canonical context reference mismatch');
