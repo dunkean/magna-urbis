@@ -1,0 +1,56 @@
+{
+  "format": "surface-opus-v13-review-provenance",
+  "model": "claude-opus-5-5",
+  "requestedEffort": "high",
+  "actualModelUsage": {
+    "claude-opus-5-5": {
+      "inputTokens": 92,
+      "outputTokens": 35918,
+      "cacheReadInputTokens": 7717495,
+      "cacheCreationInputTokens": 246314,
+      "webSearchRequests": 0,
+      "costUSD": 4.232738999999999,
+      "contextWindow": 1000000,
+      "maxOutputTokens": 128000,
+      "thinkingTokens": 15611,
+      "canonicalModel": "claude-opus-5-5",
+      "provider": "firstParty",
+      "costBasis": "list"
+    }
+  },
+  "durationMs": 494597,
+  "totalCostUsd": 4.232738999999999,
+  "readOnlyTools": [
+    "Read",
+    "Glob",
+    "Grep"
+  ],
+  "campaignHead": "6ef8d3c6f2b88f884a2ad199c7b305dfaf3649c1",
+  "reviewInputHead": "c36c5a4",
+  "promptFile": "docs/surface/reviews/phase06-followup-v13-prompt.md",
+  "promptFileSha256": "e804960be521b86a4e4a2fff2daf31acbfb63f2a79bf8495cfff74bc3159169c",
+  "rawReport": "web/out/surface-reviews/phase06-followup-v13-preserved.json",
+  "rawReportSha256": "981629ed6f5ccefca07a6d12f202ff65b5df1863266ebcd4206ee25523be79b7",
+  "markdown": "docs/surface/reviews/phase06-followup-v13.md",
+  "markdownSha256": "21ffa9bd19fbcc835d73a78f6b4edb1cb7e610d71201c11fbd66720477cfa1bb",
+  "imagesReportedOpened": 33,
+  "imageSets": {
+    "freshTour": 7,
+    "freshLayerProbes": 10,
+    "currentCity": 3,
+    "boundedTreeControls": 4,
+    "groundControls": 2,
+    "V12History": 7
+  },
+  "verdicts": {
+    "technical": "PASS",
+    "strictNavigation": "PASS",
+    "QoS": "PARTIAL",
+    "groundResponse": "technical PASS; artistic PARTIAL",
+    "staticAppearance": "PARTIAL; artistic FAIL",
+    "cityStyles": "technical PASS; visual/style PARTIAL or FAIL",
+    "artisticProduction": "FAIL"
+  },
+  "limits": "No shell/Git/hash recomputation by reviewer. Partial source/doc reading explicitly listed in verbatim review. No qualification of future VisibilityPlan, support culling or albedo correction.",
+  "submissionNote": "The committed c36c5a4 prompt was submitted unchanged. An attempted last-minute controlled-lighting addendum failed to read its UTF8 file under Windows default encoding before writing; it was not submitted. The reviewer independently identified the LOD discontinuity in the V13 40m image. The later common-camera evidence and fixed product require separate V14 review."
+}
