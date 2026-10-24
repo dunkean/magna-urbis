@@ -85,9 +85,15 @@ export function packMaterialMean(color: readonly number[]): number {
   return encode(color[0]) | encode(color[1]) << 8 | encode(color[2]) << 16;
 }
 
+// Exactly the previous scalar expression, evaluated once for every possible
+// stored byte. Float64 storage preserves its result, without quantisation.
+const MATERIAL_MEAN_LINEAR = Float64Array.from({ length: 256 }, (_, v) => {
+  const s = v / 255;
+  return s <= .04045 ? s / 12.92 : Math.pow((s + .055) / 1.055, 2.4);
+});
+
 export function unpackMaterialMean(packed: number): [number, number, number] {
-  const decode = (v: number) => { const s = v / 255; return s <= .04045 ? s / 12.92 : Math.pow((s + .055) / 1.055, 2.4); };
-  return [decode(packed & 255), decode(packed >>> 8 & 255), decode(packed >>> 16 & 255)];
+  return [MATERIAL_MEAN_LINEAR[packed & 255], MATERIAL_MEAN_LINEAR[packed >>> 8 & 255], MATERIAL_MEAN_LINEAR[packed >>> 16 & 255]];
 }
 
 /** Physical-coordinate CPU reference. Patterns organize material relief; they never change canonical DEM or hydrology. */
