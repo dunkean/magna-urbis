@@ -1,5 +1,6 @@
 class_name SurfaceData
 extends RefCounted
+const PrepareControl=preload("res://adapters/surface_prepare_control.gd")
 const Geometry = preload("res://adapters/surface_geometry.gd")
 const UrbanReader = preload("res://adapters/urban_reader.gd")
 const Layers=preload("res://adapters/surface_layers.gd")
@@ -319,9 +320,12 @@ static func field_at(world: Dictionary, name: String, x: float, z: float, catego
 # CPU work only; called by a Thread. Display interpolation never changes sourceLOD.
 static func prepare(world: Dictionary, origin: Dictionary, view_width: float, serial := 0, packet: Dictionary = {}, skip_context := false, display_source: Dictionary = {}, skip_height := false, scene_request: Dictionary = {}) -> Dictionary:
 	var start := Time.get_ticks_usec()
+	var control_token=scene_request.get("prepareControl")
+	if PrepareControl.hit(control_token,"data-start"):return PrepareControl.result(control_token,"data-start",start)
 	var terrain: Dictionary = world.terrain
 	var spacing := display_spacing(terrain,view_width,int(scene_request.get("displaySamples",256)))
-	if display_source.is_empty(): display_source=build_display_source(world,spacing)
+	if display_source.is_empty(): display_source=build_display_source(world,spacing,control_token)
+	if PrepareControl.hit(control_token,"display-source"):return PrepareControl.result(control_token,"display-source",start)
 	# Terrain3D 1.0.2 import_images floors to 256-sample region origins.
 	# The symmetric start must therefore remain a multiple of 256 samples.
 	var size := 512
@@ -333,6 +337,7 @@ static func prepare(world: Dictionary, origin: Dictionary, view_width: float, se
 	var hole_bits := PackedByteArray([4,0,0,0]).decode_float(0)
 	var loaded_minimum=INF;var loaded_maximum=-INF
 	for z in (0 if skip_height else size):
+		if z%8==0 and PrepareControl.hit(control_token,"height-rows"):return PrepareControl.result(control_token,"height-rows",start)
 		for x in size:
 			var wx: float = origin.x+local_start.x+x*spacing
 			var wz: float = origin.z+local_start.z+z*spacing
@@ -344,17 +349,20 @@ static func prepare(world: Dictionary, origin: Dictionary, view_width: float, se
 			if has_source:loaded_minimum=minf(loaded_minimum,altitude);loaded_maximum=maxf(loaded_maximum,altitude)
 			if not has_source:
 				control.set_pixel(x,z,Color(hole_bits,0,0,1))
+	if PrepareControl.hit(control_token,"height-complete"):return PrepareControl.result(control_token,"height-complete",start)
 	# Native context resolution remains independent of the representation mesh.
 	var canonical := context(world)
 	terrain = canonical.grid
 	var fields: Dictionary = canonical.fields
 	var result := {"loadedHeightRangeWorld":Vector2(loaded_minimum-.01,loaded_maximum+.01),"worldId":world.id,"world":world,"packet":packet,"generation":serial,"origin":origin,"spacing":spacing,"localStart":local_start,"height":null if skip_height else height,"control":null if skip_height else control,"contextGrid":terrain,"displaySource":display_source,"sceneRequest":scene_request}
 	var layers=Layers.prepare(world,canonical)
+	if PrepareControl.hit(control_token,"layer-images"):return PrepareControl.result(control_token,"layer-images",start)
 	result.surfaceLayers=layers
 	result.surfaceLayersMetadata=layers.get("metadata",{}).duplicate(true)
 	result.surfaceLayersMetadata["fieldsVersion"]=world.get("surfaceLayers",{}).get("fieldsVersion","")
 	result.surfaceLayersMetadata["canonicalVersion"]=world.get("versions",{}).get("surfaceLayers","")
 	if skip_context:
+		if PrepareControl.hit(control_token,"before-scene-geometry"):return PrepareControl.result(control_token,"before-scene-geometry",start)
 		_append_scene(result,world,packet,origin,view_width,scene_request)
 		result.prepareMs=(Time.get_ticks_usec()-start)/1000.0
 		return result
@@ -363,6 +371,7 @@ static func prepare(world: Dictionary, origin: Dictionary, view_width: float, se
 	var rock := Image.create(int(terrain.width),int(terrain.height),false,Image.FORMAT_RF)
 	var average:Image=layers.groundAverage if layers.get("available",false) else Image.create(int(terrain.width),int(terrain.height),false,Image.FORMAT_RGBAF)
 	for z in int(terrain.height):
+		if z%8==0 and PrepareControl.hit(control_token,"context-rows"):return PrepareControl.result(control_token,"context-rows",start)
 		for x in int(terrain.width):
 			var i: int = z*int(terrain.width)+x
 			state.set_pixel(x,z,Color(float(fields.treeCover[i]),float(fields.wetness[i]),float(fields.snow[i]),float(fields.grassCover[i])))
@@ -384,6 +393,7 @@ static func prepare(world: Dictionary, origin: Dictionary, view_width: float, se
 	state.generate_mipmaps()
 	average.generate_mipmaps()
 	result.merge({"ids":ids,"state":state,"rock":rock,"average":average,"prepareMs":(Time.get_ticks_usec()-start)/1000.0})
+	if PrepareControl.hit(control_token,"before-scene-geometry"):return PrepareControl.result(control_token,"before-scene-geometry",start)
 	_append_scene(result,world,packet,origin,view_width,scene_request)
 	result.prepareMs=(Time.get_ticks_usec()-start)/1000.0
 	return result
@@ -408,17 +418,22 @@ static func display_spacing(terrain: Dictionary, view_width: float, sampleBudget
 	if spacing<0.25: spacing*=2.0
 	return spacing
 
-static func build_display_source(world: Dictionary, spacing: float) -> Dictionary:
+static func build_display_source(world: Dictionary, spacing: float,control_token=null) -> Dictionary:
 	var display := world.duplicate(false)
-	display.terrain=_prefilter_grid(world.terrain,spacing)
+	display.terrain=_prefilter_grid(world.terrain,spacing,control_token)
+	if PrepareControl.hit(control_token,"prefilter-root-complete"):return {}
 	var parents: Array = []
-	for parent in world.get("_terrainParents",[]): parents.append({"bounds":parent.bounds,"terrain":_prefilter_grid(parent.terrain,spacing)})
+	for parent in world.get("_terrainParents",[]):
+		if PrepareControl.hit(control_token,"prefilter-parent"):return {}
+		var filtered=_prefilter_grid(parent.terrain,spacing,control_token)
+		if PrepareControl.hit(control_token,"prefilter-parent-complete"):return {}
+		parents.append({"bounds":parent.bounds,"terrain":filtered})
 	display["_terrainParents"]=parents
 	display["_displaySpacing"]=spacing
 	display["_heightLayers"]=Geometry.prepare_height_layers(display)
 	return display
 
-static func _prefilter_grid(source: Dictionary, target_spacing: float) -> Dictionary:
+static func _prefilter_grid(source: Dictionary, target_spacing: float,control_token=null) -> Dictionary:
 	var grid := source
 	var max_shift := 0.0
 	while float(grid.spacingM)*2.0<=target_spacing*1.000001 and int(grid.width)>2 and int(grid.height)>2:
@@ -430,6 +445,7 @@ static func _prefilter_grid(source: Dictionary, target_spacing: float) -> Dictio
 		var values := PackedFloat64Array()
 		values.resize(width*height)
 		for z in height:
+			if z%8==0 and PrepareControl.hit(control_token,"prefilter-rows"):return {}
 			for x in width:
 				var sum := 0.0
 				var low := INF
