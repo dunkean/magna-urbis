@@ -140,6 +140,7 @@
     ROUGHNESS=sqrt(mix(ROUGHNESS*ROUGHNESS,low_rough*low_rough,visible_low));
     composed_normal=mix(composed_normal,low_normal,visible_low);
     float crown_mask=show_trees?surface_canopy_residual(v_vertex.xz,canopy_main_pixel_footprint(v_vertex.xz,PROJECTION_MATRIX*VIEW_MATRIX,VIEWPORT_SIZE),state.r):0.0;
+    crown_mask*=1.0-forest_oblique_selector(FRAGCOORD.xy);
     // Mapper policy: the full optical canopy casts the same approximate shadow
     // inside and outside the inventory page. Tree geometry never casts engine
     // shadows; terrain and buildings retain their physical shadow settings.

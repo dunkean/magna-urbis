@@ -190,7 +190,7 @@ static func build(world:Dictionary,display:Dictionary,camera:Dictionary,origin:D
 			if index.is_empty():return _fail("nonfinite-source-controls")
 			layers.append({"bounds":layer.bounds,"index":index})
 		_cached_world=world;_cached_display=display;_cached_layers=layers
-	var token=options.get("prepareControl");var crown=float(options.get("crownHeightM",20.0));var radius=float(options.get("maximumCrownRadiusM",7.56))*(1.56 if crown>=32.0 else 1.0)
+	var token=options.get("prepareControl");var crown=float(options.get("crownHeightM",20.0));var radius=float(options.get("maximumCrownRadiusM",7.56))*float(options.get("crownHorizontalSupportFactor",1.56 if crown>=32.0 else 1.0))
 	var pad=.05+float(camera.far)*.000001
 	var planes=_planes(camera);var stack:Array=[]
 	# Partition every physical source domain. Union height ranges of ALL overlapping
@@ -252,11 +252,12 @@ static func build(world:Dictionary,display:Dictionary,camera:Dictionary,origin:D
 	if reuse:
 		for axis in ["x","y","z"]:
 			if absf(float(old_origin[axis])-float(planned_origin[axis]))>.00001:reuse=false;break
-	var budget={"newResidentRfControlBackingTransferBytes":0 if reuse else image_size*image_size*24,"activeResidentRfControlBackingBytes":active_side*active_side*16,"newAtlasArraysImagesMipsUploadUpperBytes":aw*ah*240,"activeAtlasImagesMipsTextureUpperBytes":active_atlas*128,"heightIndexUpperBytes":estimate,"sourceContextReserveBytes":SOURCE_CONTEXT_RESERVE_BYTES,"reuseResident":reuse}
+	var budget={"newResidentRfControlBackingTransferBytes":0 if reuse else image_size*image_size*24,"activeResidentRfControlBackingBytes":active_side*active_side*16,"newAtlasArraysImagesMipsUploadUpperBytes":aw*ah*240 if options.get("prepareCanopyAtlas",true) else 0,"activeAtlasImagesMipsTextureUpperBytes":active_atlas*128,"heightIndexUpperBytes":estimate,"sourceContextReserveBytes":SOURCE_CONTEXT_RESERVE_BYTES,"reuseResident":reuse}
+	budget["newCanopyAtlasPrepared"]=bool(options.get("prepareCanopyAtlas",true))
 	budget["extraKnownFeatureBytes"]=int(features.totalBytes)
 	var total=0
 	for key in budget:
-		if key!="reuseResident":total+=int(budget[key])
+		if key not in ["reuseResident","newCanopyAtlasPrepared"]:total+=int(budget[key])
 	budget["estimatedKnownPeakBytes"]=total;budget["limitBytes"]=mini(MAX_ESTIMATED_WORKING_BYTES,int(options.get("maxEstimatedWorkingBytes",MAX_ESTIMATED_WORKING_BYTES)));budget["rssOrVramBoundClaimed"]=false
 	budget["knownFeatureLedger"]=features.items
 	if total>int(budget.limitBytes):

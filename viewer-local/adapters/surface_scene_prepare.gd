@@ -9,6 +9,7 @@ const Presentation=preload("res://adapters/surface_presentation.gd")
 const Roads = preload("res://adapters/surface_roads.gd")
 const VisibilityPlan=preload("res://adapters/surface_visibility_plan.gd")
 const Canopy=preload("res://adapters/surface_canopy.gd")
+const FullTrees=preload("res://adapters/surface_tree_oblique.gd")
 const Solar=preload("res://adapters/surface_tree_solar.gd")
 
 # Prepare winding, normals and material batches without touching the scene tree.
@@ -43,7 +44,7 @@ static func prepare(request: Dictionary) -> Dictionary:
 		plan_options["reuseResidentCandidate"]=request.get("reuseObliqueHeight",false)
 		visibility_plan=VisibilityPlan.build(request.world,request.displaySource,request.get("visibilityCamera",{}),request.origin,spacing,Canopy.tree_page(request.packet),plan_options)
 		if PrepareControl.hit(control,"visibility-complete"):return PrepareControl.result(control,"visibility-complete",started)
-		request.sceneRequest["canopyAtlasBounds"]=visibility_plan.atlasBounds
+		request.sceneRequest["canopyAtlasBounds"]={"disabled":true} if request.get("obliqueFull",false) else visibility_plan.atlasBounds
 		if visibility_plan.get("available",false):
 			request.sceneRequest["visibilityResidentImageSize"]=int(visibility_plan.residentImageSize)
 			request.sceneRequest["visibilityCameraSha256"]=visibility_plan.cameraSha256
@@ -77,6 +78,8 @@ static func prepare(request: Dictionary) -> Dictionary:
 	result.populations=Population.prepare(population_packet,request.focus,request.width,request.viewportWidth,request.oblique,not request.get("groundOnly",false),request.sceneRequest.get("canopyAtlasBounds",{}))
 	if request.get("solarShadows",false):
 		result.treeSolar=Solar.prepare(population_packet,request.world,request.origin,request.get("solarDirection",Vector3.ZERO))
+	if request.get("obliqueFull",false):
+		result.treeOblique=FullTrees.prepare(result.get("treeSolar",{}),request.get("visibilityCamera",{}),request.origin,request.treeHighBounds,int(request.treeHighTriangles),14,request.treeViewSupport)
 	if request.oblique:
 		result.populations.canopy["visibilityPlan"]=visibility_plan
 		if not visibility_plan.get("available",false):result.populations.canopy["reason"]=visibility_plan.reason

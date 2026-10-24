@@ -12,10 +12,12 @@ static func _visible(box:AABB,planes:Array)->bool:
 	return true
 
 # Complete source tree data, packed on the worker. No100k Dictionary expansion.
-static func prepare(data:Dictionary,camera:Dictionary,origin:Dictionary,high_bounds:AABB,high_triangles:int,max_high:int=14)->Dictionary:
+static func prepare(data:Dictionary,camera:Dictionary,origin:Dictionary,high_bounds:AABB,high_triangles:int,max_high:int=14,support:Dictionary={})->Dictionary:
 	if not data.get("available",false) or camera.is_empty():return {"available":false,"reason":data.get("reason","missing-source-camera")}
 	var values:PackedFloat64Array=data.values;var names:PackedStringArray=data.ids
 	var planes=Visibility._planes(camera);var candidates=[];var visible_support=0;var maximum_error=0.0;var grid=Views.directions()
+	if support.is_empty():return {"available":false,"reason":"missing-measured-view-support"}
+	var extent=float(support.horizontalRadiusH);var min_y=float(support.minYH);var max_y=float(support.maxYH)
 	var source_view:Basis=camera.basis.inverse();var projection:Projection=camera.projection
 	for i in int(data.count):
 		var at=i*6;var h=values[at+3];var radius=float(data.radii[i])
@@ -24,10 +26,10 @@ static func prepare(data:Dictionary,camera:Dictionary,origin:Dictionary,high_bou
 		var pixels=2.0*radius*absf(projection.y.y)*float(camera.viewport.y)/(2.0*denominator)
 		# The complete proxy support includes non-alpha card parts. It may yield
 		# false positives, never a centre-only rejection of a visible crown.
-		var bound=AABB(Vector3(-1.132,-.632,-1.132),Vector3(2.264,2.264,2.264))
+		var bound=AABB(Vector3(-extent*radius/.42,min_y*h,-extent*radius/.42),Vector3(2*extent*radius/.42,(max_y-min_y)*h,2*extent*radius/.42))
 		var local=Vector3(values[at]-float(camera.position.x),values[at+1]-float(camera.position.y),values[at+2]-float(camera.position.z))
-		var support=Transform3D(Basis(Vector3.UP,values[at+4]).scaled(Vector3.ONE*h),local)*bound
-		if not _visible(support,planes):continue
+		var source_support=AABB(local+bound.position,bound.size)
+		if not _visible(source_support,planes):continue
 		visible_support+=1
 		var to_eye=Basis(Vector3.UP,-values[at+4])*(-delta)
 		var selected=Views.nearest(to_eye,grid);maximum_error=maxf(maximum_error,rad_to_deg(acos(clampf(to_eye.normalized().dot(grid[selected]),-1,1))))
@@ -50,5 +52,22 @@ static func prepare(data:Dictionary,camera:Dictionary,origin:Dictionary,high_bou
 		buffer[at+8]=-s*horizontal;buffer[at+9]=0;buffer[at+10]=c*horizontal;buffer[at+11]=p.z
 		buffer[at+12]=1;buffer[at+13]=1;buffer[at+14]=1;buffer[at+15]=1
 		buffer[at+16]=h;buffer[at+17]=Canopy.radius_class(r);buffer[at+18]=values[source+5];buffer[at+19]=r
-		low=low.min(p+Vector3(-1.601,-.632,-1.601)*h);upper=upper.max(p+Vector3(1.601,1.632,1.601)*h)
-	return {"available":true,"count":int(data.count),"high":high,"middleBuffer":buffer,"middleCount":row,"middleBounds":AABB(low,upper-low) if row else AABB(),"highTriangles":high.size()*high_triangles,"impostorTriangles":row*2,"sourceInventorySha256":data.sourceInventorySha256,"visibleSupportAabbCount":visible_support,"maximumViewErrorDegrees":maximum_error,"camera":camera,"scope":"all physically supported source IDs, no rank thinning; uniform physical impostor scale; high source scale unchanged"}
+		low=low.min(p+Vector3(-extent*horizontal,min_y*h,-extent*horizontal));upper=upper.max(p+Vector3(extent*horizontal,max_y*h,extent*horizontal))
+	return {"available":true,"count":int(data.count),"high":high,"middleBuffer":buffer,"middleCount":row,"middleBounds":AABB(low,upper-low) if row else AABB(),"highTriangles":high.size()*high_triangles,"impostorTriangles":row*2,"sourceInventorySha256":data.sourceInventorySha256,"visibleSupportAabbCount":visible_support,"maximumViewErrorDegrees":maximum_error,"camera":camera,"support":support.duplicate(true),"scope":"all physically supported source IDs, no rank thinning; uniform physical impostor scale; high source scale unchanged"}
+
+
+static func feature_bytes(input_count:int)->Dictionary:
+	if input_count<0 or input_count>100000:return {"invalid-full-oblique-count":-1}
+	return {"oblique33ViewTextureBytes":Views.persistent_bytes(),"obliqueFullColorBuffersCopiesBytes":input_count*80*2*4,"obliqueMetadataAllowanceBytes":8*1024*1024}
+
+# No reference-plane homography: this mode renders actual 3D roots/cards.
+# The visibility plan already encloses every positive source control and the
+# complete transformed support. Any camera/source change caps the whole view.
+static func guard(plan:Dictionary,world:Dictionary,camera:Dictionary,data:Dictionary,source_binding:bool)->Dictionary:
+	if not source_binding:return {"weight":0.0,"reason":"oblique-full-source-binding-mismatch"}
+	if not data.get("available",false):return {"weight":0.0,"reason":data.get("reason","missing-complete-oblique-inventory")}
+	if not plan.get("available",false):return {"weight":0.0,"reason":plan.get("reason","missing-resident-plan")}
+	if not is_same(plan.get("_world"),world):return {"weight":0.0,"reason":"oblique-full-source-changed"}
+	if not Visibility.same_camera(plan.camera,camera) or not Visibility.same_camera(data.camera,camera):return {"weight":0.0,"reason":"oblique-full-camera-changed"}
+	if not Visibility._encloses(plan.residentBounds,plan.visibleBounds):return {"weight":0.0,"reason":"oblique-full-resident-missing"}
+	return {"weight":1.0,"reason":"complete-3D-source-page-and-resident-support","frustumBounds":plan.visibleBounds,"sourceInventorySha256":data.sourceInventorySha256,"maximumViewErrorDegrees":data.maximumViewErrorDegrees}

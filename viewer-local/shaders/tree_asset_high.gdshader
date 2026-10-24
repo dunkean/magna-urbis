@@ -1,6 +1,7 @@
 shader_type spatial;
 render_mode cull_disabled;
 #include "canopy.gdshaderinc"
+#include "forest_oblique.gdshaderinc"
 #include "color_space.gdshaderinc"
 uniform sampler2D tree_albedo : source_color,filter_linear_mipmap_anisotropic,repeat_enable;
 uniform sampler2D tree_normal : hint_normal,filter_linear_mipmap_anisotropic,repeat_enable;
@@ -42,5 +43,8 @@ void fragment(){
  ALBEDO=display_color(source.rgb);
  ROUGHNESS=clamp(dot(texture(tree_roughness,UV),tree_roughness_channel)*tree_roughness_factor,.04,1.0);SPECULAR=.25;
  float footprint=canopy_main_pixel_footprint(tree_world_position.xz,PROJECTION_MATRIX*VIEW_MATRIX,VIEWPORT_SIZE);
- ALPHA=cutout*canopy_geometry_weight*canopy_instance_weight(tree_class,footprint);ALPHA_HASH_SCALE=1.0;
+ if(forest_oblique_full_enabled){
+  if(cutout<.5 || forest_oblique_selector(FRAGCOORD.xy)<.5)discard;
+  ALPHA=1.0;ALPHA_SCISSOR_THRESHOLD=.5;
+ }else{ALPHA=cutout*canopy_geometry_weight*canopy_instance_weight(tree_class,footprint);ALPHA_HASH_SCALE=1.0;}
 }
