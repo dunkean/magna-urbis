@@ -1,5 +1,10 @@
 # SurfaceWorld — état de l'implémentation
 
+Les [corrections consécutives à la revue V8](V9_CORRECTIONS.md) décrivent le
+compilateur 1.5.3 et le renderer V9 en cours de qualification. Le bilan ci-dessous
+conserve les mesures du snapshot V8 ; sa revue indépendante est
+[archivée séparément](reviews/phase06-followup-v8.md).
+
 État documentaire du 23 octobre 2026, renderer figé `984f488`, compilateur
 `surface-1.5.2`. **La campagne technique V8 complète passe.** La revue finale
 Opus 5.5 est en préparation ; ce résultat technique n'est pas une acceptation
