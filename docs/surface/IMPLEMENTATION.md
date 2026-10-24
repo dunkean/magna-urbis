@@ -31,6 +31,18 @@ ce dépassement n'est pas une augmentation volontaire du test. Tournée et probe
 ne sont pas exécutées. Voir [V10 négative](evidence/native-e2e-v10-negative.json)
 et [la comparaison de population](evidence/population-optimization-independent-v10.json).
 
+La [revue indépendante Opus V10](reviews/phase06-performance-v10.md) corrige
+l'interprétation de ces délais : Godot reçoit les deux previews en 1,685 s et
+1,115 s, ce qui contredit un upload réel de 11 s. Les observations CDP ont été
+traitées tardivement par le driver. Les fenêtres de gel se situent autour des
+écritures synchrones de logs, avec un lecteur Node inactif aux mêmes instants ;
+la contre-pression du pipe est le mécanisme à confirmer par A/B instrumenté.
+Les benchmarks directs du Worker prouvent le gain de population ; les délais
+observés par le driver ne sont pas à eux seuls une mesure du CPU ou du réseau.
+La revue relève aussi le refresh caméra du parent qui occupe la préparation
+pendant 7,9 s, et un trou terminal omis dans la métrique de navigation. Les
+corrections en cours ne qualifient pas rétroactivement V9 ou V10.
+
 ## Qualification du snapshot intégré
 
 La [preuve V8](evidence/native-e2e-v8.json) porte sur une nouvelle génération
