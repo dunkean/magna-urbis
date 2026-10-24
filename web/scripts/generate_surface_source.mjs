@@ -49,6 +49,7 @@ const timeoutMs = Number(option('--timeout-ms', '900000'));
 const out = resolve(option('--out', 'out/surface/real40km'));
 const viewerGodot = option('--viewer-godot', undefined), viewerAssets = option('--viewer-assets', undefined);
 const viewerVegetationAssets=option('--viewer-vegetation-assets',undefined);
+const viewerTreeAssets=option('--viewer-tree-assets',undefined);
 const viewerLauncher = resolve(option('--viewer-launcher', fileURLToPath(new URL('./surface_viewer.mjs', import.meta.url))));
 const viewerTimeoutMs = Number(option('--viewer-timeout-ms', '900000'));
 const viewerResolution = option('--viewer-resolution', '2048x1280');
@@ -70,8 +71,9 @@ const retainVisualsAfterNavigationFailure=args.includes('--viewer-retain-visuals
 if(retainVisualsAfterNavigationFailure&&!navigationSeconds)throw new Error('--viewer-retain-visuals-after-navigation-failure requires navigation');
 if(!Number.isFinite(navigationSeconds)||navigationSeconds!==0&&(navigationSeconds<5||navigationSeconds>120)||navigationSeconds&&!viewerGodot)throw new Error('Navigation requires --viewer-godot and duration5..120 seconds');
 if(navigationFirst&&!navigationSeconds)throw new Error('--viewer-navigation-first requires --viewer-navigation-seconds');
+if(viewerTreeAssets&&!viewerGodot)throw new Error('--viewer-tree-assets requires --viewer-godot');
 if(viewerVegetationAssets&&!viewerGodot)throw new Error('--viewer-vegetation-assets requires --viewer-godot');
-if (viewerGodot && (!existsSync(viewerGodot) || !existsSync(viewerLauncher) || viewerAssets && !existsSync(viewerAssets) || viewerVegetationAssets&&!existsSync(viewerVegetationAssets)
+if (viewerGodot && (!existsSync(viewerGodot) || !existsSync(viewerLauncher) || viewerAssets && !existsSync(viewerAssets) || viewerVegetationAssets&&!existsSync(viewerVegetationAssets) || viewerTreeAssets&&!existsSync(viewerTreeAssets)
   || !/^\d+x\d+$/.test(viewerResolution) || Number(viewerResolution.split('x')[0]) < 2000 || !(viewerTimeoutMs > 0))) throw new Error('Invalid viewer executable/launcher/assets/resolution/timeout (width must be >=2000 pixels for the 10m/5mm proof)');
 if (!Number.isFinite(width) || width < 500 || width > 100000 || !(timeoutMs > 0)) throw new Error('Invalid source dimensions/timeout');
 await mkdir(out, { recursive: true });
@@ -88,10 +90,11 @@ report.requiredRenderContract={version:'surface-layers-1',waterMode:viewerWaterM
 report.nativePhaseOrder=viewerGodot?(navigationFirst?['navigation','tour']:['tour',...(navigationSeconds?['navigation']:[])]):[];
 if(layerProbe)report.nativePhaseOrder.push('layer-isolation');
 report.driverProcessId=process.pid;
-if(viewerGodot)report.requestedViewer={godot:resolve(viewerGodot),assets:viewerAssets&&resolve(viewerAssets),vegetationAssets:viewerVegetationAssets&&resolve(viewerVegetationAssets),audioDriver:'Dummy',launcher:viewerLauncher,
+if(viewerGodot)report.requestedViewer={godot:resolve(viewerGodot),assets:viewerAssets&&resolve(viewerAssets),vegetationAssets:viewerVegetationAssets&&resolve(viewerVegetationAssets),treeAssets:viewerTreeAssets&&resolve(viewerTreeAssets),audioDriver:'Dummy',launcher:viewerLauncher,
   resolution:viewerResolution,mode:args.includes('--viewer-oblique')?'oblique':'top',presentation:'aerial',timeoutMs:viewerTimeoutMs};
 if(viewerAssets)report.assets={manifest:resolve(viewerAssets),manifestSha256:createHash('sha256').update(await readFile(resolve(viewerAssets))).digest('hex'),scope:'Resolved asset manifest pinned separately from tracked source code; native asset digest identifies loaded maps.'};
 if(viewerVegetationAssets)report.vegetationAssets={manifest:resolve(viewerVegetationAssets),manifestSha256:createHash('sha256').update(await readFile(resolve(viewerVegetationAssets))).digest('hex'),scope:'Prepared CC0 vegetation manifest; source/product hashes and renderer digest validated by native library independently of soil recipes.'};
+if(viewerTreeAssets)report.treeAssets={manifest:resolve(viewerTreeAssets),manifestSha256:createHash('sha256').update(await readFile(resolve(viewerTreeAssets))).digest('hex'),scope:'Experimental CC0 tree derivative and shared optical mask; independent source/product hashes validated by native library. Does not change terrain or potential candidates.'};
 if(geologyScenario)report.requestedGeology={id:geologyScenario,queryParameter:'surface_geology',provenance:'Explicit authored preset, fixed world frame; not observed geological data or a terrain-height modification.'};
 if (decoderModel) report.requestedModels = { decoderModel };
 const snapshotRoot=resolve(dirname(viewerLauncher),'../..');
@@ -128,6 +131,7 @@ async function runNativeTour(sessionId) {
   if(!args.includes('--viewer-oblique'))command.push('--top');
   if(viewerAssets)command.push('--assets',resolve(viewerAssets));
   if(viewerVegetationAssets)command.push('--vegetation-assets',resolve(viewerVegetationAssets));
+  if(viewerTreeAssets)command.push('--tree-assets',resolve(viewerTreeAssets));
   report.viewer={status:'running',startedAt:new Date().toISOString(),startedElapsedMs:Date.now()-began,sessionId,
     command:[process.execPath,...command],paths:{directory,stdout:logPath,stderr:errorPath,metrics:metricsPath},events,errors:nativeErrors,
     browserHeldOpen:true,sourcePacket:paths.source,manualPacketSwaps:false};
@@ -217,6 +221,7 @@ async function runNativeNavigation(sessionId) {
     '--native-log-mode',viewerNativeLogMode,'--presentation','aerial','--water-mode',viewerWaterMode,'--water-vector-tint',viewerWaterVectorTint,'--water-symbol-width-px',String(viewerWaterSymbolWidthPx),'--layers','all','--metrics',paths.metrics,'--navigation-seconds',String(navigationSeconds),'--navigation-report',paths.report];
   if(!args.includes('--viewer-oblique'))command.push('--top');if(viewerAssets)command.push('--assets',resolve(viewerAssets));
   if(viewerVegetationAssets)command.push('--vegetation-assets',resolve(viewerVegetationAssets));
+  if(viewerTreeAssets)command.push('--tree-assets',resolve(viewerTreeAssets));
   const phase={status:'running',startedElapsedMs:Date.now()-began,paths,command:[resolve(viewerGodot),...command],browserHeldOpen:true};report.navigation=phase;report.status='native-navigation';await save();
   let timeout;
   try{
@@ -281,6 +286,7 @@ async function runNativeLayerProbe(sessionId,widthM){
   if(widthM<=160)command.push('--layer-require-instances');
   if(!args.includes('--viewer-oblique'))command.push('--top');if(viewerAssets)command.push('--assets',resolve(viewerAssets));
   if(viewerVegetationAssets)command.push('--vegetation-assets',resolve(viewerVegetationAssets));
+  if(viewerTreeAssets)command.push('--tree-assets',resolve(viewerTreeAssets));
   const phase={status:'running',widthM,requireInstances:widthM<=160,startedElapsedMs:Date.now()-began,paths,command:[resolve(viewerGodot),...command],browserHeldOpen:true};
   report.layerProbes??=[];report.layerProbes.push(phase);report.layerProbe??=phase;report.layerProbeStatus='running';report.status='native-layer-isolation';await save();
   let timeout;
@@ -548,6 +554,7 @@ try {
   if(viewerGodot)assertFrozenSurfaceSnapshots(report.code.selectedRepository,report.code.finalRepository);
   if(viewerAssets){report.assets.finalManifestSha256=createHash('sha256').update(await readFile(resolve(viewerAssets))).digest('hex');if(report.assets.finalManifestSha256!==report.assets.manifestSha256)throw new Error('Resolved asset manifest changed during the run');}
   if(viewerVegetationAssets){report.vegetationAssets.finalManifestSha256=createHash('sha256').update(await readFile(resolve(viewerVegetationAssets))).digest('hex');if(report.vegetationAssets.finalManifestSha256!==report.vegetationAssets.manifestSha256)throw new Error('Prepared vegetation manifest changed during the run');}
+  if(viewerTreeAssets){report.treeAssets.finalManifestSha256=createHash('sha256').update(await readFile(resolve(viewerTreeAssets))).digest('hex');if(report.treeAssets.finalManifestSha256!==report.treeAssets.manifestSha256)throw new Error('Prepared tree manifest changed during the run');}
   assertNoRetainedNavigationFailure(report);
   report.finalService = await serviceStatus(); report.status = 'complete'; report.durationMs = Date.now() - began;
   await page.screenshot({ path: resolve(out, 'fresh-source-after-refinement.png') });
