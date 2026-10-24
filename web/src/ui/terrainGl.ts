@@ -1,3 +1,4 @@
+import { copyUpload, textureDescriptor, type OriginalTexture, type OriginalDraw, type OriginalFormat } from './renderOriginalFixture';
 import { NEURAL_EARTH_MATERIAL_GLSL } from '../../../rust/bridge/terrainMaterial';
 import { RENDER_3D_MATERIAL_GLSL } from '../../../rust/bridge/terrainMaterial3d';
 import { FOREST_GLSL, FOREST_PRELUDE_GLSL, type ForestField, type ForestOccupation } from '../../../rust/bridge/terrainForest';
@@ -34,7 +35,7 @@ export { heightPyramid } from './terrainSurface';
 
 export type GlStyle = TerrainStyle;
 
-/** Control points of a height layer: `n²` values at cell centres of the square `[x, x + width]²`. */
+/** Control points of a height layer: `nÂ²` values at cell centres of the square `[x, x + width]Â²`. */
 export interface HeightLayer {
   waterSurface?: WaterSurface;
   x: number; y: number; width: number; n: number; data: Float32Array;
@@ -54,13 +55,13 @@ export interface TerrainLook {
   contours: boolean; contourStep: number; flatRelief: boolean;
   /** Fractal refinement below `sourceCell` (metres), seeded. */
   refine: boolean; sourceCell: number; seed: number; detail: FractalDetail;
-  /** Lower clamp of the regional reliefs (the engine keeps land at ≥ 0.3 m). */
+  /** Lower clamp of the regional reliefs (the engine keeps land at â‰¥ 0.3 m). */
   floor: number;
   frame: boolean; background: string;
 }
 
 export interface WaterLayer {
-  /** Prefiltered signed shore coefficients over the map (`n²`, drainage cells). */
+  /** Prefiltered signed shore coefficients over the map (`nÂ²`, drainage cells). */
   lake?: Float32Array; n: number;
   /** `procedural` (default) adds sub-cell shore detail; `exact` draws the B-spline's zero as is. */
   shore?: 'procedural' | 'exact';
@@ -363,7 +364,7 @@ void main() {
       bool index = mod(k, 5.0) < 0.5;
       float dist = abs(v - k) / dv;                          // device pixels to the nearest level
       float line = k < 0.5 ? 0.0 : clamp((index ? uIndexW : uThinW) * 0.5 + 0.5 - dist, 0.0, 1.0);
-      // Levels closer than ~2 px alias into moiré: cross-fade them to their mean ink
+      // Levels closer than ~2 px alias into moirÃ©: cross-fade them to their mean ink
       // (four thin levels in five, then the index levels, five times sparser).
       float thin = mix(index ? 0.0 : line * uThinA, min(1.0, 0.8 * dv * uThinW) * uThinA, smoothstep(0.3, 0.7, dv));
       float main_ = mix(index ? line * uIndexA : 0.0, min(1.0, 0.2 * dv * uIndexW) * uIndexA, smoothstep(0.3, 0.7, dv * 5.0));
@@ -400,7 +401,7 @@ void main() {
   vec2 dir = l > 1e-6 ? d / l : vec2(1.0, 0.0), nrm = vec2(-dir.y, dir.x);
   // Cartographic width: below its physical size on screen, a river keeps a
   // stroke growing with the logarithm of its width: hairline streams (about
-  // 2 km² drained, 7 m wide), 1 px at 20 km², bold trunks.
+  // 2 kmÂ² drained, 7 m wide), 1 px at 20 kmÂ², bold trunks.
   vec2 carto = clamp(0.35 + 0.4 * log2(max(aWidth, vec2(6.0)) / 6.0), 0.35, 3.2) * uDpr;
   vec2 half_ = max(aWidth / uPx, carto) * 0.5;
   float r = max(half_.x, half_.y) + 1.0;
@@ -504,6 +505,16 @@ export class TerrainGl {
   /** Last frame's GPU submission time, ms (CPU side). */
   drawMs = 0;
 
+  // Reference-tool ledger: copied bytes, never a reconstructed SurfaceWorld.
+  private originalTextures = new Map<WebGLTexture, OriginalTexture>();
+  private originalTextureSerial = 0;
+  private originalRivers = new Float32Array();
+  private originalWaterSvg = '';
+  private originalWaterWidth = 0;
+  private originalRecording?: OriginalDraw[];
+  private originalLastDraws: OriginalDraw[] = [];
+  private originalPendingClears = new Set<string>();
+
   constructor(private canvas: HTMLCanvasElement) {
     const gl = canvas.getContext('webgl2', { alpha: false, antialias: false, depth: false, stencil: false, preserveDrawingBuffer: false, powerPreference: 'high-performance' });
     if (!gl) throw new Error('WebGL2 indisponible');
@@ -540,6 +551,7 @@ export class TerrainGl {
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, filter);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    this.rememberOriginal(texture,w,h,internal,[data],filter);
     return texture;
   }
 
@@ -552,6 +564,7 @@ export class TerrainGl {
     levels.forEach((values, lod) => gl.texSubImage2D(gl.TEXTURE_2D, lod, 0, 0, layer.n >> lod, layer.n >> lod, gl.RED, gl.FLOAT, values));
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST_MIPMAP_NEAREST);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    this.rememberOriginal(texture,layer.n,layer.n,gl.R32F,levels,gl.NEAREST_MIPMAP_NEAREST);
     let cave: WebGLTexture | undefined;
     if (layer.cave?.length) {
       const mask = new Uint8Array(layer.cave.length);
@@ -563,6 +576,8 @@ export class TerrainGl {
 
   private release(layer: GpuLayer | undefined): void {
     if (!layer) return;
+    this.originalTextures.delete(layer.texture);
+    if(layer.cave)this.originalTextures.delete(layer.cave);
     this.gl.deleteTexture(layer.texture);
     if (layer.cave) this.gl.deleteTexture(layer.cave);
   }
@@ -609,6 +624,7 @@ export class TerrainGl {
   /** Retained exports keep exact SVG banks, including accumulated crop transforms.
    * Cache vector paths once; rasterize only the visible viewport, without readback. */
   setRetainedWater(svg: string | undefined, width = 1): void {
+    this.originalWaterSvg=svg??'';this.originalWaterWidth=width;
     const key = svg ? `${width}:${svg}` : '';
     if (key === this.retainedWaterKey) return;
     this.retainedWaterKey = key;
@@ -632,6 +648,7 @@ export class TerrainGl {
     }
     this.lakeMode = water?.shore === 'exact' ? 2 : 1;
     const rivers = water?.rivers ?? new Float32Array();
+    this.originalRivers=rivers.slice();
     gl.bindBuffer(gl.ARRAY_BUFFER, this.riverBuffer);
     gl.bufferData(gl.ARRAY_BUFFER, rivers.byteLength ? rivers : new Float32Array(9), gl.STATIC_DRAW);
     this.riverCount = rivers.length / 9;
@@ -662,6 +679,65 @@ export class TerrainGl {
     this.request();
   }
 
+  private rememberOriginal(texture: WebGLTexture,w:number,h:number,internal:number,levels:ArrayBufferView[],filter:number,generated=false):void {
+    const gl=this.gl;
+    const format:OriginalFormat=internal===gl.R32F?'RF':internal===gl.RG32F?'RGF':internal===gl.R8?'R8':'RGBA8';
+    const wrap=(value:number)=>value===gl.CLAMP_TO_EDGE?'CLAMP_TO_EDGE':value===gl.REPEAT?'REPEAT':String(value);
+    this.originalTextures.set(texture,{key:'texture-'+(++this.originalTextureSerial),width:w,height:h,format,glFormat:format==='RF'?'R32F':format==='RGF'?'RG32F':format,levels:levels.map(copyUpload),generated,sampler:{min:filter===gl.NEAREST_MIPMAP_NEAREST?'NEAREST_MIPMAP_NEAREST':filter===gl.LINEAR?'LINEAR':'NEAREST',mag:filter===gl.LINEAR?'LINEAR':'NEAREST',wrapS:wrap(gl.getTexParameter(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S)),wrapT:wrap(gl.getTexParameter(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T))}});
+  }
+
+  private recordOriginalDraw(name:OriginalDraw['program'],program:WebGLProgram,instances=1):void {
+    if(!this.originalRecording)return;
+    const gl=this.gl;const uniforms:OriginalDraw['uniforms']={};const textures:Record<string,string>={};const samplers:NonNullable<OriginalDraw['samplers']>={};const active=gl.getParameter(gl.ACTIVE_TEXTURE);
+    for(let i=0;i<gl.getProgramParameter(program,gl.ACTIVE_UNIFORMS);i++){
+      const info=gl.getActiveUniform(program,i)!;const location=gl.getUniformLocation(program,info.name);if(!location)continue;const value=gl.getUniform(program,location);const key=info.name.replace(/\[0\]$/,'');
+      uniforms[key]=ArrayBuffer.isView(value)?Array.from(value as unknown as ArrayLike<number>):value;
+      if(info.type===gl.SAMPLER_2D){gl.activeTexture(gl.TEXTURE0+Number(value));const texture=gl.getParameter(gl.TEXTURE_BINDING_2D) as WebGLTexture|null;if(texture){textures[key]=this.originalTextures.get(texture)?.key??'untracked-texture';const label=(n:number)=>n===gl.LINEAR?'LINEAR':n===gl.NEAREST?'NEAREST':n===gl.NEAREST_MIPMAP_NEAREST?'NEAREST_MIPMAP_NEAREST':String(n);samplers[key]={min:label(gl.getTexParameter(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER)),mag:label(gl.getTexParameter(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER)),wrapS:'CLAMP_TO_EDGE',wrapT:'CLAMP_TO_EDGE'};}}
+    }
+    gl.activeTexture(active);
+    const bound=gl.getParameter(gl.FRAMEBUFFER_BINDING);const texture=bound?gl.getFramebufferAttachmentParameter(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.FRAMEBUFFER_ATTACHMENT_OBJECT_NAME):null;
+    const enumName=(value:number)=>({[gl.ZERO]:'ZERO',[gl.ONE]:'ONE',[gl.SRC_ALPHA]:'SRC_ALPHA',[gl.ONE_MINUS_SRC_ALPHA]:'ONE_MINUS_SRC_ALPHA',[gl.FUNC_ADD]:'FUNC_ADD',[gl.MAX]:'MAX'}[value]??String(value));
+    const target=texture===this.captureTarget?.texture?'screen':texture?this.originalTextures.get(texture)?.key??'untracked-target':'screen';
+    const clear=this.originalPendingClears.has(target)?{color:[0,0,0,0]}:undefined;this.originalPendingClears.delete(target);
+    this.originalRecording.push({program:name,uniforms,textures,samplers,clear,target,primitive:'TRIANGLE_STRIP',instances,blend:{enabled:gl.isEnabled(gl.BLEND),srcRgb:enumName(gl.getParameter(gl.BLEND_SRC_RGB)),dstRgb:enumName(gl.getParameter(gl.BLEND_DST_RGB)),srcAlpha:enumName(gl.getParameter(gl.BLEND_SRC_ALPHA)),dstAlpha:enumName(gl.getParameter(gl.BLEND_DST_ALPHA)),equationRgb:enumName(gl.getParameter(gl.BLEND_EQUATION_RGB)),equationAlpha:enumName(gl.getParameter(gl.BLEND_EQUATION_ALPHA))},viewport:Array.from(gl.getParameter(gl.VIEWPORT))});
+  }
+
+  /** Actual uploaded source bytes plus the most recent exact reference draw list. */
+  snapshotInputs() {
+    if(!this.base||!this.look||!this.view)throw new Error('Original Render inputs unavailable');
+    const data:Record<string,ReturnType<typeof textureDescriptor>>={};const files:Record<string,Uint8Array>={};const targets:Record<string,unknown>={};
+    const used=new Set(this.originalLastDraws.flatMap(d=>Object.values(d.textures)));
+    for(const [texture,entry] of this.originalTextures){
+      if(entry.generated){targets[entry.key]={width:entry.width,height:entry.height,format:entry.format};continue;}
+      if(used.size&&!used.has(entry.key))continue;
+      const descriptor=textureDescriptor(entry);data[entry.key]=descriptor;
+      const bytes=new Uint8Array(entry.levels.reduce((n,v)=>n+v.length,0));let at=0;
+      for(const level of entry.levels){bytes.set(level,at);at+=level.length;}files[descriptor.file]=bytes;
+    }
+    const width=this.canvas.width,height=this.canvas.height;const px=1/(this.view.view.scale);
+    const state={look:structuredClone(this.look),view:structuredClone(this.view.view),canvas:{width,height,pixelRatio:1,stylePixelRatio:1},origin:[this.view.view.cx-this.view.width/(2*this.view.view.scale),this.view.view.cy-this.view.height/(2*this.view.view.scale)],metresPerPixel:px};
+    files['data/rivers.bin']=copyUpload(this.originalRivers);
+    return {fixture:{format:'magna-render-original-fixture',version:1,inputs:state,data,targets,buffers:{rivers:{file:'data/rivers.bin',format:'F32',stride:9,length:this.originalRivers.length}},draws:structuredClone(this.originalLastDraws),outputTarget:'screen',retainedWater:{svg:this.originalWaterSvg,width:this.originalWaterWidth},source:{renderer:'Render original',sourceHead:'f2298841d9fe09729df02f8ecc92e7ffbefa6505',scope:'exact uploaded renderer inputs; no SurfaceWorld, material reassignment or inferred soil fields'}},files};
+  }
+
+  /** Original 2D draw at a fixed DPR, without captureRegion's mesh3d override. */
+  captureExact2D(options:{width:number;height:number;view?:View}) {
+    if(!this.base||!this.look||!this.view||this.gl.isContextLost())throw new Error('Original Render not ready');
+    if(!Number.isInteger(options.width)||!Number.isInteger(options.height)||options.width<=0||options.height<=0||options.width>8192||options.height>8192)throw new Error('Invalid reference dimensions');
+    if(this.details.some(d=>performance.now()-d.fadeStart<240)||this.enhanced.some(d=>performance.now()-d.fadeStart<240))throw new Error('Original height layers are still cross-fading');
+    const previous=this.view;const previousLook=this.look;const gl=this.gl;
+    const output=document.createElement('canvas');output.width=options.width;output.height=options.height;
+    try{
+      this.view={view:{...(options.view??previous.view)},width:options.width,height:options.height};
+      this.captureTarget=this.renderTarget(options.width,options.height,this.captureTarget);
+      this.originalPendingClears.clear();this.originalRecording=[];this.draw(1,1,this.captureTarget.framebuffer);this.originalLastDraws=this.originalRecording;this.originalRecording=undefined;
+      const raw=new Uint8Array(options.width*options.height*4);gl.bindFramebuffer(gl.FRAMEBUFFER,this.captureTarget.framebuffer);gl.readPixels(0,0,options.width,options.height,gl.RGBA,gl.UNSIGNED_BYTE,raw);
+      const rgba=new Uint8Array(raw.length);for(let y=0;y<options.height;y++)rgba.set(raw.subarray(y*options.width*4,(y+1)*options.width*4),(options.height-1-y)*options.width*4);
+      output.getContext('2d')!.putImageData(new ImageData(new Uint8ClampedArray(rgba),options.width,options.height),0,0);
+      return {canvas:output,rgba,...this.snapshotInputs()};
+    }finally{this.originalRecording=undefined;this.view=previous;if(this.look!==previousLook)throw new Error('Reference capture unexpectedly changed TerrainLook');gl.bindFramebuffer(gl.FRAMEBUFFER,null);this.draw();}
+  }
+
   /** Reuse the map material for the perspective viewer without changing the 2D camera. */
   captureMap(size = 2048, groundOverlay = false): HTMLCanvasElement {
     if (!this.look) throw new Error('Le terrain est indisponible.');
@@ -675,7 +751,7 @@ export class TerrainGl {
     const capturedHeight = height ? this.upload(height, false) : undefined;
     const output = document.createElement('canvas'); output.width = output.height = size;
     const context = output.getContext('2d');
-    if (!context) throw new Error('Impossible de préparer le style 3D.');
+    if (!context) throw new Error('Impossible de prÃ©parer le style 3D.');
     try {
       // Freeze the current regional detail at its final opacity for reproducible tiles.
       this.details = !groundOverlay && includeDetails && details.length ? [{ ...details[details.length - 1], fadeStart: -Infinity }] : [];
@@ -862,6 +938,7 @@ export class TerrainGl {
         const inset = 2 * l.width / l.n;
         gl.uniform4f(u('uQuad'), (l.x + inset - origin[0]) / px, (l.y + inset - origin[1]) / px, (l.x + l.width - inset - origin[0]) / px, (l.y + l.width - inset - origin[1]) / px);
       }
+      this.recordOriginalDraw("terrain",this.terrain);
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
     };
     // The render style paints its water layers (depth, shelf, glint, wet banks); other styles keep the flat ink.
@@ -872,6 +949,7 @@ export class TerrainGl {
       const target = this.target(width, height);
       gl.bindFramebuffer(gl.FRAMEBUFFER, target.framebuffer);
       gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT);
+      if(this.originalRecording)this.originalPendingClears.add(this.originalTextures.get(target.texture)?.key??'untracked-target');
       gl.useProgram(this.river);
       const r = (name: string): WebGLUniformLocation | null => this.riverUniform(name);
       gl.uniform2f(r('uCanvas'), width, height); gl.uniform2f(r('uOrigin'), origin[0], origin[1]);
@@ -883,6 +961,7 @@ export class TerrainGl {
       gl.uniform1i(r('uHasLake'), this.lake ? this.lakeMode : 0); gl.uniform1f(r('uLakeN'), this.lakeN);
       gl.enable(gl.BLEND); gl.blendEquation(gl.MAX); gl.blendFunc(gl.ONE, gl.ONE);
       gl.bindVertexArray(this.riverVao);
+      this.recordOriginalDraw("river",this.river,this.riverCount);
       gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, this.riverCount);
       gl.bindVertexArray(null);
       gl.bindFramebuffer(gl.FRAMEBUFFER, destination);
@@ -892,6 +971,7 @@ export class TerrainGl {
       if (paintedWater && !this.overlay) { this.paintWater(0, width, height, origin, px, stylePixelRatio, waterBand); return; }
       gl.useProgram(this.composite);
       gl.uniform1i(gl.getUniformLocation(this.composite, 'uLayer'), 0);
+      this.recordOriginalDraw("composite",this.composite);
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
     };
     const renderRetainedWater = (destination: WebGLFramebuffer | null): void => {
@@ -910,6 +990,8 @@ export class TerrainGl {
         gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false); gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+        if(!this.originalTextures.has(this.retainedWaterTexture))this.rememberOriginal(this.retainedWaterTexture,width,height,gl.RGBA,[],gl.LINEAR,true);
+        const original=this.originalTextures.get(this.retainedWaterTexture)!;original.width=width;original.height=height;
         this.retainedWaterViewKey = key;
       }
       gl.bindFramebuffer(gl.FRAMEBUFFER, destination);
@@ -917,6 +999,7 @@ export class TerrainGl {
       if (paintedWater) { this.paintWater(11, width, height, origin, px, stylePixelRatio, waterBand); return; }
       gl.useProgram(this.composite);
       gl.uniform1i(gl.getUniformLocation(this.composite, 'uLayer'), 11);
+      this.recordOriginalDraw("composite",this.composite);
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
     };
     const separateWater = isRender3dStyle(look.style) && look.layers.relief && look.layers.hypsometry && look.layers.water !== false && !look.groundCapture;
@@ -970,6 +1053,7 @@ export class TerrainGl {
     gl.uniform1fv(u('uRings[0]'), rings); gl.uniform1i(u('uRingCount'), rings.length);
     gl.uniform3fv(u('uWaterStops[0]'), palette.colors); gl.uniform1fv(u('uWaterStopT[0]'), palette.positions);
     gl.uniform1i(u('uWaterStopCount'), water.stops.length);
+    this.recordOriginalDraw("renderWater",program);
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
   }
 
@@ -980,10 +1064,11 @@ export class TerrainGl {
   private renderTarget(width: number,height: number,previous?: {framebuffer:WebGLFramebuffer;texture:WebGLTexture;width:number;height:number}): {framebuffer:WebGLFramebuffer;texture:WebGLTexture;width:number;height:number} {
     const gl = this.gl;
     if(previous?.width===width && previous.height===height)return previous;
-    if(previous){gl.deleteFramebuffer(previous.framebuffer);gl.deleteTexture(previous.texture);}
+    if(previous){this.originalTextures.delete(previous.texture);gl.deleteFramebuffer(previous.framebuffer);gl.deleteTexture(previous.texture);}
     const texture = gl.createTexture()!;
     gl.bindTexture(gl.TEXTURE_2D, texture);
     gl.texStorage2D(gl.TEXTURE_2D, 1, gl.RGBA8, width, height);
+    this.rememberOriginal(texture,width,height,gl.RGBA8,[],gl.NEAREST,true);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
     const framebuffer = gl.createFramebuffer()!;
     gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);

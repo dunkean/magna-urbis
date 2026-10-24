@@ -1,0 +1,7 @@
+<!doctype html><html lang="fr"><meta charset="utf-8"><title>Render original — référence exacte</title>
+<style>body{font:15px system-ui;margin:18px;background:#eee}button,input{font:inherit;margin:4px}canvas{display:block;max-width:100%;background:#ddd}small{display:block;max-width:1000px}#status{white-space:pre-wrap}</style>
+<h1>Render original — référence 2D</h1>
+<small>Source NN réelle archivée, sans génération, SurfaceWorld, GR, PBR ou géométrie 3D. Cette page charge les tableaux CPU ; le GPU ne démarre qu’après « Initialiser ». Référence initiale : terrain sans l’eau vectorielle, dont les chemins source restent archivés séparément.</small>
+<p><button id="initialize" disabled>Initialiser Render (GPU)</button><label>Largeur m <input id="width" value="40000" type="number" min="0.01"></label><label>X <input id="x" value="20000" type="number"></label><label>Z <input id="z" value="20000" type="number"></label><button id="draw" disabled>Afficher</button><button id="capture" disabled>Exporter fixture ZIP</button></p>
+<p id="status">Chargement CPU…</p><canvas id="reference" width="1024" height="640"></canvas>
+<script type="module" src="./render-original-reference.ts"></script></html>
