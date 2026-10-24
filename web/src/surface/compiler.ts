@@ -1,5 +1,5 @@
 import{surfaceColluvium,naturalGroundWeights,naturalGroundRockRecipe}from'./groundSupport';
-import{allocateGroundResponseFields,createGroundResponse,createGroundResponseSampler,hydrateGroundResponse,GROUND_RESPONSE_BYTES_PER_SAMPLE}from'./groundResponse';
+import{allocateGroundResponseFields,createGroundResponse,createGroundResponseSampler,hydrateGroundResponse,assertGroundResponseRock,GROUND_RESPONSE_BYTES_PER_SAMPLE}from'./groundResponse';
 import {
   SURFACE_COMPILER_VERSION, SURFACE_PHYSICAL_CONTEXT_VERSION, SURFACE_POPULATION_VERSION, SURFACE_SCHEMA_VERSION, DepositOrigin, Landform, Occupation, WaterClass,
   assertNotAborted, clamp, hashString, terrainBounds,
@@ -280,6 +280,7 @@ export function compileSurfaceWorld(input: SurfaceCompileInput, options: Compile
   if (!Number.isFinite(state.dayOfYear) || state.dayOfYear < 1 || state.dayOfYear > 366 || !Number.isFinite(state.surfaceWetness ?? 0) || !Number.isFinite(state.snowWaterEquivalentM ?? 0)) throw new Error('Invalid seasonal state');
   const materials = options.materialLibrary ?? SURFACE_MATERIALS, M = createMaterialIndex(materials);
   for (const required of SURFACE_MATERIALS) if (M[required.id] === undefined) throw new Error('Material catalogue missing required recipe ' + required.id);
+  if(options.groundResponse!==false)for(const id of ['fractured-bedrock','carbonate-karst','volcanic-crust','coastal-rock'])assertGroundResponseRock(materials[M[id]]);
   const f = createFields(n, radii.length, geology.units.length);
   const responseFields=options.groundResponse===false?undefined:allocateGroundResponseFields(n);
   f.bedrock.set(geology.bedrock);
