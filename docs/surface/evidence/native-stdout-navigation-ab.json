@@ -1,0 +1,514 @@
+{
+  "format": "native-stdout-navigation-ab",
+  "version": 1,
+  "status": "diagnostic-complete",
+  "qualificationClaimed": false,
+  "rootHead": "6cf2b8db3e7c885c6402ba9df58ec020360a8de2",
+  "nativeBaseline": "f4d25e105195f9a57f2622b2ee7ea70f5e923940",
+  "runtimeFileCount": 567,
+  "rootSnapshotUnchanged": true,
+  "sameBrowserAndSource": true,
+  "sharedSessionId": "842c3393-6346-470e-884a-a53a8bdd4523",
+  "sharedRegistrationId": "70de415c0c22eb550d3e69a5a0535e1d",
+  "rawNeuralSha256": "3c7c2f32e37844842f058208e21522543bcec69125348e115390f83d5b814159",
+  "sourcePacketSha256": "e01318a7d09b0fc97b5a628fa1f95a8d140b4d8424b86b6493f6c152214630f5",
+  "sourcePacketBytes": 84802873,
+  "liveWarmupPacketSha256": "3427a6c4af4d5c39ecf2fdaecbd582cd2a64a74451c372fc319dc975669a80d7",
+  "sourceBuildings": 0,
+  "totalDurationMs": 394914,
+  "modeOrder": [
+    "pipe",
+    "file"
+  ],
+  "phases": [
+    {
+      "mode": "pipe",
+      "logTransport": "legacy-pipes-drained-by-driver",
+      "status": "complete",
+      "elapsedIncludingWarmupAndDrainMs": 140019,
+      "legacyProbeReported": {
+        "continuousSeconds": 20.0,
+        "motionActualWallSeconds": 20.018,
+        "warmupSeconds": 66.169,
+        "drainSeconds": 19.322,
+        "maximumInputGapSeconds": 3.178,
+        "motionLiveDisplayCount": 1,
+        "sourceReplacedWhileMoving": true,
+        "status": "complete"
+      },
+      "nominalDurationMs": 20000,
+      "navigationFrameWallMs": {
+        "max": 3146.971,
+        "p50": 31.254,
+        "p95": 41.798,
+        "p99": 78.21
+      },
+      "inferredIntervalsBeforeDecode": [
+        {
+          "requestSerial": 0,
+          "httpCompletedTickMs": 58684,
+          "decodedTickMs": 71784,
+          "decodeElapsedMs": 13100,
+          "intervalBeforeDecodeStartMs": 0
+        },
+        {
+          "requestSerial": 26,
+          "httpCompletedTickMs": 103645,
+          "decodedTickMs": 104554,
+          "decodeElapsedMs": 908,
+          "intervalBeforeDecodeStartMs": 1
+        },
+        {
+          "requestSerial": 68,
+          "httpCompletedTickMs": 105628,
+          "decodedTickMs": 109215,
+          "decodeElapsedMs": 721,
+          "intervalBeforeDecodeStartMs": 2866
+        },
+        {
+          "requestSerial": 111,
+          "httpCompletedTickMs": 116898,
+          "decodedTickMs": 117624,
+          "decodeElapsedMs": 678,
+          "intervalBeforeDecodeStartMs": 48
+        },
+        {
+          "requestSerial": 176,
+          "httpCompletedTickMs": 129082,
+          "decodedTickMs": 129770,
+          "decodeElapsedMs": 631,
+          "intervalBeforeDecodeStartMs": 57
+        },
+        {
+          "requestSerial": 176,
+          "httpCompletedTickMs": 130489,
+          "decodedTickMs": 131366,
+          "decodeElapsedMs": 842,
+          "intervalBeforeDecodeStartMs": 35
+        }
+      ],
+      "displayEvidence": {
+        "displayedLiveWorlds": [
+          {
+            "worldId": "c66c966cc9ba0d92d6570fec183e6e40",
+            "liveSerial": 68,
+            "appliedTickMs": 117448,
+            "request": {
+              "extent": 953.062426601174,
+              "knownContextId": "5132dd6c71c4a6c232bc5c7c51d440d0",
+              "knownSceneContextId": "9d7816e6ad5a0f8620fd1262a5815a08",
+              "preview": true,
+              "resolution": 128,
+              "x": 19569.5992685827,
+              "y": 19534.5334737778
+            },
+            "deliveredGrid": {
+              "width": 128,
+              "height": 128,
+              "spacingM": 7.445800207821662
+            },
+            "nativeSpacingM": 3.75,
+            "fineContributionWeight": 1,
+            "sourceEpoch": "bench-source-1",
+            "sceneEpoch": "bench-scene-1",
+            "sourceActualAtFocus": {
+              "id": "infinite:2814899424497554030:70de415c0c22eb550d3e69a5a0535e1d",
+              "nativeSpacingM": 3.75,
+              "sourceLOD": -3,
+              "sourceLODKnown": true,
+              "version": "decoder-v12-nyquist-notch:magna-retained-v1:e2bf5473c0ff:f21afa261ed7"
+            }
+          }
+        ],
+        "discardedPreparationCount": {
+          "failed": 0,
+          "obsoletePhysicalLineage": 0,
+          "olderThanDisplayed": 0
+        }
+      },
+      "finalDisplayEvidence": {
+        "worldId": "1e4ba295e7d5b5ab15bc6395e7c5deb9",
+        "liveSerial": 176,
+        "appliedTickMs": 137221,
+        "request": {
+          "extent": 65.1935943202764,
+          "knownContextId": "5132dd6c71c4a6c232bc5c7c51d440d0",
+          "knownSceneContextId": "9d7816e6ad5a0f8620fd1262a5815a08",
+          "preview": false,
+          "resolution": 512,
+          "x": 20012.2811014484,
+          "y": 19975.3265882263
+        },
+        "deliveredGrid": {
+          "height": 140,
+          "spacingM": 0.465668530859122,
+          "width": 140
+        },
+        "fineContributionWeight": 1,
+        "sourceEpoch": "bench-source-1",
+        "sceneEpoch": "bench-scene-1",
+        "sourceActualAtFocus": {
+          "id": "infinite:2814899424497554030:70de415c0c22eb550d3e69a5a0535e1d",
+          "nativeSpacingM": 0.46875,
+          "sourceLOD": -6,
+          "sourceLODKnown": true,
+          "version": "decoder-v12-nyquist-notch:magna-retained-v1:e2bf5473c0ff:f21afa261ed7"
+        }
+      },
+      "runtimeErrorCount": 0,
+      "files": {
+        "stdout.log": {
+          "sha256": "d548208d7b6bad42d470b5138775f9e152859b7f01259d0c6e4563503b63514c",
+          "bytes": 252658
+        },
+        "stderr.log": {
+          "sha256": "a805a07428b9e7b2156c0924c12310b3c6774ec8f02f575765014c5c9b715cf8",
+          "bytes": 470
+        },
+        "metrics.json": {
+          "sha256": "c41fdb91be652970d63773b0cc36ed171e37ee35c74b43665696d4aae39dc595",
+          "bytes": 186225
+        },
+        "navigation-report.json": {
+          "sha256": "ca46b6096c0bddcb3133dd6e3d8087487b478e59968d23ae861dc8aeb8ae761b",
+          "bytes": 131368
+        }
+      }
+    },
+    {
+      "mode": "file",
+      "logTransport": "inherited-file-descriptors",
+      "status": "complete",
+      "elapsedIncludingWarmupAndDrainMs": 131694,
+      "legacyProbeReported": {
+        "continuousSeconds": 20.0,
+        "motionActualWallSeconds": 20.019,
+        "warmupSeconds": 70.298,
+        "drainSeconds": 8.346,
+        "maximumInputGapSeconds": 2.004,
+        "motionLiveDisplayCount": 2,
+        "sourceReplacedWhileMoving": true,
+        "status": "complete"
+      },
+      "nominalDurationMs": 20000,
+      "navigationFrameWallMs": {
+        "max": 2468.79,
+        "p50": 31.204,
+        "p95": 40.315,
+        "p99": 53.564
+      },
+      "inferredIntervalsBeforeDecode": [
+        {
+          "requestSerial": 0,
+          "httpCompletedTickMs": 61852,
+          "decodedTickMs": 74981,
+          "decodeElapsedMs": 13109,
+          "intervalBeforeDecodeStartMs": 20
+        },
+        {
+          "requestSerial": 42,
+          "httpCompletedTickMs": 106036,
+          "decodedTickMs": 106946,
+          "decodeElapsedMs": 906,
+          "intervalBeforeDecodeStartMs": 4
+        },
+        {
+          "requestSerial": 137,
+          "httpCompletedTickMs": 119344,
+          "decodedTickMs": 119971,
+          "decodeElapsedMs": 623,
+          "intervalBeforeDecodeStartMs": 4
+        },
+        {
+          "requestSerial": 257,
+          "httpCompletedTickMs": 121285,
+          "decodedTickMs": 122067,
+          "decodeElapsedMs": 778,
+          "intervalBeforeDecodeStartMs": 4
+        }
+      ],
+      "displayEvidence": {
+        "displayedLiveWorlds": [
+          {
+            "worldId": "903ef147cb8fc5b9f25fb86f9b3e6063",
+            "liveSerial": 42,
+            "appliedTickMs": 115371,
+            "request": {
+              "extent": 8483.47305035776,
+              "knownContextId": "5132dd6c71c4a6c232bc5c7c51d440d0",
+              "knownSceneContextId": "9d7816e6ad5a0f8620fd1262a5815a08",
+              "preview": true,
+              "resolution": 128,
+              "x": 15466.6074025121,
+              "y": 15588.5796220352
+            },
+            "deliveredGrid": {
+              "width": 128,
+              "height": 128,
+              "spacingM": 66.27713320591998
+            },
+            "nativeSpacingM": 30,
+            "fineContributionWeight": 1,
+            "sourceEpoch": "bench-source-1",
+            "sceneEpoch": "bench-scene-1",
+            "sourceActualAtFocus": {
+              "id": "infinite:2814899424497554030:70de415c0c22eb550d3e69a5a0535e1d",
+              "nativeSpacingM": 30,
+              "sourceLOD": 0,
+              "sourceLODKnown": true,
+              "version": "decoder-v12-nyquist-notch:magna-retained-v1:e2bf5473c0ff:f21afa261ed7"
+            }
+          },
+          {
+            "worldId": "903ef147cb8fc5b9f25fb86f9b3e6063",
+            "liveSerial": 42,
+            "appliedTickMs": 118839,
+            "request": {
+              "extent": 8483.47305035776,
+              "knownContextId": "5132dd6c71c4a6c232bc5c7c51d440d0",
+              "knownSceneContextId": "9d7816e6ad5a0f8620fd1262a5815a08",
+              "preview": true,
+              "resolution": 128,
+              "x": 15466.6074025121,
+              "y": 15588.5796220352
+            },
+            "deliveredGrid": {
+              "width": 128,
+              "height": 128,
+              "spacingM": 66.27713320591998
+            },
+            "nativeSpacingM": 30,
+            "fineContributionWeight": 1,
+            "sourceEpoch": "bench-source-1",
+            "sceneEpoch": "bench-scene-1",
+            "sourceActualAtFocus": {
+              "id": "infinite:2814899424497554030:70de415c0c22eb550d3e69a5a0535e1d",
+              "nativeSpacingM": 30,
+              "sourceLOD": 0,
+              "sourceLODKnown": true,
+              "version": "decoder-v12-nyquist-notch:magna-retained-v1:e2bf5473c0ff:f21afa261ed7"
+            }
+          }
+        ],
+        "discardedPreparationCount": {
+          "failed": 0,
+          "obsoletePhysicalLineage": 0,
+          "olderThanDisplayed": 0
+        }
+      },
+      "finalDisplayEvidence": {
+        "worldId": "9e19a335e37ecf0bd1f49e15547611b9",
+        "liveSerial": 257,
+        "appliedTickMs": 127447,
+        "request": {
+          "extent": 65.1935943202764,
+          "knownContextId": "5132dd6c71c4a6c232bc5c7c51d440d0",
+          "knownSceneContextId": "9d7816e6ad5a0f8620fd1262a5815a08",
+          "preview": false,
+          "resolution": 512,
+          "x": 19759.5541750378,
+          "y": 19874.8512138457
+        },
+        "deliveredGrid": {
+          "height": 140,
+          "spacingM": 0.465668530859122,
+          "width": 140
+        },
+        "fineContributionWeight": 1,
+        "sourceEpoch": "bench-source-1",
+        "sceneEpoch": "bench-scene-1",
+        "sourceActualAtFocus": {
+          "id": "infinite:2814899424497554030:70de415c0c22eb550d3e69a5a0535e1d",
+          "nativeSpacingM": 0.46875,
+          "sourceLOD": -6,
+          "sourceLODKnown": true,
+          "version": "decoder-v12-nyquist-notch:magna-retained-v1:e2bf5473c0ff:f21afa261ed7"
+        }
+      },
+      "runtimeErrorCount": 0,
+      "files": {
+        "stdout.log": {
+          "sha256": "7b4ab2a67fe6e8d0c412d512667270dcf99335cecd35ada39c50c1e4e3eddcad",
+          "bytes": 229984
+        },
+        "stderr.log": {
+          "sha256": "a805a07428b9e7b2156c0924c12310b3c6774ec8f02f575765014c5c9b715cf8",
+          "bytes": 470
+        },
+        "metrics.json": {
+          "sha256": "e45beb47c9d443a4a053b872498f742683c03ce66b649eb1e318b6d9987fece7",
+          "bytes": 172029
+        },
+        "navigation-report.json": {
+          "sha256": "6822ae57e6cbe7962788f6d4c9f6a283a4d008e7c6e0a6c72b4d3468ef2831a6",
+          "bytes": 144879
+        }
+      }
+    }
+  ],
+  "pageClock": {
+    "timeOriginMs": 1792805362814.2,
+    "eventCount": 549,
+    "dropped": 0,
+    "workerRoundtrips": [
+      {
+        "requestId": 1,
+        "postToMainReceptionMs": 15260.699999988079,
+        "binaryBytes": 69774425,
+        "note": "Includes dispatch/scheduling; not an isolated Worker CPU duration."
+      },
+      {
+        "requestId": 2,
+        "postToMainReceptionMs": 13537.90000000596,
+        "binaryBytes": 140658841,
+        "note": "Includes dispatch/scheduling; not an isolated Worker CPU duration."
+      },
+      {
+        "requestId": 3,
+        "postToMainReceptionMs": 726.2999999821186,
+        "binaryBytes": 7705408,
+        "note": "Includes dispatch/scheduling; not an isolated Worker CPU duration."
+      },
+      {
+        "requestId": 4,
+        "postToMainReceptionMs": 296.80000001192093,
+        "binaryBytes": 5077900,
+        "note": "Includes dispatch/scheduling; not an isolated Worker CPU duration."
+      },
+      {
+        "requestId": 5,
+        "postToMainReceptionMs": 292.30000001192093,
+        "binaryBytes": 4372348,
+        "note": "Includes dispatch/scheduling; not an isolated Worker CPU duration."
+      },
+      {
+        "requestId": 6,
+        "postToMainReceptionMs": 10545.59999999404,
+        "binaryBytes": 4369404,
+        "note": "Includes dispatch/scheduling; not an isolated Worker CPU duration."
+      },
+      {
+        "requestId": 7,
+        "postToMainReceptionMs": 218.80000001192093,
+        "binaryBytes": 5120660,
+        "note": "Includes dispatch/scheduling; not an isolated Worker CPU duration."
+      },
+      {
+        "requestId": 8,
+        "postToMainReceptionMs": 13377.200000017881,
+        "binaryBytes": 140658841,
+        "note": "Includes dispatch/scheduling; not an isolated Worker CPU duration."
+      },
+      {
+        "requestId": 9,
+        "postToMainReceptionMs": 884.1999999880791,
+        "binaryBytes": 9194824,
+        "note": "Includes dispatch/scheduling; not an isolated Worker CPU duration."
+      },
+      {
+        "requestId": 10,
+        "postToMainReceptionMs": 1403.0999999940395,
+        "binaryBytes": 4808988,
+        "note": "Includes dispatch/scheduling; not an isolated Worker CPU duration."
+      },
+      {
+        "requestId": 11,
+        "postToMainReceptionMs": 322.69999998807907,
+        "binaryBytes": 5104088,
+        "note": "Includes dispatch/scheduling; not an isolated Worker CPU duration."
+      }
+    ],
+    "uploads": [
+      {
+        "id": "ac5f1bf9-7374-4637-961f-567478649cb1",
+        "bytes": 69774425,
+        "startToLastAckMs": 11432.700000017881,
+        "clock": "page-performance-now"
+      },
+      {
+        "id": "0a2a47f8-fe50-4278-9c0b-0b02f48573cc",
+        "bytes": 140658841,
+        "startToLastAckMs": 12853.40000000596,
+        "clock": "page-performance-now"
+      },
+      {
+        "id": "25edc375-6a7c-4b1c-ac0c-a68f1c150b57",
+        "bytes": 7705408,
+        "startToLastAckMs": 321.60000002384186,
+        "clock": "page-performance-now"
+      },
+      {
+        "id": "754fcf78-bb41-4bb3-a85c-39661be53848",
+        "bytes": 5077900,
+        "startToLastAckMs": 224.5,
+        "clock": "page-performance-now"
+      },
+      {
+        "id": "40de1b20-eeac-4ab5-801e-7e24c7ff0f15",
+        "bytes": 4372348,
+        "startToLastAckMs": 194.2000000178814,
+        "clock": "page-performance-now"
+      },
+      {
+        "id": "1aa39461-6b70-4a70-aac5-275afdd9e311",
+        "bytes": 4369404,
+        "startToLastAckMs": 189.69999998807907,
+        "clock": "page-performance-now"
+      },
+      {
+        "id": "855b2b2e-043a-46d0-9823-f31faae2556f",
+        "bytes": 5120660,
+        "startToLastAckMs": 219.09999999403954,
+        "clock": "page-performance-now"
+      },
+      {
+        "id": "ddb91858-19bf-411f-829e-5b01db47a833",
+        "bytes": 140658841,
+        "startToLastAckMs": 19236.5,
+        "clock": "page-performance-now"
+      },
+      {
+        "id": "e0afd4cc-8c15-4bf8-b37b-bc8795311e90",
+        "bytes": 9194824,
+        "startToLastAckMs": 373,
+        "clock": "page-performance-now"
+      },
+      {
+        "id": "a35da58e-252e-4fc4-a605-499585c765c8",
+        "bytes": 4808988,
+        "startToLastAckMs": 229.10000002384186,
+        "clock": "page-performance-now"
+      },
+      {
+        "id": "85bc6034-a228-44b4-953b-862b690d1d49",
+        "bytes": 5104088,
+        "startToLastAckMs": 234.2999999821186,
+        "clock": "page-performance-now"
+      }
+    ]
+  },
+  "transportUnitProof": {
+    "tests": 3,
+    "parentBusyMs": 2000,
+    "fileWriterCompletedWhileParentBusy": true,
+    "pipeWriterStillBlockedUntilParentResumed": true,
+    "largeStdoutStderrBytesExact": true
+  },
+  "errors": [],
+  "driverSource": {
+    "sha256": "469dde01ccc362b8f2644c0b302b4cffe1d1ffc2cad54d5dc8bceec5a218b44e",
+    "archivedAs": "executed-driver.mjs",
+    "pageTimingSha256": "d1df9edee9ef21ce3071e1482f8148bd1ceab0b891f5e0552aa6a3600bea1264",
+    "fileLogHelperSha256": "ddd0695030c6e9f1ea0c5415c3a20ee3c19744459e5959dbe3bbba741a8439c2"
+  },
+  "limits": [
+    "Both current gates passed; modeA did not reproduce the10s V10 stalls. Synthetic control proves file logging avoids parent-drain dependency, not the internal cause of the Node pause.",
+    "The pre-decode interval is inferred from native ticks minus decodeElapsedMs; it includes print and nearby small setup and is not a direct print timer.",
+    "Same generation/export/browser/session; query coalescing and neural cache state differ in sequence, so this is not a statistically controlled performance comparison.",
+    "Driver stdout/stderr used the tool capture pipes in both modes as inV10. Poll cadence and runner internal drainage are not independently attested.",
+    "Bounded PAGE instrumentation was enabled equally inA/B; Node/CDP callbacks remain observation times. Worker post-to-main receipt includes browser scheduling and is not isolated Worker CPU.",
+    "Native runtime/probe are the unchangedf4 baseline. NewC counters/terminal-gap validation were not retroactively applied. Legacy acceptance aliases are not used as display proof.",
+    "No seven-view tour, layer probes, GPU FPS target, production or artistic qualification is claimed."
+  ],
+  "outputDirectory": "web/out/surface/stdout-navigation-ab"
+}
