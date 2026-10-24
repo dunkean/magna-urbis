@@ -1,0 +1,135 @@
+{
+  "format": "surface-soil-demo-evidence",
+  "version": 1,
+  "scope": "Controlled native demo checks, not artistic acceptance or interactive FPS qualification",
+  "runtimeHead": "695f04b47c2385c45f324683307c101e31a6a195",
+  "engine": "Godot4.7.2",
+  "device": "NVIDIA GeForce RTX4090 / Forward+",
+  "exitCode": 0,
+  "elapsedSeconds": 56.53950459999032,
+  "sourceSha256": "c3a285e38786a5fa938b06c7e79abebe656dff320ee9bb1d79c3e99f24ef0abf",
+  "sourceUnchanged": true,
+  "codeUnchanged": true,
+  "codeHashes": {
+    "viewer-local/diagnostics/surface_soil_preview.gd": "1e85641dee5cdccc570e2f6c3c06cec7dacc68a5e8a18caa66999dd3396c5a48",
+    "viewer-local/tests/surface_soil_demo_check.gd": "b3c76608d8679034e3aa0e16d65f898ae418cfc472c5e15718a9348978d4be96",
+    "viewer-local/scene/main.gd": "895bc9131146083c0f997d05bee0d797a010fa7ae47bf625b3007be6de4ae695",
+    "viewer-local/adapters/surface_presentation.gd": "010d7902be800429d202b450f6cc19840bb69891a9f56b9cc8d3e0094eddd47e",
+    "viewer-local/shaders/surface_body.gdshaderinc": "d9d4638b3834bedc2aaea48dd4cc2bdbca27f17084d7a801e655ce52f6e793c6",
+    "viewer-local/shaders/surface_detail_distribution.gdshaderinc": "3e1f292cd9674674850c63c39969ec8a73aa235866a0657a6bab9c55216ad689",
+    "surface/presentation/palettes.json": "57fec9cd8d27be1f95dae797b8639bcdee284119e4a908891da589a041318aef"
+  },
+  "scriptShaderErrors": 0,
+  "warnings": "Existing deprecated instance_reset_physics_interpolation warning, once",
+  "pass": true,
+  "failures": [],
+  "captures": [
+    {
+      "style": "aerial",
+      "widthM": 40.0,
+      "path": "web/out/demo-sols/validation-v1/user-captures/soil-aerial-x20000.00-z20000.00-w40.00-2026-10-24T14-48-14-31979.png",
+      "imageSha256": "7d968633972d01e2eb8e139676ae26d25dd5ef172d1159348c7cbc7da5663111",
+      "status": "complete",
+      "paletteHash": "18dd71e3db8ec8c4087c798cf79100b57ff4fbc99cbc845f51a600ed82e9e961"
+    },
+    {
+      "style": "parchment",
+      "widthM": 40.0,
+      "path": "web/out/demo-sols/validation-v1/user-captures/soil-parchment-x20000.00-z20000.00-w40.00-2026-10-24T14-48-15-33021.png",
+      "imageSha256": "771bc3577619065546d7aaa68b879b124031fcea1f6ecd5cc94e61b7b31d4bb7",
+      "status": "complete",
+      "paletteHash": "18dd71e3db8ec8c4087c798cf79100b57ff4fbc99cbc845f51a600ed82e9e961"
+    },
+    {
+      "style": "atlas",
+      "widthM": 40.0,
+      "path": "web/out/demo-sols/validation-v1/user-captures/soil-atlas-x20000.00-z20000.00-w40.00-2026-10-24T14-48-15-33264.png",
+      "imageSha256": "1f2544d547c3e93fdb2476ffebbb165b7a32d79079cdb7f6e03f34f3a2b7f559",
+      "status": "complete",
+      "paletteHash": "a0b908f4245d197e5b325869019ffd5b643ca6ddb5f9a0cb6da104f557d1ff75"
+    },
+    {
+      "style": "watabou",
+      "widthM": 40.0,
+      "path": "web/out/demo-sols/validation-v1/user-captures/soil-watabou-x20000.00-z20000.00-w40.00-2026-10-24T14-48-15-33502.png",
+      "imageSha256": "0f2e3ca38e6ec202032ade7ceba025cbd3e55328d9e35a4df263d8d417ee9da8",
+      "status": "complete",
+      "paletteHash": "d78ccd7af69bbadd1b9987a828da95da09f85bc5e632ebdff3430b964dd1b1df"
+    },
+    {
+      "style": "engraving",
+      "widthM": 40.0,
+      "path": "web/out/demo-sols/validation-v1/user-captures/soil-engraving-x20000.00-z20000.00-w40.00-2026-10-24T14-48-16-33704.png",
+      "imageSha256": "272aa3130cb104f7d3acbb3b55895091bb6a04163664dfeb6ee12fe269b30043",
+      "status": "complete",
+      "paletteHash": "39fb1196cd8051f578876122e9e882dc02790e64c6eb4fdd4582a9edccdec39a"
+    },
+    {
+      "style": "cadastre",
+      "widthM": 40.0,
+      "path": "web/out/demo-sols/validation-v1/user-captures/soil-cadastre-x20000.00-z20000.00-w40.00-2026-10-24T14-48-16-33905.png",
+      "imageSha256": "46820e854343ca23a60372361eb0f562b9b2634f318487bab4b3b44f4d6454c9",
+      "status": "complete",
+      "paletteHash": "6fa901e88678c5c573e00d4bf0c591e8935f11442f4870b97b1d19fdeb56e159"
+    },
+    {
+      "style": "blueprint",
+      "widthM": 40.0,
+      "path": "web/out/demo-sols/validation-v1/user-captures/soil-blueprint-x20000.00-z20000.00-w40.00-2026-10-24T14-48-16-34138.png",
+      "imageSha256": "88005edc1c8f1b791ac84a38b2e5ea328157617fa952a5a0d2155fc842190b25",
+      "status": "complete",
+      "paletteHash": "79e26579a321614cb17bc4e5aa89e152b512372ccd5026d93d6dd9240951b542"
+    },
+    {
+      "style": "illuminated",
+      "widthM": 40.0,
+      "path": "web/out/demo-sols/validation-v1/user-captures/soil-illuminated-x20000.00-z20000.00-w40.00-2026-10-24T14-48-16-34374.png",
+      "imageSha256": "c370a279b308ce157651592463253cf28faa3d43351b4b08f2154f68d94451f2",
+      "status": "complete",
+      "paletteHash": "d99c4d31cdc807e097a5d26bbdd38648a7362b44e8ebb6aae985cd5b208c645b"
+    },
+    {
+      "style": "topographic",
+      "widthM": 40.0,
+      "path": "web/out/demo-sols/validation-v1/user-captures/soil-topographic-x20000.00-z20000.00-w40.00-2026-10-24T14-48-17-34572.png",
+      "imageSha256": "a211183067ce4c4da70e98e92861e93593bbc4ecd80b55a576ab6d7b15a51fcc",
+      "status": "complete",
+      "paletteHash": "e30c4dcfd2995c7da9ff82c6d498622a16f2ef3a9f2409f991f74b07b75af7dc"
+    },
+    {
+      "style": "night",
+      "widthM": 40.0,
+      "path": "web/out/demo-sols/validation-v1/user-captures/soil-night-x20000.00-z20000.00-w40.00-2026-10-24T14-48-17-34811.png",
+      "imageSha256": "052694e21c36c34243bc0689ee306d5bad34468fe03123a042a39222a2f40976",
+      "status": "complete",
+      "paletteHash": "4f731020e472a67a25343dd074433926f6aa591b5767496cdba252d1a6b561bd"
+    },
+    {
+      "style": "aerial",
+      "widthM": 10.0,
+      "path": "web/out/demo-sols/validation-v1/user-captures/soil-aerial-x20000.00-z20000.00-w10.00-2026-10-24T14-48-23-41054.png",
+      "imageSha256": "955d2ad0776006431b698635ae4be16571df2e283b4cf0f7cee619afb7ece1ba",
+      "status": "complete",
+      "paletteHash": null
+    },
+    {
+      "style": "aerial",
+      "widthM": 1.0,
+      "path": "web/out/demo-sols/validation-v1/user-captures/soil-aerial-x20000.00-z20000.00-w1.00-2026-10-24T14-48-30-48444.png",
+      "imageSha256": "2ed45bf863612e14217496a33fefba7feb0969f71ab1e856fcc25cabecbd5f0f",
+      "status": "complete",
+      "paletteHash": null
+    }
+  ],
+  "rawReport": "web/out/demo-sols/validation-v1/smoke.json",
+  "rawReportSha256": "3a4d5b111858ad7d60c9e5e0a11bdfd3d36bebfd1d7b71408dc55500e50f10e9",
+  "knownLimits": [
+    "One retained40km source, no fresh live generation",
+    "R4 camouflage-like patches remain artistically unaccepted",
+    "Native map palettes omit Canvas brush/hatching/final layout",
+    "Capture source probes are focus+four corners, not a continuous support certificate",
+    "Automated control callbacks tested; not an OS mouse interaction campaign"
+  ],
+  "rawReportRetained": false,
+  "rawReportNote": "The second run reused validation-v1 for logs/report; original V1 PNGs and this compact record remain, but the original raw report is unavailable. Final run copied byte-for-byte under validation-v2."
+}

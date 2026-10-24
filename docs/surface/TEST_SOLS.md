@@ -45,13 +45,30 @@ multiscalaire est procédurale, contrainte par les champs physiques conservés.
 La démo V15 n'est ni relancée ni modifiée par ce lanceur. Le centre est transmis
 à `main.gd` avec `--x/--z` (le paramètre `--focus` du quality probe n'est pas utilisé).
 
-Voir [la loi et ses limites](SURFACE_DETAIL_DISTRIBUTION.md). Les contrôles de
-ce lanceur portent sur les entrées et arguments ; une exécution interactive du
-wrapper reste une vérification séparée.
+Voir [la loi et ses limites](SURFACE_DETAIL_DISTRIBUTION.md).
+
+Le [contrôle natif final de la démo](evidence/soil-demo-v2.json) passe sur le runtime
+`a25881b` avec Godot 4.7.2 / RTX 4090 Forward+ : dix modes, neuf palettes
+effectivement distinctes dans les uniforms, bascules R4/couvert/moyenne physique,
+douze captures PNG + JSON, dont les vues de 40 m, 10 m et 1 m. Aucun changement
+du paquet source ou des sept fichiers contrôlés, aucune erreur de script/shader.
+Les appels des contrôles sont automatisés ; cela ne qualifie ni une fréquence
+d'images interactive ni la qualité artistique. Les nappes de R4 restent trop
+proches du camouflage. Un premier essai du wrapper avait révélé une erreur de
+type du centre ; il est conservé séparément sous
+`web/out/surface/ground-cover-quality/interactive-smoke/` et ne constitue pas
+une réussite malgré son code de sortie 0.
 
 Les effets de pinceau, d'encre et la mise en page finale du rendu web ne sont
 pas reproduits par ces aperçus natifs. Render3D et Render3DBrush ne sont pas
 présentés comme des styles supplémentaires de cette démo.
+
+Dans cette démo, les palettes peuvent aussi afficher la distribution R4 du
+sol et du couvert bas : F1 permet de comparer avec les aplats précédents.
+Cette option reste désactivée dans les autres vues cartographiques. Le premier
+contrôle technique passait déjà, mais ses cartes proches étaient presque
+uniformes ; le contrôle final vérifie aussi des variations de pixels dans le
+terrain, hors panneau, pour Parchment et Blueprint.
 
 Palettes disponibles : `parchment`, `atlas`, `watabou`, `engraving`, `cadastre`,
 `blueprint`, `illuminated`, `topographic`, `night`. Le wrapper peut proposer

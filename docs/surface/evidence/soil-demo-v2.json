@@ -1,0 +1,148 @@
+{
+  "format": "surface-soil-demo-evidence",
+  "version": 2,
+  "scope": "Controlled native demo checks, not artistic acceptance or interactive FPS qualification",
+  "runtimeHead": "a25881bdeec5bd66b2788ef5555dddae6bc49e45",
+  "engine": "Godot4.7.2",
+  "device": "NVIDIA GeForce RTX4090 / Forward+",
+  "exitCode": 0,
+  "elapsedSeconds": 48.146761100011645,
+  "sourceSha256": "c3a285e38786a5fa938b06c7e79abebe656dff320ee9bb1d79c3e99f24ef0abf",
+  "sourceUnchanged": true,
+  "codeUnchanged": true,
+  "codeHashes": {
+    "viewer-local/diagnostics/surface_soil_preview.gd": "a2810450e29083aa81ef7da66eb2262cd95b0c94ba082b088971ee0d90665a62",
+    "viewer-local/tests/surface_soil_demo_check.gd": "12a0efdb93286ed2901cbb60705cc61fa3305f956fb970746033401612cc4067",
+    "viewer-local/scene/main.gd": "895bc9131146083c0f997d05bee0d797a010fa7ae47bf625b3007be6de4ae695",
+    "viewer-local/adapters/surface_presentation.gd": "010d7902be800429d202b450f6cc19840bb69891a9f56b9cc8d3e0094eddd47e",
+    "viewer-local/shaders/surface_body.gdshaderinc": "ed27e3cd6b6f4f883f166ad053c0466c405b335198752b34213d5049670cd4ba",
+    "viewer-local/shaders/surface_detail_distribution.gdshaderinc": "5904007294d99220141accfad78963e7fd14a77c133cef753d5f8b082de1a8e3",
+    "surface/presentation/palettes.json": "57fec9cd8d27be1f95dae797b8639bcdee284119e4a908891da589a041318aef"
+  },
+  "scriptShaderErrors": 0,
+  "warnings": "Existing deprecated instance_reset_physics_interpolation warning, once",
+  "pass": true,
+  "failures": [],
+  "captures": [
+    {
+      "style": "aerial",
+      "widthM": 40.0,
+      "path": "web/out/demo-sols/validation-v2/user-captures/soil-aerial-x20000.00-z20000.00-w40.00-2026-10-24T14-55-28-27555.png",
+      "imageSha256": "d7c8f5b938194dc503a6a160988a7e9880adbe507147fa249b00bcd2f6fa790c",
+      "status": "complete",
+      "terrainSampleColors": 97,
+      "paletteHash": "18dd71e3db8ec8c4087c798cf79100b57ff4fbc99cbc845f51a600ed82e9e961"
+    },
+    {
+      "style": "parchment",
+      "widthM": 40.0,
+      "path": "web/out/demo-sols/validation-v2/user-captures/soil-parchment-x20000.00-z20000.00-w40.00-2026-10-24T14-55-29-28427.png",
+      "imageSha256": "826fb1c27b1bb79504327d207ee841fef5d42a33895954b262914acf4261cead",
+      "status": "complete",
+      "terrainSampleColors": 47,
+      "paletteHash": "18dd71e3db8ec8c4087c798cf79100b57ff4fbc99cbc845f51a600ed82e9e961"
+    },
+    {
+      "style": "atlas",
+      "widthM": 40.0,
+      "path": "web/out/demo-sols/validation-v2/user-captures/soil-atlas-x20000.00-z20000.00-w40.00-2026-10-24T14-55-29-28768.png",
+      "imageSha256": "e12a352f1459587ae70d382211132e42508044d89dd30ba85cf1023e8b2035d8",
+      "status": "complete",
+      "terrainSampleColors": 60,
+      "paletteHash": "a0b908f4245d197e5b325869019ffd5b643ca6ddb5f9a0cb6da104f557d1ff75"
+    },
+    {
+      "style": "watabou",
+      "widthM": 40.0,
+      "path": "web/out/demo-sols/validation-v2/user-captures/soil-watabou-x20000.00-z20000.00-w40.00-2026-10-24T14-55-29-29092.png",
+      "imageSha256": "4e584f3649d458b99f1a13755b604c3ef2b449d2e49e5701487f631cb31ad3cd",
+      "status": "complete",
+      "terrainSampleColors": 12,
+      "paletteHash": "d78ccd7af69bbadd1b9987a828da95da09f85bc5e632ebdff3430b964dd1b1df"
+    },
+    {
+      "style": "engraving",
+      "widthM": 40.0,
+      "path": "web/out/demo-sols/validation-v2/user-captures/soil-engraving-x20000.00-z20000.00-w40.00-2026-10-24T14-55-30-29358.png",
+      "imageSha256": "9f32ffc6beda5268c8211c6a1dea38ebd5a47b0fadb74817bb61af584402d7aa",
+      "status": "complete",
+      "terrainSampleColors": 22,
+      "paletteHash": "39fb1196cd8051f578876122e9e882dc02790e64c6eb4fdd4582a9edccdec39a"
+    },
+    {
+      "style": "cadastre",
+      "widthM": 40.0,
+      "path": "web/out/demo-sols/validation-v2/user-captures/soil-cadastre-x20000.00-z20000.00-w40.00-2026-10-24T14-55-30-29659.png",
+      "imageSha256": "1320fd99317a7f71edcf5df76be7100a81e56aa92f0d8094fa3cdd75694f2b7c",
+      "status": "complete",
+      "terrainSampleColors": 18,
+      "paletteHash": "6fa901e88678c5c573e00d4bf0c591e8935f11442f4870b97b1d19fdeb56e159"
+    },
+    {
+      "style": "blueprint",
+      "widthM": 40.0,
+      "path": "web/out/demo-sols/validation-v2/user-captures/soil-blueprint-x20000.00-z20000.00-w40.00-2026-10-24T14-55-30-29933.png",
+      "imageSha256": "c9c2175edf7c53d3ea06b1d54de367d957983ab7c5500721c6dcf5b732edf6b6",
+      "status": "complete",
+      "terrainSampleColors": 23,
+      "paletteHash": "79e26579a321614cb17bc4e5aa89e152b512372ccd5026d93d6dd9240951b542"
+    },
+    {
+      "style": "illuminated",
+      "widthM": 40.0,
+      "path": "web/out/demo-sols/validation-v2/user-captures/soil-illuminated-x20000.00-z20000.00-w40.00-2026-10-24T14-55-30-30242.png",
+      "imageSha256": "86743cd9f8773bb49752010ca39b67b9eec24da0d5ad2a8532bfb1612720c9d9",
+      "status": "complete",
+      "terrainSampleColors": 48,
+      "paletteHash": "d99c4d31cdc807e097a5d26bbdd38648a7362b44e8ebb6aae985cd5b208c645b"
+    },
+    {
+      "style": "topographic",
+      "widthM": 40.0,
+      "path": "web/out/demo-sols/validation-v2/user-captures/soil-topographic-x20000.00-z20000.00-w40.00-2026-10-24T14-55-31-30527.png",
+      "imageSha256": "dbbae217828000b2e7b446dc0b70ade07c3cfee5322ec6a299dc8f0ddc2a9bac",
+      "status": "complete",
+      "terrainSampleColors": 47,
+      "paletteHash": "e30c4dcfd2995c7da9ff82c6d498622a16f2ef3a9f2409f991f74b07b75af7dc"
+    },
+    {
+      "style": "night",
+      "widthM": 40.0,
+      "path": "web/out/demo-sols/validation-v2/user-captures/soil-night-x20000.00-z20000.00-w40.00-2026-10-24T14-55-31-30801.png",
+      "imageSha256": "bdbf9bf873fd687d42b3f90b36f971e3a26b5d6576f3dc1fef8445ccd8701799",
+      "status": "complete",
+      "terrainSampleColors": 22,
+      "paletteHash": "4f731020e472a67a25343dd074433926f6aa591b5767496cdba252d1a6b561bd"
+    },
+    {
+      "style": "aerial",
+      "widthM": 10.0,
+      "path": "web/out/demo-sols/validation-v2/user-captures/soil-aerial-x20000.00-z20000.00-w10.00-2026-10-24T14-55-37-36926.png",
+      "imageSha256": "0cae72e2724e210bf6e2d91c9e87e869cb379894abc3a85a20e7ac04374ad56f",
+      "status": "complete",
+      "terrainSampleColors": null,
+      "paletteHash": null
+    },
+    {
+      "style": "aerial",
+      "widthM": 1.0,
+      "path": "web/out/demo-sols/validation-v2/user-captures/soil-aerial-x20000.00-z20000.00-w1.00-2026-10-24T14-55-44-44329.png",
+      "imageSha256": "6377a1e927192410d1c240f03d63159fe9fba2b3313d2b9efcb47d31ca4ea310",
+      "status": "complete",
+      "terrainSampleColors": null,
+      "paletteHash": null
+    }
+  ],
+  "rawReport": "web/out/demo-sols/validation-v2/smoke.json",
+  "rawReportSha256": "0a4cba35dcc7ea20b89ab0f238f9df05cc79fea9319592ce5118638e629d5c5e",
+  "knownLimits": [
+    "One retained40km source, no fresh live generation",
+    "R4 camouflage-like patches remain artistically unaccepted",
+    "Native map palettes omit Canvas brush/hatching/final layout",
+    "Capture source probes are focus+four corners, not a continuous support certificate",
+    "Automated control callbacks tested; not an OS mouse interaction campaign"
+  ],
+  "rawReportRetained": true,
+  "rawReportNote": "Final report/logs and the12matching PNG/JSON pairs copied byte-for-byte to validation-v2. Original producer paths in the raw report retain validation-v1.",
+  "changesFromFirstRun": "Demo-only map detail opt-in;9cartographic previews now retain the same independent soil/low-cover distribution. Prior native map path remains default outside this wrapper."
+}
