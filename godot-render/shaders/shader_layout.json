@@ -2,9 +2,46 @@
   "format": "magna-render-original-shader-layout",
   "version": 1,
   "upstreamOriginalRevision": "f2298841d9fe09729df02f8ecc92e7ffbefa6505",
-  "referenceHead": "85e773b1b0eef8c6f7c45fbcc8d343e57db9c4e4",
+  "referenceHead": "dff14f387a6d1edc89d93737f861ee91e022a5aa",
   "referenceModule": "web/src/ui/terrainGl.ts",
   "referenceExport": "renderOriginalShaderSources",
+  "upstreamLiteralAudit": {
+    "revision": "f2298841d9fe09729df02f8ecc92e7ffbefa6505",
+    "module": "web/src/ui/terrainGl.ts",
+    "normalisation": "CRLF to LF only; original byte values retained",
+    "entries": [
+      {
+        "name": "TERRAIN_VS",
+        "normalisedSourceLiteralBytesSha256": "609a23d2cbc17890617476d6fbc2c63d7b04d37fd10464aa3c0a856543150d33",
+        "exact": true
+      },
+      {
+        "name": "TERRAIN_FS",
+        "normalisedSourceLiteralBytesSha256": "f4b211205f103f9bbed5374469d43bd5176da6b782593dc260670817d159a06e",
+        "exact": true
+      },
+      {
+        "name": "RIVER_VS",
+        "normalisedSourceLiteralBytesSha256": "8058bf413bb4584681a2766d5c9e170c8755b38afbf4a7caf5cff9f14dfd74fe",
+        "exact": true
+      },
+      {
+        "name": "RIVER_FS",
+        "normalisedSourceLiteralBytesSha256": "de7f564daa799e33c05eef8bf4028b01bfaeaebf1852dfc2c4a7a25049069fa2",
+        "exact": true
+      },
+      {
+        "name": "COMPOSITE_VS",
+        "normalisedSourceLiteralBytesSha256": "a2a355f2b6097e8887d7cafd5ed0bbd716946dc123774a1027c5167afd5b7f7e",
+        "exact": true
+      },
+      {
+        "name": "COMPOSITE_FS",
+        "normalisedSourceLiteralBytesSha256": "ecbde7394d5380dcd1942a63fe5fdad654aac7704516be02163d98ec730c85b8",
+        "exact": true
+      }
+    ]
+  },
   "descriptorSet": 0,
   "uniformBinding": 0,
   "orientation": "Original gl_Position and gl_FragCoord untouched; final display orientation belongs to adapter",
@@ -1189,9 +1226,9 @@
           "functionCount": 1
         },
         "fragment": {
-          "originalSha256": "ce16892a784d83440f0081b86eefec7555e12f56a3c3d842b1958c531ce96120",
-          "translatedSha256": "8e783805773aadfc0908d0af76514b8fb41a2c7f34780e2f62b224bd86eb169e",
-          "mathFunctionsSha256": "6ceabfae7ce3a8d1f6527615d9bfc11c83267b84b27a6546bb1fe54e95dd4faa",
+          "originalSha256": "77f713f579535881a0735eec1352c3bdb28e9e610439adef29ed72722631d4d8",
+          "translatedSha256": "105b4c41714fabd122db9a2cabd6d9827105ab5441575b26d8b3d81f685fe00c",
+          "mathFunctionsSha256": "c78b1b8b40e3174624dcab6ad70bf8c6edd8a89ece4ec0ff62360272c42e3dc4",
           "functionCount": 88
         }
       }
@@ -1376,9 +1413,9 @@
       ],
       "stages": {
         "vertex": {
-          "originalSha256": "bb90a9df3c25430959a13f5ae469745da0de9bc59c592a674b1a1a4fb49454f2",
-          "translatedSha256": "83b1c9d1cebb785ceb05b70cf5cfbbabf10f7564a7eb7f8452b443fb71791d5e",
-          "mathFunctionsSha256": "2815bc302bb27d360eae2b64b180ae8f102b93251e42b45ae4e0a1cf452e96d9",
+          "originalSha256": "8058bf413bb4584681a2766d5c9e170c8755b38afbf4a7caf5cff9f14dfd74fe",
+          "translatedSha256": "50029ffb81ee72c7f1136dad021e22f6bda6df6cac3c401392eee8b15040c31f",
+          "mathFunctionsSha256": "f458502e44f88bceffc1c0113af55dfaacff19c4a3e33722bab460a54f716b16",
           "functionCount": 1
         },
         "fragment": {

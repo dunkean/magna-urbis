@@ -2,7 +2,7 @@
  * node --import tsx scripts/export_render_original_shaders.ts --reference-root PATH
  * No shader maths, orientation, material policy or source texture is changed. */
 import {createHash} from 'node:crypto';
-import {mkdirSync,writeFileSync} from 'node:fs';
+import {mkdirSync,writeFileSync,readFileSync} from 'node:fs';
 import {resolve,join} from 'node:path';
 import {pathToFileURL,fileURLToPath} from 'node:url';
 import {parseArgs} from 'node:util';
@@ -25,6 +25,22 @@ export interface ProgramLayout {
 const sha=(s:string)=>createHash('sha256').update(s).digest('hex');
 const normalise=(s:string)=>s.replace(/\r\n/g,'\n');
 const round=(v:number,a:number)=>Math.ceil(v/a)*a;
+/** Compare literal bytes with the actual git object, not an instrumented import.
+ * Latin1 transports all bytes (the upstream file contains legacy comment bytes);
+ * only CRLF is normalised, as JS template evaluation does. */
+export function verifyOriginalLiterals(referenceRoot:string):unknown {
+  const module='web/src/ui/terrainGl.ts',revision='f2298841d9fe09729df02f8ecc92e7ffbefa6505';
+  const upstream=normalise(execFileSync('git',['show',`${revision}:${module}`],{cwd:referenceRoot}).toString('latin1'));
+  const current=normalise(readFileSync(join(referenceRoot,module)).toString('latin1'));
+  const entries=[];
+  for(const name of ['TERRAIN_VS','TERRAIN_FS','RIVER_VS','RIVER_FS','COMPOSITE_VS','COMPOSITE_FS']){
+    const pattern=new RegExp('const '+name+' = `([\\s\\S]*?)`;');
+    const a=upstream.match(pattern)?.[1],b=current.match(pattern)?.[1];
+    if(a===undefined||b===undefined||a!==b)throw Error(`Original git shader literal differs: ${name}`);
+    entries.push({name,normalisedSourceLiteralBytesSha256:createHash('sha256').update(Buffer.from(a,'latin1')).digest('hex'),exact:true});
+  }
+  return{revision,module,normalisation:'CRLF to LF only; original byte values retained',entries};
+}
 function maskComments(source:string):string {
   return source.replace(/\/\*[\s\S]*?\*\/|\/\/[^\n\r]*/g,s=>s.replace(/[^\n\r]/g,' '));
 }
@@ -145,6 +161,7 @@ export function convertProgram(name:string,original:OriginalProgram):{layout:Pro
   return{layout:layouts,...converted};
 }
 export async function exportRenderOriginalShaders(referenceRoot:string,outputRoot:string):Promise<unknown> {
+  const upstreamLiteralAudit=verifyOriginalLiterals(referenceRoot);
   const modulePath=join(referenceRoot,'web/src/ui/terrainGl.ts');
   const api=await import(pathToFileURL(modulePath).href);
   if(typeof api.renderOriginalShaderSources!=='function')throw Error('Original reference must expose renderOriginalShaderSources()');
@@ -155,7 +172,7 @@ export async function exportRenderOriginalShaders(referenceRoot:string,outputRoo
     const converted=convertProgram(name,sources[name]);programs[name]=converted.layout;
     writeFileSync(join(outputRoot,converted.layout.vertex),converted.vertex);writeFileSync(join(outputRoot,converted.layout.fragment),converted.fragment);
   }
-  const result={format:'magna-render-original-shader-layout',version:1,upstreamOriginalRevision:'f2298841d9fe09729df02f8ecc92e7ffbefa6505',referenceHead:execFileSync('git',['rev-parse','HEAD'],{cwd:referenceRoot,encoding:'utf8'}).trim(),referenceModule:'web/src/ui/terrainGl.ts',referenceExport:'renderOriginalShaderSources',descriptorSet:0,uniformBinding:0,orientation:'Original gl_Position and gl_FragCoord untouched; final display orientation belongs to adapter',programs};
+  const result={format:'magna-render-original-shader-layout',version:1,upstreamOriginalRevision:'f2298841d9fe09729df02f8ecc92e7ffbefa6505',referenceHead:execFileSync('git',['rev-parse','HEAD'],{cwd:referenceRoot,encoding:'utf8'}).trim(),referenceModule:'web/src/ui/terrainGl.ts',referenceExport:'renderOriginalShaderSources',upstreamLiteralAudit,descriptorSet:0,uniformBinding:0,orientation:'Original gl_Position and gl_FragCoord untouched; final display orientation belongs to adapter',programs};
   writeFileSync(join(outputRoot,'shader_layout.json'),JSON.stringify(result,null,2)+'\n');return result;
 }
 if(process.argv[1]&&resolve(process.argv[1])===resolve(fileURLToPath(import.meta.url))){

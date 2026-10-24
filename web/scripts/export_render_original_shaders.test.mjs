@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {resolve,join} from 'node:path';
 import {pathToFileURL} from 'node:url';
-import {convertProgram,std140} from './export_render_original_shaders.ts';
+import {convertProgram,std140,verifyOriginalLiterals} from './export_render_original_shaders.ts';
 
 test('std140 scalar, vec3 tail packing, arrays and column-major matrices match fixed byte examples',()=>{
   assert.deepEqual(std140('float'),{alignment:4,stride:4,byteLength:4});
@@ -68,6 +68,9 @@ test('conflicting uniforms and a V2 source are refused before producing an unrel
   assert.throws(()=>convertProgram('fixture',{...fixture,fragment:fixture.fragment+'\nuniform int uRenderV2;'}),/RenderV2/);
 });
 const ref=process.env.RENDER_ORIGINAL_REFERENCE_ROOT;
+test('reference shader literals match six original f229 git-object byte sequences',{skip:!ref},()=>{
+  const audit=verifyOriginalLiterals(ref);assert.equal(audit.entries.length,6);assert.ok(audit.entries.every(v=>v.exact));
+});
 test('all eight real shader stages regenerate exactly and river instances use the nine-float SSBO',{skip:!ref},async()=>{
   const api=await import(pathToFileURL(join(ref,'web/src/ui/terrainGl.ts')).href);
   const sources=api.renderOriginalShaderSources();

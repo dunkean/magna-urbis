@@ -24,7 +24,7 @@ void main() {
   vec2 dir = l > 1e-6 ? d / l : vec2(1.0, 0.0), nrm = vec2(-dir.y, dir.x);
   // Cartographic width: below its physical size on screen, a river keeps a
   // stroke growing with the logarithm of its width: hairline streams (about
-  // 2 kmÂ² drained, 7 m wide), 1 px at 20 kmÂ², bold trunks.
+  // 2 km² drained, 7 m wide), 1 px at 20 km², bold trunks.
   vec2 carto = clamp(0.35 + 0.4 * log2(max(aWidth, vec2(6.0)) / 6.0), 0.35, 3.2) * uDpr;
   vec2 half_ = max(aWidth / uPx, carto) * 0.5;
   float r = max(half_.x, half_.y) + 1.0;
