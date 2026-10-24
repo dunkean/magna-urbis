@@ -42,6 +42,7 @@ describe('shared offline/live complete family pages',()=>{
     expect(limited.world.id).toBe(normal.world.id);expect(fingerprint(limited.world)).toBe(fingerprint(normal.world));expect(limited.candidateColumns!.count).toBeLessThanOrEqual(400);
     for(const family of ['tree','shrub','boulder','grass','debris']as const){const exact=packCandidateColumns(generateSurfaceCandidates(limited.world,limited.candidatePages[family].bounds,{families:[family],includeOverhang:true}));expect(exact.ids).toEqual(unpackCandidateColumns(limited.candidateColumns!).filter(c=>c.family===family).map(c=>c.stableId));}
     expect(()=>exportSurfaceInputPacket(source,undefined,{}, {candidateBounds:'all',candidateLimit:1})).toThrow(/budget/);
+    expect(()=>exportSurfaceInputPacket(source,undefined,{}, {candidateBounds:{minX:-100,minZ:-100,maxX:-50,maxZ:-50}})).toThrow(/do not intersect exported source/);
   });
   it('requests a four-kilometre complete tree page on a large export, with actual source heights outside the local page',()=>{
     const source=input(17,256),t=source.terrain;
