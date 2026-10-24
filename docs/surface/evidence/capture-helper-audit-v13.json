@@ -1,0 +1,200 @@
+{
+  "helperSources": {
+    "normalization": "LF",
+    "baselineSha256": "c52c4b007f252eae52d2edd02083de9ec9df73a5c437271445ef95c6a4ca147b",
+    "patchedSha256": "cc2c37e05421c96408813eae55f1fd234dec4c446e79a1b47c298ed356ce50ce"
+  },
+  "format": "surface-capture-helper-independent-audit",
+  "version": 1,
+  "baseline": "c7dbb5c",
+  "scope": "CPU replay of retained metrics and logs, not a new GPU run or global campaign qualification",
+  "inputs": [
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-vegetation-assets-2026-10-24\\web\\out\\vegetation-tree\\prepared-root-pivot-1024\\resolved.json",
+      "bytes": 12479,
+      "sha256": "ffc6ec902ed5ff6f1019939b6ecd6b7bd12485e25eeef5f33a4eabeab916d738"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-vegetation-assets-2026-10-24\\web\\out\\tree-gpu-first\\160m-cc0-tree\\metrics.json",
+      "bytes": 76420,
+      "sha256": "b21dda6afce7cdd8a579c21b47a905150de6726e9c71f1a35d937f9ac9a809aa"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-vegetation-assets-2026-10-24\\web\\out\\tree-gpu-first\\160m-cc0-tree\\layer-report.json",
+      "bytes": 19900,
+      "sha256": "c3cc2f0895ce3b8bb075fc149bfb7278712926eefb31c7223c647a1a4dbcb2c4"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-vegetation-assets-2026-10-24\\web\\out\\tree-gpu-first\\160m-cc0-tree\\stdout.log",
+      "bytes": 132206,
+      "sha256": "5cd760e81151753e1d29dcfdddc603011c4bba4b3bc4963872fe09c6f5ca18e3"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\native-log-modes-v13\\native-navigation-synchronous\\metrics.json",
+      "bytes": 223065,
+      "sha256": "d225af29ae9401415aab356cb7c19af5cee8386411497ea8900484519237a829"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\native-log-modes-v13\\native-navigation-synchronous\\stdout.log",
+      "bytes": 195569,
+      "sha256": "b18666c8c95fb668548b3d0a079faa30f23c30b3060b7740fd1488b75663e36c"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\native-log-modes-v13\\native-navigation-synchronous\\stderr.log",
+      "bytes": 806,
+      "sha256": "e05bda4b23e387db688b0e648feebaa22c9740ee60ff22c8368c235f031f2a9b"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\native-log-modes-v13\\native-navigation-threaded\\metrics.json",
+      "bytes": 244618,
+      "sha256": "22cb6d16f9b8cad4f0ce3b47edb4bb9e29b0093dd4d631f4371403a92122820f"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\native-log-modes-v13\\native-navigation-threaded\\stdout.log",
+      "bytes": 208659,
+      "sha256": "41a660207f79e34ce2e8b14ac554665f44f85ba56011d8e08cd1410f8c9d216c"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\native-log-modes-v13\\native-navigation-threaded\\stderr.log",
+      "bytes": 806,
+      "sha256": "e05bda4b23e387db688b0e648feebaa22c9740ee60ff22c8368c235f031f2a9b"
+    }
+  ],
+  "tree": {
+    "replay": [
+      {
+        "name": "all",
+        "visibility": {
+          "ground": true,
+          "lowCover": true,
+          "trees": true
+        },
+        "requireGeometry": true,
+        "tree": {
+          "alphaPositiveInFrustum": 74,
+          "nodeVisible": 394,
+          "submitted": 394
+        },
+        "enabled": true,
+        "phase": 1.9715483671393
+      },
+      {
+        "name": "no-low-cover",
+        "visibility": {
+          "ground": true,
+          "lowCover": false,
+          "trees": true
+        },
+        "requireGeometry": true,
+        "tree": {
+          "alphaPositiveInFrustum": 74,
+          "nodeVisible": 394,
+          "submitted": 394
+        },
+        "enabled": true,
+        "phase": 1.9715483671393
+      },
+      {
+        "name": "no-trees",
+        "visibility": {
+          "ground": true,
+          "lowCover": true,
+          "trees": false
+        },
+        "requireGeometry": false,
+        "tree": {
+          "alphaPositiveInFrustum": 0,
+          "nodeVisible": 0,
+          "submitted": 394
+        },
+        "enabled": true,
+        "phase": 1.9715483671393
+      },
+      {
+        "name": "ground",
+        "visibility": {
+          "ground": true,
+          "lowCover": false,
+          "trees": false
+        },
+        "requireGeometry": false,
+        "tree": {
+          "alphaPositiveInFrustum": 0,
+          "nodeVisible": 0,
+          "submitted": 394
+        },
+        "enabled": true,
+        "phase": 1.9715483671393
+      },
+      {
+        "name": "ground-mean-unlit",
+        "visibility": {
+          "ground": true,
+          "lowCover": false,
+          "trees": false
+        },
+        "requireGeometry": false,
+        "tree": {
+          "alphaPositiveInFrustum": 0,
+          "nodeVisible": 0,
+          "submitted": 394
+        },
+        "enabled": true,
+        "phase": 1.9715483671393
+      }
+    ],
+    "negative": [
+      {
+        "mutation": "alphaPositiveInFrustum",
+        "value": "missing",
+        "before": "incorrectly accepted",
+        "after": "rejected"
+      },
+      {
+        "mutation": "geometryFilterMaximumRatio",
+        "value": "missing",
+        "before": "incorrectly accepted",
+        "after": "rejected"
+      },
+      {
+        "mutation": "geometryFilterCompatible",
+        "value": "true",
+        "before": "incorrectly accepted",
+        "after": "rejected"
+      }
+    ],
+    "filterRatio": 0.400404008949638,
+    "filterMaximum": 8,
+    "assetDigest": "e3243d0df97653ccdaecf9e9a22e49d488fdc9a6e5253813bff76ed384ef4bde",
+    "cartographic": "Driver invokes this aerial-only helper only for aerial phases; ignored assets must reject, not be claimed as applied.",
+    "emptyNearFrame": "requireGeometry remains false except tour 160m and tree-enabled near layer-probe views; zero visible trees alone does not reject capability."
+  },
+  "logging": [
+    {
+      "mode": "synchronous",
+      "timingVersion": "native-log-timing-1",
+      "applicationEvents": 65,
+      "accepted": null,
+      "written": null,
+      "pending": null,
+      "excludedOwnMetricsLine": null,
+      "rejected": null,
+      "modeGate": "passed",
+      "strictPhase": "FAILED",
+      "preservedScriptError": true
+    },
+    {
+      "mode": "threaded",
+      "timingVersion": "native-log-timing-2",
+      "applicationEvents": 65,
+      "accepted": 64,
+      "written": 64,
+      "pending": 0,
+      "excludedOwnMetricsLine": 1,
+      "rejected": 0,
+      "modeGate": "passed",
+      "strictPhase": "FAILED",
+      "preservedScriptError": true
+    }
+  ]
+}

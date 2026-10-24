@@ -11,3 +11,27 @@ test('stale asset, unsafe filter, dropped identity, inflated triangles and absen
     assert.throws(()=>verifyTreeAssetCapture(data,manifest,{requireGeometry:true}),path);
   }
 });
+
+test('required geometry cannot be certified by missing, nonnumeric or impossible visible counts',()=>{
+  for(const value of [undefined,null,NaN,Infinity,'2',true,-1,0,0.5,4]){
+    const data=fixture();data.populationInstances.families.tree.alphaPositiveInFrustum=value;
+    assert.throws(()=>verifyTreeAssetCapture(data,manifest,{requireGeometry:true}),String(value));
+  }
+});
+test('common filter certificate has strict finite numeric bounds and a boolean compatibility result',()=>{
+  for(const [key,values]of Object.entries({geometryFilterCompatible:['true',1,null],geometryFilterMaximumRatio:[undefined,null,NaN,Infinity,0,-1,'8',9],geometryFilterRatio:[NaN,Infinity,-1,'4']})){
+    for(const value of values){const data=fixture();data.canopyView[key]=value;assert.throws(()=>verifyTreeAssetCapture(data,manifest),key+':'+String(value));}
+  }
+});
+test('empty near framing or a disabled tree layer retains capability without claiming visible geometry',()=>{
+  for(const hidden of [false,true]){
+    const data=fixture();data.populationInstances.families.tree.alphaPositiveInFrustum=0;
+    data.populationInstances.families.tree.nodeVisible=0;data.layerView={visibility:{trees:!hidden}};
+    assert.equal(verifyTreeAssetCapture(data,manifest).retainedCount,3);
+    assert.throws(()=>verifyTreeAssetCapture(data,manifest,{requireGeometry:true}));
+  }
+});
+test('an ignored asset is rejected even when no visible geometry is required',()=>{
+  const data=fixture();data.canopyView.treeAssets.enabled=false;
+  assert.throws(()=>verifyTreeAssetCapture(data,manifest));
+});
