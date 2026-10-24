@@ -1,5 +1,6 @@
 class_name SurfaceScenePrepare
 extends RefCounted
+const PrepareControl=preload("res://adapters/surface_prepare_control.gd")
 const Data = preload("res://adapters/surface_data.gd")
 const Population = preload("res://adapters/surface_population.gd")
 const Detail=preload("res://adapters/surface_geometry_detail.gd")
@@ -24,23 +25,41 @@ static func mesh_arrays(vertices: PackedVector3Array, normals: PackedVector3Arra
 
 static func prepare(request: Dictionary) -> Dictionary:
 	var started := Time.get_ticks_usec()
+	var control=request.get("prepareControl")
+	var phase_tick=started;var phases={}
+	if PrepareControl.hit(control,"scene-start"):return PrepareControl.result(control,"scene-start",started)
 	var result := Data.prepare(request.world,request.origin,request.width,request.generation,request.packet,request.skipContext,request.displaySource,request.skipHeight,request.sceneRequest)
+	if result.get("cancelled",false):return result
+	phases["dataMs"]=(Time.get_ticks_usec()-phase_tick)/1000.0;phase_tick=Time.get_ticks_usec()
+	result["prepareControl"]=control
 	result.worldRevision=request.get("worldRevision",0)
 	result.viewWidth=request.width
 	result.focus=request.focus
 	result.oblique=request.oblique
 	for key in ["heightImageSize","displaySamples","physicalLineage","contextKey","heightKey","liveSerial","presentationMode"]:
 		if request.has(key):result[key]=request[key]
+	if PrepareControl.hit(control,"detail"):return PrepareControl.result(control,"detail",started)
+	phases["metadataMs"]=(Time.get_ticks_usec()-phase_tick)/1000.0;phase_tick=Time.get_ticks_usec()
 	result.geometryDetail=Detail.prepare(request.world)
+	if PrepareControl.hit(control,"tree-support"):return PrepareControl.result(control,"tree-support",started)
+	phases["detailMs"]=(Time.get_ticks_usec()-phase_tick)/1000.0;phase_tick=Time.get_ticks_usec()
 	var population_packet:Dictionary=Detail.population_packet(request.packet,request.world)
 	result.unsupportedTreeCount=population_packet._unsupportedTreeIDs.size()
+	if PrepareControl.hit(control,"population"):return PrepareControl.result(control,"population",started)
+	phases["treeSupportMs"]=(Time.get_ticks_usec()-phase_tick)/1000.0;phase_tick=Time.get_ticks_usec()
 	result.populations=Population.prepare(population_packet,request.focus,request.width,request.viewportWidth,request.oblique,not request.get("groundOnly",false),request.sceneRequest.get("canopyAtlasBounds",{}))
+	if PrepareControl.hit(control,"city-map"):return PrepareControl.result(control,"city-map",started)
+	phases["populationMs"]=(Time.get_ticks_usec()-phase_tick)/1000.0;phase_tick=Time.get_ticks_usec()
 	if request.get("presentationMode","")=="cartographic" and not request.get("groundOnly",false):
 		var palette:Dictionary=Presentation.profile(request.packet,"cartographic").palette.get("urban",{})
 		result.cityMap=CityMap.prepare(request.packet,request.origin,request.focus,request.width,maxf(0.0,float(palette.get("massEdgeW",0.04))))
 		result.cityMapArrays=mesh_arrays(result.cityMap.vertices,result.cityMap.normals)
 		result.cityMapOutlineArrays=mesh_arrays(result.cityMap.outlineVertices,result.cityMap.outlineNormals)
+	if PrepareControl.hit(control,"roads"):return PrepareControl.result(control,"roads",started)
+	phases["cityMapMs"]=(Time.get_ticks_usec()-phase_tick)/1000.0;phase_tick=Time.get_ticks_usec()
 	if request.get("projectRoads",false) and not request.get("groundOnly",false): result.roadProjectors=Roads.prepareRoadProjectors(request.packet,request.world,request.origin,request.focus,request.width)
+	if PrepareControl.hit(control,"buffers"):return PrepareControl.result(control,"buffers",started)
+	phases["roadsMs"]=(Time.get_ticks_usec()-phase_tick)/1000.0;phase_tick=Time.get_ticks_usec()
 	result.populations.buffers={}
 	var cartographic:bool=request.get("presentationMode","")=="cartographic"
 	var map_palette:Dictionary=Presentation.profile(request.packet,"cartographic").palette if cartographic else {}
@@ -66,11 +85,15 @@ static func prepare(request: Dictionary) -> Dictionary:
 			result.populations.families[family][i]=candidate
 		result.populations.buffers[family]=population_buffer(result.populations.families[family],family,request.origin)
 	result.populations.trunkBuffer=population_buffer(result.populations.families.tree,"trunk",request.origin)
+	if PrepareControl.hit(control,"water-geometry"):return PrepareControl.result(control,"water-geometry",started)
+	phases["buffersMs"]=(Time.get_ticks_usec()-phase_tick)/1000.0;phase_tick=Time.get_ticks_usec()
 	if result.has("waterGeometry"):
 		if ResourceLoader.exists("res://adapters/surface_hydrology.gd"):
 			var hydrology=load("res://adapters/surface_hydrology.gd")
 			result.waterGeometry=hydrology.prepare(request.packet,request.world,request.origin,request.focus,request.width,result.waterGeometry)
 		result.waterArrays=mesh_arrays(result.waterGeometry.vertices)
+	if PrepareControl.hit(control,"urban-arrays"):return PrepareControl.result(control,"urban-arrays",started)
+	phases["hydrologyMs"]=(Time.get_ticks_usec()-phase_tick)/1000.0;phase_tick=Time.get_ticks_usec()
 	if result.has("urbanGeometry"):
 		var urban: Dictionary = result.urbanGeometry
 		result.roadArrays=mesh_arrays(urban.roadVertices)
@@ -89,6 +112,9 @@ static func prepare(request: Dictionary) -> Dictionary:
 		if batches.is_empty() and not urban.vertices.is_empty(): batches.append({"arrays":mesh_arrays(urban.vertices,urban.normals),"materialId":"","surface":"wall","slots":{},"buildingIds":urban.get("buildingIds",[])})
 		result.urbanBatches=batches
 	result.prepareMs=(Time.get_ticks_usec()-started)/1000.0
+	if PrepareControl.hit(control,"scene-complete"):return PrepareControl.result(control,"scene-complete",started)
+	phases["urbanArraysMs"]=(Time.get_ticks_usec()-phase_tick)/1000.0
+	result["cpuPhasesMs"]=phases
 	return result
 
 # MultiMesh's documented 3x4 row-major transform + linear RGBA colour and four custom float channels.

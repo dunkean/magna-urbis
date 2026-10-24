@@ -41,6 +41,9 @@ var previous_frame_tick := 0
 var native_profile_events:Array=[]
 var native_log_timings:Array=[]
 var native_log_maxima:Dictionary={}
+const PrepareControl=preload("res://adapters/surface_prepare_control.gd")
+var active_prepare_control:RefCounted
+var preparation_cancellations:Array=[]
 var packet_worker: Thread
 var packet_context: Dictionary = {}
 var canonical_contexts: Dictionary = {}
@@ -291,9 +294,10 @@ func _begin_prepare() -> void:
 	water_world.versions=canonical.get("versions",world.get("versions",{}))
 	var water_key := Geometry.chunk_key(world,focus,width_m,"water")
 	var urban_key := Geometry.chunk_key(world,focus,width_m,"urban")
-	var scene_request := {"heightCoverageExtentM":width_m*(4.0 if oblique else 2.0),"canopyAtlasBounds":_canopy_atlas_request(),"displaySamples":display_samples,"waterKey":water_key,"urbanKey":urban_key,"buildWater":not options.has("--ground-only") and not scene_mesh_cache.has(water_key),"buildUrban":not options.has("--ground-only") and not scene_mesh_cache.has(urban_key),"focus":focus.duplicate()}
+	active_prepare_control=PrepareControl.new(world_revision,rendered_revision,str(world.id),rendered_world_id)
+	var scene_request := {"prepareControl":active_prepare_control,"heightCoverageExtentM":width_m*(4.0 if oblique else 2.0),"canopyAtlasBounds":_canopy_atlas_request(),"displaySamples":display_samples,"waterKey":water_key,"urbanKey":urban_key,"buildWater":not options.has("--ground-only") and not scene_mesh_cache.has(water_key),"buildUrban":not options.has("--ground-only") and not scene_mesh_cache.has(urban_key),"focus":focus.duplicate()}
 	worker = Thread.new()
-	worker.start(ScenePrepare.prepare.bind({"heightImageSize":expected_image_size,"displaySamples":display_samples,"physicalLineage":_physical_lineage(world,packet),"contextKey":prepared_context_key,"heightKey":prepared_height_key,"liveSerial":int(packet.get("_acceptedLiveSerial",-1)),"worldRevision":world_revision,"world":world,"origin":next_origin,"width":width_m,"generation":generation,"packet":packet,"skipContext":context_textures.has(prepared_context_key),"displaySource":height_source_cache.get(prepared_height_key,{}),"skipHeight":reuse_height,"sceneRequest":scene_request,"focus":focus.duplicate(),"viewportWidth":get_viewport().get_visible_rect().size.x,"oblique":oblique,"groundOnly":options.has("--ground-only"),"presentationMode":presentation_mode,"projectRoads":RenderingServer.get_current_rendering_method()=="forward_plus"}))
+	worker.start(ScenePrepare.prepare.bind({"prepareControl":active_prepare_control,"heightImageSize":expected_image_size,"displaySamples":display_samples,"physicalLineage":_physical_lineage(world,packet),"contextKey":prepared_context_key,"heightKey":prepared_height_key,"liveSerial":int(packet.get("_acceptedLiveSerial",-1)),"worldRevision":world_revision,"world":world,"origin":next_origin,"width":width_m,"generation":generation,"packet":packet,"skipContext":context_textures.has(prepared_context_key),"displaySource":height_source_cache.get(prepared_height_key,{}),"skipHeight":reuse_height,"sceneRequest":scene_request,"focus":focus.duplicate(),"viewportWidth":get_viewport().get_visible_rect().size.x,"oblique":oblique,"groundOnly":options.has("--ground-only"),"presentationMode":presentation_mode,"projectRoads":RenderingServer.get_current_rendering_method()=="forward_plus"}))
 	last_request_tick = Time.get_ticks_msec()
 
 func _apply_prepared(prepared: Dictionary) -> void:
@@ -407,7 +411,7 @@ func _apply_prepared(prepared: Dictionary) -> void:
 	upload_times.append((Time.get_ticks_usec()-begin)/1000.0)
 	warm_frames = 0
 	region_counts.append(int(terrain.get("data").call("get_region_count")))
-	preparation_snapshots.append({"focus":requested_focus.duplicate(),"widthM":requested_width,"generation":prepared.generation,"sourceId":world.terrain.source.id})
+	preparation_snapshots.append({"focus":requested_focus.duplicate(),"widthM":requested_width,"generation":prepared.generation,"sourceId":world.terrain.source.id,"cpuPhasesMs":prepared.get("cpuPhasesMs",{}).duplicate()})
 	rendered_tick_ms=Time.get_ticks_msec()
 	rendered_snapshot={"worldId":rendered_world_id,"source":rendered_source.duplicate(),"tileSource":world.terrain.source.duplicate(),"sourceActualAtFocus":rendered_source.duplicate(),"focusInsideSource":source_focus.focusInsideSource,"fineContributionWeight":source_focus.fineContributionWeight,"seamWeight":source_focus.seamWeight,"sourceContributionsAtFocus":source_focus.contributions,"sourceBounds":world.bounds.duplicate(),"focusAtApply":focus.duplicate(),"request":packet.get("source",{}).get("request",{}).duplicate(true),"deliveredGrid":{"width":int(world.terrain.width),"height":int(world.terrain.height),"spacingM":float(world.terrain.spacingM)},"displaySamples":rendered_display_samples,"heightImageSize":rendered_height_image_size,"loadedHeightRangeWorld":[float(rendered_height_range.x)+float(origin.y),float(rendered_height_range.y)+float(origin.y)],"liveSerial":rendered_live_serial,"appliedTickMs":rendered_tick_ms,"sourceEpoch":packet.get("source",{}).get("sourceEpoch"),"sceneEpoch":packet.get("source",{}).get("sceneEpoch"),"worldRevision":rendered_revision}
 	_update_view_satisfaction("rendered-source")
@@ -701,12 +705,8 @@ func _process(delta: float) -> void:
 	if worker != null and not worker.is_alive():
 		var prepared = worker.wait_to_finish()
 		worker = null
-		if prepared is Dictionary:
-			_complete_prepared(prepared)
-		else:
-			discarded_preparations.failed+=1
-			push_warning("Terrain preparation failed; retaining parent. Navigate or reload to retry.")
-			applied_generation=generation
+		active_prepare_control=null
+		_handle_prepared_result(prepared)
 	if worker==null and not water_projection_busy and (view_dirty or rendered_revision!=world_revision) and Time.get_ticks_msec()-last_request_tick>160:
 		_begin_prepare()
 	if terrain != null:
@@ -958,6 +958,7 @@ func _accept_packet(next: Dictionary, context: Dictionary) -> void:
 		while native_profile_events.size()>128:native_profile_events.pop_front()
 	var repeated_identity: bool = next_world.id==world.id
 	world_revision+=1
+	if active_prepare_control!=null:active_prepare_control.request_cancel(world_revision,rendered_revision)
 	world = next_world
 	packet = next
 	presentation_mode=Presentation.profile(packet,str(options.get("--presentation","cartographic" if options.has("--style") else ""))).mode
@@ -1046,6 +1047,7 @@ func _write_metrics() -> void:
 	metrics["discardedPreparations"]=discarded_preparations
 	metrics["nativeLogTiming"]={"maximaByEvent":native_log_maxima,"recent":native_log_timings}
 	metrics["nativeMainProfiles"]=native_profile_events
+	metrics["preparationCancellations"]=preparation_cancellations
 	metrics["liveAcceptance"]=live_acceptance_events
 	metrics["unsupportedTreeCount"]=unsupported_tree_count
 	metrics["cityMap"]=city_map_metrics
@@ -1405,7 +1407,29 @@ func _water_source_covers(bounds:Dictionary,required_focus:Dictionary,required_w
 	var max_z=minf(float(required_focus.y)+required_width*.5,float(g.originZ)+(int(g.height)-1)*float(g.spacingM)+half)
 	return min_x>=max_x or min_z>=max_z or (float(bounds.get("minX",INF))<=min_x and float(bounds.get("minZ",INF))<=min_z and float(bounds.get("maxX",-INF))>=max_x and float(bounds.get("maxZ",-INF))>=max_z)
 
+func _handle_prepared_result(prepared)->void:
+	if prepared is Dictionary and prepared.get("cancelled",false):
+		discarded_preparations["cancelledSuperseded"]=int(discarded_preparations.get("cancelledSuperseded",0))+1
+		preparation_cancellations.append(prepared.get("cancellation",{}))
+		while preparation_cancellations.size()>128:preparation_cancellations.pop_front()
+		view_dirty=true
+		_begin_prepare()
+	elif prepared is Dictionary:
+		_complete_prepared(prepared)
+	else:
+		discarded_preparations.failed+=1
+		push_warning("Terrain preparation failed; retaining parent. Navigate or reload to retry.")
+		applied_generation=generation
+
+func _skip_obsolete_camera_refresh(prepared:Dictionary)->bool:
+	if not PrepareControl.obsolete_camera_result(prepared,world_revision,rendered_revision):return false
+	discarded_preparations["skippedCameraRefresh"]=int(discarded_preparations.get("skippedCameraRefresh",0))+1
+	view_dirty=true
+	_begin_prepare()
+	return true
+
 func _complete_prepared(prepared:Dictionary)->void:
+	if _skip_obsolete_camera_refresh(prepared):return
 	var geometry:Dictionary=prepared.get("waterGeometry",{})
 	if geometry.is_empty():
 		geometry=scene_mesh_cache.get(prepared.sceneRequest.get("waterKey",""),{}).get("geometry",{})
@@ -1447,6 +1471,7 @@ func _complete_prepared(prepared:Dictionary)->void:
 			push_error("Water source-map projection failed; retaining displayed snapshot: "+str(projection.error))
 			return
 		prepared.waterProjection=projection
+	if _skip_obsolete_camera_refresh(prepared):return
 	_apply_prepared(prepared)
 
 func _set_canopy_main_camera(material:Object,view_projection:Projection,viewport_size:Vector2)->void:
