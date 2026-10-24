@@ -1,0 +1,606 @@
+{
+  "format": "independent-tree-filter-certificate-review",
+  "version": 1,
+  "status": "PASS_BOUNDED_CPU_REVIEW",
+  "reviewedViewerCommit": "4a1b6c2d2bc51170cf47b15158ff5ed0fafa15ee",
+  "scope": "Real-arithmetic derivation plus independent Camera3D/phase-method CPU checks. No GPU silhouette, renderer integration, oblique energy or latency qualification. Historical counterexamples not rewritten.",
+  "projectionCases": [
+    {
+      "actualFrustumBounds": {
+        "maxX": 91.4884567260742,
+        "maxZ": 39.2025299072266,
+        "minX": -91.4884567260742,
+        "minZ": -78.1448669433594
+      },
+      "actualMaximumRatio": 8.49990361293183,
+      "atlasBounds": {
+        "maxX": 240.0,
+        "maxZ": 240.0,
+        "minX": -240.0,
+        "minZ": -240.0
+      },
+      "atlasSpacingM": 0.25,
+      "cameraPosition": [
+        0.0,
+        55.0,
+        51.2328758239746
+      ],
+      "certificate": {
+        "activeAtlasSpacingM": 0.25,
+        "analyticFootprintBound": {
+          "eastBoundM": 0.914884668514637,
+          "maximumW": 128.429035018831,
+          "method": "finite-step homography; analytic minimum affine numerator norm over full frustum rectangle",
+          "minimumW": 48.4446186464156,
+          "relativeF32Margin": 0.001,
+          "southBoundM": 2.14766052881473,
+          "upperBoundM": 2.14980918934354,
+          "valid": true
+        },
+        "crownHeightEnvelopeM": 20.0,
+        "frustumBounds": {
+          "maxX": 91.4884567260742,
+          "maxZ": 39.2025299072266,
+          "minX": -91.4884567260742,
+          "minZ": -78.1448669433594
+        },
+        "geometryFilterBudgetLimited": true,
+        "geometryFilterCertificate": "active atlas spacing; analytic finite-step homography bound over full frustum height-envelope rectangle; shared dyadic kernel<=8x8",
+        "geometryFilterCompatible": false,
+        "geometryFilterMaximumRatio": 8.0,
+        "geometryFilterRatio": 8.59923675737416,
+        "haloM": 26.0,
+        "heightEnvelopeWorld": [
+          0.0,
+          20.0
+        ],
+        "marginM": 122.511543273926,
+        "maximumPixelFootprintM": 2.14980918934354,
+        "pageBounds": {
+          "maxX": 240.0,
+          "maxZ": 240.0,
+          "minX": -240.0,
+          "minZ": -240.0
+        },
+        "reason": "complete-frustum-plus-halo",
+        "referenceY": 0.0,
+        "safePhase": 1.0,
+        "sampledMaximumPixelFootprintM": 2.12497590323296,
+        "transitionM": 45.7514563106796
+      },
+      "certifiedPhase": 1.0,
+      "format": "independent-canopy-corner-footprint-probe",
+      "fovDegrees": 48,
+      "independentlySampledMaximumM": 2.12497590323296,
+      "mainObliqueDirectionRatio": true,
+      "rawViewSafePhase": 2.0,
+      "reviewedMaximumM": 2.14980918934354,
+      "reviewedMaximumRatio": 8.59923675737416,
+      "reviewedViewSha256": "72001db30f19b7451b24f29f549b77efa93723ee85f9eb3fac2a4bcd36d43b59",
+      "sampleCount": 18818,
+      "sampledMaximumAtPixel": [
+        100.0,
+        0.0
+      ],
+      "scope": "Headless CPU actual Camera3D projection and SurfaceCanopyView; same per-pixel main-camera one-metre secants as shader. Tests oblique far-edge midpoint missed by corner-only maximum. No GPU or claim about prior2048px captures.",
+      "unsafeCondition": false,
+      "version": 1,
+      "viewport": [
+        200,
+        125
+      ]
+    },
+    {
+      "actualFrustumBounds": {
+        "maxX": 83.1713180541992,
+        "maxZ": 36.2636184692383,
+        "minX": -83.1713180541992,
+        "minZ": -71.040771484375
+      },
+      "actualMaximumRatio": 7.72303847498538,
+      "atlasBounds": {
+        "maxX": 240.0,
+        "maxZ": 240.0,
+        "minX": -240.0,
+        "minZ": -240.0
+      },
+      "atlasSpacingM": 0.25,
+      "cameraPosition": [
+        0.0,
+        50.0,
+        46.5753440856934
+      ],
+      "certificate": {
+        "activeAtlasSpacingM": 0.25,
+        "analyticFootprintBound": {
+          "eastBoundM": 0.831713214661989,
+          "maximumW": 116.753651304345,
+          "method": "finite-step homography; analytic minimum affine numerator norm over full frustum rectangle",
+          "minimumW": 43.614585291949,
+          "relativeF32Margin": 0.001,
+          "southBoundM": 1.95344898255656,
+          "upperBoundM": 1.95540343153912,
+          "valid": true
+        },
+        "crownHeightEnvelopeM": 20.0,
+        "frustumBounds": {
+          "maxX": 83.1713180541992,
+          "maxZ": 36.2636184692383,
+          "minX": -83.1713180541992,
+          "minZ": -71.040771484375
+        },
+        "geometryFilterBudgetLimited": false,
+        "geometryFilterCertificate": "active atlas spacing; analytic finite-step homography bound over full frustum height-envelope rectangle; shared dyadic kernel<=8x8",
+        "geometryFilterCompatible": true,
+        "geometryFilterMaximumRatio": 8.0,
+        "geometryFilterRatio": 7.82161372615647,
+        "haloM": 26.0,
+        "heightEnvelopeWorld": [
+          0.0,
+          20.0
+        ],
+        "marginM": 130.828681945801,
+        "maximumPixelFootprintM": 1.95540343153912,
+        "pageBounds": {
+          "maxX": 240.0,
+          "maxZ": 240.0,
+          "minX": -240.0,
+          "minZ": -240.0
+        },
+        "reason": "complete-frustum-plus-halo",
+        "referenceY": 0.0,
+        "safePhase": 2.0,
+        "sampledMaximumPixelFootprintM": 1.93075961874634,
+        "transitionM": 45.7514563106796
+      },
+      "certifiedPhase": 2.0,
+      "format": "independent-canopy-corner-footprint-probe",
+      "fovDegrees": 48,
+      "independentlySampledMaximumM": 1.93075961874634,
+      "mainObliqueDirectionRatio": true,
+      "rawViewSafePhase": 2.0,
+      "reviewedMaximumM": 1.95540343153912,
+      "reviewedMaximumRatio": 7.82161372615647,
+      "reviewedViewSha256": "72001db30f19b7451b24f29f549b77efa93723ee85f9eb3fac2a4bcd36d43b59",
+      "sampleCount": 18818,
+      "sampledMaximumAtPixel": [
+        100.0,
+        0.0
+      ],
+      "scope": "Headless CPU actual Camera3D projection and SurfaceCanopyView; same per-pixel main-camera one-metre secants as shader. Tests oblique far-edge midpoint missed by corner-only maximum. No GPU or claim about prior2048px captures.",
+      "unsafeCondition": false,
+      "version": 1,
+      "viewport": [
+        200,
+        125
+      ]
+    },
+    {
+      "actualFrustumBounds": {
+        "maxX": 181.595062255859,
+        "maxZ": 69.2908782958984,
+        "minX": -181.595062255859,
+        "minZ": -160.508880615234
+      },
+      "actualMaximumRatio": 9.23283538556786,
+      "atlasBounds": {
+        "maxX": 400.0,
+        "maxZ": 400.0,
+        "minX": -400.0,
+        "minZ": -400.0
+      },
+      "atlasSpacingM": 0.5,
+      "cameraPosition": [
+        0.0,
+        100.0,
+        100.0
+      ],
+      "certificate": {
+        "activeAtlasSpacingM": 0.5,
+        "analyticFootprintBound": {
+          "eastBoundM": 1.81595087831788,
+          "maximumW": 254.918272182449,
+          "method": "finite-step homography; analytic minimum affine numerator norm over full frustum rectangle",
+          "minimumW": 92.425307122302,
+          "relativeF32Margin": 0.001,
+          "southBoundM": 4.64203126267982,
+          "upperBoundM": 4.64667429394249,
+          "valid": true
+        },
+        "crownHeightEnvelopeM": 20.0,
+        "frustumBounds": {
+          "maxX": 181.595062255859,
+          "maxZ": 69.2908782958984,
+          "minX": -181.595062255859,
+          "minZ": -160.508880615234
+        },
+        "geometryFilterBudgetLimited": true,
+        "geometryFilterCertificate": "active atlas spacing; analytic finite-step homography bound over full frustum height-envelope rectangle; shared dyadic kernel<=8x8",
+        "geometryFilterCompatible": false,
+        "geometryFilterMaximumRatio": 8.0,
+        "geometryFilterRatio": 9.29334858788499,
+        "haloM": 26.0,
+        "heightEnvelopeWorld": [
+          0.0,
+          20.0
+        ],
+        "marginM": 192.404937744141,
+        "maximumPixelFootprintM": 4.64667429394249,
+        "pageBounds": {
+          "maxX": 400.0,
+          "maxZ": 400.0,
+          "minX": -400.0,
+          "minZ": -400.0
+        },
+        "reason": "complete-frustum-plus-halo",
+        "referenceY": 0.0,
+        "safePhase": 1.0,
+        "sampledMaximumPixelFootprintM": 4.61641769278393,
+        "transitionM": 45.7514563106796
+      },
+      "certifiedPhase": 1.0,
+      "format": "independent-canopy-corner-footprint-probe",
+      "fovDegrees": 48,
+      "independentlySampledMaximumM": 4.61641769278393,
+      "mainObliqueDirectionRatio": false,
+      "rawViewSafePhase": 2.0,
+      "reviewedMaximumM": 4.64667429394249,
+      "reviewedMaximumRatio": 9.29334858788499,
+      "reviewedViewSha256": "72001db30f19b7451b24f29f549b77efa93723ee85f9eb3fac2a4bcd36d43b59",
+      "sampleCount": 18818,
+      "sampledMaximumAtPixel": [
+        100.0,
+        0.0
+      ],
+      "scope": "Headless CPU actual Camera3D projection and SurfaceCanopyView; same per-pixel main-camera one-metre secants as shader. Tests oblique far-edge midpoint missed by corner-only maximum. No GPU or claim about prior2048px captures.",
+      "unsafeCondition": false,
+      "version": 1,
+      "viewport": [
+        200,
+        125
+      ]
+    },
+    {
+      "actualFrustumBounds": {
+        "maxX": 91.4884567260742,
+        "maxZ": 43.3272171020508,
+        "minX": -91.4884567260742,
+        "minZ": -78.1448669433594
+      },
+      "actualMaximumRatio": 8.49990361293183,
+      "atlasBounds": {
+        "maxX": 240.0,
+        "maxZ": 240.0,
+        "minX": -240.0,
+        "minZ": -240.0
+      },
+      "atlasSpacingM": 0.25,
+      "cameraPosition": [
+        0.0,
+        55.0,
+        51.2328758239746
+      ],
+      "certificate": {
+        "activeAtlasSpacingM": 0.25,
+        "analyticFootprintBound": {
+          "eastBoundM": 0.914884668514637,
+          "maximumW": 128.429035018831,
+          "method": "finite-step homography; analytic minimum affine numerator norm over full frustum rectangle",
+          "minimumW": 45.6332167163255,
+          "relativeF32Margin": 0.001,
+          "southBoundM": 2.14766052881473,
+          "upperBoundM": 2.14980918934354,
+          "valid": true
+        },
+        "crownHeightEnvelopeM": 32.0,
+        "frustumBounds": {
+          "maxX": 91.4884567260742,
+          "maxZ": 43.3272171020508,
+          "minX": -91.4884567260742,
+          "minZ": -78.1448669433594
+        },
+        "geometryFilterBudgetLimited": true,
+        "geometryFilterCertificate": "active atlas spacing; analytic finite-step homography bound over full frustum height-envelope rectangle; shared dyadic kernel<=8x8",
+        "geometryFilterCompatible": false,
+        "geometryFilterMaximumRatio": 8.0,
+        "geometryFilterRatio": 8.59923675737416,
+        "haloM": 26.0,
+        "heightEnvelopeWorld": [
+          0.0,
+          32.0
+        ],
+        "marginM": 122.511543273926,
+        "maximumPixelFootprintM": 2.14980918934354,
+        "pageBounds": {
+          "maxX": 240.0,
+          "maxZ": 240.0,
+          "minX": -240.0,
+          "minZ": -240.0
+        },
+        "reason": "complete-frustum-plus-halo",
+        "referenceY": 0.0,
+        "safePhase": 1.0,
+        "sampledMaximumPixelFootprintM": 2.12497590323296,
+        "transitionM": 45.7514563106796
+      },
+      "certifiedPhase": 1.0,
+      "format": "independent-canopy-corner-footprint-probe",
+      "fovDegrees": 48,
+      "independentlySampledMaximumM": 2.12497590323296,
+      "mainObliqueDirectionRatio": true,
+      "rawViewSafePhase": 2.0,
+      "reviewedMaximumM": 2.14980918934354,
+      "reviewedMaximumRatio": 8.59923675737416,
+      "reviewedViewSha256": "72001db30f19b7451b24f29f549b77efa93723ee85f9eb3fac2a4bcd36d43b59",
+      "sampleCount": 18818,
+      "sampledMaximumAtPixel": [
+        100.0,
+        0.0
+      ],
+      "scope": "Headless CPU actual Camera3D projection and SurfaceCanopyView; same per-pixel main-camera one-metre secants as shader. Tests oblique far-edge midpoint missed by corner-only maximum. No GPU or claim about prior2048px captures.",
+      "unsafeCondition": false,
+      "version": 1,
+      "viewport": [
+        200,
+        125
+      ]
+    },
+    {
+      "actualFrustumBounds": {
+        "maxX": 83.1713180541992,
+        "maxZ": 40.3883094787598,
+        "minX": -83.1713180541992,
+        "minZ": -71.040771484375
+      },
+      "actualMaximumRatio": 7.72303847498538,
+      "atlasBounds": {
+        "maxX": 240.0,
+        "maxZ": 240.0,
+        "minX": -240.0,
+        "minZ": -240.0
+      },
+      "atlasSpacingM": 0.25,
+      "cameraPosition": [
+        0.0,
+        50.0,
+        46.5753440856934
+      ],
+      "certificate": {
+        "activeAtlasSpacingM": 0.25,
+        "analyticFootprintBound": {
+          "eastBoundM": 0.831713214661989,
+          "maximumW": 116.753651304345,
+          "method": "finite-step homography; analytic minimum affine numerator norm over full frustum rectangle",
+          "minimumW": 40.8031807617472,
+          "relativeF32Margin": 0.001,
+          "southBoundM": 1.95344898255656,
+          "upperBoundM": 1.95540343153912,
+          "valid": true
+        },
+        "crownHeightEnvelopeM": 32.0,
+        "frustumBounds": {
+          "maxX": 83.1713180541992,
+          "maxZ": 40.3883094787598,
+          "minX": -83.1713180541992,
+          "minZ": -71.040771484375
+        },
+        "geometryFilterBudgetLimited": false,
+        "geometryFilterCertificate": "active atlas spacing; analytic finite-step homography bound over full frustum height-envelope rectangle; shared dyadic kernel<=8x8",
+        "geometryFilterCompatible": true,
+        "geometryFilterMaximumRatio": 8.0,
+        "geometryFilterRatio": 7.82161372615647,
+        "haloM": 26.0,
+        "heightEnvelopeWorld": [
+          0.0,
+          32.0
+        ],
+        "marginM": 130.828681945801,
+        "maximumPixelFootprintM": 1.95540343153912,
+        "pageBounds": {
+          "maxX": 240.0,
+          "maxZ": 240.0,
+          "minX": -240.0,
+          "minZ": -240.0
+        },
+        "reason": "complete-frustum-plus-halo",
+        "referenceY": 0.0,
+        "safePhase": 2.0,
+        "sampledMaximumPixelFootprintM": 1.93075961874634,
+        "transitionM": 45.7514563106796
+      },
+      "certifiedPhase": 2.0,
+      "format": "independent-canopy-corner-footprint-probe",
+      "fovDegrees": 48,
+      "independentlySampledMaximumM": 1.93075961874634,
+      "mainObliqueDirectionRatio": true,
+      "rawViewSafePhase": 2.0,
+      "reviewedMaximumM": 1.95540343153912,
+      "reviewedMaximumRatio": 7.82161372615647,
+      "reviewedViewSha256": "72001db30f19b7451b24f29f549b77efa93723ee85f9eb3fac2a4bcd36d43b59",
+      "sampleCount": 18818,
+      "sampledMaximumAtPixel": [
+        100.0,
+        0.0
+      ],
+      "scope": "Headless CPU actual Camera3D projection and SurfaceCanopyView; same per-pixel main-camera one-metre secants as shader. Tests oblique far-edge midpoint missed by corner-only maximum. No GPU or claim about prior2048px captures.",
+      "unsafeCondition": false,
+      "version": 1,
+      "viewport": [
+        200,
+        125
+      ]
+    },
+    {
+      "actualFrustumBounds": {
+        "maxX": 181.595062255859,
+        "maxZ": 73.8972473144531,
+        "minX": -181.595062255859,
+        "minZ": -160.508880615234
+      },
+      "actualMaximumRatio": 9.23283538556786,
+      "atlasBounds": {
+        "maxX": 400.0,
+        "maxZ": 400.0,
+        "minX": -400.0,
+        "minZ": -400.0
+      },
+      "atlasSpacingM": 0.5,
+      "cameraPosition": [
+        0.0,
+        100.0,
+        100.0
+      ],
+      "certificate": {
+        "activeAtlasSpacingM": 0.5,
+        "analyticFootprintBound": {
+          "eastBoundM": 1.81595087831788,
+          "maximumW": 254.918272182449,
+          "method": "finite-step homography; analytic minimum affine numerator norm over full frustum rectangle",
+          "minimumW": 89.1681124083789,
+          "relativeF32Margin": 0.001,
+          "southBoundM": 4.64203126267982,
+          "upperBoundM": 4.64667429394249,
+          "valid": true
+        },
+        "crownHeightEnvelopeM": 32.0,
+        "frustumBounds": {
+          "maxX": 181.595062255859,
+          "maxZ": 73.8972473144531,
+          "minX": -181.595062255859,
+          "minZ": -160.508880615234
+        },
+        "geometryFilterBudgetLimited": true,
+        "geometryFilterCertificate": "active atlas spacing; analytic finite-step homography bound over full frustum height-envelope rectangle; shared dyadic kernel<=8x8",
+        "geometryFilterCompatible": false,
+        "geometryFilterMaximumRatio": 8.0,
+        "geometryFilterRatio": 9.29334858788499,
+        "haloM": 26.0,
+        "heightEnvelopeWorld": [
+          0.0,
+          32.0
+        ],
+        "marginM": 192.404937744141,
+        "maximumPixelFootprintM": 4.64667429394249,
+        "pageBounds": {
+          "maxX": 400.0,
+          "maxZ": 400.0,
+          "minX": -400.0,
+          "minZ": -400.0
+        },
+        "reason": "complete-frustum-plus-halo",
+        "referenceY": 0.0,
+        "safePhase": 1.0,
+        "sampledMaximumPixelFootprintM": 4.61641769278393,
+        "transitionM": 45.7514563106796
+      },
+      "certifiedPhase": 1.0,
+      "format": "independent-canopy-corner-footprint-probe",
+      "fovDegrees": 48,
+      "independentlySampledMaximumM": 4.61641769278393,
+      "mainObliqueDirectionRatio": false,
+      "rawViewSafePhase": 2.0,
+      "reviewedMaximumM": 4.64667429394249,
+      "reviewedMaximumRatio": 9.29334858788499,
+      "reviewedViewSha256": "72001db30f19b7451b24f29f549b77efa93723ee85f9eb3fac2a4bcd36d43b59",
+      "sampleCount": 18818,
+      "sampledMaximumAtPixel": [
+        100.0,
+        0.0
+      ],
+      "scope": "Headless CPU actual Camera3D projection and SurfaceCanopyView; same per-pixel main-camera one-metre secants as shader. Tests oblique far-edge midpoint missed by corner-only maximum. No GPU or claim about prior2048px captures.",
+      "unsafeCondition": false,
+      "version": 1,
+      "viewport": [
+        200,
+        125
+      ]
+    }
+  ],
+  "phaseCases": {
+    "cases": [
+      {
+        "delta": 0.0,
+        "highMiddleRetiredWeights": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "pendingAtlas": false,
+        "phase": 1.0,
+        "terrainWeight": 0.0
+      },
+      {
+        "delta": 0.016,
+        "highMiddleRetiredWeights": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "pendingAtlas": false,
+        "phase": 1.0,
+        "terrainWeight": 0.0
+      },
+      {
+        "delta": 1.0,
+        "highMiddleRetiredWeights": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "pendingAtlas": false,
+        "phase": 1.0,
+        "terrainWeight": 0.0
+      },
+      {
+        "delta": 0.0,
+        "highMiddleRetiredWeights": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "pendingAtlas": true,
+        "phase": 1.0,
+        "terrainWeight": 0.0
+      },
+      {
+        "delta": 0.016,
+        "highMiddleRetiredWeights": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "pendingAtlas": true,
+        "phase": 1.0,
+        "terrainWeight": 0.0
+      },
+      {
+        "delta": 1.0,
+        "highMiddleRetiredWeights": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "pendingAtlas": true,
+        "phase": 0.0,
+        "terrainWeight": 0.0
+      }
+    ],
+    "failures": [],
+    "reviewedMainSha256": "db7a063dfc5ba01a451e38f8969c87027a5869f640f43c4ae1867ef515a1ae3f",
+    "scope": "Actual pure phase/material-weight method text with CPU shader-parameter recorders; verifies immediate global cap including pending atlas at delta0. Not GPU rendering, uniform binding integration or node visibility.",
+    "status": "PASS"
+  },
+  "totalProjectionQueries": 112908,
+  "historicalCounterexampleInterpretation": {
+    "geometryWeight": 1,
+    "globalPhase": 2,
+    "safePhase1GeometryWeight": 0
+  },
+  "assetHeightEnvelopeM": 32,
+  "maximumDeclaredAssetAABBHeightM": 28.8,
+  "float32Allowance": {
+    "relative": 0.001,
+    "absoluteM": 1e-06,
+    "formalMachineArithmeticProof": false
+  }
+}
