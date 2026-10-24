@@ -106,7 +106,7 @@ fn matches(f: &Fields, i: usize, s: &SettlementSpec) -> bool {
 }
 /// Culture preference × global multiplier for one site type (1 = neutral).
 fn site_weight(s: &SettlementSpec, cfg: &Config, site: &str) -> f64 {
-    s.site_prefs.weights.get(site).copied().unwrap_or(1.0)
+    s.site_prefs.weights.get(site).copied().unwrap_or_else(|| crate::urban::culture_site_weight(&s.culture, site))
         * cfg.site_weights.get(site).copied().unwrap_or(1.0)
 }
 /// Log-weight: ×3 → +0.55, ×0 → −1.96 (strongly avoided, still possible as a last resort).

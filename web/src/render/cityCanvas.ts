@@ -8,6 +8,7 @@ import type { PlacementBatch, PlacedBuilding } from '../../../rust/bridge/urbanA
 import { urbanFunctionColor, type UrbanBuildingAppearance } from './urbanBuildingStyle';
 import { roleLabel } from './cityRoles';
 import { cityWallDetails, drawCityWallGround, drawCityWalls } from './cityWalls'; // walls hook (cityWalls.ts)
+import { buildingRoof, pieceShadow, pieceTop, readMassing, roofLight as roofLight3 } from './cityMassing';
 
 export interface Box { minX: number; minY: number; maxX: number; maxY: number }
 export type CityView = 'tissue' | 'uses' | 'parcels' | 'buildings' | 'roles';
@@ -138,7 +139,10 @@ export interface CityScene {
   parcelById: Map<string, number>;
 }
 export interface CityBuilding { id: string; surface: Surface; fn: string; family: string; landmark: boolean; parcel?: number; building: PlacedBuilding; path?: Path2D }
-export interface CityBuildings { items: CityBuilding[]; bins: SpatialBins; byId: Map<string, number> }
+/** Roof pans of the massing (cityMassing.ts): one polygon per sloped face, its
+ * building and its light; height shadows per building (sun from the north-west). */
+export interface CityRoofs { shapes: Shape[]; owner: Uint32Array; light: Float32Array; cover: string[]; shadows: Shape[][] }
+export interface CityBuildings { items: CityBuilding[]; bins: SpatialBins; byId: Map<string, number>; roofs?: CityRoofs }
 
 /** Optional contract fields read defensively: older plans render without them. */
 type DistrictContract = { role?: string; label?: string; wealth?: number };
@@ -238,6 +242,7 @@ export function buildCityScene(layouts: readonly Layout[], partitions: readonly 
 /** Buildings of a scene, linked to their parcel allocation for roles. */
 export function buildCityBuildings(batch: Pick<PlacementBatch, 'buildings'> | undefined, plan?: CityScene): CityBuildings {
   const items: CityBuilding[] = [], byId = new Map<string, number>();
+  const roofShapes: Shape[] = [], roofOwner: number[] = [], roofLight: number[] = [], roofCover: string[] = [], shadows: Shape[][] = [];
   for (const building of batch?.buildings ?? []) {
     const surface = building.roof_footprint.length ? building.roof_footprint : building.footprint;
     if (!surface.length) continue;
@@ -246,8 +251,17 @@ export function buildCityBuildings(batch: Pick<PlacementBatch, 'buildings'> | un
     byId.set(building.id, items.length);
     items.push({ id: building.id, surface, fn: building.function, family: roleFamily(programme?.role ?? allocation?.role, building.function),
       landmark: programme?.landmark === true || allocation?.landmark === true, parcel, building });
+    const massing = readMassing(programme, building.footprint);
+    if (!massing) { shadows.push([]); continue; }
+    const owner = items.length - 1;
+    for (const face of buildingRoof(building.footprint, massing)) {
+      if (face.normal[2] < 0.08 || face.points.length < 3) continue; // gable ends and walls are edge-on from above
+      roofShapes.push({ outer: face.points.map(p => ({ x: p.x, y: p.y })), holes: [] }); roofOwner.push(owner); roofLight.push(roofLight3(face.normal)); roofCover.push(massing[face.piece].cover);
+    }
+    shadows.push(building.footprint.flatMap((shape, i) => { const s = massing[i] && pieceShadow(shape, pieceTop(massing[i])); return s ? [s] : []; }));
   }
-  return { items, byId, bins: new SpatialBins(items.map(b => surfaceBox(b.surface)), 64) };
+  const roofs = roofShapes.length ? { shapes: roofShapes, owner: Uint32Array.from(roofOwner), light: Float32Array.from(roofLight), cover: roofCover, shadows } : undefined;
+  return { items, byId, bins: new SpatialBins(items.map(b => surfaceBox(b.surface)), 64), ...(roofs ? { roofs } : {}) };
 }
 
 export interface CityPick { building?: CityBuilding; parcel?: CityParcel; block?: CityBlock }

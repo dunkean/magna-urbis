@@ -27464,7 +27464,7 @@
         "minBlock": 700,
         "minWidth": 17,
         "widthByRank": [
-          11,
+          9,
           7,
           4.6,
           3.2,
@@ -27749,7 +27749,7 @@
         "minBlock": 700,
         "minWidth": 17,
         "widthByRank": [
-          11,
+          9,
           7,
           4.6,
           3.2,
@@ -28320,7 +28320,7 @@
         "minBlock": 700,
         "minWidth": 17,
         "widthByRank": [
-          11,
+          9,
           7,
           4.6,
           3.2,
@@ -28605,7 +28605,7 @@
         "minBlock": 700,
         "minWidth": 17,
         "widthByRank": [
-          11,
+          9,
           7,
           4.6,
           3.2,
@@ -45034,6 +45034,8 @@
           "village": 200
         },
         "campLayout": "ring",
+        "campForm": "horseshoe",
+        "campUnitMax": 60,
         "campOpening": "road",
         "campRow": 9.5,
         "campArc": [
@@ -45333,6 +45335,8 @@
           "village": 200
         },
         "campLayout": "ring",
+        "campForm": "horseshoe",
+        "campUnitMax": 60,
         "campOpening": "road",
         "campRow": 9.5,
         "campArc": [
@@ -45632,6 +45636,8 @@
           "village": 200
         },
         "campLayout": "ring",
+        "campForm": "horseshoe",
+        "campUnitMax": 60,
         "campOpening": "road",
         "campRow": 9.5,
         "campArc": [
@@ -50230,6 +50236,8 @@
           "village": 80
         },
         "campLayout": "ring",
+        "campForm": "circle",
+        "campUnitMax": 180,
         "campOpening": "east",
         "campRow": 14.0,
         "campArc": [
@@ -50529,6 +50537,8 @@
           "village": 80
         },
         "campLayout": "ring",
+        "campForm": "circle",
+        "campUnitMax": 180,
         "campOpening": "east",
         "campRow": 14.0,
         "campArc": [
@@ -50828,6 +50838,8 @@
           "village": 80
         },
         "campLayout": "ring",
+        "campForm": "circle",
+        "campUnitMax": 180,
         "campOpening": "east",
         "campRow": 14.0,
         "campArc": [
@@ -112769,11 +112781,12 @@
           "material": "felt"
         },
         "campLayout": "ring",
+        "campForm": "court",
         "campOpening": "south",
         "campRow": 10.5,
         "campArc": [
-          10.5,
-          12.5
+          15.0,
+          21.0
         ],
         "campPath": 3.5,
         "campGap": 0.0,
@@ -113064,11 +113077,12 @@
           "material": "felt"
         },
         "campLayout": "ring",
+        "campForm": "court",
         "campOpening": "south",
         "campRow": 10.5,
         "campArc": [
-          10.5,
-          12.5
+          15.0,
+          21.0
         ],
         "campPath": 3.5,
         "campGap": 0.0,
@@ -113359,11 +113373,12 @@
           "material": "felt"
         },
         "campLayout": "ring",
+        "campForm": "court",
         "campOpening": "south",
         "campRow": 10.5,
         "campArc": [
-          10.5,
-          12.5
+          15.0,
+          21.0
         ],
         "campPath": 3.5,
         "campGap": 0.0,
@@ -117856,6 +117871,8 @@
           "material": "thatch"
         },
         "campLayout": "ring",
+        "campForm": "plaza",
+        "campUnitMax": 8,
         "campOpening": "road",
         "campRow": 18.0,
         "campArc": [
@@ -118155,6 +118172,8 @@
           "material": "thatch"
         },
         "campLayout": "ring",
+        "campForm": "plaza",
+        "campUnitMax": 8,
         "campOpening": "road",
         "campRow": 18.0,
         "campArc": [
@@ -118454,6 +118473,8 @@
           "material": "thatch"
         },
         "campLayout": "ring",
+        "campForm": "plaza",
+        "campUnitMax": 8,
         "campOpening": "road",
         "campRow": 18.0,
         "campArc": [
@@ -127350,6 +127371,8 @@
       "growth": null
     },
     "stilt-town": {
+      "sitePrefs": {"lakeshore": 4, "harbor": 3, "estuary": 2},
+      "sitePrefs": {"lakeshore": 4, "harbor": 3, "estuary": 2},
       "label": "Stilt town (marsh folk)",
       "recipes": [
         {
@@ -133457,6 +133480,8 @@
       "scope": "Settlement patterns only; numerical ranges are artistic, not measured reconstructions."
     },
     "lizardfolk-swamp": {
+      "sitePrefs": {"lakeshore": 5, "bridge": 2, "harbor": 2, "hilltop": 0.3},
+      "render": {"stilts": true, "plotLines": true},
       "label": "Hommes-lézards · cité lacustre sur pilotis",
       "recipes": [
         {
@@ -133564,6 +133589,8 @@
       "scope": "Fantasy settlement built on the cited real morphologies; numerical ranges are artistic."
     },
     "merfolk-tidal": {
+      "sitePrefs": {"harbor": 5, "island": 3, "estuary": 3, "hilltop": 0.3},
+      "render": {"stilts": true, "plotLines": true},
       "label": "Ondins · village de grève et de grottes marines",
       "recipes": [
         {

@@ -17,6 +17,7 @@ mod fortification;
 mod fringe;
 mod geography;
 mod geometry;
+mod massing;
 pub use geography::{Geography, VectorGeography};
 mod influences;
 pub mod kinds;
@@ -753,6 +754,13 @@ impl Morph {
             self.value[key][1].as_f64().unwrap_or(0.0),
         ]
     }
+    /// Block size range of a zone. A village's blocks are the land between
+    /// its few roads: house plots on the street, gardens and fields behind,
+    /// never the lane mesh of a town (2.5× the tissue's catalogue range).
+    pub fn block_size(&self, zone: &str) -> [f64; 2] {
+        let [lo, hi] = self.range("blockSize", zone);
+        if zone == "village" { [lo * 2.5, hi * 2.5] } else { [lo, hi] }
+    }
     pub fn range(&self, key: &str, zone: &str) -> [f64; 2] {
         [
             self.value[key][zone][0].as_f64().unwrap_or(0.0),
@@ -775,6 +783,14 @@ impl Morph {
                 1.0 + self.number("widthJitter"),
             )
     }
+}
+/// Culture preference for a settlement site archetype (catalogue
+/// `cultures.<id>.sitePrefs`, 1 = neutral): marsh folk seek lakes, tide folk
+/// the shore. Read by the placement stage on top of the user's preferences.
+pub fn culture_site_weight(culture: &str, site: &str) -> f64 {
+    catalogue()["cultures"][culture]["sitePrefs"][site]
+        .as_f64()
+        .unwrap_or(1.0)
 }
 fn catalogue() -> &'static Value {
     static CATALOGUE: OnceLock<Value> = OnceLock::new();

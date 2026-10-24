@@ -653,7 +653,7 @@ fn reserved_land(
         "quarters",
     )
     .map(|m| {
-        let r = m.range("blockSize", &epoch.zone);
+        let r = m.block_size(&epoch.zone);
         (r[0] + r[1]) * 0.5
     })
     .unwrap_or(block);

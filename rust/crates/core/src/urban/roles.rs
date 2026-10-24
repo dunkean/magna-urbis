@@ -709,16 +709,44 @@ pub fn assign(
     let quay_front = served_quay_frontage(layout, &frame, env);
     if population >= 800 && navigable {
         let count = 1 + population as usize / 60_000;
+        // Without quays, the port is still the land along navigable water:
+        // the quarters whose blocks front the sea, a lake or the river (side
+        // length of those blocks), never a whole district reaching inland.
+        let quays: f64 = quay_front.iter().sum();
+        let shore_front: Vec<f64> = if quays < QUAY_FRONT {
+            // (front, waterfront area, total area) per quarter; a quarter is
+            // riverside when a quarter of its land at least lies on the water.
+            let mut f = vec![(0.0, 0.0, 0.0); layout.quarters.len()];
+            for (bi, b) in layout.blocks.iter().enumerate() {
+                if b.quarter >= f.len() {
+                    continue;
+                }
+                let a = g::area(&b.shape);
+                f[b.quarter].2 += a;
+                if env.get(bi).is_some_and(|e| !e.wet && matches!(e.water.as_str(), "sea" | "lake" | "river")) {
+                    f[b.quarter].0 += a.sqrt();
+                    f[b.quarter].1 += a;
+                }
+            }
+            f.iter().map(|&(front, wet, all)| if wet >= 0.25 * all { front } else { 0.0 }).collect()
+        } else {
+            vec![]
+        };
+        let before = warnings.len();
         carve_port(
             layout,
             &frame,
-            &quay_front,
+            if quays < QUAY_FRONT { &shore_front } else { &quay_front },
             count,
             &mut groups,
             &mut fixed,
             &mut fixed_roles,
             &mut warnings,
         );
+        // The quay warning speaks of quays only.
+        if quays < QUAY_FRONT {
+            warnings.truncate(before);
+        }
     }
     for (id, d) in groups.iter_mut().enumerate() {
         d.id = id;
@@ -800,14 +828,30 @@ pub fn assign(
             })
             .collect()
     } else {
-        feats.iter().map(|f| f.1).collect()
+        // Without quays, a port reads its land along navigable water (sea,
+        // lake, river), never a brook: share of the district's block area.
+        let mut wet = vec![(0.0_f64, 0.0_f64); n];
+        for (bi, b) in layout.blocks.iter().enumerate() {
+            let Some(di) = block_district[bi] else { continue };
+            let w = g::area(&b.shape).max(1.0);
+            wet[di].1 += w;
+            if env.get(bi).is_some_and(|e| matches!(e.water.as_str(), "sea" | "lake" | "river")) {
+                wet[di].0 += w;
+            }
+        }
+        wet.iter().map(|&(a, t)| a / t.max(1e-9)).collect()
     };
+    let total_area: f64 = facts.iter().map(|f| f.0).sum::<f64>().max(1e-9);
+    let share: Vec<f64> = facts.iter().map(|f| f.0 / total_area).collect();
+    let attached = attached_districts(layout, &groups, frame.center);
     let roles = district_roles(
         layout,
         population,
         navigable,
         &feats,
         &landing,
+        &share,
+        &attached,
         &fixed_roles,
     );
     for (di, d) in groups.iter_mut().enumerate() {
@@ -1025,6 +1069,55 @@ fn carve_port<'a>(
     }
 }
 
+/// Districts with a quarter in the town's main body: the quarters linked
+/// (within a street's width) to the quarter at the centre, transitively.
+fn attached_districts(layout: &Layout, groups: &[UrbanDistrict], center: Point) -> Vec<bool> {
+    const TOUCH: f64 = 40.0;
+    let q = layout.quarters.len();
+    if q == 0 {
+        return vec![true; groups.len()];
+    }
+    let rings: Vec<Vec<Point>> = layout
+        .quarters
+        .iter()
+        .map(|x| {
+            let r = &x.shape.outer;
+            r.iter().step_by(r.len().div_ceil(160).max(1)).copied().collect()
+        })
+        .collect();
+    let boxes: Vec<_> = layout.quarters.iter().map(|x| g::bbox(&x.shape)).collect();
+    let touch = |a: usize, b: usize| {
+        let (p, o) = (boxes[a], boxes[b]);
+        if p.2 + TOUCH < o.0 || o.2 + TOUCH < p.0 || p.3 + TOUCH < o.1 || o.3 + TOUCH < p.1 {
+            return false;
+        }
+        let near = |pts: &[Point], other: &[Point]| {
+            pts.iter().any(|&v| (0..other.len()).any(|i| g::distance(v, other[i], other[(i + 1) % other.len()]).0 < TOUCH))
+        };
+        near(&rings[a], &rings[b]) || near(&rings[b], &rings[a])
+    };
+    let start = (0..q)
+        .find(|&i| g::contains(&layout.quarters[i].shape, center))
+        .or_else(|| (0..q).min_by(|&a, &b| dist(g::interior_point(&layout.quarters[a].shape), center).total_cmp(&dist(g::interior_point(&layout.quarters[b].shape), center))))
+        .unwrap_or(0);
+    let mut main = vec![false; q];
+    main[start] = true;
+    let mut stack = vec![start];
+    while let Some(a) = stack.pop() {
+        for b in 0..q {
+            if !main[b] && touch(a, b) {
+                main[b] = true;
+                stack.push(b);
+            }
+        }
+    }
+    groups.iter().map(|d| d.quarters.is_empty() || d.quarters.iter().any(|&x| main.get(x).copied().unwrap_or(true))).collect()
+}
+
+/// Least landing (share of the town's quays, else of the district's land
+/// along water) for a district to be the port: a strand of shore is no harbour.
+const PORT_LANDING: f64 = 0.15;
+
 /// Greedy role choice: the core district takes the nucleus role, then each
 /// specialised role takes its best-scoring free district while keeping at least
 /// half of a town residential; residual peripheral new districts become poor.
@@ -1035,6 +1128,8 @@ fn district_roles(
     navigable: bool,
     feats: &[(SiteFacts, f64, f64, bool)],
     landing: &[f64],
+    share: &[f64],
+    attached: &[bool],
     fixed: &[Option<String>],
 ) -> Vec<String> {
     let n = feats.len();
@@ -1070,8 +1165,16 @@ fn district_roles(
             _ => "civic",
         }
     };
+    // A specialised role names a part of the town, never most of it: a
+    // district over this share of the land stays residential (its market,
+    // church or hall stand in it as services). Small towns have few, large
+    // districts, so the cap loosens with fewer districts.
+    let cap = if n >= 6 { 0.15 } else if n >= 3 { 0.25 } else { 0.0 };
+    // A detached patch (a satellite on another spur) is a hamlet of the town,
+    // not where its elite, market or temples go.
+    let fits = |i: usize| share.get(i).is_none_or(|&s| s <= cap) && attached.get(i).copied().unwrap_or(true);
     if roles[core].is_empty() {
-        roles[core] = auto_core.into();
+        roles[core] = if fits(core) { auto_core } else { "commoner" }.into();
     }
     if n == 1 {
         return roles;
@@ -1091,7 +1194,7 @@ fn district_roles(
         // harbour, however little of the town touches navigable water: a quay
         // needs one frontage, not a third. `water` is `landing` for this role.
         ("port", 800.0, extra(60_000.0), |f, water, _| {
-            (water > 0.0).then(|| -water * 3.0 + f.core * 0.3)
+            (water > PORT_LANDING).then(|| -water * 3.0 + f.core * 0.3)
         }),
         ("elite", 2500.0, extra(60_000.0), |f, water, _| {
             Some(-f.high * 1.5 + f.core * 1.2 + water * 0.5 - f.pressure * 0.2)
@@ -1129,7 +1232,7 @@ fn district_roles(
                 break;
             }
             let best = (0..n)
-                .filter(|&i| roles[i].is_empty())
+                .filter(|&i| roles[i].is_empty() && (role == "port" || fits(i)))
                 .filter_map(|i| {
                     let water = if role == "port" {
                         landing[i]

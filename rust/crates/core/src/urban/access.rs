@@ -70,13 +70,16 @@ pub(super) fn refine(layout: &mut Layout, cfg: &LayoutConfig, morph: &Morph, sur
         .map(|b| (b.shape.clone(), g::bbox(&b.shape)))
         .collect::<Vec<_>>();
     let mut index = parcels::FrontageIndex::new(layout);
+    // The lane budget follows the city: one lane per two blocks at least (a
+    // large town has thousands of deep blocks, never a fixed 96 for all).
+    let cap = 96usize.max(original.len() / 2);
     for (block_id, block) in original.into_iter().enumerate() {
         let morph = block
             .phase
             .or_else(|| layout.quarters.get(block.quarter).map(|q| q.phase))
             .and_then(|i| phase_morphs.get(i))
             .unwrap_or(morph);
-        if block.kind != "block" || g::area(&block.shape) < 600.0 || added >= 96 {
+        if block.kind != "block" || g::area(&block.shape) < 600.0 || added >= cap {
             result.push(block);
             continue;
         }
@@ -107,8 +110,12 @@ pub(super) fn refine(layout: &mut Layout, cfg: &LayoutConfig, morph: &Morph, sur
             }
         }
         let mut block_added = 0;
-        for _ in 0..cfg.access_budget {
-            if added >= 96 {
+        // Per block, the configured budget, more for a block whose land runs
+        // many frontage depths deep (a lane serves about a 4-depth square).
+        let deep = (g::area(&block.shape) / (4.0 * depth * depth)).ceil() as usize;
+        let budget = (cfg.access_budget as usize).max(deep.min(24));
+        for _ in 0..budget {
+            if added >= cap {
                 break;
             }
             let mut targets = vec![];

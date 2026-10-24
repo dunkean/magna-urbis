@@ -814,7 +814,7 @@ pub fn prepare(
                 .get_or_init(|| {
                     super::culture::block_morph(layout, block_culture(layout, bi), bi).map(
                         |(zone, m)| {
-                            let r = m.range("blockSize", zone);
+                            let r = m.block_size(zone);
                             (r[0] + r[1]) * 0.5
                         },
                     )

@@ -166,7 +166,8 @@ export function planColors(scene: CityScene, mesh: Pick<CityGlFillMesh, 'layers'
 
 /** Colours of the building mesh (feature = item index). */
 export function buildingColors(buildings: CityBuildings | undefined, s: CityGlStyleState, scene?: CityScene): { fill: Uint8Array; line: Uint8Array } {
-  const items = buildings?.items ?? [], fill = new Uint8Array(Math.max(1, items.length) * 4), line = new Uint8Array(Math.max(1, items.length) * 4);
+  const items = buildings?.items ?? [], roofs = buildings?.roofs, count = items.length + (roofs ? roofs.shapes.length + items.length : 0);
+  const fill = new Uint8Array(Math.max(1, count) * 4), line = new Uint8Array(Math.max(1, count) * 4), colors: string[] = [];
   const parchment = s.palette === 'parchment', edge = parchment ? '#f1e5c6' : '#2e261d';
   const painted = !!s.painted && !parchment && s.view !== 'roles' && s.diagnostic !== 'uses';
   items.forEach((b, i) => {
@@ -176,7 +177,21 @@ export function buildingColors(buildings: CityBuildings | undefined, s: CityGlSt
       : parchment ? b.landmark ? PARCH.landmark : PARCH.mass : b.landmark ? '#3f3329' : '#5a4b3c';
     // Party walls: every roof keeps a dark edge, so adjoining houses of a row stay distinct.
     put(fill, i, color); put(line, i, painted ? b.landmark ? '#e2d3a6' : '#1f1811' : edge, painted && !b.landmark ? 0.8 : 1);
+    colors.push(color);
   });
+  // Roof pans: the building's colour lit by the pan's slope (sun north-west), a
+  // darker hip/ridge line; flat views (roles, uses, parchment) keep a softer relief.
+  if (roofs) {
+    const flatView = s.view === 'roles' || s.diagnostic === 'uses' || parchment, relief = flatView ? 0.5 : 1;
+    for (let k = 0; k < roofs.shapes.length; k++) {
+      // Plan views paint the roof material (tile, slate, thatch…) varied per house.
+      const owner = items[roofs.owner[k]], material = flatView ? undefined : ROOF_COVERS[roofs.cover[k]];
+      const base = material ? shade(owner.landmark ? mix(material, '#3a3440', 0.2) : material, roofJitter(owner.id) * 1.6) : colors[roofs.owner[k]], f = items.length + k;
+      put(fill, f, shade(base, roofs.light[k] * relief)); put(line, f, shade(base, -0.38), 0.55);
+    }
+    // Shadow features are drawn with a tint; they only need to be shown.
+    for (let i = 0; i < items.length; i++) put(fill, items.length + roofs.shapes.length + i, '#000000');
+  }
   return { fill, line };
 }
 /** Painted roof of a building: the role family decides the material (tile, slate, lead,
@@ -198,6 +213,8 @@ function shade(color: string, k: number): string {
   const v = rgb(color), c = (sh: number): number => Math.max(0, Math.min(255, Math.round(((v >> sh) & 255) * (1 + k))));
   return `#${((c(16) << 16) | (c(8) << 8) | c(0)).toString(16).padStart(6, '0')}`;
 }
+/** Roof covers of the city massing (urban/massing.rs). */
+const ROOF_COVERS: Record<string, string> = { tile: '#9a5a42', slate: '#5d6470', thatch: '#9b8a5c', earth: '#b69a72', plaster: '#c9bba0', stone: '#8a8478', lead: '#7b8088' };
 /** Roof hues by role family (render background). */
 export const PAINTED_FAMILY_ROOFS: Record<string, string> = {
   dwelling: '#8a5c45', commerce: '#9a6c3e', craft: '#74483a', civic: '#4d5d78', worship: '#5b4b72', defence: '#57595c', garden: '#7f8461',

@@ -244,3 +244,7 @@ web/out/city-building-draft-restore-proposal-v1b/manifest.json SHAe6258cd03217da
 
 ## Codex — culture des phases / étapes ordinales, tranche UI isolée
 Réservation copie fraîche `web/out/city-growth-phase-ui-proposal-v1/candidate` : seuls terrainUrban.ts, testbench.ts et docs/CITY_VARIATION_VARIABLES.md ; nouveau petit helper/test. Le rapport lit exclusivement GrowthPhase.culture retourné/importé, absence inconnue. Libellés Époques→Étapes, IDs epochs/data-epoch/valeurs/liens/périodes inchangés. Aucun Core/Houses/geometry6/asset ni produit modifié, aucun test/build/browser/natif exécuté par agent ; root seul valide. Blend et couverture historique hors scope. Code/assets/config protégés, notes chronologiques provenance seule.
+
+
+## Codex — remplacement explicite de profil, lecture seule
+Scope court dans CODEX_EXPLICIT_PROFILE_REPLACEMENT_UI_SCOPE.md : un axe plan/parcelles/architecture à la fois, aperçu/régénération, population et autres surcharges conservées ; aucun seuil ni alternative garantie sans preuve. Éviter style global et handler générique parcelles qui réinitialisent volontairement des champs. Coordination directe feasibility_review pour établi/non_couvert/inconnu scoped/config/versions ; aucun produit/test/build/natif/browser de cette lecture.

@@ -191,9 +191,13 @@ export function packPlan(scene: CityScene, origin = cityOrigin(scene)): CityGlFi
 }
 /** Building polygons: every shape of a building's surface shares its feature id (= item index). */
 export function packBuildings(buildings: CityBuildings | undefined, origin: Point): CityGlFillSource {
-  const packer = new CityGlPacker(origin), items = buildings?.items ?? [];
-  const layer = packLayer(packer, items.map(b => b.surface), 0);
-  return { polygons: packer.done(), layers: { buildings: layer }, featureCount: items.length, origin };
+  const packer = new CityGlPacker(origin), items = buildings?.items ?? [], roofs = buildings?.roofs;
+  const layers: Record<string, CityGlSourceLayer> = { buildings: packLayer(packer, items.map(b => b.surface), 0) };
+  if (!roofs) return { polygons: packer.done(), layers, featureCount: items.length, origin };
+  // Features: buildings [0, n), roof pans [n, n + r), shadows [n + r, 2n + r).
+  layers.roofs = packLayer(packer, roofs.shapes.map(s => [s]), items.length);
+  layers.shadows = packLayer(packer, roofs.shadows, items.length + roofs.shapes.length);
+  return { polygons: packer.done(), layers, featureCount: 2 * items.length + roofs.shapes.length, origin };
 }
 /** Assemble a fill mesh from a packing and its triangulation. */
 export function fillMesh(source: CityGlFillSource, t: CityGlTriangulation): CityGlFillMesh {

@@ -1310,15 +1310,20 @@ pub(super) fn rank_widths(base: [f64; 5], population: u32) -> [f64; 5] {
     table[0] = table[0].min(20.0);
     table
 }
-/// Street land of a semantic role, relative to its rank width.
-fn role_factor(role: &str) -> f64 {
-    match role {
+/// Street land of a semantic role, relative to its rank width: the full
+/// extra (a market street half again as wide, a processional way) belongs to a
+/// large city; a town of 5 000 widens its market street only slightly.
+fn role_factor(role: &str, population: u32) -> f64 {
+    let full = match role {
         "market" => 1.6,
         "processional" => 1.5,
         "ring" => 1.3,
         "gate-street" => 1.1,
         _ => 1.0,
-    }
+    };
+    // 0 at 5 000 inhabitants, 1 at 100 000 and beyond.
+    let size = ((population as f64 / 5000.0).max(1.0).log10() / 20f64.log10()).clamp(0.0, 1.0);
+    1.0 + (full - 1.0) * (0.35 + 0.65 * size)
 }
 fn rewidth(role: &str) -> bool {
     matches!(
@@ -1477,7 +1482,7 @@ pub(super) fn hierarchy(
             && path.len() >= 2
         {
             let widths = if rewidth(&role) {
-                vec![table[rank.min(4)] * role_factor(&role); path.len()]
+                vec![table[rank.min(4)] * role_factor(&role, population); path.len()]
             } else {
                 widths
             };

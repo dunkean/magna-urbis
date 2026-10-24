@@ -1112,6 +1112,29 @@ fn edge_enclosures(
     field.value["deepFill"] = serde_json::json!(true);
     field.value["wideLotChance"] = serde_json::json!(0.15);
     let mut lots = strips(shape, block, axis, fronts, &field, zone, rng);
+    // A field larger than a few crofts (an unserved reserve keeps the block
+    // whole) is fenced into field-sized plots along the block's axis, never
+    // one garden of hectares.
+    lots = lots
+        .into_iter()
+        .flat_map(|p| {
+            if area(&p.shape) <= 6000.0 {
+                return vec![p];
+            }
+            let cells = field_grid(&p.shape, axis, 45.0, 75.0);
+            if cells.len() < 2 {
+                return vec![p];
+            }
+            cells
+                .into_iter()
+                .map(|c| {
+                    let mut q = p.clone();
+                    q.shape = c;
+                    q
+                })
+                .collect()
+        })
+        .collect();
     for p in &mut lots {
         p.use_kind = "garden".into();
         p.reason = "edge-enclosure".into();
@@ -1120,6 +1143,34 @@ fn edge_enclosures(
         p.provenance.push("edge-enclosure".into());
     }
     lots
+}
+
+/// Field plots: the shape cut by a grid of `w` × `d` m cells along `axis`.
+fn field_grid(shape: &Shape, axis: Point, w: f64, d: f64) -> Vec<Shape> {
+    let l = length(axis).max(1e-9);
+    let u = Point { x: axis.x / l, y: axis.y / l };
+    let v = Point { x: -u.y, y: u.x };
+    let (mut s0, mut s1, mut t0, mut t1) = (f64::MAX, f64::MIN, f64::MAX, f64::MIN);
+    for p in &shape.outer {
+        let (s, t) = (dot(*p, u), dot(*p, v));
+        s0 = s0.min(s);
+        s1 = s1.max(s);
+        t0 = t0.min(t);
+        t1 = t1.max(t);
+    }
+    let (ns, nt) = (((s1 - s0) / w).round().max(1.0), ((t1 - t0) / d).round().max(1.0));
+    let (ws, dt) = ((s1 - s0) / ns, (t1 - t0) / nt);
+    let at = |s: f64, t: f64| add(scale(u, s), scale(v, t));
+    let mut out = vec![];
+    for i in 0..ns as usize {
+        for j in 0..nt as usize {
+            let (a0, a1) = (s0 + i as f64 * ws, s0 + (i + 1) as f64 * ws);
+            let (b0, b1) = (t0 + j as f64 * dt, t0 + (j + 1) as f64 * dt);
+            let cell = Shape { outer: vec![at(a0, b0), at(a1, b0), at(a1, b1), at(a0, b1)], holes: vec![] };
+            out.extend(intersection(&cell, shape).into_iter().filter(|c| area(c) > 1.0));
+        }
+    }
+    out
 }
 
 /// One strip partition of a territory: `lots` frontage lengths along the real
@@ -2707,6 +2758,28 @@ fn qualify(
             })
             .collect();
     }
+    // Back land larger than a few crofts (a deep block no lane could reach:
+    // slope, water) is not one lot's garden of hectares: it is fenced into
+    // field plots along the block's axis, open land of the town's edge.
+    let mut fields = vec![];
+    cells.retain(|c| {
+        if c.use_kind != "garden" || c.reason != "retained-backland" || area(&c.shape) <= 6000.0 {
+            return true;
+        }
+        let pieces = field_grid(&c.shape, c.axis, 45.0, 75.0);
+        if pieces.len() < 2 {
+            return true;
+        }
+        for piece in pieces {
+            let mut q = parcel(piece, c.block, c.axis, &[], "garden");
+            q.reason = "backland-field".into();
+            q.family = "reserve".into();
+            q.provenance = vec!["retained-backland".into(), "backland-field".into()];
+            fields.push(q);
+        }
+        false
+    });
+    cells.extend(fields);
     // A retained rear property is attached through ownership, without inventing
     // a street facade. Its geometry and its owner's ID both stay inspectable.
     for i in 0..cells.len() {

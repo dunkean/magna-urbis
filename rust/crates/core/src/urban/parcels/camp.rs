@@ -27,6 +27,9 @@ use super::super::geometry::{bbox, ribbon, union};
 use super::*;
 use std::f64::consts::{PI, TAU};
 
+#[path = "camp_forms.rs"]
+mod forms;
+
 /// Whether the block's culture lays its land out as a camp.
 pub(super) fn enabled(morph: &Morph) -> bool {
     !morph.text("campLayout").is_empty()
@@ -45,6 +48,7 @@ pub(super) fn lots(
     let frame = Frame::of(layout);
     let tiles = match morph.text("campLayout") {
         "rows" => rows(&frame, morph, layout),
+        _ if !morph.text("campForm").is_empty() => forms::tiles(&frame, morph, layout),
         _ => ring(&frame, morph, layout),
     };
     let index = FrontageIndex::new(layout);

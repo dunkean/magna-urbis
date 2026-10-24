@@ -1326,7 +1326,7 @@ fn split_quarter(
         } else {
             &q.zone
         };
-        let bs = m.range("blockSize", zone);
+        let bs = m.block_size(zone);
         let target = bs[0].max(1.0)
             * (bs[1].max(bs[0].max(1.0)) / bs[0].max(1.0)).powf(rng.float())
             * (0.85
@@ -3856,7 +3856,7 @@ pub(super) fn probe_quarter(
         };
         (3.0 * sp[0].max(20.0), 3.0 * sp[1].max(20.0))
     } else {
-        let [lo, hi] = morph.range("blockSize", zone);
+        let [lo, hi] = morph.block_size(zone);
         let (lo, hi) = (lo.max(300.0), hi.max(lo.max(300.0)));
         let mean = if hi > lo * 1.001 {
             (hi - lo) / (hi / lo).ln()

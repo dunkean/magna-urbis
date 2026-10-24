@@ -673,7 +673,7 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
   if (options.before) options.before.before(buildingPanel.programme, buildingPanel.panel, ...(displaySection ? [displaySection] : []));
   // City Bench has no backend anchor: the display section follows the building panel.
   else if (displaySection) buildingPanel.panel.after(displaySection);
-  const architectureNames: Record<UrbanSceneMode, string> = { silhouette: 'Silhouettes (aperçu)', compact: 'Plan compact', detailed: 'Détaillé' };
+  const architectureNames: Record<UrbanSceneMode, string> = { silhouette: 'Volumes de la ville', compact: 'Plan compact (générateur houses)', detailed: 'Détaillé (générateur houses)' };
   const architectureActions: Record<UrbanSceneMode, string> = { silhouette: 'Tracer les silhouettes', compact: 'Planifier les bâtiments', detailed: 'Planifier et détailler la vue' };
   const architectureLabel = document.createElement('label'), cityCounts = document.createElement('small');
   const cacheRepair = document.createElement('details'); cacheRepair.className = 'advanced'; cacheRepair.dataset.coldRepair = ''; cacheRepair.hidden = true;

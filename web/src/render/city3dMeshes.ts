@@ -11,6 +11,7 @@ import { isBuildingProjection, surfaceTriangles, type Building3dScene, type Buil
 import type { NativeBuildingProjection, NativeBuildingProjectionScene } from '../ui/urbanBuildingProjection';
 import { roleFamily } from './cityCanvas';
 import type { Enclosure } from '../../../rust/bridge/urban';
+import { pieceRoof, readMassing } from './cityMassing';
 
 type RoofMesh = ArchitectureVolume['roof_mesh'];
 type RoofMeshFace = RoofMesh['faces'][number];
@@ -39,6 +40,9 @@ const FAMILY_MASSING: Record<string, Massing> = {
   defence: { floors: 5, wall: 'stone', roof: 'stone', pitchDeg: 0, hip: false, flat: true },
   garden: { floors: 1, wall: 'wood', roof: 'thatch', pitchDeg: 30, hip: false },
 };
+/** Massing covers and walls (urban/massing.rs) on the display materials. */
+const COVERS: Record<string, MaterialPattern> = { tile: 'tile', slate: 'stone', thatch: 'thatch', earth: 'earth', plaster: 'plain', stone: 'stone', lead: 'stone' };
+const WALLS: Record<string, MaterialPattern> = { timber: 'wood', wood: 'wood', brick: 'tile', stone: 'stone', earth: 'earth', plaster: 'plain' };
 function hash(text: string): number { let h = 2166136261; for (let i = 0; i < text.length; i++) h = Math.imul(h ^ text.charCodeAt(i), 16777619); return h >>> 0; }
 
 /** Floors, materials and roof of a silhouette from its role family, role and wealth. */
@@ -180,6 +184,19 @@ export function silhouetteBuilding(building: PlacedBuilding, heightAt?: City3dHe
   if (heightAt) for (const shape of footprint) for (const p of shape.outer) { const h = heightAt(p.x, p.y); if (Number.isFinite(h)) { low = Math.min(low, h); high = Math.max(high, h); } }
   let ground = Number.isFinite(building.ground_z_m) ? building.ground_z_m : (Number.isFinite(low) ? (low + high) / 2 : 0);
   if (Number.isFinite(low)) ground = Math.max(low, Math.min(high, ground));
+  const massing = readMassing((building as PlacedBuilding & { programme?: unknown }).programme, footprint);
+  if (massing) {
+    // City massing (cityMassing.ts): one volume per preview piece, its own height and roof.
+    const foundation = { footprint, z_min_m: Math.min(ground, Number.isFinite(low) ? low : ground) - 0.3, z_max_m: ground };
+    const volumes = footprint.flatMap((shape, i) => {
+      const piece = massing[i]; if (!piece) return [];
+      const materials = slots(WALLS[piece.wall] ?? m.wall, COVERS[piece.cover] ?? m.roof), roof = new RoofBuilder();
+      for (const face of pieceRoof(shape, piece, i)) roof.face(face.points.map(p => ({ x: p.x, y: p.y, z: p.z + ground })), materials.cladding);
+      const system = piece.roof === 'flat' ? 'RF-FLAT' : piece.roof === 'hip' || piece.roof === 'pyramid' ? 'RF-HIP' : 'RF-GABLE';
+      return [baseVolume(`${building.id}:city3d:${i}`, [shape], ground, piece.eave_m, Math.max(0, piece.rise_m), materials, roof.mesh(), system, { ...foundation, footprint: [shape] })];
+    });
+    return { ...building, ground_z_m: ground, roof_footprint: building.roof_footprint.length ? building.roof_footprint : footprint, volumes };
+  }
   const wall = m.floors * CITY3D_LEVEL_M, eave = ground + wall, materials = slots(m.wall, m.roof), roof = new RoofBuilder();
   let rise = 0;
   for (const shape of footprint) {

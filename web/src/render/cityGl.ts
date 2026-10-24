@@ -593,7 +593,13 @@ export function createCityGlRenderer(canvas: HTMLCanvasElement | OffscreenCanvas
       // Buildings above the streets (as in drawCity).
       if (d.buildings && built) {
         gl.useProgram(fillP.program);
-        if (painted && palette !== 'parchment') {
+        const pans = !!built.mesh.layers.roofs?.triangles.count;
+        if (pans && palette !== 'parchment') {
+          // Massing shadows: each piece's outline swept by its own height (cityMassing.ts).
+          gl.uniform4fv(fillP.u.uTint, PAINTED_SHADOW);
+          fills(built, 'shadows', false);
+          gl.uniform4f(fillP.u.uTint, 0, 0, 0, 0);
+        } else if (painted && palette !== 'parchment') {
           // Ground shadow: the same triangles, shifted south-east (metres, with a 1 px floor).
           const dx = Math.max(1.6, 1.1 * mpp), dy = 0.8 * dx;
           gl.uniform4fv(fillP.u.uView, [view[0], view[1], view[2] + dx * view[0], view[3] + dy * view[1]]);
@@ -601,7 +607,9 @@ export function createCityGlRenderer(canvas: HTMLCanvasElement | OffscreenCanvas
           fills(built, 'buildings', false);
           gl.uniform4fv(fillP.u.uView, view); gl.uniform4f(fillP.u.uTint, 0, 0, 0, 0);
         }
-        fills(built, 'buildings', false); if (d.buildingLines) fills(built, 'buildings', true);
+        fills(built, 'buildings', false);
+        if (pans) { fills(built, 'roofs', false); if (lod === 'close') fills(built, 'roofs', true); }
+        if (d.buildingLines) fills(built, 'buildings', true);
       }
       // Selection: a 2 px outline built on demand (a few segments).
       const selKey = `${o.selectedId ?? ''}|${o.selectedParcel ?? ''}|${generation}|${buildingGeneration}`;

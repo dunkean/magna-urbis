@@ -1163,6 +1163,29 @@ impl BuildingSiteIndex {
         } else {
             Vec::new()
         };
+        // Display massing of the preview pieces (massing.rs): the building
+        // shown is the planned silhouette raised in volume.
+        let fronts: Vec<[super::Point; 2]> = accesses
+            .iter()
+            .filter(|a| a["kind"] == "public")
+            .filter_map(|a| Some([point(&a["segment"][0])?, point(&a["segment"][1])?]))
+            .collect();
+        let massing = super::massing::massing(&super::massing::Input {
+            parts: &parts,
+            arch: tissue.as_ref().map_or(&Value::Null, |(_, morph)| &morph.value["arch"]),
+            culture: building_culture,
+            zone: tissue.as_ref().map_or("", |(zone, _)| zone.as_str()),
+            role: &role,
+            function: &allocation.function,
+            landmark: programme["landmark"].as_bool().unwrap_or(false),
+            wealth,
+            pressure: parcel.pressure,
+            fronts: &fronts,
+            seed: &site_seed,
+        });
+        if !massing.is_null() {
+            programme["massing"] = massing;
+        }
         let mut request = json!({"id":format!("{}/building",parcel.id),"parcel_id":parcel.id,
             "placement_hint":hint.as_ref().map(|shape|vec![shape]),
             "preview":preview,"preview_parts":preview_parts,"programme":programme,

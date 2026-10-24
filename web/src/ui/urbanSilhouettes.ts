@@ -24,7 +24,10 @@ export function silhouetteScene(requests: CityPlacementRequest[]): PlacementBatc
 export function siteVisualScene(sites: UrbanSiteVisual[]): PlacementBatch {
   const buildings: CityBuilding[] = [], open_spaces: PlacementBatch['open_spaces'] = [];
   for (const request of sites) {
-    if (request.function === 'open_space') { open_spaces.push({ id: request.id, parcel_id: request.parcel_id, surface: request.surface }); continue; }
+    // A lot the house generator could not take (slope, missing source) keeps its
+    // city building when the city sent its massing.
+    const massed = !!(request.programme as { massing?: unknown } | undefined)?.massing && request.preview;
+    if (request.function === 'open_space' && !massed) { open_spaces.push({ id: request.id, parcel_id: request.parcel_id, surface: request.surface }); continue; }
     const footprint = request.surface;
     if (!footprint.length) continue;
     buildings.push({ id: request.id, parcel_id: request.parcel_id, function: request.function, culture: request.culture,

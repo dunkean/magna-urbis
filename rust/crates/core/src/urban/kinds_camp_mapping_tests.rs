@@ -110,3 +110,4 @@ fn camp_mapping_override_limits_match_the_actual_native_morph_consumer(){
     assert!(!cultural_camp("kraal",300,&c));
     assert!(super::super::resolve("kraal",&c.preset,"auto","core",1.,&json!({}),"quarters").is_err());
 }
+
