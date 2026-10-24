@@ -76,7 +76,7 @@ static func prepare(request: Dictionary) -> Dictionary:
 	phases["treeSupportMs"]=(Time.get_ticks_usec()-phase_tick)/1000.0;phase_tick=Time.get_ticks_usec()
 	result.populations=Population.prepare(population_packet,request.focus,request.width,request.viewportWidth,request.oblique,not request.get("groundOnly",false),request.sceneRequest.get("canopyAtlasBounds",{}))
 	if request.get("solarShadows",false):
-		result.treeSolar=Solar.prepare(population_packet,request.world,request.origin)
+		result.treeSolar=Solar.prepare(population_packet,request.world,request.origin,request.get("solarDirection",Vector3.ZERO))
 	if request.oblique:
 		result.populations.canopy["visibilityPlan"]=visibility_plan
 		if not visibility_plan.get("available",false):result.populations.canopy["reason"]=visibility_plan.reason

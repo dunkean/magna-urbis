@@ -349,6 +349,7 @@ func _begin_prepare() -> void:
 	worker = Thread.new()
 	var prepare_request={"prepareControl":active_prepare_control,"heightImageSize":expected_image_size,"displaySamples":display_samples,"physicalLineage":_physical_lineage(world,packet),"contextKey":prepared_context_key,"heightKey":prepared_height_key,"liveSerial":int(packet.get("_acceptedLiveSerial",-1)),"worldRevision":world_revision,"world":world,"origin":next_origin,"width":width_m,"generation":generation,"packet":tree_library.packet_copy(packet,presentation_mode),"skipContext":context_textures.has(prepared_context_key),"displaySource":height_source_cache.get(prepared_height_key,{}),"skipHeight":reuse_height,"sceneRequest":scene_request,"focus":focus.duplicate(),"viewportWidth":get_viewport().get_visible_rect().size.x,"oblique":oblique,"groundOnly":options.has("--ground-only"),"presentationMode":presentation_mode,"projectRoads":RenderingServer.get_current_rendering_method()=="forward_plus"}
 	prepare_request["solarShadows"]=tree_shadow_mode=="native-solar" and presentation_mode=="aerial" and not options.has("--ground-only")
+	prepare_request["solarDirection"]=sun.global_basis.z.normalized()
 	if oblique:
 		prepare_request["visibilityCamera"]=VisibilityPlan.snapshot(camera,get_viewport().get_visible_rect().size,origin)
 		prepare_request["renderedHeightImageSize"]=rendered_height_image_size
@@ -848,7 +849,7 @@ func _build_asset_trees(candidates:Array)->void:
 func _build_tree_solar(data:Dictionary)->void:
 	var previous=tree_solar_data
 	tree_solar_data=data;tree_solar_node=null
-	if not data.get("available",false) or rendered_presentation_mode!="aerial" or not tree_solar.descriptor.get("available",false):
+	if not data.get("available",false) or not data.has("renderBuffer") or rendered_presentation_mode!="aerial" or not tree_solar.descriptor.get("available",false):
 		tree_solar_weight=0;return
 	if previous.get("sourceInventorySha256","")!=data.sourceInventorySha256 or previous.get("sourceEpoch")!=data.sourceEpoch or previous.get("sceneEpoch")!=data.sceneEpoch:tree_solar_weight=0
 	tree_solar_node=tree_solar.create_node(data,origin);objects.add_child(tree_solar_node)

@@ -31,6 +31,8 @@ func _initialize()->void:
 		check(absf(basis.determinant()-1)<.00001,"right-handed solar frame")
 		check(basis.z.is_equal_approx(direction),"quad faces sun not camera")
 		var result=Solar.instance_buffer(data,origin,direction);var a:PackedFloat32Array=result.buffer
+		var on_worker=Solar.prepare(packet,world,origin,direction)
+		check(on_worker.renderBuffer.to_byte_array()==result.buffer.to_byte_array() and on_worker.renderBounds==result.bounds,"worker/UI source buffer preparation byte-exact")
 		check(a.size()==20,"exact one buffer row")
 		check(a[3]==4.25 and a[7]==18.125 and a[11]==-3.5,"subtract source doubles beforeFP32; root+H/2")
 		check(a[16]==Solar.yaw_bin(.73),"source yaw bin")

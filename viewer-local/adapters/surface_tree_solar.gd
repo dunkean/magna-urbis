@@ -38,14 +38,14 @@ static func yaw_bin(angle:float)->int:
 
 # CPU only. Complete inventory, NOT Population's selected colour geometry.
 # Source records remain untouched. Buffers are private renderer products.
-static func prepare(packet:Dictionary,world:Dictionary,origin:Dictionary)->Dictionary:
+static func prepare(packet:Dictionary,world:Dictionary,origin:Dictionary,to_sun:Vector3=Vector3.ZERO)->Dictionary:
 	var page=Canopy.tree_page(packet)
 	if page.is_empty():return {"available":false,"reason":"missing-complete-tree-page"}
 	if not Visibility._covered_rectangle(page.bounds,Coverage.domains(world)):return {"available":false,"reason":"tree-page-without-complete-real-height-domain"}
 	var columns:Dictionary=packet.get("candidateColumns",{})
 	var records:Array=packet.get("candidates",[])
 	var n=int(columns.count) if not columns.is_empty() else records.size()
-	var values=PackedFloat64Array();var names=PackedStringArray();var ids=HashingContext.new();ids.start(HashingContext.HASH_SHA256)
+	var values=PackedFloat64Array();var radii=PackedFloat64Array();var names=PackedStringArray();var ids=HashingContext.new();ids.start(HashingContext.HASH_SHA256)
 	var count=0;var max_root=-INF;var min_root=INF;var maximum_height=0.0
 	var declared_count=0;var excluded=0;var unsupported:Dictionary=packet.get("_unsupportedTreeIDs",{})
 	for i in n:
@@ -65,7 +65,7 @@ static func prepare(packet:Dictionary,world:Dictionary,origin:Dictionary)->Dicti
 		if declared_count>MAX_TREES:return {"available":false,"reason":"complete-shadow-inventory-over-budget"}
 		ids.update(id.to_utf8_buffer());ids.update(PackedFloat64Array([x,y,z,size,radius,angle,rank]).to_byte_array());ids.update(PackedByteArray([1 if unsupported.has(id) else 0]))
 		if unsupported.has(id):excluded+=1;continue
-		count+=1;names.append(id);values.append_array(PackedFloat64Array([x,y,z,size,angle,rank]))
+		count+=1;names.append(id);values.append_array(PackedFloat64Array([x,y,z,size,angle,rank]));radii.append(radius)
 		max_root=maxf(max_root,y);min_root=minf(min_root,y);maximum_height=maxf(maximum_height,size)
 	if declared_count!=int(page.get("count",-1)):return {"available":false,"reason":"complete-page-count-mismatch","actualCount":declared_count,"declaredCount":page.get("count")}
 	var maximum=-INF;var minimum=INF
@@ -75,7 +75,10 @@ static func prepare(packet:Dictionary,world:Dictionary,origin:Dictionary)->Dicti
 			if not is_finite(float(value)):return {"available":false,"reason":"nonfinite-source-height"}
 			maximum=maxf(maximum,float(value));minimum=minf(minimum,float(value))
 	if not is_finite(maximum) or not is_finite(minimum):return {"available":false,"reason":"missing-real-height-support"}
-	return {"available":true,"version":VERSION,"page":page,"values":values,"ids":names,"count":count,"declaredSourceTreeCount":declared_count,"unsupportedTreeCount":excluded,"triangles":count*2,"sourceInventorySha256":ids.finish().hex_encode(),"worldId":str(world.id),"source":world.terrain.source.duplicate(true),"sourceEpoch":packet.get("source",{}).get("sourceEpoch"),"sceneEpoch":packet.get("source",{}).get("sceneEpoch"),"maximumSourceY":maxf(maximum,max_root),"minimumSourceY":minf(minimum,min_root),"maximumTreeHeightM":MAX_HEIGHT,"actualMaximumTreeHeightM":maximum_height,"origin":origin.duplicate()}
+	var result={"available":true,"version":VERSION,"page":page,"values":values,"radii":radii,"ids":names,"count":count,"declaredSourceTreeCount":declared_count,"unsupportedTreeCount":excluded,"triangles":count*2,"sourceInventorySha256":ids.finish().hex_encode(),"worldId":str(world.id),"source":world.terrain.source.duplicate(true),"sourceEpoch":packet.get("source",{}).get("sourceEpoch"),"sceneEpoch":packet.get("source",{}).get("sceneEpoch"),"maximumSourceY":maxf(maximum,max_root),"minimumSourceY":minf(minimum,min_root),"maximumTreeHeightM":MAX_HEIGHT,"actualMaximumTreeHeightM":maximum_height,"origin":origin.duplicate()}
+	if to_sun.is_finite() and to_sun.length_squared()>.5:
+		var prepared=instance_buffer(result,origin,to_sun.normalized());result["renderBuffer"]=prepared.buffer;result["renderBounds"]=prepared.bounds;result["renderDirection"]=to_sun.normalized()
+	return result
 
 static func instance_buffer(data:Dictionary,origin:Dictionary,to_sun:Vector3)->Dictionary:
 	var values:PackedFloat64Array=data.values;var basis=solar_basis(to_sun)
@@ -152,6 +155,8 @@ func create_node(data:Dictionary,origin:Dictionary)->MultiMeshInstance3D:
 	var mesh=QuadMesh.new();mesh.size=Vector2(SPAN,SPAN)
 	var material=ShaderMaterial.new();material.shader=preload("res://shaders/tree_solar_shadow.gdshader");material.set_shader_parameter("solar_data",texture)
 	mesh.surface_set_material(0,material)
-	var instance=instance_buffer(data,origin,direction);var multi=MultiMesh.new();multi.transform_format=MultiMesh.TRANSFORM_3D;multi.use_colors=true;multi.use_custom_data=true;multi.mesh=mesh;multi.instance_count=int(data.count);multi.buffer=instance.buffer;multi.custom_aabb=instance.bounds
+	var prepared=data.has("renderBuffer") and data.get("origin",{})==origin and data.get("renderDirection",Vector3.ZERO).distance_to(direction)<.000001
+	var instance={"buffer":data.renderBuffer,"bounds":data.renderBounds} if prepared else instance_buffer(data,origin,direction)
+	var multi=MultiMesh.new();multi.transform_format=MultiMesh.TRANSFORM_3D;multi.use_colors=true;multi.use_custom_data=true;multi.mesh=mesh;multi.instance_count=int(data.count);multi.buffer=instance.buffer;multi.custom_aabb=instance.bounds
 	var node=MultiMeshInstance3D.new();node.name="CompleteTreeSolarShadowOnly";node.multimesh=multi;node.layers=2;node.cast_shadow=GeometryInstance3D.SHADOW_CASTING_SETTING_SHADOWS_ONLY;node.gi_mode=GeometryInstance3D.GI_MODE_DISABLED;node.set_meta("surfaceLayer","trees");node.set_meta("solarShadow",true)
 	return node
