@@ -36,7 +36,7 @@ import neural_refinement as refinement
 LOCK = threading.Lock()
 STATE = {'state': 'ready', 'message': 'Python/CUDA pret ; poids charges au premier calcul',
          'backend': 'python-cuda', 'generated': 0, 'loaded': False, 'resolution': 1024, 'extent': 40000,
-         'zoneConditioning': 1, 'modelCatalog': 1}
+         'zoneConditioning': 1, 'modelCatalog': 1, 'nativeOutput': True}
 MODELS = None
 MODELS_KEY = None
 
@@ -66,6 +66,8 @@ def models(seed, params):
 
 def generate(body):
     params, condition = body['params'], body['conditioning']
+    native_output = params.get('outputResolution') == 'native'
+    output_n = math.ceil(40000 / 30) if native_output else 1024
     seed = int(condition['seed'])
     if not 0 <= seed < 2**64:
         raise ValueError('Invalid seed')
@@ -178,7 +180,7 @@ def generate(body):
         with torch.inference_mode():
             heights = world.get(origin, origin, origin + native_size, origin + native_size, with_climate=False)['elev'].float().cpu().numpy()
         torch.cuda.synchronize()
-        coordinates = (np.arange(1024, dtype=np.float64) + .5) * 40000 / 1024 / 30 - .5
+        coordinates = (np.arange(output_n, dtype=np.float64) + .5) * 40000 / output_n / 30 - .5
         yy, xx = np.meshgrid(coordinates, coordinates, indexing='ij')
         heights = map_coordinates(heights, [yy, xx], order=1, mode='nearest').astype('<f4')
         if not np.isfinite(heights).all():
@@ -192,6 +194,8 @@ def generate(body):
                     land=float(np.mean(heights > 0)), edited=bool(body.get('edited')), sketchRegion=True, zoneConditioning=1,
                     **model_catalog.model_info(selected))
         meta['neuralSeed'] = str(seed)
+        meta.update(outputResolution=output_n, outputCell=40000/output_n, decoderNativeCell=30,
+                    stages=['coarse', 'base', 'decoder'], nativeDefinitionRetained=native_output)
         meta['neuralToken'] = refinement.retain_world(world, origin)
         retained_world = True
         return heights.tobytes(), meta
