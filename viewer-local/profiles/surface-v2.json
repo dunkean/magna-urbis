@@ -1,0 +1,23 @@
+{
+  "format": "magna-surface-render-profile",
+  "version": 1,
+  "id": "surface-v2",
+  "defaults": {
+    "assets": "web/out/surface-assets/resolved.json",
+    "vegetationAssets": "web/out/vegetation-assets/resolved.json",
+    "treeAssets": "web/out/vegetation-tree-v14/resolved.json",
+    "heightBatch": {
+      "win32": "viewer-local/native-height/target/release/magna-surface-height-batch.exe",
+      "default": "viewer-local/native-height/target/release/magna-surface-height-batch"
+    },
+    "presentation": "aerial",
+    "waterMode": "source-map",
+    "waterVectorTint": "uniform",
+    "waterSymbolWidthPx": 1.25,
+    "nativeLogMode": "threaded"
+  },
+  "requirements": {
+    "treeDigest": "74edf966059a17fd44df22d24f4ee055f780d84196ee9c54703fa3b9e46ecbe9"
+  },
+  "scope": "Explicit local rendering configuration; no downloads, source-world changes, asset-cache detection or implicit fallback. Input/source/artistic qualification remains separate."
+}
