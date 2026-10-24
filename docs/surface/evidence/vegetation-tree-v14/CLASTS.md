@@ -73,7 +73,55 @@ godot --audio-driver Dummy --headless --path viewer-local --script tests/surface
 godot --audio-driver Dummy --headless --path viewer-local --script diagnostics/check.gd
 ```
 
-No GPU was used while ROOT reserved its oblique/fresh campaign. A dedicated real
-source view must still confirm visual improvement, real PBR bindings and style/
-layer/shadow behavior. Shrubs, debris and other legacy glyphs are intentionally
-outside this small lot; they are not presented as fixed vegetation assets.
+No GPU was used while ROOT reserved its oblique/fresh campaign. After its explicit
+release, the following real-source controls were performed. Shrubs, debris and
+other legacy glyphs remain intentionally outside this small lot.
+
+## Dedicated GPU controls
+
+[clasts-gpu.json](clasts-gpu.json) records six sequential runs, baseline frozen
+`1eee770` versus`a5993fe`, with actual native source hashes before/after each run.
+The small diagnostic wrapper was untracked during the runs and is explicitly
+included in those maps. Source/terrain-asset manifests and the pinned Rust height
+batch executable are checked unchanged at the end. ROOT itself was never edited.
+
+The same retained V13 packet is used throughout, focusing on existing candidate
+`1905266606:boulder:2001:1998:1`: position20014.029683487024 /19983.486032686196,
+size2.380960226m, sourceRock4 **mudstone**. No boulder was added or moved. Actual
+rendered groups retain five existing instances and use the already loaded `rock`
+asset via `recipe:fractured-bedrock`, with the manifest's actual physical extent
+**8m**. The fallback was not used. Other lithology-to-recipe mappings are covered
+by CPU tests, not falsely presented as separately rendered source cases.
+
+TOP8m and OBLIQUE8m show the changed shape/grains and real engine-cast shadow.
+The captured images were opened: surfaces are irregular/textured, but flat facets
+remain conspicuous at this very close scale. This is a bounded procedural preview,
+not photogrammetry or final artistic quality. Cartographic blueprint keeps the
+original glyph, with all four visibility states pixel-identical.
+
+For **each** pose, source/ground/GR/parent/detail/inventory fingerprints and all
+non-boulder instance buffers are unchanged. A dedicated `no-boulders` state hides
+boulder nodes **and disables their casting** in both profiles: the entire resulting
+image is pixel-identical, proving the terrain sampler extraction did not alter
+the surrounding render. Ground/no-trees states that still contain boulders are
+not incorrectly required to match. All family instance counts stay unchanged.
+
+Actual adapter: RTX5090, Forward+, Godot4.7.2 / Terrain3D1.0.2, Dummy audio. All six
+runs completed with no shader/runtime errors; the existing Terrain3D deprecated
+interpolation warning remains. The explicit native height sampler SHA is
+`1d2c1652ff6711c1a6c78677d3c6158bd497c93e1fad5a5609c952aef7a4f6ec`.
+Process durations19–24s include initialization/five captures and are not FPS.
+No full navigation or fresh-generation qualification is claimed. The rock is
+fully resolved in this view; subpixel shadow-fade thresholds and an independent
+GPU normal-direction oracle were not exercised. CPU math/code checks cover the
+main-camera fade and inverse-transpose construction without relabelling them GPU
+proof. All processes exited and the GPU was explicitly released.
+
+- [TOP before](clast-top-before.png) / [after](clast-top-after.png)
+- [Oblique before](clast-oblique-before.png) / [after](clast-oblique-after.png)
+- [Blueprint unchanged](clast-blueprint.png)
+
+`web/scripts/surface_clast_gpu.mjs` reproduces the six controls with separate
+`--before` /`--after` worktrees, `--world`, `--assets`, `--godot`, `--height-batch`,
+`--style-catalogue` and `--out`. It uses only the retained packet, verifies runtime
+hashes, preserves raw failures, and does not generate or modify source data.
