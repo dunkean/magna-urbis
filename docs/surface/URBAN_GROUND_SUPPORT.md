@@ -41,4 +41,4 @@ cd web
 npx tsx scripts/migrate_surface_natural_ground.ts --source <native-current-419-source-footprints.surfacebin> --out <native-current-419-ground-1.5.3.surfacebin> --report <migration-report.json>
 ```
 
-Comparable plan400m and aerial oblique600m captures remain a separate GPU qualification step on the final integrated renderer.
+Comparable plan400m, aerial oblique600m and overall8400m captures on the frozen integrated renderer are recorded in [native-current-419-v9-render.json](evidence/native-current-419-v9-render.json). The actual oblique comparison shows the pale grey occupied ground replaced by beige mineral support. Canopy/water rendering and candidate pages also changed, so the screenshots do not isolate the ground shader; the independent CPU proof isolates the four derived arrays.
