@@ -32,7 +32,7 @@
     vec3 ground_distribution_delta=vec3(0.0);
     vec3 ground_distribution_probe=vec3(0.0);
     vec3 ground_physical_mean=vec3(0.0),ground_minimum_color=vec3(1.0),ground_maximum_color=vec3(0.0);
-    bool ground_distribution_active=surface_detail_distribution_enabled && response_active && presentation_mode==0;
+    bool ground_distribution_active=surface_detail_distribution_enabled && response_active && (presentation_mode==0 || surface_detail_distribution_in_maps_enabled);
     if(ground_distribution_active) {
         int component_ids[8];float component_amounts[8];vec3 component_colors[8];float component_total;vec3 component_mean;
         ground_response_components(source_uv,component_ids,component_amounts,component_colors,component_total,component_mean);
@@ -130,7 +130,7 @@
     float low_visual_alpha=low_alpha;
     vec3 low_reference_palette=vec3(0.0);
     vec3 low_minimum_color=vec3(1.0),low_maximum_color=vec3(0.0);
-    bool low_distribution_active=surface_detail_distribution_enabled && surface_layers_explicit && presentation_mode==0;
+    bool low_distribution_active=surface_detail_distribution_enabled && surface_layers_explicit && (presentation_mode==0 || surface_detail_distribution_in_maps_enabled);
     if(surface_layers_explicit) {
         vec4 low_slots[4];
         low_slots[0]=texelFetch(low_cover_ids,cell,0);

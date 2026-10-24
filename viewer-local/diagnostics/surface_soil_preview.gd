@@ -95,9 +95,10 @@ class SoilControls extends Node:
 			bound_generation=generation;style_dirty=false
 		scene.set("diagnostic",7 if mean_only else 0)
 		material.call("set_shader_param","surface_detail_distribution_enabled",detail)
+		material.call("set_shader_param","surface_detail_distribution_in_maps_enabled",true)
 		material.call("set_shader_param","diagnostic",7 if mean_only else 0)
 		detail_button.text="F1 R4 : "+("ON" if detail else "reference uniforme")
-		detail_button.disabled=current_style().mode!="aerial"
+		detail_button.disabled=false
 		low_button.text="F2 Couvert bas : "+("ON" if low else "OFF")
 		mean_button.text="F3 Moyenne physique : "+("ON" if mean_only else "OFF")
 		capture_button.disabled=capturing or not settled()
@@ -137,7 +138,7 @@ class SoilControls extends Node:
 		if world.is_empty():label.text="Chargement du terrain retenu...";return
 		var context:Dictionary=Data.context(world);var focus:Dictionary=scene.get("focus")
 		var x=float(focus.get("x",0));var z=float(focus.get("y",0));var chosen=current_style()
-		label.text="SOLS EXPERIMENTAUX - TOP - sans arbres/objets/ombres\n%s - %s\n%.2f m | X %.2f / Z %.2f\nFleches : palettes | molette : zoom | glisser : deplacer | 1-7 : echelles\nF1 R4 : aerien seulement | F2 : couvert bas | F3 : moyenne physique | S : capture\n%s\n%s\nRepartition procedurale, pas de sols fins observes.%s"%[chosen.label,"moyenne physique hors palette" if mean_only else chosen.mode,float(scene.get("width_m")),x,z,weights(world,context,x,z),chosen.coverage,"\nCapture : "+last_capture if not last_capture.is_empty() else ""]
+		label.text="SOLS EXPERIMENTAUX - TOP - sans arbres/objets/ombres\n%s - %s\n%.2f m | X %.2f / Z %.2f\nFleches : palettes | molette : zoom | glisser : deplacer | 1-7 : echelles\nF1 : detail R4 | F2 : couvert bas | F3 : moyenne physique | S : capture\n%s\n%s\nRepartition procedurale, pas de sols fins observes.%s"%[chosen.label,"moyenne physique hors palette" if mean_only else chosen.mode,float(scene.get("width_m")),x,z,weights(world,context,x,z),chosen.coverage,"\nCapture : "+last_capture if not last_capture.is_empty() else ""]
 	func weights(world:Dictionary,context:Dictionary,x:float,z:float)->String:
 		if not context.get("groundResponse") is Dictionary:return "Poids physiques complets indisponibles : legacy explicite."
 		var grid:Dictionary=context.grid;var fields:Dictionary=context.fields;var response:Dictionary=context.groundResponse.fields

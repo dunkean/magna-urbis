@@ -32,14 +32,21 @@ func run()->void:
 		var material=viewer.get("terrain").get("material")
 		var mode=material.call("get_shader_param","presentation_mode")
 		require_true(int(mode)==(0 if selected.mode=="aerial" else 1),"Wrong shader presentation mode: "+str(selected.id))
+		require_true(material.call("get_shader_param","surface_detail_distribution_in_maps_enabled")==true,"Demo map detail not enabled")
 		var palette=material.call("get_shader_param","map_palette")
 		var palette_hash=str(palette).sha256_text()
 		if selected.mode=="cartographic":palette_hashes[selected.id]=palette_hash
 		var record:Dictionary=await controls.capture_view()
 		require_true(record.get("captureStatus")=="complete","Incomplete capture: "+str(selected.id))
 		require_true(record.get("imageSha256","")!="","Missing image: "+str(selected.id))
+		var image=Image.load_from_file(str(record.get("imagePath","")))
+		var terrain_colors:Dictionary={}
+		if image!=null:
+			for x in range(900,1500,60):
+				for y in range(450,950,50):terrain_colors[image.get_pixel(x,y).to_rgba32()]=true
+		if selected.id in ["blueprint","parchment"]:require_true(terrain_colors.size()>3,"Map detail remains a flat field: "+str(selected.id))
 		require_true(not viewer.get("objects").visible and not viewer.get("sun").shadow_enabled,"Objects/shadows unexpectedly visible")
-		results.append({"style":selected.id,"shaderMode":mode,"paletteHash":palette_hash,"capture":record})
+		results.append({"style":selected.id,"shaderMode":mode,"paletteHash":palette_hash,"terrainSampleColors":terrain_colors.size(),"capture":record})
 	var unique:Dictionary={}
 	for value in palette_hashes.values():unique[value]=true
 	require_true(unique.size()>=7,"Native palette uniforms did not change sufficiently")

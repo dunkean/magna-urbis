@@ -1,6 +1,8 @@
 // Renderer-only arrangement of existing fractions, not observed fine geology.
 // Known-CDF material allocation, never an arbitrary RGB/noise multiplier.
 uniform bool surface_detail_distribution_enabled=true;
+// Isolated soil demo opt-in; existing cartographic views keep their prior path.
+uniform bool surface_detail_distribution_in_maps_enabled=false;
 uniform vec4 detail_distribution_phase[3]; // fractional origin.xy, integer-cell origin mod4096.zw
 const vec3 DETAIL_DISTRIBUTION_SCALES=vec3(12.0,1.7,0.17);
 const vec3 DETAIL_DISTRIBUTION_WEIGHTS=vec3(0.4,0.35,0.25);
