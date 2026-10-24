@@ -1,7 +1,7 @@
 import { generateSurfaceCandidates, PopulationBudgetError } from './population';
 import { sampleTerrainHeight } from './heightSampling';
 import { SURFACE_MAX_CANDIDATES } from './limits';
-import { assertNotAborted, type Bounds, type SurfaceCandidate, type SurfaceWorld, type TerrainGrid } from './model';
+import { assertNotAborted, SURFACE_POPULATION_VERSION, type Bounds, type SurfaceCandidate, type SurfaceWorld, type TerrainGrid } from './model';
 import type { CandidateColumns } from './candidateColumns';
 
 export interface CandidatePage {
@@ -13,6 +13,7 @@ export interface CandidatePage {
 export interface SurfaceCandidatePages {
   version: 'surface-candidate-pages-1';
   tree: CandidatePage; shrub: CandidatePage; boulder: CandidatePage; grass: CandidatePage; debris: CandidatePage;
+  query?:{version:'surface-population-query-1';recipeVersion:string;mode:'paged'|'complete-explicit-bounds';requestedBounds:Bounds;canonicalDomain:Bounds;identityDomain?:Bounds;sourceToWorldTranslation:{x:number;z:number};producer?:string};
   support: {
     policy: 'fine-inside-centres-otherwise-parent-or-canonical';
     canonicalSource: CandidateHeightSource; fineSource?: CandidateHeightSource; parentSource?: CandidateHeightSource;
@@ -23,6 +24,8 @@ interface CandidateHeightSource {id:string;version:string;nativeSpacingM:number;
 export interface CandidatePageOptions {
   fineTerrain?: TerrainGrid; parentTerrain?: TerrainGrid; canonicalContextId: string;
   maxCandidates?: number; maxCheckedSlots?: number; signal?: AbortSignal;
+  /** Explicit legacy all/bounds requests remain complete or fail; never shrink silently. */
+  requireCompleteBounds?:boolean;
 }
 const LOCAL = ['shrub', 'boulder', 'grass', 'debris'] as const;
 const FAMILIES=['tree',...LOCAL] as const;
@@ -64,8 +67,18 @@ export function generateSurfaceCandidatePages(canonical:SurfaceWorld,view:Bounds
     throw new Error('Candidate budget cannot hold a complete inventory at the focus');
   };
   // Reserve room for trees; under ordinary density the local page needs <25k items.
-  const local=query([...LOCAL],Math.min(480,Math.max(0,extent)),Math.floor(max/4));
-  const tree=query(['tree'],Math.min(4000,Math.max(480,extent)),max-local.candidates.length);
+  let local:ReturnType<typeof query>,tree:ReturnType<typeof query>;
+  if(options.requireCompleteBounds){
+    const bounds={minX:Math.max(view.minX,canonical.bounds.minX),minZ:Math.max(view.minZ,canonical.bounds.minZ),maxX:Math.min(view.maxX,canonical.bounds.maxX),maxZ:Math.min(view.maxZ,canonical.bounds.maxZ)};
+    if(bounds.minX>bounds.maxX||bounds.minZ>bounds.maxZ)throw new Error('Explicit population bounds do not intersect exported source');
+    const all=generateSurfaceCandidates(canonical,bounds,{maxCandidates:max,maxCheckedSlots:slots,includeOverhang:true,signal:options.signal});
+    const page={bounds,requestedBounds:{...bounds},count:all.length,complete:true as const,includeOverhang:true as const,retention:1 as const,limitedBy:'none' as const};
+    const trees=all.filter(c=>c.family==='tree'),others=all.filter(c=>c.family!=='tree');
+    tree={candidates:trees,page:{...page,count:trees.length}};local={candidates:others,page:{...page,count:others.length}};
+  }else{
+    local=query([...LOCAL],Math.min(480,Math.max(0,extent)),Math.floor(max/4));
+    tree=query(['tree'],Math.min(4000,Math.max(480,extent)),max-local.candidates.length);
+  }
   const candidates=[...tree.candidates,...local.candidates];
   const fine=options.fineTerrain,parent=options.parentTerrain;
   const fineBounds=fine?terrainSampleBounds(fine):undefined,parentBounds=parent?terrainSampleBounds(parent):undefined;
@@ -78,8 +91,34 @@ export function generateSurfaceCandidatePages(canonical:SurfaceWorld,view:Bounds
     if(!Number.isFinite(candidate.y))throw new Error('Candidate support height is non-finite');
   }
   const pages:SurfaceCandidatePages={version:'surface-candidate-pages-1',tree:tree.page,support,
+    query:{version:'surface-population-query-1',recipeVersion:SURFACE_POPULATION_VERSION,mode:options.requireCompleteBounds?'complete-explicit-bounds':'paged',requestedBounds:{...view},canonicalDomain:{...canonical.bounds},sourceToWorldTranslation:{x:0,z:0}},
     ...Object.fromEntries(LOCAL.map(family=>[family,{...local.page,count:local.candidates.filter(c=>c.family===family).length}])) as Record<typeof LOCAL[number],CandidatePage>};
   return {candidates,candidatePages:pages,candidateBounds:local.page.bounds};
+}
+
+/** A common frame rebase changes positions/page bounds, never physical cell IDs.
+ * Source origin may be supplied before the forward translation to avoid losing
+ * small metric offsets when restoring a large global coordinate. */
+export function generateSurfaceCandidatePagesInFrame(canonical:SurfaceWorld,view:Bounds,options:CandidatePageOptions&{translation?:{x:number;z:number};sourceOrigin?:{x:number;z:number}}){
+  const delta=options.translation??{x:0,z:0};
+  if(![delta.x,delta.z].every(Number.isFinite))throw new Error('Invalid population frame translation');
+  if(options.sourceOrigin){
+    const matches=(a:number,b:number)=>Number.isFinite(a)&&Math.abs(a-b)<=2*Number.EPSILON*Math.max(1,Math.abs(a),Math.abs(b));
+    if(!matches(options.sourceOrigin.x+delta.x,canonical.terrain.originX)||!matches(options.sourceOrigin.z+delta.z,canonical.terrain.originZ))throw new Error('Population source origin does not match the declared common frame translation');
+  }
+  const shift=(b:Bounds,dx:number,dz:number):Bounds=>({minX:b.minX+dx,maxX:b.maxX+dx,minZ:b.minZ+dz,maxZ:b.maxZ+dz});
+  const grid=(t:TerrainGrid):TerrainGrid=>({...t,originX:t.originX-delta.x,originZ:t.originZ-delta.z});
+  const sourceTerrain=grid(canonical.terrain);
+  if(options.sourceOrigin){sourceTerrain.originX=options.sourceOrigin.x;sourceTerrain.originZ=options.sourceOrigin.z;}
+  const domain=terrainSampleBounds(sourceTerrain),source={...canonical,terrain:sourceTerrain,bounds:domain};
+  const fullView=view.minX===canonical.bounds.minX&&view.minZ===canonical.bounds.minZ&&view.maxX===canonical.bounds.maxX&&view.maxZ===canonical.bounds.maxZ;
+  const result=generateSurfaceCandidatePages(source,fullView?domain:shift(view,-delta.x,-delta.z),{...options,fineTerrain:options.fineTerrain?grid(options.fineTerrain):undefined,parentTerrain:options.parentTerrain?grid(options.parentTerrain):undefined});
+  for(const c of result.candidates){c.x+=delta.x;c.z+=delta.z;}
+  for(const family of FAMILIES){const p=result.candidatePages[family];p.bounds=shift(p.bounds,delta.x,delta.z);p.requestedBounds=shift(p.requestedBounds,delta.x,delta.z);}
+  const s=result.candidatePages.support;
+  if(options.fineTerrain)s.fineBounds=terrainSampleBounds(options.fineTerrain);if(options.parentTerrain)s.parentBounds=terrainSampleBounds(options.parentTerrain);
+  result.candidatePages.query={...result.candidatePages.query!,requestedBounds:fullView?{...view}:shift(result.candidatePages.query!.requestedBounds,delta.x,delta.z),canonicalDomain:{...canonical.bounds},identityDomain:domain,sourceToWorldTranslation:{...delta}};
+  result.candidateBounds=shift(result.candidateBounds,delta.x,delta.z);return result;
 }
 
 /** Shape and count verification at packet ingress; completeness is a producer guarantee. */
@@ -106,5 +145,11 @@ export function validateSurfaceCandidatePages(value:unknown,columns?:CandidateCo
     if(expected&&s.canonicalContextId!==expected||s.canonicalSource.id!==world.terrain.source.id||s.canonicalSource.version!==world.terrain.source.version)throw new Error('Candidate page context/source mismatch');
     if(s.fineSource&&(s.fineSource.id!==world.terrain.source.id||s.fineSource.version!==world.terrain.source.version||!s.fineBounds||Object.entries(terrainSampleBounds(world.terrain)).some(([key,v])=>s.fineBounds![key as keyof Bounds]!==v)))throw new Error('Candidate fine support mismatch');
     if(s.parentSource&&(s.parentSource.id!==world.terrain.source.id||s.parentSource.version!==world.terrain.source.version||!s.parentBounds))throw new Error('Candidate parent source mismatch');
+  }
+  if(p.query){
+    const q=p.query;
+    if(q.version!=='surface-population-query-1'||typeof q.recipeVersion!=='string'||!q.recipeVersion||!['paged','complete-explicit-bounds'].includes(q.mode)||!bounds(q.requestedBounds)||!bounds(q.canonicalDomain)
+      ||q.identityDomain!==undefined&&!bounds(q.identityDomain)||!q.sourceToWorldTranslation||![q.sourceToWorldTranslation.x,q.sourceToWorldTranslation.z].every(Number.isFinite)||q.producer!==undefined&&typeof q.producer!=='string')throw new Error('Invalid population query provenance');
+    for(const family of FAMILIES){const b=p[family].bounds,d=q.canonicalDomain;if(b.minX<d.minX||b.minZ<d.minZ||b.maxX>d.maxX||b.maxZ>d.maxZ)throw new Error('Population page exceeds its exported source domain');}
   }
 }
