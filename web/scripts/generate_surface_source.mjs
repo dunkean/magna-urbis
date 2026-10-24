@@ -28,6 +28,7 @@ import { hashString } from '../src/surface/model.ts';
 import { registrationFieldFingerprint } from '../src/surface/registrationBinding.ts';
 import { isFinalQualityDisplay,sameDeliveredSpacing,verifyFinalDisplay,verifyMotionLiveDisplay,verifyTourQuality,verifyNavigationTiming } from './surface_navigation_evidence.ts';
 import { verifyExplicitLayerCapture,verifyWaterCapture,verifyLayerIsolationProbe } from './surface_render_evidence.ts';
+import { verifyNativeLogMode } from './surface_native_log_evidence.mjs';
 import { hasExplicitSurfaceLayers } from '../src/surface/surfaceLayers.ts';
 import { captureSurfaceRepositorySnapshot,assertFrozenSurfaceSnapshots } from './surface_repository_snapshot.mjs';
 import { parseLayerProbeWidths,assertCompletedLayerProbeBatch } from './surface_layer_probe_batch.ts';
@@ -157,6 +158,7 @@ async function runNativeTour(sessionId) {
     report.viewer.elapsedMs=Date.now()-began-report.viewer.startedElapsedMs;
   }
   report.viewer.metrics=JSON.parse(await readFile(metricsPath,'utf8'));
+  report.viewer.nativeLogEvidence=verifyNativeLogMode(report.viewer.metrics,viewerNativeLogMode);
   const names=await readdir(directory),mode=args.includes('--viewer-oblique')?'oblique':'top';
   report.viewer.captures=[];
   for(let i=0;i<widths.length;i++){
@@ -229,6 +231,7 @@ async function runNativeNavigation(sessionId) {
   phase.elapsedMs=Date.now()-began-phase.startedElapsedMs;
   if(existsSync(paths.report))phase.result=JSON.parse(await readFile(paths.report,'utf8'));
   if(existsSync(paths.metrics))phase.metrics=JSON.parse(await readFile(paths.metrics,'utf8'));
+  phase.nativeLogEvidence=verifyNativeLogMode(phase.metrics,viewerNativeLogMode);
   if(phase.result?.continuousSeconds!==navigationSeconds||phase.result.motionEndTickMs-phase.result.motionStartTickMs!==Math.round(navigationSeconds*1000))throw new Error('Navigation proof changed its requested nominal motion duration');
   phase.timingEvidence=verifyNavigationTiming(phase.result,navigationSeconds);
   try{phase.displayEvidence=verifyMotionLiveDisplay(phase.result,phase.metrics);}catch(error){phase.displayEvidenceFailure=String(error);}
@@ -290,6 +293,7 @@ async function runNativeLayerProbe(sessionId,widthM){
   phase.elapsedMs=Date.now()-began-phase.startedElapsedMs;
   if(existsSync(paths.report))phase.result=JSON.parse(await readFile(paths.report,'utf8'));
   if(existsSync(paths.metrics))phase.metrics=JSON.parse(await readFile(paths.metrics,'utf8'));
+  phase.nativeLogEvidence=verifyNativeLogMode(phase.metrics,viewerNativeLogMode);
   verifyLayerIsolationProbe(phase.result,{requireInstances:widthM<=160,expectedWidthM:widthM});
   const bare=phase.result.bareGroundMean,first=phase.result.views[0];
   if(!bare||bare.diagnostic!==7||Math.abs(bare.widthM-widthM)>1e-9*widthM||bare.focus?.x!==first.focus?.x||bare.focus?.y!==first.focus?.y||bare.oblique!==first.oblique
