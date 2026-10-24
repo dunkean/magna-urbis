@@ -1,0 +1,590 @@
+{
+  "format": "native-log-modes-v13-compact-evidence",
+  "version": 1,
+  "status": "BOTH PHASES FAILED strict runtime gate; diagnostic collection complete only",
+  "originalDriverStatus": "diagnostic-complete",
+  "driverExit": 0,
+  "qualificationClaimed": false,
+  "frozenCode": {
+    "head": "cf760322364c5efa94ad58bebecbfa2aeb40234b",
+    "statusInitial": "",
+    "statusFinal": "",
+    "runtimeFileCount": 613,
+    "runtimeHashesIdentical": true,
+    "runtimeMapSha256": "ef4e1677a9597a860b297306c0e6009abc4d064a96088c38d4cd11342d7a2f1d",
+    "driver": {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\native-log-modes-v13\\executed-driver.mjs",
+      "sha256": "cb4a8e81d2bc92ca9f0f82775ea65bdaa63857ecb298809b6933a87429f3c433"
+    }
+  },
+  "source": {
+    "freshGeneration": true,
+    "packet": {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\native-log-modes-v13\\fresh-source.surfacebin",
+      "bytes": 91626097,
+      "sha256": "352b21a5737c4fa7234ca71c1e85b32089f342eccea3d4d648aa9a671199aec9"
+    },
+    "rawNeuralSha256": "3c7c2f32e37844842f058208e21522543bcec69125348e115390f83d5b814159",
+    "rawNeuralGrid": 1024,
+    "rawNeuralWidthM": 40000,
+    "canonicalGrid": {
+      "width": 512,
+      "height": 512,
+      "spacingM": 78.125
+    },
+    "sourceFieldFingerprint": "rf1-019b8aa8fc4b7a3a38e7adce2163d4ea",
+    "liveContextId": "77cfd1236673f3cd48e8f9f3b7b3979f",
+    "environmentVersion": "31dc6ccb235bdf9573257a83c03cdc8f",
+    "registration": [
+      {
+        "id": "a2a245a0425b7b09e90b48719b4eab47",
+        "version": "decoder-v12-nyquist-notch:magna-retained-v1:e2bf5473c0ff:f21afa261ed7",
+        "minMpp": 0.46875,
+        "nativeMpp": 30,
+        "retainedSourceCell": 78.125,
+        "decoderUsed": true
+      }
+    ],
+    "sharedSessionId": "66853bfd-2565-417e-91fa-7438d9c09d09",
+    "generationsObserved": 1,
+    "assetManifestSha256": "c9f5beb9d4cdbdb7eb5a83340d72d882f36322c73272244408374a260b7e8e26",
+    "assetManifestUnchanged": true,
+    "artAssetExperimentFlagsPresent": false
+  },
+  "protocol": {
+    "requestedModes": [
+      "synchronous",
+      "threaded"
+    ],
+    "fixedOrder": true,
+    "sharedBrowserSourceSession": true,
+    "audioDriver": "Dummy in both phases",
+    "stdout": "inherited native file descriptors; driver/supervisor files too",
+    "fullTourOrLayerProbe": false,
+    "renderContract": {
+      "version": "surface-layers-1",
+      "waterMode": "source-map",
+      "waterVectorTint": "source-classes",
+      "waterSymbolWidthPx": 1.25,
+      "layerProbeWidths": [],
+      "physicalSourceChangesAllowed": false
+    }
+  },
+  "phases": [
+    {
+      "mode": "synchronous",
+      "strictStatus": "FAILED",
+      "rawNativeExit": 0,
+      "rawProbeStatus": "complete",
+      "driverFailure": "Error: Continuous native navigation did not display verified live source during input: see native-navigation reports/logs",
+      "scriptErrors": [
+        "SCRIPT ERROR: Invalid operands 'float' and 'String' in operator '!='."
+      ],
+      "typedPathStack": "SCRIPT ERROR: Invalid operands 'float' and 'String' in operator '!='.\r\n   at: expected_wire_dtype (res://adapters/surface_ground_response.gd:16)\r\n   GDScript backtrace (most recent call first):\r\n       [0] expected_wire_dtype (res://adapters/surface_ground_response.gd:16)\r\n       [1] decode_packet (res://adapters/surface_data.gd:47)\r\nWARNING: instance_reset_physics_interpolation() is deprecated.\r\n   at: _instance_reset_physics_interpolation_bind_compat_104269 (servers/rendering/rendering_server.compat.inc:62)\r\n   GDScript backtrace (most recent call first):\r\n       [0] _apply_prepared (res://scene/main.gd:355)\r\n       [1] _complete_prepared (res://scene/main.gd:1552)\r\n       [2] bake (res://adapters/surface_water_projection.gd:132)\r\n       [3] apply (res://adapters/surface_water_symbols.gd:57)",
+      "processId": 178112,
+      "adapter": "NVIDIA GeForce RTX 5090",
+      "backend": "forward_plus",
+      "phaseWallMs": 108246,
+      "temporalPredicate": "PASS within unchanged nominal20s window",
+      "sourcePredicate": "PASS recorded identity/environment/canonical-build/display checks; does not waive runtime error",
+      "nominalSeconds": 20,
+      "nominalDurationSeconds": 20,
+      "actualDurationSeconds": 20.006,
+      "overshootSeconds": 0.006000000000000227,
+      "maximumInputGapSeconds": 0.3019999999999996,
+      "terminalInputGapSeconds": 0.01699999999999946,
+      "maximumInputGapInterval": {
+        "fromElapsedSeconds": 11.192,
+        "toElapsedSeconds": 11.494,
+        "gapSeconds": 0.3019999999999996,
+        "terminal": false
+      },
+      "motionAcceptedCount": 10,
+      "motionActualAcceptedCount": 10,
+      "warmupSeconds": 50.648,
+      "drainSeconds": 12.461,
+      "motionApplicationCount": 4,
+      "motionDistinctLiveWorldCount": 2,
+      "motionDisplayEventCount": 2,
+      "longestMotionApplicationGapSeconds": 11.113,
+      "finalReady": true,
+      "motionDisplays": [
+        {
+          "worldId": "96f16d51ce67ca7f71dcb5c1db8e58ed",
+          "serial": 60,
+          "appliedTickMs": 86571,
+          "secondsAfterMotionStart": 11.436,
+          "preview": true,
+          "requestedResolution": 128,
+          "deliveredGrid": {
+            "width": 128,
+            "height": 128,
+            "spacingM": 66.27713320592
+          },
+          "nativeSpacingM": 30,
+          "decoderUsed": false
+        },
+        {
+          "worldId": "0805f13f29977e51048b768fe1c69e63",
+          "serial": 208,
+          "appliedTickMs": 91718,
+          "secondsAfterMotionStart": 16.583,
+          "preview": true,
+          "requestedResolution": 128,
+          "deliveredGrid": {
+            "width": 129,
+            "height": 129,
+            "spacingM": 1.6300522555842647
+          },
+          "nativeSpacingM": 0.9375,
+          "decoderUsed": true
+        }
+      ],
+      "final": {
+        "nativeSpacingM": 0.46875,
+        "deliveredGrid": {
+          "height": 140,
+          "spacingM": 0.465668530859122,
+          "width": 140
+        },
+        "preview": false
+      },
+      "sourceChecks": {
+        "workerPackets": 13,
+        "environmentVersions": [
+          "31dc6ccb235bdf9573257a83c03cdc8f"
+        ],
+        "canonicalBuildCounts": [
+          1
+        ],
+        "workerErrors": []
+      },
+      "log": {
+        "mode": "synchronous",
+        "version": "native-log-timing-1",
+        "mainMaximaByEvent": {
+          "live-http-completed": {
+            "characters": 297,
+            "count": 13,
+            "mainWallMs": 11.929,
+            "printMs": 11.901,
+            "serializeMs": 0.047
+          },
+          "live-packet-decoded": {
+            "characters": 137,
+            "count": 13,
+            "mainWallMs": 12.17,
+            "printMs": 12.152,
+            "serializeMs": 0.032
+          },
+          "live-tile-accepted": {
+            "characters": 158,
+            "count": 13,
+            "mainWallMs": 8.185,
+            "printMs": 8.176,
+            "serializeMs": 0.019
+          },
+          "surface-viewer-start": {
+            "characters": 6474,
+            "count": 1,
+            "mainWallMs": 12.971,
+            "printMs": 12.929,
+            "serializeMs": 0.042
+          },
+          "terrain-replaced": {
+            "characters": 405,
+            "count": 9,
+            "mainWallMs": 10.994,
+            "printMs": 10.969,
+            "serializeMs": 0.046
+          },
+          "view-satisfied": {
+            "characters": 149,
+            "count": 15,
+            "mainWallMs": 33.709,
+            "printMs": 33.7,
+            "serializeMs": 0.017
+          }
+        },
+        "flushedBeforeSnapshot": false,
+        "flushBeforeSnapshotMs": 0.001,
+        "writer": null
+      },
+      "allSceneFrameWallMs": {
+        "max": 3630.672,
+        "p50": 16.666,
+        "p95": 16.885,
+        "p99": 18.911
+      },
+      "cpuScriptMs": {
+        "max": 215.068,
+        "p50": 0.05,
+        "p95": 0.246,
+        "p99": 0.777,
+        "samples": 4578,
+        "scope": "entire viewer _process including initial and first30 post-apply frames; engine/input callbacks excluded; wall/GPU metrics reported separately"
+      },
+      "eventCounts": {
+        "surface-viewer-start": 1,
+        "live-http-completed": 13,
+        "terrain-replaced": 9,
+        "live-packet-decoded": 13,
+        "live-tile-accepted": 13,
+        "view-satisfied": 15,
+        "metrics": 1,
+        "navigation-proof": 1
+      },
+      "applicationJsonCount": 65,
+      "totalJsonCount": 66
+    },
+    {
+      "mode": "threaded",
+      "strictStatus": "FAILED",
+      "rawNativeExit": 0,
+      "rawProbeStatus": "complete",
+      "driverFailure": "Error: Continuous native navigation did not display verified live source during input: see native-navigation reports/logs",
+      "scriptErrors": [
+        "SCRIPT ERROR: Invalid operands 'float' and 'String' in operator '!='."
+      ],
+      "typedPathStack": "SCRIPT ERROR: Invalid operands 'float' and 'String' in operator '!='.\r\n   at: expected_wire_dtype (res://adapters/surface_ground_response.gd:16)\r\n   GDScript backtrace (most recent call first):\r\n       [0] expected_wire_dtype (res://adapters/surface_ground_response.gd:16)\r\n       [1] decode_packet (res://adapters/surface_data.gd:47)\r\nWARNING: instance_reset_physics_interpolation() is deprecated.\r\n   at: _instance_reset_physics_interpolation_bind_compat_104269 (servers/rendering/rendering_server.compat.inc:62)\r\n   GDScript backtrace (most recent call first):\r\n       [0] _apply_prepared (res://scene/main.gd:355)\r\n       [1] _complete_prepared (res://scene/main.gd:1552)\r\n       [2] bake (res://adapters/surface_water_projection.gd:132)\r\n       [3] apply (res://adapters/surface_water_symbols.gd:57)",
+      "processId": 201952,
+      "adapter": "NVIDIA GeForce RTX 5090",
+      "backend": "forward_plus",
+      "phaseWallMs": 115771,
+      "temporalPredicate": "PASS within unchanged nominal20s window",
+      "sourcePredicate": "PASS recorded identity/environment/canonical-build/display checks; does not waive runtime error",
+      "nominalSeconds": 20,
+      "nominalDurationSeconds": 20,
+      "actualDurationSeconds": 20.015,
+      "overshootSeconds": 0.015000000000000568,
+      "maximumInputGapSeconds": 0.4289999999999985,
+      "terminalInputGapSeconds": 0.05000000000000071,
+      "maximumInputGapInterval": {
+        "fromElapsedSeconds": 11.284,
+        "toElapsedSeconds": 11.713,
+        "gapSeconds": 0.4289999999999985,
+        "terminal": false
+      },
+      "motionAcceptedCount": 10,
+      "motionActualAcceptedCount": 10,
+      "warmupSeconds": 55.484,
+      "drainSeconds": 15.982,
+      "motionApplicationCount": 4,
+      "motionDistinctLiveWorldCount": 2,
+      "motionDisplayEventCount": 2,
+      "longestMotionApplicationGapSeconds": 11.316,
+      "finalReady": true,
+      "motionDisplays": [
+        {
+          "worldId": "002613da6e66d9b4cb26e9c25e1e93ce",
+          "serial": 61,
+          "appliedTickMs": 90489,
+          "secondsAfterMotionStart": 11.653,
+          "preview": true,
+          "requestedResolution": 128,
+          "deliveredGrid": {
+            "width": 128,
+            "height": 128,
+            "spacingM": 66.27713320592
+          },
+          "nativeSpacingM": 30,
+          "decoderUsed": false
+        },
+        {
+          "worldId": "f4a79fd790ad47d9bb2b7f97bccd65bb",
+          "serial": 214,
+          "appliedTickMs": 95757,
+          "secondsAfterMotionStart": 16.921,
+          "preview": true,
+          "requestedResolution": 128,
+          "deliveredGrid": {
+            "width": 128,
+            "height": 128,
+            "spacingM": 1.3707488902881835
+          },
+          "nativeSpacingM": 0.9375,
+          "decoderUsed": true
+        }
+      ],
+      "final": {
+        "nativeSpacingM": 0.46875,
+        "deliveredGrid": {
+          "height": 140,
+          "spacingM": 0.465668530859122,
+          "width": 140
+        },
+        "preview": false
+      },
+      "sourceChecks": {
+        "workerPackets": 13,
+        "environmentVersions": [
+          "31dc6ccb235bdf9573257a83c03cdc8f"
+        ],
+        "canonicalBuildCounts": [
+          1
+        ],
+        "workerErrors": []
+      },
+      "log": {
+        "mode": "threaded",
+        "version": "native-log-timing-2",
+        "mainMaximaByEvent": {
+          "live-http-completed": {
+            "characters": 297,
+            "count": 13,
+            "enqueueMs": 0.033,
+            "mainWallMs": 0.082,
+            "serializeMs": 0.049
+          },
+          "live-packet-decoded": {
+            "characters": 138,
+            "count": 13,
+            "enqueueMs": 0.03,
+            "mainWallMs": 0.065,
+            "serializeMs": 0.035
+          },
+          "live-tile-accepted": {
+            "characters": 159,
+            "count": 13,
+            "enqueueMs": 0.011,
+            "mainWallMs": 0.029,
+            "serializeMs": 0.018
+          },
+          "surface-viewer-start": {
+            "characters": 6474,
+            "count": 1,
+            "enqueueMs": 0.029,
+            "mainWallMs": 0.084,
+            "serializeMs": 0.055
+          },
+          "terrain-replaced": {
+            "characters": 406,
+            "count": 9,
+            "enqueueMs": 0.024,
+            "mainWallMs": 0.059,
+            "serializeMs": 0.035
+          },
+          "view-satisfied": {
+            "characters": 149,
+            "count": 15,
+            "enqueueMs": 0.024,
+            "mainWallMs": 0.04,
+            "serializeMs": 0.018
+          }
+        },
+        "flushedBeforeSnapshot": true,
+        "flushBeforeSnapshotMs": 0.005,
+        "writer": {
+          "accepted": 64,
+          "accepting": true,
+          "capacityMessages": 8192,
+          "capacityUtf8Bytes": 16777216,
+          "closed": false,
+          "closing": false,
+          "failure": "",
+          "inFlight": false,
+          "joined": false,
+          "lastWrittenSerial": 64,
+          "maximumPending": 2,
+          "maximumPendingUtf8Bytes": 6475,
+          "mode": "threaded",
+          "pending": 0,
+          "pendingUtf8Bytes": 0,
+          "queueDepth": 0,
+          "rejected": 0,
+          "scope": "64 accepted/written before metrics snapshot;65 application JSON including that later metrics line. Additional navigation-proof is outside the viewer FIFO. closed/joined false are pre-exit snapshot values, not proof a thread survived.",
+          "sink": "stdout",
+          "version": "surface-native-log-1",
+          "written": 64,
+          "maximaByEvent": {
+            "live-http-completed": {
+              "count": 13,
+              "printWallMs": 45.415,
+              "queueWaitMs": 0.087
+            },
+            "live-packet-decoded": {
+              "count": 13,
+              "printWallMs": 26.149,
+              "queueWaitMs": 0.1
+            },
+            "live-tile-accepted": {
+              "count": 13,
+              "printWallMs": 13.314,
+              "queueWaitMs": 25.977
+            },
+            "surface-viewer-start": {
+              "count": 1,
+              "printWallMs": 12.293,
+              "queueWaitMs": 0.067
+            },
+            "terrain-replaced": {
+              "count": 9,
+              "printWallMs": 27.42,
+              "queueWaitMs": 42.743
+            },
+            "view-satisfied": {
+              "count": 15,
+              "printWallMs": 42.785,
+              "queueWaitMs": 0.06
+            }
+          },
+          "applicationJsonCount": 65,
+          "acceptedPlusOneLaterMetrics": true,
+          "writerSerialAndEventFIFOExact": true
+        }
+      },
+      "allSceneFrameWallMs": {
+        "max": 741.844,
+        "p50": 16.668,
+        "p95": 16.87,
+        "p99": 17.131
+      },
+      "cpuScriptMs": {
+        "max": 207.245,
+        "p50": 0.065,
+        "p95": 0.263,
+        "p99": 0.565,
+        "samples": 5282,
+        "scope": "entire viewer _process including initial and first30 post-apply frames; engine/input callbacks excluded; wall/GPU metrics reported separately"
+      },
+      "eventCounts": {
+        "surface-viewer-start": 1,
+        "live-http-completed": 13,
+        "terrain-replaced": 9,
+        "live-packet-decoded": 13,
+        "live-tile-accepted": 13,
+        "view-satisfied": 15,
+        "metrics": 1,
+        "navigation-proof": 1
+      },
+      "applicationJsonCount": 65,
+      "totalJsonCount": 66
+    }
+  ],
+  "knownFailure": {
+    "message": "Invalid operands 'float' and 'String' in operator '!='",
+    "function": "SurfaceGroundResponse.expected_wire_dtype",
+    "subsequentCorrection": "e75e54a",
+    "scope": "Correction was delivered after this frozen run. Its later CPU fresh decode proof does not retroactively turn either phase PASS."
+  },
+  "survivorCheck": {
+    "checkedAtUtc": "2026-10-24T05:41:14.1729838Z",
+    "exactNames": [
+      "node.exe",
+      "python.exe",
+      "chrome-headless-shell.exe",
+      "Godot_v4.7.2-stable_win64_console.exe",
+      "Godot_v4.7.2-stable_win64.exe"
+    ],
+    "ownedSeedPids": [
+      196276,
+      199144,
+      178112,
+      201952
+    ],
+    "ownedPathMarker": "native-log-modes-v13",
+    "survivors": [],
+    "scope": "Read-only exact executable-name query; only recorded task PIDs, descendants or the exact artifact directory are retained. No unrelated process details or termination."
+  },
+  "limitations": [
+    "Fixed order synchronous then threaded; shared source/browser/context and warm caches. This is one diagnostic A/B, not a causal comparison or repeated performance study.",
+    "Actual requests and accepted/displayed world IDs differ between modes because input/frame scheduling differs.",
+    "navigationFrameWallMs derives from all_frame_times across warm-up, nominal motion and drain after _ready; its max is not a motion-only stall or FPS.",
+    "Synchronous printMs, threaded main enqueueMs and writer printWallMs are different measured spans. A smaller enqueue span is not a faster physical print.",
+    "Threaded writer snapshot precedes its metrics event;64 accepted+1 later metrics=65 application JSON;navigation-proof adds the66th JSON line outside the FIFO.",
+    "Driver/supervisor exit0 mean diagnostic collection finished; both strict native phases remain FAILED because stderr contains a real SCRIPT ERROR.",
+    "No60FPS, artistic, complete freshE2E, causality or resolved off-CPU pause claim."
+  ],
+  "artifacts": [
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\native-log-modes-v13\\report.json",
+      "bytes": 2431530,
+      "sha256": "d62a6ed7368c05bdd6261bfb959f8ad863beefaf7bd2dcff66603dc47a11e98a"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\native-log-modes-v13\\executed-driver.mjs",
+      "bytes": 60005,
+      "sha256": "cb4a8e81d2bc92ca9f0f82775ea65bdaa63857ecb298809b6933a87429f3c433"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\native-log-modes-v13\\supervisor.py",
+      "bytes": 1903,
+      "sha256": "8662e1cf5d3c1b5fdaa9fb648cbc2c1dd3cd60e093480b851cb136324d61cc9e"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\native-log-modes-v13\\supervisor-report.json",
+      "bytes": 1485,
+      "sha256": "75eb4cf3b45a9b6f829d98b01838ea08b75de3907a9870c1fb5e38baac93fa06"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\native-log-modes-v13\\driver-process.json",
+      "bytes": 1442,
+      "sha256": "c5fe6d99b8068d709d29f73b3dd116e3925dd06cae6e12efcfe273f6e76068b6"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\native-log-modes-v13\\driver.stdout.log",
+      "bytes": 24015,
+      "sha256": "e1275a9d64792d6309e48bae14073797e3c1035e5d9dfb45bf8f50f17ddc4810"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\native-log-modes-v13\\driver.stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\native-log-modes-v13\\fresh-source.surfacebin",
+      "bytes": 91626097,
+      "sha256": "352b21a5737c4fa7234ca71c1e85b32089f342eccea3d4d648aa9a671199aec9"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\native-log-modes-v13\\live-refinement.surfacebin",
+      "bytes": 76589841,
+      "sha256": "56804c0ed42e06d46cda56f1b9823a143c36a19e1a421d8dead648a25769a84b"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\native-log-modes-v13\\fresh-neural-heightfield.f32",
+      "bytes": 4194304,
+      "sha256": "3c7c2f32e37844842f058208e21522543bcec69125348e115390f83d5b814159"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\native-log-modes-v13\\native-navigation-synchronous\\stdout.log",
+      "bytes": 195569,
+      "sha256": "b18666c8c95fb668548b3d0a079faa30f23c30b3060b7740fd1488b75663e36c"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\native-log-modes-v13\\native-navigation-synchronous\\stderr.log",
+      "bytes": 806,
+      "sha256": "e05bda4b23e387db688b0e648feebaa22c9740ee60ff22c8368c235f031f2a9b"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\native-log-modes-v13\\native-navigation-synchronous\\metrics.json",
+      "bytes": 223065,
+      "sha256": "d225af29ae9401415aab356cb7c19af5cee8386411497ea8900484519237a829"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\native-log-modes-v13\\native-navigation-synchronous\\navigation-report.json",
+      "bytes": 175192,
+      "sha256": "0eba1695d045d635468ae0128aa46e4587f71a83157fa4aefd7e5400ef83fc0e"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\native-log-modes-v13\\native-navigation-threaded\\stdout.log",
+      "bytes": 208659,
+      "sha256": "41a660207f79e34ce2e8b14ac554665f44f85ba56011d8e08cd1410f8c9d216c"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\native-log-modes-v13\\native-navigation-threaded\\stderr.log",
+      "bytes": 806,
+      "sha256": "e05bda4b23e387db688b0e648feebaa22c9740ee60ff22c8368c235f031f2a9b"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\native-log-modes-v13\\native-navigation-threaded\\metrics.json",
+      "bytes": 244618,
+      "sha256": "22cb6d16f9b8cad4f0ce3b47edb4bb9e29b0093dd4d631f4371403a92122820f"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\native-log-modes-v13\\native-navigation-threaded\\navigation-report.json",
+      "bytes": 174946,
+      "sha256": "eb277e086cafcb081b90aebdbff6fe05d4e6a84c8fb2ea7826eb350a3e9f659d"
+    }
+  ]
+}
