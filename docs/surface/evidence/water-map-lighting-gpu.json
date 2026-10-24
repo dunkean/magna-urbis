@@ -1,0 +1,703 @@
+{
+  "format": "source-water-map-lighting-gpu-evidence",
+  "version": 1,
+  "baseCommit": "151cb319a8c0dc9e7e229f547d6096564e6ed63a",
+  "prototypeCommit": "52f660ca318c36e04abc77192bc6d3fff66cc359",
+  "primaryProbeSha256": "4f1c405b6af2e407b425e902fe427ce269a8b566633e6770538124e68c58274f",
+  "scope": "Authored 256px inclined receiver/alpha ramp/roof diagnostic, Forward+ RTX4090; no real hydrology/terrain/city qualification, no FPS or universal PBR claim",
+  "runs": [
+    {
+      "name": "zero-specular",
+      "reportPath": "web\\out\\surface\\water-flat\\gpu\\report.json",
+      "reportSha256": "f01fc727921fe514cccf016951a0a8b2595e8a37475bcf6e2167289a1bb9b6a8",
+      "report": {
+        "adapter": "NVIDIA GeForce RTX 4090",
+        "backend": "forward_plus",
+        "cases": [
+          {
+            "key": "-55-none",
+            "pixels": [
+              [
+                0.458823531866074,
+                0.458823531866074,
+                0.458823531866074
+              ],
+              [
+                0.458823531866074,
+                0.458823531866074,
+                0.458823531866074
+              ],
+              [
+                0.458823531866074,
+                0.458823531866074,
+                0.458823531866074
+              ],
+              [
+                0.458823531866074,
+                0.458823531866074,
+                0.458823531866074
+              ]
+            ],
+            "roofRGB": [
+              1.0,
+              0.0,
+              0.0
+            ]
+          },
+          {
+            "key": "-55-default",
+            "pixels": [
+              [
+                0.458823531866074,
+                0.458823531866074,
+                0.458823531866074
+              ],
+              [
+                0.415686279535294,
+                0.431372553110123,
+                0.447058826684952
+              ],
+              [
+                0.396078437566757,
+                0.462745100259781,
+                0.517647087574005
+              ],
+              [
+                0.443137258291245,
+                0.639215707778931,
+                0.7843137383461
+              ]
+            ],
+            "roofRGB": [
+              1.0,
+              0.0,
+              0.0
+            ]
+          },
+          {
+            "key": "-55-terrain",
+            "pixels": [
+              [
+                0.458823531866074,
+                0.458823531866074,
+                0.458823531866074
+              ],
+              [
+                0.415686279535294,
+                0.431372553110123,
+                0.447058826684952
+              ],
+              [
+                0.396078437566757,
+                0.462745100259781,
+                0.517647087574005
+              ],
+              [
+                0.443137258291245,
+                0.639215707778931,
+                0.7843137383461
+              ]
+            ],
+            "roofRGB": [
+              1.0,
+              0.0,
+              0.0
+            ]
+          },
+          {
+            "key": "-55-flat-map",
+            "pixels": [
+              [
+                0.458823531866074,
+                0.458823531866074,
+                0.458823531866074
+              ],
+              [
+                0.466666668653488,
+                0.533333361148834,
+                0.592156887054443
+              ],
+              [
+                0.470588237047195,
+                0.596078455448151,
+                0.690196096897125
+              ],
+              [
+                0.482352942228317,
+                0.69803923368454,
+                0.850980401039124
+              ]
+            ],
+            "roofRGB": [
+              1.0,
+              0.0,
+              0.0
+            ]
+          },
+          {
+            "key": "55-none",
+            "pixels": [
+              [
+                0.376470595598221,
+                0.376470595598221,
+                0.376470595598221
+              ],
+              [
+                0.372549027204514,
+                0.372549027204514,
+                0.372549027204514
+              ],
+              [
+                0.372549027204514,
+                0.372549027204514,
+                0.372549027204514
+              ],
+              [
+                0.372549027204514,
+                0.372549027204514,
+                0.372549027204514
+              ]
+            ],
+            "roofRGB": [
+              1.0,
+              0.0,
+              0.0
+            ]
+          },
+          {
+            "key": "55-default",
+            "pixels": [
+              [
+                0.376470595598221,
+                0.376470595598221,
+                0.376470595598221
+              ],
+              [
+                0.337254911661148,
+                0.352941185235977,
+                0.364705890417099
+              ],
+              [
+                0.321568638086319,
+                0.376470595598221,
+                0.423529416322708
+              ],
+              [
+                0.360784322023392,
+                0.52549022436142,
+                0.643137276172638
+              ]
+            ],
+            "roofRGB": [
+              1.0,
+              0.0,
+              0.0
+            ]
+          },
+          {
+            "key": "55-terrain",
+            "pixels": [
+              [
+                0.376470595598221,
+                0.376470595598221,
+                0.376470595598221
+              ],
+              [
+                0.337254911661148,
+                0.352941185235977,
+                0.364705890417099
+              ],
+              [
+                0.321568638086319,
+                0.376470595598221,
+                0.423529416322708
+              ],
+              [
+                0.360784322023392,
+                0.52549022436142,
+                0.643137276172638
+              ]
+            ],
+            "roofRGB": [
+              1.0,
+              0.0,
+              0.0
+            ]
+          },
+          {
+            "key": "55-flat-map",
+            "pixels": [
+              [
+                0.376470595598221,
+                0.376470595598221,
+                0.376470595598221
+              ],
+              [
+                0.403921574354172,
+                0.482352942228317,
+                0.549019634723663
+              ],
+              [
+                0.43529412150383,
+                0.5686274766922,
+                0.670588254928589
+              ],
+              [
+                0.482352942228317,
+                0.69803923368454,
+                0.850980401039124
+              ]
+            ],
+            "roofRGB": [
+              1.0,
+              0.0,
+              0.0
+            ]
+          }
+        ],
+        "diagnostics": {
+          "flatMapAlphaPolicy": "original base alpha retained; same C++ mip reconstruction; emission RGB already premultiplied, no extra alpha multiplication",
+          "flatMapDerivedTextureBudgetBytes": 100663296,
+          "flatMapDerivedTextureBytes": 349524,
+          "waterMapLighting": "flat-map",
+          "waterMapLightingScope": "renderer cartographic emission on terrain only; no physical surface, reflection or bathymetry claim",
+          "waterMapLightingVersion": "source-map-lighting-1"
+        },
+        "failures": [],
+        "flatAlphaCompositeMaxError": 0.00230211019515991,
+        "flatOpaqueSunDelta": 0.0,
+        "format": "source-water-map-lighting-probe",
+        "scope": "authored inclined receiver and alpha ramp, no source hydrology or terrain edited; zero receiver specular isolates proposed albedo/emission mechanism",
+        "sourceSha256": "9c1b51d7fb28fce0f9ad7f3ac699c1a62be293a893ebdd2369fe9fde43137106",
+        "sourceUnchanged": true,
+        "version": 1
+      },
+      "supervisor": {
+        "command": [
+          "D:/workspace/self/_surface-tools/godot-4.7.2/Godot_v4.7.2-stable_win64_console.exe",
+          "--path",
+          "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-v17-water-flat\\viewer-local",
+          "--rendering-method",
+          "forward_plus",
+          "--rendering-driver",
+          "vulkan",
+          "--resolution",
+          "256x256",
+          "--position",
+          "1700,900",
+          "--script",
+          "res://diagnostics/water_map_lighting_probe.gd",
+          "--",
+          "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-v17-water-flat\\web\\out\\surface\\water-flat\\gpu"
+        ],
+        "watcherIntervalSeconds": 1,
+        "watcherChecks": 2,
+        "status": "exited",
+        "pid": 208424,
+        "code": 0,
+        "durationMs": 3323
+      },
+      "pngs": [
+        {
+          "name": "-55-default.png",
+          "bytes": 949,
+          "sha256": "aa51757ca595df3120f1aca4f37ced967a5a28f553b0086f9fede27f97f18309"
+        },
+        {
+          "name": "-55-flat-map.png",
+          "bytes": 938,
+          "sha256": "59fb464405de6d417e70cbefe1c4c3aab3014877baf5dffcab5ea474ae5124e7"
+        },
+        {
+          "name": "-55-none.png",
+          "bytes": 892,
+          "sha256": "cbe667fbb0e9776a6e1507dc7fb4c314c94601f973e8d69e1dd9990d38923c53"
+        },
+        {
+          "name": "-55-terrain.png",
+          "bytes": 949,
+          "sha256": "aa51757ca595df3120f1aca4f37ced967a5a28f553b0086f9fede27f97f18309"
+        },
+        {
+          "name": "55-default.png",
+          "bytes": 1957,
+          "sha256": "647be8ea93a41f8a802c68b0d8457b1fdda2474b133129880e98b505d103e946"
+        },
+        {
+          "name": "55-flat-map.png",
+          "bytes": 1442,
+          "sha256": "337844d628264940511ddd0523e7b0b5bb8c774937067d4e4e3f7a1b18b305b5"
+        },
+        {
+          "name": "55-none.png",
+          "bytes": 1474,
+          "sha256": "eb227f046e289ab6932f5ebded0987777499285f45bb0cf4d96c940cdec324b3"
+        },
+        {
+          "name": "55-terrain.png",
+          "bytes": 1957,
+          "sha256": "647be8ea93a41f8a802c68b0d8457b1fdda2474b133129880e98b505d103e946"
+        }
+      ],
+      "legacyPngByteExactBothSuns": true,
+      "stderrBytes": 0,
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "receiver-specular-0.5",
+      "reportPath": "web\\out\\surface\\water-flat\\gpu-specular\\report.json",
+      "reportSha256": "0bb29a279227e40856a8e25e0e4925cf88f2529a1f483bba7662c4f421506e98",
+      "report": {
+        "adapter": "NVIDIA GeForce RTX 4090",
+        "backend": "forward_plus",
+        "cases": [
+          {
+            "key": "-55-none",
+            "pixels": [
+              [
+                0.470588237047195,
+                0.470588237047195,
+                0.470588237047195
+              ],
+              [
+                0.470588237047195,
+                0.470588237047195,
+                0.470588237047195
+              ],
+              [
+                0.470588237047195,
+                0.470588237047195,
+                0.470588237047195
+              ],
+              [
+                0.470588237047195,
+                0.470588237047195,
+                0.470588237047195
+              ]
+            ],
+            "roofRGB": [
+              1.0,
+              0.0,
+              0.0
+            ]
+          },
+          {
+            "key": "-55-default",
+            "pixels": [
+              [
+                0.470588237047195,
+                0.470588237047195,
+                0.470588237047195
+              ],
+              [
+                0.427450984716415,
+                0.443137258291245,
+                0.458823531866074
+              ],
+              [
+                0.407843142747879,
+                0.474509805440903,
+                0.529411792755127
+              ],
+              [
+                0.454901963472366,
+                0.647058844566345,
+                0.788235306739807
+              ]
+            ],
+            "roofRGB": [
+              1.0,
+              0.0,
+              0.0
+            ]
+          },
+          {
+            "key": "-55-terrain",
+            "pixels": [
+              [
+                0.470588237047195,
+                0.470588237047195,
+                0.470588237047195
+              ],
+              [
+                0.427450984716415,
+                0.443137258291245,
+                0.458823531866074
+              ],
+              [
+                0.407843142747879,
+                0.474509805440903,
+                0.529411792755127
+              ],
+              [
+                0.454901963472366,
+                0.647058844566345,
+                0.788235306739807
+              ]
+            ],
+            "roofRGB": [
+              1.0,
+              0.0,
+              0.0
+            ]
+          },
+          {
+            "key": "-55-flat-map",
+            "pixels": [
+              [
+                0.470588237047195,
+                0.470588237047195,
+                0.470588237047195
+              ],
+              [
+                0.47843137383461,
+                0.541176497936249,
+                0.600000023841858
+              ],
+              [
+                0.482352942228317,
+                0.603921592235565,
+                0.69803923368454
+              ],
+              [
+                0.494117647409439,
+                0.705882370471954,
+                0.854901969432831
+              ]
+            ],
+            "roofRGB": [
+              1.0,
+              0.0,
+              0.0
+            ]
+          },
+          {
+            "key": "55-none",
+            "pixels": [
+              [
+                0.384313732385635,
+                0.384313732385635,
+                0.384313732385635
+              ],
+              [
+                0.384313732385635,
+                0.384313732385635,
+                0.384313732385635
+              ],
+              [
+                0.384313732385635,
+                0.384313732385635,
+                0.384313732385635
+              ],
+              [
+                0.384313732385635,
+                0.384313732385635,
+                0.384313732385635
+              ]
+            ],
+            "roofRGB": [
+              1.0,
+              0.0,
+              0.0
+            ]
+          },
+          {
+            "key": "55-default",
+            "pixels": [
+              [
+                0.384313732385635,
+                0.384313732385635,
+                0.384313732385635
+              ],
+              [
+                0.34901961684227,
+                0.364705890417099,
+                0.376470595598221
+              ],
+              [
+                0.333333343267441,
+                0.388235300779343,
+                0.43529412150383
+              ],
+              [
+                0.372549027204514,
+                0.533333361148834,
+                0.650980412960052
+              ]
+            ],
+            "roofRGB": [
+              1.0,
+              0.0,
+              0.0
+            ]
+          },
+          {
+            "key": "55-terrain",
+            "pixels": [
+              [
+                0.384313732385635,
+                0.384313732385635,
+                0.384313732385635
+              ],
+              [
+                0.34901961684227,
+                0.364705890417099,
+                0.376470595598221
+              ],
+              [
+                0.333333343267441,
+                0.388235300779343,
+                0.43529412150383
+              ],
+              [
+                0.372549027204514,
+                0.533333361148834,
+                0.650980412960052
+              ]
+            ],
+            "roofRGB": [
+              1.0,
+              0.0,
+              0.0
+            ]
+          },
+          {
+            "key": "55-flat-map",
+            "pixels": [
+              [
+                0.384313732385635,
+                0.384313732385635,
+                0.384313732385635
+              ],
+              [
+                0.415686279535294,
+                0.490196079015732,
+                0.556862771511078
+              ],
+              [
+                0.443137258291245,
+                0.572549045085907,
+                0.674509823322296
+              ],
+              [
+                0.490196079015732,
+                0.701960802078247,
+                0.854901969432831
+              ]
+            ],
+            "roofRGB": [
+              1.0,
+              0.0,
+              0.0
+            ]
+          }
+        ],
+        "diagnostics": {
+          "flatMapAlphaPolicy": "original base alpha retained; same C++ mip reconstruction; emission RGB already premultiplied, no extra alpha multiplication",
+          "flatMapDerivedTextureBudgetBytes": 100663296,
+          "flatMapDerivedTextureBytes": 349524,
+          "waterMapLighting": "flat-map",
+          "waterMapLightingScope": "renderer cartographic emission on terrain only; no physical surface, reflection or bathymetry claim",
+          "waterMapLightingVersion": "source-map-lighting-1"
+        },
+        "failures": [],
+        "flatAlphaCompositeMaxError": 0.0117647051811218,
+        "flatOpaqueSunDelta": 0.00392156839370728,
+        "format": "source-water-map-lighting-probe",
+        "receiverSpecular": 0.5,
+        "scope": "authored inclined receiver and alpha ramp, no source hydrology or terrain edited; receiver specular explicitly recorded; authored albedo/emission mechanism test",
+        "sourceSha256": "9c1b51d7fb28fce0f9ad7f3ac699c1a62be293a893ebdd2369fe9fde43137106",
+        "sourceUnchanged": true,
+        "version": 1
+      },
+      "supervisor": {
+        "command": [
+          "D:/workspace/self/_surface-tools/godot-4.7.2/Godot_v4.7.2-stable_win64_console.exe",
+          "--path",
+          "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-v17-water-flat\\viewer-local",
+          "--rendering-method",
+          "forward_plus",
+          "--rendering-driver",
+          "vulkan",
+          "--resolution",
+          "256x256",
+          "--position",
+          "1700,900",
+          "--script",
+          "res://diagnostics/water_map_lighting_probe.gd",
+          "--",
+          "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-v17-water-flat\\web\\out\\surface\\water-flat\\gpu-specular",
+          ".5"
+        ],
+        "watcherIntervalSeconds": 1,
+        "watcherChecks": 2,
+        "status": "exited",
+        "pid": 65340,
+        "code": 0,
+        "durationMs": 3389
+      },
+      "pngs": [
+        {
+          "name": "-55-default.png",
+          "bytes": 1311,
+          "sha256": "0b2533549eadbc934b9942fda538539facc8536fe24fd6195529d02e108d99b6"
+        },
+        {
+          "name": "-55-flat-map.png",
+          "bytes": 937,
+          "sha256": "bbe0555b6d0c388126077dd062e195c8437e9870ff3bcc008d63e9a95b0a7285"
+        },
+        {
+          "name": "-55-none.png",
+          "bytes": 892,
+          "sha256": "008543adbe4e7d09059d7ab697c7652d4f46049083268b2d7c577951246880b1"
+        },
+        {
+          "name": "-55-terrain.png",
+          "bytes": 1311,
+          "sha256": "0b2533549eadbc934b9942fda538539facc8536fe24fd6195529d02e108d99b6"
+        },
+        {
+          "name": "55-default.png",
+          "bytes": 1510,
+          "sha256": "23d102c39f069782674f5b1d79cc617599208c11a34a71e33e231da84b9420e8"
+        },
+        {
+          "name": "55-flat-map.png",
+          "bytes": 1151,
+          "sha256": "8c74156b78ebb8ee5eb88d20d0c00ca4520bba2306efbf467e71027eabd3f90f"
+        },
+        {
+          "name": "55-none.png",
+          "bytes": 1096,
+          "sha256": "5618b8dd61a61b0f6730ba8ad7af24cca99269360fb125ac6ac6817acad76176"
+        },
+        {
+          "name": "55-terrain.png",
+          "bytes": 1510,
+          "sha256": "23d102c39f069782674f5b1d79cc617599208c11a34a71e33e231da84b9420e8"
+        }
+      ],
+      "legacyPngByteExactBothSuns": true,
+      "stderrBytes": 0,
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ],
+  "gpuReleased": true,
+  "ownProbeSurvivors": [],
+  "initialSetupFailure": {
+    "reason": "viewport opaque capture returned RGB8, oracle reconstruction initially assumed RGBA8; fixed explicit conversion, source/bake unchanged; initial run stopped with owned identity verified",
+    "rawLogs": [
+      {
+        "path": "web\\out\\surface\\water-flat\\gpu-initial.stdout.log",
+        "bytes": 154,
+        "sha256": "8877d9eccded4a57ab54887edc3d84ca368db40c4558902f4a57f4eaeee67ece"
+      },
+      {
+        "path": "web\\out\\surface\\water-flat\\gpu-initial.stderr.log",
+        "bytes": 221098,
+        "sha256": "28e189217782b05e3b094d0305d433de05a0a66238eef36bd84b13606b2a8bc6"
+      }
+    ]
+  }
+}

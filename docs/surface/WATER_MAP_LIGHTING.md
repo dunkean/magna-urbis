@@ -27,9 +27,17 @@ CPU validation: `surface_water_map_lighting_test.gd` passes 2,826 assertions,
 including all 256 alpha values, every mip alpha byte, source RGBA preservation,
 cache identity, budgets, legacy texture properties and incompatible mode refusal.
 The initial report-path setup error was corrected before this successful run.
-No GPU validation has been performed for this prototype yet. In particular,
-zero-specular albedo/emission isolation does not certify arbitrary PBR bed
-specular response, shadows or a complete artistic result.
+Forward+ RTX 4090 GPU oracle subsequently passed in 3.323 s (receiver specular
+0) and 3.389 s (receiver specular 0.5). Default and explicit `terrain` PNGs are
+byte-exact under both sun directions. Opaque flat-map interior sun difference
+is 0 and 1/255 respectively; single-alpha compositing error is 0.002302 and
+0.011765 (less than 1 and 3/255 respectively). All eight roof samples per run
+remain red, source RGBA is unchanged and both successful runs have empty stderr.
+The initial oracle readback incorrectly assumed opaque RGB8 captures were RGBA8;
+that setup failure is preserved separately, and fixed by explicit image conversion.
+These are authored controls, not certification of arbitrary PBR bed specular
+response, real regional lakes, shadows or a complete artistic result. No ORM or
+terrain shader override has been added. See `evidence/water-map-lighting-gpu.json`.
 
 Run the CPU test with Godot headless and an absolute writable report path:
 
@@ -37,7 +45,7 @@ Run the CPU test with Godot headless and an absolute writable report path:
 Godot --headless --path viewer-local --script res://tests/surface_water_map_lighting_test.gd -- ABSOLUTE/cpu.json
 ```
 
-The separately scheduled GPU oracle is
+The GPU oracle is
 `viewer-local/diagnostics/water_map_lighting_probe.gd`: inclined terrain, two sun
 directions, alpha 0/.25/.5/1, default/explicit legacy byte parity, single-alpha
 compositing and a layer-2 roof occluder. It is an authored diagnostic, not a new

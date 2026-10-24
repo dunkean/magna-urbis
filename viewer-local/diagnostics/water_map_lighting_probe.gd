@@ -6,7 +6,7 @@ func check(ok:bool,label:String):
 	if not ok:failures.append(label)
 func _initialize():call_deferred("run")
 func run():
-	var args=OS.get_cmdline_user_args();output=args[0] if args.size()>0 else "user://water-flat-probe"
+	var args=OS.get_cmdline_user_args();var specular=float(args[1]) if args.size()>1 else 0.;output=args[0] if args.size()>0 else "user://water-flat-probe"
 	DirAccess.make_dir_recursive_absolute(output)
 	var image=Image.create(256,256,false,Image.FORMAT_RGBA8)
 	var tint=Color(.2,.45,.7,1.)
@@ -21,7 +21,7 @@ func run():
 	var environment=WorldEnvironment.new();var config=Environment.new();config.background_mode=Environment.BG_COLOR;config.background_color=Color.BLACK;config.ambient_light_source=Environment.AMBIENT_SOURCE_COLOR;config.ambient_light_color=Color.WHITE;config.ambient_light_energy=.05;config.tonemap_mode=Environment.TONE_MAPPER_LINEAR;environment.environment=config;viewport.add_child(environment)
 	var camera=Camera3D.new();camera.projection=Camera3D.PROJECTION_ORTHOGONAL;camera.size=40.;camera.position=Vector3(0,100,0);viewport.add_child(camera);camera.look_at(Vector3.ZERO,Vector3(0,0,-1));camera.current=true
 	var terrain=MeshInstance3D.new();var plane=PlaneMesh.new();plane.size=Vector2(60,60);terrain.mesh=plane;terrain.rotation.z=.25;terrain.layers=1
-	var material=StandardMaterial3D.new();material.albedo_color=Color(.5,.5,.5);material.roughness=1.;material.metallic_specular=0.;terrain.material_override=material;viewport.add_child(terrain)
+	var material=StandardMaterial3D.new();material.albedo_color=Color(.5,.5,.5);material.roughness=1.;material.metallic_specular=specular;terrain.material_override=material;viewport.add_child(terrain)
 	var roof=MeshInstance3D.new();var box=BoxMesh.new();box.size=Vector3(5,1,5);roof.mesh=box;roof.position=Vector3(12,8,-8);roof.layers=2;var red=StandardMaterial3D.new();red.shading_mode=BaseMaterial3D.SHADING_MODE_UNSHADED;red.albedo_color=Color.RED;roof.material_override=red;viewport.add_child(roof)
 	var sun=DirectionalLight3D.new();sun.light_energy=1.;sun.shadow_enabled=false;viewport.add_child(sun)
 	var cases:Array=[];var captures={}
@@ -33,7 +33,7 @@ func run():
 			if decal!=null:viewport.add_child(decal)
 			for frame in 6:await process_frame
 			await RenderingServer.frame_post_draw
-			var capture=viewport.get_texture().get_image();var key=str(int(direction))+"-"+mode;captures[key]=capture.get_data();capture.save_png(output+"/"+key+".png")
+			var capture=viewport.get_texture().get_image();capture.convert(Image.FORMAT_RGBA8);var key=str(int(direction))+"-"+mode;captures[key]=capture.get_data();capture.save_png(output+"/"+key+".png")
 			var pixels=[]
 			for x in [32,96,160,224]:
 				var value=capture.get_pixel(x,180);pixels.append([value.r,value.g,value.b])
@@ -62,5 +62,5 @@ func run():
 			interior_delta=maxf(interior_delta,maxf(absf(a.r-b.r),maxf(absf(a.g-b.g),absf(a.b-b.b))))
 	check(interior_delta<=2./255.,"opaque flat interior independent of sun")
 	check(image.get_data()==source_bytes,"source RGBA unchanged")
-	var report={"format":"source-water-map-lighting-probe","version":1,"scope":"authored inclined receiver and alpha ramp, no source hydrology or terrain edited; zero receiver specular isolates proposed albedo/emission mechanism","failures":failures,"backend":RenderingServer.get_current_rendering_method(),"adapter":RenderingServer.get_video_adapter_name(),"sourceSha256":source_hash.finish().hex_encode(),"cases":cases,"flatAlphaCompositeMaxError":alpha_error,"flatOpaqueSunDelta":interior_delta,"sourceUnchanged":image.get_data()==source_bytes,"diagnostics":projection.diagnostics}
+	var report={"format":"source-water-map-lighting-probe","version":1,"scope":"authored inclined receiver and alpha ramp, no source hydrology or terrain edited; receiver specular explicitly recorded; authored albedo/emission mechanism test","failures":failures,"receiverSpecular":specular,"backend":RenderingServer.get_current_rendering_method(),"adapter":RenderingServer.get_video_adapter_name(),"sourceSha256":source_hash.finish().hex_encode(),"cases":cases,"flatAlphaCompositeMaxError":alpha_error,"flatOpaqueSunDelta":interior_delta,"sourceUnchanged":image.get_data()==source_bytes,"diagnostics":projection.diagnostics}
 	var file=FileAccess.open(output+"/report.json",FileAccess.WRITE);file.store_string(JSON.stringify(report,"  "));print(JSON.stringify(report));quit(0 if failures.is_empty() else 1)
