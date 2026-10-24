@@ -1,9 +1,45 @@
 # SurfaceWorld — état de l'implémentation
 
-Les [corrections consécutives à la revue V8](V9_CORRECTIONS.md) décrivent le
-compilateur 1.5.3 et le renderer V9 en cours de qualification. Le bilan ci-dessous
-conserve les mesures du snapshot V8 ; sa revue indépendante est
-[archivée séparément](reviews/phase06-followup-v8.md).
+État courant du 24 octobre 2026 : **la campagne technique V12 complète passe**
+sur le runtime figé `bc6579f`, compilateur `surface-1.5.3` et analyse physique
+`1.5.2`. Le [bilan V12](evidence/NATIVE_V12.md) et sa
+[preuve compacte](evidence/native-e2e-v12.json) conservent les résultats et hashes.
+Les corrections sont détaillées dans [V9_CORRECTIONS.md](V9_CORRECTIONS.md).
+
+- Une nouvelle génération Infinite Generation couvre 40 × 40 km. Les 584 fichiers
+  de runtime et les assets restent identiques pendant les 803,958 s de campagne.
+- Navigation nominale de 20 s, durée réelle 20,118 s : **un monde preview distinct**
+  est affiché deux fois, la première après 17,018 s. Sa grille 128² est rééchantillonnée
+  depuis le parent natif 30 m, sans décodeur : cela prouve la progression des requêtes
+  live, pas une arrivée de détail neuronal plus fin pendant le déplacement.
+- Après arrêt, le drain de 17,207 s fournit une grille 133² au pas livré de
+  0,468353 m, relief natif 0,46875 m avec décodeur. Les sept captures vont de
+  40 km à 10 m. Les 4,8828125 mm par pixel de cette dernière sont une mesure écran.
+- Deux probes indépendants à 10 km et 160 m vérifient sol, couvert bas et arbres.
+  Au proche, les comptes CPU alpha-positifs cadrés sont 64 arbres et 64 troncs,
+  288 herbes, 17 arbustes, 61 débris et 31 rochers. Masquer les arbres retire aussi
+  leur canopée et leur ombre optique ; masquer le couvert bas conserve le sol.
+  Ces comptes ne sont pas une mesure d'occlusion GPU.
+- L'hydrologie Magna conserve ses contours et niveaux ; le symbole cartographique
+  de rive de 1,25 pixel écran est déclaré. Les deux archives source passent leur
+  réimport strict sans réparation des slots.
+- Les trois vues des 419 bâtiments natifs sont
+  [qualifiées séparément](evidence/native-city419-v12.json), avec un parent retenu
+  à 15,625 m. La nouvelle génération de cette campagne ne contient pas de ville.
+
+Les frames de navigation donnent p50 31,236 ms, p95 39,101 ms, p99 64,117 ms,
+maximum 1 625,123 ms ; le warmup dure 62,062 s. Ce n'est pas une qualification
+60 FPS ou faible latence. Les vérifications passent : **224 tests dans 42 fichiers**,
+TypeScript complet, build terrainbench de 445 modules, parse natif et 13 tests Node
+de logs/horloges/rétention. Les validations de cache hydrologique et de préemption
+restent des preuves complémentaires bornées.
+
+La végétation proche conserve des couronnes sphériques et des petits blocs ;
+le contexte environnemental reste à 78,125 m. La qualité Google Earth, la parité
+de tous les styles et l'adoption définitive de Godot restent à démontrer. La revue
+Opus finale V12 est en cours ; les anciens verdicts artistiques restent conservés.
+
+## Historique conservé
 
 État documentaire du 24 octobre 2026. Le bilan technique ci-dessous décrit le
 renderer V8 figé `984f488`, compilateur `surface-1.5.2`.
@@ -56,7 +92,7 @@ Voir [V11 négative](evidence/native-e2e-v11-negative.json),
 [les captures urbaines V11](evidence/native-current-419-v11-render.json) et
 [le diagnostic séparé des pipes](NATIVE_STDOUT_DIAGNOSTIC.md).
 
-## Qualification du snapshot intégré
+## Qualification V8 archivée
 
 La [preuve V8](evidence/native-e2e-v8.json) porte sur une nouvelle génération
 teacher réelle 40 × 40 km, avec le même navigateur et la même session pendant
@@ -135,7 +171,7 @@ flowchart LR
 | --- | --- |
 | Monde physique indépendant du moteur | `web/src/surface/model.ts`, mètres, repère main droite +X est / +Y haut / +Z sud, grilles à centres de cellules. |
 | Compilation canonique | `compiler.ts` : morphologie multi-rayons, géologie explicite ou scénario granite déclaré, drainage source ou D8 déclaré, sols/dépôts/couverts, recettes matérielles et identités. |
-| Étages physiques | `surfaceLayers.ts`, compilateur `surface-1.5.2` : paires et moyennes du sol nu et du couvert bas, interpolation prémultipliée du couvert, humus brun continu, arbres/couronnes indépendants ; neuf arrays et 28 octets supplémentaires par échantillon, disponibilité legacy explicite. |
+| Étages physiques | `surfaceLayers.ts`, compilateur `surface-1.5.3`, analyse physique `1.5.2` : paires et moyennes du sol nu et du couvert bas, interpolation prémultipliée du couvert, humus brun continu, substrat naturel sous occupation urbaine grossière, arbres/couronnes indépendants ; neuf arrays et 28 octets supplémentaires par échantillon, disponibilité legacy explicite. |
 | Raffinement | `retargetSurfaceWorld` conserve le contexte canonique et ses catégories ; il projette les continus sémantiquement, renormalise les fractions et conserve les métadonnées du vrai relief fin. |
 | Source | `provider.ts`, `adapters/infiniteRefinement.ts`, `registrationBinding.ts` : requête emprise/pas, annulation, snapshot des contrôles retenus, empreinte de contenu non cryptographique, versions et emprise strictes. |
 | Contexte régional | `adapters/neuralEarth.ts`, `regionalCompiler.ts`, `geologyScenario.ts` : géoréférence, unités et provenance explicites ; aucun substrat déduit du seul climat. |
@@ -188,9 +224,12 @@ projetée est leur simulation physique. Il ne creuse pas le relief et ne monte p
 l'eau pour masquer un conflit. Une preuve GPU à 10 km conserve les 6 495 pixels
 des contours de référence et aucun des 52 pixels de toit affectés par un overlay
 sans profondeur. Les métriques de chaque vue indiquent l'autorité, les niveaux
-manquants, budgets, surfaces et conflits d'appui. Les segments plus fins qu'un
-pixel restent sous-échantillonnés : aucune conservation visuelle du débit n'est
-revendiquée. Voir [la preuve de projection](evidence/hydrology-f2/README.md).
+manquants, budgets, surfaces et conflits d'appui. Les limites vectorielles reçoivent
+avant rasterisation un symbole déclaré de 1,25 pixel écran, qui améliore la lecture
+régionale sans inventer de centreline, largeur physique ou débit. Le mode brut
+utilise une largeur symbolique nulle ; `source-levels` interdit ces symboles.
+Voir [la projection](evidence/hydrology-f2/README.md) et
+[les symboles de rive](WATER_SYMBOLS.md).
 
 Le défaut V7 de 43 triangles manquants a été reproduit : la conversion d'un
 sommet relatif en Float32 reconstruisait la limite 0 m à −0,000122 m. Le lookup
@@ -430,12 +469,12 @@ le téléchargement est une préparation hors boucle de rendu. Les probes GPU du
 [README natif](../../viewer-local/README.md) se lancent avec le backend indiqué
 dans leur rapport ; `canopy_probe.gd` requiert un vrai renderer, sans `--headless`.
 
-La campagne V8 ci-dessous est **techniquement qualifiée** sur le gel déclaré.
+La campagne V12 ci-dessous est **techniquement qualifiée** sur le gel déclaré.
 Le serveurVite et le servicePython doivent déjà être actifs. Garder le même
 snapshot pendant la génération et le parcours évite les rechargements de code :
 
 ```powershell
-node --import tsx scripts/generate_surface_source.mjs --url http://127.0.0.1:5197 --neural http://127.0.0.1:8893 --width 40000 --seed surface-native-e2e-40km --decoder-model original --geology-scenario tilted-strata-v1 --out out/surface/native-e2e-40km-v8 --viewer-godot $env:GODOT --viewer-assets C:/data/resolved.json --viewer-resolution 2048x1280 --viewer-navigation-seconds 20 --viewer-navigation-first --viewer-layer-probe --viewer-water-mode source-map
+node --import tsx scripts/generate_surface_source.mjs --url http://127.0.0.1:5197 --neural http://127.0.0.1:8893 --width 40000 --seed surface-native-e2e-40km --decoder-model original --geology-scenario tilted-strata-v1 --out out/surface/native-e2e-40km-v12 --viewer-godot $env:GODOT --viewer-assets C:/data/resolved.json --viewer-resolution 2048x1280 --viewer-navigation-seconds 20 --viewer-navigation-first --viewer-layer-probe --viewer-layer-probe-widths 10000,160 --viewer-water-mode source-map --viewer-water-symbol-width-px 1.25 --viewer-retain-visuals-after-navigation-failure
 ```
 
 `--viewer-launcher` permet de choisir explicitement le launcher du worktree
@@ -460,7 +499,7 @@ injecte de vrais événements molette et glisser à20Hz, mesure les applications
 géométrie et de source pendant le mouvement, puis attend le drain final. Un
 résultat qui n'applique aucun détail live pendant les entrées est un échec, même
 si le parent reste affiché. Le rapport sépare les annulations attendues des erreurs.
-Une tournée par paliers n'en tient pas lieu. La prochaine campagne doit afficher
+Une tournée par paliers n'en tient pas lieu. Le critère de campagne exige d'afficher
 pendant ces mêmes 20 secondes au moins un monde distinct du warmup, issu d'une
 requête interactive explicite `preview:true,resolution:128`, accepté puis réellement
 appliqué pendant le mouvement. Après arrêt, le drain et les sept captures exigent
@@ -476,11 +515,12 @@ satisfaction de la vue ; il ne compte jamais comme nouvelle acceptation ni
 comme nouveau monde affiché. Le serial réel du paquet peut donc rester identique
 entre deux captures. La satisfaction des caméras successives doit progresser et
 les captures restent reliées au paquet final réellement rendu. Cette politique
-est vérifiée par V5 puis V8, sans compter un cache comme une nouvelle acceptation.
-Restent à mesurer : applications pendant
-les entrées continues, âge des résultats, files d'attente/annulations, retour sur
-site après éviction, p95/p99 et pics d'upload/RAM/VRAM, avec routes/eau/ville/couvert
-et les styles cartographiques choisis.
+est vérifiée par V5, V8 puis V12, sans compter un cache comme une nouvelle acceptation.
+V12 mesure les applications pendant les entrées, les annulations et p95/p99 ;
+son option de rétention des captures après échec n'a pas été utilisée. Un échec
+de navigation resterait un échec global malgré des captures statiques. Restent
+notamment le retour après éviction, les pics RAM/VRAM, des trajectoires longues,
+la ville live complète et les styles cartographiques choisis.
 
 ## BacklogB01–B28
 
@@ -489,9 +529,9 @@ et les styles cartographiques choisis.
 
 | ID | État au snapshot | Reste nécessaire pour le critère du design |
 | --- | --- | --- |
-| B01 | Implémenté : sources/snapshots, captures et manifeste V8 exact archivés. | Maintenir cette provenance lors des prochains changements. |
-| B02 | Implémenté : fournisseur neutre, emprises/centres, annulation, eau/occupation/ville et liaison de contrôles. | Parcours natif frais qualifié par V8 ; scène urbaine neuve et live complète encore distincte. |
-| B03 | Prototype Godot/Terrain3D et vrais imports40km ; parent/noyaux/précision instrumentés. | Navigation continue et tournée finale, vidéo, décision moteur fondée aussi sur styles/plans/export. |
+| B01 | Implémenté : sources/snapshots, captures et manifeste V12 exact archivés. | Maintenir cette provenance lors des prochains changements. |
+| B02 | Implémenté : fournisseur neutre, emprises/centres, annulation, eau/occupation/ville et liaison de contrôles. | Parcours natif frais V12 qualifié ; scène urbaine neuve et live complète encore distincte. |
+| B03 | Prototype Godot/Terrain3D et vrais imports40km ; navigation V12 et tournée qualifiées sous leurs limites mesurées. | Latence/préparation, vidéo, décision moteur fondée aussi sur styles/plans/export. |
 | B04 | Prototype PBR réel, eau, objets bornés, éclairage et métriquesGPU. | Qualité de la scène complète et budgets pendant les remplacements. |
 | B05 | Implémenté : contrat moteur-neutre, versions/provenance, sampling, hydration et binaire. | Revue finale du schéma intégré et de ses frontières. |
 | B06 | Implémenté : pente/courbure/TPI multi-rayons et confiance de bord. | Comparaisons terrain documentées ; ce n'est pas un classifieur geomorphon complet. |
@@ -501,11 +541,11 @@ et les styles cartographiques choisis.
 | B10 | Partiel : climat physique, fractions minérales renormalisées, organique distinct et sols heuristiques. | Calibration/validation crête-versant-creux et géométries submaille pertinentes. |
 | B11 | Implémenté : catalogue extensible et15 jeux PBR normalisés, échelles/provenance/fallback explicites. | Couverture artistique de toutes les scènes et contrôle des assets sur leurs usages réels. |
 | B12 | Partiel : recettes conditionnées, top2+blend, moyenne canonique et motifs orientés. | Organisation mésoscopique plus précise que les cellules de contexte ; diagnostic intégré roche/sol/dépôts. |
-| B13 | Implémenté : inventaire stable, colonnes, budgets/rangs et sélection bornée. | Objets proches de qualité et validation temporelle dans la scène. |
-| B14 | Partiel : couronnes calibrées, transmittance/residual commun, masque d'appui séparé. | Canopy/ombres/couleurs sur navigation réelle et couverts hétérogènes ; forêt photographique non livrée. |
+| B13 | Implémenté : inventaire stable, colonnes, pages complètes bornées et isolation des instances proches V12. | Objets proches de qualité et trajectoires temporelles supplémentaires. |
+| B14 | Partiel : couronnes calibrées, transmittance/résiduel commun, sécurité de page globale et isolation V12. | Couronnes/ombres optiques encore stylisées ; couverts hétérogènes et forêt photographique non livrée. |
 | B15 | Partiel : filtrage linéaire, moyenne PBRGPU, classes/poids communs et rebase. | Mesurer aliasing/popping/continuité lumineuse sur trajectoires, pas seulement probes. |
 | B16 | Partiel : scène linéaire et styles cartographiques distincts, eau source explicite. | Plusieurs éclairages, rives mobiles compatibles et ombres de toute la scène. |
-| B17 | V8 technique complète : source neuve, mouvement, sept échelles, quatre visibilités et sol nu ; ville419 séparée. | Verdict artistique/revue finale indépendant, puis trajectoires et scènes supplémentaires. |
+| B17 | V12 technique complète : source neuve, mouvement, sept échelles, isolation à 10 km et 160 m ; ville419 séparée. | Verdict artistique/revue finale indépendant, puis trajectoires et scènes supplémentaires. |
 | B18 | Prototype : vrai importOrogen/NeuralEarth métrique, unités/lapse/provenance ; géologie externe exigée. | Intégration d'un paquet géologique régional réel et confrontation aux scènes. |
 | B19 | Partiel : matériaux/coastmasks/eau et provenance de dépôt déclarés. | Deux côtes qualifiées, bancs/marais géométriques, fond/turbidité/flux. |
 | B20 | Partiel : occupation, exclusions, routes et ville native/style source conservés. | Scène rurale complète : champs/cours/haies et contacts d'appui validés. |
