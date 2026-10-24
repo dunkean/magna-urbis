@@ -7,6 +7,10 @@ class CancelGate extends "res://adapters/surface_prepare_control.gd":
 	func checkpoint(stage:String)->bool:
 		if stage=="height-batch-poll":request_cancel(2,1)
 		return super.checkpoint(stage)
+class CancelSourceGate extends "res://adapters/surface_prepare_control.gd":
+	func checkpoint(stage:String)->bool:
+		if stage=="height-batch-source-layer":request_cancel(2,1)
+		return super.checkpoint(stage)
 var checks=0
 var failures=0
 var cases=[]
@@ -42,7 +46,7 @@ func exercise(executable:String,world:Dictionary,origin:Dictionary,spacing:float
 	verify(expected.to_byte_array()==result.height.get_data(),name+": ALL output RF bytes equal GDScript source/seam/nearest-height reconstruction")
 	verify(controls==result.control.get_data(),name+": ALL terrain hole/control bits equal")
 	verify(int(result.metrics.holes)==holes,name+": source coverage count")
-	cases.append({"name":name,"pixels":size*size,"holes":holes,"nativeTotalMs":result.metrics.totalMs,"nativeSampleMs":result.metrics.sampleMs,"maximumF64ToRfErrorM":maximum,"allRfAndControlBytesExact":true})
+	cases.append({"name":name,"pixels":size*size,"holes":holes,"nativeTotalMs":result.metrics.totalMs,"nativeSampleMs":result.metrics.sampleMs,"maximumF64ToRfErrorM":maximum,"allRfAndControlBytesExact":true,"sourceSamples":result.metrics.sourceSamples,"sourceLayers":result.metrics.sourceLayers,"sourceBudgetVersion":result.metrics.sourceBudgetVersion,"sourceInputSha256":result.metrics.sourceInputSha256,"outputPayloadSha256":result.metrics.outputPayloadSha256,"nativeKnownBufferUpperBytes":result.metrics.nativeKnownBufferUpperBytes})
 func run()->void:
 	var args=OS.get_cmdline_user_args()
 	if args.size()!=1:push_error("Pass native height helper executable");quit(2);return
@@ -58,6 +62,32 @@ func run()->void:
 	var left=world_for(grid(5,2,-18,-4,true));var right=world_for(grid(5,2,10,-4,true));right.terrain.heights.fill(1100)
 	right["_terrainParents"]=[{"terrain":left.terrain,"bounds":left.bounds,"canonicalContextId":"test-context"}]
 	exercise(exe,right,origin,1.0,49,"disjoint-domains-hidden-gap-nearest-tie")
+	# Actual failing V14 chain SHAPES, with explicitly authored heights here.
+	# The unarchived NN child body is not claimed to be replayed by this fixture.
+	var shapes=[[214,100.0,19950.0],[512,244.0,19878.0],[512,820.0,19590.0],[512,3124.0,18438.0],[512,12052.0,13974.0],[512,39921.875,39.0625]]
+	var chain=[]
+	for shape in shapes:
+		var spacing=float(shape[1])/int(shape[0]);var start=float(shape[2])+spacing*.5
+		chain.append(world_for(grid(int(shape[0]),spacing,start,start,false)))
+	chain.append(world_for(grid(512,78.125,39.0625,39.0625,true)))
+	var live:Dictionary=chain[0];live._terrainParents=[]
+	for index in range(1,chain.size()):live._terrainParents.append({"terrain":chain[index].terrain,"bounds":chain[index].bounds,"canonicalContextId":"test-context"})
+	exercise(exe,live,{"x":20000.0,"y":1000.125,"z":20000.0},100.0/214.0,512,"v14-full-live-chain-shapes-authored-heights-1618660-samples")
+	var full=[]
+	var maximum_grid=grid(1024,1.0,-512,-512,false,true)
+	for index in 7:
+		var g:Dictionary=maximum_grid.duplicate();g.spacingM=float(index+1)
+		var item=world_for(g);full.append({"terrain":g,"bounds":item.bounds,"canonicalContextId":"test-context"})
+	var maximum_world=world_for(full[0].terrain);maximum_world._terrainParents=full.slice(1)
+	exercise(exe,maximum_world,origin,1.25,65,"exact-seven-1024-square-f64-budget")
+	verify(Batch.source_budget(full).samples==7340032,"expanded source sample limit accepts exactly seven 1024-square controls")
+	var oversized:Dictionary=full[6].duplicate(true);oversized.terrain.width=1025;oversized.terrain.heights.resize(1025*1024)
+	var above=full.duplicate();above[6]=oversized
+	verify(Batch.source_budget(above).get("heightBatchError")=="height batch source sample budget","above total source samples rejected before payload copies")
+	var too_many=full.duplicate();too_many.append(full[0])
+	verify(Batch.source_budget(too_many).get("heightBatchError")=="height batch source layer budget","eight layers rejected independently of sample count")
+	var before_wire=CancelSourceGate.new(1,1,"shown","shown")
+	verify(Batch.prepare(maximum_world,maximum_world,origin,Vector3.ZERO,1,65,checks,{"heightBatchExecutable":exe,"prepareControl":before_wire}).get("cancelled",false) and before_wire.report().reached,"source serialization checkpoint cancels before allocating wire copies or subprocess")
 	var source=world_for(grid(5,2,-4,-4,true));source["_displaySpacing"]=1.0
 	verify(Batch.prepare(source,source,origin,Vector3.ZERO,1,16,1,{"heightBatchExecutable":"missing-native-helper"}).failed,"explicit missing helper refuses rather than silently fake/fallback")
 	var token=CancelGate.new(1,1,"shown","shown")
