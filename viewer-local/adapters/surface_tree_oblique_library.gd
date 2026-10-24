@@ -60,8 +60,8 @@ func bake(parent:Node,library:RefCounted)->bool:
 		node.mesh.surface_set_material(i,material);materials.append(material)
 	var camera=Camera3D.new();camera.projection=Camera3D.PROJECTION_ORTHOGONAL;camera.size=SPAN;camera.near=.01;camera.far=5;scene.add_child(camera);camera.current=true
 	var color_images:Array[Image]=[];var normal_images:Array[Image]=[];var depth_images:Array[Image]=[];var hash=HashingContext.new();hash.start(HashingContext.HASH_SHA256)
-	# Opaque alpha-scissor MRT replacement must preserve unassociated RGB even
-	# when A stores roughness. Refuse an unexpected engine/readback association.
+	# Verify linear, unassociated HDR data and binary opaque coverage. Godot's
+	# scissor pass stores A=1, so roughness is packed in depth.G, never output A.
 	camera.position=Vector3(2,1,2);camera.look_at(Vector3(0,.5,0))
 	for material in materials:material.set_shader_parameter("channel",3)
 	await parent.get_tree().process_frame;await parent.get_tree().process_frame;await RenderingServer.frame_post_draw
@@ -71,7 +71,8 @@ func bake(parent:Node,library:RefCounted)->bool:
 			var c=calibration.get_pixel(x,y)
 			if c.a>.1:sentinel=c;break
 		if sentinel.a>.1:break
-	if absf(sentinel.r-.25)>.003 or absf(sentinel.g-.5)>.003 or absf(sentinel.b-.75)>.003 or absf(sentinel.a-.5)>.003:viewport.queue_free();return false
+	if absf(sentinel.r-.25)>.003 or absf(sentinel.g-.5)>.003 or absf(sentinel.b-.75)>.003 or absf(sentinel.a-1.0)>.003:
+		push_error("View data readback calibration: "+str(sentinel)+" format="+str(calibration.get_format()));viewport.queue_free();return false
 	for direction in directions():
 		camera.position=Vector3(0,.5,0)+direction*2;camera.look_at(Vector3(0,.5,0),Vector3.FORWARD if direction.y>.999 else Vector3.UP)
 		for channel in 3:
@@ -91,7 +92,7 @@ func bake(parent:Node,library:RefCounted)->bool:
 		for image in array:bytes+=image.get_data().size()
 	if bytes!=persistent_bytes():viewport.queue_free();return false
 	color_images.clear();normal_images.clear();depth_images.clear();viewport.queue_free();await RenderingServer.frame_post_draw
-	descriptor={"available":true,"version":VERSION,"assetDigest":library.cpu.digest,"viewCount":directions().size(),"elevationsDegrees":ELEVATIONS,"azimuthCount":AZIMUTHS,"maximumAzimuthQuantizationDegrees":22.5,"maximumElevationQuantizationDegrees":15,"resolution":RESOLUTION,"spanInSourceHeight":SPAN,"heightRadiusRatioAppliedBeforeProjection":RATIO,"colorFormat":"premultiplied-linear-RGBA16F+mips","normalRoughnessFormat":"coverage-premultiplied-encoded-world-normalRGB/roughnessA-linear-RGBA8+mips","depthFormat":"coverage-premultiplied-depthR/coverageG-RG16F+mips","persistentTextureBytes":bytes,"sourceAabbEnclosingRadius":radius,"productsSha256":hash.finish().hex_encode(),"bakeMs":(Time.get_ticks_usec()-started)/1000.0,"scope":"view-quantized source geometry/albedo/normal/roughness/depth; no beauty lighting, canonical data changes or exact oblique3D claim"}
+	descriptor={"available":true,"version":VERSION,"assetDigest":library.cpu.digest,"viewCount":directions().size(),"elevationsDegrees":ELEVATIONS,"azimuthCount":AZIMUTHS,"maximumAzimuthQuantizationDegrees":22.5,"maximumElevationQuantizationDegrees":15,"resolution":RESOLUTION,"spanInSourceHeight":SPAN,"heightRadiusRatioAppliedBeforeProjection":RATIO,"colorFormat":"premultiplied-linear-RGBA16F+mips","normalRoughnessFormat":"coverage-premultiplied-encoded-physical-normalRGB/coverageA-linear-RGBA8+mips","depthFormat":"coverage-premultiplied-depthR/roughnessG-RG16F+mips; divide by colourA","persistentTextureBytes":bytes,"sourceAabbEnclosingRadius":radius,"productsSha256":hash.finish().hex_encode(),"bakeMs":(Time.get_ticks_usec()-started)/1000.0,"scope":"view-quantized source geometry/albedo/normal/roughness/depth; no beauty lighting, canonical data changes or exact oblique3D claim"}
 	return true
 
 func material()->ShaderMaterial:

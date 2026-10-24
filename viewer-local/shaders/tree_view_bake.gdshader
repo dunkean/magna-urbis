@@ -32,9 +32,9 @@ void fragment(){
  n=normalize(t*mapped.x+b*mapped.y+n*mapped.z)*(FRONT_FACING?1.0:-1.0);
  float r=clamp(dot(texture(source_roughness,UV),roughness_channel)*roughness_factor,.04,1.0);
  if(channel==0){ALBEDO=c.rgb;ALPHA=1.0;}
- else if(channel==1){ALBEDO=n*.5+.5;ALPHA=r;}
- else if(channel==2){ALBEDO=vec3(dot(source_position-vec3(0,.5,0),view_direction)/1.6+.5,1,.25);ALPHA=1.0;}
- else {ALBEDO=vec3(.25,.5,.75);ALPHA=.5;}
+ else if(channel==1){ALBEDO=n*.5+.5;ALPHA=1.0;}
+ else if(channel==2){ALBEDO=vec3(dot(source_position-vec3(0,.5,0),view_direction)/1.6+.5,r,.25);ALPHA=1.0;}
+ else {ALBEDO=vec3(.25,.5,.75);ALPHA=1.0;}
  // Source cutout is already discarded above. Write data, not alpha blend.
  ALPHA_SCISSOR_THRESHOLD=0.0;
 }

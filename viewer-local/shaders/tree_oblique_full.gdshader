@@ -34,11 +34,11 @@ void fragment(){
  vec3 normal=nr.rgb/max(color.a,.00001)*2.0-1.0;
  NORMAL=normalize(mat3(VIEW_MATRIX)*transpose(inverse(mat3(tree_model)))*normal);
  ALBEDO=display_color(color.rgb/max(color.a,.00001));
- ROUGHNESS=clamp(nr.a/max(color.a,.00001),.04,1.0);SPECULAR=.25;
+ ROUGHNESS=clamp(depth.g/max(color.a,.00001),.04,1.0);SPECULAR=.25;
  // Source alpha is linear and mip-filtered. Hashing preserves sub-.5 coverage,
  // unlike a fixed alpha scissor that would erase unresolved foliage.
  ALPHA=color.a*forest_oblique_selector(FRAGCOORD.xy);ALPHA_HASH_SCALE=1.0;
- vec3 point=local_position+local_view*((depth.r/max(depth.g,.00001)-.5)*1.6);
+ vec3 point=local_position+local_view*((depth.r/max(color.a,.00001)-.5)*1.6);
  vec4 clip=PROJECTION_MATRIX*VIEW_MATRIX*tree_model*vec4(point,1);
  DEPTH=tree_depth_enabled?clip.z/clip.w:FRAGCOORD.z;
 }
