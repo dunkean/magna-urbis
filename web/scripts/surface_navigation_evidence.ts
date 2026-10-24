@@ -1,5 +1,61 @@
 type Row=Record<string,any>;
 const record=(v:unknown):v is Row=>!!v&&typeof v==='object'&&!Array.isArray(v);
+/** Diagnostics include the final blocked frame, while qualification still ends
+ * at the original nominal motionEndTickMs. No new timing/FPS threshold is added. */
+export function verifyNavigationTiming(proof:unknown,expectedSeconds?:number):Row {
+  if(!record(proof)||proof.version!==2||proof.timingVersion!=='navigation-timing-1'
+    ||!Number.isFinite(proof.continuousSeconds)||proof.continuousSeconds<=0
+    ||expectedSeconds!==undefined&&proof.continuousSeconds!==expectedSeconds
+    ||![proof.motionStartTickMs,proof.motionEndTickMs,proof.actualMotionEndTickMs].every(v=>Number.isSafeInteger(v)&&v>=0)
+    ||proof.motionEndTickMs-proof.motionStartTickMs!==Math.round(proof.continuousSeconds*1000)
+    ||proof.actualMotionEndTickMs<proof.motionEndTickMs
+    ||!Array.isArray(proof.inputSamples)||!proof.inputSamples.length||!Array.isArray(proof.motionApplications))
+    throw new Error('Missing or inconsistent nominal/actual navigation timing');
+  const near=(a:unknown,b:number):boolean=>typeof a==='number'&&Number.isFinite(a)&&Math.abs(a-b)<=1e-9*Math.max(1,Math.abs(b));
+  const actualSeconds=(proof.actualMotionEndTickMs-proof.motionStartTickMs)/1000;
+  if(!near(proof.motionActualWallSeconds,actualSeconds))throw new Error('Actual input duration differs from its measured end tick');
+  let previous=0,maximum=0,maximumInterval={fromElapsedSeconds:0,toElapsedSeconds:0,gapSeconds:0,terminal:false};
+  for(const sample of proof.inputSamples){
+    if(!record(sample)||!Number.isFinite(sample.elapsedSeconds)||sample.elapsedSeconds<previous||sample.elapsedSeconds>proof.continuousSeconds)
+      throw new Error('Input samples are unordered or outside the nominal input interval');
+    const gap=sample.elapsedSeconds-previous;
+    if(gap>maximum){maximum=gap;maximumInterval={fromElapsedSeconds:previous,toElapsedSeconds:sample.elapsedSeconds,gapSeconds:gap,terminal:false};}
+    previous=sample.elapsedSeconds;
+  }
+  const terminal=actualSeconds-previous;
+  if(terminal>maximum){maximum=terminal;maximumInterval={fromElapsedSeconds:previous,toElapsedSeconds:actualSeconds,gapSeconds:terminal,terminal:true};}
+  if(!near(proof.lastInputElapsedSeconds,previous)||!near(proof.terminalInputGapSeconds,terminal)||!near(proof.maximumInputGapSeconds,maximum)
+    ||!record(proof.maximumInputGapInterval)||!near(proof.maximumInputGapInterval.fromElapsedSeconds,maximumInterval.fromElapsedSeconds)
+    ||!near(proof.maximumInputGapInterval.toElapsedSeconds,maximumInterval.toElapsedSeconds)||!near(proof.maximumInputGapInterval.gapSeconds,maximumInterval.gapSeconds)
+    ||proof.maximumInputGapInterval.terminal!==maximumInterval.terminal)
+    throw new Error('Reported input gap omits or changes the actual terminal interval');
+  let previousApplication=0,applicationGap=0;
+  for(const application of proof.motionApplications){
+    if(!record(application)||!Number.isFinite(application.elapsedSeconds)||application.elapsedSeconds<previousApplication||application.elapsedSeconds>proof.continuousSeconds)
+      throw new Error('Invalid observed geometry application samples');
+    applicationGap=Math.max(applicationGap,application.elapsedSeconds-previousApplication);previousApplication=application.elapsedSeconds;
+  }
+  applicationGap=Math.max(applicationGap,actualSeconds-previousApplication);
+  if(!near(proof.longestMotionApplicationGapSeconds,applicationGap)||proof.motionApplicationCount!==proof.motionApplications.length
+    ||!record(proof.motionEnd)||!near(proof.motionEnd.elapsedSeconds,actualSeconds)||!Number.isFinite(proof.drainSeconds)||proof.drainSeconds<0
+    ||!record(proof.final)||!near(proof.final.elapsedSeconds,actualSeconds+proof.drainSeconds))
+    throw new Error('Observed application/end snapshots hide the actual input duration');
+  if(!record(proof.counterSemantics)||proof.counterSemantics.version!=='navigation-counters-1'||!record(proof.compatibilityAliases)
+    ||proof.compatibilityAliases['snapshot.liveAppliedSerial']!=='snapshot.liveAcceptedSerial'
+    ||proof.compatibilityAliases.motionLiveApplicationCount!=='motionLiveAcceptedCount'||!Array.isArray(proof.liveAcceptance)
+    ||proof.liveAcceptance.some((e:unknown)=>!record(e)||!Number.isSafeInteger(e.tickMs)))
+    throw new Error('Navigation acceptance counters lack explicit semantics/legacy aliases');
+  const count=(end:number)=>proof.liveAcceptance.filter((e:Row)=>e.tickMs>proof.motionStartTickMs&&e.tickMs<=end).length;
+  const accepted=count(proof.motionEndTickMs),actualAccepted=count(proof.actualMotionEndTickMs);
+  if(proof.motionLiveAcceptedCount!==accepted||proof.motionActualLiveAcceptedCount!==actualAccepted||proof.motionLiveApplicationCount!==accepted)
+    throw new Error('Acceptance counts differ from the accepted packet ledger');
+  for(const snapshot of [proof.initial,proof.motionEnd,proof.final]){
+    if(!record(snapshot)||!Number.isSafeInteger(snapshot.liveAcceptedSerial)||snapshot.liveAcceptedSerial< -1||snapshot.liveAppliedSerial!==snapshot.liveAcceptedSerial)
+      throw new Error('Legacy liveAppliedSerial must be an explicit acceptance alias');
+  }
+  return {nominalDurationSeconds:proof.continuousSeconds,actualDurationSeconds:actualSeconds,overshootSeconds:actualSeconds-proof.continuousSeconds,
+    maximumInputGapSeconds:maximum,terminalInputGapSeconds:terminal,maximumInputGapInterval:maximumInterval,motionAcceptedCount:accepted,motionActualAcceptedCount:actualAccepted};
+}
 /** Godot's default JSON output rounds binary64 values to decimal text. Compare
  * the actual grid spacing across that boundary without requiring bit identity. */
 export const sameDeliveredSpacing=(actual:unknown,expected:unknown):boolean=>typeof actual==='number'&&typeof expected==='number'

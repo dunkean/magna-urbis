@@ -4,6 +4,7 @@ extends SceneTree
 # Do not pass --frames/--tour: those intentionally suppress interactive input.
 var viewer: Node
 const Evidence = preload("res://diagnostics/navigation_evidence.gd")
+const Timing = preload("res://diagnostics/navigation_timing.gd")
 
 func _initialize() -> void:
 	call_deferred("run")
@@ -32,7 +33,8 @@ func snapshot(elapsed: float) -> Dictionary:
 		"appliedGeneration":int(viewer.get("applied_generation")),"requestedGeneration":int(viewer.get("generation")),
 		"worldId":str(world.get("id","")),"source":world.get("terrain",{}).get("source",{}),
 		"rendered":rendered.duplicate(true),"discardedPreparations":discarded.duplicate(),
-		"liveSerial":int(viewer.get("live_serial")),"liveAppliedSerial":int(viewer.get("last_live_applied_serial")),
+		"liveSerial":int(viewer.get("live_serial")),"liveAcceptedSerial":int(viewer.get("last_live_applied_serial")),
+		"liveAppliedSerial":int(viewer.get("last_live_applied_serial")), # Declared legacy acceptance alias, not rendering.
 		"viewSatisfiedSerial":int(viewer.get("view_satisfied_serial")),
 		"viewSatisfaction":viewer.get("view_satisfaction").duplicate(true),
 		"liveBusy":bool(viewer.get("live_busy")),"geometryBusy":viewer.get("worker")!=null}
@@ -62,21 +64,23 @@ func run() -> void:
 		"initial":snapshot(0.0),"motionApplications":[],"inputSamples":[],"sourceReplacedWhileMoving":false,
 		"scope":"Real Input.parse_input_event wheel and held-left pan against the unmodified native scene; no FPS target is assumed."}
 	report.qualityPolicy={"interactive":{"preview":true,"requestedResolution":128},"settled":{"preview":false,"requestedResolution":512},"actualProviderGridAuthoritative":true,"canonicalInventoryUnchanged":true}
+	report.counterSemantics={"version":"navigation-counters-1","motionLiveAcceptedCount":"retained acceptance ledger entries in the nominal input interval, not renderer applications",
+		"motionActualLiveAcceptedCount":"retained acceptance ledger entries through actualMotionEndTickMs, not renderer applications",
+		"motionApplicationCount":"observed applied geometry generation changes","motionLiveDisplayCount":"fresh verified renderer applications in the nominal input interval"}
+	report.compatibilityAliases={"snapshot.liveAppliedSerial":"snapshot.liveAcceptedSerial","motionLiveApplicationCount":"motionLiveAcceptedCount"}
 	button(MOUSE_BUTTON_LEFT,true)
 	var motion_began := Time.get_ticks_msec();var next_input := 0.0
 	report.motionStartTickMs=motion_began
 	var initial_rendered_serial := int(viewer.get("rendered_live_serial"))
 	var initial_rendered_world_id := str(viewer.get("rendered_world_id"))
 	var minimum_width := float(viewer.get("width_m"));var maximum_pan_offset := 0.0
-	var last_generation := int(viewer.get("applied_generation"));var last_live := int(viewer.get("last_live_applied_serial"))
-	var last_apply := 0.0;var longest_gap := 0.0;var live_applies := 0
+	var last_generation := int(viewer.get("applied_generation"))
 	while true:
 		var elapsed := (Time.get_ticks_msec()-motion_began)/1000.0
 		if elapsed>=duration: break
-		var generation := int(viewer.get("applied_generation"));var live_applied := int(viewer.get("last_live_applied_serial"))
+		var generation := int(viewer.get("applied_generation"))
 		if generation!=last_generation:
-			report.motionApplications.append(snapshot(elapsed));longest_gap=maxf(longest_gap,elapsed-last_apply);last_apply=elapsed;last_generation=generation
-		if live_applied!=last_live: live_applies+=1;last_live=live_applied
+			report.motionApplications.append(snapshot(elapsed));last_generation=generation
 		if elapsed>=next_input:
 			next_input=elapsed+0.05
 			# A log-scale zoom reaches the close view without a quiet pause. Panning
@@ -97,26 +101,23 @@ func run() -> void:
 			report.inputSamples.append({"elapsedSeconds":elapsed,"targetWidthM":target,"widthBeforeInputM":width,"wheel":wheel})
 		await process_frame
 	button(MOUSE_BUTTON_LEFT,false)
-	report.motionEndTickMs=mini(Time.get_ticks_msec(),motion_began+roundi(duration*1000.0))
-	report.motionActualWallSeconds=(Time.get_ticks_msec()-motion_began)/1000.0
-	var previous_input := 0.0;var input_max_gap := 0.0
-	for sample in report.inputSamples:
-		input_max_gap=maxf(input_max_gap,float(sample.elapsedSeconds)-previous_input);previous_input=float(sample.elapsedSeconds)
-	report.maximumInputGapSeconds=maxf(input_max_gap,duration-previous_input)
-	longest_gap=maxf(longest_gap,duration-last_apply)
-	report.motionApplicationCount=report.motionApplications.size();report.motionLiveApplicationCount=live_applies
-	report.longestMotionApplicationGapSeconds=longest_gap
-	report.motionEnd=snapshot(duration)
+	var actual_end := Time.get_ticks_msec()
+	var timing := Timing.summarize(motion_began,duration,actual_end,report.inputSamples,report.motionApplications)
+	if timing.has("error"):push_error(str(timing.error));quit(1);return
+	report.merge(timing,true)
+	report.motionApplicationCount=report.motionApplications.size()
+	report.motionEnd=snapshot(report.motionActualWallSeconds)
 	report.minimumObservedWidthM=minimum_width;report.maximumObservedPanOffsetM=maximum_pan_offset
 	var drain_began := Time.get_ticks_msec()
 	await process_frame
 	while not ready_for_input(require_live) and Time.get_ticks_msec()-drain_began<120000:
 		await process_frame
 	report.drainSeconds=(Time.get_ticks_msec()-drain_began)/1000.0
-	report.finalReady=ready_for_input(require_live);report.final=snapshot(duration+report.drainSeconds)
+	report.finalReady=ready_for_input(require_live);report.final=snapshot(report.motionActualWallSeconds+report.drainSeconds)
 	var render_events: Array = viewer.get("render_events")
 	var accepted: Array = viewer.get("live_acceptance_events")
 	report.liveAcceptance=accepted.duplicate(true)
+	report.merge(Timing.acceptance_counts(accepted,motion_began,int(report.motionEndTickMs),actual_end),true)
 	report.motionDisplayEvents=render_events.filter(func(event): return int(event.get("appliedTickMs",-1))>motion_began and int(event.get("appliedTickMs",-1))<=int(report.motionEndTickMs)).duplicate(true)
 	report.motionLiveDisplays=Evidence.qualifying_live_displays(report.motionDisplayEvents,accepted,motion_began,int(report.motionEndTickMs),initial_rendered_serial,initial_rendered_world_id)
 	report.motionLiveDisplayCount=report.motionLiveDisplays.size()
@@ -132,5 +133,7 @@ func run() -> void:
 	if file==null: push_error("Cannot write navigation report");quit(1);return
 	file.store_string(JSON.stringify(report,"  "));file=null
 	print(JSON.stringify({"event":"navigation-proof","path":absolute,"status":report.status,
-		"motionApplicationCount":report.motionApplicationCount,"motionLiveApplicationCount":live_applies,"motionLiveDisplayCount":report.motionLiveDisplayCount,"longestGapSeconds":longest_gap}))
+		"motionApplicationCount":report.motionApplicationCount,"motionLiveAcceptedCount":report.motionLiveAcceptedCount,
+		"motionLiveApplicationCount":report.motionLiveAcceptedCount,"motionLiveDisplayCount":report.motionLiveDisplayCount,
+		"actualMotionEndTickMs":actual_end,"longestGapSeconds":report.longestMotionApplicationGapSeconds}))
 	quit(0 if report.status=="complete" else 1)
