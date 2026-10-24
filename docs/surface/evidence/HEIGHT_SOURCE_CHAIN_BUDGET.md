@@ -39,7 +39,12 @@ is an explicitly derived **retained-control query fixture**, not recovery or
 byte replay of that neural response, and adds no observed fine terrain. Fixture
 construction took 5,022.854 ms, scalar reference 2,015.110 ms, and native total
 520.421 ms in this local sample. Those are wall-time observations, not a latency
-or FPS guarantee. Production does not derive new parent grids, prune parents,
+or FPS guarantee. This retained-control test overlapped the start of ROOT V15 at approximately
+08:54:26–08:54:35 UTC (8.665 s command wall time); it is explicitly recorded as
+concurrent diagnostic work in the JSON evidence. No further test/benchmark was
+run during V15 after that disclosure.
+
+Production does not derive new parent grids, prune parents,
 coarsen the source or change source/physics/compiler/population identities.
 
 Exact executable, source, code and payload hashes, measured cases and limits
