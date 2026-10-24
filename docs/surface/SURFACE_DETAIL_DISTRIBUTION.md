@@ -6,9 +6,9 @@ It does **not** add a DEM, observed soil/lithology, physical water, candidates o
 population density. The canonical 78.125 m context, compiler/schema versions,
 ground-response means, source heights and population IDs remain unchanged.
 
-This is a CPU-validated prototype awaiting a new native visual check. The first two native prototypes are explicit artistic failures: [R1](evidence/SOIL_COVER_DISTRIBUTION_R1.md)
+This is a CPU-validated prototype whose third native visual check also failed artistic acceptance. The first two native prototypes are explicit artistic failures: [R1](evidence/SOIL_COVER_DISTRIBUTION_R1.md)
 and [R2](evidence/soil-cover-distribution-r2.json), each preserved with 28 images.
-Their technical checks do not qualify version 3 visually. GPU access requires
+[R3](evidence/soil-cover-distribution-r3.json) preserves the same negative conclusion: ordinal recipe intervals still form material ribbons. Its technical checks do not qualify version 3 visually. GPU access requires
 a handoff and a one-second watcher that yields to the user V15 demo.
 
 ## What and where
@@ -45,11 +45,11 @@ fields are not reconstructed. The cartographic palette path remains unchanged.
 ## Calibrated stochastic arrangement and filtering
 
 Nominal bands are **12 m, 1.7 m and 0.17 m**, with weights **0.40, 0.35, 0.25**.
-For every lattice vertex and band, separate uint32 hashes feed Box–Muller:
+For every lattice vertex and band, separate uint32 hashes feed Boxâ€“Muller:
 `u=(uint+0.5)/2^32`, avoiding `log(0)`. The trig expression transforms a hash
 sample, never a periodic spatial coordinate. Four Gaussian vertex values are
 interpolated with positive smoothstep weights, then divided by
-`sqrt(sum(weight²))` **before** applying an explicit normal CDF.
+`sqrt(sum(weightÂ²))` **before** applying an explicit normal CDF.
 
 Under an ideal independent-Gaussian seed model, this produces a uniform rank
 conditional on any fixed point/interpolation weights. It is an **ensemble**
@@ -77,7 +77,7 @@ claim of perfect antialiasing under every perspective.
 A common achromatic gamut gain uses only the original target, original
 probabilities and min/max source component colours. The same gain applies to
 **every** possible outcome; it never reads the realised rank/delta. The active
-mean is `originalTarget + S × (localPhysicalMean − originalPhysicalMean)`,
+mean is `originalTarget + S Ã— (localPhysicalMean âˆ’ originalPhysicalMean)`,
 not a mixture of asset means. This preserves the original sRGB8 knot target
 and keeps the correction within the existing display gamut. Photo maps remain
 registered zero-mean residuals; those residuals fade to zero when unresolved.
@@ -130,7 +130,7 @@ measurement. Prototype source remains isolated from the frozen user demo.
 Nine Node tests cover independent Gaussian-CDF quadrature, vertex/band moments,
 conditional seed-ensemble distributions, recipe-slot/corner-order invariance,
 nonrepetition and cell-edge continuity, probability 0/1 and wrapped filters,
-seed-block recipe fractions, zoom/tile/rebase at ±1e9 m, shared JS/GD phase bytes
+seed-block recipe fractions, zoom/tile/rebase at Â±1e9 m, shared JS/GD phase bytes
 and the common-gain counterexample with 100,000 extreme-colour draws.
 
 For 32,768 pseudorandom layout seeds at three fixed points and three bands, the
@@ -152,8 +152,10 @@ The extreme-colour test keeps a deliberately different target with maximum
 measured mean error 0.000552662; the unresolved target bits are exact. Targeted TypeScript strict checking and GD main
 parse pass. These are small CPU checks, not native visual or FPS qualification.
 
-After ROOT hands back the GPU, the same retained V15 source/camera will be used
-at 2560/160/40/10 m. The native check must reject source/inventory/buffer changes,
-keep diagnostic-7 pixel identity, inspect actual shrub/grass/litter appearance,
-and preserve the negative R1 and R2. Version 3 is not ready for artistic acceptance
-until those images have been produced and reviewed.
+The R3 retained-source run completed in80.829s with28images, no engine errors,
+no user-demo watcher hit and no owned process survivor. Source and frozen runtime
+hashes remained exact, all seven per-pose source fingerprints agreed, and all
+four raw diagnostic-7 A/B image pairs were byte-identical. These technical
+checks passed while the artistic check failed: successive material intervals
+of one rank still create contour-like ribbons. The R3 negative is retained;
+no production-quality or FPS claim follows from this run.

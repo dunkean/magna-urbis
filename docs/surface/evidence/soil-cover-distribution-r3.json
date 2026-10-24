@@ -1,0 +1,219 @@
+{
+  "version": 1,
+  "component": "surface-detail-distribution-3",
+  "status": "ARTISTIC_FAIL",
+  "runtimeCommit": "78f80de",
+  "scope": "Retained V15 exact source, explicit existing page replay. No fresh generation, live QoS or new physical evidence.",
+  "technical": {
+    "exitCode": 0,
+    "durationMs": 80828.6497592926,
+    "sourceUnchanged": true,
+    "runtimeUnchanged": true,
+    "pngCount": 28,
+    "errors": 0,
+    "userWatchTicks": 80,
+    "demoHits": 0,
+    "ownedSurvivors": []
+  },
+  "finding": "R3 Gaussian seed ensemble improves statistical calibration, but allocating many recipes as successive intervals of the SAME rank still draws contour-like material ribbons at40m and160m. This is not visually acceptable soil organization. Do not promote as production quality.",
+  "views": [
+    {
+      "widthM": 2560,
+      "rawMeanPixelsExact": true,
+      "sourceFingerprintsAllExact": true,
+      "images": [
+        {
+          "name": "before-all",
+          "image": "D:\\workspace\\self\\_worktrees\\magna-urbis-ground-cover-quality\\web\\out\\surface\\ground-cover-quality\\native-r3\\captures/2560m/before-all.png",
+          "pixelSha256": "1f6eb361e36e24a9540ae8b944dc4a0aa9a59080b7e4cc201171beeff95c5c29"
+        },
+        {
+          "name": "after-all",
+          "image": "D:\\workspace\\self\\_worktrees\\magna-urbis-ground-cover-quality\\web\\out\\surface\\ground-cover-quality\\native-r3\\captures/2560m/after-all.png",
+          "pixelSha256": "7bf14c2184f5e09345600edf71eca0328264b8f48d94608e7731e8b90c189090"
+        },
+        {
+          "name": "before-no-trees",
+          "image": "D:\\workspace\\self\\_worktrees\\magna-urbis-ground-cover-quality\\web\\out\\surface\\ground-cover-quality\\native-r3\\captures/2560m/before-no-trees.png",
+          "pixelSha256": "3d2bf34912bef52a827d00e8871bdeec6c51fd36f0555bfc21c16d71e31ad5ea"
+        },
+        {
+          "name": "after-no-trees",
+          "image": "D:\\workspace\\self\\_worktrees\\magna-urbis-ground-cover-quality\\web\\out\\surface\\ground-cover-quality\\native-r3\\captures/2560m/after-no-trees.png",
+          "pixelSha256": "f8f7f0d9603f1bcbeff1f2bed8de2adf2ee661367f758c2be3b55d0087701c16"
+        },
+        {
+          "name": "after-ground",
+          "image": "D:\\workspace\\self\\_worktrees\\magna-urbis-ground-cover-quality\\web\\out\\surface\\ground-cover-quality\\native-r3\\captures/2560m/after-ground.png",
+          "pixelSha256": "aefb681d174c5182d771b75472e5ee62e7834f16b358b79d312875895070506e"
+        },
+        {
+          "name": "before-mean",
+          "image": "D:\\workspace\\self\\_worktrees\\magna-urbis-ground-cover-quality\\web\\out\\surface\\ground-cover-quality\\native-r3\\captures/2560m/before-mean.png",
+          "pixelSha256": "256dccd20d52c7eb29f090ce325ef924013c265d55303a2061cad84c0bbec6fa"
+        },
+        {
+          "name": "after-mean",
+          "image": "D:\\workspace\\self\\_worktrees\\magna-urbis-ground-cover-quality\\web\\out\\surface\\ground-cover-quality\\native-r3\\captures/2560m/after-mean.png",
+          "pixelSha256": "256dccd20d52c7eb29f090ce325ef924013c265d55303a2061cad84c0bbec6fa"
+        }
+      ]
+    },
+    {
+      "widthM": 160,
+      "rawMeanPixelsExact": true,
+      "sourceFingerprintsAllExact": true,
+      "images": [
+        {
+          "name": "before-all",
+          "image": "D:\\workspace\\self\\_worktrees\\magna-urbis-ground-cover-quality\\web\\out\\surface\\ground-cover-quality\\native-r3\\captures/160m/before-all.png",
+          "pixelSha256": "7c995b41c1d9649450942c75e725f6d640d04021af3967dffd29e8bd5233c107"
+        },
+        {
+          "name": "after-all",
+          "image": "D:\\workspace\\self\\_worktrees\\magna-urbis-ground-cover-quality\\web\\out\\surface\\ground-cover-quality\\native-r3\\captures/160m/after-all.png",
+          "pixelSha256": "ec63d1683ec1f4e16c16330a4724aad93b46f1a2231a6f28d1ba64c01ed941f1"
+        },
+        {
+          "name": "before-no-trees",
+          "image": "D:\\workspace\\self\\_worktrees\\magna-urbis-ground-cover-quality\\web\\out\\surface\\ground-cover-quality\\native-r3\\captures/160m/before-no-trees.png",
+          "pixelSha256": "86aedcd982a2b4320509e1c975c01dafc91e0c5b49d589e859d3b3322fac8414"
+        },
+        {
+          "name": "after-no-trees",
+          "image": "D:\\workspace\\self\\_worktrees\\magna-urbis-ground-cover-quality\\web\\out\\surface\\ground-cover-quality\\native-r3\\captures/160m/after-no-trees.png",
+          "pixelSha256": "22286e4319d23f4833a6b2d425f5442b4edb6f70e340b42bc7ed69fa727e837a"
+        },
+        {
+          "name": "after-ground",
+          "image": "D:\\workspace\\self\\_worktrees\\magna-urbis-ground-cover-quality\\web\\out\\surface\\ground-cover-quality\\native-r3\\captures/160m/after-ground.png",
+          "pixelSha256": "6df96231997ab0563bae2cf6db67a6e5dfee099cd4db7e84d92aee3eb9a33c5c"
+        },
+        {
+          "name": "before-mean",
+          "image": "D:\\workspace\\self\\_worktrees\\magna-urbis-ground-cover-quality\\web\\out\\surface\\ground-cover-quality\\native-r3\\captures/160m/before-mean.png",
+          "pixelSha256": "40d13d1eafb03fc05a61924b4e6589369d707c11aa23fba09256caf4130de64d"
+        },
+        {
+          "name": "after-mean",
+          "image": "D:\\workspace\\self\\_worktrees\\magna-urbis-ground-cover-quality\\web\\out\\surface\\ground-cover-quality\\native-r3\\captures/160m/after-mean.png",
+          "pixelSha256": "40d13d1eafb03fc05a61924b4e6589369d707c11aa23fba09256caf4130de64d"
+        }
+      ]
+    },
+    {
+      "widthM": 40,
+      "rawMeanPixelsExact": true,
+      "sourceFingerprintsAllExact": true,
+      "images": [
+        {
+          "name": "before-all",
+          "image": "D:\\workspace\\self\\_worktrees\\magna-urbis-ground-cover-quality\\web\\out\\surface\\ground-cover-quality\\native-r3\\captures/40m/before-all.png",
+          "pixelSha256": "637cb2f2fad8ed88bb5e042d6eb1325e695fa6ed99ef5fb6c3c1707eb40dfe70"
+        },
+        {
+          "name": "after-all",
+          "image": "D:\\workspace\\self\\_worktrees\\magna-urbis-ground-cover-quality\\web\\out\\surface\\ground-cover-quality\\native-r3\\captures/40m/after-all.png",
+          "pixelSha256": "65d632340ce7e0291e76f944987a15f57a22eca7d20cb62cf2a55eecefa461db"
+        },
+        {
+          "name": "before-no-trees",
+          "image": "D:\\workspace\\self\\_worktrees\\magna-urbis-ground-cover-quality\\web\\out\\surface\\ground-cover-quality\\native-r3\\captures/40m/before-no-trees.png",
+          "pixelSha256": "931bd1dcfb7c4820cb62acc1e63644262c903ee9e9408843d4e1cff7d5ed1fdf"
+        },
+        {
+          "name": "after-no-trees",
+          "image": "D:\\workspace\\self\\_worktrees\\magna-urbis-ground-cover-quality\\web\\out\\surface\\ground-cover-quality\\native-r3\\captures/40m/after-no-trees.png",
+          "pixelSha256": "b1315bc0ee7f329fc199a382f5717847e944724981551a8b3b7471c12f6d2420"
+        },
+        {
+          "name": "after-ground",
+          "image": "D:\\workspace\\self\\_worktrees\\magna-urbis-ground-cover-quality\\web\\out\\surface\\ground-cover-quality\\native-r3\\captures/40m/after-ground.png",
+          "pixelSha256": "506188b37af87cfc4129b7aed832ace3bebfa1c1101b2abc92fde2e090ecacbe"
+        },
+        {
+          "name": "before-mean",
+          "image": "D:\\workspace\\self\\_worktrees\\magna-urbis-ground-cover-quality\\web\\out\\surface\\ground-cover-quality\\native-r3\\captures/40m/before-mean.png",
+          "pixelSha256": "1ab68ae2a5953b13a00208eaab390b2565026a2c3284fe9fb2a4160a9ee8bde4"
+        },
+        {
+          "name": "after-mean",
+          "image": "D:\\workspace\\self\\_worktrees\\magna-urbis-ground-cover-quality\\web\\out\\surface\\ground-cover-quality\\native-r3\\captures/40m/after-mean.png",
+          "pixelSha256": "1ab68ae2a5953b13a00208eaab390b2565026a2c3284fe9fb2a4160a9ee8bde4"
+        }
+      ]
+    },
+    {
+      "widthM": 10,
+      "rawMeanPixelsExact": true,
+      "sourceFingerprintsAllExact": true,
+      "images": [
+        {
+          "name": "before-all",
+          "image": "D:\\workspace\\self\\_worktrees\\magna-urbis-ground-cover-quality\\web\\out\\surface\\ground-cover-quality\\native-r3\\captures/10m/before-all.png",
+          "pixelSha256": "866633b4d06d9aaaded1195f9e3c9d1fcd0ab28254226a34f1e14f0de324bd79"
+        },
+        {
+          "name": "after-all",
+          "image": "D:\\workspace\\self\\_worktrees\\magna-urbis-ground-cover-quality\\web\\out\\surface\\ground-cover-quality\\native-r3\\captures/10m/after-all.png",
+          "pixelSha256": "3c07477d37f0510789f4f9ca7f02f692a046efa65e48c9f1802d9a1cd9e3357d"
+        },
+        {
+          "name": "before-no-trees",
+          "image": "D:\\workspace\\self\\_worktrees\\magna-urbis-ground-cover-quality\\web\\out\\surface\\ground-cover-quality\\native-r3\\captures/10m/before-no-trees.png",
+          "pixelSha256": "8a3fcc5bb55286362a170679ee447d0fbfb1b54bf0c4c27650eb819b8dd54743"
+        },
+        {
+          "name": "after-no-trees",
+          "image": "D:\\workspace\\self\\_worktrees\\magna-urbis-ground-cover-quality\\web\\out\\surface\\ground-cover-quality\\native-r3\\captures/10m/after-no-trees.png",
+          "pixelSha256": "b24e7f6e37cf4630815008076319baba1f98ff73476f122699cc9400fccf8169"
+        },
+        {
+          "name": "after-ground",
+          "image": "D:\\workspace\\self\\_worktrees\\magna-urbis-ground-cover-quality\\web\\out\\surface\\ground-cover-quality\\native-r3\\captures/10m/after-ground.png",
+          "pixelSha256": "f11eaa177dafd4cfac961b5da56ae943ad423a21821541df7fb238f6d3d03a70"
+        },
+        {
+          "name": "before-mean",
+          "image": "D:\\workspace\\self\\_worktrees\\magna-urbis-ground-cover-quality\\web\\out\\surface\\ground-cover-quality\\native-r3\\captures/10m/before-mean.png",
+          "pixelSha256": "daa5ac85abf0262a32b75586435ca363f7f81ece4d12ece3128a7299108473a4"
+        },
+        {
+          "name": "after-mean",
+          "image": "D:\\workspace\\self\\_worktrees\\magna-urbis-ground-cover-quality\\web\\out\\surface\\ground-cover-quality\\native-r3\\captures/10m/after-mean.png",
+          "pixelSha256": "daa5ac85abf0262a32b75586435ca363f7f81ece4d12ece3128a7299108473a4"
+        }
+      ]
+    }
+  ],
+  "rawFiles": {
+    "report.json": {
+      "path": "web/out/surface/ground-cover-quality/native-r3/report.json",
+      "sha256": "1f2a4f6705651775610f3cbae45439680308c7205b2c9a28d68b65e598c2af75"
+    },
+    "supervisor-report.json": {
+      "path": "web/out/surface/ground-cover-quality/native-r3/supervisor-report.json",
+      "sha256": "cd477bd8dcea0352e17181fccaa9d3056035df4626b5fdbd6bb8edf6a9032b79"
+    },
+    "snapshot-before.json": {
+      "path": "web/out/surface/ground-cover-quality/native-r3/snapshot-before.json",
+      "sha256": "960fe1646341b553a2e0ba8c9a9ad10e9cc2fb7b7e8a9c7956c214c5b708cbab"
+    },
+    "snapshot-after.json": {
+      "path": "web/out/surface/ground-cover-quality/native-r3/snapshot-after.json",
+      "sha256": "960fe1646341b553a2e0ba8c9a9ad10e9cc2fb7b7e8a9c7956c214c5b708cbab"
+    },
+    "owned-process-check.json": {
+      "path": "web/out/surface/ground-cover-quality/native-r3/owned-process-check.json",
+      "sha256": "310a1fd242b7d9d6e151f4c3dd0366c1f5b7e1679213e4df4ebc14b26c04afdf"
+    },
+    "stdout.log": {
+      "path": "web/out/surface/ground-cover-quality/native-r3/stdout.log",
+      "sha256": "8e64fd90685d9ba4029610d0a6499fc2a93ebaac0f691f060c804b3941024f07"
+    },
+    "stderr.log": {
+      "path": "web/out/surface/ground-cover-quality/native-r3/stderr.log",
+      "sha256": "26fab02bba702a20edb88e1cc0925b07b38ff47bdaaeef66e67e743756d5709a"
+    }
+  }
+}
