@@ -17,7 +17,8 @@ void fragment(){
  // One global viewport transfer; no page-edge spatial fade or camera LOD cap.
  float h=fract(sin(dot(floor(UV*1024.0),vec2(12.9898,78.233))+stable_seed*6.2831853)*43758.5453);
  ALPHA=step(.5,d.g)*step(h,solar_weight)*step(.000001,solar_weight);ALPHA_SCISSOR_THRESHOLD=.5;
- vec3 point=solar_plane_position+solar_depth_axis*((d.r-.5)*1.6);
+ // Linear filtering sees zero background: R is coverage-premultiplied depth.
+ vec3 point=solar_plane_position+solar_depth_axis*((d.r/max(d.g,.000001)-.5)*1.6);
  vec4 clip=PROJECTION_MATRIX*VIEW_MATRIX*vec4(point,1.0);
  // Godot Forward+ Vulkan depth is [0,1], including its directional shadow pass.
  // Always assign DEPTH: a conditional output otherwise has undefined branches.
