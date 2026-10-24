@@ -364,7 +364,7 @@ void main() {
       bool index = mod(k, 5.0) < 0.5;
       float dist = abs(v - k) / dv;                          // device pixels to the nearest level
       float line = k < 0.5 ? 0.0 : clamp((index ? uIndexW : uThinW) * 0.5 + 0.5 - dist, 0.0, 1.0);
-      // Levels closer than ~2 px alias into moirÃ©: cross-fade them to their mean ink
+      // Levels closer than ~2 px alias into moiré: cross-fade them to their mean ink
       // (four thin levels in five, then the index levels, five times sparser).
       float thin = mix(index ? 0.0 : line * uThinA, min(1.0, 0.8 * dv * uThinW) * uThinA, smoothstep(0.3, 0.7, dv));
       float main_ = mix(index ? line * uIndexA : 0.0, min(1.0, 0.2 * dv * uIndexW) * uIndexA, smoothstep(0.3, 0.7, dv * 5.0));
@@ -401,7 +401,7 @@ void main() {
   vec2 dir = l > 1e-6 ? d / l : vec2(1.0, 0.0), nrm = vec2(-dir.y, dir.x);
   // Cartographic width: below its physical size on screen, a river keeps a
   // stroke growing with the logarithm of its width: hairline streams (about
-  // 2 kmÂ² drained, 7 m wide), 1 px at 20 kmÂ², bold trunks.
+  // 2 km² drained, 7 m wide), 1 px at 20 km², bold trunks.
   vec2 carto = clamp(0.35 + 0.4 * log2(max(aWidth, vec2(6.0)) / 6.0), 0.35, 3.2) * uDpr;
   vec2 half_ = max(aWidth / uPx, carto) * 0.5;
   float r = max(half_.x, half_.y) + 1.0;
