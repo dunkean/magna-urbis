@@ -7,7 +7,12 @@ données canoniques. La campagne V5 portait sur `surface-1.4.0` : elle **ne vali
 pas** ce nouveau contrat, son shader ni sa qualité visuelle. La campagne
 [V8](surface/evidence/native-e2e-v8.json) qualifie techniquement son intégration
 live : quatre visibilités distinctes, mêmes données physiques et inventaire.
-Elle ne vaut pas acceptation artistique.
+La campagne [V12 complète](surface/evidence/NATIVE_V12.md) qualifie maintenant
+les contrôles à 10 km et à 160 m sur le snapshot figé `bc6579f`, avec navigation
+nominale de 20 secondes et sept captures de zoom. Les
+[preuves structurées](surface/evidence/native-e2e-v12.json) conservent les
+584 hashes runtime identiques avant/après. Elle ne vaut pas acceptation
+artistique ; les échecs V9–V11 restent conservés.
 
 1. **Sol/support** : roche, dépôts, sol minéral et matière organique du sol. Le
    carbone/humus du sol reste distinct de la litière morte en surface. Ce support
@@ -137,10 +142,34 @@ le JSON, les budgets et les métadonnées legacy/malformées.
 
 L'intégration GD possède des diagnostics séparés **sol nu**, **herbes et
 litière**, **arbres** et **canopée optique**, avec contrôles de visibilité
-indépendants. V8 prouve leur isolation à 10 km ; elle ne prouve pas le masquage
-de véritables instances proches. Le harnais ajoute donc un second contrôle à
-160 m : lecture des buffers MultiMesh, alpha et frustum CPU, quatre visibilités
-et sol moyen sans éclairage, avec hashes des données physiques et des candidats.
-Ce contrôle distingue les instances soumises des pixels visibles après occlusion.
-Son existence dans le code ne constitue pas à elle seule une campagne réussie.
-Les captures V5 ne qualifient ni ces couches ni une scène urbaine construite.
+indépendants. V8 prouvait leur isolation à 10 km, sans qualifier le masquage
+réel des instances proches. V12 exécute les deux probes, chacune avec cinq
+images : tous les étages, sans arbres, sans couvert bas, sol seul et sol moyen
+sans éclairage. À 160 m, les comptes CPU réellement alpha-positifs dans le
+frustum sont **64 arbres / 64 troncs, 288 herbes, 17 arbustes, 61 débris et
+31 rochers** dans l'état complet. Sans arbres, arbres/troncs passent à zéro,
+ainsi que la canopée et son ombre optique. Sans couvert bas, herbes/arbustes/débris
+passent à zéro ; les 31 rochers persistent. Les allocations soumises restent
+fixes entre toggles. Ces comptes de buffers et de frustum CPU ne sont pas des
+comptes de pixels visibles après occlusion GPU.
+
+Les champs physiques, le contexte, les hauteurs, les arrays de sol et les
+empreintes de l'inventaire restent identiques entre états de visibilité d'une
+même vue. Les inventaires de deux largeurs de vue différentes ne sont pas
+supposés identiques. Les contrôles avant gel passent : **224 tests Surface dans
+42 fichiers**, typecheck complet et build de 445 modules.
+
+La navigation V12 applique **une seule nouvelle preview distincte**, demandée
+à 128 et livrée en 128², deux fois pendant la fenêtre nominale. Son espacement
+natif est de 30 m et `decoderUsed=false` : cela prouve la progression du flux,
+pas un raffinement neural appris pendant le mouvement. Le vrai support fin à
+0,46875 m natif, `decoderUsed=true`, arrive seulement pendant le drain final.
+La grille environnementale canonique reste à **78,125 m** ; les couches et les
+petits objets ne transforment pas cette résolution en mesure physique fine.
+
+V12 ne qualifie ni le photoréalisme, ni 60 FPS, ni une interaction à faible
+latence. La couronne proxy uniforme et les petites végétations en blocs restent
+visibles dans la capture à 10 m. Les ombres forestières restent optiques. La
+ville retenue de 419 réalisations natives est une preuve séparée, sur un parent
+à 15,625 m / LOD inconnu, sans nouvelle génération neurale urbaine. Les captures
+V5 ne qualifient ni ces couches ni cette scène construite.
