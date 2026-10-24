@@ -45,10 +45,10 @@ export const SURFACE_MATERIALS: MaterialRecipe[] = [
  * Moisture/organic are fractions; slope is radians, never percent grade or degrees.
  * The C1 transition changes only derived ground recipes, never physical fields. */
 export function organicSoilFraction(moisture:number,slopeRadians:number,organic:number):number {
-  if(![moisture,slopeRadians,organic].every(Number.isFinite)||moisture<0||moisture>1||organic<0||organic>1||slopeRadians<0||slopeRadians>Math.PI/2+1e-6)throw new Error('Soil appearance requires fractions and slope in radians');
-  const smooth=(a:number,b:number,value:number)=>{const t=Math.max(0,Math.min(1,(value-a)/(b-a)));return t*t*(3-2*t);};
-  return smooth(.72,.88,moisture)*(1-smooth(.08,.16,slopeRadians))*smooth(.02,.16,organic);
+  if(!Number.isFinite(moisture)||!Number.isFinite(slopeRadians)||!Number.isFinite(organic)||moisture<0||moisture>1||organic<0||organic>1||slopeRadians<0||slopeRadians>Math.PI/2+1e-6)throw new Error('Soil appearance requires fractions and slope in radians');
+  return soilSmooth(.72,.88,moisture)*(1-soilSmooth(.08,.16,slopeRadians))*soilSmooth(.02,.16,organic);
 }
+function soilSmooth(a:number,b:number,value:number):number {const t=Math.max(0,Math.min(1,(value-a)/(b-a)));return t*t*(3-2*t);}
 
 export function createMaterialIndex(materials: MaterialRecipe[]): Record<string, number> {
   if (!materials.length || materials.length > 65536) throw new Error('Material catalogue requires 1..65536 entries');

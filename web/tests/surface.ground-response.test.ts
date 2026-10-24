@@ -98,4 +98,25 @@ describe('physical parameters before ground recipe response',()=>{
     expect(deserializeSurfaceWorld(serializeSurfaceWorld(base)).groundResponse!.id).toBe(base.groundResponse!.id);
     const invalid=JSON.parse(serializeSurfaceWorld(base));delete invalid.groundResponse.fields.gravity;expect(()=>hydrateSurfaceWorld(invalid)).toThrow(/ground response/);
   });
+  it('bounds the exact-knot branch discontinuity by recorded sRGB8 half-step and Float32 parameter quantization',()=>{
+    const world=compileSurfaceWorld(surfaceLayerInput(),{topographicRadiiM:[32,64,128]}),decode=(v:number)=>{const s=v/255;return s<=.04045?s/12.92:Math.pow((s+.055)/1.055,2.4);};
+    let maximum=0;
+    for(let i=0;i<17*17;i++){
+      const x=i%17*32,z=Math.floor(i/17)*32,encoded=world.fields.groundMaterialMeanColor![i],mean=sampleSurface(world,x,z).surfaceLayers.ground!.meanColorLinear;
+      const halfSteps=[encoded&255,encoded>>>8&255,encoded>>>16&255].map(b=>Math.max(decode(Math.min(255,b+.5))-decode(b),decode(b)-decode(Math.max(0,b-.5))));
+      const bound=Math.hypot(...halfSteps)+0.000002; // explicit Float32-potential arithmetic allowance
+      for(const[dx,dz]of [[x===512?-1e-8:1e-8,0],[0,z===512?-1e-8:1e-8],[x===512?-1e-8:1e-8,z===512?-1e-8:1e-8]]){
+        const nearby=sampleSurface(world,x+dx,z+dz).surfaceLayers.ground!.meanColorLinear,delta=Math.hypot(...mean.map((v,c)=>v-nearby[c]));maximum=Math.max(maximum,delta);expect(delta).toBeLessThanOrEqual(bound);
+      }
+    }
+    expect(maximum).toBeGreaterThan(0); // Quantized knots are deliberately not hidden by smoothing.
+  });
+  it('handles a saturated valid fraction when four spatial weights sum one Float64 ulp above one',()=>{
+    const{world,response}=fixture();response.fields.moisturePreSaturation.fill(1);world.fields.organic.fill(1);
+    const fx=2/997,fz=662/991,weights=[(1-fx)*(1-fz),fx*(1-fz),(1-fx)*fz,fx*fz];
+    expect(weights.reduce((a,b)=>a+b,0)).toBeGreaterThan(1);
+    const sample=createGroundResponseSampler(response,world.fields,world.materials,world.geology.units)([0,1,2,3],weights,0);
+    expect(sample.mean.every(Number.isFinite)).toBe(true);
+    response.fields.moisturePreSaturation.fill(1.01);expect(()=>createGroundResponseSampler(response,world.fields,world.materials,world.geology.units)([0,1,2,3],weights,0)).toThrow(/fractions/);
+  });
 });
