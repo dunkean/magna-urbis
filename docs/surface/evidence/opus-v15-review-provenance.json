@@ -1,0 +1,54 @@
+{
+  "format": "actual-opus-v15-review-provenance",
+  "model": "claude-opus-5-5",
+  "requestedEffort": "high",
+  "isError": false,
+  "durationMs": 526841,
+  "totalCostUsd": 4.0402074,
+  "raw": {
+    "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface-reviews\\phase06.json",
+    "preservedPath": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface-reviews\\phase06-followup-v15-preserved.json",
+    "bytes": 27639,
+    "sha256": "1aaa3486daeeff22ac2e4b09ab655f49b6d47aebc835818c1e87d03b0e24d32a"
+  },
+  "prompt": {
+    "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\docs\\surface\\reviews\\phase06-followup-v15-prompt.md",
+    "headAtSubmission": "50c22a5",
+    "sha256": "a920563c5a18e24461d947a950cd40edca154e5f8e077942d0386e9ac8f92350"
+  },
+  "verbatimResult": {
+    "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\docs\\surface\\reviews\\phase06-followup-v15.md",
+    "bytes": 25424,
+    "sha256": "0f1a9130205baf1a8b148353c780daefadbba2861005d0a7cccb04e20241f232"
+  },
+  "actualModelUsage": {
+    "claude-opus-5-5": {
+      "inputTokens": 92,
+      "outputTokens": 38600,
+      "cacheReadInputTokens": 6861237,
+      "cacheCreationInputTokens": 236949,
+      "webSearchRequests": 0,
+      "costUSD": 4.0402074,
+      "contextWindow": 1000000,
+      "maxOutputTokens": 128000,
+      "thinkingTokens": 15896,
+      "canonicalModel": "claude-opus-5-5",
+      "provider": "firstParty",
+      "costBasis": "list"
+    }
+  },
+  "toolPolicy": "Read, Glob, Grep only; no shell/tests/GPU/file writes; reviewer declares partial reading and no independent hash recomputation",
+  "verdicts": {
+    "technicalIntegration": "PASS",
+    "strict20SecondsAndFineDelivery": "PASS",
+    "navigationQos": "PARTIAL",
+    "layers": "PASS technical",
+    "forest": "PARTIAL",
+    "hydrology": "PARTIAL",
+    "city": "Static technical PASS / visual PARTIAL",
+    "mapper": "PARTIAL",
+    "artisticProduction": "FAIL"
+  },
+  "historicalV14": "FAILED, preserved",
+  "historicalV13": "Technical PASS, artistic FAIL, preserved"
+}
