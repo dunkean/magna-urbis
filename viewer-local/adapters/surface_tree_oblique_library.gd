@@ -10,6 +10,8 @@ var colors:Texture2DArray
 var normal_roughness:Texture2DArray
 var depths:Texture2DArray
 var descriptor:Dictionary={}
+var spans:=PackedFloat32Array()
+var offsets:=PackedVector2Array()
 
 static func directions()->PackedVector3Array:
 	var result=PackedVector3Array()
@@ -38,6 +40,20 @@ static func mip_pixels()->int:
 	return total
 
 static func persistent_bytes()->int:return directions().size()*mip_pixels()*(8+4+4)
+
+static func layout(bound:AABB)->Dictionary:
+	var lengths=PackedFloat32Array();var centres=PackedVector2Array();var horizontal=0.0;var min_y=INF;var max_y=-INF
+	for direction in directions():
+		var basis=frame(direction);var low=Vector2(INF,INF);var upper=Vector2(-INF,-INF)
+		for i in 8:
+			var p=Vector3(bound.end.x if i&1 else bound.position.x,bound.end.y if i&2 else bound.position.y,bound.end.z if i&4 else bound.position.z)*Vector3(RATIO,1,RATIO)-Vector3(0,.5,0)
+			var projected=Vector2(p.dot(basis.x),p.dot(basis.y));low=low.min(projected);upper=upper.max(projected)
+		var span=maxf(upper.x-low.x,upper.y-low.y)*(1.0+4.0/RESOLUTION);var offset=(low+upper)*.5
+		lengths.append(span);centres.append(offset)
+		for corner in [Vector2(-.5,-.5),Vector2(-.5,.5),Vector2(.5,-.5),Vector2(.5,.5)]:
+			var p=Vector3(0,.5,0)+basis.x*(corner.x*span+offset.x)+basis.y*(corner.y*span+offset.y)
+			horizontal=maxf(horizontal,Vector2(p.x,p.z).length());min_y=minf(min_y,p.y);max_y=maxf(max_y,p.y)
+	return {"spans":lengths,"offsets":centres,"horizontalRadiusH":horizontal*1.000002+.000001,"minYH":min_y-.000001,"maxYH":max_y+.000001}
 
 func bake(parent:Node,library:RefCounted)->bool:
 	var started=Time.get_ticks_usec();descriptor={"available":false}
@@ -73,8 +89,11 @@ func bake(parent:Node,library:RefCounted)->bool:
 		if sentinel.a>.1:break
 	if absf(sentinel.r-.25)>.003 or absf(sentinel.g-.5)>.003 or absf(sentinel.b-.75)>.003 or absf(sentinel.a-1.0)>.003:
 		push_error("View data readback calibration: "+str(sentinel)+" format="+str(calibration.get_format()));viewport.queue_free();return false
-	for direction in directions():
-		camera.position=Vector3(0,.5,0)+direction*2;camera.look_at(Vector3(0,.5,0),Vector3.FORWARD if direction.y>.999 else Vector3.UP)
+	var layouts=layout(bound);spans=layouts.spans;offsets=layouts.offsets;var directions_array=directions()
+	for index in directions_array.size():
+		var direction:Vector3=directions_array[index];var basis=frame(direction);var span=float(spans[index]);var offset:Vector2=offsets[index]
+		var target=Vector3(0,.5,0)+basis.x*offset.x+basis.y*offset.y
+		camera.size=span;camera.position=target+direction*2;camera.look_at(target,Vector3.FORWARD if direction.y>.999 else Vector3.UP)
 		for channel in 3:
 			for material in materials:material.set_shader_parameter("channel",channel);material.set_shader_parameter("view_direction",direction)
 			await parent.get_tree().process_frame;await parent.get_tree().process_frame;await RenderingServer.frame_post_draw
@@ -85,6 +104,7 @@ func bake(parent:Node,library:RefCounted)->bool:
 			elif channel==1:image.convert(Image.FORMAT_RGBA8);image.generate_mipmaps();normal_images.append(image)
 			else:image.convert(Image.FORMAT_RGH);image.generate_mipmaps();depth_images.append(image)
 			hash.update(image.get_data())
+	hash.update(spans.to_byte_array());hash.update(offsets.to_byte_array())
 	colors=Texture2DArray.new();normal_roughness=Texture2DArray.new();depths=Texture2DArray.new()
 	if colors.create_from_images(color_images)!=OK or normal_roughness.create_from_images(normal_images)!=OK or depths.create_from_images(depth_images)!=OK:viewport.queue_free();return false
 	var bytes=0
@@ -93,9 +113,13 @@ func bake(parent:Node,library:RefCounted)->bool:
 	if bytes!=persistent_bytes():viewport.queue_free();return false
 	color_images.clear();normal_images.clear();depth_images.clear();viewport.queue_free();await RenderingServer.frame_post_draw
 	descriptor={"available":true,"version":VERSION,"assetDigest":library.cpu.digest,"viewCount":directions().size(),"elevationsDegrees":ELEVATIONS,"azimuthCount":AZIMUTHS,"maximumAzimuthQuantizationDegrees":22.5,"maximumElevationQuantizationDegrees":15,"resolution":RESOLUTION,"spanInSourceHeight":SPAN,"heightRadiusRatioAppliedBeforeProjection":RATIO,"colorFormat":"premultiplied-linear-RGBA16F+mips","normalRoughnessFormat":"coverage-premultiplied-encoded-physical-normalRGB/coverageA-linear-RGBA8+mips","depthFormat":"coverage-premultiplied-depthR/roughnessG-RG16F+mips; divide by colourA","persistentTextureBytes":bytes,"sourceAabbEnclosingRadius":radius,"productsSha256":hash.finish().hex_encode(),"bakeMs":(Time.get_ticks_usec()-started)/1000.0,"scope":"view-quantized source geometry/albedo/normal/roughness/depth; no beauty lighting, canonical data changes or exact oblique3D claim"}
+	descriptor["viewSpans"]=Array(spans);descriptor["viewOffsets"]=[]
+	for p in offsets:descriptor.viewOffsets.append([p.x,p.y])
+	descriptor["support"]={"horizontalRadiusH":layouts.horizontalRadiusH,"minYH":layouts.minYH,"maxYH":layouts.maxYH,"policy":"all non-alpha quad corners, all views, yaw-invariant horizontal circle; conservative false positives"}
 	return true
 
 func material()->ShaderMaterial:
 	var result=ShaderMaterial.new();result.shader=preload("res://shaders/tree_oblique_full.gdshader")
 	result.set_shader_parameter("physical_view_colors",colors);result.set_shader_parameter("physical_view_normal_roughness",normal_roughness);result.set_shader_parameter("physical_view_depth",depths)
+	result.set_shader_parameter("physical_view_spans",spans);result.set_shader_parameter("physical_view_offsets",offsets)
 	return result

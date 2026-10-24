@@ -5,7 +5,7 @@ var library=Assets.new();var views=Views.new();var viewport:SubViewport;var scen
 func _initialize()->void:call_deferred("run")
 func draw(product:Dictionary,candidate:Dictionary,uniform_scale:bool,channel:String)->Image:
 	for material:ShaderMaterial in product.materials:
-		var text=material.shader.code.replace('"canopy.gdshaderinc"','"res://shaders/canopy.gdshaderinc"').replace('"color_space.gdshaderinc"','"res://shaders/color_space.gdshaderinc"').replace('"forest_oblique.gdshaderinc"','"res://shaders/forest_oblique.gdshaderinc"')
+		var text=material.shader.code.replace('"canopy.gdshaderinc"','"res://shaders/canopy.gdshaderinc"').replace('"color_space.gdshaderinc"','"res://shaders/color_space.gdshaderinc"').replace('"forest_oblique.gdshaderinc"','"res://shaders/forest_oblique.gdshaderinc"').replace('"forest_alpha_hash.gdshaderinc"','"res://shaders/forest_alpha_hash.gdshaderinc"')
 		if channel=="coverage":
 			text=text.replace("render_mode cull_disabled;","render_mode cull_disabled,unshaded;")
 			text=text.insert(text.rfind("}"),"ALBEDO=vec3(1.0);\n")
