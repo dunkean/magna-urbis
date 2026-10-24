@@ -93,8 +93,9 @@ origine. Le lanceur fournit aussi `surface/presentation/palettes.json`, exporté
 styles existants, pour les overrides `--style`. Le profil conserve l'identité des
 quinze styles terrain, leurs palettes et métadonnées d'eau. Godot prévisualise la
 palette, la hiérarchie des masses urbaines, les groupes de matériaux natifs et la
-vue orthographique. Les brosses fantasy, la composition, les étiquettes et la mise
-en page finale restent assurées par les renderers web existants.
+vue orthographique. Le bridge de composition ajoute les noms disponibles, titre,
+légende et cadre ; il réutilise neuf palettes de surcouche. Les brosses fantasy,
+hachures et quinze réalisations complètes restent du travail distinct.
 
 La vue cartographique emploie une exposition linéaire, une lumière ambiante blanche
 et aucun soleil direct. Les routes projetées peuvent ainsi conserver leurs
