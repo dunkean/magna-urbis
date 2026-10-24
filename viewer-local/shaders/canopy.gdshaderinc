@@ -23,6 +23,7 @@ uniform vec2 canopy_shadow_offset=vec2(4.7,-8.5);
 uniform vec3 canopy_shadow_transmittance=vec3(.25,.34,.50);
 uniform float canopy_shadow_angular_diameter_degrees=0.0;
 uniform float canopy_shadow_reference_height_m=9.80388349514563;
+uniform float canopy_shadow_reconstruction_texels=0.0;
 uniform vec3 canopy_linear_albedo = vec3(0.055,0.105,0.036);
 // One common horizontal reference plane, in the current rebased frame. Both
 // representations project the same world-XZ point onto this plane each pixel.
@@ -117,7 +118,10 @@ float surface_canopy_residual(vec2 world_xz,float footprint_m,float mean_cover) 
 }
 float surface_canopy_shadow_target(vec2 p,float footprint,float cover){
     float diameter=2.0*clamp(canopy_shadow_reference_height_m,0.0,32.0)*tan(radians(clamp(canopy_shadow_angular_diameter_degrees,0.0,2.0))*.5);
-    return surface_canopy_target(p,max(footprint,min(diameter,1.0)),cover);
+    // Reconstruction bandwidth is not a physical solar angle or a visibility
+    // change. Keep a coarsely rasterized shadow from exposing source texel steps.
+    float reconstruction=canopy_enabled?clamp(canopy_shadow_reconstruction_texels,0.0,2.0)*canopy_spacing_m:0.0;
+    return surface_canopy_target(p,max(max(footprint,min(diameter,1.0)),reconstruction),cover);
 }
 vec3 surface_canopy_color(vec2 p,float footprint){
     if(!canopy_asset_enabled || !canopy_enabled)return canopy_linear_albedo;
