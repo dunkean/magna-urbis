@@ -31,7 +31,7 @@ Terrain preparation failed: height batch source sample budget; previous rendered
 
 Les nouvelles préparations dépassant le budget de samples du batch de hauteurs sont refusées ; le terrain réellement affiché précédent reste en place. Une réponse reçue ou un paquet accepté ne prouve pas qu’un nouveau terrain a été appliqué. Le dernier monde capturé reste celui de la vue à 160 m ; le dernier paquet accepté possède une autre identité, conservée dans la preuve. Aucune capture à 40 m sur un proxy ou une source silencieusement substituée n’est présentée comme valide.
 
-Le parent a validé la ligne de commande du viewer appartenant à la campagne, puis arrêté explicitement le PID 208296 et ses processus Node 212064 / Godot 198724. Le driver 178260 s’est ensuite terminé avec l’erreur du tour. C’est un arrêt explicite, pas une terminaison normale du tour. Le contrôle CIM ultérieur ne trouve aucun survivant parmi les six PID consignés ; cet archivage n’a arrêté aucun processus et n’a touché aucun service partagé.
+Le parent a validé la ligne de commande du viewer appartenant à la campagne, puis arrêté explicitement le PID 208296 et ses descendants 212064 / 198724. Le driver 178260 s’est ensuite terminé avec l’erreur du tour. C’est un arrêt explicite, pas une terminaison normale du tour. Le contrôle CIM ultérieur ne trouve aucun survivant parmi les six PID consignés ; cet archivage n’a arrêté aucun processus et n’a touché aucun service partagé.
 
 ## Sources et suite encore à qualifier
 
