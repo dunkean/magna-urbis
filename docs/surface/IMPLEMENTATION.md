@@ -43,6 +43,19 @@ La revue relève aussi le refresh caméra du parent qui occupe la préparation
 pendant 7,9 s, et un trou terminal omis dans la métrique de navigation. Les
 corrections en cours ne qualifient pas rétroactivement V9 ou V10.
 
+**V11 reste échouée** sur le snapshot propre `176e774` : aucune nouvelle source
+n'est affichée dans la fenêtre nominale de 20 s. Les corrections de logs,
+préemption et mesure fonctionnent : mouvement réel 20,014 s, maximum de print
+15,821 ms, annulation effectivement atteinte. La première preview n'est acceptée
+qu'après 16,426 s ; l'horloge de la page mesure 8,526 s entre envoi au worker et
+réception du résultat, puis 0,387 s d'upload. Ce délai n'est pas encore attribué
+au CPU worker ou à la réception sur une page occupée. La tournée et les probes
+ne sont pas exécutées. Les trois vues urbaines recapturées passent et restent
+identiques en pixels à V9, sans remplacer le contrôle live.
+Voir [V11 négative](evidence/native-e2e-v11-negative.json),
+[les captures urbaines V11](evidence/native-current-419-v11-render.json) et
+[le diagnostic séparé des pipes](NATIVE_STDOUT_DIAGNOSTIC.md).
+
 ## Qualification du snapshot intégré
 
 La [preuve V8](evidence/native-e2e-v8.json) porte sur une nouvelle génération
