@@ -1,0 +1,391 @@
+{
+  "format": "surface-height-source-chain-budget-evidence",
+  "version": 1,
+  "result": "PASS",
+  "scope": "CPU-only native/GD source-chain budget repair; not an E2E/navigation/GPU/artistic qualification. Historical V14 remains FAILED.",
+  "runtimeCommit": "0d26dace85fe00a0fdb356bf463e0e4b125e813b",
+  "baseRuntimeCommit": "763081706cb199c1e7a157d5e2de3c49d38f1aa1",
+  "nativeExecutable": {
+    "path": "viewer-local/native-height/target/release/magna-surface-height-batch.exe",
+    "sha256": "5b0424fd0d99e12933c3791655ca632bf06690dd21e55918f7885dace73176fe",
+    "builtIn": "OWN worktree only; Root must rebuild separately"
+  },
+  "files": {
+    "viewer-local/adapters/surface_height_batch.gd": "d2ac86b7b259bd6f976739162ac3e8f8fdf9c4bb1fbfb036fe8e62c17dbaf012",
+    "viewer-local/native-height/src/main.rs": "fcfcbf8537590e746267410e1d7ac0cbac195f365e19448c5353c45018d5f48c",
+    "viewer-local/native-height/Cargo.lock": "05d7662415236c8c63a2933455d8acf077ccbac96dd3f8ebd6da6e2837ebe665",
+    "viewer-local/tests/surface_height_batch_test.gd": "8f4802eef1257abc711ba1ed3af9e69f843a29f546218a563fe300e0438a986a",
+    "viewer-local/tests/surface_height_chain_retained_test.gd": "3798bf0e5479cc78fc4b1abbeba48e4f1d35d55e28a5f1a3e7ed80002f7e83b2",
+    "web/scripts/surface_height_evidence.mjs": "6abf004cdafbbfa3a920213975cc81a6f47f72532225d928f32d7bee7c3dbea3",
+    "web/scripts/surface_height_evidence.test.mjs": "da85b01c087ece18028eabb2084672056b6a180035fb4330aaf4dd907de959f7"
+  },
+  "regression": {
+    "rawReportSha256": "08a5df2afdc95cc4463f6c6dcc2db9a998fa9285cd098be28c52f3f03faf515f",
+    "rawStatus": "failed",
+    "failedChildWorldId": "84fe4f2a1e733de41b2f3dfae57c4716",
+    "loggedTourGridsCoarseToFine": [
+      {
+        "requestId": 13,
+        "worldId": "7083dd845b69902a3a01d47c61a2bcf0",
+        "width": 512,
+        "height": 512,
+        "originX": 78.0487060546875,
+        "originZ": 78.0487060546875,
+        "spacingM": 77.972412109375,
+        "samples": 262144
+      },
+      {
+        "requestId": 14,
+        "worldId": "31536d7034256e7e9e0f12200f57354c",
+        "width": 512,
+        "height": 512,
+        "originX": 13985.76953125,
+        "originZ": 13985.76953125,
+        "spacingM": 23.5390625,
+        "samples": 262144
+      },
+      {
+        "requestId": 15,
+        "worldId": "f900455361eb01fd6e057193178ac2bf",
+        "width": 512,
+        "height": 512,
+        "originX": 18441.05078125,
+        "originZ": 18441.05078125,
+        "spacingM": 6.1015625,
+        "samples": 262144
+      },
+      {
+        "requestId": 16,
+        "worldId": "233da89cce92acb23486b504b0ea1548",
+        "width": 512,
+        "height": 512,
+        "originX": 19590.80078125,
+        "originZ": 19590.80078125,
+        "spacingM": 1.6015625,
+        "samples": 262144
+      },
+      {
+        "requestId": 17,
+        "worldId": "4643e051de43b93fe09b04f953d1fe75",
+        "width": 512,
+        "height": 512,
+        "originX": 19878.23828125,
+        "originZ": 19878.23828125,
+        "spacingM": 0.4765625,
+        "samples": 262144
+      },
+      {
+        "requestId": 18,
+        "worldId": "84fe4f2a1e733de41b2f3dfae57c4716",
+        "width": 214,
+        "height": 214,
+        "originX": 19950.233644859814,
+        "originZ": 19950.233644859814,
+        "spacingM": 0.4672897196261682,
+        "samples": 45796
+      }
+    ],
+    "additionalExactRegistrationParentSamples": 262144,
+    "failureChainSamples": 1618660,
+    "oldSampleBudget": 1572864,
+    "excessSamples": 45796,
+    "originalFailed214NnBodyArchived": false,
+    "expectedOldFailure": "height batch source sample budget"
+  },
+  "bounds": {
+    "sourceBudgetVersion": "height-source-chain-2",
+    "sourceLayers": 7,
+    "sourceSamples": 7340032,
+    "inputWireBytes": 536870912,
+    "manifestBytes": 1048576,
+    "outputWidthMax": 4096,
+    "outputHeightMax": 4096,
+    "outputRfAndControlBytesMax": 134217728,
+    "sourceRawF64BytesMax": 58720256,
+    "nativePromotedF64BytesMax": 58720256,
+    "nativeKnownBufferBudgetBytes": 402653184,
+    "nativeMetadataAllowanceBytes": 33554432,
+    "estimationScope": "input wire + promoted f64 controls + RF/control output + size_of(Tap)*(width+height)*layers + 32MiB allowance. Not process RSS/VRAM or total GD renderer memory. Full-chain preflight occurs before GD wire copies and Rust promotion."
+  },
+  "tests": {
+    "rust": {
+      "tests": 3,
+      "result": "PASS",
+      "fullBudgetSourceSamples": 7340032,
+      "aboveSampleBudgetRefused": true,
+      "eightLayersRefused": true,
+      "sourceHashAtomicOutputMalformedAndKernelsChecked": true
+    },
+    "nodeEvidence": {
+      "tests": 3,
+      "result": "PASS",
+      "historicalLowCountRecordsRemainReadable": true,
+      "expandedBudgetRequiresNewCheckedMetadata": true,
+      "unknownBudgetOrOverLimitRefused": true
+    },
+    "gd": {
+      "cancel": {
+        "cancelled": true,
+        "ownedProcessId": 211944,
+        "processRunningAfterCleanup": false,
+        "processWasRunningAtAbort": true,
+        "temporaryDirectory": "C:/Users/U108-N257/AppData/Roaming/Godot/app_userdata/Magna Urbis • SurfaceWorld/height-batch/208348-2-5814371",
+        "temporaryDirectoryRemoved": true
+      },
+      "cases": [
+        {
+          "allRfAndControlBytesExact": true,
+          "holes": 833,
+          "maximumF64ToRfErrorM": 0.0,
+          "name": "bilinear-f32-edge-padding",
+          "nativeKnownBufferUpperBytes": 33569788.0,
+          "nativeSampleMs": 0.1266,
+          "nativeTotalMs": 425.371,
+          "outputPayloadSha256": "8c72cf72cf8f3d9961e22fe15854a9520c5c566c2f0fec51bc24ce5a6ff9f16d",
+          "pixels": 1089,
+          "sourceBudgetVersion": "height-source-chain-2",
+          "sourceInputSha256": "fc9f1b8a9383f38bcfc74c15ce8579ba393035d4ee61b3e9a604bd0f090ef814",
+          "sourceLayers": 1,
+          "sourceSamples": 81
+        },
+        {
+          "allRfAndControlBytesExact": true,
+          "holes": 3201,
+          "maximumF64ToRfErrorM": 3.77496098735719e-06,
+          "name": "cubic-f32-16tap",
+          "nativeKnownBufferUpperBytes": 33599492.0,
+          "nativeSampleMs": 0.2557,
+          "nativeTotalMs": 468.563,
+          "outputPayloadSha256": "94e1254c51e5c2d3af9c2e0831222cd96e186b43a27791e2243452d22a678788",
+          "pixels": 4225,
+          "sourceBudgetVersion": "height-source-chain-2",
+          "sourceInputSha256": "d87d7b318555d65e9b052b6f27cc4c33b8fd036008f871062e889d197c8b37eb",
+          "sourceLayers": 1,
+          "sourceSamples": 81
+        },
+        {
+          "allRfAndControlBytesExact": true,
+          "holes": 3201,
+          "maximumF64ToRfErrorM": 3.80858818971319e-06,
+          "name": "cubic-f64-16tap",
+          "nativeKnownBufferUpperBytes": 33599816.0,
+          "nativeSampleMs": 0.2458,
+          "nativeTotalMs": 390.912,
+          "outputPayloadSha256": "b64fc93218268b9a48eaf9be9651dfdf3f03a712d93cefb0f375f172773aaa76",
+          "pixels": 4225,
+          "sourceBudgetVersion": "height-source-chain-2",
+          "sourceInputSha256": "378af277d97b1f2b1bd0a68f7e665ce8c4b802d8addf8d8c5c3059f7142ac3e3",
+          "sourceLayers": 1,
+          "sourceSamples": 81
+        },
+        {
+          "allRfAndControlBytesExact": true,
+          "holes": 833,
+          "maximumF64ToRfErrorM": 3.8105936255306e-06,
+          "name": "rebase-1e9-irregular-last-sample",
+          "nativeKnownBufferUpperBytes": 33569996.0,
+          "nativeSampleMs": 0.0852,
+          "nativeTotalMs": 380.301,
+          "outputPayloadSha256": "a6f518f4d7353253aa7752e71cab5be7b8df21c8b10ced13ace191e49014390b",
+          "pixels": 1089,
+          "sourceBudgetVersion": "height-source-chain-2",
+          "sourceInputSha256": "defe7703d66f424933f9245bb8ed52577e6246742ef90dda48adade8884c4130",
+          "sourceLayers": 1,
+          "sourceSamples": 81
+        },
+        {
+          "allRfAndControlBytesExact": true,
+          "holes": 1521,
+          "maximumF64ToRfErrorM": 3.80964070245682e-06,
+          "name": "fine-child-cubic-parent-feather",
+          "nativeKnownBufferUpperBytes": 33610144.0,
+          "nativeSampleMs": 0.2156,
+          "nativeTotalMs": 395.724,
+          "outputPayloadSha256": "cf49ae097f701f3088a11f7c72b6f13e41e88cbfe46e389b906d05996893c3be",
+          "pixels": 4225,
+          "sourceBudgetVersion": "height-source-chain-2",
+          "sourceInputSha256": "07aea1491567e82e111f33599511704020c31044efe7727474c3f7aaff4b720a",
+          "sourceLayers": 2,
+          "sourceSamples": 162
+        },
+        {
+          "allRfAndControlBytesExact": true,
+          "holes": 2273,
+          "maximumF64ToRfErrorM": 3.17891453960328e-06,
+          "name": "disjoint-domains-hidden-gap-nearest-tie",
+          "nativeKnownBufferUpperBytes": 33589592.0,
+          "nativeSampleMs": 0.1729,
+          "nativeTotalMs": 399.462,
+          "outputPayloadSha256": "a6e0fb4a250cf540e1561c175cb3d6147c23e7de3285a8511c7896c02a185882",
+          "pixels": 2401,
+          "sourceBudgetVersion": "height-source-chain-2",
+          "sourceInputSha256": "732b0646e18de536604f14bda8b327b7e77079ba9e09b0e0fc0f1153827c4d4c",
+          "sourceLayers": 2,
+          "sourceSamples": 50
+        },
+        {
+          "allRfAndControlBytesExact": true,
+          "holes": 0,
+          "maximumF64ToRfErrorM": 3.81458653464506e-06,
+          "name": "v14-full-live-chain-shapes-authored-heights-1618660-samples",
+          "nativeKnownBufferUpperBytes": 55595352.0,
+          "nativeSampleMs": 7.3968,
+          "nativeTotalMs": 446.104,
+          "outputPayloadSha256": "c11372789ee47c284c10305e3cb0d49c8f22aca0a2b6f5a8a567a14d8d3b0905",
+          "pixels": 262144,
+          "sourceBudgetVersion": "height-source-chain-2",
+          "sourceInputSha256": "c965a4c4e7c690e7c299e5d732bf6673fdd598c13bcc7859088675c01996eb1e",
+          "sourceLayers": 7,
+          "sourceSamples": 1618660
+        },
+        {
+          "allRfAndControlBytesExact": true,
+          "holes": 0,
+          "maximumF64ToRfErrorM": 3.80262781618512e-06,
+          "name": "exact-seven-1024-square-f64-budget",
+          "nativeKnownBufferUpperBytes": 151097344.0,
+          "nativeSampleMs": 11.1737,
+          "nativeTotalMs": 717.58,
+          "outputPayloadSha256": "48e37736629523e2e9ffb4d564a0bc9ea554c2339b47f9daf62945c7f4939762",
+          "pixels": 4225,
+          "sourceBudgetVersion": "height-source-chain-2",
+          "sourceInputSha256": "3354be11565dbe3aae20f1f534734635c8431935402314166b277092843ffa47",
+          "sourceLayers": 7,
+          "sourceSamples": 7340032
+        }
+      ],
+      "checks": 41,
+      "failures": 0,
+      "result": "PASS",
+      "scope": "authored CPU kernel/whole-image F32 and hole-bit parity, process cancellation/timeout; no GPU",
+      "test": "native-height-batch",
+      "timeout": {
+        "failed": true,
+        "heightBatchError": "height batch process timeout",
+        "ownedProcessId": 208472,
+        "processRunningAfterCleanup": false,
+        "processWasRunningAtAbort": true,
+        "temporaryDirectory": "C:/Users/U108-N257/AppData/Roaming/Godot/app_userdata/Magna Urbis • SurfaceWorld/height-batch/208348-3-5832015",
+        "temporaryDirectoryRemoved": true
+      }
+    },
+    "retainedRelief": {
+      "allRfAndControlBytesExact": true,
+      "executableSha256": "5b0424fd0d99e12933c3791655ca632bf06690dd21e55918f7885dace73176fe",
+      "failures": [],
+      "generatedControlQueryFixtureMs": 5022.854,
+      "layers": [
+        {
+          "height": 214,
+          "heightSha256": "2fe281278b77855a84b0ec0a31629da98082d860058ac99047188dcb325b62b2",
+          "originX": 19950.2336448598,
+          "sampleProvenance": "F32 queries of retained real B-spline parent, not original NN tile body",
+          "spacingM": 0.467289719626168,
+          "width": 214
+        },
+        {
+          "height": 512,
+          "heightSha256": "d72d6a5bacb8e29f67dea4d78347e3a84d0dc8a7c1b52918ecefdcbd9354f1f2",
+          "originX": 19878.23828125,
+          "sampleProvenance": "F32 queries of retained real B-spline parent, not original NN tile body",
+          "spacingM": 0.4765625,
+          "width": 512
+        },
+        {
+          "height": 512,
+          "heightSha256": "408c635ac954323b9b7beecba161c4990c45abc47ebb1a7970d63bf8d14e1cd0",
+          "originX": 19590.80078125,
+          "sampleProvenance": "F32 queries of retained real B-spline parent, not original NN tile body",
+          "spacingM": 1.6015625,
+          "width": 512
+        },
+        {
+          "height": 512,
+          "heightSha256": "c3f4ade0b9680421dd2dd24831e2018e457913289e0974de9cfafd89b8715b27",
+          "originX": 18441.05078125,
+          "sampleProvenance": "F32 queries of retained real B-spline parent, not original NN tile body",
+          "spacingM": 6.1015625,
+          "width": 512
+        },
+        {
+          "height": 512,
+          "heightSha256": "8d3ad0339c2a04cd6a38adac75a4248a060b2fee2ee0448100d154ec3eb7f8d7",
+          "originX": 13985.76953125,
+          "sampleProvenance": "F32 queries of retained real B-spline parent, not original NN tile body",
+          "spacingM": 23.5390625,
+          "width": 512
+        },
+        {
+          "height": 512,
+          "heightSha256": "68fb205c398b629306676fbed5fc263626a5e05480124a9c470135057c0cb57e",
+          "originX": 78.0487060546875,
+          "sampleProvenance": "F32 queries of retained real B-spline parent, not original NN tile body",
+          "spacingM": 77.972412109375,
+          "width": 512
+        },
+        {
+          "height": 512,
+          "heightSha256": "83f73301fe7c84a5cf396e98780b9b820ca66e99fd7a3a1abbc1d56142f94a0c",
+          "originX": 39.0625,
+          "sampleProvenance": "exact original retained B-spline controls",
+          "spacingM": 78.125,
+          "width": 512
+        }
+      ],
+      "nativeSampler": {
+        "eligible": true,
+        "executableSha256": "5b0424fd0d99e12933c3791655ca632bf06690dd21e55918f7885dace73176fe",
+        "holes": 0.0,
+        "mode": "explicit-native-batch",
+        "nativeKnownBufferUpperBytes": 55596160.0,
+        "outputPayloadSha256": "c41e87b305521736b97f8e6a69077bfe67d26fb10a460bc1072ff7d12648c83f",
+        "provenance": "Rust f64 scalar ordered16taps; no fast-math; GD positive-kernel seam policy",
+        "requested": true,
+        "sampleMs": 9.0652,
+        "sceneEpoch": null,
+        "size": 512,
+        "sourceBudgetVersion": "height-source-chain-2",
+        "sourceBytes": 6474640,
+        "sourceEpoch": null,
+        "sourceInputSha256": "a4395e880648646264df95c8eab8a2da3d726c71e1c1890fc8c601d03e228185",
+        "sourceLayers": 7,
+        "sourceSampleBudget": 7340032,
+        "sourceSamples": 1618660,
+        "sourceWorldId": "retained-v14-chain-diagnostic",
+        "spacingM": 0.467289719626168,
+        "totalMs": 520.421,
+        "used": true,
+        "version": "gd-height-batch-1"
+      },
+      "outputPixels": 262144,
+      "referencePayloadSha256": "c41e87b305521736b97f8e6a69077bfe67d26fb10a460bc1072ff7d12648c83f",
+      "result": "PASS",
+      "retainedPacket": {
+        "path": "D:/workspace/self/_worktrees/magna-urbis-surface-world-2026-10-23/web/out/surface/native-e2e-40km-v14/live-refinement.surfacebin",
+        "retainedControlSha256": "83f73301fe7c84a5cf396e98780b9b820ca66e99fd7a3a1abbc1d56142f94a0c",
+        "sha256": "246dfaaad5f1d352ef560d89c941e79385c13f8513383e0a548c4c72fb872b80"
+      },
+      "scalarGdReferenceMs": 2015.11,
+      "scope": "CPU retained-control query diagnostic; failed original NN 214-square BODY was not archived, so this is NOT byte replay of that body, no NN/generate/register/GPU; production never resamples or prunes parents",
+      "sourceBuffersUnchanged": true,
+      "sourceLayers": 7,
+      "sourceSamples": 1618660
+    }
+  },
+  "unchanged": [
+    "positive-kernel scalar ordered arithmetic",
+    "parent blending/source selection/hole bits",
+    "source heights, source files and terrain metadata",
+    "512MiB input/wire ceiling",
+    "7-layer/domain maximum",
+    "4096-square output ceiling",
+    "all compiler/environment/population versions",
+    "default path and explicit height-batch opt-in",
+    "20-second navigation gates"
+  ],
+  "limitations": [
+    "Failed original NN214 tile BODY was not archived. The retained-relief diagnostic queries actual original512-square B-spline controls on logged region grids, then compares all262144 output samples/control bits to scalar GD. It does not claim the failed original NN samples were recovered.",
+    "Measured total times include local file/process transport and are not interactive QoS, whole-process memory or FPS claims.",
+    "The repair raises only a checked processing budget; production never resamples, prunes, replaces, coarsens or invents source parents."
+  ]
+}
