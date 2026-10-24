@@ -1,0 +1,20 @@
+/** Authored analytical model comparison only. No retained source, PBR, physical
+ * observation, native renderer or QoS evidence. Emits PPM previews at40m/256px.
+ * Usage: node --import tsx scripts/compare_surface_detail_models.ts [outputDir]
+ * Positive spatial4-tap race + probability-only horizon; no softmin.
+ */
+import {writeFileSync,mkdirSync} from 'node:fs';
+import {resolve} from 'node:path';
+const out=resolve(process.argv[2]??'out/surface/detail-model-comparison');mkdirSync(out,{recursive:true});
+import {detailGaussianVertex as G,detailNormalCdf as Phi,detailDistributionPhases,intervalMass as F,createDetailDistributionSampler,DETAIL_BANDS as B} from '../src/surface/detailDistribution.ts';
+const p=[.03,.55,.15,.04,.11,.06,.04,.02],C=[[.23,.22,.19],[.40,.28,.16],[.14,.09,.04],[.48,.38,.23],[.30,.29,.23],[.33,.30,.24],[.49,.42,.28],[.40,.36,.26]],phase=detailDistributionPhases(0,0,1905266606),old=createDetailDistributionSampler(1905266606);
+function rank(x,z,b,node){let u=x/B[b].metres+phase[b*4],v=z/B[b].metres+phase[b*4+1],ix=Math.floor(u)+phase[b*4+2],iz=Math.floor(v)+phase[b*4+3],a=u-Math.floor(u),c=v-Math.floor(v);a=a*a*(3-2*a);c=c*c*(3-2*c);let w=[(1-a)*(1-c),a*(1-c),(1-a)*c,a*c],o=[[0,0],[1,0],[0,1],[1,1]],g=0,s=0;for(let j=0;j<4;j++){g+=w[j]*G(ix+o[j][0],iz+o[j][1],b+node*3+3);s+=w[j]*w[j];}return Phi(g/Math.sqrt(s));}
+let useC2=false;
+function split(x,z,fp){let out=p.map(()=>0);for(let b=0;b<3;b++){function walk(lo,hi,mass,node){if(hi-lo===1){out[lo]+=mass*B[b].weight;return;}let mid=(lo+hi)>>1,l=p.slice(lo,mid).reduce((a,c)=>a+c,0),r=p.slice(mid,hi).reduce((a,c)=>a+c,0),q=l/(l+r),h=2*fp/B[b].metres,t=h>=.5?q:F(useC2?rankC2(x,z,b,node):rank(x,z,b,node),0,q,h);walk(lo,mid,mass*t,node*2+1);walk(mid,hi,mass*(1-t),node*2+2);}walk(0,p.length,1,0);}return out;}
+function race(x,z,fp){let out=p.map(()=>0);for(let b=0;b<3;b++){let winner=0,best=Infinity;for(let i=0;i<p.length;i++){let score=-Math.log(Math.max(1e-12,rank(x,z,b,i+17)))/p[i];if(score<best){best=score;winner=i;}}out[winner]+=B[b].weight;}return out;}
+
+function rankC2(x,z,b,node){let u=x/B[b].metres+phase[b*4],v=z/B[b].metres+phase[b*4+1],ix=Math.floor(u)+phase[b*4+2],iz=Math.floor(v)+phase[b*4+3];const weights=f=>[(1-f)**3/6,(3*f**3-6*f*f+4)/6,(-3*f**3+3*f*f+3*f+1)/6,f**3/6],wx=weights(u-Math.floor(u)),wz=weights(v-Math.floor(v));let g=0,s=0;for(let j=0;j<4;j++)for(let i=0;i<4;i++){const w=wx[i]*wz[j];g+=w*G(ix+i-1,iz+j-1,b+node*3+3);s+=w*w;}return Phi(g/Math.sqrt(s));}
+const smooth=(a,b,x)=>{let t=Math.min(1,Math.max(0,(x-a)/(b-a)));return t*t*(3-2*t)};
+function race4(x,z,fp){let out=p.map(()=>0);if(fp>=3)return [...p];for(let b=0;b<3;b++){const unresolved=smooth(B[b].metres*.125,B[b].metres*.25,fp);for(let i=0;i<p.length;i++)out[i]+=p[i]*unresolved*B[b].weight;if(unresolved===1)continue;for(const [dx,dz] of [[-.25,-.25],[.25,-.25],[-.25,.25],[.25,.25]]){let win=0,best=Infinity;for(let i=0;i<p.length;i++){let score=-Math.log(Math.max(1e-12,(useC2?rankC2(x+dx*fp,z+dz*fp,b,i+17):rank(x+dx*fp,z+dz*fp,b,i+17))))/p[i];if(score<best){best=score;win=i;}}out[win]+=.25*(1-unresolved)*B[b].weight;}}return out;}
+const n=256,fp=40/n;for(const mode of ['ordinal','split','split-c2','race','race4','race4-c2']){let bytes=Buffer.alloc(n*n*3);useC2=mode==='split-c2'||mode==='race4-c2';for(let z=0;z<n;z++)for(let x=0;x<n;x++){const xx=(x+.5)*40/n,zz=(z+.5)*40/n;let w=mode==='ordinal'?old(p,xx,zz,fp):mode==='race'?race(xx,zz,fp):mode.startsWith('race4')?race4(xx,zz,fp):split(xx,zz,fp);for(let c=0;c<3;c++){let v=0;for(let j=0;j<p.length;j++)v+=w[j]*C[j][c];bytes[(z*n+x)*3+c]=Math.round((1.055*Math.pow(v,1/2.4)-.055)*255);}}writeFileSync(resolve(out,`oracle-${mode}-pixel-filter.ppm`),Buffer.concat([Buffer.from(`P6\n${n} ${n}\n255\n`),bytes]));}
+console.log(JSON.stringify({status:'ANALYTICAL_ONLY',extentM:40,resolution:n,footprintM:fp,models:['ordinal','split','split-c2','race','race4','race4-c2'],source:'authored constant mixture, not actual retained/native source',race4:'positive spatial4tap quadrature + original-probability horizon blend depending only on footprint/scale; no softmin'}));

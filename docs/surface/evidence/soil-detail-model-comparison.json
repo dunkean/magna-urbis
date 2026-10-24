@@ -1,0 +1,247 @@
+{
+  "version": 1,
+  "status": "ANALYTICAL_COMPARISON_ONLY",
+  "input": "authored constant8recipe probabilities, not retained/native observations",
+  "extentM": 40,
+  "resolution": [
+    256,
+    256
+  ],
+  "footprintM": 0.15625,
+  "models": {
+    "ordinal": "R3 reference, ordered recipe intervals of one Gaussian-CDF rank",
+    "split": "7 independent Gaussian-CDF fields on balanced binary probability tree, positive rank filtering",
+    "split-c2": "positive separable cubicB-spline16vertices divided by sqrt(sum weights^2), thenPhi; same binary probability tree",
+    "race": "hard exponential race from8 independent Gaussian-CDF ranks; no softmin",
+    "race4": "hard exponential race with positive spatial4tap quadrature, probability-only unresolved blend",
+    "race4-c2": "same race4 with variance-normalized positive cubicB-spline interpolation"
+  },
+  "findings": [
+    "Ordered intervals create artificial material contour ribbons.",
+    "Binary splits remove those rings but C1 interpolation leaves visibly rectangular patchwork.",
+    "C2 splits are smooth but visually diffuse.",
+    "C2 race4 is the preferred analytical image: organic patches without ordinal rings. Native implementation/quality not qualified."
+  ],
+  "scopeLimits": [
+    "Ideal independent Gaussian seed ensemble is an assumption; deterministic hash requires tests.",
+    "No exact mass in a realised patch.",
+    "Positive quadrature preserves ensemble mean; it is not exact perspective pixel integration.",
+    "C2/4tap work is more expensive; no FPS or QoS claim.",
+    "Source target mean must remain the existing GR target with the SAME outcome-independent gamut factor."
+  ],
+  "reproduce": "cd web; node --import tsx scripts/compare_surface_detail_models.ts out/surface/detail-model-comparison",
+  "previews": {
+    "ordinal": {
+      "ignoredPath": "web/out/surface/ground-cover-quality/oracle-ordinal-pixel-filter.png",
+      "sha256": "a411a3ad7148bbfa8512c25dbc195b59570b7e17e4f6f24a95c9ef9e72b36b23"
+    },
+    "split": {
+      "ignoredPath": "web/out/surface/ground-cover-quality/oracle-split-pixel-filter.png",
+      "sha256": "e8acb18caa26914e4b16a916cf6ec9ce911e9d0b47ab037a468bb605449aa3f7"
+    },
+    "split-c2": {
+      "ignoredPath": "web/out/surface/ground-cover-quality/oracle-split-c2-pixel-filter.png",
+      "sha256": "31a582082938858d3eb88cffb04d3ddcb98aeb5b0a63a20f87d9f6a7e44e53b9"
+    },
+    "race": {
+      "ignoredPath": "web/out/surface/ground-cover-quality/oracle-race-pixel-filter.png",
+      "sha256": "d72e19664a50a888cdfa0ec0f1842fe4c3d9997deab87d22b3502a1a8606f76a"
+    },
+    "race4": {
+      "ignoredPath": "web/out/surface/ground-cover-quality/oracle-race4-pixel-filter.png",
+      "sha256": "0525d17d954c0183455a44697e93a13386faa7dbe32b80cbb3c2124d360cbf66"
+    },
+    "race4-c2": {
+      "ignoredPath": "web/out/surface/ground-cover-quality/oracle-race4-c2-pixel-filter.png",
+      "sha256": "43c48b9e676330185b589d78989e9fac9d3eb10ec8373614aa74a6361d87ee8c"
+    }
+  },
+  "earlierEnsembleComparison": {
+    "status": "ANALYTICAL_ONLY",
+    "source": "authored constant8recipe mixture; not retained/native renderer",
+    "probabilities": [
+      0.03,
+      0.55,
+      0.15,
+      0.04,
+      0.11,
+      0.06,
+      0.04,
+      0.02
+    ],
+    "colors": [
+      [
+        0.23,
+        0.22,
+        0.19
+      ],
+      [
+        0.4,
+        0.28,
+        0.16
+      ],
+      [
+        0.14,
+        0.09,
+        0.04
+      ],
+      [
+        0.48,
+        0.38,
+        0.23
+      ],
+      [
+        0.3,
+        0.29,
+        0.23
+      ],
+      [
+        0.33,
+        0.3,
+        0.24
+      ],
+      [
+        0.49,
+        0.42,
+        0.28
+      ],
+      [
+        0.4,
+        0.36,
+        0.26
+      ]
+    ],
+    "stats": [
+      {
+        "mode": "split",
+        "nSeeds": 16384,
+        "scope": "ideal independent layout-seed ensemble assumption; deterministic hashes measured, NOT exact patch mass",
+        "rows": [
+          {
+            "recipe": 0,
+            "target": 0.03,
+            "mean": 0.029465428209865085,
+            "error": -0.0005345717901349134,
+            "sem95": 0.00124609968511745
+          },
+          {
+            "recipe": 1,
+            "target": 0.55,
+            "mean": 0.5483945253485399,
+            "error": -0.0016054746514601037,
+            "sem95": 0.0039985097148160014
+          },
+          {
+            "recipe": 2,
+            "target": 0.15,
+            "mean": 0.15040967615547207,
+            "error": 0.00040967615547207736,
+            "sem95": 0.002864990020780112
+          },
+          {
+            "recipe": 3,
+            "target": 0.04,
+            "mean": 0.040732698912740485,
+            "error": 0.0007326989127404843,
+            "sem95": 0.0015595623266858277
+          },
+          {
+            "recipe": 4,
+            "target": 0.11,
+            "mean": 0.10941614102318407,
+            "error": -0.0005838589768159264,
+            "sem95": 0.002514120028987948
+          },
+          {
+            "recipe": 5,
+            "target": 0.06,
+            "mean": 0.060836153050448295,
+            "error": 0.0008361530504482975,
+            "sem95": 0.0019224675811710923
+          },
+          {
+            "recipe": 6,
+            "target": 0.04,
+            "mean": 0.04013736170084798,
+            "error": 0.00013736170084797938,
+            "sem95": 0.001559790852623631
+          },
+          {
+            "recipe": 7,
+            "target": 0.02,
+            "mean": 0.020608015598903164,
+            "error": 0.0006080155989031631,
+            "sem95": 0.0011246840097537472
+          }
+        ],
+        "maxError": 0.0016054746514601037,
+        "maxErrorPlus95": 0.005603984366276105
+      },
+      {
+        "mode": "race",
+        "nSeeds": 16384,
+        "scope": "ideal independent layout-seed ensemble assumption; deterministic hashes measured, NOT exact patch mass",
+        "rows": [
+          {
+            "recipe": 0,
+            "target": 0.03,
+            "mean": 0.030450439453125002,
+            "error": 0.0004504394531250032,
+            "sem95": 0.0015363503877963412
+          },
+          {
+            "recipe": 1,
+            "target": 0.55,
+            "mean": 0.5490020751953095,
+            "error": -0.0009979248046905198,
+            "sem95": 0.0044506474095073936
+          },
+          {
+            "recipe": 2,
+            "target": 0.15,
+            "mean": 0.15068359374999965,
+            "error": 0.0006835937499996558,
+            "sem95": 0.0031908358362683796
+          },
+          {
+            "recipe": 3,
+            "target": 0.04,
+            "mean": 0.04028320312500008,
+            "error": 0.00028320312500008243,
+            "sem95": 0.0017747184552559833
+          },
+          {
+            "recipe": 4,
+            "target": 0.11,
+            "mean": 0.10957946777343758,
+            "error": -0.00042053222656242284,
+            "sem95": 0.0028025583192846657
+          },
+          {
+            "recipe": 5,
+            "target": 0.06,
+            "mean": 0.06002502441406253,
+            "error": 2.502441406253275e-05,
+            "sem95": 0.0021270944305164714
+          },
+          {
+            "recipe": 6,
+            "target": 0.04,
+            "mean": 0.03951416015624998,
+            "error": -0.00048583984375002304,
+            "sem95": 0.0017558105887119587
+          },
+          {
+            "recipe": 7,
+            "target": 0.02,
+            "mean": 0.020462036132812524,
+            "error": 0.00046203613281252387,
+            "sem95": 0.0012773858004071616
+          }
+        ],
+        "maxError": 0.0009979248046905198,
+        "maxErrorPlus95": 0.005448572214197913
+      }
+    ]
+  }
+}
