@@ -7,6 +7,8 @@ const Detail=preload("res://adapters/surface_geometry_detail.gd")
 const CityMap=preload("res://adapters/surface_city_map.gd")
 const Presentation=preload("res://adapters/surface_presentation.gd")
 const Roads = preload("res://adapters/surface_roads.gd")
+const VisibilityPlan=preload("res://adapters/surface_visibility_plan.gd")
+const Canopy=preload("res://adapters/surface_canopy.gd")
 
 # Prepare winding, normals and material batches without touching the scene tree.
 static func mesh_arrays(vertices: PackedVector3Array, normals: PackedVector3Array = PackedVector3Array()) -> Array:
@@ -28,6 +30,28 @@ static func prepare(request: Dictionary) -> Dictionary:
 	var control=request.get("prepareControl")
 	var phase_tick=started;var phases={}
 	if PrepareControl.hit(control,"scene-start"):return PrepareControl.result(control,"scene-start",started)
+	var visibility_plan:Dictionary={}
+	if request.oblique:
+		# One worker snapshot supplies BOTH resident heights and the atlas query.
+		request=request.duplicate(false);request.sceneRequest=request.sceneRequest.duplicate(false)
+		var spacing=Data.display_spacing(request.world.terrain,request.width,int(request.get("displaySamples",256)))
+		if request.displaySource.is_empty():request.displaySource=Data.build_display_source(request.world,spacing,control)
+		var plan_options:Dictionary=request.get("visibilityOptions",{}).duplicate(false)
+		plan_options["activeResidentSide"]=request.get("renderedHeightImageSize",0)
+		plan_options["activeResidentOrigin"]=request.get("renderedOrigin",{})
+		plan_options["reuseResidentCandidate"]=request.get("reuseObliqueHeight",false)
+		visibility_plan=VisibilityPlan.build(request.world,request.displaySource,request.get("visibilityCamera",{}),request.origin,spacing,Canopy.tree_page(request.packet),plan_options)
+		if PrepareControl.hit(control,"visibility-complete"):return PrepareControl.result(control,"visibility-complete",started)
+		request.sceneRequest["canopyAtlasBounds"]=visibility_plan.atlasBounds
+		if visibility_plan.get("available",false):
+			request.sceneRequest["visibilityResidentImageSize"]=int(visibility_plan.residentImageSize)
+			request.origin=visibility_plan.residentOrigin
+			request.heightImageSize=int(visibility_plan.residentImageSize)
+			var old:Dictionary=request.get("renderedOrigin",{})
+			var same_origin=not old.is_empty() and absf(float(old.x)-float(request.origin.x))<.00001 and absf(float(old.z)-float(request.origin.z))<.00001 and absf(float(old.y)-float(request.origin.y))<.00001
+			request.skipHeight=request.get("reuseObliqueHeight",false) and same_origin and int(request.get("renderedHeightImageSize",0))==int(visibility_plan.residentImageSize)
+		else:request.skipHeight=false
+	phases["visibilityPlanMs"]=(Time.get_ticks_usec()-phase_tick)/1000.0;phase_tick=Time.get_ticks_usec()
 	var result := Data.prepare(request.world,request.origin,request.width,request.generation,request.packet,request.skipContext,request.displaySource,request.skipHeight,request.sceneRequest)
 	if result.get("cancelled",false):return result
 	phases["dataMs"]=(Time.get_ticks_usec()-phase_tick)/1000.0;phase_tick=Time.get_ticks_usec()
@@ -36,6 +60,7 @@ static func prepare(request: Dictionary) -> Dictionary:
 	result.viewWidth=request.width
 	result.focus=request.focus
 	result.oblique=request.oblique
+	if request.oblique:result.visibilityPlan=visibility_plan
 	for key in ["heightImageSize","displaySamples","physicalLineage","contextKey","heightKey","liveSerial","presentationMode"]:
 		if request.has(key):result[key]=request[key]
 	if PrepareControl.hit(control,"detail"):return PrepareControl.result(control,"detail",started)
@@ -48,6 +73,9 @@ static func prepare(request: Dictionary) -> Dictionary:
 	if PrepareControl.hit(control,"population"):return PrepareControl.result(control,"population",started)
 	phases["treeSupportMs"]=(Time.get_ticks_usec()-phase_tick)/1000.0;phase_tick=Time.get_ticks_usec()
 	result.populations=Population.prepare(population_packet,request.focus,request.width,request.viewportWidth,request.oblique,not request.get("groundOnly",false),request.sceneRequest.get("canopyAtlasBounds",{}))
+	if request.oblique:
+		result.populations.canopy["visibilityPlan"]=visibility_plan
+		if not visibility_plan.get("available",false):result.populations.canopy["reason"]=visibility_plan.reason
 	if PrepareControl.hit(control,"city-map"):return PrepareControl.result(control,"city-map",started)
 	phases["populationMs"]=(Time.get_ticks_usec()-phase_tick)/1000.0;phase_tick=Time.get_ticks_usec()
 	if request.get("presentationMode","")=="cartographic" and not request.get("groundOnly",false):
