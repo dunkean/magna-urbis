@@ -1,0 +1,50 @@
+{
+  "format": "native-threaded-log-cpu-proof",
+  "version": 1,
+  "scope": "Optional threaded logger CPU transport/ordering/lifecycle tests only; no GPU, navigation A/B, causal or performance qualification",
+  "runtimeDefault": "synchronous",
+  "nativeAssertions": 1438,
+  "realStdoutRecords": 300,
+  "utf8AndPayloadExact": true,
+  "eventTicksRetained": true,
+  "pendingAfterFlush": 0,
+  "joined": true,
+  "closedStateRejected": 1,
+  "pressure": "Byte and message caps tested separately while sink was semaphore-blocked; accepted strings drained in FIFO after failure",
+  "mutexDuringIO": "Injected sink calls snapshot while blocked; test would deadlock if the queue mutex were held during output",
+  "boundedStats": {
+    "accepted": 551,
+    "eventBuckets": 64,
+    "recent": 512,
+    "written": 551
+  },
+  "nodeTests": {
+    "passed": 5,
+    "failed": 0,
+    "includes": "new native logger+CLI tests and existing fd/backpressure/UTF8 log transport tests"
+  },
+  "parse": "main GDScript and driver node --check PASS",
+  "artifacts": {
+    "stdout": "web\\out\\surface\\native-log-fd-BFIpwE\\stdout.log",
+    "stdoutSha256Lf": "25671b06a45c3b04ec80115631589c7cab87c08900aa74dbed681d3a50e72408",
+    "stderr": "web\\out\\surface\\native-log-fd-BFIpwE\\stderr.log",
+    "stderrSha256Lf": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "sourceSha256Lf": {
+    "viewer-local/adapters/surface_native_log.gd": "47792002bcf07e2ed57765277a08aa460f299507e238c38e6b9af0d2e08ed0a6",
+    "viewer-local/scene/main.gd": "f4b4f8109b1fd8da657df9e9b3a0f3494b04982ebf1e1f32a3ab5f692ec9760a",
+    "viewer-local/tests/native_log_test.gd": "1f8c70758dcb741fe37e35deea4f93c892a836ff9ead783c76ced78ea1152ec9",
+    "web/scripts/surface_native_log.test.mjs": "a3835efe43b3f411e6f36c07197abc7e8f65817f60972a702e99d3e0c5897271"
+  },
+  "limitations": [
+    "OS print and final flush/join can still stall; no timing or source gate is relaxed.",
+    "JSON serialization and metrics file I/O remain on the main thread.",
+    "Godot engine diagnostics do not use the application FIFO.",
+    "Metrics writer snapshot excludes its own later output line."
+  ],
+  "productionEmitterBodyExecuted": {
+    "modeThreaded": "event clock and nested payload frozen before queue; enqueueMs present, printMs absent",
+    "modeSynchronous": "v1 printMs present, enqueueMs absent",
+    "method": "Extract and execute the real production _emit_native function in a minimal CPU host; no duplicated emitter implementation"
+  }
+}

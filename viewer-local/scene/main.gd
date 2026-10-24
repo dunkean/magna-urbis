@@ -1,5 +1,6 @@
 extends Node3D
 
+const NativeLog=preload("res://adapters/surface_native_log.gd")
 const Data = preload("res://adapters/surface_data.gd")
 const Library = preload("res://adapters/material_library.gd")
 const VegetationLibrary=preload("res://adapters/surface_vegetation_library.gd")
@@ -44,6 +45,9 @@ var previous_frame_tick := 0
 var native_profile_events:Array=[]
 var native_log_timings:Array=[]
 var native_log_maxima:Dictionary={}
+var native_log_mode="synchronous"
+var native_logger:RefCounted
+var native_log_failed=false
 const PrepareControl=preload("res://adapters/surface_prepare_control.gd")
 var active_prepare_control:RefCounted
 var preparation_cancellations:Array=[]
@@ -144,6 +148,12 @@ var unsupported_tree_count:=0
 
 func _ready() -> void:
 	_parse_options()
+	native_log_mode=str(options.get("--native-log-mode","synchronous"))
+	if native_log_mode not in ["synchronous","threaded"]:
+		push_error("--native-log-mode must be synchronous or threaded");get_tree().quit(2);return
+	if native_log_mode=="threaded":
+		native_logger=NativeLog.new()
+		if native_logger.start()!=OK:push_error("Native log writer could not start");get_tree().quit(1);return
 	RenderingServer.viewport_set_measure_render_time(get_viewport().get_viewport_rid(),true)
 	surface_shader_code = ShaderSource.build()
 	if options.has("--resolution"):
@@ -232,7 +242,7 @@ func _ready() -> void:
 	_update_camera()
 	_begin_prepare()
 	_request_live()
-	print(JSON.stringify({"event":"surface-viewer-start","godot":Engine.get_version_info().string,"terrain3d":"1.0.2","backend":RenderingServer.get_current_rendering_method(),"adapter":RenderingServer.get_video_adapter_name(),"source":world.terrain.source,"worldId":world.id,"pbrAssets":library.loaded_assets}))
+	_emit_native({"event":"surface-viewer-start","godot":Engine.get_version_info().string,"terrain3d":"1.0.2","backend":RenderingServer.get_current_rendering_method(),"adapter":RenderingServer.get_video_adapter_name(),"source":world.terrain.source,"worldId":world.id,"pbrAssets":library.loaded_assets})
 
 func _parse_options() -> void:
 	var args := OS.get_cmdline_user_args()
@@ -1047,7 +1057,7 @@ func _capture(path: String) -> void:
 	var absolute := ProjectSettings.globalize_path(path)
 	DirAccess.make_dir_recursive_absolute(absolute.get_base_dir())
 	var result := get_viewport().get_texture().get_image().save_png(absolute)
-	print(JSON.stringify({"event":"capture","captureTickMs":Time.get_ticks_msec(),"populationInstances":population_instances(),"canopyView":canopy_view_state,"surfaceLayers":rendered_surface_layers,"water":water_metrics,"urban":rendered_urban_metrics,"renderedWorldId":rendered_world_id,"renderedSource":rendered_source,"renderedLiveSerial":rendered_live_serial,"renderedSnapshot":rendered_snapshot,"viewSatisfiedSerial":view_satisfied_serial,"viewSatisfaction":view_satisfaction,"path":absolute,"error":result,"widthM":width_m,"metresPerPixel":width_m/get_viewport().get_visible_rect().size.x}))
+	_emit_native({"event":"capture","captureTickMs":Time.get_ticks_msec(),"populationInstances":population_instances(),"canopyView":canopy_view_state,"surfaceLayers":rendered_surface_layers,"water":water_metrics,"urban":rendered_urban_metrics,"renderedWorldId":rendered_world_id,"renderedSource":rendered_source,"renderedLiveSerial":rendered_live_serial,"renderedSnapshot":rendered_snapshot,"viewSatisfiedSerial":view_satisfied_serial,"viewSatisfaction":view_satisfaction,"path":absolute,"error":result,"widthM":width_m,"metresPerPixel":width_m/get_viewport().get_visible_rect().size.x})
 
 func _emit_native(event:Dictionary)->void:
 	var started=Time.get_ticks_usec()
@@ -1055,15 +1065,26 @@ func _emit_native(event:Dictionary)->void:
 	if not record.has("tickMs"):record["tickMs"]=started/1000
 	record["unixTimeMs"]=Time.get_unix_time_from_system()*1000.0
 	var text=JSON.stringify(record)
-	var before_print=Time.get_ticks_usec()
-	print(text)
+	var before_output=Time.get_ticks_usec()
+	var accepted=true
+	if native_logger!=null:accepted=native_logger.enqueue(text,str(record.get("event","unknown")))
+	else:print(text)
 	var finished=Time.get_ticks_usec()
-	var timing={"event":str(record.get("event","unknown")),"beforeSerializeUs":started,"beforePrintUs":before_print,"afterPrintUs":finished,"serializeMs":(before_print-started)/1000.0,"printMs":(finished-before_print)/1000.0,"characters":text.length()}
+	var timing={"event":str(record.get("event","unknown")),"mode":native_log_mode,"beforeSerializeUs":started,"serializeMs":(before_output-started)/1000.0,"mainWallMs":(finished-started)/1000.0,"characters":text.length()}
+	if native_logger==null:
+		timing.merge({"beforePrintUs":before_output,"afterPrintUs":finished,"printMs":(finished-before_output)/1000.0})
+	else:
+		timing.merge({"beforeEnqueueUs":before_output,"afterEnqueueUs":finished,"enqueueMs":(finished-before_output)/1000.0,"accepted":accepted})
 	native_log_timings.append(timing)
 	while native_log_timings.size()>512:native_log_timings.pop_front()
-	var maximum:Dictionary=native_log_maxima.get(timing.event,{"count":0,"serializeMs":0.0,"printMs":0.0,"characters":0})
-	maximum.count+=1;maximum.serializeMs=maxf(maximum.serializeMs,timing.serializeMs);maximum.printMs=maxf(maximum.printMs,timing.printMs);maximum.characters=maxi(maximum.characters,timing.characters)
+	var output_key="printMs" if native_logger==null else "enqueueMs"
+	var maximum:Dictionary=native_log_maxima.get(timing.event,{"count":0,"serializeMs":0.0,"mainWallMs":0.0,"characters":0,output_key:0.0})
+	maximum.count+=1;maximum.serializeMs=maxf(maximum.serializeMs,timing.serializeMs);maximum.mainWallMs=maxf(maximum.mainWallMs,timing.mainWallMs);maximum[output_key]=maxf(float(maximum[output_key]),float(timing[output_key]));maximum.characters=maxi(maximum.characters,timing.characters)
 	native_log_maxima[timing.event]=maximum
+	if not accepted and not native_log_failed:
+		native_log_failed=true
+		push_error("Native log queue rejected output; failing closed: "+str(native_logger.snapshot().failure))
+		get_tree().quit(1)
 
 func _quantile(values: Array[float], fraction: float) -> Variant:
 	if values.is_empty(): return null
@@ -1072,6 +1093,12 @@ func _quantile(values: Array[float], fraction: float) -> Variant:
 	return sorted[mini(int(fraction*(sorted.size()-1)),sorted.size()-1)]
 
 func _write_metrics() -> void:
+	# No main-thread queue drain during input. The final probe calls this after
+	# releasing input and settling; exit always closes/joins the writer as well.
+	var may_flush=not Input.is_anything_pressed() and not _quality_preview()
+	var flush_started=Time.get_ticks_usec()
+	if native_logger!=null and may_flush:native_logger.flush()
+	var flush_ms=(Time.get_ticks_usec()-flush_started)/1000.0
 	var metrics := {"godot":Engine.get_version_info().string,"terrain3d":"1.0.2","backend":RenderingServer.get_current_rendering_method(),"adapter":RenderingServer.get_video_adapter_name(),"worldId":rendered_world_id,"source":rendered_source,"requestedWorldId":world.id,"requestedSource":world.terrain.source,"resolution":[get_viewport().get_visible_rect().size.x,get_viewport().get_visible_rect().size.y],"frames":frame_times.size(),"frameWallMs":{"p50":_quantile(frame_times,0.5),"p95":_quantile(frame_times,0.95),"p99":_quantile(frame_times,0.99)},"navigationFrameWallMs":{"p50":_quantile(all_frame_times,0.5),"p95":_quantile(all_frame_times,0.95),"p99":_quantile(all_frame_times,0.99),"max":_quantile(all_frame_times,1.0)},"cpuScriptMs":{"samples":process_times.size(),"p50":_quantile(process_times,0.5),"p95":_quantile(process_times,0.95),"p99":_quantile(process_times,0.99),"max":_quantile(process_times,1.0),"scope":"entire viewer _process including initial and first30 post-apply frames; engine/input callbacks excluded; wall/GPU metrics reported separately"},"prepareMs":prepare_times,"uploadAndObjectsMs":upload_times,"regionCounts":region_counts,"preparationSnapshots":preparation_snapshots,"videoMemoryBytes":Performance.get_monitor(Performance.RENDER_VIDEO_MEM_USED),"textureMemoryBytes":Performance.get_monitor(Performance.RENDER_TEXTURE_MEM_USED),"drawCalls":Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME),"objects":selected_candidates,"roadProjectors":road_projector_count,"candidateCount":candidate_count,"cpuFrameMs":null,"cpuTimeNote":"cpuScriptMs measures this viewer script only; full engine CPU frame/pass timing is not available here.","gpuRenderMs":{"p50":_quantile(gpu_render_times,0.5),"p95":_quantile(gpu_render_times,0.95),"p99":_quantile(gpu_render_times,0.99)},"cpuRenderMs":{"p50":_quantile(cpu_render_times,0.5),"p95":_quantile(cpu_render_times,0.95)},"gpuTimeNote":"RenderingServer measured viewport render time; null when the backend returns no positive samples. Frame wall time separately includes vsync, uploads and driver stalls."}
 	metrics["renderSourceVersion"]={"assetVersion":library.asset_version,"assetDigest":library.asset_digest,"assetBindings":library.loaded_asset_bindings,"vegetationAssets":vegetation_library.version,"vegetationApplied":rendered_presentation_mode=="aerial" and not vegetation_library.variants.is_empty(),"presentation":Presentation.profile(rendered_packet,rendered_presentation_mode),"geometryDetail":rendered_geometry_detail}
 	metrics["liveHttpEvents"]=live_http_events
@@ -1083,7 +1110,7 @@ func _write_metrics() -> void:
 	metrics["renderedSnapshot"]=rendered_snapshot
 	metrics["renderEvents"]=render_events
 	metrics["discardedPreparations"]=discarded_preparations
-	metrics["nativeLogTiming"]={"maximaByEvent":native_log_maxima,"recent":native_log_timings}
+	metrics["nativeLogTiming"]={"version":"native-log-timing-1" if native_logger==null else "native-log-timing-2","mode":native_log_mode,"maximaByEvent":native_log_maxima,"recent":native_log_timings,"writer":native_logger.snapshot() if native_logger!=null else null,"flushedBeforeSnapshot":native_logger!=null and may_flush,"flushBeforeSnapshotMs":flush_ms,"scope":"Main serialize/output wall spans; threaded enqueueMs is not writer printWallMs. Writer snapshot excludes the later metrics event itself."}
 	metrics["nativeMainProfiles"]=native_profile_events
 	metrics["preparationCancellations"]=preparation_cancellations
 	metrics["liveAcceptance"]=live_acceptance_events
@@ -1100,9 +1127,11 @@ func _write_metrics() -> void:
 	DirAccess.make_dir_recursive_absolute(path.get_base_dir())
 	var file := FileAccess.open(path,FileAccess.WRITE)
 	file.store_string(JSON.stringify(metrics,"  "))
-	print(JSON.stringify({"event":"metrics","path":path,"metrics":metrics}))
+	_emit_native({"event":"metrics","path":path,"metrics":metrics})
+	if native_logger!=null and may_flush:native_logger.flush()
 
 func _exit_tree() -> void:
+	if native_logger!=null:native_logger.close()
 	if worker!=null: worker.wait_to_finish()
 	if packet_worker!=null: packet_worker.wait_to_finish()
 
