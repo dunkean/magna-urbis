@@ -6,17 +6,20 @@ import {execFileSync} from 'node:child_process';
 import {createHash} from 'node:crypto';
 import {strict as assert} from 'node:assert';
 
-const {values}=parseArgs({options:{root:{type:'string'},capture:{type:'string'},out:{type:'string'},server:{type:'string',default:'http://127.0.0.1:8893'}}});
-if(!values.root||!values.capture||!values.out)throw Error('--root ROOT --capture V10-DIRECTORY --out NEW-DIRECTORY [--server http://127.0.0.1:8893]');
-const root=resolve(values.root),capture=resolve(values.capture),out=resolve(values.out),revision='f4d25e105195f9a57f2622b2ee7ea70f5e923940';
+const {values}=parseArgs({options:{root:{type:'string'},capture:{type:'string'},out:{type:'string'},serials:{type:'string'},server:{type:'string',default:'http://127.0.0.1:8893'}}});
+if(!values.root||!values.capture||!values.out)throw Error('--root ROOT --capture CAPTURE-DIRECTORY --out NEW-DIRECTORY [--serials 21,204,253] [--server http://127.0.0.1:8893]');
+const root=resolve(values.root),capture=resolve(values.capture),out=resolve(values.out);
+const report=JSON.parse(readFileSync(resolve(capture,'report.json'),'utf8')),revision=report.code?.selectedRepository?.head;
+if(typeof revision!=='string'||!/^[a-f0-9]{40}$/.test(revision))throw Error('Capture has no exact producer revision');
+const serials=values.serials?.split(',').map(Number);
+if(serials&&(!serials.length||serials.some(s=>!Number.isSafeInteger(s)||s<0)||new Set(serials).size!==serials.length))throw Error('Pass distinct nonnegative native request serials');
 // Read-only imports must really be the frozen producer being replayed. Neither
 // missing compile inputs nor a changed compiler may be silently substituted.
-assert.equal(execFileSync('git',['diff',revision,'--name-only','--','web/src/surface'],{cwd:root,encoding:'utf8'}).trim(),'','Surface producer differs from the recorded f4 snapshot');
+assert.equal(execFileSync('git',['diff',revision,'--name-only','--','web/src/surface'],{cwd:root,encoding:'utf8'}).trim(),'','Surface producer differs from the recorded snapshot');
 const load=(name:string)=>import(pathToFileURL(resolve(root,'web/src/surface',name)).href);
 const [{decodeSurfaceBinary,encodeSurfaceBinary},{recoverRetainedPopulationSampler},{retargetSurfaceWorld,fingerprint},
   {generateSurfaceCandidatePages},{packCandidateColumns},{compareRefinementParent},{validateSurfacePacket}]=await Promise.all([
   load('binary.ts'),load('retainedPopulation.ts'),load('compiler.ts'),load('candidatePages.ts'),load('candidateColumns.ts'),load('registrationBinding.ts'),load('packet.ts')]);
-const report=JSON.parse(readFileSync(resolve(capture,'report.json'),'utf8'));
 assert.equal(report.code.selectedRepository.head,revision,'Capture producer differs');
 const savedBytes=readFileSync(resolve(capture,'live-refinement.surfacebin')),saved=decodeSurfaceBinary(savedBytes),recovered=recoverRetainedPopulationSampler(saved);
 const parent=recovered.parent,field={width:parent.spacingM*parent.width,n:parent.width,data:parent.heights};
@@ -24,11 +27,14 @@ const sha=(a:Uint8Array)=>createHash('sha256').update(a).digest('hex');
 const immutable=fingerprint({world:saved.world,parents:saved.terrainParents,urban:saved.urban,source:saved.source});
 const outputs:any[]=[];
 mkdirSync(out,{recursive:true});
-for(const event of report.browserEvents.filter((e:any)=>e.kind==='worker-compiled'&&e.packet.source.request.preview)){
+for(const event of report.browserEvents.filter((e:any)=>e.kind==='worker-compiled')){
   const summary=event.packet,q=summary.source.request;
+  const serial=report.navigation.result.liveAcceptance.find((e:any)=>e.worldId===summary.worldId)?.requestSerial;
+  if(serials?!serials.includes(serial):!q.preview)continue;
+  assert.equal(q.knownContextId,recovered.contextId,'Only the saved known-context request can be replayed');
+  assert.equal(q.knownSceneContextId,saved.source.sceneContextId,'Saved scene differs; refusing missing scene reconstruction');
   const sourceEvent=report.network.find((e:any)=>e.url.endsWith('/refinement/tile')&&e.meta?.n===summary.terrain.width&&Math.abs(e.meta.x-q.x)<1e-8&&Math.abs(e.meta.y-q.y)<1e-8);
   assert.ok(sourceEvent?.request,'Original tile request was not archived');
-  const serial=report.navigation.result.liveAcceptance.find((e:any)=>e.worldId===summary.worldId)?.requestSerial;
   assert.ok(Number.isInteger(serial),'Original native request serial unavailable');
   const file=resolve(out,`preview-${serial}.surfacebin`);if(existsSync(file))throw Error('Output exists; retain previous evidence');
   const began=performance.now(),response=await fetch(`${values.server}/refinement/tile`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(sourceEvent.request),signal:AbortSignal.timeout(60000)});
@@ -63,7 +69,8 @@ for(const event of report.browserEvents.filter((e:any)=>e.kind==='worker-compile
   console.log(JSON.stringify({serial,worldId:world.id,candidateCount:pages.candidates.length,compactFile:file,sha256:sha(bytes)}));
 }
 assert.equal(fingerprint({world:saved.world,parents:saved.terrainParents,urban:saved.urban,source:saved.source}),immutable,'Saved packet mutated');
+if(serials)assert.deepEqual(outputs.map(o=>o.serial).sort((a,b)=>a-b),[...serials].sort((a,b)=>a-b),'Some selected serials were not replayed');
 const result={format:'explicit-retained-preview-replay',version:1,status:'PASS',producerRevision:revision,sourceCapture:capture,initialCachePacket:resolve(capture,'live-refinement.surfacebin'),savedPacketSha256:sha(savedBytes),canonicalContextId:recovered.contextId,canonicalTerrainHash:recovered.terrainHash,outputs,
   sourceGenerationRequested:false,registrationRequested:false,savedPacketUnchanged:true,
-  scope:'Explicit retained query replay, not archived original BODY. Existing Python registration only; no registration/generation fallback. Original terrain hash,parent diagnostics,world id,versions and projected layer descriptor verified. Canonical context borrowed exactly; no unavailable compiler inputs inferred. Retarget+pages f4 semantics, not a reconstructed initial worker compilation. Compact output omits known context/scene as production did. Standalone variant adds known context/scene for diagnostic loading. Whole BODY byte equality with original cannot be asserted because it was not saved.'};
+  scope:'Explicit retained query replay, not archived original BODY. Existing Python registration only; no registration/generation fallback. Original terrain hash,parent diagnostics,world id,versions and projected layer descriptor verified. Canonical context borrowed exactly; no unavailable compiler inputs inferred. Retarget+pages from the captured producer semantics, not a reconstructed initial worker compilation. Compact output omits known context/scene as production did. Standalone variant adds known context/scene for diagnostic loading. Whole BODY byte equality with original cannot be asserted because it was not saved.'};
 writeFileSync(resolve(out,'report.json'),JSON.stringify(result,null,2)+'\n');
