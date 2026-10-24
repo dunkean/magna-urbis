@@ -1,13 +1,13 @@
 import type { Decor } from '../../ui/decor';
 import type { Building3dScene } from '../../render/urbanBuildingGeometry';
-import { compileSurfaceWorld, serializeSurfaceWorld } from '../compiler';
-import type { Bounds, CompileOptions, SurfaceCompileInput, SurfaceWorld } from '../model';
-import { generateSurfaceCandidates } from '../population';
+import { compileSurfaceWorld, serializeSurfaceWorld, getCanonicalSurfaceContext } from '../compiler';
+import type { Bounds, CompileOptions, SurfaceCompileInput, SurfaceWorld,SurfaceCandidate } from '../model';
+import { generateSurfaceCandidatePagesInFrame, type SurfaceCandidatePages } from '../candidatePages';
 import { occupationFromMagnaScene, type SurfaceRoad } from './occupation';
 import { decorToSurfaceInput } from './magna';
 import { magnaClimateToSurface, MAGNA_CLIMATE_PRESETS } from './climate';
 import { archiveSurfaceSource } from './sourceArchive';
-import { packCandidateColumns } from '../candidateColumns';
+import { packCandidateColumns,type CandidateColumns } from '../candidateColumns';
 import { magnaUrbanPacket, magnaUrbanIdentity, magnaRoads } from './magnaUrban';
 import { magnaSurfacePresentation } from '../presentation';
 import { magnaSurfaceSource } from './magnaSource';
@@ -45,12 +45,18 @@ export function exportSurfaceInputPacket(input: SurfaceCompileInput, scene: Buil
     urban, urbanId: magnaUrbanIdentity(urban), source: options.encoding === 'binary' ? archiveSurfaceSource(source) : structuredClone(source), ...packetCandidates(world, options) };
 }
 
-function packetCandidates(world: SurfaceWorld, options: SurfacePacketOptions) {
-  const b = world.bounds, cx = (b.minX + b.maxX) / 2, cz = (b.minZ + b.maxZ) / 2;
-  const candidateBounds = options.candidateBounds === 'all' ? b : options.candidateBounds ?? { minX: Math.max(b.minX, cx - 160), maxX: Math.min(b.maxX, cx + 160),
-    minZ: Math.max(b.minZ, cz - 160), maxZ: Math.min(b.maxZ, cz + 160) };
-  const candidates = generateSurfaceCandidates(world, candidateBounds, { maxCandidates: options.candidateLimit ?? 100000, signal: options.signal });
-  return options.encoding === 'binary' ? { candidateBounds, candidateColumns: packCandidateColumns(candidates) } : { candidateBounds, candidates };
+function packetCandidates(world: SurfaceWorld, options: SurfacePacketOptions, translation={x:0,z:0},sourceOrigin?:{x:number;z:number}):{candidateBounds:Bounds;candidatePages:SurfaceCandidatePages;candidateColumns?:CandidateColumns;candidates?:SurfaceCandidate[]} {
+  const b = world.bounds;
+  const view=options.candidateBounds&&options.candidateBounds!=='all'?options.candidateBounds:b;
+  // Common frame translation is a rebase, not a new physical placement/seed.
+  // Borrow fields in their original source coordinate grid; never publish this
+  // private sampling view as a newly compiled world.
+  const result=generateSurfaceCandidatePagesInFrame(world,view,{canonicalContextId:getCanonicalSurfaceContext(world).id,
+    requireCompleteBounds:options.candidateBounds!==undefined,maxCandidates:options.candidateLimit??100000,signal:options.signal,translation,sourceOrigin});
+  const pages:SurfaceCandidatePages=result.candidatePages;
+  pages.query!.producer='offline-export';
+  const candidateBounds=result.candidateBounds;
+  return options.encoding === 'binary' ? { candidateBounds,candidatePages:pages,candidateColumns:packCandidateColumns(result.candidates) } : { candidateBounds,candidatePages:pages,candidates:result.candidates };
 }
 function addWaterValidationWarning(world: SurfaceWorld, validation: ReturnType<typeof decorToSurfaceInput>['sourceWaterValidation']) {
   const removed = validation.sourceWetCells - validation.physicalWetCells;
@@ -72,6 +78,7 @@ export function exportSurfacePacket(decor: Decor, scene?: Building3dScene, optio
   input.terrain.originX+=frame.terrainSourceOrigin.x-frame.geometrySourceOrigin.x;
   input.terrain.originZ+=frame.terrainSourceOrigin.z-frame.geometrySourceOrigin.z;
   input.occupation = occupationFromMagnaScene(input.terrain, buildings, roads, input.occupation);
+  const populationSourceOrigin={x:input.terrain.originX+frame.geometrySourceOrigin.x,z:input.terrain.originZ+frame.geometrySourceOrigin.z};
   input.terrain.originX+=dx; input.terrain.originZ+=dz;
   input = applySurfaceGeology(input, decor.meta.query, {...options,frameTranslationX:frame.frameTranslation.x,frameTranslationZ:frame.frameTranslation.z});
   const world = compileSurfaceWorld(input, options);
@@ -81,6 +88,6 @@ export function exportSurfacePacket(decor: Decor, scene?: Building3dScene, optio
   const urban = magnaUrbanPacket(decor, buildings, dx, dz, options.roads, options.encoding);
   return { format: 'magna-surface-packet', version: 1,
     presentation: magnaSurfacePresentation(decor.meta.query),
-    world: options.encoding === 'binary' ? world : JSON.parse(serializeSurfaceWorld(world)), urban, urbanId: magnaUrbanIdentity(urban), ...packetCandidates(world, options),
+    world: options.encoding === 'binary' ? world : JSON.parse(serializeSurfaceWorld(world)), urban, urbanId: magnaUrbanIdentity(urban), ...packetCandidates(world, options,frame.frameTranslation,populationSourceOrigin),
     source };
 }
