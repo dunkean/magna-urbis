@@ -1,0 +1,553 @@
+{
+  "format": "magna-offline-tree-prototype",
+  "version": 1,
+  "pipelineVersion": "tree-offline-root-pivot-leaf-uv-quad-binary-alpha-normal-source-impostor-v6",
+  "status": "PREPARED-NOT-RENDERER-QUALIFIED",
+  "assetId": "tree_small_02",
+  "license": "CC0-1.0",
+  "sourceFiles": [
+    {
+      "path": "tree_small_02_1k.blend",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Models/blend/1k/tree_small_02/tree_small_02_1k.blend",
+      "bytes": 63805841,
+      "sha256": "af3fef6da3eb97057d9d4d3c4281c5944696b8d518715deddd8500482d30b1bd"
+    },
+    {
+      "path": "textures/tree_small_02_branch_diff_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Models/png/1k/tree_small_02/tree_small_02_branch_diff_1k.png",
+      "bytes": 1277270,
+      "sha256": "a93ce54213c4a98cd01cb5c5f7ab46b77defcd66e1dd082e6912f6e60632e630"
+    },
+    {
+      "path": "textures/tree_small_02_branch_nor_gl_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Models/png/1k/tree_small_02/tree_small_02_branch_nor_gl_1k.png",
+      "bytes": 5754879,
+      "sha256": "0338a1400391893fdf6c6cbd1c22a573d6ab2300ad771d4916184bf206e1a671"
+    },
+    {
+      "path": "textures/tree_small_02_branch_rough_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Models/png/1k/tree_small_02/tree_small_02_branch_rough_1k.png",
+      "bytes": 421614,
+      "sha256": "f285a54d141f30e39c7741e84a813c5cbccd9e9ee397af687176213f77d3e9a5"
+    },
+    {
+      "path": "textures/tree_small_02_diff_1k.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/tree_small_02/tree_small_02_diff_1k.jpg",
+      "bytes": 863246,
+      "sha256": "4e0093f407b3a1120a36de49a48ebe5a465a9a9b77e361c7a3e66866e115e404"
+    },
+    {
+      "path": "textures/tree_small_02_leaves_alpha_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Models/png/1k/tree_small_02/tree_small_02_leaves_alpha_1k.png",
+      "bytes": 264711,
+      "sha256": "4f143e2dda8a6a572f427ac378b92255d21761e4611de0d26e21816c01aa533b"
+    },
+    {
+      "path": "textures/tree_small_02_leaves_diff_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Models/png/1k/tree_small_02/tree_small_02_leaves_diff_1k.png",
+      "bytes": 2338424,
+      "sha256": "d3fc48522c76aa1f91076c6b86f302669822ebe4e2acabd67d42c4d57eaa5ba0"
+    },
+    {
+      "path": "textures/tree_small_02_leaves_nor_gl_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Models/png/1k/tree_small_02/tree_small_02_leaves_nor_gl_1k.png",
+      "bytes": 4903387,
+      "sha256": "fa4ad390f2e68b745db8f568cad64c3272696c5e01312ae564795e37724d79b8"
+    },
+    {
+      "path": "textures/tree_small_02_leaves_rough_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Models/png/1k/tree_small_02/tree_small_02_leaves_rough_1k.png",
+      "bytes": 1043665,
+      "sha256": "f005213467e38bcb355b00c9a6eb9896b8d810ee885d5c7fa308d9f3326ef602"
+    },
+    {
+      "path": "textures/tree_small_02_nor_gl_1k.exr",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Models/exr/1k/tree_small_02/tree_small_02_nor_gl_1k.exr",
+      "bytes": 2462999,
+      "sha256": "cf999e30663267b55b6fab43ca97c1e96176bdc67268e6c25854d53f15267d64"
+    },
+    {
+      "path": "textures/tree_small_02_rough_1k.exr",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Models/exr/1k/tree_small_02/tree_small_02_rough_1k.exr",
+      "bytes": 978557,
+      "sha256": "1ed5ad24397c065beb2b2d3521470730f24e957cbd5fb323ad3f9b6d267b4585"
+    }
+  ],
+  "blender": "5.2.1 LTS",
+  "device": "CPU",
+  "threads": 2,
+  "sourceTemplate": "tree_small_02_LOD1",
+  "sourceTriangles": 495533,
+  "normalization": {
+    "sourceBottomPivot": [
+      0.005929957143962383,
+      0.012492358684539795,
+      -0.024194231256842613
+    ],
+    "sourceHeight": 4.564037313684821,
+    "sourceCrownRadius": 2.939949990382095,
+    "preparedHeight": 1,
+    "preparedCrownRadius": 1,
+    "physicalBinding": "height=candidate.size; horizontal radius=candidate.crownRadiusM; root=candidate position",
+    "pivotPolicy": "median XY of source vertices in bottom1% of measured height; Z=min; no crown-bbox recentering",
+    "sourceCoordinates": "Blender horizontal X/Y, Z-up; export glTF x-east,y-up,z=-BlenderY",
+    "sourceSupportVertexCount": 52
+  },
+  "lods": [
+    {
+      "lod": "near",
+      "actualTriangles": 134295,
+      "budget": 134295,
+      "decimationPassTriangles": [
+        7991
+      ],
+      "surfaces": 3,
+      "path": "near.glb",
+      "bytes": 36778808,
+      "sha256": "e1126e5bc1e8074ec262083a0323ceb03ec177fb7b111b980415e9626e628889",
+      "prepareSeconds": 10.632548299996415,
+      "actualNormalizedBounds": {
+        "min": [
+          -0.4480854868888855,
+          -0.9944528341293335,
+          -9.32112834561849e-06
+        ],
+        "max": [
+          0.5471552014350891,
+          0.4677751958370209,
+          1.0003167390823364
+        ],
+        "maximumHorizontalRadius": 0.9999999848737433
+      },
+      "views": [
+        {
+          "name": "top",
+          "orthoScale": 2.2,
+          "resolution": 1024,
+          "cameraPosition": [
+            0.0,
+            0.0,
+            5.5
+          ],
+          "target": [
+            0.0,
+            0.0,
+            0.5
+          ],
+          "products": {
+            "albedo": {
+              "path": "near-top-albedo.png",
+              "sha256": "ec8576ac7bbbaee9e614014592b663b7a5f8afad1a0bcc844f1f890b6b18f74d",
+              "bytes": 1239650,
+              "colorSpace": "srgb"
+            },
+            "normal": {
+              "path": "near-top-normal.png",
+              "sha256": "0ee09f67df33e21deea5b2b35e5f35c94ec162d4fa1e6f7b99af1371b51d54f0",
+              "bytes": 1280284,
+              "colorSpace": "linear-world-normal-encoded"
+            }
+          },
+          "alphaAreaToCanonicalDisc": 0.21483661727733153,
+          "alphaWeightedMeanLinear": [
+            0.08989705710331986,
+            0.1429378069224048,
+            0.04478493843826035
+          ],
+          "binaryAlphaScissorThreshold": 0.5,
+          "binaryAlphaAreaToCanonicalDisc": 0.22157018313215385,
+          "alphaMaskPolicy": "alpha channel of this same albedo product; no independent procedural silhouette",
+          "sharedMask": {
+            "path": "near-top-alpha.a8",
+            "sha256": "d8003443e128493539055f6add11b11e7176aa2cfdc1316d982f3c4d7b864cec",
+            "bytes": 1048576,
+            "format": "linear-coverage-u8",
+            "width": 1024,
+            "height": 1024,
+            "originX": -1.0989257812500002,
+            "originZ": -1.0989257812500002,
+            "spacing": 0.0021484375,
+            "coordinateSystem": "x-east,y-up,z-map-y; row0=minZ; centered normalized crown",
+            "sourceLeafAlphaScissorThreshold": 0.5,
+            "antialiasSamples": 8,
+            "source": "this exact prepared mesh and cutout policy, not a crown disc"
+          }
+        },
+        {
+          "name": "oblique-0",
+          "orthoScale": 2.2,
+          "resolution": 1024,
+          "cameraPosition": [
+            3.5350000858306885,
+            0.0,
+            4.034999847412109
+          ],
+          "target": [
+            0.0,
+            0.0,
+            0.5
+          ],
+          "products": {
+            "albedo": {
+              "path": "near-oblique-0-albedo.png",
+              "sha256": "0a77138a62607820942a18792cbea6a954ab572a57df053d0ca4f8360a35f1f4",
+              "bytes": 1105530,
+              "colorSpace": "srgb"
+            },
+            "normal": {
+              "path": "near-oblique-0-normal.png",
+              "sha256": "ee226750305bd1a3c0d57605a5e63209811003d4cd942fb2ed54223498adf5a5",
+              "bytes": 1142514,
+              "colorSpace": "linear-world-normal-encoded"
+            }
+          }
+        },
+        {
+          "name": "oblique-1",
+          "orthoScale": 2.2,
+          "resolution": 1024,
+          "cameraPosition": [
+            2.1645631829041086e-16,
+            3.5350000858306885,
+            4.034999847412109
+          ],
+          "target": [
+            0.0,
+            0.0,
+            0.5
+          ],
+          "products": {
+            "albedo": {
+              "path": "near-oblique-1-albedo.png",
+              "sha256": "1bb571c2fcf22404e92f8b0c341cbaec42be8cda3ae5b691279f806ef154d665",
+              "bytes": 1058992,
+              "colorSpace": "srgb"
+            },
+            "normal": {
+              "path": "near-oblique-1-normal.png",
+              "sha256": "b9e003b3895e33b9a10212878535134f0736f52a9b32d26d2cd98920ec920591",
+              "bytes": 1094682,
+              "colorSpace": "linear-world-normal-encoded"
+            }
+          }
+        },
+        {
+          "name": "oblique-2",
+          "orthoScale": 2.2,
+          "resolution": 1024,
+          "cameraPosition": [
+            -3.5350000858306885,
+            4.3291263658082172e-16,
+            4.034999847412109
+          ],
+          "target": [
+            0.0,
+            0.0,
+            0.5
+          ],
+          "products": {
+            "albedo": {
+              "path": "near-oblique-2-albedo.png",
+              "sha256": "4e4a4c19ab99c4586bc62341cb59644582bac4494e3ebf5c64defeadb8a73ae4",
+              "bytes": 1072914,
+              "colorSpace": "srgb"
+            },
+            "normal": {
+              "path": "near-oblique-2-normal.png",
+              "sha256": "559d72ac0e923aa7f3db23a18f560ddd257551b35d274a965f2da483e7061ef1",
+              "bytes": 1108772,
+              "colorSpace": "linear-world-normal-encoded"
+            }
+          }
+        },
+        {
+          "name": "oblique-3",
+          "orthoScale": 2.2,
+          "resolution": 1024,
+          "cameraPosition": [
+            -6.493689681061224e-16,
+            -3.5350000858306885,
+            4.034999847412109
+          ],
+          "target": [
+            0.0,
+            0.0,
+            0.5
+          ],
+          "products": {
+            "albedo": {
+              "path": "near-oblique-3-albedo.png",
+              "sha256": "0cab871159da55fa5d711f0b42f37ce864517ed64207951642070e48ee59d83e",
+              "bytes": 973593,
+              "colorSpace": "srgb"
+            },
+            "normal": {
+              "path": "near-oblique-3-normal.png",
+              "sha256": "396ce2e32d31d26c5bc07b1ac715717a654ee240f6f563c98828c8316f273d58",
+              "bytes": 1008263,
+              "colorSpace": "linear-world-normal-encoded"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "lod": "source-reference",
+      "actualTriangles": 495533,
+      "runtimeGeometryExported": false,
+      "views": [
+        {
+          "name": "top",
+          "orthoScale": 2.2,
+          "resolution": 1024,
+          "cameraPosition": [
+            0.0,
+            0.0,
+            5.5
+          ],
+          "target": [
+            0.0,
+            0.0,
+            0.5
+          ],
+          "products": {
+            "albedo": {
+              "path": "source-reference-top-albedo.png",
+              "sha256": "282b30c7162a5054f9883451a825980749ba644b7e19dcf9fee093d04fa1584f",
+              "bytes": 1226923,
+              "colorSpace": "srgb"
+            },
+            "normal": {
+              "path": "source-reference-top-normal.png",
+              "sha256": "cdc06cbe6efb853fb6646c0b0270cf9d90100d35968ec9c64a32ad48832d9f21",
+              "bytes": 1269878,
+              "colorSpace": "linear-world-normal-encoded"
+            }
+          },
+          "alphaAreaToCanonicalDisc": 0.201131094728384,
+          "alphaWeightedMeanLinear": [
+            0.09380491365347668,
+            0.14736351918637464,
+            0.04897625867354522
+          ],
+          "binaryAlphaScissorThreshold": 0.5,
+          "binaryAlphaAreaToCanonicalDisc": 0.20867457955567487,
+          "alphaMaskPolicy": "alpha channel of this same albedo product; no independent procedural silhouette",
+          "sharedMask": {
+            "path": "source-reference-top-alpha.a8",
+            "sha256": "51915876aab43df21c53c7fbda4549878d77492f87d7034b94cc2bc08641ab0a",
+            "bytes": 1048576,
+            "format": "linear-coverage-u8",
+            "width": 1024,
+            "height": 1024,
+            "originX": -1.0989257812500002,
+            "originZ": -1.0989257812500002,
+            "spacing": 0.0021484375,
+            "coordinateSystem": "x-east,y-up,z-map-y; row0=minZ; centered normalized crown",
+            "sourceLeafAlphaScissorThreshold": 0.5,
+            "antialiasSamples": 8,
+            "source": "this exact prepared mesh and cutout policy, not a crown disc"
+          }
+        },
+        {
+          "name": "oblique-0",
+          "orthoScale": 2.2,
+          "resolution": 1024,
+          "cameraPosition": [
+            3.5350000858306885,
+            0.0,
+            4.034999847412109
+          ],
+          "target": [
+            0.0,
+            0.0,
+            0.5
+          ],
+          "products": {
+            "albedo": {
+              "path": "source-reference-oblique-0-albedo.png",
+              "sha256": "fb99f72dfc4182a24a69112437e34e6447f7b1056feb5e350874fa6456918e7d",
+              "bytes": 1093619,
+              "colorSpace": "srgb"
+            },
+            "normal": {
+              "path": "source-reference-oblique-0-normal.png",
+              "sha256": "83c78e8623e39892e7b8d33bc37dd641c6ca3084653ea267e055984bf25497b4",
+              "bytes": 1131853,
+              "colorSpace": "linear-world-normal-encoded"
+            }
+          }
+        },
+        {
+          "name": "oblique-1",
+          "orthoScale": 2.2,
+          "resolution": 1024,
+          "cameraPosition": [
+            2.1645631829041086e-16,
+            3.5350000858306885,
+            4.034999847412109
+          ],
+          "target": [
+            0.0,
+            0.0,
+            0.5
+          ],
+          "products": {
+            "albedo": {
+              "path": "source-reference-oblique-1-albedo.png",
+              "sha256": "d873d2f2f0cfa26602d98677eb12fb3372dc7772bdb3b2a5db677262749c0689",
+              "bytes": 1050665,
+              "colorSpace": "srgb"
+            },
+            "normal": {
+              "path": "source-reference-oblique-1-normal.png",
+              "sha256": "7c09c9d9635228089410d792c8db5b541ca5e8f28066969f65616a2ee4ab5140",
+              "bytes": 1089861,
+              "colorSpace": "linear-world-normal-encoded"
+            }
+          }
+        },
+        {
+          "name": "oblique-2",
+          "orthoScale": 2.2,
+          "resolution": 1024,
+          "cameraPosition": [
+            -3.5350000858306885,
+            4.3291263658082172e-16,
+            4.034999847412109
+          ],
+          "target": [
+            0.0,
+            0.0,
+            0.5
+          ],
+          "products": {
+            "albedo": {
+              "path": "source-reference-oblique-2-albedo.png",
+              "sha256": "461a6716a2a96342cf3794d7ea2a1e8121fe981280f6b416db58f60315aeac72",
+              "bytes": 1061935,
+              "colorSpace": "srgb"
+            },
+            "normal": {
+              "path": "source-reference-oblique-2-normal.png",
+              "sha256": "9293a7fb4f7cc4d6b9e58a172fbbfeeb8deb3eab3e46f8e5ba13d4b0b7252e73",
+              "bytes": 1098619,
+              "colorSpace": "linear-world-normal-encoded"
+            }
+          }
+        },
+        {
+          "name": "oblique-3",
+          "orthoScale": 2.2,
+          "resolution": 1024,
+          "cameraPosition": [
+            -6.493689681061224e-16,
+            -3.5350000858306885,
+            4.034999847412109
+          ],
+          "target": [
+            0.0,
+            0.0,
+            0.5
+          ],
+          "products": {
+            "albedo": {
+              "path": "source-reference-oblique-3-albedo.png",
+              "sha256": "dcc6cb8f14d81dc281d1e2e1e1048b48e98826bbb4ef1b2b1bed9d04f7b0ee6b",
+              "bytes": 965702,
+              "colorSpace": "srgb"
+            },
+            "normal": {
+              "path": "source-reference-oblique-3-normal.png",
+              "sha256": "0ca62bef0b2b610b7889a4026e7f87efd18a73212388736adfa53cb4f06ea3c5",
+              "bytes": 1001149,
+              "colorSpace": "linear-world-normal-encoded"
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "middleImpostor": {
+    "path": "middle-impostor.json",
+    "sha256": "c5c505ea08d1486b47318a48e9d1330cbe3766d47d69eae217c746767d99db9f",
+    "bytes": 5696,
+    "actualTriangles": 2
+  },
+  "sourceComparison": {
+    "topAlphaSoftIoU": 0.9089989020426332,
+    "nearAreaToSourceArea": 1.0681422361244342,
+    "gridAndViewIdentical": true
+  },
+  "failed8kAttempt": {
+    "trianglesAfterFourPasses": 15109,
+    "target": 8000,
+    "reason": "disconnected source leaf components reach collapse floor; no claim that repeated ratios achieve target"
+  },
+  "elapsedSeconds": 36.23321969999233,
+  "runtimeEnabled": false,
+  "canonicalCoverCalibrated": false,
+  "selectedCoverageCalibrated": false,
+  "shadowPolicy": "retain existing total-C optical approximation; no engine tree shadow activation",
+  "limitations": [
+    "No imported-tree render or C/V gate has run in Godot.",
+    "The prepared near and middle optical quad use the same derived alpha grid; the intact-source comparison has its own separately named mask. No filled disc is substituted for foliage coverage.",
+    "Sparse crown alpha area is not equal to the canonical filled-disc coverage. No silent opacity or population correction is applied.",
+    "View-dependent parallax, double-sided lighting and BRDF parity are not qualified by an encoded-world-normal bake."
+  ],
+  "preparationMethod": "leaf-quads",
+  "leafReconstruction": {
+    "leafComponents": 63152,
+    "sourceLeafTriangles": 386574,
+    "actualLeafTriangles": 126304,
+    "componentDrops": 0,
+    "degenerateUVOriginalTriangleFallbacks": 0,
+    "uvAffineRMSErrorNormalizedQuantiles": {
+      "median": 0.00026997867188636375,
+      "p95": 0.0015522034388023818,
+      "max": 0.006513587996212297
+    },
+    "actualBranchTriangles": 7991
+  },
+  "alphaPolicy": "binary alpha from pinned linear source PNG>.5, then same sampler/cutout>.5 for near/reference CPU bake and derived glTF MASK alphaCutoff=.5; A8 includes pixel AA",
+  "preparedAlpha": {
+    "path": "tree_small_02_leaves_alpha_cutout.png",
+    "sha256": "2453dfde3c70c39eabe8accbea8f0d33f4e038e2f19583ca1b2f06a3de506f4f",
+    "sourceAlphaSha256": "4f143e2dda8a6a572f427ac378b92255d21761e4611de0d26e21816c01aa533b",
+    "threshold": 0.5,
+    "values": [
+      0,
+      1
+    ]
+  },
+  "normalPolicies": {
+    "tree_small_02_branches-world-normal": "authored NormalMap node world output",
+    "tree_small_02_leaves-prepared-cutout-world-normal": "authored NormalMap node world output",
+    "tree_small_02_trunk-world-normal": "authored NormalMap node world output"
+  },
+  "assetDigest": "ef89df3fa4e374b778f57f385e072fd6bcc6c2d5e95884bdb7bcd67343723aa6",
+  "assetVersion": {
+    "pipelineVersion": "tree-offline-root-pivot-leaf-uv-quad-binary-alpha-normal-source-impostor-v6",
+    "sourceSha256": "af3fef6da3eb97057d9d4d3c4281c5944696b8d518715deddd8500482d30b1bd",
+    "geometrySha256": "e1126e5bc1e8074ec262083a0323ceb03ec177fb7b111b980415e9626e628889",
+    "preparedAlphaSha256": "2453dfde3c70c39eabe8accbea8f0d33f4e038e2f19583ca1b2f06a3de506f4f",
+    "impostorSha256": "c5c505ea08d1486b47318a48e9d1330cbe3766d47d69eae217c746767d99db9f",
+    "normalization": {
+      "sourceBottomPivot": [
+        0.005929957143962383,
+        0.012492358684539795,
+        -0.024194231256842613
+      ],
+      "sourceHeight": 4.564037313684821,
+      "sourceCrownRadius": 2.939949990382095,
+      "preparedHeight": 1,
+      "preparedCrownRadius": 1,
+      "physicalBinding": "height=candidate.size; horizontal radius=candidate.crownRadiusM; root=candidate position",
+      "pivotPolicy": "median XY of source vertices in bottom1% of measured height; Z=min; no crown-bbox recentering",
+      "sourceCoordinates": "Blender horizontal X/Y, Z-up; export glTF x-east,y-up,z=-BlenderY",
+      "sourceSupportVertexCount": 52
+    },
+    "alphaPolicy": "binary alpha from pinned linear source PNG>.5, then same sampler/cutout>.5 for near/reference CPU bake and derived glTF MASK alphaCutoff=.5; A8 includes pixel AA",
+    "maskSha256": "d8003443e128493539055f6add11b11e7176aa2cfdc1316d982f3c4d7b864cec"
+  }
+}

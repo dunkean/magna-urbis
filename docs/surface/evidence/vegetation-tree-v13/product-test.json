@@ -1,0 +1,1 @@
+{"test": "prepared-tree-products", "checks": 42, "result": "PASS", "actualTriangles": 134295, "impostorTriangles": 2, "scope": "CPU file/alpha/grid/algebra evidence only; no Godot renderer or artistic acceptance"}

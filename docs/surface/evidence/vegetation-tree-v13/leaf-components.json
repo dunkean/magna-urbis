@@ -1,0 +1,23 @@
+{
+  "format": "source-leaf-topology-audit",
+  "version": 1,
+  "sourceObject": "tree_small_02_LOD1",
+  "sourceTriangles": 495533,
+  "leafTriangles": 386574,
+  "leafComponents": 63152,
+  "quadReplacementTriangleCount": 126304,
+  "componentTriangleQuantiles": {
+    "min": 2.0,
+    "p25": 3.0,
+    "median": 4.0,
+    "p75": 4.0,
+    "p95": 24.0,
+    "max": 28.0
+  },
+  "uvLayers": [
+    "UVMap",
+    "UV_map_01"
+  ],
+  "elapsedSeconds": 1.2757774000056088,
+  "scope": "topology counts only; planar UV fit, silhouette conservation and C/V not yet proven; no renderer/GPU run"
+}
