@@ -38,6 +38,9 @@ var process_times: Array[float] = []
 var gpu_render_times: Array[float] = []
 var cpu_render_times: Array[float] = []
 var previous_frame_tick := 0
+var native_profile_events:Array=[]
+var native_log_timings:Array=[]
+var native_log_maxima:Dictionary={}
 var packet_worker: Thread
 var packet_context: Dictionary = {}
 var canonical_contexts: Dictionary = {}
@@ -410,7 +413,7 @@ func _apply_prepared(prepared: Dictionary) -> void:
 	_update_view_satisfaction("rendered-source")
 	render_events.append(rendered_snapshot.duplicate(true))
 	while render_events.size()>128:render_events.pop_front()
-	print(JSON.stringify({"event":"terrain-replaced","worldId":rendered_world_id,"renderedSnapshot":rendered_snapshot,"requestedWorldId":self.world.id,"origin":[origin.x,origin.y,origin.z],"sourceLOD":world.terrain.source.sourceLOD,"nativeSpacingM":world.terrain.source.nativeSpacingM,"displaySpacingM":prepared.spacing,"regions":terrain.get("data").call("get_region_count"),"prepareMs":prepared.prepareMs,"uploadAndObjectsMs":upload_times.back()}))
+	_emit_native({"event":"terrain-replaced","worldId":rendered_world_id,"generation":applied_generation,"liveSerial":rendered_live_serial,"requestedWorldId":self.world.id,"origin":[origin.x,origin.y,origin.z],"sourceLOD":world.terrain.source.sourceLOD,"nativeSpacingM":world.terrain.source.nativeSpacingM,"displaySpacingM":prepared.spacing,"regions":terrain.get("data").call("get_region_count"),"prepareMs":prepared.prepareMs,"uploadAndObjectsMs":upload_times.back()})
 
 func _update_camera() -> void:
 	var world:Dictionary=rendered_world if not rendered_world.is_empty() else self.world
@@ -682,9 +685,9 @@ func _build_populations(populations: Dictionary) -> void:
 
 func _process(delta: float) -> void:
 	if world.is_empty(): return
+	var tick := Time.get_ticks_usec()
 	_update_canopy_phase(delta)
 	_update_quality_state()
-	var tick := Time.get_ticks_usec()
 	var wall_ms := (tick-previous_frame_tick)/1000.0 if previous_frame_tick>0 else delta*1000.0
 	previous_frame_tick = tick
 	if terrain!=null: all_frame_times.append(wall_ms)
@@ -693,7 +696,7 @@ func _process(delta: float) -> void:
 		var received = packet_worker.wait_to_finish()
 		packet_worker = null
 		if packet_context.get("kind")=="live":
-			print(JSON.stringify({"event":"live-packet-decoded","requestSerial":packet_context.get("serial",-1),"decodeElapsedMs":Time.get_ticks_msec()-int(packet_context.get("decodeStartedTickMs",Time.get_ticks_msec())),"validPacket":received is Dictionary and not received.is_empty(),"tickMs":Time.get_ticks_msec()}))
+			_emit_native({"event":"live-packet-decoded","requestSerial":packet_context.get("serial",-1),"decodeElapsedMs":Time.get_ticks_msec()-int(packet_context.get("decodeStartedTickMs",Time.get_ticks_msec())),"validPacket":received is Dictionary and not received.is_empty(),"tickMs":Time.get_ticks_msec()})
 		if received is Dictionary: _accept_packet(received,packet_context)
 	if worker != null and not worker.is_alive():
 		var prepared = worker.wait_to_finish()
@@ -750,7 +753,7 @@ func _process(delta: float) -> void:
 		elif not options.has("--capture"):
 			_write_metrics()
 			get_tree().quit()
-	if warm_frames>30: process_times.append((Time.get_ticks_usec()-tick)/1000.0)
+	process_times.append((Time.get_ticks_usec()-tick)/1000.0)
 
 func _update_hud() -> void:
 	var world:Dictionary=rendered_world if not rendered_world.is_empty() else self.world
@@ -787,7 +790,7 @@ func _unhandled_input(event: InputEvent) -> void:
 				if terrain!=null: terrain.get("material").call("set_shader_param","diagnostic",diagnostic)
 				if previous==5 or diagnostic==5: _begin_prepare()
 			KEY_S: _capture("res://captures/surface-%d.png"%Time.get_unix_time_from_system())
-			KEY_F: print(JSON.stringify({"event":"inspect","x":focus.x,"z":focus.y,"heightM":Data.height_at(world,focus.x,focus.y),"material":Data.field_at(world,"material",focus.x,focus.y,true),"bedrock":Data.field_at(world,"bedrock",focus.x,focus.y,true),"sand":Data.field_at(world,"sand",focus.x,focus.y),"silt":Data.field_at(world,"silt",focus.x,focus.y),"clay":Data.field_at(world,"clay",focus.x,focus.y),"waterClass":Data.field_at(world,"waterClass",focus.x,focus.y,true),"source":world.terrain.source}))
+			KEY_F: _emit_native({"event":"inspect","x":focus.x,"z":focus.y,"heightM":Data.height_at(world,focus.x,focus.y),"material":Data.field_at(world,"material",focus.x,focus.y,true),"bedrock":Data.field_at(world,"bedrock",focus.x,focus.y,true),"sand":Data.field_at(world,"sand",focus.x,focus.y),"silt":Data.field_at(world,"silt",focus.x,focus.y),"clay":Data.field_at(world,"clay",focus.x,focus.y),"waterClass":Data.field_at(world,"waterClass",focus.x,focus.y,true),"sourceId":world.terrain.source.id,"sourceLOD":world.terrain.source.sourceLOD})
 			KEY_ESCAPE: _write_metrics(); get_tree().quit()
 		if event.keycode>=KEY_1 and event.keycode<=KEY_7:
 			width_m = tour_widths[event.keycode-KEY_1]
@@ -834,12 +837,12 @@ func _live_completed(result: int, code: int, _headers: PackedStringArray, body: 
 	var http_event={"event":"live-http-completed","requestSerial":int(live_request_context.get("serial",live_requested_serial)),"resultCode":result,"httpCode":code,"bodyBytes":body.size(),"downloadedBytes":live_request.get_downloaded_bytes(),"expectedBodyBytes":live_request.get_body_size(),"requestElapsedMs":Time.get_ticks_msec()-int(live_request_context.get("startedTickMs",Time.get_ticks_msec())),"tickMs":Time.get_ticks_msec(),"useThreads":live_request.use_threads,"downloadChunkBytes":live_request.download_chunk_size,"timeoutSeconds":live_request.timeout}
 	live_http_events.append(http_event)
 	while live_http_events.size()>128:live_http_events.pop_front()
-	print(JSON.stringify(http_event))
+	_emit_native(http_event)
 	live_busy = false
 	# Camera movement does not invalidate an immutable source request.
 	if live_request_context.get("lineage","")!=_source_scene_lineage():
 		live_requested_serial=mini(live_requested_serial,live_serial-1)
-		print("Discarded live response from an obsolete source/scene epoch")
+		_emit_native({"event":"live-response-discarded","reason":"obsolete source/scene epoch"})
 		return
 	if result!=HTTPRequest.RESULT_SUCCESS or code<200 or code>=300:
 		failed_live_serial=live_requested_serial
@@ -886,6 +889,7 @@ func _poll_stream() -> void:
 	packet_worker.start(Data.read_json.bind(path))
 
 func _accept_packet(next: Dictionary, context: Dictionary) -> void:
+	var profile_tick=Time.get_ticks_usec();var profile_start=profile_tick;var phases={}
 	if context.get("kind")=="file": rejected_files[context.path]=int(context.modified)
 	if next.is_empty(): return
 	if context.kind=="live":
@@ -903,18 +907,23 @@ func _accept_packet(next: Dictionary, context: Dictionary) -> void:
 			failed_live_serial=int(context.serial)
 			_record_live_binding_rejection(reason,int(context.serial))
 			return
+	phases["bindingChecksMs"]=(Time.get_ticks_usec()-profile_tick)/1000.0;profile_tick=Time.get_ticks_usec()
 	next=Presentation.overrides(next,str(options.get("--style","")),str(options.get("--style-catalogue","")))
 	if not _resolve_scene(next): return
+	phases["sceneResolveMs"]=(Time.get_ticks_usec()-profile_tick)/1000.0;profile_tick=Time.get_ticks_usec()
 	var next_world := Data.unpack_world(next)
+	phases["unpackWorldMs"]=(Time.get_ticks_usec()-profile_tick)/1000.0;profile_tick=Time.get_ticks_usec()
 	if next_world.is_empty(): return
 	if next.has("source") and next.source.has("canonicalContextId") and next_world.has("canonicalContextRef") and next.source.canonicalContextId!=next_world.canonicalContextRef.id: return
 	if not _resolve_context(next_world): return
+	phases["contextResolveMs"]=(Time.get_ticks_usec()-profile_tick)/1000.0;profile_tick=Time.get_ticks_usec()
 	next["_showProxies"]=options.has("--show-proxies")
 	next_world["_cityIdentity"]=Geometry.city_identity(next)
 	next_world["_showProxies"]=next._showProxies
 	if context.kind=="file":
 		if context.path==world_path: world_modified = int(context.modified)
 		else: last_stream_request = ""
+	phases["sceneIdentityMs"]=(Time.get_ticks_usec()-profile_tick)/1000.0;profile_tick=Time.get_ticks_usec()
 	var parents := _external_parents(next,next_world)
 	if next_world.terrain.source.id==world.terrain.source.id and next_world.terrain.source.version==world.terrain.source.version:
 		parents.append({"terrain":world.terrain,"bounds":world.bounds})
@@ -935,13 +944,18 @@ func _accept_packet(next: Dictionary, context: Dictionary) -> void:
 			unique.resize(5)
 			unique.append(coarsest)
 		next_world["_terrainParents"] = unique
+	phases["parentsMs"]=(Time.get_ticks_usec()-profile_tick)/1000.0;profile_tick=Time.get_ticks_usec()
 	if context.kind=="live":
 		last_live_applied_serial=int(context.serial)
 		failed_live_serial=-1
 		next["_acceptedLiveSerial"]=int(context.serial)
 		live_acceptance_events.append({"tickMs":Time.get_ticks_msec(),"requestSerial":context.serial,"cameraSerial":live_serial,"sourceEpoch":next.get("source",{}).get("sourceEpoch"),"sceneEpoch":next.get("source",{}).get("sceneEpoch"),"request":next.get("source",{}).get("request",{}).duplicate(true),"worldId":next_world.id})
 		while live_acceptance_events.size()>128:live_acceptance_events.pop_front()
-		print(JSON.stringify({"event":"live-tile-applied","requestSerial":context.serial,"cameraSerial":live_serial,"worldId":next_world.id}))
+		_emit_native({"event":"live-tile-accepted","requestSerial":context.serial,"cameraSerial":live_serial,"worldId":next_world.id})
+	if options.has("--profile-native"):
+		var event={"event":"native-accept-profile","tickMs":Time.get_ticks_msec(),"requestSerial":context.get("serial",-1),"worldId":next_world.id,"totalBeforeAcceptanceMs":(Time.get_ticks_usec()-profile_start)/1000.0,"phases":phases}
+		native_profile_events.append(event)
+		while native_profile_events.size()>128:native_profile_events.pop_front()
 	var repeated_identity: bool = next_world.id==world.id
 	world_revision+=1
 	world = next_world
@@ -996,6 +1010,22 @@ func _capture(path: String) -> void:
 	var result := get_viewport().get_texture().get_image().save_png(absolute)
 	print(JSON.stringify({"event":"capture","captureTickMs":Time.get_ticks_msec(),"populationInstances":population_instances(),"canopyView":canopy_view_state,"surfaceLayers":rendered_surface_layers,"water":water_metrics,"urban":rendered_urban_metrics,"renderedWorldId":rendered_world_id,"renderedSource":rendered_source,"renderedLiveSerial":rendered_live_serial,"renderedSnapshot":rendered_snapshot,"viewSatisfiedSerial":view_satisfied_serial,"viewSatisfaction":view_satisfaction,"path":absolute,"error":result,"widthM":width_m,"metresPerPixel":width_m/get_viewport().get_visible_rect().size.x}))
 
+func _emit_native(event:Dictionary)->void:
+	var started=Time.get_ticks_usec()
+	var record=event.duplicate(false)
+	if not record.has("tickMs"):record["tickMs"]=started/1000
+	record["unixTimeMs"]=Time.get_unix_time_from_system()*1000.0
+	var text=JSON.stringify(record)
+	var before_print=Time.get_ticks_usec()
+	print(text)
+	var finished=Time.get_ticks_usec()
+	var timing={"event":str(record.get("event","unknown")),"beforeSerializeUs":started,"beforePrintUs":before_print,"afterPrintUs":finished,"serializeMs":(before_print-started)/1000.0,"printMs":(finished-before_print)/1000.0,"characters":text.length()}
+	native_log_timings.append(timing)
+	while native_log_timings.size()>512:native_log_timings.pop_front()
+	var maximum:Dictionary=native_log_maxima.get(timing.event,{"count":0,"serializeMs":0.0,"printMs":0.0,"characters":0})
+	maximum.count+=1;maximum.serializeMs=maxf(maximum.serializeMs,timing.serializeMs);maximum.printMs=maxf(maximum.printMs,timing.printMs);maximum.characters=maxi(maximum.characters,timing.characters)
+	native_log_maxima[timing.event]=maximum
+
 func _quantile(values: Array[float], fraction: float) -> Variant:
 	if values.is_empty(): return null
 	var sorted := values.duplicate()
@@ -1003,7 +1033,7 @@ func _quantile(values: Array[float], fraction: float) -> Variant:
 	return sorted[mini(int(fraction*(sorted.size()-1)),sorted.size()-1)]
 
 func _write_metrics() -> void:
-	var metrics := {"godot":Engine.get_version_info().string,"terrain3d":"1.0.2","backend":RenderingServer.get_current_rendering_method(),"adapter":RenderingServer.get_video_adapter_name(),"worldId":rendered_world_id,"source":rendered_source,"requestedWorldId":world.id,"requestedSource":world.terrain.source,"resolution":[get_viewport().get_visible_rect().size.x,get_viewport().get_visible_rect().size.y],"frames":frame_times.size(),"frameWallMs":{"p50":_quantile(frame_times,0.5),"p95":_quantile(frame_times,0.95),"p99":_quantile(frame_times,0.99)},"navigationFrameWallMs":{"p50":_quantile(all_frame_times,0.5),"p95":_quantile(all_frame_times,0.95),"p99":_quantile(all_frame_times,0.99),"max":_quantile(all_frame_times,1.0)},"cpuScriptMs":{"p50":_quantile(process_times,0.5),"p95":_quantile(process_times,0.95),"p99":_quantile(process_times,0.99)},"prepareMs":prepare_times,"uploadAndObjectsMs":upload_times,"regionCounts":region_counts,"preparationSnapshots":preparation_snapshots,"videoMemoryBytes":Performance.get_monitor(Performance.RENDER_VIDEO_MEM_USED),"textureMemoryBytes":Performance.get_monitor(Performance.RENDER_TEXTURE_MEM_USED),"drawCalls":Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME),"objects":selected_candidates,"roadProjectors":road_projector_count,"candidateCount":candidate_count,"cpuFrameMs":null,"cpuTimeNote":"cpuScriptMs measures this viewer script only; full engine CPU frame/pass timing is not available here.","gpuRenderMs":{"p50":_quantile(gpu_render_times,0.5),"p95":_quantile(gpu_render_times,0.95),"p99":_quantile(gpu_render_times,0.99)},"cpuRenderMs":{"p50":_quantile(cpu_render_times,0.5),"p95":_quantile(cpu_render_times,0.95)},"gpuTimeNote":"RenderingServer measured viewport render time; null when the backend returns no positive samples. Frame wall time separately includes vsync, uploads and driver stalls."}
+	var metrics := {"godot":Engine.get_version_info().string,"terrain3d":"1.0.2","backend":RenderingServer.get_current_rendering_method(),"adapter":RenderingServer.get_video_adapter_name(),"worldId":rendered_world_id,"source":rendered_source,"requestedWorldId":world.id,"requestedSource":world.terrain.source,"resolution":[get_viewport().get_visible_rect().size.x,get_viewport().get_visible_rect().size.y],"frames":frame_times.size(),"frameWallMs":{"p50":_quantile(frame_times,0.5),"p95":_quantile(frame_times,0.95),"p99":_quantile(frame_times,0.99)},"navigationFrameWallMs":{"p50":_quantile(all_frame_times,0.5),"p95":_quantile(all_frame_times,0.95),"p99":_quantile(all_frame_times,0.99),"max":_quantile(all_frame_times,1.0)},"cpuScriptMs":{"samples":process_times.size(),"p50":_quantile(process_times,0.5),"p95":_quantile(process_times,0.95),"p99":_quantile(process_times,0.99),"max":_quantile(process_times,1.0),"scope":"entire viewer _process including initial and first30 post-apply frames; engine/input callbacks excluded; wall/GPU metrics reported separately"},"prepareMs":prepare_times,"uploadAndObjectsMs":upload_times,"regionCounts":region_counts,"preparationSnapshots":preparation_snapshots,"videoMemoryBytes":Performance.get_monitor(Performance.RENDER_VIDEO_MEM_USED),"textureMemoryBytes":Performance.get_monitor(Performance.RENDER_TEXTURE_MEM_USED),"drawCalls":Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME),"objects":selected_candidates,"roadProjectors":road_projector_count,"candidateCount":candidate_count,"cpuFrameMs":null,"cpuTimeNote":"cpuScriptMs measures this viewer script only; full engine CPU frame/pass timing is not available here.","gpuRenderMs":{"p50":_quantile(gpu_render_times,0.5),"p95":_quantile(gpu_render_times,0.95),"p99":_quantile(gpu_render_times,0.99)},"cpuRenderMs":{"p50":_quantile(cpu_render_times,0.5),"p95":_quantile(cpu_render_times,0.95)},"gpuTimeNote":"RenderingServer measured viewport render time; null when the backend returns no positive samples. Frame wall time separately includes vsync, uploads and driver stalls."}
 	metrics["renderSourceVersion"]={"assetVersion":library.asset_version,"assetDigest":library.asset_digest,"assetBindings":library.loaded_asset_bindings,"presentation":Presentation.profile(rendered_packet,rendered_presentation_mode),"geometryDetail":rendered_geometry_detail}
 	metrics["liveHttpEvents"]=live_http_events
 	metrics["viewSatisfiedSerial"]=view_satisfied_serial
@@ -1014,6 +1044,8 @@ func _write_metrics() -> void:
 	metrics["renderedSnapshot"]=rendered_snapshot
 	metrics["renderEvents"]=render_events
 	metrics["discardedPreparations"]=discarded_preparations
+	metrics["nativeLogTiming"]={"maximaByEvent":native_log_maxima,"recent":native_log_timings}
+	metrics["nativeMainProfiles"]=native_profile_events
 	metrics["liveAcceptance"]=live_acceptance_events
 	metrics["unsupportedTreeCount"]=unsupported_tree_count
 	metrics["cityMap"]=city_map_metrics
@@ -1336,7 +1368,7 @@ func _update_view_satisfaction(reason:String,region:Dictionary={})->bool:
 	if changed:
 		view_satisfaction_events.append(view_satisfaction.duplicate(true))
 		while view_satisfaction_events.size()>128:view_satisfaction_events.pop_front()
-		print(JSON.stringify({"event":"view-satisfied","viewSatisfaction":view_satisfaction}))
+		_emit_native({"event":"view-satisfied","serial":live_serial,"worldId":rendered_world_id,"requestSerial":rendered_live_serial})
 	return true
 
 func _import_alignment_valid(prepared:Dictionary)->bool:
