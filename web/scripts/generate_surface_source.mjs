@@ -21,7 +21,7 @@ import { decodeSurfaceBinary, encodeSurfaceBinary } from '../src/surface/binary.
 import { compileSurfaceWorld } from '../src/surface/compiler.ts';
 import { hashString } from '../src/surface/model.ts';
 import { registrationFieldFingerprint } from '../src/surface/registrationBinding.ts';
-import { isFinalQualityDisplay,sameDeliveredSpacing,verifyFinalDisplay,verifyMotionLiveDisplay,verifyTourQuality } from './surface_navigation_evidence.ts';
+import { isFinalQualityDisplay,sameDeliveredSpacing,verifyFinalDisplay,verifyMotionLiveDisplay,verifyTourQuality,verifyNavigationTiming } from './surface_navigation_evidence.ts';
 import { verifyExplicitLayerCapture,verifyWaterCapture,verifyLayerIsolationProbe } from './surface_render_evidence.ts';
 import { hasExplicitSurfaceLayers } from '../src/surface/surfaceLayers.ts';
 import { captureSurfaceRepositorySnapshot,assertFrozenSurfaceSnapshots } from './surface_repository_snapshot.mjs';
@@ -211,6 +211,7 @@ async function runNativeNavigation(sessionId) {
   if(existsSync(paths.report))phase.result=JSON.parse(await readFile(paths.report,'utf8'));
   if(existsSync(paths.metrics))phase.metrics=JSON.parse(await readFile(paths.metrics,'utf8'));
   if(phase.result?.continuousSeconds!==navigationSeconds||phase.result.motionEndTickMs-phase.result.motionStartTickMs!==Math.round(navigationSeconds*1000))throw new Error('Navigation proof changed its requested nominal motion duration');
+  phase.timingEvidence=verifyNavigationTiming(phase.result,navigationSeconds);
   try{phase.displayEvidence=verifyMotionLiveDisplay(phase.result,phase.metrics);phase.finalDisplayEvidence=verifyFinalDisplay(phase.result,phase.metrics);}catch(error){phase.displayEvidenceFailure=String(error);}
   if(phase.metrics.loadedLiveBinding?.fingerprint!==report.source.canonicalFieldFingerprint||phase.metrics.loadedLiveBinding?.error)throw new Error('Native navigation loaded a different source heightfield');
   const relevant=browserEvents.filter(e=>e.elapsedMs>=phase.startedElapsedMs),packets=relevant.filter(e=>e.kind==='worker-compiled');
