@@ -3,6 +3,8 @@
 The opt-in renderer is now implemented by `--tree-assets <resolved.json>` in
 aerial views. Its budget, filtering certificate and approximations are described
 in [the renderer contract](evidence/vegetation-tree-v13/EXPERIMENTAL_RENDERER.md).
+The [bounded GPU evidence](evidence/vegetation-tree-v13/GPU.md) distinguishes
+actual TOP coverage, cartographic invariance and the retained oblique fallback.
 The staged data-loader description below remains the basis of its source/asset
 separation. CPU checks do not substitute for the subsequent GPU/campaign results.
 

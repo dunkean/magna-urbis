@@ -1,4 +1,10 @@
-# Offline tree preparation: useful product, runtime still disabled
+# Offline tree preparation — historical authoring stage
+
+This page records the offline preparation stage at `ffa0328`, before the
+consumer was enabled. Subsequent implementation and bounded native rendering
+are recorded in [GPU.md](GPU.md) and
+[EXPERIMENTAL_RENDERER.md](EXPERIMENTAL_RENDERER.md). The production default
+remains legacy; the prepared tree is an explicit aerial-renderer option.
 
 The source is [Tree Small02](https://polyhaven.com/a/tree_small_02), by Rico
 Cilliers / Poly Haven, [CC0](https://polyhaven.com/license). The pinned source
