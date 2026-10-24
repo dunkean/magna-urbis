@@ -1,5 +1,20 @@
 # Composer une carte finale sur une capture SurfaceWorld
 
+## Composition v2 : clé visuelle liée au rendu, panneaux externes
+
+La version 2 du compositeur et de la preuve exportée garde le binding de capture en version 1. Le PNG source conserve sa taille et ses octets ; le canvas de sortie est agrandi autour de lui. `evidence.canvas.rasterBounds` donne son origine et ses dimensions : un pixel source reste un pixel de sortie. Le titre, la légende, le nord et la règle sont tous hors de ce rectangle. Les matrices natives continuent de projeter dans les pixels du raster original ; on ajoute seulement cette origine pour obtenir les coordonnées composées. Il ne faut pas recalculer l’échelle à partir de la largeur totale du nouveau canvas.
+
+Une clé visuelle exige `content.visualLegend`, format `surface-visual-legend` version 1, lié aux SHA de l’image et des métriques ainsi qu’au monde. L’adaptateur `nativeVisualLegend` lit la palette réellement capturée et les représentations natives soumises : contour/remplissage de toiture, bande routière à deux bords intérieurs de 1/8, disque de couronne cartographique. Les icônes sont schématiques, pas une mesure des objets. Leurs couleurs ne changent pas quand la palette décorative de la marge change. Ce contrat concerne la politique native cartographique actuelle, pas un classificateur universel de pixels ou d’occlusion.
+
+Les recettes de sol et potentiels canoniques restent dans les métadonnées `legend`, avec qualifications et comptes ; ils ne sont plus dessinés comme une fausse clé. Sans glyphes certifiables, la légende visuelle est omise et la raison conservée. En particulier, l’oblique CITY14 ne présente plus « Eau » ou des recettes invisibles : sa clé visuelle est vide, tandis que huit entrées de contexte restent consultables dans la preuve. Aucun toponyme n’est inventé.
+
+La [preuve v2 CITY14](evidence/map-quality-city419-v2.json) comporte le TOP et la perspective réels. Le TOP devient 1 672 × 920 pixels autour du raster inchangé de 1 280 × 800 ; ses trois glyphes représentent Bâtiments, Voirie et Arbres. La barre reste 25 m = 80 pixels et la grille explicite 5 m. La perspective devient 1 328 × 920, sans fausse règle, grille ou nord ; son crop raster est identique au PNG source sur les 1 024 000 pixels RGB. Pour le TOP, un contrôle CPU ôtant seulement la grille donne également zéro différence RGB. Tous les panneaux ont une intersection vide avec le raster, donc ne peuvent masquer ses empreintes ou POIs.
+
+![Blueprint avec clé native et panneaux hors carte](evidence/map-quality-city419-v2-blueprint.png)
+
+Les sections et preuves historiques ci-dessous décrivent aussi la version 1 ; elles ne doivent pas être utilisées pour réintroduire ses panneaux sur le raster ou ses légendes de potentiels.
+
+
 Le bridge `web/src/surface/mapComposition.ts` compose un SVG autonome sur un PNG géoréférencé, sans génération ni modification du monde. Il réutilise les palettes, piles de polices, moteur de placement des noms, sérialiseur de labels, primitives de panneaux et cadres du renderer web. Le CLI produit SVG, PNG via resvg et preuve JSON. Il ne remplace ni les styles web ni le pipeline SVG existant.
 
 ## Entrées et API
