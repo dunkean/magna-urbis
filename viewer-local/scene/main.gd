@@ -241,7 +241,7 @@ func _ready() -> void:
 	tree_shadow_mode=str(options.get("--tree-shadow-mode","optical"))
 	if tree_shadow_mode not in ["optical","native-solar"]:
 		push_error("--tree-shadow-mode must be optical or native-solar");get_tree().quit(2);return
-	if tree_shadow_mode=="native-solar" and (tree_library.cpu.is_empty() or RenderingServer.get_current_rendering_method()!="forward_plus"):
+	if tree_shadow_mode=="native-solar" and presentation_mode=="aerial" and (tree_library.cpu.is_empty() or RenderingServer.get_current_rendering_method()!="forward_plus"):
 		push_error("Native solar tree shadows require a verified tree asset and Forward+");get_tree().quit(2);return
 	_setup_lighting()
 	camera.name = "RelativeCamera"
@@ -1438,7 +1438,8 @@ func _update_canopy_phase(delta:float)->void:
 		for key in bindings:material.set_shader_parameter(key,_canopy_material_geometry_weight(material) if key=="canopy_geometry_weight" else bindings[key])
 
 func _update_tree_solar(delta:float,view:Dictionary)->bool:
-	var validity=tree_shadow_mode=="native-solar" and rendered_presentation_mode=="aerial" and tree_solar_node!=null and is_instance_valid(tree_solar_node) and tree_solar_data.get("available",false) and tree_solar_data.get("worldId","")==rendered_world_id and tree_solar.direction.distance_to(sun.global_basis.z.normalized())<.000001
+	var source:Dictionary=rendered_packet.get("source",{})
+	var validity=tree_shadow_mode=="native-solar" and rendered_presentation_mode=="aerial" and tree_solar_node!=null and is_instance_valid(tree_solar_node) and tree_solar_data.get("available",false) and tree_solar_data.get("worldId","")==rendered_world_id and tree_solar_data.get("sourceEpoch")==source.get("sourceEpoch") and tree_solar_data.get("sceneEpoch")==source.get("sceneEpoch") and tree_solar.descriptor.get("assetDigest","")==tree_library.cpu.get("digest") and tree_solar.direction.distance_to(sun.global_basis.z.normalized())<.000001
 	var state:Dictionary={"weight":0.0,"reason":"no-compatible-complete-source-solar-inventory"}
 	if validity:state=TreeSolar.guard(tree_solar_data,view.get("frustumBounds",{}),float(rendered_height_range.x)+float(origin.y),sun.global_basis.z.normalized())
 	var cap=float(state.weight)
