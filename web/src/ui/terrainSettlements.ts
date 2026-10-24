@@ -123,7 +123,7 @@ export function createTerrainSettlements(options: {
     onDisplayChange: options.onChange,
   });
   const urban = createTerrainUrban({ map, before: backend, getTerrain: options.getTerrain,
-    getRaster: options.getRaster, city: options.city,
+    getRaster: options.getRaster, city: options.city, cityView: true,
     parcelDefault: options.parcelDefault ?? false,
     getSeed: () => options.getSettings().seed, getAuto: options.getAuto, upstreamPending: () => enabled && !decorReady(), onChange: () => { if (!restoringDecor) publishOptions(urban.workshopDraft() ?? urban.workshopSettings()); draw(); options.onChange(); }, onPlanChange: () => { if (!restoringDecor) publishOptions(urban.workshopDraft() ?? urban.workshopSettings()); syncLanduse(); options.onPlanChange?.(); }, onFocus: options.onFocus, onProjection: options.onProjection });
   const publishOptions = urbanOptionSync(() => { const d = options.getDecor?.(); return d && urban.target !== 'all' ? `${d.meta.pipeline?.syncSource ?? d.meta.id}:${urban.target}` : undefined; }, state => urban.applyWorkshopDraft(state));

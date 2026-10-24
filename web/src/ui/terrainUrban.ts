@@ -128,11 +128,14 @@ type Kind = 'quarters' | 'parcels';
 
 /** `getRaster` replaces `getTerrain` where the raster is already adapted (Urban Bench decors). */
 export function createTerrainUrban(options: { map: SVGSVGElement; before: Element | null; getTerrain(): TerrainData | undefined; getRaster?(): SettlementRaster | undefined; getSeed(): string; getAuto?(): boolean; parcelDefault?: boolean; onChange(): void; onPlanChange?(): void; onFocus?(center: Point, radius: number): void; onProjection?(active: boolean, camera?: import('./terrain3d').Terrain3dCamera): boolean | void;
-  /** City Bench: one city, the same controls regrouped by theme and shown once, building silhouettes. */
+  /** City Bench: one city, the same controls regrouped by theme and shown once. Implies cityView. */
   city?: boolean;
+  /** City Bench drawing (plan layer, roles, inspector) and building volumes, for every settlement shown. */
+  cityView?: boolean;
   /** Upstream stages (placement, regional roads) still answering: buildings wait for them. */
   upstreamPending?(): boolean }) {
   let settlements: SettlementOutput | undefined, roads: RoadOutput | undefined;
+  const cityView = !!(options.city || options.cityView);
   let regionalOf: RoadOutput | undefined, regional: Street[] = [];
   let layouts: Layout[] | undefined, partitions: Partition[] | undefined;
   let initialBuildingState: import('./urbanBuildingsPanel').UrbanBuildingState | undefined;
@@ -154,7 +157,7 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
   let sceneRequestScene: PlacementBatch | ColdCityState | undefined;
   let layoutConfig = defaultLayoutConfig(), parcelConfig = defaultParcelConfig();
   let quarterSeed = '', parcelSeed = '', target = '', ready = false;
-  let enabled = true, parcelEnabled = options.parcelDefault ?? true, appliedKind: Kind = 'quarters';
+  let enabled = true, parcelEnabled = options.parcelDefault ?? true, appliedKind: Kind = 'quarters', appliedOnly: Set<string> | undefined;
   let worker: Worker | undefined, fallback = false, cachedTerrain: TerrainData | SettlementRaster | undefined, id = 0;
   let timer: ReturnType<typeof setTimeout> | undefined;
   const draftTimers: Partial<Record<Kind, ReturnType<typeof setTimeout>>> = {};
@@ -511,6 +514,8 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
     coldProjection?: NativeBuildingProjectionScene; buildings?: number; refusals?: number; openSpaces?: number;
     completed: number; total: number; errors: number; selected?: string };
   let architecturePreview: ArchitecturePreview | undefined, architectureEpoch = 0;
+  // Native building plans (compact, detailed) are stored per city; volumes cover any selection.
+  const singleCityArchitecture = (): boolean => target === 'all' && (layouts?.length ?? 0) > 1 && !(cityView && architectureMode === 'silhouette');
   function deactivateParentPaint(): void {
     // An invalidated marker is intentionally not an attestation of a new paint.
     if (frameInfo.dataset.parentEvidence) frameInfo.dataset.parentEvidence = JSON.stringify({ version: 'parent-city-viewport-evidence-1', phase: 'invalidated', active: false, complete: false });
@@ -524,7 +529,7 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
     coldSession?.dispose(); coldSession = undefined; clearColdView();
     sceneRequestScene = undefined; sceneRequestList = []; sceneSites?.dispose(); sceneSites = undefined;
   }
-  const buildingPanel = createUrbanBuildingsPanel({ host: stages, silhouettes: options.city,
+  const buildingPanel = createUrbanBuildingsPanel({ host: stages, silhouettes: cityView,
     getProgramme: () => appliedLayout.programme,
     applyProgramme: programme => { layoutConfig.programme = clone(programme); controlRelevance?.sync(layoutConfig, layouts); appliedLayout = { ...clone(appliedLayout), programme: clone(programme) }; request('quarters'); options.onChange(); },
     generate: async (seed, settings, onProgress) => {
@@ -535,16 +540,16 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
       const settling = (): boolean => !!options.upstreamPending?.() || (['quarters', 'parcels'] as const).some(kind => one(kind, '[data-apply]').getAttribute('aria-busy') === 'true');
       await waitForArchitectureInputs({ pending: settling, current: active });
       if (!layouts || !partitions) throw new Error('Générez les parcelles avant les bâtiments.');
-      if (target === 'all' && layouts.length > 1) throw new Error('Choisissez une ville avant d’implanter ses bâtiments.');
+      if (singleCityArchitecture()) throw new Error('Choisissez une ville avant d’implanter ses plans de bâtiments ; « Volumes de la ville » couvre tous les settlements.');
       const inputLayouts = layouts, inputPartitions = partitions;
       const selectedLayouts = layouts.filter(layout => target === 'all' || layout.key === target), selectedPartitions = partitions.filter(partition => selectedLayouts.some(layout => layout.key === partition.key));
       if (!selectedLayouts.length) throw new Error('Le plan de la ville sélectionnée est absent.');
       const source = options.getRaster?.() ?? options.getTerrain();
       if (!source) throw new Error('Le terrain d’appui est absent.');
-      const retained = options.city ? urbanSource.select({ layouts, partitions, terrain: source, runtime: executionRuntime,
+      const retained = cityView ? urbanSource.select({ layouts, partitions, terrain: source, runtime: executionRuntime,
         keys: selectedLayouts.map(layout => layout.key) }) : undefined;
       const raster = retained ? undefined : 'n' in source ? source : { ...settlementRaster(source, 1024), geometry: terrainGeography(source) };
-      const preview: ArchitecturePreview | undefined = options.city && architectureMode !== 'silhouette'
+      const preview: ArchitecturePreview | undefined = cityView && architectureMode !== 'silhouette'
         ? { layouts: inputLayouts, partitions: inputPartitions, completed: 0, total: 0, errors: 0 } : undefined;
       architecturePreview = preview;
       try {
@@ -615,7 +620,7 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
           architecturePreview = undefined;
           return { cold: state, timing: response.timing, generationNote };
         }
-        const response = await sceneClient.run({ raster, layouts: selectedLayouts, partitions: selectedPartitions, ...retained, seed: seed || appliedParcelSeed || options.getSeed(), settings, runtime: executionRuntime, silhouettes: options.city, mode: options.city ? architectureMode : undefined, buildingOverrides: options.city ? edits.buildings : undefined }, onProgress,
+        const response = await sceneClient.run({ raster, layouts: selectedLayouts, partitions: selectedPartitions, ...retained, seed: seed || appliedParcelSeed || options.getSeed(), settings, runtime: executionRuntime, silhouettes: cityView, mode: cityView ? architectureMode : undefined, buildingOverrides: cityView ? edits.buildings : undefined }, onProgress,
           preview ? (delta, progress, scene) => {
             if (!active() || architecturePreview !== preview || layouts !== inputLayouts || partitions !== inputPartitions) throw new DOMException('Plan remplacé', 'AbortError');
             publishArchitectureBatch(preview, delta, progress, scene);
@@ -658,7 +663,7 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
       if (target !== 'all') rememberCities([target]); draw(); options.onChange();
       if (changedScene || changedAppearance) options.onPlanChange?.();
     }, onOpen: (building, context) => openUrbanHouseCase(building, context ?? buildingPanel.state.scene),
-    ...(options.city ? { onAssembly: openSelectedAssembly } : {}),
+    ...(cityView ? { onAssembly: openSelectedAssembly } : {}),
     readColdBuilding: async (state, id) => (await ensureColdView(state)).read(id, 'selection'),
     loadColdRefusals: async state => { await ensureColdSession(state); },
     getColdRefusals: state => sameCold(coldSession?.state, state) ? coldSession?.projection.refusals : undefined,
@@ -716,11 +721,11 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
   })(); };
 
   function architectureTitles(): void {
-    if (!options.city) return;
-    buildingPanel.panel.querySelector('summary')!.textContent = `9 · Bâtiments · ${architectureNames[architectureMode].toLowerCase()}`;
+    if (!cityView) return;
+    if (options.city) buildingPanel.panel.querySelector('summary')!.textContent = `9 · Bâtiments · ${architectureNames[architectureMode].toLowerCase()}`;
     buildingPanel.panel.querySelector('[data-buildings-generate]')!.textContent = architectureActions[architectureMode];
   }
-  if (options.city) {
+  if (cityView) {
     // Silhouettes: city footprints only. Compact: native plans drawn by the LOD renderer.
     // Detailed enriches these same native plans only in the visible close-up.
     architectureLabel.innerHTML = `Architecture<select data-city-architecture>${Object.entries(architectureNames).map(([id, label]) => `<option value="${id}">${label}</option>`).join('')}</select>`;
@@ -757,7 +762,7 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
     } catch (error) { completeGeneration = false; status('quarters', String(error)); }
   });
   const views = document.createElement('nav'); views.className = 'urban-view-tabs'; views.setAttribute('aria-label', 'Vue du plan urbain');
-  for (const [view, label] of Object.entries({ tissue: 'Tissu', uses: 'Usages', parcels: 'Parcelles', buildings: 'Bâtiments', ...(options.city ? { roles: 'Rôles' } : {}) })) {
+  for (const [view, label] of Object.entries({ tissue: 'Tissu', uses: 'Usages', parcels: 'Parcelles', buildings: 'Bâtiments', ...(cityView ? { roles: 'Rôles' } : {}) })) {
     const button = document.createElement('button'); button.type = 'button'; button.textContent = label; button.dataset.urbanView = view;
     button.onclick = () => { render.view = view as Render['view']; draw(); options.onChange(); options.onPlanChange?.(); }; views.append(button);
   }
@@ -769,9 +774,9 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
   // City Bench: legend of the roles view and frame statistics of the canvas.
   const legend = document.createElement('div'); legend.className = 'city-legend'; legend.dataset.cityLegend = '';
 
-  if (options.city) { views.after(legend); inspection.before(editsBox); displayHost.append(frameInfo); }
+  if (cityView) { views.after(legend); inspection.before(editsBox); displayHost.append(frameInfo); }
   options.map.addEventListener('click', event => {
-    if (options.city) { cityClick(event); return; }
+    if (cityView) { cityClick(event); return; }
     const building = (event.target as Element).closest('[data-urban-building]');
     if (building) { buildingPanel.select(building.getAttribute('data-urban-building')!); return; }
     // Silhouettes are drawn as a few merged paths: find the clicked footprint geometrically.
@@ -841,7 +846,8 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
     one(kind, '[data-status]').textContent = text;
     one<HTMLButtonElement>(kind, '[data-apply]').setAttribute('aria-busy', String(busy));
   }
-  function request(kind: Kind): void {
+  /** `only`: plan just these settlements of the selection (the others keep their plan). */
+  function request(kind: Kind, only?: Set<string>): void {
     clearTimeout(timer);
     const source = options.getRaster ? options.getRaster() : options.getTerrain();
     if (!ready || !source || !settlements) return;
@@ -854,7 +860,7 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
       try { worker = new UrbanWorker(); worker.onmessage = (e: MessageEvent<UrbanResponse>) => receive(e.data); worker.onerror = e => { e.preventDefault(); useFallback(); }; }
       catch { fallback = true; }
     }
-    const selected = settlements.settlements.filter(s => target === 'all' || s.key === target);
+    const selected = settlements.settlements.filter(s => (target === 'all' || s.key === target) && (!only || only.has(s.key)));
     const message: UrbanRequest = { id: ++id, kind, seed: kind === 'quarters' ? appliedQuarterSeed || options.getSeed() : appliedParcelSeed || options.getSeed(), runtime: executionRuntime };
     if (cachedTerrain !== source) {
       // The worker takes ownership of the buffers: a retained raster is copied.
@@ -875,12 +881,12 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
       if (parcelsById) message.layoutsId = layoutsId; else message.layouts = selected;
       message.parcelConfig = parcelWithEdits(clone(appliedParcel), edits);
     }
-    appliedKind = kind;
+    appliedKind = kind; appliedOnly = only;
     status(kind, `Rust · génération ${kind === 'quarters' ? 'des quartiers' : 'des parcelles'}…`, true);
     if (fallback) void runUrbanRequest(message).then(receive, error => receive({ id: message.id, error: String(error) }));
     else try { const r = message.raster; worker!.postMessage(message, r ? [r.height.buffer, r.water.buffer, r.waterLevel.buffer, r.riverWidth.buffer, r.riverIds.buffer] : []); } catch { useFallback(); }
   }
-  function useFallback(): void { worker?.terminate(); worker = undefined; fallback = true; cachedTerrain = undefined; request(appliedKind); }
+  function useFallback(): void { worker?.terminate(); worker = undefined; fallback = true; cachedTerrain = undefined; request(appliedKind, appliedOnly); }
   function receive(response: UrbanResponse): void {
     if (response.id !== id) return;
     if (response.error) {
@@ -932,7 +938,7 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
       one('parcels', '[data-warnings]').textContent = warningText((partitions ?? []).flatMap(p => p.warnings.map(w => `${p.key} : ${urbanCapacityWarningText(w)}`)));
       if (completeGeneration) {
         completeGeneration = false; initialBuildingState = undefined;
-        if (target === 'all' && layouts!.length > 1) status('parcels', 'Plan prêt · choisissez une ville pour implanter ses bâtiments.');
+        if (singleCityArchitecture()) status('parcels', 'Plan prêt · choisissez une ville pour implanter ses plans de bâtiments.');
         else void buildingPanel.generate();
       } else if (initialBuildingState?.generated || buildingPanel.state.generated) { initialBuildingState = undefined; void buildingPanel.generate({ seed: buildingPanel.state.seed, settings: buildingPanel.state.settings }); }
     }
@@ -997,7 +1003,7 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
     const { opacity, ...appearance } = render;
     const state = JSON.stringify({ enabled, parcelEnabled, render: appearance });
     if (layer !== drawnLayer || opacity !== drawnOpacity) { layer.setAttribute('opacity', String(opacity)); drawnOpacity = opacity; }
-    if (options.city) { drawCityLayer(layer); return; }
+    if (cityView) { drawCityLayer(layer); return; }
     updateUrbanBuildingSelection(layer, buildingPanel.state.scene, buildingPanel.state.selected);
     const buildingAppearance = JSON.stringify({ visible: buildingPanel.state.visible, appearance: buildingPanel.state.appearance });
     if (layer === drawnLayer && layouts === drawnLayouts && partitions === drawnPartitions && state === drawnState && drawnScene === buildingPanel.state.scene && drawnBuildingAppearance === buildingAppearance) { if (render.centers) identityScale(layer); return; }
@@ -1348,7 +1354,7 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
   }
   /** Real buildings, refusals and errors, never mixed with the population target. */
   function cityCountsReport(): void {
-    if (!options.city) return;
+    if (!cityView) return;
     const scene = displayedArchitecture(), site = settlements?.settlements.find(s => s.key === target);
     const parentPreview = architecturePreview?.parent, parent = buildingPanel.state.parent;
     if (parentPreview || parent) {
@@ -1382,7 +1388,7 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
       : site ? `Population cible ${site.population.toLocaleString()} hab. · aucun bâtiment tracé.` : '';
   }
   function cityLegend(): void {
-    if (!options.city || legendOf[0] === render.view && legendOf[1] === cityPlan) return;
+    if (!cityView || legendOf[0] === render.view && legendOf[1] === cityPlan) return;
     legendOf = [render.view, cityPlan];
     if (render.view !== 'roles') { legend.replaceChildren(); return; }
     const used = new Set(cityPlan?.districts.flatMap(d => d.role ? [districtRoleKey(d.role)] : []) ?? []);
@@ -1475,10 +1481,10 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
     note.textContent = `Emprise du plan : ${actual.toFixed(1)} m²; ${targetScope} : ${target.toFixed(1)} m² (${(actual / target * 100).toFixed(1)} %). La capacité habitante reste non évaluée.`;
     inspection.append(note);
   }
-  function inspectorNote(text: string): void { if (!options.city) return; const note = document.createElement('small'); note.setAttribute('role', 'status'); note.className = 'city-edit-refusal'; note.textContent = text; inspection.prepend(note); }
+  function inspectorNote(text: string): void { if (!cityView) return; const note = document.createElement('small'); note.setAttribute('role', 'status'); note.className = 'city-edit-refusal'; note.textContent = text; inspection.prepend(note); }
   /** Edited items count and a global reset; edits persist in the share query. */
   function editsReport(): void {
-    if (!options.city) return;
+    if (!cityView) return;
     const n = editCount(edits);
     editsBox.innerHTML = n ? `<span>${n} élément(s) modifié(s) · ${Object.keys(edits.quarters).length} quartier(s), ${Object.keys(edits.parcels).length} parcelle(s), ${Object.keys(edits.buildings).length} bâtiment(s)</span><button type="button" data-edits-reset>Tout réinitialiser</button>` : '';
     structuralEditsReport(); // edits hook (cityShapeEditor.ts)
@@ -1787,6 +1793,7 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
   }
   for (const action of ['seed', 'plan', 'back'] as const) { const button = one<HTMLButtonElement>('quarters', `[data-explore="${action}"]`); if (button) button.onclick = () => explore(action); }
   targetSelect.onchange = () => {
+    const built = !!buildingPanel.state.generated;
     if (target) cityDrafts.set(target, clone({ layoutConfig, parcelConfig, quarterSeed, parcelSeed, dirty, building: buildingPanel.captureDraft() }));
     target = targetSelect.value; clearTimeout(timer); ++id; layoutsId = undefined; invalidateArchitecture();
     const saved = citySettings[target], draft = cityDrafts.get(target);
@@ -1801,6 +1808,9 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
     buildingPanel.restore({ ...buildingPanel.state, ...(saved?.building ?? { seed: '', settings: undefined, generated: false }), selected: undefined });
     buildingPanel.restoreDraft(draft?.building);
     for (const kind of ['quarters', 'parcels'] as const) { status(kind, layouts?.some(layout => target === 'all' || layout.key === target) ? 'Plan conservé · sélection seule.' : 'Plan absent pour cette sélection.'); populate(kind); }
+    // Settlements of the selection without a plan are planned now; planned ones keep theirs.
+    const missing = settlements?.settlements.filter(s => (target === 'all' || s.key === target) && !layouts?.some(layout => layout.key === s.key)) ?? [];
+    if (missing.length && enabled && ready) { completeGeneration = built; request('quarters', new Set(missing.map(s => s.key))); }
     draw(); options.onChange();
   };
   one<HTMLButtonElement>('quarters', '#urbanFocus').onclick = () => {
@@ -1906,7 +1916,7 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
     /** Same-input lots / silhouettes / compact plans comparison (Visual50 runner). */
     comparison: { ...comparison.api, async prepare() { if (buildingPanel.state.parent) throw new Error('La comparaison legacy des parents natifs n’est pas encore prise en charge.'); const state = buildingPanel.state.cold; if (state) await ensureColdSession(state); draw(); } },
     /** Map clicks belong to the inspector (City Bench roles view too), not to settlement markers. */
-    get inspecting(): boolean { return render.view === 'buildings' || !!options.city && render.view === 'roles'; },
+    get inspecting(): boolean { return render.view === 'buildings' || cityView && render.view === 'roles'; },
     get buildingVisible(): boolean { return buildingPanel.state.visible && render.view === 'buildings'; },
     selectBuilding: (id: string): void => { if (buildingPanel.state.parent) throw new Error('Utilisez une sélection parent/membre explicite.'); buildingPanel.select(id); },
     selectParent: (pick: import('./urbanParentColdWindow').ParentMapSelection): void => { boundedParent()?.select(pick); buildingPanel.selectParent(pick); },
@@ -1962,7 +1972,7 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
       status('parcels', `Génération du terrain échouée : ${message}`);
     },
     updateView: draw,
-    share(params: URLSearchParams): void { params.set('urban', JSON.stringify({ enabled, parcelEnabled, target, quarterSeed: appliedQuarterSeed, parcelSeed: appliedParcelSeed, layoutConfig: appliedLayout, parcelConfig: appliedParcel, render, buildingState: buildingSettings(buildingPanel.state), ...(options.city ? { architecture: architectureMode } : {}), ...(hasEdits(edits) ? { edits: packEdits(edits) } : {}) })); }, // edits hook (cityEdits.ts): outlines packed in links
+    share(params: URLSearchParams): void { params.set('urban', JSON.stringify({ enabled, parcelEnabled, target, quarterSeed: appliedQuarterSeed, parcelSeed: appliedParcelSeed, layoutConfig: appliedLayout, parcelConfig: appliedParcel, render, buildingState: buildingSettings(buildingPanel.state), ...(cityView ? { architecture: architectureMode } : {}), ...(hasEdits(edits) ? { edits: packEdits(edits) } : {}) })); }, // edits hook (cityEdits.ts): outlines packed in links
   };
 }
 import { executionRuntime } from './executionProfile';
