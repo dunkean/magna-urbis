@@ -7,6 +7,14 @@ export const GROUND_RESPONSE_VERSION = 'surface-ground-response-1' as const;
 export const GROUND_RESPONSE_FLOAT_FIELDS = ['alluvial','gravity','wind','coastal','aridity','moisturePreSaturation'] as const;
 export const GROUND_RESPONSE_BYTES_PER_SAMPLE = 26;
 const ROCK_FAMILIES=['bedrock','gravity','karst','volcanic','rocky-coast'];
+const GROUND_RECIPES=['fractured-bedrock','carbonate-karst','volcanic-crust','coastal-rock','mineral-soil','organic-soil','arid-reg','alluvial-bars','angular-talus','wind-ripple-sand','coastal-sediment','cultivated-soil'];
+export function assertGroundResponseCatalogue(materials:MaterialRecipe[]):void {
+  const M=createMaterialIndex(materials);
+  for(const id of GROUND_RECIPES){const recipe=materials[M[id]];
+    if(!recipe||recipe.surfaceRole&&recipe.surfaceRole!=='ground'||['marine','inland-water','snow-ice','vegetation'].includes(recipe.family))throw new Error('Ground response recipe has an incompatible ground family/role: '+id);
+  }
+  for(const id of GROUND_RECIPES.slice(0,4))assertGroundResponseRock(materials[M[id]]);
+}
 export function assertGroundResponseRock(recipe:MaterialRecipe):void {
   if(!recipe||recipe.surfaceRole&&recipe.surfaceRole!=='ground'||!ROCK_FAMILIES.includes(recipe.family))throw new Error('Ground response recipe has an incompatible rock family/role');
 }
@@ -33,13 +41,22 @@ export interface GroundResponseParameters {
 /** Shared operation order with naturalGroundWeights. Coastal is the effective
  * declared sediment potential, already gated by the source process at each knot. */
 export function groundResponseWeights(p: GroundResponseParameters, M: Record<string, number>): Array<[number, number]> {
-  const rockCover = clamp((p.stoniness-.08)/.75);
-  const sediment: Array<[number, number]> = [[M['alluvial-bars'],p.alluvial],[M['angular-talus'],p.gravity],[M['wind-ripple-sand'],p.wind],[M['coastal-sediment'],p.coastal]];
-  const sum = sediment.reduce((s,[,v])=>s+v,0),scale=Math.max(1,sum),soilRest=(1-rockCover)*(1-Math.min(1,sum));
-  const dry=clamp((.65-p.aridity)/.4),humus=organicSoilFraction(p.moisturePreSaturation,p.slopeRadians,p.organic),soil=soilRest*(1-dry);
+  const amounts=new Float64Array(8);writeAmounts(p,amounts);
   if(p.occupation===Occupation.Crop)return [[M['cultivated-soil'],1]];
-  return [[p.rockRecipe,rockCover],[M['mineral-soil'],soil*(1-humus)],[M['organic-soil'],soil*humus],[M['arid-reg'],soilRest*dry],...sediment.map(([id,v])=>[id,v/scale*(1-rockCover)] as [number,number])];
+  return [[p.rockRecipe,amounts[0]],[M['mineral-soil'],amounts[1]],[M['organic-soil'],amounts[2]],[M['arid-reg'],amounts[3]],
+    [M['alluvial-bars'],amounts[4]],[M['angular-talus'],amounts[5]],[M['wind-ripple-sand'],amounts[6]],[M['coastal-sediment'],amounts[7]]];
 }
+function writeAmounts(p:GroundResponseParameters,out:Float64Array):void {
+  const rock=clamp((p.stoniness-.08)/.75),sum=(((0+p.alluvial)+p.gravity)+p.wind)+p.coastal,scale=Math.max(1,sum),rest=(1-rock)*(1-Math.min(1,sum));
+  const dry=clamp((.65-p.aridity)/.4),humus=organicSoilFraction(p.moisturePreSaturation,p.slopeRadians,p.organic),soil=rest*(1-dry);
+  if(p.occupation===Occupation.Crop){out.fill(0);out[0]=1;return;}
+  out[0]=rock;out[1]=soil*(1-humus);out[2]=soil*humus;out[3]=rest*dry;
+  out[4]=p.alluvial/scale*(1-rock);out[5]=p.gravity/scale*(1-rock);out[6]=p.wind/scale*(1-rock);out[7]=p.coastal/scale*(1-rock);
+}
+function interpolate(a:Float32Array,i:readonly number[],w:readonly number[]):number {
+  return (((0+a[i[0]]*w[0])+a[i[1]]*w[1])+a[i[2]]*w[2])+a[i[3]]*w[3];
+}
+function upperUnitRoundoff(value:number):number {return value>1&&value<=1+4*Number.EPSILON?1:value;}
 
 export function allocateGroundResponseFields(n: number): GroundResponseFields {
   if(!Number.isSafeInteger(n)||n<4||n>16_777_216||n*GROUND_RESPONSE_BYTES_PER_SAMPLE>512*1024*1024)throw new Error('Ground response allocation exceeds the bounded sample budget');
@@ -79,6 +96,7 @@ export function createGroundResponse(grid: SurfaceGridGeometry, source: SourceId
 export function hydrateGroundResponse(value: unknown, expected: {grid:SurfaceGridGeometry;source:SourceIdentity;environmentVersion:string;materialLibraryVersion:string;materials:MaterialRecipe[]}, memoryBudgetBytes=512*1024*1024): SurfaceGroundResponse {
   const r=value as SurfaceGroundResponse,n=expected.grid.width*expected.grid.height;
   if(!Number.isFinite(memoryBudgetBytes)||memoryBudgetBytes<=0||n*GROUND_RESPONSE_BYTES_PER_SAMPLE>memoryBudgetBytes)throw new Error('Ground response exceeds memoryBudgetBytes');
+  assertGroundResponseCatalogue(expected.materials);
   if(!r||typeof r!=='object'||r.version!==GROUND_RESPONSE_VERSION||r.interpolation!=='bilinear-physical-before-recipe'||r.quantization!=='float32-potentials; uint16-recipe; stored-srgb8-at-canonical-knots'
     ||!r.source||typeof r.source.id!=='string'||!r.source.id||typeof r.source.version!=='string'||!r.source.version||!Number.isFinite(r.source.sourceLOD)||!Number.isFinite(r.source.nativeSpacingM)||r.source.nativeSpacingM<=0
     ||r.source.sourceLODKnown!==undefined&&typeof r.source.sourceLODKnown!=='boolean'||r.source.provenance!==undefined&&typeof r.source.provenance!=='string'
@@ -102,16 +120,34 @@ export interface GroundResponseSample extends MaterialComposition {mean:[number,
  * existing nearest-category convention and source padding policy. */
 export function createGroundResponseSampler(response: SurfaceGroundResponse, physical: SurfaceFields, materials: MaterialRecipe[], units: RockUnit[]) {
   const M=createMaterialIndex(materials),rocks=new Map(units.map(r=>[r.id,r])),g=response.fields;
+  const ids=new Uint16Array([0,M['mineral-soil'],M['organic-soil'],M['arid-reg'],M['alluvial-bars'],M['angular-talus'],M['wind-ripple-sand'],M['coastal-sediment']]);
+  const amounts=new Float64Array(8),combinedIds=new Uint16Array(8),combinedAmounts=new Float64Array(8);
+  const colorRoles=materials.map(recipe=>recipe.family==='gravity'?2:['bedrock','karst','volcanic','rocky-coast'].includes(recipe.family)?1:0);
+  const p:GroundResponseParameters={stoniness:0,slopeRadians:0,organic:0,rockRecipe:0,occupation:0,alluvial:0,gravity:0,wind:0,coastal:0,aridity:0,moisturePreSaturation:0};
   return (indices:readonly number[],weights:readonly number[],nearest:number):GroundResponseSample=>{
     // Preserve existing recorded ids/means at exact canonical knots. The stored
     // sRGB8 quantisation is evidence, not extra response detail to invent.
     for(let c=0;c<4;c++)if(weights[c]===1){const i=indices[c];return {primary:physical.groundMaterial![i],secondary:physical.groundMaterialSecondary![i],blend:physical.groundMaterialBlend![i],mean:unpackMaterialMean(physical.groundMaterialMeanColor![i])};}
-    const continuous=(a:ArrayLike<number>)=>weights.reduce((sum,w,c)=>sum+a[indices[c]]*w,0);
-    const p:GroundResponseParameters={stoniness:continuous(physical.stoniness),slopeRadians:continuous(physical.slope),organic:continuous(physical.organic),rockRecipe:g.rockRecipe[nearest],occupation:physical.occupation[nearest],
-      alluvial:continuous(g.alluvial),gravity:continuous(g.gravity),wind:continuous(g.wind),coastal:continuous(g.coastal),aridity:continuous(g.aridity),moisturePreSaturation:continuous(g.moisturePreSaturation)};
+    p.stoniness=interpolate(physical.stoniness,indices,weights);p.slopeRadians=interpolate(physical.slope,indices,weights);p.organic=upperUnitRoundoff(interpolate(physical.organic,indices,weights));p.rockRecipe=g.rockRecipe[nearest];p.occupation=physical.occupation[nearest];
+    p.alluvial=interpolate(g.alluvial,indices,weights);p.gravity=interpolate(g.gravity,indices,weights);p.wind=interpolate(g.wind,indices,weights);p.coastal=interpolate(g.coastal,indices,weights);p.aridity=interpolate(g.aridity,indices,weights);p.moisturePreSaturation=upperUnitRoundoff(interpolate(g.moisturePreSaturation,indices,weights));
     const bed=rocks.get(physical.bedrock[nearest]),source=rocks.get(physical.sourceRock[nearest]);if(!bed||!source)throw new Error('Unknown ground response substrate/source');
-    const amounts=groundResponseWeights(p,M),total=amounts.reduce((sum,[,v])=>sum+v,0),mean:[number,number,number]=[0,0,0];
-    for(const[id,v]of amounts){const recipe=materials[id],color=materialColor(recipe,recipe.family!=='gravity'?bed:source);for(let c=0;c<3;c++)mean[c]+=color[c]*v/total;}
-    return {...dominantMaterialPair(amounts),mean};
+    writeAmounts(p,amounts);ids[0]=p.occupation===Occupation.Crop?M['cultivated-soil']:p.rockRecipe;
+    let total=0;for(let i=0;i<8;i++)total+=amounts[i];
+    const mean:[number,number,number]=[0,0,0];let count=0;
+    for(let i=0;i<8;i++){
+      const id=ids[i],v=amounts[i],color=colorRoles[id]===2?source.colorLinear:colorRoles[id]===1?bed.colorLinear:materials[id].colorLinear;
+      for(let c=0;c<3;c++)mean[c]+=color[c]*v/total;
+      if(!Number.isFinite(v)||v<=0)continue;
+      let slot=0;while(slot<count&&combinedIds[slot]!==id)slot++;
+      if(slot===count){combinedIds[count]=id;combinedAmounts[count++]=0+v;}else combinedAmounts[slot]+=v;
+    }
+    let first=-1,second=-1;
+    for(let i=0;i<count;i++){
+      if(first<0||(combinedAmounts[first]-combinedAmounts[i]||combinedIds[i]-combinedIds[first])<0){second=first;first=i;}
+      else if(second<0||(combinedAmounts[second]-combinedAmounts[i]||combinedIds[i]-combinedIds[second])<0)second=i;
+    }
+    if(first<0)return{primary:0,secondary:0,blend:0,mean};
+    const a=combinedAmounts[first],b=second<0?0:combinedAmounts[second];
+    return{primary:combinedIds[first],secondary:second<0?combinedIds[first]:combinedIds[second],blend:b/(a+b),mean};
   };
 }
