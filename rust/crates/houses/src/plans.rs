@@ -292,6 +292,8 @@ impl<'a> PreparedPlan<'a> {
                 single_incumbent_growth::record_preparation();
                 #[cfg(test)]
                 single_need_continuation::record_preparation();
+                #[cfg(test)]
+                single_native_prepose::diagnostics::preparation();
                 if self.retain_native_entry {
                     crate::engine::prepare_foundation_and_entry(self.resolved)
                 } else {
@@ -939,6 +941,13 @@ fn frontage_poses_prepared<'a>(
     prepared: &PreparedPlan<'_>,
     domain: &Surface,
 ) -> Vec<(Transform, &'a ArchitectureAccess)> {
+    frontage_poses_prepared_with_flip(r,prepared,domain,None)
+}
+
+fn frontage_poses_prepared_with_flip<'a>(
+    r: &'a PlacementRequest, prepared: &PreparedPlan<'_>, domain: &Surface,
+    native_front_flip: Option<bool>,
+) -> Vec<(Transform, &'a ArchitectureAccess)> {
     let resolved = prepared.resolved;
     const LIMIT: usize = 8;
     const MARGIN: f64 = 0.1;
@@ -989,7 +998,7 @@ fn frontage_poses_prepared<'a>(
     let bodies = bounds(&prepared.body_local);
     // Prefer the end without the rear court. This only chooses a half-turn;
     // no reflection or change to the source assembly is introduced.
-    let flip = envelope[3] - bodies[3] < bodies[1] - envelope[1];
+    let flip = native_front_flip.unwrap_or_else(|| envelope[3] - bodies[3] < bodies[1] - envelope[1]);
     let native = if flip {
         [-envelope[2], -envelope[3], -envelope[0], -envelope[1]]
     } else {
@@ -1056,7 +1065,7 @@ fn frontage_poses_prepared<'a>(
                     },
                     access,
                 ));
-                if poses.len() == LIMIT {
+                if poses.len() == LIMIT || native_front_flip.is_some() {
                     return poses;
                 }
             }
@@ -1352,6 +1361,8 @@ fn visual_with_connection_prepared_reported(
     single_incumbent_growth::record_admission();
     #[cfg(test)]
     single_need_continuation::record_admission();
+    #[cfg(test)]
+    single_native_prepose::diagnostics::admission();
     let resolved = prepared.resolved;
     let footprint = map_surface(&prepared.body_local, &transform);
     let all = map_surface(&prepared.plan_local, &transform);
@@ -3591,6 +3602,7 @@ pub fn plan_batch(input: PlanBatchRequest) -> Result<PlanBatch, String> {
     }
     if let Some(deferred) = deferred_input {
         single_need_continuation::after_complete_batch(&deferred, &mut result)?;
+        single_native_prepose::after_complete_batch(&deferred,&mut result)?;
     }
     Ok(result)
 }
@@ -5165,3 +5177,6 @@ mod b06_light_entry_tests;
 #[cfg(test)]
 #[path = "b06_light_entry_tests/finalize_policy.rs"]
 mod b06_light_finalize_policy_tests;
+
+#[path="single_native_prepose.rs"]
+mod single_native_prepose;

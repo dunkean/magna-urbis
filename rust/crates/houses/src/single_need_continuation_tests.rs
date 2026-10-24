@@ -9,6 +9,9 @@ const REFERENCE:&str=include_str!("../tests/fixtures/single-need-postbatch-java-
 fn input(bytes:&[u8])->PlanBatchRequest {serde_json::from_slice(bytes).unwrap()}
 fn digest(bytes:&[u8])->String {format!("{:x}",Sha256::digest(bytes))}
 fn run(input:PlanBatchRequest,enabled:bool)->Result<Vec<u8>,String>{
+    // These unchanged transport goldens own the OLD Need phase only.
+    // The new default final postphase is independently covered below on the SAME real inputs.
+    let _prepose=single_native_prepose::Mode::new(false);
     let _incumbent=single_incumbent_growth::Mode::new(true);
     let _need=Mode::new(enabled);
     plan_batch(input).map(|b|serde_json::to_vec(&b).unwrap())
@@ -105,3 +108,6 @@ fn need_postbatch_mixed_batch_preserves_core_functional_pins_exactly(){
         }
     }
 }
+
+#[path="single_need_prepose_final_tests.rs"]
+mod prepose_final_contract;
