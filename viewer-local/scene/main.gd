@@ -9,6 +9,7 @@ const ViewQuality=preload("res://adapters/surface_view_quality.gd")
 const LiveBinding=preload("res://adapters/surface_live_binding.gd")
 const WaterProjection=preload("res://adapters/surface_water_projection.gd")
 const Presentation = preload("res://adapters/surface_presentation.gd")
+const GroundResponse=preload("res://adapters/surface_ground_response.gd")
 var surface_shader_code := ""
 var world: Dictionary = {}
 var packet: Dictionary = {}
@@ -358,6 +359,12 @@ func _apply_prepared(prepared: Dictionary) -> void:
 			for binding in {"low_cover_ids":"lowIds","low_cover_average":"lowAverage","low_cover_state":"lowState"}:
 				context_textures[context_key][binding]=ImageTexture.create_from_image(prepared.surfaceLayers[{"low_cover_ids":"lowIds","low_cover_average":"lowAverage","low_cover_state":"lowState"}[binding]])
 		context_textures[context_key]["surface_layers_explicit"]=prepared.get("surfaceLayers",{}).get("available",false)
+		var ground_response:Dictionary=prepared.get("surfaceLayers",{}).get("groundResponse",{})
+		context_textures[context_key]["ground_response_enabled"]=ground_response.get("available",false)
+		if ground_response.get("available",false):
+			for binding in ground_response.bindings:
+				var value=ground_response.bindings[binding]
+				context_textures[context_key][binding]=ImageTexture.create_from_image(value) if value is Image else value
 		while context_textures.size()>2: context_textures.erase(context_textures.keys()[0])
 	for name in context_textures[context_key]: mat.call("set_shader_param",name,context_textures[context_key][name])
 	mat.call("set_shader_param","source_spacing_m",float(t.spacingM))
@@ -991,7 +998,7 @@ func _resolve_context(value: Dictionary) -> bool:
 		if canonical.source.id!=value.terrain.source.id or canonical.source.version!=value.terrain.source.version:
 			push_warning("Canonical context terrain source identity mismatch")
 			return false
-		for key in ["environment","occupation","population","materialLibrary","surfaceState","hydrology","geology","surfaceLayers"]:
+		for key in ["environment","occupation","population","materialLibrary","surfaceState","hydrology","geology","surfaceLayers","groundResponse"]:
 			if canonical.versions.get(key)!=value.versions.get(key):
 				push_warning("Canonical context version mismatch: "+key)
 				return false
