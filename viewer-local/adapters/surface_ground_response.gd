@@ -1,6 +1,8 @@
 class_name SurfaceGroundResponse
 extends RefCounted
 
+# Physical slope is stored in Float32; atan may round to this exact value.
+const MAX_SLOPE_F32=1.5707963705062866 # float32(PI/2), not a generic epsilon
 const VERSION="surface-ground-response-1"
 const QUANTIZATION="float32-potentials; uint16-recipe; stored-srgb8-at-canonical-knots"
 const FLOATS=["alluvial","gravity","wind","coastal","aridity","moisturePreSaturation"]
@@ -89,7 +91,7 @@ static func validate(world:Dictionary)->bool:
 		if not physical.has(key) or not _sequence(physical[key]) and not physical[key] is PackedInt64Array or physical[key].size()!=n:return false
 	for key in ["slope","stoniness","organic"]:
 		for value in physical[key]:
-			if not _number(value) or float(value)<0 or float(value)>(PI/2.0 if key=="slope" else 1.0):return false
+			if not _number(value) or float(value)<0 or float(value)>(MAX_SLOPE_F32 if key=="slope" else 1.0):return false
 	var units={}
 	for unit in geology.units:
 		if not unit is Dictionary or not _number(unit.get("id")) or floorf(float(unit.id))!=float(unit.id) or int(unit.id)<1 or int(unit.id)>65535 or units.has(int(unit.id)) or not unit.get("colorLinear") is Array or unit.colorLinear.size()!=3:return false
