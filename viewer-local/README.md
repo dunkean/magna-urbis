@@ -3,8 +3,10 @@
 Godot est un moteur de rendu candidat pour les cartes et plans JDR 2D/3D de
 Magna Urbis. Les contrats de données restent indépendants du moteur ; les palettes
 existantes, les vues orthographiques et les exports de cartes guident son évaluation.
-Les sorties SVG/Canvas conservent actuellement les étiquettes et la composition
-finale non reprises ici. Ce projet ne génère aucun relief et ne modifie ni les hauteurs
+Un [bridge de composition SVG/PNG](../docs/surface/MAP_COMPOSITION.md) réutilise
+les palettes, polices, placement des noms source, cadre et primitives de carte.
+Il compose les captures natives TOP et obliques ; les pinceaux et tous les styles
+web ne sont pas encore repris. Ce projet ne génère aucun relief et ne modifie ni les hauteurs
 source, ni les volumes urbains natifs, ni leurs identifiants de matériaux.
 
 ## Installer et lancer
@@ -20,6 +22,20 @@ $env:GODOT = 'C:/tools/Godot_v4.7.2-stable_win64_console.exe'
 node web/scripts/surface_viewer.mjs --check
 node web/scripts/surface_viewer.mjs --world C:/data/world.surfacebin --assets C:/data/surface-assets/resolved.json
 ```
+
+Pour la configuration intégrée, préparer les ressources locales décrites dans
+les [profils explicites](profiles/README.md), puis lancer depuis le dépôt :
+
+```powershell
+node web/scripts/surface_viewer.mjs --render-profile surface-v2 --world C:/data/world.surfacebin --godot $env:GODOT --top
+```
+
+Ce profil exige les manifests PBR, herbes et arbres corrigés, ainsi que le batch
+d'interpolation Rust compilé localement. Il vérifie les octets de tous les fichiers
+de rendu avant le démarrage ; une ressource manquante provoque une erreur explicite.
+Il ne télécharge rien et n'améliore pas rétroactivement les données d'un ancien
+paquet. Le [batch natif](native-height/README.md) reconstruit exactement les
+heightfields d'Infinite Generation ; il n'est pas un autre générateur.
 
 Le lanceur accepte `--godot <exécutable>` et `--renderer forward_plus|mobile|gl_compatibility`.
 Les chemins relatifs sont résolus depuis le répertoire courant. Il importe le
