@@ -1,6 +1,16 @@
 # SurfaceWorld — état de l'implémentation
 
-État courant du 24 octobre 2026 : **la campagne technique V12 complète passe**
+Développement courant du 24 octobre 2026 : compilateur `surface-1.6.0`,
+réponse physique continue du sol, herbes CC0 et chemin expérimental d'arbres.
+Les [corrections V13](V13_CORRECTIONS.md), la
+[réponse du sol](GROUND_RESPONSE.md), les
+[herbes GPU](evidence/vegetation-grass-v13/README.md) et le
+[contrat des arbres](evidence/vegetation-tree-v13/EXPERIMENTAL_RENDERER.md)
+séparent les preuves bornées de la prochaine campagne intégrée. La revue V12
+ne qualifie pas ces nouveaux fichiers. Sol, herbes/litière et arbres gardent leurs
+contrats propres ; hauteurs Infinite Generation et hydrologie Magna sont conservées.
+
+Dernière campagne complète antérieure aux changements V13 : **V12 passe techniquement**
 sur le runtime figé `bc6579f`, compilateur `surface-1.5.3` et analyse physique
 `1.5.2`. Le [bilan V12](evidence/NATIVE_V12.md) et sa
 [preuve compacte](evidence/native-e2e-v12.json) conservent les résultats et hashes.
