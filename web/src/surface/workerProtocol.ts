@@ -18,12 +18,20 @@ export interface SurfaceWorkerJob extends Routing {
   maxCandidates?: number; maxCheckedSlots?: number; binaryBudgetBytes?: number; memoryBudgetBytes?: number;
   registrationBinding?: Readonly<SurfaceRegistrationBinding>;
   presentation?: import('./presentation').SurfacePresentation;
+  /** Diagnostic envelope only; never participates in compiled fields/IDs/binary. */
+  diagnosticTiming?: boolean;
+}
+export interface SurfaceWorkerProcessorTiming {
+  version: 'surface-worker-processor-timing-1'; timeOriginMs: number;
+  startNowMs: number; finishNowMs: number; synchronousMs: number;
+  startedUtcMs: number; finishedUtcMs: number;
 }
 export type SurfaceWorkerRequest = SurfaceWorkerInit | SurfaceWorkerJob;
-export type SurfaceWorkerResponse =
+export type SurfaceWorkerResponse = (
   | (Routing & { kind: 'initialized' })
   | (Routing & { kind: 'compiled'; requestId: number; binary: ArrayBuffer; contextId: string; environmentVersion: string; canonicalBuildCount: number })
-  | (Routing & { kind: 'error'; requestId?: number; error: { name: string; message: string } });
+  | (Routing & { kind: 'error'; requestId?: number; error: { name: string; message: string } })
+) & { processorTiming?: SurfaceWorkerProcessorTiming };
 export interface SurfaceWorkerPacket {
   format: 'magna-surface-packet'; version: 1; world: SurfaceWorld; urban?: unknown;
   terrainParents?: Array<{ terrain: TerrainGrid; bounds: Bounds; canonicalContextId: string }>;
