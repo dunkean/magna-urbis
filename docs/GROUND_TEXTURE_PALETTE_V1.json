@@ -1,0 +1,5469 @@
+{
+  "schemaVersion": 1,
+  "paletteVersion": "ground-textures-v1-study",
+  "date": "2026-10-25",
+  "status": "proposed-documentation-not-runtime-implementation",
+  "scope": {
+    "inputsAssumed": [
+      "Existing terrain, climate, geomorphons, hydrology and five lithology proportions",
+      "N1 exposed support and roughness",
+      "N2 loose material availability, sizes, roundness and source",
+      "N3 typed waters and precise banks",
+      "N4 declared scene state"
+    ],
+    "additionalSimulationRequired": false,
+    "snowIcePolicy": "Explicit N4 scene appearance presets with local terrain modulation; no automatic annual-temperature snow cover",
+    "coverPolicy": "Use canonical cover context if present; otherwise derive plausible appearance preferences, without claiming exact canopy agreement",
+    "lithologyPolicy": "Five physical parents; twenty bare-rock visual profiles plus two colonized-rock profiles",
+    "excludedDependency": "Optional physical and historical extensions in GROUND_MATERIAL_MAPPING.md section 4.2",
+    "outputDomain": "Visible ground including litter, low herbaceous and moss surfaces, snow and surface ice; trees and constructions separate"
+  },
+  "selectionPolicy": {
+    "scope": "One resolved asset per type for the entire map",
+    "key": [
+      "worldSeed",
+      "paletteVersion",
+      "typeId"
+    ],
+    "algorithm": "Hash a canonically encoded key with a specified stable hash; modulo length of the sorted validated candidate pool",
+    "weights": "Equal probabilities among admitted candidates in this proposal",
+    "persistence": "Save resolved asset, source image hashes, scale and preparation settings; never reroll per cell, tile, camera or LOD",
+    "fallback": "Prepare a compatible replacement before resolving the palette, and record it",
+    "contextProfile": "Any global cover appearance profile has a separate saved seed key",
+    "note": "Candidate identity changes between maps, not within a type on a map; local UV transforms keep the same source asset"
+  },
+  "provenance": {
+    "reference": "../../magna-urbis-height-chain-budget/docs/RENDER_REVIEW.md",
+    "providers": [
+      {
+        "name": "Poly Haven",
+        "inventory": "https://api.polyhaven.com/assets?t=textures",
+        "files": "https://api.polyhaven.com/files/{assetId}",
+        "license": "https://polyhaven.com/license"
+      },
+      {
+        "name": "ambientCG",
+        "inventory": "https://ambientcg.com/api/v2/full_json",
+        "documentation": "https://docs.ambientcg.com/api/v2/full_json/",
+        "license": "https://docs.ambientcg.com/license/"
+      }
+    ],
+    "availability": "Four channels checked from provider metadata, not a full pack ingestion or engine validation",
+    "visualReview": "Per-asset scope recorded; provider lit previews are not base-color maps",
+    "ingestionRemaining": [
+      "Inspect and validate complete maps",
+      "Reject incompatible visual content or human traces",
+      "Check normals, displacement amplitude, physical scale and residual lighting",
+      "Prepare bounded recoloring and material mean",
+      "Record exact downloaded file hashes"
+    ]
+  },
+  "counts": {
+    "types": 90,
+    "assets": 142,
+    "groups": {
+      "Terres et matrices": 12,
+      "Sables et fragments": 12,
+      "Roches": 22,
+      "Sols forestiers": 12,
+      "Prairies steppes savanes et couverts ras": 16,
+      "Sols humides et mousses": 6,
+      "Neiges et glaces de surface": 10
+    }
+  },
+  "types": [
+    {
+      "id": "B01",
+      "group": "Terres et matrices",
+      "label": "Terre brune fine",
+      "conditions": "Matrice émergée dominante, ni sable libre ni couvert ras choisi",
+      "candidates": [
+        "ph:brown_mud",
+        "acg:Ground048"
+      ],
+      "adaptation": "Teinte minérale et humidité"
+    },
+    {
+      "id": "B02",
+      "group": "Terres et matrices",
+      "label": "Terre sombre riche en organique",
+      "conditions": "Matrice stable, organique élevé, sans tapis forestier dense",
+      "candidates": [
+        "ph:dirt_floor",
+        "acg:Ground051"
+      ],
+      "adaptation": "Assombrissement organique, pas de tourbe revendiquée"
+    },
+    {
+      "id": "B03",
+      "group": "Terres et matrices",
+      "label": "Terre claire limoneuse",
+      "conditions": "Fines limoneuses disponibles, faible pierrosité, surface stable",
+      "candidates": [
+        "acg:Ground102",
+        "acg:Ground103"
+      ],
+      "adaptation": "Détail très fin et couleur parentale ; pas de loess historique"
+    },
+    {
+      "id": "B04",
+      "group": "Terres et matrices",
+      "label": "Terre argileuse compacte",
+      "conditions": "Argile dominante, fines exposées, sans dessiccation active",
+      "candidates": [
+        "acg:Ground026",
+        "ph:brown_mud"
+      ],
+      "adaptation": "Faible relief, humidité variable"
+    },
+    {
+      "id": "B05",
+      "group": "Terres et matrices",
+      "label": "Terre argileuse fissurée",
+      "conditions": "Matrice argileuse, N4 sec et cycle humide-sec autorisé",
+      "candidates": [
+        "ph:dry_ground_01",
+        "ph:mud_cracked_dry_03"
+      ],
+      "adaptation": "Échelle des fissures modeste ; pas de vertisol déduit"
+    },
+    {
+      "id": "B06",
+      "group": "Terres et matrices",
+      "label": "Terre poussiéreuse sèche",
+      "conditions": "Fines disponibles, faible humidité, surface meuble découverte",
+      "candidates": [
+        "acg:Ground104",
+        "acg:Ground099"
+      ],
+      "adaptation": "Palette claire et faible relief"
+    },
+    {
+      "id": "B07",
+      "group": "Terres et matrices",
+      "label": "Terre grumeleuse",
+      "conditions": "Matrice meuble irrégulière, humidité intermédiaire et faible exposition rocheuse",
+      "candidates": [
+        "acg:Ground104",
+        "ph:brown_mud_dry"
+      ],
+      "adaptation": "Granularité de motte ; pas de sillons agricoles"
+    },
+    {
+      "id": "B08",
+      "group": "Terres et matrices",
+      "label": "Terre sèche caillouteuse",
+      "conditions": "Matrice avec fragments épars, stock grossier modéré",
+      "candidates": [
+        "ph:brown_mud_dry",
+        "acg:Ground091"
+      ],
+      "adaptation": "Pierrosité à l'échelle de l'exemplaire"
+    },
+    {
+      "id": "B09",
+      "group": "Terres et matrices",
+      "label": "Boue fine humide",
+      "conditions": "Matrice fine émergée, état humide/saturé N4, hors eau libre",
+      "candidates": [
+        "acg:Ground036",
+        "acg:Ground083"
+      ],
+      "adaptation": "Rugosité abaissée, eau libre traitée séparément"
+    },
+    {
+      "id": "B10",
+      "group": "Terres et matrices",
+      "label": "Boue desséchée en plaques",
+      "conditions": "Fines cohésives, cycle sec-humide N4, surface desséchée",
+      "candidates": [
+        "ph:mud_cracked_dry_riverbed_002",
+        "ph:mud_cracked_dry_03"
+      ],
+      "adaptation": "Plaques et fissures calibrées ; pas de nouvelle histoire pédologique"
+    },
+    {
+      "id": "B11",
+      "group": "Terres et matrices",
+      "label": "Terre chaude ocre ou rougeâtre",
+      "conditions": "Source minérale et palette compatibles, exposition sèche",
+      "candidates": [
+        "ph:red_dirt_mud_01",
+        "acg:Ground098"
+      ],
+      "adaptation": "Variante d'apparence ; ne signifie pas latérite ou cuirasse"
+    },
+    {
+      "id": "B12",
+      "group": "Terres et matrices",
+      "label": "Résidu minéral friable",
+      "conditions": "Altération élevée, manteau résiduel exposé, stock de fines",
+      "candidates": [
+        "ph:dirt",
+        "acg:Ground105"
+      ],
+      "adaptation": "Couleur du parent et rugosité ; pas de profil géologique profond"
+    },
+    {
+      "id": "S01",
+      "group": "Sables et fragments",
+      "label": "Sable fin clair",
+      "conditions": "Sable libre disponible et dominant, peu de grossiers",
+      "candidates": [
+        "ph:sand_02",
+        "acg:Ground052"
+      ],
+      "adaptation": "Palette sableuse compatible, sec ou humide"
+    },
+    {
+      "id": "S02",
+      "group": "Sables et fragments",
+      "label": "Sable fin ocre",
+      "conditions": "Sable libre dominant, parent/palette plus chauds",
+      "candidates": [
+        "ph:sand_03",
+        "acg:Ground080"
+      ],
+      "adaptation": "Teinte choisie sans créer une province minérale"
+    },
+    {
+      "id": "S03",
+      "group": "Sables et fragments",
+      "label": "Sable graveleux",
+      "conditions": "Stock sableux avec petits fragments abondants",
+      "candidates": [
+        "ph:gravelly_sand",
+        "ph:sandy_gravel_02"
+      ],
+      "adaptation": "Pré-mélange photographique sable et gravier"
+    },
+    {
+      "id": "S04",
+      "group": "Sables et fragments",
+      "label": "Sable humide compact",
+      "conditions": "Stock sableux, N4 humide, proximité typée ou rétention",
+      "candidates": [
+        "ph:damp_sand",
+        "ph:damp_beach_sand"
+      ],
+      "adaptation": "Reste une surface de sol, pas un plan d'eau"
+    },
+    {
+      "id": "S05",
+      "group": "Sables et fragments",
+      "label": "Sable à rides fines",
+      "conditions": "Sable libre, vent ou courant pertinent, pas de grande dune à fabriquer",
+      "candidates": [
+        "ph:sand_02",
+        "ph:sand_03"
+      ],
+      "adaptation": "Base PBR et rides directionnelles fines ; ensemble choisi une fois"
+    },
+    {
+      "id": "S06",
+      "group": "Sables et fragments",
+      "label": "Sable ferme peu texturé",
+      "conditions": "Sable compact ou mélange fin stable, faible rugosité",
+      "candidates": [
+        "acg:Ground092C",
+        "acg:Ground101"
+      ],
+      "adaptation": "Relief faible ; pas de sel ou gypse inféré"
+    },
+    {
+      "id": "G01",
+      "group": "Sables et fragments",
+      "label": "Gravier fin anguleux",
+      "conditions": "Stock grossier fin, angularité élevée, couverture importante",
+      "candidates": [
+        "ph:gravel_stones",
+        "acg:Gravel043"
+      ],
+      "adaptation": "Taille réelle des éléments à calibrer"
+    },
+    {
+      "id": "G02",
+      "group": "Sables et fragments",
+      "label": "Gravier grossier",
+      "conditions": "Stock anguleux plus gros, dépôt ou versant connecté",
+      "candidates": [
+        "ph:rock_ground",
+        "acg:Gravel022"
+      ],
+      "adaptation": "Fragments et matrice déjà présents dans la photo"
+    },
+    {
+      "id": "G03",
+      "group": "Sables et fragments",
+      "label": "Petits galets roulés",
+      "conditions": "N2 arrondi et petites tailles, dépôt remanié",
+      "candidates": [
+        "ph:clean_pebbles",
+        "acg:Gravel020"
+      ],
+      "adaptation": "Provenance du dépôt, pas roche locale imposée"
+    },
+    {
+      "id": "G04",
+      "group": "Sables et fragments",
+      "label": "Galets moyens et gros",
+      "conditions": "N2 arrondi et tailles plus grandes, stock remanié suffisant",
+      "candidates": [
+        "ph:dry_river_pebbles",
+        "ph:ganges_river_pebbles"
+      ],
+      "adaptation": "Échelle cohérente, pas grossissement arbitraire d'un grain"
+    },
+    {
+      "id": "G05",
+      "group": "Sables et fragments",
+      "label": "Sol à pierres dispersées",
+      "conditions": "Fragments sur matrice, couverture intermédiaire",
+      "candidates": [
+        "ph:rocks_ground_03",
+        "acg:Rocks009"
+      ],
+      "adaptation": "Texture de zone pré-mélangée"
+    },
+    {
+      "id": "G06",
+      "group": "Sables et fragments",
+      "label": "Roche et fragments en mosaïque",
+      "conditions": "N1 roche partielle avec manteau meuble et fragments",
+      "candidates": [
+        "ph:rocks_ground_06",
+        "ph:rocks_ground_05"
+      ],
+      "adaptation": "Pas de double ajout de la matrice ni de gros volumes nouveaux"
+    },
+    {
+      "id": "R01",
+      "group": "Roches",
+      "label": "Aspect granitique fin compact",
+      "conditions": "Parent granitique, faible altération et rugosité faible",
+      "candidates": [
+        "ph:rock_01",
+        "acg:Rock024"
+      ],
+      "adaptation": "Grain et couleur de roche ; exemplaires non certifiés pétrographiquement"
+    },
+    {
+      "id": "R02",
+      "group": "Roches",
+      "label": "Aspect granitique à gros grain",
+      "conditions": "Parent granitique, rugosité intermédiaire, roche exposée",
+      "candidates": [
+        "ph:rock_boulder_dry",
+        "acg:Rock048"
+      ],
+      "adaptation": "Préserver le détail minéral, teinte granitique"
+    },
+    {
+      "id": "R03",
+      "group": "Roches",
+      "label": "Roche granitique très fracturée",
+      "conditions": "Parent granitique, forte rugosité structurelle ou pente exposée",
+      "candidates": [
+        "acg:Rock058",
+        "ph:rock_05"
+      ],
+      "adaptation": "Fractures de l'exemplaire, pas faille géologique ajoutée"
+    },
+    {
+      "id": "R04",
+      "group": "Roches",
+      "label": "Roche granitique altérée",
+      "conditions": "Parent granitique et altération forte, transition vers fines",
+      "candidates": [
+        "ph:rock_surface",
+        "ph:rock_08"
+      ],
+      "adaptation": "Atténuation du relief et palette d'altération"
+    },
+    {
+      "id": "R05",
+      "group": "Roches",
+      "label": "Roche carbonatée claire massive",
+      "conditions": "Parent calcaire, roche exposée compacte",
+      "candidates": [
+        "acg:Rock018",
+        "ph:rock_08"
+      ],
+      "adaptation": "Couleur claire, sans karst nouveau"
+    },
+    {
+      "id": "R06",
+      "group": "Roches",
+      "label": "Roche carbonatée en bancs",
+      "conditions": "Parent calcaire, structure orientée exposée",
+      "candidates": [
+        "acg:Rock019",
+        "acg:Rock017"
+      ],
+      "adaptation": "Orientation du motif ; pas de pendage supplémentaire exigé"
+    },
+    {
+      "id": "R07",
+      "group": "Roches",
+      "label": "Roche carbonatée fissurée",
+      "conditions": "Parent calcaire, forte rugosité ou exposition",
+      "candidates": [
+        "acg:Rock027",
+        "ph:rock_boulder_dry"
+      ],
+      "adaptation": "Fissures locales de texture, pas de dolines"
+    },
+    {
+      "id": "R08",
+      "group": "Roches",
+      "label": "Roche carbonatée altérée ou piquetée",
+      "conditions": "Parent calcaire, altération et couverture mince",
+      "candidates": [
+        "acg:Rock032",
+        "ph:rock_08"
+      ],
+      "adaptation": "Aspect érodé générique ; pas de dissolution simulée"
+    },
+    {
+      "id": "R09",
+      "group": "Roches",
+      "label": "Grès stratifié",
+      "conditions": "Parent gréseux, exposition de structure orientée",
+      "candidates": [
+        "ph:cliff_side",
+        "acg:Rock061"
+      ],
+      "adaptation": "Aligner les bancs, éviter rotations aléatoires"
+    },
+    {
+      "id": "R10",
+      "group": "Roches",
+      "label": "Grès massif ocre",
+      "conditions": "Parent gréseux, roche compacte et palette chaude",
+      "candidates": [
+        "ph:rock_face",
+        "acg:Rock029"
+      ],
+      "adaptation": "Conserver la structure sans revendiquer une chimie précise"
+    },
+    {
+      "id": "R11",
+      "group": "Roches",
+      "label": "Grès clair altéré",
+      "conditions": "Parent gréseux, altération et teinte claire compatibles",
+      "candidates": [
+        "ph:worn_rock_natural_01",
+        "acg:Rock052"
+      ],
+      "adaptation": "Teinte et échelle des aspérités"
+    },
+    {
+      "id": "R12",
+      "group": "Roches",
+      "label": "Grès grossier fracturé",
+      "conditions": "Parent gréseux, forte rugosité et pente exposée",
+      "candidates": [
+        "ph:rock_boulder_cracked",
+        "acg:Rock056"
+      ],
+      "adaptation": "Gros reliefs limités à leur représentation de texture"
+    },
+    {
+      "id": "R13",
+      "group": "Roches",
+      "label": "Roche argilo-marneuse compacte",
+      "conditions": "Parent argilo-marneux, roche accessible et compacte",
+      "candidates": [
+        "ph:rock_surface",
+        "acg:Rock041"
+      ],
+      "adaptation": "Substitut visuel fin, adouci et recoloré"
+    },
+    {
+      "id": "R14",
+      "group": "Roches",
+      "label": "Roche argilo-marneuse en plaquettes",
+      "conditions": "Parent argilo-marneux, texture structurale rugueuse",
+      "candidates": [
+        "acg:Rock060",
+        "acg:Rock034"
+      ],
+      "adaptation": "Plaquettes visuelles ; pas de schistosité physique déduite"
+    },
+    {
+      "id": "R15",
+      "group": "Roches",
+      "label": "Roche argilo-marneuse finement stratifiée",
+      "conditions": "Parent argilo-marneux, structure orientée, altération modérée",
+      "candidates": [
+        "acg:Rock027",
+        "acg:Rock038"
+      ],
+      "adaptation": "Direction fournie, variation de relief limitée"
+    },
+    {
+      "id": "R16",
+      "group": "Roches",
+      "label": "Roche argilo-marneuse friable",
+      "conditions": "Parent argilo-marneux, altération forte et fines disponibles",
+      "candidates": [
+        "acg:Rock062",
+        "ph:rock_2"
+      ],
+      "adaptation": "Transition vers B12/B04, pas d'alternance de classes sèches"
+    },
+    {
+      "id": "R17",
+      "group": "Roches",
+      "label": "Roche basaltique sombre compacte",
+      "conditions": "Parent basaltique, faible altération, rugosité faible",
+      "candidates": [
+        "ph:dark_rock_02",
+        "acg:Rock031"
+      ],
+      "adaptation": "Apparence de roche sombre, pas lave récente"
+    },
+    {
+      "id": "R18",
+      "group": "Roches",
+      "label": "Roche basaltique sombre fissurée",
+      "conditions": "Parent basaltique, rugosité ou exposition fortes",
+      "candidates": [
+        "ph:dark_rock",
+        "acg:Rock035"
+      ],
+      "adaptation": "Réseau de fractures du matériau, pas coulée inventée"
+    },
+    {
+      "id": "R19",
+      "group": "Roches",
+      "label": "Roche basaltique très rugueuse",
+      "conditions": "Parent basaltique, forte rugosité et fragmentation",
+      "candidates": [
+        "acg:Rock047",
+        "acg:Rock048"
+      ],
+      "adaptation": "Aspect massif ou bréchique générique ; pas de scorie identifiée"
+    },
+    {
+      "id": "R20",
+      "group": "Roches",
+      "label": "Roche basaltique altérée",
+      "conditions": "Parent basaltique, altération élevée, humidité et dépôts compatibles",
+      "candidates": [
+        "acg:Rock033",
+        "acg:Rock037"
+      ],
+      "adaptation": "Patine et teinte d'altération, sans diagnostic minéralogique"
+    },
+    {
+      "id": "R21",
+      "group": "Roches",
+      "label": "Roche à mousse",
+      "conditions": "Roche exposée et contexte humide à couvert ras, exposition favorable",
+      "candidates": [
+        "acg:Rock064",
+        "ph:mossy_rock"
+      ],
+      "adaptation": "Texture combinant déjà roche et mousse ; contexte identifié"
+    },
+    {
+      "id": "R22",
+      "group": "Roches",
+      "label": "Roche à lichens ou mouchetures végétales",
+      "conditions": "Roche exposée, contexte frais/relativement stable de couvert ras",
+      "candidates": [
+        "ph:lichen_rock",
+        "acg:Rock046S"
+      ],
+      "adaptation": "Apparence de surface, sans nouvelle carte biologique"
+    },
+    {
+      "id": "F01",
+      "group": "Sols forestiers",
+      "label": "Litière feuillue sèche dense",
+      "conditions": "Contexte feuillu, sec ou saison sèche N4, manteau accessible",
+      "candidates": [
+        "ph:forest_leaves_03",
+        "ph:forest_leaves_04"
+      ],
+      "adaptation": "Feuilles et sol déjà mélangés, aucun arbre peint"
+    },
+    {
+      "id": "F02",
+      "group": "Sols forestiers",
+      "label": "Litière feuillue claire",
+      "conditions": "Contexte feuillu, palette claire ou saison de chute déclarée",
+      "candidates": [
+        "acg:ScatteredLeaves008",
+        "acg:ScatteredLeaves009"
+      ],
+      "adaptation": "Choix saisonnier global, pas changement à chaque pixel"
+    },
+    {
+      "id": "F03",
+      "group": "Sols forestiers",
+      "label": "Sol feuillu humide sombre",
+      "conditions": "Contexte feuillu, humidité forte et organique",
+      "candidates": [
+        "acg:Ground023",
+        "ph:mud_forest"
+      ],
+      "adaptation": "Pas de tourbe physique revendiquée"
+    },
+    {
+      "id": "F04",
+      "group": "Sols forestiers",
+      "label": "Litière d'aiguilles dense",
+      "conditions": "Contexte résineux, manteau d'aiguilles stable",
+      "candidates": [
+        "ph:forrest_ground_03",
+        "acg:Ground082S"
+      ],
+      "adaptation": "Détail d'aiguilles, sans génération de conifères"
+    },
+    {
+      "id": "F05",
+      "group": "Sols forestiers",
+      "label": "Sol résineux sableux",
+      "conditions": "Contexte résineux, matrice sableuse disponible",
+      "candidates": [
+        "ph:forrest_sand_01",
+        "acg:Ground084"
+      ],
+      "adaptation": "Conserver le sable et les débris, pas vert uniforme"
+    },
+    {
+      "id": "F06",
+      "group": "Sols forestiers",
+      "label": "Sol forestier mixte",
+      "conditions": "Contexte forestier mélangé ou profil d'apparence mixte",
+      "candidates": [
+        "ph:leaves_forest_ground",
+        "acg:Ground078"
+      ],
+      "adaptation": "Mélange déjà présent dans la texture"
+    },
+    {
+      "id": "F07",
+      "group": "Sols forestiers",
+      "label": "Sol forestier caillouteux",
+      "conditions": "Contexte forestier, N1/N2 fragments ou roche partielle",
+      "candidates": [
+        "ph:forest_ground_04",
+        "acg:Ground085"
+      ],
+      "adaptation": "Pas reclassé en roche massive"
+    },
+    {
+      "id": "F08",
+      "group": "Sols forestiers",
+      "label": "Sol forestier mousseux",
+      "conditions": "Contexte forestier humide, couverture ras mousseux autorisée",
+      "candidates": [
+        "ph:forest_leaves_02",
+        "acg:Ground024"
+      ],
+      "adaptation": "Mousse et feuilles d'un même exemplaire"
+    },
+    {
+      "id": "F09",
+      "group": "Sols forestiers",
+      "label": "Sol forestier à racines apparentes",
+      "conditions": "Contexte forestier, manteau mince ou décapage relatif",
+      "candidates": [
+        "ph:roots",
+        "acg:Ground076"
+      ],
+      "adaptation": "Racines au sol, pas tronc ou houppier"
+    },
+    {
+      "id": "F10",
+      "group": "Sols forestiers",
+      "label": "Terre de clairière forestière",
+      "conditions": "Contexte forestier ouvert, peu de litière, matrice exposée",
+      "candidates": [
+        "acg:Ground071",
+        "ph:dirt_floor"
+      ],
+      "adaptation": "Raccord vers les sols herbacés et nus"
+    },
+    {
+      "id": "F11",
+      "group": "Sols forestiers",
+      "label": "Sol de forêt sèche",
+      "conditions": "Contexte forestier chaud/sec ou phase sèche N4",
+      "candidates": [
+        "ph:dry_decay_leaves",
+        "ph:winter_leaves"
+      ],
+      "adaptation": "Débris secs, recoloration bornée"
+    },
+    {
+      "id": "F12",
+      "group": "Sols forestiers",
+      "label": "Sol de forêt chaude humide",
+      "conditions": "Contexte forestier chaud/humide, matrice organique et litière",
+      "candidates": [
+        "ph:leaves_forest_ground",
+        "acg:Ground106"
+      ],
+      "adaptation": "Approximation de l'apparence au sol, pas identification d'essences tropicales"
+    },
+    {
+      "id": "P01",
+      "group": "Prairies steppes savanes et couverts ras",
+      "label": "Prairie verte dense",
+      "conditions": "Contexte herbacé, humidité moyenne à forte, matrice stable",
+      "candidates": [
+        "acg:Grass001",
+        "acg:Grass002"
+      ],
+      "adaptation": "Texture au ras du sol, pas arbres"
+    },
+    {
+      "id": "P02",
+      "group": "Prairies steppes savanes et couverts ras",
+      "label": "Pelouse ou prairie très rase",
+      "conditions": "Contexte herbacé ras, surface régulière et stable",
+      "candidates": [
+        "acg:Grass005",
+        "acg:Grass006"
+      ],
+      "adaptation": "Usage d'apparence, pas preuve de tonte humaine"
+    },
+    {
+      "id": "P03",
+      "group": "Prairies steppes savanes et couverts ras",
+      "label": "Prairie verte hétérogène",
+      "conditions": "Contexte herbacé, sol et humidité variables",
+      "candidates": [
+        "acg:Grass003",
+        "acg:Grass004"
+      ],
+      "adaptation": "Hétérogénéité de l'exemplaire, identité stable"
+    },
+    {
+      "id": "P04",
+      "group": "Prairies steppes savanes et couverts ras",
+      "label": "Prairie à feuilles larges",
+      "conditions": "Contexte herbacé relativement chaud/humide",
+      "candidates": [
+        "ph:leafy_grass",
+        "acg:Grass001"
+      ],
+      "adaptation": "Petites plantes du couvert ras, pas canopée"
+    },
+    {
+      "id": "P05",
+      "group": "Prairies steppes savanes et couverts ras",
+      "label": "Prairie dense à aspect haut",
+      "conditions": "Contexte herbacé productif et humide",
+      "candidates": [
+        "ph:leafy_grass",
+        "acg:Grass004"
+      ],
+      "adaptation": "Aspect de dessus ; la texture ne crée pas des tiges en volume"
+    },
+    {
+      "id": "P06",
+      "group": "Prairies steppes savanes et couverts ras",
+      "label": "Prairie sèche feutrée",
+      "conditions": "Contexte herbacé, N4 sec, faible eau disponible",
+      "candidates": [
+        "ph:withered_grass",
+        "ph:grass_ground"
+      ],
+      "adaptation": "Structure sèche conservée, pas seul changement de couleur du gazon"
+    },
+    {
+      "id": "P07",
+      "group": "Prairies steppes savanes et couverts ras",
+      "label": "Prairie clairsemée sur terre",
+      "conditions": "Couvert herbacé ouvert, matrice visible",
+      "candidates": [
+        "ph:sparse_grass",
+        "acg:Ground003"
+      ],
+      "adaptation": "Texture pré-mélangée plantes/terre"
+    },
+    {
+      "id": "P08",
+      "group": "Prairies steppes savanes et couverts ras",
+      "label": "Steppe sèche",
+      "conditions": "Contexte herbacé sec, eau limitée, peu de couvert dense",
+      "candidates": [
+        "ph:sparse_grass",
+        "acg:Ground013"
+      ],
+      "adaptation": "Palette paille et terre, densité adaptée au type"
+    },
+    {
+      "id": "P09",
+      "group": "Prairies steppes savanes et couverts ras",
+      "label": "Steppe pierreuse",
+      "conditions": "Contexte herbacé ouvert et froid/sec, fragments/roche partielle",
+      "candidates": [
+        "ph:aerial_grass_rock",
+        "acg:Ground067"
+      ],
+      "adaptation": "Pré-mélange minéral/herbacé ; pas matériau de roche nue"
+    },
+    {
+      "id": "P10",
+      "group": "Prairies steppes savanes et couverts ras",
+      "label": "Savane verte de saison humide",
+      "conditions": "Contexte chaud saisonnier, herbacé dominant, N4 humide",
+      "candidates": [
+        "ph:leafy_grass",
+        "acg:Grass004"
+      ],
+      "adaptation": "Aucun arbre dans cette texture de sol"
+    },
+    {
+      "id": "P11",
+      "group": "Prairies steppes savanes et couverts ras",
+      "label": "Savane sèche à herbes continues",
+      "conditions": "Contexte chaud saisonnier, N4 sec, couvert herbacé continu",
+      "candidates": [
+        "ph:withered_grass",
+        "ph:grass_ground"
+      ],
+      "adaptation": "Graminées sèches, sans convertir tout le sol en sable"
+    },
+    {
+      "id": "P12",
+      "group": "Prairies steppes savanes et couverts ras",
+      "label": "Savane ouverte à terre visible",
+      "conditions": "Contexte chaud, eau limitée et couverture herbacée discontinue",
+      "candidates": [
+        "ph:sparse_grass",
+        "acg:Ground003"
+      ],
+      "adaptation": "Matrice visible et teintée selon source"
+    },
+    {
+      "id": "P13",
+      "group": "Prairies steppes savanes et couverts ras",
+      "label": "Savane pierreuse",
+      "conditions": "Contexte chaud herbacé ouvert et stock grossier",
+      "candidates": [
+        "ph:brown_mud_rocks_01",
+        "acg:Ground067"
+      ],
+      "adaptation": "Herbe/terre/pierres comme une seule recette de zone"
+    },
+    {
+      "id": "P14",
+      "group": "Prairies steppes savanes et couverts ras",
+      "label": "Prairie alpine rase",
+      "conditions": "Contexte froid d'altitude, sol émergé non enneigé, couvert ras",
+      "candidates": [
+        "acg:Grass003",
+        "acg:Grass004"
+      ],
+      "adaptation": "Pas de pergélisol ni glacier inféré"
+    },
+    {
+      "id": "P15",
+      "group": "Prairies steppes savanes et couverts ras",
+      "label": "Tapis herbeux et mousseux froid",
+      "conditions": "Contexte froid humide, couvert ras et matrice stable",
+      "candidates": [
+        "acg:Moss003",
+        "acg:Grass003"
+      ],
+      "adaptation": "Apparence de type toundra, sans histoire de pergélisol"
+    },
+    {
+      "id": "P16",
+      "group": "Prairies steppes savanes et couverts ras",
+      "label": "Lande herbacée mêlée de débris",
+      "conditions": "Contexte frais, ouvert, humidité moyenne, couvert ras mixte",
+      "candidates": [
+        "acg:Ground037",
+        "ph:forrest_ground_01"
+      ],
+      "adaptation": "Petites plantes et débris, sans arbustes ou arbres en volume"
+    },
+    {
+      "id": "H01",
+      "group": "Sols humides et mousses",
+      "label": "Herbe humide sombre",
+      "conditions": "Couvert herbacé, bas-fond ou rétention et état humide",
+      "candidates": [
+        "acg:Grass002",
+        "acg:Ground037"
+      ],
+      "adaptation": "Fines et vert sombre, pas végétation flottante"
+    },
+    {
+      "id": "H02",
+      "group": "Sols humides et mousses",
+      "label": "Sol humide organique découvert",
+      "conditions": "Matrice riche en organique et N4 humide, hors eau libre",
+      "candidates": [
+        "acg:Ground051",
+        "ph:mud_forest"
+      ],
+      "adaptation": "Aspect organique, pas tourbe épaisse"
+    },
+    {
+      "id": "H03",
+      "group": "Sols humides et mousses",
+      "label": "Mousse dense en coussinets",
+      "conditions": "Profil de couvert ras humide et support stable",
+      "candidates": [
+        "acg:Moss002",
+        "acg:Moss004"
+      ],
+      "adaptation": "Texture complète de mousse, pas forêt"
+    },
+    {
+      "id": "H04",
+      "group": "Sols humides et mousses",
+      "label": "Mousse mêlée de litière",
+      "conditions": "Contexte humide, débris et couvert ras mêlés",
+      "candidates": [
+        "acg:Moss001",
+        "ph:forest_leaves_02"
+      ],
+      "adaptation": "Un pré-mélange, pas deux couches comptées deux fois"
+    },
+    {
+      "id": "H05",
+      "group": "Sols humides et mousses",
+      "label": "Pierres humides et mousse",
+      "conditions": "Support ou fragments rocheux partiels et couvert ras humide",
+      "candidates": [
+        "acg:Ground068",
+        "acg:Ground086"
+      ],
+      "adaptation": "Roche/mousse, identité locale minérale conservée"
+    },
+    {
+      "id": "H06",
+      "group": "Sols humides et mousses",
+      "label": "Berge humide à petits débris",
+      "conditions": "N3 rive typée, matrice fine humide et couvert ras/débris",
+      "candidates": [
+        "acg:Ground024",
+        "ph:mud_forest"
+      ],
+      "adaptation": "Pas de marée, salinité ou tourbière requises"
+    },
+    {
+      "id": "N01",
+      "group": "Neiges et glaces de surface",
+      "label": "Neige fraîche fine",
+      "conditions": "Preset neige fraîche N4 et rétention locale positive",
+      "candidates": [
+        "acg:Snow005",
+        "acg:Snow001"
+      ],
+      "adaptation": "Manteau de surface, pas glacier"
+    },
+    {
+      "id": "N02",
+      "group": "Neiges et glaces de surface",
+      "label": "Neige fraîche irrégulière",
+      "conditions": "Preset neige N4, surface moins régulière",
+      "candidates": [
+        "acg:Snow002",
+        "acg:Snow004"
+      ],
+      "adaptation": "Relief de surface calibré"
+    },
+    {
+      "id": "N03",
+      "group": "Neiges et glaces de surface",
+      "label": "Neige compacte",
+      "conditions": "Preset neige compacte ou tassée naturellement N4",
+      "candidates": [
+        "acg:Snow007A",
+        "acg:Snow010A"
+      ],
+      "adaptation": "Candidats sans traces humaines explicites"
+    },
+    {
+      "id": "N04",
+      "group": "Neiges et glaces de surface",
+      "label": "Neige transformée granuleuse",
+      "conditions": "Preset neige ancienne/transformée N4",
+      "candidates": [
+        "acg:Snow003",
+        "acg:Snow010A"
+      ],
+      "adaptation": "Variante d'apparence, pas simulation de métamorphisme"
+    },
+    {
+      "id": "N05",
+      "group": "Neiges et glaces de surface",
+      "label": "Neige soufflée à ondulations",
+      "conditions": "Preset neige ventée N4 et direction régionale disponible",
+      "candidates": [
+        "acg:Snow008A",
+        "acg:Snow009A"
+      ],
+      "adaptation": "Alignement du motif, pas corniche nouvelle"
+    },
+    {
+      "id": "N06",
+      "group": "Neiges et glaces de surface",
+      "label": "Neige salie ou fondante",
+      "conditions": "Preset fonte N4, support minéral ou organique affleurant",
+      "candidates": [
+        "acg:Snow014",
+        "ph:snow_04"
+      ],
+      "adaptation": "Couverture et humidité séparées de la roche mère"
+    },
+    {
+      "id": "N07",
+      "group": "Neiges et glaces de surface",
+      "label": "Neige discontinue sur herbe",
+      "conditions": "Preset neige partielle N4, contexte herbacé sous-jacent",
+      "candidates": [
+        "acg:Snow015"
+      ],
+      "adaptation": "Pré-mélange déjà enneigé ; ne pas ajouter une seconde neige complète"
+    },
+    {
+      "id": "N08",
+      "group": "Neiges et glaces de surface",
+      "label": "Neige discontinue sur minéral",
+      "conditions": "Preset neige partielle N4, support rocheux/minéral",
+      "candidates": [
+        "acg:Snow014",
+        "ph:snow_05"
+      ],
+      "adaptation": "Taches minérales et raccord au support ; pas une histoire glaciaire"
+    },
+    {
+      "id": "I01",
+      "group": "Neiges et glaces de surface",
+      "label": "Glace à petites fractures",
+      "conditions": "Preset glace de surface N4, sol ou eau gelée explicitement sélectionné",
+      "candidates": [
+        "acg:Ice002",
+        "acg:Ice003"
+      ],
+      "adaptation": "Niveau d'eau conservé si domaine aquatique"
+    },
+    {
+      "id": "I02",
+      "group": "Neiges et glaces de surface",
+      "label": "Glace à grandes fractures",
+      "conditions": "Preset glace fracturée N4 et domaine compatible",
+      "candidates": [
+        "acg:Ice001",
+        "acg:Ice004"
+      ],
+      "adaptation": "Aucune banquise ou crevasse de glacier générée par le choix de texture"
+    }
+  ],
+  "assets": [
+    {
+      "ref": "acg:Grass001",
+      "provider": "ambientCG",
+      "assetId": "Grass001",
+      "url": "https://ambientcg.com/a/Grass001",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Grass 001",
+      "tags": [
+        "001",
+        "1",
+        "cover",
+        "dark",
+        "dense",
+        "fresh",
+        "garden",
+        "grass",
+        "grass001",
+        "green",
+        "ground",
+        "lawn",
+        "natural",
+        "park",
+        "short",
+        "soft"
+      ],
+      "status": "provider-download-metadata-checked",
+      "usedByTypes": [
+        "P01",
+        "P04"
+      ],
+      "normalConvention": "Select NormalGL or convert NormalDX during pack ingestion; convention not certified by summary metadata",
+      "visualReview": "official-lit-preview-examined"
+    },
+    {
+      "ref": "acg:Grass002",
+      "provider": "ambientCG",
+      "assetId": "Grass002",
+      "url": "https://ambientcg.com/a/Grass002",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Grass 002",
+      "tags": [
+        "2",
+        "grass",
+        "green",
+        "ground"
+      ],
+      "status": "provider-download-metadata-checked",
+      "usedByTypes": [
+        "P01",
+        "H01"
+      ],
+      "normalConvention": "Select NormalGL or convert NormalDX during pack ingestion; convention not certified by summary metadata",
+      "visualReview": "official-lit-preview-examined"
+    },
+    {
+      "ref": "acg:Grass003",
+      "provider": "ambientCG",
+      "assetId": "Grass003",
+      "url": "https://ambientcg.com/a/Grass003",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Grass 003",
+      "tags": [
+        "3",
+        "grass",
+        "green",
+        "ground"
+      ],
+      "status": "provider-download-metadata-checked",
+      "usedByTypes": [
+        "P03",
+        "P14",
+        "P15"
+      ],
+      "normalConvention": "Select NormalGL or convert NormalDX during pack ingestion; convention not certified by summary metadata",
+      "visualReview": "official-lit-preview-examined"
+    },
+    {
+      "ref": "acg:Grass004",
+      "provider": "ambientCG",
+      "assetId": "Grass004",
+      "url": "https://ambientcg.com/a/Grass004",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Grass 004",
+      "tags": [
+        "004",
+        "4",
+        "dense",
+        "garden",
+        "grass",
+        "grass004",
+        "green",
+        "ground",
+        "lawn",
+        "lush",
+        "natural",
+        "park",
+        "short",
+        "soft",
+        "suburban"
+      ],
+      "status": "provider-download-metadata-checked",
+      "usedByTypes": [
+        "P03",
+        "P05",
+        "P10",
+        "P14"
+      ],
+      "normalConvention": "Select NormalGL or convert NormalDX during pack ingestion; convention not certified by summary metadata",
+      "visualReview": "official-lit-preview-examined"
+    },
+    {
+      "ref": "acg:Grass005",
+      "provider": "ambientCG",
+      "assetId": "Grass005",
+      "url": "https://ambientcg.com/a/Grass005",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Grass 005",
+      "tags": [
+        "5",
+        "clean",
+        "grass",
+        "green",
+        "lawn",
+        "short"
+      ],
+      "status": "provider-download-metadata-checked",
+      "usedByTypes": [
+        "P02"
+      ],
+      "normalConvention": "Select NormalGL or convert NormalDX during pack ingestion; convention not certified by summary metadata",
+      "visualReview": "official-lit-preview-examined"
+    },
+    {
+      "ref": "acg:Grass006",
+      "provider": "ambientCG",
+      "assetId": "Grass006",
+      "url": "https://ambientcg.com/a/Grass006",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Grass 006",
+      "tags": [
+        "6",
+        "grass",
+        "lawn"
+      ],
+      "status": "provider-download-metadata-checked",
+      "usedByTypes": [
+        "P02"
+      ],
+      "normalConvention": "Select NormalGL or convert NormalDX during pack ingestion; convention not certified by summary metadata",
+      "visualReview": "official-lit-preview-examined"
+    },
+    {
+      "ref": "acg:Gravel020",
+      "provider": "ambientCG",
+      "assetId": "Gravel020",
+      "url": "https://ambientcg.com/a/Gravel020",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Gravel 020",
+      "tags": [
+        "20",
+        "gravel",
+        "ground",
+        "pebbles",
+        "river",
+        "rocks"
+      ],
+      "status": "provider-download-metadata-checked",
+      "usedByTypes": [
+        "G03"
+      ],
+      "normalConvention": "Select NormalGL or convert NormalDX during pack ingestion; convention not certified by summary metadata",
+      "visualReview": "metadata-only"
+    },
+    {
+      "ref": "acg:Gravel022",
+      "provider": "ambientCG",
+      "assetId": "Gravel022",
+      "url": "https://ambientcg.com/a/Gravel022",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Gravel 022",
+      "tags": [
+        "22",
+        "dirt",
+        "gravel",
+        "grey",
+        "ground",
+        "pebbles",
+        "stone"
+      ],
+      "status": "provider-download-metadata-checked",
+      "usedByTypes": [
+        "G02"
+      ],
+      "normalConvention": "Select NormalGL or convert NormalDX during pack ingestion; convention not certified by summary metadata",
+      "visualReview": "metadata-only"
+    },
+    {
+      "ref": "acg:Gravel043",
+      "provider": "ambientCG",
+      "assetId": "Gravel043",
+      "url": "https://ambientcg.com/a/Gravel043",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Gravel 043",
+      "tags": [
+        "043",
+        "43",
+        "fine",
+        "grained",
+        "granular",
+        "gravel",
+        "gravel043",
+        "gray",
+        "ground",
+        "industrial",
+        "natural",
+        "pathway",
+        "rough",
+        "stone"
+      ],
+      "status": "provider-download-metadata-checked",
+      "usedByTypes": [
+        "G01"
+      ],
+      "normalConvention": "Select NormalGL or convert NormalDX during pack ingestion; convention not certified by summary metadata",
+      "visualReview": "metadata-only"
+    },
+    {
+      "ref": "acg:Ground003",
+      "provider": "ambientCG",
+      "assetId": "Ground003",
+      "url": "https://ambientcg.com/a/Ground003",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Ground 003",
+      "tags": [
+        "3",
+        "dirt",
+        "grass",
+        "green",
+        "ground"
+      ],
+      "status": "provider-download-metadata-checked",
+      "usedByTypes": [
+        "P07",
+        "P12"
+      ],
+      "normalConvention": "Select NormalGL or convert NormalDX during pack ingestion; convention not certified by summary metadata",
+      "visualReview": "official-lit-preview-examined"
+    },
+    {
+      "ref": "acg:Ground013",
+      "provider": "ambientCG",
+      "assetId": "Ground013",
+      "url": "https://ambientcg.com/a/Ground013",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Ground 013",
+      "tags": [
+        "13",
+        "dirt",
+        "grass",
+        "green",
+        "ground"
+      ],
+      "status": "provider-download-metadata-checked",
+      "usedByTypes": [
+        "P08"
+      ],
+      "normalConvention": "Select NormalGL or convert NormalDX during pack ingestion; convention not certified by summary metadata",
+      "visualReview": "official-lit-preview-examined"
+    },
+    {
+      "ref": "acg:Ground023",
+      "provider": "ambientCG",
+      "assetId": "Ground023",
+      "url": "https://ambientcg.com/a/Ground023",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Ground 023",
+      "tags": [
+        "23",
+        "brown",
+        "dirt",
+        "forest",
+        "ground",
+        "leaves",
+        "mud",
+        "sticks"
+      ],
+      "status": "provider-download-metadata-checked",
+      "usedByTypes": [
+        "F03"
+      ],
+      "normalConvention": "Select NormalGL or convert NormalDX during pack ingestion; convention not certified by summary metadata",
+      "visualReview": "official-lit-preview-examined"
+    },
+    {
+      "ref": "acg:Ground024",
+      "provider": "ambientCG",
+      "assetId": "Ground024",
+      "url": "https://ambientcg.com/a/Ground024",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Ground 024",
+      "tags": [
+        "24",
+        "dirt",
+        "forest",
+        "ground",
+        "moss",
+        "mud",
+        "sticks"
+      ],
+      "status": "provider-download-metadata-checked",
+      "usedByTypes": [
+        "F08",
+        "H06"
+      ],
+      "normalConvention": "Select NormalGL or convert NormalDX during pack ingestion; convention not certified by summary metadata",
+      "visualReview": "official-lit-preview-examined"
+    },
+    {
+      "ref": "acg:Ground026",
+      "provider": "ambientCG",
+      "assetId": "Ground026",
+      "url": "https://ambientcg.com/a/Ground026",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Ground 026",
+      "tags": [
+        "26",
+        "clay",
+        "flat",
+        "ground",
+        "mud",
+        "smooth"
+      ],
+      "status": "provider-download-metadata-checked",
+      "usedByTypes": [
+        "B04"
+      ],
+      "normalConvention": "Select NormalGL or convert NormalDX during pack ingestion; convention not certified by summary metadata",
+      "visualReview": "metadata-only"
+    },
+    {
+      "ref": "acg:Ground036",
+      "provider": "ambientCG",
+      "assetId": "Ground036",
+      "url": "https://ambientcg.com/a/Ground036",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Ground 036",
+      "tags": [
+        "36",
+        "dirt",
+        "ground",
+        "mud",
+        "soil"
+      ],
+      "status": "provider-download-metadata-checked",
+      "usedByTypes": [
+        "B09"
+      ],
+      "normalConvention": "Select NormalGL or convert NormalDX during pack ingestion; convention not certified by summary metadata",
+      "visualReview": "metadata-only"
+    },
+    {
+      "ref": "acg:Ground037",
+      "provider": "ambientCG",
+      "assetId": "Ground037",
+      "url": "https://ambientcg.com/a/Ground037",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Ground 037",
+      "tags": [
+        "037",
+        "37",
+        "damp",
+        "earth",
+        "forest",
+        "grass",
+        "green",
+        "ground",
+        "moss",
+        "natural",
+        "overgrown",
+        "rough",
+        "woodland"
+      ],
+      "status": "provider-download-metadata-checked",
+      "usedByTypes": [
+        "P16",
+        "H01"
+      ],
+      "normalConvention": "Select NormalGL or convert NormalDX during pack ingestion; convention not certified by summary metadata",
+      "visualReview": "official-lit-preview-examined"
+    },
+    {
+      "ref": "acg:Ground048",
+      "provider": "ambientCG",
+      "assetId": "Ground048",
+      "url": "https://ambientcg.com/a/Ground048",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Ground 048",
+      "tags": [
+        "48",
+        "brown",
+        "dirt",
+        "ground",
+        "soil"
+      ],
+      "status": "provider-download-metadata-checked",
+      "usedByTypes": [
+        "B01"
+      ],
+      "normalConvention": "Select NormalGL or convert NormalDX during pack ingestion; convention not certified by summary metadata",
+      "visualReview": "metadata-only"
+    },
+    {
+      "ref": "acg:Ground051",
+      "provider": "ambientCG",
+      "assetId": "Ground051",
+      "url": "https://ambientcg.com/a/Ground051",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Ground 051",
+      "tags": [
+        "51",
+        "dark",
+        "dirt",
+        "ground",
+        "mud"
+      ],
+      "status": "provider-download-metadata-checked",
+      "usedByTypes": [
+        "B02",
+        "H02"
+      ],
+      "normalConvention": "Select NormalGL or convert NormalDX during pack ingestion; convention not certified by summary metadata",
+      "visualReview": "metadata-only"
+    },
+    {
+      "ref": "acg:Ground052",
+      "provider": "ambientCG",
+      "assetId": "Ground052",
+      "url": "https://ambientcg.com/a/Ground052",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Ground 052",
+      "tags": [
+        "52",
+        "beach",
+        "dirt",
+        "ground",
+        "sand",
+        "white"
+      ],
+      "status": "provider-download-metadata-checked",
+      "usedByTypes": [
+        "S01"
+      ],
+      "normalConvention": "Select NormalGL or convert NormalDX during pack ingestion; convention not certified by summary metadata",
+      "visualReview": "metadata-only"
+    },
+    {
+      "ref": "acg:Ground067",
+      "provider": "ambientCG",
+      "assetId": "Ground067",
+      "url": "https://ambientcg.com/a/Ground067",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Ground 067",
+      "tags": [
+        "67",
+        "brown",
+        "dirt",
+        "forest",
+        "ground",
+        "rocky"
+      ],
+      "status": "provider-download-metadata-checked",
+      "usedByTypes": [
+        "P09",
+        "P13"
+      ],
+      "normalConvention": "Select NormalGL or convert NormalDX during pack ingestion; convention not certified by summary metadata",
+      "visualReview": "official-lit-preview-examined"
+    },
+    {
+      "ref": "acg:Ground068",
+      "provider": "ambientCG",
+      "assetId": "Ground068",
+      "url": "https://ambientcg.com/a/Ground068",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Ground 068",
+      "tags": [
+        "68",
+        "dirt",
+        "ground",
+        "moss",
+        "rock",
+        "stone"
+      ],
+      "status": "provider-download-metadata-checked",
+      "usedByTypes": [
+        "H05"
+      ],
+      "normalConvention": "Select NormalGL or convert NormalDX during pack ingestion; convention not certified by summary metadata",
+      "visualReview": "official-lit-preview-examined"
+    },
+    {
+      "ref": "acg:Ground071",
+      "provider": "ambientCG",
+      "assetId": "Ground071",
+      "url": "https://ambientcg.com/a/Ground071",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Ground 071",
+      "tags": [
+        "71",
+        "dirt",
+        "forest",
+        "ground",
+        "mud",
+        "sticks"
+      ],
+      "status": "provider-download-metadata-checked",
+      "usedByTypes": [
+        "F10"
+      ],
+      "normalConvention": "Select NormalGL or convert NormalDX during pack ingestion; convention not certified by summary metadata",
+      "visualReview": "official-lit-preview-examined"
+    },
+    {
+      "ref": "acg:Ground076",
+      "provider": "ambientCG",
+      "assetId": "Ground076",
+      "url": "https://ambientcg.com/a/Ground076",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Ground 076",
+      "tags": [
+        "076",
+        "76",
+        "forest",
+        "ground",
+        "ground076",
+        "leaves",
+        "roots",
+        "tree"
+      ],
+      "status": "provider-download-metadata-checked",
+      "usedByTypes": [
+        "F09"
+      ],
+      "normalConvention": "Select NormalGL or convert NormalDX during pack ingestion; convention not certified by summary metadata",
+      "visualReview": "official-lit-preview-examined"
+    },
+    {
+      "ref": "acg:Ground078",
+      "provider": "ambientCG",
+      "assetId": "Ground078",
+      "url": "https://ambientcg.com/a/Ground078",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Ground 078",
+      "tags": [
+        "78",
+        "brown",
+        "floor",
+        "forest",
+        "ground",
+        "path",
+        "rocky",
+        "sand",
+        "stones"
+      ],
+      "status": "provider-download-metadata-checked",
+      "usedByTypes": [
+        "F06"
+      ],
+      "normalConvention": "Select NormalGL or convert NormalDX during pack ingestion; convention not certified by summary metadata",
+      "visualReview": "official-lit-preview-examined"
+    },
+    {
+      "ref": "acg:Ground080",
+      "provider": "ambientCG",
+      "assetId": "Ground080",
+      "url": "https://ambientcg.com/a/Ground080",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Ground 080",
+      "tags": [
+        "80",
+        "beach",
+        "brown",
+        "dirt",
+        "ground",
+        "sand",
+        "yellow"
+      ],
+      "status": "provider-download-metadata-checked",
+      "usedByTypes": [
+        "S02"
+      ],
+      "normalConvention": "Select NormalGL or convert NormalDX during pack ingestion; convention not certified by summary metadata",
+      "visualReview": "metadata-only"
+    },
+    {
+      "ref": "acg:Ground082S",
+      "provider": "ambientCG",
+      "assetId": "Ground082S",
+      "url": "https://ambientcg.com/a/Ground082S",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Ground 082 S",
+      "tags": [
+        "82",
+        "brown",
+        "dirt",
+        "forest",
+        "ground",
+        "soil"
+      ],
+      "status": "provider-download-metadata-checked",
+      "usedByTypes": [
+        "F04"
+      ],
+      "normalConvention": "Select NormalGL or convert NormalDX during pack ingestion; convention not certified by summary metadata",
+      "visualReview": "official-lit-preview-examined"
+    },
+    {
+      "ref": "acg:Ground083",
+      "provider": "ambientCG",
+      "assetId": "Ground083",
+      "url": "https://ambientcg.com/a/Ground083",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Ground 083",
+      "tags": [
+        "83",
+        "beige",
+        "dirt",
+        "ground",
+        "mud",
+        "river",
+        "sand",
+        "soil",
+        "water",
+        "wet"
+      ],
+      "status": "provider-download-metadata-checked",
+      "usedByTypes": [
+        "B09"
+      ],
+      "normalConvention": "Select NormalGL or convert NormalDX during pack ingestion; convention not certified by summary metadata",
+      "visualReview": "metadata-only"
+    },
+    {
+      "ref": "acg:Ground084",
+      "provider": "ambientCG",
+      "assetId": "Ground084",
+      "url": "https://ambientcg.com/a/Ground084",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Ground 084",
+      "tags": [
+        "84",
+        "brown",
+        "forest",
+        "ground",
+        "roots",
+        "sand"
+      ],
+      "status": "provider-download-metadata-checked",
+      "usedByTypes": [
+        "F05"
+      ],
+      "normalConvention": "Select NormalGL or convert NormalDX during pack ingestion; convention not certified by summary metadata",
+      "visualReview": "official-lit-preview-examined"
+    },
+    {
+      "ref": "acg:Ground085",
+      "provider": "ambientCG",
+      "assetId": "Ground085",
+      "url": "https://ambientcg.com/a/Ground085",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Ground 085",
+      "tags": [
+        "85",
+        "brown",
+        "dirt",
+        "forest",
+        "ground",
+        "rocky",
+        "stones"
+      ],
+      "status": "provider-download-metadata-checked",
+      "usedByTypes": [
+        "F07"
+      ],
+      "normalConvention": "Select NormalGL or convert NormalDX during pack ingestion; convention not certified by summary metadata",
+      "visualReview": "official-lit-preview-examined"
+    },
+    {
+      "ref": "acg:Ground086",
+      "provider": "ambientCG",
+      "assetId": "Ground086",
+      "url": "https://ambientcg.com/a/Ground086",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Ground 086",
+      "tags": [
+        "86",
+        "dirt",
+        "forest",
+        "ground",
+        "path",
+        "rocky",
+        "stones"
+      ],
+      "status": "provider-download-metadata-checked",
+      "usedByTypes": [
+        "H05"
+      ],
+      "normalConvention": "Select NormalGL or convert NormalDX during pack ingestion; convention not certified by summary metadata",
+      "visualReview": "official-lit-preview-examined"
+    },
+    {
+      "ref": "acg:Ground091",
+      "provider": "ambientCG",
+      "assetId": "Ground091",
+      "url": "https://ambientcg.com/a/Ground091",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Ground 091",
+      "tags": [
+        "91",
+        "dirt",
+        "fine",
+        "gravel",
+        "grey",
+        "ground"
+      ],
+      "status": "provider-download-metadata-checked",
+      "usedByTypes": [
+        "B08"
+      ],
+      "normalConvention": "Select NormalGL or convert NormalDX during pack ingestion; convention not certified by summary metadata",
+      "visualReview": "metadata-only"
+    },
+    {
+      "ref": "acg:Ground092C",
+      "provider": "ambientCG",
+      "assetId": "Ground092C",
+      "url": "https://ambientcg.com/a/Ground092C",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Ground 092 C",
+      "tags": [
+        "092",
+        "92",
+        "beige",
+        "damp",
+        "earthy",
+        "gritty",
+        "ground",
+        "ground092c",
+        "layered",
+        "mud",
+        "natural",
+        "organic",
+        "outdoor",
+        "rough",
+        "rural",
+        "sand",
+        "soil",
+        "uneven",
+        "wet",
+        "white"
+      ],
+      "status": "provider-download-metadata-checked",
+      "usedByTypes": [
+        "S06"
+      ],
+      "normalConvention": "Select NormalGL or convert NormalDX during pack ingestion; convention not certified by summary metadata",
+      "visualReview": "metadata-only"
+    },
+    {
+      "ref": "acg:Ground098",
+      "provider": "ambientCG",
+      "assetId": "Ground098",
+      "url": "https://ambientcg.com/a/Ground098",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Ground 098",
+      "tags": [
+        "098",
+        "98",
+        "beach",
+        "beige",
+        "brown",
+        "desert",
+        "dry",
+        "earthy",
+        "environmental",
+        "eroded",
+        "granular",
+        "ground",
+        "landscape",
+        "layered",
+        "natural",
+        "organic",
+        "outdoor",
+        "rough",
+        "rural",
+        "sand",
+        "waves",
+        "wavy"
+      ],
+      "status": "provider-download-metadata-checked",
+      "usedByTypes": [
+        "B11"
+      ],
+      "normalConvention": "Select NormalGL or convert NormalDX during pack ingestion; convention not certified by summary metadata",
+      "visualReview": "metadata-only"
+    },
+    {
+      "ref": "acg:Ground099",
+      "provider": "ambientCG",
+      "assetId": "Ground099",
+      "url": "https://ambientcg.com/a/Ground099",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Ground 099",
+      "tags": [
+        "099",
+        "99",
+        "beige",
+        "brown",
+        "dark",
+        "dry",
+        "eroded",
+        "granular",
+        "gritty",
+        "ground",
+        "layered",
+        "natural",
+        "organic",
+        "outdoor",
+        "riverbed",
+        "rough",
+        "rustic",
+        "sand",
+        "uneven"
+      ],
+      "status": "provider-download-metadata-checked",
+      "usedByTypes": [
+        "B06"
+      ],
+      "normalConvention": "Select NormalGL or convert NormalDX during pack ingestion; convention not certified by summary metadata",
+      "visualReview": "metadata-only"
+    },
+    {
+      "ref": "acg:Ground101",
+      "provider": "ambientCG",
+      "assetId": "Ground101",
+      "url": "https://ambientcg.com/a/Ground101",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Ground 101",
+      "tags": [
+        "101",
+        "beige",
+        "clear",
+        "fine",
+        "grained",
+        "granular",
+        "ground",
+        "ground101",
+        "light",
+        "minimalist",
+        "natural",
+        "neutral",
+        "outdoor",
+        "pristine",
+        "rural",
+        "sand",
+        "smooth",
+        "soft",
+        "uniform",
+        "white"
+      ],
+      "status": "provider-download-metadata-checked",
+      "usedByTypes": [
+        "S06"
+      ],
+      "normalConvention": "Select NormalGL or convert NormalDX during pack ingestion; convention not certified by summary metadata",
+      "visualReview": "metadata-only"
+    },
+    {
+      "ref": "acg:Ground102",
+      "provider": "ambientCG",
+      "assetId": "Ground102",
+      "url": "https://ambientcg.com/a/Ground102",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Ground 102",
+      "tags": [
+        "102",
+        "beige",
+        "brown",
+        "compressed",
+        "dirt",
+        "dry",
+        "ground",
+        "ground102",
+        "outdoor",
+        "rough",
+        "sand",
+        "stamped",
+        "uneven"
+      ],
+      "status": "provider-download-metadata-checked",
+      "usedByTypes": [
+        "B03"
+      ],
+      "normalConvention": "Select NormalGL or convert NormalDX during pack ingestion; convention not certified by summary metadata",
+      "visualReview": "metadata-only"
+    },
+    {
+      "ref": "acg:Ground103",
+      "provider": "ambientCG",
+      "assetId": "Ground103",
+      "url": "https://ambientcg.com/a/Ground103",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Ground 103",
+      "tags": [
+        "103",
+        "brown",
+        "dirt",
+        "earth",
+        "ground",
+        "natural",
+        "old",
+        "outdoor",
+        "rough",
+        "soil",
+        "uneven"
+      ],
+      "status": "provider-download-metadata-checked",
+      "usedByTypes": [
+        "B03"
+      ],
+      "normalConvention": "Select NormalGL or convert NormalDX during pack ingestion; convention not certified by summary metadata",
+      "visualReview": "metadata-only"
+    },
+    {
+      "ref": "acg:Ground104",
+      "provider": "ambientCG",
+      "assetId": "Ground104",
+      "url": "https://ambientcg.com/a/Ground104",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Ground 104",
+      "tags": [
+        "104",
+        "beige",
+        "brown",
+        "crumbly",
+        "dirt",
+        "earth",
+        "granular",
+        "ground",
+        "natural",
+        "old",
+        "rough",
+        "soil",
+        "uneven"
+      ],
+      "status": "provider-download-metadata-checked",
+      "usedByTypes": [
+        "B06",
+        "B07"
+      ],
+      "normalConvention": "Select NormalGL or convert NormalDX during pack ingestion; convention not certified by summary metadata",
+      "visualReview": "metadata-only"
+    },
+    {
+      "ref": "acg:Ground105",
+      "provider": "ambientCG",
+      "assetId": "Ground105",
+      "url": "https://ambientcg.com/a/Ground105",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Ground 105",
+      "tags": [
+        "105",
+        "beige",
+        "brown",
+        "dirt",
+        "dry",
+        "eroded",
+        "ground",
+        "layered",
+        "natural",
+        "rough",
+        "rustic",
+        "uneven"
+      ],
+      "status": "provider-download-metadata-checked",
+      "usedByTypes": [
+        "B12"
+      ],
+      "normalConvention": "Select NormalGL or convert NormalDX during pack ingestion; convention not certified by summary metadata",
+      "visualReview": "metadata-only"
+    },
+    {
+      "ref": "acg:Ground106",
+      "provider": "ambientCG",
+      "assetId": "Ground106",
+      "url": "https://ambientcg.com/a/Ground106",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Ground 106",
+      "tags": [
+        "106",
+        "beige",
+        "brown",
+        "dirt",
+        "earth",
+        "forest",
+        "ground",
+        "ground106",
+        "leaves",
+        "mud",
+        "muddy",
+        "natural",
+        "river",
+        "riverbed",
+        "rough",
+        "scattered",
+        "soil",
+        "uneven"
+      ],
+      "status": "provider-download-metadata-checked",
+      "usedByTypes": [
+        "F12"
+      ],
+      "normalConvention": "Select NormalGL or convert NormalDX during pack ingestion; convention not certified by summary metadata",
+      "visualReview": "official-lit-preview-examined"
+    },
+    {
+      "ref": "acg:Ice001",
+      "provider": "ambientCG",
+      "assetId": "Ice001",
+      "url": "https://ambientcg.com/a/Ice001",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Ice 001",
+      "tags": [
+        "1",
+        "frozen",
+        "green",
+        "ice",
+        "lake",
+        "shiny",
+        "water"
+      ],
+      "status": "provider-download-metadata-checked",
+      "usedByTypes": [
+        "I02"
+      ],
+      "normalConvention": "Select NormalGL or convert NormalDX during pack ingestion; convention not certified by summary metadata",
+      "visualReview": "official-lit-preview-examined"
+    },
+    {
+      "ref": "acg:Ice002",
+      "provider": "ambientCG",
+      "assetId": "Ice002",
+      "url": "https://ambientcg.com/a/Ice002",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Ice 002",
+      "tags": [
+        "2",
+        "frozen",
+        "green",
+        "ice",
+        "lake",
+        "shiny",
+        "water"
+      ],
+      "status": "provider-download-metadata-checked",
+      "usedByTypes": [
+        "I01"
+      ],
+      "normalConvention": "Select NormalGL or convert NormalDX during pack ingestion; convention not certified by summary metadata",
+      "visualReview": "official-lit-preview-examined"
+    },
+    {
+      "ref": "acg:Ice003",
+      "provider": "ambientCG",
+      "assetId": "Ice003",
+      "url": "https://ambientcg.com/a/Ice003",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Ice 003",
+      "tags": [
+        "3",
+        "frozen",
+        "green",
+        "ice",
+        "lake",
+        "shiny",
+        "water"
+      ],
+      "status": "provider-download-metadata-checked",
+      "usedByTypes": [
+        "I01"
+      ],
+      "normalConvention": "Select NormalGL or convert NormalDX during pack ingestion; convention not certified by summary metadata",
+      "visualReview": "official-lit-preview-examined"
+    },
+    {
+      "ref": "acg:Ice004",
+      "provider": "ambientCG",
+      "assetId": "Ice004",
+      "url": "https://ambientcg.com/a/Ice004",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Ice 004",
+      "tags": [
+        "4",
+        "frozen",
+        "green",
+        "ice",
+        "lake",
+        "shiny",
+        "water"
+      ],
+      "status": "provider-download-metadata-checked",
+      "usedByTypes": [
+        "I02"
+      ],
+      "normalConvention": "Select NormalGL or convert NormalDX during pack ingestion; convention not certified by summary metadata",
+      "visualReview": "official-lit-preview-examined"
+    },
+    {
+      "ref": "acg:Moss001",
+      "provider": "ambientCG",
+      "assetId": "Moss001",
+      "url": "https://ambientcg.com/a/Moss001",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Moss 001",
+      "tags": [
+        "1",
+        "ground",
+        "moss",
+        "mossy"
+      ],
+      "status": "provider-download-metadata-checked",
+      "usedByTypes": [
+        "H04"
+      ],
+      "normalConvention": "Select NormalGL or convert NormalDX during pack ingestion; convention not certified by summary metadata",
+      "visualReview": "official-lit-preview-examined"
+    },
+    {
+      "ref": "acg:Moss002",
+      "provider": "ambientCG",
+      "assetId": "Moss002",
+      "url": "https://ambientcg.com/a/Moss002",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Moss 002",
+      "tags": [
+        "2",
+        "green",
+        "moss",
+        "mossy"
+      ],
+      "status": "provider-download-metadata-checked",
+      "usedByTypes": [
+        "H03"
+      ],
+      "normalConvention": "Select NormalGL or convert NormalDX during pack ingestion; convention not certified by summary metadata",
+      "visualReview": "official-lit-preview-examined"
+    },
+    {
+      "ref": "acg:Moss003",
+      "provider": "ambientCG",
+      "assetId": "Moss003",
+      "url": "https://ambientcg.com/a/Moss003",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Moss 003",
+      "tags": [
+        "3",
+        "green",
+        "moss",
+        "mossy"
+      ],
+      "status": "provider-download-metadata-checked",
+      "usedByTypes": [
+        "P15"
+      ],
+      "normalConvention": "Select NormalGL or convert NormalDX during pack ingestion; convention not certified by summary metadata",
+      "visualReview": "official-lit-preview-examined"
+    },
+    {
+      "ref": "acg:Moss004",
+      "provider": "ambientCG",
+      "assetId": "Moss004",
+      "url": "https://ambientcg.com/a/Moss004",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Moss 004",
+      "tags": [
+        "4",
+        "green",
+        "moss",
+        "mossy"
+      ],
+      "status": "provider-download-metadata-checked",
+      "usedByTypes": [
+        "H03"
+      ],
+      "normalConvention": "Select NormalGL or convert NormalDX during pack ingestion; convention not certified by summary metadata",
+      "visualReview": "official-lit-preview-examined"
+    },
+    {
+      "ref": "acg:Rock017",
+      "provider": "ambientCG",
+      "assetId": "Rock017",
+      "url": "https://ambientcg.com/a/Rock017",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Rock 017",
+      "tags": [
+        "17",
+        "cliff",
+        "light",
+        "rock",
+        "stone",
+        "white"
+      ],
+      "status": "provider-download-metadata-checked",
+      "usedByTypes": [
+        "R06"
+      ],
+      "normalConvention": "Select NormalGL or convert NormalDX during pack ingestion; convention not certified by summary metadata",
+      "visualReview": "metadata-only"
+    },
+    {
+      "ref": "acg:Rock018",
+      "provider": "ambientCG",
+      "assetId": "Rock018",
+      "url": "https://ambientcg.com/a/Rock018",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Rock 018",
+      "tags": [
+        "18",
+        "cliff",
+        "light",
+        "rock",
+        "stone",
+        "white"
+      ],
+      "status": "provider-download-metadata-checked",
+      "usedByTypes": [
+        "R05"
+      ],
+      "normalConvention": "Select NormalGL or convert NormalDX during pack ingestion; convention not certified by summary metadata",
+      "visualReview": "official-lit-preview-examined"
+    },
+    {
+      "ref": "acg:Rock019",
+      "provider": "ambientCG",
+      "assetId": "Rock019",
+      "url": "https://ambientcg.com/a/Rock019",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Rock 019",
+      "tags": [
+        "19",
+        "beige",
+        "clean",
+        "cliff",
+        "light",
+        "rock",
+        "stone",
+        "white"
+      ],
+      "status": "provider-download-metadata-checked",
+      "usedByTypes": [
+        "R06"
+      ],
+      "normalConvention": "Select NormalGL or convert NormalDX during pack ingestion; convention not certified by summary metadata",
+      "visualReview": "official-lit-preview-examined"
+    },
+    {
+      "ref": "acg:Rock024",
+      "provider": "ambientCG",
+      "assetId": "Rock024",
+      "url": "https://ambientcg.com/a/Rock024",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Rock 024",
+      "tags": [
+        "24",
+        "cliff",
+        "rock",
+        "smooth",
+        "stone"
+      ],
+      "status": "provider-download-metadata-checked",
+      "usedByTypes": [
+        "R01"
+      ],
+      "normalConvention": "Select NormalGL or convert NormalDX during pack ingestion; convention not certified by summary metadata",
+      "visualReview": "official-lit-preview-examined"
+    },
+    {
+      "ref": "acg:Rock027",
+      "provider": "ambientCG",
+      "assetId": "Rock027",
+      "url": "https://ambientcg.com/a/Rock027",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Rock 027",
+      "tags": [
+        "27",
+        "cliff",
+        "gray",
+        "grey",
+        "light",
+        "rock",
+        "stone"
+      ],
+      "status": "provider-download-metadata-checked",
+      "usedByTypes": [
+        "R07",
+        "R15"
+      ],
+      "normalConvention": "Select NormalGL or convert NormalDX during pack ingestion; convention not certified by summary metadata",
+      "visualReview": "official-lit-preview-examined"
+    },
+    {
+      "ref": "acg:Rock029",
+      "provider": "ambientCG",
+      "assetId": "Rock029",
+      "url": "https://ambientcg.com/a/Rock029",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Rock 029",
+      "tags": [
+        "29",
+        "cliff",
+        "desert",
+        "orange",
+        "red",
+        "rock",
+        "stone"
+      ],
+      "status": "provider-download-metadata-checked",
+      "usedByTypes": [
+        "R10"
+      ],
+      "normalConvention": "Select NormalGL or convert NormalDX during pack ingestion; convention not certified by summary metadata",
+      "visualReview": "official-lit-preview-examined"
+    },
+    {
+      "ref": "acg:Rock031",
+      "provider": "ambientCG",
+      "assetId": "Rock031",
+      "url": "https://ambientcg.com/a/Rock031",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Rock 031",
+      "tags": [
+        "31",
+        "black",
+        "cliff",
+        "dark",
+        "grey",
+        "rock"
+      ],
+      "status": "provider-download-metadata-checked",
+      "usedByTypes": [
+        "R17"
+      ],
+      "normalConvention": "Select NormalGL or convert NormalDX during pack ingestion; convention not certified by summary metadata",
+      "visualReview": "metadata-only"
+    },
+    {
+      "ref": "acg:Rock032",
+      "provider": "ambientCG",
+      "assetId": "Rock032",
+      "url": "https://ambientcg.com/a/Rock032",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Rock 032",
+      "tags": [
+        "32",
+        "cliff",
+        "gray",
+        "light",
+        "rock",
+        "stone"
+      ],
+      "status": "provider-download-metadata-checked",
+      "usedByTypes": [
+        "R08"
+      ],
+      "normalConvention": "Select NormalGL or convert NormalDX during pack ingestion; convention not certified by summary metadata",
+      "visualReview": "metadata-only"
+    },
+    {
+      "ref": "acg:Rock033",
+      "provider": "ambientCG",
+      "assetId": "Rock033",
+      "url": "https://ambientcg.com/a/Rock033",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Rock 033",
+      "tags": [
+        "33",
+        "black",
+        "cliff",
+        "dirty",
+        "rock",
+        "stone"
+      ],
+      "status": "provider-download-metadata-checked",
+      "usedByTypes": [
+        "R20"
+      ],
+      "normalConvention": "Select NormalGL or convert NormalDX during pack ingestion; convention not certified by summary metadata",
+      "visualReview": "metadata-only"
+    },
+    {
+      "ref": "acg:Rock034",
+      "provider": "ambientCG",
+      "assetId": "Rock034",
+      "url": "https://ambientcg.com/a/Rock034",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Rock 034",
+      "tags": [
+        "34",
+        "cliff",
+        "grey",
+        "rock",
+        "stone",
+        "wall"
+      ],
+      "status": "provider-download-metadata-checked",
+      "usedByTypes": [
+        "R14"
+      ],
+      "normalConvention": "Select NormalGL or convert NormalDX during pack ingestion; convention not certified by summary metadata",
+      "visualReview": "official-lit-preview-examined"
+    },
+    {
+      "ref": "acg:Rock035",
+      "provider": "ambientCG",
+      "assetId": "Rock035",
+      "url": "https://ambientcg.com/a/Rock035",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Rock 035",
+      "tags": [
+        "35",
+        "black",
+        "cave",
+        "cliff",
+        "grey",
+        "rock",
+        "stone"
+      ],
+      "status": "provider-download-metadata-checked",
+      "usedByTypes": [
+        "R18"
+      ],
+      "normalConvention": "Select NormalGL or convert NormalDX during pack ingestion; convention not certified by summary metadata",
+      "visualReview": "official-lit-preview-examined"
+    },
+    {
+      "ref": "acg:Rock037",
+      "provider": "ambientCG",
+      "assetId": "Rock037",
+      "url": "https://ambientcg.com/a/Rock037",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Rock 037",
+      "tags": [
+        "37",
+        "black",
+        "cliff",
+        "dirty",
+        "leaks",
+        "rock",
+        "stone"
+      ],
+      "status": "provider-download-metadata-checked",
+      "usedByTypes": [
+        "R20"
+      ],
+      "normalConvention": "Select NormalGL or convert NormalDX during pack ingestion; convention not certified by summary metadata",
+      "visualReview": "metadata-only"
+    },
+    {
+      "ref": "acg:Rock038",
+      "provider": "ambientCG",
+      "assetId": "Rock038",
+      "url": "https://ambientcg.com/a/Rock038",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Rock 038",
+      "tags": [
+        "38",
+        "cliff",
+        "grey",
+        "rock",
+        "stone"
+      ],
+      "status": "provider-download-metadata-checked",
+      "usedByTypes": [
+        "R15"
+      ],
+      "normalConvention": "Select NormalGL or convert NormalDX during pack ingestion; convention not certified by summary metadata",
+      "visualReview": "metadata-only"
+    },
+    {
+      "ref": "acg:Rock041",
+      "provider": "ambientCG",
+      "assetId": "Rock041",
+      "url": "https://ambientcg.com/a/Rock041",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Rock 041",
+      "tags": [
+        "41",
+        "black",
+        "rock",
+        "smooth"
+      ],
+      "status": "provider-download-metadata-checked",
+      "usedByTypes": [
+        "R13"
+      ],
+      "normalConvention": "Select NormalGL or convert NormalDX during pack ingestion; convention not certified by summary metadata",
+      "visualReview": "official-lit-preview-examined"
+    },
+    {
+      "ref": "acg:Rock046S",
+      "provider": "ambientCG",
+      "assetId": "Rock046S",
+      "url": "https://ambientcg.com/a/Rock046S",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Rock 046 S",
+      "tags": [
+        "46",
+        "grey",
+        "moss",
+        "rock"
+      ],
+      "status": "provider-download-metadata-checked",
+      "usedByTypes": [
+        "R22"
+      ],
+      "normalConvention": "Select NormalGL or convert NormalDX during pack ingestion; convention not certified by summary metadata",
+      "visualReview": "metadata-only"
+    },
+    {
+      "ref": "acg:Rock047",
+      "provider": "ambientCG",
+      "assetId": "Rock047",
+      "url": "https://ambientcg.com/a/Rock047",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Rock 047",
+      "tags": [
+        "47",
+        "dark",
+        "rock",
+        "rough"
+      ],
+      "status": "provider-download-metadata-checked",
+      "usedByTypes": [
+        "R19"
+      ],
+      "normalConvention": "Select NormalGL or convert NormalDX during pack ingestion; convention not certified by summary metadata",
+      "visualReview": "metadata-only"
+    },
+    {
+      "ref": "acg:Rock048",
+      "provider": "ambientCG",
+      "assetId": "Rock048",
+      "url": "https://ambientcg.com/a/Rock048",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Rock 048",
+      "tags": [
+        "48",
+        "dark",
+        "rock",
+        "rough"
+      ],
+      "status": "provider-download-metadata-checked",
+      "usedByTypes": [
+        "R02",
+        "R19"
+      ],
+      "normalConvention": "Select NormalGL or convert NormalDX during pack ingestion; convention not certified by summary metadata",
+      "visualReview": "official-lit-preview-examined"
+    },
+    {
+      "ref": "acg:Rock052",
+      "provider": "ambientCG",
+      "assetId": "Rock052",
+      "url": "https://ambientcg.com/a/Rock052",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Rock 052",
+      "tags": [
+        "52",
+        "beige",
+        "cliff",
+        "mountain",
+        "rock",
+        "stone",
+        "wall"
+      ],
+      "status": "provider-download-metadata-checked",
+      "usedByTypes": [
+        "R11"
+      ],
+      "normalConvention": "Select NormalGL or convert NormalDX during pack ingestion; convention not certified by summary metadata",
+      "visualReview": "official-lit-preview-examined"
+    },
+    {
+      "ref": "acg:Rock056",
+      "provider": "ambientCG",
+      "assetId": "Rock056",
+      "url": "https://ambientcg.com/a/Rock056",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Rock 056",
+      "tags": [
+        "56",
+        "brown",
+        "cliff",
+        "mountain",
+        "rock",
+        "rocky",
+        "stone",
+        "wall"
+      ],
+      "status": "provider-download-metadata-checked",
+      "usedByTypes": [
+        "R12"
+      ],
+      "normalConvention": "Select NormalGL or convert NormalDX during pack ingestion; convention not certified by summary metadata",
+      "visualReview": "official-lit-preview-examined"
+    },
+    {
+      "ref": "acg:Rock058",
+      "provider": "ambientCG",
+      "assetId": "Rock058",
+      "url": "https://ambientcg.com/a/Rock058",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Rock 058",
+      "tags": [
+        "58",
+        "cliff",
+        "grey",
+        "rock"
+      ],
+      "status": "provider-download-metadata-checked",
+      "usedByTypes": [
+        "R03"
+      ],
+      "normalConvention": "Select NormalGL or convert NormalDX during pack ingestion; convention not certified by summary metadata",
+      "visualReview": "official-lit-preview-examined"
+    },
+    {
+      "ref": "acg:Rock060",
+      "provider": "ambientCG",
+      "assetId": "Rock060",
+      "url": "https://ambientcg.com/a/Rock060",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Rock 060",
+      "tags": [
+        "60",
+        "cliff",
+        "rock",
+        "rough"
+      ],
+      "status": "provider-download-metadata-checked",
+      "usedByTypes": [
+        "R14"
+      ],
+      "normalConvention": "Select NormalGL or convert NormalDX during pack ingestion; convention not certified by summary metadata",
+      "visualReview": "official-lit-preview-examined"
+    },
+    {
+      "ref": "acg:Rock061",
+      "provider": "ambientCG",
+      "assetId": "Rock061",
+      "url": "https://ambientcg.com/a/Rock061",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Rock 061",
+      "tags": [
+        "61",
+        "brown",
+        "cliff",
+        "grey",
+        "rock",
+        "sand"
+      ],
+      "status": "provider-download-metadata-checked",
+      "usedByTypes": [
+        "R09"
+      ],
+      "normalConvention": "Select NormalGL or convert NormalDX during pack ingestion; convention not certified by summary metadata",
+      "visualReview": "official-lit-preview-examined"
+    },
+    {
+      "ref": "acg:Rock062",
+      "provider": "ambientCG",
+      "assetId": "Rock062",
+      "url": "https://ambientcg.com/a/Rock062",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Rock 062",
+      "tags": [
+        "062",
+        "62",
+        "cracked",
+        "eroded",
+        "grey",
+        "natural",
+        "outdoor",
+        "rock",
+        "rough",
+        "rugged",
+        "sand",
+        "stone",
+        "uneven"
+      ],
+      "status": "provider-download-metadata-checked",
+      "usedByTypes": [
+        "R16"
+      ],
+      "normalConvention": "Select NormalGL or convert NormalDX during pack ingestion; convention not certified by summary metadata",
+      "visualReview": "official-lit-preview-examined"
+    },
+    {
+      "ref": "acg:Rock064",
+      "provider": "ambientCG",
+      "assetId": "Rock064",
+      "url": "https://ambientcg.com/a/Rock064",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Rock 064",
+      "tags": [
+        "064",
+        "64",
+        "forest",
+        "gray",
+        "green",
+        "irregular",
+        "moss",
+        "mossy",
+        "natural",
+        "old",
+        "rock",
+        "rock064",
+        "rough",
+        "stacked",
+        "stone"
+      ],
+      "status": "provider-download-metadata-checked",
+      "usedByTypes": [
+        "R21"
+      ],
+      "normalConvention": "Select NormalGL or convert NormalDX during pack ingestion; convention not certified by summary metadata",
+      "visualReview": "official-lit-preview-examined"
+    },
+    {
+      "ref": "acg:Rocks009",
+      "provider": "ambientCG",
+      "assetId": "Rocks009",
+      "url": "https://ambientcg.com/a/Rocks009",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Rocks 009",
+      "tags": [
+        "9",
+        "ground",
+        "pebbles",
+        "rock",
+        "rocks",
+        "stone",
+        "stones"
+      ],
+      "status": "provider-download-metadata-checked",
+      "usedByTypes": [
+        "G05"
+      ],
+      "normalConvention": "Select NormalGL or convert NormalDX during pack ingestion; convention not certified by summary metadata",
+      "visualReview": "metadata-only"
+    },
+    {
+      "ref": "acg:ScatteredLeaves008",
+      "provider": "ambientCG",
+      "assetId": "ScatteredLeaves008",
+      "url": "https://ambientcg.com/a/ScatteredLeaves008",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Scattered Leaves 008",
+      "tags": [
+        "8",
+        "autumn",
+        "fall",
+        "fallen",
+        "floor",
+        "forest",
+        "ground",
+        "leaf",
+        "leaves",
+        "scattered",
+        "yellow"
+      ],
+      "status": "provider-download-metadata-checked",
+      "usedByTypes": [
+        "F02"
+      ],
+      "normalConvention": "Select NormalGL or convert NormalDX during pack ingestion; convention not certified by summary metadata",
+      "visualReview": "official-lit-preview-examined"
+    },
+    {
+      "ref": "acg:ScatteredLeaves009",
+      "provider": "ambientCG",
+      "assetId": "ScatteredLeaves009",
+      "url": "https://ambientcg.com/a/ScatteredLeaves009",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Scattered Leaves 009",
+      "tags": [
+        "009",
+        "9",
+        "autumn",
+        "brown",
+        "cover",
+        "dry",
+        "fallen",
+        "forest",
+        "green",
+        "ground",
+        "leaves",
+        "natural",
+        "rough",
+        "scattered",
+        "scatteredleaves009",
+        "yellow"
+      ],
+      "status": "provider-download-metadata-checked",
+      "usedByTypes": [
+        "F02"
+      ],
+      "normalConvention": "Select NormalGL or convert NormalDX during pack ingestion; convention not certified by summary metadata",
+      "visualReview": "official-lit-preview-examined"
+    },
+    {
+      "ref": "acg:Snow001",
+      "provider": "ambientCG",
+      "assetId": "Snow001",
+      "url": "https://ambientcg.com/a/Snow001",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Snow 001",
+      "tags": [
+        "1",
+        "clean",
+        "light",
+        "snow",
+        "white",
+        "winter"
+      ],
+      "status": "provider-download-metadata-checked",
+      "usedByTypes": [
+        "N01"
+      ],
+      "normalConvention": "Select NormalGL or convert NormalDX during pack ingestion; convention not certified by summary metadata",
+      "visualReview": "official-lit-preview-examined"
+    },
+    {
+      "ref": "acg:Snow002",
+      "provider": "ambientCG",
+      "assetId": "Snow002",
+      "url": "https://ambientcg.com/a/Snow002",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Snow 002",
+      "tags": [
+        "2",
+        "clean",
+        "light",
+        "snow",
+        "white",
+        "winter"
+      ],
+      "status": "provider-download-metadata-checked",
+      "usedByTypes": [
+        "N02"
+      ],
+      "normalConvention": "Select NormalGL or convert NormalDX during pack ingestion; convention not certified by summary metadata",
+      "visualReview": "official-lit-preview-examined"
+    },
+    {
+      "ref": "acg:Snow003",
+      "provider": "ambientCG",
+      "assetId": "Snow003",
+      "url": "https://ambientcg.com/a/Snow003",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Snow 003",
+      "tags": [
+        "3",
+        "clean",
+        "light",
+        "snow",
+        "white",
+        "winter"
+      ],
+      "status": "provider-download-metadata-checked",
+      "usedByTypes": [
+        "N04"
+      ],
+      "normalConvention": "Select NormalGL or convert NormalDX during pack ingestion; convention not certified by summary metadata",
+      "visualReview": "official-lit-preview-examined"
+    },
+    {
+      "ref": "acg:Snow004",
+      "provider": "ambientCG",
+      "assetId": "Snow004",
+      "url": "https://ambientcg.com/a/Snow004",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Snow 004",
+      "tags": [
+        "4",
+        "clean",
+        "light",
+        "snow",
+        "white",
+        "winter"
+      ],
+      "status": "provider-download-metadata-checked",
+      "usedByTypes": [
+        "N02"
+      ],
+      "normalConvention": "Select NormalGL or convert NormalDX during pack ingestion; convention not certified by summary metadata",
+      "visualReview": "official-lit-preview-examined"
+    },
+    {
+      "ref": "acg:Snow005",
+      "provider": "ambientCG",
+      "assetId": "Snow005",
+      "url": "https://ambientcg.com/a/Snow005",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Snow 005",
+      "tags": [
+        "5",
+        "bright",
+        "clean",
+        "fluffy",
+        "fresh",
+        "snow",
+        "white"
+      ],
+      "status": "provider-download-metadata-checked",
+      "usedByTypes": [
+        "N01"
+      ],
+      "normalConvention": "Select NormalGL or convert NormalDX during pack ingestion; convention not certified by summary metadata",
+      "visualReview": "official-lit-preview-examined"
+    },
+    {
+      "ref": "acg:Snow007A",
+      "provider": "ambientCG",
+      "assetId": "Snow007A",
+      "url": "https://ambientcg.com/a/Snow007A",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Snow 007 A",
+      "tags": [
+        "7",
+        "clean",
+        "smooth",
+        "snow",
+        "white"
+      ],
+      "status": "provider-download-metadata-checked",
+      "usedByTypes": [
+        "N03"
+      ],
+      "normalConvention": "Select NormalGL or convert NormalDX during pack ingestion; convention not certified by summary metadata",
+      "visualReview": "official-lit-preview-examined"
+    },
+    {
+      "ref": "acg:Snow008A",
+      "provider": "ambientCG",
+      "assetId": "Snow008A",
+      "url": "https://ambientcg.com/a/Snow008A",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Snow 008 A",
+      "tags": [
+        "8",
+        "dunes",
+        "snow",
+        "waves"
+      ],
+      "status": "provider-download-metadata-checked",
+      "usedByTypes": [
+        "N05"
+      ],
+      "normalConvention": "Select NormalGL or convert NormalDX during pack ingestion; convention not certified by summary metadata",
+      "visualReview": "official-lit-preview-examined"
+    },
+    {
+      "ref": "acg:Snow009A",
+      "provider": "ambientCG",
+      "assetId": "Snow009A",
+      "url": "https://ambientcg.com/a/Snow009A",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Snow 009 A",
+      "tags": [
+        "9",
+        "dunes",
+        "snow"
+      ],
+      "status": "provider-download-metadata-checked",
+      "usedByTypes": [
+        "N05"
+      ],
+      "normalConvention": "Select NormalGL or convert NormalDX during pack ingestion; convention not certified by summary metadata",
+      "visualReview": "official-lit-preview-examined"
+    },
+    {
+      "ref": "acg:Snow010A",
+      "provider": "ambientCG",
+      "assetId": "Snow010A",
+      "url": "https://ambientcg.com/a/Snow010A",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Snow 010 A",
+      "tags": [
+        "10",
+        "clean",
+        "snow",
+        "white"
+      ],
+      "status": "provider-download-metadata-checked",
+      "usedByTypes": [
+        "N03",
+        "N04"
+      ],
+      "normalConvention": "Select NormalGL or convert NormalDX during pack ingestion; convention not certified by summary metadata",
+      "visualReview": "official-lit-preview-examined"
+    },
+    {
+      "ref": "acg:Snow014",
+      "provider": "ambientCG",
+      "assetId": "Snow014",
+      "url": "https://ambientcg.com/a/Snow014",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Snow 014",
+      "tags": [
+        "014",
+        "14",
+        "cold",
+        "frozen",
+        "ice",
+        "natural",
+        "outdoor",
+        "smooth",
+        "snow",
+        "soft",
+        "white",
+        "winter"
+      ],
+      "status": "provider-download-metadata-checked",
+      "usedByTypes": [
+        "N06",
+        "N08"
+      ],
+      "normalConvention": "Select NormalGL or convert NormalDX during pack ingestion; convention not certified by summary metadata",
+      "visualReview": "official-lit-preview-examined"
+    },
+    {
+      "ref": "acg:Snow015",
+      "provider": "ambientCG",
+      "assetId": "Snow015",
+      "url": "https://ambientcg.com/a/Snow015",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Snow 015",
+      "tags": [
+        "015",
+        "15",
+        "brown",
+        "cold",
+        "dirty",
+        "frozen",
+        "grass",
+        "green",
+        "ground",
+        "icy",
+        "melting",
+        "natural",
+        "outdoor",
+        "rough",
+        "snow",
+        "wet",
+        "white",
+        "winter"
+      ],
+      "status": "provider-download-metadata-checked",
+      "usedByTypes": [
+        "N07"
+      ],
+      "normalConvention": "Select NormalGL or convert NormalDX during pack ingestion; convention not certified by summary metadata",
+      "visualReview": "official-lit-preview-examined"
+    },
+    {
+      "ref": "ph:aerial_grass_rock",
+      "provider": "Poly Haven",
+      "assetId": "aerial_grass_rock",
+      "url": "https://polyhaven.com/a/aerial_grass_rock",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Aerial Grass Rock",
+      "tags": [
+        "moss",
+        "grass",
+        "cliff",
+        "cave",
+        "rock face"
+      ],
+      "status": "provider-file-list-checked",
+      "usedByTypes": [
+        "P09"
+      ],
+      "normalConvention": "OpenGL source available (nor_gl); verify importer orientation",
+      "visualReview": "metadata-only"
+    },
+    {
+      "ref": "ph:brown_mud",
+      "provider": "Poly Haven",
+      "assetId": "brown_mud",
+      "url": "https://polyhaven.com/a/brown_mud",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Brown Mud",
+      "tags": [
+        "mud",
+        "dirt",
+        "stones",
+        "dry",
+        "ground",
+        "soil",
+        "plant debris",
+        "granular",
+        "organic matter",
+        "earthy",
+        "twigs",
+        "earth"
+      ],
+      "status": "provider-file-list-checked",
+      "usedByTypes": [
+        "B01",
+        "B04"
+      ],
+      "normalConvention": "OpenGL source available (nor_gl); verify importer orientation",
+      "visualReview": "metadata-only"
+    },
+    {
+      "ref": "ph:brown_mud_dry",
+      "provider": "Poly Haven",
+      "assetId": "brown_mud_dry",
+      "url": "https://polyhaven.com/a/brown_mud_dry",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Brown Mud Dry",
+      "tags": [
+        "mud",
+        "dirt",
+        "stones",
+        "dry",
+        "ground"
+      ],
+      "status": "provider-file-list-checked",
+      "usedByTypes": [
+        "B07",
+        "B08"
+      ],
+      "normalConvention": "OpenGL source available (nor_gl); verify importer orientation",
+      "visualReview": "downloaded-base-color-examined"
+    },
+    {
+      "ref": "ph:brown_mud_rocks_01",
+      "provider": "Poly Haven",
+      "assetId": "brown_mud_rocks_01",
+      "url": "https://polyhaven.com/a/brown_mud_rocks_01",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Brown Mud Rocks 01",
+      "tags": [
+        "gravel",
+        "mud",
+        "moss",
+        "stones",
+        "forest",
+        "rocks",
+        "loose stones",
+        "plants",
+        "weeds",
+        "scattered weeds",
+        "plant debris",
+        "riverbank",
+        "organic matter",
+        "rocky soil",
+        "wet ground"
+      ],
+      "status": "provider-file-list-checked",
+      "usedByTypes": [
+        "P13"
+      ],
+      "normalConvention": "OpenGL source available (nor_gl); verify importer orientation",
+      "visualReview": "metadata-only"
+    },
+    {
+      "ref": "ph:clean_pebbles",
+      "provider": "Poly Haven",
+      "assetId": "clean_pebbles",
+      "url": "https://polyhaven.com/a/clean_pebbles",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Clean Pebbles",
+      "tags": [
+        "rock",
+        "gravel",
+        "pebbles",
+        "stones",
+        "uneven",
+        "path"
+      ],
+      "status": "provider-file-list-checked",
+      "usedByTypes": [
+        "G03"
+      ],
+      "normalConvention": "OpenGL source available (nor_gl); verify importer orientation",
+      "visualReview": "downloaded-base-color-examined"
+    },
+    {
+      "ref": "ph:cliff_side",
+      "provider": "Poly Haven",
+      "assetId": "cliff_side",
+      "url": "https://polyhaven.com/a/cliff_side",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Cliff Side",
+      "tags": [
+        "cliff",
+        "rock face",
+        "rugged",
+        "eroded",
+        "boulder",
+        "landscape",
+        "mountain",
+        "terrain",
+        "orange",
+        "sediment",
+        "canyon"
+      ],
+      "status": "provider-file-list-checked",
+      "usedByTypes": [
+        "R09"
+      ],
+      "normalConvention": "OpenGL source available (nor_gl); verify importer orientation",
+      "visualReview": "metadata-only"
+    },
+    {
+      "ref": "ph:damp_beach_sand",
+      "provider": "Poly Haven",
+      "assetId": "damp_beach_sand",
+      "url": "https://polyhaven.com/a/damp_beach_sand",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Damp Beach Sand",
+      "tags": [
+        "wet",
+        "beach",
+        "sandy",
+        "sandy beach",
+        "compact soil",
+        "beach sediment",
+        "gritty",
+        "pitted",
+        "imprinted"
+      ],
+      "status": "provider-file-list-checked",
+      "usedByTypes": [
+        "S04"
+      ],
+      "normalConvention": "OpenGL source available (nor_gl); verify importer orientation",
+      "visualReview": "metadata-only"
+    },
+    {
+      "ref": "ph:damp_sand",
+      "provider": "Poly Haven",
+      "assetId": "damp_sand",
+      "url": "https://polyhaven.com/a/damp_sand",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Damp Sand",
+      "tags": [
+        "coarse",
+        "sand",
+        "beach",
+        "wet",
+        "brown",
+        "ground",
+        "costal",
+        "granular",
+        "grainy",
+        "moist",
+        "riverbank",
+        "footprints",
+        "playground",
+        "sandpit"
+      ],
+      "status": "provider-file-list-checked",
+      "usedByTypes": [
+        "S04"
+      ],
+      "normalConvention": "OpenGL source available (nor_gl); verify importer orientation",
+      "visualReview": "metadata-only"
+    },
+    {
+      "ref": "ph:dark_rock",
+      "provider": "Poly Haven",
+      "assetId": "dark_rock",
+      "url": "https://polyhaven.com/a/dark_rock",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Dark Rock",
+      "tags": [
+        "uneven",
+        "rough",
+        "weathered",
+        "rock",
+        "fissured",
+        "cracked",
+        "craggy",
+        "striated",
+        "geological",
+        "rock formation",
+        "veined",
+        "stone",
+        "fractured",
+        "metamorphic",
+        "striations",
+        "exposed rock"
+      ],
+      "status": "provider-file-list-checked",
+      "usedByTypes": [
+        "R18"
+      ],
+      "normalConvention": "OpenGL source available (nor_gl); verify importer orientation",
+      "visualReview": "metadata-only"
+    },
+    {
+      "ref": "ph:dark_rock_02",
+      "provider": "Poly Haven",
+      "assetId": "dark_rock_02",
+      "url": "https://polyhaven.com/a/dark_rock_02",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Dark Rock 02",
+      "tags": [
+        "rough",
+        "rock face",
+        "rock",
+        "weathered",
+        "fractured",
+        "stratified",
+        "craggy",
+        "striated",
+        "fissured",
+        "geological",
+        "veined",
+        "weathered rock",
+        "rock formation",
+        "striations",
+        "exposed rock"
+      ],
+      "status": "provider-file-list-checked",
+      "usedByTypes": [
+        "R17"
+      ],
+      "normalConvention": "OpenGL source available (nor_gl); verify importer orientation",
+      "visualReview": "downloaded-base-color-examined"
+    },
+    {
+      "ref": "ph:dirt",
+      "provider": "Poly Haven",
+      "assetId": "dirt",
+      "url": "https://polyhaven.com/a/dirt",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Dirt",
+      "tags": [
+        "dirt",
+        "dirty",
+        "ground",
+        "nature",
+        "earth",
+        "dusty",
+        "rocky",
+        "debris",
+        "footprints"
+      ],
+      "status": "provider-file-list-checked",
+      "usedByTypes": [
+        "B12"
+      ],
+      "normalConvention": "OpenGL source available (nor_gl); verify importer orientation",
+      "visualReview": "metadata-only"
+    },
+    {
+      "ref": "ph:dirt_floor",
+      "provider": "Poly Haven",
+      "assetId": "dirt_floor",
+      "url": "https://polyhaven.com/a/dirt_floor",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Dirt Floor",
+      "tags": [
+        "dirt",
+        "ground",
+        "brown",
+        "nature",
+        "uneven",
+        "mud",
+        "debris",
+        "forest",
+        "pathway",
+        "woodland"
+      ],
+      "status": "provider-file-list-checked",
+      "usedByTypes": [
+        "B02",
+        "F10"
+      ],
+      "normalConvention": "OpenGL source available (nor_gl); verify importer orientation",
+      "visualReview": "metadata-only"
+    },
+    {
+      "ref": "ph:dry_decay_leaves",
+      "provider": "Poly Haven",
+      "assetId": "dry_decay_leaves",
+      "url": "https://polyhaven.com/a/dry_decay_leaves",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Dry Decay Leaves",
+      "tags": [
+        "leaves",
+        "forest",
+        "dry",
+        "sticks",
+        "winter",
+        "dead grass",
+        "twigs",
+        "nature",
+        "leaf litter",
+        "organic"
+      ],
+      "status": "provider-file-list-checked",
+      "usedByTypes": [
+        "F11"
+      ],
+      "normalConvention": "OpenGL source available (nor_gl); verify importer orientation",
+      "visualReview": "metadata-only"
+    },
+    {
+      "ref": "ph:dry_ground_01",
+      "provider": "Poly Haven",
+      "assetId": "dry_ground_01",
+      "url": "https://polyhaven.com/a/dry_ground_01",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Dry Ground 01",
+      "tags": [
+        "dry",
+        "sand",
+        "mud",
+        "cracked",
+        "desert",
+        "baked",
+        "rough",
+        "fissured",
+        "baked earth",
+        "compact",
+        "brittle",
+        "parched"
+      ],
+      "status": "provider-file-list-checked",
+      "usedByTypes": [
+        "B05"
+      ],
+      "normalConvention": "OpenGL source available (nor_gl); verify importer orientation",
+      "visualReview": "downloaded-base-color-examined"
+    },
+    {
+      "ref": "ph:dry_river_pebbles",
+      "provider": "Poly Haven",
+      "assetId": "dry_river_pebbles",
+      "url": "https://polyhaven.com/a/dry_river_pebbles",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Dry River Pebbles",
+      "tags": [
+        "river",
+        "rocks",
+        "pebbles",
+        "loose stones",
+        "loose rocks",
+        "rounded rocks",
+        "rounded pebbles",
+        "debris",
+        "riverbed"
+      ],
+      "status": "provider-file-list-checked",
+      "usedByTypes": [
+        "G04"
+      ],
+      "normalConvention": "OpenGL source available (nor_gl); verify importer orientation",
+      "visualReview": "downloaded-base-color-examined"
+    },
+    {
+      "ref": "ph:forest_ground_04",
+      "provider": "Poly Haven",
+      "assetId": "forest_ground_04",
+      "url": "https://polyhaven.com/a/forest_ground_04",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Forest Ground 04",
+      "tags": [
+        "rough",
+        "uneven",
+        "stones",
+        "ground",
+        "forest",
+        "dry",
+        "brown",
+        "gravel",
+        "rock",
+        "debris",
+        "nature",
+        "dirt"
+      ],
+      "status": "provider-file-list-checked",
+      "usedByTypes": [
+        "F07"
+      ],
+      "normalConvention": "OpenGL source available (nor_gl); verify importer orientation",
+      "visualReview": "metadata-only"
+    },
+    {
+      "ref": "ph:forest_leaves_02",
+      "provider": "Poly Haven",
+      "assetId": "forest_leaves_02",
+      "url": "https://polyhaven.com/a/forest_leaves_02",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Forest Leaves 02",
+      "tags": [
+        "moss",
+        "sticks",
+        "leaves",
+        "twigs",
+        "autumn",
+        "mossy",
+        "mosscovered",
+        "mossy patches",
+        "forest floor",
+        "fallen leaves",
+        "leaf litter",
+        "organic",
+        "plant debris"
+      ],
+      "status": "provider-file-list-checked",
+      "usedByTypes": [
+        "F08",
+        "H04"
+      ],
+      "normalConvention": "OpenGL source available (nor_gl); verify importer orientation",
+      "visualReview": "metadata-only"
+    },
+    {
+      "ref": "ph:forest_leaves_03",
+      "provider": "Poly Haven",
+      "assetId": "forest_leaves_03",
+      "url": "https://polyhaven.com/a/forest_leaves_03",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Forest Leaves 03",
+      "tags": [
+        "leaves",
+        "autumn",
+        "dry",
+        "nature",
+        "forest",
+        "ground",
+        "cover",
+        "dirt",
+        "debris",
+        "brown",
+        "yellow",
+        "green"
+      ],
+      "status": "provider-file-list-checked",
+      "usedByTypes": [
+        "F01"
+      ],
+      "normalConvention": "OpenGL source available (nor_gl); verify importer orientation",
+      "visualReview": "metadata-only"
+    },
+    {
+      "ref": "ph:forest_leaves_04",
+      "provider": "Poly Haven",
+      "assetId": "forest_leaves_04",
+      "url": "https://polyhaven.com/a/forest_leaves_04",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Forest Leaves 04",
+      "tags": [
+        "leaves",
+        "nature",
+        "ground",
+        "dirt",
+        "debris",
+        "dry",
+        "autumn",
+        "sticks",
+        "twigs",
+        "brown"
+      ],
+      "status": "provider-file-list-checked",
+      "usedByTypes": [
+        "F01"
+      ],
+      "normalConvention": "OpenGL source available (nor_gl); verify importer orientation",
+      "visualReview": "metadata-only"
+    },
+    {
+      "ref": "ph:forrest_ground_01",
+      "provider": "Poly Haven",
+      "assetId": "forrest_ground_01",
+      "url": "https://polyhaven.com/a/forrest_ground_01",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Forest Ground 01",
+      "tags": [
+        "grass",
+        "twigs",
+        "forest",
+        "leaves",
+        "sticks",
+        "foliage",
+        "dead grass",
+        "plant litter",
+        "underbrush",
+        "underbrush",
+        "organic",
+        "dry grass",
+        "dry leaves"
+      ],
+      "status": "provider-file-list-checked",
+      "usedByTypes": [
+        "P16"
+      ],
+      "normalConvention": "OpenGL source available (nor_gl); verify importer orientation",
+      "visualReview": "metadata-only"
+    },
+    {
+      "ref": "ph:forrest_ground_03",
+      "provider": "Poly Haven",
+      "assetId": "forrest_ground_03",
+      "url": "https://polyhaven.com/a/forrest_ground_03",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Forest Ground 03",
+      "tags": [
+        "pine",
+        "needles",
+        "forest",
+        "plant debris",
+        "dirt soil",
+        "leaf litter",
+        "twigs",
+        "fallen leaves",
+        "ground cover",
+        "fallen pine needles",
+        "dry grass"
+      ],
+      "status": "provider-file-list-checked",
+      "usedByTypes": [
+        "F04"
+      ],
+      "normalConvention": "OpenGL source available (nor_gl); verify importer orientation",
+      "visualReview": "metadata-only"
+    },
+    {
+      "ref": "ph:forrest_sand_01",
+      "provider": "Poly Haven",
+      "assetId": "forrest_sand_01",
+      "url": "https://polyhaven.com/a/forrest_sand_01",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Forest Sand 01",
+      "tags": [
+        "sand",
+        "pine",
+        "needles",
+        "forest",
+        "plant debris",
+        "plant litter",
+        "soil",
+        "organic matter",
+        "granular",
+        "twigs",
+        "sticks"
+      ],
+      "status": "provider-file-list-checked",
+      "usedByTypes": [
+        "F05"
+      ],
+      "normalConvention": "OpenGL source available (nor_gl); verify importer orientation",
+      "visualReview": "metadata-only"
+    },
+    {
+      "ref": "ph:ganges_river_pebbles",
+      "provider": "Poly Haven",
+      "assetId": "ganges_river_pebbles",
+      "url": "https://polyhaven.com/a/ganges_river_pebbles",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Ganges River Pebbles",
+      "tags": [
+        "rough",
+        "uneven",
+        "rock",
+        "pebbles",
+        "pebble",
+        "scattered pebbles",
+        "scattered",
+        "river",
+        "pebbly",
+        "rocky",
+        "bumpy"
+      ],
+      "status": "provider-file-list-checked",
+      "usedByTypes": [
+        "G04"
+      ],
+      "normalConvention": "OpenGL source available (nor_gl); verify importer orientation",
+      "visualReview": "metadata-only"
+    },
+    {
+      "ref": "ph:grass_ground",
+      "provider": "Poly Haven",
+      "assetId": "grass_ground",
+      "url": "https://polyhaven.com/a/grass_ground",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Grass Ground",
+      "tags": [
+        "grass",
+        "dry grass",
+        "dirt",
+        "root",
+        "dead grass",
+        "turf",
+        "dry"
+      ],
+      "status": "provider-file-list-checked",
+      "usedByTypes": [
+        "P06",
+        "P11"
+      ],
+      "normalConvention": "OpenGL source available (nor_gl); verify importer orientation",
+      "visualReview": "metadata-only"
+    },
+    {
+      "ref": "ph:gravel_stones",
+      "provider": "Poly Haven",
+      "assetId": "gravel_stones",
+      "url": "https://polyhaven.com/a/gravel_stones",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Gravel Stones",
+      "tags": [
+        "rough",
+        "uneven",
+        "stones",
+        "gravel",
+        "gritty",
+        "grey",
+        "pebbles",
+        "coarse",
+        "pebbly",
+        "pathway",
+        "driveway",
+        "gravelly",
+        "gray",
+        "garden walkway",
+        "rocky",
+        "scattered pebbles",
+        "gritty texture",
+        "stony",
+        "driveway stones"
+      ],
+      "status": "provider-file-list-checked",
+      "usedByTypes": [
+        "G01"
+      ],
+      "normalConvention": "OpenGL source available (nor_gl); verify importer orientation",
+      "visualReview": "metadata-only"
+    },
+    {
+      "ref": "ph:gravelly_sand",
+      "provider": "Poly Haven",
+      "assetId": "gravelly_sand",
+      "url": "https://polyhaven.com/a/gravelly_sand",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Gravelly Sand",
+      "tags": [
+        "sand",
+        "gravel",
+        "stony",
+        "terrain",
+        "ground",
+        "dirt",
+        "coarse",
+        "debris",
+        "dusty"
+      ],
+      "status": "provider-file-list-checked",
+      "usedByTypes": [
+        "S03"
+      ],
+      "normalConvention": "OpenGL source available (nor_gl); verify importer orientation",
+      "visualReview": "metadata-only"
+    },
+    {
+      "ref": "ph:leafy_grass",
+      "provider": "Poly Haven",
+      "assetId": "leafy_grass",
+      "url": "https://polyhaven.com/a/leafy_grass",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Leafy Grass",
+      "tags": [
+        "grass",
+        "green",
+        "nature",
+        "ground",
+        "foliage",
+        "leaves",
+        "plants",
+        "outdoors",
+        "twigs",
+        "sticks",
+        "trampled"
+      ],
+      "status": "provider-file-list-checked",
+      "usedByTypes": [
+        "P04",
+        "P05",
+        "P10"
+      ],
+      "normalConvention": "OpenGL source available (nor_gl); verify importer orientation",
+      "visualReview": "metadata-only"
+    },
+    {
+      "ref": "ph:leaves_forest_ground",
+      "provider": "Poly Haven",
+      "assetId": "leaves_forest_ground",
+      "url": "https://polyhaven.com/a/leaves_forest_ground",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Leaves Forest Ground",
+      "tags": [
+        "dirt",
+        "forest",
+        "leaves",
+        "twigs",
+        "yellow",
+        "green",
+        "sticks",
+        "autumn",
+        "nature",
+        "brown"
+      ],
+      "status": "provider-file-list-checked",
+      "usedByTypes": [
+        "F06",
+        "F12"
+      ],
+      "normalConvention": "OpenGL source available (nor_gl); verify importer orientation",
+      "visualReview": "metadata-only"
+    },
+    {
+      "ref": "ph:lichen_rock",
+      "provider": "Poly Haven",
+      "assetId": "lichen_rock",
+      "url": "https://polyhaven.com/a/lichen_rock",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Lichen Rock",
+      "tags": [
+        "rock",
+        "cliff",
+        "lichen",
+        "moss",
+        "rock face",
+        "boulder",
+        "mossy",
+        "stone",
+        "nature",
+        "rugged"
+      ],
+      "status": "provider-file-list-checked",
+      "usedByTypes": [
+        "R22"
+      ],
+      "normalConvention": "OpenGL source available (nor_gl); verify importer orientation",
+      "visualReview": "metadata-only"
+    },
+    {
+      "ref": "ph:mossy_rock",
+      "provider": "Poly Haven",
+      "assetId": "mossy_rock",
+      "url": "https://polyhaven.com/a/mossy_rock",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Mossy Rock",
+      "tags": [
+        "rough",
+        "moss",
+        "rock face",
+        "cracked",
+        "lichen",
+        "striations",
+        "striated",
+        "mosscovered",
+        "mossy",
+        "uneven",
+        "rock"
+      ],
+      "status": "provider-file-list-checked",
+      "usedByTypes": [
+        "R21"
+      ],
+      "normalConvention": "OpenGL source available (nor_gl); verify importer orientation",
+      "visualReview": "metadata-only"
+    },
+    {
+      "ref": "ph:mud_cracked_dry_03",
+      "provider": "Poly Haven",
+      "assetId": "mud_cracked_dry_03",
+      "url": "https://polyhaven.com/a/mud_cracked_dry_03",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Mud Cracked Dry 03",
+      "tags": [
+        "dry",
+        "mud",
+        "sand",
+        "uneven",
+        "ground",
+        "cracked",
+        "cracks",
+        "nature"
+      ],
+      "status": "provider-file-list-checked",
+      "usedByTypes": [
+        "B05",
+        "B10"
+      ],
+      "normalConvention": "OpenGL source available (nor_gl); verify importer orientation",
+      "visualReview": "downloaded-base-color-examined"
+    },
+    {
+      "ref": "ph:mud_cracked_dry_riverbed_002",
+      "provider": "Poly Haven",
+      "assetId": "mud_cracked_dry_riverbed_002",
+      "url": "https://polyhaven.com/a/mud_cracked_dry_riverbed_002",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Mud Cracked Dry Riverbed 002",
+      "tags": [
+        "weathered",
+        "cracked",
+        "rough",
+        "ground",
+        "dry",
+        "uneven",
+        "mud",
+        "cracks",
+        "nature",
+        "flaked",
+        "lake"
+      ],
+      "status": "provider-file-list-checked",
+      "usedByTypes": [
+        "B10"
+      ],
+      "normalConvention": "OpenGL source available (nor_gl); verify importer orientation",
+      "visualReview": "metadata-only"
+    },
+    {
+      "ref": "ph:mud_forest",
+      "provider": "Poly Haven",
+      "assetId": "mud_forest",
+      "url": "https://polyhaven.com/a/mud_forest",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Mud Forest",
+      "tags": [
+        "brown",
+        "ground",
+        "dirty",
+        "leaves",
+        "mud",
+        "forest",
+        "sticks"
+      ],
+      "status": "provider-file-list-checked",
+      "usedByTypes": [
+        "F03",
+        "H02",
+        "H06"
+      ],
+      "normalConvention": "OpenGL source available (nor_gl); verify importer orientation",
+      "visualReview": "metadata-only"
+    },
+    {
+      "ref": "ph:red_dirt_mud_01",
+      "provider": "Poly Haven",
+      "assetId": "red_dirt_mud_01",
+      "url": "https://polyhaven.com/a/red_dirt_mud_01",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Red Dirt Mud 01",
+      "tags": [
+        "gravel",
+        "mud",
+        "dirt",
+        "rough",
+        "pathway",
+        "path",
+        "road",
+        "village"
+      ],
+      "status": "provider-file-list-checked",
+      "usedByTypes": [
+        "B11"
+      ],
+      "normalConvention": "OpenGL source available (nor_gl); verify importer orientation",
+      "visualReview": "metadata-only"
+    },
+    {
+      "ref": "ph:rock_01",
+      "provider": "Poly Haven",
+      "assetId": "rock_01",
+      "url": "https://polyhaven.com/a/rock_01",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Rock 01",
+      "tags": [
+        "grey",
+        "smooth",
+        "rock",
+        "stone",
+        "gray",
+        "weathered",
+        "rock face",
+        "solid rock"
+      ],
+      "status": "provider-file-list-checked",
+      "usedByTypes": [
+        "R01"
+      ],
+      "normalConvention": "OpenGL source available (nor_gl); verify importer orientation",
+      "visualReview": "downloaded-base-color-examined"
+    },
+    {
+      "ref": "ph:rock_05",
+      "provider": "Poly Haven",
+      "assetId": "rock_05",
+      "url": "https://polyhaven.com/a/rock_05",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Rock 05",
+      "tags": [
+        "rough",
+        "uneven",
+        "old",
+        "stone",
+        "geological",
+        "irregular",
+        "rock",
+        "pitted",
+        "rock face"
+      ],
+      "status": "provider-file-list-checked",
+      "usedByTypes": [
+        "R03"
+      ],
+      "normalConvention": "OpenGL source available (nor_gl); verify importer orientation",
+      "visualReview": "metadata-only"
+    },
+    {
+      "ref": "ph:rock_08",
+      "provider": "Poly Haven",
+      "assetId": "rock_08",
+      "url": "https://polyhaven.com/a/rock_08",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Rock 08",
+      "tags": [
+        "rough",
+        "rock face",
+        "bare",
+        "rock",
+        "boulder",
+        "coarse",
+        "geological",
+        "stone",
+        "uneven"
+      ],
+      "status": "provider-file-list-checked",
+      "usedByTypes": [
+        "R04",
+        "R05",
+        "R08"
+      ],
+      "normalConvention": "OpenGL source available (nor_gl); verify importer orientation",
+      "visualReview": "downloaded-base-color-examined"
+    },
+    {
+      "ref": "ph:rock_2",
+      "provider": "Poly Haven",
+      "assetId": "rock_2",
+      "url": "https://polyhaven.com/a/rock_2",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Rock 2",
+      "tags": [
+        "rough",
+        "stone",
+        "dirty",
+        "rock face",
+        "rock",
+        "coarse",
+        "geological",
+        "uneven"
+      ],
+      "status": "provider-file-list-checked",
+      "usedByTypes": [
+        "R16"
+      ],
+      "normalConvention": "OpenGL source available (nor_gl); verify importer orientation",
+      "visualReview": "metadata-only"
+    },
+    {
+      "ref": "ph:rock_boulder_cracked",
+      "provider": "Poly Haven",
+      "assetId": "rock_boulder_cracked",
+      "url": "https://polyhaven.com/a/rock_boulder_cracked",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Rock Boulder Cracked",
+      "tags": [
+        "rough",
+        "weathered",
+        "rock face",
+        "rock",
+        "orange",
+        "cliff",
+        "cave",
+        "stone",
+        "uneven",
+        "eroded"
+      ],
+      "status": "provider-file-list-checked",
+      "usedByTypes": [
+        "R12"
+      ],
+      "normalConvention": "OpenGL source available (nor_gl); verify importer orientation",
+      "visualReview": "metadata-only"
+    },
+    {
+      "ref": "ph:rock_boulder_dry",
+      "provider": "Poly Haven",
+      "assetId": "rock_boulder_dry",
+      "url": "https://polyhaven.com/a/rock_boulder_dry",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Rock Boulder Dry",
+      "tags": [
+        "weathered",
+        "chipped",
+        "rocks",
+        "boulder",
+        "stone",
+        "flat",
+        "damaged",
+        "eroded",
+        "cracked",
+        "rough",
+        "uneven"
+      ],
+      "status": "provider-file-list-checked",
+      "usedByTypes": [
+        "R02",
+        "R07"
+      ],
+      "normalConvention": "OpenGL source available (nor_gl); verify importer orientation",
+      "visualReview": "downloaded-base-color-examined"
+    },
+    {
+      "ref": "ph:rock_face",
+      "provider": "Poly Haven",
+      "assetId": "rock_face",
+      "url": "https://polyhaven.com/a/rock_face",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Rock Face",
+      "tags": [
+        "terrain",
+        "landscape",
+        "rock face",
+        "solid rock",
+        "cliff",
+        "solid"
+      ],
+      "status": "provider-file-list-checked",
+      "usedByTypes": [
+        "R10"
+      ],
+      "normalConvention": "OpenGL source available (nor_gl); verify importer orientation",
+      "visualReview": "downloaded-base-color-examined"
+    },
+    {
+      "ref": "ph:rock_ground",
+      "provider": "Poly Haven",
+      "assetId": "rock_ground",
+      "url": "https://polyhaven.com/a/rock_ground",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Rock Ground",
+      "tags": [
+        "gravel",
+        "rough",
+        "broken",
+        "rock",
+        "ground"
+      ],
+      "status": "provider-file-list-checked",
+      "usedByTypes": [
+        "G02"
+      ],
+      "normalConvention": "OpenGL source available (nor_gl); verify importer orientation",
+      "visualReview": "downloaded-base-color-examined"
+    },
+    {
+      "ref": "ph:rock_surface",
+      "provider": "Poly Haven",
+      "assetId": "rock_surface",
+      "url": "https://polyhaven.com/a/rock_surface",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Rock Surface",
+      "tags": [
+        "rough",
+        "weathered",
+        "discolored",
+        "dirty",
+        "stone",
+        "rock",
+        "boulder",
+        "coarse"
+      ],
+      "status": "provider-file-list-checked",
+      "usedByTypes": [
+        "R04",
+        "R13"
+      ],
+      "normalConvention": "OpenGL source available (nor_gl); verify importer orientation",
+      "visualReview": "downloaded-base-color-examined"
+    },
+    {
+      "ref": "ph:rocks_ground_03",
+      "provider": "Poly Haven",
+      "assetId": "rocks_ground_03",
+      "url": "https://polyhaven.com/a/rocks_ground_03",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Rocks Ground 03",
+      "tags": [
+        "rocks",
+        "rough",
+        "stones",
+        "uneven",
+        "pebbles",
+        "pebbly",
+        "scattered pebbles",
+        "scattered rocks",
+        "gravel",
+        "gravelly",
+        "plant debris"
+      ],
+      "status": "provider-file-list-checked",
+      "usedByTypes": [
+        "G05"
+      ],
+      "normalConvention": "OpenGL source available (nor_gl); verify importer orientation",
+      "visualReview": "metadata-only"
+    },
+    {
+      "ref": "ph:rocks_ground_05",
+      "provider": "Poly Haven",
+      "assetId": "rocks_ground_05",
+      "url": "https://polyhaven.com/a/rocks_ground_05",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Rocks Ground 05",
+      "tags": [
+        "rough",
+        "rock",
+        "gravel",
+        "dirt",
+        "rocky",
+        "soil",
+        "uneven",
+        "stony",
+        "dry",
+        "pebbles",
+        "stones"
+      ],
+      "status": "provider-file-list-checked",
+      "usedByTypes": [
+        "G06"
+      ],
+      "normalConvention": "OpenGL source available (nor_gl); verify importer orientation",
+      "visualReview": "downloaded-base-color-examined"
+    },
+    {
+      "ref": "ph:rocks_ground_06",
+      "provider": "Poly Haven",
+      "assetId": "rocks_ground_06",
+      "url": "https://polyhaven.com/a/rocks_ground_06",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Rocks Ground 06",
+      "tags": [
+        "rocks",
+        "rough",
+        "broken",
+        "rock",
+        "uneven",
+        "gravel",
+        "scattered pebbles",
+        "scattered rocks",
+        "coastal",
+        "layered rock"
+      ],
+      "status": "provider-file-list-checked",
+      "usedByTypes": [
+        "G06"
+      ],
+      "normalConvention": "OpenGL source available (nor_gl); verify importer orientation",
+      "visualReview": "downloaded-base-color-examined"
+    },
+    {
+      "ref": "ph:roots",
+      "provider": "Poly Haven",
+      "assetId": "roots",
+      "url": "https://polyhaven.com/a/roots",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Roots",
+      "tags": [
+        "uneven",
+        "old",
+        "weathered",
+        "brown",
+        "dirty",
+        "ground",
+        "dry",
+        "nature",
+        "dirt",
+        "tree",
+        "forest"
+      ],
+      "status": "provider-file-list-checked",
+      "usedByTypes": [
+        "F09"
+      ],
+      "normalConvention": "OpenGL source available (nor_gl); verify importer orientation",
+      "visualReview": "metadata-only"
+    },
+    {
+      "ref": "ph:sand_02",
+      "provider": "Poly Haven",
+      "assetId": "sand_02",
+      "url": "https://polyhaven.com/a/sand_02",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Sand 02",
+      "tags": [
+        "dirty",
+        "sand",
+        "sandy",
+        "beach",
+        "gritty",
+        "coast",
+        "shore",
+        "granular"
+      ],
+      "status": "provider-file-list-checked",
+      "usedByTypes": [
+        "S01",
+        "S05"
+      ],
+      "normalConvention": "OpenGL source available (nor_gl); verify importer orientation",
+      "visualReview": "metadata-only"
+    },
+    {
+      "ref": "ph:sand_03",
+      "provider": "Poly Haven",
+      "assetId": "sand_03",
+      "url": "https://polyhaven.com/a/sand_03",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Sand 03",
+      "tags": [
+        "sand",
+        "sandy",
+        "beach",
+        "seaside",
+        "gritty",
+        "shore",
+        "costal",
+        "sandy beach",
+        "coastline",
+        "granular",
+        "coast"
+      ],
+      "status": "provider-file-list-checked",
+      "usedByTypes": [
+        "S02",
+        "S05"
+      ],
+      "normalConvention": "OpenGL source available (nor_gl); verify importer orientation",
+      "visualReview": "downloaded-base-color-examined"
+    },
+    {
+      "ref": "ph:sandy_gravel_02",
+      "provider": "Poly Haven",
+      "assetId": "sandy_gravel_02",
+      "url": "https://polyhaven.com/a/sandy_gravel_02",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Sandy Gravel 02",
+      "tags": [
+        "terrain",
+        "sand",
+        "gravel",
+        "stony",
+        "gravelly",
+        "dusty",
+        "desert",
+        "ground",
+        "pebbles",
+        "debris"
+      ],
+      "status": "provider-file-list-checked",
+      "usedByTypes": [
+        "S03"
+      ],
+      "normalConvention": "OpenGL source available (nor_gl); verify importer orientation",
+      "visualReview": "downloaded-base-color-examined"
+    },
+    {
+      "ref": "ph:snow_04",
+      "provider": "Poly Haven",
+      "assetId": "snow_04",
+      "url": "https://polyhaven.com/a/snow_04",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Snow 04",
+      "tags": [
+        "snow",
+        "mud",
+        "field",
+        "uneven",
+        "rough"
+      ],
+      "status": "provider-file-list-checked",
+      "usedByTypes": [
+        "N06"
+      ],
+      "normalConvention": "OpenGL source available (nor_gl); verify importer orientation",
+      "visualReview": "metadata-only"
+    },
+    {
+      "ref": "ph:snow_05",
+      "provider": "Poly Haven",
+      "assetId": "snow_05",
+      "url": "https://polyhaven.com/a/snow_05",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Snow 05",
+      "tags": [
+        "snow",
+        "mud",
+        "uneven",
+        "rough"
+      ],
+      "status": "provider-file-list-checked",
+      "usedByTypes": [
+        "N08"
+      ],
+      "normalConvention": "OpenGL source available (nor_gl); verify importer orientation",
+      "visualReview": "metadata-only"
+    },
+    {
+      "ref": "ph:sparse_grass",
+      "provider": "Poly Haven",
+      "assetId": "sparse_grass",
+      "url": "https://polyhaven.com/a/sparse_grass",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Sparse Grass",
+      "tags": [
+        "grass",
+        "nature",
+        "sparse",
+        "roots",
+        "root",
+        "vegetation",
+        "greenery",
+        "landscape",
+        "soil",
+        "environment",
+        "dirt",
+        "plants",
+        "ground",
+        "growth",
+        "flora"
+      ],
+      "status": "provider-file-list-checked",
+      "usedByTypes": [
+        "P07",
+        "P08",
+        "P12"
+      ],
+      "normalConvention": "OpenGL source available (nor_gl); verify importer orientation",
+      "visualReview": "metadata-only"
+    },
+    {
+      "ref": "ph:winter_leaves",
+      "provider": "Poly Haven",
+      "assetId": "winter_leaves",
+      "url": "https://polyhaven.com/a/winter_leaves",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Winter Leaves",
+      "tags": [
+        "leaves",
+        "forest",
+        "dry",
+        "sticks",
+        "winter",
+        "dead grass",
+        "twigs",
+        "nature",
+        "leaf litter"
+      ],
+      "status": "provider-file-list-checked",
+      "usedByTypes": [
+        "F11"
+      ],
+      "normalConvention": "OpenGL source available (nor_gl); verify importer orientation",
+      "visualReview": "metadata-only"
+    },
+    {
+      "ref": "ph:withered_grass",
+      "provider": "Poly Haven",
+      "assetId": "withered_grass",
+      "url": "https://polyhaven.com/a/withered_grass",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Withered Grass",
+      "tags": [
+        "old",
+        "weathered",
+        "grass",
+        "dead grass",
+        "discolored",
+        "driedup",
+        "dry"
+      ],
+      "status": "provider-file-list-checked",
+      "usedByTypes": [
+        "P06",
+        "P11"
+      ],
+      "normalConvention": "OpenGL source available (nor_gl); verify importer orientation",
+      "visualReview": "metadata-only"
+    },
+    {
+      "ref": "ph:worn_rock_natural_01",
+      "provider": "Poly Haven",
+      "assetId": "worn_rock_natural_01",
+      "url": "https://polyhaven.com/a/worn_rock_natural_01",
+      "license": "CC0-1.0",
+      "channels": [
+        "baseColor",
+        "normal",
+        "roughness",
+        "height"
+      ],
+      "name": "Worn Rock Natural 01",
+      "tags": [
+        "weathered",
+        "yellow",
+        "rock face",
+        "rock",
+        "flat",
+        "brown",
+        "boulder",
+        "cliff",
+        "chipped",
+        "nature",
+        "costal"
+      ],
+      "status": "provider-file-list-checked",
+      "usedByTypes": [
+        "R11"
+      ],
+      "normalConvention": "OpenGL source available (nor_gl); verify importer orientation",
+      "visualReview": "metadata-only"
+    }
+  ]
+}
