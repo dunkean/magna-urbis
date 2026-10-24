@@ -1,6 +1,7 @@
 import {describe,it,expect} from 'vitest';
+import {createHash} from 'node:crypto';
 import {compileSurfaceWorld,hydrateSurfaceWorld,retargetSurfaceWorld,sampleSurface,serializeSurfaceWorld,deserializeSurfaceWorld,estimateSurfaceCompileBytes} from '../src/surface/compiler';
-import {allocateGroundResponseFields,createGroundResponse,createGroundResponseSampler,groundResponseWeights,groundResponseIdentity,hydrateGroundResponse,GROUND_RESPONSE_BYTES_PER_SAMPLE} from '../src/surface/groundResponse';
+import {allocateGroundResponseFields,createGroundResponse,createGroundResponseSampler,groundResponseWeights,groundResponseIdentity,hydrateGroundResponse,GROUND_RESPONSE_BYTES_PER_SAMPLE,GROUND_RESPONSE_FLOAT_FIELDS} from '../src/surface/groundResponse';
 import {createMaterialIndex,dominantMaterialPair,materialColor,packMaterialMean,unpackMaterialMean} from '../src/surface/materials';
 import {decodeSurfaceBinary,encodeSurfaceBinary} from '../src/surface/binary';
 import type {SurfaceGridGeometry} from '../src/surface/model';
@@ -40,6 +41,18 @@ describe('physical parameters before ground recipe response',()=>{
     expect(hydrateGroundResponse(decoded,expected).fields.alluvial).toBe(borrowed);
     const json=JSON.parse(JSON.stringify(response,(_,v)=>ArrayBuffer.isView(v)?Array.from(v as any):v)),restored=hydrateGroundResponse(json,expected);
     expect(restored.fields.rockRecipe).toBeInstanceOf(Uint16Array);expect(restored.fields.gravity).toBeInstanceOf(Float32Array);expect(encodeSurfaceBinary(restored)).toEqual(bytes);
+  });
+  it('frames strings unambiguously including delimiter-looking ids, NUL and astral Unicode',()=>{
+    const{response}=fixture(),identity=(id:string,version:string)=>groundResponseIdentity({...response,source:{...response.source,id,version}});
+    expect(identity('a;string:b','c')).not.toBe(identity('a','b;string:c'));
+    expect(identity('a\0b','c')).not.toBe(identity('a','\0bc'));
+    expect(identity('é🌲\0;string:','v')).toBe(identity('é🌲\0;string:','v'));
+    expect(identity('é🌲','v')).not.toBe(identity('é','🌲v'));
+    const r={...response,source:{...response.source,id:'é🌲\0;string:',version:'v'}},g=r.grid,s=r.source;
+    const values=['gr-sha256-1',r.version,new Float64Array([g.width,g.height,g.originX,g.originZ,g.spacingM,s.sourceLOD,s.nativeSpacingM]),s.id,s.version,s.sourceLODKnown===undefined?'unspecified':String(s.sourceLODKnown),s.provenance??'',r.environmentVersion,r.materialLibraryVersion,r.interpolation,r.quantization,...GROUND_RESPONSE_FLOAT_FIELDS.map(k=>r.fields[k]),r.fields.rockRecipe];
+    const hash=createHash('sha256'),length=(n:number)=>{const b=Buffer.alloc(4);b.writeUInt32LE(n);hash.update(b);};hash.update(Buffer.from([3]));length(values.length);
+    for(const value of values){if(typeof value==='string'){const b=Buffer.from(value,'utf16le');hash.update(Buffer.from([1]));length(b.length);hash.update(b);}else{hash.update(Buffer.from([2,value instanceof Float64Array?1:value instanceof Float32Array?2:3]));length(value.byteLength);hash.update(new Uint8Array(value.buffer,value.byteOffset,value.byteLength));}}
+    expect(groundResponseIdentity(r)).toBe('gr-sha256-1:'+hash.digest('hex'));
   });
   it('rejects partial groups, wrong types, edited data/hash, source/frame/version mismatches and allocation over budget',()=>{
     const{world,grid,response}=fixture(),expected={grid,source:world.terrain.source,environmentVersion:world.versions.environment,materialLibraryVersion:world.versions.materialLibrary,materials:world.materials};

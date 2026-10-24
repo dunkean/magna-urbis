@@ -17,7 +17,9 @@ describe('bit-exact material sampling reduction', () => {
     const input = surfaceLayerInput();
     input.terrain = { ...input.terrain, width: 2, height: 2, heights: new Float32Array(4).fill(100) };
     delete input.geology; delete input.hydrology; delete input.occupation;
-    const world = compileSurfaceWorld(input), f = world.fields;
+    // Explicitly test the baked/legacy reducer while mutating material arrays;
+    // the new physical response has separate parameter-law tests.
+    const world = compileSurfaceWorld(input,{groundResponse:false}), f = world.fields;
     let seed = 391;
     const random = () => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed / 4294967296; };
     for (let scenario = 0; scenario < 400; scenario++) {
