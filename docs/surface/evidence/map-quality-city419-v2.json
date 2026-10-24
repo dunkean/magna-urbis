@@ -1,0 +1,478 @@
+{
+  "format": "surface-map-quality-v2-proof",
+  "version": 1,
+  "producerCommit": "c6582acc891ec1ca541c8dad676eecc4cfe1a802",
+  "base": "00dbad1",
+  "scope": "CPU compositions of real retained CITY14 captures; no new native render, generation or GPU run.",
+  "sourceScope": "419 native realizations,81 refusals, retained15.625m/unknownLOD/legacy1.5.3; no newGR or fresh city.",
+  "cases": [
+    {
+      "name": "city419-top",
+      "binding": {
+        "format": "surface-map-capture",
+        "version": 1,
+        "sourcePacketSha256": "54616775da71a5fb94e32d1cce13b59cad38f79f410f04525be72bc14edf589e",
+        "metricsSha256": "cf3c954aae3b208099b0968b637b34a28223a8353aa2afba43b62ceeb8c70ca5",
+        "imageSha256": "c69ecb23fc11944e7553908834b1fa934634869b9ef121ce8068e909fb0d2452",
+        "worldId": "0de1e8948131f56a677a8e24e8ecbac8",
+        "canonicalContextId": "00eb9ae088b9342e0ce55680861edf6c",
+        "widthPx": 1280,
+        "heightPx": 800,
+        "projection": {
+          "kind": "orthographic-top",
+          "bounds": {
+            "maxX": 6736.4762957318,
+            "maxZ": 8587.94301892941,
+            "minX": 6336.4762957318,
+            "minZ": 8337.94301892941
+          },
+          "north": "local-negative-z"
+        },
+        "presentation": "cartographic",
+        "mapStyle": "blueprint",
+        "nativeProjection": {
+          "clipRange": [
+            -1,
+            1
+          ],
+          "focus": {
+            "x": 6536.4762957318,
+            "z": 8462.94301892941
+          },
+          "format": "surface-map-projection",
+          "precision": "rebased float32 camera matrix; subtract Float64 renderOrigin before multiplying; TOP scale is the horizontal map reference frame",
+          "projectionMode": "orthographic-top",
+          "renderOrigin": {
+            "x": 6507.8125,
+            "y": 50.8608436584473,
+            "z": 8445.3125
+          },
+          "uniformMetricScale": {
+            "bounds": {
+              "maxX": 6736.4762957318,
+              "maxZ": 8587.94301892941,
+              "minX": 6336.4762957318,
+              "minZ": 8337.94301892941
+            },
+            "metresPerPixel": 0.3125,
+            "north": "local-negative-z"
+          },
+          "version": 1,
+          "viewportPixels": {
+            "height": 800,
+            "width": 1280
+          },
+          "worldId": "0de1e8948131f56a677a8e24e8ecbac8",
+          "worldToClip": [
+            0.00499999988824129,
+            0,
+            0,
+            0,
+            0,
+            -3.49691109402528e-10,
+            -0.00125313282478601,
+            0,
+            0,
+            -0.00800000037997961,
+            5.47761766500621e-11,
+            0,
+            -0.143318980932236,
+            0.141045093536377,
+            -0.504260182380676,
+            1
+          ]
+        }
+      },
+      "canvas": {
+        "format": "surface-external-layout",
+        "version": 1,
+        "widthPx": 1672,
+        "heightPx": 920,
+        "rasterBounds": {
+          "x": 24,
+          "y": 96,
+          "width": 1280,
+          "height": 800
+        },
+        "panels": [
+          {
+            "kind": "title",
+            "x": 384,
+            "y": 24,
+            "width": 560,
+            "height": 48
+          },
+          {
+            "kind": "visual-legend",
+            "x": 1328,
+            "y": 96,
+            "width": 320,
+            "height": 142
+          },
+          {
+            "kind": "north",
+            "x": 1328,
+            "y": 262,
+            "width": 120,
+            "height": 120
+          },
+          {
+            "kind": "scale",
+            "x": 1328,
+            "y": 406,
+            "width": 108,
+            "height": 45
+          }
+        ],
+        "pixelsPerSourcePixel": 1,
+        "projectionCoordinates": "Raster-local; add rasterBounds.x/y once to obtain composed pixels"
+      },
+      "visualLegend": {
+        "format": "surface-visual-legend",
+        "version": 1,
+        "policy": "native-cartographic-glyphs-1",
+        "worldId": "0de1e8948131f56a677a8e24e8ecbac8",
+        "imageSha256": "c69ecb23fc11944e7553908834b1fa934634869b9ef121ce8068e909fb0d2452",
+        "metricsSha256": "cf3c954aae3b208099b0968b637b34a28223a8353aa2afba43b62ceeb8c70ca5",
+        "entries": [
+          {
+            "id": "native-buildings",
+            "text": "B\u00e2timents",
+            "glyph": {
+              "kind": "outlined-building",
+              "fill": "#1f4f96",
+              "stroke": "#e6efff",
+              "strokeWidthPx": 1.3439999999999999
+            },
+            "sourcePath": "metrics.renderSourceVersion.presentation.palette.urban.mass/massEdge/massEdgeW; metrics.cityMap",
+            "qualification": "Prepared source roof overlay; representative outline/fill, not a GPU occlusion census"
+          },
+          {
+            "id": "roads",
+            "text": "Voirie",
+            "glyph": {
+              "kind": "double-edge-road",
+              "fill": "#12356a",
+              "edge": "#e6efff",
+              "borderFraction": 0.125
+            },
+            "sourcePath": "metrics.renderSourceVersion.presentation.palette.roadFill/trackFill/roadEdge; urban.roads; metrics.roadProjectors",
+            "qualification": "Native border-inside-1of8-v1 road texture policy; schematic icon, not metric road width"
+          },
+          {
+            "id": "trees",
+            "text": "Arbres",
+            "glyph": {
+              "kind": "tree-disc",
+              "fill": "#16407c"
+            },
+            "sourcePath": "metrics.renderSourceVersion.presentation.palette.treeFill; metrics.populationInstances.families.tree",
+            "qualification": "Native cartographic procedural crown disc; alpha-positive centres in frame, not a per-pixel occlusion proof"
+          }
+        ]
+      },
+      "sourceContextMetadata": [
+        {
+          "id": "native-buildings",
+          "text": "B\u00e2timents",
+          "sourcePath": "urban.buildings",
+          "semantic": "native-buildings",
+          "count": 419,
+          "qualification": "Native building records retained in source packet; not GPU visibility"
+        },
+        {
+          "id": "roads",
+          "text": "Voirie",
+          "sourcePath": "urban.roads",
+          "semantic": "roads",
+          "count": 6,
+          "qualification": "Road records retained in source packet"
+        },
+        {
+          "id": "trees",
+          "text": "Arbres",
+          "sourcePath": "world.canonicalContext.fields.treeCover",
+          "semantic": "trees",
+          "count": 228,
+          "qualification": "Canonical tree-cover potential support nodes; not rendered or observed tree counts"
+        },
+        {
+          "id": "low-cover",
+          "text": "Couvert bas",
+          "sourcePath": "world.canonicalContext.fields.grassCover/shrubCover/litter",
+          "semantic": "low-cover",
+          "count": 228,
+          "qualification": "Canonical low-cover potential support nodes; not rendered instances"
+        },
+        {
+          "id": "recipe:mineral-soil",
+          "text": "Sol min\u00e9ral",
+          "sourcePath": "world.materials[0] / canonicalContext.fields.groundMaterial",
+          "semantic": "ground-recipe",
+          "count": 486,
+          "qualification": "Canonical ground recipe support nodes; not visible pixel area"
+        }
+      ],
+      "sourceContextVisible": false,
+      "sourceLabelCount": 0,
+      "title": "Plan urbain",
+      "gridMeters": 5,
+      "scaleBar": {
+        "lengthM": 25,
+        "pixels": 80
+      },
+      "cropRgbMaxDifference": 21,
+      "cropChangedPixels": 239875,
+      "topGridOmittedControlMaxDifference": 0,
+      "embeddedOriginalPngSha256": "c69ecb23fc11944e7553908834b1fa934634869b9ef121ce8068e909fb0d2452",
+      "projectionPolicy": "Native matrix and source viewport unchanged; add canvas.rasterBounds.x/y once for composed coordinates.",
+      "artifacts": [
+        {
+          "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-v16-map-quality\\web\\out\\surface\\map-quality\\city419-top.svg",
+          "bytes": 146887,
+          "sha256": "40cd1d3d7d45cd128af6171ee0a1f727a1382d267f3a6830f13ee25971e94e2d"
+        },
+        {
+          "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-v16-map-quality\\web\\out\\surface\\map-quality\\city419-top.png",
+          "bytes": 290777,
+          "sha256": "b627310da5a0c729e729bf1f3bc65c23f7d7e389f9b1f9ef27405dcf0feefac0"
+        },
+        {
+          "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-v16-map-quality\\web\\out\\surface\\map-quality\\city419-top.json",
+          "bytes": 11162,
+          "sha256": "a21834df28b88e3fda1b7964c45c6294308c2d2e8ade9f27a53dcb1a9d4b3d4e"
+        }
+      ]
+    },
+    {
+      "name": "city419-perspective",
+      "binding": {
+        "format": "surface-map-capture",
+        "version": 1,
+        "sourcePacketSha256": "54616775da71a5fb94e32d1cce13b59cad38f79f410f04525be72bc14edf589e",
+        "metricsSha256": "9ec0bdb1aebbde8692e293fc807a8dfefb8a40ab4b5814d22fbb912f72101933",
+        "imageSha256": "0d491e0fea1a856cedd11956dcfca68bed600988208f366ea2276855b918d824",
+        "worldId": "0de1e8948131f56a677a8e24e8ecbac8",
+        "canonicalContextId": "00eb9ae088b9342e0ce55680861edf6c",
+        "widthPx": 1280,
+        "heightPx": 800,
+        "projection": {
+          "kind": "perspective",
+          "worldToClip": [
+            1.40377295017242,
+            0,
+            0,
+            0,
+            0,
+            1.53090679645538,
+            -0.734501600265503,
+            -0.731721580028534,
+            0,
+            -1.64347362518311,
+            -0.684193253517151,
+            -0.681603610515594,
+            -31.2220115661621,
+            185.964889526367,
+            489.542755126953,
+            496.096557617188
+          ],
+          "renderOrigin": {
+            "x": 6507.8125,
+            "y": 51.3937606811523,
+            "z": 8382.8125
+          },
+          "matrixLayout": "column-major",
+          "clipDepth": "minus-one-to-one"
+        },
+        "presentation": "aerial",
+        "mapStyle": "atlas",
+        "nativeProjection": {
+          "clipRange": [
+            -1,
+            1
+          ],
+          "focus": {
+            "x": 6530.05399672873,
+            "z": 8494.49297823057
+          },
+          "format": "surface-map-projection",
+          "precision": "rebased float32 camera matrix; subtract Float64 renderOrigin before multiplying; TOP scale is the horizontal map reference frame",
+          "projectionMode": "perspective",
+          "renderOrigin": {
+            "x": 6507.8125,
+            "y": 51.3937606811523,
+            "z": 8382.8125
+          },
+          "uniformMetricScale": null,
+          "version": 1,
+          "viewportPixels": {
+            "height": 800,
+            "width": 1280
+          },
+          "worldId": "0de1e8948131f56a677a8e24e8ecbac8",
+          "worldToClip": [
+            1.40377295017242,
+            0,
+            0,
+            0,
+            0,
+            1.53090679645538,
+            -0.734501600265503,
+            -0.731721580028534,
+            0,
+            -1.64347362518311,
+            -0.684193253517151,
+            -0.681603610515594,
+            -31.2220115661621,
+            185.964889526367,
+            489.542755126953,
+            496.096557617188
+          ]
+        }
+      },
+      "canvas": {
+        "format": "surface-external-layout",
+        "version": 1,
+        "widthPx": 1328,
+        "heightPx": 920,
+        "rasterBounds": {
+          "x": 24,
+          "y": 96,
+          "width": 1280,
+          "height": 800
+        },
+        "panels": [
+          {
+            "kind": "title",
+            "x": 384,
+            "y": 24,
+            "width": 560,
+            "height": 48
+          }
+        ],
+        "pixelsPerSourcePixel": 1,
+        "projectionCoordinates": "Raster-local; add rasterBounds.x/y once to obtain composed pixels"
+      },
+      "visualLegend": {
+        "format": "surface-visual-legend",
+        "version": 1,
+        "policy": "native-cartographic-glyphs-1",
+        "worldId": "0de1e8948131f56a677a8e24e8ecbac8",
+        "imageSha256": "0d491e0fea1a856cedd11956dcfca68bed600988208f366ea2276855b918d824",
+        "metricsSha256": "9ec0bdb1aebbde8692e293fc807a8dfefb8a40ab4b5814d22fbb912f72101933",
+        "entries": [],
+        "omittedReason": "No certified visual glyph key for this presentation; source semantics remain metadata only"
+      },
+      "sourceContextMetadata": [
+        {
+          "id": "native-buildings",
+          "text": "B\u00e2timents",
+          "sourcePath": "urban.buildings",
+          "semantic": "native-buildings",
+          "count": 419,
+          "qualification": "Native building records retained in source packet; not GPU visibility"
+        },
+        {
+          "id": "roads",
+          "text": "Voirie",
+          "sourcePath": "urban.roads",
+          "semantic": "roads",
+          "count": 6,
+          "qualification": "Road records retained in source packet"
+        },
+        {
+          "id": "water",
+          "text": "Eau",
+          "sourcePath": "world.canonicalContext.fields.waterClass",
+          "semantic": "water",
+          "count": 9980,
+          "qualification": "Canonical source support nodes; not vector area or measured flow"
+        },
+        {
+          "id": "trees",
+          "text": "Arbres",
+          "sourcePath": "world.canonicalContext.fields.treeCover",
+          "semantic": "trees",
+          "count": 1033899,
+          "qualification": "Canonical tree-cover potential support nodes; not rendered or observed tree counts"
+        },
+        {
+          "id": "low-cover",
+          "text": "Couvert bas",
+          "sourcePath": "world.canonicalContext.fields.grassCover/shrubCover/litter",
+          "semantic": "low-cover",
+          "count": 1043864,
+          "qualification": "Canonical low-cover potential support nodes; not rendered instances"
+        },
+        {
+          "id": "recipe:mineral-soil",
+          "text": "Sol min\u00e9ral",
+          "sourcePath": "world.materials[0] / canonicalContext.fields.groundMaterial",
+          "semantic": "ground-recipe",
+          "count": 1007275,
+          "qualification": "Canonical ground recipe support nodes; not visible pixel area"
+        },
+        {
+          "id": "recipe:fractured-bedrock",
+          "text": "Roche fractur\u00e9e",
+          "sourcePath": "world.materials[1] / canonicalContext.fields.groundMaterial",
+          "semantic": "ground-recipe",
+          "count": 16,
+          "qualification": "Canonical ground recipe support nodes; not visible pixel area"
+        },
+        {
+          "id": "recipe:alluvial-bars",
+          "text": "Alluvions",
+          "sourcePath": "world.materials[7] / canonicalContext.fields.groundMaterial",
+          "semantic": "ground-recipe",
+          "count": 41285,
+          "qualification": "Canonical ground recipe support nodes; not visible pixel area"
+        }
+      ],
+      "sourceContextVisible": false,
+      "sourceLabelCount": 0,
+      "title": "Vue urbaine",
+      "gridMeters": null,
+      "scaleBar": null,
+      "cropRgbMaxDifference": 0,
+      "cropChangedPixels": 0,
+      "topGridOmittedControlMaxDifference": null,
+      "embeddedOriginalPngSha256": "0d491e0fea1a856cedd11956dcfca68bed600988208f366ea2276855b918d824",
+      "projectionPolicy": "Native matrix and source viewport unchanged; add canvas.rasterBounds.x/y once for composed coordinates.",
+      "artifacts": [
+        {
+          "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-v16-map-quality\\web\\out\\surface\\map-quality\\city419-perspective.svg",
+          "bytes": 1649583,
+          "sha256": "d462a028e21161a11b91299dfbf44e1abc4696fd32298444967eea1ea645ba27"
+        },
+        {
+          "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-v16-map-quality\\web\\out\\surface\\map-quality\\city419-perspective.png",
+          "bytes": 1654972,
+          "sha256": "5f8ed419a95d0eb99d1edf8c5e004a2d59972684156e893c42cc3d0e73fa7838"
+        },
+        {
+          "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-v16-map-quality\\web\\out\\surface\\map-quality\\city419-perspective.json",
+          "bytes": 10685,
+          "sha256": "19d60f0c3d648966258836b49d0718725cefb4ba89fbe9de90469fd3e639980a"
+        }
+      ]
+    }
+  ],
+  "tests": {
+    "targeted": 14,
+    "fullTypeScript": "PASS",
+    "standaloneCliTypeScript": "PASS"
+  },
+  "blueprintCopy": {
+    "path": "docs\\surface\\evidence\\map-quality-city419-v2-blueprint.png",
+    "sha256": "b627310da5a0c729e729bf1f3bc65c23f7d7e389f9b1f9ef27405dcf0feefac0",
+    "bytes": 290777
+  },
+  "limits": [
+    "Legend policy binds current native cartographic roof/road/crown primitives and captured palette; it is not a universal renderer/visibility classifier.",
+    "Perspective visual key is deliberately omitted because category appearance/visibility cannot be certified from these metrics; source context remains metadata.",
+    "Symbol swatches are schematic, not metric building/road dimensions or GPU occlusion counts.",
+    "TOP grid intentionally modifies its raster overlay pixels; removing only that grid in a CPU control gives zero RGB difference on all1280x800sourcepixels.",
+    "No names invented, no15style claim, no artistic acceptance or performance/FPS qualification."
+  ]
+}
