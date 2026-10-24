@@ -1,0 +1,805 @@
+{
+  "format": "native-e2e-v14-negative-evidence",
+  "version": 1,
+  "status": "FAILED",
+  "rawReport": {
+    "path": "report.json",
+    "bytes": 1519607,
+    "sha256": "08a5df2afdc95cc4463f6c6dcc2db9a998fa9285cd098be28c52f3f03faf515f"
+  },
+  "artifactBaseDirectory": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\native-e2e-40km-v14",
+  "runtimeHead": "763081706cb199c1e7a157d5e2de3c49d38f1aa1",
+  "runtimeSnapshotFileCount": 945,
+  "selectedFinalAndAbortSnapshotsIdentical": true,
+  "cleanSnapshots": true,
+  "driverImplementation": {
+    "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\scripts\\generate_surface_source.mjs",
+    "sha256": "0a094fece9a95fb6085b41d4ced253cf9f05916a83cb2c2d84dccb29da458df2"
+  },
+  "driverFailure": "Error: Native tour exited 1, signal=null",
+  "driverDurationMs": 499773,
+  "supervisorExitCode": 1,
+  "supervisorDurationMs": 506612,
+  "stages": {
+    "freshGeneration": "source and raw neural body saved",
+    "navigation": "PASS",
+    "tour": "FAILED; stopped before40m image",
+    "layerProbes": "NOT_EXECUTED",
+    "rawLayerProbeStatus": "failed",
+    "strictSourceRestoration": "PASS; separate from overall failure"
+  },
+  "navigation": {
+    "timing": {
+      "nominalDurationSeconds": 20,
+      "actualDurationSeconds": 20.005,
+      "overshootSeconds": 0.004999999999999005,
+      "maximumInputGapSeconds": 0.5410000000000004,
+      "terminalInputGapSeconds": 0.05000000000000071,
+      "maximumInputGapInterval": {
+        "fromElapsedSeconds": 16.62,
+        "toElapsedSeconds": 17.161,
+        "gapSeconds": 0.5410000000000004,
+        "terminal": false
+      },
+      "motionAcceptedCount": 8,
+      "motionActualAcceptedCount": 8
+    },
+    "motionRenderedDistinctWorlds": [
+      {
+        "worldId": "247dae74b1ca923a076f0f4cc5d59600",
+        "elapsedNominalMotionSeconds": 17.092,
+        "source": {
+          "id": "infinite:2814899424497554030:73d3dfc576cc6471a981702556b17960",
+          "nativeSpacingM": 30,
+          "sourceLOD": 0,
+          "sourceLODKnown": true,
+          "version": "decoder-v12-nyquist-notch:magna-retained-v1:e2bf5473c0ff:f21afa261ed7",
+          "decoderUsed": false
+        },
+        "deliveredGrid": {
+          "width": 128,
+          "height": 128,
+          "spacingM": 66.27713320592
+        },
+        "request": {
+          "extent": 8483.47305035776,
+          "knownContextId": "8babe2a6d08b9e88860b4176961ec4da",
+          "knownSceneContextId": "597f98eb506001ffe79a126f9efaee99",
+          "preview": true,
+          "resolution": 128,
+          "x": 15264.3730469711,
+          "y": 15460.1954532108
+        }
+      }
+    ],
+    "motionAcceptedCount": 8,
+    "motionGeometryApplicationCount": 3,
+    "finalReady": true,
+    "warmupSeconds": 42.493,
+    "drainSeconds": 11.094,
+    "finalAfterMotion": {
+      "worldId": "20c898a7eace21297c571ac7d98b682b",
+      "source": {
+        "id": "infinite:2814899424497554030:73d3dfc576cc6471a981702556b17960",
+        "nativeSpacingM": 0.46875,
+        "sourceLOD": -6,
+        "sourceLODKnown": true,
+        "version": "decoder-v12-nyquist-notch:magna-retained-v1:e2bf5473c0ff:f21afa261ed7",
+        "decoderUsed": true
+      },
+      "deliveredGrid": {
+        "height": 140,
+        "spacingM": 0.465668530859122,
+        "width": 140
+      },
+      "appliedTickMs": 98571,
+      "nominalMotionEndTickMs": 87539
+    },
+    "allProcessFrameWallMs": {
+      "max": 883.163,
+      "p50": 16.67,
+      "p95": 16.924,
+      "p99": 17.442
+    },
+    "frameScope": "Whole after_ready process collection, not motion-onlyFPS or60FPS proof.",
+    "retainVisualsRequested": true,
+    "retainVisualsUsed": false
+  },
+  "tour": {
+    "status": "failed",
+    "exitCode": 1,
+    "signal": null,
+    "elapsedMs": 375439,
+    "completedImages": [
+      {
+        "widthM": 40000.0,
+        "artifact": {
+          "path": "native-tour\\00_40000m_top.png",
+          "bytes": 2109841,
+          "sha256": "60c2abd68e1d506762fd06cd04590bd80c1db40589bce383f3e88c26b055dd40"
+        },
+        "worldId": "7083dd845b69902a3a01d47c61a2bcf0",
+        "actualSourceAtFocus": {
+          "id": "infinite:2814899424497554030:73d3dfc576cc6471a981702556b17960",
+          "nativeSpacingM": 30.0,
+          "sourceLOD": 0.0,
+          "sourceLODKnown": true,
+          "version": "decoder-v12-nyquist-notch:magna-retained-v1:e2bf5473c0ff:f21afa261ed7",
+          "decoderUsed": false
+        },
+        "heightSampler": {
+          "eligible": true,
+          "executableSha256": "1d2c1652ff6711c1a6c78677d3c6158bd497c93e1fad5a5609c952aef7a4f6ec",
+          "holes": 3932160.0,
+          "mode": "explicit-native-batch",
+          "outputPayloadSha256": "f5627a49c4c8325edaaefd2c5496ff53245550be0e4c75d6ba8b63587d2e73a0",
+          "provenance": "Rust f64 scalar ordered16taps; no fast-math; GD positive-kernel seam policy",
+          "requested": true,
+          "sampleMs": 547.59,
+          "sceneEpoch": "bench-scene-1",
+          "size": 2048,
+          "sourceEpoch": "bench-source-1",
+          "sourceInputSha256": "b0626e4ab9647db211c08ecbc854f9bce32ffc223dc2067957b7a9899747edc4",
+          "sourceSamples": 524288,
+          "sourceWorldId": "7083dd845b69902a3a01d47c61a2bcf0",
+          "spacingM": 77.972412109375,
+          "totalMs": 2265.023,
+          "used": true,
+          "version": "gd-height-batch-1"
+        },
+        "water": {
+          "sourceVectorMissingAreaM2": 0.0,
+          "missingLevelTriangles": 0,
+          "sourceVectorCoverageComplete": true,
+          "budgetLimited": false
+        }
+      },
+      {
+        "widthM": 10000.0,
+        "artifact": {
+          "path": "native-tour\\01_10000m_top.png",
+          "bytes": 4242593,
+          "sha256": "a7f877ee3ff7b05fb82d04435ece38a33f84f5b41adeded9f855683bff0a6bb9"
+        },
+        "worldId": "31536d7034256e7e9e0f12200f57354c",
+        "actualSourceAtFocus": {
+          "id": "infinite:2814899424497554030:73d3dfc576cc6471a981702556b17960",
+          "nativeSpacingM": 15.0,
+          "sourceLOD": -1.0,
+          "sourceLODKnown": true,
+          "version": "decoder-v12-nyquist-notch:magna-retained-v1:e2bf5473c0ff:f21afa261ed7",
+          "decoderUsed": true
+        },
+        "heightSampler": {
+          "eligible": true,
+          "executableSha256": "1d2c1652ff6711c1a6c78677d3c6158bd497c93e1fad5a5609c952aef7a4f6ec",
+          "holes": 0.0,
+          "mode": "explicit-native-batch",
+          "outputPayloadSha256": "3df4adb1130a908c9f586f05cafe8957e95bdb7da92e59f70a1b3042d52d64dc",
+          "provenance": "Rust f64 scalar ordered16taps; no fast-math; GD positive-kernel seam policy",
+          "requested": true,
+          "sampleMs": 21.7594,
+          "sceneEpoch": "bench-scene-1",
+          "size": 1024,
+          "sourceEpoch": "bench-source-1",
+          "sourceInputSha256": "57c5a753a2e220a53768bcd94c3b04d9430498ef9c56db435d0b76bf85f346f9",
+          "sourceSamples": 786432,
+          "sourceWorldId": "31536d7034256e7e9e0f12200f57354c",
+          "spacingM": 23.5390625,
+          "totalMs": 981.277,
+          "used": true,
+          "version": "gd-height-batch-1"
+        },
+        "water": {
+          "sourceVectorMissingAreaM2": 0.0,
+          "missingLevelTriangles": 0,
+          "sourceVectorCoverageComplete": true,
+          "budgetLimited": false
+        }
+      },
+      {
+        "widthM": 2560.0,
+        "artifact": {
+          "path": "native-tour\\02_2560m_top.png",
+          "bytes": 2801813,
+          "sha256": "6d4e5f23f57a0544b6091d5aba10a7a924c7b34da24d92b04ff4a69f188474b8"
+        },
+        "worldId": "f900455361eb01fd6e057193178ac2bf",
+        "actualSourceAtFocus": {
+          "id": "infinite:2814899424497554030:73d3dfc576cc6471a981702556b17960",
+          "nativeSpacingM": 3.75,
+          "sourceLOD": -3.0,
+          "sourceLODKnown": true,
+          "version": "decoder-v12-nyquist-notch:magna-retained-v1:e2bf5473c0ff:f21afa261ed7",
+          "decoderUsed": true
+        },
+        "heightSampler": {
+          "eligible": true,
+          "executableSha256": "1d2c1652ff6711c1a6c78677d3c6158bd497c93e1fad5a5609c952aef7a4f6ec",
+          "holes": 0.0,
+          "mode": "explicit-native-batch",
+          "outputPayloadSha256": "8fdfdcaa827825ccbc1d5f4f540c58cdc79d2c2bf57d384c59a0285d7db43dac",
+          "provenance": "Rust f64 scalar ordered16taps; no fast-math; GD positive-kernel seam policy",
+          "requested": true,
+          "sampleMs": 20.5665,
+          "sceneEpoch": "bench-scene-1",
+          "size": 1024,
+          "sourceEpoch": "bench-source-1",
+          "sourceInputSha256": "d813d1994f4c2db332d229aca0745214d140473fa8cb510141e358a4216d7b91",
+          "sourceSamples": 1048576,
+          "sourceWorldId": "f900455361eb01fd6e057193178ac2bf",
+          "spacingM": 6.1015625,
+          "totalMs": 557.797,
+          "used": true,
+          "version": "gd-height-batch-1"
+        },
+        "water": {
+          "sourceVectorMissingAreaM2": 0.0,
+          "missingLevelTriangles": 0,
+          "sourceVectorCoverageComplete": true,
+          "budgetLimited": false
+        }
+      },
+      {
+        "widthM": 640.0,
+        "artifact": {
+          "path": "native-tour\\03_640m_top.png",
+          "bytes": 2562012,
+          "sha256": "ed83a8283711e3da3326b4d6914da3437eca62d7b5fd9f71a988efc26055d5c8"
+        },
+        "worldId": "233da89cce92acb23486b504b0ea1548",
+        "actualSourceAtFocus": {
+          "id": "infinite:2814899424497554030:73d3dfc576cc6471a981702556b17960",
+          "nativeSpacingM": 0.9375,
+          "sourceLOD": -5.0,
+          "sourceLODKnown": true,
+          "version": "decoder-v12-nyquist-notch:magna-retained-v1:e2bf5473c0ff:f21afa261ed7",
+          "decoderUsed": true
+        },
+        "heightSampler": {
+          "eligible": true,
+          "executableSha256": "1d2c1652ff6711c1a6c78677d3c6158bd497c93e1fad5a5609c952aef7a4f6ec",
+          "holes": 0.0,
+          "mode": "explicit-native-batch",
+          "outputPayloadSha256": "a620d3276b147887ca1b621c70e8bbe93143fd01d18843759c280dd73909eed2",
+          "provenance": "Rust f64 scalar ordered16taps; no fast-math; GD positive-kernel seam policy",
+          "requested": true,
+          "sampleMs": 21.5341,
+          "sceneEpoch": "bench-scene-1",
+          "size": 1024,
+          "sourceEpoch": "bench-source-1",
+          "sourceInputSha256": "81a91a61e47a9567d831c281fbf2f136ad5a9c4ad00e8120c45298e4c18a431b",
+          "sourceSamples": 1310720,
+          "sourceWorldId": "233da89cce92acb23486b504b0ea1548",
+          "spacingM": 1.6015625,
+          "totalMs": 508.979,
+          "used": true,
+          "version": "gd-height-batch-1"
+        },
+        "water": {
+          "sourceVectorMissingAreaM2": 0.0,
+          "missingLevelTriangles": 0,
+          "sourceVectorCoverageComplete": true,
+          "budgetLimited": false
+        }
+      },
+      {
+        "widthM": 160.0,
+        "artifact": {
+          "path": "native-tour\\04_160m_top.png",
+          "bytes": 2421330,
+          "sha256": "0956e0d51fda980c77151ffc5ae0001fcb56db62019bf7fb61b46416225e2b99"
+        },
+        "worldId": "4643e051de43b93fe09b04f953d1fe75",
+        "actualSourceAtFocus": {
+          "id": "infinite:2814899424497554030:73d3dfc576cc6471a981702556b17960",
+          "nativeSpacingM": 0.46875,
+          "sourceLOD": -6.0,
+          "sourceLODKnown": true,
+          "version": "decoder-v12-nyquist-notch:magna-retained-v1:e2bf5473c0ff:f21afa261ed7",
+          "decoderUsed": true
+        },
+        "heightSampler": {
+          "eligible": true,
+          "executableSha256": "1d2c1652ff6711c1a6c78677d3c6158bd497c93e1fad5a5609c952aef7a4f6ec",
+          "holes": 0.0,
+          "mode": "explicit-native-batch",
+          "outputPayloadSha256": "d503473a5a33f136e38053d3eb60d584c73c39178d7cb4052e8a928a9bbce9f3",
+          "provenance": "Rust f64 scalar ordered16taps; no fast-math; GD positive-kernel seam policy",
+          "requested": true,
+          "sampleMs": 22.8501,
+          "sceneEpoch": "bench-scene-1",
+          "size": 1024,
+          "sourceEpoch": "bench-source-1",
+          "sourceInputSha256": "c89478a59527f76039d2e758b551b7574b6e6af119065f39d889c898847442f3",
+          "sourceSamples": 1572864,
+          "sourceWorldId": "4643e051de43b93fe09b04f953d1fe75",
+          "spacingM": 0.4765625,
+          "totalMs": 535.639,
+          "used": true,
+          "version": "gd-height-batch-1"
+        },
+        "water": {
+          "sourceVectorMissingAreaM2": 0.0,
+          "missingLevelTriangles": 0,
+          "sourceVectorCoverageComplete": true,
+          "budgetLimited": false
+        }
+      }
+    ],
+    "missingWidthsM": [
+      40,
+      10
+    ],
+    "finalMetricsFileExists": false,
+    "warningLiteral": "Terrain preparation failed: height batch source sample budget; previous rendered source retained",
+    "warningCount": 1117,
+    "lastRenderedWorldInCapture": "4643e051de43b93fe09b04f953d1fe75",
+    "lastAcceptedPacketWorldId": "84fe4f2a1e733de41b2f3dfae57c4716",
+    "sourceFailClosed": "Preparations above the height batch source sample budget were rejected; previous actual terrain retained. Accepted packets do not establish a new rendered source.",
+    "stderrTail": "ce sample budget; previous rendered source retained\n   at: push_warning (core/variant/variant_utility.cpp:1033)\n   GDScript backtrace (most recent call first):\n       [0] _handle_prepared_result (res://scene/main.gd:1625)\n       [1] _process (res://scene/main.gd:873)\nWARNING: Terrain preparation failed: height batch source sample budget; previous rendered source retained\n   at: push_warning (core/variant/variant_utility.cpp:1033)\n   GDScript backtrace (most recent call first):\n       [0] _handle_prepared_result (res://scene/main.gd:1625)\n       [1] _process (res://scene/main.gd:873)\nWARNING: Terrain preparation failed: height batch source sample budget; previous rendered source retained\n   at: push_warning (core/variant/variant_utility.cpp:1033)\n   GDScript backtrace (most recent call first):\n       [0] _handle_prepared_result (res://scene/main.gd:1625)\n       [1] _process (res://scene/main.gd:873)\nWARNING: Terrain preparation failed: height batch source sample budget; previous rendered source retained\n   at: push_warning (core/variant/variant_utility.cpp:1033)\n   GDScript backtrace (most recent call first):\n       [0] _handle_prepared_result (res://scene/main.gd:1625)\n       [1] _process (res://scene/main.gd:873)\nWARNING: Terrain preparation failed: height batch source sample budget; previous rendered source retained\n   at: push_warning (core/variant/variant_utility.cpp:1033)\n   GDScript backtrace (most recent call first):\n       [0] _handle_prepared_result (res://scene/main.gd:1625)\n       [1] _process (res://scene/main.gd:873)\nWARNING: Terrain preparation failed: height batch source sample budget; previous rendered source retained\n   at: push_warning (core/variant/variant_utility.cpp:1033)\n   GDScript backtrace (most recent call first):\n       [0] _handle_prepared_result (res://scene/main.gd:1625)\n       [1] _process (res://scene/main.gd:873)\nWARNING: Terrain preparation failed: height batch source sample budget; previous rendered source retained\n   at: push_warning (core/variant/variant_utility.cpp:1033)\n   GDScript backtrace (most recent call first):\n       [0] _handle_prepared_result (res://scene/main.gd:1625)\n       [1] _process (res://scene/main.gd:873)\n",
+    "driverStderr": "file:///D:/workspace/self/_worktrees/magna-urbis-surface-world-2026-10-23/web/scripts/generate_surface_source.mjs:170\n    if(result.code!==0)throw new Error(`Native tour exited ${result.code}, signal=${result.signal}`);\n                             ^\n\nError: Native tour exited 1, signal=null\n    at runNativeTour (file:///D:/workspace/self/_worktrees/magna-urbis-surface-world-2026-10-23/web/scripts/generate_surface_source.mjs:170:30)\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async file:///D:/workspace/self/_worktrees/magna-urbis-surface-world-2026-10-23/web/scripts/generate_surface_source.mjs:573:18\n\nNode.js v24.10.0\n"
+  },
+  "strictSourceRestoration": {
+    "format": "native-v14-strict-source-restoration",
+    "status": "PASS",
+    "records": [
+      {
+        "name": "fresh-source.surfacebin",
+        "bytes": 91626097,
+        "sha256": "a21a4af82583efc29c9f7330fbe5c9dbf4b6d0a9a145dbf5bda4de58e3c34b36",
+        "worldId": "344ec6afec0013d19846ffe79db47cab",
+        "compilerVersion": "surface-1.6.0",
+        "groundResponseId": "gr-sha256-1:c4781d7ad7b369c42de22a2ab559f6b0396fc24a6b4f738e6a52bfebfba4056d",
+        "restoration": "PASS without clearing, repairing or replacing any slot",
+        "attachments": [
+          {
+            "path": [
+              "meta",
+              "waterSvg"
+            ],
+            "encoding": "json-utf8",
+            "bytes": 2070219,
+            "sha256": "d95cc55b8103946012b297849fb46d878fce28ee21d021bdff5c5ebf57204d4d"
+          },
+          {
+            "path": [
+              "meta",
+              "waterMaterial",
+              "field"
+            ],
+            "encoding": "base64",
+            "bytes": 1048576,
+            "sha256": "1bb2cdbfccb4075eaa54388bdbd2565d963e20b834c3ed2846f24b94ceaf64e5"
+          },
+          {
+            "path": [
+              "meta",
+              "waterMaterial",
+              "sea",
+              "distance"
+            ],
+            "encoding": "base64",
+            "bytes": 1048576,
+            "sha256": "c0818445e54bb4c6eede4691067963885ae7dd5a3f74348b3d1ca29afe6da730"
+          },
+          {
+            "path": [
+              "meta",
+              "waterMaterial",
+              "path"
+            ],
+            "encoding": "json-utf8",
+            "bytes": 175806,
+            "sha256": "a39fba427769e8dc0638259d674bf7f366c08ee3d8b1d18faad619a3bc82c828"
+          },
+          {
+            "path": [
+              "meta",
+              "regeneration"
+            ],
+            "encoding": "json-utf8",
+            "bytes": 5719,
+            "sha256": "49a277c11981f140d16da348c8276ad627642aff92ec0c188482ddf45a5e0124"
+          },
+          {
+            "path": [
+              "geometry"
+            ],
+            "encoding": "json-utf8",
+            "bytes": 4978369,
+            "sha256": "5e6f45c1a0692e0068d5f6772b1c869c84e655d6ac053ca139b84f1cf745ec40"
+          }
+        ],
+        "restoredWaterArrays": [
+          {
+            "path": [
+              "water",
+              "classes"
+            ],
+            "type": "Uint8Array",
+            "length": 262144
+          },
+          {
+            "path": [
+              "water",
+              "levelM"
+            ],
+            "type": "Float32Array",
+            "length": 262144
+          },
+          {
+            "path": [
+              "water",
+              "riverIds"
+            ],
+            "type": "Int32Array",
+            "length": 262144
+          },
+          {
+            "path": [
+              "water",
+              "riverWidthM"
+            ],
+            "type": "Float32Array",
+            "length": 262144
+          }
+        ],
+        "sourcePresentation": "absent",
+        "restoredPresentationFormat": null,
+        "jobPresentationFormat": "magna-surface-presentation"
+      },
+      {
+        "name": "live-refinement.surfacebin",
+        "bytes": 76589841,
+        "sha256": "246dfaaad5f1d352ef560d89c941e79385c13f8513383e0a548c4c72fb872b80",
+        "worldId": "519dbecf657c4c01a547748fddaeec63",
+        "compilerVersion": "surface-1.6.0",
+        "groundResponseId": "gr-sha256-1:9e10d04f73a00343abbdefbb9c4e2344756ac3a115c93b3dde5029aa5d457284",
+        "restoration": "PASS without clearing, repairing or replacing any slot",
+        "attachments": [
+          {
+            "path": [
+              "meta",
+              "waterSvg"
+            ],
+            "encoding": "json-utf8",
+            "bytes": 2070219,
+            "sha256": "d95cc55b8103946012b297849fb46d878fce28ee21d021bdff5c5ebf57204d4d"
+          },
+          {
+            "path": [
+              "meta",
+              "waterMaterial",
+              "field"
+            ],
+            "encoding": "base64",
+            "bytes": 1048576,
+            "sha256": "1bb2cdbfccb4075eaa54388bdbd2565d963e20b834c3ed2846f24b94ceaf64e5"
+          },
+          {
+            "path": [
+              "meta",
+              "waterMaterial",
+              "sea",
+              "distance"
+            ],
+            "encoding": "base64",
+            "bytes": 1048576,
+            "sha256": "c0818445e54bb4c6eede4691067963885ae7dd5a3f74348b3d1ca29afe6da730"
+          },
+          {
+            "path": [
+              "meta",
+              "waterMaterial",
+              "path"
+            ],
+            "encoding": "json-utf8",
+            "bytes": 175806,
+            "sha256": "a39fba427769e8dc0638259d674bf7f366c08ee3d8b1d18faad619a3bc82c828"
+          },
+          {
+            "path": [
+              "geometry"
+            ],
+            "encoding": "json-utf8",
+            "bytes": 4978369,
+            "sha256": "5e6f45c1a0692e0068d5f6772b1c869c84e655d6ac053ca139b84f1cf745ec40"
+          },
+          {
+            "path": [
+              "presentation"
+            ],
+            "encoding": "json-utf8",
+            "bytes": 8313,
+            "sha256": "7d246eb0e6d2e480106503aa1dbf64eb0cc93e88faf366184fe10106c02fdd2a"
+          }
+        ],
+        "restoredWaterArrays": [
+          {
+            "path": [
+              "water",
+              "classes"
+            ],
+            "type": "Uint8Array",
+            "length": 262144
+          },
+          {
+            "path": [
+              "water",
+              "levelM"
+            ],
+            "type": "Float32Array",
+            "length": 262144
+          },
+          {
+            "path": [
+              "water",
+              "riverIds"
+            ],
+            "type": "Int32Array",
+            "length": 262144
+          },
+          {
+            "path": [
+              "water",
+              "riverWidthM"
+            ],
+            "type": "Float32Array",
+            "length": 262144
+          }
+        ],
+        "sourcePresentation": "archived-null",
+        "restoredPresentationFormat": "magna-surface-presentation",
+        "jobPresentationFormat": "magna-surface-presentation"
+      }
+    ]
+  },
+  "neuralOutput": {
+    "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\native-e2e-40km-v14\\fresh-neural-heightfield.f32",
+    "bytes": 4194304,
+    "width": 1024,
+    "height": 1024,
+    "extentM": 40000,
+    "sampleSpacingM": 39.0625,
+    "sourceStage": "raw Python neural response before Magna reconstruction/hydrology",
+    "sha256": "3c7c2f32e37844842f058208e21522543bcec69125348e115390f83d5b814159",
+    "meta": {
+      "backend": "python-cuda",
+      "precision": "bf16",
+      "profile": "coarse4-original-original",
+      "totalMs": 1466.6109000099823,
+      "coarseMs": 36.549407958984375,
+      "baseMs": 409.91747856140137,
+      "decoderMs": 831.403079032898,
+      "reconstructionMs": 188.7409344566986,
+      "evaluations": [
+        4,
+        121,
+        36
+      ],
+      "land": 1,
+      "edited": false,
+      "sketchRegion": true,
+      "zoneConditioning": 1,
+      "selectedModels": {
+        "coarseModel": "coarse4",
+        "baseModel": "original",
+        "decoderModel": "original"
+      },
+      "modelIdentity": "a9288d7266cdde292e04b15619054476c04bcd17b06d646ba475381179547436:baseModel:original:9ef8030cb805b433b98ec25c5dddefbac07a9e26:decoderModel:original:9ef8030cb805b433b98ec25c5dddefbac07a9e26",
+      "modelRevision": "919550498b3fd7c9d4c53e575f6a2d5475f9be2d",
+      "experimental": false,
+      "neuralSeed": "2814899424497554030",
+      "neuralToken": "1113cd91a9694d1aa8b310cffe08edf9"
+    }
+  },
+  "renderProfile": {
+    "id": "surface-v2",
+    "version": 1,
+    "format": "magna-surface-render-profile",
+    "profilePath": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\viewer-local\\profiles\\surface-v2.json",
+    "profileSha256": "6beb12f12daa71dd596577128087aa145169340fe89724742b8c2a8efeaa2c92",
+    "root": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23",
+    "platform": "win32",
+    "requiredTreeDigest": "74edf966059a17fd44df22d24f4ee055f780d84196ee9c54703fa3b9e46ecbe9",
+    "effectiveSha256": "75f7a4859708d8982fddc74fe10978caaa13cc6b738ac770814a6f6b7f10c168",
+    "effectiveDefaults": {
+      "assets": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface-assets\\resolved.json",
+      "vegetationAssets": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\vegetation-assets\\resolved.json",
+      "treeAssets": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\vegetation-tree-v14\\resolved.json",
+      "heightBatch": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\viewer-local\\native-height\\target\\release\\magna-surface-height-batch.exe",
+      "presentation": "aerial",
+      "nativeLogMode": "threaded",
+      "waterMode": "source-map",
+      "waterVectorTint": "uniform",
+      "waterSymbolWidthPx": 1.25
+    },
+    "artifacts": {
+      "assets": {
+        "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface-assets\\resolved.json",
+        "sha256": "c9f5beb9d4cdbdb7eb5a83340d72d882f36322c73272244408374a260b7e8e26"
+      },
+      "vegetationAssets": {
+        "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\vegetation-assets\\resolved.json",
+        "sha256": "245fdbc786ff5806998075657a9194af767ef13f372670db5a11010c9d4099c1"
+      },
+      "treeAssets": {
+        "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\vegetation-tree-v14\\resolved.json",
+        "sha256": "2c0286061d797330c848fd6f2ed01a573fbbc767fe1af5fdc2aec0c756ab60be"
+      },
+      "heightBatch": {
+        "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\viewer-local\\native-height\\target\\release\\magna-surface-height-batch.exe",
+        "sha256": "1d2c1652ff6711c1a6c78677d3c6158bd497c93e1fad5a5609c952aef7a4f6ec"
+      }
+    },
+    "treeDigest": "74edf966059a17fd44df22d24f4ee055f780d84196ee9c54703fa3b9e46ecbe9",
+    "treeEncodingCorrectionVerified": true,
+    "runtimeFileCount": 82,
+    "runtimeBytes": 274146927,
+    "runtimeArtifactsSha256": "03c4329c7ce102211d5c168f39d49c754978abc9240199ff41f4ee6581631df2",
+    "overrides": []
+  },
+  "cleanup": {
+    "parentReportedAction": "Parent validated owned viewer command line, explicitly stopped viewer PID208296 and owned node212064/Godot198724 tree. Driver178260 then ended with Native tour exited1. This is an explicit abort, not a completed tour.",
+    "followUp": {
+      "checkedAtUtc": "2026-10-24T08:45:42.3328237Z",
+      "recordedOwnedIds": [
+        208296,
+        212064,
+        198724,
+        178260,
+        209860,
+        209144
+      ],
+      "exactNames": [
+        "node.exe",
+        "python.exe",
+        "chrome-headless-shell.exe",
+        "Godot_v4.7.2-stable_win64_console.exe",
+        "Godot_v4.7.2-stable_win64.exe"
+      ],
+      "survivors": [],
+      "scope": "Follow-up of recorded owned IDs only; no process terminated by this archive."
+    },
+    "archiveActions": "Read-only hashing and documentation only; no processes started or terminated."
+  },
+  "nextFix": {
+    "status": "PENDING_NOT_QUALIFIED_BY_V14",
+    "scope": "Parent/model preparing bounded native height source-sample budget correction. A new campaign/path must validate it; no retrospective pass."
+  },
+  "cityEvidence": {
+    "status": "Separate retained CITY419 captures/compositions completed",
+    "path": "native-city419-v14.json",
+    "scope": "Retained15.625m source419/81refusals, not this fresh campaign; cannot replace missing tour40/10or layer probes."
+  },
+  "limits": [
+    "Overall FAILED is preserved despite navigation and strict restoration passes.",
+    "Five PNGs do not constitute seven-view completion. No40m/10m or layer-isolation result is inferred.",
+    "Height warnings are retained verbatim; previous-source retention is not silent proxy success.",
+    "No new artistic acceptance, performance/FPS or engine-adoption claim.",
+    "Archived snapshots attest the original frozen runtime, not the current post-run documentation HEAD."
+  ],
+  "artifacts": [
+    {
+      "path": "report.json",
+      "bytes": 1519607,
+      "sha256": "08a5df2afdc95cc4463f6c6dcc2db9a998fa9285cd098be28c52f3f03faf515f"
+    },
+    {
+      "path": "supervisor-report.json",
+      "bytes": 1413,
+      "sha256": "37ea64bb2b74d07b235a8f24611e2d0d0ba86d1094bd161afd661eda7b19cc3d"
+    },
+    {
+      "path": "driver-process.json",
+      "bytes": 1370,
+      "sha256": "f87680e0130bfb21b53f0fea3225e1877c42cdff7f7c81fe7ca71915725f5ead"
+    },
+    {
+      "path": "supervisor.py",
+      "bytes": 1962,
+      "sha256": "d5293c81cb017dd874f5f790bc768df35c6f85c3e5b837dd286b7ba465a890d6"
+    },
+    {
+      "path": "driver.stdout.log",
+      "bytes": 31701,
+      "sha256": "fb078818aff2977384f69dd88f20e90121d80fa6be18bc0a34898d314474e71f"
+    },
+    {
+      "path": "driver.stderr.log",
+      "bytes": 682,
+      "sha256": "a5d48511dc5aa39cd16d7af4cc3fe03bae7e8b8d671ea3ee2912b938e8901bfc"
+    },
+    {
+      "path": "progress.json",
+      "bytes": 1042,
+      "sha256": "d71e230621b12830ddebfa43f6ab7939d8acbcc8ffda9887194d6136a88fef3a"
+    },
+    {
+      "path": "aborted-snapshot-after.json",
+      "bytes": 99763,
+      "sha256": "6265bbea825c2fb9b4bfd5c46f6c72d1f5cd99f84fae193b15c41d16bcf2b968"
+    },
+    {
+      "path": "strict-source-restoration.json",
+      "bytes": 5787,
+      "sha256": "9492bcc0bf7dac689d7d4f12e9294d3c7f6382f092b658f141b7a0b90ba51dca"
+    },
+    {
+      "path": "restore-source.mjs",
+      "bytes": 2090,
+      "sha256": "f5b76dd6f4636a32a81b4bd05300cf5e1893c7898df6f17dc13766751e81ff5e"
+    },
+    {
+      "path": "fresh-neural-heightfield.f32",
+      "bytes": 4194304,
+      "sha256": "3c7c2f32e37844842f058208e21522543bcec69125348e115390f83d5b814159"
+    },
+    {
+      "path": "fresh-source.surfacebin",
+      "bytes": 91626097,
+      "sha256": "a21a4af82583efc29c9f7330fbe5c9dbf4b6d0a9a145dbf5bda4de58e3c34b36"
+    },
+    {
+      "path": "live-refinement.surfacebin",
+      "bytes": 76589841,
+      "sha256": "246dfaaad5f1d352ef560d89c941e79385c13f8513383e0a548c4c72fb872b80"
+    },
+    {
+      "path": "native-navigation\\stdout.log",
+      "bytes": 199731,
+      "sha256": "b2faab7608681c6d81e4e2d785458bc654bf336393b6ac113d50355ffacc106e"
+    },
+    {
+      "path": "native-navigation\\stderr.log",
+      "bytes": 470,
+      "sha256": "c5b2cb6ed43020d538861693b659678c20993158307d91b13fb81c90a666472d"
+    },
+    {
+      "path": "native-navigation\\navigation-report.json",
+      "bytes": 135739,
+      "sha256": "e86d2724cd1e288ef670b614194ac4bedf2969e818f962460adb7175ced9dcf0"
+    },
+    {
+      "path": "native-navigation\\metrics.json",
+      "bytes": 235622,
+      "sha256": "8163a7c7ed4fef77ed687121d73645ebe0db3a3693f85140dc9ce95a142a59a3"
+    },
+    {
+      "path": "native-tour\\stdout.log",
+      "bytes": 130486,
+      "sha256": "8934bdec90b3d4f033e2a594e4d8c0c3bc12878f5ddb44928fcb4d39ca38b717"
+    },
+    {
+      "path": "native-tour\\stderr.log",
+      "bytes": 365729,
+      "sha256": "e618990365530a217e01a7e3b3164f476ae24efd754c0ac2876bb15ebff92ce6"
+    },
+    {
+      "path": "native-tour\\00_40000m_top.png",
+      "bytes": 2109841,
+      "sha256": "60c2abd68e1d506762fd06cd04590bd80c1db40589bce383f3e88c26b055dd40"
+    },
+    {
+      "path": "native-tour\\01_10000m_top.png",
+      "bytes": 4242593,
+      "sha256": "a7f877ee3ff7b05fb82d04435ece38a33f84f5b41adeded9f855683bff0a6bb9"
+    },
+    {
+      "path": "native-tour\\02_2560m_top.png",
+      "bytes": 2801813,
+      "sha256": "6d4e5f23f57a0544b6091d5aba10a7a924c7b34da24d92b04ff4a69f188474b8"
+    },
+    {
+      "path": "native-tour\\03_640m_top.png",
+      "bytes": 2562012,
+      "sha256": "ed83a8283711e3da3326b4d6914da3437eca62d7b5fd9f71a988efc26055d5c8"
+    },
+    {
+      "path": "native-tour\\04_160m_top.png",
+      "bytes": 2421330,
+      "sha256": "0956e0d51fda980c77151ffc5ae0001fcb56db62019bf7fb61b46416225e2b99"
+    }
+  ]
+}
