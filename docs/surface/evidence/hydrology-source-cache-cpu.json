@@ -1,0 +1,444 @@
+{
+  "checks": 51,
+  "failures": [],
+  "measured": [
+    {
+      "authority": "magna-urbis-fixed-hydrology",
+      "baselineMs": 0.236,
+      "cachedMs": 0.185,
+      "contourSha256": "88287727f987e1015cdf8791f8bc4aecece1481b5d455e0bd5a907395c9ccd52",
+      "fallback": null,
+      "label": "authored cold/hot 0",
+      "sourceVertices": 6
+    },
+    {
+      "authority": "magna-urbis-fixed-hydrology",
+      "baselineMs": 0.166,
+      "cachedMs": 0.165,
+      "contourSha256": "88287727f987e1015cdf8791f8bc4aecece1481b5d455e0bd5a907395c9ccd52",
+      "fallback": null,
+      "label": "authored cold/hot 1",
+      "sourceVertices": 6
+    },
+    {
+      "authority": "magna-urbis-fixed-hydrology",
+      "baselineMs": 0.165,
+      "cachedMs": 0.151,
+      "contourSha256": "88287727f987e1015cdf8791f8bc4aecece1481b5d455e0bd5a907395c9ccd52",
+      "fallback": null,
+      "label": "authored cold/hot 2",
+      "sourceVertices": 6
+    },
+    {
+      "authority": "magna-urbis-fixed-hydrology",
+      "baselineMs": 0.158,
+      "cachedMs": 0.15,
+      "contourSha256": "0debe3fea1e233f2212fc1ad8bf041eb6eff3da88af697629dabbf3a5e9eb86d",
+      "fallback": null,
+      "label": "frame 1000000000.0",
+      "sourceVertices": 6
+    },
+    {
+      "authority": "magna-urbis-fixed-hydrology",
+      "baselineMs": 0.159,
+      "cachedMs": 0.151,
+      "contourSha256": "50abcdd6c6facf3728dabe4bf08922e4f918c7c8d47967da7aff6da1af5aea19",
+      "fallback": null,
+      "label": "frame -1000000000.0",
+      "sourceVertices": 6
+    },
+    {
+      "authority": "magna-urbis-fixed-hydrology",
+      "baselineMs": 0.163,
+      "cachedMs": 0.152,
+      "contourSha256": "88287727f987e1015cdf8791f8bc4aecece1481b5d455e0bd5a907395c9ccd52",
+      "fallback": null,
+      "label": "frame 0.0",
+      "sourceVertices": 6
+    },
+    {
+      "authority": "magna-urbis-fixed-hydrology",
+      "baselineMs": 0.158,
+      "cachedMs": 0.15,
+      "contourSha256": "0debe3fea1e233f2212fc1ad8bf041eb6eff3da88af697629dabbf3a5e9eb86d",
+      "fallback": null,
+      "label": "frame 1000000000.0",
+      "sourceVertices": 6
+    },
+    {
+      "authority": "magna-urbis-fixed-hydrology",
+      "baselineMs": 0.156,
+      "cachedMs": 0.152,
+      "contourSha256": "88287727f987e1015cdf8791f8bc4aecece1481b5d455e0bd5a907395c9ccd52",
+      "fallback": null,
+      "label": "frame 0.0",
+      "sourceVertices": 6
+    },
+    {
+      "authority": "magna-urbis-fixed-hydrology",
+      "baselineMs": 0.162,
+      "cachedMs": 0.155,
+      "contourSha256": "eb7a2979d6c0bf90e7e8e59f3c5d5f77563b989d79bb575a0ed39a71395b1350",
+      "fallback": null,
+      "label": "one byte edit under same scene ID",
+      "sourceVertices": 6
+    },
+    {
+      "authority": "magna-urbis-fixed-hydrology",
+      "baselineMs": 0.16,
+      "cachedMs": 0.159,
+      "contourSha256": "88287727f987e1015cdf8791f8bc4aecece1481b5d455e0bd5a907395c9ccd52",
+      "fallback": null,
+      "label": "class-valid",
+      "sourceVertices": 6
+    },
+    {
+      "authority": "magna-retained-physical-raster",
+      "baselineMs": 0.016,
+      "cachedMs": 0.011,
+      "contourSha256": null,
+      "fallback": "invalid retained Magna water class",
+      "label": "class-invalid",
+      "sourceVertices": 6
+    },
+    {
+      "authority": "magna-retained-physical-raster",
+      "baselineMs": 0.015,
+      "cachedMs": 0.01,
+      "contourSha256": null,
+      "fallback": "missing or mis-sized retained water columns",
+      "label": "size",
+      "sourceVertices": 6
+    },
+    {
+      "authority": "magna-retained-physical-raster",
+      "baselineMs": 0.019,
+      "cachedMs": 0.015,
+      "contourSha256": null,
+      "fallback": "invalid retained first-sample water origin",
+      "label": "origin",
+      "sourceVertices": 6
+    },
+    {
+      "authority": "magna-retained-physical-raster",
+      "baselineMs": 0.014,
+      "cachedMs": 0.009,
+      "contourSha256": null,
+      "fallback": "invalid retained water grid shape",
+      "label": "width",
+      "sourceVertices": 6
+    },
+    {
+      "authority": "magna-urbis-fixed-hydrology",
+      "baselineMs": 0.117,
+      "cachedMs": 0.108,
+      "contourSha256": "88287727f987e1015cdf8791f8bc4aecece1481b5d455e0bd5a907395c9ccd52",
+      "fallback": null,
+      "label": "levels",
+      "sourceVertices": 0
+    },
+    {
+      "authority": "magna-retained-physical-raster",
+      "baselineMs": 0.017,
+      "cachedMs": 0.013,
+      "contourSha256": null,
+      "fallback": "invalid retained Magna water class",
+      "label": "fractional-array-class",
+      "sourceVertices": 6
+    },
+    {
+      "authority": "magna-retained-physical-raster",
+      "baselineMs": 0.011,
+      "cachedMs": 0.007,
+      "contourSha256": null,
+      "fallback": "cavern class 2 is ambiguous; retained physical contextual water only",
+      "label": "cavern",
+      "sourceVertices": 6
+    },
+    {
+      "authority": "magna-retained-physical-raster",
+      "baselineMs": 0.01,
+      "cachedMs": 0.009,
+      "contourSha256": null,
+      "fallback": "retained source vector water geometry unavailable",
+      "label": "malformed-json",
+      "sourceVertices": 6
+    },
+    {
+      "authority": "magna-retained-physical-raster",
+      "baselineMs": 433.809,
+      "cachedMs": 293.202,
+      "contourSha256": null,
+      "fallback": "source vector point budget exceeded",
+      "label": "unchanged source point budget rejection",
+      "sourceVertices": 6
+    },
+    {
+      "authority": "magna-urbis-fixed-hydrology",
+      "baselineMs": 1002.027,
+      "cachedMs": 1155.651,
+      "contourSha256": "286deb4c05ca9983309487538399ea7aeb8a32c748022bd05e1c60ed278afe40",
+      "fallback": null,
+      "label": "retained V11 21 attempt 0",
+      "sourceVertices": 0
+    },
+    {
+      "authority": "magna-urbis-fixed-hydrology",
+      "baselineMs": 1031.828,
+      "cachedMs": 624.412,
+      "contourSha256": "286deb4c05ca9983309487538399ea7aeb8a32c748022bd05e1c60ed278afe40",
+      "fallback": null,
+      "label": "retained V11 21 attempt 1",
+      "sourceVertices": 0
+    },
+    {
+      "authority": "magna-urbis-fixed-hydrology",
+      "baselineMs": 992.601,
+      "cachedMs": 8289.183,
+      "contourSha256": "286deb4c05ca9983309487538399ea7aeb8a32c748022bd05e1c60ed278afe40",
+      "fallback": null,
+      "label": "retained V11 21 attempt 2",
+      "sourceVertices": 0
+    },
+    {
+      "authority": "magna-urbis-fixed-hydrology",
+      "baselineMs": 1025.297,
+      "cachedMs": 654.794,
+      "contourSha256": "286deb4c05ca9983309487538399ea7aeb8a32c748022bd05e1c60ed278afe40",
+      "fallback": null,
+      "label": "retained V11 204 attempt 0",
+      "sourceVertices": 0
+    },
+    {
+      "authority": "magna-urbis-fixed-hydrology",
+      "baselineMs": 1008.28,
+      "cachedMs": 620.765,
+      "contourSha256": "286deb4c05ca9983309487538399ea7aeb8a32c748022bd05e1c60ed278afe40",
+      "fallback": null,
+      "label": "retained V11 204 attempt 1",
+      "sourceVertices": 0
+    },
+    {
+      "authority": "magna-urbis-fixed-hydrology",
+      "baselineMs": 1068.206,
+      "cachedMs": 632.713,
+      "contourSha256": "286deb4c05ca9983309487538399ea7aeb8a32c748022bd05e1c60ed278afe40",
+      "fallback": null,
+      "label": "retained V11 204 attempt 2",
+      "sourceVertices": 0
+    }
+  ],
+  "passed": true,
+  "scope": "CPU exact source-cache outputs/rejections, elapsed buildMs excluded; retained V11 replays not archived original BODYs; no GPU or navigation claim",
+  "format": "hydrology-source-cache-cpu",
+  "version": 1,
+  "frozenNativeRuntime": "176e77403152e9893f5f9303728db0e1ecd033e5",
+  "baselineHydrologySha256": "827a864e8d0b26d91c44b12190efc9ae67e039311e283ee1139fe9275b1a8790",
+  "cachedHydrologySha256": "47e739102ecf5c023a1432772a40c87be09ac11b948ea10d8859761af998269f",
+  "repeatedInstrumentedReplay": {
+    "records": [
+      {
+        "attempt": 0,
+        "contourHash": "286deb4c05ca9983309487538399ea7aeb8a32c748022bd05e1c60ed278afe40",
+        "elapsedMs": 976.066,
+        "phases": {
+          "bedDiagnosticsMs": 0.006,
+          "metadataAndClassImageMs": 64.236,
+          "seaUnionMs": 249.898,
+          "sourceGeometryDecodeMs": 175.204,
+          "vectorClipMeshLevelsMs": 339.572,
+          "waterValidationMs": 146.659,
+          "windowSetupMs": 0.025
+        },
+        "vertices": 0
+      },
+      {
+        "attempt": 1,
+        "contourHash": "286deb4c05ca9983309487538399ea7aeb8a32c748022bd05e1c60ed278afe40",
+        "elapsedMs": 636.012,
+        "phases": {
+          "bedDiagnosticsMs": 0.006,
+          "metadataAndClassImageMs": 53.78,
+          "seaUnionMs": 224.037,
+          "sourceGeometryDecodeMs": 0.385,
+          "vectorClipMeshLevelsMs": 357.079,
+          "waterValidationMs": 0.204,
+          "windowSetupMs": 0.017
+        },
+        "vertices": 0
+      },
+      {
+        "attempt": 2,
+        "contourHash": "286deb4c05ca9983309487538399ea7aeb8a32c748022bd05e1c60ed278afe40",
+        "elapsedMs": 641.171,
+        "phases": {
+          "bedDiagnosticsMs": 0.005,
+          "metadataAndClassImageMs": 52.85,
+          "seaUnionMs": 236.545,
+          "sourceGeometryDecodeMs": 0.36,
+          "vectorClipMeshLevelsMs": 350.655,
+          "waterValidationMs": 0.189,
+          "windowSetupMs": 0.016
+        },
+        "vertices": 0
+      },
+      {
+        "attempt": 3,
+        "contourHash": "286deb4c05ca9983309487538399ea7aeb8a32c748022bd05e1c60ed278afe40",
+        "elapsedMs": 639.744,
+        "phases": {
+          "bedDiagnosticsMs": 0.005,
+          "metadataAndClassImageMs": 62.475,
+          "seaUnionMs": 236.917,
+          "sourceGeometryDecodeMs": 0.522,
+          "vectorClipMeshLevelsMs": 339.042,
+          "waterValidationMs": 0.219,
+          "windowSetupMs": 0.019
+        },
+        "vertices": 0
+      },
+      {
+        "attempt": 4,
+        "contourHash": "286deb4c05ca9983309487538399ea7aeb8a32c748022bd05e1c60ed278afe40",
+        "elapsedMs": 669.313,
+        "phases": {
+          "bedDiagnosticsMs": 0.006,
+          "metadataAndClassImageMs": 52.665,
+          "seaUnionMs": 249.916,
+          "sourceGeometryDecodeMs": 0.458,
+          "vectorClipMeshLevelsMs": 365.527,
+          "waterValidationMs": 0.188,
+          "windowSetupMs": 0.017
+        },
+        "vertices": 0
+      },
+      {
+        "attempt": 5,
+        "contourHash": "286deb4c05ca9983309487538399ea7aeb8a32c748022bd05e1c60ed278afe40",
+        "elapsedMs": 670.039,
+        "phases": {
+          "bedDiagnosticsMs": 0.005,
+          "metadataAndClassImageMs": 62.797,
+          "seaUnionMs": 246.445,
+          "sourceGeometryDecodeMs": 0.41,
+          "vectorClipMeshLevelsMs": 359.647,
+          "waterValidationMs": 0.184,
+          "windowSetupMs": 0.018
+        },
+        "vertices": 0
+      },
+      {
+        "attempt": 6,
+        "contourHash": "286deb4c05ca9983309487538399ea7aeb8a32c748022bd05e1c60ed278afe40",
+        "elapsedMs": 643.773,
+        "phases": {
+          "bedDiagnosticsMs": 0.007,
+          "metadataAndClassImageMs": 51.159,
+          "seaUnionMs": 235.984,
+          "sourceGeometryDecodeMs": 0.426,
+          "vectorClipMeshLevelsMs": 355.286,
+          "waterValidationMs": 0.188,
+          "windowSetupMs": 0.018
+        },
+        "vertices": 0
+      },
+      {
+        "attempt": 7,
+        "contourHash": "286deb4c05ca9983309487538399ea7aeb8a32c748022bd05e1c60ed278afe40",
+        "elapsedMs": 673.544,
+        "phases": {
+          "bedDiagnosticsMs": 0.006,
+          "metadataAndClassImageMs": 60.51,
+          "seaUnionMs": 248.624,
+          "sourceGeometryDecodeMs": 0.38,
+          "vectorClipMeshLevelsMs": 363.296,
+          "waterValidationMs": 0.185,
+          "windowSetupMs": 0.017
+        },
+        "vertices": 0
+      },
+      {
+        "attempt": 8,
+        "contourHash": "286deb4c05ca9983309487538399ea7aeb8a32c748022bd05e1c60ed278afe40",
+        "elapsedMs": 656.405,
+        "phases": {
+          "bedDiagnosticsMs": 0.006,
+          "metadataAndClassImageMs": 54.088,
+          "seaUnionMs": 245.068,
+          "sourceGeometryDecodeMs": 0.424,
+          "vectorClipMeshLevelsMs": 356.07,
+          "waterValidationMs": 0.182,
+          "windowSetupMs": 0.017
+        },
+        "vertices": 0
+      },
+      {
+        "attempt": 9,
+        "contourHash": "286deb4c05ca9983309487538399ea7aeb8a32c748022bd05e1c60ed278afe40",
+        "elapsedMs": 643.854,
+        "phases": {
+          "bedDiagnosticsMs": 0.006,
+          "metadataAndClassImageMs": 53.119,
+          "seaUnionMs": 244.062,
+          "sourceGeometryDecodeMs": 0.407,
+          "vectorClipMeshLevelsMs": 345.4,
+          "waterValidationMs": 0.197,
+          "windowSetupMs": 0.016
+        },
+        "vertices": 0
+      },
+      {
+        "attempt": 10,
+        "contourHash": "286deb4c05ca9983309487538399ea7aeb8a32c748022bd05e1c60ed278afe40",
+        "elapsedMs": 651.466,
+        "phases": {
+          "bedDiagnosticsMs": 0.006,
+          "metadataAndClassImageMs": 59.322,
+          "seaUnionMs": 218.825,
+          "sourceGeometryDecodeMs": 0.433,
+          "vectorClipMeshLevelsMs": 372.142,
+          "waterValidationMs": 0.189,
+          "windowSetupMs": 0.017
+        },
+        "vertices": 0
+      },
+      {
+        "attempt": 11,
+        "contourHash": "286deb4c05ca9983309487538399ea7aeb8a32c748022bd05e1c60ed278afe40",
+        "elapsedMs": 643.861,
+        "phases": {
+          "bedDiagnosticsMs": 0.006,
+          "metadataAndClassImageMs": 55.938,
+          "seaUnionMs": 234.254,
+          "sourceGeometryDecodeMs": 0.463,
+          "vectorClipMeshLevelsMs": 352.461,
+          "waterValidationMs": 0.186,
+          "windowSetupMs": 0.017
+        },
+        "vertices": 0
+      }
+    ]
+  },
+  "repeatedSummary": {
+    "coldMs": 976.066,
+    "hotCount": 11,
+    "hotMinimumMs": 636.012,
+    "hotMaximumMs": 673.544,
+    "hotMedianMs": 643.861
+  },
+  "limits": [
+    "Original strict V11 FAILED. These are retained CPU replay/component tests, not fresh BODY byte identity, GPU, latency gate or campaign qualification.",
+    "All measured rows are retained, including one un-attributed8289.183ms cached call in the comparison run after a500001-point stress case. It did not recur in the separate12-call profile; no GC/OS/cache cause is claimed.",
+    "Headless timing differs from concurrent GPU/browser runtime, so no absolute native campaign speedup is inferred.",
+    "The cache preserves one decoded geometry object plus copied key bytes <=64MiB and one copied class byte column <=4096²bytes. Decoded-object resident memory is additional and not measured here.",
+    "Only elapsed buildMs is omitted from output equality; all buffers, image bytes, contour hashes, metadata and rejection/fallback strings are compared.",
+    "The repeated replay uses near21 (empty clipped water output); non-empty output parity is additionally tested on authored water."
+  ],
+  "regressionTests": [
+    "surface_hydrology_test.gd",
+    "surface_hydrology_sweep_test.gd",
+    "surface_water_float_bound_test.gd",
+    "surface_water_contours_test.gd",
+    "surface_hydrology_visibility_test.gd"
+  ]
+}
