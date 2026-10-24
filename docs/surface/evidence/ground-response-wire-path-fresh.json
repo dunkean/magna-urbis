@@ -1,0 +1,137 @@
+{
+  "archiveBlocks": [
+    {
+      "decodedType": "PackedByteArray",
+      "dtype": "u8",
+      "exactOriginalPayload": true,
+      "length": 2070219.0,
+      "offset": 79969160.0,
+      "path": [
+        "source",
+        "$surfaceSourceArchive",
+        "attachments",
+        0.0,
+        "bytes"
+      ],
+      "sha256": "d95cc55b8103946012b297849fb46d878fce28ee21d021bdff5c5ebf57204d4d"
+    },
+    {
+      "decodedType": "PackedByteArray",
+      "dtype": "u8",
+      "exactOriginalPayload": true,
+      "length": 1048576.0,
+      "offset": 82039384.0,
+      "path": [
+        "source",
+        "$surfaceSourceArchive",
+        "attachments",
+        1.0,
+        "bytes"
+      ],
+      "sha256": "1bb2cdbfccb4075eaa54388bdbd2565d963e20b834c3ed2846f24b94ceaf64e5"
+    },
+    {
+      "decodedType": "PackedByteArray",
+      "dtype": "u8",
+      "exactOriginalPayload": true,
+      "length": 1048576.0,
+      "offset": 83087960.0,
+      "path": [
+        "source",
+        "$surfaceSourceArchive",
+        "attachments",
+        2.0,
+        "bytes"
+      ],
+      "sha256": "c0818445e54bb4c6eede4691067963885ae7dd5a3f74348b3d1ca29afe6da730"
+    },
+    {
+      "decodedType": "PackedByteArray",
+      "dtype": "u8",
+      "exactOriginalPayload": true,
+      "length": 175806.0,
+      "offset": 84136536.0,
+      "path": [
+        "source",
+        "$surfaceSourceArchive",
+        "attachments",
+        3.0,
+        "bytes"
+      ],
+      "sha256": "a39fba427769e8dc0638259d674bf7f366c08ee3d8b1d18faad619a3bc82c828"
+    },
+    {
+      "decodedType": "PackedByteArray",
+      "dtype": "u8",
+      "exactOriginalPayload": true,
+      "length": 5719.0,
+      "offset": 84312344.0,
+      "path": [
+        "source",
+        "$surfaceSourceArchive",
+        "attachments",
+        4.0,
+        "bytes"
+      ],
+      "sha256": "49a277c11981f140d16da348c8276ad627642aff92ec0c188482ddf45a5e0124"
+    },
+    {
+      "decodedType": "PackedByteArray",
+      "dtype": "u8",
+      "exactOriginalPayload": true,
+      "length": 4978369.0,
+      "offset": 84318064.0,
+      "path": [
+        "source",
+        "$surfaceSourceArchive",
+        "attachments",
+        5.0,
+        "bytes"
+      ],
+      "sha256": "5e6f45c1a0692e0068d5f6772b1c869c84e655d6ac053ca139b84f1cf745ec40"
+    }
+  ],
+  "archivePayloadBytesExact": true,
+  "bytes": 91626097,
+  "groundResponseId": "gr-sha256-1:53b0f9bdfa07b3f824613aaddd0779948b1ba654ec495ea3da1d41ca7aa9f99f",
+  "inputBytesUnchanged": true,
+  "nativeGroundResponseValid": true,
+  "packetSha256": "352b21a5737c4fa7234ca71c1e85b32089f342eccea3d4d648aa9a671199aec9",
+  "scope": "Actual fresh packet CPU Data.decode_packet, no GPU or scene acceptance claim",
+  "sourceId": "mountains-surface-native-e2e-40km",
+  "sourcePacket": "D:/workspace/self/_worktrees/magna-urbis-surface-world-2026-10-23/web/out/surface/native-log-modes-v13/fresh-source.surfacebin",
+  "sourceVersion": "2026-10-24T05:11:21.410Z",
+  "status": "PASS",
+  "worldId": "27b9f1007bf6c01e63e34578fbdba674",
+  "bug": "Typed source/archive descriptor paths include JSON numeric Array indices; comparing a float path suffix to a String before checking types raised a GDScript error.",
+  "fix": "Return empty dtype for any non-String component; retain exact GR string-only prefix whitelist. Validate descriptor path Array shape before calling typed classifiers.",
+  "cpuTests": {
+    "passed": 28,
+    "mixedParts": [
+      "Float JSON index",
+      "Integer",
+      "Bool",
+      "null",
+      "Dictionary"
+    ],
+    "opaquePreservation": [
+      "Array source metadata",
+      "PackedByteArray unknown GR suffix",
+      "PackedFloat64Array unknown all-string prefix",
+      "typesArray string/numeric metadata"
+    ],
+    "malformedNonArrayPaths": "Rejected without SCRIPT ERROR"
+  },
+  "strictStderrEmpty": true,
+  "gpuRun": false,
+  "failureEvidencePreserved": "Original ROOT/native-log-modes-v13 synchronous failure log and captured source remain unchanged.",
+  "codeSha256Lf": {
+    "viewer-local/adapters/surface_ground_response.gd": "88a628c00b39d9883b70299260b61220b925bb22456c4041dcbb05433bce0213",
+    "viewer-local/adapters/surface_data.gd": "c4518345b37e7b73a4b3289fbd8a831aa399c67c7211635781def9c8d836bb1e",
+    "viewer-local/tests/ground_response_wire_path_test.gd": "84f8da7ef4332d15c76bb826ec5546b0e807f9df2dd79a2eba836e24b3e019b5",
+    "viewer-local/tests/ground_response_fresh_decode_probe.gd": "4a97d935503a8e523190cb4edc9a82c26e71edd24de3462ec31d327f100abf77"
+  },
+  "rawReport": "web\\out\\surface\\ground-response-wire-path\\fresh-decode-report.json",
+  "stdoutSha256Lf": "a93da2f3c3f23b3fcf9401e0059f1727cfa43b4070f93a98661ff435a14e1e8e",
+  "stderrSha256Lf": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

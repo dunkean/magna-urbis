@@ -13,6 +13,9 @@ static var _cached_fields:Dictionary={}
 static var _cached_result:Dictionary={}
 
 static func expected_wire_dtype(path:Array)->String:
+	# Array indices in unrelated source/archive paths are valid, but never GR.
+	for component in path:
+		if not component is String:return ""
 	if path.size()<3 or path[-3]!="groundResponse" or path[-2]!="fields":return ""
 	if path.slice(0,path.size()-3) not in [[],["world"],["canonicalContext"],["world","canonicalContext"]]:return ""
 	return "f32" if path[-1] in FLOATS else "u16" if path[-1]=="rockRecipe" else ""

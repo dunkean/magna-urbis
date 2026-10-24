@@ -42,14 +42,14 @@ static func decode_packet(bytes: PackedByteArray) -> Dictionary:
 		# Validate every address before decoding any payload allocation.
 		for descriptor in manifest.arrays:
 			if not descriptor is Dictionary or not strides.has(descriptor.get("dtype","")): return {}
-			var expected=Layers.expected_wire_dtype(descriptor.get("path",[]))
-			if expected.is_empty():expected=GroundResponse.expected_wire_dtype(descriptor.get("path",[]))
+			var path = descriptor.get("path")
+			if not path is Array or path.is_empty() or path.size()>32: return {}
+			var expected=Layers.expected_wire_dtype(path)
+			if expected.is_empty():expected=GroundResponse.expected_wire_dtype(path)
 			if not expected.is_empty() and descriptor.dtype!=expected:return {}
 			var stride: int = strides[descriptor.dtype]
 			if not _integer(descriptor.get("length"),0,MAX_PACKET_BYTES/stride) or not _integer(descriptor.get("offset"),0,payload_length): return {}
 			if int(descriptor.offset)%stride!=0 or int(descriptor.offset)+int(descriptor.length)*stride>payload_length: return {}
-			var path = descriptor.get("path")
-			if not path is Array or path.is_empty() or path.size()>32: return {}
 			var path_key := JSON.stringify(path)
 			if paths.has(path_key): return {}
 			paths[path_key]=true
