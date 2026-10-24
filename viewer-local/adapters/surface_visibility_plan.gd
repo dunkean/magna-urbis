@@ -21,6 +21,26 @@ static var _cached_world:Dictionary={}
 static var _cached_display:Dictionary={}
 static var _cached_layers:Array=[]
 
+# Additive feature ledger, never a substitute for the existing resident/atlas
+# budget. It bounds only declared known data planes/reserves, not processRSS.
+static func feature_ledger(value)->Dictionary:
+	var ledger:Dictionary={}
+	if value is int:
+		if value<0 or value>MAX_ESTIMATED_WORKING_BYTES:return {"valid":false}
+		if value>0:ledger["callerFeatureReserveBytes"]=value
+	elif value is Dictionary:
+		if value.size()>32:return {"valid":false}
+		for key in value:
+			var amount=value[key]
+			if not key is String or key.is_empty() or not (amount is int or amount is float) or not is_finite(float(amount)) or floorf(float(amount))!=float(amount) or float(amount)<0 or float(amount)>MAX_ESTIMATED_WORKING_BYTES:return {"valid":false}
+			ledger[key]=int(amount)
+	else:return {"valid":false}
+	var total=0
+	for amount in ledger.values():
+		if int(amount)>MAX_ESTIMATED_WORKING_BYTES-total:return {"valid":false}
+		total+=int(amount)
+	return {"valid":true,"totalBytes":total,"items":ledger}
+
 static func _camera_hash(camera:Dictionary)->String:
 	var hash=HashingContext.new();hash.start(HashingContext.HASH_SHA256);hash.update(var_to_bytes(camera));return hash.finish().hex_encode()
 
@@ -129,6 +149,8 @@ static func _visible(bounds:Dictionary,low:float,high:float,camera:Dictionary,pl
 	return true
 
 static func build(world:Dictionary,display:Dictionary,camera:Dictionary,origin:Dictionary,spacing:float,page:Dictionary,options:Dictionary={})->Dictionary:
+	var features=feature_ledger(options.get("extraKnownFeatureBytes",0))
+	if not features.valid:return _fail("invalid-known-feature-budget-ledger")
 	if camera.is_empty() or page.is_empty() or not page.get("complete",false):return _fail("missing-camera-or-complete-tree-page")
 	var physical_domains=Coverage.domains(world)
 	if physical_domains.is_empty():return _fail("invalid-source-lineage-or-domain")
@@ -231,10 +253,12 @@ static func build(world:Dictionary,display:Dictionary,camera:Dictionary,origin:D
 		for axis in ["x","y","z"]:
 			if absf(float(old_origin[axis])-float(planned_origin[axis]))>.00001:reuse=false;break
 	var budget={"newResidentRfControlBackingTransferBytes":0 if reuse else image_size*image_size*24,"activeResidentRfControlBackingBytes":active_side*active_side*16,"newAtlasArraysImagesMipsUploadUpperBytes":aw*ah*240,"activeAtlasImagesMipsTextureUpperBytes":active_atlas*128,"heightIndexUpperBytes":estimate,"sourceContextReserveBytes":SOURCE_CONTEXT_RESERVE_BYTES,"reuseResident":reuse}
+	budget["extraKnownFeatureBytes"]=int(features.totalBytes)
 	var total=0
 	for key in budget:
 		if key!="reuseResident":total+=int(budget[key])
 	budget["estimatedKnownPeakBytes"]=total;budget["limitBytes"]=mini(MAX_ESTIMATED_WORKING_BYTES,int(options.get("maxEstimatedWorkingBytes",MAX_ESTIMATED_WORKING_BYTES)));budget["rssOrVramBoundClaimed"]=false
+	budget["knownFeatureLedger"]=features.items
 	if total>int(budget.limitBytes):
 		var failure=_fail("estimated-working-memory-budget",visits);failure["memoryBudget"]=budget;return failure
 	var binding=[]

@@ -16,6 +16,14 @@ var texture:Texture2DArray
 var direction:=Vector3.ZERO
 var descriptor:Dictionary={}
 
+static func known_feature_bytes(source_count:int)->Dictionary:
+	# At most active+new source/caster batches coexist. Four source-array/reference
+	# copies include grow/reallocation peaks; instance rows reserve two batches times
+	# four copies (caller, server backing, upload, GPU). These are explicit upper
+	# accounting allowances, not an assertion about undocumented engine/RSS copies.
+	var count=clampi(source_count,0,MAX_TREES)
+	return {"solarShadowTextureGpuBytes":RESOLUTION*RESOLUTION*4*YAW_BINS,"solarShadowSourceFloat64PeakBytes":count*6*8*4,"solarShadowIdReferenceReserveBytes":count*16*4,"solarShadowInstanceCpuGpuPeakBytes":count*20*4*2*4,"solarShadowMetadataReserveBytes":8*1024*1024}
+
 static func binding_matches(data:Dictionary,world:Dictionary,packet:Dictionary,bake:Dictionary,asset_digest:String)->bool:
 	var source:Dictionary=packet.get("source",{});var expected:Dictionary=world.get("terrain",{}).get("source",{})
 	return data.get("available",false) and data.get("worldId","")==world.get("id") and data.get("source",{}).get("id")==expected.get("id") and data.get("source",{}).get("version")==expected.get("version") and data.get("sourceEpoch")==source.get("sourceEpoch") and data.get("sceneEpoch")==source.get("sceneEpoch") and bake.get("available",false) and bake.get("assetDigest","")==asset_digest
