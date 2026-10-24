@@ -107,7 +107,7 @@ static func decode_output(raw:PackedByteArray,request:Dictionary,wire_job:Dictio
 	if sha(body)!=header.get("payloadSha256"):return failed("canopy payload sha256")
 	var planes=[];var position=0
 	for bytes in lengths:
-		planes.append(body.slice(position,position+bytes).to_float32_array());position+=bytes
+		planes.append(body.slice(position,position+bytes));position+=bytes
 	# The pinned native producer validates every output value. Its echoed extrema
 	# plus the bound payload digest avoid redoing millions of scalar GD iterations.
 	var extremes=header.get("planeExtremes")
@@ -122,4 +122,4 @@ static func decode_output(raw:PackedByteArray,request:Dictionary,wire_job:Dictio
 		if k==1 and (float(e[0])<0 or float(e[1])>request.treeCount):return failed("canopy counts extrema")
 		if k==2 and (float(e[0])<-.00001 or float(e[1])>1.00001):return failed("canopy normal extrema")
 	body=PackedByteArray()
-	return {"coverage":planes[0],"counts":planes[1],"normals":planes[2],"colors":planes[3],"trees":int(header.trees),"selected":int(header.selectedTrees),"unsupported":int(header.unsupportedTrees),"metrics":{"version":VERSION,"requested":true,"used":true,"eligible":true,"sourceWorldId":job.worldId,"sourceEpoch":job.sourceEpoch,"sceneEpoch":job.sceneEpoch,"assetDigest":job.assetDigest,"executableSha256":executable_hash,"sourceInputSha256":input_hash,"outputPayloadSha256":header.payloadSha256,"width":width,"height":height,"treeCount":request.treeCount,"nativeKnownBufferUpperBytes":known,"sampleMs":header.sampleMs,"totalMs":(Time.get_ticks_usec()-started)/1000.0}}
+	return {"planes":planes,"trees":int(header.trees),"selected":int(header.selectedTrees),"unsupported":int(header.unsupportedTrees),"metrics":{"version":VERSION,"requested":true,"used":true,"eligible":true,"sourceWorldId":job.worldId,"sourceEpoch":job.sourceEpoch,"sceneEpoch":job.sceneEpoch,"assetDigest":job.assetDigest,"executableSha256":executable_hash,"sourceInputSha256":input_hash,"outputPayloadSha256":header.payloadSha256,"width":width,"height":height,"treeCount":request.treeCount,"nativeKnownBufferUpperBytes":known,"sampleMs":header.sampleMs,"totalMs":(Time.get_ticks_usec()-started)/1000.0}}

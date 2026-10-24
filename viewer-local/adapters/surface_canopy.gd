@@ -91,11 +91,12 @@ static func prepare(packet: Dictionary,selected: Dictionary,view_bounds:Dictiona
 	var columns: Dictionary = packet.get("candidateColumns",{})
 	var count := int(columns.count) if not columns.is_empty() else candidates.size()
 	var trees := 0; var selected_trees := 0;var unsupported_trees := 0
+	var native_planes:Array=[]
 	var sampler={"requested":false,"used":false,"version":"gd-canopy-raster-1"}
 	if native_requested:
 		var result=Batch.prepare(packet,selected,unsupported,asset,origin,spacing,width,height,options)
 		if result.get("failed",false) or result.get("cancelled",false):return result
-		coverage=result.coverage;counts=result.counts;normal_values=result.normals;color_values=result.colors
+		native_planes=result.planes
 		trees=result.trees;selected_trees=result.selected;unsupported_trees=result.unsupported;sampler=result.metrics
 	else:
 		for i in range(count):
@@ -144,12 +145,12 @@ static func prepare(packet: Dictionary,selected: Dictionary,view_bounds:Dictiona
 							color_values[index*4]=c.r/maxf(c.a,.00001);color_values[index*4+1]=c.g/maxf(c.a,.00001);color_values[index*4+2]=c.b/maxf(c.a,.00001);color_values[index*4+3]=1.0
 						normal_values[index*4]=normal.x*.5+.5;normal_values[index*4+1]=normal.y*.5+.5;normal_values[index*4+2]=normal.z*.5+.5;normal_values[index*4+3]=1.0
 					if is_selected: counts[index*4+bin]+=1.0
-	var coverage_image := Image.create_from_data(width,height,false,Image.FORMAT_RF,coverage.to_byte_array())
+	var coverage_image := Image.create_from_data(width,height,false,Image.FORMAT_RF,native_planes[0] if native_requested else coverage.to_byte_array())
 	coverage_image.generate_mipmaps() # Linear coverage, not sRGB and not overlap counts.
-	var normal_image:=Image.create_from_data(width,height,false,Image.FORMAT_RGBAF,normal_values.to_byte_array());normal_image.generate_mipmaps()
-	var counts_image := Image.create_from_data(width,height,false,Image.FORMAT_RGBAF,counts.to_byte_array())
+	var normal_image:=Image.create_from_data(width,height,false,Image.FORMAT_RGBAF,native_planes[2] if native_requested else normal_values.to_byte_array());normal_image.generate_mipmaps()
+	var counts_image := Image.create_from_data(width,height,false,Image.FORMAT_RGBAF,native_planes[1] if native_requested else counts.to_byte_array())
 	var color_image:Image
-	if not asset.is_empty():color_image=Image.create_from_data(width,height,false,Image.FORMAT_RGBAF,color_values.to_byte_array());color_image.generate_mipmaps()
+	if not asset.is_empty():color_image=Image.create_from_data(width,height,false,Image.FORMAT_RGBAF,native_planes[3] if native_requested else color_values.to_byte_array());color_image.generate_mipmaps()
 	var digest=HashingContext.new();digest.start(HashingContext.HASH_SHA256)
 	if not asset.is_empty():digest.update(str(asset.digest).to_utf8_buffer())
 	for image in [coverage_image,counts_image,normal_image]:digest.update(image.get_data())

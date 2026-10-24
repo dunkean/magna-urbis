@@ -51,7 +51,7 @@ func run()->void:
 		var fields=["coverage","counts","normals","colors"];var images=["coverageImage","countsImage","normalImage","colorImage"];var exact={};var maxima={}
 		for k in 4:
 			if not scalar.has(images[k]):continue
-			var format=Image.FORMAT_RF if k==0 else Image.FORMAT_RGBAF;var image=Image.create_from_data(int(scalar.gridSize.x),int(scalar.gridSize.y),false,format,native[fields[k]].to_byte_array())
+			var format=Image.FORMAT_RF if k==0 else Image.FORMAT_RGBAF;var image=Image.create_from_data(int(scalar.gridSize.x),int(scalar.gridSize.y),false,format,native.planes[k])
 			if k!=1:image.generate_mipmaps()
 			var expected:PackedFloat32Array=scalar[images[k]].get_data().to_float32_array();var actual:PackedFloat32Array=image.get_data().to_float32_array();var error=0.;var mismatches=0
 			for i in expected.size():
