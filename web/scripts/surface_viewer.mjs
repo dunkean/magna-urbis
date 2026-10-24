@@ -40,5 +40,7 @@ if (check >= 0) {
   process.exit(/(?:SCRIPT|SHADER) ERROR|ERROR:/.test((result.stdout ?? '') + (result.stderr ?? '')) ? 1 : result.status ?? 1);
 }
 if (!args.includes('--world')) throw new Error('Required: --world <surface-world.json>. Options: --assets <resolved.json> --top --width <metres> --live-url <url> --capture <png> --frames 120 --metrics <json> --tour <directory>.');
-const result = spawnSync(godot, ['--path', project, '--rendering-method', renderer, '--', ...args], { stdio: 'inherit', windowsHide: true });
+// This cartographic viewer has no audio scene. Avoid requiring a workstation
+// audio device (e.g. remote sessions) before terrain can be rendered.
+const result = spawnSync(godot, ['--audio-driver', 'Dummy', '--path', project, '--rendering-method', renderer, '--', ...args], { stdio: 'inherit', windowsHide: true });
 process.exit(result.status ?? 1);
