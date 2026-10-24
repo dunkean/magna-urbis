@@ -17,6 +17,7 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { spawnSurfaceFileLogged,parseSurfaceNativeLogs } from './surface_process_logs.mjs';
 import { installSurfacePageTiming } from './surface_page_timing.mjs';
+import { installSurfaceProcessorTiming, captureSurfaceProcessorTiming } from './surface_processor_timing.mjs';
 import { decodeSurfaceBinary, encodeSurfaceBinary } from '../src/surface/binary.ts';
 import { compileSurfaceWorld } from '../src/surface/compiler.ts';
 import { hashString } from '../src/surface/model.ts';
@@ -67,6 +68,7 @@ const paths = { report: resolve(out, 'report.json'), progress: resolve(out, 'pro
 const report = { format: 'magna-fresh-source-proof', version: 1, startedAt: new Date(began).toISOString(), base, neural, widthM: width, seed,
   requestedSource: 'neural-python', freshGeneration: true, paths, errors, network, progress, status: 'starting' };
 report.browserEvents = browserEvents;
+report.processorTimingDiagnostic = { enabled: true, requestFlag: 'diagnosticTiming', responseField: 'processorTiming', clock: 'surface-worker-processor-timing-1', pageReceiptBeforePacketSummary: true, cpuSampling: false, binaryChanged: false };
 report.requiredRenderContract={version:'surface-layers-1',waterMode:viewerWaterMode,waterSymbolWidthPx:viewerWaterSymbolWidthPx,layerProbeWidths:layerProbe?layerProbeWidths:[],physicalSourceChangesAllowed:false};
 report.nativePhaseOrder=viewerGodot?(navigationFirst?['navigation','tour']:['tour',...(navigationSeconds?['navigation']:[])]):[];
 if(layerProbe)report.nativePhaseOrder.push('layer-isolation');
@@ -372,7 +374,8 @@ try {
         this.addEventListener('message', event => {
           const message=event.data;
           if (message?.kind==='compiled') {
-            try { emit({kind:'worker-compiled',workerURL,requestId:message.requestId,sourceEpoch:message.sourceEpoch,sceneEpoch:message.sceneEpoch,
+            const timingProof = captureSurfaceProcessorTiming(message);
+            try { emit({kind:'worker-compiled',...timingProof,workerURL,requestId:message.requestId,sourceEpoch:message.sourceEpoch,sceneEpoch:message.sceneEpoch,
               environmentVersion:message.environmentVersion,canonicalBuildCount:message.canonicalBuildCount,packet:summarizeBinary(message.binary)}); }
             catch(error) { emit({kind:'worker-proof-error',message:String(error)}); }
           } else if(message?.kind==='error') emit({kind:'worker-error',workerURL,error:message.error});
@@ -380,7 +383,7 @@ try {
       }
     };
   };
-  await page.addInitScript({content:`(${installSurfacePageTiming.toString()})();(${initializeProofPage.toString()})();`});
+  await page.addInitScript({content:`(${installSurfacePageTiming.toString()})();(${installSurfaceProcessorTiming.toString()})();${captureSurfaceProcessorTiming.toString()};(${initializeProofPage.toString()})();`});
   page.on('pageerror', error => { errors.push({ type: 'pageerror', message: String(error), elapsedMs: Date.now() - began }); console.error(String(error)); });
   page.on('console', message => {
     if (message.type() === 'error') { errors.push({ type: 'console', message: message.text(), elapsedMs: Date.now() - began }); console.error(message.text()); }
