@@ -16,6 +16,12 @@
         slot_weights[i*2]=surface_weights[i]*(1.0-slots[i].b);
         slot_weights[i*2+1]=surface_weights[i]*slots[i].b;
     }
+    ivec2 response_pair;float response_blend;vec3 response_mean;
+    bool response_active=ground_response_sample(source_uv,response_pair,response_blend,response_mean);
+    if(response_active) {
+        for(int i=0;i<8;i++){ids[i]=response_pair.x;slot_weights[i]=0.0;}
+        ids[1]=response_pair.y;slot_weights[0]=1.0-response_blend;slot_weights[1]=response_blend;
+    }
     vec4 state=texture(surface_state,source_uv);
     // Derivatives must be evaluated outside data-dependent material/projection branches.
     vec3 surface_dx=dFdx(v_vertex);
@@ -45,7 +51,7 @@
     float macro=surface_noise(v_vertex.xz/16.0+noise_phase_16.xy,noise_phase_16.zw);
     // The canonical mean already includes substrate and the full recipe mixture;
     // use it at every scale, including contacts where the compact pair loses a third recipe.
-    vec3 base=texture(surface_average,source_uv).rgb;
+    vec3 base=response_active?response_mean:texture(surface_average,source_uv).rgb;
     vec3 raw_ground_mean=base;
     float detail_exposure; vec3 detail_color; float detail_slope; float detail_confidence;
     surface_geometry_detail(v_vertex.xz,base,detail_exposure,detail_color,detail_slope,detail_confidence);

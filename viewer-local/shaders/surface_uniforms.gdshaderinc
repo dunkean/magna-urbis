@@ -39,6 +39,7 @@ uniform vec2 source_grid_size;
 uniform int presentation_mode = 0;
 uniform vec4 map_palette[32];
 uniform float map_relief_shade = 0.0;
+#include "res://shaders/ground_response.gdshaderinc"
 
 
 float surface_hash(vec2 p) {
