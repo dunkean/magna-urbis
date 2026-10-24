@@ -1,0 +1,677 @@
+{
+  "version": 1,
+  "status": "PASS",
+  "scope": "Historical ROOT GPU control at1eee770; not fresh generation, not GR, not city, not photorealism, not full E2E/QoS and not later clast/PBR-cache qualification.",
+  "runtime": {
+    "head": "1eee770b21bcd4432ef53a96845e5a1729af7d1a",
+    "statusBefore": "",
+    "statusAfter": "",
+    "snapshotsEqual": true,
+    "runtimeFileCount": 935,
+    "snapshotSha256": "f07028568af747253d9aa2c67737fb2fecccfcb993c8603e6e6ea1052b0d209f",
+    "selectedRuntimeFileSha256": {
+      "viewer-local/scene/main.gd": "5eebc53a5ea92bf4dbba279e83123cda78486f4698fbb5c335ae1e8928e14cb1",
+      "viewer-local/adapters/surface_visibility_plan.gd": "19af2adafd02d9c0fb89a0d9d7d9e6faf8c2e13af02036de4a7d3c6dfa88b19d",
+      "viewer-local/adapters/surface_data.gd": "e6e45f2d63a2adbe8c2825768c78aad19e158f13756c39d3fc732a7e309c4d2a",
+      "viewer-local/adapters/surface_height_batch.gd": "e1409a9a4dcf9edbabc0e88496b7981bfb538dceeff69ecb6e89fb832c756400",
+      "viewer-local/adapters/surface_map_projection.gd": "d013cc00995704a313bf4d8e546d712f8765d7add024b949de66fe30b228c553",
+      "viewer-local/adapters/material_library.gd": "c2fe1d2d5c3dbb85cc37926973617851c362e57934fd3eeec9a70411a86d004b",
+      "viewer-local/native-height/src/main.rs": "4855d292364d1e841d8728f2bd56e0136d608863c2b669cff41cde1fe2ee1039"
+    },
+    "godot": "4.7.2-stable (official)",
+    "terrain3d": "1.0.2",
+    "adapter": "NVIDIA GeForce RTX 5090",
+    "backend": "forward_plus"
+  },
+  "source": {
+    "pathAtCapture": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-v13-tree-audit\\web\\out\\surface\\tree-optical-audit\\v12-live-page4000\\packet.surfacebin",
+    "bytes": 75105689,
+    "sha256": "e9646f0aadfc2d69cac78e64977389201ff8ef87360ff2f52f72bc37cb079d2c",
+    "unchanged": true,
+    "compilerVersion": "surface-1.5.3",
+    "worldId": "313a630904c50b372b0e38891af563a5",
+    "canonicalContextId": "a78043dc1216dff25a30e9ec01f75c40",
+    "groundResponseAvailable": false,
+    "child": {
+      "width": 64,
+      "height": 64,
+      "originX": 19980.3125,
+      "originZ": 19980.3125,
+      "spacingM": 0.625,
+      "reconstruction": "bilinear-samples"
+    },
+    "childNativeSpacingM": 0.46875,
+    "parent": {
+      "width": 512,
+      "height": 512,
+      "spacingM": 78.125,
+      "reconstruction": "cubic-bspline-controls",
+      "sourceLODKnown": false
+    },
+    "treePage": {
+      "bounds": {
+        "maxX": 22000.0,
+        "maxZ": 22000.0,
+        "minX": 18000.0,
+        "minZ": 18000.0
+      },
+      "complete": true,
+      "count": 67221.0,
+      "includeOverhang": true,
+      "limitedBy": "none",
+      "requestedBounds": {
+        "maxX": 22000.0,
+        "maxZ": 22000.0,
+        "minX": 18000.0,
+        "minZ": 18000.0
+      },
+      "retention": 1.0
+    },
+    "newNeuralGeneration": false
+  },
+  "execution": {
+    "durationMs": 37276,
+    "exitCode": 0,
+    "runtimeErrors": false,
+    "warning": "WARNING: instance_reset_physics_interpolation() is deprecated.\n   at: _instance_reset_physics_interpolation_bind_compat_104269 (servers/rendering/rendering_server.compat.inc:62)\n   GDScript backtrace (most recent call first):\n       [0] _apply_prepared (res://scene/main.gd:374)\n       [1] _complete_prepared (res://scene/main.gd:1666)\n       [2] _handle_prepared_result (res://scene/main.gd:1606)\n       [3] _process (res://scene/main.gd:846)",
+    "command": [
+      "D:\\workspace\\self\\_surface-tools\\godot-4.7.2\\Godot_v4.7.2-stable_win64_console.exe",
+      "--audio-driver",
+      "Dummy",
+      "--path",
+      "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\viewer-local",
+      "--rendering-method",
+      "forward_plus",
+      "--script",
+      "diagnostics/layer_probe.gd",
+      "--",
+      "--world",
+      "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-v13-tree-audit\\web\\out\\surface\\tree-optical-audit\\v12-live-page4000\\packet.surfacebin",
+      "--assets",
+      "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface-assets\\resolved.json",
+      "--vegetation-assets",
+      "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\vegetation-assets\\resolved.json",
+      "--tree-assets",
+      "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\vegetation-tree-v14\\resolved.json",
+      "--height-batch",
+      "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\viewer-local\\native-height\\target\\release\\magna-surface-height-batch.exe",
+      "--presentation",
+      "aerial",
+      "--oblique",
+      "--resolution",
+      "1600x1000",
+      "--width",
+      "160",
+      "--x",
+      "20006.7656233",
+      "--z",
+      "19995.0289897",
+      "--water-mode",
+      "source-levels",
+      "--water-symbol-width-px",
+      "0",
+      "--layers",
+      "all",
+      "--metrics",
+      "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\oblique-v14-first\\metrics.json",
+      "--layer-report",
+      "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\oblique-v14-first\\layer-report.json",
+      "--layer-captures",
+      "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\oblique-v14-first",
+      "--layer-require-instances"
+    ],
+    "noGpuRerunForArchive": true
+  },
+  "heightSampler": {
+    "eligible": true,
+    "executableSha256": "1d2c1652ff6711c1a6c78677d3c6158bd497c93e1fad5a5609c952aef7a4f6ec",
+    "holes": 0.0,
+    "mode": "explicit-native-batch",
+    "outputPayloadSha256": "778b82ea73c64530f8a407f4547dcedbfea5d8bee008d6b729f41fe0f39c540c",
+    "provenance": "Rust f64 scalar ordered16taps; no fast-math; GD positive-kernel seam policy",
+    "requested": true,
+    "sampleMs": 369.2445,
+    "sceneEpoch": "bench-scene-1",
+    "size": 4096,
+    "sourceEpoch": "bench-source-1",
+    "sourceInputSha256": "0b2519391756c3b2cb4cd5fdf125409a223fa1ed1663702875eae2361f5eb29d",
+    "sourceSamples": 266240,
+    "sourceWorldId": "313a630904c50b372b0e38891af563a5",
+    "spacingM": 0.625,
+    "totalMs": 1406.936,
+    "used": true,
+    "version": "gd-height-batch-1"
+  },
+  "canopy": {
+    "phase": 2.0,
+    "safePhase": 2.0,
+    "reason": "planned-source-support-plus-halo",
+    "geometryWeight": 1.0,
+    "exactWeight": 1.0,
+    "activeAtlasHash": "4e11fd76e6c7e55e27346c6c96e0e00ddb9cd481bde478db191dfeb470c15336",
+    "activeAtlasSpacingM": 1.0,
+    "geometryFilterRatio": 3.84846458098643,
+    "geometryFilterMaximumRatio": 8.0,
+    "geometryFilterCompatible": true,
+    "frustumBounds": {
+      "maxX": 20557.6505532965,
+      "maxZ": 20089.8160806403,
+      "minX": 19364.3770345941,
+      "minZ": 19286.4046224847
+    },
+    "atlasBounds": {
+      "maxX": 20685.6505532965,
+      "maxZ": 20217.8160806403,
+      "minX": 19236.3770345941,
+      "minZ": 19158.4046224847
+    },
+    "residentTerrainBounds": {
+      "maxX": 21258.4375,
+      "maxZ": 20978.4375,
+      "minX": 18701.5625,
+      "minZ": 18421.5625
+    },
+    "heightEnvelopeWorld": [
+      1873.15539550781,
+      2224.34301757813
+    ],
+    "marginM": 105.32100725174
+  },
+  "treeAssetDigest": "74edf966059a17fd44df22d24f4ee055f780d84196ee9c54703fa3b9e46ecbe9",
+  "instances": {
+    "families": {
+      "boulder": {
+        "alphaPositiveInFrustum": 80,
+        "nodeVisible": 311,
+        "submitted": 311
+      },
+      "debris": {
+        "alphaPositiveInFrustum": 129,
+        "nodeVisible": 500,
+        "submitted": 500
+      },
+      "grass": {
+        "alphaPositiveInFrustum": 225,
+        "nodeVisible": 1000,
+        "submitted": 1000
+      },
+      "shrub": {
+        "alphaPositiveInFrustum": 46,
+        "nodeVisible": 149,
+        "submitted": 149
+      },
+      "tree": {
+        "alphaPositiveInFrustum": 369,
+        "nodeVisible": 4773,
+        "submitted": 4773
+      },
+      "trunk": {
+        "alphaPositiveInFrustum": 0,
+        "nodeVisible": 0,
+        "submitted": 0
+      }
+    },
+    "scope": "submitted buffers, actual node/camera visibility, shader ALPHA gate>0 and centres in frustum; no GPU occlusion or per-mask fragment claim",
+    "treeOpticalShadowEnabled": true,
+    "treeResidualEnabled": true,
+    "treeShaderUniformAvailable": true
+  },
+  "layers": {
+    "status": "complete",
+    "requireInstances": true,
+    "invariantFingerprints": {
+      "canonicalContextFingerprint": "2db6fc7d93d4d2cb3cc2082da7b8a1f78b7491174927786cccad5bfb175a0f40",
+      "terrainVersion": "efe7269503b7323f7cd02615b81e9f7d:21af4adfae230b232e85e40756a28dd291918ba5dd592ba8536b12974f7de354",
+      "groundFieldsVersion": "38c9de0d6e98c906e63e37be85af5bb1292af89cd6b4d787a65e3df1cd77386f",
+      "projectedGroundFieldsVersion": "19cb1bd46e2b3a1c906031a1c7fa3a9791f2e54341e51968d9c21e9d427be088",
+      "groundResponseFingerprint": "0c6ba5989a2aa82e91cdb9b0e5a8b1e8846ca365a065004290ba4b1ac9ddd294",
+      "groundSampleFingerprint": "5adb8e23b04478e6419ffeea4defb0eb082ff66cf0859ba8f6d0bbee6072c60c",
+      "geometryDetailFingerprint": "5ffb250eb7e944ff5d8ed97f57708d1db6a4379b2a6b9631870341a0aa8b9dc3",
+      "parentTerrainFingerprint": "4182a304b83914f93f5fec6404ac8086e964caf140b880d3ad866b435b1d1b0b",
+      "inventoryFingerprint": "e21e9958346fda6f4438220207f9501b3acdf8f3fae8a0a68f416dd9ce01a9e6",
+      "instanceBufferFingerprint": "a8a095b6d382dc8dfb5ed418ef7cc7eaf7acef128cd4e13e3805a72f4cdfa1f2"
+    },
+    "invariantsEqualAcrossFourTogglesAndUnlit": true,
+    "states": [
+      {
+        "name": "all",
+        "visibility": {
+          "ground": true,
+          "lowCover": true,
+          "trees": true
+        },
+        "families": {
+          "boulder": {
+            "alphaPositiveInFrustum": 80,
+            "nodeVisible": 311,
+            "submitted": 311
+          },
+          "debris": {
+            "alphaPositiveInFrustum": 129,
+            "nodeVisible": 500,
+            "submitted": 500
+          },
+          "grass": {
+            "alphaPositiveInFrustum": 225,
+            "nodeVisible": 1000,
+            "submitted": 1000
+          },
+          "shrub": {
+            "alphaPositiveInFrustum": 46,
+            "nodeVisible": 149,
+            "submitted": 149
+          },
+          "tree": {
+            "alphaPositiveInFrustum": 369,
+            "nodeVisible": 4773,
+            "submitted": 4773
+          },
+          "trunk": {
+            "alphaPositiveInFrustum": 0,
+            "nodeVisible": 0,
+            "submitted": 0
+          }
+        },
+        "treeResidualEnabled": true,
+        "treeOpticalShadowEnabled": true
+      },
+      {
+        "name": "no-low-cover",
+        "visibility": {
+          "ground": true,
+          "lowCover": false,
+          "trees": true
+        },
+        "families": {
+          "boulder": {
+            "alphaPositiveInFrustum": 80,
+            "nodeVisible": 311,
+            "submitted": 311
+          },
+          "debris": {
+            "alphaPositiveInFrustum": 0,
+            "nodeVisible": 0,
+            "submitted": 500
+          },
+          "grass": {
+            "alphaPositiveInFrustum": 0,
+            "nodeVisible": 0,
+            "submitted": 1000
+          },
+          "shrub": {
+            "alphaPositiveInFrustum": 0,
+            "nodeVisible": 0,
+            "submitted": 149
+          },
+          "tree": {
+            "alphaPositiveInFrustum": 369,
+            "nodeVisible": 4773,
+            "submitted": 4773
+          },
+          "trunk": {
+            "alphaPositiveInFrustum": 0,
+            "nodeVisible": 0,
+            "submitted": 0
+          }
+        },
+        "treeResidualEnabled": true,
+        "treeOpticalShadowEnabled": true
+      },
+      {
+        "name": "no-trees",
+        "visibility": {
+          "ground": true,
+          "lowCover": true,
+          "trees": false
+        },
+        "families": {
+          "boulder": {
+            "alphaPositiveInFrustum": 80,
+            "nodeVisible": 311,
+            "submitted": 311
+          },
+          "debris": {
+            "alphaPositiveInFrustum": 129,
+            "nodeVisible": 500,
+            "submitted": 500
+          },
+          "grass": {
+            "alphaPositiveInFrustum": 225,
+            "nodeVisible": 1000,
+            "submitted": 1000
+          },
+          "shrub": {
+            "alphaPositiveInFrustum": 46,
+            "nodeVisible": 149,
+            "submitted": 149
+          },
+          "tree": {
+            "alphaPositiveInFrustum": 0,
+            "nodeVisible": 0,
+            "submitted": 4773
+          },
+          "trunk": {
+            "alphaPositiveInFrustum": 0,
+            "nodeVisible": 0,
+            "submitted": 0
+          }
+        },
+        "treeResidualEnabled": false,
+        "treeOpticalShadowEnabled": false
+      },
+      {
+        "name": "ground",
+        "visibility": {
+          "ground": true,
+          "lowCover": false,
+          "trees": false
+        },
+        "families": {
+          "boulder": {
+            "alphaPositiveInFrustum": 80,
+            "nodeVisible": 311,
+            "submitted": 311
+          },
+          "debris": {
+            "alphaPositiveInFrustum": 0,
+            "nodeVisible": 0,
+            "submitted": 500
+          },
+          "grass": {
+            "alphaPositiveInFrustum": 0,
+            "nodeVisible": 0,
+            "submitted": 1000
+          },
+          "shrub": {
+            "alphaPositiveInFrustum": 0,
+            "nodeVisible": 0,
+            "submitted": 149
+          },
+          "tree": {
+            "alphaPositiveInFrustum": 0,
+            "nodeVisible": 0,
+            "submitted": 4773
+          },
+          "trunk": {
+            "alphaPositiveInFrustum": 0,
+            "nodeVisible": 0,
+            "submitted": 0
+          }
+        },
+        "treeResidualEnabled": false,
+        "treeOpticalShadowEnabled": false
+      }
+    ]
+  },
+  "projection": {
+    "clipRange": [
+      -1,
+      1
+    ],
+    "focus": {
+      "x": 20006.7656233,
+      "z": 19995.0289897
+    },
+    "format": "surface-map-projection",
+    "precision": "rebased float32 camera matrix; subtract Float64 renderOrigin before multiplying; TOP scale is the horizontal map reference frame",
+    "projectionMode": "perspective",
+    "renderOrigin": {
+      "x": 19980.3125,
+      "y": 2135.33871582781,
+      "z": 19700.3125
+    },
+    "uniformMetricScale": null,
+    "version": 1,
+    "viewportPixels": {
+      "height": 1000,
+      "width": 1600
+    },
+    "worldId": "313a630904c50b372b0e38891af563a5",
+    "worldToClip": [
+      1.40377295017242,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      1.53090703487396,
+      -0.734501540660858,
+      -0.731721520423889,
+      0.0,
+      -1.64347338676453,
+      -0.68419337272644,
+      -0.681603729724884,
+      -37.1341781616211,
+      434.287200927734,
+      336.144683837891,
+      337.114196777344
+    ]
+  },
+  "composition": {
+    "status": "hash/binding verified locally",
+    "sourceRasterEmbeddedByteExact": true,
+    "binding": {
+      "format": "surface-map-capture",
+      "version": 1,
+      "sourcePacketSha256": "e9646f0aadfc2d69cac78e64977389201ff8ef87360ff2f52f72bc37cb079d2c",
+      "metricsSha256": "35a121d08361a64bc690cae975448801916b002be35881394cfeca9f48b2b353",
+      "imageSha256": "f55599a6917be791be4d9111b68d45d476a7f6f0b10ed4cd31ae240bba5be0a9",
+      "worldId": "313a630904c50b372b0e38891af563a5",
+      "canonicalContextId": "a78043dc1216dff25a30e9ec01f75c40",
+      "widthPx": 1600,
+      "heightPx": 1000,
+      "projection": {
+        "kind": "perspective",
+        "worldToClip": [
+          1.40377295017242,
+          0,
+          0,
+          0,
+          0,
+          1.53090703487396,
+          -0.734501540660858,
+          -0.731721520423889,
+          0,
+          -1.64347338676453,
+          -0.68419337272644,
+          -0.681603729724884,
+          -37.1341781616211,
+          434.287200927734,
+          336.144683837891,
+          337.114196777344
+        ],
+        "renderOrigin": {
+          "x": 19980.3125,
+          "y": 2135.33871582781,
+          "z": 19700.3125
+        },
+        "matrixLayout": "column-major",
+        "clipDepth": "minus-one-to-one"
+      },
+      "presentation": "aerial",
+      "mapStyle": "parchment",
+      "nativeProjection": {
+        "clipRange": [
+          -1,
+          1
+        ],
+        "focus": {
+          "x": 20006.7656233,
+          "z": 19995.0289897
+        },
+        "format": "surface-map-projection",
+        "precision": "rebased float32 camera matrix; subtract Float64 renderOrigin before multiplying; TOP scale is the horizontal map reference frame",
+        "projectionMode": "perspective",
+        "renderOrigin": {
+          "x": 19980.3125,
+          "y": 2135.33871582781,
+          "z": 19700.3125
+        },
+        "uniformMetricScale": null,
+        "version": 1,
+        "viewportPixels": {
+          "height": 1000,
+          "width": 1600
+        },
+        "worldId": "313a630904c50b372b0e38891af563a5",
+        "worldToClip": [
+          1.40377295017242,
+          0,
+          0,
+          0,
+          0,
+          1.53090703487396,
+          -0.734501540660858,
+          -0.731721520423889,
+          0,
+          -1.64347338676453,
+          -0.68419337272644,
+          -0.681603729724884,
+          -37.1341781616211,
+          434.287200927734,
+          336.144683837891,
+          337.114196777344
+        ]
+      }
+    },
+    "svgSha256": "33e2386242d7bc071b7890be626a0274583d4ca96900f227435853a64fe17044",
+    "pngSha256": "22355543f2e774512d9c482238d1339fd88439251fb96efeb1a7090391c365f5",
+    "gridMeters": null,
+    "scaleBar": null,
+    "gridLines": 0,
+    "scope": "Perspective matrix/rebased origin retained. No uniform metric scale, north or RPG grid. Legend potential/source-context counts are not visible tree counts or area."
+  },
+  "images": [
+    {
+      "name": "all",
+      "path": "web/out/surface/oblique-v14-first/all.png",
+      "bytes": 1774916,
+      "sha256": "f55599a6917be791be4d9111b68d45d476a7f6f0b10ed4cd31ae240bba5be0a9",
+      "width": 1600,
+      "height": 1000
+    },
+    {
+      "name": "no-low-cover",
+      "path": "web/out/surface/oblique-v14-first/no-low-cover.png",
+      "bytes": 1805833,
+      "sha256": "10363c200f6f1ff2dc11f1deab601aa28605094ebc0077f17181286fb8df57e0",
+      "width": 1600,
+      "height": 1000
+    },
+    {
+      "name": "no-trees",
+      "path": "web/out/surface/oblique-v14-first/no-trees.png",
+      "bytes": 1240276,
+      "sha256": "fc75195a9961752d92076f206772c6db2744a6faf8c5d27ae88fc1cb59853e10",
+      "width": 1600,
+      "height": 1000
+    },
+    {
+      "name": "ground",
+      "path": "web/out/surface/oblique-v14-first/ground.png",
+      "bytes": 1262602,
+      "sha256": "62a0e44eb9f072faedff8a6036a510ea412c6fafd63968aea1d5a1027a7ca79f",
+      "width": 1600,
+      "height": 1000
+    },
+    {
+      "name": "ground-mean-unlit",
+      "path": "web/out/surface/oblique-v14-first/ground-mean-unlit.png",
+      "bytes": 61142,
+      "sha256": "17eb0c8461bd675b8617b87d1b79aeb02c1d50197d677b60a12ac26c0c712a67",
+      "width": 1600,
+      "height": 1000
+    }
+  ],
+  "archivedImage": {
+    "path": "docs/surface/evidence/oblique-v14-composed.png",
+    "bytes": 2444783,
+    "sha256": "22355543f2e774512d9c482238d1339fd88439251fb96efeb1a7090391c365f5"
+  },
+  "artifacts": {
+    "run.py": {
+      "path": "web/out/surface/oblique-v14-first/run.py",
+      "bytes": 3842,
+      "sha256": "629b6c814db1359e719e94c00ced0c482e26de458715a6fe036f497eb6d7e94b"
+    },
+    "verify.mjs": {
+      "path": "web/out/surface/oblique-v14-first/verify.mjs",
+      "bytes": 2060,
+      "sha256": "a60d64f1d47639c24cc58388d3cd8a2b9964192b00fd59935dcab18b73a45ee3"
+    },
+    "snapshot-before.json": {
+      "path": "web/out/surface/oblique-v14-first/snapshot-before.json",
+      "bytes": 98662,
+      "sha256": "f07028568af747253d9aa2c67737fb2fecccfcb993c8603e6e6ea1052b0d209f"
+    },
+    "snapshot-after.json": {
+      "path": "web/out/surface/oblique-v14-first/snapshot-after.json",
+      "bytes": 98662,
+      "sha256": "f07028568af747253d9aa2c67737fb2fecccfcb993c8603e6e6ea1052b0d209f"
+    },
+    "supervisor.json": {
+      "path": "web/out/surface/oblique-v14-first/supervisor.json",
+      "bytes": 2372,
+      "sha256": "c715b57d188e2aeb161485b9c9601aed676c474590e7bb801c42757d5cee9911"
+    },
+    "verified.json": {
+      "path": "web/out/surface/oblique-v14-first/verified.json",
+      "bytes": 20199,
+      "sha256": "34b4d6251ef342cc8e44512df8fe1bec6d0f32018667deda5800b847abc28ba2"
+    },
+    "metrics.json": {
+      "path": "web/out/surface/oblique-v14-first/metrics.json",
+      "bytes": 103790,
+      "sha256": "35a121d08361a64bc690cae975448801916b002be35881394cfeca9f48b2b353"
+    },
+    "layer-report.json": {
+      "path": "web/out/surface/oblique-v14-first/layer-report.json",
+      "bytes": 20900,
+      "sha256": "254efc6882816e40b7b63151f5d742fb788508759af77a0eaa50acd0455917c9"
+    },
+    "capture-proof.json": {
+      "path": "web/out/surface/oblique-v14-first/capture-proof.json",
+      "bytes": 2573,
+      "sha256": "b358b6e4e89880d07080b798d68f5d29daa4245c60087937e9cd44937f631ca1"
+    },
+    "composed.json": {
+      "path": "web/out/surface/oblique-v14-first/composed.json",
+      "bytes": 8761,
+      "sha256": "6314060285473d491173b465f99eeaa1e03e6969c84b98146f2429faa4e5458e"
+    },
+    "composed.svg": {
+      "path": "web/out/surface/oblique-v14-first/composed.svg",
+      "bytes": 2374059,
+      "sha256": "33e2386242d7bc071b7890be626a0274583d4ca96900f227435853a64fe17044"
+    },
+    "composed.png": {
+      "path": "web/out/surface/oblique-v14-first/composed.png",
+      "bytes": 2444783,
+      "sha256": "22355543f2e774512d9c482238d1339fd88439251fb96efeb1a7090391c365f5"
+    },
+    "stdout.log": {
+      "path": "web/out/surface/oblique-v14-first/stdout.log",
+      "bytes": 193184,
+      "sha256": "4d9e4967497f3794bd45985e750882c6bb5ba23d4fdbcf8f2c8ff8216d703789"
+    },
+    "stderr.log": {
+      "path": "web/out/surface/oblique-v14-first/stderr.log",
+      "bytes": 451,
+      "sha256": "7e735f993baa00b036ceb4c0a4c9c32c09a444756af2de3a78ba3a656da89365"
+    }
+  },
+  "limits": [
+    "Legacy1.5.3 baked ground means; no GR potentials and no GR/M2 acceptance from this replay.",
+    "Retained V12 field/canonical context/explicit4km candidate replay; no new generation or registration.",
+    "Parent reconstruction remains78.125m;4096RF resampling is not new physical detail.",
+    "Submitted and alpha-positive centre counts are not GPU occlusion/per-pixel crown area.",
+    "Whole-view/source/filter guard passing does not certify exact oblique C/V optics or photorealism.",
+    "No city, streaming20s gate, fullV14 campaign, newer clast shader or later prepared-PBR cache is covered."
+  ],
+  "qualification": "bounded-retained-oblique-integration",
+  "treeLods": {
+    "highCount": 0,
+    "highTriangles": 0,
+    "impostorCount": 4773,
+    "impostorTriangles": 9546
+  }
+}
