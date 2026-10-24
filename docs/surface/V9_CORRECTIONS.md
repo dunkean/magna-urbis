@@ -1,9 +1,10 @@
-# Corrections du mapper après la revue V8
+# Corrections du mapper de V9 à V12
 
 24 octobre 2026. La [revue Opus V8](reviews/phase06-followup-v8.md) qualifie le
 prototype technique et refuse l'acceptation artistique. Ce document décrit la
-correction suivante ; les preuves isolées ci-dessous ne sont pas annoncées comme
-une nouvelle campagne fraîche complète.
+correction suivante et sa qualification technique V12. Les preuves isolées
+restent distinctes de la [campagne fraîche complète V12](evidence/NATIVE_V12.md) ;
+son succès technique n'annule pas le refus artistique ni les échecs antérieurs.
 
 ## Forêt : une page de données ne délimite plus une forêt visible
 
@@ -78,14 +79,17 @@ avec canopée convergée et les 419 vrais extérieurs natifs dans la vue d'ensem
 La [campagne fraîche V9](evidence/native-e2e-v9-negative.json) échoue : aucune
 nouvelle source n'est réellement affichée pendant les 20,004 secondes de mouvement.
 La preview est acceptée à la fin du mouvement, puis affichée après celui-ci.
-La compilation de sa réponse prend 13,928 s après le retour neural ; la
-préparation native suivante prend encore 3,7 s. L'upload de 9,35 Mo prend 0,618 s.
+Les observations du driver mesurent 13,928 s entre retour neural et réponse
+compilée, puis 0,618 s jusqu'à l'ACK d'upload de 9,35 Mo ; elles ne constituent
+pas des mesures isolées de CPU Worker ou de réseau. La préparation native
+suivante prend encore 3,7 s.
 La tournée et les probes ne sont pas exécutées. Les 560 fichiers runtime et le
 HEAD restent identiques avant/après ; aucun critère n'est assoupli.
 
 La [campagne suivante V10](evidence/native-e2e-v10-negative.json), sur `f4d25e1`,
-reste échouée. La correction bit-exact de population réduit le délai réel
-retour neural→compilation de 13,928 s à 1,223 s. La
+reste échouée. La correction bit-exact de population réduit l'intervalle observé
+retour neural→réponse compilée de 13,928 s à 1,223 s. Le gain CPU est prouvé
+séparément par le Worker Chromium direct, pas par cet intervalle de callbacks. La
 [vérification indépendante](evidence/population-optimization-independent-v10.json)
 conserve les sorties sur 480 requêtes et le corpus historique. Mais des délais
 de callback/ACK et un gel natif de 10,55 s empêchent encore l'affichage live
@@ -94,12 +98,54 @@ ne qualifient pas le critère de 20 s nominales. L'origine du blocage suivant
 reste à mesurer avec les horloges et sous-phases séparées ; les délais d'ACK
 observés ne sont pas présentés comme un coût réseau causal prouvé.
 
-La prochaine campagne doit donc encore réunir ces changements sur un même snapshot :
-nouvelle source Infinite Generation, mouvement continu, sept échelles, symboles
-d'eau déclarés et isolation sol/herbes/arbres à 10 km **et** à 160 m avec de vraies
-instances. La revue Opus reste une étape indépendante.
+La [campagne V11](evidence/native-e2e-v11-negative.json) échoue également :
+une preview arrive trop tard pour être affichée pendant les 20 secondes
+nominales. Les horloges PAGE/Worker et les traces ultérieures distinguent le
+calcul, l'attente et la livraison ; un span Worker ne devient pas une mesure de
+CPU. Les pauses hors CPU observées dans le diagnostic scheduler restent une
+limite sans cause déclarée résolue. Aucun gate historique n'est modifié.
 
-Couronnes et petits objets restent des représentations stylisées, les ombres
-forestières sont optiques, et le sol canonique garde sa résolution physique.
-La parité artistique de tous les styles et l'adoption définitive de Godot ne
-sont pas acquises par ces corrections.
+## Qualification intégrée V12 : critères techniques complets
+
+La [preuve lisible](evidence/NATIVE_V12.md) et le
+[rapport structuré V12](evidence/native-e2e-v12.json) enregistrent une campagne
+complète sur le runtime propre figé `bc6579f208ce1e4f05b471a1699de2ba05fae6b8` :
+source Infinite Generation fraîche, navigation nominale stricte de 20 secondes,
+sept captures de zoom et deux probes de cinq images à 10 km et à 160 m. Les
+584 hashes runtime et le manifeste d'assets sont identiques avant/après ; driver
+et superviseur sortent à zéro. L'option de rétention des visuels après échec de
+navigation est déclarée mais **n'a pas servi**. Les contrôles avant gel passent :
+**224 tests Surface / 42 fichiers**, typecheck complet et build de 445 modules.
+
+La navigation applique deux fois **une seule preview distincte** nouvelle,
+livrée en 128² après une demande 128. Son espacement natif est de 30 m,
+LOD 0, `decoderUsed=false` ; la première application survient à 17,018 s.
+Ce progrès de streaming ne prouve pas une nouvelle finesse neurale apprise
+pendant le mouvement. Le support final livré en 133², à 0,468353 m par sample
+et **0,46875 m natif / `decoderUsed=true`**, apparaît seulement dans le drain.
+La durée réelle du mouvement est de 20,118 s, son écart d'entrée maximal de
+1,498 s et le drain de 17,207 s : le succès du gate n'est pas une promesse de
+faible latence. Le contexte environnemental reste à **78,125 m** ; 4,88 mm par
+pixel écran dans la vue de 10 m ne signifie pas 4,88 mm de données source.
+
+À 160 m, les instances alpha-positives dans le frustum CPU sont arbres 64,
+troncs 64, herbes 288, arbustes 17, débris 61 et rochers 31. Les deux premiers
+comptes passent à zéro sans arbres ; herbes/arbustes/débris passent à zéro sans
+couvert bas, tandis que les 31 rochers persistent. Les allocations soumises,
+champs et empreintes restent identiques entre toggles d'une même vue. Ce ne sont
+pas des comptages de visibilité GPU après occlusion.
+
+L'eau conserve contours/niveaux source et symbole de rive explicite à 1,25 pixel,
+projeté sur le terrain seulement. Les contrôles de couverture et de budgets
+passent ; les conflits de niveau avec le terrain restent des diagnostics. Les
+archives source fraîche/live passent aussi leur restauration stricte complète.
+Les [trois vues retenues des 419](evidence/native-city419-v12.json) sont séparées :
+parent 15,625 m / LOD inconnu, source inchangée, réalisations natives existantes,
+aucune nouvelle génération neurale de ville. Elles sont byte-identiques à V11/V9.
+
+Couronnes et petits objets restent des représentations stylisées : la vue de
+10 m montre encore une surface de couronne proxy uniforme et de petites
+végétations en blocs. Les ombres forestières sont optiques ; les couleurs de sol
+restent contraintes par la grille canonique de 78,125 m. La parité artistique de
+tous les styles, 60 FPS et l'adoption définitive de Godot ne sont pas acquises.
+La revue Opus reste indépendante ; V12 ne réécrit aucun verdict V9–V11.
