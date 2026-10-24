@@ -5,6 +5,7 @@ const PrepareControl=preload("res://adapters/surface_prepare_control.gd")
 const Geometry = preload("res://adapters/surface_geometry.gd")
 const UrbanReader = preload("res://adapters/urban_reader.gd")
 const Layers=preload("res://adapters/surface_layers.gd")
+const GroundResponse=preload("res://adapters/surface_ground_response.gd")
 const Detail=preload("res://adapters/surface_geometry_detail.gd")
 const MAX_PACKET_BYTES := 512*1024*1024
 
@@ -43,6 +44,7 @@ static func decode_packet(bytes: PackedByteArray) -> Dictionary:
 		for descriptor in manifest.arrays:
 			if not descriptor is Dictionary or not strides.has(descriptor.get("dtype","")): return {}
 			var expected=Layers.expected_wire_dtype(descriptor.get("path",[]))
+			if expected.is_empty():expected=GroundResponse.expected_wire_dtype(descriptor.get("path",[]))
 			if not expected.is_empty() and descriptor.dtype!=expected:return {}
 			var stride: int = strides[descriptor.dtype]
 			if not _integer(descriptor.get("length"),0,MAX_PACKET_BYTES/stride) or not _integer(descriptor.get("offset"),0,payload_length): return {}
@@ -309,7 +311,10 @@ static func covered(world: Dictionary, x: float, z: float) -> bool:
 	return false
 
 static func context(world: Dictionary) -> Dictionary:
-	return world.get("canonicalContext",{"grid":world.terrain,"fields":world.fields,"bounds":world.bounds})
+	if world.has("canonicalContext"):return world.canonicalContext
+	var result={"grid":world.terrain,"fields":world.fields,"bounds":world.bounds}
+	if world.has("groundResponse"):result.groundResponse=world.groundResponse
+	return result
 
 static func field_at(world: Dictionary, name: String, x: float, z: float, categorical := false) -> float:
 	var canonical := context(world)

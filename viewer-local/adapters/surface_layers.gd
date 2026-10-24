@@ -1,5 +1,6 @@
 class_name SurfaceLayers
 extends RefCounted
+const GroundResponse=preload("res://adapters/surface_ground_response.gd")
 
 const VERSION="surface-layers-1"
 const LEGACY_WARNING="Legacy composite-only packet: bare ground and low-cover layers are unavailable; the legacy material pair already mixes soil, litter and herbs and cannot be unmixed."
@@ -83,6 +84,7 @@ static func _validate_fields(fields:Dictionary,n:int,materials:Array)->bool:
 # remain immutable; prepare() does not re-hash them on every camera movement.
 static func validate(world:Dictionary)->bool:
 	world.erase("_surfaceLayersValidation")
+	if not GroundResponse.validate(world):return false
 	var fields=world.get("fields");var grid=world.get("terrain");var materials=world.get("materials");var versions=world.get("versions",{})
 	if not fields is Dictionary or not grid is Dictionary or not materials is Array or materials.is_empty() or not versions is Dictionary:return false
 	if not _integer(grid.get("width"),2,1048576) or not _integer(grid.get("height"),2,1048576):return false
@@ -127,17 +129,22 @@ static func prepare(world:Dictionary,canonical_source:Dictionary={})->Dictionary
 	if not validation.get("available",false):
 		var legacy=validation.duplicate(true);legacy.metadata={"version":VERSION,"groundAvailability":"legacy-composite-unavailable","lowCoverAvailability":"legacy-composite-unavailable","legacyFallback":true,"warning":LEGACY_WARNING};return legacy
 	var source=canonical_source
-	if source.is_empty():source=world.get("canonicalContext",{"grid":world.terrain,"fields":world.fields})
+	if source.is_empty():
+		source=world.get("canonicalContext",{"grid":world.terrain,"fields":world.fields})
+		if not world.has("canonicalContext") and world.has("groundResponse"):source.groundResponse=world.groundResponse
 	if not source.get("grid") is Dictionary or not source.get("fields") is Dictionary:return {"available":false,"error":"layer texture source is missing"}
 	var grid:Dictionary=source.grid;var fields:Dictionary=source.fields
+	var response=GroundResponse.prepare(world,source)
+	if response.has("error"):return {"available":false,"error":response.error}
 	var canonical=world.get("canonicalContext")
 	var from_canonical=world.has("canonicalContextRef") and canonical is Dictionary and is_same(fields,canonical.get("fields",{}))
 	var texture_version=str(validation.canonicalFieldsVersion) if from_canonical else str(validation.fieldsVersion)
 	var texture_grid={}
 	for key in ["width","height","originX","originZ","spacingM"]:texture_grid[key]=grid[key]
 	var metadata={"version":VERSION,"groundAvailability":"explicit","lowCoverAvailability":"explicit","projectedFieldsVersion":str(validation.fieldsVersion),"canonicalFieldsVersion":str(validation.canonicalFieldsVersion),"textureFieldsVersion":texture_version,"textureSource":"canonical" if from_canonical else "world","textureGrid":texture_grid,"legacyFallback":false}
+	metadata.groundResponse=response.metadata
 	if is_same(fields,_cached_source.get("fields",{})) and is_same(grid,_cached_source.get("grid",{})) and texture_version==_cached_version:
-		var reused=_cached_images.duplicate(false);reused.metadata=metadata;return reused
+		var reused=_cached_images.duplicate(false);reused.metadata=metadata;reused.groundResponse=response;return reused
 	var width=int(grid.width);var height=int(grid.height);var n=width*height
 	if n<4 or n>1048576 or _count(fields)!=9:return {"available":false,"error":"layer texture field shape is invalid"}
 	var ids=Image.create(width,height,false,Image.FORMAT_RGBAF);var average=Image.create(width,height,false,Image.FORMAT_RGBAF)
@@ -151,6 +158,6 @@ static func prepare(world:Dictionary,canonical_source:Dictionary={})->Dictionary
 		low_ids.set_pixel(x,z,Color(a,b,blend,alpha));low_average.set_pixel(x,z,Color(rgb.r*alpha,rgb.g*alpha,rgb.b*alpha,alpha))
 		low_state.set_pixel(x,z,Color(float(fields.grassCover[i]),float(fields.shrubCover[i]),float(fields.litter[i]),alpha))
 	average.generate_mipmaps();low_average.generate_mipmaps();low_state.generate_mipmaps()
-	var result={"available":true,"groundIds":ids,"groundAverage":average,"lowIds":low_ids,"lowAverage":low_average,"lowState":low_state,"metadata":metadata}
+	var result={"available":true,"groundIds":ids,"groundAverage":average,"lowIds":low_ids,"lowAverage":low_average,"lowState":low_state,"groundResponse":response,"metadata":metadata}
 	_cached_source=source;_cached_version=texture_version;_cached_images=result
 	return result
