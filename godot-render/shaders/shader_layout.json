@@ -1,0 +1,1607 @@
+{
+  "format": "magna-render-original-shader-layout",
+  "version": 1,
+  "upstreamOriginalRevision": "f2298841d9fe09729df02f8ecc92e7ffbefa6505",
+  "referenceHead": "85e773b1b0eef8c6f7c45fbcc8d343e57db9c4e4",
+  "referenceModule": "web/src/ui/terrainGl.ts",
+  "referenceExport": "renderOriginalShaderSources",
+  "descriptorSet": 0,
+  "uniformBinding": 0,
+  "orientation": "Original gl_Position and gl_FragCoord untouched; final display orientation belongs to adapter",
+  "programs": {
+    "terrain": {
+      "vertex": "terrain.vert.glsl",
+      "fragment": "terrain.frag.glsl",
+      "uniformByteLength": 1072,
+      "uniforms": [
+        {
+          "name": "uQuad",
+          "type": "vec4",
+          "count": 1,
+          "array": false,
+          "stages": [
+            "vertex"
+          ],
+          "alignment": 16,
+          "stride": 16,
+          "byteLength": 16,
+          "offset": 0
+        },
+        {
+          "name": "uCanvas",
+          "type": "vec2",
+          "count": 1,
+          "array": false,
+          "stages": [
+            "vertex",
+            "fragment"
+          ],
+          "alignment": 8,
+          "stride": 8,
+          "byteLength": 8,
+          "offset": 16
+        },
+        {
+          "name": "uOrigin",
+          "type": "vec2",
+          "count": 1,
+          "array": false,
+          "stages": [
+            "fragment"
+          ],
+          "alignment": 8,
+          "stride": 8,
+          "byteLength": 8,
+          "offset": 24
+        },
+        {
+          "name": "uPx",
+          "type": "float",
+          "count": 1,
+          "array": false,
+          "stages": [
+            "fragment"
+          ],
+          "alignment": 4,
+          "stride": 4,
+          "byteLength": 4,
+          "offset": 32
+        },
+        {
+          "name": "uDpr",
+          "type": "float",
+          "count": 1,
+          "array": false,
+          "stages": [
+            "fragment"
+          ],
+          "alignment": 4,
+          "stride": 4,
+          "byteLength": 4,
+          "offset": 36
+        },
+        {
+          "name": "uMapW",
+          "type": "float",
+          "count": 1,
+          "array": false,
+          "stages": [
+            "fragment"
+          ],
+          "alignment": 4,
+          "stride": 4,
+          "byteLength": 4,
+          "offset": 40
+        },
+        {
+          "name": "uFieldN",
+          "type": "int",
+          "count": 1,
+          "array": false,
+          "stages": [
+            "fragment"
+          ],
+          "alignment": 4,
+          "stride": 4,
+          "byteLength": 4,
+          "offset": 44
+        },
+        {
+          "name": "uFieldOrigin",
+          "type": "vec2",
+          "count": 1,
+          "array": false,
+          "stages": [
+            "fragment"
+          ],
+          "alignment": 8,
+          "stride": 8,
+          "byteLength": 8,
+          "offset": 48
+        },
+        {
+          "name": "uFieldCell",
+          "type": "float",
+          "count": 1,
+          "array": false,
+          "stages": [
+            "fragment"
+          ],
+          "alignment": 4,
+          "stride": 4,
+          "byteLength": 4,
+          "offset": 56
+        },
+        {
+          "name": "uMaxLod",
+          "type": "int",
+          "count": 1,
+          "array": false,
+          "stages": [
+            "fragment"
+          ],
+          "alignment": 4,
+          "stride": 4,
+          "byteLength": 4,
+          "offset": 60
+        },
+        {
+          "name": "uAlpha",
+          "type": "float",
+          "count": 1,
+          "array": false,
+          "stages": [
+            "fragment"
+          ],
+          "alignment": 4,
+          "stride": 4,
+          "byteLength": 4,
+          "offset": 64
+        },
+        {
+          "name": "uBase",
+          "type": "int",
+          "count": 1,
+          "array": false,
+          "stages": [
+            "fragment"
+          ],
+          "alignment": 4,
+          "stride": 4,
+          "byteLength": 4,
+          "offset": 68
+        },
+        {
+          "name": "uHasCave",
+          "type": "int",
+          "count": 1,
+          "array": false,
+          "stages": [
+            "fragment"
+          ],
+          "alignment": 4,
+          "stride": 4,
+          "byteLength": 4,
+          "offset": 72
+        },
+        {
+          "name": "uHasLake",
+          "type": "int",
+          "count": 1,
+          "array": false,
+          "stages": [
+            "fragment"
+          ],
+          "alignment": 4,
+          "stride": 4,
+          "byteLength": 4,
+          "offset": 76
+        },
+        {
+          "name": "uLakeN",
+          "type": "float",
+          "count": 1,
+          "array": false,
+          "stages": [
+            "fragment"
+          ],
+          "alignment": 4,
+          "stride": 4,
+          "byteLength": 4,
+          "offset": 80
+        },
+        {
+          "name": "uHasOverlay",
+          "type": "int",
+          "count": 1,
+          "array": false,
+          "stages": [
+            "fragment"
+          ],
+          "alignment": 4,
+          "stride": 4,
+          "byteLength": 4,
+          "offset": 84
+        },
+        {
+          "name": "uUseWaterLayer",
+          "type": "int",
+          "count": 1,
+          "array": false,
+          "stages": [
+            "fragment"
+          ],
+          "alignment": 4,
+          "stride": 4,
+          "byteLength": 4,
+          "offset": 88
+        },
+        {
+          "name": "uWaterVisible",
+          "type": "int",
+          "count": 1,
+          "array": false,
+          "stages": [
+            "fragment"
+          ],
+          "alignment": 4,
+          "stride": 4,
+          "byteLength": 4,
+          "offset": 92
+        },
+        {
+          "name": "uRelief",
+          "type": "int",
+          "count": 1,
+          "array": false,
+          "stages": [
+            "fragment"
+          ],
+          "alignment": 4,
+          "stride": 4,
+          "byteLength": 4,
+          "offset": 96
+        },
+        {
+          "name": "uMode",
+          "type": "int",
+          "count": 1,
+          "array": false,
+          "stages": [
+            "fragment"
+          ],
+          "alignment": 4,
+          "stride": 4,
+          "byteLength": 4,
+          "offset": 100
+        },
+        {
+          "name": "uPaper",
+          "type": "vec3",
+          "count": 1,
+          "array": false,
+          "stages": [
+            "fragment"
+          ],
+          "alignment": 16,
+          "stride": 12,
+          "byteLength": 12,
+          "offset": 112
+        },
+        {
+          "name": "uSea",
+          "type": "vec3",
+          "count": 1,
+          "array": false,
+          "stages": [
+            "fragment"
+          ],
+          "alignment": 16,
+          "stride": 12,
+          "byteLength": 12,
+          "offset": 128
+        },
+        {
+          "name": "uBackground",
+          "type": "vec3",
+          "count": 1,
+          "array": false,
+          "stages": [
+            "fragment"
+          ],
+          "alignment": 16,
+          "stride": 12,
+          "byteLength": 12,
+          "offset": 144
+        },
+        {
+          "name": "uFrameColor",
+          "type": "vec3",
+          "count": 1,
+          "array": false,
+          "stages": [
+            "fragment"
+          ],
+          "alignment": 16,
+          "stride": 12,
+          "byteLength": 12,
+          "offset": 160
+        },
+        {
+          "name": "uContourColor",
+          "type": "vec3",
+          "count": 1,
+          "array": false,
+          "stages": [
+            "fragment"
+          ],
+          "alignment": 16,
+          "stride": 12,
+          "byteLength": 12,
+          "offset": 176
+        },
+        {
+          "name": "uShore",
+          "type": "vec3",
+          "count": 1,
+          "array": false,
+          "stages": [
+            "fragment"
+          ],
+          "alignment": 16,
+          "stride": 12,
+          "byteLength": 12,
+          "offset": 192
+        },
+        {
+          "name": "uCoastalSea",
+          "type": "int",
+          "count": 1,
+          "array": false,
+          "stages": [
+            "fragment"
+          ],
+          "alignment": 4,
+          "stride": 4,
+          "byteLength": 4,
+          "offset": 204
+        },
+        {
+          "name": "uSeaBand",
+          "type": "float",
+          "count": 1,
+          "array": false,
+          "stages": [
+            "fragment"
+          ],
+          "alignment": 4,
+          "stride": 4,
+          "byteLength": 4,
+          "offset": 208
+        },
+        {
+          "name": "uCoastOrigin",
+          "type": "vec2",
+          "count": 1,
+          "array": false,
+          "stages": [
+            "fragment"
+          ],
+          "alignment": 8,
+          "stride": 8,
+          "byteLength": 8,
+          "offset": 216
+        },
+        {
+          "name": "uCoastWidth",
+          "type": "float",
+          "count": 1,
+          "array": false,
+          "stages": [
+            "fragment"
+          ],
+          "alignment": 4,
+          "stride": 4,
+          "byteLength": 4,
+          "offset": 224
+        },
+        {
+          "name": "uCoastN",
+          "type": "int",
+          "count": 1,
+          "array": false,
+          "stages": [
+            "fragment"
+          ],
+          "alignment": 4,
+          "stride": 4,
+          "byteLength": 4,
+          "offset": 228
+        },
+        {
+          "name": "uStops",
+          "type": "vec3",
+          "count": 8,
+          "array": true,
+          "stages": [
+            "fragment"
+          ],
+          "alignment": 16,
+          "stride": 16,
+          "byteLength": 128,
+          "offset": 240
+        },
+        {
+          "name": "uStopT",
+          "type": "float",
+          "count": 8,
+          "array": true,
+          "stages": [
+            "fragment"
+          ],
+          "alignment": 16,
+          "stride": 16,
+          "byteLength": 128,
+          "offset": 368
+        },
+        {
+          "name": "uStopCount",
+          "type": "int",
+          "count": 1,
+          "array": false,
+          "stages": [
+            "fragment"
+          ],
+          "alignment": 4,
+          "stride": 4,
+          "byteLength": 4,
+          "offset": 496
+        },
+        {
+          "name": "uLight",
+          "type": "vec3",
+          "count": 1,
+          "array": false,
+          "stages": [
+            "fragment"
+          ],
+          "alignment": 16,
+          "stride": 12,
+          "byteLength": 12,
+          "offset": 512
+        },
+        {
+          "name": "uLight2",
+          "type": "vec3",
+          "count": 1,
+          "array": false,
+          "stages": [
+            "fragment"
+          ],
+          "alignment": 16,
+          "stride": 12,
+          "byteLength": 12,
+          "offset": 528
+        },
+        {
+          "name": "uExaggeration",
+          "type": "float",
+          "count": 1,
+          "array": false,
+          "stages": [
+            "fragment"
+          ],
+          "alignment": 4,
+          "stride": 4,
+          "byteLength": 4,
+          "offset": 540
+        },
+        {
+          "name": "uFlatLight",
+          "type": "float",
+          "count": 1,
+          "array": false,
+          "stages": [
+            "fragment"
+          ],
+          "alignment": 4,
+          "stride": 4,
+          "byteLength": 4,
+          "offset": 544
+        },
+        {
+          "name": "uRockStrength",
+          "type": "float",
+          "count": 1,
+          "array": false,
+          "stages": [
+            "fragment"
+          ],
+          "alignment": 4,
+          "stride": 4,
+          "byteLength": 4,
+          "offset": 548
+        },
+        {
+          "name": "uShade",
+          "type": "float",
+          "count": 1,
+          "array": false,
+          "stages": [
+            "fragment"
+          ],
+          "alignment": 4,
+          "stride": 4,
+          "byteLength": 4,
+          "offset": 552
+        },
+        {
+          "name": "uMinH",
+          "type": "float",
+          "count": 1,
+          "array": false,
+          "stages": [
+            "fragment"
+          ],
+          "alignment": 4,
+          "stride": 4,
+          "byteLength": 4,
+          "offset": 556
+        },
+        {
+          "name": "uMaxH",
+          "type": "float",
+          "count": 1,
+          "array": false,
+          "stages": [
+            "fragment"
+          ],
+          "alignment": 4,
+          "stride": 4,
+          "byteLength": 4,
+          "offset": 560
+        },
+        {
+          "name": "uGlobalMin",
+          "type": "float",
+          "count": 1,
+          "array": false,
+          "stages": [
+            "fragment"
+          ],
+          "alignment": 4,
+          "stride": 4,
+          "byteLength": 4,
+          "offset": 564
+        },
+        {
+          "name": "uFloor",
+          "type": "float",
+          "count": 1,
+          "array": false,
+          "stages": [
+            "fragment"
+          ],
+          "alignment": 4,
+          "stride": 4,
+          "byteLength": 4,
+          "offset": 568
+        },
+        {
+          "name": "uCoastal",
+          "type": "int",
+          "count": 1,
+          "array": false,
+          "stages": [
+            "fragment"
+          ],
+          "alignment": 4,
+          "stride": 4,
+          "byteLength": 4,
+          "offset": 572
+        },
+        {
+          "name": "uFrame",
+          "type": "int",
+          "count": 1,
+          "array": false,
+          "stages": [
+            "fragment"
+          ],
+          "alignment": 4,
+          "stride": 4,
+          "byteLength": 4,
+          "offset": 576
+        },
+        {
+          "name": "uContours",
+          "type": "int",
+          "count": 1,
+          "array": false,
+          "stages": [
+            "fragment"
+          ],
+          "alignment": 4,
+          "stride": 4,
+          "byteLength": 4,
+          "offset": 580
+        },
+        {
+          "name": "uStep",
+          "type": "float",
+          "count": 1,
+          "array": false,
+          "stages": [
+            "fragment"
+          ],
+          "alignment": 4,
+          "stride": 4,
+          "byteLength": 4,
+          "offset": 584
+        },
+        {
+          "name": "uThinW",
+          "type": "float",
+          "count": 1,
+          "array": false,
+          "stages": [
+            "fragment"
+          ],
+          "alignment": 4,
+          "stride": 4,
+          "byteLength": 4,
+          "offset": 588
+        },
+        {
+          "name": "uIndexW",
+          "type": "float",
+          "count": 1,
+          "array": false,
+          "stages": [
+            "fragment"
+          ],
+          "alignment": 4,
+          "stride": 4,
+          "byteLength": 4,
+          "offset": 592
+        },
+        {
+          "name": "uThinA",
+          "type": "float",
+          "count": 1,
+          "array": false,
+          "stages": [
+            "fragment"
+          ],
+          "alignment": 4,
+          "stride": 4,
+          "byteLength": 4,
+          "offset": 596
+        },
+        {
+          "name": "uIndexA",
+          "type": "float",
+          "count": 1,
+          "array": false,
+          "stages": [
+            "fragment"
+          ],
+          "alignment": 4,
+          "stride": 4,
+          "byteLength": 4,
+          "offset": 600
+        },
+        {
+          "name": "uFlatSlope",
+          "type": "float",
+          "count": 1,
+          "array": false,
+          "stages": [
+            "fragment"
+          ],
+          "alignment": 4,
+          "stride": 4,
+          "byteLength": 4,
+          "offset": 604
+        },
+        {
+          "name": "uRefine",
+          "type": "int",
+          "count": 1,
+          "array": false,
+          "stages": [
+            "fragment"
+          ],
+          "alignment": 4,
+          "stride": 4,
+          "byteLength": 4,
+          "offset": 608
+        },
+        {
+          "name": "uSourceCell",
+          "type": "float",
+          "count": 1,
+          "array": false,
+          "stages": [
+            "fragment"
+          ],
+          "alignment": 4,
+          "stride": 4,
+          "byteLength": 4,
+          "offset": 612
+        },
+        {
+          "name": "uSeed",
+          "type": "uint",
+          "count": 1,
+          "array": false,
+          "stages": [
+            "fragment"
+          ],
+          "alignment": 4,
+          "stride": 4,
+          "byteLength": 4,
+          "offset": 616
+        },
+        {
+          "name": "uEnhanced3d",
+          "type": "int",
+          "count": 1,
+          "array": false,
+          "stages": [
+            "fragment"
+          ],
+          "alignment": 4,
+          "stride": 4,
+          "byteLength": 4,
+          "offset": 620
+        },
+        {
+          "name": "uGroundCapture",
+          "type": "int",
+          "count": 1,
+          "array": false,
+          "stages": [
+            "fragment"
+          ],
+          "alignment": 4,
+          "stride": 4,
+          "byteLength": 4,
+          "offset": 624
+        },
+        {
+          "name": "uRefinementMode",
+          "type": "int",
+          "count": 1,
+          "array": false,
+          "stages": [
+            "fragment"
+          ],
+          "alignment": 4,
+          "stride": 4,
+          "byteLength": 4,
+          "offset": 628
+        },
+        {
+          "name": "uRefinedRect",
+          "type": "vec4",
+          "count": 1,
+          "array": false,
+          "stages": [
+            "fragment"
+          ],
+          "alignment": 16,
+          "stride": 16,
+          "byteLength": 16,
+          "offset": 640
+        },
+        {
+          "name": "uPreviousRefinedRect",
+          "type": "vec4",
+          "count": 1,
+          "array": false,
+          "stages": [
+            "fragment"
+          ],
+          "alignment": 16,
+          "stride": 16,
+          "byteLength": 16,
+          "offset": 656
+        },
+        {
+          "name": "uRefinedN",
+          "type": "int",
+          "count": 1,
+          "array": false,
+          "stages": [
+            "fragment"
+          ],
+          "alignment": 4,
+          "stride": 4,
+          "byteLength": 4,
+          "offset": 672
+        },
+        {
+          "name": "uPreviousRefinedN",
+          "type": "int",
+          "count": 1,
+          "array": false,
+          "stages": [
+            "fragment"
+          ],
+          "alignment": 4,
+          "stride": 4,
+          "byteLength": 4,
+          "offset": 676
+        },
+        {
+          "name": "uRefinedAlpha",
+          "type": "float",
+          "count": 1,
+          "array": false,
+          "stages": [
+            "fragment"
+          ],
+          "alignment": 4,
+          "stride": 4,
+          "byteLength": 4,
+          "offset": 680
+        },
+        {
+          "name": "uDetailA",
+          "type": "vec4",
+          "count": 1,
+          "array": false,
+          "stages": [
+            "fragment"
+          ],
+          "alignment": 16,
+          "stride": 16,
+          "byteLength": 16,
+          "offset": 688
+        },
+        {
+          "name": "uDetailB",
+          "type": "vec3",
+          "count": 1,
+          "array": false,
+          "stages": [
+            "fragment"
+          ],
+          "alignment": 16,
+          "stride": 12,
+          "byteLength": 12,
+          "offset": 704
+        },
+        {
+          "name": "uOctaves",
+          "type": "int",
+          "count": 1,
+          "array": false,
+          "stages": [
+            "fragment"
+          ],
+          "alignment": 4,
+          "stride": 4,
+          "byteLength": 4,
+          "offset": 716
+        },
+        {
+          "name": "uForest",
+          "type": "int",
+          "count": 1,
+          "array": false,
+          "stages": [
+            "fragment"
+          ],
+          "alignment": 4,
+          "stride": 4,
+          "byteLength": 4,
+          "offset": 720
+        },
+        {
+          "name": "uForestBrushes",
+          "type": "int",
+          "count": 1,
+          "array": false,
+          "stages": [
+            "fragment"
+          ],
+          "alignment": 4,
+          "stride": 4,
+          "byteLength": 4,
+          "offset": 724
+        },
+        {
+          "name": "uForestRect",
+          "type": "vec3",
+          "count": 1,
+          "array": false,
+          "stages": [
+            "fragment"
+          ],
+          "alignment": 16,
+          "stride": 12,
+          "byteLength": 12,
+          "offset": 736
+        },
+        {
+          "name": "uHasForestBank",
+          "type": "int",
+          "count": 1,
+          "array": false,
+          "stages": [
+            "fragment"
+          ],
+          "alignment": 4,
+          "stride": 4,
+          "byteLength": 4,
+          "offset": 748
+        },
+        {
+          "name": "uForestBankDensity",
+          "type": "float",
+          "count": 1,
+          "array": false,
+          "stages": [
+            "fragment"
+          ],
+          "alignment": 4,
+          "stride": 4,
+          "byteLength": 4,
+          "offset": 752
+        },
+        {
+          "name": "uHasOccupation",
+          "type": "int",
+          "count": 1,
+          "array": false,
+          "stages": [
+            "fragment"
+          ],
+          "alignment": 4,
+          "stride": 4,
+          "byteLength": 4,
+          "offset": 756
+        },
+        {
+          "name": "uOccupationRect",
+          "type": "vec3",
+          "count": 1,
+          "array": false,
+          "stages": [
+            "fragment"
+          ],
+          "alignment": 16,
+          "stride": 12,
+          "byteLength": 12,
+          "offset": 768
+        },
+        {
+          "name": "uOccupationN",
+          "type": "float",
+          "count": 1,
+          "array": false,
+          "stages": [
+            "fragment"
+          ],
+          "alignment": 4,
+          "stride": 4,
+          "byteLength": 4,
+          "offset": 780
+        },
+        {
+          "name": "uMaterialSeed",
+          "type": "uint",
+          "count": 1,
+          "array": false,
+          "stages": [
+            "fragment"
+          ],
+          "alignment": 4,
+          "stride": 4,
+          "byteLength": 4,
+          "offset": 784
+        },
+        {
+          "name": "uMaterialClimate",
+          "type": "vec2",
+          "count": 1,
+          "array": false,
+          "stages": [
+            "fragment"
+          ],
+          "alignment": 8,
+          "stride": 8,
+          "byteLength": 8,
+          "offset": 792
+        },
+        {
+          "name": "uWaterStops",
+          "type": "vec3",
+          "count": 8,
+          "array": true,
+          "stages": [
+            "fragment"
+          ],
+          "alignment": 16,
+          "stride": 16,
+          "byteLength": 128,
+          "offset": 800
+        },
+        {
+          "name": "uWaterStopT",
+          "type": "float",
+          "count": 8,
+          "array": true,
+          "stages": [
+            "fragment"
+          ],
+          "alignment": 16,
+          "stride": 16,
+          "byteLength": 128,
+          "offset": 928
+        },
+        {
+          "name": "uWaterStopCount",
+          "type": "int",
+          "count": 1,
+          "array": false,
+          "stages": [
+            "fragment"
+          ],
+          "alignment": 4,
+          "stride": 4,
+          "byteLength": 4,
+          "offset": 1056
+        }
+      ],
+      "samplers": [
+        {
+          "name": "uField",
+          "type": "sampler2D",
+          "count": 1,
+          "array": false,
+          "stages": [
+            "fragment"
+          ],
+          "binding": 1
+        },
+        {
+          "name": "uCave",
+          "type": "sampler2D",
+          "count": 1,
+          "array": false,
+          "stages": [
+            "fragment"
+          ],
+          "binding": 2
+        },
+        {
+          "name": "uLake",
+          "type": "sampler2D",
+          "count": 1,
+          "array": false,
+          "stages": [
+            "fragment"
+          ],
+          "binding": 3
+        },
+        {
+          "name": "uOverlay",
+          "type": "sampler2D",
+          "count": 1,
+          "array": false,
+          "stages": [
+            "fragment"
+          ],
+          "binding": 4
+        },
+        {
+          "name": "uWaterLayer",
+          "type": "sampler2D",
+          "count": 1,
+          "array": false,
+          "stages": [
+            "fragment"
+          ],
+          "binding": 5
+        },
+        {
+          "name": "uCoastDistance",
+          "type": "sampler2D",
+          "count": 1,
+          "array": false,
+          "stages": [
+            "fragment"
+          ],
+          "binding": 6
+        },
+        {
+          "name": "uRefined",
+          "type": "sampler2D",
+          "count": 1,
+          "array": false,
+          "stages": [
+            "fragment"
+          ],
+          "binding": 7
+        },
+        {
+          "name": "uPreviousRefined",
+          "type": "sampler2D",
+          "count": 1,
+          "array": false,
+          "stages": [
+            "fragment"
+          ],
+          "binding": 8
+        },
+        {
+          "name": "uForestBrushAtlas",
+          "type": "sampler2DArray",
+          "count": 1,
+          "array": false,
+          "stages": [
+            "fragment"
+          ],
+          "binding": 9
+        },
+        {
+          "name": "uForestField",
+          "type": "sampler2D",
+          "count": 1,
+          "array": false,
+          "stages": [
+            "fragment"
+          ],
+          "binding": 10
+        },
+        {
+          "name": "uForestBank",
+          "type": "sampler2D",
+          "count": 1,
+          "array": false,
+          "stages": [
+            "fragment"
+          ],
+          "binding": 11
+        },
+        {
+          "name": "uOccupation",
+          "type": "sampler2D",
+          "count": 1,
+          "array": false,
+          "stages": [
+            "fragment"
+          ],
+          "binding": 12
+        }
+      ],
+      "buffers": [],
+      "attributes": [],
+      "varyings": [],
+      "stages": {
+        "vertex": {
+          "originalSha256": "609a23d2cbc17890617476d6fbc2c63d7b04d37fd10464aa3c0a856543150d33",
+          "translatedSha256": "8fce436962b3a69ee80f165c7f834d7b588c4243f83cac52b270ec0b1859edea",
+          "mathFunctionsSha256": "5d672da12b27798360168e12276036d5e209b7632894ce40ce5d372f6abcd4f8",
+          "functionCount": 1
+        },
+        "fragment": {
+          "originalSha256": "ce16892a784d83440f0081b86eefec7555e12f56a3c3d842b1958c531ce96120",
+          "translatedSha256": "8e783805773aadfc0908d0af76514b8fb41a2c7f34780e2f62b224bd86eb169e",
+          "mathFunctionsSha256": "6ceabfae7ce3a8d1f6527615d9bfc11c83267b84b27a6546bb1fe54e95dd4faa",
+          "functionCount": 88
+        }
+      }
+    },
+    "river": {
+      "vertex": "river.vert.glsl",
+      "fragment": "river.frag.glsl",
+      "uniformByteLength": 48,
+      "uniforms": [
+        {
+          "name": "uCanvas",
+          "type": "vec2",
+          "count": 1,
+          "array": false,
+          "stages": [
+            "vertex"
+          ],
+          "alignment": 8,
+          "stride": 8,
+          "byteLength": 8,
+          "offset": 0
+        },
+        {
+          "name": "uOrigin",
+          "type": "vec2",
+          "count": 1,
+          "array": false,
+          "stages": [
+            "vertex",
+            "fragment"
+          ],
+          "alignment": 8,
+          "stride": 8,
+          "byteLength": 8,
+          "offset": 8
+        },
+        {
+          "name": "uPx",
+          "type": "float",
+          "count": 1,
+          "array": false,
+          "stages": [
+            "vertex",
+            "fragment"
+          ],
+          "alignment": 4,
+          "stride": 4,
+          "byteLength": 4,
+          "offset": 16
+        },
+        {
+          "name": "uDpr",
+          "type": "float",
+          "count": 1,
+          "array": false,
+          "stages": [
+            "vertex"
+          ],
+          "alignment": 4,
+          "stride": 4,
+          "byteLength": 4,
+          "offset": 20
+        },
+        {
+          "name": "uMapW",
+          "type": "float",
+          "count": 1,
+          "array": false,
+          "stages": [
+            "fragment"
+          ],
+          "alignment": 4,
+          "stride": 4,
+          "byteLength": 4,
+          "offset": 24
+        },
+        {
+          "name": "uHasOverlay",
+          "type": "int",
+          "count": 1,
+          "array": false,
+          "stages": [
+            "fragment"
+          ],
+          "alignment": 4,
+          "stride": 4,
+          "byteLength": 4,
+          "offset": 28
+        },
+        {
+          "name": "uHasLake",
+          "type": "int",
+          "count": 1,
+          "array": false,
+          "stages": [
+            "fragment"
+          ],
+          "alignment": 4,
+          "stride": 4,
+          "byteLength": 4,
+          "offset": 32
+        },
+        {
+          "name": "uLakeN",
+          "type": "float",
+          "count": 1,
+          "array": false,
+          "stages": [
+            "fragment"
+          ],
+          "alignment": 4,
+          "stride": 4,
+          "byteLength": 4,
+          "offset": 36
+        }
+      ],
+      "samplers": [
+        {
+          "name": "uOverlay",
+          "type": "sampler2D",
+          "count": 1,
+          "array": false,
+          "stages": [
+            "fragment"
+          ],
+          "binding": 1
+        },
+        {
+          "name": "uLake",
+          "type": "sampler2D",
+          "count": 1,
+          "array": false,
+          "stages": [
+            "fragment"
+          ],
+          "binding": 2
+        }
+      ],
+      "buffers": [
+        {
+          "name": "RiverInstances",
+          "binding": 3,
+          "type": "storage",
+          "strideBytes": 36,
+          "scalarType": "float",
+          "scalarsPerInstance": 9,
+          "stages": [
+            "vertex"
+          ]
+        }
+      ],
+      "attributes": [],
+      "varyings": [
+        {
+          "name": "vP",
+          "type": "vec2",
+          "count": 1,
+          "qualifier": "",
+          "location": 0
+        },
+        {
+          "name": "vSeg",
+          "type": "vec4",
+          "count": 1,
+          "qualifier": "flat",
+          "location": 1
+        },
+        {
+          "name": "vHalf",
+          "type": "vec2",
+          "count": 1,
+          "qualifier": "flat",
+          "location": 2
+        },
+        {
+          "name": "vColor",
+          "type": "vec3",
+          "count": 1,
+          "qualifier": "flat",
+          "location": 3
+        }
+      ],
+      "stages": {
+        "vertex": {
+          "originalSha256": "bb90a9df3c25430959a13f5ae469745da0de9bc59c592a674b1a1a4fb49454f2",
+          "translatedSha256": "83b1c9d1cebb785ceb05b70cf5cfbbabf10f7564a7eb7f8452b443fb71791d5e",
+          "mathFunctionsSha256": "2815bc302bb27d360eae2b64b180ae8f102b93251e42b45ae4e0a1cf452e96d9",
+          "functionCount": 1
+        },
+        "fragment": {
+          "originalSha256": "9aa5d5fdfd86109618f72d87676954e8768159c96a08dfcfe7eee85961afe182",
+          "translatedSha256": "2c634915ab1eac26d7dec59f75188c8fc6c80378816328eb075ec8a2e5a14317",
+          "mathFunctionsSha256": "153f2c5b16c3e63c552f575e0d600861a5d6065c4c0935054a1713f11265159d",
+          "functionCount": 5
+        }
+      }
+    },
+    "composite": {
+      "vertex": "composite.vert.glsl",
+      "fragment": "composite.frag.glsl",
+      "uniformByteLength": 0,
+      "uniforms": [],
+      "samplers": [
+        {
+          "name": "uLayer",
+          "type": "sampler2D",
+          "count": 1,
+          "array": false,
+          "stages": [
+            "fragment"
+          ],
+          "binding": 1
+        }
+      ],
+      "buffers": [],
+      "attributes": [],
+      "varyings": [],
+      "stages": {
+        "vertex": {
+          "originalSha256": "a2a355f2b6097e8887d7cafd5ed0bbd716946dc123774a1027c5167afd5b7f7e",
+          "translatedSha256": "34097fc87f0c82fc934383e6c3d5a2dfe3f56517cdd26b7f691a357a5aa635c0",
+          "mathFunctionsSha256": "f802342deaf1c2e2fb73dff5952d7ce9f99289e05baf2ffc66594be11ed69348",
+          "functionCount": 1
+        },
+        "fragment": {
+          "originalSha256": "ecbde7394d5380dcd1942a63fe5fdad654aac7704516be02163d98ec730c85b8",
+          "translatedSha256": "a28731c1db98af345960c61ab1bdcd7fd65119d6da1ceb1148bbeb7686f75503",
+          "mathFunctionsSha256": "211e83a15ebebe2102c7a2a97362b6a7d57c69e6780095b4c8a657a869392438",
+          "functionCount": 1
+        }
+      }
+    },
+    "renderWater": {
+      "vertex": "renderWater.vert.glsl",
+      "fragment": "renderWater.frag.glsl",
+      "uniformByteLength": 512,
+      "uniforms": [
+        {
+          "name": "uCanvas",
+          "type": "vec2",
+          "count": 1,
+          "array": false,
+          "stages": [
+            "fragment"
+          ],
+          "alignment": 8,
+          "stride": 8,
+          "byteLength": 8,
+          "offset": 0
+        },
+        {
+          "name": "uOrigin",
+          "type": "vec2",
+          "count": 1,
+          "array": false,
+          "stages": [
+            "fragment"
+          ],
+          "alignment": 8,
+          "stride": 8,
+          "byteLength": 8,
+          "offset": 8
+        },
+        {
+          "name": "uPx",
+          "type": "float",
+          "count": 1,
+          "array": false,
+          "stages": [
+            "fragment"
+          ],
+          "alignment": 4,
+          "stride": 4,
+          "byteLength": 4,
+          "offset": 16
+        },
+        {
+          "name": "uDpr",
+          "type": "float",
+          "count": 1,
+          "array": false,
+          "stages": [
+            "fragment"
+          ],
+          "alignment": 4,
+          "stride": 4,
+          "byteLength": 4,
+          "offset": 20
+        },
+        {
+          "name": "uBand",
+          "type": "float",
+          "count": 1,
+          "array": false,
+          "stages": [
+            "fragment"
+          ],
+          "alignment": 4,
+          "stride": 4,
+          "byteLength": 4,
+          "offset": 24
+        },
+        {
+          "name": "uBankPx",
+          "type": "float",
+          "count": 1,
+          "array": false,
+          "stages": [
+            "fragment"
+          ],
+          "alignment": 4,
+          "stride": 4,
+          "byteLength": 4,
+          "offset": 28
+        },
+        {
+          "name": "uRings",
+          "type": "float",
+          "count": 12,
+          "array": true,
+          "stages": [
+            "fragment"
+          ],
+          "alignment": 16,
+          "stride": 16,
+          "byteLength": 192,
+          "offset": 32
+        },
+        {
+          "name": "uRingCount",
+          "type": "int",
+          "count": 1,
+          "array": false,
+          "stages": [
+            "fragment"
+          ],
+          "alignment": 4,
+          "stride": 4,
+          "byteLength": 4,
+          "offset": 224
+        },
+        {
+          "name": "uWaterStops",
+          "type": "vec3",
+          "count": 8,
+          "array": true,
+          "stages": [
+            "fragment"
+          ],
+          "alignment": 16,
+          "stride": 16,
+          "byteLength": 128,
+          "offset": 240
+        },
+        {
+          "name": "uWaterStopT",
+          "type": "float",
+          "count": 8,
+          "array": true,
+          "stages": [
+            "fragment"
+          ],
+          "alignment": 16,
+          "stride": 16,
+          "byteLength": 128,
+          "offset": 368
+        },
+        {
+          "name": "uWaterStopCount",
+          "type": "int",
+          "count": 1,
+          "array": false,
+          "stages": [
+            "fragment"
+          ],
+          "alignment": 4,
+          "stride": 4,
+          "byteLength": 4,
+          "offset": 496
+        }
+      ],
+      "samplers": [
+        {
+          "name": "uLayer",
+          "type": "sampler2D",
+          "count": 1,
+          "array": false,
+          "stages": [
+            "fragment"
+          ],
+          "binding": 1
+        }
+      ],
+      "buffers": [],
+      "attributes": [],
+      "varyings": [],
+      "stages": {
+        "vertex": {
+          "originalSha256": "a2a355f2b6097e8887d7cafd5ed0bbd716946dc123774a1027c5167afd5b7f7e",
+          "translatedSha256": "f68e2fc58bdb19d37f532b03969b7580f58b276a1b048440905e8b23514c3f92",
+          "mathFunctionsSha256": "f802342deaf1c2e2fb73dff5952d7ce9f99289e05baf2ffc66594be11ed69348",
+          "functionCount": 1
+        },
+        "fragment": {
+          "originalSha256": "fa5fee2f31e3ba7c2d74da8f4f99ff12e0aa7d58511644d1326f77fd39a01a03",
+          "translatedSha256": "31938e9f5a4e0ab089d6b8cdbc64843bb24c14f9ae583f45ae614eba2b0739b8",
+          "mathFunctionsSha256": "30859ba6ff7f1d2e0dd7a0b7c038c61ae8022cfd052b7a3f599db23149774c81",
+          "functionCount": 5
+        }
+      }
+    }
+  }
+}
