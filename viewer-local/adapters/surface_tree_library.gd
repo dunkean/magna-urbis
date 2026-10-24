@@ -13,6 +13,7 @@ var mask_texture:Texture2D
 var last_error:=""
 var _source_packet:Dictionary={}
 var _render_packet:Dictionary={}
+const IMPOSTOR_LOCAL_BOUNDS=AABB(Vector3(-1.1,-.2778174593052023,-1.1),Vector3(2.2,1.5556349186104046,2.2))
 
 static func _canonical(value):
 	if value is int or value is float:return float(value)
@@ -170,12 +171,40 @@ static func instance_buffer(candidates:Array,origin:Dictionary)->PackedFloat32Ar
 		buffer[at+16]=size;buffer[at+17]=float(c.get("canopyClass",0));buffer[at+18]=float(c.get("rank",0));buffer[at+19]=radius
 	return buffer
 
-static func bounds(candidates:Array,origin:Dictionary)->AABB:
-	var low=Vector3(INF,INF,INF);var high=Vector3(-INF,-INF,-INF)
-	for c in candidates:
-		var point=Vector3(float(c.x)-float(origin.x),float(c.y)-float(origin.y),float(c.z)-float(origin.z));var radius=float(c.get("crownRadiusM",float(c.size)*.42))*1.1
-		low=low.min(point-Vector3(radius,float(c.size)*.6,radius));high=high.max(point+Vector3(radius,float(c.size)*1.6,radius))
-	return AABB(low,high-low) if not candidates.is_empty() else AABB()
+func local_support_bounds()->AABB:
+	# Union of all five shader-generated quads, including their non-alpha part.
+	# The alpha silhouette is contained by this conservative geometry support.
+	var result=IMPOSTOR_LOCAL_BOUNDS
+	if high_mesh!=null:return result.merge(high_mesh.get_aabb())
+	var authored:Dictionary=manifest.get("sourceGeometry",{}).get("actualNormalizedBounds",{})
+	if _numbers(authored.get("min"),3) and _numbers(authored.get("max"),3):
+		# The offline metadata is Blender X/Y/Z; imported glTF is X/Z/-Y.
+		var low: Array=authored.min;var high:Array=authored.max
+		var start=Vector3(low[0],low[2],-high[1]);var end=Vector3(high[0],high[2],-low[1])
+		result=result.merge(AABB(start,end-start))
+	return result
+
+static func transformed_support(candidate:Dictionary,origin:Dictionary,local_bounds:AABB=IMPOSTOR_LOCAL_BOUNDS)->AABB:
+	var size=float(candidate.size);var radius=float(candidate.get("crownRadiusM",size*.42))
+	# Subtract canonical doubles BEFORE constructing any float32 vectors.
+	var point=Vector3(float(candidate.x)-float(origin.x),float(candidate.y)-float(origin.y),float(candidate.z)-float(origin.z))
+	var basis=Basis(Vector3.UP,float(candidate.orientation)).scaled(Vector3(radius,size,radius))
+	return Transform3D(basis,point)*local_bounds
+
+static func intersects_frustum(box:AABB,planes:Array[Plane])->bool:
+	var centre=box.position+box.size*.5;var half=box.size*.5
+	# Camera3D frustum normals face outward. A whole AABB must be outside one
+	# plane before it can be rejected; the centre alone is never the test.
+	var roundoff_margin=maxf(.0001,maxf(maxf(absf(centre.x),absf(centre.y)),absf(centre.z))*.000002)
+	for plane in planes:
+		if plane.distance_to(centre)>plane.normal.abs().dot(half)+roundoff_margin:return false
+	return true
+
+static func bounds(candidates:Array,origin:Dictionary,local_bounds:AABB=IMPOSTOR_LOCAL_BOUNDS)->AABB:
+	if candidates.is_empty():return AABB()
+	var result=transformed_support(candidates[0],origin,local_bounds)
+	for i in range(1,candidates.size()):result=result.merge(transformed_support(candidates[i],origin,local_bounds))
+	return result
 
 func packet_copy(packet:Dictionary,presentation:String)->Dictionary:
 	if cpu.is_empty() or presentation!="aerial":return packet

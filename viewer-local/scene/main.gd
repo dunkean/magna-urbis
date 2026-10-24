@@ -760,17 +760,23 @@ func _build_asset_trees(candidates:Array)->void:
 	_update_camera()
 	var vp=camera.get_camera_projection()*Projection(camera.get_camera_transform().affine_inverse())
 	var screen=get_viewport().get_visible_rect().size;var reference_y=Data.height_at(rendered_world,focus.x,focus.y)-float(origin.y)
-	var pixels={}
+	var pixels={};var frustum=camera.get_frustum();var local_support=tree_library.local_support_bounds()
+	var support_tested=0;var support_intersecting=0
 	for c in candidates:
 		var x=float(c.x)-float(origin.x);var z=float(c.z)-float(origin.z)
-		var centre=Vector3(x,float(c.y)-float(origin.y)+float(c.size)*.5,z)
-		if not camera.is_position_in_frustum(centre):continue
 		var point=vp*Vector4(x,reference_y,z,1);var east=vp*Vector4(x+1,reference_y,z,1);var south=vp*Vector4(x,reference_y,z+1,1)
 		if point.w<=0 or east.w<=0 or south.w<=0:continue
 		var a=((Vector2(east.x,east.y)/east.w-Vector2(point.x,point.y)/point.w)*screen*.5).length();var b=((Vector2(south.x,south.y)/south.w-Vector2(point.x,point.y)/point.w)*screen*.5).length()
-		pixels[str(c.stableId)]=2.0*float(c.crownRadiusM)*minf(a,b)
+		var physical_pixels=2.0*float(c.crownRadiusM)*minf(a,b)
+		if physical_pixels<float(tree_library.manifest.highMinPixels):continue
+		support_tested+=1
+		if not TreeAssets.intersects_frustum(TreeAssets.transformed_support(c,origin,local_support),frustum):continue
+		support_intersecting+=1;pixels[str(c.stableId)]=physical_pixels
 	var plan=tree_library.plan(candidates,pixels)
-	tree_asset_metrics.merge({"highCount":plan.high.size(),"impostorCount":plan.middle.size(),"highTriangles":plan.highTriangles,"impostorTriangles":plan.impostorTriangles,"retainedCount":plan.retainedCount,"droppedCount":plan.droppedCount,"highMinPixels":tree_library.manifest.highMinPixels,"highBudget":tree_library.manifest.highTriangleBudget,"scope":"top shared-mask C/V; oblique view-indexed planar-depth approximation; no source edits"},true)
+	var high_centres=0
+	for c in plan.high:
+		if camera.is_position_in_frustum(Vector3(float(c.x)-float(origin.x),float(c.y)-float(origin.y)+float(c.size)*.5,float(c.z)-float(origin.z))):high_centres+=1
+	tree_asset_metrics.merge({"highCount":plan.high.size(),"impostorCount":plan.middle.size(),"highTriangles":plan.highTriangles,"impostorTriangles":plan.impostorTriangles,"retainedCount":plan.retainedCount,"droppedCount":plan.droppedCount,"highMinPixels":tree_library.manifest.highMinPixels,"highBudget":tree_library.manifest.highTriangleBudget,"highSupportTested":support_tested,"highSupportIntersecting":support_intersecting,"highCentresInFrustum":high_centres,"highCentresOutsideFrustum":plan.high.size()-high_centres,"highEligibility":"physical diameter>=500px and conservative transformed high+five-impostor AABB intersects frustum; not centre visibility or GPU occlusion","scope":"top shared-mask C/V; oblique view-indexed planar-depth approximation; no source edits"},true)
 	for kind in ["high","middle"]:
 		var group:Array=plan[kind]
 		if group.is_empty():continue
@@ -782,7 +788,7 @@ func _build_asset_trees(candidates:Array)->void:
 			if kind=="middle":material.set_shader_parameter("tree_camera_world_position",camera.global_position)
 			_apply_canopy_parameters(material);_set_canopy_main_camera(material,vp,screen)
 		var multi=MultiMesh.new();multi.transform_format=MultiMesh.TRANSFORM_3D;multi.use_custom_data=true;multi.use_colors=true
-		multi.mesh=product.mesh;multi.instance_count=group.size();multi.buffer=TreeAssets.instance_buffer(group,origin);multi.custom_aabb=TreeAssets.bounds(group,origin)
+		multi.mesh=product.mesh;multi.instance_count=group.size();multi.buffer=TreeAssets.instance_buffer(group,origin);multi.custom_aabb=TreeAssets.bounds(group,origin,local_support)
 		var node=MultiMeshInstance3D.new();node.name="tree_asset_"+kind;node.multimesh=multi;node.layers=2;node.cast_shadow=GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		node.set_meta("treeAssetHigh",kind=="high")
 		node.set_meta("populationFamily","tree");node.set_meta("surfaceLayer","trees");node.set_meta("canopyStaged",not canopy_pending.is_empty());node.set_meta("canopyRenderOrigin",origin.duplicate());node.set_meta("treeAssetDigest",tree_library.cpu.digest)
