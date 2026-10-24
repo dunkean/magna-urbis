@@ -33,7 +33,7 @@ Adapter le shader végétal pour albédo/normal/rugosité et alpha testé/haché
 ## Preuves nécessaires et limites
 
 - CPU : hashes/licences/pivots/tailles, source/candidats strictement inchangés, variante stable au zoom/raffinement/rebase, buffers et budgets bornés.
-- GPU après autorisation : 10m/160m/640m/2560m et oblique contrôlé ; mesh contre imposteur, vrai MultiMesh, alpha/normales, couverture ≤2 points, pans/franchissements de page sans rectangle/halo.
+- GPU sur snapshot isolé : 10m/160m/640m/2560m et oblique contrôlé ; mesh contre imposteur, vrai MultiMesh, alpha/normales, couverture ≤2 points, pans/franchissements de page sans rectangle/halo.
 - Couches/styles : sol RGB/normal/rugosité inchangés ; herbes/litière et arbres/ombres réellement retirés par leurs toggles ; styles cartographiques et bâtiments conservés.
 - QoS : navigation stricte20s, mémoire, bytes chargés, triangles/draws et upload mesurés. Les [MultiMeshes ne font pas de culling individuel](https://docs.godotengine.org/en/stable/tutorials/performance/using_multimesh.html) ; les gros lots devront rester bornés. Cette page signale elle-même une mise à jour4.7 incomplète : vérifier sur le moteur épinglé.
 
