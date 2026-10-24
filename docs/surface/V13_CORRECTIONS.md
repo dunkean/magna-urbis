@@ -46,17 +46,29 @@ mesures sont conservées ; cette configuration nécessite sa propre exécution.
 Le driver transmet aussi le manifeste de végétation par
 `--viewer-vegetation-assets` à chaque phase, avec hash initial/final séparé.
 
-## Chantiers séparés en cours
+## Intégration et suite ciblée
 
 - Herbes CC0 légères : ingestion et rendu intégrés, 52 assertions natives et
   [six A/B GPU](evidence/vegetation-grass-v13/README.md) passent sous leurs limites.
-  Les arbres avec LOD et masque de canopée cohérent restent en préparation.
-- Sol : diagnostiquer les réponses des paramètres physiques continus avant une
-  éventuelle révision du contexte ; aucune texture floutée pour cacher les 78 m.
+  Le [consommateur arbre](evidence/vegetation-tree-v13/GPU.md) est intégré en option,
+  avec ses contrôles TOP, son rendu urbain oblique et ses limites déclarées.
+- Sol : la [réponse physique continue](GROUND_RESPONSE.md) est intégrée et contrôlée
+  numériquement/GPU ; les champs physiques restent ceux du contexte canonique.
+  Aucune texture floutée ne remplace des observations fines absentes.
 - Eau : les [six canaux isolés et l'A/B de teinte](HYDROLOGY_V13_DIAGNOSTIC.md)
   distinguent support alluvial et composite. L'option uniforme passe ses contrôles
   GPU sans modifier l'alpha, les classes ou la géométrie ; le défaut reste inchangé.
 - Bord : la [capture 40 km](evidence/source-edge-v13/40000m.png) vérifie une bande
   de ciel de deux pixels conforme au domaine réel, sans étendre les hauteurs source.
 
-Ces lignes décrivent le travail actif, pas des capacités déjà qualifiées.
+La [campagne V13 complète](evidence/NATIVE_V13.md) qualifie techniquement ces
+changements réunis sur `6ef8d3c` : 624 fichiers identiques, source fraîche,
+navigation nominale 20 s, sept niveaux de zoom, deux probes de couches et
+restauration stricte des archives. La revue artistique reste séparée. Les
+[vues des 419 bâtiments](NATIVE_CITY419_V13.md) utilisent une source retenue
+legacy, sans GR ni nouvelle génération.
+
+La planification oblique commune (atlas/résident/enveloppe des mêmes hauteurs)
+et la sélection haute LOD par support plutôt que centre sont préparées dans
+d'autres worktrees. Le contre-exemple oblique à phase 0 et le tour 10 m sans
+haute géométrie restent conservés ; aucun correctif futur n'est crédité à V13.

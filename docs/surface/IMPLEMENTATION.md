@@ -1,14 +1,33 @@
 # SurfaceWorld — état de l'implémentation
 
-Développement courant du 24 octobre 2026 : compilateur `surface-1.6.0`,
-réponse physique continue du sol, herbes CC0 et chemin expérimental d'arbres.
-Les [corrections V13](V13_CORRECTIONS.md), la
-[réponse du sol](GROUND_RESPONSE.md), les
-[herbes GPU](evidence/vegetation-grass-v13/README.md) et le
-[contrat des arbres](evidence/vegetation-tree-v13/EXPERIMENTAL_RENDERER.md)
-séparent les preuves bornées de la prochaine campagne intégrée. La revue V12
-ne qualifie pas ces nouveaux fichiers. Sol, herbes/litière et arbres gardent leurs
-contrats propres ; hauteurs Infinite Generation et hydrologie Magna sont conservées.
+La **campagne V13 passe techniquement** sur le gel `6ef8d3c`, compilateur
+`surface-1.6.0`, analyse physique `1.5.2`. Les 624 fichiers suivis sont identiques
+avant/après ; navigation, sept zooms et deux probes de couches sont complets.
+Voir le [bilan V13](evidence/NATIVE_V13.md), la
+[preuve compacte](evidence/native-e2e-v13.json) et les
+[vues urbaines séparées](NATIVE_CITY419_V13.md).
+
+Deux mondes distincts sont affichés pendant les 20 s de déplacement : parent
+natif 30 m après 12,808 s, puis raffinement neuronal natif 0,9375 m après 19,602 s.
+La durée réelle est 20,015 s ; le drain fournit ensuite 0,46875 m natif.
+Le contexte environnemental reste à 78,125 m. Le pixel écran de 4,8828 mm à
+10 m n'est pas une mesure du relief source. Le maximum de frame murale de
+699,89 ms couvre échauffement, mouvement et drain ; aucun 60 FPS n'est qualifié.
+
+La [réponse continue du sol](GROUND_RESPONSE.md) et les
+[herbes CC0](evidence/vegetation-grass-v13/README.md) sont intégrées. Les
+[arbres expérimentaux](evidence/vegetation-tree-v13/GPU.md) utilisent un maillage
+proche et des imposteurs avec masque optique commun, activés explicitement par
+manifeste. Sol, herbes/litière et arbres restent indépendants. Le plan Blueprint
+conserve sa présentation ; les 419 volumes natifs sont éprouvés séparément sur
+une source urbaine legacy. Haute géométrie/imposteur, oblique, diversité végétale,
+styles finaux et coût de navigation gardent des limites déclarées. La revue
+artistique V13 reste distincte de ce succès technique.
+
+Les [corrections V13](V13_CORRECTIONS.md) conservent leurs preuves négatives.
+Deux correctifs ciblés ultérieurs sont préparés hors du gel : planification
+commune du résident/atlas oblique et sélection haute LOD par support intersectant
+la vue. Ils ne sont pas qualifiés par cette campagne.
 
 Dernière campagne complète antérieure aux changements V13 : **V12 passe techniquement**
 sur le runtime figé `bc6579f`, compilateur `surface-1.5.3` et analyse physique
@@ -545,9 +564,9 @@ la ville live complète et les styles cartographiques choisis.
 
 | ID | État au snapshot | Reste nécessaire pour le critère du design |
 | --- | --- | --- |
-| B01 | Implémenté : sources/snapshots, captures et manifeste V12 exact archivés. | Maintenir cette provenance lors des prochains changements. |
-| B02 | Implémenté : fournisseur neutre, emprises/centres, annulation, eau/occupation/ville et liaison de contrôles. | Parcours natif frais V12 qualifié ; scène urbaine neuve et live complète encore distincte. |
-| B03 | Prototype Godot/Terrain3D et vrais imports40km ; navigation V12 et tournée qualifiées sous leurs limites mesurées. | Latence/préparation, vidéo, décision moteur fondée aussi sur styles/plans/export. |
+| B01 | Implémenté : sources/snapshots, captures et manifestes V12/V13 exacts archivés. | Maintenir cette provenance lors des prochains changements. |
+| B02 | Implémenté : fournisseur neutre, emprises/centres, annulation, eau/occupation/ville et liaison de contrôles. | Parcours natif frais V13 qualifié ; scène urbaine neuve et live complète encore distincte. |
+| B03 | Prototype Godot/Terrain3D et vrais imports40km ; navigation V13 et tournée qualifiées sous leurs limites mesurées. | Latence/préparation, vidéo, décision moteur fondée aussi sur styles/plans/export. |
 | B04 | Prototype PBR réel, eau, objets bornés, éclairage et métriquesGPU. | Qualité de la scène complète et budgets pendant les remplacements. |
 | B05 | Implémenté : contrat moteur-neutre, versions/provenance, sampling, hydration et binaire. | Revue finale du schéma intégré et de ses frontières. |
 | B06 | Implémenté : pente/courbure/TPI multi-rayons et confiance de bord. | Comparaisons terrain documentées ; ce n'est pas un classifieur geomorphon complet. |
@@ -556,12 +575,12 @@ la ville live complète et les styles cartographiques choisis.
 | B09 | Partiel : gravitaire/alluvial avec sources distinctes et tests headwater/floodplain. | Versant/vallée réels complets et diagnostic fragments→sources ; aucun bilan matière certifié. |
 | B10 | Partiel : climat physique, fractions minérales renormalisées, organique distinct et sols heuristiques. | Calibration/validation crête-versant-creux et géométries submaille pertinentes. |
 | B11 | Implémenté : catalogue extensible et15 jeux PBR normalisés, échelles/provenance/fallback explicites. | Couverture artistique de toutes les scènes et contrôle des assets sur leurs usages réels. |
-| B12 | Partiel : recettes conditionnées, top2+blend, moyenne canonique et motifs orientés. | Organisation mésoscopique plus précise que les cellules de contexte ; diagnostic intégré roche/sol/dépôts. |
-| B13 | Implémenté : inventaire stable, colonnes, pages complètes bornées et isolation des instances proches V12. | Objets proches de qualité et trajectoires temporelles supplémentaires. |
-| B14 | Partiel : couronnes calibrées, transmittance/résiduel commun, sécurité de page globale et isolation V12. | Couronnes/ombres optiques encore stylisées ; couverts hétérogènes et forêt photographique non livrée. |
+| B12 | Partiel : recettes conditionnées, top2+blend et réponse continue des paramètres physiques avant recette (GR1.6), motifs orientés. | Organisation mésoscopique plus précise que les cellules de contexte ; diagnostic intégré roche/sol/dépôts. |
+| B13 | Implémenté : inventaire stable, colonnes, pages complètes bornées et isolation des instances proches V12. | Herbes CC0 et arbres réels bornés intégrés ; diversité, LOD par support et trajectoires supplémentaires restent nécessaires. |
+| B14 | Partiel : masque asset partagé, LUT optique auditée, C/V GPU TOP, certificat de filtre global et isolation V13. | Parité lumineuse high/imposteur, oblique général, ombres optiques et couverts hétérogènes ; forêt photographique non livrée. |
 | B15 | Partiel : filtrage linéaire, moyenne PBRGPU, classes/poids communs et rebase. | Mesurer aliasing/popping/continuité lumineuse sur trajectoires, pas seulement probes. |
 | B16 | Partiel : scène linéaire et styles cartographiques distincts, eau source explicite. | Plusieurs éclairages, rives mobiles compatibles et ombres de toute la scène. |
-| B17 | V12 technique complète : source neuve, mouvement, sept échelles, isolation à 10 km et 160 m ; ville419 séparée. | Verdict artistique/revue finale indépendant, puis trajectoires et scènes supplémentaires. |
+| B17 | V13 technique complète : source neuve, mouvement, sept échelles, isolation à 10 km et 160 m ; ville419 séparée. | Revue Opus V13, puis correctifs oblique/LOD et trajectoires/scènes supplémentaires ; V12 artistique reste refusée. |
 | B18 | Prototype : vrai importOrogen/NeuralEarth métrique, unités/lapse/provenance ; géologie externe exigée. | Intégration d'un paquet géologique régional réel et confrontation aux scènes. |
 | B19 | Partiel : matériaux/coastmasks/eau et provenance de dépôt déclarés. | Deux côtes qualifiées, bancs/marais géométriques, fond/turbidité/flux. |
 | B20 | Partiel : occupation, exclusions, routes et ville native/style source conservés. | Scène rurale complète : champs/cours/haies et contacts d'appui validés. |
