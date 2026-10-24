@@ -3,6 +3,11 @@
 #include "res://shaders/canopy_lod.gdshaderinc"
 uniform vec4 canopy_meso_phase=vec4(0.0);
 uniform int canopy_meso_seed=0;
+uniform bool canopy_asset_enabled=false;
+uniform sampler2D canopy_optical_lut : filter_linear, repeat_disable;
+float canopy_optical_mean(float envelope_cover){
+ return canopy_asset_enabled?textureLod(canopy_optical_lut,vec2((clamp(envelope_cover,0.0,1.0)*256.0+.5)/257.0,.5),0.0).r:envelope_cover;
+}
 const float CANOPY_MESO_CELL_M=16.0;
 const float CANOPY_MESO_CDF[65]=float[65](0.000000000, 0.001787186, 0.007123947, 0.015642166, 0.027740479, 0.042984009, 0.062061310, 0.084333420, 0.109577179, 0.137813568, 0.169153214, 0.203155518, 0.239603043, 0.278257370, 0.319181442, 0.361764908, 0.405628204, 0.450138092, 0.495178223, 0.540449142, 0.583829880, 0.627262115, 0.669685364, 0.709945679, 0.748413086, 0.783838272, 0.816434860, 0.846004486, 0.873222351, 0.896793365, 0.917478561, 0.934982300, 0.949651718, 0.961904526, 0.971836090, 0.979625702, 0.985696793, 0.990203857, 0.993701935, 0.996088028, 0.997552872, 0.998659134, 0.999273300, 0.999637604, 0.999811172, 0.999916077, 0.999952316, 0.999980927, 0.999986649, 0.999996185, 0.999998093, 1.000000000, 1.000000000, 1.000000000, 1.000000000, 1.000000000, 1.000000000, 1.000000000, 1.000000000, 1.000000000, 1.000000000, 1.000000000, 1.000000000, 1.000000000, 1.000000000);
 float canopy_meso_hash(ivec2 cell,uint salt){
@@ -12,6 +17,7 @@ float canopy_meso_hash(ivec2 cell,uint salt){
  return float(h&16777215u)/16777216.0;
 }
 float canopy_meso_cover(vec2 world_xz,float footprint_m,float cover){
+ cover=canopy_optical_mean(cover);
  cover=clamp(cover,0.0,1.0);if(cover<=0.0||cover>=1.0)return cover;
  float detail=canopy_reference_visible_weight(footprint_m);
  if(detail<=0.0)return cover;
@@ -32,6 +38,7 @@ float canopy_meso_cover(vec2 world_xz,float footprint_m,float cover){
  return mix(cover,mask,detail);
 }
 vec3 canopy_meso_normal(vec2 world_xz,float footprint_m,float cover){
+ cover=canopy_optical_mean(cover);
  cover=clamp(cover,0.000001,.999999);
  float detail=canopy_reference_visible_weight(footprint_m);
  if(detail<=0.0)return vec3(0,1,0);

@@ -1,5 +1,6 @@
 class_name SurfaceCanopy
 extends RefCounted
+const TreeMask=preload("res://adapters/surface_tree_mask.gd")
 
 # canopy-r1: exact provided crown discs, no procedural noise. RGB is LINEAR.
 const LINEAR_ALBEDO := Color(0.055,0.105,0.036,1.0)
@@ -14,6 +15,7 @@ static var _cached_selection: Dictionary = {}
 static var _cached_atlas: Dictionary = {}
 static var _cached_unsupported: Dictionary = {}
 static var _cached_view_bounds: Dictionary = {}
+static var _cached_asset_digest:String=""
 
 static func _power2(value:int)->int:
 	return int(pow(2.0,ceil(log(float(value))/log(2.0))))
@@ -46,7 +48,8 @@ static func prepare(packet: Dictionary,selected: Dictionary,view_bounds:Dictiona
 	# Packets are immutable snapshots. A sequential preparation worker may reuse
 	# the exact atlas while panning if neither packet identity nor selected ids changed.
 	var unsupported: Dictionary = packet.get("_unsupportedTreeIDs",{})
-	if is_same(packet,_cached_packet) and selected==_cached_selection and unsupported==_cached_unsupported and view_bounds==_cached_view_bounds: return _cached_atlas
+	var asset:Dictionary=packet.get("_treeAssetCPU",{})
+	if is_same(packet,_cached_packet) and selected==_cached_selection and unsupported==_cached_unsupported and view_bounds==_cached_view_bounds and str(asset.get("digest","legacy"))==_cached_asset_digest: return _cached_atlas
 	var page=tree_page(packet)
 	if view_bounds.get("disabled",false):return {"available":false,"reason":"Complete tree page does not cover this view","page":page}
 	if page.is_empty():return {"available":false,"reason":"No declared complete tree page"}
@@ -62,6 +65,8 @@ static func prepare(packet: Dictionary,selected: Dictionary,view_bounds:Dictiona
 	var coverage := PackedFloat32Array(); coverage.resize(width*height)
 	var counts := PackedFloat32Array(); counts.resize(width*height*4)
 	var normal_values:=PackedFloat32Array();normal_values.resize(width*height*4)
+	var color_values:=PackedFloat32Array()
+	if not asset.is_empty():color_values.resize(width*height*4)
 	var crown_heights:=PackedFloat32Array();crown_heights.resize(width*height);crown_heights.fill(-INF)
 	var height_origin:=0.0;var has_height_origin:=false
 	# Keep absolute regional coordinates in scalar doubles. Vector2 is FP32;
@@ -87,29 +92,46 @@ static func prepare(packet: Dictionary,selected: Dictionary,view_bounds:Dictiona
 			continue
 		var is_selected := selected.has(id)
 		var bin := radius_class(radius)
+		var angle:float=float(columns.orientation[i]) if not columns.is_empty() else float(candidates[i].get("orientation",0.0))
+		var cosine=cos(angle);var sine=sin(angle)
+		var support=radius if asset.is_empty() else radius*1.1
 		trees+=1
 		if is_selected: selected_trees+=1
-		for iz in range(maxi(0,ceili((z-radius-float(origin.z))/spacing)),mini(height-1,floori((z+radius-float(origin.z))/spacing))+1):
+		for iz in range(maxi(0,ceili((z-support-float(origin.z))/spacing)),mini(height-1,floori((z+support-float(origin.z))/spacing))+1):
 			var dz := float(origin.z)+float(iz)*spacing-z
-			var half := sqrt(maxf(0.0,radius*radius-dz*dz))
+			var half := sqrt(maxf(0.0,support*support-dz*dz))
 			for ix in range(maxi(0,ceili((x-half-float(origin.x))/spacing)),mini(width-1,floori((x+half-float(origin.x))/spacing))+1):
 				var index := iz*width+ix
-				coverage[index]=1.0
 				var dx=float(origin.x)+float(ix)*spacing-x
+				var mask_location=Vector3.ZERO
+				if not asset.is_empty():
+					mask_location=TreeMask.address(asset,(cosine*dx-sine*dz)/radius,(sine*dx+cosine*dz)/radius)
+					if not TreeMask.inside(asset,mask_location):continue
+				coverage[index]=1.0
 				var top=sqrt(maxf(0.0,1.0-(dx*dx+dz*dz)/(radius*radius)))
 				var vertical_radius=tree_size*.33
 				var crown_height=tree_y-height_origin+tree_size*.72+top*vertical_radius
+				if not asset.is_empty():crown_height=tree_y-height_origin+tree_size*.5
 				if crown_height>crown_heights[index]:
 					crown_heights[index]=crown_height
 					var normal=Vector3(dx/radius,top*radius/maxf(vertical_radius,.01),dz/radius).normalized()
+					if not asset.is_empty():
+						var n=TreeMask.response(asset,"normal",mask_location);var c=TreeMask.response(asset,"color",mask_location)
+						var local=(Vector3(n.r,n.g,n.b)/maxf(n.a,.00001)*2.0-Vector3.ONE)/Vector3(radius,tree_size,radius)
+						normal=Vector3(cosine*local.x+sine*local.z,local.y,-sine*local.x+cosine*local.z).normalized()
+						color_values[index*4]=c.r/maxf(c.a,.00001);color_values[index*4+1]=c.g/maxf(c.a,.00001);color_values[index*4+2]=c.b/maxf(c.a,.00001);color_values[index*4+3]=1.0
 					normal_values[index*4]=normal.x*.5+.5;normal_values[index*4+1]=normal.y*.5+.5;normal_values[index*4+2]=normal.z*.5+.5;normal_values[index*4+3]=1.0
 				if is_selected: counts[index*4+bin]+=1.0
 	var coverage_image := Image.create_from_data(width,height,false,Image.FORMAT_RF,coverage.to_byte_array())
 	coverage_image.generate_mipmaps() # Linear coverage, not sRGB and not overlap counts.
 	var normal_image:=Image.create_from_data(width,height,false,Image.FORMAT_RGBAF,normal_values.to_byte_array());normal_image.generate_mipmaps()
 	var counts_image := Image.create_from_data(width,height,false,Image.FORMAT_RGBAF,counts.to_byte_array())
+	var color_image:Image
+	if not asset.is_empty():color_image=Image.create_from_data(width,height,false,Image.FORMAT_RGBAF,color_values.to_byte_array());color_image.generate_mipmaps()
 	var digest=HashingContext.new();digest.start(HashingContext.HASH_SHA256)
+	if not asset.is_empty():digest.update(str(asset.digest).to_utf8_buffer())
 	for image in [coverage_image,counts_image,normal_image]:digest.update(image.get_data())
+	if color_image!=null:digest.update(color_image.get_data())
 	var world:Dictionary=packet.get("world",{})
 	var source:Dictionary=packet.get("source",{})
 	var source_descriptor={"worldId":world.get("id"),"seed":world.get("seed"),"sourceEpoch":source.get("sourceEpoch"),"sceneEpoch":source.get("sceneEpoch"),"canonicalContextId":world.get("canonicalContextRef",{}).get("id",world.get("canonicalContext",{}).get("id")),"versions":world.get("versions",{}),"terrainSource":world.get("terrain",{}).get("source",{}),"completeTreePage":page}
@@ -117,11 +139,15 @@ static func prepare(packet: Dictionary,selected: Dictionary,view_bounds:Dictiona
 		"worldId":str(packet.get("world",{}).get("id","")),"page":page,"pageBounds":page_bounds,"origin":origin,"spacingM":spacing,"gridSize":Vector2(width,height),"bounds":bounds,"fallbackBlendM":transition_widths(bounds).paint,"geometryBlendM":transition_widths(bounds).geometry,
 		"linearAlbedo":LINEAR_ALBEDO,"treeCount":trees,"selectedTreeCount":selected_trees,"unsupportedTreeCount":unsupported_trees,
 		"scope":"Exact inventory only when the whole viewport and halo are covered; otherwise whole-view renderer-only meso, never candidate IDs"}
+	if not asset.is_empty():
+		atlas["assetDigest"]=asset.digest;atlas.version="canopy-r6-shared-asset-cutout-whole-frustum";atlas["colorImage"]=color_image
+		atlas.sourceDescriptor["rendererAssetDigest"]=asset.digest
 	_cached_packet=packet
 	_cached_selection=selected.duplicate()
 	_cached_view_bounds=view_bounds.duplicate()
 	_cached_unsupported=unsupported.duplicate()
 	_cached_atlas=atlas
+	_cached_asset_digest=str(asset.get("digest","legacy"))
 	return atlas
 
 # Stable renderer phase depends only on canonical seed and absolute double origin.

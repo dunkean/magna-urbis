@@ -4,6 +4,7 @@ const NativeLog=preload("res://adapters/surface_native_log.gd")
 const Data = preload("res://adapters/surface_data.gd")
 const Library = preload("res://adapters/material_library.gd")
 const VegetationLibrary=preload("res://adapters/surface_vegetation_library.gd")
+const TreeAssets=preload("res://adapters/surface_tree_library.gd")
 const ShaderSource = preload("res://adapters/surface_shader.gd")
 const Geometry = preload("res://adapters/surface_geometry.gd")
 const ScenePrepare = preload("res://adapters/surface_scene_prepare.gd")
@@ -21,6 +22,8 @@ var sun := DirectionalLight3D.new()
 var library := Library.new()
 var vegetation_library:=VegetationLibrary.new()
 var vegetation_materials:Array=[]
+var tree_library:=TreeAssets.new()
+var tree_asset_metrics:Dictionary={"enabled":false}
 var terrain: Node3D
 var objects := Node3D.new()
 var origin: Dictionary = {"x":0.0,"y":0.0,"z":0.0}
@@ -219,6 +222,8 @@ func _ready() -> void:
 	library.load_manifest(options.get("--assets", ""))
 	if options.has("--vegetation-assets") and not vegetation_library.load_manifest(str(options["--vegetation-assets"])):
 		push_error(vegetation_library.last_error);get_tree().quit(2);return
+	if options.has("--tree-assets") and not tree_library.load_manifest(str(options["--tree-assets"])):
+		push_error(tree_library.last_error);get_tree().quit(2);return
 	_setup_lighting()
 	camera.name = "RelativeCamera"
 	camera.fov = 48.0
@@ -318,7 +323,7 @@ func _begin_prepare() -> void:
 	active_prepare_control=PrepareControl.new(world_revision,rendered_revision,str(world.id),rendered_world_id)
 	var scene_request := {"prepareControl":active_prepare_control,"heightCoverageExtentM":width_m*(4.0 if oblique else 2.0),"canopyAtlasBounds":_canopy_atlas_request(),"displaySamples":display_samples,"waterKey":water_key,"urbanKey":urban_key,"buildWater":not options.has("--ground-only") and not scene_mesh_cache.has(water_key),"buildUrban":not options.has("--ground-only") and not scene_mesh_cache.has(urban_key),"focus":focus.duplicate()}
 	worker = Thread.new()
-	worker.start(ScenePrepare.prepare.bind({"prepareControl":active_prepare_control,"heightImageSize":expected_image_size,"displaySamples":display_samples,"physicalLineage":_physical_lineage(world,packet),"contextKey":prepared_context_key,"heightKey":prepared_height_key,"liveSerial":int(packet.get("_acceptedLiveSerial",-1)),"worldRevision":world_revision,"world":world,"origin":next_origin,"width":width_m,"generation":generation,"packet":packet,"skipContext":context_textures.has(prepared_context_key),"displaySource":height_source_cache.get(prepared_height_key,{}),"skipHeight":reuse_height,"sceneRequest":scene_request,"focus":focus.duplicate(),"viewportWidth":get_viewport().get_visible_rect().size.x,"oblique":oblique,"groundOnly":options.has("--ground-only"),"presentationMode":presentation_mode,"projectRoads":RenderingServer.get_current_rendering_method()=="forward_plus"}))
+	worker.start(ScenePrepare.prepare.bind({"prepareControl":active_prepare_control,"heightImageSize":expected_image_size,"displaySamples":display_samples,"physicalLineage":_physical_lineage(world,packet),"contextKey":prepared_context_key,"heightKey":prepared_height_key,"liveSerial":int(packet.get("_acceptedLiveSerial",-1)),"worldRevision":world_revision,"world":world,"origin":next_origin,"width":width_m,"generation":generation,"packet":tree_library.packet_copy(packet,presentation_mode),"skipContext":context_textures.has(prepared_context_key),"displaySource":height_source_cache.get(prepared_height_key,{}),"skipHeight":reuse_height,"sceneRequest":scene_request,"focus":focus.duplicate(),"viewportWidth":get_viewport().get_visible_rect().size.x,"oblique":oblique,"groundOnly":options.has("--ground-only"),"presentationMode":presentation_mode,"projectRoads":RenderingServer.get_current_rendering_method()=="forward_plus"}))
 	last_request_tick = Time.get_ticks_msec()
 
 func _apply_prepared(prepared: Dictionary) -> void:
@@ -480,6 +485,9 @@ func _update_camera() -> void:
 	for material in canopy_materials:
 		material.set_shader_parameter("canopy_reference_y",reference_y)
 		_set_canopy_main_camera(material,main_projection,main_size)
+		if material.get_meta("treeAsset",false):
+			material.set_shader_parameter("tree_main_top",not oblique)
+			if material.get_meta("treeImpostor",false):material.set_shader_parameter("tree_camera_world_position",camera.global_position)
 	for material in vegetation_materials:_set_vegetation_main_camera(material)
 	_update_canopy_phase(0.0)
 
@@ -492,13 +500,25 @@ func _build_scene_objects(prepared: Dictionary) -> void:
 	vegetation_materials.clear()
 	for child in objects.get_children():
 		if not canopy_pending.is_empty() and child.get_meta("surfaceLayer","")=="trees" and not child.get_meta("canopyStaged",false):
+			# A transition keeps old IDs/counts but demotes their expensive LOD to
+			# the SAME top mask impostor before allocating the new high batch.
+			# Thus no frame submits two batches of fourteen 134k-triangle trees.
+			if child.get_meta("treeAssetHigh",false):
+				var replacement=tree_library.impostor_render_mesh()
+				child.multimesh.mesh=replacement.mesh
+				child.set_meta("treeAssetHigh",false)
+				for material in replacement.materials:
+					material.set_meta("treeAsset",true);material.set_meta("treeImpostor",true)
+					material.set_shader_parameter("tree_main_top",not oblique)
+					material.set_shader_parameter("tree_camera_world_position",camera.global_position)
 			var previous_origin:Dictionary=child.get_meta("canopyRenderOrigin",origin)
 			child.position+=Vector3(float(previous_origin.x)-float(origin.x),float(previous_origin.y)-float(origin.y),float(previous_origin.z)-float(origin.z))
 			child.set_meta("canopyRenderOrigin",origin.duplicate())
 			child.set_meta("canopyRetired",true)
-			var retained_material:ShaderMaterial=child.multimesh.mesh.surface_get_material(0)
-			retained_material.set_meta("canopyRetired",true)
-			canopy_materials.append(retained_material)
+			for surface in child.multimesh.mesh.get_surface_count():
+				var retained_material:ShaderMaterial=child.multimesh.mesh.surface_get_material(surface)
+				retained_material.set_meta("canopyRetired",true)
+				canopy_materials.append(retained_material)
 			continue
 		child.visible=false
 		child.queue_free()
@@ -631,9 +651,13 @@ func _build_populations(populations: Dictionary) -> void:
 	candidate_count=int(populations.candidateCount)
 	selected_candidates=int(populations.selectedCount)
 	var families: Dictionary = populations.families
+	tree_asset_metrics={"enabled":not tree_library.cpu.is_empty() and presentation_mode=="aerial","profile":tree_library.version}
 	for family in families:
 		var visible: Array = families[family]
 		if visible.is_empty(): continue
+		if family=="tree" and presentation_mode=="aerial" and not tree_library.cpu.is_empty():
+			_build_asset_trees(visible)
+			continue
 		if family=="grass" and presentation_mode=="aerial" and not vegetation_library.variants.is_empty():
 			_build_asset_grass(visible,populations.buffers.grass)
 			continue
@@ -725,6 +749,39 @@ func _set_vegetation_main_camera(material:ShaderMaterial)->void:
 	material.set_shader_parameter("main_camera_view",camera.get_camera_transform().affine_inverse())
 	material.set_shader_parameter("main_camera_projection",camera.get_camera_projection())
 	material.set_shader_parameter("main_viewport_size",get_viewport().get_visible_rect().size)
+
+func _build_asset_trees(candidates:Array)->void:
+	# Camera projection must refer to the new render origin before measuring LOD.
+	_update_camera()
+	var vp=camera.get_camera_projection()*Projection(camera.get_camera_transform().affine_inverse())
+	var screen=get_viewport().get_visible_rect().size;var reference_y=Data.height_at(rendered_world,focus.x,focus.y)-float(origin.y)
+	var pixels={}
+	for c in candidates:
+		var x=float(c.x)-float(origin.x);var z=float(c.z)-float(origin.z)
+		var centre=Vector3(x,float(c.y)-float(origin.y)+float(c.size)*.5,z)
+		if not camera.is_position_in_frustum(centre):continue
+		var point=vp*Vector4(x,reference_y,z,1);var east=vp*Vector4(x+1,reference_y,z,1);var south=vp*Vector4(x,reference_y,z+1,1)
+		if point.w<=0 or east.w<=0 or south.w<=0:continue
+		var a=((Vector2(east.x,east.y)/east.w-Vector2(point.x,point.y)/point.w)*screen*.5).length();var b=((Vector2(south.x,south.y)/south.w-Vector2(point.x,point.y)/point.w)*screen*.5).length()
+		pixels[str(c.stableId)]=2.0*float(c.crownRadiusM)*minf(a,b)
+	var plan=tree_library.plan(candidates,pixels)
+	tree_asset_metrics.merge({"highCount":plan.high.size(),"impostorCount":plan.middle.size(),"highTriangles":plan.highTriangles,"impostorTriangles":plan.impostorTriangles,"retainedCount":plan.retainedCount,"droppedCount":plan.droppedCount,"highMinPixels":tree_library.manifest.highMinPixels,"highBudget":tree_library.manifest.highTriangleBudget,"scope":"top shared-mask C/V; oblique view-indexed planar-depth approximation; no source edits"},true)
+	for kind in ["high","middle"]:
+		var group:Array=plan[kind]
+		if group.is_empty():continue
+		var product=tree_library.high_render_mesh() if kind=="high" else tree_library.impostor_render_mesh()
+		for material in product.materials:
+			material.set_meta("treeAsset",true);material.set_meta("treeImpostor",kind=="middle")
+			material.set_meta("canopyStaged",not canopy_pending.is_empty());canopy_materials.append(material)
+			material.set_shader_parameter("tree_main_top",not oblique)
+			if kind=="middle":material.set_shader_parameter("tree_camera_world_position",camera.global_position)
+			_apply_canopy_parameters(material);_set_canopy_main_camera(material,vp,screen)
+		var multi=MultiMesh.new();multi.transform_format=MultiMesh.TRANSFORM_3D;multi.use_custom_data=true;multi.use_colors=true
+		multi.mesh=product.mesh;multi.instance_count=group.size();multi.buffer=TreeAssets.instance_buffer(group,origin);multi.custom_aabb=TreeAssets.bounds(group,origin)
+		var node=MultiMeshInstance3D.new();node.name="tree_asset_"+kind;node.multimesh=multi;node.layers=2;node.cast_shadow=GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		node.set_meta("treeAssetHigh",kind=="high")
+		node.set_meta("populationFamily","tree");node.set_meta("surfaceLayer","trees");node.set_meta("canopyStaged",not canopy_pending.is_empty());node.set_meta("canopyRenderOrigin",origin.duplicate());node.set_meta("treeAssetDigest",tree_library.cpu.digest)
+		objects.add_child(node)
 
 func _build_asset_grass(candidates:Array,buffer:PackedFloat32Array)->void:
 	var batches=VegetationLibrary.partition(candidates,buffer,vegetation_library.variants.size())
@@ -1154,7 +1211,12 @@ func _exit_tree() -> void:
 
 func _update_canopy_textures(info: Dictionary) -> void:
 	if is_same(canopy_info,info):return
-	if canopy_info.is_empty() or canopy_phase<=0.00001 or info.get("physicalLineage")!=canopy_info.get("physicalLineage"):
+	if info.has("assetDigest") and info.get("assetDigest")==canopy_info.get("assetDigest") and info.get("atlasHash")==canopy_info.get("atlasHash") and info.get("physicalLineage")==canopy_info.get("physicalLineage"):
+		# A cached atlas may arrive in a new dictionary wrapper after a camera
+		# refresh. Identical content needs neither a second fade nor old geometry.
+		canopy_info=info
+		return
+	if canopy_info.is_empty() or canopy_phase<=0.00001 or info.get("physicalLineage")!=canopy_info.get("physicalLineage") or info.get("assetDigest","legacy")!=canopy_info.get("assetDigest","legacy"):
 		_install_canopy_textures(info)
 		return
 	# The old atlas remains bound while its WHOLE-VIEW optical response fades.
@@ -1177,6 +1239,7 @@ func _install_canopy_textures(info:Dictionary)->void:
 	if not is_same(canopy_textures.get("coverageImage"),info.coverageImage) or not is_same(canopy_textures.get("countsImage"),info.countsImage):
 		canopy_textures={"coverageImage":info.coverageImage,"countsImage":info.countsImage,"coverage":ImageTexture.create_from_image(info.coverageImage),"counts":ImageTexture.create_from_image(info.countsImage)}
 		if info.has("normalImage"):canopy_textures["normals"]=ImageTexture.create_from_image(info.normalImage)
+		if info.has("colorImage"):canopy_textures["colors"]=ImageTexture.create_from_image(info.colorImage)
 	_refresh_canopy_bindings()
 
 func _canopy_material_geometry_weight(material:Object)->float:
@@ -1198,6 +1261,12 @@ func _apply_canopy_parameters(material: Object) -> void:
 	var packet:Dictionary=rendered_packet if not rendered_packet.is_empty() else self.packet
 	var presentation_mode:String=rendered_presentation_mode
 	var values := {"canopy_exact_weight":minf(canopy_phase,1.0),"canopy_geometry_weight":_canopy_material_geometry_weight(material),"canopy_shadow_use_total":true,"canopy_enabled":canopy_info.get("available",false),"canopy_linear_albedo":Presentation.canopy_color(packet,presentation_mode),"canopy_reference_y":Data.height_at(world,focus.x,focus.y)-float(origin.y)}
+	var asset_enabled=not tree_library.cpu.is_empty() and presentation_mode=="aerial"
+	values["canopy_asset_enabled"]=asset_enabled
+	values["canopy_shadow_angular_diameter_degrees"]=.53 if asset_enabled else 0.0
+	if asset_enabled:
+		values["canopy_optical_lut"]=tree_library.mean_texture
+		values["canopy_linear_albedo"]=Vector3(tree_library.cpu.meanLinear[0],tree_library.cpu.meanLinear[1],tree_library.cpu.meanLinear[2])
 	values.merge(preload("res://adapters/surface_canopy.gd").meso_parameters(world,origin))
 	var to_light=sun.global_basis.z
 	values["canopy_shadow_offset"]=preload("res://adapters/surface_canopy.gd").shadow_offset(to_light,preload("res://adapters/surface_canopy.gd").REFERENCE_CROWN_CENTRE_HEIGHT_M)
@@ -1205,6 +1274,7 @@ func _apply_canopy_parameters(material: Object) -> void:
 		var b: Dictionary = canopy_info.bounds
 		values["canopy_normals_enabled"]=canopy_textures.has("normals")
 		if canopy_textures.has("normals"):values["canopy_normals"]=canopy_textures.normals
+		if canopy_textures.has("colors"):values["canopy_colors"]=canopy_textures.colors
 		values.merge({"canopy_coverage":canopy_textures.coverage,"canopy_counts":canopy_textures.counts,
 			"canopy_origin":Vector2(float(canopy_info.origin.x)-float(origin.x),float(canopy_info.origin.z)-float(origin.z)),
 			"canopy_grid_size":canopy_info.gridSize,"canopy_spacing_m":canopy_info.spacingM,"canopy_fallback_blend_m":canopy_info.fallbackBlendM,
@@ -1225,18 +1295,17 @@ func _canopy_guard(info:Dictionary)->Dictionary:
 		var spacing=float(terrain.get("vertex_spacing"));var extent=float(rendered_height_image_size)*spacing*.5
 		resident={"minX":float(origin.x)-extent+2*spacing,"minZ":float(origin.z)-extent+2*spacing,"maxX":float(origin.x)+extent-3*spacing,"maxZ":float(origin.z)+extent-3*spacing}
 		safe_bounds=CanopyView.intersection(safe_bounds,resident)
-	var guard=CanopyView.evaluate(camera,get_viewport().get_visible_rect().size,reference_y,origin,safe_bounds,halo,20.0,rendered_height_range if oblique else Vector2(NAN,NAN))
+	var crown_envelope=32.0 if canopy_info.has("assetDigest") else 20.0
+	var guard=CanopyView.evaluate(camera,get_viewport().get_visible_rect().size,reference_y,origin,safe_bounds,halo,crown_envelope,rendered_height_range if oblique else Vector2(NAN,NAN))
 	guard["residentTerrainBounds"]=resident
-	if float(guard.get("maximumPixelFootprintM",INF))/float(info.spacingM)>8.0:
-		guard.safePhase=minf(float(guard.safePhase),1.0)
-		guard["geometryFilterBudgetLimited"]=true
-	return guard
+	return CanopyView.certify_filter(guard,float(info.spacingM),info.gridSize)
 
 func _canopy_atlas_request()->Dictionary:
 	var page=preload("res://adapters/surface_canopy.gd").tree_page(packet)
 	if page.is_empty():return {"disabled":true}
 	var reference_y=Data.height_at(world,focus.x,focus.y)-float(origin.y)
-	var guard=CanopyView.evaluate(camera,get_viewport().get_visible_rect().size,reference_y,origin,page.bounds,40.0,20.0,rendered_height_range if oblique else Vector2(NAN,NAN))
+	var crown_envelope=32.0 if not tree_library.cpu.is_empty() and rendered_presentation_mode=="aerial" else 20.0
+	var guard=CanopyView.evaluate(camera,get_viewport().get_visible_rect().size,reference_y,origin,page.bounds,40.0,crown_envelope,rendered_height_range if oblique else Vector2(NAN,NAN))
 	if float(guard.safePhase)<=0.0:return {"disabled":true}
 	return CanopyView.intersection(page.bounds,CanopyView.expanded(guard.frustumBounds,128.0))
 
@@ -1260,6 +1329,7 @@ func _update_canopy_phase(delta:float)->void:
 	canopy_transition_busy=not canopy_pending.is_empty() or absf(cap-canopy_phase)>0.001
 	canopy_view_state=guard.duplicate(true)
 	canopy_view_state.merge({"phase":canopy_phase,"exactWeight":minf(canopy_phase,1.0),"geometryWeight":maxf(0.0,canopy_phase-1.0),"activeAtlasWorldId":canopy_info.get("worldId",""),"activeAtlasHash":canopy_info.get("atlasHash",""),"activeAtlasSource":canopy_info.get("sourceDescriptor",{}),"transitionPending":not canopy_pending.is_empty(),"pendingAtlasHash":canopy_pending.get("atlasHash",""),"pendingAtlas":not canopy_pending.is_empty(),"treePage":canopy_info.get("page",{}),"atlasBounds":canopy_info.get("bounds",{}),"spatialBlend":"none; one phase for the whole viewport"},true)
+	canopy_view_state["treeAssets"]=tree_asset_metrics
 	var bindings={"canopy_exact_weight":canopy_view_state.exactWeight,"canopy_geometry_weight":canopy_view_state.geometryWeight}
 	if terrain!=null:
 		for key in bindings:terrain.get("material").call("set_shader_param",key,bindings[key])
@@ -1302,8 +1372,9 @@ func population_instances()->Dictionary:
 				alpha=smoothstep(1.25,3.0,float(buffer[at+16])*absf(projection.y.y)*viewport_size.y/(2.0*denominator))
 			if alpha>0.000001:families[family].alphaPositiveInFrustum+=1
 	var material=terrain.get("material") if terrain!=null else null
-	var trees=bool(material.call("get_shader_param","show_trees")) if material!=null else false
-	return {"families":families,"treeResidualEnabled":trees,"treeOpticalShadowEnabled":trees and rendered_presentation_mode!="cartographic","scope":"submitted buffers, actual node/camera visibility, shader ALPHA>0 and centres in frustum; no GPU occlusion claim"}
+	var tree_uniform=material.call("get_shader_param","show_trees") if material!=null else null
+	var trees=tree_uniform==true
+	return {"families":families,"treeResidualEnabled":trees,"treeOpticalShadowEnabled":trees and rendered_presentation_mode!="cartographic","treeShaderUniformAvailable":tree_uniform is bool,"scope":"submitted buffers, actual node/camera visibility, shader ALPHA gate>0 and centres in frustum; no GPU occlusion or per-mask fragment claim"}
 
 func _build_road_projectors(records: Array) -> void:
 	var packet:Dictionary=rendered_packet if not rendered_packet.is_empty() else self.packet
