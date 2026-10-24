@@ -6,6 +6,7 @@ const Library = preload("res://adapters/material_library.gd")
 const VegetationLibrary=preload("res://adapters/surface_vegetation_library.gd")
 const Clasts=preload("res://adapters/surface_clast_library.gd")
 const TreeAssets=preload("res://adapters/surface_tree_library.gd")
+const TreeSolar=preload("res://adapters/surface_tree_solar.gd")
 const ShaderSource = preload("res://adapters/surface_shader.gd")
 const Geometry = preload("res://adapters/surface_geometry.gd")
 const ScenePrepare = preload("res://adapters/surface_scene_prepare.gd")
@@ -29,6 +30,12 @@ var clast_materials:Array=[]
 var clast_metrics:Dictionary={"enabled":false}
 var tree_library:=TreeAssets.new()
 var tree_asset_metrics:Dictionary={"enabled":false}
+var tree_solar=TreeSolar.new()
+var tree_shadow_mode="optical"
+var tree_solar_data:Dictionary={}
+var tree_solar_node:MultiMeshInstance3D
+var tree_solar_weight=0.0
+var tree_solar_metrics:Dictionary={"mode":"optical"}
 var terrain: Node3D
 var objects := Node3D.new()
 var origin: Dictionary = {"x":0.0,"y":0.0,"z":0.0}
@@ -231,6 +238,11 @@ func _ready() -> void:
 		push_error(vegetation_library.last_error);get_tree().quit(2);return
 	if options.has("--tree-assets") and not tree_library.load_manifest(str(options["--tree-assets"])):
 		push_error(tree_library.last_error);get_tree().quit(2);return
+	tree_shadow_mode=str(options.get("--tree-shadow-mode","optical"))
+	if tree_shadow_mode not in ["optical","native-solar"]:
+		push_error("--tree-shadow-mode must be optical or native-solar");get_tree().quit(2);return
+	if tree_shadow_mode=="native-solar" and (tree_library.cpu.is_empty() or RenderingServer.get_current_rendering_method()!="forward_plus"):
+		push_error("Native solar tree shadows require a verified tree asset and Forward+");get_tree().quit(2);return
 	_setup_lighting()
 	camera.name = "RelativeCamera"
 	camera.fov = 48.0
@@ -253,6 +265,11 @@ func _ready() -> void:
 	canvas.add_child(hud)
 	hud.visible=options.has("--hud") or diagnostic>0
 	_update_camera()
+	if tree_shadow_mode=="native-solar" and presentation_mode=="aerial":
+		set_process(false);set_process_unhandled_input(false)
+		if not await tree_solar.bake(self,tree_library,sun.global_basis.z):
+			push_error("Native solar tree shadow bake failed; no stale atlas substituted");get_tree().quit(2);return
+		set_process(true);set_process_unhandled_input(true)
 	_begin_prepare()
 	_request_live()
 	_emit_native({"event":"surface-viewer-start","godot":Engine.get_version_info().string,"terrain3d":"1.0.2","backend":RenderingServer.get_current_rendering_method(),"adapter":RenderingServer.get_video_adapter_name(),"source":world.terrain.source,"worldId":world.id,"pbrAssets":library.loaded_assets})
@@ -331,6 +348,7 @@ func _begin_prepare() -> void:
 	var scene_request := {"prepareControl":active_prepare_control,"heightCoverageExtentM":width_m*(4.0 if oblique else 2.0),"canopyAtlasBounds":{} if oblique else _canopy_atlas_request(),"displaySamples":display_samples,"waterKey":water_key,"urbanKey":urban_key,"buildWater":not options.has("--ground-only") and not scene_mesh_cache.has(water_key),"buildUrban":not options.has("--ground-only") and not scene_mesh_cache.has(urban_key),"focus":focus.duplicate()}
 	worker = Thread.new()
 	var prepare_request={"prepareControl":active_prepare_control,"heightImageSize":expected_image_size,"displaySamples":display_samples,"physicalLineage":_physical_lineage(world,packet),"contextKey":prepared_context_key,"heightKey":prepared_height_key,"liveSerial":int(packet.get("_acceptedLiveSerial",-1)),"worldRevision":world_revision,"world":world,"origin":next_origin,"width":width_m,"generation":generation,"packet":tree_library.packet_copy(packet,presentation_mode),"skipContext":context_textures.has(prepared_context_key),"displaySource":height_source_cache.get(prepared_height_key,{}),"skipHeight":reuse_height,"sceneRequest":scene_request,"focus":focus.duplicate(),"viewportWidth":get_viewport().get_visible_rect().size.x,"oblique":oblique,"groundOnly":options.has("--ground-only"),"presentationMode":presentation_mode,"projectRoads":RenderingServer.get_current_rendering_method()=="forward_plus"}
+	prepare_request["solarShadows"]=tree_shadow_mode=="native-solar" and presentation_mode=="aerial" and not options.has("--ground-only")
 	if oblique:
 		prepare_request["visibilityCamera"]=VisibilityPlan.snapshot(camera,get_viewport().get_visible_rect().size,origin)
 		prepare_request["renderedHeightImageSize"]=rendered_height_image_size
@@ -524,6 +542,9 @@ func _build_scene_objects(prepared: Dictionary) -> void:
 	vegetation_materials.clear()
 	clast_materials.clear()
 	for child in objects.get_children():
+		if child.get_meta("solarShadow",false):
+			# Never retire source shadows under a new rendered snapshot/atlas.
+			child.visible=false;child.queue_free();continue
 		if not canopy_pending.is_empty() and child.get_meta("surfaceLayer","")=="trees" and not child.get_meta("canopyStaged",false):
 			# A transition keeps old IDs/counts but demotes their expensive LOD to
 			# the SAME top mask impostor before allocating the new high batch.
@@ -652,6 +673,7 @@ func _build_scene_objects(prepared: Dictionary) -> void:
 		city_map_metrics={"representation":overlay.representation,"buildingIds":overlay.buildingIds,"sourceRoofAreaM2":overlay.sourceRoofAreaM2,"budgetLimited":overlay.budgetLimited,"omittedBuildingIds":overlay.omittedBuildingIds,"missingRoofFootprintIds":overlay.missingRoofFootprintIds}
 	_build_road_projectors(prepared.get("roadProjectors",[]))
 	_build_populations(prepared.populations)
+	_build_tree_solar(prepared.get("treeSolar",{}))
 	if diagnostic==5:
 		var normals := ShaderMaterial.new()
 		normals.shader=load("res://shaders/normals.gdshader")
@@ -817,6 +839,14 @@ func _build_asset_trees(candidates:Array)->void:
 		node.set_meta("treeAssetHigh",kind=="high")
 		node.set_meta("populationFamily","tree");node.set_meta("surfaceLayer","trees");node.set_meta("canopyStaged",not canopy_pending.is_empty());node.set_meta("canopyRenderOrigin",origin.duplicate());node.set_meta("treeAssetDigest",tree_library.cpu.digest)
 		objects.add_child(node)
+
+func _build_tree_solar(data:Dictionary)->void:
+	var previous=tree_solar_data
+	tree_solar_data=data;tree_solar_node=null
+	if not data.get("available",false) or rendered_presentation_mode!="aerial" or not tree_solar.descriptor.get("available",false):
+		tree_solar_weight=0;return
+	if previous.get("sourceInventorySha256","")!=data.sourceInventorySha256 or previous.get("sourceEpoch")!=data.sourceEpoch or previous.get("sceneEpoch")!=data.sceneEpoch:tree_solar_weight=0
+	tree_solar_node=tree_solar.create_node(data,origin);objects.add_child(tree_solar_node)
 
 func _build_asset_grass(candidates:Array,buffer:PackedFloat32Array)->void:
 	var batches=VegetationLibrary.partition(candidates,buffer,vegetation_library.variants.size())
@@ -1243,6 +1273,7 @@ func _write_metrics() -> void:
 	metrics["surfaceLayers"]=rendered_surface_layers
 	metrics["populationInstances"]=population_instances()
 	metrics["canopyView"]=canopy_view_state
+	metrics["treeSolarShadows"]=tree_solar_metrics
 	metrics["canopy"]={"representation":"whole-view exact inventory when complete page, atlas and resident terrain cover the frustum plus halo; otherwise whole-view calibrated meso","approximatePositionsClaimedAsInventory":false,"paintedCrownShadow":"total-C optical transfer for the entire canopy; native canopy/trunk casting disabled; buildings and terrain retain physical shadows","physicalForestShadowClaimed":false,"opticalDetailPixels":[1.25,3.0],"geometryDetailPixels":[3.0,8.0],"referenceCrownDiameterM":preload("res://adapters/surface_canopy.gd").REFERENCE_CROWN_DIAMETER_M,"referenceCrownCentreHeightM":preload("res://adapters/surface_canopy.gd").REFERENCE_CROWN_CENTRE_HEIGHT_M,"mesoCellM":preload("res://adapters/surface_canopy.gd").MESO_CELL_M,"paintedShadowTransmittance":[.25,.34,.50],"canonicalSeed":rendered_world.get("seed"),"atlasVersion":canopy_info.get("version",""),"paintBlendM":canopy_info.get("fallbackBlendM"),"geometryBlendM":canopy_info.get("geometryBlendM")}
 	var path: String = options.get("--metrics","res://captures/metrics.json")
 	path = ProjectSettings.globalize_path(path)
@@ -1319,6 +1350,7 @@ func _apply_canopy_parameters(material: Object) -> void:
 	var packet:Dictionary=rendered_packet if not rendered_packet.is_empty() else self.packet
 	var presentation_mode:String=rendered_presentation_mode
 	var values := {"canopy_exact_weight":minf(canopy_phase,1.0),"canopy_geometry_weight":_canopy_material_geometry_weight(material),"canopy_shadow_use_total":true,"canopy_enabled":canopy_info.get("available",false),"canopy_linear_albedo":Presentation.canopy_color(packet,presentation_mode),"canopy_reference_y":Data.height_at(world,focus.x,focus.y)-float(origin.y)}
+	values["canopy_native_shadow_weight"]=tree_solar_weight if presentation_mode=="aerial" else 0.0
 	var asset_enabled=not tree_library.cpu.is_empty() and presentation_mode=="aerial"
 	values["canopy_asset_enabled"]=asset_enabled
 	values["canopy_shadow_angular_diameter_degrees"]=.53 if asset_enabled else 0.0
@@ -1378,6 +1410,7 @@ func _canopy_atlas_request()->Dictionary:
 func _update_canopy_phase(delta:float)->void:
 	if camera==null:return
 	var guard=_canopy_guard(canopy_info)
+	var solar_pending=_update_tree_solar(delta,guard)
 	var cap=float(guard.safePhase)
 	if not canopy_pending.is_empty():
 		canopy_pending_elapsed+=delta
@@ -1392,16 +1425,32 @@ func _update_canopy_phase(delta:float)->void:
 		canopy_phase=minf(canopy_phase,cap)
 		canopy_phase=lerpf(canopy_phase,cap,1.0-exp(-delta/0.20))
 		if absf(cap-canopy_phase)<0.001:canopy_phase=cap
-	canopy_transition_busy=not canopy_pending.is_empty() or absf(cap-canopy_phase)>0.001
+	canopy_transition_busy=not canopy_pending.is_empty() or absf(cap-canopy_phase)>0.001 or solar_pending
 	canopy_view_state=guard.duplicate(true)
 	canopy_view_state.merge({"phase":canopy_phase,"exactWeight":minf(canopy_phase,1.0),"geometryWeight":maxf(0.0,canopy_phase-1.0),"activeAtlasWorldId":canopy_info.get("worldId",""),"activeAtlasHash":canopy_info.get("atlasHash",""),"activeAtlasSource":canopy_info.get("sourceDescriptor",{}),"transitionPending":not canopy_pending.is_empty(),"pendingAtlasHash":canopy_pending.get("atlasHash",""),"pendingAtlas":not canopy_pending.is_empty(),"treePage":canopy_info.get("page",{}),"atlasBounds":canopy_info.get("bounds",{}),"spatialBlend":"none; one phase for the whole viewport"},true)
 	canopy_view_state["treeAssets"]=tree_asset_metrics
+	canopy_view_state["treeSolarShadows"]=tree_solar_metrics
 	if tree_asset_metrics.get("enabled",false):tree_asset_metrics["shadowFiltering"]={"solarAngularDiameterDegrees":.53,"referenceHeightM":9.80388349514563,"reconstructionFootprintTexels":2.0,"policy":"shadow footprint=max(main pixel, declared solar penumbra, two active atlas texels); visibility C/V unchanged","physicalPenumbraClaimed":false}
-	var bindings={"canopy_exact_weight":canopy_view_state.exactWeight,"canopy_geometry_weight":canopy_view_state.geometryWeight}
+	var bindings={"canopy_exact_weight":canopy_view_state.exactWeight,"canopy_geometry_weight":canopy_view_state.geometryWeight,"canopy_native_shadow_weight":tree_solar_weight}
 	if terrain!=null:
 		for key in bindings:terrain.get("material").call("set_shader_param",key,bindings[key])
 	for material in canopy_materials:
 		for key in bindings:material.set_shader_parameter(key,_canopy_material_geometry_weight(material) if key=="canopy_geometry_weight" else bindings[key])
+
+func _update_tree_solar(delta:float,view:Dictionary)->bool:
+	var validity=tree_shadow_mode=="native-solar" and rendered_presentation_mode=="aerial" and tree_solar_node!=null and is_instance_valid(tree_solar_node) and tree_solar_data.get("available",false) and tree_solar_data.get("worldId","")==rendered_world_id and tree_solar.direction.distance_to(sun.global_basis.z.normalized())<.000001
+	var state:Dictionary={"weight":0.0,"reason":"no-compatible-complete-source-solar-inventory"}
+	if validity:state=TreeSolar.guard(tree_solar_data,view.get("frustumBounds",{}),float(rendered_height_range.x)+float(origin.y),sun.global_basis.z.normalized())
+	var cap=float(state.weight)
+	# Unsafe modes/coverage fall immediately, rise only after a compatible source.
+	tree_solar_weight=minf(tree_solar_weight,cap)
+	tree_solar_weight=lerpf(tree_solar_weight,cap,1.0-exp(-delta/.20))
+	if absf(tree_solar_weight-cap)<.001:tree_solar_weight=cap
+	if tree_solar_node!=null and is_instance_valid(tree_solar_node):
+		tree_solar_node.multimesh.mesh.surface_get_material(0).set_shader_parameter("solar_weight",tree_solar_weight)
+		tree_solar_node.visible=layer_visibility.trees and validity
+	tree_solar_metrics={"mode":tree_shadow_mode,"weight":tree_solar_weight,"targetWeight":cap,"opticalFallbackWeight":1.0-tree_solar_weight,"active":tree_solar_weight>0,"completeInventoryCount":tree_solar_data.get("count",0),"submittedTriangles":int(tree_solar_data.get("count",0))*2 if validity else 0,"colourRetentionCapApplies":false,"worldId":tree_solar_data.get("worldId",""),"sourceInventorySha256":tree_solar_data.get("sourceInventorySha256",""),"sourceEpoch":tree_solar_data.get("sourceEpoch"),"sceneEpoch":tree_solar_data.get("sceneEpoch"),"guard":state,"bake":tree_solar.descriptor,"treeLayerVisible":layer_visibility.trees,"scope":"native backend shared with terrain/buildings; quantized solar cutout/depth, complete page with source-height halo; whole-view fallback, no physical transport exactness claim"}
+	return absf(tree_solar_weight-cap)>.001
 
 # Counts come from the actually submitted MultiMesh buffers and shader state.
 # They deliberately do not claim occlusion visibility or a GPU fragment count.
@@ -1441,7 +1490,7 @@ func population_instances()->Dictionary:
 	var material=terrain.get("material") if terrain!=null else null
 	var tree_uniform=material.call("get_shader_param","show_trees") if material!=null else null
 	var trees=tree_uniform==true
-	return {"families":families,"clasts":clast_metrics,"treeResidualEnabled":trees,"treeOpticalShadowEnabled":trees and rendered_presentation_mode!="cartographic","treeShaderUniformAvailable":tree_uniform is bool,"scope":"submitted buffers, actual node/camera visibility, shader ALPHA gate>0 and centres in frustum; no GPU occlusion or per-mask fragment claim"}
+	return {"families":families,"clasts":clast_metrics,"treeResidualEnabled":trees,"treeOpticalShadowEnabled":trees and rendered_presentation_mode!="cartographic" and tree_solar_weight<1.0,"treeNativeSolarShadowEnabled":trees and tree_solar_weight>0.0,"treeShaderUniformAvailable":tree_uniform is bool,"scope":"submitted buffers, actual node/camera visibility, shader ALPHA gate>0 and centres in frustum; no GPU occlusion or per-mask fragment claim"}
 
 func _build_road_projectors(records: Array) -> void:
 	var packet:Dictionary=rendered_packet if not rendered_packet.is_empty() else self.packet

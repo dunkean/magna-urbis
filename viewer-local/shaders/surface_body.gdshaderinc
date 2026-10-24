@@ -144,7 +144,7 @@
     // inside and outside the inventory page. Tree geometry never casts engine
     // shadows; terrain and buildings retain their physical shadow settings.
     float canopy_shadow=(show_trees && presentation_mode==0)?(canopy_shadow_use_total?surface_canopy_shadow_target(v_vertex.xz-canopy_shadow_offset,canopy_main_pixel_footprint(v_vertex.xz,PROJECTION_MATRIX*VIEW_MATRIX,VIEWPORT_SIZE),texture(surface_state,source_uv-canopy_shadow_offset/source_spacing_m/source_grid_size).r):surface_canopy_residual(v_vertex.xz-canopy_shadow_offset,canopy_main_pixel_footprint(v_vertex.xz,PROJECTION_MATRIX*VIEW_MATRIX,VIEWPORT_SIZE),texture(surface_state,source_uv-canopy_shadow_offset/source_spacing_m/source_grid_size).r)):0.0;
-    ground*=mix(vec3(1.0),canopy_shadow_transmittance,canopy_shadow);
+    ground*=mix(vec3(1.0),canopy_shadow_transmittance,canopy_shadow*(1.0-canopy_native_shadow_weight));
     ground=mix(ground,surface_canopy_color(v_vertex.xz,canopy_main_pixel_footprint(v_vertex.xz,PROJECTION_MATRIX*VIEW_MATRIX,VIEWPORT_SIZE)),crown_mask);
     if(presentation_mode==0 && crown_mask>.00001) {
         vec3 canopy_normal=surface_canopy_normal(v_vertex.xz,canopy_main_pixel_footprint(v_vertex.xz,PROJECTION_MATRIX*VIEW_MATRIX,VIEWPORT_SIZE),state.r);
