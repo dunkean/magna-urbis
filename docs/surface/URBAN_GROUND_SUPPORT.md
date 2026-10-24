@@ -14,7 +14,7 @@ The500 accepted legacy plots remain distinct from419 current native exterior rea
 
 ## Measured CPU proof
 
-See [urban-ground-v9.json](evidence/urban-ground-v9.json). A128² real retained crop contains774 Built and423 Road cells. Built goes from one artificial mean to19 local ground means; Road goes from one to42. Natural cells are unchanged. Physical fields, occupation, heights, legacy composite, low cover and population/environment versions are exact between old and new compilation of identical inputs. Source geometry/IDs and roads remain immutable. This is a bounded A/B CPU proof; crop-edge diagnostic routing is rederived identically in both versions, not presented as a new source hydrology network or a full-world rendering qualification.
+See [urban-ground-v9.json](evidence/urban-ground-v9.json). A128Â² real retained crop contains774 Built and423 Road cells. Built goes from one artificial mean to19 local ground means; Road goes from one to42. Natural cells are unchanged. Physical fields, occupation, heights, legacy composite, low cover and population/environment versions are exact between old and new compilation of identical inputs. Source geometry/IDs and roads remain immutable. This is a bounded A/B CPU proof; crop-edge diagnostic routing is rederived identically in both versions, not presented as a new source hydrology network or a full-world rendering qualification.
 
 Reproduce with the immutable source419 packet and a private checkout of baseline9b87392 (no primary checkout):
 
@@ -34,7 +34,7 @@ The diagnostic checks the input packet SHA and aborts if it is not the archived 
 
 The migration requires the exact source packet SHA, matching retained parent, original climate and the recorded absent process masks/default floodplain and colluvial parameters. It refuses a mismatch in any natural ground cell. It is deliberately a pinned evidence tool, not an automatic migration of arbitrary old saves whose generation parameters may be unknown.
 
-The complete1024² context has3,604 Road and1,108 Built cells. Road now has52 distinct ground means and Built30; the1,043,864 natural cells retain exactly the same ground values. The explicit canonical/parent/source references and derived world identity are updated; native urban identity,419 realizations,81 refusals, terrain source identities, legacy composition, populations and archives are unchanged. Binary encode/decode/hydration verifies the resulting packet. See [urban-ground-v9-migration.json](evidence/urban-ground-v9-migration.json).
+The complete1024Â² context has3,604 Road and1,108 Built cells. Road now has52 distinct ground means and Built30; the1,043,864 natural cells retain exactly the same ground values. The explicit canonical/parent/source references and derived world identity are updated; native urban identity,419 realizations,81 refusals, terrain source identities, legacy composition, populations and archives are unchanged. Binary encode/decode/hydration verifies the resulting packet. See [urban-ground-v9-migration.json](evidence/urban-ground-v9-migration.json).
 
 ```powershell
 cd web
