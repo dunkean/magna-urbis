@@ -1,6 +1,6 @@
 /** Renderer-only, inferred arrangement of existing material/cover probabilities.
  * No DEM, soil, geology, hydrology or population fields are modified. */
-export const SURFACE_DETAIL_DISTRIBUTION_VERSION = 'surface-detail-distribution-3';
+export const SURFACE_DETAIL_DISTRIBUTION_VERSION = 'surface-detail-distribution-4';
 export const DETAIL_BANDS = Object.freeze([
   Object.freeze({ metres: 12, weight: .4 }),
   Object.freeze({ metres: 1.7, weight: .35 }),
@@ -137,5 +137,49 @@ export function createDetailDistributionSampler(seed=0,originX=0,originZ=0,layer
     if(footprint>=3)return [...weights];
     const ranks=DETAIL_BANDS.map((band,i)=>2*footprint/band.metres>=.5?0:detailRank(x/band.metres,z/band.metres,phases[i*4]+layerPhaseX,phases[i*4+1]+layerPhaseZ,phases[i*4+2],phases[i*4+3],i));
     return redistributeWithRanks(weights,ranks,footprint);
+  };
+}
+
+/** Positive C2 B-spline Gaussian reconstruction. Normalisation is applied to
+ * variance, not RGB. Independent ideal vertex normals imply a pointwise normal
+ * law for EVERY interpolation phase, including seams. */
+export function detailGaussianC2(x:number,z:number,phaseX=0,phaseZ=0,cellOriginX=0,cellOriginZ=0,field=0):number {
+  const u=x+phaseX,v=z+phaseZ,ix=Math.floor(u)+cellOriginX,iz=Math.floor(v)+cellOriginZ;
+  const kernel=(f:number)=>[(1-f)**3/6,(3*f**3-6*f*f+4)/6,(-3*f**3+3*f*f+3*f+1)/6,f**3/6];
+  const a=kernel(fract(u)),b=kernel(fract(v));let sum=0,variance=0;
+  for(let j=0;j<4;j++)for(let i=0;i<4;i++){const w=a[i]*b[j];sum+=w*detailGaussianVertex(ix+i-1,iz+j-1,field);variance+=w*w;}
+  return sum/Math.sqrt(variance);
+}
+/** Hard exponential race: no softmax/temperature. Positive spatial quadrature
+ * preserves each original recipe expectation under the ideal independent-field
+ * seed ensemble. It is NOT exact mass in one patch or a pixel-area integral.
+ * The optional uncovered outcome stays separate from soil and canopy. */
+export function createDetailRaceSampler(seed=0,originX=0,originZ=0,layerPhaseX=0,layerPhaseZ=0) {
+  const phases=detailDistributionPhases(originX,originZ,seed);
+  return (weights:readonly number[],x:number,z:number,footprint:number,channels:readonly number[]=weights.map((_,i)=>i)):number[]=>{
+    validateDetailProbabilities(weights,footprint);
+    if(weights.length>8||channels.length!==weights.length||channels.some(v=>!Number.isInteger(v)||v<0||v>63))throw Error('Invalid race channel layout');
+    if(![x,z].every(Number.isFinite))throw Error('Invalid race coordinates');
+    if(footprint>=3)return [...weights];
+    const probabilities=[...weights,Math.max(0,1-weights.reduce((a,b)=>a+b,0))],fields=[...channels,64],result=weights.map(()=>0);
+    const smooth=(a:number,b:number,v:number)=>{const t=clamp((v-a)/(b-a),0,1);return t*t*(3-2*t);};
+    const active=probabilities.map((p,i)=>p>0?i:-1).filter(i=>i>=0);
+    if(active.length===1)return [...weights];
+    DETAIL_BANDS.forEach((band,b)=>{
+      const closure=smooth(band.metres*.125,band.metres*.25,footprint),k=b*4;
+      weights.forEach((p,i)=>result[i]+=band.weight*closure*p);
+      if(closure===1)return;
+      for(const [dx,dz] of [[-.25,-.25],[.25,-.25],[-.25,.25],[.25,.25]]){
+        let winner=-1,best=Infinity;
+        for(const i of active){
+          const g=detailGaussianC2((x+dx*footprint)/band.metres,(z+dz*footprint)/band.metres,phases[k]+layerPhaseX,phases[k+1]+layerPhaseZ,phases[k+2],phases[k+3],b+3*(fields[i]+17));
+          // GPU Phi may round to0; this finite-precision floor is declared.
+          const score=-Math.log(Math.max(1e-7,detailNormalCdf(g)))/probabilities[i];
+          if(score<best){best=score;winner=i;}
+        }
+        if(winner<weights.length)result[winner]+=band.weight*(1-closure)*.25;
+      }
+    });
+    return result;
   };
 }

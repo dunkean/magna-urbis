@@ -41,15 +41,16 @@
         // Ground components already have a fixed physical-role order (rock,
         // residual soil, humus, dry surface, transport processes), independent
         // of the current raster corner. Keep isolated rock supports first.
-        vec3 ranks=detail_distribution_ranks(v_vertex.xz,vec2(0.0),footprint);float start=0.0;
+        float probabilities[8];int channels[8];float local_masses[8];
+        for(int i=0;i<8;i++){probabilities[i]=component_amounts[i]/component_total;channels[i]=i;}
+        detail_distribution_race(v_vertex.xz,vec2(0.0),footprint,probabilities,channels,local_masses);
         for(int i=0;i<8;i++) {
-            float probability=component_amounts[i]/component_total;
+            float probability=probabilities[i];
             if(probability>0.0){ground_minimum_color=min(ground_minimum_color,component_colors[i]);ground_maximum_color=max(ground_maximum_color,component_colors[i]);}
-            float local_mass=detail_distribution_mass(ranks,start,probability,footprint);
+            float local_mass=local_masses[i];
             ids[i]=component_ids[i];slot_weights[i]=local_mass;
             ground_distribution_delta+=component_colors[i]*(local_mass-probability);
             ground_distribution_probe+=component_colors[i]*local_mass;
-            start+=probability;
         }
     }
     vec4 ah=vec4(0.0); vec4 nr=vec4(0.0); vec4 mean_palette=vec4(0.0);
@@ -153,14 +154,16 @@
                 float weight=low_weights[i];low_weights[i]=low_weights[j];low_weights[j]=weight;
             }
             float original_sum=0.0;for(int i=0;i<8;i++)original_sum+=low_weights[i];
-            vec3 ranks=detail_distribution_ranks(v_vertex.xz,vec2(.371,.619),footprint);float start=0.0;
+            float probabilities[8];int channels[8];float local_masses[8];
+            for(int i=0;i<8;i++){probabilities[i]=low_weights[i]*low_alpha/max(original_sum,.000001);channels[i]=32+low_ids[i];}
+            detail_distribution_race(v_vertex.xz,vec2(.371,.619),footprint,probabilities,channels,local_masses);
             low_visual_alpha=0.0;
             for(int i=0;i<8;i++) {
-                float probability=low_weights[i]*low_alpha/max(original_sum,.000001);
+                float probability=probabilities[i];
                 if(probability>0.0){low_minimum_color=min(low_minimum_color,palette[low_ids[i]].rgb);low_maximum_color=max(low_maximum_color,palette[low_ids[i]].rgb);}
                 low_reference_palette+=palette[low_ids[i]].rgb*probability;
-                low_weights[i]=detail_distribution_mass(ranks,start,probability,footprint);
-                low_visual_alpha+=low_weights[i];start+=probability;
+                low_weights[i]=local_masses[i];
+                low_visual_alpha+=low_weights[i];
             }
             if(footprint>=3.0)low_visual_alpha=low_alpha;
         }

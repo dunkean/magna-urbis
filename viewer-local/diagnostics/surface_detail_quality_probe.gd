@@ -19,19 +19,29 @@ func run()->void:
 	if not args.has("--detail-report") or not args.has("--detail-captures"):push_error("Detail probe output paths missing");quit(2);return
 	viewer=load("res://scene/main.tscn").instantiate();root.add_child(viewer);current_scene=viewer
 	var began=Time.get_ticks_msec()
+	if args.has("--detail-textures-only"):viewer.get("sun").shadow_enabled=false
 	while not ready(false) and Time.get_ticks_msec()-began<180000:await process_frame
 	if not ready(false):push_error("Retained detail source did not settle");quit(1);return
-	var report={"format":"surface-detail-retained-quality-probe","version":1,"status":"running","distribution":DetailDistribution.metadata(int(viewer.get("rendered_world").get("seed",0))),"views":[],"scope":"Explicit retained replay, no neural call or new observed detail. Each paired pose keeps camera/source/context/ground/geometry/inventory/buffers exact. Before uses the previous uniform mixture and sphere shrubs/debris, after uses calibrated component allocations and authored leaves/twigs. Tree pipeline/positions/densities unchanged."}
-	for width in [2560.0,160.0,40.0,10.0]:
+	var report={"format":"surface-detail-retained-quality-probe","version":1,"status":"running","texturesOnly":args.has("--detail-textures-only"),"distribution":DetailDistribution.metadata(int(viewer.get("rendered_world").get("seed",0))),"views":[],"scope":"Explicit retained replay, no neural call or new observed detail. Each paired pose keeps camera/source/context/ground/geometry/inventory/buffers exact. Before uses the previous uniform mixture and sphere shrubs/debris, after uses calibrated component allocations and authored leaves/twigs. Tree pipeline/positions/densities unchanged."}
+	var widths=[2560.0,160.0,40.0,10.0]
+	if args.has("--detail-widths"):
+		widths=[]
+		for value in str(args["--detail-widths"]).split(","):
+			if not value.is_valid_float() or float(value)<=0.0:push_error("Invalid detail width");quit(2);return
+			widths.append(float(value))
+	for width in widths:
 		viewer.set("width_m",width);viewer.call("_update_camera");viewer.call("_begin_prepare")
 		var started=Time.get_ticks_msec()
 		while not ready(false) and Time.get_ticks_msec()-started<180000:await process_frame
 		if not ready(false):push_error("Detail pose failed to settle");quit(1);return
 		var reference={};var raw_hashes=[]
-		for test in [{"name":"before-all","enabled":false,"low":true,"trees":true,"diagnostic":0},{"name":"after-all","enabled":true,"low":true,"trees":true,"diagnostic":0},{"name":"before-no-trees","enabled":false,"low":true,"trees":false,"diagnostic":0},{"name":"after-no-trees","enabled":true,"low":true,"trees":false,"diagnostic":0},{"name":"after-ground","enabled":true,"low":false,"trees":false,"diagnostic":0},{"name":"before-mean","enabled":false,"low":false,"trees":false,"diagnostic":7},{"name":"after-mean","enabled":true,"low":false,"trees":false,"diagnostic":7}]:
+		var tests=[{"name":"before-all","enabled":false,"low":true,"trees":true,"diagnostic":0},{"name":"after-all","enabled":true,"low":true,"trees":true,"diagnostic":0},{"name":"before-no-trees","enabled":false,"low":true,"trees":false,"diagnostic":0},{"name":"after-no-trees","enabled":true,"low":true,"trees":false,"diagnostic":0},{"name":"after-ground","enabled":true,"low":false,"trees":false,"diagnostic":0},{"name":"before-mean","enabled":false,"low":false,"trees":false,"diagnostic":7},{"name":"after-mean","enabled":true,"low":false,"trees":false,"diagnostic":7}]
+		if args.has("--detail-smoke"):
+			tests=tests.filter(func(test):return test.name in ["before-no-trees","after-no-trees","before-mean","after-mean"])
+		for test in tests:
 			set_representation(test.enabled);viewer.call("set_layer_visibility",true,test.low,test.trees)
 			viewer.get("terrain").get("material").call("set_shader_param","diagnostic",test.diagnostic)
-			viewer.get("objects").visible=test.diagnostic==0
+			viewer.get("objects").visible=test.diagnostic==0 and not args.has("--detail-textures-only")
 			for i in 4:await process_frame
 			await RenderingServer.frame_post_draw
 			var snapshot=physical_snapshot()

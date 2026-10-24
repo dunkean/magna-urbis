@@ -1,0 +1,244 @@
+{
+  "status": "CPU_PASS_NATIVE_PENDING",
+  "component": "surface-detail-distribution-4",
+  "newNodeTests": 5,
+  "priorNodeTests": 9,
+  "godotAssertions": 7439,
+  "scope": "renderer experiment, no physical/source/population mutation; native/PBR quality pending",
+  "statistics": [
+    {
+      "test": "C2-hard-race-conditional-ensemble",
+      "name": "retained-ground40m",
+      "n": 8192,
+      "footprintM": 0.02,
+      "maximumError": 0.00023192107677508234,
+      "maximumErrorPlusPointwise95": 0.005481793282973061,
+      "rows": [
+        {
+          "target": 0.21862031280994412,
+          "mean": 0.2188522338867192,
+          "error": 0.00023192107677508234,
+          "sem95": 0.005249872206197979
+        },
+        {
+          "target": 0.7813796871900559,
+          "mean": 0.7811477661132815,
+          "error": 0.00023192107677438845,
+          "sem95": 0.005249872206197463
+        }
+      ],
+      "assumption": "ideal independent Gaussian field/seed ensemble; measured deterministic hashes, not exact mass in realised cells"
+    },
+    {
+      "test": "C2-hard-race-conditional-ensemble",
+      "name": "retained-low-cover40m",
+      "n": 8192,
+      "footprintM": 0.02,
+      "maximumError": 0.0027276611328122535,
+      "maximumErrorPlusPointwise95": 0.007711399790198753,
+      "rows": [
+        {
+          "target": 0.19,
+          "mean": 0.19272766113281226,
+          "error": 0.0027276611328122535,
+          "sem95": 0.004983738657386499
+        },
+        {
+          "target": 0.2212052395939827,
+          "mean": 0.22169036865234423,
+          "error": 0.00048512905836153863,
+          "sem95": 0.005258002347677601
+        }
+      ],
+      "assumption": "ideal independent Gaussian field/seed ensemble; measured deterministic hashes, not exact mass in realised cells"
+    },
+    {
+      "test": "C2-hard-race-conditional-ensemble",
+      "name": "authored8recipe-extreme",
+      "n": 8192,
+      "footprintM": 0.02,
+      "maximumError": 0.0030490112304687803,
+      "maximumErrorPlusPointwise95": 0.008224595513229375,
+      "rows": [
+        {
+          "target": 0.0001,
+          "mean": 0.00017700195312500002,
+          "error": 7.700195312500002e-05,
+          "sem95": 0.0001761826929497074
+        },
+        {
+          "target": 0.0199,
+          "mean": 0.019543457031249992,
+          "error": 0.00035654296875000865,
+          "sem95": 0.0017592085341191855
+        },
+        {
+          "target": 0.2,
+          "mean": 0.20259246826171906,
+          "error": 0.0025924682617190498,
+          "sem95": 0.005106398286507971
+        },
+        {
+          "target": 0.34,
+          "mean": 0.33771209716796874,
+          "error": 0.0022879028320312855,
+          "sem95": 0.00593669268119809
+        },
+        {
+          "target": 0.215,
+          "mean": 0.21578216552734347,
+          "error": 0.0007821655273434758,
+          "sem95": 0.005176235264028481
+        },
+        {
+          "target": 0.08,
+          "mean": 0.08264312744140606,
+          "error": 0.0026431274414060596,
+          "sem95": 0.0034987189152558026
+        },
+        {
+          "target": 0.1,
+          "mean": 0.09959869384765636,
+          "error": 0.00040130615234364175,
+          "sem95": 0.0037560530448456472
+        },
+        {
+          "target": 0.045,
+          "mean": 0.04195098876953122,
+          "error": 0.0030490112304687803,
+          "sem95": 0.0025199679267912775
+        }
+      ],
+      "assumption": "ideal independent Gaussian field/seed ensemble; measured deterministic hashes, not exact mass in realised cells"
+    },
+    {
+      "test": "race-origin-1e9",
+      "probes": 256,
+      "differing": 0,
+      "scope": "finite float32 phase transport; discontinuous categorical boundaries can move within quantisation, no claim of exact arbitrary-pixel continuity"
+    }
+  ],
+  "logs": {
+    "race-r4-test.stdout.log": {
+      "path": "web/out/surface/ground-cover-quality/race-r4-test.stdout.log",
+      "sha256": "051ec2a520eeab76bae0c6ca0d0eeae7d0478bcdba4d990516cf334dfae72817"
+    },
+    "race-r4-test.stderr.log": {
+      "path": "web/out/surface/ground-cover-quality/race-r4-test.stderr.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "distribution-r4-legacy-test.stdout.log": {
+      "path": "web/out/surface/ground-cover-quality/distribution-r4-legacy-test.stdout.log",
+      "sha256": "784f362403913ad21bea19d3ce1ca4e68b41201d02b9b192556b2d8fce834e03"
+    },
+    "geometry-r4-test.stdout.log": {
+      "path": "web/out/surface/ground-cover-quality/geometry-r4-test.stdout.log",
+      "sha256": "60a0644fa4c619baeb65e263565fd5dc2beacf132821fcebf0e912bec30b1f33"
+    },
+    "geometry-r4-test.stderr.log": {
+      "path": "web/out/surface/ground-cover-quality/geometry-r4-test.stderr.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "parse-r4.stdout.log": {
+      "path": "web/out/surface/ground-cover-quality/parse-r4.stdout.log",
+      "sha256": "83cf0b082206af2aa236c83064fbcfa76be1e00a4aa3558574b2f65965d9481c"
+    },
+    "parse-r4.stderr.log": {
+      "path": "web/out/surface/ground-cover-quality/parse-r4.stderr.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "tsc-r4.stdout.log": {
+      "path": "web/out/surface/ground-cover-quality/tsc-r4.stdout.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "tsc-r4.stderr.log": {
+      "path": "web/out/surface/ground-cover-quality/tsc-r4.stderr.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  },
+  "retainedCpuMeanPreview": {
+    "status": "RETAINED_CPU_MEAN_DIAGNOSTIC_ONLY",
+    "input": "D:\\workspace\\self\\_worktrees\\magna-urbis-ground-cover-quality\\web\\out\\surface\\ground-cover-quality\\retained-pages\\packet.surfacebin",
+    "sourceSha256": "c3a285e38786a5fa938b06c7e79abebe656dff320ee9bb1d79c3e99f24ef0abf",
+    "contextId": "9aa813bd01736793a58f2f759884ae39",
+    "groundResponseId": "gr-sha256-1:4762ee766f0723f1366dbf8b00c1c95690fc269d78a088e65bff43a9aeaa042d",
+    "extentM": 40,
+    "focus": [
+      20000,
+      20000
+    ],
+    "resolution": 256,
+    "shaderFootprintM": 0.02,
+    "centre": {
+      "target": [
+        0.2587464435733549,
+        0.18530627625337107,
+        0.12358619259337913
+      ],
+      "ground": [
+        0.25,
+        0.17,
+        0.105
+      ],
+      "before": [
+        0.19838160203245336,
+        0.1560625269879451,
+        0.08713249870107387
+      ],
+      "after": [
+        0.15567330116167405,
+        0.10163900577276658,
+        0.053647536875173915
+      ],
+      "probabilities": [
+        0.2186610893338722,
+        0.7813389106661278,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "recipeIds": [
+        1,
+        0,
+        19,
+        3,
+        7,
+        4,
+        2,
+        10
+      ],
+      "lowP": [
+        0.19325941016915701,
+        0.2179059764466854
+      ],
+      "lowIds": [
+        13,
+        18
+      ],
+      "alpha": 0.41116538661584245,
+      "localAlpha": 0.65,
+      "params": {
+        "stoniness": 0.24399581700040418,
+        "slopeRadians": 0.21866108425751346,
+        "organic": 0.18338707425604756,
+        "rockRecipe": 1,
+        "occupation": 0,
+        "alluvial": 0,
+        "gravity": 0,
+        "wind": 0,
+        "coastal": 0,
+        "aridity": 1.8526040194907187,
+        "moisturePreSaturation": 0.8766056965501309
+      }
+    },
+    "limits": [
+      "No PBR/normal/lighting or native-quality claim.",
+      "Existing physical context/ground-response source inputs, unchanged; no new observed fine geology.",
+      "Output sampling resolution differs from supplied shader footprint; this is a mean-distribution diagnostic.",
+      "Categorical conservation is seed-ensemble expectation, not exact mass in one patch."
+    ]
+  }
+}

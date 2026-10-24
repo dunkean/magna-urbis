@@ -60,3 +60,52 @@ float detail_distribution_gain(vec3 target,vec3 physical_mean,vec3 minimum_color
     vec3 upper=mix(vec3(1.0),(vec3(.95)-target)/max(positive,vec3(.00000001)),step(vec3(.00000001),positive));
     return clamp(min(min(min(lower.x,lower.y),lower.z),min(min(upper.x,upper.y),upper.z)),0.0,1.0);
 }
+void detail_distribution_cubic(float f,out float weights[4]) {
+    weights[0]=(1.0-f)*(1.0-f)*(1.0-f)/6.0;
+    weights[1]=(3.0*f*f*f-6.0*f*f+4.0)/6.0;
+    weights[2]=(-3.0*f*f*f+3.0*f*f+3.0*f+1.0)/6.0;
+    weights[3]=f*f*f/6.0;
+}
+float detail_distribution_c2(vec2 position,vec2 cell_origin,uint field) {
+    vec2 cell=floor(position)+cell_origin;
+    float wx[4];float wz[4];detail_distribution_cubic(fract(position.x),wx);detail_distribution_cubic(fract(position.y),wz);
+    float value=0.0,variance=0.0;
+    for(int j=0;j<4;j++)for(int i=0;i<4;i++) {
+        float weight=wx[i]*wz[j];
+        value+=weight*detail_distribution_gaussian(cell+vec2(float(i-1),float(j-1)),field);
+        variance+=weight*weight;
+    }
+    return detail_distribution_normal_cdf(value/sqrt(variance));
+}
+// Independent hard races avoid the contour ribbons produced by assigning all
+// recipes consecutive intervals of ONE rank. No softmax or RGB randomness.
+void detail_distribution_race(vec2 local_position,vec2 separate_layer_phase,float footprint,float probability[8],int channels[8],out float mass[8]) {
+    float total=0.0;int active=0;
+    for(int i=0;i<8;i++){mass[i]=probability[i];total+=probability[i];if(probability[i]>0.0)active++;}
+    float uncovered=max(0.0,1.0-total);if(uncovered>0.0)active++;
+    if(footprint>=3.0||active<=1)return; // exact original fractions/target horizon
+    for(int i=0;i<8;i++)mass[i]=0.0;
+    float scales[3];scales[0]=12.0;scales[1]=1.7;scales[2]=.17;
+    float bands[3];bands[0]=.4;bands[1]=.35;bands[2]=.25;
+    for(int b=0;b<3;b++) {
+        float scale=scales[b],closure=smoothstep(scale*.125,scale*.25,footprint);
+        for(int i=0;i<8;i++)mass[i]+=bands[b]*closure*probability[i];
+        if(closure>=1.0)continue;
+        // Positive spatial quadrature: each sample has the SAME categorical
+        // expectation. Its uncertainty is not an exact pixel-area certificate.
+        for(int tap=0;tap<4;tap++) {
+            vec2 offset=vec2(tap%2==0?-.25:.25,tap<2?-.25:.25)*footprint;
+            vec2 position=(local_position+offset)/scale+detail_distribution_phase[b].xy+separate_layer_phase;
+            int winner=-1;float best=3.402823e38;
+            for(int i=0;i<9;i++) {
+                float p=uncovered;int channel=64;
+                if(i<8){p=probability[i];channel=channels[i];}
+                if(p<=0.0)continue;
+                float rank=detail_distribution_c2(position,detail_distribution_phase[b].zw,uint(b+3*(channel+17)));
+                float score=-log(max(.0000001,rank))/p;
+                if(score<best){best=score;winner=i;}
+            }
+            if(winner>=0&&winner<8)mass[winner]+=bands[b]*(1.0-closure)*.25;
+        }
+    }
+}
