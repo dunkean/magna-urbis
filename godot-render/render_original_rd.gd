@@ -82,7 +82,10 @@ func _sampler(settings:Dictionary)->RID:
 	var state:=RDSamplerState.new()
 	state.min_filter=RenderingDevice.SAMPLER_FILTER_LINEAR if str(settings.get("min","NEAREST")).begins_with("LINEAR") else RenderingDevice.SAMPLER_FILTER_NEAREST
 	state.mag_filter=RenderingDevice.SAMPLER_FILTER_LINEAR if settings.get("mag")=="LINEAR" else RenderingDevice.SAMPLER_FILTER_NEAREST
-	state.mip_filter=RenderingDevice.SAMPLER_FILTER_NEAREST
+	state.mip_filter=RenderingDevice.SAMPLER_FILTER_LINEAR if str(settings.get("min","")).ends_with("MIPMAP_LINEAR") else RenderingDevice.SAMPLER_FILTER_NEAREST
+	if not str(settings.get("min","")).contains("MIPMAP"):state.max_lod=0.0
+	if settings.get("wrapS","CLAMP_TO_EDGE")!="CLAMP_TO_EDGE" or settings.get("wrapT","CLAMP_TO_EDGE")!="CLAMP_TO_EDGE":
+		_gpu_fail("Original sampler wrap mode is not supported");return RID()
 	state.repeat_u=RenderingDevice.SAMPLER_REPEAT_MODE_CLAMP_TO_EDGE;state.repeat_v=state.repeat_u;state.repeat_w=state.repeat_u
 	return keep(rd.sampler_create(state))
 
@@ -99,6 +102,7 @@ func _active_bindings(spirv:RDShaderSPIRV)->Dictionary:
 	return found
 
 func _initialize_gpu()->void:
+	if released:return
 	rd=RenderingServer.get_rendering_device()
 	if rd==null:_gpu_fail("Original Render requires the Vulkan RenderingDevice");return
 	for key in scene.get("data",{}):
@@ -174,6 +178,7 @@ func _initialize_gpu()->void:
 	_draw_latest()
 
 func _publish_texture(rid:RID)->void:
+	if released:return
 	output_texture=Texture2DRD.new();output_texture.texture_rd_rid=rid
 
 func _blend_factor(name:String)->int:
@@ -256,6 +261,7 @@ func _draw_latest()->void:
 	_publish_ready.call_deferred(int(view.serial))
 
 func _publish_ready(value:int)->void:
+	if released:return
 	rendered_serial=value;ready=value==serial
 
 func stats()->Dictionary:
@@ -281,6 +287,7 @@ func _store_capture(path:String,bytes:PackedByteArray)->void:
 
 func cleanup()->void:
 	if released:return
+	released=true
 	if output_texture!=null:output_texture.texture_rd_rid=RID()
 	RenderingServer.call_on_render_thread(_release_gpu)
 

@@ -48,6 +48,7 @@ func start()->void:
 	canvas=ViewRoot.new();canvas.app=self;canvas.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT);root.add_child(canvas)
 	display=TextureRect.new();display.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT);display.expand_mode=TextureRect.EXPAND_IGNORE_SIZE;display.stretch_mode=TextureRect.STRETCH_SCALE;display.flip_v=true;display.texture_filter=CanvasItem.TEXTURE_FILTER_NEAREST;display.mouse_filter=Control.MOUSE_FILTER_IGNORE;canvas.add_child(display)
 	hud=Label.new();hud.position=Vector2(12,12);hud.mouse_filter=Control.MOUSE_FILTER_IGNORE;hud.add_theme_color_override("font_color",Color.WHITE);hud.add_theme_color_override("font_shadow_color",Color.BLACK);hud.add_theme_constant_override("shadow_offset_x",1);hud.add_theme_constant_override("shadow_offset_y",1);canvas.add_child(hud)
+	hud.visible=not options.has("--capture")
 	var script=load("res://render_original_rd.gd")
 	if script==null:fail("Original Render renderer script unavailable");return
 	renderer=script.new()
@@ -68,6 +69,7 @@ func _process(_delta:float)->bool:
 			exiting=true;call_deferred("finish")
 	return false
 func handle_input(event:InputEvent)->void:
+	if frame_limit>0:return # Controlled reference captures ignore unrelated desktop input.
 	if event is InputEventKey and event.pressed and not event.echo:
 		match event.keycode:
 			KEY_ESCAPE:exiting=true;quit()
@@ -95,6 +97,11 @@ func finish()->void:
 	capturing=true
 	await RenderingServer.frame_post_draw
 	if options.has("--capture"):
+		# Check the actual displayed canvas as well as the native framebuffer.
+		var display_path=ProjectSettings.globalize_path(str(options["--capture"]).get_basename()+".display.png")
+		DirAccess.make_dir_recursive_absolute(display_path.get_base_dir())
+		var display_error=root.get_texture().get_image().save_png(display_path)
+		if display_error!=OK:push_error("Could not save actual Render display");quit(1);return
 		var result:Dictionary=await renderer.capture_png(str(options["--capture"]))
 		print(JSON.stringify({"event":"render-original-capture","result":result,"stats":renderer.stats()}))
 		if result.has("error"):quit(1);return
