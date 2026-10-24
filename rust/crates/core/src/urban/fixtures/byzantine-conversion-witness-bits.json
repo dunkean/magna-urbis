@@ -1,0 +1,141 @@
+{
+  "sourceSha256": "c49b611727f01a9e239f126e00af9bce9b5a7697f880b0ecbac6032f8b2db464",
+  "event": 0,
+  "rawOuterBits": [
+    [
+      "40a06802fdec885e",
+      "409fb58a9c97615a"
+    ],
+    [
+      "40a06802fdea885e",
+      "409fb58a9c97615a"
+    ],
+    [
+      "40a068e4e8da885e",
+      "409fb14b24cf615a"
+    ],
+    [
+      "40a082c0478a885e",
+      "409fc6c7c00f615a"
+    ],
+    [
+      "40a082e4136a885e",
+      "409fdf45716f615a"
+    ],
+    [
+      "40a07fb5eff6885e",
+      "409fe879d30f615a"
+    ],
+    [
+      "40a07fdb0bd6885e",
+      "409fe80e6b4f615a"
+    ],
+    [
+      "40a082dca47e885e",
+      "409fda2f899f615a"
+    ],
+    [
+      "40a082d009be885e",
+      "409fd18fe17f615a"
+    ],
+    [
+      "40a072260c02885e",
+      "409fc31d8abb615a"
+    ],
+    [
+      "40a0730fc414885e",
+      "409fbee72c57615a"
+    ],
+    [
+      "40a0680cd0c4885e",
+      "409fb55b5337615a"
+    ]
+  ],
+  "rawHoleBits": [],
+  "expectedRawVertices": 12,
+  "oldInvalidVertices": 11,
+  "nativeBeforeSha256": "861049deca07f7d3c28a29bd488dde19cdcaec712cc676644fa138d6f07bb771",
+  "demands": [
+    {
+      "id": "probe/demand/domestic",
+      "function": "domestic",
+      "role": "dwelling",
+      "unit": "domesticUnits",
+      "requestedBits": "404eaaaaaaaaaaac",
+      "targetAreaBits": "40b0c55555555556",
+      "targetFrontageBits": "4010000000000000"
+    },
+    {
+      "id": "probe/demand/mixed",
+      "function": "mixed",
+      "role": "dwelling.shop",
+      "unit": "domesticUnits",
+      "requestedBits": "4015555555555556",
+      "targetAreaBits": "4077555555555556",
+      "targetFrontageBits": "4010000000000000"
+    },
+    {
+      "id": "probe/demand/common",
+      "function": "common",
+      "role": "open.common",
+      "unit": "usefulAreaM2",
+      "requestedBits": "4082c00000000000",
+      "targetAreaBits": "4082c00000000000",
+      "targetFrontageBits": "4010000000000000"
+    },
+    {
+      "id": "probe/demand/market",
+      "function": "market",
+      "role": "commerce.market",
+      "unit": "usefulAreaM2",
+      "requestedBits": "4069000000000000",
+      "targetAreaBits": "4069000000000000",
+      "targetFrontageBits": "4020000000000000"
+    },
+    {
+      "id": "probe/demand/worship.parish",
+      "function": "collective",
+      "role": "worship.parish",
+      "unit": "usefulAreaM2",
+      "requestedBits": "40788fd3f5a5f9d7",
+      "targetAreaBits": "40788fd3f5a5f9d7",
+      "targetFrontageBits": "4014000000000000"
+    },
+    {
+      "id": "probe/demand/craft.smithy",
+      "function": "workshop",
+      "role": "craft.smithy",
+      "unit": "usefulAreaM2",
+      "requestedBits": "40562d6f9bdf5aca",
+      "targetAreaBits": "40562d6f9bdf5aca",
+      "targetFrontageBits": "4010000000000000"
+    },
+    {
+      "id": "probe/demand/craft.bakery",
+      "function": "workshop",
+      "role": "craft.bakery",
+      "unit": "usefulAreaM2",
+      "requestedBits": "4054000000000000",
+      "targetAreaBits": "4054000000000000",
+      "targetFrontageBits": "4010000000000000"
+    },
+    {
+      "id": "probe/demand/storage.barn",
+      "function": "warehouse",
+      "role": "storage.barn",
+      "unit": "usefulAreaM2",
+      "requestedBits": "407dabe148d110b8",
+      "targetAreaBits": "406dabe148d110b8",
+      "targetFrontageBits": "4022000000000000"
+    },
+    {
+      "id": "probe/demand/garden",
+      "function": "common",
+      "role": "open.garden",
+      "unit": "usefulAreaM2",
+      "requestedBits": "40dc681211378a78",
+      "targetAreaBits": "40dc681211378a78",
+      "targetFrontageBits": "4010000000000000"
+    }
+  ]
+}

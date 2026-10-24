@@ -1,0 +1,9 @@
+{
+    "preset": "culture",
+    "culture": "site",
+    "recipe": "auto",
+    "zone": "auto",
+    "density": 1,
+    "params": {},
+    "operator": "culture"
+  }

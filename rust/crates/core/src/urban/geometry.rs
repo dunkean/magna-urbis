@@ -32,23 +32,59 @@ pub(super) fn polygon(s: &Shape) -> Polygon<f64> {
     Polygon::new(line(&s.outer), s.holes.iter().map(|r| line(r)).collect())
 }
 pub(super) fn shapes(p: geo::MultiPolygon<f64>) -> Vec<Shape> {
-    fn ring(l: &LineString<f64>) -> Vec<Point> {
+    fn ring(l: &LineString<f64>, approximate: &mut bool) -> Vec<Point> {
         let mut r: Vec<_> = l.0.iter().map(|p| Point { x: p.x, y: p.y }).collect();
         if r.len() > 1
             && (r[0].x - r[r.len() - 1].x).abs() + (r[0].y - r[r.len() - 1].y).abs() < 1e-8
         {
+            *approximate |= r[0].x != r[r.len() - 1].x || r[0].y != r[r.len() - 1].y;
             r.pop();
         }
-        r.dedup_by(|a, b| (a.x - b.x).hypot(a.y - b.y) < 1e-7);
+        r.dedup_by(|a, b| {
+            let close = (a.x - b.x).hypot(a.y - b.y) < 1e-7;
+            *approximate |= close && (a.x != b.x || a.y != b.y);
+            close
+        });
+        r
+    }
+    fn exact_ring(l: &LineString<f64>) -> Vec<Point> {
+        let mut r: Vec<_> = l.0.iter().map(|p| Point { x: p.x, y: p.y }).collect();
+        if r.len() > 1 && r[0].x == r[r.len() - 1].x && r[0].y == r[r.len() - 1].y {
+            r.pop();
+        }
         r
     }
     p.0.into_iter()
         .filter(|p| p.unsigned_area() > 0.01)
         .map(|p| {
-            normalized(Shape {
-                outer: ring(p.exterior()),
-                holes: p.interiors().iter().map(ring).collect(),
-            })
+            #[cfg(test)]
+            conversion_topology_tests::record(0);
+            let mut approximate = false;
+            let converted = normalized(Shape {
+                outer: ring(p.exterior(), &mut approximate),
+                holes: p.interiors().iter().map(|h| ring(h, &mut approximate)).collect(),
+            });
+            // Removing a distinct, near-coincident vertex can turn a valid raw
+            // overlay ring into a crossing. Ordinary/exact-duplicate conversions
+            // keep their old path; valid historical simplifications stay exact.
+            if approximate {
+                use geo::Validation;
+                #[cfg(test)]
+                conversion_topology_tests::record(1);
+                if !polygon(&converted).is_valid() {
+                    #[cfg(test)]
+                    conversion_topology_tests::record(2);
+                    if p.is_valid() {
+                        #[cfg(test)]
+                        conversion_topology_tests::record(3);
+                        return normalized(Shape {
+                            outer: exact_ring(p.exterior()),
+                            holes: p.interiors().iter().map(exact_ring).collect(),
+                        });
+                    }
+                }
+            }
+            converted
         })
         .filter(|p| p.outer.len() >= 3)
         .collect()
@@ -794,3 +830,7 @@ mod tests {
         assert_eq!(pieces.len(), 2);
     }
 }
+
+#[cfg(test)]
+#[path = "geometry_conversion_topology_tests.rs"]
+mod conversion_topology_tests;

@@ -1,4 +1,4 @@
-> **Instruction utilisateur actuelle — 24 octobre : banc visuel annulé.** Ne plus planifier de campagne de captures. Commit/push des travaux intégrés demandé ; aucune promotion des prototypes Core23/prépose/byzantin pendant cette clôture. Les anciennes mentions de campagne ci-dessous sont historiques.
+> **Instruction utilisateur actuelle — 24 octobre : banc visuel annulé.** Ne plus planifier de campagne de captures. Commit/push des travaux intégrés demandé ; aucune nouvelle promotion de prototype pendant cette clôture. Le correctif source geometry6 déjà intégré et validé (277 tests) est inclus ; Core23/prépose et le nouveau Wasm restent isolés. Les anciennes mentions de campagne ci-dessous sont historiques.
 
 # Opus city generation — active
 
@@ -949,3 +949,23 @@ Root Core23 Web:Kraal60.023s timeout/no layout, Mongol37.703squarters/38.181swal
 
 ## GEL GIT IMMÉDIAT — demande utilisateur, coordination Root
 L’utilisateur demande COMMIT/PUSH maintenant et aucun nouveau banc visuel. Merci à Opus de cesser toute modification du workspace pendant la capture Git et le push coordonnés par Root. City_quality a figé son dernier workflow diagnostique Core23 (source0dcf/workflow0cb3) ; aucune promotion Core23/performance, aucun autre source/produit/test/capture ne sera modifié ou lancé par cet agent. Les copies/traces isolées restent non promues. Root seul inspecte, stage, commit et push les travaux intégrés.
+
+
+## Codex — full132 portail prépose, revue indépendante sans promotion
+Root full132 complet : 8 395 demandes originales, 132 ACK puis release ; 6 530 parents, 1 359 groupes, 7 889 membres, 1 713 refus et 152 ouverts inchangés. Revue exhaustive : tous les 1 359 anciens groupes et 5 818 archives parents inchangés ; 712 Singles passent réellement entrance=None→native, sans changement des sources/config/seed/dimensions/niveaux/besoins hors certificat. Aucun gain brut/utile/ménages. Queue exhaustive ce6f5398… dans single-native-prepose-independent-review-v2. Rapport CODEX_SINGLE_NATIVE_PREPOSE_FULL132_REVIEW.md. Audit natif global des 712 avant/après et vrais détails B15/B14 préparés, NON EXÉCUTÉS : houses-single-native-prepose-global-audit-workspace-v1, gel1ce32c46…/273sources/2metadata/953pins ; deux deltas cfg(test), aucun runtime/produit/Core/UI modifié. Root seul compile/exécute et décidera après audits, aucune nouvelle promotion.
+
+
+## Codex — prépose V3, attribution des deux goldens Need rouges
+FULL496 V2 : 494 PASS et deux anciens hashes de transport Need rouges, non remplacés. Nouvelle copie isolée houses-single-native-prepose-workspace-v3 en préparation : runtime V2 inchangé, helper des anciens goldens explicitement prépose OFF pour conserver leur contrat Need, vrais tests du pipeline final ON sur les mêmes 0002/0080 avec comparaison de la capture Need, sources/besoins/niveaux, voisinage complet et réalisation native. Root seul compilera/exécutera ; aucune promotion ni modification produit/Core/UI. Le contrôle global712 et les deux vrais détails ont été validés séparément par root, sans annuler ces deux échecs de suite.
+
+
+## Codex — BYZ geometry6 V2 sources appliquées sur ordre root
+Six chemins seulement (geometry.rs, test autonome, quatre fixtures), reçu `web/out/byzantine-geometry-six-production-delivery-v2/after.json` SHA4979fbcc7aaf30326f7c20250dea75499a52875f6f767bf59be6ecca78319aa1. 1 657 protégés, dérive hors allowlist zéro ; aucun Core23/PNW/contact ni prépose Houses promu. Root standalone277 défaut parallèle + huit ciblés + GEOS A/B et coût étroit acceptés ; 277 PRODUIT encore à exécuter par root. Core Web d02b, Houses Web897c/builder c476 et UI inchangés. Aucun build/test/natif/service/browser par auteur. Staging Web frais seulement après 277 produit vert, aucun ancien Wasm présenté corrigé ; banc visuel annulé.
+
+
+## Codex — culture des phases / étapes ordinales, tranche UI isolée
+Réservation copie fraîche `web/out/city-growth-phase-ui-proposal-v1/candidate` : seuls terrainUrban.ts, testbench.ts et docs/CITY_VARIATION_VARIABLES.md ; nouveau petit helper/test. Le rapport lit exclusivement GrowthPhase.culture retourné/importé, absence inconnue. Libellés Époques→Étapes, IDs epochs/data-epoch/valeurs/liens/périodes inchangés. Aucun Core/Houses/geometry6/asset ni produit modifié, aucun test/build/browser/natif exécuté par agent ; root seul valide. Blend et couverture historique hors scope. Code/assets/config protégés, notes chronologiques provenance seule.
+
+
+## Codex — prépose V3 test-only gelée, aucune promotion
+Gel e3e7fe5be4d48771eee41f13f09a5d1dcc0cbf6d07c1dd492025fc8cd6ec3204 : houses-single-native-prepose-workspace-v3/DELIVERY.md,273sources/15metadata/670pins. Runtime V2 entièrement exact ; seuls deux fichiers tests changent. Les anciens hashes/assertions Need demeurent, helper prépose OFF ; deux vrais tests défaut ON et capture exhaustive0002/0080 préparés pour vérifier phase Need inchangée, sources/besoins/brut intrinsèque/portes, contexte complet/réadmission/détails. Résultats non présumés ; root seul exécutera, deux fails V2 conservés. Core geometry Byz légitimement actuel conservé, TODO exclu, aucun produit touché.
