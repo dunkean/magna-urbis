@@ -1,0 +1,126 @@
+{
+  "format": "ground-response-independent-contract-audit",
+  "version": 1,
+  "scope": "Independent CPU transport/physical compatibility audit, not GPU or artistic acceptance; no source or primary repository edited",
+  "reviewedCommits": [
+    "fd1506f752cb27fa71576505b80e97b5eb0c0fe3",
+    "4afca0f0807d7338b7f5b33a0c1c2d38e78008b9"
+  ],
+  "beforeFix": {
+    "ownerSuite": {
+      "tests": 30,
+      "passed": 30,
+      "failed": 0
+    },
+    "independentSuite": {
+      "tests": 9,
+      "passed": 7,
+      "failed": 2,
+      "checks": [
+        {
+          "name": "rejects a legacy catalogue whose rock recipe belongs to marine family",
+          "status": "failed",
+          "failure": "AssertionError: expected [Function] to throw an error"
+        },
+        {
+          "name": "rejects finite JSON values that become nonfinite Float32 after conversion",
+          "status": "failed",
+          "failure": "AssertionError: expected [Function] to throw an error"
+        },
+        {
+          "name": "rejects missing, partial, unknown columns, strings and wrong constructors",
+          "status": "passed",
+          "failure": null
+        },
+        {
+          "name": "rejects stale hash, frame, source generation, environment and material identities",
+          "status": "passed",
+          "failure": null
+        },
+        {
+          "name": "enforces exact response allocation budget and rejects invalid values",
+          "status": "passed",
+          "failure": null
+        },
+        {
+          "name": "keeps all recorded canonical node values exactly and bounds near-knot quantization",
+          "status": "passed",
+          "failure": null
+        },
+        {
+          "name": "preserves ground samples under a common large coordinate frame translation",
+          "status": "passed",
+          "failure": null
+        },
+        {
+          "name": "resolves exact canonical data across adjacent retarget tiles and rejects a wrong known context",
+          "status": "passed",
+          "failure": null
+        },
+        {
+          "name": "keeps legacy group absence and original byte serialization without inventing response data",
+          "status": "passed",
+          "failure": null
+        }
+      ]
+    },
+    "findings": [
+      {
+        "id": "legacy-marine-rock-recipe",
+        "status": "Confirmed by owner; fix pending",
+        "repro": "Change default fractured-bedrock.family to marine, delete surfaceRole, compile with that materialLibrary then binary encode/decode/hydrate: accepted. Recomputed materialLibrary versions remain internally consistent.",
+        "impact": "Optional missing legacy role bypasses a required ground support category guard."
+      },
+      {
+        "id": "json-float32-overflow",
+        "status": "Confirmed by owner; fix pending",
+        "repro": "Set typed aridity[0]=Infinity, calculate response identity over those bytes, convert JSON value to finite1e100. hydrate validates before Float32 conversion then accepts Infinity with matching identity.",
+        "impact": "Finite JSON numeric value does not guarantee finite Float32 storage."
+      }
+    ],
+    "nearKnotAndNodeMetrics": {
+      "scope": "Independent CPU contract audit; no GPU or artistic acceptance",
+      "canonicalKnots": 289,
+      "nearKnotSamples": 768,
+      "maximumNearKnotQuantizationDeltaLinear": 0.00186044270557148
+    },
+    "actualLegacyCompilerReplay": {
+      "scope": "Actual compiler6820ff3 output roundtripped by new hydrator, exact old bytes; same fixture compiled by both cores preserves every previous field/version and candidate record",
+      "status": "PASS",
+      "baselineCommit": "6820ff3",
+      "oldCompilerVersion": "surface-1.5.3",
+      "newCompilerVersion": "surface-1.6.0",
+      "legacyBytes": 89004,
+      "legacyBinarySha256": "f2c7fce7e2178ddbb369b48fd5edaaa3785bea75a48bcd169cbc00a5be1eaf3b",
+      "legacyResponseInvented": false,
+      "oldFieldCount": 52,
+      "oldVersionCount": 9,
+      "candidates": 6422
+    }
+  },
+  "afterFix": {
+    "status": "Pending owner correction and independent rerun"
+  },
+  "limits": [
+    "Quantization at exact knots is intentionally stored-sRGB8; the measured near-knot delta is not zero and does not claim an analytically C1 color field.",
+    "Physical routing, terrain, old fields and candidates are exact on this authored analytic fixture; this is not new neural terrain or observation of actual soils.",
+    "A correct group/hash/lineage validates its representation, not empirical truth of its authored potentials.",
+    "No CPU timing or production navigation performance claim."
+  ],
+  "filesSha256Lf": {
+    "web/src/surface/groundResponse.ts": "1e813e8ad22271cae2eca87734407e1796e43c397a59c9a176c22d1a77aef0da",
+    "web/src/surface/compiler.ts": "90620e7880211ba689bc17c750d3f2cafcca124445882983fc5320438f8102fe",
+    "web/src/surface/model.ts": "8851892e77df45b53f71e9161e566315d5158230454c7098fe1adf5d73777c54",
+    "web/src/surface/packet.ts": "ea69c6ca467b4712e54b3ff94870675c44818f6abdee48875a5525a256de1319",
+    "web/tests/surface.ground-response-independent.test.ts": "142dce41613eb897d112a999897edb1f219a96e8f1b3a03d4aba8aabd55c2c35"
+  },
+  "rawArtifacts": [
+    "web\\out\\surface\\ground-response-audit\\owner-tests-before.json",
+    "web\\out\\surface\\ground-response-audit\\independent-tests-before.json",
+    "web\\out\\surface\\ground-response-audit\\independent-metrics-before.json",
+    "web\\out\\surface\\ground-response-audit\\legacy-actual-report.json",
+    "web\\out\\surface\\ground-response-audit\\full-role.ts",
+    "web\\out\\surface\\ground-response-audit\\overflow.ts",
+    "web\\out\\surface\\ground-response-audit\\actual-legacy.ts"
+  ]
+}
