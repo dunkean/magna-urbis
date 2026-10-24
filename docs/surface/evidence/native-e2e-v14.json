@@ -641,7 +641,7 @@
     "overrides": []
   },
   "cleanup": {
-    "parentReportedAction": "Parent validated owned viewer command line, explicitly stopped viewer PID208296 and owned node212064/Godot198724 tree. Driver178260 then ended with Native tour exited1. This is an explicit abort, not a completed tour.",
+    "parentReportedAction": "Parent validated owned viewer command line, explicitly stopped viewer PID208296 and owned descendants212064/198724. Driver178260 then ended with Native tour exited1. This is an explicit abort, not a completed tour; descendant executable roles were not independently recorded.",
     "followUp": {
       "checkedAtUtc": "2026-10-24T08:45:42.3328237Z",
       "recordedOwnedIds": [
