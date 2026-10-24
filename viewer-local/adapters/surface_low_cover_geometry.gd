@@ -1,12 +1,12 @@
 extends RefCounted
-const VERSION="surface-low-cover-geometry-1"
+const VERSION="surface-low-cover-geometry-2"
 const VARIANTS=4
 const MAX_TRIANGLES={"shrub":256,"debris":96}
 # Authored botanical approximations, not additional candidates or measured plants.
 # Normalised support matches the existing source-sized instance transform.
 static func _triangle(tool:SurfaceTool,a:Vector3,b:Vector3,c:Vector3)->void:
 	var n=(b-a).cross(c-a).normalized()
-	for p in [a,b,c]:
+	for p in [a,c,b]:
 		tool.set_normal(n);tool.set_uv(Vector2(p.x+.5,p.z+.5));tool.add_vertex(p)
 static func _leaf(tool:SurfaceTool,root:Vector3,direction:Vector3,width:float)->void:
 	var side=direction.normalized().cross(Vector3.UP).normalized()*width

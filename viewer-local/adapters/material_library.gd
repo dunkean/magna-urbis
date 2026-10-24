@@ -215,7 +215,7 @@ func _load_image(value, manifest_path: String) -> Image:
 	return img
 
 func configure(material: Object, world: Dictionary, origin: Dictionary) -> void:
-	material.set_shader_param("detail_distribution_phase",DetailDistribution.phases(origin))
+	material.set_shader_param("detail_distribution_phase",DetailDistribution.phases(origin,int(world.get("seed",0))))
 	var colors := PackedVector4Array()
 	var material_scales := PackedFloat32Array()
 	var material_layers := PackedInt32Array()

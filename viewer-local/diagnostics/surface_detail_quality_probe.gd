@@ -21,7 +21,7 @@ func run()->void:
 	var began=Time.get_ticks_msec()
 	while not ready(false) and Time.get_ticks_msec()-began<180000:await process_frame
 	if not ready(false):push_error("Retained detail source did not settle");quit(1);return
-	var report={"format":"surface-detail-retained-quality-probe","version":1,"status":"running","distribution":DetailDistribution.metadata(),"views":[],"scope":"Explicit retained replay, no neural call or new observed detail. Each paired pose keeps camera/source/context/ground/geometry/inventory/buffers exact. Before uses the previous uniform mixture and sphere shrubs/debris, after uses calibrated component allocations and authored leaves/twigs. Tree pipeline/positions/densities unchanged."}
+	var report={"format":"surface-detail-retained-quality-probe","version":1,"status":"running","distribution":DetailDistribution.metadata(int(viewer.get("rendered_world").get("seed",0))),"views":[],"scope":"Explicit retained replay, no neural call or new observed detail. Each paired pose keeps camera/source/context/ground/geometry/inventory/buffers exact. Before uses the previous uniform mixture and sphere shrubs/debris, after uses calibrated component allocations and authored leaves/twigs. Tree pipeline/positions/densities unchanged."}
 	for width in [2560.0,160.0,40.0,10.0]:
 		viewer.set("width_m",width);viewer.call("_update_camera");viewer.call("_begin_prepare")
 		var started=Time.get_ticks_msec()
