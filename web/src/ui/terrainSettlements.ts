@@ -1,3 +1,4 @@
+import { retainCityPlacement } from './cityRetainedPlacement';
 import { retainSelectValue } from './retainedSelectValue';
 import { bindCityPlaceCulture } from './cityPlanCulture';
 import { urbanOptionSync } from './urbanOptionSync';
@@ -67,6 +68,7 @@ export function createTerrainSettlements(options: {
   // Placement reruns only when its inputs changed; road edits reroute between the current places.
   let complete = false, needsPlacement = true, validation: { width: number; n: number; water: Uint8Array } | undefined;
   let fallback = false, answered = 0;
+  let citySearchRequested = false, cityPlacementScoresStale = false;
   let drawnLayer: SVGGElement | undefined, drawnOutput: SettlementOutput | undefined, drawnState = '';
   let drag: { key: string; pointer: number; start: Point; point: Point; moved: boolean } | undefined;
   const initial = new URLSearchParams(location.search).get('settlements');
@@ -183,8 +185,10 @@ export function createTerrainSettlements(options: {
   if (options.city) {
     panel.querySelector('summary')!.firstChild!.textContent = '1 · Ville ';
     for (const id of ['setEnabled', 'setMode', 'setDistribution', 'setMainPop', 'setCulture']) el(id).closest('label')!.hidden = true;
-    for (const id of ['setCounts', 'setGenerate', 'setTakeOver', 'setAdd', 'setExportDecor']) el(id).hidden = true;
+    for (const id of ['setCounts', 'setTakeOver', 'setAdd', 'setExportDecor']) el(id).hidden = true;
     for (const box of Array.from(panel.querySelectorAll<HTMLElement>(':scope > .stage-controls > details, :scope > .stage-controls > .control-group[data-show]'))) box.hidden = true;
+    el('setGenerate').hidden = false; el('setGenerate').textContent = 'Rechercher un nouvel emplacement';
+    el('setGenerate').title = 'Recherche explicite : peut déplacer la ville. Les changements de population, culture ou plan conservent sa position.';
     el('setPickHint').textContent = 'Glissez le marqueur ou utilisez « Placer sur la carte » : seules les routes et le plan sont recalculés.';
     el('setPickHint').before(el('setEditor'));
     places.hidden = true;
@@ -228,7 +232,8 @@ export function createTerrainSettlements(options: {
   }
   /** A placement input changed: placement, then roads. */
   function changed(): void {
-    needsPlacement = true; options.onChange(); schedule();
+    if (options.city) { ++id; citySearchRequested = false; needsPlacement = false; } else needsPlacement = true;
+    options.onChange(); schedule();
   }
   function schedule(): void { clearTimeout(timer); timer = setTimeout(recalculate, 180); }
   function recalculate(): void {
@@ -236,7 +241,21 @@ export function createTerrainSettlements(options: {
     const t = options.getTerrain(); if (!t || !complete || options.active === false) return;
     if (!enabled) { ++id; output = undefined; draw(); list(); roads.set(undefined); urban.setSettlements(undefined); el('setStatus').textContent = 'Settlement generation disabled.'; el('setState').textContent = ''; return; }
     config.relief = options.getSettings().relief;
-    const place = needsPlacement || !output;
+    if (options.city && !citySearchRequested) {
+      const retained = retainCityPlacement(output, config.mode === 'list' ? config.list : output?.settlements ?? []);
+      if (!retained.output) {
+        ++id; answered = id; needsPlacement = false; output = undefined;
+        roads.set(undefined); urban.setSettlements(undefined); draw(); list(); editor();
+        const pinned = config.list.filter(s => s.position && Number.isFinite(s.position.x) && Number.isFinite(s.position.y));
+        el('setStatus').textContent = pinned.length
+          ? `Coordonnées fournies conservées (${pinned.map(s => `${s.key}: ${s.position!.x}, ${s.position!.y}`).join(' ; ')}), mais données de site non validées. Cliquez sur Valider les positions fournies ; aucun centre n’est fabriqué.`
+          : 'Aucune position conservée : cliquez sur Rechercher un nouvel emplacement ou placez la ville sur la carte.';
+        el('setGenerate').textContent = pinned.length === config.list.length && pinned.length ? 'Valider les positions fournies' : 'Rechercher un nouvel emplacement';
+        el('setState').textContent = 'Placement explicite requis'; options.onChange(); return;
+      }
+      output = retained.output; cityPlacementScoresStale ||= retained.changed; needsPlacement = false;
+    }
+    const place = options.city ? citySearchRequested : needsPlacement || !output;
     const request: SettlementRequest = { id: ++id, seed: options.getSettings().seed, roads: roads.enabled ? clone(roads.config) : null, runtime: executionRuntime };
     if (place) request.place = { ...config, main: prefs(config.main), list: config.list.map(prefs) };
     else request.sites = sites(output!);
@@ -262,7 +281,8 @@ export function createTerrainSettlements(options: {
   }
   function useFallback(): void {
     // The fallback engine keeps its own terrain: resend the raster.
-    worker?.terminate(); worker = undefined; fallback = true; cachedTerrain = undefined; needsPlacement = true; recalculate();
+    worker?.terminate(); worker = undefined; fallback = true; cachedTerrain = undefined;
+    if (!options.city) needsPlacement = true; recalculate();
   }
   function receive(response: SettlementResponse): void {
     if (response.id !== id) return;
@@ -270,7 +290,8 @@ export function createTerrainSettlements(options: {
     if ('error' in response) { el('setStatus').textContent = `Settlement generation: ${response.error}`; roads.error(response.error); return; }
     answered = response.id;
     if (response.settlements) {
-      output = response.settlements; needsPlacement = false;
+      output = response.settlements; needsPlacement = false; citySearchRequested = false; cityPlacementScoresStale = false;
+      if (options.city) el('setGenerate').textContent = 'Rechercher un nouvel emplacement';
       window.dispatchEvent(new CustomEvent('settlements:generated', { detail: output }));
       if (selection && !output.settlements.some(s => s.key === selection) && !config.list.some(s => s.key === selection)) selection = '';
       const people = output.settlements.reduce((sum, s) => sum + s.population, 0);
@@ -352,8 +373,9 @@ export function createTerrainSettlements(options: {
       site.value = spec.siteType !== 'auto' ? spec.siteType : spec.position ? 'fixed' : 'auto';
       site.onchange = () => {
         if (site.value !== 'fixed') { edit(s => { s.siteType = site.value as SettlementSpec['siteType']; delete s.position; }); return; }
-        const width = options.getTerrain()?.width ?? 0, p = dryNear({ x: width / 2, y: width / 2 });
-        if (p) edit(s => { s.siteType = 'auto'; s.position = { x: Math.round(p.x), y: Math.round(p.y) }; });
+        const p = spec.position ?? result?.center;
+        if (p) edit(s => { s.siteType = 'auto'; s.position = { ...p }; });
+        else { setPicking(selection); el('setScore').textContent = 'Aucune position connue : cliquez sur la carte pour placer la ville.'; }
       };
       el('setRemove').hidden = true; el('setMountain').closest('details')!.hidden = true;
       const cultureSelect = el<HTMLSelectElement>('setPlaceCulture');
@@ -368,14 +390,16 @@ export function createTerrainSettlements(options: {
       };
     }
     el('setMove').onclick = () => { adopt(); setPicking(selection); };
-    el('setAutoPosition').onclick = () => edit(s => { delete s.position; });
+    el('setAutoPosition').textContent = options.city ? 'Rechercher un nouvel emplacement' : 'Automatic position';
+    el('setAutoPosition').onclick = () => { if (options.city) requestPlacementSearch(); else edit(s => { delete s.position; }); };
     el('setRemove').onclick = () => { adopt(); config.list = config.list.filter(s => s.key !== selection); selection = ''; setPicking(); list(); editor(); changed(); };
     if (result) {
-      const scores = result.scores;
+      const scores = result.scores, stale = options.city && cityPlacementScoresStale;
       const ranking = scores.rankingScore == null ? '' : `<small>Candidate rank ${scores.candidateRank} · ranking score ${scores.rankingScore.toFixed(3)} (class reference ${scores.rankingPopulation} inhabitants, before jitter)</small>`;
       const terms: [string, number][] = [['Flatness', scores.flatness], ['Buildable land', scores.buildable], ['Fresh water', scores.freshWater], ['River access', scores.river], ['Harbor', scores.harbor], ['Flood risk', scores.flood], ['Culture', scores.culture], ['Site type', scores.site], ['Defensibility', scores.defense], ['Elevation', scores.elevation], ['Clustering', scores.cluster], ['Seed variation', scores.variation]];
       const unreachable = roads.output?.unreachable.includes(result.key) ? '<br>Unreachable by road' : '';
-      el('setScore').innerHTML = `<b>Choice score ${scores.total.toFixed(3)}</b><small>${scores.manual ? 'Manual position; score shown for comparison.' : 'Best available site with spacing and terrain constraints.'}<br>${result.center.x.toFixed(0)}, ${result.center.y.toFixed(0)} m · ${esc(result.archetype)} · radius ${result.radius.toFixed(0)} m</small><table>${terms.filter(([, v]) => v !== 0).map(([label, value]) => `<tr><td>${label}</td><td>${value >= 0 ? '+' : ''}${value.toFixed(3)}</td></tr>`).join('')}</table><small>Buildable ${(scores.buildableFraction * 100).toFixed(0)}% · slope ${(Math.atan(scores.slope) * 180 / Math.PI).toFixed(1)}°<br>Water ${scores.waterDistance >= 1e6 ? 'absent' : `${scores.waterDistance.toFixed(0)} m away`} · above water ${scores.heightAboveWater.toFixed(1)} m<br>Spacing × ${scores.spacingRelaxation.toFixed(2)}${unreachable}</small>`;
+      el('setScore').innerHTML = `<b>${stale ? 'Score conservé' : 'Choice score'} ${scores.total.toFixed(3)}</b><small>${stale ? 'Données du site initial non réévaluées.' : scores.manual ? 'Manual position; score shown for comparison.' : 'Best available site with spacing and terrain constraints.'}<br>${result.center.x.toFixed(0)}, ${result.center.y.toFixed(0)} m · ${esc(result.archetype)} · radius ${result.radius.toFixed(0)} m</small><table>${terms.filter(([, v]) => v !== 0).map(([label, value]) => `<tr><td>${label}</td><td>${value >= 0 ? '+' : ''}${value.toFixed(3)}</td></tr>`).join('')}</table><small>Buildable ${(scores.buildableFraction * 100).toFixed(0)}% · slope ${(Math.atan(scores.slope) * 180 / Math.PI).toFixed(1)}°<br>Water ${scores.waterDistance >= 1e6 ? 'absent' : `${scores.waterDistance.toFixed(0)} m away`} · above water ${scores.heightAboveWater.toFixed(1)} m<br>Spacing × ${scores.spacingRelaxation.toFixed(2)}${unreachable}</small>`;
+      if (options.city && cityPlacementScoresStale) el('setScore').insertAdjacentHTML('afterbegin', '<p><strong>Position conservée ou déplacée manuellement ; scores, rayon et archétype du site initial non recalculés.</strong> Ces valeurs ne certifient pas les nouveaux réglages ni le nouveau centre.</p>');
       el('setScore').insertAdjacentHTML('beforeend', ranking);
     } else el('setScore').textContent = 'This settlement has no valid position yet. Use automatic position or place it on dry land.';
   }
@@ -422,7 +446,10 @@ export function createTerrainSettlements(options: {
     } else {
       const s = config.list.find(s => s.key === (picking ?? drag?.key)); if (!s) return false; s.position = p; selection = s.key;
     }
-    enabled = true; setPicking(); controls(); list(); editor(); changed(); return true;
+    enabled = true; setPicking(); controls(); list(); editor(); changed();
+    // A new manually pinned site needs native metadata, but only after this explicit map action.
+    if (options.city && !output?.settlements.some(s => s.key === selection)) { citySearchRequested = true; needsPlacement = true; }
+    return true;
   }
   map.addEventListener('pointerdown', event => {
     if (urban.inspecting) return;
@@ -460,7 +487,18 @@ export function createTerrainSettlements(options: {
     changed();
   };
   input('setShowPoints').onchange = () => { showPoints = input('setShowPoints').checked; draw(); options.onChange(); };
-  el('setGenerate').onclick = () => { needsPlacement = true; recalculate(); };
+  function requestPlacementSearch(): void {
+    if (options.city) {
+      adopt();
+      const spec = config.list.find(s => s.key === selection);
+      const pinnedNew = config.mode === 'list' && config.list.length > 0 && config.list.every(s => s.position)
+        && config.list.some(s => !output?.settlements.some(p => p.key === s.key));
+      if (spec && !pinnedNew) delete spec.position; // Explicit new-site validation keeps imported/manual pins exact.
+      citySearchRequested = true;
+    }
+    needsPlacement = true; recalculate();
+  }
+  el('setGenerate').onclick = requestPlacementSearch;
   el('setTakeOver').onclick = () => { adopt(); selection = config.list[0]?.key ?? ''; controls(); list(); editor(); changed(); };
   el('setAdd').onclick = () => setPicking(picking === 'new' ? undefined : 'new');
   /** Decor of the current map, once placement and routing answered the latest request. */
@@ -511,12 +549,13 @@ export function createTerrainSettlements(options: {
     captureData: decorData,
     restoreDecor(d: Decor): void {
       clearTimeout(timer); ++id; answered = id; complete = true; cachedTerrain = undefined;
-      if (!d.meta.settlements.length) { needsPlacement = true; recalculate(); return; }
+      citySearchRequested = false; cityPlacementScoresStale = false;
+      if (!d.meta.settlements.length) { output = undefined; needsPlacement = !options.city; recalculate(); return; }
       // The City Bench link carries the edited city (size, culture, position); the map keeps its first placement.
       const edited = options.city && config.mode === 'list' && config.list.length ? clone(config.list) : undefined;
       enabled = true; output = { settlements: clone(d.meta.settlements), requested: d.meta.settlements.length, usableKm2: 0, warnings: [], ms: 0 }; needsPlacement = false;
       config.mode = 'auto'; adopt();
-      const key = (s: SettlementSpec): string => JSON.stringify([s.key, s.population, s.culture, s.name, s.position && [Math.round(s.position.x), Math.round(s.position.y)]]);
+      const key = (s: SettlementSpec): string => JSON.stringify([s.key, s.population, s.culture, s.name, s.position && [s.position.x, s.position.y]]);
       const replaced = !!edited && edited.map(key).join() !== config.list.map(key).join();
       if (replaced) config.list = edited!; selection = d.meta.pipeline?.city ?? (options.city ? output.settlements[0]?.key ?? '' : ''); controls(); list(); editor();
       el('setStatus').textContent = `Map · ${output.settlements.length} place(s) · ${output.settlements.reduce((sum, s) => sum + s.population, 0).toLocaleString()} inhabitants`;
@@ -544,7 +583,7 @@ export function createTerrainSettlements(options: {
     cancelPicking(): void { setPicking(); },
     /** Style or forest settings changed: update the Canvas woods and republish the occupation. */
     refreshForestMaterial(): void { landuse?.refreshForest(); publishForest(true); },
-    terrainReady(): void { complete = true; needsPlacement = true; recalculate(); },
+    terrainReady(): void { complete = true; citySearchRequested = false; needsPlacement = !options.city; recalculate(); },
     terrainFailed(message: string): void {
       complete = false; ++id; clearTimeout(timer);
       el('setGenerate').removeAttribute('aria-busy');
@@ -569,7 +608,7 @@ import { executionRuntime } from './executionProfile';
 
 /** City Bench implantation choices; every site type is required first, then relaxed with a warning. */
 const IMPLANTATIONS: [string, string][] = [
-  ['fixed', 'Position fixe (centre ou placée à la main)'], ['auto', 'Stratégie automatique'],
+  ['fixed', 'Position conservée ou placée à la main'], ['auto', 'Stratégie automatique'],
   ['harbor', 'Côte, port'], ['estuary', 'Estuaire'], ['bridge', 'Bord de rivière, pont'], ['meander', 'Méandre'],
   ['confluence', 'Confluence'], ['lakeshore', 'Rive de lac'], ['island', 'Île'],
   ['hilltop', 'Colline'], ['spur', 'Hauteur fortifiée, éperon'], ['pass', 'Col de montagne'],

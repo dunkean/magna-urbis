@@ -253,37 +253,66 @@ fn deck_height(r: &Land) -> Vec<f32> {
             _ => None,
         })
         .collect();
+    // Preserve the synchronous D8 propagation: a wave only reads heights committed by
+    // earlier waves. Queue each unresolved cell once instead of cloning/scanning the
+    // entire raster on every wave across a wide sea or cavern.
+    let mut queued = vec![false; n * n];
+    let mut frontier = Vec::new();
+    for i in 0..n * n {
+        if h[i].is_some() {
+            continue;
+        }
+        let (x, y) = ((i % n) as isize, (i / n) as isize);
+        if D8.iter().any(|&(dx, dy)| {
+            let (xx, yy) = (x + dx, y + dy);
+            xx >= 0 && yy >= 0 && xx < n as isize && yy < n as isize
+                && h[yy as usize * n + xx as usize].is_some()
+        }) {
+            queued[i] = true;
+            frontier.push(i);
+        }
+    }
+    let mut values = Vec::new();
+    let mut next = Vec::new();
     for _ in 0..n {
-        let mut next = h.clone();
-        let mut open = false;
-        for i in 0..n * n {
-            if h[i].is_some() {
-                continue;
-            }
+        if frontier.is_empty() {
+            break;
+        }
+        values.clear();
+        for &i in &frontier {
             let (x, y) = ((i % n) as isize, (i / n) as isize);
             let (mut sum, mut count) = (0.0, 0);
+            // Same f32 accumulation order as the full-grid implementation.
             for (dx, dy) in D8 {
                 let (xx, yy) = (x + dx, y + dy);
-                if xx >= 0
-                    && yy >= 0
-                    && xx < n as isize
-                    && yy < n as isize
+                if xx >= 0 && yy >= 0 && xx < n as isize && yy < n as isize
                     && let Some(v) = h[yy as usize * n + xx as usize]
                 {
                     sum += v;
                     count += 1;
                 }
             }
-            if count > 0 {
-                next[i] = Some(sum / count as f32);
-            } else {
-                open = true;
+            debug_assert!(count > 0);
+            values.push(sum / count as f32);
+        }
+        for (&i, &v) in frontier.iter().zip(&values) {
+            h[i] = Some(v);
+        }
+        next.clear();
+        for &i in &frontier {
+            let (x, y) = ((i % n) as isize, (i / n) as isize);
+            for (dx, dy) in D8 {
+                let (xx, yy) = (x + dx, y + dy);
+                if xx >= 0 && yy >= 0 && xx < n as isize && yy < n as isize {
+                    let j = yy as usize * n + xx as usize;
+                    if h[j].is_none() && !queued[j] {
+                        queued[j] = true;
+                        next.push(j);
+                    }
+                }
             }
         }
-        h = next;
-        if !open {
-            break;
-        }
+        std::mem::swap(&mut frontier, &mut next);
     }
     h.iter()
         .zip(&r.height)
@@ -370,4 +399,172 @@ fn distance(n: usize, cell: f64, mask: impl Fn(usize) -> bool) -> (Vec<f64>, Vec
         }
     }
     (d, source)
+}
+
+#[cfg(test)]
+fn deck_height_legacy(r: &Land) -> Vec<f32> {
+    let n = r.n;
+    let mut h: Vec<Option<f32>> = (0..n * n)
+        .map(|i| match r.water[i] {
+            0 => Some(r.height[i]),
+            2 if r.water_level[i] > r.height[i] => Some(r.water_level[i]),
+            _ => None,
+        })
+        .collect();
+    for _ in 0..n {
+        let mut next = h.clone();
+        let mut open = false;
+        for i in 0..n * n {
+            if h[i].is_some() {
+                continue;
+            }
+            let (x, y) = ((i % n) as isize, (i / n) as isize);
+            let (mut sum, mut count) = (0.0, 0);
+            for (dx, dy) in D8 {
+                let (xx, yy) = (x + dx, y + dy);
+                if xx >= 0
+                    && yy >= 0
+                    && xx < n as isize
+                    && yy < n as isize
+                    && let Some(v) = h[yy as usize * n + xx as usize]
+                {
+                    sum += v;
+                    count += 1;
+                }
+            }
+            if count > 0 {
+                next[i] = Some(sum / count as f32);
+            } else {
+                open = true;
+            }
+        }
+        h = next;
+        if !open {
+            break;
+        }
+    }
+    h.iter()
+        .zip(&r.height)
+        .map(|(v, &g)| v.unwrap_or(g))
+        .collect()
+}
+
+
+#[cfg(test)]
+mod deck_frontier_tests {
+    use super::*;
+    use crate::settlements::{Config, SettlementSpec};
+
+    fn fixture(n: usize, kind: usize) -> Land {
+        let mut r = Land {
+            width: n as f64 * 40.0,
+            n,
+            height: (0..n*n).map(|i| 5.0 + ((i * 37 + i / n * 11) % 173) as f32 / 13.0).collect(),
+            water: vec![0; n*n],
+            water_level: vec![24.125; n*n],
+            river_width: vec![0.0; n*n],
+            river_ids: vec![-1; n*n],
+        };
+        for y in 0..n {
+            for x in 0..n {
+                let i = y*n+x;
+                r.water[i] = match kind {
+                    0 => 0, // all dry
+                    1 => 1, // no height sources; preserve original ground fallback
+                    2 => if x < (n/8).max(1) { 0 } else { 1 },
+                    3 => if x == 0 || y == 0 || x+1 == n || y+1 == n { 0 } else { 3 },
+                    4 => if (x == n/2 && y == n/2) || (x+y)%17 == 0 { 0 } else { 1 },
+                    5 => 2, // lake decks are sources
+                    6 => { r.water_level[i] = -30.0; 2 }, // cavern rock is not a source
+                    _ => ((i*19+x*3+y*7)%4) as u8,
+                };
+                if r.water[i] == 3 {
+                    r.river_width[i] = 12.5;
+                    r.river_ids[i] = (x % 3) as i32;
+                }
+            }
+        }
+        r
+    }
+    fn raster(r: &Land) -> Raster<'_> {
+        Raster { width: r.width, n: r.n, height: &r.height, water: &r.water,
+            water_level: &r.water_level, river_width: &r.river_width, river_ids: &r.river_ids }
+    }
+    fn assert_bits(r: &Land) {
+        let before = deck_height_legacy(r);
+        let after = deck_height(r);
+        assert_eq!(before.len(), after.len());
+        for (i, (a, b)) in before.iter().zip(&after).enumerate() {
+            assert_eq!(a.to_bits(), b.to_bits(), "cell {i}, n {}", r.n);
+        }
+    }
+
+    #[test]
+    fn settlement_deck_frontier_matches_legacy_bits_all_water_classes_and_converging_waves() {
+        for n in [1, 2, 3, 7, 16, 31, 64] {
+            for kind in 0..8 { assert_bits(&fixture(n, kind)); }
+        }
+    }
+
+    #[test]
+    fn settlement_deck_frontier_matches_legacy_bits_wide_sea_islands_and_rock() {
+        for kind in [2, 3, 4, 6] { assert_bits(&fixture(128, kind)); }
+    }
+
+    #[test]
+    fn settlement_deck_frontier_preserves_placement_scores_seed_and_explicit_position() {
+        let r = fixture(64, 2);
+        let fast = Fields::new(raster(&r));
+        let mut reference = Fields::new(raster(&r));
+        reference.route_height = deck_height_legacy(&reference.r);
+        assert_eq!(fast.route_height.iter().map(|x|x.to_bits()).collect::<Vec<_>>(),
+            reference.route_height.iter().map(|x|x.to_bits()).collect::<Vec<_>>());
+        let position = Point { x: 100.25, y: 1200.75 };
+        let mut cfg = Config { mode: "list".into(), list: vec![
+            SettlementSpec { key: "pinned".into(), population: 300, position: Some(position), ..Default::default() },
+            SettlementSpec { key: "auto".into(), population: 150, site_type: "bridge".into(), ..Default::default() },
+        ], ..Default::default() };
+        for seed in ["placement-frontier-a", "placement-frontier-b"] {
+            for manual in [true, false] {
+                cfg.list[0].position = manual.then_some(position);
+                let a = crate::settlements::placement::place(seed, &reference, &cfg);
+                let b = crate::settlements::placement::place(seed, &fast, &cfg);
+                assert_eq!(serde_json::to_vec(&a).unwrap(), serde_json::to_vec(&b).unwrap());
+                if manual {
+                    let pinned = b.settlements.iter().find(|s| s.spec.key == "pinned").unwrap();
+                    assert_eq!(pinned.center, position);
+                    assert!(pinned.scores.manual);
+                }
+            }
+        }
+    }
+
+    /// Short algorithm-only A/B, not a whole-placement CPU or UI latency claim.
+    #[test]
+    #[ignore = "root-only short deck propagation A/B"]
+    fn settlement_deck_frontier_short_benchmark() {
+        use std::{hint::black_box, time::Instant};
+        let mut rows = Vec::new();
+        for n in [128, 256] {
+            let r = fixture(n, 2);
+            assert_bits(&r);
+            for round in 0..3 {
+                for fast_first in [false, true] {
+                    let order = if fast_first { [true, false] } else { [false, true] };
+                    for frontier in order {
+                        let begin = Instant::now();
+                        let values = if frontier { deck_height(black_box(&r)) } else { deck_height_legacy(black_box(&r)) };
+                        black_box(&values);
+                        rows.push(serde_json::json!({"n":n,"round":round,"frontier":frontier,
+                            "elapsed_ms":begin.elapsed().as_secs_f64()*1000.0,"cells":values.len()}));
+                    }
+                }
+            }
+        }
+        let result = serde_json::json!({"scope":"deck_height only; same raster and f32 bits; not whole placement or browser latency", "rows":rows});
+        let out = std::env::var("SETTLEMENT_DECK_PROOF_OUT").expect("SETTLEMENT_DECK_PROOF_OUT JSON path");
+        assert!(!std::path::Path::new(&out).exists(), "fresh proof output required");
+        std::fs::write(out, serde_json::to_vec_pretty(&result).unwrap()).unwrap();
+        println!("{result}");
+    }
 }

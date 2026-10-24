@@ -1,0 +1,55 @@
+{
+  "origin": {
+    "path": "web/decors/city-04-mountain-bay-s.decor",
+    "sha256": "0800824f502ccd835212e92aa5a6cdb40438b67c80afdac881c11c5798d3b5af",
+    "scope": "Retained actual decor settlement metadata only; no new native generation, admission or capacity proof."
+  },
+  "settlement": {
+    "key": "city",
+    "name": "Baie montagneuse méditerranéenne",
+    "population": 5000,
+    "culture": "roman-core",
+    "kind": "settlement",
+    "siteType": "auto",
+    "position": {
+      "x": 2000,
+      "y": 2000
+    },
+    "sitePrefs": {
+      "mountainFace": 0,
+      "woodland": 0,
+      "weights": {}
+    },
+    "center": {
+      "x": 2000,
+      "y": 2000
+    },
+    "cls": "town",
+    "archetype": "harbor",
+    "radius": 561.7894090783491,
+    "scores": {
+      "total": 1.1056030016380891,
+      "rankingScore": null,
+      "candidateRank": null,
+      "rankingPopulation": null,
+      "flatness": 0,
+      "buildable": 0.29505442325955145,
+      "freshWater": 0,
+      "river": 0,
+      "harbor": 1,
+      "flood": 0,
+      "culture": 0,
+      "site": 0,
+      "defense": 0,
+      "elevation": 0,
+      "cluster": 0,
+      "variation": -0.18945142162146214,
+      "buildableFraction": 0.21075315947110818,
+      "waterDistance": 578.125,
+      "slope": 0.2874498963356018,
+      "heightAboveWater": 123.06282806396484,
+      "spacingRelaxation": 1,
+      "manual": true
+    }
+  }
+}
