@@ -582,9 +582,12 @@ fn seeded_open_fringe_leaves_reserves_while_wall_town_keeps_a_defined_edge() {
     let seed = "urban-fringe-3";
     let open = run(seed, &site, &cfg, surface, &roads);
     assert!(open.enclosures.is_empty());
+    // Peripheral vacancy is exercised, and its edge land returns to the
+    // countryside instead of a fringe of empty blocks.
     assert!(
-        open.blocks.iter().any(|b| b.kind == "reserve"),
-        "the open seed must exercise peripheral vacancy"
+        open.warnings.iter().any(|w| w.starts_with("Terre vacante rendue")),
+        "the open seed must exercise peripheral vacancy: {:?}",
+        open.warnings
     );
     cfg.fortification = "wall".into();
     let walled = run(seed, &site, &cfg, surface, &roads);

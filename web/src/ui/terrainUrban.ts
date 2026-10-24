@@ -1812,7 +1812,19 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
     options.onFocus({ x: (minX + maxX) / 2, y: (minY + maxY) / 2 }, Math.max(maxX - minX, maxY - minY) / 2);
   };
   populate('quarters'); populate('parcels'); editsReport();
+  // Plan layers hidden together (map toggle "Plan de ville"): buildings,
+  // streets and walls stay. The previous choices come back when shown again.
+  const PLAN_LAYERS = ['blocks', 'parcels', 'gardens', 'places', 'domains', 'allocated', 'reserve'] as const;
+  let planSaved: Partial<Record<(typeof PLAN_LAYERS)[number], boolean>> | undefined;
   return {
+    get planVisible(): boolean { return !planSaved; },
+    setPlanVisible(visible: boolean): void {
+      if (visible === !planSaved) return;
+      if (!visible) { planSaved = Object.fromEntries(PLAN_LAYERS.map(k => [k, render[k]])); for (const k of PLAN_LAYERS) render[k] = false; }
+      else { for (const k of PLAN_LAYERS) render[k] = planSaved?.[k] ?? render[k]; planSaved = undefined; }
+      for (const e of Array.from(rendering.querySelectorAll<HTMLInputElement>('input[data-render]'))) if (e.type === 'checkbox') e.checked = Boolean(render[e.dataset.render as keyof Render]);
+      draw(); options.onChange();
+    },
     captureContext: () => clone({ layoutConfig, parcelConfig, quarterSeed, parcelSeed, dirty }),
     restoreContext(saved: { layoutConfig: LayoutConfig; parcelConfig: ParcelConfig; quarterSeed: string; parcelSeed: string; dirty: Record<Kind, boolean> }): void {
       layoutConfig = normalizeLayoutConfig(saved.layoutConfig, true); parcelConfig = normalizeParcelConfig(saved.parcelConfig);
