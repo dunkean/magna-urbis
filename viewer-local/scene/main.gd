@@ -2,6 +2,7 @@ extends Node3D
 
 const Data = preload("res://adapters/surface_data.gd")
 const Library = preload("res://adapters/material_library.gd")
+const VegetationLibrary=preload("res://adapters/surface_vegetation_library.gd")
 const ShaderSource = preload("res://adapters/surface_shader.gd")
 const Geometry = preload("res://adapters/surface_geometry.gd")
 const ScenePrepare = preload("res://adapters/surface_scene_prepare.gd")
@@ -16,6 +17,8 @@ var options: Dictionary = {}
 var camera := Camera3D.new()
 var sun := DirectionalLight3D.new()
 var library := Library.new()
+var vegetation_library:=VegetationLibrary.new()
+var vegetation_materials:Array=[]
 var terrain: Node3D
 var objects := Node3D.new()
 var origin: Dictionary = {"x":0.0,"y":0.0,"z":0.0}
@@ -198,6 +201,8 @@ func _ready() -> void:
 	oblique = options.has("--oblique") or (not options.has("--top") and presentation_mode!="cartographic")
 	stream_directory = options.get("--stream-dir", "")
 	library.load_manifest(options.get("--assets", ""))
+	if options.has("--vegetation-assets") and not vegetation_library.load_manifest(str(options["--vegetation-assets"])):
+		push_error(vegetation_library.last_error);get_tree().quit(2);return
 	_setup_lighting()
 	camera.name = "RelativeCamera"
 	camera.fov = 48.0
@@ -451,6 +456,7 @@ func _update_camera() -> void:
 	for material in canopy_materials:
 		material.set_shader_parameter("canopy_reference_y",reference_y)
 		_set_canopy_main_camera(material,main_projection,main_size)
+	for material in vegetation_materials:_set_vegetation_main_camera(material)
 	_update_canopy_phase(0.0)
 
 func _build_scene_objects(prepared: Dictionary) -> void:
@@ -459,6 +465,7 @@ func _build_scene_objects(prepared: Dictionary) -> void:
 	var presentation_mode:String=rendered_presentation_mode
 	scene_top_y=-INF
 	canopy_materials.clear()
+	vegetation_materials.clear()
 	for child in objects.get_children():
 		if not canopy_pending.is_empty() and child.get_meta("surfaceLayer","")=="trees" and not child.get_meta("canopyStaged",false):
 			var previous_origin:Dictionary=child.get_meta("canopyRenderOrigin",origin)
@@ -603,6 +610,9 @@ func _build_populations(populations: Dictionary) -> void:
 	for family in families:
 		var visible: Array = families[family]
 		if visible.is_empty(): continue
+		if family=="grass" and presentation_mode=="aerial" and not vegetation_library.variants.is_empty():
+			_build_asset_grass(visible,populations.buffers.grass)
+			continue
 		var mesh: Mesh
 		var mat := StandardMaterial3D.new()
 		if family == "tree" or family == "shrub":
@@ -686,6 +696,27 @@ func _build_populations(populations: Dictionary) -> void:
 			trunk_instance.set_meta("canopyRenderOrigin",origin.duplicate())
 			trunk_instance.multimesh = trunks
 			objects.add_child(trunk_instance)
+
+func _set_vegetation_main_camera(material:ShaderMaterial)->void:
+	material.set_shader_parameter("main_camera_view",camera.get_camera_transform().affine_inverse())
+	material.set_shader_parameter("main_camera_projection",camera.get_camera_projection())
+	material.set_shader_parameter("main_viewport_size",get_viewport().get_visible_rect().size)
+
+func _build_asset_grass(candidates:Array,buffer:PackedFloat32Array)->void:
+	var batches=VegetationLibrary.partition(candidates,buffer,vegetation_library.variants.size())
+	for batch in batches:
+		if batch.ids.is_empty():continue
+		var variant:Dictionary=vegetation_library.variants[batch.variant]
+		var mesh:Mesh=variant.mesh.duplicate()
+		var material=vegetation_library.material();vegetation_materials.append(material)
+		_set_vegetation_main_camera(material);mesh.surface_set_material(0,material)
+		var multi=MultiMesh.new();multi.transform_format=MultiMesh.TRANSFORM_3D
+		multi.use_custom_data=true;multi.use_colors=true;multi.mesh=mesh
+		multi.instance_count=batch.ids.size();multi.buffer=batch.buffer
+		var instance=MultiMeshInstance3D.new();instance.name="grass_cc0_"+str(batch.variant)
+		instance.set_meta("populationFamily","grass");instance.set_meta("surfaceLayer","lowCover")
+		instance.set_meta("vegetationAsset",{"assetDigest":vegetation_library.version.digest,"variant":variant.id,"triangleCount":variant.triangleCount})
+		instance.layers=2;instance.multimesh=multi;objects.add_child(instance)
 
 func _process(delta: float) -> void:
 	if world.is_empty(): return
@@ -1035,7 +1066,7 @@ func _quantile(values: Array[float], fraction: float) -> Variant:
 
 func _write_metrics() -> void:
 	var metrics := {"godot":Engine.get_version_info().string,"terrain3d":"1.0.2","backend":RenderingServer.get_current_rendering_method(),"adapter":RenderingServer.get_video_adapter_name(),"worldId":rendered_world_id,"source":rendered_source,"requestedWorldId":world.id,"requestedSource":world.terrain.source,"resolution":[get_viewport().get_visible_rect().size.x,get_viewport().get_visible_rect().size.y],"frames":frame_times.size(),"frameWallMs":{"p50":_quantile(frame_times,0.5),"p95":_quantile(frame_times,0.95),"p99":_quantile(frame_times,0.99)},"navigationFrameWallMs":{"p50":_quantile(all_frame_times,0.5),"p95":_quantile(all_frame_times,0.95),"p99":_quantile(all_frame_times,0.99),"max":_quantile(all_frame_times,1.0)},"cpuScriptMs":{"samples":process_times.size(),"p50":_quantile(process_times,0.5),"p95":_quantile(process_times,0.95),"p99":_quantile(process_times,0.99),"max":_quantile(process_times,1.0),"scope":"entire viewer _process including initial and first30 post-apply frames; engine/input callbacks excluded; wall/GPU metrics reported separately"},"prepareMs":prepare_times,"uploadAndObjectsMs":upload_times,"regionCounts":region_counts,"preparationSnapshots":preparation_snapshots,"videoMemoryBytes":Performance.get_monitor(Performance.RENDER_VIDEO_MEM_USED),"textureMemoryBytes":Performance.get_monitor(Performance.RENDER_TEXTURE_MEM_USED),"drawCalls":Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME),"objects":selected_candidates,"roadProjectors":road_projector_count,"candidateCount":candidate_count,"cpuFrameMs":null,"cpuTimeNote":"cpuScriptMs measures this viewer script only; full engine CPU frame/pass timing is not available here.","gpuRenderMs":{"p50":_quantile(gpu_render_times,0.5),"p95":_quantile(gpu_render_times,0.95),"p99":_quantile(gpu_render_times,0.99)},"cpuRenderMs":{"p50":_quantile(cpu_render_times,0.5),"p95":_quantile(cpu_render_times,0.95)},"gpuTimeNote":"RenderingServer measured viewport render time; null when the backend returns no positive samples. Frame wall time separately includes vsync, uploads and driver stalls."}
-	metrics["renderSourceVersion"]={"assetVersion":library.asset_version,"assetDigest":library.asset_digest,"assetBindings":library.loaded_asset_bindings,"presentation":Presentation.profile(rendered_packet,rendered_presentation_mode),"geometryDetail":rendered_geometry_detail}
+	metrics["renderSourceVersion"]={"assetVersion":library.asset_version,"assetDigest":library.asset_digest,"assetBindings":library.loaded_asset_bindings,"vegetationAssets":vegetation_library.version,"vegetationApplied":rendered_presentation_mode=="aerial" and not vegetation_library.variants.is_empty(),"presentation":Presentation.profile(rendered_packet,rendered_presentation_mode),"geometryDetail":rendered_geometry_detail}
 	metrics["liveHttpEvents"]=live_http_events
 	metrics["viewSatisfiedSerial"]=view_satisfied_serial
 	metrics["viewSatisfaction"]=view_satisfaction
