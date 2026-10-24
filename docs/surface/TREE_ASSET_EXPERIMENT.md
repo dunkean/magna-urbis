@@ -1,4 +1,10 @@
-# Experimental tree consumer: staged implementation
+# Experimental tree consumer
+
+The opt-in renderer is now implemented by `--tree-assets <resolved.json>` in
+aerial views. Its budget, filtering certificate and approximations are described
+in [the renderer contract](evidence/vegetation-tree-v13/EXPERIMENTAL_RENDERER.md).
+The staged data-loader description below remains the basis of its source/asset
+separation. CPU checks do not substitute for the subsequent GPU/campaign results.
 
 The prepared CC0 asset and its limitations are recorded in
 [the offline evidence](evidence/vegetation-tree-v13/README.md). This document
@@ -30,6 +36,5 @@ snapshot identity to preserve worker-cache reuse.
 
 The optional headless import test inspects the actual three-surface134k mesh and
 NormalGL/roughness/albedo bindings. This remains a CPU import/parser test, not a
-GPU render or artistic acceptance. The tree CLI/render branch follows in a
-separate commit; absent that explicit experimental profile, legacy rendering
-continues unchanged.
+GPU render or artistic acceptance. Without the explicit experimental profile,
+legacy rendering continues unchanged.

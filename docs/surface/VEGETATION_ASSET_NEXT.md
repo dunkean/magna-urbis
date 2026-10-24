@@ -1,5 +1,11 @@
 # Prochaine étape artistique : végétation proche
 
+Cette page conserve l'audit initial, avant import. Les travaux exécutés depuis
+sont documentés séparément : [herbes GPU](evidence/vegetation-grass-v13/README.md),
+[préparation des arbres](evidence/vegetation-tree-v13/README.md),
+[consommateur expérimental](TREE_ASSET_EXPERIMENT.md) et
+[audit optique indépendant](TREE_OPTICAL_INDEPENDENT_REVIEW.md).
+
 Audit du 24 octobre 2026, pendant la revue Opus V12. Proposition uniquement : aucun import, téléchargement de géométrie, code runtime, test GPU ou changement ROOT. V12 reste figé. Les chiffres ci-dessous viennent des métadonnées et des petits documents glTF officiels consultés ; ils ne mesurent pas le rendu.
 
 ## Constat et première étape bornée

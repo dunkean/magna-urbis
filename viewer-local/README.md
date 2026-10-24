@@ -48,6 +48,23 @@ au digest. `loaded_asset_bindings` expose les couches et leurs moyennes linéair
 Cette provenance de rendu reste distincte de `World.versions.materialLibrary`,
 qui décrit les recettes du modèle canonique.
 
+Les assets végétaux ont leurs manifestes séparés :
+`--vegetation-assets C:/data/grass/resolved.json` active les touffes CC0 en vue
+aérienne ; `--tree-assets C:/data/tree/resolved.json` active le chemin expérimental
+d'arbres, avec maillage proche, imposteurs et masque optique commun. Les glyphes
+cartographiques gardent leur présentation. Ces options ne changent aucune hauteur,
+identité de candidat, roche ou rivière. Voir la
+[préparation des arbres](../docs/surface/TREE_ASSET_EXPERIMENT.md) et les
+[preuves des herbes](../docs/surface/evidence/vegetation-grass-v13/README.md).
+Le driver de campagne transmet respectivement `--viewer-vegetation-assets` et
+`--viewer-tree-assets` et vérifie les manifestes au début et à la fin.
+
+Le compilateur `surface-1.6.0` fournit la
+[réponse continue du sol](../docs/surface/GROUND_RESPONSE.md) : les paramètres
+physiques sont interpolés avant la recette. Les anciens paquets gardent leur
+ancien rendu ; le lecteur ne reconstruit pas des sols fins depuis leurs couleurs.
+Sol, herbes/litière et arbres restent trois couches indépendantes.
+
 ## Vues et styles de carte
 
 ```powershell
