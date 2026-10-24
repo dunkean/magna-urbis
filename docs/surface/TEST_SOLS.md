@@ -13,7 +13,7 @@ depuis la racine de ce worktree, dans PowerShell :
 
 Le défaut est une vue TOP aérienne de 40 m, centrée sur 20000/20000.
 `-Check` valide les fichiers locaux sans ouvrir Godot ni utiliser le GPU.
-`-Style` accepte `aerial`, les styles de terrain et les palettes du catalogue
+`-Style` accepte `aerial` et les neuf palettes du catalogue
 partagé `surface/presentation/palettes.json`. Un style de carte active le mode
 cartographique ; il ne transforme pas la recette physique du sol. L'expérience
 R4 reste explicitement distincte du Render de production et artistiquement
@@ -42,6 +42,10 @@ La démo V15 n'est ni relancée ni modifiée par ce lanceur. Le centre est trans
 Voir [la loi et ses limites](SURFACE_DETAIL_DISTRIBUTION.md). Les contrôles de
 ce lanceur portent sur les entrées et arguments ; une exécution interactive du
 wrapper reste une vérification séparée.
+
+Les effets de pinceau, d'encre et la mise en page finale du rendu web ne sont
+pas reproduits par ces aperçus natifs. Render3D et Render3DBrush ne sont pas
+présentés comme des styles supplémentaires de cette démo.
 
 Palettes disponibles : `parchment`, `atlas`, `watabou`, `engraving`, `cadastre`,
 `blueprint`, `illuminated`, `topographic`, `night`. Le wrapper peut proposer
