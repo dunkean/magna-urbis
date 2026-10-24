@@ -31,9 +31,27 @@ export function verifyExplicitLayerCapture(capture:unknown,packet:unknown,visibi
 
 /** Source-map visibility is distinct from a physical water/bed consistency test.
  * A retained source can conflict with a refined bed without losing map authority. */
-export function verifyWaterCapture(capture:unknown,options:{requireSourceMap?:boolean;allowEmptySourceMap?:boolean;waterSymbolWidthPx?:number;screenMetresPerPixel?:number}={}):Row {
+export function verifyWaterCapture(capture:unknown,options:{requireSourceMap?:boolean;allowEmptySourceMap?:boolean;waterSymbolWidthPx?:number;screenMetresPerPixel?:number;waterVectorTint?:'source-classes'|'uniform'}={}):Row {
   if(!record(capture)||!record(capture.renderedSnapshot)||!record(capture.water))throw new Error('Missing per-view water authority/representation evidence');
   const water=capture.water;
+  const expectedUniform=options.waterVectorTint==='uniform';
+  if(options.waterVectorTint!==undefined&&!['source-classes','uniform'].includes(options.waterVectorTint))throw new Error('Unknown requested water vector tint');
+  if(['uniformVectorTint','sourceVectorTintVersion','sourceVectorTintPolicy'].some(key=>water[key]!==undefined)
+    &&(typeof water.uniformVectorTint!=='boolean'||water.sourceVectorTintVersion!=='source-vector-tint-1'
+      ||water.sourceVectorTintPolicy!==(water.uniformVectorTint?'uniform-untyped-vectors-explicit-sea':'source-classes')))
+    throw new Error('Inconsistent water vector tint metadata');
+  if(expectedUniform||water.uniformVectorTint===true){
+    if(!expectedUniform||water.uniformVectorTint!==true||water.sourceVectorTintVersion!=='source-vector-tint-1'
+      ||water.sourceVectorTintPolicy!=='uniform-untyped-vectors-explicit-sea'||water.sourceWaterPartitionAvailable!==true
+      ||water.waterPresentation!=='source-map-terrain-projection'||water.authority!=='magna-urbis-fixed-hydrology'||water.fixedVectorDisplayAvailable!==true)
+      throw new Error('Undeclared, missing or non-source-map uniform vector tint');
+    const vector=water.sourceVectorVertexCount,sea=water.sourceSeaVertexCount,total=water.sourceVertices;
+    if([vector,sea,total].some(n=>!Number.isSafeInteger(n)||n<0||n%3!==0)||total>999996||vector+sea!==total)throw new Error('Uniform vector tint hides the original vector/sea partition');
+    const colors=['vectorLinearTint','bankSymbolLinearTint','seaLinearTint'];
+    if(colors.some(key=>!Array.isArray(water[key])||water[key].length!==3||water[key].some((n:unknown)=>!nonnegative(n)))
+      ||water.vectorLinearTint.some((n:number,i:number)=>n!==water.bankSymbolLinearTint[i])
+      ||water.vectorTintClassClaim!=='untyped retained vector polygons; explicit sea union only')throw new Error('Uniform vector tint invents a class or changes the declared fill/bank tint');
+  }
   const expectedSymbol=options.waterSymbolWidthPx??0,actualSymbol=water.symbolWidthPx??0;
   if(!finite(expectedSymbol)||expectedSymbol<0||expectedSymbol>1.25||!finite(actualSymbol)||Math.abs(actualSymbol-expectedSymbol)>1e-12)throw new Error('Undeclared or unrequested water symbology');
   if(water.worldId!==capture.renderedSnapshot.worldId||typeof water.authority!=='string'||!water.authority)throw new Error('Water evidence differs from the displayed world');

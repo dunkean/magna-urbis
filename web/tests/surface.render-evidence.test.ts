@@ -33,6 +33,19 @@ describe('new rendered layer and fixed source-map evidence',()=>{
     const{capture}=fixture();expect(verifyWaterCapture(capture,{requireSourceMap:true})).toBe(capture.water);
     expect(capture.water.vectorBedDiagnosticConflicts).toBeGreaterThan(0);expect(capture.water.physicalWaterSurfaceClaimed).toBe(false);
   });
+  it('qualifies only the explicitly requested uniform tint with an exact original batch partition',()=>{
+    const {capture}=fixture();const water:any=capture.water;
+    Object.assign(water,{sourceVectorTintVersion:'source-vector-tint-1',sourceVectorTintPolicy:'uniform-untyped-vectors-explicit-sea',uniformVectorTint:true,
+      sourceWaterPartitionAvailable:true,sourceVectorVertexCount:540,sourceSeaVertexCount:60,vectorLinearTint:[.028,.1,.115],bankSymbolLinearTint:[.028,.1,.115],seaLinearTint:[.018,.095,.125],vectorTintClassClaim:'untyped retained vector polygons; explicit sea union only'});
+    expect(verifyWaterCapture(capture,{waterVectorTint:'uniform'})).toBe(water);
+    expect(()=>verifyWaterCapture(capture)).toThrow(/Undeclared/);
+    expect(()=>verifyWaterCapture(fixture().capture,{waterVectorTint:'uniform'})).toThrow(/missing/);
+    for(const change of [{uniformVectorTint:false},{waterPresentation:'physical-depth-tested'},{sourceVectorTintPolicy:'invent-river'},
+      {sourceWaterPartitionAvailable:false},{sourceVectorVertexCount:539},{sourceSeaVertexCount:0},{sourceVectorVertexCount:NaN},
+      {vectorLinearTint:[.028,.1,NaN]},{bankSymbolLinearTint:[.1,.1,.1]},{vectorTintClassClaim:'all polygons are rivers'}]){
+      const bad=structuredClone(capture);Object.assign(bad.water,change);expect(()=>verifyWaterCapture(bad,{waterVectorTint:'uniform'})).toThrow();
+    }
+  });
   it('keeps the regional nonempty-vector gate while allowing only an explicitly empty near projection',()=>{
     const{capture}=fixture();const water:any=capture.water;
     Object.assign(water,{empty:true,sourceVectorRequestedAreaM2:0,sourceVectorAreaM2:0,sourceVertices:0});

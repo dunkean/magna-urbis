@@ -53,8 +53,9 @@ Le driver transmet aussi le manifeste de végétation par
   Les arbres avec LOD et masque de canopée cohérent restent en préparation.
 - Sol : diagnostiquer les réponses des paramètres physiques continus avant une
   éventuelle révision du contexte ; aucune texture floutée pour cacher les 78 m.
-- Eau : les [six canaux isolés](HYDROLOGY_V13_DIAGNOSTIC.md) distinguent support
-  alluvial et composite ; une option de teinte cohérente est encore en cours.
+- Eau : les [six canaux isolés et l'A/B de teinte](HYDROLOGY_V13_DIAGNOSTIC.md)
+  distinguent support alluvial et composite. L'option uniforme passe ses contrôles
+  GPU sans modifier l'alpha, les classes ou la géométrie ; le défaut reste inchangé.
 - Bord : la [capture 40 km](evidence/source-edge-v13/40000m.png) vérifie une bande
   de ciel de deux pixels conforme au domaine réel, sans étendre les hauteurs source.
 

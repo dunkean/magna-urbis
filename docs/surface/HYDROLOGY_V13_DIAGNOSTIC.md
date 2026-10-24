@@ -47,6 +47,20 @@ peut harmoniser fill et symbole sans leur inventer une classe ; elle demande
 son propre A/B. Aucun dépôt alluvial, contour, niveau ou largeur source n'est
 modifié par ces diagnostics.
 
+Cet [A/B de teinte](evidence/water-tint-v13.json) passe désormais sur `cb37de2` :
+les douze PNG du mode historique sont byte-exacts aux contrôles précédents,
+et tous les canaux alpha restent byte-exacts en mode uniforme. Classes, source
+et sommets restent identiques. À (1935,246), fill et symbole ont maintenant la
+même teinte, sans modifier les trois points alluviaux. Une fixture GPU séparée
+de deux triangles vérifie réellement `VERTEX_ID` pour vecteur/mer ; ces six
+fenêtres ne contiennent pas de mer réelle. La fixture n'est pas une nouvelle
+preuve géographique.
+
+`--water-vector-tint uniform` active cette représentation ; `source-classes`
+reste le défaut. Le driver reçoit `--viewer-water-vector-tint uniform` et vérifie
+à chaque capture la politique, les partitions, la teinte fill/rive et l'absence
+de nouvelle classe. Le mode physique `source-levels` refuse cette option.
+
 Le diagnostic `ground-mean-unlit` masque désormais tous les objets, y compris
 les Decals d'eau et de route, pour mesurer le terrain seul. V12 conservait ces
 Decals : son diagnostic était utile pour localiser le défaut, mais ne séparait
