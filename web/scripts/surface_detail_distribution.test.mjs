@@ -1,32 +1,41 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-import {detailRank,intervalMass,redistributeDetail,homotheticSquareRank,mergeRecipeProbabilities,reanchorDetailMean,detailDistributionPhases,DETAIL_BANDS} from '../src/surface/detailDistribution.ts';
+import {detailRank,intervalMass,redistributeDetail,detailNormalCdf,detailGaussianValue,detailGaussianVertex,createDetailDistributionSampler,mergeRecipeProbabilities,reanchorDetailMean,detailDistributionPhases,DETAIL_BANDS} from '../src/surface/detailDistribution.ts';
 const near=(a,b,tolerance=1e-10)=>assert.ok(Math.abs(a-b)<=tolerance,`${a} versus ${b}`);
-test('homothetic area rank is calibrated independently of hashed centre; inverse-warp cell histograms',()=>{
-  const n=256,probabilities=[.01,.1,.3,.7,.99];
-  for(const [cx,cz]of[[.25,.75],[.5,.5],[.73,.31]]){
-    const inside=probabilities.map(()=>0);
-    for(let z=0;z<n;z++)for(let x=0;x<n;x++){
-      const rank=homotheticSquareRank((x+.5)/n,(z+.5)/n,cx,cz);
-      probabilities.forEach((p,i)=>inside[i]+=rank<=p?1:0);
-    }
-    inside.forEach((count,i)=>near(count/n**2,probabilities[i],.008));
+test('normal CDF agrees with independent Simpson integration; Gaussian vertex moments/bands',()=>{
+  for(const value of [-6,-3,-1,0,.4,1,2,5]){
+    const a=Math.abs(value),n=4096,h=a/n;let sum=1+Math.exp(-a*a/2);
+    for(let i=1;i<n;i++)sum+=(i%2?4:2)*Math.exp(-((i*h)**2)/2);
+    const integral=sum*h/(3*Math.sqrt(2*Math.PI));
+    near(detailNormalCdf(value),.5+(value>=0?integral:-integral),1e-6);
   }
-  for(const [ix,iz]of[[0,0],[7,-13],[-19,27],[4095,4095]]){
-    const bins=new Array(10).fill(0);
-    for(let z=0;z<n;z++)for(let x=0;x<n;x++){
-      // Independent inverse of the three unit-Jacobian shears. Uniform samples
-      // of EACH warped cell have exact area measure, unlike arbitrary RGB noise.
-      const u=ix+(x+.5)/n,v=iz+(z+.5)/n;
-      const u0=u-.16*Math.sin(2*Math.PI*v);
-      const v0=v-.22*Math.sin(2*Math.PI*u0);
-      const x0=u0-.22*Math.sin(2*Math.PI*v0);
-      bins[Math.min(9,Math.floor(detailRank(x0,v0)*10))]++;
-    }
-    bins.forEach(count=>near(count/n**2,.1,.008));
+  let maxMean=0,maxVarianceError=0,maxCorrelation=0;const n=32768;
+  const sums=[0,0,0],squares=[0,0,0],cross=[0,0,0];
+  for(let i=0;i<n;i++){
+    const g=[0,1,2].map(b=>detailGaussianVertex(i%256,Math.floor(i/256),b));
+    g.forEach((v,b)=>{assert.ok(Number.isFinite(v));sums[b]+=v;squares[b]+=v*v;});
+    cross[0]+=g[0]*g[1];cross[1]+=g[0]*g[2];cross[2]+=g[1]*g[2];
   }
-  assert.notEqual(detailRank(.33,.61),detailRank(1.33,.61),'adjacent cells must not repeat the same patch');
+  for(let b=0;b<3;b++){maxMean=Math.max(maxMean,Math.abs(sums[b]/n));maxVarianceError=Math.max(maxVarianceError,Math.abs(squares[b]/n-(sums[b]/n)**2-1));}
+  maxCorrelation=Math.max(...cross.map(v=>Math.abs(v/n)));
+  assert.ok(maxMean<.025&&maxVarianceError<.04&&maxCorrelation<.04);
+  console.log(JSON.stringify({test:'gaussian-vertices',n,maxMean,maxVarianceError,maxCrossMoment:maxCorrelation}));
+});
+test('variance-normalised Gaussian Phi has conditional uniform seed-ensemble CDF with explicit DKW bound',()=>{
+  const points=[[0,0],[.5,.5],[.13,.87]],n=32768;
+  const samples=Array.from({length:9},()=>[]);let rng=91823;
+  for(let i=0;i<n;i++){
+    rng=(Math.imul(rng,1664525)+1013904223)>>>0;const phases=detailDistributionPhases(0,0,rng);
+    for(let band=0;band<3;band++)for(let p=0;p<points.length;p++){
+      const k=band*4;samples[band*3+p].push(detailRank(points[p][0],points[p][1],phases[k],phases[k+1],phases[k+2],phases[k+3],band));
+    }
+  }
+  const dkw95=Math.sqrt(Math.log(40)/(2*n));let maximumEmpiricalError=0;
+  for(const values of samples){values.sort((a,b)=>a-b);for(let i=0;i<n;i++)maximumEmpiricalError=Math.max(maximumEmpiricalError,Math.abs(values[i]-i/n),Math.abs((i+1)/n-values[i]));}
+  const uncertaintyBound=maximumEmpiricalError+dkw95;
+  assert.ok(uncertaintyBound<.02,`Pointwise95% DKW assumption bound ${uncertaintyBound}; not an exact-area claim`);
+  console.log(JSON.stringify({test:'conditional-seed-ensemble',seeds:n,points:3,bands:3,maximumEmpiricalCdfError:maximumEmpiricalError,dkw95HalfWidth:dkw95,maximumErrorPlusDkw95:uncertaintyBound,assumption:'independent ideal seeds; actual hash is deterministic pseudorandom; pointwise not simultaneous across all profiles'}));
 });
 test('corner duplicates merge into one physical recipe interval, not alternating rings',()=>{
   const ids=Object.freeze([13,18,13,18,13,18,13,18]);
@@ -43,11 +52,7 @@ test('hashed patch layout is not the rejected one-cell periodic pattern and stay
   }
   const correlation=(ab-a*b/n)/Math.sqrt((aa-a*a/n)*(bb-b*b/n));
   assert.ok(correlation<.8,`Rejected periodic field would have correlation1, got${correlation}`);
-  for(const u of [0,1,7,-13])for(const v of [.13,.51,.87]){
-    const inverse=(u,v)=>{const a=u-.16*Math.sin(2*Math.PI*v);const b=v-.22*Math.sin(2*Math.PI*a);return[a-.22*Math.sin(2*Math.PI*b),b]};
-    const left=inverse(u-1e-7,v),right=inverse(u+1e-7,v);
-    near(detailRank(...left),detailRank(...right),1e-5);
-  }
+  for(const u of [0,1,7,-13])for(const v of [.13,.51,.87])near(detailRank(u-1e-7,v),detailRank(u+1e-7,v),1e-5);
   console.log(JSON.stringify({test:'adjacent-cell-layout',correlation}));
 });
 test('circular filtering conserves even tiny/wrapped probabilities and exact empty/full/horizon',()=>{
@@ -58,26 +63,35 @@ test('circular filtering conserves even tiny/wrapped probabilities and exact emp
     if(h===.5)near(intervalMass(.473,start,probability,h),probability,0);
   }
 });
-test('per-recipe fractions and low-cover void are conserved over four phases and four LOD filters',()=>{
-  const weights=Object.freeze([.0001,.0199,.2,.34,.44]);
-  let worst=0;
-  for(const seed of [0,.127,.371,.873])for(const footprint of [.002,.08,1.25,6]){
-    const means=weights.map(()=>0),lowMeans=[0,0,0],n=12000;let rng=17317;
-    for(let i=0;i<n;i++){
-      rng=(Math.imul(rng,1664525)+1013904223)>>>0;const x=rng/2**32*96;
-      rng=(Math.imul(rng,1664525)+1013904223)>>>0;const z=rng/2**32*96;
-      const local=redistributeDetail(weights,x,z,footprint,seed,seed*.71);
-      near(local.reduce((a,b)=>a+b,0),1,1e-9);
-      local.forEach((mass,k)=>{assert.ok(mass>=0&&mass<=1);means[k]+=mass/n;});
-      const low=redistributeDetail([.215,.285,.08],x,z,footprint,seed+.371,seed+.619);
-      assert.ok(low.reduce((a,b)=>a+b,0)<=1+1e-9);
-      low.forEach((mass,k)=>lowMeans[k]+=mass/n);
+test('per-recipe fractions and low-cover void converge over64seed blocks, not exact mass per realised patch',()=>{
+  const weights=Object.freeze([.0001,.0199,.2,.34,.44]),lowWeights=Object.freeze([.215,.285,.08]);
+  const seeds=64,positions=512;let worstError=0,worstErrorPlus95=0;const realised=[];
+  for(const footprint of [.002,.08,1.25,6]){
+    const blocks=Array.from({length:8},()=>[]);let sourceRng=17317;
+    for(let seed=0;seed<seeds;seed++){
+      sourceRng=(Math.imul(sourceRng,1664525)+1013904223)>>>0;
+      const sample=createDetailDistributionSampler(sourceRng),sampleLow=createDetailDistributionSampler(sourceRng,0,0,.371,.619);
+      const means=new Array(8).fill(0);let rng=731;
+      for(let i=0;i<positions;i++){
+        rng=(Math.imul(rng,1664525)+1013904223)>>>0;const x=rng/2**32*96;
+        rng=(Math.imul(rng,1664525)+1013904223)>>>0;const z=rng/2**32*96;
+        const ground=sample(weights,x,z,footprint),low=sampleLow(lowWeights,x,z,footprint);
+        near(ground.reduce((a,b)=>a+b,0),1,1e-9);assert.ok(low.reduce((a,b)=>a+b,0)<=1+1e-9);
+        [...ground,...low].forEach((v,k)=>{assert.ok(v>=0&&v<=1);means[k]+=v/positions;});
+      }
+      means.forEach((v,k)=>blocks[k].push(v));
     }
-    means.forEach((mean,k)=>{worst=Math.max(worst,Math.abs(mean-weights[k]));near(mean,weights[k],.015);});
-    lowMeans.forEach((mean,k)=>{const wanted=[.215,.285,.08][k];worst=Math.max(worst,Math.abs(mean-wanted));near(mean,wanted,.015);});
+    const expected=[...weights,...lowWeights];
+    blocks.forEach((values,k)=>{
+      const mean=values.reduce((a,b)=>a+b,0)/seeds;
+      const sem=Math.sqrt(values.reduce((sum,v)=>sum+(v-mean)**2,0)/(seeds-1)/seeds);
+      const error=Math.abs(mean-expected[k]),bound=error+1.96*sem;
+      worstError=Math.max(worstError,error);worstErrorPlus95=Math.max(worstErrorPlus95,bound);
+      assert.ok(bound<.02,`Seed-block mean/95%SEM bound ${bound}`);
+      realised.push({footprint,recipe:k,mean,target:expected[k],sem95:1.96*sem,realisedMinimum:Math.min(...values),realisedMaximum:Math.max(...values)});
+    });
   }
-  assert.deepEqual(weights,[.0001,.0199,.2,.34,.44]);
-  console.log(JSON.stringify({test:'per-recipe-calibration',worstAbsoluteFractionError:worst,phaseOffsets:4,filters:4,samplesPerConfiguration:12000}));
+  console.log(JSON.stringify({test:'per-recipe-seed-ensemble',seeds,positionsPerSeed:positions,filters:4,worstMeanError:worstError,worstErrorPlusBlock95:worstErrorPlus95,scope:'CI across seed blocks; spatial positions are NOT counted as independent. Realised cell/viewport mass is not asserted exact.',profiles:realised}));
 });
 test('zoom/tile/rebase changes no phase or fractions; unresolved means equal input probabilities',()=>{
   const weights=Object.freeze([.2,.3,.5]);
@@ -129,8 +143,8 @@ test('world seed and floating origin transport the same shader cells, with exact
     const zero=detailDistributionPhases(0,0,fixture.seed),shifted=detailDistributionPhases(fixture.x,fixture.z,fixture.seed);
     for(let band=0;band<3;band++){
       const scale=DETAIL_BANDS[band].metres,k=band*4,x=fixture.x+13.375,z=fixture.z+7.625;
-      const direct=detailRank(x/scale,z/scale,zero[k],zero[k+1],zero[k+2],zero[k+3]);
-      const rebased=detailRank((x-fixture.x)/scale,(z-fixture.z)/scale,shifted[k],shifted[k+1],shifted[k+2],shifted[k+3]);
+      const direct=detailRank(x/scale,z/scale,zero[k],zero[k+1],zero[k+2],zero[k+3],band);
+      const rebased=detailRank((x-fixture.x)/scale,(z-fixture.z)/scale,shifted[k],shifted[k+1],shifted[k+2],shifted[k+3],band);
       near(direct,rebased,2e-4);
     }
   }

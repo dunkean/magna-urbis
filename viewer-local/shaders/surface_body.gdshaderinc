@@ -41,7 +41,7 @@
         // Ground components already have a fixed physical-role order (rock,
         // residual soil, humus, dry surface, transport processes), independent
         // of the current raster corner. Keep isolated rock supports first.
-        vec3 ranks=detail_distribution_ranks(v_vertex.xz,vec2(0.0));float start=0.0;
+        vec3 ranks=detail_distribution_ranks(v_vertex.xz,vec2(0.0),footprint);float start=0.0;
         for(int i=0;i<8;i++) {
             float probability=component_amounts[i]/component_total;
             if(probability>0.0){ground_minimum_color=min(ground_minimum_color,component_colors[i]);ground_maximum_color=max(ground_maximum_color,component_colors[i]);}
@@ -153,7 +153,7 @@
                 float weight=low_weights[i];low_weights[i]=low_weights[j];low_weights[j]=weight;
             }
             float original_sum=0.0;for(int i=0;i<8;i++)original_sum+=low_weights[i];
-            vec3 ranks=detail_distribution_ranks(v_vertex.xz,vec2(.371,.619));float start=0.0;
+            vec3 ranks=detail_distribution_ranks(v_vertex.xz,vec2(.371,.619),footprint);float start=0.0;
             low_visual_alpha=0.0;
             for(int i=0;i<8;i++) {
                 float probability=low_weights[i]*low_alpha/max(original_sum,.000001);

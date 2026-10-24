@@ -1,15 +1,15 @@
 # Inferred spatial detail for soil and low cover
 
-`surface-detail-distribution-2` is a renderer component. It arranges existing
+`surface-detail-distribution-3` is a renderer component. It arranges existing
 material probabilities at fixed metric scales, independently of camera tiles.
 It does **not** add a DEM, observed soil/lithology, physical water, candidates or
 population density. The canonical 78.125 m context, compiler/schema versions,
 ground-response means, source heights and population IDs remain unchanged.
 
-This is a CPU-validated prototype awaiting a new native visual check. The first
-native prototype is an explicit [artistic failure](evidence/SOIL_COVER_DISTRIBUTION_R1.md),
-preserved with all 28 images. Neither its technical checks nor these CPU checks
-qualify version 2 visually. No GPU is used while the user runs the V15 demo.
+This is a CPU-validated prototype awaiting a new native visual check. The first two native prototypes are explicit artistic failures: [R1](evidence/SOIL_COVER_DISTRIBUTION_R1.md)
+and [R2](evidence/soil-cover-distribution-r2.json), each preserved with 28 images.
+Their technical checks do not qualify version 3 visually. GPU access requires
+a handoff and a one-second watcher that yields to the user V15 demo.
 
 ## What and where
 
@@ -45,21 +45,31 @@ fields are not reconstructed. The cartographic palette path remains unchanged.
 ## Calibrated stochastic arrangement and filtering
 
 Nominal bands are **12 m, 1.7 m and 0.17 m**, with weights **0.40, 0.35, 0.25**.
-Three periodic shears curve the cell coordinates and each have Jacobian
-determinant one. Integer hashes choose only a patch centre and whether a cell
-is subdivided into four half-size cells. They do not choose RGB, geology or
-additional objects. Centres stay inside the middle half of each cell.
+For every lattice vertex and band, separate uint32 hashes feed Box–Muller:
+`u=(uint+0.5)/2^32`, avoiding `log(0)`. The trig expression transforms a hash
+sample, never a periodic spatial coordinate. Four Gaussian vertex values are
+interpolated with positive smoothstep weights, then divided by
+`sqrt(sum(weight²))` **before** applying an explicit normal CDF.
 
-Inside a cell, nested copies of the cell about any interior centre have area
-fraction `t²`. The squared homothetic radius is consequently a calibrated area
-rank. It is one on every shared edge regardless of centre/subdivision, so the
-arrangement is continuous across those edges. Unlike the rejected first
-prototype, adjacent cells do not repeat the same set of sinusoidal rings.
+Under an ideal independent-Gaussian seed model, this produces a uniform rank
+conditional on any fixed point/interpolation weights. It is an **ensemble**
+statement, not exact area/mass in each realised cell or viewport. The
+implementation uses deterministic pseudorandom hashes and float32 GPU maths;
+their approximation is measured, not asserted to be a proof of independence.
+The normal CDF approximation is independently checked by quadrature.
+
+This replaces R2's area-calibrated curved cells, whose shared high-rank
+boundaries still made visible ribbons. There are no trigonometric coordinate
+shears, forced rank-one cell boundaries, or homothetic-cell patterns in R3.
+Gaussian values and their first derivatives are continuous across cell edges.
+Different bands use different vertex/lane salts. A final integer avalanche on
+the layout-seed hash removes the lane correlation found by the first ensemble
+test; the initial failed 3.119% bound is kept in the ignored pre-avalanche log.
 
 Each existing probability is allocated one contiguous rank interval. Circular
 box convolution filters that interval, including wraparound and probabilities
 0/1. Its integral is still the input probability. A constant two-times footprint
-guard accounts for half-size cells. Each band tends continuously to its input
+guard is an explicit rank-space antialiasing approximation. Each band tends continuously to its input
 fraction when unresolved; all bands equal the input by a 3 m footprint. This
 is a declared rank-space filter, **not** an exact ray/pixel area integral or a
 claim of perfect antialiasing under every perspective.
@@ -78,7 +88,7 @@ The linear band mixture preserves nonnegative fractions and their total. Low
 cover may total below one, preserving bare support. Expected premultiplied
 recipe colour follows those same masses; colours are not renormalised to force
 a photograph. Finite viewports can contain different proportions of patches.
-Conservation is an area/probability statement and an exact unresolved horizon,
+Conservation is a seed-ensemble/probability statement and an exact unresolved horizon,
 not a requirement that every 10 m crop have the regional average colour.
 
 ## Frame, budgets and provenance
@@ -90,7 +100,7 @@ origins modulo 4096: **48 bytes, no new raster image**. A versioned layout
 seed comes from `world.seed` and the band/lane, never the camera, request or
 current world-id. Its fraction and integer carry are transported together.
 This is a non-cryptographic visual seed, not a source/candidate identity. Individual bands have a
-finite hash period; the complete multi-band pattern repeats only beyond this
+finite 4096-cell hash period; the complete multi-band pattern repeats only beyond this
 40 km source. Float32 phase/local-coordinate rounding remains a declared
 representation limit, not new observed source information.
 
@@ -117,13 +127,23 @@ measurement. Prototype source remains isolated from the frozen user demo.
 
 ## CPU checks and remaining validation
 
-Eight Node tests cover an independent area raster, inverse-warp histograms over
-different hashed cells, recipe-slot/corner-order invariance, adjacent-cell
-nonrepetition and shared-edge continuity, probability 0/1 and wrapped filters,
-per-recipe fractions over four phases/four filters, zoom/tile/rebase at ±1e9 m, cross-language seeded shader phase bytes,
-and the common-gain counterexample with 100,000 extreme-colour draws. Maximum measured absolute fraction error is **0.00523615**, or
-**0.524 percentage point**, on 12,000 positions per configuration. This finite
-sampling error is retained, not presented as exact equality everywhere.
+Nine Node tests cover independent Gaussian-CDF quadrature, vertex/band moments,
+conditional seed-ensemble distributions, recipe-slot/corner-order invariance,
+nonrepetition and cell-edge continuity, probability 0/1 and wrapped filters,
+seed-block recipe fractions, zoom/tile/rebase at ±1e9 m, shared JS/GD phase bytes
+and the common-gain counterexample with 100,000 extreme-colour draws.
+
+For 32,768 pseudorandom layout seeds at three fixed points and three bands, the
+maximum empirical CDF error is **0.006679**; adding the pointwise 95% DKW
+half-width gives **0.014182** (1.419 percentage points). That DKW statement
+assumes independent seeds and is **not** simultaneous confidence over all
+profiles or a rigorous confidence certificate for the deterministic hash.
+
+A separate 64-seed/four-filter test uses 512 spatial positions per seed, with
+uncertainty computed across seed blocks, not by pretending correlated spatial
+positions are independent. Its maximum mean error is **0.006616**; maximum
+error plus the seed-block 95% interval is **0.013680**. The realised min/max
+fractions are retained in the log. No exact per-patch mass is claimed.
 
 The GD CPU test passes **7439 assertions** for eight meshes: bounded support,
 finite unit normals/tangents, clockwise/front-face agreement, exact source IDs
@@ -135,5 +155,5 @@ parse pass. These are small CPU checks, not native visual or FPS qualification.
 After ROOT hands back the GPU, the same retained V15 source/camera will be used
 at 2560/160/40/10 m. The native check must reject source/inventory/buffer changes,
 keep diagnostic-7 pixel identity, inspect actual shrub/grass/litter appearance,
-and preserve the negative R1. Version 2 is not ready for artistic acceptance
+and preserve the negative R1 and R2. Version 3 is not ready for artistic acceptance
 until those images have been produced and reviewed.

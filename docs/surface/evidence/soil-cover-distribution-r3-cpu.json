@@ -1,0 +1,371 @@
+{
+  "version": 1,
+  "component": "surface-detail-distribution-3",
+  "status": "CPU_PASS_NATIVE_VISUAL_PENDING",
+  "scope": "Inferred renderer distribution only; no new source/physical context/candidate evidence. R1 and R2 remain artistic failures.",
+  "model": "Positive smooth Gaussian lattice, variance normalization and normal CDF. Conditional seed-ensemble model, not exact area per realised patch.",
+  "nodeTests": 9,
+  "godotAssertions": 7439,
+  "sourceTargetAtHorizon": "bit-exact",
+  "statistics": [
+    {
+      "test": "gaussian-vertices",
+      "n": 32768,
+      "maxMean": 0.0037372908838115082,
+      "maxVarianceError": 0.005695951391204046,
+      "maxCrossMoment": 0.003560956284230015
+    },
+    {
+      "test": "conditional-seed-ensemble",
+      "seeds": 32768,
+      "points": 3,
+      "bands": 3,
+      "maximumEmpiricalCdfError": 0.006678931046795844,
+      "dkw95HalfWidth": 0.0075025218071868805,
+      "maximumErrorPlusDkw95": 0.014181452853982725,
+      "assumption": "independent ideal seeds; actual hash is deterministic pseudorandom; pointwise not simultaneous across all profiles"
+    },
+    {
+      "test": "adjacent-cell-layout",
+      "correlation": 0.08599637876196178
+    },
+    {
+      "test": "per-recipe-seed-ensemble",
+      "seeds": 64,
+      "positionsPerSeed": 512,
+      "filters": 4,
+      "worstMeanError": 0.006615408111619647,
+      "worstErrorPlusBlock95": 0.013679400655770002,
+      "scope": "CI across seed blocks; spatial positions are NOT counted as independent. Realised cell/viewport mass is not asserted exact.",
+      "profiles": [
+        {
+          "footprint": 0.002,
+          "recipe": 0,
+          "mean": 7.776101470631667e-05,
+          "target": 0.0001,
+          "sem95": 1.8216202365512432e-05,
+          "realisedMinimum": 1.660156249999909e-05,
+          "realisedMaximum": 0.0004675519827809318
+        },
+        {
+          "footprint": 0.002,
+          "recipe": 1,
+          "mean": 0.020360145738982503,
+          "target": 0.0199,
+          "sem95": 0.0016784585041984081,
+          "realisedMinimum": 0.00826519661705285,
+          "realisedMaximum": 0.043112384332560594
+        },
+        {
+          "footprint": 0.002,
+          "recipe": 2,
+          "mean": 0.19764220380859945,
+          "target": 0.2,
+          "sem95": 0.004855859431799158,
+          "realisedMinimum": 0.1454365658486493,
+          "realisedMaximum": 0.24751255963821314
+        },
+        {
+          "footprint": 0.002,
+          "recipe": 3,
+          "mean": 0.33584233498317045,
+          "target": 0.34,
+          "sem95": 0.00477073568387737,
+          "realisedMinimum": 0.2905294733341573,
+          "realisedMaximum": 0.37569752149963925
+        },
+        {
+          "footprint": 0.002,
+          "recipe": 4,
+          "mean": 0.4460775544545365,
+          "target": 0.44,
+          "sem95": 0.007601846201233498,
+          "realisedMinimum": 0.3830870624668818,
+          "realisedMaximum": 0.5344032822519318
+        },
+        {
+          "footprint": 0.002,
+          "recipe": 5,
+          "mean": 0.2151021875449022,
+          "target": 0.215,
+          "sem95": 0.005481549953972254,
+          "realisedMinimum": 0.15362487377687353,
+          "realisedMaximum": 0.26413298686807674
+        },
+        {
+          "footprint": 0.002,
+          "recipe": 6,
+          "mean": 0.27838459188838033,
+          "target": 0.285,
+          "sem95": 0.004230782952743382,
+          "realisedMinimum": 0.24517339756912573,
+          "realisedMaximum": 0.311811763260043
+        },
+        {
+          "footprint": 0.002,
+          "recipe": 7,
+          "mean": 0.0801202505517494,
+          "target": 0.08,
+          "sem95": 0.0022386508425361576,
+          "realisedMinimum": 0.06382070382714453,
+          "realisedMaximum": 0.106458601220328
+        },
+        {
+          "footprint": 0.08,
+          "recipe": 0,
+          "mean": 0.00010041931019966068,
+          "target": 0.0001,
+          "sem95": 6.8404160312433144e-06,
+          "realisedMinimum": 5.659484863281106e-05,
+          "realisedMaximum": 0.00018068237304686262
+        },
+        {
+          "footprint": 0.08,
+          "recipe": 1,
+          "mean": 0.020088418053646036,
+          "target": 0.0199,
+          "sem95": 0.0012515235755986213,
+          "realisedMinimum": 0.011490505508465273,
+          "realisedMaximum": 0.03597797765964096
+        },
+        {
+          "footprint": 0.08,
+          "recipe": 2,
+          "mean": 0.19838342045299828,
+          "target": 0.2,
+          "sem95": 0.004941665705993913,
+          "realisedMinimum": 0.14706289931013633,
+          "realisedMaximum": 0.24633715302961506
+        },
+        {
+          "footprint": 0.08,
+          "recipe": 3,
+          "mean": 0.3355902117262356,
+          "target": 0.34,
+          "sem95": 0.004457974378190505,
+          "realisedMinimum": 0.2938523213742066,
+          "realisedMaximum": 0.378304779856263
+        },
+        {
+          "footprint": 0.08,
+          "recipe": 4,
+          "mean": 0.44583753045692087,
+          "target": 0.44,
+          "sem95": 0.007193964232851848,
+          "realisedMinimum": 0.3768361814701766,
+          "realisedMaximum": 0.527520877075004
+        },
+        {
+          "footprint": 0.08,
+          "recipe": 5,
+          "mean": 0.21522243212376718,
+          "target": 0.215,
+          "sem95": 0.004952356497789708,
+          "realisedMinimum": 0.16397953048023425,
+          "realisedMaximum": 0.2565898072559797
+        },
+        {
+          "footprint": 0.08,
+          "recipe": 6,
+          "mean": 0.2800032059666977,
+          "target": 0.285,
+          "sem95": 0.004206051030783539,
+          "realisedMinimum": 0.24047888175925936,
+          "realisedMaximum": 0.31910139023546025
+        },
+        {
+          "footprint": 0.08,
+          "recipe": 7,
+          "mean": 0.07972242638192183,
+          "target": 0.08,
+          "sem95": 0.00170081324422093,
+          "realisedMinimum": 0.06849868564013611,
+          "realisedMaximum": 0.10240177302071699
+        },
+        {
+          "footprint": 1.25,
+          "recipe": 0,
+          "mean": 0.00010085876400307528,
+          "target": 0.0001,
+          "sem95": 1.1567951067395505e-06,
+          "realisedMinimum": 8.981249999999803e-05,
+          "realisedMaximum": 0.00011081249999999798
+        },
+        {
+          "footprint": 1.25,
+          "recipe": 1,
+          "mean": 0.02005079843559147,
+          "target": 0.0199,
+          "sem95": 0.0002298374627930167,
+          "realisedMinimum": 0.01786327638007887,
+          "realisedMaximum": 0.022019097489809125
+        },
+        {
+          "footprint": 1.25,
+          "recipe": 2,
+          "mean": 0.19927619335718827,
+          "target": 0.2,
+          "sem95": 0.0023703764789524038,
+          "realisedMinimum": 0.17629151878517865,
+          "realisedMaximum": 0.2251331552546566
+        },
+        {
+          "footprint": 1.25,
+          "recipe": 3,
+          "mean": 0.3365308990482273,
+          "target": 0.34,
+          "sem95": 0.003315742319991692,
+          "realisedMinimum": 0.30571056924348666,
+          "realisedMaximum": 0.3683202527121264
+        },
+        {
+          "footprint": 1.25,
+          "recipe": 4,
+          "mean": 0.4440412503949897,
+          "target": 0.44,
+          "sem95": 0.00418359149166512,
+          "realisedMinimum": 0.403871962536419,
+          "realisedMaximum": 0.49396263128087187
+        },
+        {
+          "footprint": 1.25,
+          "recipe": 5,
+          "mean": 0.2144562423812911,
+          "target": 0.215,
+          "sem95": 0.002314060139608463,
+          "realisedMinimum": 0.18944098551549865,
+          "realisedMaximum": 0.23358154025272948
+        },
+        {
+          "footprint": 1.25,
+          "recipe": 6,
+          "mean": 0.2818140325111118,
+          "target": 0.285,
+          "sem95": 0.003066157520066235,
+          "realisedMinimum": 0.24865608646114773,
+          "realisedMaximum": 0.31213557312315826
+        },
+        {
+          "footprint": 1.25,
+          "recipe": 7,
+          "mean": 0.07979325612567376,
+          "target": 0.08,
+          "sem95": 0.0008471247207736269,
+          "realisedMinimum": 0.07295811710368523,
+          "realisedMaximum": 0.09005706639913522
+        },
+        {
+          "footprint": 6,
+          "recipe": 0,
+          "mean": 0.00010000000000000093,
+          "target": 0.0001,
+          "sem95": 1.673308769599017e-20,
+          "realisedMinimum": 0.00010000000000000086,
+          "realisedMaximum": 0.00010000000000000086
+        },
+        {
+          "footprint": 6,
+          "recipe": 1,
+          "mean": 0.019899999999999828,
+          "target": 0.0199,
+          "sem95": 5.9971386302428775e-18,
+          "realisedMinimum": 0.019899999999999852,
+          "realisedMaximum": 0.019899999999999852
+        },
+        {
+          "footprint": 6,
+          "recipe": 2,
+          "mean": 0.2000000000000016,
+          "target": 0.2,
+          "sem95": 4.797710904194302e-17,
+          "realisedMinimum": 0.2000000000000018,
+          "realisedMaximum": 0.2000000000000018
+        },
+        {
+          "footprint": 6,
+          "recipe": 3,
+          "mean": 0.3400000000000031,
+          "target": 0.34,
+          "sem95": 8.224647264333089e-17,
+          "realisedMinimum": 0.34000000000000274,
+          "realisedMaximum": 0.34000000000000274
+        },
+        {
+          "footprint": 6,
+          "recipe": 4,
+          "mean": 0.43999999999999784,
+          "target": 0.44,
+          "sem95": 8.224647264333089e-17,
+          "realisedMinimum": 0.43999999999999817,
+          "realisedMaximum": 0.43999999999999817
+        },
+        {
+          "footprint": 6,
+          "recipe": 5,
+          "mean": 0.21500000000000213,
+          "target": 0.215,
+          "sem95": 6.168485448249816e-17,
+          "realisedMinimum": 0.21500000000000238,
+          "realisedMaximum": 0.21500000000000238
+        },
+        {
+          "footprint": 6,
+          "recipe": 6,
+          "mean": 0.284999999999997,
+          "target": 0.285,
+          "sem95": 9.595421808388604e-17,
+          "realisedMinimum": 0.28499999999999737,
+          "realisedMaximum": 0.28499999999999737
+        },
+        {
+          "footprint": 6,
+          "recipe": 7,
+          "mean": 0.0799999999999991,
+          "target": 0.08,
+          "sem95": 2.7415490881110298e-17,
+          "realisedMinimum": 0.07999999999999899,
+          "realisedMaximum": 0.07999999999999899
+        }
+      ]
+    },
+    {
+      "test": "common-gamut-gain",
+      "samples": 100000,
+      "targets": 4,
+      "worstMeanError": 0.0005526614904118876,
+      "sourceTargetPreserved": true
+    }
+  ],
+  "limitations": [
+    "Deterministic hash is not a proof of independent Gaussian seeds.",
+    "DKW interval is pointwise, not simultaneous across all profiles.",
+    "Rank-space footprint filtering is not exact perspective pixel integration.",
+    "No GPU quality/FPS qualification in this proof."
+  ],
+  "logs": {
+    "distribution-r3-test.stdout.log": {
+      "path": "web/out/surface/ground-cover-quality/distribution-r3-test.stdout.log",
+      "sha256": "43f05b651338e8093a2629b8661cc5b1af522e92fbfd2b6874bd14c1d8510c62"
+    },
+    "geometry-r3-test.stdout.log": {
+      "path": "web/out/surface/ground-cover-quality/geometry-r3-test.stdout.log",
+      "sha256": "60a0644fa4c619baeb65e263565fd5dc2beacf132821fcebf0e912bec30b1f33"
+    },
+    "geometry-r3-test.stderr.log": {
+      "path": "web/out/surface/ground-cover-quality/geometry-r3-test.stderr.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "parse-r3.stdout.log": {
+      "path": "web/out/surface/ground-cover-quality/parse-r3.stdout.log",
+      "sha256": "83cf0b082206af2aa236c83064fbcfa76be1e00a4aa3558574b2f65965d9481c"
+    },
+    "parse-r3.stderr.log": {
+      "path": "web/out/surface/ground-cover-quality/parse-r3.stderr.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "distribution-r3-pre-avalanche.stdout.log": {
+      "path": "web/out/surface/ground-cover-quality/distribution-r3-pre-avalanche.stdout.log",
+      "sha256": "9edc9abdfd8e81e8a0d0a5ee81a50c7c1c5a505ec1c3355529aa5d363e59d351"
+    }
+  }
+}
