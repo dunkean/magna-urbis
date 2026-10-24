@@ -41,6 +41,7 @@ func run()->void:
 	var lut_file=FileAccess.open(root.path_join("optical-mean.f32"),FileAccess.WRITE);lut_file.store_buffer(lut.to_byte_array());lut_file.close()
 	var mask:Dictionary=report.lods[0].views[0].sharedMask
 	var descriptor={"format":"magna-tree-render-assets","version":1,"experimental":true,"sourceAssetDigest":report.assetDigest,"sourceGeometry":report.lods[0],"normalization":report.normalization,"mask":mask,"views":views,"meanLinear":report.lods[0].views[0].alphaWeightedMeanLinear,"lookup":{"path":"optical-mean.f32","sha256":FileAccess.get_sha256(root.path_join("optical-mean.f32")),"length":257,"opticalCalibrationDigest":calibration.opticalCalibrationDigest},"license":report.license,"pipelineVersion":"tree-render-cpu-packed-v1","highMaxInstances":14,"highMinPixels":500.0,"highTriangleBudget":2000000,"scope":"experimental; shared top cutout C/V; oblique view-indexed planar depth approximation"}
+	if report.has("glbAlbedoEncodingCorrection"):descriptor["albedoEncodingCorrection"]=report.glbAlbedoEncodingCorrection
 	descriptor["digest"]=TreeAssets.descriptor_digest(descriptor)
 	var result=FileAccess.open(root.path_join("resolved.json"),FileAccess.WRITE);result.store_string(JSON.stringify(descriptor,"  ",true,true));result.close()
 	print(JSON.stringify({"format":descriptor.format,"digest":descriptor.digest,"views":views.size(),"output":root.path_join("resolved.json"),"scope":"CPU packing only; no GPU textures created"}));quit()

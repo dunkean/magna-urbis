@@ -120,6 +120,7 @@ func load_manifest(path:String,graphics:bool=true)->bool:
 		for i in high_mesh.get_surface_count():actual+=high_mesh.surface_get_array_index_len(i)/3
 		if actual!=int(geometry.actualTriangles):return _fail("Imported tree triangle count mismatch")
 	version={"available":true,"digest":manifest.digest,"sourceAssetDigest":manifest.sourceAssetDigest,"cpuOnly":not graphics,"triangles":manifest.sourceGeometry.actualTriangles,"impostorTriangles":2,"views":5,"pipelineVersion":manifest.pipelineVersion,"scope":manifest.scope}
+	version["albedoEncodingPolicy"]=manifest.get("albedoEncodingCorrection",{}).get("policy","legacy combined-export PNG; encoding not corrected")
 	return true
 
 func high_render_mesh()->Dictionary:
