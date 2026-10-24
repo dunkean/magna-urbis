@@ -25,7 +25,7 @@ describe('natural ground beneath source infrastructure',()=>{
   it('retains explicit cultivation and versions only the changed derived layer, not physical candidate lineage',()=>{
     const input=surfaceLayerInput(),world=compileSurfaceWorld(input,{topographicRadiiM:[32,64,128]}),crop=input.occupation!.classes.findIndex(v=>v===Occupation.Crop);
     expect(world.materials[world.fields.groundMaterial![crop]].id).toBe('cultivated-soil');
-    expect(world.compilerVersion).toBe('surface-1.5.3');expect(world.diagnostics.assumptions.some(v=>v.includes('natural-under-infrastructure-1'))).toBe(true);
+    expect(world.compilerVersion).toBe('surface-1.6.0');expect(world.diagnostics.assumptions.some(v=>v.includes('natural-under-infrastructure-1'))).toBe(true);
     const original={...world.fields};for(const key of SURFACE_LAYER_FIELDS)delete original[key];
     expect(fingerprint(original)).toBe(baseline.fieldsFingerprint);
   });

@@ -49,14 +49,24 @@ export function groundResponseIdentity(response: Omit<SurfaceGroundResponse,'id'
   const g=response.grid,s=response.source;
   // Numeric metadata uses explicit IEEE754 bytes, avoiding cross-language
   // decimal formatting differences at large/rebased world coordinates.
-  const digest=new SurfaceSha256(),text=(value:string)=>{const bytes=new Uint8Array(value.length*2);for(let i=0;i<value.length;i++){const c=value.charCodeAt(i);bytes[i*2]=c&255;bytes[i*2+1]=c>>>8;}digest.update(bytes);};
-  text('[');
-  for(const value of ['gr-sha256-1',response.version,new Float64Array([g.width,g.height,g.originX,g.originZ,g.spacingM,s.sourceLOD,s.nativeSpacingM]),s.id,s.version,
+  const digest=new SurfaceSha256(),length=(n:number)=>{const bytes=new Uint8Array(4);new DataView(bytes.buffer).setUint32(0,n,true);digest.update(bytes);};
+  const values=['gr-sha256-1',response.version,new Float64Array([g.width,g.height,g.originX,g.originZ,g.spacingM,s.sourceLOD,s.nativeSpacingM]),s.id,s.version,
     s.sourceLODKnown===undefined?'unspecified':String(s.sourceLODKnown),s.provenance??'',response.environmentVersion,response.materialLibraryVersion,response.interpolation,response.quantization,
-    ...GROUND_RESPONSE_FLOAT_FIELDS.map(key=>response.fields[key]),response.fields.rockRecipe]){
-    if(typeof value==='string')text('string:'+value+';');else{text(value.constructor.name+':'+value.byteLength+':');digest.update(new Uint8Array(value.buffer,value.byteOffset,value.byteLength));}
+    ...GROUND_RESPONSE_FLOAT_FIELDS.map(key=>response.fields[key]),response.fields.rockRecipe];
+  // Framed stream: list(tag3,count u32LE), then string(tag1,UTF16LE byte
+  // length u32LE,bytes) or typed(tag2,dtype u8,byte length u32LE,bytes).
+  // Delimiter-looking source ids, NULs and astral Unicode remain unambiguous.
+  digest.update(new Uint8Array([3]));length(values.length);
+  for(const value of values){
+    if(typeof value==='string'){
+      const bytes=new Uint8Array(value.length*2);for(let i=0;i<value.length;i++){const c=value.charCodeAt(i);bytes[i*2]=c&255;bytes[i*2+1]=c>>>8;}
+      digest.update(new Uint8Array([1]));length(bytes.length);digest.update(bytes);
+    }else{
+      const dtype=value instanceof Float64Array?1:value instanceof Float32Array?2:value instanceof Uint16Array?3:0;if(!dtype)throw new Error('Unknown ground response hash dtype');
+      digest.update(new Uint8Array([2,dtype]));length(value.byteLength);digest.update(new Uint8Array(value.buffer,value.byteOffset,value.byteLength));
+    }
   }
-  text(']');return 'gr-sha256-1:'+digest.hex();
+  return 'gr-sha256-1:'+digest.hex();
 }
 export function createGroundResponse(grid: SurfaceGridGeometry, source: SourceIdentity, environmentVersion: string, materialLibraryVersion: string, fields: GroundResponseFields): SurfaceGroundResponse {
   const value:Omit<SurfaceGroundResponse,'id'>={version:GROUND_RESPONSE_VERSION,grid:{...grid},source:{...source},environmentVersion,materialLibraryVersion,
