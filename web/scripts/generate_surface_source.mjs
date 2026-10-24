@@ -3,6 +3,7 @@
  * --viewer-assets C:/data/resolved.json --viewer-launcher ROOT/web/scripts/surface_viewer.mjs
  * --geology-scenario tilted-strata-v1 opts into an explicit fixed world-space scenario.
  * --viewer-navigation-first runs the same continuous-input test before the tour.
+ * --viewer-retain-visuals-after-navigation-failure retains independent visuals only after a valid final drain; overall failure remains.
  * --viewer-layer-probe adds four same-source visibility captures and unlit bare ground.
  * --viewer-layer-probe-widths 10000,160 also proves actual near-instance masking.
  * --viewer-water-mode source-map explicitly selects terrain-only retained-vector display.
@@ -16,6 +17,7 @@ import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { spawnSurfaceFileLogged,parseSurfaceNativeLogs } from './surface_process_logs.mjs';
+import { runSurfaceNavigationRetainingVisuals, canRetainSurfaceNavigationVisuals, assertNoRetainedNavigationFailure } from './surface_visual_retention.mjs';
 import { installSurfacePageTiming } from './surface_page_timing.mjs';
 import { installSurfaceProcessorTiming, captureSurfaceProcessorTiming } from './surface_processor_timing.mjs';
 import { decodeSurfaceBinary, encodeSurfaceBinary } from '../src/surface/binary.ts';
@@ -56,6 +58,8 @@ if(layerProbe&&!viewerGodot)throw new Error('--viewer-layer-probe requires --vie
 if(!['source-map','source-levels'].includes(viewerWaterMode))throw new Error('Viewer water mode must be source-map or source-levels');
 const navigationSeconds=Number(option('--viewer-navigation-seconds','0'));
 const navigationFirst=args.includes('--viewer-navigation-first');
+const retainVisualsAfterNavigationFailure=args.includes('--viewer-retain-visuals-after-navigation-failure');
+if(retainVisualsAfterNavigationFailure&&!navigationSeconds)throw new Error('--viewer-retain-visuals-after-navigation-failure requires navigation');
 if(!Number.isFinite(navigationSeconds)||navigationSeconds!==0&&(navigationSeconds<5||navigationSeconds>120)||navigationSeconds&&!viewerGodot)throw new Error('Navigation requires --viewer-godot and duration5..120 seconds');
 if(navigationFirst&&!navigationSeconds)throw new Error('--viewer-navigation-first requires --viewer-navigation-seconds');
 if (viewerGodot && (!existsSync(viewerGodot) || !existsSync(viewerLauncher) || viewerAssets && !existsSync(viewerAssets)
@@ -68,6 +72,7 @@ const paths = { report: resolve(out, 'report.json'), progress: resolve(out, 'pro
 const report = { format: 'magna-fresh-source-proof', version: 1, startedAt: new Date(began).toISOString(), base, neural, widthM: width, seed,
   requestedSource: 'neural-python', freshGeneration: true, paths, errors, network, progress, status: 'starting' };
 report.browserEvents = browserEvents;
+report.retainVisualsAfterNavigationFailureRequested=retainVisualsAfterNavigationFailure;
 report.processorTimingDiagnostic = { enabled: true, requestFlag: 'diagnosticTiming', responseField: 'processorTiming', clock: 'surface-worker-processor-timing-1', pageReceiptBeforePacketSummary: true, cpuSampling: false, binaryChanged: false };
 report.requiredRenderContract={version:'surface-layers-1',waterMode:viewerWaterMode,waterSymbolWidthPx:viewerWaterSymbolWidthPx,layerProbeWidths:layerProbe?layerProbeWidths:[],physicalSourceChangesAllowed:false};
 report.nativePhaseOrder=viewerGodot?(navigationFirst?['navigation','tour']:['tour',...(navigationSeconds?['navigation']:[])]):[];
@@ -214,7 +219,8 @@ async function runNativeNavigation(sessionId) {
   if(existsSync(paths.metrics))phase.metrics=JSON.parse(await readFile(paths.metrics,'utf8'));
   if(phase.result?.continuousSeconds!==navigationSeconds||phase.result.motionEndTickMs-phase.result.motionStartTickMs!==Math.round(navigationSeconds*1000))throw new Error('Navigation proof changed its requested nominal motion duration');
   phase.timingEvidence=verifyNavigationTiming(phase.result,navigationSeconds);
-  try{phase.displayEvidence=verifyMotionLiveDisplay(phase.result,phase.metrics);phase.finalDisplayEvidence=verifyFinalDisplay(phase.result,phase.metrics);}catch(error){phase.displayEvidenceFailure=String(error);}
+  try{phase.displayEvidence=verifyMotionLiveDisplay(phase.result,phase.metrics);}catch(error){phase.displayEvidenceFailure=String(error);}
+  try{phase.finalDisplayEvidence=verifyFinalDisplay(phase.result,phase.metrics);}catch(error){phase.finalDisplayEvidenceFailure=String(error);}
   if(phase.metrics.loadedLiveBinding?.fingerprint!==report.source.canonicalFieldFingerprint||phase.metrics.loadedLiveBinding?.error)throw new Error('Native navigation loaded a different source heightfield');
   const relevant=browserEvents.filter(e=>e.elapsedMs>=phase.startedElapsedMs),packets=relevant.filter(e=>e.kind==='worker-compiled');
   phase.workerPackets=packets.length;phase.environmentVersions=[...new Set(packets.map(e=>e.environmentVersion))];
@@ -235,13 +241,19 @@ async function runNativeNavigation(sessionId) {
   phase.discardedLiveReplies=(logs.join('\n').match(/Discarded superseded live terrain response/g)??[]).length;
   phase.workerErrors=relevant.filter(e=>e.kind==='worker-error'&&e.error?.name!=='AbortError'||e.kind==='worker-proof-error');
   await save();
-  if(phase.timedOut||phase.code!==0||phase.result?.status!=='complete'||!phase.result?.sourceReplacedWhileMoving
-    ||phase.displayEvidenceFailure||logs.some(log=>/(?:SCRIPT|SHADER) ERROR|ERROR:/.test(log))||unavailable.some(line=>!/HTTP (409|499)\b/.test(line))||phase.workerErrors.length)throw new Error(`Continuous native navigation did not display verified live source during input: ${phase.displayEvidenceFailure??'see native-navigation reports/logs'}`);
   if(!packets.length||phase.environmentVersions.length!==1||packets.some(e=>e.canonicalBuildCount!==1)
     ||packets.some(e=>e.packet?.source.registrationBinding?.canonicalFieldFingerprint!==report.source.canonicalFieldFingerprint)
     ||phase.environmentVersions[0]!==report.live.environmentVersion
     ||geologyScenario&&packets.some(e=>JSON.stringify(e.packet?.geologyScenario)!==JSON.stringify(report.source.geologyScenario))
     ||network.some(e=>e.elapsedMs>=phase.startedElapsedMs&&e.url?.includes('/generate?')))throw new Error('Continuous native navigation changed canonical context or regenerated source');
+  phase.visualRetentionEligible=canRetainSurfaceNavigationVisuals(phase,[
+    ...logs.filter(log=>/(?:SCRIPT|SHADER) ERROR|ERROR:/.test(log)),
+    ...unavailable.filter(line=>!/HTTP (409|499)\b/.test(line)),...phase.workerErrors,
+    ...errors,
+    ...network.filter(e=>e.elapsedMs>=phase.startedElapsedMs&&(e.type==='requestfailed'||e.status>=400&&![409,499].includes(e.status))),
+    ...relevant.filter(e=>e.kind==='broker-reply'&&e.status>=400&&![409,499].includes(e.status))]);
+  if(phase.timedOut||phase.code!==0||phase.result?.status!=='complete'||!phase.result?.sourceReplacedWhileMoving
+    ||phase.displayEvidenceFailure||phase.finalDisplayEvidenceFailure||logs.some(log=>/(?:SCRIPT|SHADER) ERROR|ERROR:/.test(log))||unavailable.some(line=>!/HTTP (409|499)\b/.test(line))||phase.workerErrors.length)throw new Error(`Continuous native navigation did not display verified live source during input: ${phase.displayEvidenceFailure??'see native-navigation reports/logs'}`);
   phase.status='complete';await save();
 }
 async function runNativeLayerProbe(sessionId,widthM){
@@ -510,14 +522,15 @@ try {
     grid: { width: live.world.terrain.width, height: live.world.terrain.height, spacingM: live.world.terrain.spacingM },
     contextId: live.world.canonicalContextRef?.id, includesCanonicalContext: !!live.world.canonicalContext, decoderUsed, registrations };
   if (!live.world.terrain.source.sourceLODKnown || !live.world.canonicalContext || !decoderUsed) throw new Error('Fresh refinement did not prove a decoder-backed source level and canonical context');
-  if(navigationFirst)await runNativeNavigation(sessions.at(-1));
+  if(navigationFirst)await runSurfaceNavigationRetainingVisuals(report,retainVisualsAfterNavigationFailure,()=>runNativeNavigation(sessions.at(-1)));
   if(viewerGodot)await runNativeTour(sessions.at(-1));
-  if(navigationSeconds&&!navigationFirst)await runNativeNavigation(sessions.at(-1));
+  if(navigationSeconds&&!navigationFirst)await runSurfaceNavigationRetainingVisuals(report,retainVisualsAfterNavigationFailure,()=>runNativeNavigation(sessions.at(-1)));
   if(layerProbe){for(const probeWidth of layerProbeWidths)await runNativeLayerProbe(sessions.at(-1),probeWidth);assertCompletedLayerProbeBatch(report.layerProbes,layerProbeWidths);report.layerProbeStatus='complete';}
-  if(viewerGodot&&report.viewer?.status!=='complete'||navigationSeconds&&report.navigation?.status!=='complete'||layerProbe&&report.layerProbeStatus!=='complete')throw new Error('A requested native proof phase did not complete');
+  if(viewerGodot&&report.viewer?.status!=='complete'||navigationSeconds&&report.navigation?.status!=='complete'&&!report.retainedNavigationFailure||layerProbe&&report.layerProbeStatus!=='complete')throw new Error('A requested native proof phase did not complete');
   report.code.finalRepository=await repositorySnapshot();
   if(viewerGodot)assertFrozenSurfaceSnapshots(report.code.selectedRepository,report.code.finalRepository);
   if(viewerAssets){report.assets.finalManifestSha256=createHash('sha256').update(await readFile(resolve(viewerAssets))).digest('hex');if(report.assets.finalManifestSha256!==report.assets.manifestSha256)throw new Error('Resolved asset manifest changed during the run');}
+  assertNoRetainedNavigationFailure(report);
   report.finalService = await serviceStatus(); report.status = 'complete'; report.durationMs = Date.now() - began;
   await page.screenshot({ path: resolve(out, 'fresh-source-after-refinement.png') });
   await save(); console.log(JSON.stringify({ result: { status: report.status, durationMs: report.durationMs, widthM: width,
