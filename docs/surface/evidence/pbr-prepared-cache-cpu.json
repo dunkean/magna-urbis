@@ -1,0 +1,144 @@
+{
+  "version": 1,
+  "status": "CPU-PARITY-PASS; GPU/WHOLE-WARMUP-UNMEASURED",
+  "scope": "MaterialLibrary15-assets only, headless/dummy renderer. No source/world/shader change, no full50s startup attribution.",
+  "initialUninstrumentedBaselineMs": 6327.473,
+  "realParity": {
+    "allMeanBytesExact": true,
+    "assetCount": 15,
+    "assetDigest": "f09e0208a3cfe0beae93940bbe00a85b237ac2ab449b532305918249eeada57c",
+    "baselineMs": 6806.295,
+    "checks": 41,
+    "coldMs": 7885.234,
+    "coldStats": {
+      "enabled": true,
+      "hits": 0,
+      "loadMs": 7877.811,
+      "misses": 15,
+      "sourceChanged": 0,
+      "version": "surface-pbr-prepared-1",
+      "writeSkipped": {},
+      "writes": 15
+    },
+    "failures": 0,
+    "imageHashes": [
+      {
+        "ahSha256": "61ef2c94f155727a9373c68fd23bb31c8267cd584aa475da85e03c694566e17f",
+        "assetId": "rock",
+        "nrSha256": "053aebf1916b6fb0bc06f79d20304a9acbd5cf34aa44f34ef1f206a953618fd2"
+      },
+      {
+        "ahSha256": "2e1dafd2413870827e31d05b7c5eb9b3727cc668360c19ac115e0a52e0c640e7",
+        "assetId": "soil",
+        "nrSha256": "887487f067410d8ff005833814366d59f7fee385e40a5f6927184bf9c0a7c79f"
+      },
+      {
+        "ahSha256": "eabccc20cefe503c76d9cff5a6ca9bb51acda47f6761686c6ac51f490c9f57bd",
+        "assetId": "litter",
+        "nrSha256": "26d9c829f1b62df9e3e0fd204ad8dc2029503cbefcefd0ba62be5804bc75e86d"
+      },
+      {
+        "ahSha256": "c7472ccc2a390e53d8e7c3f0ce95ebf1e118fd88329eb6e24c8a27fb7030bc51",
+        "assetId": "grass",
+        "nrSha256": "8f16fc25d4fefd4cf3033f0b6a376f657e73a88c5724cd229afc3bbd4078ab9b"
+      },
+      {
+        "ahSha256": "c4e165e576cf1db813ca929ece434822f2d2c2f90c53547c45cbdff7dc76bc89",
+        "assetId": "sand",
+        "nrSha256": "6d0da3830610c30ce01f2b00c03ee4b60158175092bc4226c244cf4db9e405f0"
+      },
+      {
+        "ahSha256": "467fb5ffe29c87d1c26d27a6b50bb46d11336a5243054940bdf07929d84e94ab",
+        "assetId": "gravel",
+        "nrSha256": "67105422a9a0b66ddc8201706fe79cc53bfd25c0472c4da828c478840a8db57b"
+      },
+      {
+        "ahSha256": "3ec44aeef88aef591de1a93bc600d2dfe22c225a4bbd25593837becbcb8089bf",
+        "assetId": "dry-cracked-soil",
+        "nrSha256": "ffca868eb1d61ace71f4eb0a706c2c93938653ca5606b2a8ed5ce87343b0e1a8"
+      },
+      {
+        "ahSha256": "a3515a61161956c6cc6d4ac2866402f97ffa81eecba3861d16637c2617a1ce38",
+        "assetId": "cultivated-soil",
+        "nrSha256": "cf4b3f90d38d4e389b1195e9b8ca4234e7c7d9ea2c292a2b9ae6a241f66db676"
+      },
+      {
+        "ahSha256": "876859b95ea050989ce9e55a16e20a828dafec8684c5aea96cae87cbc07f4874",
+        "assetId": "dark-rock",
+        "nrSha256": "48436c4dd7dbc0f3cd0cfe4b9c2aabfd5bc2a925e3b806cee86f992f92a51e06"
+      },
+      {
+        "ahSha256": "86a7f36214d56e72f183c121f6af0b5b788be5c54136fe37e19be6a64c1c20d7",
+        "assetId": "weathered-cliff",
+        "nrSha256": "25726561d2d53c42dbc4c71e6b3d0a50992cc9301ff07b49f03b07b5eaa407c0"
+      },
+      {
+        "ahSha256": "852c1f51b81ed525c7f6b441aba50c717f95cc7b85ecf13c3ad144dfa1ef0d18",
+        "assetId": "wet-beach",
+        "nrSha256": "b5e908ec8044ba626c6f9896ae5e3839cb4ca94188c75be994ab5c488234356b"
+      },
+      {
+        "ahSha256": "54917872696fdd27b09ee0b30f78c270de8a0aa560f569ac66df6b520f2f0194",
+        "assetId": "clean-sand",
+        "nrSha256": "571fdd21875e909afba1ccd19fe92d9fd5936669aa0dd56ecd510ad621e1f81b"
+      },
+      {
+        "ahSha256": "f732e486eb32aacd8f998470cb003ac5928cfd1794f953085fa70ab72b05ae29",
+        "assetId": "snow",
+        "nrSha256": "b829d976b4a93db8c47f1ff7665324a9a2bec127ad5ae1706d9bc8a11c70416b"
+      },
+      {
+        "ahSha256": "8bf6a7c1acb61f2d23b2ad844f06cc270582b792294dcd90fcebdd2d4465a26e",
+        "assetId": "leaf-litter",
+        "nrSha256": "8e5914b0e91fa74d6fc63d8758f1e7cd5a64fa42672c05994fed0d3826a16a58"
+      },
+      {
+        "ahSha256": "c40c535b76a04003c4a76c4cd25d89fe6452d579d823eb316424e499e022825d",
+        "assetId": "wet-organic-soil",
+        "nrSha256": "06aea93c17a99dc115e8285128c987649956a949818980c8ae9693803542eaf7"
+      }
+    ],
+    "scope": "headless dummy-renderer CPU load_manifest; full real15-asset image/mip/mean parity, no GPU or whole50s warmup attribution",
+    "status": "PASS",
+    "warmMs": 2007.243,
+    "warmStats": {
+      "enabled": true,
+      "hits": 15,
+      "loadMs": 1997.407,
+      "misses": 0,
+      "sourceChanged": 0,
+      "version": "surface-pbr-prepared-1",
+      "writeSkipped": {},
+      "writes": 0
+    }
+  },
+  "smallCacheChecks": 18,
+  "configureTailUnchanged": true,
+  "initialAssetDigest": "f09e0208a3cfe0beae93940bbe00a85b237ac2ab449b532305918249eeada57c",
+  "assetDigestUnchanged": true,
+  "knownCacheEntries": 15,
+  "knownCacheBytes": 251663745,
+  "limits": {
+    "knownFinalAndPendingFiles": 32,
+    "knownFileBytes": 536870912,
+    "directoryScanEntries": 256,
+    "recursiveDeletion": false,
+    "eviction": false
+  },
+  "pipelineVersionUnchanged": "surface-pbr-linear-ah16f-normalgl-nr8-stochastic3-mean-residual-v2",
+  "key": "pixel pipeline + atlas dimensions + actual sourceSHA256 + Godot version/build/OS",
+  "stats": "library.cache_stats, excluded from asset_version/digest",
+  "historicalProbeError": "parity-report.json FAIL: test called non-static _audit_sha on GDScript resource; fixed to instance. Mean/digest/bindings already exact there; no pixel-hash PASS claimed from negative report.",
+  "reports": {
+    "baseline": "web/out/surface/pbr-cache/baseline-report.json",
+    "negative": "web/out/surface/pbr-cache/parity-report.json",
+    "passed": "web/out/surface/pbr-cache/parity-report-2.json"
+  },
+  "sourceFilesSha256": {
+    "viewer-local/adapters/material_library.gd": "ee6fb9d2e79f88e4ffeccaa945f8baef20e47a6ccf6371c554ba0db6f50c8aae",
+    "viewer-local/adapters/surface_pbr_cache.gd": "1b04c501eee0f04ecc89974063bf69ff1718d460cb3ed3b1ff7f8ddd3101a9b7",
+    "viewer-local/tests/surface_pbr_cache_test.gd": "072bee1fb679c9acfd7951ff3dcb5cd0fcdd35865902974e4c4770aa59fc2c1b",
+    "viewer-local/tests/pbr_real_cache_parity.gd": "bfdd7e984a608f11bd2b7636c508819fbe73de4fd652a9c07adb45552770184c",
+    "viewer-local/tests/pbr_startup_probe.gd": "2fb0a058d740037426ac42cd8648c3f07928cf9fa88256ebaf324c89186f9d3f"
+  }
+}

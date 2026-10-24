@@ -1,10 +1,15 @@
 class_name SurfaceMaterialLibrary
 extends RefCounted
+const PreparedCache=preload("res://adapters/surface_pbr_cache.gd")
 const ATLAS_SIZE := 1024
 # Bump when channel packing, colour decode, filtering or mean-residual semantics change.
 const PIPELINE_VERSION := "surface-pbr-linear-ah16f-normalgl-nr8-stochastic3-mean-residual-v2"
 const MAP_NAMES := ["baseColor","normal","roughness","height"]
 const MAP_ALIASES := ["Diffuse","NormalGL","Rough","Displacement"]
+var prepared_cache_enabled:=true
+var prepared_cache_directory:="user://surface-pbr-prepared-v1"
+# Runtime statistics are deliberately excluded from asset_version/digest.
+var cache_stats:Dictionary={}
 var asset_version: Dictionary = {}
 var asset_digest := ""
 var loaded_asset_bindings: Dictionary = {}
@@ -77,6 +82,13 @@ var loaded_assets: Array = []
 var layer_means := PackedColorArray()
 
 func load_manifest(path: String) -> void:
+	var cache_started=Time.get_ticks_usec()
+	cache_stats={"version":PreparedCache.VERSION,"enabled":prepared_cache_enabled,"hits":0,"misses":0,"writes":0,"sourceChanged":0,"writeSkipped":{}}
+	var cache_allowed=prepared_cache_enabled
+	if not path.is_empty():
+		var cache_root=ProjectSettings.globalize_path(prepared_cache_directory).simplify_path().replace("\\","/").to_lower().trim_suffix("/")
+		var source_root=ProjectSettings.globalize_path(path).get_base_dir().simplify_path().replace("\\","/").to_lower().trim_suffix("/")
+		if cache_root==source_root or cache_root.begins_with(source_root+"/"):cache_allowed=false;cache_stats["disabledReason"]="cache-inside-source-directory"
 	layers.clear(); scales.clear(); loaded_assets.clear(); layer_means.clear(); _version_assets.clear(); _height_fallbacks.clear()
 	var albedos: Array[Image] = []
 	var normals: Array[Image] = []
@@ -105,35 +117,30 @@ func load_manifest(path: String) -> void:
 		if assets is Dictionary:
 			assets = assets.values()
 		for asset in assets:
-			var maps: Dictionary = asset.get("maps",{})
-			var diffuse := _load_image(maps.get("baseColor",maps.get("Diffuse","")),path)
-			var normal := _load_image(maps.get("normal",maps.get("NormalGL","")),path)
-			var rough := _load_image(maps.get("roughness",maps.get("Rough","")),path)
-			var height := _load_image(maps.get("height",maps.get("Displacement","")),path)
-			if diffuse == null or normal == null or rough == null:
-				continue
-			if height==null:
+			var versioned=_version_asset(asset,path)
+			var cache_key=_prepared_key(asset,versioned)
+			var prepared:Dictionary=PreparedCache.load_entry(prepared_cache_directory,cache_key) if cache_allowed else {}
+			if not prepared.is_empty():
+				var checked=_version_asset(asset,path)
+				if _prepared_key(asset,checked)!=cache_key:
+					prepared={};cache_stats.sourceChanged+=1
+				else:versioned=checked;cache_stats.hits+=1
+			if prepared.is_empty():
+				cache_stats.misses+=1
+				prepared=_pack_prepared_material(asset.get("maps",{}),path)
+				if prepared.is_empty():continue
+				var checked=_version_asset(asset,path)
+				if cache_allowed and _prepared_key(asset,checked)==cache_key:
+					var status=PreparedCache.store_entry(prepared_cache_directory,cache_key,prepared)
+					if status=="written":cache_stats.writes+=1
+					else:cache_stats.writeSkipped[status]=int(cache_stats.writeSkipped.get(status,0))+1
+				elif cache_allowed:cache_stats.sourceChanged+=1
+				versioned=checked
+			if prepared.heightFallback:
 				_height_fallbacks.append(str(asset.get("id",asset.get("assetId","unknown"))))
-				height=Image.create(ATLAS_SIZE,ATLAS_SIZE,false,Image.FORMAT_RF)
-				height.fill(Color(0.5,0,0,1))
 				push_warning("PBR height unavailable for "+str(asset.get("id","unknown"))+"; using explicit flat-height fallback")
-			var ah := Image.create(ATLAS_SIZE,ATLAS_SIZE,false,Image.FORMAT_RGBAH)
-			var nr := Image.create(ATLAS_SIZE,ATLAS_SIZE,false,Image.FORMAT_RGBA8)
-			var red := 0.0
-			var green := 0.0
-			var blue := 0.0
-			for y in ATLAS_SIZE:
-				for x in ATLAS_SIZE:
-					var color := diffuse.get_pixel(x,y)
-					var linear := color.srgb_to_linear()
-					red+=linear.r; green+=linear.g; blue+=linear.b
-					linear.a = height.get_pixel(x,y).r
-					ah.set_pixel(x,y,linear)
-					color = normal.get_pixel(x,y)
-					color.a = rough.get_pixel(x,y).r
-					nr.set_pixel(x,y,color)
-			ah.generate_mipmaps()
-			nr.generate_mipmaps()
+			var ah:Image=prepared.ah
+			var nr:Image=prepared.nr
 			var layer := albedos.size()
 			var asset_id: String = asset.get("id",asset.get("assetId","unknown"))
 			layers[asset_id] = layer
@@ -145,14 +152,51 @@ func load_manifest(path: String) -> void:
 			for recipe_id in asset.get("recipeIds",[]):
 				layers["recipe:"+str(recipe_id)]=layer
 				scales["recipe:"+str(recipe_id)]=scales[asset_id]
-			_version_assets.append(_version_asset(asset,path))
+			_version_assets.append(versioned)
 			loaded_assets.append(asset_id)
 			albedos.append(ah)
 			normals.append(nr)
-			layer_means.append(Color(red/(ATLAS_SIZE*ATLAS_SIZE),green/(ATLAS_SIZE*ATLAS_SIZE),blue/(ATLAS_SIZE*ATLAS_SIZE),1))
+			layer_means.append(prepared.mean)
 	albedo_height.create_from_images(albedos)
 	normal_rough.create_from_images(normals)
 	_finish_asset_version()
+	cache_stats["loadMs"]=(Time.get_ticks_usec()-cache_started)/1000.0
+
+func _prepared_key(asset:Dictionary,versioned:Dictionary)->Dictionary:
+	var hashes={}
+	for i in MAP_NAMES.size():
+		var name=MAP_NAMES[i] if versioned.maps.has(MAP_NAMES[i]) else MAP_ALIASES[i]
+		hashes[MAP_NAMES[i]]=str(versioned.maps.get(name,{}).get("actualSha256","")).to_lower()
+	return PreparedCache.key(str(asset.get("id",asset.get("assetId","unknown"))),PIPELINE_VERSION,ATLAS_SIZE,hashes)
+
+func _pack_prepared_material(maps:Dictionary,path:String)->Dictionary:
+	var diffuse := _load_image(maps.get("baseColor",maps.get("Diffuse","")),path)
+	var normal := _load_image(maps.get("normal",maps.get("NormalGL","")),path)
+	var rough := _load_image(maps.get("roughness",maps.get("Rough","")),path)
+	var height := _load_image(maps.get("height",maps.get("Displacement","")),path)
+	if diffuse==null or normal==null or rough==null:return {}
+	var fallback=height==null
+	if fallback:
+		height=Image.create(ATLAS_SIZE,ATLAS_SIZE,false,Image.FORMAT_RF)
+		height.fill(Color(.5,0,0,1))
+	var ah := Image.create(ATLAS_SIZE,ATLAS_SIZE,false,Image.FORMAT_RGBAH)
+	var nr := Image.create(ATLAS_SIZE,ATLAS_SIZE,false,Image.FORMAT_RGBA8)
+	var red := 0.0
+	var green := 0.0
+	var blue := 0.0
+	for y in ATLAS_SIZE:
+		for x in ATLAS_SIZE:
+			var color := diffuse.get_pixel(x,y)
+			var linear := color.srgb_to_linear()
+			red+=linear.r;green+=linear.g;blue+=linear.b
+			linear.a=height.get_pixel(x,y).r
+			ah.set_pixel(x,y,linear)
+			color=normal.get_pixel(x,y)
+			color.a=rough.get_pixel(x,y).r
+			nr.set_pixel(x,y,color)
+	ah.generate_mipmaps()
+	nr.generate_mipmaps()
+	return {"ah":ah,"nr":nr,"mean":Color(red/(ATLAS_SIZE*ATLAS_SIZE),green/(ATLAS_SIZE*ATLAS_SIZE),blue/(ATLAS_SIZE*ATLAS_SIZE),1),"heightFallback":fallback}
 
 func _load_image(value, manifest_path: String) -> Image:
 	if value is Dictionary:
