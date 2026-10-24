@@ -1,0 +1,411 @@
+{
+  "format": "explicit-retained-preview-replay",
+  "version": 1,
+  "status": "PASS",
+  "producerRevision": "f4d25e105195f9a57f2622b2ee7ea70f5e923940",
+  "sourceCapture": "ROOT/web/out/surface/native-e2e-40km-v10",
+  "initialCachePacket": "ROOT/web/out/surface/native-e2e-40km-v10/live-refinement.surfacebin",
+  "savedPacketSha256": "29c2412100d1327d320c694c01774763c59f2c7c7d5d4912f0adbcd2bd75fb07",
+  "canonicalContextId": "2cc43122fe82284cdd995f8a5f425586",
+  "canonicalTerrainHash": "fad423dfeeec12fbce8b6d4396756d5d",
+  "outputs": [
+    {
+      "serial": 37,
+      "originalRequestId": 3,
+      "originalWorldId": "b9c4484af7c4f2d438e0f012ce3a3dde",
+      "request": {
+        "extent": 8483.47305035776,
+        "knownContextId": "2cc43122fe82284cdd995f8a5f425586",
+        "knownSceneContextId": "144ff1d312772c97f660eddf3e7142e9",
+        "preview": true,
+        "resolution": 128,
+        "x": 15545.3847756674,
+        "y": 15683.2247289167
+      },
+      "originalTileRequest": {
+        "id": "2e40b24347c5b9e970fdcd862062d4da",
+        "x": 15545.3847756674,
+        "y": 15683.2247289167,
+        "width": 8483.47305035776,
+        "resolution": 128
+      },
+      "sourceQueryMs": 26.622799999999984,
+      "retargetMs": 201.2367999999999,
+      "pagesMs": 490.08770000000004,
+      "originalTerrainHashMatched": true,
+      "originalParentDiagnosticsMatched": true,
+      "originalWorldIdMatched": true,
+      "originalVersionsMatched": true,
+      "originalSurfaceLayerDescriptorMatched": true,
+      "candidateCount": 71341,
+      "candidatePages": {
+        "version": "surface-candidate-pages-1",
+        "tree": {
+          "bounds": {
+            "minX": 17787.12130084628,
+            "minZ": 17924.96125409558,
+            "maxX": 21787.12130084628,
+            "maxZ": 21924.96125409558
+          },
+          "requestedBounds": {
+            "minX": 17787.12130084628,
+            "minZ": 17924.96125409558,
+            "maxX": 21787.12130084628,
+            "maxZ": 21924.96125409558
+          },
+          "count": 64067,
+          "complete": true,
+          "includeOverhang": true,
+          "retention": 1,
+          "limitedBy": "none"
+        },
+        "support": {
+          "policy": "fine-inside-centres-otherwise-parent-or-canonical",
+          "canonicalSource": {
+            "id": "infinite:2814899424497554030:2e40b24347c5b9e970fdcd862062d4da",
+            "version": "decoder-v12-nyquist-notch:magna-retained-v1:e2bf5473c0ff:f21afa261ed7",
+            "nativeSpacingM": 39.0625,
+            "reconstruction": "bilinear-samples"
+          },
+          "canonicalContextId": "2cc43122fe82284cdd995f8a5f425586",
+          "fineSource": {
+            "id": "infinite:2814899424497554030:2e40b24347c5b9e970fdcd862062d4da",
+            "version": "decoder-v12-nyquist-notch:magna-retained-v1:e2bf5473c0ff:f21afa261ed7",
+            "nativeSpacingM": 30,
+            "reconstruction": "bilinear-samples"
+          },
+          "fineBounds": {
+            "minX": 15578.52334227036,
+            "minZ": 15716.36329551966,
+            "maxX": 23995.7192594222,
+            "maxZ": 24133.5592126715
+          },
+          "parentSource": {
+            "id": "infinite:2814899424497554030:2e40b24347c5b9e970fdcd862062d4da",
+            "version": "decoder-v12-nyquist-notch:magna-retained-v1:e2bf5473c0ff:f21afa261ed7",
+            "nativeSpacingM": 78.125,
+            "reconstruction": "cubic-bspline-controls"
+          },
+          "parentBounds": {
+            "minX": 39.0625,
+            "minZ": 39.0625,
+            "maxX": 39960.9375,
+            "maxZ": 39960.9375
+          },
+          "fineSampleCount": 71341,
+          "parentSampleCount": 0,
+          "canonicalSampleCount": 0
+        },
+        "query": {
+          "version": "surface-population-query-1",
+          "recipeVersion": "population-1.2.0",
+          "mode": "paged",
+          "requestedBounds": {
+            "minX": 15545.3847756674,
+            "minZ": 15683.2247289167,
+            "maxX": 24028.85782602516,
+            "maxZ": 24166.69777927446
+          },
+          "canonicalDomain": {
+            "minX": 39.0625,
+            "minZ": 39.0625,
+            "maxX": 39960.9375,
+            "maxZ": 39960.9375
+          },
+          "sourceToWorldTranslation": {
+            "x": 0,
+            "z": 0
+          }
+        },
+        "shrub": {
+          "bounds": {
+            "minX": 19547.12130084628,
+            "minZ": 19684.96125409558,
+            "maxX": 20027.12130084628,
+            "maxZ": 20164.96125409558
+          },
+          "requestedBounds": {
+            "minX": 19547.12130084628,
+            "minZ": 19684.96125409558,
+            "maxX": 20027.12130084628,
+            "maxZ": 20164.96125409558
+          },
+          "count": 184,
+          "complete": true,
+          "includeOverhang": true,
+          "retention": 1,
+          "limitedBy": "none"
+        },
+        "boulder": {
+          "bounds": {
+            "minX": 19547.12130084628,
+            "minZ": 19684.96125409558,
+            "maxX": 20027.12130084628,
+            "maxZ": 20164.96125409558
+          },
+          "requestedBounds": {
+            "minX": 19547.12130084628,
+            "minZ": 19684.96125409558,
+            "maxX": 20027.12130084628,
+            "maxZ": 20164.96125409558
+          },
+          "count": 486,
+          "complete": true,
+          "includeOverhang": true,
+          "retention": 1,
+          "limitedBy": "none"
+        },
+        "grass": {
+          "bounds": {
+            "minX": 19547.12130084628,
+            "minZ": 19684.96125409558,
+            "maxX": 20027.12130084628,
+            "maxZ": 20164.96125409558
+          },
+          "requestedBounds": {
+            "minX": 19547.12130084628,
+            "minZ": 19684.96125409558,
+            "maxX": 20027.12130084628,
+            "maxZ": 20164.96125409558
+          },
+          "count": 5924,
+          "complete": true,
+          "includeOverhang": true,
+          "retention": 1,
+          "limitedBy": "none"
+        },
+        "debris": {
+          "bounds": {
+            "minX": 19547.12130084628,
+            "minZ": 19684.96125409558,
+            "maxX": 20027.12130084628,
+            "maxZ": 20164.96125409558
+          },
+          "requestedBounds": {
+            "minX": 19547.12130084628,
+            "minZ": 19684.96125409558,
+            "maxX": 20027.12130084628,
+            "maxZ": 20164.96125409558
+          },
+          "count": 680,
+          "complete": true,
+          "includeOverhang": true,
+          "retention": 1,
+          "limitedBy": "none"
+        }
+      },
+      "originalWireBytes": 9347316,
+      "compact": {
+        "file": "MODEL/web/out/surface/v10-preview-replay-r2/preview-37.surfacebin",
+        "bytes": 9347732,
+        "sha256": "17c13c353a39bbde9f29b8d045289b396cd5e4e926770353c365cd0f89948d2c"
+      },
+      "standalone": {
+        "file": "MODEL/web/out/surface/v10-preview-replay-r2/preview-37-standalone.surfacebin",
+        "bytes": 77949849,
+        "sha256": "c11daf01ab41e0dda12d501f33f115edfd1bba9d5f2eb694dc4406cab7dd866e"
+      }
+    },
+    {
+      "serial": 90,
+      "originalRequestId": 4,
+      "originalWorldId": "94dc8b5be00ca4e5c610697b406855d7",
+      "request": {
+        "extent": 254.918898679962,
+        "knownContextId": "2cc43122fe82284cdd995f8a5f425586",
+        "knownSceneContextId": "144ff1d312772c97f660eddf3e7142e9",
+        "preview": true,
+        "resolution": 128,
+        "x": 19753.2835191352,
+        "y": 19880.7868091783
+      },
+      "originalTileRequest": {
+        "id": "2e40b24347c5b9e970fdcd862062d4da",
+        "x": 19753.2835191352,
+        "y": 19880.7868091783,
+        "width": 254.9188986799636,
+        "resolution": 129
+      },
+      "sourceQueryMs": 29.407500000000255,
+      "retargetMs": 190.2398000000003,
+      "pagesMs": 15.81309999999985,
+      "originalTerrainHashMatched": true,
+      "originalParentDiagnosticsMatched": true,
+      "originalWorldIdMatched": true,
+      "originalVersionsMatched": true,
+      "originalSurfaceLayerDescriptorMatched": true,
+      "candidateCount": 3149,
+      "candidatePages": {
+        "version": "surface-candidate-pages-1",
+        "tree": {
+          "bounds": {
+            "minX": 19640.74296847518,
+            "minZ": 19768.24625851828,
+            "maxX": 20120.74296847518,
+            "maxZ": 20248.24625851828
+          },
+          "requestedBounds": {
+            "minX": 19640.74296847518,
+            "minZ": 19768.24625851828,
+            "maxX": 20120.74296847518,
+            "maxZ": 20248.24625851828
+          },
+          "count": 912,
+          "complete": true,
+          "includeOverhang": true,
+          "retention": 1,
+          "limitedBy": "none"
+        },
+        "support": {
+          "policy": "fine-inside-centres-otherwise-parent-or-canonical",
+          "canonicalSource": {
+            "id": "infinite:2814899424497554030:2e40b24347c5b9e970fdcd862062d4da",
+            "version": "decoder-v12-nyquist-notch:magna-retained-v1:e2bf5473c0ff:f21afa261ed7",
+            "nativeSpacingM": 39.0625,
+            "reconstruction": "bilinear-samples"
+          },
+          "canonicalContextId": "2cc43122fe82284cdd995f8a5f425586",
+          "fineSource": {
+            "id": "infinite:2814899424497554030:2e40b24347c5b9e970fdcd862062d4da",
+            "version": "decoder-v12-nyquist-notch:magna-retained-v1:e2bf5473c0ff:f21afa261ed7",
+            "nativeSpacingM": 1.875,
+            "reconstruction": "bilinear-samples"
+          },
+          "fineBounds": {
+            "minX": 19754.27157688202,
+            "minZ": 19881.77486692512,
+            "maxX": 20007.21436006834,
+            "maxZ": 20134.71765011144
+          },
+          "parentSource": {
+            "id": "infinite:2814899424497554030:2e40b24347c5b9e970fdcd862062d4da",
+            "version": "decoder-v12-nyquist-notch:magna-retained-v1:e2bf5473c0ff:f21afa261ed7",
+            "nativeSpacingM": 78.125,
+            "reconstruction": "cubic-bspline-controls"
+          },
+          "parentBounds": {
+            "minX": 39.0625,
+            "minZ": 39.0625,
+            "maxX": 39960.9375,
+            "maxZ": 39960.9375
+          },
+          "fineSampleCount": 2508,
+          "parentSampleCount": 641,
+          "canonicalSampleCount": 0
+        },
+        "query": {
+          "version": "surface-population-query-1",
+          "recipeVersion": "population-1.2.0",
+          "mode": "paged",
+          "requestedBounds": {
+            "minX": 19753.2835191352,
+            "minZ": 19880.7868091783,
+            "maxX": 20008.202417815162,
+            "maxZ": 20135.705707858262
+          },
+          "canonicalDomain": {
+            "minX": 39.0625,
+            "minZ": 39.0625,
+            "maxX": 39960.9375,
+            "maxZ": 39960.9375
+          },
+          "sourceToWorldTranslation": {
+            "x": 0,
+            "z": 0
+          }
+        },
+        "shrub": {
+          "bounds": {
+            "minX": 19753.2835191352,
+            "minZ": 19880.7868091783,
+            "maxX": 20008.202417815162,
+            "maxZ": 20135.705707858262
+          },
+          "requestedBounds": {
+            "minX": 19753.2835191352,
+            "minZ": 19880.7868091783,
+            "maxX": 20008.202417815162,
+            "maxZ": 20135.705707858262
+          },
+          "count": 61,
+          "complete": true,
+          "includeOverhang": true,
+          "retention": 1,
+          "limitedBy": "none"
+        },
+        "boulder": {
+          "bounds": {
+            "minX": 19753.2835191352,
+            "minZ": 19880.7868091783,
+            "maxX": 20008.202417815162,
+            "maxZ": 20135.705707858262
+          },
+          "requestedBounds": {
+            "minX": 19753.2835191352,
+            "minZ": 19880.7868091783,
+            "maxX": 20008.202417815162,
+            "maxZ": 20135.705707858262
+          },
+          "count": 103,
+          "complete": true,
+          "includeOverhang": true,
+          "retention": 1,
+          "limitedBy": "none"
+        },
+        "grass": {
+          "bounds": {
+            "minX": 19753.2835191352,
+            "minZ": 19880.7868091783,
+            "maxX": 20008.202417815162,
+            "maxZ": 20135.705707858262
+          },
+          "requestedBounds": {
+            "minX": 19753.2835191352,
+            "minZ": 19880.7868091783,
+            "maxX": 20008.202417815162,
+            "maxZ": 20135.705707858262
+          },
+          "count": 1821,
+          "complete": true,
+          "includeOverhang": true,
+          "retention": 1,
+          "limitedBy": "none"
+        },
+        "debris": {
+          "bounds": {
+            "minX": 19753.2835191352,
+            "minZ": 19880.7868091783,
+            "maxX": 20008.202417815162,
+            "maxZ": 20135.705707858262
+          },
+          "requestedBounds": {
+            "minX": 19753.2835191352,
+            "minZ": 19880.7868091783,
+            "maxX": 20008.202417815162,
+            "maxZ": 20135.705707858262
+          },
+          "count": 252,
+          "complete": true,
+          "includeOverhang": true,
+          "retention": 1,
+          "limitedBy": "none"
+        }
+      },
+      "originalWireBytes": 4513092,
+      "compact": {
+        "file": "MODEL/web/out/surface/v10-preview-replay-r2/preview-90.surfacebin",
+        "bytes": 4513516,
+        "sha256": "6f6291a60221aa4d29596ebaf4cb9e33bead6665312ea1b3ce013d5ac30ac7bc"
+      },
+      "standalone": {
+        "file": "MODEL/web/out/surface/v10-preview-replay-r2/preview-90-standalone.surfacebin",
+        "bytes": 73115633,
+        "sha256": "be15188ac9c51cec753cd80fb6cc706138ecf4d31afbe675a08025ad65902e53"
+      }
+    }
+  ],
+  "sourceGenerationRequested": false,
+  "registrationRequested": false,
+  "savedPacketUnchanged": true,
+  "scope": "Explicit retained query replay, not archived original BODY. Existing Python registration only; no registration/generation fallback. Original terrain hash,parent diagnostics,world id,versions and projected layer descriptor verified. Canonical context borrowed exactly; no unavailable compiler inputs inferred. Retarget+pages f4 semantics, not a reconstructed initial worker compilation. Compact output omits known context/scene as production did. Standalone variant adds known context/scene for diagnostic loading. Whole BODY byte equality with original cannot be asserted because it was not saved."
+}
