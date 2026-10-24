@@ -19,7 +19,7 @@ func run()->void:
 	var g=terrain(65,16.0);g.heights[0]=-150.0
 	var w=world_for(g);var original=g.heights.to_byte_array().duplicate()
 	var origin={"x":0.0,"y":0.0,"z":0.0};var snap=Plan.snapshot(camera,Vector2(200,125),origin)
-	var page={"complete":true,"bounds":{"minX":-1000.0,"minZ":-1000.0,"maxX":1000.0,"maxZ":1000.0}}
+	var page={"complete":true,"bounds":{"minX":-500.0,"minZ":-500.0,"maxX":500.0,"maxZ":500.0}}
 	var plan=Plan.build(w,w,snap,origin,.625,page,{"crownHeightM":32.0,"haloM":40.0})
 	verify(plan.available,"small oblique source has a bounded plan")
 	verify(plan.heightEnvelopeWorld[0]>-100.0,"offscreen valley is not substituted as a global infinite height plane")
@@ -96,4 +96,7 @@ func run()->void:
 	Plan.build(cancelled_world,cancelled_world,snap,origin,1.25,page,{"prepareControl":token})
 	verify(token.report().reached and token.report().stage=="visibility-index-controls","index construction has an actual cancellation checkpoint")
 	verify(not Plan.describe(plan).has("_world") and not Plan.describe(plan).has("camera"),"report never serializes world arrays or native projection objects")
+	var unsupported=world_for(terrain(9,1.0))
+	verify(Plan.build(unsupported,unsupported,snap,origin,.625,page).reason=="tree-page-has-unknown-height-support","complete tree inventory cannot invent missing parent heights")
+	verify(not Plan._covered_rectangle({"minX":0,"maxX":10,"minZ":0,"maxZ":10},[{"minX":0,"maxX":4,"minZ":0,"maxZ":10},{"minX":6,"maxX":10,"minZ":0,"maxZ":10}]),"disjoint physical rectangles do not cover their bounding-box gap")
 	print(JSON.stringify({"test":"oblique-visibility-plan","checks":checks,"result":"PASS","visitedNodes":plan.visitedNodes,"residentImageSize":plan.residentImageSize,"sourceHeightEnvelope":plan.heightEnvelopeWorld,"scope":"small authored CPU source controls only; retained V12 oblique/GPU remain unqualified"}));quit()

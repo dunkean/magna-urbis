@@ -97,6 +97,22 @@ static func _union(a:Dictionary,b:Dictionary)->Dictionary:
 	if a.is_empty():return b.duplicate()
 	return {"minX":minf(a.minX,b.minX),"minZ":minf(a.minZ,b.minZ),"maxX":maxf(a.maxX,b.maxX),"maxZ":maxf(a.maxZ,b.maxZ)}
 
+static func _covered_rectangle(bounds:Dictionary,domains:Array)->bool:
+	var remaining:Array=[bounds]
+	for domain in domains:
+		var next:Array=[]
+		for rect in remaining:
+			var hit=_intersect(rect,domain)
+			if hit.is_empty() or float(hit.maxX)<=float(hit.minX) or float(hit.maxZ)<=float(hit.minZ):next.append(rect);continue
+			if float(rect.minX)<float(hit.minX):next.append({"minX":rect.minX,"minZ":rect.minZ,"maxX":hit.minX,"maxZ":rect.maxZ})
+			if float(rect.maxX)>float(hit.maxX):next.append({"minX":hit.maxX,"minZ":rect.minZ,"maxX":rect.maxX,"maxZ":rect.maxZ})
+			if float(rect.minZ)<float(hit.minZ):next.append({"minX":hit.minX,"minZ":rect.minZ,"maxX":hit.maxX,"maxZ":hit.minZ})
+			if float(rect.maxZ)>float(hit.maxZ):next.append({"minX":hit.minX,"minZ":hit.maxZ,"maxX":hit.maxX,"maxZ":rect.maxZ})
+		remaining=next
+		if remaining.is_empty():return true
+		if remaining.size()>128:return false
+	return remaining.is_empty()
+
 static func _planes(camera:Dictionary)->Array:
 	# Subtract double camera coordinates before any Vector3/Projection operation.
 	var vp:Projection=camera.projection*Projection(Transform3D(camera.basis,Vector3.ZERO).affine_inverse())
@@ -114,7 +130,11 @@ static func _visible(bounds:Dictionary,low:float,high:float,camera:Dictionary,pl
 
 static func build(world:Dictionary,display:Dictionary,camera:Dictionary,origin:Dictionary,spacing:float,page:Dictionary,options:Dictionary={})->Dictionary:
 	if camera.is_empty() or page.is_empty() or not page.get("complete",false):return _fail("missing-camera-or-complete-tree-page")
-	if Coverage.domains(world).is_empty():return _fail("invalid-source-lineage-or-domain")
+	var physical_domains=Coverage.domains(world)
+	if physical_domains.is_empty():return _fail("invalid-source-lineage-or-domain")
+	# A page of positions is not a substitute for its real height support.
+	# Refuse a fine-only packet claiming trees outside its transported sources.
+	if not _covered_rectangle(page.bounds,physical_domains):return _fail("tree-page-has-unknown-height-support")
 	var domains=Geometry.prepare_height_layers(world);var display_domains=Geometry.prepare_height_layers(display)
 	for layer in display_domains:
 		var matched=false
