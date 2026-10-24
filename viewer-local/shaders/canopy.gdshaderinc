@@ -10,6 +10,7 @@ uniform vec2 canopy_main_viewport_size=vec2(1.0);
 uniform sampler2D canopy_coverage : filter_linear_mipmap, repeat_disable;
 uniform bool canopy_normals_enabled=false;
 uniform sampler2D canopy_normals : filter_linear_mipmap, repeat_disable;
+uniform sampler2D canopy_colors : filter_linear_mipmap, repeat_disable;
 uniform sampler2D canopy_counts : filter_nearest, repeat_disable;
 uniform vec2 canopy_origin;
 uniform vec2 canopy_grid_size = vec2(2.0);
@@ -20,6 +21,8 @@ uniform float canopy_fallback_blend_m = 16.0;
 uniform bool canopy_shadow_use_total=true;
 uniform vec2 canopy_shadow_offset=vec2(4.7,-8.5);
 uniform vec3 canopy_shadow_transmittance=vec3(.25,.34,.50);
+uniform float canopy_shadow_angular_diameter_degrees=0.0;
+uniform float canopy_shadow_reference_height_m=9.80388349514563;
 uniform vec3 canopy_linear_albedo = vec3(0.055,0.105,0.036);
 // One common horizontal reference plane, in the current rebased frame. Both
 // representations project the same world-XZ point onto this plane each pixel.
@@ -50,6 +53,7 @@ float canopy_visible_at(ivec2 texel,float footprint_m) {
 // Counts themselves are never mipmapped or averaged before pow(). The atlas
 // uses power-of-two dimensions and a world-aligned dyadic origin.
 float canopy_visible_mip_at(ivec2 cell,int level,float footprint_m) {
+    cell=clamp(cell,ivec2(0),textureSize(canopy_coverage,level)-ivec2(1));
     if(level==0)return canopy_visible_at(clamp(cell,ivec2(0),ivec2(canopy_grid_size)-ivec2(1)),footprint_m);
     int side=1<<level;
     float visible=0.0;
@@ -64,7 +68,7 @@ float canopy_visible_mip_at(ivec2 cell,int level,float footprint_m) {
 }
 float canopy_visible_mip(vec2 uv,int level,float footprint_m) {
     vec2 size=vec2(textureSize(canopy_coverage,level));
-    vec2 grid=clamp(uv*size-vec2(.5),vec2(0),size-vec2(1.001));
+    vec2 grid=clamp(uv*size-vec2(.5),vec2(0),max(vec2(0),size-vec2(1)));
     ivec2 cell=ivec2(floor(grid));vec2 f=fract(grid);
     return mix(mix(canopy_visible_mip_at(cell,level,footprint_m),canopy_visible_mip_at(cell+ivec2(1,0),level,footprint_m),f.x),
                mix(canopy_visible_mip_at(cell+ivec2(0,1),level,footprint_m),canopy_visible_mip_at(cell+ivec2(1,1),level,footprint_m),f.x),f.y);
@@ -72,16 +76,18 @@ float canopy_visible_mip(vec2 uv,int level,float footprint_m) {
 float surface_canopy_selected_visibility(vec2 world_xz,float footprint_m) {
     if(!canopy_enabled || canopy_geometry_weight<=0.0 || canopy_instance_weight(3,footprint_m)<=0.0)return 0.0;
     vec2 uv=((world_xz-canopy_origin)/canopy_spacing_m+vec2(.5))/canopy_grid_size;
-    float lod=clamp(log2(max(footprint_m/canopy_spacing_m,1.0)),0.0,3.0);
-    int low=int(floor(lod));int high=min(low+1,3);
+    int maximum=min(3,int(floor(log2(min(canopy_grid_size.x,canopy_grid_size.y)))));
+    float lod=clamp(log2(max(footprint_m/canopy_spacing_m,1.0)),0.0,float(maximum));
+    int low=int(floor(lod));int high=min(low+1,maximum);
     return mix(canopy_visible_mip(uv,low,footprint_m),canopy_visible_mip(uv,high,footprint_m),fract(lod));
 }
 float canopy_coverage_mip(vec2 uv,int level) {
     vec2 size=vec2(textureSize(canopy_coverage,level));
-    vec2 grid=clamp(uv*size-vec2(.5),vec2(0),size-vec2(1.001));
+    vec2 grid=clamp(uv*size-vec2(.5),vec2(0),max(vec2(0),size-vec2(1)));
     ivec2 cell=ivec2(floor(grid));vec2 f=fract(grid);
-    return mix(mix(texelFetch(canopy_coverage,cell,level).r,texelFetch(canopy_coverage,cell+ivec2(1,0),level).r,f.x),
-               mix(texelFetch(canopy_coverage,cell+ivec2(0,1),level).r,texelFetch(canopy_coverage,cell+ivec2(1,1),level).r,f.x),f.y);
+    ivec2 upper=ivec2(size)-ivec2(1);
+    return mix(mix(texelFetch(canopy_coverage,cell,level).r,texelFetch(canopy_coverage,min(cell+ivec2(1,0),upper),level).r,f.x),
+               mix(texelFetch(canopy_coverage,min(cell+ivec2(0,1),upper),level).r,texelFetch(canopy_coverage,min(cell+ivec2(1,1),upper),level).r,f.x),f.y);
 }
 float canopy_coverage_filtered(vec2 uv,float lod) {
     int maximum=int(floor(log2(min(canopy_grid_size.x,canopy_grid_size.y))));
@@ -105,8 +111,20 @@ float surface_canopy_residual(vec2 world_xz,float footprint_m,float mean_cover) 
     float visible=surface_canopy_selected_visibility(world_xz,footprint_m);
     // A single viewport phase forbids geometry until the entire view is exact.
     // Complete-page inventory and identical filtering make visible <= total.
-    visible=min(total,visible);
-    return visible>=0.999999 ? 0.0 : clamp((total-visible)/(1.0-visible),0.0,1.0);
+    // The host certificate disables geometry globally if footprint/activeSpacing
+    // exceeds the common kernel. Do not hide a broken certificate by clamping V.
+    return visible>=0.999999 ? 0.0 : (total-visible)/(1.0-visible);
+}
+float surface_canopy_shadow_target(vec2 p,float footprint,float cover){
+    float diameter=2.0*clamp(canopy_shadow_reference_height_m,0.0,32.0)*tan(radians(clamp(canopy_shadow_angular_diameter_degrees,0.0,2.0))*.5);
+    return surface_canopy_target(p,max(footprint,min(diameter,1.0)),cover);
+}
+vec3 surface_canopy_color(vec2 p,float footprint){
+    if(!canopy_asset_enabled || !canopy_enabled)return canopy_linear_albedo;
+    vec2 uv=((p-canopy_origin)/canopy_spacing_m+vec2(.5))/canopy_grid_size;
+    float lod=max(0.0,log2(max(footprint/canopy_spacing_m,1.0)));
+    vec4 c=textureLod(canopy_colors,uv,lod);
+    return mix(canopy_linear_albedo,c.a>.00001?c.rgb/c.a:canopy_linear_albedo,clamp(canopy_exact_weight,0.0,1.0));
 }
 
 vec3 surface_canopy_normal(vec2 p,float footprint,float mean_cover) {
