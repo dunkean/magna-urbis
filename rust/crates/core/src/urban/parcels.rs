@@ -1542,19 +1542,24 @@ fn shared(a: &Shape, b: &Shape) -> f64 {
         for j in 0..b.outer.len() {
             let r = b.outer[j];
             let s = b.outer[(j + 1) % b.outer.len()];
-            if dot(dir, unit(sub(s, r))).abs() < 0.99999 {
-                continue;
-            }
-            // Overlapping collinear edges may use different vertex splits.
+            // Reject by the existing line-distance predicate before paying
+            // for the other side's normalized direction. Both tests are pure;
+            // their thresholds and the accumulation order are unchanged.
             let off = sub(r, p);
             if (off.x * dir.y - off.y * dir.x).abs() > 0.01 {
                 continue;
             }
+            if dot(dir, unit(sub(s, r))).abs() < 0.99999 {
+                continue;
+            }
+            // Overlapping collinear edges may use different vertex splits.
             let u = dot(off, dir);
             let v = dot(sub(s, p), dir);
             len += (u.max(v).min(edge_len) - u.min(v).max(0.0)).max(0.0);
         }
     }
+    #[cfg(test)]
+    shared_predicate_tests::assert_legacy(a, b, len);
     len
 }
 
@@ -4807,3 +4812,7 @@ mod tests {
         assert!(deepest <= 100.0, "deepest admitted lot {deepest:.1} m");
     }
 }
+
+#[cfg(test)]
+#[path = "parcels/shared_predicate_tests.rs"]
+mod shared_predicate_tests;

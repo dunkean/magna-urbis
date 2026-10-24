@@ -214,6 +214,19 @@ impl Bins {
         })
     }
 }
+/// Observe frontage to the retained street network; its physical validity was
+/// checked upstream. A carved street can face a hole boundary as well as the
+/// outer boundary. A hole alone supplies no access and does not create a street.
+fn block_boundary_served(shape: &Shape, streets: &[Street], all: &Bins, reach: f64) -> bool {
+    shape.outer.iter().chain(shape.holes.iter().flatten()).any(|&p| {
+        all.around(p, reach).any(|(i, j)| {
+            let s = &streets[i];
+            g::distance(p, s.path[j], s.path[j + 1]).0
+                <= s.widths[j].max(s.widths[j + 1]) * 0.5 + 2.0
+        })
+    })
+}
+
 /// Ribbon polygons binned by bounding box: a piece visits only the ribbons
 /// whose box shares a cell with its own, in ascending ribbon order (the order
 /// of the former linear scan, so the successive differences are unchanged).
@@ -3574,15 +3587,7 @@ fn generate_once(
         .fold(0.0, |a: f64, &w| a.max(w))
         * 0.5
         + 2.0;
-    let served = |b: &Block| {
-        b.shape.outer.iter().any(|&p| {
-            all.around(p, reach).any(|(i, j)| {
-                let s = &streets[i];
-                g::distance(p, s.path[j], s.path[j + 1]).0
-                    <= s.widths[j].max(s.widths[j + 1]) * 0.5 + 2.0
-            })
-        })
-    };
+    let served = |b: &Block| block_boundary_served(&b.shape, &streets, &all, reach);
     let mut served_flags = super::par::map(&blocks, |_, b| served(b));
     let unserved: Vec<usize> = (0..blocks.len())
         .filter(|&i| blocks[i].kind == "block" && !served_flags[i])
@@ -4793,3 +4798,7 @@ mod tests {
         assert!(mean > 2500.0, "core blocks of {mean:.0} m²");
     }
 }
+
+#[cfg(test)]
+#[path = "pnw_block_boundary_tests.rs"]
+mod pnw_block_boundary_tests;

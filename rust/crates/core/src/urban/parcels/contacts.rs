@@ -180,6 +180,11 @@ pub(super) fn street_contacts(shape: &Shape, layout: &Layout, index: &FrontageIn
 
 /// Intersect both boundary interval sets, allowing either side to be split.
 pub(super) fn boundary_contacts(shape: &Shape, fronts: &[Front]) -> Vec<Front> {
+    // Front geometry is immutable for this call. Evaluate the ORIGINAL
+    // unit(sub(b,a)) once per front, lazily at the first nondegenerate edge,
+    // rather than once for each (ring edge, front) pair. No spatial rejection,
+    // candidate reordering, predicate/tolerance or arithmetic formula changes.
+    let directions=std::cell::OnceCell::<Vec<Point>>::new();
     let mut result = Vec::new();
     for ring in std::iter::once(&shape.outer).chain(shape.holes.iter()) {
         let mut pieces = Vec::new();
@@ -195,8 +200,9 @@ pub(super) fn boundary_contacts(shape: &Shape, fronts: &[Front]) -> Vec<Front> {
             }
             let axis = scale(edge, 1.0 / len);
             let mut spans = Vec::new();
-            for f in fronts {
-                if dot(unit(sub(f.b, f.a)), axis) < 1.0 - 1e-8
+            let directions=directions.get_or_init(||fronts.iter().map(|f|unit(sub(f.b,f.a))).collect());
+            for (f,&direction) in fronts.iter().zip(directions) {
+                if dot(direction, axis) < 1.0 - 1e-8
                     || dot(sub(f.a, a), normal(axis)).abs() > 0.025
                     || dot(sub(f.b, a), normal(axis)).abs() > 0.025
                 {
@@ -224,5 +230,11 @@ pub(super) fn boundary_contacts(shape: &Shape, fronts: &[Front]) -> Vec<Front> {
         }
         result.extend(merge(pieces));
     }
+    #[cfg(test)]
+    prepared_direction_tests::assert_legacy(shape,fronts,&result);
     result
 }
+
+#[cfg(test)]
+#[path="contacts_prepared_direction_tests.rs"]
+mod prepared_direction_tests;

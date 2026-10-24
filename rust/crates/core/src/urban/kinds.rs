@@ -111,8 +111,6 @@ pub fn label(id: &str) -> &'static str {
     Kind::from_id(id).map_or("", Kind::label)
 }
 
-/// Cultures whose settlements are camps below town size.
-const NOMADS: [&str; 2] = ["nomad-camp", "native-plains"];
 /// Site archetypes where a small town is worth a wall, or a village clusters.
 const DEFENSIVE: [&str; 4] = ["hilltop", "spur", "pass", "island"];
 
@@ -122,6 +120,35 @@ fn culture<'a>(site: &'a Site, cfg: &'a LayoutConfig) -> &'a str {
     } else {
         &cfg.culture
     }
+}
+
+/// The actual chosen native preset declares its camp layout. Automatic
+/// cultural recipes follow their existing grown-profile transition. The older
+/// nomad catalogue can still declare a ring through `camp.layout`; no culture
+/// name list is maintained here. Explicit presets never borrow that fallback.
+fn camp_preset_params(culture: &str, population: u32, cfg: &LayoutConfig) -> &'static serde_json::Value {
+    let recipe = if cfg.recipe == "auto" {
+        composition::recipe(culture, population, "core")
+    } else {
+        cfg.recipe.clone()
+    };
+    let preset = if cfg.preset == "culture" { format!("{culture}/{recipe}") } else { cfg.preset.clone() };
+    &super::catalogue()["presets"][preset]["params"]
+}
+
+fn native_camp(culture: &str, population: u32, cfg: &LayoutConfig) -> bool {
+    camp_preset_params(culture, population, cfg)["campLayout"]
+        .as_str().is_some_and(|layout| !layout.is_empty())
+}
+
+fn cultural_camp(culture: &str, population: u32, cfg: &LayoutConfig) -> bool {
+    let params = camp_preset_params(culture, population, cfg);
+    if !params.is_object() { return false; }
+    if let Some(layout) = params.get("campLayout") {
+        return layout.as_str().is_some_and(|s| !s.is_empty());
+    }
+    cfg.preset == "culture" && cfg.recipe == "auto"
+        && composition::culture_data(culture, population)["camp"]["layout"].as_str() == Some("ring")
 }
 
 pub(super) fn resolve(site: &Site, cfg: &LayoutConfig, roads: &[Street]) -> Kind {
@@ -141,15 +168,15 @@ pub(super) fn resolve(site: &Site, cfg: &LayoutConfig, roads: &[Street]) -> Kind
             Kind::Single
         };
     }
-    if NOMADS.contains(&culture) && pop < 5000 {
-        return Kind::Camp;
-    }
     if pop <= 12 {
         return if state == "ruined" {
             Kind::Ruin
         } else {
             Kind::Farmstead
         };
+    }
+    if cfg.settlement_form == "auto" && pop < 5000 && cultural_camp(culture, pop, cfg) {
+        return Kind::Camp;
     }
     if pop < 150 {
         return Kind::Hamlet;
@@ -231,7 +258,13 @@ pub(super) fn effective(site: &Site, cfg: &LayoutConfig, roads: &[Street]) -> (L
         Kind::Single | Kind::Ruin | Kind::Farmstead | Kind::Camp | Kind::Hamlet => {
             set(&mut c.suburbs, "auto", "none");
             set(&mut c.peripheral_road, "auto", "none");
-            set(&mut c.fortification, "culture", "none");
+            // Native camp grammars own their enclosure (e.g. the kraal hedge).
+            // A legacy camp still keeps the former generic, unfortified plan.
+            let native_camp = kind == Kind::Camp
+                && native_camp(culture(site, cfg), site.population, cfg);
+            if !native_camp {
+                set(&mut c.fortification, "culture", "none");
+            }
             if default_epochs {
                 c.footprint.epochs = 1;
             }
@@ -733,6 +766,14 @@ pub(super) fn lay_out(
     surface: Surface<'_>,
     roads: &[Street],
 ) -> Option<Layout> {
+    // These camps already have the shared quarter + parcels/camp grammar.
+    // Returning None delegates to the caller's existing quarter pipeline;
+    // do not first replace its land with the legacy annular band below.
+    if kind == Kind::Camp && !morph.text("campLayout").is_empty()
+        && native_camp(culture(site, cfg), site.population, cfg)
+    {
+        return None;
+    }
     let culture = culture(site, cfg).to_owned();
     let mut rng = Rng::new(seed).fork(&format!("settlement-kind:{}", kind.id()));
     let reach = 600.0;
@@ -1529,3 +1570,11 @@ mod demographic_morphology_tests {
         cfg.settlement_form = "ribbon".into(); assert_eq!(resolve(&site(100000), &cfg, &[]), Kind::City);
     }
 }
+
+#[cfg(test)]
+#[path = "kinds_camp_mapping_tests.rs"]
+mod camp_kind_mapping_tests;
+
+#[cfg(test)]
+#[path = "kinds_camp_consumer_activation_tests.rs"]
+mod camp_consumer_tests;

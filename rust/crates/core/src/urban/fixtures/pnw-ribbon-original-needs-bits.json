@@ -1,0 +1,83 @@
+[
+  {
+    "id": "probe/demand/domestic",
+    "function": "domestic",
+    "role": "dwelling",
+    "unit": "domesticUnits",
+    "requestedBits": "4041400000000000",
+    "targetAreaBits": "40a2de0000000000",
+    "targetFrontageBits": "4010000000000000"
+  },
+  {
+    "id": "probe/demand/mixed",
+    "function": "mixed",
+    "role": "dwelling.shop",
+    "unit": "domesticUnits",
+    "requestedBits": "4008000000000000",
+    "targetAreaBits": "406a400000000000",
+    "targetFrontageBits": "4010000000000000"
+  },
+  {
+    "id": "probe/demand/common",
+    "function": "common",
+    "role": "open.common",
+    "unit": "usefulAreaM2",
+    "requestedBits": "4082c00000000000",
+    "targetAreaBits": "4082c00000000000",
+    "targetFrontageBits": "4010000000000000"
+  },
+  {
+    "id": "probe/demand/civic.council-house",
+    "function": "collective",
+    "role": "civic.council-house",
+    "unit": "usefulAreaM2",
+    "requestedBits": "40830b41ded273ef",
+    "targetAreaBits": "40830b41ded273ef",
+    "targetFrontageBits": "4020000000000000"
+  },
+  {
+    "id": "probe/demand/open.plaza",
+    "function": "common",
+    "role": "open.plaza",
+    "unit": "usefulAreaM2",
+    "requestedBits": "409030c18d6bf10c",
+    "targetAreaBits": "409030c18d6bf10c",
+    "targetFrontageBits": "4010000000000000"
+  },
+  {
+    "id": "probe/demand/storage.granary",
+    "function": "warehouse",
+    "role": "storage.granary",
+    "unit": "usefulAreaM2",
+    "requestedBits": "4061800000000000",
+    "targetAreaBits": "4051800000000000",
+    "targetFrontageBits": "4022000000000000"
+  },
+  {
+    "id": "probe/demand/craft.workshop",
+    "function": "workshop",
+    "role": "craft.workshop",
+    "unit": "usefulAreaM2",
+    "requestedBits": "40532ea285dc7223",
+    "targetAreaBits": "40532ea285dc7223",
+    "targetFrontageBits": "4010000000000000"
+  },
+  {
+    "id": "probe/demand/worship.shrine",
+    "function": "collective",
+    "role": "worship.shrine",
+    "unit": "usefulAreaM2",
+    "requestedBits": "4053c891cef0fbf4",
+    "targetAreaBits": "4053c891cef0fbf4",
+    "targetFrontageBits": "4014000000000000"
+  },
+  {
+    "id": "probe/demand/storage.barn",
+    "function": "warehouse",
+    "role": "storage.barn",
+    "unit": "usefulAreaM2",
+    "requestedBits": "407dabe148d110b8",
+    "targetAreaBits": "406dabe148d110b8",
+    "targetFrontageBits": "4022000000000000"
+  }
+]

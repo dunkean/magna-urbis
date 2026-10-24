@@ -322,6 +322,75 @@ impl Nodes {
     }
 }
 
+/// Complete the EXISTING boundary graph with actual retained-path rings.
+/// Split T junctions only at real existing vertices using exactly Nodes' 2mm
+/// join policy. The 32m bins affect lookup cost only, never geometry/selection.
+fn navigation_edges(
+    block:&Shape,cells:&[Shape],navigation:&[Shape],nodes:&mut Nodes,
+    edges:&mut BTreeMap<(usize,usize),Vec<usize>>,own:&mut [Vec<(usize,usize)>],
+)->BTreeSet<(usize,usize)> {
+    let valid:Vec<_>=navigation.iter().filter(|p|difference(p,block).is_empty()).collect();
+    for p in cells.iter().chain(valid.iter().copied()) {
+        for ring in std::iter::once(&p.outer).chain(p.holes.iter()) {
+            for &v in ring {nodes.id(v);}
+        }
+    }
+    let pts=&nodes.points;
+    let mut grid:BTreeMap<(i64,i64),Vec<usize>>=BTreeMap::new();
+    for (i,p) in pts.iter().enumerate(){grid.entry(((p.x/32.).floor()as i64,(p.y/32.).floor()as i64)).or_default().push(i);}
+    let split=|a:Point,b:Point|->Vec<(usize,usize)>{
+        let d=sub(b,a);let squared=dot(d,d);if squared==0.{return vec![];}
+        let mut along=vec![];
+        for y in (((a.y.min(b.y)-2e-3)/32.).floor()as i64)..=(((a.y.max(b.y)+2e-3)/32.).floor()as i64) {
+            for x in (((a.x.min(b.x)-2e-3)/32.).floor()as i64)..=(((a.x.max(b.x)+2e-3)/32.).floor()as i64) {
+                if let Some(ids)=grid.get(&(x,y)){for &i in ids {
+                    let t=dot(sub(pts[i],a),d)/squared;
+                    if distance(pts[i],a,b)<2e-3 {along.push((t.clamp(0.0,1.0),i));}
+                }}
+            }
+        }
+        along.sort_by(|a,b|a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
+        along.dedup_by_key(|p|p.1);
+        along.windows(2).filter_map(|w|{let(a,b)=(w[0].1,w[1].1);(a!=b).then_some((a.min(b),a.max(b)))}).collect()
+    };
+    edges.clear();for list in own.iter_mut(){list.clear();}
+    for (ci,c) in cells.iter().enumerate(){
+        for ring in std::iter::once(&c.outer).chain(c.holes.iter()){
+            for (&a,&b) in ring.iter().zip(ring.iter().cycle().skip(1)).take(ring.len()){
+                for e in split(a,b){let list=edges.entry(e).or_default();if !list.contains(&ci){list.push(ci);}own[ci].push(e);}
+            }
+        }
+    }
+    let mut nav=BTreeSet::new();
+    for p in valid {
+        for ring in std::iter::once(&p.outer).chain(p.holes.iter()){
+            for (&a,&b) in ring.iter().zip(ring.iter().cycle().skip(1)).take(ring.len()){
+                for e in split(a,b){nav.insert(e);edges.entry(e).or_default();}
+            }
+        }
+    }
+    nav
+}
+fn painted_runs(route:&[usize],pts:&[Point],nav:&BTreeSet<(usize,usize)>)->Vec<Vec<Point>>{
+    let mut out=vec![];let mut line=vec![];
+    for w in route.windows(2){let(a,b)=(w[0],w[1]);
+        if nav.contains(&(a.min(b),a.max(b))){if line.len()>1 {out.push(std::mem::take(&mut line));}}
+        else {if line.is_empty(){line.push(pts[a]);}line.push(pts[b]);}
+    }
+    if line.len()>1{out.push(line);}out
+}
+fn strokes_avoid(lines:&[Vec<Point>],width:f64,forbidden:&[Shape])->bool{
+    if forbidden.is_empty(){return true;}
+    for line in lines{
+        let mut pieces=vec![];
+        for w in line.windows(2){pieces.extend(ribbon(w,&[width]));}
+        for &p in line{pieces.push(disc(p,0.5*width));}
+        for p in pieces{for f in forbidden{
+            if boxes_overlap(bbox(&p),bbox(f)) && !intersection(&p,f).is_empty(){return false;}
+        }}
+    }true
+}
+
 /// Footpaths serving the cells with no street front: shortest routes along
 /// the shared cell boundaries (multi-source Dijkstra from the street nodes),
 /// each starting with one whole side of the cell it serves, later routes
@@ -333,6 +402,29 @@ pub(super) fn footpaths(
     fronts: &[Front],
     width: f64,
 ) -> (Vec<Shape>, Vec<(Shape, (f64, f64, f64, f64))>, Vec<Front>) {
+    footpaths_with_connected_sources(shape, cells, fronts, width, &[])
+}
+
+/// Camp alone may supply indices of shared fronts whose clipped path component
+/// has an actual entry on the regional street component. They retain their
+/// shared class; callers never turn a nearest-street reference into a source.
+pub(super) fn footpaths_with_connected_sources(
+    shape: &Shape,
+    cells: &[Shape],
+    fronts: &[Front],
+    width: f64,
+    connected_shared: &[usize],
+) -> (Vec<Shape>, Vec<(Shape, (f64, f64, f64, f64))>, Vec<Front>) {
+    footpaths_with_navigation(shape, cells, fronts, width, connected_shared, &[], &[])
+}
+
+/// Retained path contours are navigation ONLY: no additional target, owner,
+/// area or drawn stroke. Camp supplies already-clipped actual paths and the
+/// existing closed centre cells which a new stroke must never enter.
+pub(super) fn footpaths_with_navigation(
+    shape:&Shape, cells:&[Shape], fronts:&[Front], width:f64,
+    connected_shared:&[usize], navigation:&[Shape], forbidden:&[Shape],
+)->(Vec<Shape>,Vec<(Shape,(f64,f64,f64,f64))>,Vec<Front>) {
     // Fronts near each cell only (a camp brings thousands of path fronts).
     let mut served: Vec<f64> = cells
         .iter()
@@ -376,12 +468,18 @@ pub(super) fn footpaths(
             own[c].push(e);
         }
     }
+    let nav_edges=if navigation.is_empty() {BTreeSet::new()} else {
+        navigation_edges(shape, cells, navigation, &mut nodes, &mut edges, &mut own)
+    };
+    let blocked:Vec<bool>=cells.iter().map(|c|forbidden.iter().any(|f|f==c)).collect();
     let n = nodes.points.len();
     let pts = &nodes.points;
     let len = |e: (usize, usize)| length(sub(pts[e.0], pts[e.1]));
     let mut graph = vec![Vec::new(); n];
     for (&e, list) in &edges {
-        if list.len() >= 2 {
+        if (list.len() >= 2 || nav_edges.contains(&e))
+            && (nav_edges.contains(&e) || !list.iter().any(|&c|blocked[c]))
+        {
             let l = len(e);
             graph[e.0].push((e.1, l));
             graph[e.1].push((e.0, l));
@@ -398,13 +496,15 @@ pub(super) fn footpaths(
         }
         if let Some(f) = fronts
             .iter()
-            .position(|f| !f.shared && distance(*p, f.a, f.b) < 0.05)
+            .enumerate()
+            .position(|(i, f)| (!f.shared || connected_shared.contains(&i)) && distance(*p, f.a, f.b) < 0.05)
         {
             source[v] = Some(f);
             dist[v] = 0.0;
             heap.push(Reverse((0f64.to_bits(), v)));
         }
     }
+    let initial_seeds:Vec<bool>=if navigation.is_empty(){vec![]}else{source.iter().map(Option::is_some).collect()};
     let relax = |heap: &mut BinaryHeap<Reverse<(u64, usize)>>,
                  dist: &mut Vec<f64>,
                  pred: &mut Vec<usize>| {
@@ -424,7 +524,7 @@ pub(super) fn footpaths(
     };
     relax(&mut heap, &mut dist, &mut pred);
     let mut order: Vec<usize> = (0..cells.len())
-        .filter(|&c| served[c] < MIN_FRONT)
+        .filter(|&c| served[c] < MIN_FRONT && !blocked[c])
         .collect();
     let reach = |c: usize, dist: &[f64]| {
         own[c]
@@ -444,7 +544,7 @@ pub(super) fn footpaths(
         let side = own[c]
             .iter()
             .copied()
-            .filter(|e| edges[e].len() >= 2 && len(*e) >= MIN_FRONT)
+            .filter(|e| edges[e].len() >= 2 && !nav_edges.contains(e) && !edges[e].iter().any(|&c|blocked[c]) && len(*e) >= MIN_FRONT)
             .filter(|e| dist[e.0].min(dist[e.1]).is_finite())
             .min_by(|a, b| {
                 dist[a.0]
@@ -463,10 +563,30 @@ pub(super) fn footpaths(
             v = pred[v];
             route.push(v);
         }
-        let mut front = None;
+        let nav_front=if navigation.is_empty(){None}else{
+            let Some(f)=route.iter().find_map(|&v|source[v]) else {continue;};Some(f)
+        };
+        let mut runs=if navigation.is_empty(){None}else{
+            let mut lines=painted_runs(&route,pts,&nav_edges);
+            if let Some(&last)=route.last()
+                && initial_seeds[last] && source[last].is_some_and(|f|!fronts[f].shared)
+                && route.len()>1
+                && !nav_edges.contains(&(route[route.len()-2].min(last),route[route.len()-2].max(last)))
+                && let Some(line)=lines.last_mut() && line.len()>1
+            {
+                let k=line.len();let dir=unit(sub(line[k-1],line[k-2]));
+                line.push(add(line[k-1],scale(dir,2.*width)));
+            }
+            // Check the complete proposed painted strokes BEFORE changing
+            // served, taken, sources or distances. No route through a closed
+            // centre and no retry that changes the old admission policy.
+            if lines.is_empty() || !strokes_avoid(&lines,width,forbidden) {continue;}
+            Some(lines)
+        };
+        let mut front = nav_front;
         for pair in route.windows(2) {
             let e = (pair[0].min(pair[1]), pair[0].max(pair[1]));
-            if taken.insert(e) {
+            if !nav_edges.contains(&e) && taken.insert(e) {
                 for &k in &edges[&e] {
                     served[k] += len(e);
                 }
@@ -474,17 +594,22 @@ pub(super) fn footpaths(
         }
         for &v in &route {
             front = front.or(source[v]);
+            if nav_front.is_some() {source[v]=nav_front;}
             if dist[v] > 0.0 {
                 dist[v] = 0.0;
                 heap.push(Reverse((0f64.to_bits(), v)));
             }
         }
         relax(&mut heap, &mut dist, &mut pred);
+        if let Some(lines)=runs.take() {
+            for line in lines {routes.push((line,front.expect("actual connected source, never nearest")));}
+            continue;
+        }
         let mut line: Vec<Point> = route.iter().map(|&v| pts[v]).collect();
         // A route reaching the street runs on past the kerb so its end cap
         // leaves no sliver; the block clip trims it.
         if let Some(&last) = route.last()
-            && source[last].is_some()
+            && source[last].is_some_and(|f| !fronts[f].shared)
             && line.len() >= 2
         {
             let k = line.len();

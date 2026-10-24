@@ -1,0 +1,107 @@
+{
+  "schema": "camp-cultural-consumer-synthetic-2",
+  "terrain": {
+    "synthetic": true,
+    "width": 4000.0,
+    "n": 128,
+    "heightConstant": 20.0,
+    "waterConstant": 0,
+    "geometry": null
+  },
+  "center": {
+    "x": 2000.0,
+    "y": 2000.0
+  },
+  "seed": "camp-consumer-synthetic-v2",
+  "footprintBudget": "radius",
+  "cases": [
+    {
+      "id": "SYN-kraal",
+      "culture": "kraal",
+      "population": 300,
+      "radius": 110.0,
+      "roadY": 1960.0,
+      "control": false
+    },
+    {
+      "id": "SYN-native-plains",
+      "culture": "native-plains",
+      "population": 300,
+      "radius": 110.0,
+      "roadY": 1960.0,
+      "control": false
+    },
+    {
+      "id": "SYN-mongol-ordu",
+      "culture": "mongol-ordu",
+      "population": 300,
+      "radius": 110.0,
+      "roadY": 1960.0,
+      "control": false
+    },
+    {
+      "id": "SYN-guarani-village",
+      "culture": "guarani-village",
+      "population": 300,
+      "radius": 110.0,
+      "roadY": 1960.0,
+      "control": false
+    },
+    {
+      "id": "SYN-pnw-plank-village",
+      "culture": "pnw-plank-village",
+      "population": 300,
+      "radius": 110.0,
+      "roadY": 1960.0,
+      "control": false
+    },
+    {
+      "id": "SYN-native-iroquoian",
+      "culture": "native-iroquoian",
+      "population": 300,
+      "radius": 110.0,
+      "roadY": 1960.0,
+      "control": false
+    },
+    {
+      "id": "SYN-nomad-camp",
+      "culture": "nomad-camp",
+      "population": 300,
+      "radius": 110.0,
+      "roadY": 1960.0,
+      "control": true
+    },
+    {
+      "id": "SYN-grown-kraal",
+      "culture": "kraal",
+      "population": 3000,
+      "radius": 110.0,
+      "roadY": 1960.0,
+      "control": true
+    },
+    {
+      "id": "SYN-tiny-kraal",
+      "culture": "kraal",
+      "population": 8,
+      "radius": 110.0,
+      "roadY": 1960.0,
+      "control": true
+    },
+    {
+      "id": "SYN-inuit",
+      "culture": "inuit-camp",
+      "population": 80,
+      "radius": 110.0,
+      "roadY": 1960.0,
+      "control": true
+    },
+    {
+      "id": "SYN-plains-centre-crossing",
+      "culture": "native-plains",
+      "population": 300,
+      "radius": 110.0,
+      "roadY": 2000.0,
+      "control": false
+    }
+  ]
+}

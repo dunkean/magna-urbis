@@ -47,7 +47,12 @@ pub(super) fn lots(
         "rows" => rows(&frame, morph, layout),
         _ => ring(&frame, morph, layout),
     };
-    assemble(shape, block, axis, fronts, morph, tiles)
+    let index = FrontageIndex::new(layout);
+    let reached = regional_streets(layout);
+    assemble_with_contacts(shape, block, axis, fronts, morph, tiles, |path| {
+        contacts::street_contacts(path, layout, &index).into_iter()
+            .filter(|f| reached.get(f.street).copied().unwrap_or(false)).collect()
+    })
 }
 
 /// What a tile of the camp holds.
@@ -276,7 +281,9 @@ fn ring(frame: &Frame, morph: &Morph, layout: &Layout) -> (Vec<Tile>, Vec<Shape>
         shape: frame.disc(centre_r),
         hold: Hold::Centre,
         nominal: 0.0,
-        cut: lanes > 0 && from > 0.0,
+        // Open central grounds also give up the lanes crossing them. A place
+        // and its footpath are distinct parcels in the same exact partition.
+        cut: lanes > 0,
     }];
     let (gap0, gap1) = (beta - 0.5 * gap, beta + 0.5 * gap);
     let span = TAU - gap;
@@ -465,8 +472,131 @@ fn boxes_overlap(a: (f64, f64, f64, f64), b: (f64, f64, f64, f64)) -> bool {
     a.0 <= b.2 && b.0 <= a.2 && a.1 <= b.3 && b.1 <= a.3
 }
 
+/// Same 0.1mm junction keys as the existing final planar street graph.
+/// This only checks existing connectivity: no snapping or street edit occurs.
+fn regional_streets(layout: &Layout) -> Vec<bool> {
+    use std::collections::{BTreeMap,BTreeSet};
+    let key=|p:Point| ((p.x*10000.).round() as i64,(p.y*10000.).round() as i64);
+    let mut members:BTreeMap<(i64,i64),Vec<usize>>=BTreeMap::new();
+    for (i,s) in layout.streets.iter().enumerate() {
+        for &p in &s.path { members.entry(key(p)).or_default().push(i); }
+    }
+    let mut reached=vec![false;layout.streets.len()];let mut queue=vec![];
+    for (i,s) in layout.streets.iter().enumerate() {
+        if s.role=="regional" && s.path.len()>1 {reached[i]=true;queue.push(i);}
+    }
+    let mut visited=BTreeSet::new();
+    while let Some(i)=queue.pop() {
+        for &p in &layout.streets[i].path {
+            let k=key(p);if !visited.insert(k) {continue;}
+            for &j in &members[&k] {
+                if !reached[j] && layout.streets[j].path.len()>1 {reached[j]=true;queue.push(j);}
+            }
+        }
+    }
+    reached
+}
+fn reversed(p:&Shape)->Shape {
+    let mut r=p.clone();r.outer.reverse();for h in &mut r.holes {h.reverse();}r
+}
+/// Eligibility is directional (the original path outer side). Certification
+/// is per actual clipped connected component and a genuine street contact.
+fn connected_path_fronts(
+    block:&Shape, paths:&[Shape], eligible:&[Front],
+    native_contacts:impl Fn(&Shape)->Vec<Front>, required_width:f64,
+)->Vec<Front> {
+    let mut result=vec![];
+    for p in paths {
+        if !difference(p,block).is_empty() {continue;}
+        let entries=native_contacts(p);
+        let anchor=entries.iter().enumerate().filter(|(_,f)|!f.shared)
+            .filter(|(i,_)| { let (lo,hi)=contacts::support_span(&entries,*i);hi-lo>=required_width })
+            .min_by_key(|(_,f)|(f.rank,f.street)).map(|(_,f)|*f);
+        let Some(anchor)=anchor else {continue;};
+        result.extend(contacts::boundary_contacts(&reversed(p),eligible).into_iter().map(|f|Front{
+            street:anchor.street,rank:anchor.rank+1,shared:true,gate:true,..f
+        }));
+    }
+    result
+}
+fn without_existing_paths(links:Vec<Shape>, paths:&[Shape])->Vec<Shape> {
+    links.into_iter().flat_map(|link| {
+        let mut rest=vec![link];
+        for p in paths {
+            rest=rest.into_iter().flat_map(|q| {
+                if boxes_overlap(bbox(&q),bbox(p)) {difference(&q,p)} else {vec![q]}
+            }).collect();if rest.is_empty(){break;}
+        }
+        rest
+    }).collect()
+}
+
+/// Existing construction classification, shared by final emission and the
+/// effective-open ownership check. No size threshold changes here.
+fn dwelling_fits(a:f64, nominal:f64)->bool {
+    a >= (0.45 * nominal).min(250.0) && a >= 30.0
+}
+
+/// Assign only the uncovered part of discarded path caps to a contiguous
+/// EXISTING open cell. If there is no such cell, preserve the old geometry;
+/// the parent's partition diagnostics still expose the unresolved deficit.
+fn assign_open_ground_caps(block: &Shape, cells: &mut [(Shape, Hold, f64)], rejected: &[Shape]) -> usize {
+    let mut unassigned = 0;
+    for cap in rejected {
+        let mut missing = vec![cap.clone()];
+        // A radial cap may already belong to a tile; never claim that land a
+        // second time or take it from its existing owner.
+        for (owned, _, _) in cells.iter() {
+            let ob = bbox(owned);
+            missing = missing.into_iter().flat_map(|p| {
+                if boxes_overlap(bbox(&p), ob) { difference(&p, owned) }
+                else { vec![p] }
+            }).collect();
+            if missing.is_empty() { break; }
+        }
+        for fragment in missing {
+            let fb = bbox(&fragment);
+            let mut owners: Vec<_> = cells.iter().enumerate()
+                .filter(|(_, (p, hold, nominal))| {
+                    // Clipped dwelling/head tiles failing the EXISTING final
+                    // size gate already emit camp-open, not a dwelling. They
+                    // are eligible without reclassifying any buildable cell.
+                    let open = *hold == Hold::Open ||
+                        (matches!(*hold, Hold::Dwelling | Hold::Head) && !dwelling_fits(area(p), *nominal));
+                    open && boxes_overlap(bbox(p), fb)
+                })
+                .map(|(i, (p, _, _))| (i, shared(p, &fragment)))
+                .collect();
+            owners.sort_by(|a,b| b.1.total_cmp(&a.1).then(a.0.cmp(&b.0)));
+            let attached = owners.into_iter().find_map(|(i, _)| {
+                // Do not use joined(): its conform/snap fallback would bridge
+                // a real gap. This is only an ordinary set union.
+                let mut joined = union(&[cells[i].0.clone(), fragment.clone()]);
+                if joined.len() != 1 { return None; }
+                let whole = joined.pop().unwrap();
+                if !super::super::geometry::simple(&whole)
+                    || !difference(&cells[i].0, &whole).is_empty()
+                    || !difference(&fragment, &whole).is_empty()
+                    || !difference(&whole, block).is_empty()
+                { return None; }
+                Some((i, whole))
+            });
+            if let Some((i, whole)) = attached {
+                cells[i].0 = whole;
+                // This was already non-built land before the union. Even if
+                // its small addition crosses a size threshold, never turn the
+                // restored cap into a newly buildable dwelling or capacity.
+                cells[i].1 = Hold::Open;
+            }
+            else { unassigned += 1; }
+        }
+    }
+    unassigned
+}
+
 /// The block's share of the tessellation: tiles clipped to the block, the
 /// paths cut from them, clipped tiles too small for their dwelling opened.
+#[cfg(test)]
 fn assemble(
     shape: &Shape,
     block: usize,
@@ -475,6 +605,14 @@ fn assemble(
     morph: &Morph,
     (tiles, paths): (Vec<Tile>, Vec<Shape>),
 ) -> Vec<Parcel> {
+    assemble_with_contacts(shape, block, axis, fronts, morph, (tiles, paths), |_| vec![])
+}
+
+fn assemble_with_contacts(
+    shape: &Shape, block: usize, axis: Point, fronts: &mut Vec<Front>, morph: &Morph,
+    (tiles, paths): (Vec<Tile>, Vec<Shape>),
+    native_contacts: impl Fn(&Shape) -> Vec<Front>,
+) -> Vec<Parcel> {
     let b = bbox(shape);
     let near_block = |p: Point, q: Point| {
         p.x.max(q.x) >= b.0 - 1.0
@@ -482,55 +620,23 @@ fn assemble(
             && p.y.max(q.y) >= b.1 - 1.0
             && p.y.min(q.y) <= b.3 + 1.0
     };
-    // Path fronts, from each path before the union: its outer side only (a
-    // ring path's hole runs along the backs of the row inside it; the huts
-    // face the centre, onto their inner path). Each is a shared front of the
-    // street nearest to it (else of the block's main street).
-    let main = fronts
-        .iter()
-        .filter(|f| !f.shared)
-        .min_by_key(|f| f.rank)
-        .copied();
-    let mut shared = vec![];
-    for p in paths.iter().filter(|p| boxes_overlap(bbox(p), b)) {
-        let ring = &super::super::geometry::normalized(p.clone()).outer;
-        let Some(f) = fronts
-            .iter()
-            .filter(|f| !f.shared)
-            .min_by(|x, y| {
-                let d = |f: &Front| {
-                    ring.iter()
-                        .map(|&q| distance(q, f.a, f.b))
-                        .fold(f64::INFINITY, f64::min)
-                };
-                d(x).total_cmp(&d(y))
-            })
-            .copied()
-            .or(main)
-        else {
-            continue;
-        };
-        for k in 0..ring.len() {
-            let (a, q) = (ring[(k + 1) % ring.len()], ring[k]);
-            if near_block(a, q) {
-                shared.push(Front {
-                    a,
-                    b: q,
-                    street: f.street,
-                    rank: f.rank + 1,
-                    shared: true,
-                    gate: true,
-                });
-            }
-        }
-    }
-    let paths: Vec<Shape> = union(&paths)
-        .iter()
+    // Preserve which side of each original ring/row is a front, but do not
+    // attach access to its unclipped global geometry or its nearest street.
+    let eligible: Vec<Front> = paths.iter().filter(|p| boxes_overlap(bbox(p), b))
+        .flat_map(|p| {
+            let ring=super::super::geometry::normalized(p.clone()).outer;
+            (0..ring.len()).filter_map(|k| {
+                let (a,q)=(ring[(k+1)%ring.len()],ring[k]);
+                near_block(a,q).then_some(Front{a,b:q,street:0,rank:0,shared:true,gate:true})
+            }).collect::<Vec<_>>()
+        }).collect();
+    let (paths,rejected):(Vec<Shape>,Vec<Shape>) = union(&paths).iter()
         .filter(|p| boxes_overlap(bbox(p), b))
-        .flat_map(|p| intersection(p, shape))
-        .filter(|p| area(p) > 0.5)
-        .collect();
+        .flat_map(|p| intersection(p, shape)).partition(|p| area(p)>0.5);
+    let shared = connected_path_fronts(shape, &paths, &eligible, native_contacts, morph.number_or("campPath", 3.0).clamp(1.2, 3.0));
+    let first_shared=fronts.len();
     fronts.extend(shared);
+    let connected_shared: Vec<usize> = (first_shared..fronts.len()).collect();
     let centre_use = match morph.text("campCentreUse") {
         "plot" => "plot",
         "place" | "byre" => "place",
@@ -551,7 +657,14 @@ fn assemble(
             && !std::iter::once(&shape.outer)
                 .chain(shape.holes.iter())
                 .flatten()
-                .any(|v| v.x > tb.0 && v.x < tb.2 && v.y > tb.1 && v.y < tb.3);
+                .any(|v| v.x > tb.0 && v.x < tb.2 && v.y > tb.1 && v.y < tb.3)
+            // A narrow access notch (or hole) can cross a tile while every
+            // endpoint lies outside its bbox. Test the whole tile boundary,
+            // with the existing interval predicate, before skipping the clip.
+            && tile.shape.outer.iter()
+                .zip(tile.shape.outer.iter().cycle().skip(1))
+                .take(tile.shape.outer.len())
+                .all(|(&a, &b)| super::super::geometry::segment_within(shape, a, b));
         let clipped = if inside {
             vec![tile.shape.clone()]
         } else {
@@ -583,11 +696,22 @@ fn assemble(
             );
         }
     }
+    // Cap-specific stage, exact validated assignment and hold-commit rules.
+    // Restored ground is an existing non-built cell, never navigation land.
+    let _unassigned_caps = assign_open_ground_caps(shape, &mut cells, &rejected);
     // Cells reaching neither a street nor a camp path get a footpath along
     // the cell boundaries (organic's router).
     let width = morph.number_or("campPath", 3.0).clamp(1.2, 3.0);
     let shapes: Vec<Shape> = cells.iter().map(|c| c.0.clone()).collect();
-    let (links, raw, link_fronts) = super::organic::footpaths(shape, &shapes, fronts, width);
+    let forbidden:Vec<Shape>=cells.iter().filter(|(_,h,_)|*h==Hold::Centre && centre_use!="place").map(|(p,_,_)|p.clone()).collect();
+    let (links, raw, link_fronts) = super::organic::footpaths_with_navigation(
+        shape, &shapes, fronts, width, &connected_shared, &paths, &forbidden);
+    // A link arriving on an existing path gives up only that already-owned
+    // land. No threshold filters away a new fragment, and no old path moves.
+    let links = without_existing_paths(links, &paths);
+    let link_fronts: Vec<Front> = links.iter().flat_map(|p| {
+        contacts::boundary_contacts(&reversed(p), &link_fronts)
+    }).collect();
     fronts.extend(link_fronts);
     let mut out = Vec::with_capacity(cells.len() + paths.len() + links.len());
     for (cell, hold, nominal) in cells {
@@ -597,7 +721,7 @@ fn assemble(
         {
             let a = area(&piece);
             let (kind, tag) = match hold {
-                Hold::Dwelling | Hold::Head if a >= (0.45 * nominal).min(250.0) && a >= 30.0 => (
+                Hold::Dwelling | Hold::Head if dwelling_fits(a, nominal) => (
                     "plot",
                     if hold == Hold::Head {
                         "camp-head"
@@ -658,17 +782,19 @@ mod tests {
     /// ring paths, the great hut at the back, all in an exact partition.
     #[test]
     fn a_kraal_is_a_byre_ringed_by_huts_on_paths_in_an_exact_partition() {
-        let shape = rectangle(-75.0, -78.0, 75.0, 75.0);
+        let old_shape=rectangle(-75.0,-78.0,75.0,75.0);
+        let original=layout(&old_shape);
+        assert!(contacts::street_contacts(&old_shape,&original,&FrontageIndex::new(&original)).is_empty(),
+            "the former manual front is not a real Native street contact");
+        // Derive the positive's land edge from the ACTUAL street ribbon, not
+        // a guessed coordinate or a looser contact threshold. The old negative
+        // fixture above remains exactly -78/-80/width6.
+        let road=&original.streets[0];
+        let kerb=ribbon(&road.path,&road.widths).iter().map(|p|bbox(p).3).fold(f64::NEG_INFINITY,f64::max);
+        let shape = rectangle(-75.0,kerb,75.0,75.0);
         let l = layout(&shape);
-        let r = &shape.outer;
-        let mut fronts: Vec<Front> = vec![Front {
-            a: r[0],
-            b: r[1],
-            rank: 0,
-            street: 0,
-            shared: false,
-            gate: false,
-        }];
+        let mut fronts=contacts::street_contacts(&shape,&l,&FrontageIndex::new(&l));
+        assert!(!fronts.is_empty(),"the positive starts from real street contacts");
         let morph = Morph {
             value: serde_json::json!({"campLayout":"ring","campRow":9.5,"campArc":[9.0,10.5],
                 "campPath":2.5,"campGap":50.0,"campCentre":0.3,"campHead":"back","campCentreUse":"byre"}),
@@ -701,3 +827,15 @@ mod tests {
         }));
     }
 }
+
+#[cfg(test)]
+#[path = "camp_consumer_regression_tests.rs"]
+mod consumer_regression_tests;
+
+#[cfg(test)]
+#[path = "camp_connected_fronts_tests.rs"]
+mod connected_fronts_tests;
+
+#[cfg(test)]
+#[path = "camp_cap_ground_tests.rs"]
+mod cap_ground_tests;
