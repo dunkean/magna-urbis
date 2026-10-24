@@ -188,3 +188,13 @@
         if(diagnostic==20) probe=vec3(show_trees?surface_canopy_target(v_vertex.xz,canopy_main_pixel_footprint(v_vertex.xz,PROJECTION_MATRIX*VIEW_MATRIX,VIEWPORT_SIZE),state.r):0.0);
         ALBEDO=vec3(0.0); EMISSION=display_color(probe); ROUGHNESS=1.0; SPECULAR=0.0; NORMAL_MAP=vec3(0.5,0.5,1.0);
     }
+
+    // Evaluate all derivatives first. No fragment outside the real source union
+    // is displayed, even though tessellation needs edge-clamped support there.
+    bool source_covered=false;
+    for(int i=0;i<7;i++) {
+        if(i>=source_coverage_count) break;
+        vec4 bounds=source_coverage_rects[i];
+        source_covered=source_covered || (all(greaterThanEqual(v_vertex.xz,bounds.xy)) && all(lessThanEqual(v_vertex.xz,bounds.zw)));
+    }
+    if(!source_covered) discard;

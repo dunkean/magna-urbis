@@ -1,5 +1,6 @@
 class_name SurfaceData
 extends RefCounted
+const SourceCoverage=preload("res://adapters/surface_source_coverage.gd")
 const PrepareControl=preload("res://adapters/surface_prepare_control.gd")
 const Geometry = preload("res://adapters/surface_geometry.gd")
 const UrbanReader = preload("res://adapters/urban_reader.gd")
@@ -323,6 +324,8 @@ static func prepare(world: Dictionary, origin: Dictionary, view_width: float, se
 	var control_token=scene_request.get("prepareControl")
 	if PrepareControl.hit(control_token,"data-start"):return PrepareControl.result(control_token,"data-start",start)
 	var terrain: Dictionary = world.terrain
+	var source_domains=SourceCoverage.domains(world)
+	if source_domains.is_empty():return {"error":"Source rendering domains have invalid lineage or bounds"}
 	var spacing := display_spacing(terrain,view_width,int(scene_request.get("displaySamples",256)))
 	if display_source.is_empty(): display_source=build_display_source(world,spacing,control_token)
 	if PrepareControl.hit(control_token,"display-source"):return PrepareControl.result(control_token,"display-source",start)
@@ -336,15 +339,24 @@ static func prepare(world: Dictionary, origin: Dictionary, view_width: float, se
 	var control := Image.create(size,size,false,Image.FORMAT_RF)
 	var hole_bits := PackedByteArray([4,0,0,0]).decode_float(0)
 	var loaded_minimum=INF;var loaded_maximum=-INF
+	var edge_support_cache:Dictionary={}
 	for z in (0 if skip_height else size):
 		if z%8==0 and PrepareControl.hit(control_token,"height-rows"):return PrepareControl.result(control_token,"height-rows",start)
 		for x in size:
 			var wx: float = origin.x+local_start.x+x*spacing
 			var wz: float = origin.z+local_start.z+z*spacing
 			var has_source:=covered(world,wx,wz)
-			# Off-domain filler follows the same clamped current-grid fallback as
-			# height_at, without scanning parent layers that cannot cover this point.
-			var altitude:=height_at(display_source,wx,wz) if has_source else Geometry.sample_height(display_source.terrain,wx,wz)
+			# Tessellation-only edge extension. Native hole bits remain set and
+			# the visual shader discards fragments outside the exact source union.
+			var altitude:float
+			if has_source:altitude=height_at(display_source,wx,wz)
+			else:
+				var sample_point=SourceCoverage.nearest_point(source_domains,wx,wz)
+				# Repeated off-domain rows/columns share boundary samples. The local
+				# cache key never replaces the double coordinates used for sampling.
+				var key=Vector2(float(sample_point.x)-float(origin.x),float(sample_point.z)-float(origin.z))
+				if not edge_support_cache.has(key):edge_support_cache[key]=height_at(display_source,float(sample_point.x),float(sample_point.z))
+				altitude=float(edge_support_cache[key])
 			height.set_pixel(x,z,Color(altitude-origin.y,0,0,1))
 			if has_source:loaded_minimum=minf(loaded_minimum,altitude);loaded_maximum=maxf(loaded_maximum,altitude)
 			if not has_source:
@@ -354,7 +366,7 @@ static func prepare(world: Dictionary, origin: Dictionary, view_width: float, se
 	var canonical := context(world)
 	terrain = canonical.grid
 	var fields: Dictionary = canonical.fields
-	var result := {"loadedHeightRangeWorld":Vector2(loaded_minimum-.01,loaded_maximum+.01),"worldId":world.id,"world":world,"packet":packet,"generation":serial,"origin":origin,"spacing":spacing,"localStart":local_start,"height":null if skip_height else height,"control":null if skip_height else control,"contextGrid":terrain,"displaySource":display_source,"sceneRequest":scene_request}
+	var result := {"loadedHeightRangeWorld":Vector2(loaded_minimum-.01,loaded_maximum+.01),"worldId":world.id,"world":world,"packet":packet,"generation":serial,"origin":origin,"spacing":spacing,"localStart":local_start,"height":null if skip_height else height,"control":null if skip_height else control,"sourceCoverageRects":SourceCoverage.rebased_rects(source_domains,origin),"sourceCoverageCount":source_domains.size(),"contextGrid":terrain,"displaySource":display_source,"sceneRequest":scene_request}
 	var layers=Layers.prepare(world,canonical)
 	if PrepareControl.hit(control_token,"layer-images"):return PrepareControl.result(control_token,"layer-images",start)
 	result.surfaceLayers=layers

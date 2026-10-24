@@ -364,6 +364,8 @@ func _apply_prepared(prepared: Dictionary) -> void:
 	mat.call("set_shader_param","source_grid_size",Vector2(int(t.width),int(t.height)))
 	mat.call("set_shader_param","source_origin",Vector2(float(t.originX)-next_origin.x,float(t.originZ)-next_origin.z))
 	mat.call("set_shader_param","source_extent",Vector2((int(t.width)-1)*float(t.spacingM),(int(t.height)-1)*float(t.spacingM)))
+	mat.call("set_shader_param","source_coverage_count",int(prepared.get("sourceCoverageCount",0)))
+	mat.call("set_shader_param","source_coverage_rects",prepared.get("sourceCoverageRects",PackedVector4Array()))
 	mat.call("set_shader_param","diagnostic",diagnostic)
 	if packet.has("candidateBounds"):
 		var cb: Dictionary = packet.candidateBounds
