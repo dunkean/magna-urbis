@@ -45,7 +45,7 @@ static func prepare(packet:Dictionary,world:Dictionary,origin:Dictionary)->Dicti
 		var radius=float(columns.crownRadiusM[i]) if not columns.is_empty() else float(records[i].get("crownRadiusM",size*RATIO))
 		var angle=float(columns.orientation[i]) if not columns.is_empty() else float(records[i].orientation)
 		var rank=float(columns.rank[i]) if not columns.is_empty() else float(records[i].get("rank",0))
-		if not is_finite(x) or not is_finite(y) or not is_finite(z) or not is_finite(size) or not is_finite(radius) or not is_finite(angle) or size<=0 or size>MAX_HEIGHT or absf(radius/size-RATIO)>.000001:
+		if not is_finite(x) or not is_finite(y) or not is_finite(z) or not is_finite(size) or not is_finite(radius) or not is_finite(angle) or not is_finite(rank) or rank<0 or rank>=1 or size<=0 or size>MAX_HEIGHT or absf(radius/size-RATIO)>.000001:
 			return {"available":false,"reason":"unsupported-nonfinite-height-or-anisotropy","offendingId":id}
 		count+=1
 		if count>MAX_TREES:return {"available":false,"reason":"complete-shadow-inventory-over-budget"}
@@ -94,6 +94,13 @@ static func guard(data:Dictionary,view:Dictionary,receiver_minimum_y:float,to_su
 func bake(parent:Node,library:RefCounted,to_sun:Vector3)->bool:
 	var started=Time.get_ticks_usec();direction=to_sun.normalized();descriptor={"available":false}
 	if direction.y<=.05 or library.high_mesh==null:return false
+	# Conservative eight-corner bound covers every source vertex, all32 yaws and
+	# all solar directions. Refuse a product whose real support could be cropped.
+	var bounds:AABB=library.high_mesh.get_aabb();var bound_radius=0.0
+	for i in 8:
+		var p=Vector3(bounds.end.x if i&1 else bounds.position.x,bounds.end.y if i&2 else bounds.position.y,bounds.end.z if i&4 else bounds.position.z)*Vector3(RATIO,1,RATIO)-Vector3(0,.5,0)
+		bound_radius=maxf(bound_radius,p.length())
+	if bound_radius>=SPAN*.5:return false
 	var viewport=SubViewport.new();viewport.size=Vector2i(RESOLUTION,RESOLUTION);viewport.own_world_3d=true;viewport.transparent_bg=true;viewport.use_hdr_2d=true;viewport.render_target_update_mode=SubViewport.UPDATE_ALWAYS;parent.add_child(viewport)
 	var scene=Node3D.new();viewport.add_child(scene)
 	var environment=WorldEnvironment.new();environment.environment=Environment.new();environment.environment.background_mode=Environment.BG_COLOR;environment.environment.background_color=Color(0,0,0,0);environment.environment.tonemap_mode=Environment.TONE_MAPPER_LINEAR;scene.add_child(environment)
@@ -121,7 +128,7 @@ func bake(parent:Node,library:RefCounted,to_sun:Vector3)->bool:
 	viewport.queue_free()
 	texture=Texture2DArray.new()
 	if texture.create_from_images(images)!=OK:return false
-	descriptor={"available":true,"version":VERSION,"assetDigest":library.cpu.digest,"solarDirection":[direction.x,direction.y,direction.z],"yawBins":YAW_BINS,"maximumYawErrorDegrees":180.0/YAW_BINS,"heightRadiusRatio":RATIO,"resolution":RESOLUTION,"dataFormat":"RG16F(solar-depth,source-cutout)","textureBytes":RESOLUTION*RESOLUTION*4*YAW_BINS,"productsSha256":digest.finish().hex_encode(),"bakeMs":(Time.get_ticks_usec()-started)/1000.0,"readbackTransfer":transfer,"readbackFormat":observed_format,"depthPolicy":"actual source surface depth along solar axis; fragment writes native shadow-map depth","scope":"quantized yaw silhouette/depth of corrected high asset, not full3D view-dependent light transport"}
+	descriptor={"available":true,"version":VERSION,"assetDigest":library.cpu.digest,"solarDirection":[direction.x,direction.y,direction.z],"yawBins":YAW_BINS,"maximumYawErrorDegrees":180.0/YAW_BINS,"heightRadiusRatio":RATIO,"sourceAabbEnclosingRadius":bound_radius,"bakeHalfSpan":SPAN*.5,"resolution":RESOLUTION,"dataFormat":"RG16F(solar-depth,source-cutout)","textureBytes":RESOLUTION*RESOLUTION*4*YAW_BINS,"productsSha256":digest.finish().hex_encode(),"bakeMs":(Time.get_ticks_usec()-started)/1000.0,"readbackTransfer":transfer,"readbackFormat":observed_format,"depthPolicy":"actual source surface depth along solar axis; fragment writes native shadow-map depth","scope":"quantized yaw silhouette/depth of corrected high asset, not full3D view-dependent light transport"}
 	return true
 
 func create_node(data:Dictionary,origin:Dictionary)->MultiMeshInstance3D:
