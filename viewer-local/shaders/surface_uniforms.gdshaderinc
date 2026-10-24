@@ -115,3 +115,7 @@ void sample_surface_material(vec3 p, vec3 dx, vec3 dy, vec3 normal, vec3 tangent
         ah=ah*weights.y+ax*weights.x+az*weights.z;
     }
 }
+
+// Exact union of validated source/parent domains, in render-local metres.
+uniform int source_coverage_count = 0;
+uniform vec4 source_coverage_rects[7];
