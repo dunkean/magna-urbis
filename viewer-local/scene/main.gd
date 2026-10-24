@@ -104,6 +104,7 @@ var quality_preview_active:=false
 var rendered_display_samples:=256
 var rendered_height_image_size:=0
 var rendered_height_range:=Vector2(NAN,NAN)
+var rendered_height_sampler:Dictionary={}
 var view_satisfied_serial:=-1
 var view_satisfaction:Dictionary={}
 var view_satisfaction_events:Array=[]
@@ -335,6 +336,7 @@ func _begin_prepare() -> void:
 		var shadow=preload("res://adapters/surface_canopy.gd").shadow_offset(sun.global_basis.z,preload("res://adapters/surface_canopy.gd").REFERENCE_CROWN_CENTRE_HEIGHT_M)
 		var active_texels=int(canopy_info.gridSize.x)*int(canopy_info.gridSize.y) if canopy_info.get("available",false) else 0
 		prepare_request["visibilityOptions"]={"prepareControl":active_prepare_control,"crownHeightM":crown,"maximumCrownRadiusM":float(packet.get("_maximumCrownRadiusM",7.56)),"activeAtlasTexels":active_texels,"haloM":maxf(40.0,shadow.length()+2.0*spacing+7.56)}
+	if options.has("--height-batch"):scene_request["heightBatchExecutable"]=str(options["--height-batch"])
 	worker.start(ScenePrepare.prepare.bind(prepare_request))
 	last_request_tick = Time.get_ticks_msec()
 
@@ -415,6 +417,7 @@ func _apply_prepared(prepared: Dictionary) -> void:
 		var cb: Dictionary = packet.candidateBounds
 		mat.call("set_shader_param","candidate_bounds",Vector4(float(cb.minX)-next_origin.x,float(cb.minZ)-next_origin.z,float(cb.maxX)-next_origin.x,float(cb.maxZ)-next_origin.z))
 	if prepared.height!=null:
+		rendered_height_sampler=prepared.get("heightSampler",{"mode":"gd-scalar"}).duplicate(true)
 		# A smaller import does not remove old Terrain3D regions automatically.
 		# Remove the previous active set before importing one coherent new window.
 		var terrain_data: Object = next_terrain.get("data")
@@ -1198,6 +1201,7 @@ func _write_metrics() -> void:
 	metrics["liveBindingRejections"]=live_binding_rejections
 	metrics["renderedSnapshot"]=rendered_snapshot
 	metrics["mapProjection"]=_map_projection()
+	metrics["heightSampler"]=rendered_height_sampler
 	metrics["renderEvents"]=render_events
 	metrics["discardedPreparations"]=discarded_preparations
 	metrics["nativeLogTiming"]={"version":"native-log-timing-1" if native_logger==null else "native-log-timing-2","mode":native_log_mode,"maximaByEvent":native_log_maxima,"recent":native_log_timings,"writer":native_logger.snapshot() if native_logger!=null else null,"flushedBeforeSnapshot":native_logger!=null and may_flush,"flushBeforeSnapshotMs":flush_ms,"scope":"Main serialize/output wall spans; threaded enqueueMs is not writer printWallMs. Writer snapshot excludes the later metrics event itself."}
@@ -1588,7 +1592,11 @@ func _water_source_covers(bounds:Dictionary,required_focus:Dictionary,required_w
 	return min_x>=max_x or min_z>=max_z or (float(bounds.get("minX",INF))<=min_x and float(bounds.get("minZ",INF))<=min_z and float(bounds.get("maxX",-INF))>=max_x and float(bounds.get("maxZ",-INF))>=max_z)
 
 func _handle_prepared_result(prepared)->void:
-	if prepared is Dictionary and prepared.get("cancelled",false):
+	if prepared is Dictionary and prepared.get("failed",false):
+		discarded_preparations.failed+=1
+		push_warning("Terrain preparation failed: "+str(prepared.get("heightBatchError","unknown native batch failure"))+"; previous rendered source retained")
+		applied_generation=generation
+	elif prepared is Dictionary and prepared.get("cancelled",false):
 		discarded_preparations["cancelledSuperseded"]=int(discarded_preparations.get("cancelledSuperseded",0))+1
 		preparation_cancellations.append(prepared.get("cancellation",{}))
 		while preparation_cancellations.size()>128:preparation_cancellations.pop_front()
