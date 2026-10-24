@@ -114,6 +114,7 @@ var failed_live_serial := -1
 var region_counts: Array[int] = []
 var preparation_snapshots: Array = []
 const CanopyView=preload("res://adapters/surface_canopy_view.gd")
+const VisibilityPlan=preload("res://adapters/surface_visibility_plan.gd")
 var water_symbol_width_px:float=0.0
 var water_vector_tint:String="source-classes"
 var canopy_phase:float=0.0
@@ -322,9 +323,19 @@ func _begin_prepare() -> void:
 	var water_key := Geometry.chunk_key(world,focus,width_m,"water")
 	var urban_key := Geometry.chunk_key(world,focus,width_m,"urban")
 	active_prepare_control=PrepareControl.new(world_revision,rendered_revision,str(world.id),rendered_world_id)
-	var scene_request := {"prepareControl":active_prepare_control,"heightCoverageExtentM":width_m*(4.0 if oblique else 2.0),"canopyAtlasBounds":_canopy_atlas_request(),"displaySamples":display_samples,"waterKey":water_key,"urbanKey":urban_key,"buildWater":not options.has("--ground-only") and not scene_mesh_cache.has(water_key),"buildUrban":not options.has("--ground-only") and not scene_mesh_cache.has(urban_key),"focus":focus.duplicate()}
+	var scene_request := {"prepareControl":active_prepare_control,"heightCoverageExtentM":width_m*(4.0 if oblique else 2.0),"canopyAtlasBounds":{} if oblique else _canopy_atlas_request(),"displaySamples":display_samples,"waterKey":water_key,"urbanKey":urban_key,"buildWater":not options.has("--ground-only") and not scene_mesh_cache.has(water_key),"buildUrban":not options.has("--ground-only") and not scene_mesh_cache.has(urban_key),"focus":focus.duplicate()}
 	worker = Thread.new()
-	worker.start(ScenePrepare.prepare.bind({"prepareControl":active_prepare_control,"heightImageSize":expected_image_size,"displaySamples":display_samples,"physicalLineage":_physical_lineage(world,packet),"contextKey":prepared_context_key,"heightKey":prepared_height_key,"liveSerial":int(packet.get("_acceptedLiveSerial",-1)),"worldRevision":world_revision,"world":world,"origin":next_origin,"width":width_m,"generation":generation,"packet":tree_library.packet_copy(packet,presentation_mode),"skipContext":context_textures.has(prepared_context_key),"displaySource":height_source_cache.get(prepared_height_key,{}),"skipHeight":reuse_height,"sceneRequest":scene_request,"focus":focus.duplicate(),"viewportWidth":get_viewport().get_visible_rect().size.x,"oblique":oblique,"groundOnly":options.has("--ground-only"),"presentationMode":presentation_mode,"projectRoads":RenderingServer.get_current_rendering_method()=="forward_plus"}))
+	var prepare_request={"prepareControl":active_prepare_control,"heightImageSize":expected_image_size,"displaySamples":display_samples,"physicalLineage":_physical_lineage(world,packet),"contextKey":prepared_context_key,"heightKey":prepared_height_key,"liveSerial":int(packet.get("_acceptedLiveSerial",-1)),"worldRevision":world_revision,"world":world,"origin":next_origin,"width":width_m,"generation":generation,"packet":tree_library.packet_copy(packet,presentation_mode),"skipContext":context_textures.has(prepared_context_key),"displaySource":height_source_cache.get(prepared_height_key,{}),"skipHeight":reuse_height,"sceneRequest":scene_request,"focus":focus.duplicate(),"viewportWidth":get_viewport().get_visible_rect().size.x,"oblique":oblique,"groundOnly":options.has("--ground-only"),"presentationMode":presentation_mode,"projectRoads":RenderingServer.get_current_rendering_method()=="forward_plus"}
+	if oblique:
+		prepare_request["visibilityCamera"]=VisibilityPlan.snapshot(camera,get_viewport().get_visible_rect().size,origin)
+		prepare_request["renderedHeightImageSize"]=rendered_height_image_size
+		prepare_request["renderedOrigin"]=origin.duplicate()
+		prepare_request["reuseObliqueHeight"]=terrain!=null and rendered_revision==world_revision and absf(float(terrain.get("vertex_spacing"))-spacing)<.00001
+		var crown=32.0 if not tree_library.cpu.is_empty() and presentation_mode=="aerial" else 20.0
+		var shadow=preload("res://adapters/surface_canopy.gd").shadow_offset(sun.global_basis.z,preload("res://adapters/surface_canopy.gd").REFERENCE_CROWN_CENTRE_HEIGHT_M)
+		var active_texels=int(canopy_info.gridSize.x)*int(canopy_info.gridSize.y) if canopy_info.get("available",false) else 0
+		prepare_request["visibilityOptions"]={"prepareControl":active_prepare_control,"crownHeightM":crown,"maximumCrownRadiusM":float(packet.get("_maximumCrownRadiusM",7.56)),"activeAtlasTexels":active_texels,"haloM":maxf(40.0,shadow.length()+2.0*spacing+7.56)}
+	worker.start(ScenePrepare.prepare.bind(prepare_request))
 	last_request_tick = Time.get_ticks_msec()
 
 func _apply_prepared(prepared: Dictionary) -> void:
@@ -1312,7 +1323,14 @@ func _canopy_guard(info:Dictionary)->Dictionary:
 		resident={"minX":float(origin.x)-extent+2*spacing,"minZ":float(origin.z)-extent+2*spacing,"maxX":float(origin.x)+extent-3*spacing,"maxZ":float(origin.z)+extent-3*spacing}
 		safe_bounds=CanopyView.intersection(safe_bounds,resident)
 	var crown_envelope=32.0 if canopy_info.has("assetDigest") else 20.0
-	var guard=CanopyView.evaluate(camera,get_viewport().get_visible_rect().size,reference_y,origin,safe_bounds,halo,crown_envelope,rendered_height_range if oblique else Vector2(NAN,NAN))
+	var guard:Dictionary
+	if oblique:
+		guard=VisibilityPlan.guard(info.get("visibilityPlan",{}),w,VisibilityPlan.snapshot(camera,get_viewport().get_visible_rect().size,origin),safe_bounds,halo,reference_y+float(origin.y))
+		# A source apply may move the camera's physical target. It still displays
+		# immediately; a subsequent camera-only job obtains its own certificate.
+		if guard.get("reason","")=="visibility-plan-camera-changed":view_dirty=true
+	else:
+		guard=CanopyView.evaluate(camera,get_viewport().get_visible_rect().size,reference_y,origin,safe_bounds,halo,crown_envelope)
 	guard["residentTerrainBounds"]=resident
 	return CanopyView.certify_filter(guard,float(info.spacingM),info.gridSize)
 

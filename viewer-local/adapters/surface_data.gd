@@ -340,6 +340,8 @@ static func prepare(world: Dictionary, origin: Dictionary, view_width: float, se
 	# The symmetric start must therefore remain a multiple of 256 samples.
 	var size := 512
 	while size*spacing<float(scene_request.get("heightCoverageExtentM",view_width*2.0)) and size<2048: size*=2
+	# Oblique source-control plan; only aligned, bounded Terrain3D sizes allowed.
+	if int(scene_request.get("visibilityResidentImageSize",0)) in [512,1024,2048,4096]:size=int(scene_request.visibilityResidentImageSize)
 	# Region addresses stay local and exactly aligned to Terrain3D's region grid.
 	var local_start := Vector3(-size*0.5*spacing,0.0,-size*0.5*spacing)
 	var height := Image.create(size,size,false,Image.FORMAT_RF)

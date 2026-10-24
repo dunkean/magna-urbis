@@ -1,0 +1,171 @@
+{
+  "version": 1,
+  "status": "CPU-plan-and-resident-only; real-oblique-rendering-PENDING",
+  "base": "6ef8d3c6f2b88f884a2ad199c7b305dfaf3649c1",
+  "scope": "Retained V12 replay; no NN generate/register, no GPU, no streaming/QoS pass claim. Old V12 oblique phase0 remains failed.",
+  "sourceSha256": "e9646f0aadfc2d69cac78e64977389201ff8ef87360ff2f52f72bc37cb079d2c",
+  "sourceBytes": 75105689,
+  "physicalHeightsAndProjectedCanonicalFields": {
+    "beforeSha256": "abdebbe32fc4abefa18f9d567283263adb39d2eebaca7c941a8aaf36cf448edc",
+    "afterSha256": "abdebbe32fc4abefa18f9d567283263adb39d2eebaca7c941a8aaf36cf448edc",
+    "unchanged": true,
+    "encoding": "typed bytes, Array values encoded as native Variant bytes; sorted field keys"
+  },
+  "originalNegative": {
+    "phase": 0.0,
+    "marginM": -197.746131420136,
+    "residentSide": 1024,
+    "residentSpacingM": 0.625
+  },
+  "planner2048Negative": {
+    "reason": "resident-height-budget",
+    "rawReport": "web/out/surface/oblique-visibility/retained-v12-plan.json",
+    "preserved": true
+  },
+  "cases": [
+    {
+      "crownHeightEnvelopeM": 20.0,
+      "available": true,
+      "reason": "conservative-source-control-frustum",
+      "buildMs": 1583.43,
+      "residentImageSize": 4096,
+      "residentOrigin": {
+        "x": 19980.3125,
+        "y": 2135.33871582781,
+        "z": 19700.3125
+      },
+      "visibleBounds": {
+        "maxX": 20553.4174770674,
+        "maxZ": 20085.5830044112,
+        "minX": 19446.5825229326,
+        "minZ": 19290.6376987138
+      },
+      "atlasBounds": {
+        "maxX": 20681.4174770674,
+        "maxZ": 20213.5830044112,
+        "minX": 19318.5825229326,
+        "minZ": 19162.6376987138
+      },
+      "atlasGridEstimate": {
+        "height": 2048,
+        "spacingM": 1.0,
+        "width": 2048
+      },
+      "heightEnvelopeWorld": [
+        1873.15539550781,
+        2212.34301757813
+      ],
+      "visitedNodes": 5754,
+      "memoryBudget": {
+        "activeAtlasImagesMipsTextureUpperBytes": 0,
+        "activeResidentRfControlBackingBytes": 0,
+        "estimatedKnownPeakBytes": 1552031744,
+        "heightIndexUpperBytes": 8527872,
+        "limitBytes": 2147483648,
+        "newAtlasArraysImagesMipsUploadUpperBytes": 1006632960,
+        "newResidentRfControlBackingTransferBytes": 402653184,
+        "reuseResident": false,
+        "rssOrVramBoundClaimed": false,
+        "sourceContextReserveBytes": 134217728
+      },
+      "cpuGuard": {
+        "safePhase": 2.0,
+        "marginM": 88.0,
+        "geometryFilterCompatible": true,
+        "geometryFilterRatio": 3.81127016866275,
+        "maximumPixelFootprintM": 3.81127016866275
+      }
+    },
+    {
+      "crownHeightEnvelopeM": 32.0,
+      "available": true,
+      "reason": "conservative-source-control-frustum",
+      "buildMs": 2626.939,
+      "residentImageSize": 4096,
+      "residentOrigin": {
+        "x": 19980.3125,
+        "y": 2135.33871582781,
+        "z": 19700.3125
+      },
+      "visibleBounds": {
+        "maxX": 20557.6510770674,
+        "maxZ": 20089.8166044112,
+        "minX": 19364.3765108232,
+        "minZ": 19286.4040987138
+      },
+      "atlasBounds": {
+        "maxX": 20685.6510770674,
+        "maxZ": 20217.8166044112,
+        "minX": 19236.3765108232,
+        "minZ": 19158.4040987138
+      },
+      "atlasGridEstimate": {
+        "height": 2048,
+        "spacingM": 1.0,
+        "width": 2048
+      },
+      "heightEnvelopeWorld": [
+        1873.15539550781,
+        2224.34301757813
+      ],
+      "visitedNodes": 5770,
+      "memoryBudget": {
+        "activeAtlasImagesMipsTextureUpperBytes": 0,
+        "activeResidentRfControlBackingBytes": 0,
+        "estimatedKnownPeakBytes": 1552031744,
+        "heightIndexUpperBytes": 8527872,
+        "limitBytes": 2147483648,
+        "newAtlasArraysImagesMipsUploadUpperBytes": 1006632960,
+        "newResidentRfControlBackingTransferBytes": 402653184,
+        "reuseResident": false,
+        "rssOrVramBoundClaimed": false,
+        "sourceContextReserveBytes": 134217728
+      },
+      "cpuGuard": {
+        "safePhase": 2.0,
+        "marginM": 88.0,
+        "geometryFilterCompatible": true,
+        "geometryFilterRatio": 3.84846817459371,
+        "maximumPixelFootprintM": 3.84846817459371
+      }
+    }
+  ],
+  "residentPreparation": {
+    "controlBytes": 67108864,
+    "heightBytes": 67108864,
+    "loadedHeightRangeWorld": [
+      1624.75903320313,
+      2189.96655273438
+    ],
+    "maximumRfStorageErrorM": 1.42006049372867e-05,
+    "prepareMs": 114913.702,
+    "rfFormatValidated": true,
+    "sampleChecks": 49,
+    "scope": "CPU Data.prepare only; no Terrain3D import/GPU or navigation latency claim",
+    "size": 4096,
+    "spacingM": 0.625
+  },
+  "validation": {
+    "smallCpuChecks": 875,
+    "topImageAndMipParityChecks": 18,
+    "mainAndScenePrepareParse": "PASS after first headless editor class-cache initialization",
+    "gpu": "NOT RUN",
+    "nativeTerrain3DImport": "NOT RUN"
+  },
+  "knownBufferBudgetScope": "2GiB ceiling on estimated known buffers incl active/new atlas/resident, index and explicit128MiB source/context reserve; not an RSS/VRAM guarantee",
+  "fullReport": "web/out/surface/oblique-visibility/retained-v12-resident4096.json",
+  "stdout": "web/out/surface/oblique-visibility/resident4096-r3.stdout.log",
+  "stderrBytes": 0,
+  "preparationProbeHarnessFailures": "r1/r2 stopped before Data.prepare: hash helper did not handle PackedByteArray/Array. Logs preserved; no resident timing taken from them.",
+  "nextStep": "Independent source/kernel/cache review, then separate retained oblique GPU/import validation; optimize native sampling before any interactive QoS claim.",
+  "sourceFilesSha256": {
+    "viewer-local/adapters/surface_visibility_plan.gd": "081d606a35b73cc8c28d9b47bf5b236faf83d05dcee46e296918f3c393b79d1f",
+    "viewer-local/adapters/surface_data.gd": "6c1298bba2ef0021ce7433d674603d4cf9cf8317c6466e23794957d20f2fe36a",
+    "viewer-local/adapters/surface_scene_prepare.gd": "e3759ea13441506887cd540e8c49a89f64db6dbf9add855ece159fe68b76bc0a",
+    "viewer-local/adapters/surface_population.gd": "3154ca85a0ce5ebab332ad2ea993b8bc6c61a0415bc121a06881480ef7bb1d20",
+    "viewer-local/scene/main.gd": "9cc09fc2b7067c8b0f947e472da8fff943b80ef4b0780bb479eaf035693d4673",
+    "viewer-local/tests/surface_visibility_plan_test.gd": "ad5114f5e4de4714a6b685351090a600c008375abd65a2432f1e859ec3992bd3",
+    "viewer-local/tests/visibility_top_parity_test.gd": "a428701efbcd7290d327600cfeca07207033079a388c578b1522e4ae3592f855",
+    "viewer-local/tests/oblique_visibility_retained_probe.gd": "ac8511d49ce4007d3acefc493caabd3d2fec973f03c922f689a0b03c4b20dbde"
+  }
+}

@@ -14,6 +14,10 @@ static func prepare(packet: Dictionary, focus: Dictionary, width_m: float, viewp
 	var unsupported: Dictionary = packet.get("_unsupportedTreeIDs",{})
 	var radius := clampf(width_m*(1.5 if oblique else 1.0),40.0,5000.0)
 	var query_radius := radius+float(packet.get("_maximumCrownRadiusM",0.0))
+	# Oblique tree geometry and atlas use the SAME planned support rectangle.
+	# Other families retain their original circular eligibility and budgets.
+	var planned_tree_bounds:Dictionary=atlas_bounds if oblique and not atlas_bounds.is_empty() and not atlas_bounds.get("disabled",false) else {}
+	if not planned_tree_bounds.is_empty():query_radius=maxf(query_radius,maxf(maxf(absf(float(planned_tree_bounds.minX)-float(focus.x)),absf(float(planned_tree_bounds.maxX)-float(focus.x))),maxf(absf(float(planned_tree_bounds.minZ)-float(focus.y)),absf(float(planned_tree_bounds.maxZ)-float(focus.y))))+float(packet.get("_maximumCrownRadiusM",7.56)))
 	var buckets: Dictionary = packet.get("_candidateBuckets",{})
 	var nearby: Array = []
 	for z in range(floori((focus.y-query_radius)/128.0),floori((focus.y+query_radius)/128.0)+1):
@@ -26,7 +30,10 @@ static func prepare(packet: Dictionary, focus: Dictionary, width_m: float, viewp
 		var size: float = columns.size[i] if not columns.is_empty() else float(candidates[i].size)
 		var crown_radius: float = columns.crownRadiusM[i] if not columns.is_empty() else float(candidates[i].get("crownRadiusM",size*0.42))
 		if not is_finite(crown_radius): crown_radius=size*0.42
-		if Vector2(px-focus.x,pz-focus.y).length()>radius+crown_radius: continue
+		var family_name=str(columns.families[int(columns.family[i])]) if not columns.is_empty() else str(candidates[i].family)
+		if family_name=="tree" and not planned_tree_bounds.is_empty():
+			if not Canopy.can_select(px,pz,crown_radius,planned_tree_bounds):continue
+		elif Vector2(px-focus.x,pz-focus.y).length()>radius+crown_radius: continue
 		if maxf(size,2.0*crown_radius)/width_m*viewport_width<1.25: continue
 		var candidate: Dictionary = candidates[i] if columns.is_empty() else {"stableId":columns.ids[i],"family":columns.families[int(columns.family[i])],"x":px,"y":columns.positions[i*3+1],"z":pz,"size":size,"orientation":columns.orientation[i],"rank":columns.rank[i],"variant":columns.variant[i],"crownRadiusM":crown_radius}
 		if str(candidate.family)=="tree":
