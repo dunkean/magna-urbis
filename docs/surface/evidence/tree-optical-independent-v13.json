@@ -1,0 +1,1382 @@
+{
+  "format": "independent-tree-optical-review",
+  "version": 1,
+  "sourceCommits": [
+    "ffa0328f0113bfebe501879133d80f96d1f3b29e",
+    "7ec8d78b62cb3016a75a43f8c5cde16d8c38132b"
+  ],
+  "verdict": {
+    "lutStationaryMarginal": "PASS_WITHIN_TWO_PERCENTAGE_POINTS",
+    "nativeMaskAndAtlas": "PASS",
+    "rendererGeneralCV": "PRE_FIX_COUNTEREXAMPLES_REQUIRE_CERTIFIED_GUARD_OR_KERNEL_FIX",
+    "gpu": "NOT_RUN"
+  },
+  "environment": {
+    "python": "3.13.9 (tags/v3.13.9:8183fa5, Oct 14 2025, 14:09:13) [MSC v.1944 64 bit (AMD64)]",
+    "numpy": "2.3.5",
+    "pillow": "11.3.0",
+    "godot": "4.7.2 headless Dummy"
+  },
+  "monteCarlo": {
+    "format": "independent-tree-optical-monte-carlo",
+    "version": 1,
+    "status": "PASS",
+    "checks": 2512,
+    "elapsedSeconds": 33.29040789999999,
+    "pointsPerSeed": 200000,
+    "seeds": 8,
+    "totalPoints": 1600000,
+    "confidence": "Student t7 95% interval across8 independent seeded process/probe realizations; includes finite-domain and sampled-point variation, not only conditional binomial uncertainty",
+    "asset": {
+      "descriptorDigest": "e3243d0df97653ccdaecf9e9a22e49d488fdc9a6e5253813bff76ed384ef4bde",
+      "sourceAssetDigest": "ef89df3fa4e374b778f57f385e072fd6bcc6c2d5e95884bdb7bcd67343723aa6",
+      "maskSha256": "d8003443e128493539055f6add11b11e7176aa2cfdc1316d982f3c4d7b864cec",
+      "lutSha256": "9416a33d91c2a1ad29266b3ffff0e75e51581fcc286e538e133ba81faea5575e",
+      "maskBoundsXZ": [
+        -0.4458007812500001,
+        -0.4651367187500002,
+        0.54462890625,
+        0.99365234375
+      ],
+      "glbBoundsXYZ": {
+        "min": [
+          -0.4480854868888855,
+          -9.32112834561849e-06,
+          -0.4677751958370209
+        ],
+        "max": [
+          0.5471552014350891,
+          1.0003167390823364,
+          0.9944528341293335
+        ]
+      },
+      "stemBottomMedianXZ": [
+        -0.001022089971229434,
+        0.0005349705461412668
+      ],
+      "horizontalRadius": 0.9999999848737433,
+      "normalizedHeight": 1.000326060210682
+    },
+    "generator": {
+      "sourceHashes": {
+        "population.ts": "875472e5e5493d8c42900f15c9b2407657ac2e7a17df50c458f134ed9c6b9338",
+        "treeCanopy.ts": "bc96bec80d793fcc25f98bf6a730b62d45ea4992065e3dcf18fe51be3b9950ce"
+      },
+      "witnesses": [
+        {
+          "seed": 0,
+          "records": 86528,
+          "allRecordBytesAndIdsExact": true,
+          "actualDensityWitnesses": 12
+        },
+        {
+          "seed": 1,
+          "records": 86528,
+          "allRecordBytesAndIdsExact": true,
+          "actualDensityWitnesses": 0
+        },
+        {
+          "seed": 17,
+          "records": 86528,
+          "allRecordBytesAndIdsExact": true,
+          "actualDensityWitnesses": 0
+        },
+        {
+          "seed": 6422,
+          "records": 86528,
+          "allRecordBytesAndIdsExact": true,
+          "actualDensityWitnesses": 12
+        },
+        {
+          "seed": 2307,
+          "records": 86528,
+          "allRecordBytesAndIdsExact": true,
+          "actualDensityWitnesses": 0
+        },
+        {
+          "seed": 4294967295,
+          "records": 86528,
+          "allRecordBytesAndIdsExact": true,
+          "actualDensityWitnesses": 0
+        },
+        {
+          "seed": 2147483647,
+          "records": 86528,
+          "allRecordBytesAndIdsExact": true,
+          "actualDensityWitnesses": 0
+        },
+        {
+          "seed": -9712,
+          "records": 86528,
+          "allRecordBytesAndIdsExact": true,
+          "actualDensityWitnesses": 0
+        }
+      ],
+      "heightRange": [
+        4,
+        18
+      ],
+      "radiusRange": [
+        1.68,
+        7.56
+      ],
+      "rotationRangeRadians": [
+        0,
+        6.283185307179586
+      ],
+      "rankRange": "[0,1)",
+      "cellM": 20,
+      "slots": 32,
+      "probeDomainXZ": [
+        -500,
+        500
+      ],
+      "sourceCentreDomainXZ": [
+        -520,
+        520
+      ],
+      "overhangGuaranteedM": 20
+    },
+    "densities": [
+      {
+        "requestedCover": 0,
+        "actualCover": 0,
+        "acceptance": 0,
+        "expectedEnvelope": 0,
+        "lutOpticalMean": 0.0,
+        "monteCarloMean": 0.0,
+        "errorPercentagePoints": 0.0,
+        "ci95HalfWidthPercentagePoints": 0.0,
+        "absoluteErrorPlusCI95PercentagePoints": 0.0,
+        "passesTwoPercentagePoints": true,
+        "monteCarloEnvelopeMean": 0.0,
+        "simultaneousCI95HalfWidthPercentagePoints": 0.0,
+        "absoluteErrorPlusSimultaneousCI95PercentagePoints": 0.0,
+        "passesSimultaneousTwoPercentagePoints": true
+      },
+      {
+        "requestedCover": 0.005,
+        "actualCover": 0.004999999888241291,
+        "acceptance": 0.000830621352342611,
+        "expectedEnvelope": 0.004999999888241291,
+        "lutOpticalMean": 0.0011198992776893235,
+        "monteCarloMean": 0.001088125,
+        "errorPercentagePoints": -0.0031774277689323614,
+        "ci95HalfWidthPercentagePoints": 0.015773912292991115,
+        "absoluteErrorPlusCI95PercentagePoints": 0.018951340061923477,
+        "passesTwoPercentagePoints": true,
+        "monteCarloEnvelopeMean": 0.004983125,
+        "simultaneousCI95HalfWidthPercentagePoints": 0.02784597942370674,
+        "absoluteErrorPlusSimultaneousCI95PercentagePoints": 0.031023407192639102,
+        "passesSimultaneousTwoPercentagePoints": true
+      },
+      {
+        "requestedCover": 0.02,
+        "actualCover": 0.019999999552965164,
+        "acceptance": 0.003322485409370444,
+        "expectedEnvelope": 0.019999999552965164,
+        "lutOpticalMean": 0.004479597036251448,
+        "monteCarloMean": 0.0047375,
+        "errorPercentagePoints": 0.025790296374855227,
+        "ci95HalfWidthPercentagePoints": 0.022460596550295617,
+        "absoluteErrorPlusCI95PercentagePoints": 0.04825089292515085,
+        "passesTwoPercentagePoints": true,
+        "monteCarloEnvelopeMean": 0.02121,
+        "simultaneousCI95HalfWidthPercentagePoints": 0.03965010694662055,
+        "absoluteErrorPlusSimultaneousCI95PercentagePoints": 0.06544040332147577,
+        "passesSimultaneousTwoPercentagePoints": true
+      },
+      {
+        "requestedCover": 0.05,
+        "actualCover": 0.05000000074505806,
+        "acceptance": 0.008423958590887468,
+        "expectedEnvelope": 0.05000000074505806,
+        "lutOpticalMean": 0.011322255978179818,
+        "monteCarloMean": 0.011519374999999998,
+        "errorPercentagePoints": 0.019711902182018015,
+        "ci95HalfWidthPercentagePoints": 0.021827577796521908,
+        "absoluteErrorPlusCI95PercentagePoints": 0.04153947997853992,
+        "passesTwoPercentagePoints": true,
+        "monteCarloEnvelopeMean": 0.051054375,
+        "simultaneousCI95HalfWidthPercentagePoints": 0.03853262722028561,
+        "absoluteErrorPlusSimultaneousCI95PercentagePoints": 0.058244529402303624,
+        "passesSimultaneousTwoPercentagePoints": true
+      },
+      {
+        "requestedCover": 0.1,
+        "actualCover": 0.10000000149011612,
+        "acceptance": 0.017292243325404,
+        "expectedEnvelope": 0.10000000149011612,
+        "lutOpticalMean": 0.023107014210300036,
+        "monteCarloMean": 0.023338750000000002,
+        "errorPercentagePoints": 0.02317357896999654,
+        "ci95HalfWidthPercentagePoints": 0.04950040169265299,
+        "absoluteErrorPlusCI95PercentagePoints": 0.07267398066264953,
+        "passesTwoPercentagePoints": true,
+        "monteCarloEnvelopeMean": 0.10106875,
+        "simultaneousCI95HalfWidthPercentagePoints": 0.08738397560453647,
+        "absoluteErrorPlusSimultaneousCI95PercentagePoints": 0.110557554574533,
+        "passesSimultaneousTwoPercentagePoints": true
+      },
+      {
+        "requestedCover": 0.2,
+        "actualCover": 0.20000000298023224,
+        "acceptance": 0.03656371519362696,
+        "expectedEnvelope": 0.2000000029802322,
+        "lutOpticalMean": 0.04824940193833527,
+        "monteCarloMean": 0.048169375,
+        "errorPercentagePoints": -0.008002693833526753,
+        "ci95HalfWidthPercentagePoints": 0.07002265665196221,
+        "absoluteErrorPlusCI95PercentagePoints": 0.07802535048548896,
+        "passesTwoPercentagePoints": true,
+        "monteCarloEnvelopeMean": 0.19949125,
+        "simultaneousCI95HalfWidthPercentagePoints": 0.12361229225232892,
+        "absoluteErrorPlusSimultaneousCI95PercentagePoints": 0.13161498608585567,
+        "passesSimultaneousTwoPercentagePoints": true
+      },
+      {
+        "requestedCover": 0.35,
+        "actualCover": 0.3499999940395355,
+        "acceptance": 0.07040966522464406,
+        "expectedEnvelope": 0.3499999940395355,
+        "lutOpticalMean": 0.09089460487268752,
+        "monteCarloMean": 0.08953812500000001,
+        "errorPercentagePoints": -0.13564798726875132,
+        "ci95HalfWidthPercentagePoints": 0.07749523476202684,
+        "absoluteErrorPlusCI95PercentagePoints": 0.21314322203077815,
+        "passesTwoPercentagePoints": true,
+        "monteCarloEnvelopeMean": 0.346678125,
+        "simultaneousCI95HalfWidthPercentagePoints": 0.13680377274429023,
+        "absoluteErrorPlusSimultaneousCI95PercentagePoints": 0.27245176001304156,
+        "passesSimultaneousTwoPercentagePoints": true
+      },
+      {
+        "requestedCover": 0.5,
+        "actualCover": 0.5,
+        "acceptance": 0.11297298009775586,
+        "expectedEnvelope": 0.5,
+        "lutOpticalMean": 0.1418730765581131,
+        "monteCarloMean": 0.14071,
+        "errorPercentagePoints": -0.11630765581130964,
+        "ci95HalfWidthPercentagePoints": 0.11329108082365894,
+        "absoluteErrorPlusCI95PercentagePoints": 0.2295987366349686,
+        "passesTwoPercentagePoints": true,
+        "monteCarloEnvelopeMean": 0.49921812499999996,
+        "simultaneousCI95HalfWidthPercentagePoints": 0.19999484255449076,
+        "absoluteErrorPlusSimultaneousCI95PercentagePoints": 0.3163024983658004,
+        "passesSimultaneousTwoPercentagePoints": true
+      },
+      {
+        "requestedCover": 0.7,
+        "actualCover": 0.699999988079071,
+        "acceptance": 0.19514694353717124,
+        "expectedEnvelope": 0.699999988079071,
+        "lutOpticalMean": 0.23254431415011823,
+        "monteCarloMean": 0.2305625,
+        "errorPercentagePoints": -0.19818141501182218,
+        "ci95HalfWidthPercentagePoints": 0.11169587250844423,
+        "absoluteErrorPlusCI95PercentagePoints": 0.30987728752026644,
+        "passesTwoPercentagePoints": true,
+        "monteCarloEnvelopeMean": 0.6993925000000001,
+        "simultaneousCI95HalfWidthPercentagePoints": 0.19717879178047115,
+        "absoluteErrorPlusSimultaneousCI95PercentagePoints": 0.39536020679229333,
+        "passesSimultaneousTwoPercentagePoints": true
+      },
+      {
+        "requestedCover": 0.85,
+        "actualCover": 0.8500000238418579,
+        "acceptance": 0.30521007617245693,
+        "expectedEnvelope": 0.8500000238418579,
+        "lutOpticalMean": 0.3394883858209141,
+        "monteCarloMean": 0.33714,
+        "errorPercentagePoints": -0.23483858209141228,
+        "ci95HalfWidthPercentagePoints": 0.1103819018264926,
+        "absoluteErrorPlusCI95PercentagePoints": 0.3452204839179049,
+        "passesTwoPercentagePoints": true,
+        "monteCarloEnvelopeMean": 0.850635625,
+        "simultaneousCI95HalfWidthPercentagePoints": 0.19485921500754608,
+        "absoluteErrorPlusSimultaneousCI95PercentagePoints": 0.4296977970989584,
+        "passesSimultaneousTwoPercentagePoints": true
+      },
+      {
+        "requestedCover": 0.95,
+        "actualCover": 0.949999988079071,
+        "acceptance": 0.4763042403312012,
+        "expectedEnvelope": 0.949999988079071,
+        "lutOpticalMean": 0.4775393336799425,
+        "monteCarloMean": 0.474398125,
+        "errorPercentagePoints": -0.31412086799424976,
+        "ci95HalfWidthPercentagePoints": 0.12806974715273364,
+        "absoluteErrorPlusCI95PercentagePoints": 0.4421906151469834,
+        "passesTwoPercentagePoints": true,
+        "monteCarloEnvelopeMean": 0.950121875,
+        "simultaneousCI95HalfWidthPercentagePoints": 0.226083895851186,
+        "absoluteErrorPlusSimultaneousCI95PercentagePoints": 0.5402047638454357,
+        "passesSimultaneousTwoPercentagePoints": true
+      },
+      {
+        "requestedCover": 1,
+        "actualCover": 1,
+        "acceptance": 1,
+        "expectedEnvelope": 0.9985347239254927,
+        "lutOpticalMean": 0.7472361326217651,
+        "monteCarloMean": 0.744675,
+        "errorPercentagePoints": -0.2561132621765161,
+        "ci95HalfWidthPercentagePoints": 0.19167148739623746,
+        "absoluteErrorPlusCI95PercentagePoints": 0.44778474957275355,
+        "passesTwoPercentagePoints": true,
+        "monteCarloEnvelopeMean": 0.998526875,
+        "simultaneousCI95HalfWidthPercentagePoints": 0.33836122548484243,
+        "absoluteErrorPlusSimultaneousCI95PercentagePoints": 0.5944744876613586,
+        "passesSimultaneousTwoPercentagePoints": true
+      }
+    ],
+    "realizations": [
+      {
+        "seed": 0,
+        "opticalMean": [
+          0.0,
+          0.000975,
+          0.0051,
+          0.0119,
+          0.02403,
+          0.04931,
+          0.08975,
+          0.14035,
+          0.23026,
+          0.336705,
+          0.471955,
+          0.742325
+        ],
+        "envelopeMean": [
+          0.0,
+          0.004695,
+          0.022815,
+          0.052455,
+          0.10311,
+          0.20375,
+          0.347805,
+          0.497665,
+          0.697175,
+          0.848565,
+          0.949525,
+          0.99833
+        ]
+      },
+      {
+        "seed": 1,
+        "opticalMean": [
+          0.0,
+          0.00083,
+          0.00443,
+          0.011565,
+          0.023795,
+          0.04789,
+          0.088695,
+          0.140695,
+          0.230015,
+          0.33654,
+          0.47412,
+          0.74448
+        ],
+        "envelopeMean": [
+          0.0,
+          0.004355,
+          0.019605,
+          0.051055,
+          0.10373,
+          0.199205,
+          0.344145,
+          0.499805,
+          0.6987,
+          0.85047,
+          0.950295,
+          0.99862
+        ]
+      },
+      {
+        "seed": 17,
+        "opticalMean": [
+          0.0,
+          0.00108,
+          0.004915,
+          0.01164,
+          0.02311,
+          0.048035,
+          0.09019,
+          0.140995,
+          0.229765,
+          0.337245,
+          0.47592,
+          0.744515
+        ],
+        "envelopeMean": [
+          0.0,
+          0.00527,
+          0.0219,
+          0.051315,
+          0.09991,
+          0.200875,
+          0.34975,
+          0.502535,
+          0.699195,
+          0.85284,
+          0.95065,
+          0.998445
+        ]
+      },
+      {
+        "seed": 6422,
+        "opticalMean": [
+          0.0,
+          0.000845,
+          0.004665,
+          0.01109,
+          0.02226,
+          0.04716,
+          0.087725,
+          0.138305,
+          0.228155,
+          0.335095,
+          0.473005,
+          0.74162
+        ],
+        "envelopeMean": [
+          0.0,
+          0.003825,
+          0.02071,
+          0.04899,
+          0.09711,
+          0.194935,
+          0.33661,
+          0.488505,
+          0.69234,
+          0.8496,
+          0.94933,
+          0.998605
+        ]
+      },
+      {
+        "seed": 2307,
+        "opticalMean": [
+          0.0,
+          0.001285,
+          0.004775,
+          0.011495,
+          0.02348,
+          0.04788,
+          0.089455,
+          0.139525,
+          0.23141,
+          0.33628,
+          0.47632,
+          0.744605
+        ],
+        "envelopeMean": [
+          0.0,
+          0.005095,
+          0.02055,
+          0.049285,
+          0.09894,
+          0.195805,
+          0.342605,
+          0.494665,
+          0.699055,
+          0.84598,
+          0.94999,
+          0.998375
+        ]
+      },
+      {
+        "seed": 4294967295,
+        "opticalMean": [
+          0.0,
+          0.001315,
+          0.00474,
+          0.011445,
+          0.02312,
+          0.049385,
+          0.090645,
+          0.14241,
+          0.230625,
+          0.33847,
+          0.47345,
+          0.744055
+        ],
+        "envelopeMean": [
+          0.0,
+          0.006295,
+          0.021875,
+          0.0521,
+          0.102965,
+          0.20587,
+          0.352905,
+          0.504455,
+          0.701025,
+          0.85181,
+          0.950145,
+          0.99846
+        ]
+      },
+      {
+        "seed": 2147483647,
+        "opticalMean": [
+          0.0,
+          0.00117,
+          0.00497,
+          0.01176,
+          0.023935,
+          0.04845,
+          0.09002,
+          0.14225,
+          0.23209,
+          0.33744,
+          0.474875,
+          0.748485
+        ],
+        "envelopeMean": [
+          0.0,
+          0.00484,
+          0.0223,
+          0.05209,
+          0.10159,
+          0.196595,
+          0.34687,
+          0.50221,
+          0.703755,
+          0.85125,
+          0.950845,
+          0.998785
+        ]
+      },
+      {
+        "seed": -9712,
+        "opticalMean": [
+          0.0,
+          0.001205,
+          0.004305,
+          0.01126,
+          0.02298,
+          0.047245,
+          0.089825,
+          0.14115,
+          0.23218,
+          0.339345,
+          0.47554,
+          0.747315
+        ],
+        "envelopeMean": [
+          0.0,
+          0.00549,
+          0.019925,
+          0.051145,
+          0.101195,
+          0.198895,
+          0.352735,
+          0.503905,
+          0.703895,
+          0.85457,
+          0.950195,
+          0.998595
+        ]
+      }
+    ],
+    "selectedCoverage": [
+      {
+        "seed": 0,
+        "pointCount": 200000,
+        "selectedRankThresholds": [
+          0.2,
+          0.5,
+          1.0
+        ],
+        "phases": [
+          0,
+          0.25,
+          0.5,
+          1.0
+        ],
+        "pixelFootprintsM": [
+          0.02,
+          0.25,
+          1,
+          4,
+          10
+        ],
+        "commonPositiveFilterBlockSizes": [
+          4,
+          16,
+          64
+        ],
+        "maximumCount": 5,
+        "VAboveC": 0
+      },
+      {
+        "seed": 1,
+        "pointCount": 200000,
+        "selectedRankThresholds": [
+          0.2,
+          0.5,
+          1.0
+        ],
+        "phases": [
+          0,
+          0.25,
+          0.5,
+          1.0
+        ],
+        "pixelFootprintsM": [
+          0.02,
+          0.25,
+          1,
+          4,
+          10
+        ],
+        "commonPositiveFilterBlockSizes": [
+          4,
+          16,
+          64
+        ],
+        "maximumCount": 4,
+        "VAboveC": 0
+      },
+      {
+        "seed": 17,
+        "pointCount": 200000,
+        "selectedRankThresholds": [
+          0.2,
+          0.5,
+          1.0
+        ],
+        "phases": [
+          0,
+          0.25,
+          0.5,
+          1.0
+        ],
+        "pixelFootprintsM": [
+          0.02,
+          0.25,
+          1,
+          4,
+          10
+        ],
+        "commonPositiveFilterBlockSizes": [
+          4,
+          16,
+          64
+        ],
+        "maximumCount": 5,
+        "VAboveC": 0
+      },
+      {
+        "seed": 6422,
+        "pointCount": 200000,
+        "selectedRankThresholds": [
+          0.2,
+          0.5,
+          1.0
+        ],
+        "phases": [
+          0,
+          0.25,
+          0.5,
+          1.0
+        ],
+        "pixelFootprintsM": [
+          0.02,
+          0.25,
+          1,
+          4,
+          10
+        ],
+        "commonPositiveFilterBlockSizes": [
+          4,
+          16,
+          64
+        ],
+        "maximumCount": 4,
+        "VAboveC": 0
+      },
+      {
+        "seed": 2307,
+        "pointCount": 200000,
+        "selectedRankThresholds": [
+          0.2,
+          0.5,
+          1.0
+        ],
+        "phases": [
+          0,
+          0.25,
+          0.5,
+          1.0
+        ],
+        "pixelFootprintsM": [
+          0.02,
+          0.25,
+          1,
+          4,
+          10
+        ],
+        "commonPositiveFilterBlockSizes": [
+          4,
+          16,
+          64
+        ],
+        "maximumCount": 5,
+        "VAboveC": 0
+      },
+      {
+        "seed": 4294967295,
+        "pointCount": 200000,
+        "selectedRankThresholds": [
+          0.2,
+          0.5,
+          1.0
+        ],
+        "phases": [
+          0,
+          0.25,
+          0.5,
+          1.0
+        ],
+        "pixelFootprintsM": [
+          0.02,
+          0.25,
+          1,
+          4,
+          10
+        ],
+        "commonPositiveFilterBlockSizes": [
+          4,
+          16,
+          64
+        ],
+        "maximumCount": 4,
+        "VAboveC": 0
+      },
+      {
+        "seed": 2147483647,
+        "pointCount": 200000,
+        "selectedRankThresholds": [
+          0.2,
+          0.5,
+          1.0
+        ],
+        "phases": [
+          0,
+          0.25,
+          0.5,
+          1.0
+        ],
+        "pixelFootprintsM": [
+          0.02,
+          0.25,
+          1,
+          4,
+          10
+        ],
+        "commonPositiveFilterBlockSizes": [
+          4,
+          16,
+          64
+        ],
+        "maximumCount": 4,
+        "VAboveC": 0
+      },
+      {
+        "seed": -9712,
+        "pointCount": 200000,
+        "selectedRankThresholds": [
+          0.2,
+          0.5,
+          1.0
+        ],
+        "phases": [
+          0,
+          0.25,
+          0.5,
+          1.0
+        ],
+        "pixelFootprintsM": [
+          0.02,
+          0.25,
+          1,
+          4,
+          10
+        ],
+        "commonPositiveFilterBlockSizes": [
+          4,
+          16,
+          64
+        ],
+        "maximumCount": 4,
+        "VAboveC": 0
+      }
+    ],
+    "negativeControl": {
+      "filteredSourceC": 0.5,
+      "filterAfterPow": 0.46875,
+      "wrongPowAfterMeanCounts": 0.75,
+      "wrongExceedsC": true
+    },
+    "scope": "CPU Monte Carlo of actual unchanged homogeneous generator and actual1024 root-pivot binary mask. Not cover times mean opacity. No source/ID/seed/acceptance changes, GPU/Blender or renderer activation. Stationary marginal LUT, not local finite-page exact C. Top-down footprint only; oblique parallax/silhouette/BRDF/shadow compatibility remains unqualified.",
+    "rawMonteCarloReportSha256": "4a0a7e072cf14ea59093cac2c200402ef938fc35ca79480d85d8ed7e3bd472cb",
+    "simultaneousConfidence": {
+      "method": "Student t7 between independent seeded process/probe means, Bonferroni12 density comparisons; same retained samples and means",
+      "pointwiseCritical": 2.3646242515927858,
+      "simultaneousCritical": 4.174314971143922,
+      "familyErrorProbability": 0.05,
+      "densityCount": 12,
+      "scope": "Approximate seeded-realization inference under large-area CLT; does not claim exact local finite-page coverage"
+    }
+  },
+  "actualGeneratorWitnesses": {
+    "format": "actual-tree-process-witnesses",
+    "version": 1,
+    "scope": "Authored flat homogeneous diagnostic; canonical candidate generator unchanged. No IG/source/retained candidate mutation.",
+    "seedList": [
+      0,
+      1,
+      17,
+      6422,
+      2307,
+      4294967295,
+      2147483647,
+      -9712
+    ],
+    "cellM": 20,
+    "slots": 32,
+    "cellsMin": -26,
+    "cellsMax": 25,
+    "bounds": {
+      "minX": -520,
+      "minZ": -520,
+      "maxX": 520,
+      "maxZ": 520
+    },
+    "recordColumns": [
+      "x",
+      "z",
+      "size",
+      "crownRadiusM",
+      "orientation",
+      "rank",
+      "variant"
+    ],
+    "sourceHashes": {
+      "population.ts": "875472e5e5493d8c42900f15c9b2407657ac2e7a17df50c458f134ed9c6b9338",
+      "treeCanopy.ts": "bc96bec80d793fcc25f98bf6a730b62d45ea4992065e3dcf18fe51be3b9950ce"
+    },
+    "densities": [
+      {
+        "requestedCover": 0,
+        "actualCover": 0,
+        "acceptance": 0,
+        "expectedEnvelope": 0
+      },
+      {
+        "requestedCover": 0.005,
+        "actualCover": 0.004999999888241291,
+        "acceptance": 0.000830621352342611,
+        "expectedEnvelope": 0.004999999888241291
+      },
+      {
+        "requestedCover": 0.02,
+        "actualCover": 0.019999999552965164,
+        "acceptance": 0.003322485409370444,
+        "expectedEnvelope": 0.019999999552965164
+      },
+      {
+        "requestedCover": 0.05,
+        "actualCover": 0.05000000074505806,
+        "acceptance": 0.008423958590887468,
+        "expectedEnvelope": 0.05000000074505806
+      },
+      {
+        "requestedCover": 0.1,
+        "actualCover": 0.10000000149011612,
+        "acceptance": 0.017292243325404,
+        "expectedEnvelope": 0.10000000149011612
+      },
+      {
+        "requestedCover": 0.2,
+        "actualCover": 0.20000000298023224,
+        "acceptance": 0.03656371519362696,
+        "expectedEnvelope": 0.2000000029802322
+      },
+      {
+        "requestedCover": 0.35,
+        "actualCover": 0.3499999940395355,
+        "acceptance": 0.07040966522464406,
+        "expectedEnvelope": 0.3499999940395355
+      },
+      {
+        "requestedCover": 0.5,
+        "actualCover": 0.5,
+        "acceptance": 0.11297298009775586,
+        "expectedEnvelope": 0.5
+      },
+      {
+        "requestedCover": 0.7,
+        "actualCover": 0.699999988079071,
+        "acceptance": 0.19514694353717124,
+        "expectedEnvelope": 0.699999988079071
+      },
+      {
+        "requestedCover": 0.85,
+        "actualCover": 0.8500000238418579,
+        "acceptance": 0.30521007617245693,
+        "expectedEnvelope": 0.8500000238418579
+      },
+      {
+        "requestedCover": 0.95,
+        "actualCover": 0.949999988079071,
+        "acceptance": 0.4763042403312012,
+        "expectedEnvelope": 0.949999988079071
+      },
+      {
+        "requestedCover": 1,
+        "actualCover": 1,
+        "acceptance": 1,
+        "expectedEnvelope": 0.9985347239254927
+      }
+    ],
+    "seeds": [
+      {
+        "seed": 0,
+        "file": "seed-0.f64",
+        "count": 86528,
+        "sha256": "a41ef400edf28789c46fda05d693cd329020379b3cb1f67fa9c4567cfaab55fc",
+        "idsSha256": "b137c994a9a16c656ecb5c216388c0afa0701e2eb143a15fb37dc5a7d8164c82",
+        "witnesses": [
+          {
+            "requestedCover": 0,
+            "actualCover": 0,
+            "acceptance": 0,
+            "expectedEnvelope": 0,
+            "count": 0,
+            "idsSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "recordsSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "requestedCover": 0.005,
+            "actualCover": 0.004999999888241291,
+            "acceptance": 0.000830621352342611,
+            "expectedEnvelope": 0.004999999888241291,
+            "count": 65,
+            "idsSha256": "2d930a19648517adcf8c5ed40092a01683691d519665070614874bd15bc5b805",
+            "recordsSha256": "85cf48b694075eff7c41421dc88919b735056ad606fa1731bcafeb80c96926ff"
+          },
+          {
+            "requestedCover": 0.02,
+            "actualCover": 0.019999999552965164,
+            "acceptance": 0.003322485409370444,
+            "expectedEnvelope": 0.019999999552965164,
+            "count": 299,
+            "idsSha256": "511afd6ed7a56c1eaa15fbd6e3398624a9e7922ac79a0a5184cda5e75d1107d4",
+            "recordsSha256": "5b8f293d73e27b2f93b26592953273194fbd11fd5ac8c84c5543855c68bf8d6b"
+          },
+          {
+            "requestedCover": 0.05,
+            "actualCover": 0.05000000074505806,
+            "acceptance": 0.008423958590887468,
+            "expectedEnvelope": 0.05000000074505806,
+            "count": 761,
+            "idsSha256": "b704db5fb1a8fcd255d7dc6c94f6763051c2d03a4f85506b66128c12f264e00c",
+            "recordsSha256": "0a67def32f8109a4d0a358086f69b9a1c773a1aa5c1a76d921fc07920948fe25"
+          },
+          {
+            "requestedCover": 0.1,
+            "actualCover": 0.10000000149011612,
+            "acceptance": 0.017292243325404,
+            "expectedEnvelope": 0.10000000149011612,
+            "count": 1529,
+            "idsSha256": "496ab3c7e62da79ecb6d80e278ac2c1ef42319dfb59683f260afa8189aa957ba",
+            "recordsSha256": "f97315aed9db3eaead6a7c0b81aecea681d4fff45f13f41b3f4dcf101d71da78"
+          },
+          {
+            "requestedCover": 0.2,
+            "actualCover": 0.20000000298023224,
+            "acceptance": 0.03656371519362696,
+            "expectedEnvelope": 0.2000000029802322,
+            "count": 3232,
+            "idsSha256": "2afd9b0f7b95689791f5883479eae254faa72f4f6707d9bdee9267be8f0a2ee1",
+            "recordsSha256": "bd21f176472c07443a2821abd6f3c0899f087431531b1423d76f07dda74589de"
+          },
+          {
+            "requestedCover": 0.35,
+            "actualCover": 0.3499999940395355,
+            "acceptance": 0.07040966522464406,
+            "expectedEnvelope": 0.3499999940395355,
+            "count": 6107,
+            "idsSha256": "c09cdbe0e24d560b92003d79ce3ecc747b1390be8c9979178a465e56c294126e",
+            "recordsSha256": "d42b762c697b99408016c859faaa71a88950470b7bbc991aea5e559bdcb4ff32"
+          },
+          {
+            "requestedCover": 0.5,
+            "actualCover": 0.5,
+            "acceptance": 0.11297298009775586,
+            "expectedEnvelope": 0.5,
+            "count": 9729,
+            "idsSha256": "f52cae754a7f874f82fc26db8241bf1a8f5bc054517dc566f48a698eaf7278a7",
+            "recordsSha256": "3f5a6c129c78bff3afd8462b8b611f4faf16093ed655982f0b3eb1e83eb5e962"
+          },
+          {
+            "requestedCover": 0.7,
+            "actualCover": 0.699999988079071,
+            "acceptance": 0.19514694353717124,
+            "expectedEnvelope": 0.699999988079071,
+            "count": 16877,
+            "idsSha256": "ddb4f9ca794c0adce0d910d98509814f4dcd4cf64da9911ae13b4ff799d0773b",
+            "recordsSha256": "7dbbbb0b9a3bd517703c2478a7c7dd7c5dafc667357bebb586488a4467259e4d"
+          },
+          {
+            "requestedCover": 0.85,
+            "actualCover": 0.8500000238418579,
+            "acceptance": 0.30521007617245693,
+            "expectedEnvelope": 0.8500000238418579,
+            "count": 26456,
+            "idsSha256": "0234f4a96149662d5226f7ec234eea84012c75b45b4cd9aa204c88a3c396bcb6",
+            "recordsSha256": "984830e6f97a82ec62d3ddfc4175ae90dd072053506dfdb0af421925f67d7b39"
+          },
+          {
+            "requestedCover": 0.95,
+            "actualCover": 0.949999988079071,
+            "acceptance": 0.4763042403312012,
+            "expectedEnvelope": 0.949999988079071,
+            "count": 41176,
+            "idsSha256": "b28ecae3b99f0104b23d2d20b87c99c812a41112e15cd58d9d34e048ba8b3b9d",
+            "recordsSha256": "93e8009cd4ade800bc9a702ab06319694867c3acd010a9439e769987dc4a1553"
+          },
+          {
+            "requestedCover": 1,
+            "actualCover": 1,
+            "acceptance": 1,
+            "expectedEnvelope": 0.9985347239254927,
+            "count": 86528,
+            "idsSha256": "b137c994a9a16c656ecb5c216388c0afa0701e2eb143a15fb37dc5a7d8164c82",
+            "recordsSha256": "a41ef400edf28789c46fda05d693cd329020379b3cb1f67fa9c4567cfaab55fc"
+          }
+        ]
+      },
+      {
+        "seed": 1,
+        "file": "seed-1.f64",
+        "count": 86528,
+        "sha256": "523eab55cc165e7ec2ce8cff28435dbdf5aa9a528002a3b8d5aeef5eee687505",
+        "idsSha256": "eb75c14de216328ded0c00131f69bf546377e47b47d8b169d14c7d8b3fadb4cc",
+        "witnesses": []
+      },
+      {
+        "seed": 17,
+        "file": "seed-17.f64",
+        "count": 86528,
+        "sha256": "c79cc1ddd5e67bc95cb94ad22f03c6ca82d7ec8a624790fd5bbfd4f5001f8162",
+        "idsSha256": "933503b33f44bfd5ec53cdcbc494a90c138da791a2f65eb294d144fadba922de",
+        "witnesses": []
+      },
+      {
+        "seed": 6422,
+        "file": "seed-6422.f64",
+        "count": 86528,
+        "sha256": "7947d166b3c7db59235f1864e61cdcacaf526c16eb4a0ce723bc1d91dfd938a2",
+        "idsSha256": "e4542b1c7fac5a6b3fc29337daeb99f79108df0f0f38bce90f3f7a2a29550dbe",
+        "witnesses": [
+          {
+            "requestedCover": 0,
+            "actualCover": 0,
+            "acceptance": 0,
+            "expectedEnvelope": 0,
+            "count": 0,
+            "idsSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "recordsSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "requestedCover": 0.005,
+            "actualCover": 0.004999999888241291,
+            "acceptance": 0.000830621352342611,
+            "expectedEnvelope": 0.004999999888241291,
+            "count": 58,
+            "idsSha256": "4d7b8b69a42080618e39bac2a7f9b3f1c5b1bdc37b5977ee4248ce5fb2ff212a",
+            "recordsSha256": "df4cb9ed9622aef1f0bbab047e0394823ce37069473497238f799e41ccd15da5"
+          },
+          {
+            "requestedCover": 0.02,
+            "actualCover": 0.019999999552965164,
+            "acceptance": 0.003322485409370444,
+            "expectedEnvelope": 0.019999999552965164,
+            "count": 312,
+            "idsSha256": "bd995f69358952d705e09621f403f22807a7db214ce302b274fcacce2e82a9d0",
+            "recordsSha256": "41d1a87d636bb553c4fd6ff860a64304f484b0f665af78f7d6f860350192a471"
+          },
+          {
+            "requestedCover": 0.05,
+            "actualCover": 0.05000000074505806,
+            "acceptance": 0.008423958590887468,
+            "expectedEnvelope": 0.05000000074505806,
+            "count": 746,
+            "idsSha256": "116116e8cd803cad59d658eadb5a85ae27bb9e061d6185f16196188072eb64ab",
+            "recordsSha256": "e010b347abdbf15e79b55012b29aa997d1e893ef1d010d83a5f1fc458b042159"
+          },
+          {
+            "requestedCover": 0.1,
+            "actualCover": 0.10000000149011612,
+            "acceptance": 0.017292243325404,
+            "expectedEnvelope": 0.10000000149011612,
+            "count": 1525,
+            "idsSha256": "22375abd97ab8dd6af5cdf946edbe9dab29afd82f0f7ecdc02e6fbad133f10d2",
+            "recordsSha256": "7492fa7150c83190078e2219f199fb59ff617d2b87b141f0b5a68fdd86a559fc"
+          },
+          {
+            "requestedCover": 0.2,
+            "actualCover": 0.20000000298023224,
+            "acceptance": 0.03656371519362696,
+            "expectedEnvelope": 0.2000000029802322,
+            "count": 3148,
+            "idsSha256": "db1ca532f4e2a854a57fb24e36d434385e46b667242dcb98ef5382a74529eee2",
+            "recordsSha256": "3a222b5337a180a005d774ae87740aae8caa5c95040f7aa23c6c27217918232c"
+          },
+          {
+            "requestedCover": 0.35,
+            "actualCover": 0.3499999940395355,
+            "acceptance": 0.07040966522464406,
+            "expectedEnvelope": 0.3499999940395355,
+            "count": 5931,
+            "idsSha256": "65e77888788f0b71210e0576f3aa4e223c1ce99d7a3b1bc379053c44f0c2fd99",
+            "recordsSha256": "84e753e5ebf505c630c99264c56c16156ac4d0086956918e14387524ebe78cdd"
+          },
+          {
+            "requestedCover": 0.5,
+            "actualCover": 0.5,
+            "acceptance": 0.11297298009775586,
+            "expectedEnvelope": 0.5,
+            "count": 9576,
+            "idsSha256": "a01840b2cf466e80f63e408a1ec74e4b3aa15997623aca13c5e695a70d6b18f9",
+            "recordsSha256": "5f1569b6a512a7bd66e9057547c691bfc4c50f6f66097dc64108b59e6f8dcb6d"
+          },
+          {
+            "requestedCover": 0.7,
+            "actualCover": 0.699999988079071,
+            "acceptance": 0.19514694353717124,
+            "expectedEnvelope": 0.699999988079071,
+            "count": 16546,
+            "idsSha256": "8ae982989c61d3226472956dee03aa798b81bf7fbe33b641447ff9f6ab0f7074",
+            "recordsSha256": "0c999ec3f063b1da8d491afdc004941957a288e32cb23db83b8fdde58c5e492b"
+          },
+          {
+            "requestedCover": 0.85,
+            "actualCover": 0.8500000238418579,
+            "acceptance": 0.30521007617245693,
+            "expectedEnvelope": 0.8500000238418579,
+            "count": 26214,
+            "idsSha256": "95c27b486b5a480929cda204940e090a0c7cb63a3d5b896f01a3e3ac0a2005aa",
+            "recordsSha256": "2b097e8fe9e95bfb065b6871447e38b86ad6c60195adb2ccf33e6dd5cb523c90"
+          },
+          {
+            "requestedCover": 0.95,
+            "actualCover": 0.949999988079071,
+            "acceptance": 0.4763042403312012,
+            "expectedEnvelope": 0.949999988079071,
+            "count": 41119,
+            "idsSha256": "d29bebfd85c6086af8659fb420022d824827873d8defa24d4854949c33c910cc",
+            "recordsSha256": "e07c89b6a332cbac9f9e1605933b18818c4438113f2f4240ce7b91dd9167d629"
+          },
+          {
+            "requestedCover": 1,
+            "actualCover": 1,
+            "acceptance": 1,
+            "expectedEnvelope": 0.9985347239254927,
+            "count": 86528,
+            "idsSha256": "e4542b1c7fac5a6b3fc29337daeb99f79108df0f0f38bce90f3f7a2a29550dbe",
+            "recordsSha256": "7947d166b3c7db59235f1864e61cdcacaf526c16eb4a0ce723bc1d91dfd938a2"
+          }
+        ]
+      },
+      {
+        "seed": 2307,
+        "file": "seed-2307.f64",
+        "count": 86528,
+        "sha256": "54c7f50916425a6d398da95aa8d7dc1a4c48f3857481f301e32db43f297d7fa3",
+        "idsSha256": "96be5fe13dd49e4e1e1d3e0f1acd3a1f7824c1f3c0572a2a482ff88a5baedaed",
+        "witnesses": []
+      },
+      {
+        "seed": 4294967295,
+        "file": "seed-4294967295.f64",
+        "count": 86528,
+        "sha256": "97e80553831ab270ae8128a839f6f995ee03e5c553ad53ec676fd2b76e849243",
+        "idsSha256": "2fe3fc2ac50fe27c01bf1aa26a76b079f28843a7ae0bc16eff3b13042fcf5144",
+        "witnesses": []
+      },
+      {
+        "seed": 2147483647,
+        "file": "seed-2147483647.f64",
+        "count": 86528,
+        "sha256": "296ef01191c32c1e1d41efa9d5f59624f5285746ff7d91bfb242306d1e06ab05",
+        "idsSha256": "57d8b2ef9f8abf6a825176cb0356ad69a046d280b542d7fcac43fb89e9dbefa6",
+        "witnesses": []
+      },
+      {
+        "seed": -9712,
+        "file": "seed--9712.f64",
+        "count": 86528,
+        "sha256": "5ff3fc73597e81604c5c606ccff89536578b19addd50a9d2c55ceb4e0f033b4e",
+        "idsSha256": "b5b3d021703912ea7e1041deee99f2c77bcbc4c1a8e2068ac2a2a226a54b6407",
+        "witnesses": []
+      }
+    ]
+  },
+  "native": {
+    "actualWipAtlasSamples": 5000,
+    "actualWipCanopySha256": "f70f83149576c675f46800f3be3a303d29a0bc0f95745eff47f129fb5adefe4e",
+    "actualWipTreeLibrarySha256": "b2f0497e8693b6c389f115f460277ad8b215a88001c4ac5e811940b50863a8d9",
+    "classificationMismatches": 0,
+    "failures": [],
+    "maskSha256": "d8003443e128493539055f6add11b11e7176aa2cfdc1316d982f3c4d7b864cec",
+    "maximumCoverageError": 2.34317244496296e-08,
+    "plannedUniqueIds": 30,
+    "radiusCases": 1010,
+    "samples": 6160,
+    "scope": "Headless CPU mask/radius/LOD against independent Python. Optional WIP canopy loaded verbatim except global class registration; actual pure plan/buffer methods extracted verbatim to avoid graphics imports. Rotated C/count samples, budget/IDs and root rebasing tested. No ImageTexture, mesh import or GPU",
+    "sourceBufferUnchanged": true,
+    "status": "PASS",
+    "transformedInstances": 30,
+    "weightCases": 28
+  },
+  "filterCounterexample": {
+    "format": "independent-canopy-filter-limit",
+    "version": 1,
+    "status": "CONDITIONAL_COUNTEREXAMPLE_REPRODUCED",
+    "gridSize": 2048,
+    "spacingM": 0.03125,
+    "footprintM": 1.0,
+    "phase": 1,
+    "selectedBins": [
+      1,
+      3
+    ],
+    "selectedInstanceWeights": [
+      1,
+      1
+    ],
+    "sourceCLevel": 5,
+    "selectedVLevelAfterCurrentCap": 3,
+    "queryPoints": 50000,
+    "maximumVisibleAboveC": 0.5878994464874268,
+    "queriesWithVisibleAboveC": 2408,
+    "sameLevel5KernelMaximumVisibleAboveC": 0.0,
+    "finePointwiseVAboveC": 0,
+    "scope": "Actual prepared mask and independently validated rotated atlas layout. CPU emulates current shader C mip floor(log2(footprint/spacing)) vs selected-V cap3. Reachable only if an active geometry view permits footprint/atlasSpacing>8. No assertion that ordinary2048px tested views reached this ratio; oblique/resize/reuse invariants must exclude it or kernels must match. min(total,visible) conceals the internal overshoot but does not prove matching geometry/paint energy."
+  },
+  "cameraCounterexamples": [
+    {
+      "actualMaximumRatio": 9.23283538556786,
+      "atlasBounds": {
+        "maxX": 400.0,
+        "maxZ": 400.0,
+        "minX": -400.0,
+        "minZ": -400.0
+      },
+      "atlasSpacingM": 0.5,
+      "cameraPosition": [
+        0,
+        100,
+        100
+      ],
+      "cornerRatio": 5.67280457436466,
+      "cornerReportedMaximumM": 2.83640228718233,
+      "format": "independent-canopy-corner-footprint-probe",
+      "fovDegrees": 48,
+      "independentlySampledMaximumM": 4.61641769278393,
+      "mainExistingCornerBudgetPhase": 2.0,
+      "rawViewSafePhase": 2.0,
+      "sampledMaximumAtPixel": [
+        100.0,
+        0.0
+      ],
+      "scope": "Headless CPU actual Camera3D projection and SurfaceCanopyView; same per-pixel main-camera one-metre secants as shader. Tests oblique far-edge midpoint missed by corner-only maximum. No GPU or claim about prior2048px captures.",
+      "unsafeCondition": true,
+      "version": 1,
+      "viewport": [
+        200,
+        125
+      ]
+    },
+    {
+      "actualMaximumRatio": 7.72303847498538,
+      "atlasBounds": {
+        "maxX": 240.0,
+        "maxZ": 240.0,
+        "minX": -240.0,
+        "minZ": -240.0
+      },
+      "atlasSpacingM": 0.25,
+      "cameraPosition": [
+        0.0,
+        50.0,
+        46.5753440856934
+      ],
+      "cornerRatio": 5.10862960422942,
+      "cornerReportedMaximumM": 1.27715740105735,
+      "format": "independent-canopy-corner-footprint-probe",
+      "fovDegrees": 48,
+      "independentlySampledMaximumM": 1.93075961874634,
+      "mainExistingCornerBudgetPhase": 2.0,
+      "mainObliqueDirectionRatio": true,
+      "rawViewSafePhase": 2.0,
+      "sampledMaximumAtPixel": [
+        100.0,
+        0.0
+      ],
+      "scope": "Headless CPU actual Camera3D projection and SurfaceCanopyView; same per-pixel main-camera one-metre secants as shader. Tests oblique far-edge midpoint missed by corner-only maximum. No GPU or claim about prior2048px captures.",
+      "unsafeCondition": false,
+      "version": 1,
+      "viewport": [
+        200,
+        125
+      ]
+    },
+    {
+      "actualFrustumBounds": {
+        "maxX": 91.4884567260742,
+        "maxZ": 39.2025299072266,
+        "minX": -91.4884567260742,
+        "minZ": -78.1448669433594
+      },
+      "actualMaximumRatio": 8.49990361293183,
+      "atlasBounds": {
+        "maxX": 240.0,
+        "maxZ": 240.0,
+        "minX": -240.0,
+        "minZ": -240.0
+      },
+      "atlasSpacingM": 0.25,
+      "cameraPosition": [
+        0.0,
+        55.0,
+        51.2328758239746
+      ],
+      "cornerRatio": 5.62248139191906,
+      "cornerReportedMaximumM": 1.40562034797976,
+      "format": "independent-canopy-corner-footprint-probe",
+      "fovDegrees": 48,
+      "independentlySampledMaximumM": 2.12497590323296,
+      "mainExistingCornerBudgetPhase": 2.0,
+      "mainObliqueDirectionRatio": true,
+      "rawViewSafePhase": 2.0,
+      "sampledMaximumAtPixel": [
+        100.0,
+        0.0
+      ],
+      "scope": "Headless CPU actual Camera3D projection and SurfaceCanopyView; same per-pixel main-camera one-metre secants as shader. Tests oblique far-edge midpoint missed by corner-only maximum. No GPU or claim about prior2048px captures.",
+      "unsafeCondition": true,
+      "version": 1,
+      "viewport": [
+        200,
+        125
+      ]
+    }
+  ]
+}
