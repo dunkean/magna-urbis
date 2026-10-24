@@ -36,8 +36,14 @@ restent des preuves complémentaires bornées.
 
 La végétation proche conserve des couronnes sphériques et des petits blocs ;
 le contexte environnemental reste à 78,125 m. La qualité Google Earth, la parité
-de tous les styles et l'adoption définitive de Godot restent à démontrer. La revue
-Opus finale V12 est en cours ; les anciens verdicts artistiques restent conservés.
+de tous les styles et l'adoption définitive de Godot restent à démontrer. La
+[revue indépendante Opus V12](reviews/phase06-followup-v12.md) confirme le succès
+technique et refuse l'acceptation artistique/production : couronnes et ombres
+simplifiées, paliers de sol à 78 m, latence et halos hydrologiques résiduels.
+La vérification post-revue recalcule les
+[584 hashes runtime](evidence/v12-post-review-runtime-equivalence.json) : aucun
+écart et aucun chemin runtime modifié depuis le gel. Les corrections artistiques
+suivantes sont préparées séparément ; elles ne sont pas qualifiées par V12.
 
 ## Historique conservé
 
