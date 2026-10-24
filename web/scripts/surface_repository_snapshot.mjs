@@ -4,7 +4,9 @@ import{resolve}from'node:path';
 import{createHash}from'node:crypto';
 
 const PATHS=['viewer-local/adapters','viewer-local/scene','viewer-local/shaders','viewer-local/diagnostics','viewer-local/project.godot',
-  'web/src/surface','web/src/ui','web/scripts','web/terrainbench.html','web/vite.config.ts','rust/bridge'];
+  'web/src/surface','web/src/ui','web/scripts','web/terrainbench.html','web/vite.config.ts','rust/bridge',
+  'surface/materials/catalogue.json','surface/presentation/palettes.json','surface/vegetation/catalogue.json','surface/vegetation/tree-offline-source.json',
+  'web/package.json','web/package-lock.json','viewer-local/bootstrap.ps1'];
 export async function captureSurfaceRepositorySnapshot(root){
   const git=args=>{const result=spawnSync('git',['-C',root,...args],{windowsHide:true,encoding:'utf8',maxBuffer:8*1024*1024});
     if(result.status!==0)throw new Error('Cannot pin surface source snapshot: '+(result.stderr?.trim()||result.error||result.status));return result.stdout;};
