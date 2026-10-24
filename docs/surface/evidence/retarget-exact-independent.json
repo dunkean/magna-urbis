@@ -1,0 +1,31 @@
+{
+  "reviewedCommit": "7eecc4ea66f3e1bc983f7f7871d069bf0bae8ea7",
+  "status": "PASS_WITH_SCOPE",
+  "compilerSha256": "62cfd681053f5a1e61e0733d81a689cd8f9e2a61504fc64440499a058f7a9fcb",
+  "materialsSha256": "546abe67dda3a7c3eda5ef8d8e420ea11d8a401c9669c9a68f72c5e88c027e89",
+  "compositionCases": 18000,
+  "continuousCases": 4000,
+  "comparison": "Object.is exact scalars; uint16 IDs up to65535, ties, duplicates, Float32 blend/opacity0/1/fractional, independent scalar sRGB, signedzero/NaN/Inf fallback.",
+  "scope": "Private functions exposed only in diagnostic bundle. No production edits, performance/browser/GPU/navigation claim.",
+  "findings": [],
+  "testRerun": {
+    "files": 5,
+    "tests": 27,
+    "passed": true,
+    "elapsedSuiteSeconds": 1.6
+  },
+  "review": {
+    "continuous": "Four reads and Number.isFinite guards preserve the original evaluation/grouping and nearest non-finite fallback; no Float32 conversion was inserted.",
+    "materialReduction": "At most eight uint16 entries preserve primary/secondary corner insertion order. 0+amount and left-to-right additions match Map accumulation. Two-max comparison is the same descending-weight/ascending-ID comparator; public generic reducer is unchanged.",
+    "lowCover": "Spatial*opacity accumulation, initial-zero addition, normalization, mean accumulation and the fully transparent fallback are unchanged; transparent texels remain irrelevant.",
+    "transfer": "Float64 table stores the exact scalar expression for each sRGB byte. Packing/bit extraction and API/algorithm versions are unchanged.",
+    "legacy": "Existing availability checks are unchanged; the provided corpus includes explicit-unavailable legacy state and exact rejected-input comparisons."
+  },
+  "limits": [
+    "Reviewed production edits are only compiler.ts/materials.ts. No ROOT, model checkout or production code was modified by this review.",
+    "The additional bounded audit exports private functions in an ignored diagnostic bundle; it is not a change to the public compiler API.",
+    "The model-provided14-world complete-byte corpus and9rejects were read, not re-benchmarked here. The27tests and22,000extra exact component comparisons were independently run.",
+    "No browser profile, Worker scheduling/OS attribution, GPU, full campaign, memory or speedup qualification. Existing timing outliers and V11FAILED remain negative evidence.",
+    "An initial Vitest command had an incorrectly nested node_modules junction and failed before tests; the proper local pinned Vitest2.1.9 rerun is the27-test result reported here."
+  ]
+}
