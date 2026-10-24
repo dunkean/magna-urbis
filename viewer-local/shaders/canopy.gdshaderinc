@@ -19,6 +19,8 @@ uniform vec4 canopy_bounds;
 uniform float canopy_fallback_blend_m = 16.0;
 // Renderer-only approximate shadow transfer for painted crowns, not source geometry.
 uniform bool canopy_shadow_use_total=true;
+// Whole-view transfer to native solar shadow maps; no local page-edge blend.
+uniform float canopy_native_shadow_weight=0.0;
 uniform vec2 canopy_shadow_offset=vec2(4.7,-8.5);
 uniform vec3 canopy_shadow_transmittance=vec3(.25,.34,.50);
 uniform float canopy_shadow_angular_diameter_degrees=0.0;

@@ -9,6 +9,7 @@ const Presentation=preload("res://adapters/surface_presentation.gd")
 const Roads = preload("res://adapters/surface_roads.gd")
 const VisibilityPlan=preload("res://adapters/surface_visibility_plan.gd")
 const Canopy=preload("res://adapters/surface_canopy.gd")
+const Solar=preload("res://adapters/surface_tree_solar.gd")
 
 # Prepare winding, normals and material batches without touching the scene tree.
 static func mesh_arrays(vertices: PackedVector3Array, normals: PackedVector3Array = PackedVector3Array()) -> Array:
@@ -76,6 +77,8 @@ static func prepare(request: Dictionary) -> Dictionary:
 	result.populations=Population.prepare(population_packet,request.focus,request.width,request.viewportWidth,request.oblique,not request.get("groundOnly",false),request.sceneRequest.get("canopyAtlasBounds",{}),request.sceneRequest)
 	if result.populations.canopy.get("failed",false) or result.populations.canopy.get("cancelled",false):return result.populations.canopy
 	result["canopySampler"]=result.populations.canopy.get("rasterSampler",{"requested":request.sceneRequest.has("canopyBatchExecutable"),"used":false,"eligible":false,"reason":str(result.populations.canopy.get("reason","No available atlas")),"sourceWorldId":str(request.world.id)})
+	if request.get("solarShadows",false):
+		result.treeSolar=Solar.prepare(population_packet,request.world,request.origin)
 	if request.oblique:
 		result.populations.canopy["visibilityPlan"]=visibility_plan
 		if not visibility_plan.get("available",false):result.populations.canopy["reason"]=visibility_plan.reason
