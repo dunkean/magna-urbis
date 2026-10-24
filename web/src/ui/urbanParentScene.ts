@@ -1,3 +1,4 @@
+import { createParentUiPublication } from './urbanParentUiPublication';
 /** Actual City scene client for the shared worker/fallback producer. There is
  * one authoritative source receiver and a durable CAS before UI publication. */
 import SceneWorker from './urbanSceneWorker?worker&inline';
@@ -14,22 +15,27 @@ export interface UrbanParentSceneResult { kind: 'cold-native-parent-scene'; id: 
   store: Pick<ParentSceneManifest, 'format' | 'sceneId' | 'fingerprint' | 'sourceFingerprint'>;
   counts: ParentSceneManifest['counts'] & Pick<ParentSceneManifest, 'schema_version' | 'generator_version'>;
   generation: NonNullable<ParentSceneManifest['generation']>; timing?: NonNullable<UrbanSceneResponse['parentComplete']>['timing'] }
+export type UrbanParentUiBatch = Omit<UrbanParentWorkerBatch, 'batch_json' | 'sites'>;
 export interface UrbanParentSceneOptions extends UrbanParentStageOptions { backend: ParentChunkBackend;
   forceFallback?: boolean;
   onAcknowledged?(value: UrbanParentAcknowledged): void | Promise<void>;
   progress?(completed: number, total: number): void;
-  /** Bounded preview/cache consumer of THIS successful native batch only. */
-  onBatch?(batch: NativeParentBatch, message: UrbanParentWorkerBatch): void | Promise<void> }
+  /** Latest durably stored batch preview, coalesced per frame AFTER ACK;
+   * cumulativeCounts includes skipped preview batches, source/index never skip. */
+  onBatch?(batch: NativeParentBatch, message: UrbanParentUiBatch, cumulativeCounts: NativeParentBatch['counts']): void | Promise<void> }
 type Receiver = Awaited<ReturnType<typeof createUrbanParentReceiver>>;
 export function createUrbanParentSceneClient() {
   let worker: Worker | undefined, nextId = 0, current: Run | undefined, barrier: Promise<void> = Promise.resolve(), disposed = false;
   const workerRuns = new Map<number, { worker: Worker; promise: Promise<UrbanParentWorkerDrained>; resolve(value: UrbanParentWorkerDrained): void }>();
   interface Run { request: UrbanSceneRequest; options: UrbanParentSceneOptions; abort: AbortController; begin?: BeginParentSessionReply; lastReceipt?: ParentSessionReceipt;
+    ui?: UiUpdate; publication?: ReturnType<typeof createParentUiPublication<UiUpdate>>;
     receiver?: Receiver; work: Promise<void>; producer?: Promise<void>; workerDrain?: Promise<UrbanParentWorkerDrained>; stopping: boolean; received: number;
     resolve(value: UrbanParentSceneResult): void; reject(error: unknown): void; removeSignal(): void }
+  interface UiUpdate { batch: NativeParentBatch; message: UrbanParentUiBatch; counts: NativeParentBatch['counts'];
+    version: number; acknowledged?: UrbanParentAcknowledged }
   const live = (item: Run) => current === item && !item.abort.signal.aborted && !disposed;
   function stop(item: Run, reason: unknown) {
-    if (item.stopping) return; item.stopping = true; item.abort.abort(reason); item.removeSignal();
+    if (item.stopping) return; item.stopping = true; item.publication?.cancel(); item.ui = undefined; item.abort.abort(reason); item.removeSignal();
     if (current === item) current = undefined;
     try { worker?.postMessage({ cancel: item.request.id }); } catch { /* native cleanup still belongs to its draining producer */ }
     const cleanup = Promise.allSettled([item.work, item.producer, item.workerDrain] as const).then(async results => {
@@ -51,7 +57,8 @@ export function createUrbanParentSceneClient() {
         && value.receipt.revision === begin.source.revision && value.receipt.completed === item.received
         && value.reply.session_id === begin.session_id && value.reply.completed === item.received
         && value.reply.source_fingerprint === begin.source.fingerprint && value.reply.revision === begin.source.revision, 'Native acknowledged prefix/source mismatch.');
-      await item.options.onAcknowledged?.(value); return;
+      if (item.ui) { item.ui = { ...item.ui, acknowledged: value }; item.publication?.offer(item.ui); }
+      return;
     }
     if (response.parentBegin) {
       if (item.begin || item.receiver) throw new Error('Duplicate native parent begin.');
@@ -85,12 +92,18 @@ export function createUrbanParentSceneClient() {
       if (!live(item)) throw new DOMException('Parent scene replaced', 'AbortError');
       await item.receiver.receive(batch, progress, boundary, sites, async () => {
         if (!live(item)) throw new DOMException('Parent scene replaced', 'AbortError');
-        await item.options.onBatch?.(batch, message);
-        if (!live(item)) throw new DOMException('Parent scene replaced', 'AbortError');
         item.lastReceipt = receipt ? { ...receipt } : undefined;
         source?.postMessage({ parentAck: { id: item.request.id, sessionId: message.sessionId, receipt } });
       });
-      item.received = progress.completed; item.options.progress?.(progress.completed, progress.total); return;
+      item.received = progress.completed;
+      // UI receives no raw JSON/site array and retains at most the latest batch.
+      // Native ACK is already posted; fallback returns without waiting for RAF.
+      const counts = { ...(item.ui?.counts ?? { requests: 0, admitted_parents: 0, single_parents: 0, assembly_parents: 0, physical_members: 0, refusals: 0, open_spaces: 0 }) };
+      for (const key of Object.keys(counts) as (keyof typeof counts)[]) counts[key] += batch.counts[key];
+      item.ui = { batch, message: { receipt, sessionId: message.sessionId, administrativeEmpty: message.administrativeEmpty,
+        progress: { ...progress }, boundary }, counts, version: (item.ui?.version ?? 0) + 1, acknowledged: item.ui?.acknowledged };
+      item.publication?.offer(item.ui);
+      item.options.progress?.(progress.completed, progress.total); return;
     }
     if (response.parentComplete) {
       if (!item.begin || !item.receiver) throw new Error('Parent scene completed without a source.');
@@ -99,7 +112,7 @@ export function createUrbanParentSceneClient() {
         && summary.session.begin.source.fingerprint === item.begin.source.fingerprint && summary.counts.requests === item.received
         && item.received === item.begin.total_requests, 'Incomplete native parent source/session.');
       const manifest = await item.receiver.commit(summary); if (!live(item)) throw new DOMException('Parent publication replaced after durable commit', 'AbortError');
-      parentSessionAssert(manifest.generation, 'Missing native generation evidence.'); current = undefined; item.removeSignal();
+      parentSessionAssert(manifest.generation, 'Missing native generation evidence.'); item.publication?.cancel(); item.ui = undefined; current = undefined; item.removeSignal();
       item.resolve({ kind: 'cold-native-parent-scene', id: item.request.id,
         store: { format: manifest.format, sceneId: manifest.sceneId, fingerprint: manifest.fingerprint, sourceFingerprint: manifest.sourceFingerprint },
         counts: { ...manifest.counts, schema_version: manifest.schema_version, generator_version: manifest.generator_version }, generation: manifest.generation, timing }); return;
@@ -170,6 +183,18 @@ export function createUrbanParentSceneClient() {
         const abort = new AbortController(); let removeSignal = () => {};
         const item: Run = { request, options, abort, resolve, reject, removeSignal, work: Promise.resolve(), stopping: false, received: 0 };
         current = item;
+        let publishedBatch = 0, publishedAck = -1;
+        item.publication = createParentUiPublication<UiUpdate>({ current: () => live(item),
+          publish: async value => {
+            if (!live(item)) return;
+            if (value.version > publishedBatch) {
+              await item.options.onBatch?.(value.batch, value.message, value.counts); publishedBatch = value.version;
+            }
+            if (!live(item)) return;
+            if (value.acknowledged && value.acknowledged.reply.completed > publishedAck) {
+              await item.options.onAcknowledged?.(value.acknowledged); publishedAck = value.acknowledged.reply.completed;
+            }
+          }, error: error => { if (live(item)) stop(item, error); } });
         const aborted = () => stop(item, options.signal?.reason ?? new DOMException('Parent generation cancelled', 'AbortError'));
         removeSignal = () => options.signal?.removeEventListener('abort', aborted); item.removeSignal = removeSignal;
         if (options.signal?.aborted) aborted(); else options.signal?.addEventListener('abort', aborted, { once: true });

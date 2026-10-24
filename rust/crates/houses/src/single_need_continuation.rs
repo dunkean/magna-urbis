@@ -280,14 +280,12 @@ pub(super) fn after_complete_batch(input:&PlanBatchRequest,result:&mut PlanBatch
         let mut parts=vec![b.footprint.clone(),b.courtyards.clone(),b.circulation.clone()];
         parts.extend(b.structural_features.iter().map(|f|f.surface.clone()));unite(&parts)
     };
-    let mut lands:Vec<_>=result.buildings.iter().map(occupied_land).collect();
+    let mut occupation=BatchOccupation::new(result.buildings.iter().map(occupied_land).collect());
     let mut roofs:Vec<_>=result.buildings.iter().map(|b|b.roof_footprint.clone()).collect();
     let batch_initial:Vec<_>=result.buildings.iter().map(|b|(b.id.clone(),area(&b.footprint),b.resolved.has_retained_entrance())).collect();
     for i in 0..result.buildings.len(){
         let r=&request_map[&result.buildings[i].id];let old=result.buildings[i].clone();
-        let mut index=OccupationIndex::default();
-        for(j,land)in lands.iter().enumerate(){if j!=i{index.insert(land.clone());}}
-        let local=index.local(&r.cadastral);
+        let local=occupation.local_excluding(i,&r.cadastral);
         let prior=parent_batch::prior_land();
         let occupied=if prior.is_empty(){local}else{unite(&[local,prior])};
         let mut proposed=finish(r,&occupied,old.clone(),input.footprints.get(&r.id),false);
@@ -298,8 +296,8 @@ pub(super) fn after_complete_batch(input:&PlanBatchRequest,result:&mut PlanBatch
             // Qualification of ONE already admitted object, no new dimension,
             // source, preparation, portal or native-admission trial. Both
             // directions use the existing global/native occupation threshold.
-            for j in 0..lands.len(){if j==i{continue;}pair_checks+=1;
-                roof_vs_other_land=roof_vs_other_land.max(area(&intersection(&proposed.roof_footprint,&lands[j])));
+            for j in 0..occupation.surfaces.len(){if j==i{continue;}pair_checks+=1;
+                roof_vs_other_land=roof_vs_other_land.max(area(&intersection(&proposed.roof_footprint,&occupation.surfaces[j])));
                 other_roof_vs_land=other_roof_vs_land.max(area(&intersection(&roofs[j],&land)));
             }
             if roof_vs_other_land>0.0001||other_roof_vs_land>0.0001 {
@@ -314,12 +312,17 @@ pub(super) fn after_complete_batch(input:&PlanBatchRequest,result:&mut PlanBatch
         CAPTURE.with(|capture|{if let Some(rows)=capture.borrow_mut().as_mut(){if let Some(last)=rows.last_mut(){
             last["phase"]=serde_json::json!("after_complete_legacy_batch");
             last["native_finish_attempt"]=serde_json::json!(finish_attempt);
-            last["batch_reservation"]=serde_json::json!({"other_incumbents":lands.len().saturating_sub(1),"pair_qualification_checks":pair_checks,
+            last["batch_reservation"]=serde_json::json!({"other_incumbents":occupation.surfaces.len().saturating_sub(1),"pair_qualification_checks":pair_checks,
                 "max_proposed_roof_vs_other_land_m2":roof_vs_other_land,"max_other_roof_vs_proposed_land_m2":other_roof_vs_land,
                 "rejected_after_one_native_admission":rejected,"snapshot_oracle_used":false});
         }}});
         parent_batch::record_finalized(&proposed)?;
-        lands[i]=occupied_land(&proposed);roofs[i]=proposed.roof_footprint.clone();result.buildings[i]=proposed;
+        // A refused/unchanged proposal is the whole old object, whose land and
+        // roof are already retained. Update geometry only for an actual winner.
+        if !occupation.reuses_geometry()||finish_attempt.replaced&&!rejected{
+            occupation.replace(i,occupied_land(&proposed));roofs[i]=proposed.roof_footprint.clone();
+        }
+        result.buildings[i]=proposed;
     }
     // Batch-internal monotonicity relative to the ACTUAL just-finalized old
     // pipeline, not to a stored baseline or another source/context.

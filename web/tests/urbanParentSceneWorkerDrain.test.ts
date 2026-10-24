@@ -78,3 +78,20 @@ it('replacement cannot dispatch next run until the old ACTUAL worker finally has
   expect(backend.stages.has('old')).toBe(false); expect(secondApi.begin).toHaveBeenCalledOnce();
   await client.dispose(); expect(instance.terminate).toHaveBeenCalledOnce();
 });
+
+it('ACTUAL worker durable ACK/native ACK/release never waits for RAF and completion cancels old visual callback', async () => {
+  let serial = 0; const frames = new Map<number, FrameRequestCallback>();
+  vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => { const id = ++serial; frames.set(id, callback); return id; });
+  vi.stubGlobal('cancelAnimationFrame', (id: number) => frames.delete(id));
+  const { createUrbanParentSceneClient } = await import('../src/ui/urbanParentScene');
+  const { records } = mixed(), api = sessionApi(records), gate = deferred(), release = api.release, visual = vi.fn();
+  api.release = vi.fn(async (request: CloseParentSessionRequest) => { await gate.promise; return release(request); }); h.apis.push(api);
+  const backend = new MemoryParents(), client = createUrbanParentSceneClient();
+  const work = client.run(input(), { backend, sceneId: 'worker-no-raf', sourceFingerprint: identity.fingerprint, onBatch: visual });
+  await vi.waitFor(() => expect(api.release).toHaveBeenCalledOnce());
+  expect(backend.stages.get('worker-no-raf')!.parents.size).toBe(2); expect(backend.active?.sceneId).toBe('previous-city');
+  expect(h.instances[0].messages.filter(m => 'parentAck' in m)).toHaveLength(1); expect(api.ack).toHaveBeenCalledOnce();
+  expect(visual).not.toHaveBeenCalled(); expect(frames.size).toBe(1); gate.resolve();
+  const result = await work; expect(result.generation.status).toBe('completed-and-released'); expect(frames.size).toBe(0);
+  for (const callback of frames.values()) callback(0); expect(visual).not.toHaveBeenCalled(); await client.dispose();
+});

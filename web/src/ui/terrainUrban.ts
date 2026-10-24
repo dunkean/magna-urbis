@@ -565,14 +565,13 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
             comparison.api.end(); architectureView = '2d';
             const abort = new AbortController(); parentGenerationAbort?.abort(); parentGenerationAbort = abort;
             const sample = createParentStreamWindow(), renderer = new UrbanBuildingLodRenderer<ParentMemberVisual>({ buildings: [] }, { raster: false });
-            const counts = { requests: 0, admitted_parents: 0, single_parents: 0, assembly_parents: 0, physical_members: 0, refusals: 0, open_spaces: 0 };
             const response = await parentClient.run({ raster, layouts: selectedLayouts, partitions: selectedPartitions, ...retained, seed: actualSeed, settings,
               runtime: executionRuntime, mode: architectureMode === 'detailed' ? 'detailed' : 'compact', buildingOverrides: edits.buildings, parentSession: identity },
               { backend, sourceFingerprint: identity.fingerprint, signal: abort.signal, progress: onProgress,
-                onBatch: (batch, message) => {
+                // Scene client invokes this only in a guarded, coalesced RAF, never on durable ACK.
+                onBatch: (batch, message, counts) => {
                   if (!stillCurrent()) throw new DOMException('Plan remplacé', 'AbortError');
                   const box = options.map.viewBox.baseVal, records = sample.append(batch, [box.x, box.y, box.x + box.width, box.y + box.height]);
-                  for (const key of Object.keys(counts) as (keyof typeof counts)[]) counts[key] += batch.counts[key];
                   renderer.replaceScene({ buildings: records.members, materials: records.materials });
                   preview.parent = { records, renderer, counts: { ...counts }, source: identity, sessionId: message.sessionId,
                     durableCompleted: message.progress.completed, nativeAckedCompleted: preview.parent?.nativeAckedCompleted ?? 0 };

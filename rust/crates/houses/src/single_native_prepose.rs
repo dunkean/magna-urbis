@@ -97,7 +97,7 @@ fn finish(r:&PlacementRequest,occupied:&Surface,old:PlanBuilding)->(PlanBuilding
 pub(super) fn after_complete_batch(input:&PlanBatchRequest,result:&mut PlanBatch)->Result<(),String>{
     if !enabled()||input.requests.len()>64||input.settings.as_ref().is_some_and(|s|s.typology.is_some()||s.house_config.is_some()||s.floors.is_some()){return Ok(());}
     let land=|b:&PlanBuilding|{let mut p=vec![b.footprint.clone(),b.courtyards.clone(),b.circulation.clone()];p.extend(b.structural_features.iter().map(|f|f.surface.clone()));unite(&p)};
-    let mut lands=result.buildings.iter().map(land).collect::<Vec<_>>();
+    let mut occupation=BatchOccupation::new(result.buildings.iter().map(land).collect());
     let mut roofs=result.buildings.iter().map(|b|b.roof_footprint.clone()).collect::<Vec<_>>();
     for i in 0..result.buildings.len(){
         let old=&result.buildings[i];
@@ -107,19 +107,18 @@ pub(super) fn after_complete_batch(input:&PlanBatchRequest,result:&mut PlanBatch
         if !request_allowed(&r){continue;}
         // Complete CURRENT other incumbents, not a cadastral/viewport shortlist.
         // <=64 parents only; prefix 2D geometry remains in the native session.
-        let occupied=unite(&lands.iter().enumerate().filter(|(j,_)|*j!=i).map(|(_,s)|s.clone())
-            .chain(std::iter::once(parent_batch::prior_land())).collect::<Vec<_>>());
+        let occupied=occupation.all_excluding_with_prior(i,parent_batch::prior_land());
         let (proposed,replaced)=finish(&r,&occupied,old.clone());
         if !replaced{continue;}
         let proposed_land=land(&proposed);
-        if (0..lands.len()).filter(|j|*j!=i).any(|j|
-            area(&intersection(&proposed.roof_footprint,&lands[j]))>0.0001
+        if (0..occupation.surfaces.len()).filter(|j|*j!=i).any(|j|
+            area(&intersection(&proposed.roof_footprint,&occupation.surfaces[j]))>0.0001
                 ||area(&intersection(&roofs[j],&proposed_land))>0.0001){
             #[cfg(test)]diagnostics::qualified(&r.id,false);continue;
         }
         parent_batch::record_finalized(&proposed)?;
         #[cfg(test)]diagnostics::qualified(&r.id,true);
-        lands[i]=proposed_land;roofs[i]=proposed.roof_footprint.clone();result.buildings[i]=proposed;
+        occupation.replace(i,proposed_land);roofs[i]=proposed.roof_footprint.clone();result.buildings[i]=proposed;
     }Ok(())
 }
 

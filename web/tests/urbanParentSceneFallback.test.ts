@@ -1,6 +1,6 @@
 import { afterEach, expect, it, vi } from 'vitest';
 import javaRequest from './fixtures/native-parent-java-core-request.json';
-import type { NativeParentSessionApi } from '../../rust/bridge/nativeParentSessionContract';
+import type { NativeParentSessionApi, CloseParentSessionRequest } from '../../rust/bridge/nativeParentSessionContract';
 import type { PlacementRequest } from '../../rust/bridge/urbanArchitecture';
 const h = vi.hoisted(() => ({ api: undefined as NativeParentSessionApi | undefined, rows: [] as PlacementRequest[], core: vi.fn(), pages: vi.fn() }));
 vi.mock('../../rust/bridge/architecture', () => ({ nativeParentSessionApi: () => { if (!h.api) throw new Error('Missing declared session TRANSPORT MOCK'); return h.api; } }));
@@ -55,4 +55,51 @@ it.each(['retained-need', 'legacy-unknown', 'edited-config'] as const)('shared r
   else expect(actual.programme?.housing_floor_need?.requested_m2).toBe(333.12);
   if (kind === 'edited-config') { if (request.config) { expect(actual.config?.overrides?.floors).toBe(2); expect(actual.config).not.toBe(request.config); } else expect(actual.config).toBeUndefined(); }
   await client.dispose();
+});
+
+function frameQueue() {
+  let serial = 0; const jobs = new Map<number, FrameRequestCallback>();
+  vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => { const id = ++serial; jobs.set(id, callback); return id; });
+  vi.stubGlobal('cancelAnimationFrame', (id: number) => jobs.delete(id));
+  return { jobs, flush() { const callbacks = [...jobs.values()]; jobs.clear(); for (const callback of callbacks) callback(0); } };
+}
+function parentInput() { return { mode: 'compact' as const, seed: 'raf-protocol', parentSession: identity,
+  source: { version: 1 as const, session: 'core-live', terrainRevision: 't1', layoutsRevision: 'l1', partitionsRevision: 'p1' },
+  runtime: { profile: 'local' as const, server: 'http://raf-protocol-mock.test' }, keys: ['city'] }; }
+function pausedRelease(rows: number) {
+  const { sites } = mixed(); h.rows = Array.from({ length: rows }, (_, i) => ({ ...structuredClone(sites[sites.length - 1]), id: `open-${i}`, parcel_id: `parcel-${i}` }));
+  const api = sessionApi([]), release = api.release; let finish!: () => void;
+  const gate = new Promise<void>(r => { finish = r; }); api.release = vi.fn(async (request: CloseParentSessionRequest) => { await gate; return release(request); }); h.api = api;
+  h.pages.mockImplementation(async () => ({ total: h.rows.length, timing: { prepareMs: 0, readMs: 0, pages: 0 },
+    read: async (offset: number, limit: number) => h.rows.slice(offset, offset + limit) }));
+  return { api, finish };
+}
+it('ACTUAL fallback persists/ACKs every batch with zero frame flush; one preview has cumulative counts and no raw transport copy', async () => {
+  const raf = frameQueue(), { api, finish } = pausedRelease(130), onBatch = vi.fn(), onAcknowledged = vi.fn();
+  const backend = new MemoryParents(), client = createUrbanParentSceneClient();
+  const work = client.run(parentInput(), { backend, sourceFingerprint: identity.fingerprint, sceneId: 'raf-batches', forceFallback: true, onBatch, onAcknowledged });
+  await vi.waitFor(() => expect(api.release).toHaveBeenCalledOnce());
+  expect(api.ack).toHaveBeenCalledTimes(3); expect(onBatch).not.toHaveBeenCalled(); expect(onAcknowledged).not.toHaveBeenCalled(); expect(raf.jobs.size).toBe(1);
+  expect(backend.stages.get('raf-batches')!.chunks.reduce((n, c) => n + c.counts.requests, 0)).toBe(130);
+  expect(backend.active?.sceneId).toBe('previous-city'); raf.flush();
+  await vi.waitFor(() => expect(onAcknowledged).toHaveBeenCalledOnce()); expect(onBatch).toHaveBeenCalledOnce();
+  const [batch, message, cumulative] = onBatch.mock.calls[0];
+  expect(batch.counts.requests).toBe(2); expect(message.progress.completed).toBe(130); expect(cumulative).toMatchObject({ requests: 130, open_spaces: 130 });
+  expect(message).not.toHaveProperty('batch_json'); expect(message).not.toHaveProperty('sites');
+  expect(onAcknowledged.mock.calls[0][0].reply.completed).toBe(130);
+  finish(); const result = await work; expect(result.counts.requests).toBe(130); expect(result.counts.open_spaces).toBe(130); await client.dispose();
+});
+it('ACTUAL fallback commit/release can finish before first RAF; queued provisional UI is discarded', async () => {
+  const raf = frameQueue(), { api, finish } = pausedRelease(65), onBatch = vi.fn(), backend = new MemoryParents(), client = createUrbanParentSceneClient();
+  const work = client.run(parentInput(), { backend, sourceFingerprint: identity.fingerprint, sceneId: 'complete-no-raf', forceFallback: true, onBatch });
+  await vi.waitFor(() => expect(api.release).toHaveBeenCalledOnce()); expect(api.ack).toHaveBeenCalledTimes(2); expect(backend.active?.sceneId).toBe('previous-city');
+  finish(); const result = await work; expect(result.generation.status).toBe('completed-and-released'); expect(backend.active?.sceneId).toBe('complete-no-raf');
+  expect(raf.jobs.size).toBe(0); raf.flush(); expect(onBatch).not.toHaveBeenCalled(); await client.dispose();
+});
+it('ACTUAL fallback cancellation while RAF paused drops preview and keeps previous active source', async () => {
+  const raf = frameQueue(), { api, finish } = pausedRelease(65), onBatch = vi.fn(), backend = new MemoryParents(), client = createUrbanParentSceneClient(), abort = new AbortController();
+  const work = client.run(parentInput(), { backend, sourceFingerprint: identity.fingerprint, sceneId: 'cancel-no-raf', forceFallback: true, onBatch, signal: abort.signal });
+  const failed = expect(work).rejects.toMatchObject({ name: 'AbortError' });
+  await vi.waitFor(() => expect(api.release).toHaveBeenCalledOnce()); abort.abort(new DOMException('replaced source', 'AbortError')); finish(); await failed;
+  expect(raf.jobs.size).toBe(0); raf.flush(); expect(onBatch).not.toHaveBeenCalled(); expect(backend.active?.sceneId).toBe('previous-city'); expect(backend.stages.has('cancel-no-raf')).toBe(false); await client.dispose();
 });

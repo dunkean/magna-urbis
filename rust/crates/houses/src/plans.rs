@@ -155,6 +155,71 @@ fn plan_domain_with_body(resolved: &ResolvedArchitecture, body: Surface) -> Surf
     unite(&parts)
 }
 
+// This switch changes only the local batch occupation implementation in tests.
+// Both paths retain the same surfaces, owner exclusion and ordered union fold.
+#[cfg(test)]
+std::thread_local! {static REUSE_BATCH_OCCUPATION:std::cell::Cell<bool>=const{std::cell::Cell::new(true)};}
+#[cfg(test)]
+struct BatchOccupationMode(bool);
+#[cfg(test)]
+impl BatchOccupationMode {fn new(value:bool)->Self{Self(REUSE_BATCH_OCCUPATION.with(|s|s.replace(value)))}}
+#[cfg(test)]
+impl Drop for BatchOccupationMode {fn drop(&mut self){REUSE_BATCH_OCCUPATION.with(|s|s.set(self.0));}}
+#[cfg(test)]
+fn reuse_batch_occupation()->bool{REUSE_BATCH_OCCUPATION.with(std::cell::Cell::get)}
+#[cfg(not(test))]
+fn reuse_batch_occupation()->bool{true}
+
+/// Current finalized batch only, never a city/prefix or cadastral coverage claim.
+/// Small native batches need no rebuilt grid: an ordered scan of cached boxes
+/// reproduces OccupationIndex::local's exact final bbox filter and union order.
+/// Larger legacy batches keep their previous index path without a new cache.
+struct BatchOccupation {
+    surfaces: Vec<Surface>,
+    boxes: Option<Vec<[f64;4]>>,
+}
+impl BatchOccupation {
+    fn new(surfaces:Vec<Surface>)->Self{
+        let boxes=(reuse_batch_occupation()&&surfaces.len()<=64)
+            .then(||surfaces.iter().map(bounds).collect());
+        Self{surfaces,boxes}
+    }
+    fn reuses_geometry(&self)->bool{self.boxes.is_some()}
+    fn replace(&mut self,owner:usize,surface:Surface){
+        if let Some(boxes)=&mut self.boxes{boxes[owner]=bounds(&surface);}
+        self.surfaces[owner]=surface;
+    }
+    fn local_excluding(&self,owner:usize,domain:&Surface)->Surface{
+        let Some(boxes)=&self.boxes else{
+            let mut index=OccupationIndex::default();
+            for(j,surface)in self.surfaces.iter().enumerate(){if j!=owner{index.insert(surface.clone());}}
+            return index.local(domain);
+        };
+        if !valid_surface(domain){return vec![];}
+        let b=bounds(domain);let mut out=vec![];
+        for(j,surface)in self.surfaces.iter().enumerate(){
+            if j==owner||surface.is_empty(){continue;}
+            let a=boxes[j];
+            if a[0]<=b[2]&&a[2]>=b[0]&&a[1]<=b[3]&&a[3]>=b[1]{out=union(&out,surface);}
+        }
+        out
+    }
+    fn all_excluding_with_prior(&self,owner:usize,prior:Surface)->Surface{
+        if !self.reuses_geometry(){
+            return unite(&self.surfaces.iter().enumerate().filter(|(j,_)|*j!=owner)
+                .map(|(_,s)|s.clone()).chain(std::iter::once(prior)).collect::<Vec<_>>());
+        }
+        // Include empty parts too: exactly the pre-existing unite/fold order.
+        let mut out=vec![];
+        for(j,surface)in self.surfaces.iter().enumerate(){if j!=owner{out=union(&out,surface);}}
+        union(&out,&prior)
+    }
+}
+
+#[cfg(test)]
+#[path="batch_occupation_reuse_tests.rs"]
+mod batch_occupation_reuse_tests;
+
 /// Ephemeral preparation for the rigid poses of one immutable architecture.
 /// Never reused after a layout/entry/parameter change and never stored globally.
 /// Local boolean order stays unchanged; roof parts remain separate so their

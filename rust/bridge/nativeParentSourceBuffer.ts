@@ -6,12 +6,16 @@ import type { ArchitectureRequestSource } from './architectureBatch';
 import type { PlacementRequest } from './urbanArchitecture';
 import { PARENT_LIMITS } from './nativeParentBudget';
 interface Measurement { fits: boolean; wire: { bytes: number }; reason?: string }
+interface IncrementalMeasurement { append(request: PlacementRequest): void; prefix(count: number): Measurement }
 export async function fillCanonicalParentPrefix(source: ArchitectureRequestSource, completed: number,
-  pending: PlacementRequest[], seen: Set<string>, measure: (requests: PlacementRequest[]) => Measurement,
+  pending: PlacementRequest[], seen: Set<string>, measure: ((requests: PlacementRequest[]) => Measurement) | IncrementalMeasurement,
   cancelled: () => void): Promise<void> {
+  // Session callers seed the counter with the existing bounded lookahead.
+  // The stateless adapter keeps its historical callback contract.
+  const currentMeasurement = () => typeof measure === 'function' ? measure(pending) : measure.prefix(pending.length);
   while (pending.length < PARENT_LIMITS.parents && completed + pending.length < source.total) {
     cancelled();
-    const current = measure(pending);
+    const current = currentMeasurement();
     // The last request may be the one bounded lookahead from the previous page.
     if (!current.fits) return;
     const limit = Math.min(PARENT_LIMITS.parents - pending.length, source.total - completed - pending.length);
@@ -30,7 +34,8 @@ export async function fillCanonicalParentPrefix(source: ArchitectureRequestSourc
     for (const request of page) {
       if (seen.has(request.id)) throw new Error('Duplicate native parent request.');
       seen.add(request.id); pending.push(request);
-      if (!measure(pending).fits) return; // exactly one overflow lookahead, no remaining-page accumulation.
+      if (typeof measure !== 'function') measure.append(request);
+      if (!currentMeasurement().fits) return; // exactly one overflow lookahead, no remaining-page accumulation.
     }
   }
 }

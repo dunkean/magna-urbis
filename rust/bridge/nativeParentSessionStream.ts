@@ -5,7 +5,7 @@ import { NATIVE_PARENT_SCHEMA, type NativeParentBatch, type NativeParentCounts, 
 import { NATIVE_PARENT_SESSION_SCHEMA, type NativeParentSessionApi, type BeginParentSessionRequest, type BeginParentSessionReply,
   type ParentSessionSource, type PlanParentSessionRequest, type ParentSessionReceipt, type NativeParentSessionEvidence,
   type ParentPrefixCounts, type CloseParentSessionRequest, type AckParentSessionReply, type ParentIndexQueryReport } from './nativeParentSessionContract';
-import { parentWire, parentInputBudget, PARENT_LIMITS } from './nativeParentBudget';
+import { parentWire, createParentSessionPrefixBudget, parentRecordMeasurer } from './nativeParentBudget';
 import { fillCanonicalParentPrefix } from './nativeParentSourceBuffer';
 import { parentDigest, type ParentBatchBoundary, type NativeParentStreamSummary } from './nativeParentStream';
 import { validateParentSessionBegin, validateParentSessionPlan, parentSessionAssert, parentSessionInteger } from './nativeParentSessionValidation';
@@ -29,6 +29,7 @@ export async function streamNativeParentSession(header: ArchitectureBatchHeader,
     && typeof identity.revision === 'string' && identity.revision.length > 0 && identity.coordinate_space === 'world-metres', 'Invalid native city session source.');
   await api.require(); cancelled();
   const settings = header.settings ? structuredClone(header.settings) : null;
+  const measureRecord = parentRecordMeasurer(header.footprints);
   const beginInput: BeginParentSessionRequest = { schema_version: NATIVE_PARENT_SESSION_SCHEMA, run_id: crypto.randomUUID(), source: { ...identity }, total_requests: source.total, settings };
   let begin: BeginParentSessionReply | undefined, result: NativeParentSessionSummary | undefined, primary: unknown;
   let failed = false;
@@ -59,25 +60,27 @@ export async function streamNativeParentSession(header: ArchitectureBatchHeader,
       const planInput = (requests: PlacementRequest[]): PlanParentSessionRequest => ({ schema_version: NATIVE_PARENT_SESSION_SCHEMA,
         session_id: session.session_id, source_fingerprint: identity.fingerprint, revision: identity.revision, expected_offset: completed, key,
         requests, footprints: Object.fromEntries(requests.filter(r => header.footprints?.[r.id]).map(r => [r.id, header.footprints![r.id]])) });
-      const measure = (requests: PlacementRequest[]) => {
-        // Frozen settings still cost native inner batch bytes even though absent
-        // from the session page wire. BOTH known budgets precede source reads/call.
-        const input = planInput(requests), wire = parentWire(input);
-        const virtual: NativeParentRequest = { schema_version: NATIVE_PARENT_SCHEMA,
-          batch: { schema_version: '1', ...(settings ? { settings } : {}), requests, footprints: input.footprints },
-          prior_occupation: { land_parts: [], roof_parts: [] } };
-        const inner = parentInputBudget(virtual);
-        return { fits: inner.fits && wire.bytes <= session.limits.max_input_bytes && wire.floatSlots <= session.limits.max_std_float_slots
-          && wire.rewrittenBytes <= session.limits.max_std_rewritten_bytes, reason: inner.reason ?? 'session wire budget', wire };
-      };
+      // Fixed envelopes are measured once per batch; every record only once
+      // across the stream (including a carried lookahead). All inner/session
+      // limits are still checked before source reads or a native invocation.
+      const emptyInput = planInput([]), virtual: NativeParentRequest = { schema_version: NATIVE_PARENT_SCHEMA,
+        batch: { schema_version: '1', ...(settings ? { settings } : {}), requests: [], footprints: {} },
+        prior_occupation: { land_parts: [], roof_parts: [] } };
+      const measure = createParentSessionPrefixBudget(emptyInput, virtual, session.limits, measureRecord);
+      pending.forEach(request => measure.append(request));
       await fillCanonicalParentPrefix(source, completed, pending, seen, measure, cancelled); cancelled();
-      let selected: PlacementRequest[] = [], measured = measure(selected);
-      for (const r of pending) { const next = [...selected, r], candidate = measure(next);
-        if (!candidate.fits) { if (!selected.length) throw new Error(`Whole native city request cannot fit: ${candidate.reason}.`); break; }
-        selected = next; measured = candidate;
+      let selectedCount = 0;
+      for (let count = 1; count <= pending.length; count++) {
+        const candidate = measure.prefix(count);
+        if (!candidate.fits) { if (!selectedCount) throw new Error(`Whole native city request cannot fit: ${candidate.reason}.`); break; }
+        selectedCount = count;
       }
-      parentSessionAssert(selected.length > 0, 'Native session source made no progress.');
-      const input = planInput(selected), reply = await api.plan(input); cancelled();
+      parentSessionAssert(selectedCount > 0, 'Native session source made no progress.');
+      const selected = pending.slice(0, selectedCount), input = planInput(selected), measured = { wire: parentWire(input) };
+      const predicted = measure.prefix(selectedCount).wire;
+      parentSessionAssert(measured.wire.bytes === predicted.bytes && measured.wire.floatSlots === predicted.floatSlots
+        && measured.wire.rewrittenBytes === predicted.rewrittenBytes, 'Native session incremental wire cost mismatch.');
+      const reply = await api.plan(input); cancelled();
       const validated = await validateParentSessionPlan(reply, session, input); cancelled();
       for (const key of Object.keys(queryReport) as (keyof ParentIndexQueryReport)[]) queryReport[key] = key.startsWith('max_')
         ? Math.max(queryReport[key], validated.context_report[key]) : queryReport[key] + validated.context_report[key];
