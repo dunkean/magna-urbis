@@ -1,0 +1,781 @@
+{
+  "version": 1,
+  "status": "PASS",
+  "baselineRevision": "83114a5aa977a996fcd47a713aef1c892b8a6b4d",
+  "compilerVersionUnchanged": "surface-1.5.3",
+  "apiAndVersionsUnchanged": true,
+  "productionFiles": {
+    "compiler.ts": "62cfd681053f5a1e61e0733d81a689cd8f9e2a61504fc64440499a058f7a9fcb",
+    "materials.ts": "546abe67dda3a7c3eda5ef8d8e420ea11d8a401c9669c9a68f72c5e88c027e89"
+  },
+  "fiveRepetitionPass": {
+    "version": 1,
+    "status": "PASS",
+    "baselineBundleSha256": "938ad25eeaa06b76dcd7ec55aa5372f11e2eb109c0603d323c41ca15e3260059",
+    "optimizedBundleSha256": "b23a76d62ebf953ee91eaf83336e7ffdaa1411b471ba1b4b5b1126c7e9514498",
+    "results": [
+      {
+        "name": "contact-season-0-33",
+        "width": 33,
+        "height": 33,
+        "retainedRequestReplay": false,
+        "allBytesAndMetadataExact": true,
+        "timings": {
+          "baseline": [
+            6.804300000000012,
+            6.417599999999993,
+            5.543900000000008,
+            5.412400000000048,
+            6.416900000000055
+          ],
+          "optimized": [
+            4.1042999999999665,
+            3.5368000000000848,
+            3.4606999999999744,
+            3.30619999999999,
+            3.3210000000000264
+          ]
+        },
+        "medianBaselineMs": 6.416900000000055,
+        "medianOptimizedMs": 3.4606999999999744,
+        "speedup": 1.854220244459243
+      },
+      {
+        "name": "contact-season-0-128",
+        "width": 128,
+        "height": 128,
+        "retainedRequestReplay": false,
+        "allBytesAndMetadataExact": true,
+        "timings": {
+          "baseline": [
+            79.61189999999999,
+            84.47079999999994,
+            80.48900000000003,
+            76.81619999999998,
+            84.03019999999992
+          ],
+          "optimized": [
+            44.612499999999955,
+            52.303300000000036,
+            45.62670000000003,
+            54.17789999999991,
+            43.11779999999999
+          ]
+        },
+        "medianBaselineMs": 80.48900000000003,
+        "medianOptimizedMs": 45.62670000000003,
+        "speedup": 1.7640767357709408
+      },
+      {
+        "name": "contact-season-0.25-33",
+        "width": 33,
+        "height": 33,
+        "retainedRequestReplay": false,
+        "allBytesAndMetadataExact": true,
+        "timings": {
+          "baseline": [
+            5.363200000000006,
+            5.117900000000191,
+            5.227100000000064,
+            5.024000000000115,
+            5.372699999999895
+          ],
+          "optimized": [
+            3.043100000000095,
+            2.8973000000000866,
+            2.8262999999999465,
+            3.029700000000048,
+            2.8756000000000768
+          ]
+        },
+        "medianBaselineMs": 5.227100000000064,
+        "medianOptimizedMs": 2.8973000000000866,
+        "speedup": 1.8041279812238662
+      },
+      {
+        "name": "contact-season-0.25-128",
+        "width": 128,
+        "height": 128,
+        "retainedRequestReplay": false,
+        "allBytesAndMetadataExact": true,
+        "timings": {
+          "baseline": [
+            76.08109999999988,
+            81.78480000000013,
+            76.84270000000015,
+            75.14730000000009,
+            87.02729999999974
+          ],
+          "optimized": [
+            42.40009999999984,
+            52.24520000000007,
+            42.485699999999724,
+            48.85640000000012,
+            42.286099999999806
+          ]
+        },
+        "medianBaselineMs": 76.84270000000015,
+        "medianOptimizedMs": 42.485699999999724,
+        "speedup": 1.8086720943752992
+      },
+      {
+        "name": "contact-season-0.5-33",
+        "width": 33,
+        "height": 33,
+        "retainedRequestReplay": false,
+        "allBytesAndMetadataExact": true,
+        "timings": {
+          "baseline": [
+            5.096900000000005,
+            4.994199999999637,
+            5.009799999999814,
+            5.646299999999883,
+            5.090899999999692
+          ],
+          "optimized": [
+            2.802599999999984,
+            3.0855000000001382,
+            2.892699999999877,
+            3.146900000000187,
+            2.8674000000000888
+          ]
+        },
+        "medianBaselineMs": 5.090899999999692,
+        "medianOptimizedMs": 2.892699999999877,
+        "speedup": 1.7599128841566387
+      },
+      {
+        "name": "contact-season-0.5-128",
+        "width": 128,
+        "height": 128,
+        "retainedRequestReplay": false,
+        "allBytesAndMetadataExact": true,
+        "timings": {
+          "baseline": [
+            75.98589999999967,
+            75.97779999999966,
+            172.53600000000006,
+            179.6587000000004,
+            154.9985999999999
+          ],
+          "optimized": [
+            42.9661000000001,
+            74.17630000000008,
+            86.80029999999988,
+            105.33459999999968,
+            85.46019999999999
+          ]
+        },
+        "medianBaselineMs": 154.9985999999999,
+        "medianOptimizedMs": 85.46019999999999,
+        "speedup": 1.813693391777692
+      },
+      {
+        "name": "contact-season-0.75-33",
+        "width": 33,
+        "height": 33,
+        "retainedRequestReplay": false,
+        "allBytesAndMetadataExact": true,
+        "timings": {
+          "baseline": [
+            10.981600000000071,
+            10.996099999999842,
+            10.099800000000414,
+            11.871000000000095,
+            10.853300000000218
+          ],
+          "optimized": [
+            5.588600000000042,
+            6.088800000000447,
+            5.6807999999996355,
+            5.552999999999884,
+            5.920300000000225
+          ]
+        },
+        "medianBaselineMs": 10.981600000000071,
+        "medianOptimizedMs": 5.6807999999996355,
+        "speedup": 1.9331080129560583
+      },
+      {
+        "name": "contact-season-0.75-128",
+        "width": 128,
+        "height": 128,
+        "retainedRequestReplay": false,
+        "allBytesAndMetadataExact": true,
+        "timings": {
+          "baseline": [
+            177.058,
+            159.21020000000044,
+            154.76400000000012,
+            154.19909999999982,
+            174.09259999999995
+          ],
+          "optimized": [
+            83.70139999999992,
+            83.8113000000003,
+            88.82229999999981,
+            98.89959999999974,
+            85.23180000000048
+          ]
+        },
+        "medianBaselineMs": 159.21020000000044,
+        "medianOptimizedMs": 85.23180000000048,
+        "speedup": 1.8679671202532335
+      },
+      {
+        "name": "transparent-arbitrary-colors-NaN-Infinity-ties",
+        "width": 128,
+        "height": 128,
+        "retainedRequestReplay": false,
+        "allBytesAndMetadataExact": true,
+        "timings": {
+          "baseline": [
+            180.86399999999958,
+            166.83939999999984,
+            187.90210000000025,
+            167.67500000000018,
+            187.84679999999935
+          ],
+          "optimized": [
+            108.53719999999976,
+            95.02840000000015,
+            92.6935999999996,
+            94.08800000000065,
+            109.82009999999991
+          ]
+        },
+        "medianBaselineMs": 180.86399999999958,
+        "medianOptimizedMs": 95.02840000000015,
+        "speedup": 1.9032626036006004
+      },
+      {
+        "name": "explicitly-unavailable-legacy",
+        "width": 33,
+        "height": 33,
+        "retainedRequestReplay": false,
+        "allBytesAndMetadataExact": true,
+        "timings": {
+          "baseline": [
+            5.018399999999929,
+            6.475999999999658,
+            5.548699999999371,
+            5.7280000000000655,
+            5.780299999999443
+          ],
+          "optimized": [
+            3.977600000000166,
+            3.7743000000000393,
+            4.401800000000549,
+            3.8148000000001048,
+            3.212000000000444
+          ]
+        },
+        "medianBaselineMs": 5.7280000000000655,
+        "medianOptimizedMs": 3.8148000000001048,
+        "speedup": 1.5015203942539341
+      },
+      {
+        "name": "generated-512",
+        "width": 512,
+        "height": 512,
+        "retainedRequestReplay": false,
+        "allBytesAndMetadataExact": true,
+        "timings": {
+          "baseline": [
+            2495.1627000000008,
+            2499.835899999998,
+            2469.1840999999986,
+            2506.347800000003,
+            2509.124700000004
+          ],
+          "optimized": [
+            1338.6464000000014,
+            1360.7911999999997,
+            1321.7921999999999,
+            1369.6541999999972,
+            1362.941600000002
+          ]
+        },
+        "medianBaselineMs": 2499.835899999998,
+        "medianOptimizedMs": 1360.7911999999997,
+        "speedup": 1.8370459038829754
+      },
+      {
+        "name": "V11-retained-21-actual-129",
+        "width": 129,
+        "height": 129,
+        "retainedRequestReplay": true,
+        "allBytesAndMetadataExact": true,
+        "timings": {
+          "baseline": [
+            234.93439999999828,
+            217.00589999999647,
+            214.35800000000017,
+            228.10450000000128,
+            206.8385999999955
+          ],
+          "optimized": [
+            138.20790000000125,
+            143.31820000000153,
+            120.82809999999881,
+            133.99470000000292,
+            133.94979999999487
+          ]
+        },
+        "medianBaselineMs": 217.00589999999647,
+        "medianOptimizedMs": 133.99470000000292,
+        "speedup": 1.6195110702139095
+      },
+      {
+        "name": "V11-retained-204-actual-129",
+        "width": 129,
+        "height": 129,
+        "retainedRequestReplay": true,
+        "allBytesAndMetadataExact": true,
+        "timings": {
+          "baseline": [
+            222.26529999999912,
+            207.7795000000042,
+            206.81409999999596,
+            217.80340000000433,
+            203.8810999999987
+          ],
+          "optimized": [
+            124.94670000000042,
+            117.52580000000307,
+            104.03719999999885,
+            124.80290000000241,
+            119.65529999999853
+          ]
+        },
+        "medianBaselineMs": 207.7795000000042,
+        "medianOptimizedMs": 119.65529999999853,
+        "speedup": 1.7364838832881346
+      },
+      {
+        "name": "V11-retained-253-actual-140",
+        "width": 140,
+        "height": 140,
+        "retainedRequestReplay": true,
+        "allBytesAndMetadataExact": true,
+        "timings": {
+          "baseline": [
+            242.68829999999434,
+            248.40470000000641,
+            265.63850000000093,
+            237.43860000000132,
+            178.6660999999949
+          ],
+          "optimized": [
+            141.16159999999945,
+            142.10259999999835,
+            160.93620000000374,
+            141.87739999999758,
+            144.07760000000417
+          ]
+        },
+        "medianBaselineMs": 242.68829999999434,
+        "medianOptimizedMs": 142.10259999999835,
+        "speedup": 1.7078385617152478
+      }
+    ],
+    "allMaterialBytesExact": true,
+    "candidateCount": 6422,
+    "frozenBaselineAvailable": true,
+    "scope": "Direct synchronous Node CPU wall spans of equally bundled modules, alternating order and one discarded warm-up. No browser delivery, OS scheduling attribution, GPU, navigation gate, or guaranteed latency. Retained V11 requests were requeried earlier and checked against original world/terrain/version summaries; original BODY bytes were not archived. Synthetic 512 is labelled separately from actual provider-delivered 129/140 grids."
+  },
+  "threeRepetitionValidation": {
+    "version": 1,
+    "status": "PASS",
+    "baselineBundleSha256": "938ad25eeaa06b76dcd7ec55aa5372f11e2eb109c0603d323c41ca15e3260059",
+    "optimizedBundleSha256": "b23a76d62ebf953ee91eaf83336e7ffdaa1411b471ba1b4b5b1126c7e9514498",
+    "results": [
+      {
+        "name": "contact-season-0-33",
+        "width": 33,
+        "height": 33,
+        "retainedRequestReplay": false,
+        "allBytesAndMetadataExact": true,
+        "timings": {
+          "baseline": [
+            7.140100000000075,
+            7.08299999999997,
+            7.564799999999991
+          ],
+          "optimized": [
+            4.437999999999988,
+            3.9267999999999574,
+            4.207499999999982
+          ]
+        },
+        "medianBaselineMs": 7.140100000000075,
+        "medianOptimizedMs": 4.207499999999982,
+        "speedup": 1.6969934640523128
+      },
+      {
+        "name": "contact-season-0-128",
+        "width": 128,
+        "height": 128,
+        "retainedRequestReplay": false,
+        "allBytesAndMetadataExact": true,
+        "timings": {
+          "baseline": [
+            89.66180000000008,
+            83.47259999999994,
+            84.8717999999999
+          ],
+          "optimized": [
+            46.80670000000009,
+            47.87740000000008,
+            57.53690000000006
+          ]
+        },
+        "medianBaselineMs": 84.8717999999999,
+        "medianOptimizedMs": 47.87740000000008,
+        "speedup": 1.7726902463375152
+      },
+      {
+        "name": "contact-season-0.25-33",
+        "width": 33,
+        "height": 33,
+        "retainedRequestReplay": false,
+        "allBytesAndMetadataExact": true,
+        "timings": {
+          "baseline": [
+            5.466599999999971,
+            5.607199999999921,
+            5.700399999999945
+          ],
+          "optimized": [
+            3.0950000000000273,
+            3.0874999999998636,
+            3.190800000000081
+          ]
+        },
+        "medianBaselineMs": 5.607199999999921,
+        "medianOptimizedMs": 3.0950000000000273,
+        "speedup": 1.8116962843295221
+      },
+      {
+        "name": "contact-season-0.25-128",
+        "width": 128,
+        "height": 128,
+        "retainedRequestReplay": false,
+        "allBytesAndMetadataExact": true,
+        "timings": {
+          "baseline": [
+            101.20920000000001,
+            84.78340000000003,
+            82.83270000000016
+          ],
+          "optimized": [
+            52.96510000000012,
+            49.26290000000017,
+            45.11410000000001
+          ]
+        },
+        "medianBaselineMs": 84.78340000000003,
+        "medianOptimizedMs": 49.26290000000017,
+        "speedup": 1.721039565271223
+      },
+      {
+        "name": "contact-season-0.5-33",
+        "width": 33,
+        "height": 33,
+        "retainedRequestReplay": false,
+        "allBytesAndMetadataExact": true,
+        "timings": {
+          "baseline": [
+            5.836699999999837,
+            5.529199999999946,
+            5.777900000000045
+          ],
+          "optimized": [
+            3.192699999999604,
+            3.184900000000198,
+            3.5306000000000495
+          ]
+        },
+        "medianBaselineMs": 5.777900000000045,
+        "medianOptimizedMs": 3.192699999999604,
+        "speedup": 1.809722178720444
+      },
+      {
+        "name": "contact-season-0.5-128",
+        "width": 128,
+        "height": 128,
+        "retainedRequestReplay": false,
+        "allBytesAndMetadataExact": true,
+        "timings": {
+          "baseline": [
+            89.69800000000032,
+            90.75279999999975,
+            91.24229999999989
+          ],
+          "optimized": [
+            44.92069999999967,
+            67.22199999999975,
+            47.63350000000037
+          ]
+        },
+        "medianBaselineMs": 90.75279999999975,
+        "medianOptimizedMs": 47.63350000000037,
+        "speedup": 1.905230562524254
+      },
+      {
+        "name": "contact-season-0.75-33",
+        "width": 33,
+        "height": 33,
+        "retainedRequestReplay": false,
+        "allBytesAndMetadataExact": true,
+        "timings": {
+          "baseline": [
+            7.564099999999598,
+            8.914999999999964,
+            6.788000000000011
+          ],
+          "optimized": [
+            3.144800000000032,
+            4.825000000000273,
+            3.9396999999999025
+          ]
+        },
+        "medianBaselineMs": 7.564099999999598,
+        "medianOptimizedMs": 3.9396999999999025,
+        "speedup": 1.9199685255221934
+      },
+      {
+        "name": "contact-season-0.75-128",
+        "width": 128,
+        "height": 128,
+        "retainedRequestReplay": false,
+        "allBytesAndMetadataExact": true,
+        "timings": {
+          "baseline": [
+            183.2176999999997,
+            173.2898,
+            160.99609999999984
+          ],
+          "optimized": [
+            90.52489999999989,
+            110.7489999999998,
+            87.45830000000024
+          ]
+        },
+        "medianBaselineMs": 173.2898,
+        "medianOptimizedMs": 90.52489999999989,
+        "speedup": 1.9142777291109985
+      },
+      {
+        "name": "transparent-arbitrary-colors-NaN-Infinity-ties",
+        "width": 128,
+        "height": 128,
+        "retainedRequestReplay": false,
+        "allBytesAndMetadataExact": true,
+        "timings": {
+          "baseline": [
+            203.60759999999937,
+            175.41280000000006,
+            169.48359999999957
+          ],
+          "optimized": [
+            103.8119999999999,
+            99.39679999999953,
+            99.77430000000004
+          ]
+        },
+        "medianBaselineMs": 175.41280000000006,
+        "medianOptimizedMs": 99.77430000000004,
+        "speedup": 1.7580960227232865
+      },
+      {
+        "name": "explicitly-unavailable-legacy",
+        "width": 33,
+        "height": 33,
+        "retainedRequestReplay": false,
+        "allBytesAndMetadataExact": true,
+        "timings": {
+          "baseline": [
+            6.295700000000579,
+            5.2455999999992855,
+            5.906300000000556
+          ],
+          "optimized": [
+            4.962100000000646,
+            3.968599999999242,
+            3.7682000000004336
+          ]
+        },
+        "medianBaselineMs": 5.906300000000556,
+        "medianOptimizedMs": 3.968599999999242,
+        "speedup": 1.4882578239181787
+      },
+      {
+        "name": "generated-512",
+        "width": 512,
+        "height": 512,
+        "retainedRequestReplay": false,
+        "allBytesAndMetadataExact": true,
+        "timings": {
+          "baseline": [
+            13523.1005,
+            3114.746299999999,
+            2877.1468000000023
+          ],
+          "optimized": [
+            2035.8675000000003,
+            13732.847399999999,
+            1832.7286000000022
+          ]
+        },
+        "medianBaselineMs": 3114.746299999999,
+        "medianOptimizedMs": 2035.8675000000003,
+        "speedup": 1.5299356662454695
+      },
+      {
+        "name": "V11-retained-21-actual-129",
+        "width": 129,
+        "height": 129,
+        "retainedRequestReplay": true,
+        "allBytesAndMetadataExact": true,
+        "timings": {
+          "baseline": [
+            322.4109999999928,
+            235.54799999999523,
+            262.4085999999952
+          ],
+          "optimized": [
+            171.52680000000692,
+            171.27529999999388,
+            155.175900000002
+          ]
+        },
+        "medianBaselineMs": 262.4085999999952,
+        "medianOptimizedMs": 171.27529999999388,
+        "speedup": 1.5320866464691907
+      },
+      {
+        "name": "V11-retained-204-actual-129",
+        "width": 129,
+        "height": 129,
+        "retainedRequestReplay": true,
+        "allBytesAndMetadataExact": true,
+        "timings": {
+          "baseline": [
+            228.3295000000071,
+            231.36320000000705,
+            244.26239999999234
+          ],
+          "optimized": [
+            136.9375999999902,
+            159.3536000000022,
+            134.24370000000636
+          ]
+        },
+        "medianBaselineMs": 231.36320000000705,
+        "medianOptimizedMs": 136.9375999999902,
+        "speedup": 1.6895520295377136
+      },
+      {
+        "name": "V11-retained-253-actual-140",
+        "width": 140,
+        "height": 140,
+        "retainedRequestReplay": true,
+        "allBytesAndMetadataExact": true,
+        "timings": {
+          "baseline": [
+            282.8189999999886,
+            251.79189999999653,
+            265.66139999999723
+          ],
+          "optimized": [
+            148.16829999999027,
+            155.13499999999476,
+            148.3637000000017
+          ]
+        },
+        "medianBaselineMs": 265.66139999999723,
+        "medianOptimizedMs": 148.3637000000017,
+        "speedup": 1.79060915843966
+      }
+    ],
+    "errors": [
+      {
+        "case": "source-version",
+        "name": "Error",
+        "constructor": "Error",
+        "message": "Terrain refinement source identity/version differs from canonical source; explicitly rebuild context after a source edit"
+      },
+      {
+        "case": "source-id",
+        "name": "Error",
+        "constructor": "Error",
+        "message": "Terrain refinement source identity/version differs from canonical source; explicitly rebuild context after a source edit"
+      },
+      {
+        "case": "invalid-spacing",
+        "name": "Error",
+        "constructor": "Error",
+        "message": "Terrain coordinates and spacing must be finite metres"
+      },
+      {
+        "case": "outside",
+        "name": "RangeError",
+        "constructor": "RangeError",
+        "message": "Active refinement bounds exceed canonical source footprint"
+      },
+      {
+        "case": "memory-budget",
+        "name": "Error",
+        "constructor": "Error",
+        "message": "Surface compilation requires approximately 355550 bytes, exceeding memoryBudgetBytes=1; reduce grid/fields or explicitly raise the budget"
+      },
+      {
+        "case": "cancelled",
+        "name": "AbortError",
+        "constructor": "DOMException",
+        "message": "Surface request aborted"
+      },
+      {
+        "case": "stale-environment",
+        "name": "Error",
+        "constructor": "Error",
+        "message": "Stale canonical environment version"
+      },
+      {
+        "case": "stale-terrain",
+        "name": "Error",
+        "constructor": "Error",
+        "message": "Stale base terrain version"
+      },
+      {
+        "case": "unavailable-context",
+        "name": "Error",
+        "constructor": "Error",
+        "message": "Canonical surface context unavailable; resolve canonicalContextRef before exact sampling or population generation"
+      }
+    ],
+    "allMaterialBytesExact": true,
+    "candidateCount": 6422,
+    "candidateFingerprint": "2a6337b19df0b68fc0004919dda225d5",
+    "scope": "Direct synchronous Node CPU wall spans of equally bundled modules, alternating order and one discarded warm-up. No browser delivery, OS scheduling attribution, GPU, navigation gate, or guaranteed latency. Retained V11 requests were requeried earlier and checked against original world/terrain/version summaries; original BODY bytes were not archived. Synthetic 512 is labelled separately from actual provider-delivered 129/140 grids."
+  },
+  "tests": {
+    "existing": 25,
+    "new": 2,
+    "newMaterialConfigurations": 400,
+    "newLayerComparisons": 1200,
+    "sRGB8Channels": 256
+  },
+  "typecheck": {
+    "changedFileErrors": 0,
+    "preexistingGeneratedWasmErrors": 10
+  },
+  "limitations": [
+    "Direct Node wall spans; host contention not controlled. No claim of pure CPU time or browser end-to-end gain.",
+    "Second pass ran concurrently with private typecheck; two 512 outliers13.523/13.733 seconds preserved.",
+    "An earlier exploratory bundled-versus-TS timing comparison was biased and excluded.",
+    "No NN generation, registration, GPU, full navigation campaign or20second gate claim.",
+    "V11 input source replays were retained requeries matching original summaries, not original archived BODY bytes."
+  ]
+}

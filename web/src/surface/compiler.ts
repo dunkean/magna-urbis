@@ -677,9 +677,10 @@ function gridSampler(t: SurfaceGridGeometry, x: number, z: number): { nearest: n
   const x0 = Math.min(t.width - 2, Math.floor(gx)), z0 = Math.min(t.height - 2, Math.floor(gz));
   const fx = gx - x0, fz = gz - z0, nearest = Math.round(gz) * t.width + Math.round(gx), p = z0 * t.width + x0;
   return { nearest, indices: [p, p + 1, p + t.width, p + t.width + 1], weights: [(1 - fx) * (1 - fz), fx * (1 - fz), (1 - fx) * fz, fx * fz], continuous: a => {
-    const values = [a[p], a[p + 1], a[p + t.width], a[p + t.width + 1]];
-    if (!values.every(Number.isFinite)) return a[nearest];
-    return (values[0] * (1 - fx) + values[1] * fx) * (1 - fz) + (values[2] * (1 - fx) + values[3] * fx) * fz;
+    const a0 = a[p], a1 = a[p + 1], a2 = a[p + t.width], a3 = a[p + t.width + 1];
+    if (!Number.isFinite(a0) || !Number.isFinite(a1) || !Number.isFinite(a2) || !Number.isFinite(a3)) return a[nearest];
+    // Preserve the previous grouping, including the nearest non-finite fallback.
+    return (a0 * (1 - fx) + a1 * fx) * (1 - fz) + (a2 * (1 - fx) + a3 * fx) * fz;
   } };
 }
 
@@ -688,17 +689,36 @@ function sampleMaterialComposition(fields: SurfaceFields, indices: number[], wei
     blends=layer?fields[`${layer}MaterialBlend`]!:fields.materialBlend,means=layer?fields[`${layer}MaterialMeanColor`]!:fields.materialMeanColor;
   // Low cover is an RGBA layer. Transparent texels contribute neither colour
   // nor recipe/roughness; normalise only after spatial*opacity accumulation.
-  const coverageWeights=layer==='lowCover'?weights.map((weight,corner)=>weight*fields.lowCoverOpacity![indices[corner]]):weights;
-  const coverageSum=coverageWeights.reduce((sum,weight)=>sum+weight,0);
+  const coverageWeights=layer==='lowCover'?[
+    weights[0]*fields.lowCoverOpacity![indices[0]],weights[1]*fields.lowCoverOpacity![indices[1]],
+    weights[2]*fields.lowCoverOpacity![indices[2]],weights[3]*fields.lowCoverOpacity![indices[3]],
+  ]:weights;
+  // Keep the original reduce's left-to-right additions (including the initial 0).
+  const coverageSum=(((0+coverageWeights[0])+coverageWeights[1])+coverageWeights[2])+coverageWeights[3];
   if(layer==='lowCover'&&coverageSum===0)return{primary:primary[indices[0]],secondary:primary[indices[0]],blend:0,mean:[0,0,0]};
-  const entries: Array<[number, number]> = [], mean: [number, number, number] = [0, 0, 0];
+  const ids: number[] = [], totals: number[] = [], mean: [number, number, number] = [0, 0, 0];
   for (let corner = 0; corner < 4; corner++) {
     const i = indices[corner], weight = layer==='lowCover'?coverageWeights[corner]/coverageSum:weights[corner], blend = blends[i];
-    entries.push([primary[i], weight * (1 - blend)], [secondary[i], weight * blend]);
+    // At most eight uint16 recipe ids. Accumulate in precisely the previous
+    // primary/secondary, corner order without allocating tuples, a Map or sort.
+    for(let entry=0;entry<2;entry++){
+      const id=entry===0?primary[i]:secondary[i],amount=entry===0?weight*(1-blend):weight*blend;
+      if(!Number.isFinite(amount)||amount<=0)continue;
+      const slot=ids.indexOf(id);
+      if(slot<0){ids.push(id);totals.push(0+amount);}else totals[slot]+=amount;
+    }
     const color = unpackMaterialMean(means[i]);
     for (let channel = 0; channel < 3; channel++) mean[channel] += color[channel] * weight;
   }
-  return { ...dominantMaterialPair(entries), mean };
+  let first=-1,second=-1;
+  for(let slot=0;slot<ids.length;slot++){
+    // Same comparator as dominantMaterialPair, including ascending id ties.
+    if(first<0||(totals[first]-totals[slot]||ids[slot]-ids[first])<0){second=first;first=slot;}
+    else if(second<0||(totals[second]-totals[slot]||ids[slot]-ids[second])<0)second=slot;
+  }
+  if(first<0)return{primary:0,secondary:0,blend:0,mean};
+  const a=totals[first],b=second<0?0:totals[second];
+  return { primary:ids[first],secondary:second<0?ids[first]:ids[second],blend:b/(a+b),mean };
 }
 
 function contextReference(context: CanonicalSurfaceContext): CanonicalSurfaceContextRef {
