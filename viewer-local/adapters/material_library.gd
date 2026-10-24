@@ -1,6 +1,7 @@
 class_name SurfaceMaterialLibrary
 extends RefCounted
 const PreparedCache=preload("res://adapters/surface_pbr_cache.gd")
+const DetailDistribution=preload("res://adapters/surface_detail_distribution.gd")
 const ATLAS_SIZE := 1024
 # Bump when channel packing, colour decode, filtering or mean-residual semantics change.
 const PIPELINE_VERSION := "surface-pbr-linear-ah16f-normalgl-nr8-stochastic3-mean-residual-v2"
@@ -214,6 +215,7 @@ func _load_image(value, manifest_path: String) -> Image:
 	return img
 
 func configure(material: Object, world: Dictionary, origin: Dictionary) -> void:
+	material.set_shader_param("detail_distribution_phase",DetailDistribution.phases(origin))
 	var colors := PackedVector4Array()
 	var material_scales := PackedFloat32Array()
 	var material_layers := PackedInt32Array()

@@ -17,18 +17,13 @@ vec3 ground_response_color(int id,vec3 bed,vec3 transported) {
     int role=ground_response_color_roles[id];
     return role==2?transported:role==1?bed:palette[id].rgb;
 }
-bool ground_response_sample(vec2 uv,out ivec2 pair,out float blend,out vec3 mean) {
+// Full existing response components for renderer-only spatial allocation. The
+// original compact pair, knot ids/quantised means and physical law stay intact.
+bool ground_response_components(vec2 uv,out int ids[8],out float amounts[8],out vec3 colors[8],out float total,out vec3 mean) {
     if(!ground_response_enabled)return false;
     ivec2 size=textureSize(ground_response_soil,0);
-    vec2 grid=clamp(uv*vec2(size)-vec2(0.5),vec2(0.0),vec2(size)-vec2(1.0));
-    ivec2 nearest=ivec2(floor(grid+vec2(0.5)));
-    if(all(equal(grid,vec2(nearest)))) {
-        // Preserve stored knot ids and sRGB8 mean exactly. No synthetic detail
-        // is inferred from quantisation rounding at the original samples.
-        vec4 old=texelFetch(surface_ids,nearest,0);
-        pair=ivec2(int(old.r+0.5),int(old.g+0.5));blend=old.b;
-        mean=texelFetch(surface_average,nearest,0).rgb;return true;
-    }
+    vec2 grid=clamp(uv*vec2(size)-vec2(.5),vec2(0.0),vec2(size)-vec2(1.0));
+    ivec2 nearest=ivec2(floor(grid+vec2(.5)));
     ivec2 cell=min(size-ivec2(2),ivec2(floor(grid)));vec2 f=grid-vec2(cell);
     vec4 spatial=vec4((1.0-f.x)*(1.0-f.y),f.x*(1.0-f.y),(1.0-f.x)*f.y,f.x*f.y);
     vec4 soil=vec4(0.0);vec4 processes=vec4(0.0);float aridity=0.0;
@@ -43,7 +38,8 @@ bool ground_response_sample(vec2 uv,out ivec2 pair,out float blend,out vec3 mean
         int crop=int(ground_response_recipe_ids1.w+0.5);
         vec3 crop_bed=ground_response_unit_colors[clamp(int(-codes.b-1.0+0.5),0,63)].rgb;
         vec3 crop_source=ground_response_unit_colors[clamp(int(codes.a+0.5),0,63)].rgb;
-        pair=ivec2(crop);blend=0.0;mean=ground_response_color(crop,crop_bed,crop_source);return true;
+        for(int i=0;i<8;i++){ids[i]=crop;amounts[i]=i==0?1.0:0.0;colors[i]=ground_response_color(crop,crop_bed,crop_source);}
+        total=1.0;mean=colors[0];return true;
     }
     vec3 bed=ground_response_unit_colors[clamp(int(codes.b+0.5),0,63)].rgb;
     vec3 transported=ground_response_unit_colors[clamp(int(codes.a+0.5),0,63)].rgb;
@@ -53,12 +49,27 @@ bool ground_response_sample(vec2 uv,out ivec2 pair,out float blend,out vec3 mean
     float dry=clamp((0.65-aridity)/0.4,0.0,1.0);
     float humus=ground_response_smooth(0.72,0.88,soil.a)*(1.0-ground_response_smooth(0.08,0.16,soil.g))*ground_response_smooth(0.02,0.16,soil.b);
     float soil_weight=soil_rest*(1.0-dry);
-    int ids[8];float amounts[8];
     ids[0]=int(codes.g+0.5);ids[1]=int(ground_response_recipe_ids1.x+0.5);ids[2]=int(ground_response_recipe_ids1.y+0.5);ids[3]=int(ground_response_recipe_ids1.z+0.5);
     amounts[0]=rock;amounts[1]=soil_weight*(1.0-humus);amounts[2]=soil_weight*humus;amounts[3]=soil_rest*dry;
     for(int c=0;c<4;c++){ids[c+4]=int(ground_response_recipe_ids0[c]+0.5);amounts[c+4]=processes[c]/process_scale*(1.0-rock);}
-    float total=0.0;for(int i=0;i<8;i++)total+=amounts[i];
-    mean=vec3(0.0);for(int i=0;i<8;i++)mean+=ground_response_color(ids[i],bed,transported)*amounts[i]/total;
+    total=0.0;for(int i=0;i<8;i++)total+=amounts[i];
+    mean=vec3(0.0);for(int i=0;i<8;i++){colors[i]=ground_response_color(ids[i],bed,transported);mean+=colors[i]*amounts[i]/total;}
+    return true;
+}
+bool ground_response_sample(vec2 uv,out ivec2 pair,out float blend,out vec3 mean) {
+    if(!ground_response_enabled)return false;
+    ivec2 size=textureSize(ground_response_soil,0);
+    vec2 grid=clamp(uv*vec2(size)-vec2(0.5),vec2(0.0),vec2(size)-vec2(1.0));
+    ivec2 nearest=ivec2(floor(grid+vec2(0.5)));
+    if(all(equal(grid,vec2(nearest)))) {
+        // Preserve stored knot ids and sRGB8 mean exactly. No synthetic detail
+        // is inferred from quantisation rounding at the original samples.
+        vec4 old=texelFetch(surface_ids,nearest,0);
+        pair=ivec2(int(old.r+0.5),int(old.g+0.5));blend=old.b;
+        mean=texelFetch(surface_average,nearest,0).rgb;return true;
+    }
+    int ids[8];float amounts[8];vec3 colors[8];float total;
+    ground_response_components(uv,ids,amounts,colors,total,mean);
     // Combine duplicate ids in the original insertion/addition order, then the
     // same descending weight/ascending id top2 rule as dominantMaterialPair.
     for(int i=0;i<8;i++)for(int j=0;j<i;j++)if(ids[j]==ids[i]){amounts[j]+=amounts[i];amounts[i]=0.0;break;}

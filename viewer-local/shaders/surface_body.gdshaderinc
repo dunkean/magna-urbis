@@ -27,6 +27,24 @@
     vec3 surface_dx=dFdx(v_vertex);
     vec3 surface_dy=dFdy(v_vertex);
     float footprint=max(length(surface_dx.xz),length(surface_dy.xz));
+    // Redistribute the EXISTING physical recipe probabilities, not RGB noise.
+    // Keep the stored/analytic GR mean as the horizon and diagnostic-7 value.
+    vec3 ground_distribution_delta=vec3(0.0);
+    vec3 ground_distribution_probe=vec3(0.0);
+    bool ground_distribution_active=surface_detail_distribution_enabled && response_active && presentation_mode==0;
+    if(ground_distribution_active) {
+        int component_ids[8];float component_amounts[8];vec3 component_colors[8];float component_total;vec3 component_mean;
+        ground_response_components(source_uv,component_ids,component_amounts,component_colors,component_total,component_mean);
+        vec3 ranks=detail_distribution_ranks(v_vertex.xz,vec2(0.0));float start=0.0;
+        for(int i=0;i<8;i++) {
+            float probability=component_amounts[i]/component_total;
+            float local_mass=detail_distribution_mass(ranks,start,probability,footprint);
+            ids[i]=component_ids[i];slot_weights[i]=local_mass;
+            ground_distribution_delta+=component_colors[i]*(local_mass-probability);
+            ground_distribution_probe+=component_colors[i]*local_mass;
+            start+=probability;
+        }
+    }
     vec4 ah=vec4(0.0); vec4 nr=vec4(0.0); vec4 mean_palette=vec4(0.0);
     float fine=0.0;
     vec3 source_mean=vec3(0.0);
@@ -53,6 +71,7 @@
     // use it at every scale, including contacts where the compact pair loses a third recipe.
     vec3 base=response_active?response_mean:texture(surface_average,source_uv).rgb;
     vec3 raw_ground_mean=base;
+    base+=ground_distribution_delta;
     float detail_exposure; vec3 detail_color; float detail_slope; float detail_confidence;
     surface_geometry_detail(v_vertex.xz,base,detail_exposure,detail_color,detail_slope,detail_confidence);
     // Refinement changes physical support, never the canonical environment or city style.
@@ -75,8 +94,10 @@
     float contrast=0.82*clamp(min(min(min(lower_headroom.x,lower_headroom.y),lower_headroom.z),min(min(upper_headroom.x,upper_headroom.y),upper_headroom.z)),0.0,1.0);
     vec3 ground=base+ah.rgb*contrast;
     ground=mix(ground,base,smoothstep(source_spacing_m*0.5,source_spacing_m*2.0,footprint));
+    // The calibrated material allocation replaces the old arbitrary RGB macro.
+    // Preserve the legacy fallback when no explicit GR evidence is available.
     float macro_band=1.0-smoothstep(2.0,12.0,footprint);
-    ground+=(macro-0.5)*0.18*macro_band*min(base,vec3(1.0)-base);
+    if(!ground_distribution_active) ground+=(macro-0.5)*0.18*macro_band*min(base,vec3(1.0)-base);
     float wet=clamp(state.g,0.0,1.0);
     ground*=1.0-wet*0.28;
 
@@ -96,6 +117,9 @@
     vec4 low_ah=vec4(0.0); vec4 low_nr=vec4(0.0); vec4 low_palette=vec4(0.0);
     vec3 low_source_mean=vec3(0.0); vec3 low_map_mean=vec3(0.0); float low_fine=0.0;
     float low_weight_sum=0.0;
+    float low_visual_alpha=low_alpha;
+    vec3 low_reference_palette=vec3(0.0);
+    bool low_distribution_active=surface_detail_distribution_enabled && surface_layers_explicit && presentation_mode==0;
     if(surface_layers_explicit) {
         vec4 low_slots[4];
         low_slots[0]=texelFetch(low_cover_ids,cell,0);
@@ -107,6 +131,17 @@
             float coverage_weight=surface_weights[i]*clamp(low_slots[i].a,0.0,1.0);
             low_ids[i*2]=clamp(int(low_slots[i].r+0.5),0,31);low_ids[i*2+1]=clamp(int(low_slots[i].g+0.5),0,31);
             low_weights[i*2]=coverage_weight*(1.0-low_slots[i].b);low_weights[i*2+1]=coverage_weight*low_slots[i].b;
+        }
+        if(low_distribution_active) {
+            float original_sum=0.0;for(int i=0;i<8;i++)original_sum+=low_weights[i];
+            vec3 ranks=detail_distribution_ranks(v_vertex.xz,vec2(.371,.619));float start=0.0;
+            low_visual_alpha=0.0;
+            for(int i=0;i<8;i++) {
+                float probability=low_weights[i]*low_alpha/max(original_sum,.000001);
+                low_reference_palette+=palette[low_ids[i]].rgb*probability;
+                low_weights[i]=detail_distribution_mass(ranks,start,probability,footprint);
+                low_visual_alpha+=low_weights[i];start+=probability;
+            }
         }
         for(int i=0;i<8;i++) {
             bool first=true;
@@ -128,13 +163,14 @@
     float safe_low_weight=max(low_weight_sum,0.000001);
     low_ah/=safe_low_weight;low_nr/=safe_low_weight;low_palette/=safe_low_weight;
     low_source_mean/=safe_low_weight;low_map_mean/=safe_low_weight;low_fine/=safe_low_weight;
+    if(low_distribution_active && low_visual_alpha>.000001) low_base+=low_palette.rgb-low_reference_palette/max(low_alpha,.000001);
     vec3 low_lower=low_base/max(low_source_mean,vec3(0.0001));
     vec3 low_upper=(vec3(1.0)-low_base)/max(vec3(1.0)-low_source_mean,vec3(0.0001));
     float low_contrast=0.82*clamp(min(min(min(low_lower.x,low_lower.y),low_lower.z),min(min(low_upper.x,low_upper.y),low_upper.z)),0.0,1.0);
     vec3 low_response=(low_base+low_ah.rgb*low_contrast)*(1.0-wet*0.28);
     float low_rough=clamp(mix(low_palette.a,low_nr.a,0.7)-wet*0.28,0.12,1.0);
     vec3 low_normal=mix(vec3(0.5,0.5,1.0),low_nr.xyz,low_fine*micro_strength);
-    float visible_low=(show_low_cover && surface_layers_explicit)?low_alpha:0.0;
+    float visible_low=(show_low_cover && surface_layers_explicit)?low_visual_alpha:0.0;
     if(!show_ground) { ground=vec3(0.0); composed_normal=vec3(0.5,0.5,1.0); ROUGHNESS=1.0; }
     ground=mix(ground,low_response,visible_low);
     ROUGHNESS=sqrt(mix(ROUGHNESS*ROUGHNESS,low_rough*low_rough,visible_low));
@@ -177,7 +213,7 @@
     if(diagnostic==6) { ALBEDO=vec3(0.0); EMISSION=display_color(vec3(clamp(detail_slope/1.570796327,0.0,1.0),detail_exposure,detail_confidence)); NORMAL_MAP=vec3(0.5,0.5,1.0); }
 
     // Single-variable unlit probes isolate fields from illumination and normals.
-    if(diagnostic>=7 && diagnostic<=20) {
+    if(diagnostic>=7 && diagnostic<=22) {
         vec3 probe=raw_ground_mean;
         if(diagnostic==8) probe=vec3(low_alpha);
         if(diagnostic==9) probe=vec3(state.r);
@@ -192,6 +228,8 @@
         if(diagnostic==18) probe=vec3(ROUGHNESS);
         if(diagnostic==19) probe=composed_normal;
         if(diagnostic==20) probe=vec3(show_trees?surface_canopy_target(v_vertex.xz,canopy_main_pixel_footprint(v_vertex.xz,PROJECTION_MATRIX*VIEW_MATRIX,VIEWPORT_SIZE),state.r):0.0);
+        if(diagnostic==21) probe=ground_distribution_active?ground_distribution_probe:raw_ground_mean;
+        if(diagnostic==22) probe=vec3(low_visual_alpha);
         ALBEDO=vec3(0.0); EMISSION=display_color(probe); ROUGHNESS=1.0; SPECULAR=0.0; NORMAL_MAP=vec3(0.5,0.5,1.0);
     }
 

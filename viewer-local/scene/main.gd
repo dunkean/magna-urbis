@@ -5,6 +5,7 @@ const Data = preload("res://adapters/surface_data.gd")
 const Library = preload("res://adapters/material_library.gd")
 const VegetationLibrary=preload("res://adapters/surface_vegetation_library.gd")
 const Clasts=preload("res://adapters/surface_clast_library.gd")
+const LowCoverGeometry=preload("res://adapters/surface_low_cover_geometry.gd")
 const TreeAssets=preload("res://adapters/surface_tree_library.gd")
 const ShaderSource = preload("res://adapters/surface_shader.gd")
 const Geometry = preload("res://adapters/surface_geometry.gd")
@@ -690,6 +691,9 @@ func _build_populations(populations: Dictionary) -> void:
 		if family=="grass" and presentation_mode=="aerial" and not vegetation_library.variants.is_empty():
 			_build_asset_grass(visible,populations.buffers.grass)
 			continue
+		if family in ["shrub","debris"] and presentation_mode=="aerial":
+			_build_low_cover(visible,populations.buffers[family],family)
+			continue
 		var mesh: Mesh
 		var mat := StandardMaterial3D.new()
 		if family == "tree" or family == "shrub":
@@ -773,6 +777,19 @@ func _build_populations(populations: Dictionary) -> void:
 			trunk_instance.set_meta("canopyRenderOrigin",origin.duplicate())
 			trunk_instance.multimesh = trunks
 			objects.add_child(trunk_instance)
+
+func _build_low_cover(candidates:Array,buffer:PackedFloat32Array,family:String)->void:
+	for batch in LowCoverGeometry.partition(candidates,buffer):
+		if batch.ids.is_empty():continue
+		var mesh=LowCoverGeometry.mesh(family,int(batch.variant))
+		var material=ShaderMaterial.new();material.shader=preload("res://shaders/low_cover_pbr.gdshader")
+		library.configure_clast(material,"vegetation-litter" if family=="shrub" else "forest-litter",int(batch.variant))
+		vegetation_materials.append(material);_set_vegetation_main_camera(material);mesh.surface_set_material(0,material)
+		var multi=MultiMesh.new();multi.transform_format=MultiMesh.TRANSFORM_3D;multi.use_custom_data=true;multi.use_colors=true
+		multi.mesh=mesh;multi.instance_count=batch.ids.size();multi.buffer=batch.buffer
+		var node=MultiMeshInstance3D.new();node.name="low_"+family+"_"+str(batch.variant);node.multimesh=multi;node.layers=2
+		node.set_meta("populationFamily",family);node.set_meta("surfaceLayer","lowCover");node.set_meta("lowCoverRepresentation",LowCoverGeometry.metadata())
+		objects.add_child(node)
 
 func _set_vegetation_main_camera(material:ShaderMaterial)->void:
 	material.set_shader_parameter("main_camera_view",camera.get_camera_transform().affine_inverse())
@@ -1221,6 +1238,8 @@ func _write_metrics() -> void:
 	var metrics := {"godot":Engine.get_version_info().string,"terrain3d":"1.0.2","backend":RenderingServer.get_current_rendering_method(),"adapter":RenderingServer.get_video_adapter_name(),"worldId":rendered_world_id,"source":rendered_source,"requestedWorldId":world.id,"requestedSource":world.terrain.source,"resolution":[get_viewport().get_visible_rect().size.x,get_viewport().get_visible_rect().size.y],"frames":frame_times.size(),"frameWallMs":{"p50":_quantile(frame_times,0.5),"p95":_quantile(frame_times,0.95),"p99":_quantile(frame_times,0.99)},"navigationFrameWallMs":{"p50":_quantile(all_frame_times,0.5),"p95":_quantile(all_frame_times,0.95),"p99":_quantile(all_frame_times,0.99),"max":_quantile(all_frame_times,1.0)},"cpuScriptMs":{"samples":process_times.size(),"p50":_quantile(process_times,0.5),"p95":_quantile(process_times,0.95),"p99":_quantile(process_times,0.99),"max":_quantile(process_times,1.0),"scope":"entire viewer _process including initial and first30 post-apply frames; engine/input callbacks excluded; wall/GPU metrics reported separately"},"prepareMs":prepare_times,"uploadAndObjectsMs":upload_times,"regionCounts":region_counts,"preparationSnapshots":preparation_snapshots,"videoMemoryBytes":Performance.get_monitor(Performance.RENDER_VIDEO_MEM_USED),"textureMemoryBytes":Performance.get_monitor(Performance.RENDER_TEXTURE_MEM_USED),"drawCalls":Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME),"objects":selected_candidates,"roadProjectors":road_projector_count,"candidateCount":candidate_count,"cpuFrameMs":null,"cpuTimeNote":"cpuScriptMs measures this viewer script only; full engine CPU frame/pass timing is not available here.","gpuRenderMs":{"p50":_quantile(gpu_render_times,0.5),"p95":_quantile(gpu_render_times,0.95),"p99":_quantile(gpu_render_times,0.99)},"cpuRenderMs":{"p50":_quantile(cpu_render_times,0.5),"p95":_quantile(cpu_render_times,0.95)},"gpuTimeNote":"RenderingServer measured viewport render time; null when the backend returns no positive samples. Frame wall time separately includes vsync, uploads and driver stalls."}
 	metrics["pbrCache"]=library.cache_stats
 	metrics["renderSourceVersion"]={"assetVersion":library.asset_version,"assetDigest":library.asset_digest,"assetBindings":library.loaded_asset_bindings,"vegetationAssets":vegetation_library.version,"vegetationApplied":rendered_presentation_mode=="aerial" and not vegetation_library.variants.is_empty(),"presentation":Presentation.profile(rendered_packet,rendered_presentation_mode),"geometryDetail":rendered_geometry_detail}
+	metrics.renderSourceVersion["materialDistribution"]=Library.DetailDistribution.metadata()
+	metrics.renderSourceVersion["lowCoverGeometry"]=LowCoverGeometry.metadata()
 	metrics["liveHttpEvents"]=live_http_events
 	metrics["viewSatisfiedSerial"]=view_satisfied_serial
 	metrics["viewSatisfaction"]=view_satisfaction

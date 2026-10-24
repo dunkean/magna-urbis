@@ -40,6 +40,7 @@ uniform int presentation_mode = 0;
 uniform vec4 map_palette[32];
 uniform float map_relief_shade = 0.0;
 #include "res://shaders/ground_response.gdshaderinc"
+#include "res://shaders/surface_detail_distribution.gdshaderinc"
 
 
 #include "res://shaders/pbr_stochastic.gdshaderinc"
