@@ -3,6 +3,10 @@ const PrepareControl=preload("res://adapters/surface_prepare_control.gd")
 const VERSION="native-canopy-raster-1"
 const MAX_BYTES=256*1024*1024
 const MAX_KNOWN=384*1024*1024
+# Atlas pixel vectors/copies are already covered by VisibilityPlan's 240 B/px.
+# This adds the largest input (<=100k rows, 1024-square responses, 1 MiB JSON)
+# and native allowance, rounded up; never a process RSS assertion.
+const FIXED_TRANSIENT_BYTES=80*1024*1024
 static func sha(bytes:PackedByteArray)->String:
 	var h=HashingContext.new();h.start(HashingContext.HASH_SHA256);h.update(bytes);return h.finish().hex_encode()
 static func failed(reason:String)->Dictionary:return {"failed":true,"canopyBatchError":reason}

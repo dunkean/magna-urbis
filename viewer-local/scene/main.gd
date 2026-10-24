@@ -364,6 +364,10 @@ func _begin_prepare() -> void:
 			# even a packet later refused by Solar may allocate before that rejection.
 			var input_count=int(packet.candidateColumns.count) if packet.has("candidateColumns") else packet.get("candidates",[]).size()
 			prepare_request.visibilityOptions["extraKnownFeatureBytes"]=TreeSolar.known_feature_bytes(input_count)
+		if options.has("--canopy-batch"):
+			var feature_ledger:Dictionary=prepare_request.visibilityOptions.get("extraKnownFeatureBytes",{}).duplicate()
+			feature_ledger["nativeCanopyFixedTransientBytes"]=preload("res://adapters/surface_canopy_batch.gd").FIXED_TRANSIENT_BYTES
+			prepare_request.visibilityOptions["extraKnownFeatureBytes"]=feature_ledger
 	if options.has("--height-batch"):scene_request["heightBatchExecutable"]=str(options["--height-batch"])
 	if options.has("--canopy-batch"):scene_request["canopyBatchExecutable"]=str(options["--canopy-batch"])
 	worker.start(ScenePrepare.prepare.bind(prepare_request))
