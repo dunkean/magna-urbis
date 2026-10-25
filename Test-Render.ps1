@@ -28,6 +28,7 @@ if (!$Scene) {
     $surfaceCompilerHash = (Get-FileHash -LiteralPath (Join-Path $project 'tools/ground_surface.py') -Algorithm SHA256).Hash.ToLowerInvariant()
     $waterCompilerHash = (Get-FileHash -LiteralPath (Join-Path $project 'tools/prepare_surface_water.py') -Algorithm SHA256).Hash.ToLowerInvariant()
     $placementCompilerHash = (Get-FileHash -LiteralPath (Join-Path $project 'tools/forest_placement.py') -Algorithm SHA256).Hash.ToLowerInvariant()
+    $mesoCompilerHash = (Get-FileHash -LiteralPath (Join-Path $project 'tools/prepare_mesoscale.py') -Algorithm SHA256).Hash.ToLowerInvariant()
     foreach ($wave in @('ripples.png','capillary.png','water.json')) { $null = Require-File (Join-Path $project "materials/water/$wave") }
     $textureCatalogue = Require-File (Join-Path $project 'ground_texture_catalogue.json')
     $textureCatalogueHash = (Get-FileHash -LiteralPath $textureCatalogue -Algorithm SHA256).Hash.ToLowerInvariant()
@@ -81,6 +82,11 @@ if (!$Scene) {
         $placement = Get-Content -LiteralPath $placementPath -Raw -Encoding UTF8 | ConvertFrom-Json
         if ($placement.generatorSha256 -ne $placementCompilerHash -or $placement.heightSha256 -ne $meta.heightSha256 -or $placement.groundSurfaceSha256 -ne $meta.groundSurface.grids.sha256) { throw "Placement forestier périmé : $metaPath. Lancer python godot-render/tools/forest_placement.py." }
         foreach ($file in $placement.files) { $null = Require-File (Join-Path $tileDirectory $file.file) }
+        $mesoPath = Require-File (Join-Path $tileDirectory 'meso-context.json')
+        $meso = Get-Content -LiteralPath $mesoPath -Raw -Encoding UTF8 | ConvertFrom-Json
+        $mesoData = Require-File (Join-Path $tileDirectory $meso.file)
+        if ($meso.sources.placement -ne (Get-FileHash -LiteralPath (Join-Path $tileDirectory 'forest-placement.png') -Algorithm SHA256).Hash.ToLowerInvariant() -or $meso.sources.river -ne $meta.groundSurface.sources.riverMask) { throw "Support méso périmé : lancer prepare_mesoscale.py." }
+        if ($meso.sources.generator -ne $mesoCompilerHash -or $meso.sources.height -ne $meta.heightSha256 -or $meso.sources.surface -ne $meta.groundSurface.grids.sha256 -or (Get-Item -LiteralPath $mesoData).Length -ne $meta.n*$meta.n*16 -or (Get-FileHash -LiteralPath $mesoData -Algorithm SHA256).Hash.ToLowerInvariant() -ne $meso.sha256) { throw "Contexte méso périmé : lancer python godot-render/tools/prepare_mesoscale.py." }
         $waterDetailPath = Require-File (Join-Path $tileDirectory 'surface-water-detail.json')
         $waterDetail = Get-Content -LiteralPath $waterDetailPath -Raw -Encoding UTF8 | ConvertFrom-Json
         if ($waterDetail.heightSha256 -ne $meta.heightSha256 -or $waterDetail.generatorSha256 -ne $waterCompilerHash) { throw "Textures eau périmées : $metaPath. Lancer python godot-render/tools/prepare_surface_water.py." }

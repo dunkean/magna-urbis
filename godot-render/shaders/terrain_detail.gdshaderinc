@@ -1,27 +1,70 @@
-// One bounded 9.5 m octave, fixed in world metres. The DEM is never modified.
+// Shared with mesoscale.gd: native context, fixed world bands, full derivatives.
 uniform bool terrain_detail_enabled=true;
 uniform float terrain_detail_amount=0.0;
 uniform float terrain_grid_warp=0.0;
 uniform vec2 terrain_grid_focus=vec2(20000);
-float detailPermute(float x){return mod((34.0*x+1.0)*x,289.0);}
-float detailHash(vec2 cell){return detailPermute(mod(cell.x,289.0)+detailPermute(mod(cell.y,289.0)))/144.0-1.0;}
-vec3 detailNoise(vec2 world){
- vec2 p=world/9.5;vec2 cell=floor(p);vec2 t=fract(p);
- vec2 u=t*t*t*(t*(t*6.0-15.0)+10.0);vec2 du=30.0*t*t*(t-1.0)*(t-1.0)/9.5;
- float a=detailHash(cell),b=detailHash(cell+vec2(1,0)),c=detailHash(cell+vec2(0,1)),d=detailHash(cell+vec2(1,1));
- return vec3(mix(mix(a,b,u.x),mix(c,d,u.x),u.y),mix(b-a,d-c,u.y)*du.x,mix(c-a,d-b,u.x)*du.y);
-}
-float gridCoordinate(float t,float focus){
+uniform float terrain_grid_scale=20000.0;
+uniform vec4 terrain_grid_domain=vec4(-1,1,-1,1);
+uniform uint terrain_detail_seed=1u;
+uniform bool meso_ready=false;
+uniform sampler2D meso_context : filter_nearest, repeat_disable;
+float gridCoordinate(float t,int axis){
+ if(t<=0.0)return 0.0;if(t>=1.0)return 40000.0;
  if(terrain_grid_warp<.001)return t*40000.0;
- float q=t*2.0-1.0;return focus+(q<0.0?focus:40000.0-focus)*sinh(terrain_grid_warp*q)/sinh(terrain_grid_warp);
+ float a=axis==0?terrain_grid_domain.x:terrain_grid_domain.z,b=axis==0?terrain_grid_domain.y:terrain_grid_domain.w;
+ return terrain_grid_focus[axis]+terrain_grid_scale*sinh(mix(a,b,t));
 }
-float detailAmplitude(vec2 uv,vec2 mesh_spacing){
- if(!terrain_detail_enabled)return 0.0;
- // The whole native water cell is protected, including the shore margin.
- vec4 water=textureLod(ground_water,uv,0.0);float river=textureLod(river_footprint,uv,0.0).a;
- float dry=1.0-smoothstep(.0,.05,max(max(water.g,water.b),max(water.r,river)));
- vec4 cover=textureLod(original_cover,uv,0.0);
- float amplitude=mix(.55,.14,max(cover.r,cover.b));
- amplitude=mix(amplitude,.08,cover.g);
- return amplitude*dry*terrain_detail_amount*(1.0-smoothstep(2.0,8.0,max(mesh_spacing.x,mesh_spacing.y)));
+vec4 gridDensity(vec2 world){
+ if(terrain_grid_warp<.001)return vec4(vec2(40000.0/height_n),0,0);
+ vec2 delta=world-terrain_grid_focus;
+ vec2 root=sqrt(vec2(terrain_grid_scale*terrain_grid_scale)+delta*delta);
+ vec2 factor=vec2(terrain_grid_domain.y-terrain_grid_domain.x,terrain_grid_domain.w-terrain_grid_domain.z)/height_n;
+ return vec4(root*factor,delta/root*factor);
+}
+uint mesoHashBits(ivec2 cell,uint salt){
+ uint h=((uint(cell.x)*374761393u)&2147483647u)^((uint(cell.y)*668265263u)&2147483647u)^(salt&2147483647u);
+ h=((h^(h>>13u))*1274126177u)&2147483647u;h=(h^(h>>16u))&2147483647u;
+ return h;
+}
+vec2 mesoGradient(ivec2 cell,uint salt){
+ uint h=mesoHashBits(cell,salt);
+ return normalize(vec2(float(h&65535u),float((h>>15u)&65535u))/32767.5-1.0);
+}
+vec3 mesoNoise(vec2 world,float scale,uint salt){
+ vec2 p=world/scale;ivec2 cell=ivec2(floor(p));vec2 t=fract(p);
+ vec2 u=t*t*t*(t*(t*6.0-15.0)+10.0),du=30.0*t*t*(t-1.0)*(t-1.0)/scale;
+ vec2 ga=mesoGradient(cell,salt),gb=mesoGradient(cell+ivec2(1,0),salt),gc=mesoGradient(cell+ivec2(0,1),salt),gd=mesoGradient(cell+ivec2(1,1),salt);
+ float a=dot(ga,t),b=dot(gb,t-vec2(1,0)),c=dot(gc,t-vec2(0,1)),d=dot(gd,t-1.0);
+ vec2 gradient=mix(mix(ga,gb,u.x),mix(gc,gd,u.x),u.y)/scale+vec2(mix(b-a,d-c,u.y)*du.x,mix(c-a,d-b,u.x)*du.y);
+ // Unit gradients imply |interpolated dot| <= sqrt(.5); this gain preserves
+ // the strict [-1,1] envelope without square plateaus at lattice corners.
+ return vec3(mix(mix(a,b,u.x),mix(c,d,u.x),u.y),gradient)*1.4142135;
+}
+struct MesoContext{vec4 value;vec4 dx;vec4 dz;};
+MesoContext mesoContext(vec2 world){
+ vec2 p=world/40000.0*height_n-.5;ivec2 base=ivec2(floor(p));vec2 t=fract(p);ivec2 last=ivec2(int(height_n)-1);
+ vec4 a=texelFetch(meso_context,clamp(base,ivec2(0),last),0),b=texelFetch(meso_context,clamp(base+ivec2(1,0),ivec2(0),last),0);
+ vec4 c=texelFetch(meso_context,clamp(base+ivec2(0,1),ivec2(0),last),0),d=texelFetch(meso_context,clamp(base+ivec2(1,1),ivec2(0),last),0);
+ MesoContext ctx;ctx.value=mix(mix(a,b,t.x),mix(c,d,t.x),t.y);
+ ctx.dx=mix(b-a,d-c,t.y)*(height_n/40000.0);ctx.dz=mix(c-a,d-b,t.x)*(height_n/40000.0);return ctx;
+}
+vec2 mesoBandFilter(float scale,float spacing){
+ float lo=scale/6.0,hi=scale/3.0,t=clamp((spacing-lo)/(hi-lo),0.0,1.0);
+ return vec2(1.0-t*t*(3.0-2.0*t),-6.0*t*(1.0-t)/(hi-lo));
+}
+vec3 mesoBand(vec2 world,float scale,uint salt,float amplitude,vec2 gradient,float spacing,vec2 ds){
+ vec2 filter=mesoBandFilter(scale,spacing);if(filter.x<=0.0)return vec3(0);
+ vec3 noise=mesoNoise(world,scale,terrain_detail_seed+salt);
+ return vec3(amplitude*noise.x*filter.x,filter.x*(amplitude*noise.yz+noise.x*gradient)+amplitude*noise.x*filter.y*ds);
+}
+vec3 mesoSample(vec2 world,vec4 density){
+ if(!meso_ready||!terrain_detail_enabled||terrain_detail_amount<=0.0)return vec3(0);
+ float spacing=length(density.xy);vec2 ds=density.xy*density.zw/max(spacing,.00001);
+ if(spacing>=64.0/3.0)return vec3(0);
+ MesoContext ctx=mesoContext(world);if(ctx.value.r+ctx.value.g<=0.0)return vec3(0);
+ vec2 coarse=vec2(ctx.dx.r,ctx.dz.r),fine=vec2(ctx.dx.g,ctx.dz.g);
+ return terrain_detail_amount*(mesoBand(world,64.0,17u,ctx.value.r*.68,coarse*.68,spacing,ds)
+  +mesoBand(world,27.0,109u,ctx.value.r*.32,coarse*.32,spacing,ds)
+  +mesoBand(world,9.5,271u,ctx.value.g*.72,fine*.72,spacing,ds)
+  +mesoBand(world,3.75,577u,ctx.value.g*.28,fine*.28,spacing,ds));
 }

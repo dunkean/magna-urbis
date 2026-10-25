@@ -73,6 +73,13 @@ var forest_placement_image:Image
 var grid_warp:=0.0
 var grid_focus:=Vector2(20000,20000)
 var detail_amount:=0.0
+var meso=preload("res://mesoscale.gd").new()
+var detail_enabled:=true
+var grid_scale:=20000.0
+var grid_domain:=Vector4(-1,1,-1,1)
+var detail_context_ready:=false
+var pick_bounds_cache:Dictionary={}
+var pick_bounds_image:=0
 
 class SurveyOverlay extends Control:
 	var app:Node3D
@@ -211,7 +218,8 @@ func load_tile(index:int)->void:
 	height_image=Image.create_from_data(int(meta.n),int(meta.n),false,Image.FORMAT_RF,raw)
 	if mesh_cells!=int(meta.n):
 		mesh_cells=int(meta.n);terrain.mesh.subdivide_width=mesh_cells-1;terrain.mesh.subdivide_depth=mesh_cells-1
-	vertex_height_cache.clear();terrain_max_height=maxf(0,float(meta.max))+1;survey_tile=-1
+	vertex_height_cache.clear();terrain_max_height=maxf(0,float(meta.max))+meso.MAX_HEIGHT+.25;survey_tile=-1
+	terrain.custom_aabb=AABB(Vector3(-20000,0,-20000),Vector3(40000,terrain_max_height,40000));terrain.extra_cull_margin=.25
 	material.set_shader_parameter("height_map",ImageTexture.create_from_image(height_image))
 	material.set_shader_parameter("map_image",ImageTexture.create_from_image(map_image))
 	material.set_shader_parameter("height_n",float(meta.n))
@@ -227,6 +235,7 @@ func load_tile(index:int)->void:
 	if FileAccess.file_exists(dir.path_join("original-cover.json")):
 		original_cover_meta=JSON.parse_string(FileAccess.get_file_as_string(dir.path_join("original-cover.json")))
 	surface_meta=meta.get("groundSurface",{});tile_layers.append_array(surface_meta.get("layers",[]))
+	load_detail_context(tile_dir)
 	info_selector.clear();info_selector.add_item("Aucun calque")
 	var selected=0
 	for j in tile_layers.size():
@@ -284,6 +293,14 @@ func update_ground_surface()->void:
 	update_camera()
 	ground_status.text="90 types · %d sources PBR · palette %d\n"%[ground_library.assets.size(),ground_library.palette_seed]+("Support minéral · avant les couvertures" if ground_view==3 else "Surface du sol · ombres · neige Render")
 	print(JSON.stringify({"event":"ground-view","view":ground_view,"state":ground_states[ground_state],"seed":ground_library.palette_seed,"types":ground_library.selected.size()}))
+
+func load_detail_context(directory:String,report_error:bool=true)->bool:
+	detail_context_ready=meso.load_context(directory,int(current_meta.n),{"height":current_meta.heightSha256,"surface":surface_meta.get("grids",{}).get("sha256","")})
+	material.set_shader_parameter("meso_context",meso.texture);material.set_shader_parameter("meso_ready",detail_context_ready)
+	if detail_context_ready:meso.seed=int(str(current_meta.seed).sha256_buffer().decode_u32(0))&0x7fffffff
+	elif report_error:push_error("Contexte méso absent ou périmé : lancer prepare_mesoscale.py")
+	material.set_shader_parameter("terrain_detail_seed",meso.seed)
+	vertex_height_cache.clear();update_camera();return detail_context_ready
 
 func load_original_cover()->void:
 	material.set_shader_parameter("original_cover_enabled",not original_cover_meta.is_empty())
@@ -406,13 +423,17 @@ func toggle_mode()->void:
 		orbit_yaw=yaw;orbit_elevation=elevation;top_view=true;yaw=0;elevation=PI/2.0
 	update_camera()
 func update_camera()->void:
-	var next_warp=clampf(log(12000.0/maxf(view_width,1)),0,6)
+	var next_warp=clampf(log(240000.0/maxf(view_width,1)),0,6.5)
 	var next_focus=Vector2(clampf(focus.x,1,39999),clampf(focus.z,1,39999))
-	var next_detail=1.0-smoothstep(300.0,4000.0,view_width) if ground_view>0 else 0.0
+	var next_detail=1.0 if ground_view>0 and detail_enabled and detail_context_ready else 0.0
 	if next_warp!=grid_warp or next_focus!=grid_focus or next_detail!=detail_amount:vertex_height_cache.clear()
 	grid_warp=next_warp;grid_focus=next_focus;detail_amount=next_detail
+	grid_scale=PackedFloat32Array([20000.0/sinh(maxf(grid_warp,.001))])[0]
+	grid_domain=Vector4(inverse_sinh(-grid_focus.x/grid_scale),inverse_sinh((40000-grid_focus.x)/grid_scale),inverse_sinh(-grid_focus.y/grid_scale),inverse_sinh((40000-grid_focus.y)/grid_scale))
 	material.set_shader_parameter("terrain_grid_warp",grid_warp)
 	material.set_shader_parameter("terrain_grid_focus",grid_focus)
+	material.set_shader_parameter("terrain_grid_scale",grid_scale)
+	material.set_shader_parameter("terrain_grid_domain",grid_domain)
 	material.set_shader_parameter("terrain_detail_amount",detail_amount)
 	if height_image!=null:focus.y=surface_height(focus.x,focus.z)
 	var viewport=get_viewport().get_visible_rect().size
@@ -440,50 +461,54 @@ func sample_map(image:Image,x:float,z:float)->Color:
 	var c=image.get_pixelv((Vector2i(b)+Vector2i(0,1)).clamp(Vector2i.ZERO,n)).lerp(image.get_pixelv((Vector2i(b)+Vector2i.ONE).clamp(Vector2i.ZERO,n)),t.x)
 	return a.lerp(c,t.y)
 
-func detail_permute(x:float)->float:return fposmod((34*x+1)*x,289)
-func detail_hash(x:float,z:float)->float:return detail_permute(fposmod(x,289)+detail_permute(fposmod(z,289)))/144.0-1.0
 func terrain_detail_height(x:float,z:float)->float:
-	if detail_amount<=0 or ground_water_image==null:return 0.0
-	var water=sample_map(ground_water_image,x,z);var river=sample_map(ground_river_image,x,z).a
-	var dry=1.0-smoothstep(0.0,.05,maxf(maxf(water.g,water.b),maxf(water.r,river)))
-	var amplitude=.55
-	if original_cover_image!=null and not original_cover_meta.is_empty():
-		var cover=sample_map(original_cover_image,x,z)
-		amplitude=lerpf(lerpf(.55,.14,maxf(cover.r,cover.b)),.08,cover.g)
-	var p=Vector2(x,z)/9.5;var b=p.floor();var t=p-b
-	var u=Vector2(t.x*t.x*t.x*(t.x*(t.x*6-15)+10),t.y*t.y*t.y*(t.y*(t.y*6-15)+10))
-	var value=lerpf(lerpf(detail_hash(b.x,b.y),detail_hash(b.x+1,b.y),u.x),lerpf(detail_hash(b.x,b.y+1),detail_hash(b.x+1,b.y+1),u.x),u.y)
-	var spacing=maxf(grid_spacing(x,0),grid_spacing(z,1))
-	return value*amplitude*dry*detail_amount*(1.0-smoothstep(2.0,8.0,spacing))
+	if detail_amount<=0 or not detail_enabled:return 0.0
+	return meso.sample_field(Vector2(x,z),grid_density(Vector2(x,z))).x*detail_amount
+
+func set_detail_enabled(enabled:bool)->void:
+	detail_enabled=enabled;material.set_shader_parameter("terrain_detail_enabled",enabled)
+	vertex_height_cache.clear();survey_tile=-1;update_camera()
+
+func inverse_sinh(x:float)->float:return log(x+sqrt(x*x+1))
+func grid_density(world:Vector2)->Vector4:
+	if grid_warp<.001:return Vector4(40000.0/mesh_cells,40000.0/mesh_cells,0,0)
+	var delta=world-grid_focus;var root=Vector2(sqrt(grid_scale*grid_scale+delta.x*delta.x),sqrt(grid_scale*grid_scale+delta.y*delta.y))
+	var factor=Vector2(grid_domain.y-grid_domain.x,grid_domain.w-grid_domain.z)/mesh_cells
+	return Vector4(root.x*factor.x,root.y*factor.y,delta.x/root.x*factor.x,delta.y/root.y*factor.y)
 
 func grid_spacing(world:float,axis:int)->float:
 	if grid_warp<.001:return 40000.0/mesh_cells
-	var centre=grid_focus[axis];var extent=centre if world<centre else 40000-centre
-	var s=(world-centre)*sinh(grid_warp)/extent
-	var t=(log(s+sqrt(s*s+1))/grid_warp+1)*.5
-	return grid_coordinate(minf(t+.5/mesh_cells,1),axis)-grid_coordinate(maxf(t-.5/mesh_cells,0),axis)
+	return sqrt(grid_scale*grid_scale+pow(world-grid_focus[axis],2))*(grid_domain[axis*2+1]-grid_domain[axis*2])/mesh_cells
 
 func grid_coordinate(t:float,axis:int)->float:
+	if t<=0:return 0.0
+	if t>=1:return 40000.0
 	if grid_warp<.001:return t*40000.0
-	var q=t*2-1;var centre=grid_focus[axis]
-	return centre+(centre if q<0 else 40000-centre)*sinh(grid_warp*q)/sinh(grid_warp)
+	return grid_focus[axis]+grid_scale*sinh(lerpf(grid_domain[axis*2],grid_domain[axis*2+1],t))
 func grid_index(world:float,axis:int)->int:
-	if grid_warp<.001:return clampi(int(floor(world/40000.0*mesh_cells)),0,mesh_cells-1)
-	var centre=grid_focus[axis]
-	var s=(world-centre)*sinh(grid_warp)/(centre if world<centre else 40000-centre)
-	var inverse=log(s+sqrt(s*s+1))
-	return clampi(int(floor((inverse/grid_warp+1)*.5*mesh_cells)),0,mesh_cells-1)
+	var index:int
+	if grid_warp<.001:index=clampi(int(floor(world/40000.0*mesh_cells)),0,mesh_cells-1)
+	else:
+		var q=inverse_sinh((world-grid_focus[axis])/grid_scale)
+		index=clampi(int(floor((q-grid_domain[axis*2])/(grid_domain[axis*2+1]-grid_domain[axis*2])*mesh_cells)),0,mesh_cells-1)
+	# Triangle coordinates are float32. An exact ray on a rounded grid edge
+	# must select its actual cell, rather than the float64 inverse's neighbour.
+	while index<mesh_cells-1 and world>=grid_node(index+1,axis):index+=1
+	while index>0 and world<grid_node(index,axis):index-=1
+	return index
+func grid_node(index:int,axis:int)->float:
+	return PackedFloat32Array([grid_coordinate(float(index)/mesh_cells,axis)])[0]
 func spline_weights(t:float)->Vector4:
 	var u=1-t
 	return Vector4(u*u*u,3*t*t*t-6*t*t+4,-3*t*t*t+3*t*t+3*t+1,t*t*t)/6.0
 
 func mesh_vertex(x:int,z:int)->Vector3:
 	var key=z*(mesh_cells+1)+x
-	var px=grid_coordinate(float(x)/mesh_cells,0);var pz=grid_coordinate(float(z)/mesh_cells,1)
+	var px=grid_node(x,0);var pz=grid_node(z,1)
 	if not vertex_height_cache.has(key):vertex_height_cache[key]=surface_height(px,pz)
 	return Vector3(px,vertex_height_cache[key],pz)
 
-func pick_terrain(screen:Vector2)->Variant:
+func pick_terrain(screen:Vector2,accelerated:bool=true)->Variant:
 	# Traverse rendered grid cells and intersect their actual displaced triangles.
 	# A flat collision plane would report the wrong point in perspective.
 	var origin=camera.project_ray_origin(screen);var direction=camera.project_ray_normal(screen)
@@ -496,15 +521,68 @@ func pick_terrain(screen:Vector2)->Variant:
 			var a=(lo-origin[axis])/direction[axis];var b=(hi-origin[axis])/direction[axis]
 			start=maxf(start,minf(a,b));stop=minf(stop,maxf(a,b))
 	if stop<start:return null
+	if accelerated and not top_view and ground_view>0 and view_width<8000:
+		return pick_blocks(origin,direction,start,stop)
+	return pick_grid_interval(origin,direction,start,stop)
+
+func pick_block_bounds(bx:int,bz:int)->Vector2:
+	var n=height_image.get_width();var identity=height_image.get_instance_id()
+	if pick_bounds_image!=identity:pick_bounds_image=identity;pick_bounds_cache.clear()
+	var x0=clampi(int(floor(grid_node(bx*8,0)/40000.0*n-.5))-2,0,n-1)
+	var z0=clampi(int(floor(grid_node(bz*8,1)/40000.0*n-.5))-2,0,n-1)
+	var x1=clampi(int(floor(grid_node(mini((bx+1)*8,mesh_cells),0)/40000.0*n-.5))+3,0,n-1)
+	var z1=clampi(int(floor(grid_node(mini((bz+1)*8,mesh_cells),1)/40000.0*n-.5))+3,0,n-1)
+	# Bound every rendered vertex in this block from the positive B-spline
+	# source support, plus the entire residual envelope; triangles are convex.
+	if (x1-x0+1)*(z1-z0+1)>256:return Vector2(0,terrain_max_height)
+	var key=x0|(z0<<14)|(x1<<28)|(z1<<42)
+	if pick_bounds_cache.has(key):return pick_bounds_cache[key]
+	var lo=INF;var hi=-INF
+	for z in range(z0,z1+1):
+		for x in range(x0,x1+1):
+			var h=height_image.get_pixel(x,z).r;lo=minf(lo,h);hi=maxf(hi,h)
+	var bounds=Vector2(maxf(0,lo-meso.MAX_HEIGHT-.25),maxf(0,hi+meso.MAX_HEIGHT+.25))
+	if pick_bounds_cache.size()>=8192:pick_bounds_cache.clear()
+	pick_bounds_cache[key]=bounds;return bounds
+
+func pick_blocks(origin:Vector3,direction:Vector3,start:float,stop:float)->Variant:
+	var p=origin+direction*(start+.001);var x=int(grid_index(p.x,0)/8);var z=int(grid_index(p.z,1)/8)
+	var count=int(ceil(mesh_cells/8.0));var step_x=1 if direction.x>=0 else -1;var step_z=1 if direction.z>=0 else -1
+	var entry=start
+	for iteration in count*2+2:
+		var tx=(grid_node(mini((x+1)*8,mesh_cells) if step_x>0 else x*8,0)-origin.x)/direction.x if absf(direction.x)>1e-10 else INF
+		var tz=(grid_node(mini((z+1)*8,mesh_cells) if step_z>0 else z*8,1)-origin.z)/direction.z if absf(direction.z)>1e-10 else INF
+		var finish=minf(stop,minf(tx,tz));var bounds=pick_block_bounds(x,z);var a=entry;var b=finish
+		if absf(direction.y)>1e-10:
+			var lower=(bounds.x-origin.y)/direction.y;var upper=(bounds.y-origin.y)/direction.y
+			a=maxf(a,minf(lower,upper));b=minf(b,maxf(lower,upper))
+		elif origin.y<bounds.x or origin.y>bounds.y:a=INF
+		if a<=b:
+			var hit=pick_grid_interval(origin,direction,a,b)
+			if hit!=null:return hit
+		if finish>=stop:return null
+		entry=minf(tx,tz)
+		if tx<tz:x+=step_x
+		else:z+=step_z
+		if x<0 or z<0 or x>=count or z>=count:return null
+	return null
+
+func pick_grid_interval(origin:Vector3,direction:Vector3,start:float,stop:float)->Variant:
 	var p=origin+direction*(start+.001)
 	var x=grid_index(p.x,0);var z=grid_index(p.z,1)
 	var step_x=1 if direction.x>=0 else -1;var step_z=1 if direction.z>=0 else -1
 	for _iteration in mesh_cells*2+2:
-		var tx=(grid_coordinate(float(x+1 if step_x>0 else x)/mesh_cells,0)-origin.x)/direction.x if absf(direction.x)>1e-10 else INF
-		var tz=(grid_coordinate(float(z+1 if step_z>0 else z)/mesh_cells,1)-origin.z)/direction.z if absf(direction.z)>1e-10 else INF
+		var tx=(grid_node(x+1 if step_x>0 else x,0)-origin.x)/direction.x if absf(direction.x)>1e-10 else INF
+		var tz=(grid_node(z+1 if step_z>0 else z,1)-origin.z)/direction.z if absf(direction.z)>1e-10 else INF
 		var a=mesh_vertex(x,z);var b=mesh_vertex(x+1,z);var c=mesh_vertex(x,z+1);var d=mesh_vertex(x+1,z+1)
 		var first=Geometry3D.ray_intersects_triangle(origin,direction,a,b,c)
 		var second=Geometry3D.ray_intersects_triangle(origin,direction,b,d,c)
+		if first!=null:
+			var t=(first-origin).dot(direction)
+			if t<start-.02 or t>stop+.02:first=null
+		if second!=null:
+			var t=(second-origin).dot(direction)
+			if t<start-.02 or t>stop+.02:second=null
 		if first!=null and second!=null:return first if origin.distance_squared_to(first)<origin.distance_squared_to(second) else second
 		if first!=null:return first
 		if second!=null:return second

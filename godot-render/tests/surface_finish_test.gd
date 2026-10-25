@@ -36,6 +36,9 @@ func run()->void:
 	app.material.set_shader_parameter("original_cover_enabled",true)
 	app.select_ground_view(3);app.material.set_shader_parameter("ground_auto_snow",false)
 	app.focus=Vector3(21000,0,20000)
+	# Isolate real displacement/vertex lighting; the intermediate material can
+	# otherwise preserve the same physical normal when geometry LOD changes.
+	app.material.set_shader_parameter("meso_material_enabled",false)
 	app.view_width=45;app.update_camera()
 	var detailed=await capture("relief-detail")
 	check(app.grid_warp>5,"Zoom concentrates real mesh vertices")
@@ -44,17 +47,20 @@ func run()->void:
 	var maximum=0.0;var values:Array[float]=[]
 	for j in 20:values.append(app.terrain_detail_height(21000+j*.7,20000));maximum=maxf(maximum,absf(values[-1]))
 	metrics.detailMaxMetres=maximum
-	check(maximum>.02 and maximum<=.55,"Bounded additional geometric relief")
+	check(maximum>.02 and maximum<=app.meso.MAX_HEIGHT,"Bounded additional geometric relief")
+	var canonical:Array[float]=[]
+	for j in 20:canonical.append(app.meso.sample_field(Vector2(21000+j*.7,20000)).x)
 	app.view_width=60;app.focus.x+=30;app.update_camera()
-	for j in 20:check(is_equal_approx(values[j],app.terrain_detail_height(21000+j*.7,20000)),"Detail stays fixed in world coordinates")
+	for j in 20:check(is_equal_approx(canonical[j],app.meso.sample_field(Vector2(21000+j*.7,20000)).x),"Underlying detail stays fixed while mesh LOD morphs")
 	app.focus.x-=30;app.view_width=45;app.update_camera()
 	var hit=app.pick_terrain(Vector2(640,400))
 	check(hit!=null and app.camera.unproject_position(hit).distance_to(Vector2(640,400))<.2,"Picking follows refined displaced triangles")
-	app.material.set_shader_parameter("terrain_detail_enabled",false)
+	app.set_detail_enabled(false)
 	var smooth=await capture("relief-without-detail")
 	metrics.reliefDifference=difference(detailed,smooth)
 	check(metrics.reliefDifference>.001,"Extra relief is visible at close zoom")
-	app.material.set_shader_parameter("terrain_detail_enabled",true)
+	app.set_detail_enabled(true)
+	app.material.set_shader_parameter("meso_material_enabled",true)
 	app.load_tile(6);app.select_ground_view(1)
 	var sea_point=Vector2.ZERO
 	for y in range(250,1100,80):

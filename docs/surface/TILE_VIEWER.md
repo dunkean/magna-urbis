@@ -411,17 +411,13 @@ sans instances d'arbres ajoutées. Le bouton des variantes change la palette
 PBR du monde, y compris le sol entre les arbres ; les houppiers conservent leur
 graine et leurs couleurs originales.
 
-Une octave supplémentaire de relief, de longueur de cellule **9,5 m**, apparaît
-progressivement entre 4 km et 300 m de largeur de vue. Son amplitude maximale
-est de **55 cm** sur le minéral, réduite vers 14 cm sous couvert et 8 cm dans
-le sable. Elle est fixe dans le monde, interpolée par un quintique, filtrée
-selon le pas local du maillage et exclue
-des cellules hydriques/berges. Le même maillage conserve toute l'étendue de
-40 km et concentre ses sommets autour du point observé par une transformation
-monotone en sinus hyperbolique. À fort zoom les cellules centrales passent
-sous 2 m. L'altitude sous le curseur utilise les triangles effectivement
-déplacés et cette même octave. Le DEM natif et les surfaces hydrauliques
-sur disque restent intacts. La vue Render conserve sa hauteur sans cette octave.
+Le relief intermédiaire utilise désormais quatre champs de 64 / 27 / 9,5 /
+3,75 m, conditionnés par le support et filtrés selon le pas du maillage. Le
+raffinement du même plan de 40 km arrive dès le zoom moyen ; la matière prend
+le relais pour les détails que le maillage ne résout plus. Le DEM natif et
+les surfaces hydrauliques restent intacts. Les masques hydriques sont protégés
+strictement. Voir [Relief et matière intermédiaires](TERRAIN_MESOSCALE.md) pour
+les amplitudes, les transitions, le picking, les tests et les mesures GPU.
 
 L'eau possède deux textures procédurales de pentes de vagues, sans téléchargement.
 Leur mélange à deux échelles non commensurables est filtré avec les dérivées
@@ -442,8 +438,10 @@ Reconstruction locale, après les étapes N1–N4 et la bibliothèque PBR :
 node godot-render/tools/prepare_original_cover.mjs
 node godot-render/tools/export_original_cover.mjs
 python godot-render/tools/forest_placement.py
+python godot-render/tools/prepare_mesoscale.py
 python godot-render/tools/prepare_surface_water.py
 python godot-render/tools/validate_surface_finish.py
+python godot-render/tools/validate_mesoscale.py
 ./Test-Render.ps1 -Check
 ```
 
