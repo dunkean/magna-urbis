@@ -1857,6 +1857,8 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
       successfulLayout = clone(appliedLayout); successfulParcel = clone(appliedParcel); successfulQuarterSeed = appliedQuarterSeed; successfulParcelSeed = appliedParcelSeed;
       layouts = state.layouts?.slice(); partitions = state.partitions?.slice();
       citySettings = clone(state.citySettings ?? {}); cityDrafts.clear();
+      // The snapshot names its city (a crop may hold larger neighbours).
+      if (state.siteKey && settlements?.settlements.some(s => s.key === state.siteKey)) { target = state.siteKey; targetSelect.value = target; }
       // The imported geometries are already applied. Enable their stages so
       // the default Settlements parcel toggle cannot hide or discard them.
       enabled = !!layouts?.length; parcelEnabled = partitions !== undefined;
@@ -1867,6 +1869,8 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
       status('quarters', `Plan conservé · ${layouts?.length ?? 0} ville(s)`);
       status('parcels', partitions ? 'Parcelles conservées.' : 'Parcelles non calculées.');
       draw(); options.onPlanChange?.();
+      // City Bench always cuts parcels: a plan sent without them gets them now.
+      if (options.city && layouts?.length && !partitions) { parcelEnabled = true; populate('parcels'); request('parcels'); }
     },
     restoreFromQuery(params: URLSearchParams, activate = false): boolean {
       if (!restoreState(params.get('urban'))) return false;

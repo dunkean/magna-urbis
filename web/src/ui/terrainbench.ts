@@ -1893,7 +1893,7 @@ if (pipelineStage === 'settlements') {
   document.querySelector('#settlementStage summary')!.childNodes[0].textContent = 'Implantations ';
 }
 const transfer = document.createElement('details'); transfer.className = 'stage'; transfer.open = true; transfer.id = 'pipelineTransfer';
-transfer.innerHTML = `<summary>${pipelineStage === 'terrain' ? 'Terrain → settlements' : 'Ville → atelier quartiers / parcelles'}</summary><div class="stage-controls">
+transfer.innerHTML = `<summary>${pipelineStage === 'terrain' ? 'Terrain → settlements' : 'Ville → atelier Ville'}</summary><div class="stage-controls">
   ${pipelineStage === 'terrain' ? '<label>Étendue<select id="transferExtent"><option value="all">Tout le terrain</option><option value="crop">Portion carrée</option></select></label><div id="transferCrop" hidden><label>X m<input id="transferX" type="number" min="0" value="0"></label><label>Y m<input id="transferY" type="number" min="0" value="0"></label><label>Côté m<input id="transferWidth" type="number" min="1" value="1200"></label><button id="transferPick">Placer la portion sur la carte</button><small>Découpe alignée sur les cellules, sans rééchantillonnage.</small></div>' : '<small>Choisissez la ville dans « Quartiers et îlots ». Le plan affiché est transmis avec ses rues et ses îlots.</small>'}
   <div class="settlement-actions"><button id="pipelineSave">Conserver cet export</button><button id="pipelineNext">${pipelineStage === 'terrain' ? 'Envoyer aux settlements' : 'Ouvrir la ville dans l’atelier'}</button><button id="pipelineDownload">Partager .decor</button></div><small id="pipelineStatus" role="status"></small></div>`;
 document.querySelector('.stages')!.append(transfer);
@@ -1982,7 +1982,8 @@ async function exportPipeline(action: 'save' | 'next' | 'download'): Promise<voi
     if (action === 'next') {
       const params = new URLSearchParams(d.meta.query); params.delete('view'); params.set('artifact', d.meta.id);
       if (pipelineStage === 'terrain') { params.set('stage', 'settlements'); openBench('settlements', params); }
-      else { params.set('decor', d.meta.id); params.set('space', 'workshop'); params.delete('workshop'); openBench('urban', params); }
+      // The city atelier is City Bench: the cropped map, its plan and the city key travel in the decor.
+      else openBench('city', new URLSearchParams({ artifact: d.meta.id }));
     }
   } catch (e) { el('pipelineStatus').textContent = e instanceof Error ? e.message : String(e); }
   finally { buttons.forEach(b => { b.disabled = false; }); }

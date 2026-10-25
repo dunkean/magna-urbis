@@ -9,7 +9,6 @@ const benches = {
   terrain: { title: 'Terrain · 1–3', path: 'terrainbench.html', query: '' },
   settlements: { title: 'Settlements · 4–5', path: 'terrainbench.html', query: 'stage=settlements' },
   city: { title: 'Ville', path: 'citybench.html', query: '' },
-  urban: { title: 'Urbanisme', path: 'urbanbench.html', query: '' },
   houses: { title: 'Maisons', path: 'housebench.html', query: '' },
 } as const;
 type Bench = keyof typeof benches;
@@ -128,6 +127,13 @@ function navigate(): void {
     route = `terrain?${params}`;
     history.replaceState(null, '', `#${route}`);
   }
+  // The Urbanisme atelier became City Bench: its links open the same map there.
+  if (route === 'urban' || route.startsWith('urban?')) {
+    const params = new URLSearchParams(route.includes('?') ? route.slice(route.indexOf('?') + 1) : '');
+    const artifact = params.get('artifact') ?? params.get('decor');
+    route = `city${artifact ? `?${new URLSearchParams({ artifact })}` : ''}`;
+    history.replaceState(null, '', `#${route}`);
+  }
   const separator = route.indexOf('?');
   const key = separator < 0 ? route : route.slice(0, separator);
   active = Object.hasOwn(benches, key) ? key as Bench : undefined;
@@ -208,7 +214,7 @@ window.addEventListener('message', event => {
   }
   if (event.data?.channel !== 'magna-bench-pipeline') return;
   const { stage, query } = event.data;
-  if (Object.hasOwn(benches, stage) && typeof query === 'string') {
+  if ((Object.hasOwn(benches, stage) || stage === 'urban') && typeof query === 'string') {
     // A transfer deliberately loads a new input; ordinary tab/history navigation
     // only resumes a page. Do this synchronously before late child URL messages.
     history.pushState(null, '', `#${stage}?${query}`);
@@ -224,12 +230,13 @@ installRecipeSharing({
     return hook.capture();
   },
   open: recipe => {
-    const stage = recipe.stage;
+    // An Urbanisme recipe opens its map in City Bench (navigate translates the route).
+    const stage = recipe.stage === 'urban' ? 'city' : recipe.stage;
     // An import must replay the recipe even when that atelier already has UI drafts.
     active = undefined;
     loaded.get(stage)?.remove(); loaded.delete(stage); loading.delete(stage); restoring.delete(stage);
     uiContexts.delete(stage); persistUi(); remember(stage, recipe.query);
-    history.pushState(null, '', `#${stage}?${recipe.query}`);
+    history.pushState(null, '', `#${recipe.stage}?${recipe.query}`);
     navigate();
   },
 });

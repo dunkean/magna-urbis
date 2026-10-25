@@ -1,6 +1,7 @@
 import { createTerrainSettlements } from './terrainSettlements';
 import { createTerrainDecorLibrary } from './terrainDecorLibrary';
 import { createHistoryPanel, downloadHistory, openBench, readHistory, saveHistory, syncBenchUrl } from './benchHistory';
+import { applyWorkshopPopulation, mergeCityWorkshop, translateWorkshopState, workshopSettings } from './urbanSnapshot';
 import { terrainFromDecor } from './benchTerrainTransfer';
 import type { Decor } from './decor';
 import { downloadDecorFile, readDecorFile } from './decorFile';
@@ -150,7 +151,7 @@ document.querySelector('#benchHistory [data-import]')?.closest('label')?.setAttr
 
 // Keep and share the applied city; the footer is docked by benchPanels.
 const transfer = document.createElement('details'); transfer.className = 'stage'; transfer.id = 'pipelineTransfer'; transfer.open = true;
-transfer.innerHTML = '<summary>Conserver et partager</summary><div class="stage-controls"><button id="pipelineSave" type="button">Conserver cet export</button><button id="pipelineDownload" type="button">Partager .decor</button><small id="pipelineStatus" role="status"></small></div>';
+transfer.innerHTML = '<summary>Conserver et partager</summary><div class="stage-controls"><button id="pipelineReturn" type="button" hidden>Renvoyer aux settlements</button><button id="pipelineSave" type="button">Conserver cet export</button><button id="pipelineDownload" type="button">Partager .decor</button><small id="pipelineStatus" role="status"></small></div>';
 stages.append(transfer);
 async function keep(download: boolean): Promise<void> {
   try {
@@ -163,6 +164,24 @@ async function keep(download: boolean): Promise<void> {
     el('pipelineStatus').textContent = download ? 'Export conservé et téléchargé.' : 'Export conservé dans ce navigateur.';
   } catch (error) { el('pipelineStatus').textContent = error instanceof Error ? error.message : String(error); }
 }
+/** A city opened from Settlements goes back into its source map, translated out of the crop. */
+async function returnToSettlements(): Promise<void> {
+  try {
+    const parent = decor?.meta.pipeline?.parent, crop = decor?.meta.pipeline?.crop, key = decor?.meta.pipeline?.city;
+    if (!decor || !parent || !crop || !key) throw new Error('Cette carte ne vient pas de Settlements.');
+    if (settlements.urban.layoutPending || settlements.urban.generationPending) throw new Error('Attendez la fin du calcul du plan et des parcelles.');
+    const source = await readHistory(parent).catch(() => undefined);
+    if (!source) throw new Error('La carte Settlements d’origine est absente de ce navigateur.');
+    const state = settlements.urban.workshopState(), draft = settlements.urban.workshopDraft();
+    const saved = await saveHistory({ ...source, meta: { ...source.meta, settlements: applyWorkshopPopulation(source.meta.settlements, state), pipeline: { ...source.meta.pipeline, stage: 'settlements', city: key,
+      syncSource: decor.meta.pipeline?.syncSource ?? source.meta.pipeline?.syncSource ?? source.meta.id,
+      urbanDraft: draft && workshopSettings(translateWorkshopState(draft, crop.x, crop.y)), urban: mergeCityWorkshop(source.meta.pipeline?.urban, state, key, crop.x, crop.y) } } });
+    const params = new URLSearchParams(saved.meta.query); params.delete('view'); params.set('artifact', saved.meta.id);
+    params.set('urban', JSON.stringify({ ...workshopSettings(saved.meta.pipeline!.urban!), enabled: true, parcelEnabled: !!state.partitions, target: key }));
+    openBench('settlements', params);
+  } catch (error) { el('pipelineStatus').textContent = error instanceof Error ? error.message : String(error); }
+}
+el('pipelineReturn').onclick = () => void returnToSettlements();
 el('pipelineSave').onclick = () => void keep(false);
 el('pipelineDownload').onclick = () => void keep(true);
 
@@ -295,6 +314,7 @@ else if (artifact) {
   status('Chargement de la carte…');
   void load(artifact).then(async d => {
     decor = d; lastExport = d; terrain = terrainFromDecor(d);
+    el('pipelineReturn').hidden = !(d.meta.pipeline?.parent && d.meta.pipeline.crop && d.meta.pipeline.city);
     fit(); await drawBackground(d);
     settlements.restoreDecor(d);
     if (el('status').textContent === 'Chargement de la carte…') status(`${d.meta.label} · ${(d.raster.width / 1000).toFixed(0)} km`);
