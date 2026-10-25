@@ -41,7 +41,7 @@ function harness(city = true, initialOutput: SettlementOutput | null = retained(
     const controls = () => {}, list = () => {}, editor = () => {}, draw = () => {}, syncLanduse = () => {}, publishOptions = () => {};
     let config=env.config, output=env.output, worker=env.worker, selection=config.list[0]?.key ?? '', enabled=true, showPoints=true;
     let cachedTerrain, validation, timer, fallback=false, id=0, answered=0, complete=true, needsPlacement=true, restoringDecor=false;
-    let citySearchRequested=false, cityPlacementScoresStale=false;
+    let citySearchRequested=false, cityPlacementScoresStale=false, autoRefresh=true;
     ${names.map(n => functions.get(n)!.getText(tree)).join('\n')}
     const lifecycle = { ${[...methods.values()].map(n => n.getText(tree)).join(',')} };
     return { changed, recalculate, useFallback, receive, search:requestPlacementSearch, lifecycle,
