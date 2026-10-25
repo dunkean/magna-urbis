@@ -3,16 +3,20 @@ import type { HouseMix, HouseSettings } from '../../../rust/bridge/urbanArchitec
 
 const esc = (s: string): string => s.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 export const ZONES: Record<string, string> = { core: 'Cœur', middle: 'Extension', edge: 'Périphérie', faubourg: 'Faubourgs', village: 'Village' };
+const COLUMNS: [string, string, string][] = [['all', 'Toute', 'Toute la ville'], ['core', '◉ Cœur', 'Cœur'], ['middle', '◎ Ext.', 'Extension'], ['edge', '○ Pér.', 'Périphérie'], ['faubourg', '⋯ Faub.', 'Faubourgs'], ['village', 'Vil.', 'Village']];
 export type StageState = 'none' | 'ok' | 'stale' | 'busy' | 'error';
-const STAGES = { plan: 'Plan', parcels: 'Parcelles', houses: 'Maisons' } as const;
+const STAGES = { plan: 'Plan', parcels: 'Lots', houses: 'Maisons' } as const;
 const STATE_TEXT: Record<StageState, string> = { none: 'à faire', ok: 'à jour', stale: 'à refaire', busy: 'en cours', error: 'erreur' };
 const SPREADS: Record<HouseMix['spread'], string> = { lot: 'par maison', block: 'par îlot', quarter: 'par quartier' };
+const ROWS = [['culture', '🎨', 'Plan', 'Culture du plan'], ['tissue', '╬', 'Rues', 'Maillage des rues'], ['recipe', '▦', 'Îlots', 'Recette des îlots et quartiers'], ['operator', '▤', 'Lots', 'Découpe des parcelles'], ['houses', '⌂', 'Maisons', 'Mélange de styles de maisons']] as const;
 type MixScope = { kind: 'city' } | { kind: 'zone'; zone: string } | { kind: 'quarter'; key: string };
 
 export interface UrbanMainHost {
   cultures: [string, string][]; tissues: Record<string, string>; operators: Record<string, string>;
   /** `[value, label]` of the engine control behind a plan setting (the choices stay in one place). */
   options(key: string): [string, string][];
+  /** Plan recipes (block and quarter shapes) of a culture. */
+  recipes(culture: string): [string, string][];
   state(): {
     layout: LayoutConfig; parcels: ParcelConfig; siteCulture: string; target: string;
     /** Growth zones of the plan on screen (undefined = no plan yet). */
@@ -26,7 +30,7 @@ export interface UrbanMainHost {
     architecture?: { mode: string; options: Record<string, string> };
   };
   setLayout(key: string, value: string | number): void;
-  setPlan(zone: string, patch: { culture?: string; tissue?: string }): void;
+  setPlan(zone: string, patch: { culture?: string; tissue?: string; recipe?: string }): void;
   setOperator(zone: string, operator: string): void;
   setCityOperator(operator: string): void;
   setHouses(next: HouseSettings): void;
@@ -34,86 +38,143 @@ export interface UrbanMainHost {
   setArchitecture(mode: string): void;
   steps: Record<keyof typeof STAGES | 'all', () => void>;
   auto: { get(): boolean; set(value: boolean): void };
+  /** Copies the selected settlement's urban settings to every settlement (Settlements page only). */
+  applyToAll?(): void;
+}
+
+/** One cell of the phase grid: what it shows, what a click offers and how it is written back. */
+interface Cell {
+  own: boolean; text: string; title: string;
+  /** Choices (first = the value that means « inherited »). */
+  entries?: [string, string][]; current?: string; reset: string;
+  set?(value: string): void; houses?: MixScope; label: string;
 }
 
 const usable = (mix?: HouseMix): mix is HouseMix => !!mix?.styles.some(s => s.weight > 0 && s.culture);
+const abbr = (text: string): string => { const t = text.replace(/\s*\(.*\)$/, '').replace(/^(selon|par) (la |le |les )?/, '').trim(); return t.length > 8 ? `${t.slice(0, 7)}…` : t; };
 
-/** The city panel: one rule (the most precise choice wins: place culture, city, phase, quarter, lot), one table, mixed house styles. */
+/** The city inspector: one rule (the most precise choice wins: place culture, city, phase, quarter, lot), one grid, mixed house styles. */
 export function createUrbanMainPanel(host: UrbanMainHost) {
-  const panel = document.createElement('details'); panel.className = 'stage urban-stage urban-main'; panel.id = 'urbanMainStage'; panel.open = true;
+  const panel = document.createElement('div'); panel.className = 'urban-main'; panel.id = 'urbanMainStage';
   const label = (id: string): string => host.cultures.find(([c]) => c === id)?.[1] ?? id;
-  const opts = (first: string, entries: [string, string][]): string => `<option value="">${esc(first)}</option>${entries.map(([id, text]) => `<option value="${esc(id)}">${esc(text)}</option>`).join('')}`;
-  const cultureEntries = host.cultures;
   const tissueEntries = Object.entries(host.tissues).filter(([id]) => id !== 'culture') as [string, string][];
   const operatorEntries = Object.entries(host.operators).filter(([id]) => id !== 'culture') as [string, string][];
-  const cell = (scope: string, field: string, options: string): string =>
-    `<div class="um-cell"><select data-um="${scope}:${field}">${options}</select><button type="button" data-um-reset="${scope}:${field}" title="Revenir à la valeur héritée" hidden>↺</button></div>`;
-  const houseCell = (scope: string): string => `<div class="um-cell"><button type="button" class="um-houses" data-um-houses="${scope}"></button><button type="button" data-um-reset="${scope}:houses" title="Revenir à la valeur héritée" hidden>↺</button></div>`;
-  const tableRows = (scope: string, title: string, plan: string): string => `<tr data-um-row="${scope}"><th scope="row">${title}</th><td data-label="Plan">${plan}</td><td data-label="Rues">${scope === 'city'
-    ? `<div class="um-cell"><select data-um="city:tissue">${opts('Selon la culture', tissueEntries)}</select><button type="button" data-um-reset="city:tissue" hidden title="Revenir à la valeur de la culture">↺</button></div>` : cell(scope, 'tissue', opts('', tissueEntries))}</td><td data-label="Lots">${scope === 'city'
-    ? `<div class="um-cell"><select data-um="city:operator">${opts('Selon la culture', operatorEntries)}</select><button type="button" data-um-reset="city:operator" hidden title="Revenir à la valeur de la culture">↺</button></div>` : cell(scope, 'operator', opts('', operatorEntries))}</td><td data-label="Maisons">${houseCell(scope)}</td></tr>`;
-  const mirror = (key: string, title: string): string => `<label class="um-f">${title}<select data-um-cfg="${key}"></select></label>`;
-  panel.innerHTML = `<summary>Ville</summary><div class="stage-controls">
-    <div class="um-bar">
-      <div class="um-bar-top"><span data-um-scope-slot></span><label class="um-auto" title="Régénération automatique du plan, des parcelles, des maisons, et des settlements et routes."><input type="checkbox" data-um-auto>⟳ Auto</label><span class="um-regen" data-um-regen-slot></span><button type="button" class="um-generate" data-um-step="all">Générer</button></div>
-      <div class="um-chips">${(Object.entries(STAGES) as [keyof typeof STAGES, string][]).map(([id, title]) => `<button type="button" class="um-chip" data-um-chip="${id}" data-state="none" title="Relancer cette étape et les suivantes"><b>${title}</b><i></i></button>`).join('')}<label class="um-arch" hidden title="Affichage des bâtiments"><select data-um-arch></select></label></div>
-      <small data-um-note role="status"></small>
+  const mirror = (key: string, icon: string, title: string, cls = ''): string => `<label class="um-f ${cls}" title="${title}"><span>${icon}</span><select data-um-cfg="${key}"></select></label>`;
+  const cellHtml = (row: string, col: string): string => `<div class="um-c" data-r="${row}" data-c="${col}"><button type="button" class="um-cb"></button><button type="button" class="um-x" title="Revenir à la valeur héritée" tabindex="-1">↺</button></div>`;
+  const columnsHtml = (row: string): string => COLUMNS.map(([col]) => cellHtml(row, col)).join('');
+  panel.innerHTML = `<div class="um-bar">
+      <div class="um-bar-top"><label class="um-auto" title="Régénération automatique du plan, des parcelles, des maisons, et des settlements et routes."><input type="checkbox" data-um-auto>⟳ Auto</label>
+        <span class="um-regen" data-um-regen-slot></span><button type="button" class="um-generate" data-um-step="all" title="Régénérer le plan, les lots et les maisons">▶ Générer</button></div>
+      <div class="um-bar-top"><span class="um-chips">${(Object.entries(STAGES) as [keyof typeof STAGES, string][]).map(([id, title]) => `<button type="button" class="um-chip" data-um-chip="${id}" data-state="none" title="Relancer ${title.toLowerCase()} et les étapes suivantes"><i class="um-dot"></i>${title}</button>`).join('')}<label class="um-arch" hidden title="Affichage des bâtiments"><select data-um-arch></select></label></span></div>
+      <small class="um-note" data-um-note role="status"></small>
+      <button type="button" class="um-link" data-um-apply-all hidden title="Copier les réglages urbains de ce settlement vers tous les autres et régénérer">Appliquer à tous les settlements</button>
     </div>
-    <section class="um-block"><h4>Ville</h4>
-      <label class="um-f">Culture<select data-um-culture></select></label>
-      ${mirror('settlementForm', 'Type de ville')}
-      <small class="um-simple" data-um-simple hidden>Forme simplifiée : les phases ne s’appliquent pas, seule la ligne « Toute la ville » compte.</small>
-      <details class="um-infl" data-um-infl><summary>Influence d’une autre culture <em data-um-infl-sum></em></summary>
-        ${mirror('mixCulture', 'Culture')}<label class="um-f">Part<input type="number" min="0" max="1" step="0.05" data-um-cfg="mixShare"></label>${mirror('mixMode', 'Répartition')}</details>
-    </section>
-    <details class="um-skel" data-um-skel><summary>Squelette <em data-um-skel-sum></em></summary>
-      ${mirror('fortification', 'Enceinte')}${mirror('fortificationStyle', 'Style d’enceinte')}${mirror('axisAlignment', 'Axes')}${mirror('exitTreatment', 'Sorties')}${mirror('peripheralRoad', 'Rocade')}${mirror('suburbs', 'Faubourgs')}
-    </details>
-    <section class="um-block"><h4>Phases</h4>
-      <div class="um-scroll"><table class="um-table"><thead><tr><th></th><th title="Culture du plan">Plan</th><th title="Maillage des rues">Rues</th><th title="Découpe des parcelles">Lots</th><th title="Mélange de styles de maisons">Maisons</th></tr></thead><tbody>
-      ${tableRows('city', 'Toute la ville', '<span class="um-plan-city" data-um-plan-city></span>')}
-      ${Object.entries(ZONES).map(([zone, title]) => tableRows(zone, title, cell(zone, 'culture', opts('', cultureEntries)))).join('')}</tbody></table></div>
-      <small class="um-legend">Gris « ↳ » : hérité (survol : de quoi) · normal + ↺ : choisi ici. Le plus précis l’emporte.</small>
-    </section>
-    <section class="um-block um-quarter" data-um-quarter hidden><h4 data-um-quarter-title></h4>
-      <table class="um-table"><tbody><tr data-um-row="q"><td data-label="Plan">${cell('q', 'culture', opts('', cultureEntries))}</td><td data-label="Rues">${cell('q', 'tissue', opts('', tissueEntries))}</td><td data-label="Lots"><span class="um-static" data-um-q-lots></span></td><td data-label="Maisons">${houseCell('q')}</td></tr></tbody></table>
-      <small class="um-legend">Plan · Rues · Lots · Maisons de ce quartier.</small>
-    </section>
-    <div class="um-mix" data-um-mix hidden></div>
-    <button type="button" class="um-advanced" data-um-advanced aria-expanded="false">Détails</button></div>`;
+    <div class="um-line">${mirror('culture', '🎨', 'Culture du plan')}</div>
+    <div class="um-line">${mirror('fortification', '🧱', 'Enceinte')}${mirror('settlementForm', '🏘', 'Type de ville')}</div>
+    <small class="um-simple" data-um-simple hidden>Forme simplifiée : les phases ne s’appliquent pas, seule la colonne « Toute » compte.</small>
+    <details class="um-infl" data-um-infl><summary>+ influence <em data-um-infl-sum></em></summary>
+      <div class="um-line">${mirror('mixCulture', '🎨', 'Culture d’influence')}<label class="um-f" title="Part de l’influence"><span>%</span><input type="number" min="0" max="1" step="0.05" data-um-cfg="mixShare"></label>${mirror('mixMode', '◫', 'Répartition')}</div></details>
+    <div class="um-grid" data-um-grid>
+      <div class="um-gh"></div>${COLUMNS.map(([col, text, title]) => `<div class="um-gh" data-h="${col}" title="${title}">${text}</div>`).join('')}
+      ${ROWS.map(([row, icon, name, title]) => `<div class="um-rl" title="${title}"><span>${icon}</span>${name}</div>${columnsHtml(row)}`).join('')}
+    </div>
+    <div class="um-quarter" data-um-quarter hidden><header><strong data-um-quarter-title></strong></header>
+      <div class="um-grid um-grid-q"><div class="um-gh" title="Culture du plan">🎨</div><div class="um-gh" title="Maillage des rues">╬</div><div class="um-gh" title="Découpe des parcelles">▤</div><div class="um-gh" title="Mélange de maisons">⌂</div>
+        ${['culture', 'tissue', 'operator', 'houses'].map(row => cellHtml(row, 'q')).join('')}</div></div>
+    <div class="um-pop" data-um-pop hidden></div>
+    <button type="button" class="um-advanced" data-um-advanced aria-expanded="false" title="Tous les autres réglages, par étape">⚙ Avancé</button>`;
   const q = <T extends Element>(selector: string): T => panel.querySelector<T>(selector)!;
-  const cultureSelect = q<HTMLSelectElement>('[data-um-culture]');
-  cultureSelect.onchange = () => host.setLayout('culture', cultureSelect.value);
+  const cellEl = (row: string, col: string): HTMLElement => q(`.um-c[data-r="${row}"][data-c="${col}"]`);
+
   for (const control of Array.from(panel.querySelectorAll<HTMLSelectElement | HTMLInputElement>('[data-um-cfg]'))) {
     control.onchange = () => host.setLayout(control.dataset.umCfg!, control instanceof HTMLInputElement ? Number(control.value) : control.value);
-  }
-  const apply = (scope: string, field: string, value: string): void => {
-    if (scope === 'q') { host.editQuarter(host.state().quarter!.key, { [field]: value }); return; }
-    if (scope === 'city') { if (field === 'tissue') host.setLayout('tissue', value || 'culture'); else host.setCityOperator(value || 'culture'); return; }
-    if (field === 'operator') host.setOperator(scope, value); else host.setPlan(scope, { [field]: value });
-  };
-  for (const select of Array.from(panel.querySelectorAll<HTMLSelectElement>('select[data-um]'))) {
-    const [scope, field] = select.dataset.um!.split(':');
-    select.onchange = () => apply(scope, field, select.value);
-  }
-  for (const button of Array.from(panel.querySelectorAll<HTMLButtonElement>('[data-um-reset]'))) {
-    const [scope, field] = button.dataset.umReset!.split(':');
-    button.onclick = () => { if (field === 'houses') { if (sameScope(editing, scopeOf(scope))) { editing = draft = undefined; renderMix(); } setMix(scopeOf(scope), undefined); } else apply(scope, field, ''); };
   }
   for (const button of Array.from(panel.querySelectorAll<HTMLButtonElement>('[data-um-step]'))) button.onclick = () => host.steps[button.dataset.umStep as keyof typeof host.steps]();
   for (const chip of Array.from(panel.querySelectorAll<HTMLButtonElement>('[data-um-chip]'))) chip.onclick = () => host.steps[chip.dataset.umChip as keyof typeof STAGES]();
   const arch = q<HTMLSelectElement>('[data-um-arch]'); arch.onchange = () => host.setArchitecture(arch.value);
   const auto = q<HTMLInputElement>('[data-um-auto]'); auto.onchange = () => host.auto.set(auto.checked);
+  const applyAll = q<HTMLButtonElement>('[data-um-apply-all]'); applyAll.hidden = !host.applyToAll; applyAll.onclick = () => host.applyToAll?.();
   const advanced = q<HTMLButtonElement>('[data-um-advanced]');
   advanced.onclick = () => { const frame = document.getElementById('urbanAdvancedBody'); if (frame) { frame.hidden = !frame.hidden; advanced.setAttribute('aria-expanded', String(!frame.hidden)); if (!frame.hidden) frame.scrollIntoView({ block: 'nearest' }); } };
 
-  // ---- house mix: summary and the in-place editor
-  const scopeOf = (scope: string): MixScope => scope === 'city' ? { kind: 'city' } : scope === 'q' ? { kind: 'quarter', key: host.state().quarter?.key ?? '' } : { kind: 'zone', zone: scope };
+  // ---- cells: one description per (row, column)
+  const scopeOf = (col: string): MixScope => col === 'all' ? { kind: 'city' } : col === 'q' ? { kind: 'quarter', key: host.state().quarter?.key ?? '' } : { kind: 'zone', zone: col };
   const mixOf = (houses: HouseSettings, scope: MixScope): HouseMix | undefined => scope.kind === 'city' ? houses.city : scope.kind === 'zone' ? houses.zones?.[scope.zone] : houses.quarters?.[scope.key];
+  const mixText = (mix: HouseMix): string => {
+    const styles = mix.styles.filter(s => s.weight > 0 && s.culture).sort((a, b) => b.weight - a.weight);
+    return `${abbr(label(styles[0].culture))}${styles.length > 1 ? ` +${styles.length - 1}` : ''}`;
+  };
   const summary = (mix: HouseMix): string => {
     const styles = mix.styles.filter(s => s.weight > 0 && s.culture), total = styles.reduce((n, s) => n + s.weight, 0) || 1;
     return `${styles.map(s => `${label(s.culture)} ${Math.round(s.weight / total * 100)} %`).join(' · ')}${styles.length > 1 || mix.spread !== 'lot' ? ` · ${SPREADS[mix.spread]}` : ''}`;
   };
+  function cellOf(row: string, col: string): Cell {
+    const s = host.state(), { layout, parcels, siteCulture } = s;
+    const base = layout.culture && layout.culture !== 'site' ? layout.culture : siteCulture;
+    const tissueName = (id: string): string => id === 'culture' ? 'selon la culture' : host.tissues[id] ?? id;
+    const operatorName = (id: string): string => id === 'culture' ? 'selon la culture' : host.operators[id] ?? id;
+    const over = col === 'all' || col === 'q' ? undefined : layout.phaseOverrides?.[col];
+    const cityMix = usable(s.houses.city) ? s.houses.city : undefined;
+    const zoneName = ZONES[col] ?? 'la phase';
+    const choice = (own: string, inheritedText: string, source: string, entries: [string, string][], reset: string, set: (v: string) => void, names: (id: string) => string = id => label(id)): Cell =>
+      ({ own: !!own && own !== reset, text: own && own !== reset ? abbr(names(own)) : `↳ ${abbr(inheritedText)}`, title: own && own !== reset ? `Choisi ici : ${names(own)}` : `Hérité ${source} : ${inheritedText}`,
+        entries: [[reset, `↳ ${inheritedText}`], ...entries.filter(([id]) => id !== reset)], current: own || reset, reset, set, label: '' });
+    if (row === 'houses') {
+      const scope = scopeOf(col), own = mixOf(s.houses, scope), inheritedMix = col === 'all' ? undefined : col === 'q' ? (usable(s.houses.zones?.[s.quarter?.zone ?? '']) ? s.houses.zones![s.quarter!.zone] : cityMix) : cityMix;
+      const mine = usable(own);
+      return { own: mine, text: mine ? mixText(own!) : inheritedMix ? `↳ ${mixText(inheritedMix)}` : '↳ culture', title: mine ? `Choisi ici : ${summary(own!)}` : inheritedMix ? `Hérité : ${summary(inheritedMix)}` : 'Hérité de la culture de chaque phase', reset: '', houses: scope, label: col === 'all' ? 'Toute la ville' : col === 'q' ? `Quartier ${s.quarter?.key}` : zoneName };
+    }
+    if (col === 'q') {
+      const qs = s.quarter!, edit = qs.edit, zn = ZONES[qs.zone] ?? 'la phase';
+      if (row === 'culture') return choice(edit?.culture ?? '', label(qs.culture), `de ${zn}`, host.cultures, '', v => host.editQuarter(qs.key, { culture: v }));
+      if (row === 'tissue') return choice(edit?.tissue ?? '', tissueName(qs.tissue), `de ${zn}`, tissueEntries, '', v => host.editQuarter(qs.key, { tissue: v }), tissueName);
+      const op = parcels.zoneOperators?.[qs.zone] ?? parcels.operator;
+      return { own: false, text: `↳ ${abbr(operatorName(op))}`, title: 'La découpe se règle par phase, pas par quartier.', reset: '', label: '' };
+    }
+    if (row === 'culture') {
+      if (col === 'all') return { ...choice(layout.culture || 'site', `Culture du lieu (${label(siteCulture)})`, 'du lieu', [['site', `Culture du lieu (${label(siteCulture)})`], ...host.cultures], 'site', v => host.setLayout('culture', v), id => id === 'site' ? 'lieu' : label(id)), text: layout.culture && layout.culture !== 'site' ? abbr(label(layout.culture)) : `↳ ${abbr(label(siteCulture))}`, label: '' };
+      return choice(over?.culture ?? '', label(base), layout.culture && layout.culture !== 'site' ? 'de Toute la ville' : 'de la culture du lieu', host.cultures, '', v => host.setPlan(col, { culture: v }));
+    }
+    if (row === 'tissue') {
+      if (col === 'all') return choice(layout.tissue, 'selon la culture', 'de la culture', tissueEntries, 'culture', v => host.setLayout('tissue', v || 'culture'), tissueName);
+      return choice(over?.tissue ?? '', tissueName(layout.tissue), layout.tissue === 'culture' ? 'de la culture' : 'de Toute la ville', tissueEntries, '', v => host.setPlan(col, { tissue: v }), tissueName);
+    }
+    if (row === 'recipe') {
+      const recipes = (culture: string): [string, string][] => host.recipes(culture), name = (culture: string) => (id: string): string => recipes(culture).find(([r]) => r === id)?.[1] ?? id;
+      if (col === 'all') return choice(layout.recipe, 'par phase', 'du profil du plan', recipes(base), 'auto', v => host.setLayout('recipe', v || 'auto'), name(base));
+      const culture = over?.culture || base;
+      return choice(over?.recipe ?? '', layout.recipe === 'auto' ? 'selon la phase' : name(base)(layout.recipe), layout.recipe === 'auto' ? 'du profil du plan' : 'de Toute la ville', recipes(culture), '', v => host.setPlan(col, { recipe: v }), name(culture));
+    }
+    // operator
+    if (col === 'all') return choice(parcels.operator, 'selon la culture', 'de la culture', operatorEntries, 'culture', v => host.setCityOperator(v || 'culture'), operatorName);
+    return choice(parcels.zoneOperators?.[col] ?? '', operatorName(parcels.operator), parcels.operator === 'culture' ? 'de la culture' : 'de Toute la ville', operatorEntries, '', v => host.setOperator(col, v), operatorName);
+  }
+
+  // ---- popover: choices of a cell, or the house-mix editor
+  const pop = q<HTMLElement>('[data-um-pop]');
+  let anchor: HTMLElement | undefined, editing: MixScope | undefined, draft: HouseMix | undefined;
+  const sameScope = (a?: MixScope, b?: MixScope): boolean => !!a && !!b && JSON.stringify(a) === JSON.stringify(b);
+  function closePop(): void { pop.hidden = true; pop.replaceChildren(); anchor = undefined; editing = draft = undefined; }
+  function place(): void {
+    if (!anchor) return;
+    const box = anchor.getBoundingClientRect(), host2 = panel.getBoundingClientRect(), width = Math.min(260, Math.max(180, host2.width - 8));
+    pop.style.width = `${width}px`;
+    pop.style.left = `${Math.max(4, Math.min(window.innerWidth - width - 4, box.left + box.width / 2 - width / 2))}px`;
+    const below = box.bottom + 2, height = pop.offsetHeight;
+    pop.style.top = `${below + height > window.innerHeight - 4 ? Math.max(4, box.top - height - 2) : below}px`;
+  }
+  function openList(cellNode: HTMLElement, cell: Cell): void {
+    closePop(); anchor = cellNode;
+    pop.classList.remove('um-pop-mix');
+    pop.replaceChildren(...(cell.entries ?? []).map(([id, text], i) => {
+      const b = document.createElement('button'); b.type = 'button'; b.textContent = text; b.title = text;
+      if (id === cell.current) b.classList.add('um-sel'); if (i === 0) b.classList.add('um-first');
+      b.onclick = () => { const set = cell.set; closePop(); set?.(id); };
+      return b;
+    }));
+    pop.hidden = false; place();
+    pop.querySelector<HTMLElement>('.um-sel')?.scrollIntoView({ block: 'nearest' });
+  }
   function setMix(scope: MixScope, mix: HouseMix | undefined): void {
     const houses = structuredClone(host.state().houses);
     if (scope.kind === 'city') { if (mix) houses.city = mix; else delete houses.city; }
@@ -124,9 +185,6 @@ export function createUrbanMainPanel(host: UrbanMainHost) {
     }
     host.setHouses(houses); schedule();
   }
-  let editing: MixScope | undefined, draft: HouseMix | undefined;
-  const mixBox = q<HTMLElement>('[data-um-mix]');
-  const sameScope = (a?: MixScope, b?: MixScope): boolean => !!a && !!b && JSON.stringify(a) === JSON.stringify(b);
   /** The editor owns a draft (it may hold a blank style); only styles with a culture reach the engine settings. */
   function commit(): void {
     if (!editing || !draft) return;
@@ -134,17 +192,17 @@ export function createUrbanMainPanel(host: UrbanMainHost) {
     setMix(editing, styles.length ? { ...draft, styles } : undefined);
   }
   function renderMix(): void {
-    if (!editing || !draft) { mixBox.hidden = true; return; }
+    if (!editing || !draft) return;
     const scope = editing, d = draft;
     const title = scope.kind === 'city' ? 'Toute la ville' : scope.kind === 'zone' ? ZONES[scope.zone] : `Quartier ${scope.key}`;
-    mixBox.hidden = false;
-    mixBox.innerHTML = `<header><strong>Maisons · ${esc(title)}</strong><button type="button" data-mix-close title="Fermer">✕</button></header>
-      ${d.styles.map((s, i) => `<div class="um-style"><select data-mix-culture="${i}">${opts('Choisir un style', cultureEntries)}</select><input type="number" min="0" max="100" step="5" value="${s.weight}" data-mix-weight="${i}" title="Poids"><button type="button" data-mix-remove="${i}" title="Retirer">×</button></div>`).join('')}
+    pop.classList.add('um-pop-mix'); pop.hidden = false;
+    pop.innerHTML = `<header><strong>⌂ Maisons · ${esc(title)}</strong><button type="button" data-mix-close title="Fermer">✕</button></header>
+      ${d.styles.map((s, i) => `<div class="um-style"><select data-mix-culture="${i}"><option value="">Choisir un style</option>${host.cultures.map(([id, text]) => `<option value="${esc(id)}">${esc(text)}</option>`).join('')}</select><input type="number" min="0" max="100" step="5" value="${s.weight}" data-mix-weight="${i}" title="Poids"><button type="button" data-mix-remove="${i}" title="Retirer">×</button></div>`).join('')}
       <div class="um-style-actions"><button type="button" data-mix-add>+ style</button><label>Répartition<select data-mix-spread>${(Object.entries(SPREADS) as [string, string][]).map(([id, text]) => `<option value="${id}">${text}</option>`).join('')}</select></label></div>
       <small>Tirage déterministe selon la graine. Un style sans culture ou à 0 est ignoré ; sans style, la valeur est héritée.</small>`;
-    const box = <T extends Element>(selector: string): T => mixBox.querySelector<T>(selector)!;
+    const box = <T extends Element>(selector: string): T => pop.querySelector<T>(selector)!;
     box<HTMLSelectElement>('[data-mix-spread]').value = d.spread;
-    box<HTMLButtonElement>('[data-mix-close]').onclick = () => { editing = draft = undefined; renderMix(); schedule(); };
+    box<HTMLButtonElement>('[data-mix-close]').onclick = () => { closePop(); schedule(); };
     box<HTMLSelectElement>('[data-mix-spread]').onchange = event => { d.spread = (event.target as HTMLSelectElement).value as HouseMix['spread']; commit(); };
     box<HTMLButtonElement>('[data-mix-add]').onclick = () => { d.styles.push({ culture: '', weight: 50 }); renderMix(); };
     d.styles.forEach((style, i) => {
@@ -153,16 +211,31 @@ export function createUrbanMainPanel(host: UrbanMainHost) {
       box<HTMLInputElement>(`[data-mix-weight="${i}"]`).onchange = event => { style.weight = Math.max(0, Number((event.target as HTMLInputElement).value) || 0); commit(); };
       box<HTMLButtonElement>(`[data-mix-remove="${i}"]`).onclick = () => { d.styles.splice(i, 1); if (!d.styles.length) d.styles.push({ culture: '', weight: 100 }); commit(); renderMix(); };
     });
+    place();
   }
-  for (const button of Array.from(panel.querySelectorAll<HTMLButtonElement>('[data-um-houses]'))) {
-    button.onclick = () => {
-      const scope = scopeOf(button.dataset.umHouses!);
-      if (sameScope(editing, scope)) { editing = draft = undefined; renderMix(); schedule(); return; }
-      editing = scope; const own = mixOf(host.state().houses, scope);
-      draft = usable(own) ? structuredClone(own) : { styles: [{ culture: '', weight: 100 }], spread: 'lot' };
-      renderMix(); schedule();
-    };
+  function openMix(cellNode: HTMLElement, scope: MixScope): void {
+    const same = sameScope(editing, scope); closePop();
+    if (same) { schedule(); return; }
+    anchor = cellNode; editing = scope; const own = mixOf(host.state().houses, scope);
+    draft = usable(own) ? structuredClone(own) : { styles: [{ culture: '', weight: 100 }], spread: 'lot' };
+    renderMix(); schedule();
   }
+  panel.addEventListener('click', event => {
+    const target = event.target as HTMLElement, node = target.closest<HTMLElement>('.um-c');
+    if (!node) return;
+    const row = node.dataset.r!, col = node.dataset.c!, cell = cellOf(row, col);
+    if (target.closest('.um-x')) {
+      if (cell.houses) { if (sameScope(editing, cell.houses)) closePop(); setMix(cell.houses, undefined); } else cell.set?.(cell.reset);
+      return;
+    }
+    if (!target.closest('.um-cb')) return;
+    if (cell.houses) openMix(node, cell.houses);
+    else if (cell.entries && cell.set) { if (anchor === node && !pop.hidden) closePop(); else openList(node, cell); }
+  });
+  document.addEventListener('mousedown', event => { if (!pop.hidden && !pop.contains(event.target as Node) && !(event.target as HTMLElement).closest?.('.um-c')) { closePop(); schedule(); } });
+  document.addEventListener('keydown', event => { if (event.key === 'Escape' && !pop.hidden) { closePop(); schedule(); } });
+  document.addEventListener('scroll', () => { if (!pop.hidden) place(); }, true);
+  window.addEventListener('resize', () => { if (!pop.hidden) place(); });
 
   // ---- synchronisation with the engine settings
   const set = (select: HTMLSelectElement, value: string): void => {
@@ -175,93 +248,64 @@ export function createUrbanMainPanel(host: UrbanMainHost) {
   };
   let timer: ReturnType<typeof setTimeout> | undefined;
   function schedule(): void { clearTimeout(timer); timer = setTimeout(sync, 40); }
+  function paint(node: HTMLElement, cell: Cell, absent: boolean, active: boolean): void {
+    const button = node.querySelector<HTMLButtonElement>('.um-cb')!;
+    button.textContent = cell.text; node.title = absent ? 'Cette phase n’existe pas dans le plan affiché.' : cell.title;
+    node.classList.toggle('um-own', cell.own); node.classList.toggle('um-absent', absent); node.classList.toggle('um-active', active);
+    node.querySelector<HTMLElement>('.um-x')!.hidden = !cell.own;
+  }
   function sync(): void {
     clearTimeout(timer);
-    const s = host.state(), { layout, parcels, siteCulture, zones } = s;
-    const base = layout.culture && layout.culture !== 'site' ? layout.culture : siteCulture;
-    const cityMix = usable(s.houses.city) ? s.houses.city : undefined;
-    const tissueName = (id: string): string => id === 'culture' ? 'selon la culture' : host.tissues[id] ?? id;
-    const operatorName = (id: string): string => id === 'culture' ? 'selon la culture' : host.operators[id] ?? id;
-    q('[data-um-scope-slot]').toggleAttribute('hidden', !q('[data-um-scope-slot]').childElementCount);
-    // Ville
-    cultureSelect.replaceChildren(new Option(`Culture du lieu (${label(siteCulture)})`, 'site'), ...host.cultures.map(([id, text]) => new Option(text, id)));
-    set(cultureSelect, layout.culture || 'site');
-    for (const control of Array.from(panel.querySelectorAll<HTMLSelectElement | HTMLInputElement>('[data-um-cfg]'))) {
-      const key = control.dataset.umCfg!, value = (layout as unknown as Record<string, unknown>)[key];
-      if (control instanceof HTMLInputElement) { if (document.activeElement !== control) control.value = String(value ?? ''); continue; }
-      const entries = host.options(key).map(([id, text]): [string, string] => key === 'settlementForm' && id === 'auto' ? [id, `Auto → ${s.resolved ?? 'selon la population'}`]
-        : key === 'mixCulture' && id === '' ? [id, 'Aucune'] : [id, text]);
-      fill(control, entries); set(control, String(value ?? ''));
-    }
-    q('[data-um-simple]').toggleAttribute('hidden', !s.small);
-    const infl = q<HTMLDetailsElement>('[data-um-infl]'), mixLabel = layout.mixCulture ? ` · ${label(layout.mixCulture)} ${Math.round(layout.mixShare * 100)} %` : '';
-    q('[data-um-infl-sum]').textContent = mixLabel; if (layout.mixCulture) infl.open = true;
-    const choice = (key: string): string => host.options(key).find(([id]) => id === String((layout as unknown as Record<string, unknown>)[key]))?.[1] ?? '';
-    const fort = layout.fortification === 'culture' ? 'Enceinte selon culture' : layout.fortification === 'none' ? 'Sans enceinte' : `Enceinte : ${choice('fortification').toLowerCase()}`;
-    q('[data-um-skel-sum]').textContent = `· ${fort} · ${s.roads} route${s.roads > 1 ? 's' : ''} · ${layout.axisAlignment === 'regional' ? 'axes régionaux' : 'axes de la culture'}`;
-    // Table
-    q('[data-um-plan-city]').textContent = label(base); q<HTMLElement>('[data-um-plan-city]').title = layout.culture && layout.culture !== 'site' ? 'Culture choisie dans « Ville »' : 'Culture du lieu';
-    const cityTissue = layout.tissue, cityOperator = parcels.operator;
-    set(q<HTMLSelectElement>('[data-um="city:tissue"]'), cityTissue === 'culture' ? '' : cityTissue);
-    set(q<HTMLSelectElement>('[data-um="city:operator"]'), cityOperator === 'culture' ? '' : cityOperator);
-    q<HTMLButtonElement>('[data-um-reset="city:tissue"]').hidden = cityTissue === 'culture';
-    q<HTMLButtonElement>('[data-um-reset="city:operator"]').hidden = cityOperator === 'culture';
-    q<HTMLElement>('[data-um-row="city"]').classList.toggle('um-over-tissue', cityTissue !== 'culture');
-    for (const [column, own] of [['tissue', cityTissue !== 'culture'], ['operator', cityOperator !== 'culture']] as const) q(`[data-um="city:${column}"]`).classList.toggle('um-own', own);
-    houseButton('city', s.houses.city, undefined, 'la culture de chaque phase');
-    for (const zone of Object.keys(ZONES)) {
-      const over = layout.phaseOverrides?.[zone], tr = q<HTMLElement>(`[data-um-row="${zone}"]`);
-      const absent = !!zones && !zones.has(zone) || (s.small && zone !== 'village' && zone !== 'core' && !over && !s.houses.zones?.[zone] && !parcels.zoneOperators?.[zone]);
-      tr.hidden = zone === 'village' && !s.small && !over && !parcels.zoneOperators?.[zone] && !s.houses.zones?.[zone] && !(zones?.has('village'));
-      tr.classList.toggle('um-absent', absent && !!zones); tr.title = absent && zones ? 'Cette phase n’existe pas dans le plan affiché.' : '';
-      const values: Record<string, [string, string, string]> = {
-        culture: [over?.culture ?? '', `↳ ${label(base)}`, layout.culture && layout.culture !== 'site' ? 'de Toute la ville' : 'de la culture du lieu'],
-        tissue: [over?.tissue ?? '', `↳ ${tissueName(cityTissue)}`, cityTissue === 'culture' ? 'de la culture' : 'de Toute la ville'],
-        operator: [parcels.zoneOperators?.[zone] ?? '', `↳ ${operatorName(cityOperator)}`, cityOperator === 'culture' ? 'de la culture' : 'de Toute la ville'],
-      };
-      for (const [field, [value, inherited, source]] of Object.entries(values)) {
-        const select = q<HTMLSelectElement>(`[data-um="${zone}:${field}"]`);
-        select.options[0].textContent = inherited; select.title = value ? 'Choisi pour cette phase' : `Hérité ${source}`;
-        set(select, value); select.classList.toggle('um-own', !!value); q<HTMLButtonElement>(`[data-um-reset="${zone}:${field}"]`).hidden = !value;
-      }
-      houseButton(zone, s.houses.zones?.[zone], cityMix, 'la culture de la phase');
-    }
-    // Quarter
-    const qs = s.quarter, qBox = q<HTMLElement>('[data-um-quarter]');
-    qBox.hidden = !qs;
-    if (qs) {
-      q('[data-um-quarter-title]').textContent = `Quartier ${qs.key} · ${ZONES[qs.zone] ?? qs.zone}`;
-      const zoneMix = usable(s.houses.zones?.[qs.zone]) ? s.houses.zones![qs.zone] : undefined;
-      const fields: [string, string, string, string][] = [['culture', qs.edit?.culture ?? '', `↳ ${label(qs.culture)}`, `de ${ZONES[qs.zone] ?? 'la phase'}`], ['tissue', qs.edit?.tissue ?? '', `↳ ${tissueName(qs.tissue)}`, `de ${ZONES[qs.zone] ?? 'la phase'}`]];
-      for (const [field, value, inherited, source] of fields) {
-        const select = q<HTMLSelectElement>(`[data-um="q:${field}"]`);
-        select.options[0].textContent = inherited; select.title = value ? 'Choisi pour ce quartier' : `Hérité ${source}`;
-        set(select, value); select.classList.toggle('um-own', !!value); q<HTMLButtonElement>(`[data-um-reset="q:${field}"]`).hidden = !value;
-      }
-      q('[data-um-q-lots]').textContent = `↳ ${operatorName(parcels.zoneOperators?.[qs.zone] ?? cityOperator)}`;
-      q<HTMLElement>('[data-um-q-lots]').title = 'La découpe se règle par phase, pas par quartier.';
-      houseButton('q', s.houses.quarters?.[qs.key], zoneMix ?? cityMix, 'la phase');
-    } else if (editing?.kind === 'quarter') { editing = draft = undefined; renderMix(); }
-    // Action bar
+    const s = host.state(), { layout, zones } = s;
+    // Header
     for (const chip of Array.from(panel.querySelectorAll<HTMLElement>('[data-um-chip]'))) {
       const state = s.stages[chip.dataset.umChip as keyof typeof STAGES]; chip.dataset.state = state;
-      chip.querySelector('i')!.textContent = STATE_TEXT[state];
+      chip.title = `${STAGES[chip.dataset.umChip as keyof typeof STAGES]} · ${STATE_TEXT[state]} · cliquer pour relancer cette étape et les suivantes`;
     }
     const archLabel = arch.closest('label')!;
     archLabel.hidden = !s.architecture;
     if (s.architecture) { fill(arch, Object.entries(s.architecture.options)); arch.value = s.architecture.mode; }
     auto.checked = host.auto.get();
-  }
-  function houseButton(scope: string, own: HouseMix | undefined, inherited: HouseMix | undefined, fallback: string): void {
-    const button = q<HTMLButtonElement>(`[data-um-houses="${scope}"]`), mine = usable(own);
-    const text = mine ? summary(own!) : inherited ? `↳ ${summary(inherited)}` : `↳ ${fallback}`;
-    button.textContent = text; button.title = mine ? 'Choisi ici · cliquer pour modifier' : inherited ? 'Hérité de Toute la ville · cliquer pour choisir' : 'Hérité · cliquer pour mélanger des styles';
-    button.classList.toggle('um-own', mine); button.setAttribute('aria-expanded', String(sameScope(editing, scopeOf(scope))));
-    q<HTMLButtonElement>(`[data-um-reset="${scope}:houses"]`).hidden = !mine;
+    // General line
+    for (const control of Array.from(panel.querySelectorAll<HTMLSelectElement | HTMLInputElement>('[data-um-cfg]'))) {
+      const key = control.dataset.umCfg!, value = (layout as unknown as Record<string, unknown>)[key];
+      if (control instanceof HTMLInputElement) { if (document.activeElement !== control) control.value = String(value ?? ''); continue; }
+      if (key === 'culture') {
+        fill(control, [['site', `du lieu (${label(s.siteCulture)})`], ...host.cultures]); set(control, String(value || 'site')); continue;
+      }
+      const entries = host.options(key).map(([id, text]): [string, string] => key === 'settlementForm' && id === 'auto' ? [id, `Auto → ${s.resolved ?? 'selon la population'}`]
+        : key === 'mixCulture' && id === '' ? [id, 'Aucune'] : [id, text]);
+      fill(control, entries); set(control, String(value ?? ''));
+      control.title = control.selectedOptions[0]?.textContent ?? '';
+    }
+    q('[data-um-simple]').toggleAttribute('hidden', !s.small);
+    const infl = q<HTMLDetailsElement>('[data-um-infl]');
+    q('[data-um-infl-sum]').textContent = layout.mixCulture ? `· ${label(layout.mixCulture)} ${Math.round(layout.mixShare * 100)} %` : ''; if (layout.mixCulture) infl.open = true;
+    // Grid: absent phases are greyed, the village column only exists for small types or when used.
+    const used = (zone: string): boolean => !!layout.phaseOverrides?.[zone] || !!s.parcels.zoneOperators?.[zone] || !!s.houses.zones?.[zone];
+    const showVillage = s.small || !!zones?.has('village') || used('village');
+    const hide = (col: string): boolean => col === 'village' && !showVillage;
+    for (const [col] of COLUMNS) {
+      const absent = col !== 'all' && !!zones && !zones.has(col);
+      q<HTMLElement>(`.um-gh[data-h="${col}"]`).hidden = hide(col); q<HTMLElement>(`.um-gh[data-h="${col}"]`).classList.toggle('um-absent', absent);
+      for (const [row] of ROWS) {
+        const node = cellEl(row, col); node.hidden = hide(col);
+        if (!hide(col)) paint(node, cellOf(row, col), absent, !pop.hidden && anchor === node);
+      }
+    }
+    q<HTMLElement>('[data-um-grid]').style.setProperty('--um-n', String(COLUMNS.length - (showVillage ? 0 : 1)));
+    // Quarter
+    const qs = s.quarter, qBox = q<HTMLElement>('[data-um-quarter]');
+    qBox.hidden = !qs;
+    if (qs) {
+      q('[data-um-quarter-title]').textContent = `Quartier ${qs.key} · ${ZONES[qs.zone] ?? qs.zone}`;
+      for (const row of ['culture', 'tissue', 'operator', 'houses']) { const node = cellEl(row, 'q'); paint(node, cellOf(row, 'q'), false, !pop.hidden && anchor === node); }
+    } else if (editing?.kind === 'quarter') closePop();
+    else if (!pop.hidden && anchor && !anchor.isConnected) closePop();
   }
   return {
     element: panel, sync, schedule,
-    scopeSlot: q<HTMLElement>('[data-um-scope-slot]'), regenerationSlot: q<HTMLElement>('[data-um-regen-slot]'),
-    note(text: string): void { q('[data-um-note]').textContent = text; },
+    regenerationSlot: q<HTMLElement>('[data-um-regen-slot]'),
+    note(text: string): void { q('[data-um-note]').textContent = text; q<HTMLElement>('[data-um-note]').title = text; },
   };
 }

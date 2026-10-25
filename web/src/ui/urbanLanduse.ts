@@ -1,3 +1,4 @@
+import { bindGear, gearButton } from './mapGroup';
 import LanduseWorker from './urbanLanduseWorker?worker&inline';
 import { BIOME_NAMES, type BiomeName } from '../gen/biomes';
 import { SIZE_PRESETS } from '../gen/options';
@@ -26,7 +27,9 @@ export function createUrbanLanduse(options: { map: SVGSVGElement; before: Elemen
   /** The displayed scene; `applied` is false for the city-less natural cover. */
   onScene?(scene: UrbanLanduseScene | undefined, applied: boolean): void;
 }) {
-  const settings: Settings = { seed: '', biome: 'temperate', style: 'parchment', vegetation: 'canopy', painted: false, opacity: 1, visible: true, enabled: true, hiddenKinds: [], showFarms: true };
+  /** `enabled` is the « auto » switch, off by default; `manual` keeps a scene made once by the Générer button. */
+  let manual = false;
+  const settings: Settings = { seed: '', biome: 'temperate', style: 'parchment', vegetation: 'canopy', painted: false, opacity: 1, visible: true, enabled: false, hiddenKinds: [], showFarms: true };
   try {
     const saved = JSON.parse(new URLSearchParams(location.search).get('landuse') ?? 'null');
     if (saved) {
@@ -42,14 +45,19 @@ export function createUrbanLanduse(options: { map: SVGSVGElement; before: Elemen
       if (Number.isFinite(saved.opacity)) settings.opacity = Math.max(0, Math.min(1, saved.opacity));
     }
   } catch { /* Broken optional settings retain the defaults. */ }
-  const panel = document.createElement('details'); panel.className = 'stage'; panel.id = 'landuseStage'; panel.open = true;
-  panel.innerHTML = `<summary>8 · Occupation du territoire <span id="landuseState"></span></summary><div class="stage-controls">
-    <label><input id="landuseEnabled" type="checkbox">Générer l’occupation du territoire</label>
+  const panel = document.createElement('details'); panel.className = 'stage map-group'; panel.id = 'landuseStage'; panel.open = true;
+  panel.innerHTML = `<summary>Occupation des sols</summary><div class="stage-controls" data-map-body>
+    <div class="map-line"><span class="map-icon" role="img" aria-label="Occupation des sols" title="Occupation des sols">🌾</span>
+      <label class="map-field map-grow" title="Génère l’occupation du territoire à chaque changement du plan. Décoché : rien n’est généré tant que vous ne cliquez pas sur Générer."><input id="landuseEnabled" type="checkbox">auto</label>
+      <span id="landuseState" class="map-summary"></span>${gearButton()}</div>
+    <small id="landuseStatus" class="map-status" role="status">En attente du décor…</small>
+    <div class="map-detail" hidden>
+    <button id="landuseGenerate" type="button">Générer l’occupation du territoire</button>
+    <label title="Affiche ou masque la couche d’occupation du territoire sur la carte"><input id="showLanduse" type="checkbox" checked>Occupation du territoire visible</label>
     <label>Graine des paysages<input id="landuseSeed" type="text" placeholder="Graine du décor"></label>
     <label>Biome<select id="landuseBiome"></select></label>
-    <button id="landuseGenerate" type="button">Générer l’occupation du territoire</button>
-    <details class="advanced" open><summary>Affichage</summary>
-      <label><input id="landuseVisible" type="checkbox">Afficher tous les objets d’occupation</label>
+    <details class="advanced"><summary>Affichage</summary>
+      <label hidden><input id="landuseVisible" type="checkbox">Afficher tous les objets d’occupation</label>
       <label>Style<select id="landuseStyle"></select></label>
       <label>Végétation<select id="landuseVegetation"><option value="canopy">Feuillages et canopée</option><option value="classic">Symboles classiques</option></select></label>
       <label><input id="landusePainted" type="checkbox">Textures peintes</label>
@@ -61,7 +69,8 @@ export function createUrbanLanduse(options: { map: SVGSVGElement; before: Elemen
       <small>Ces réglages masquent le dessin uniquement. Les brushes peuvent continuer à suivre les zones générées.</small>
     </details>
     <small>Champs, sillons, haies, chemins agricoles, vergers, jardins et végétation. Les quartiers réservent leur emprise avant l’ajout des maisons.</small>
-    <small id="landuseStatus" role="status">En attente du décor…</small></div>`;
+    </div></div>`;
+  bindGear(panel);
   options.before.parentElement!.insertBefore(panel, options.before);
   const q = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T;
   const seed = q<HTMLInputElement>('landuseSeed'), biome = q<HTMLSelectElement>('landuseBiome');
@@ -89,6 +98,7 @@ export function createUrbanLanduse(options: { map: SVGSVGElement; before: Elemen
     };
   }
   vegetation.value = settings.vegetation; vegetation.disabled = settings.painted;
+  const active = (): boolean => settings.enabled || manual;
   let context: Context | undefined, waiting = false, scene: UrbanLanduseScene | undefined;
   let sample: ReturnType<typeof fantasyLanduseSample> | undefined;
   let worker: Worker | undefined, fallback = false, id = 0, timer: ReturnType<typeof setTimeout> | undefined;
@@ -109,12 +119,12 @@ export function createUrbanLanduse(options: { map: SVGSVGElement; before: Elemen
     const painting = options.map.querySelector('#fantasyPainting');
     // The painting is lazily appended by the terrain renderer.
     if (painting && painting.nextSibling !== landuseLayer) options.map.insertBefore(painting, landuseLayer);
-    landuseLayer.style.display = settings.enabled && settings.visible ? '' : 'none'; landuseLayer.setAttribute('opacity', String(settings.opacity));
+    landuseLayer.style.display = active() && settings.visible ? '' : 'none'; landuseLayer.setAttribute('opacity', String(settings.opacity));
   }
   function draw(): void {
     visibility();
     renderer?.dispose(); renderer = undefined; cancelAnimationFrame(frame);
-    if (!settings.enabled || !scene || !context) { landuseLayer.replaceChildren(); canvas = undefined; host = undefined; renderWorld = undefined; renderScene = undefined; return; }
+    if (!active() || !scene || !context) { landuseLayer.replaceChildren(); canvas = undefined; host = undefined; renderWorld = undefined; renderScene = undefined; return; }
     if (!canvas) {
       landuseLayer.innerHTML = `<defs><clipPath id="urban-landuse-clip"><rect width="${scene.mapSize}" height="${scene.mapSize}"/></clipPath></defs><g clip-path="url(#urban-landuse-clip)"><foreignObject/></g>`;
       host = landuseLayer.querySelector('foreignObject')!;
@@ -148,7 +158,7 @@ export function createUrbanLanduse(options: { map: SVGSVGElement; before: Elemen
   function updateView(): void {
     visibility();
     cancelAnimationFrame(frame);
-    if (!renderer || !canvas || !host || !settings.enabled || !settings.visible) return;
+    if (!renderer || !canvas || !host || !active() || !settings.visible) return;
     if (rendererDpr !== (window.devicePixelRatio || 1)) { draw(); return; }
     const { view, width, height } = options.getView(), w = width / view.scale, h = height / view.scale;
     host.setAttribute('x', String(view.cx - w / 2)); host.setAttribute('y', String(view.cy - h / 2));
@@ -173,7 +183,7 @@ export function createUrbanLanduse(options: { map: SVGSVGElement; before: Elemen
   }
   function generate(): void {
     cancel();
-    if (!settings.enabled || !context || waiting) return;
+    if (!active() || !context || waiting) return;
     scene = undefined;
     notify(); draw();
     const request = { id, input: { ...context, seed: settings.seed || context.seed, biome: settings.biome } };
@@ -197,10 +207,10 @@ export function createUrbanLanduse(options: { map: SVGSVGElement; before: Elemen
     } catch { runFallback(); }
   }
   function schedule(): void {
-    button.disabled = !settings.enabled || !context || waiting;
-    visible.disabled = !settings.enabled;
-    panelVisible.disabled = !settings.enabled;
-    if (!settings.enabled) { q('landuseState').textContent = 'désactivée'; state('Occupation du territoire désactivée.'); return; }
+    button.disabled = !context || waiting;
+    visible.disabled = !active();
+    panelVisible.disabled = !active();
+    if (!active()) { q('landuseState').textContent = ''; state('Auto désactivé : ouvrez ⚙ et cliquez sur Générer.'); return; }
     q('landuseState').textContent = scene ? `${scene.stats.areas} zones` : '';
     if (!context || waiting) { state(context ? 'En attente des quartiers…' : 'En attente du décor…'); return; }
     if (scene) {
@@ -213,16 +223,16 @@ export function createUrbanLanduse(options: { map: SVGSVGElement; before: Elemen
     timer = setTimeout(generate, 120);
   }
   function notify(): void {
-    sample = settings.enabled && scene?.landuse ? fantasyLanduseSample(scene.landuse, scene.mapSize) : undefined;
+    sample = active() && scene?.landuse ? fantasyLanduseSample(scene.landuse, scene.mapSize) : undefined;
     options.onPlanChange?.();
-    options.onScene?.(settings.enabled ? scene : undefined, applied);
+    options.onScene?.(active() ? scene : undefined, applied);
   }
   enabled.onchange = () => {
-    settings.enabled = enabled.checked; cancel(); draw(); notify(); schedule(); options.onChange();
+    settings.enabled = enabled.checked; if (settings.enabled) manual = false; cancel(); draw(); notify(); schedule(); options.onChange();
   };
   button.onclick = () => {
     settings.seed = seed.value.trim(); settings.biome = biome.value as BiomeName;
-    options.onChange(); generate();
+    manual = true; options.onChange(); generate();
   };
   style.onchange = () => { settings.style = style.value as MapStyle; draw(); options.onChange(); };
   vegetation.onchange = () => { settings.vegetation = vegetation.value as VegetationStyle; draw(); options.onChange(); };
@@ -244,7 +254,7 @@ export function createUrbanLanduse(options: { map: SVGSVGElement; before: Elemen
       const key = next ? JSON.stringify({ seed: next.seed, city: next.city, neighbours: next.neighbours, relief: next.relief }) : '';
       if (next?.raster === previous?.raster && next?.layouts === previous?.layouts && next?.roads === previous?.roads && key === previousKey && pending === previousWaiting) return;
       previous = next; previousKey = key; previousWaiting = pending;
-      cancel(); scene = undefined; draw(); notify(); q('landuseState').textContent = '';
+      cancel(); manual = false; scene = undefined; draw(); notify(); q('landuseState').textContent = '';
       schedule();
     },
     share(params: URLSearchParams): void { params.set('landuse', JSON.stringify(settings)); },

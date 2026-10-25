@@ -143,7 +143,6 @@ function setProjection(active: boolean): void {
 setProjection(false);
 view3d.onclick = () => setProjection(!city3d.active);
 (window as Window & { magnaCity3d?: typeof city3d }).magnaCity3d = city3d; // Automated checks (stats, capture).
-document.querySelector('#roadStage summary')!.childNodes[0].textContent = '2 · Routes ';
 const historyAnchor = document.createElement('div'); stages.append(historyAnchor);
 const historyPanel = createHistoryPanel({ before: historyAnchor, current: () => lastExport ?? decor, onOpen: d => openBench('city', new URLSearchParams({ artifact: d.meta.id })) });
 anchor.remove(); historyAnchor.remove();
@@ -188,7 +187,7 @@ el('pipelineDownload').onclick = () => void keep(true);
 // Situation: map, options, camera and pins in one copyable code (or link), to hand
 // a reproducible case to someone else or to an agent (web/scripts/city_situation.mjs).
 let pins: SituationPin[] = [], pinning = false, situationNote = '';
-const situation = document.createElement('details'); situation.className = 'stage'; situation.id = 'citySituation'; situation.open = true;
+const situation = document.createElement('details'); situation.className = 'stage'; situation.id = 'citySituation'; situation.open = false;
 situation.innerHTML = `<summary>Situation à signaler</summary><div class="stage-controls">
   <small>Copiez un code (ou un lien) qui rouvre exactement cette ville, ce cadrage et vos épingles.</small>
   <div class="settlement-actions"><button id="situationPin" type="button" aria-pressed="false" title="Puis cliquez sur la carte">Épingler un point</button><button id="situationCopy" type="button">Copier le code</button><button id="situationLink" type="button">Copier le lien</button></div>

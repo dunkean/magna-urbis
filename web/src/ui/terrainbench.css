@@ -91,7 +91,7 @@ summary { cursor: pointer; font-size: 12px; font-weight: 600; }
 }
 
 .section-label { color: #285849; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; }
-.terrain-left-panel { display: flex; flex: 0 0 310px; width: 310px; min-height: 0; flex-direction: column; border-right: 1px solid #dce3df; background: #eef3ee; }
+.terrain-left-panel { display: flex; flex: 0 0 244px; width: 244px; min-height: 0; flex-direction: column; border-right: 1px solid #dce3df; background: #eef3ee; }
 .stages { display: flex; flex: 1; width: 100%; min-height: 0; flex-direction: column; gap: 6px; padding: 8px; background: #eef3ee; overflow: auto; }
 .stage { width: 100%; background: #fff; border: 1px solid #d3ddd7; border-radius: 5px; }
 .stage > summary { padding: 5px 8px; color: #285849; }

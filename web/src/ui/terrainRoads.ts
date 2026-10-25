@@ -1,6 +1,7 @@
 import { ROAD_CLASSES, ROAD_LEVELS, ROAD_PROFILES, ROAD_SURFACES, defaultRoadConfig, type Point, type RoadClass, type RoadConfig, type RoadCrossing, type RoadOutput, type RoadSegment, type RoadSurface } from '../../../rust/bridge/settlements';
 import type { Layout } from '../../../rust/bridge/urban';
 import { prepareUrbanRoadClip } from '../../../rust/bridge/urbanNetwork';
+import { bindGear, gearButton } from './mapGroup';
 import { RENDER_ROAD_PX, ROAD_STROKE_LAYERS, renderCrossingStrokes, renderRoadStrokes, roadStrokeWidth, splitAtCrossings, type RoadStroke } from '../render/roadPaintRender';
 
 const ns = 'http://www.w3.org/2000/svg';
@@ -120,14 +121,22 @@ export function createTerrainRoads(options: { map: SVGSVGElement; before: Elemen
   const panel = document.createElement('details'); panel.className = 'stage road-stage'; panel.open = true; panel.id = 'roadStage';
   const number = (key: keyof RoadConfig, label: string, min: number, max: number, step: number, title = ''): string =>
     `<label title="${esc(title)}">${label}<input data-road="${key}" type="number" min="${min}" max="${max}" step="${step}"></label>`;
-  panel.innerHTML = `<summary>5 · Roads <span id="roadState"></span></summary><div class="stage-controls">
+  panel.className = 'stage road-stage map-group';
+  panel.innerHTML = `<summary>Routes <span id="roadState"></span></summary><div class="stage-controls" data-map-body>
+    <div class="map-line"><span class="map-icon" role="img" aria-label="Routes" title="Routes">🛣</span>
+      <label class="map-field" title="Sets the road classes and their surfaces"><select id="roadLevel" aria-label="Réseau">${ROAD_LEVELS.map(l => `<option value="${l.id}">${esc(l.label)}</option>`).join('')}</select></label>
+      ${gearButton()}</div>
+    <div class="map-line map-sub">
+      <label class="map-field" title="Roads leaving the map from the main settlement (0 to 16)">sorties <input data-road="exits" type="number" min="0" max="16" step="1" aria-label="Sorties de carte"></label>
+      <label class="map-field map-grow" title="0: spanning tree only · 1: many loops, rural tracks and trails out of settlements and across the countryside">densité <input data-road="density" type="range" min="0" max="1" step="0.05" aria-label="Densité du réseau"><output id="roadDensityValue"></output></label>
+    </div>
+    <small id="roadStatus" class="map-status" role="status">Waiting for settlements…</small>
+    <div id="roadWarnings" role="status"></div>
+    <div class="map-detail" hidden>
     <button id="roadRecalculate" type="button">Recalculer les routes</button>
     <label><input id="roadEnabled" type="checkbox">Generate roads</label>
-    <label title="Sets the road classes and their surfaces">Development <select id="roadLevel">${ROAD_LEVELS.map(l => `<option value="${l.id}">${esc(l.label)}</option>`).join('')}</select></label>
     <label title="Force one surface on the whole network">Surfaces <select id="roadSurface"><option value="auto">By level &amp; culture</option>${ROAD_SURFACES.map(s => `<option value="${s}">${SURFACE_LABEL[s]} only</option>`).join('')}</select></label>
     <label title="Road-building culture: grades, straightness, bridges, causeways">Road culture <select id="roadCulture"><option value="auto">From the settlements</option>${ROAD_PROFILES.map(p => `<option value="${p.id}">${esc(p.label)}</option>`).join('')}</select></label>
-    <label title="0: spanning tree only · 1: many loops, rural tracks and trails out of settlements and across the countryside">Network &amp; path density <input data-road="density" type="range" min="0" max="1" step="0.05"><output id="roadDensityValue"></output></label>
-    ${number('exits', 'Map exits', 0, 4, 1, 'Roads leaving the map from the main settlement')}
     <details class="advanced"><summary>Routing</summary><div class="control-group">
     ${number('gradeWeight', 'Slope aversion', 0, 10, 0.1, '0 ignores the relief entirely')}
     ${number('maxGrade', 'Max grade of main roads (%)', 0, 100, 1, '0 keeps the culture value; local roads ×1.2, tracks ×1.5, trails steeper')}
@@ -144,9 +153,9 @@ export function createTerrainRoads(options: { map: SVGSVGElement; before: Elemen
     <label title="Dark edge under the paved and gravel roads"><input data-road-style="casing" type="checkbox">Casing</label>
     <label><input data-road-style="crossings" type="checkbox">Bridges &amp; fords</label>
     </div></details>
-    <small id="roadStatus" role="status">Waiting for settlements…</small>
     <div class="road-legend" id="roadLegend"></div>
-    <div id="roadWarnings" role="status"></div></div>`;
+    </div></div>`;
+  bindGear(panel);
   const stages = document.querySelector('.stages')!;
   stages.insertBefore(panel, options.before);
   const q = <T extends Element>(selector: string): T => panel.querySelector(selector) as T;
@@ -167,7 +176,7 @@ export function createTerrainRoads(options: { map: SVGSVGElement; before: Elemen
     }
     q('#roadWidthValue').textContent = `${style.width.toFixed(1)}`;
     q('#roadOpacityValue').textContent = `${Math.round(style.opacity * 100)} %`;
-    panel.querySelectorAll<HTMLElement>('.stage-controls input:not(#roadEnabled), .stage-controls select, .stage-controls button').forEach(e => e.toggleAttribute('inert', !enabled));
+    panel.querySelectorAll<HTMLElement>('.stage-controls input:not(#roadEnabled), .stage-controls select, .stage-controls button:not(.map-gear)').forEach(e => e.toggleAttribute('inert', !enabled));
   }
   function changed(): void { controls(); options.onConfigChange(); }
   q<HTMLButtonElement>('#roadRecalculate').onclick = changed;

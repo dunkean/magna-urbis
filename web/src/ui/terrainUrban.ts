@@ -257,9 +257,9 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
     };
     const retitle = (details: Element, title: string): void => { details.querySelector(':scope > summary')!.textContent = title; };
     quarterPanel.id = '';
-    const plan = section('urbanQuarterStage', '3 · Plan urbain ', true), footprint = section('cityFootprintStage', '4 · Emprise et croissance '),
+    const plan = section('urbanQuarterStage', '3 · Plan urbain ', true), footprint = section('cityFootprintStage', '4 · Emprise et croissance ', false, false),
       streets = section('cityStreetStage', '5 · Rues et îlots '), edges = section('cityEdgeStage', '6 · Enceinte, sorties et influences '),
-      display = section('cityDisplayStage', '10 · Affichage et diagnostics ');
+      display = section('cityDisplayStage', '👁 Affichage ');
     // 3 · Plan: actions, seed, composition, exploration and diagnostics.
     const seed = label('[data-seed]'), seedBox = seed.closest('details')!;
     const target = label('#urbanTarget'); target.hidden = true;
@@ -411,9 +411,8 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
     mainPanel?.sync();
   }
   const rendering = document.createElement('details'); rendering.className = 'advanced';
-  rendering.innerHTML = `<summary>Rendu · empreinte, quartiers et parcelles</summary><div class="control-group">${Object.entries({ reserve: 'Réserve de croissance', allocated: 'Terre urbaine attribuée', centers: 'Noyaux et identités de quartier', domains: 'Domaines réservés', quarters: 'Secteurs de calcul', blocks: 'Îlots', streets: 'Rues urbaines', enclosures: 'Enceintes et portes', parcels: 'Parcelles', gardens: 'Jardins', places: 'Places et communs', fronts: 'Façades accessibles', axes: 'Axes des parcelles', access: 'Statut de desserte des parcelles' }).map(([key, label]) => `<label><input data-render="${key}" type="checkbox">${label}</label>`).join('')}<label>Palette<select data-render="palette"><option value="growth">Phases de croissance</option><option value="atlas">Atlas · quartiers</option><option value="ink">Encre</option><option value="terrain">Terrain</option></select></label><label>Opacité<input data-render="opacity" type="number" min="0" max="1" step="0.05"></label><label>Épaisseur des traits (px)<input data-render="width" type="number" min="0" max="5" step="0.1"></label></div><small>Ces réglages redessinent les résultats conservés, sans appel de génération. La réserve, la terre attribuée et les enceintes sont trois objets différents.</small>`;
+  rendering.innerHTML = `<summary>⚙ Rendu · couches, palette, opacité</summary><div class="control-group">${Object.entries({ reserve: 'Réserve de croissance', allocated: 'Terre urbaine attribuée', centers: 'Noyaux et identités de quartier', domains: 'Domaines réservés', quarters: 'Secteurs de calcul', blocks: 'Îlots', streets: 'Rues urbaines', enclosures: 'Enceintes et portes', parcels: 'Parcelles', gardens: 'Jardins', places: 'Places et communs', fronts: 'Façades accessibles', axes: 'Axes des parcelles', access: 'Statut de desserte des parcelles' }).map(([key, label]) => `<label><input data-render="${key}" type="checkbox">${label}</label>`).join('')}<label>Palette<select data-render="palette"><option value="growth">Phases de croissance</option><option value="atlas">Atlas · quartiers</option><option value="ink">Encre</option><option value="terrain">Terrain</option></select></label><label>Opacité<input data-render="opacity" type="number" min="0" max="1" step="0.05"></label><label>Épaisseur des traits (px)<input data-render="width" type="number" min="0" max="5" step="0.1"></label></div><small>Ces réglages redessinent les résultats conservés, sans appel de génération. La réserve, la terre attribuée et les enceintes sont trois objets différents.</small>`;
   displayHost.append(rendering);
-  if (options.city) rendering.open = true;
   for (const e of Array.from(rendering.querySelectorAll<HTMLInputElement | HTMLSelectElement>('[data-render]'))) {
     const key = e.dataset.render as keyof Render;
     if (e instanceof HTMLInputElement && e.type === 'checkbox') e.checked = Boolean(render[key]); else e.value = String(render[key]);
@@ -764,6 +763,17 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
       populate('quarters'); populate('parcels'); request('quarters'); options.onChange();
     } catch (error) { completeGeneration = false; status('quarters', String(error)); }
   }
+  /** « Appliquer à tous » : the selected settlement's settings go to every settlement through the internal « all » target, then the selection comes back. */
+  let returnTo: string | undefined;
+  function applyToAll(): void {
+    if (!target || target === 'all' || !settlements || settlements.settlements.length < 2) { generateAll(); return; }
+    returnTo = target; targetSelect.value = 'all'; targetSelect.onchange!(new Event('change')); generateAll();
+  }
+  function leaveAll(): void {
+    if (!returnTo) return;
+    const key = returnTo; returnTo = undefined;
+    if (targetSelect.value === 'all' && Array.from(targetSelect.options).some(o => o.value === key)) { targetSelect.value = key; targetSelect.onchange!(new Event('change')); }
+  }
   installSettlementStyles(styleHost, style => {
     const next = applySettlementStyle(style, layoutConfig);
     layoutConfig = next.layout; parcelConfig = next.parcels;
@@ -912,7 +922,7 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
       one(appliedKind, '[data-draft-state]').textContent = 'Calcul refusé · le dernier plan appliqué est conservé.';
       // A refused item edit is withdrawn: the kept plan does not carry it.
       if (editsBefore) { edits = editsBefore; editsBefore = undefined; editsReport(); inspectorNote(`Modification refusée par le moteur : ${response.error}`); }
-      status(appliedKind, response.error); options.onChange(); return;
+      leaveAll(); status(appliedKind, response.error); options.onChange(); return;
     }
     if (response.layouts || response.partitions) editsBefore = undefined;
     if (response.layouts) {
@@ -944,6 +954,7 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
         }
       }
       rememberCities(incoming.map(layout => layout.key));
+      leaveAll();
       const count = (partitions ?? []).reduce((n, p) => n + p.parcels.length, 0);
       status('parcels', `Rust · ${count} parcelles · ${response.ms?.toFixed(0)} ms`);
       one('parcels', '[data-state]').textContent = `${count} parcelles`;
@@ -1873,6 +1884,8 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
   let housesTimer: ReturnType<typeof setTimeout> | undefined;
   mainPanel = createUrbanMainPanel({
     cultures: Object.entries(catalogue.cultures).map(([id, c]) => [id, c.label]), tissues, operators: parcelOperators,
+    recipes: culture => (catalogue.cultures[culture]?.recipes ?? []).map((r): [string, string] => [r.id, r.label]),
+    ...(options.city ? {} : { applyToAll: () => applyToAll() }),
     options: key => Array.from(legacyControl(key)?.closest('label')?.querySelectorAll('option') ?? []).map((o): [string, string] => [o.value, o.textContent ?? o.value]),
     state: () => {
       const own = layouts?.filter(l => target === 'all' || l.key === target), first = own?.[0], zones = zoneOf();
@@ -1933,10 +1946,20 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
     const ids = ['urbanQuarterStage', 'cityFootprintStage', 'cityStreetStage', 'cityEdgeStage', 'urbanParcelStage', 'urbanProgrammeStage', 'urbanBuildingStage'];
     const members = ids.map(id => document.getElementById(id)).filter((e): e is HTMLElement => !!e);
     const frame = document.createElement('section'); frame.id = 'urbanAdvancedFrame'; frame.className = 'stage urban-advanced-frame';
-    frame.innerHTML = '<div id="urbanAdvancedBody" hidden><h3>Détails · par étape</h3><small>Tout le reste des réglages. Recette, préréglage, zone et paramètres JSON valent pour les phases non choisies dans le tableau de la ville.</small></div>';
-    members[0].before(mainPanel.element, frame); frame.firstElementChild!.append(...members);
-    if (!options.city) { const scope = targetSelect.closest('label')!; scope.firstChild!.textContent = 'Réglages appliqués à '; mainPanel.scopeSlot.append(scope); }
-
+    frame.innerHTML = '<div id="urbanAdvancedBody" hidden><small>Tout le reste des réglages, par étape. Recette, préréglage, zone et paramètres JSON valent pour les phases non choisies dans la grille.</small></div>';
+    frame.firstElementChild!.append(...members);
+    // The city inspector (right column); created here when the page does not provide it.
+    let inspector = document.getElementById('cityInspector');
+    if (!inspector) {
+      inspector = document.createElement('aside'); inspector.id = 'cityInspector'; inspector.className = 'city-inspector city-inspector-fallback';
+      (document.querySelector('.terrain-workspace') ?? document.body).append(inspector);
+    }
+    inspector.classList.add('urban-inspector');
+    let slot = document.getElementById('cityInspectorSettlement');
+    if (!slot) { slot = document.createElement('div'); slot.id = 'cityInspectorSettlement'; }
+    inspector.append(slot, mainPanel.element, frame); inspector.hidden = false;
+    // The scope selector stays as the internal target mechanism; the inspector edits the selected settlement.
+    targetSelect.closest('label')!.hidden = true;
   }
   populate('quarters'); populate('parcels'); editsReport();
   // Plan layers hidden together (map toggle "Plan de ville"): buildings,
@@ -2082,7 +2105,7 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
       ++id; settlements = output; roads = roadOutput; ready = !!output;
       layouts = undefined; partitions = undefined;
       const sorted = output?.settlements.slice().sort((a, b) => b.population - a.population || a.key.localeCompare(b.key)) ?? [];
-      if (target !== 'all' && !sorted.some(s => s.key === target)) target = sorted[0]?.key ?? '';
+      if (!sorted.some(s => s.key === target)) target = sorted[0]?.key ?? '';
       targetSelect.replaceChildren(new Option('All · tous les settlements', 'all'), ...sorted.map(s => new Option(`${s.name || s.key} · ${s.population.toLocaleString()} hab. · ${Math.round(s.radius)} m`, s.key)));
       targetSelect.value = target; targetSelect.disabled = !sorted.length;
       populate('quarters'); populate('parcels'); draw();

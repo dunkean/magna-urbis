@@ -1,6 +1,7 @@
 import { type Decor, type DecorEntry } from './decor';
 import { readDecorFile } from './decorFile';
 import { saveHistory } from './benchHistory';
+import { bindGear, gearButton } from './mapGroup';
 
 const climates: Record<string, string> = { temperate: 'tempéré', oceanic: 'océanique', mediterranean: 'méditerranéen', arid: 'aride', cold: 'froid', tropical: 'tropical' };
 
@@ -8,7 +9,10 @@ const climates: Record<string, string> = { temperate: 'tempéré', oceanic: 'oc�
  * `city`: City Bench maps only (tag kit=city), grouped by size. */
 export function createTerrainDecorLibrary(options: { before: Element; city?: boolean; onOpen(decor: Decor): void | Promise<void> }): void {
   const panel = document.createElement('details'); panel.className = 'stage'; panel.id = 'terrainLibrary'; panel.open = true;
-  panel.innerHTML = `<summary>${options.city ? 'Carte · environnement de la ville' : 'Terrain · charger un existant'}</summary><div class="stage-controls"><label>Terrain prégénéré<select data-catalogue><option value="">Choisir un terrain…</option></select></label><button type="button" data-load>Charger le terrain</button><label>Importer .decor<input type="file" accept=".decor" data-file></label><small role="status">${options.city ? 'Une ville au centre ; changez sa taille, sa culture et sa position dans « 1 · Ville ».' : 'Les exports conservés sont aussi disponibles dans l’historique.'}</small></div>`;
+  panel.innerHTML = options.city
+    ? `<summary>Terrain</summary><div class="stage-controls" data-map-body><div class="map-line"><span class="map-icon" role="img" aria-label="Terrain" title="Terrain">⛰</span><label class="map-field map-grow"><select data-catalogue aria-label="Terrain prégénéré" title="Terrain prégénéré : le choisir le charge"><option value="">Choisir un terrain…</option></select></label>${gearButton()}</div><div class="map-detail" hidden><button type="button" data-load>Charger le terrain</button><label>Importer .decor<input type="file" accept=".decor" data-file></label><small role="status">Une ville au centre ; changez sa taille, sa culture et sa position dans l’inspecteur Ville.</small></div></div>`
+    : `<summary>Terrain · charger un existant</summary><div class="stage-controls"><label>Terrain prégénéré<select data-catalogue><option value="">Choisir un terrain…</option></select></label><button type="button" data-load>Charger le terrain</button><label>Importer .decor<input type="file" accept=".decor" data-file></label><small role="status">Les exports conservés sont aussi disponibles dans l’historique.</small></div>`;
+  if (options.city) { panel.classList.add('map-group'); bindGear(panel); }
   options.before.before(panel);
   const select = panel.querySelector('select')!, note = panel.querySelector('small')!, button = panel.querySelector('button')!;
   let entries: DecorEntry[] = [];

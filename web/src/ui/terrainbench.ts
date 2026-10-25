@@ -1887,10 +1887,9 @@ if (pipelineStage === 'settlements') {
   const display = document.getElementById('style')?.closest<HTMLElement>('.control-group'); if (display) display.hidden = false;
   el('terrain3dControls').hidden = legacyPipeline;
   input('auto').checked = false;
-  document.querySelector('#roadStage summary')!.childNodes[0].textContent = '4 · Routes régionales ';
+  document.body.classList.add('stage-settlements');
   document.querySelector('#urbanQuarterStage summary')!.childNodes[0].textContent = '5 · Quartiers et îlots ';
   document.querySelector('#urbanParcelStage summary')!.childNodes[0].textContent = 'Parcelles · optionnel ';
-  document.querySelector('#settlementStage summary')!.childNodes[0].textContent = 'Implantations ';
 }
 const transfer = document.createElement('details'); transfer.className = 'stage'; transfer.open = true; transfer.id = 'pipelineTransfer';
 transfer.innerHTML = `<summary>${pipelineStage === 'terrain' ? 'Terrain → settlements' : 'Ville → atelier Ville'}</summary><div class="stage-controls">
@@ -1903,6 +1902,8 @@ const historyPanel = createHistoryPanel({ before: transfer, current: () => lastE
 if (pipelineStage === 'terrain') {
   const extent = el<HTMLSelectElement>('transferExtent');
   extent.onchange = () => { el('transferCrop').hidden = extent.value !== 'crop'; drawTransferSelection?.(); };
+// The city inspector (right column) belongs to the Settlements page only.
+if (pipelineStage !== 'settlements') document.getElementById('cityInspector')?.remove();
   drawTransferSelection = () => {
     map.querySelector('#transferSelection')?.remove();
     if (extent.value !== 'crop') return;

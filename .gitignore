@@ -45,3 +45,5 @@ rust/crates/houses/access-integration-cases/
 rust/crates/houses/access-integration-standard-cases/
 _agents_blackboard/*/
 __pycache__/
+
+.superpowers/

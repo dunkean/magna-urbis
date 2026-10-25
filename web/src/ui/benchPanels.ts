@@ -15,18 +15,14 @@ const specs: Record<string, PanelSpec> = {
   reliefStage: { main: '#width, #relief, #climate, #motifSize, #erosion, #environment, #mountainMix', method: '#terrainMethod', compute: '#terrainSource, #generationCompute, #compute', action: '#generateRelief' },
   coastStage: { main: '#coastControl', methodText: 'Découpe du relief', computeText: 'Support du terrain · Rust / WebGPU', action: '#generateCoasts' },
   hydroStage: { main: '#hydroEnabled, #rustControls', method: '#hydroEngine', compute: '#hydroCompute', action: '#generateHydrology' },
-  settlementStage: { main: '#setEnabled, #setAutoRefresh, #setRefresh, #setMainPop, #setCulture, #setCounts', method: '#setMode, #setDistribution', computeText: 'CPU · Rust / WASM', action: '#setGenerate' },
-  roadStage: { main: '#roadEnabled, #roadLevel, #roadCulture, [data-road="density"]', methodText: 'Routage selon le terrain', computeText: 'CPU · Rust / WASM', action: '#roadRecalculate' },
   urbanQuarterStage: { main: '[data-enabled], #urbanTarget, [data-footprint="family"], [data-config="culture"]', method: '[data-config="composition"], [data-footprint="mechanism"], [data-config="tissue"]', computeText: 'CPU · Rust / WASM', action: '[data-apply]' },
   urbanParcelStage: { main: '[data-enabled], [data-config="culture"]', method: '[data-config="operator"]', computeText: 'CPU · Rust / WASM', action: '[data-apply]' },
   seedStage: { main: '#seedName, #seedPopulation, #seedCulture, #seedSite, .settlement-actions', method: '#seedRoads', computeText: 'Placement sur la carte' },
   decorStage: { main: '#decorList, #decorInfo', methodText: 'Décor conservé', computeText: 'Import local', },
-  landuseStage: { main: '#landuseEnabled, #landuseBiome', methodText: 'Occupation procédurale', computeText: 'CPU · TypeScript', action: '#landuseGenerate' },
 };
 
 /** City Bench (citybench.html): one city, its editor, the exploration tools and the seeds stay in view. */
 const citySpecs: Record<string, PanelSpec> = {
-  settlementStage: { main: '#setAutoRefresh, #setRefresh, #setEditor', methodText: 'Une ville · position fixée', computeText: 'CPU · Rust / WASM' },
   urbanQuarterStage: { main: '[data-enabled], .settlement-style-controls, .urban-explorer, [data-seed], [data-warnings]', method: '[data-config="composition"]', computeText: 'CPU · Rust / WASM', action: '[data-apply]' },
   urbanParcelStage: { main: '[data-enabled], [data-config="operator"], [data-seed]', computeText: 'CPU · Rust / WASM', action: '[data-apply]' },
 };
@@ -182,7 +178,7 @@ function organizeTransfer(): void {
   while (controls.firstChild) options.lastElementChild!.append(controls.firstChild);
   controls.append(actions, options, note);
   // Legacy decor export uses the same applied snapshot; keep it available in the dock.
-  const legacy = document.querySelector('#setExportDecor'); if (legacy) options.lastElementChild!.append(legacy);
+  const legacy = document.querySelector('#setExportDecor'); if (legacy && !legacy.closest('.map-group')) options.lastElementChild!.append(legacy);
 }
 
 function organize(): void {
