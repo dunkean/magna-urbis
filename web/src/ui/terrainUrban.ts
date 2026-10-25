@@ -1866,7 +1866,9 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
     return houses;
   };
   const legacyControl = (key: string): HTMLSelectElement | HTMLInputElement | undefined => {
-    for (const kind of ['quarters', 'parcels'] as const) { const found = one<HTMLSelectElement | HTMLInputElement>(kind, `[data-config="${key}"]`); if (found) return found; }
+    // `footprint.family` → the footprint control `[data-footprint="family"]`.
+    const selector = key.startsWith('footprint.') ? `[data-footprint="${key.slice(10)}"]` : `[data-config="${key}"]`;
+    for (const kind of ['quarters', 'parcels'] as const) { const found = one<HTMLSelectElement | HTMLInputElement>(kind, selector); if (found) return found; }
     return undefined;
   };
   const stageStates = (): Record<'plan' | 'parcels' | 'houses', import('./urbanMainPanel').StageState> => {

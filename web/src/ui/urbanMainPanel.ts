@@ -8,7 +8,7 @@ export type StageState = 'none' | 'ok' | 'stale' | 'busy' | 'error';
 const STAGES = { plan: 'Plan', parcels: 'Lots', houses: 'Maisons' } as const;
 const STATE_TEXT: Record<StageState, string> = { none: 'à faire', ok: 'à jour', stale: 'à refaire', busy: 'en cours', error: 'erreur' };
 const SPREADS: Record<HouseMix['spread'], string> = { lot: 'par maison', block: 'par îlot', quarter: 'par quartier' };
-const ROWS = [['culture', '🎨', 'Plan', 'Culture du plan'], ['tissue', '╬', 'Rues', 'Maillage des rues'], ['recipe', '▦', 'Îlots', 'Recette des îlots et quartiers'], ['operator', '▤', 'Lots', 'Découpe des parcelles'], ['houses', '⌂', 'Maisons', 'Mélange de styles de maisons']] as const;
+const ROWS = [['culture', '🎨', 'Plan', 'Culture du plan'], ['tissue', '╬', 'Rues', 'Maillage des rues'], ['recipe', '▦', 'Îlots', 'Recette des îlots et quartiers'], ['operator', '▤', 'Parcel.', 'Opérateur parcellaire (découpe des lots)'], ['houses', '⌂', 'Maisons', 'Mélange de styles de maisons']] as const;
 type MixScope = { kind: 'city' } | { kind: 'zone'; zone: string } | { kind: 'quarter'; key: string };
 
 export interface UrbanMainHost {
@@ -71,6 +71,8 @@ export function createUrbanMainPanel(host: UrbanMainHost) {
     </div>
     <div class="um-line">${mirror('culture', '🎨', 'Culture du plan')}</div>
     <div class="um-line">${mirror('fortification', '🧱', 'Enceinte')}${mirror('settlementForm', '🏘', 'Type de ville')}</div>
+    <div class="um-line">${mirror('footprint.family', '⬠', 'Forme de la ville')}${mirror('footprint.mechanism', '🌱', 'Génération : comment la ville croît')}</div>
+    <div class="um-line"><label class="um-f" title="Opérateur parcellaire de toute la ville (une phase peut le changer dans la grille, ligne ▤)"><span>▤</span><select data-um-op></select></label><label class="um-f" title="Silhouettes : culture des maisons de toute la ville (un mélange se règle dans la grille, ligne ⌂)"><span>⌂</span><select data-um-house></select></label></div>
     <small class="um-simple" data-um-simple hidden>Forme simplifiée : les phases ne s’appliquent pas, seule la colonne « Toute » compte.</small>
     <details class="um-infl" data-um-infl><summary>+ influence <em data-um-infl-sum></em></summary>
       <div class="um-line">${mirror('mixCulture', '🎨', 'Culture d’influence')}<label class="um-f" title="Part de l’influence"><span>%</span><input type="number" min="0" max="1" step="0.05" data-um-cfg="mixShare"></label>${mirror('mixMode', '◫', 'Répartition')}</div></details>
@@ -92,6 +94,14 @@ export function createUrbanMainPanel(host: UrbanMainHost) {
   for (const button of Array.from(panel.querySelectorAll<HTMLButtonElement>('[data-um-step]'))) button.onclick = () => host.steps[button.dataset.umStep as keyof typeof host.steps]();
   for (const chip of Array.from(panel.querySelectorAll<HTMLButtonElement>('[data-um-chip]'))) chip.onclick = () => host.steps[chip.dataset.umChip as keyof typeof STAGES]();
   const arch = q<HTMLSelectElement>('[data-um-arch]'); arch.onchange = () => host.setArchitecture(arch.value);
+  const cityOp = q<HTMLSelectElement>('[data-um-op]'); cityOp.onchange = () => host.setCityOperator(cityOp.value);
+  const cityHouse = q<HTMLSelectElement>('[data-um-house]');
+  cityHouse.onchange = () => {
+    if (cityHouse.value === 'mix') return;
+    const houses = structuredClone(host.state().houses);
+    if (cityHouse.value) houses.city = { styles: [{ culture: cityHouse.value, weight: 100 }], spread: houses.city?.spread ?? 'lot' }; else delete houses.city;
+    host.setHouses(houses);
+  };
   const auto = q<HTMLInputElement>('[data-um-auto]'); auto.onchange = () => host.auto.set(auto.checked);
   const applyAll = q<HTMLButtonElement>('[data-um-apply-all]'); applyAll.hidden = !host.applyToAll; applyAll.onclick = () => host.applyToAll?.();
   const advanced = q<HTMLButtonElement>('[data-um-advanced]');
@@ -268,7 +278,8 @@ export function createUrbanMainPanel(host: UrbanMainHost) {
     auto.checked = host.auto.get();
     // General line
     for (const control of Array.from(panel.querySelectorAll<HTMLSelectElement | HTMLInputElement>('[data-um-cfg]'))) {
-      const key = control.dataset.umCfg!, value = (layout as unknown as Record<string, unknown>)[key];
+      const key = control.dataset.umCfg!;
+      const value = key.startsWith('footprint.') ? (layout.footprint as unknown as Record<string, unknown>)[key.slice(10)] : (layout as unknown as Record<string, unknown>)[key];
       if (control instanceof HTMLInputElement) { if (document.activeElement !== control) control.value = String(value ?? ''); continue; }
       if (key === 'culture') {
         fill(control, [['site', `du lieu (${label(s.siteCulture)})`], ...host.cultures]); set(control, String(value || 'site')); continue;
@@ -278,6 +289,12 @@ export function createUrbanMainPanel(host: UrbanMainHost) {
       fill(control, entries); set(control, String(value ?? ''));
       control.title = control.selectedOptions[0]?.textContent ?? '';
     }
+    fill(cityOp, [['culture', 'Parcellaire selon la culture'], ...operatorEntries]); set(cityOp, s.parcels.operator || 'culture');
+    cityOp.title = `Opérateur parcellaire : ${cityOp.selectedOptions[0]?.textContent ?? ''}`;
+    const styles = s.houses.city?.styles.filter(st => st.weight > 0 && st.culture) ?? [];
+    fill(cityHouse, [['', 'Maisons selon la culture du plan'], ...host.cultures, ...(styles.length > 1 ? [['mix', `Mélange de ${styles.length} styles (grille ⌂)`] as [string, string]] : [])]);
+    set(cityHouse, styles.length > 1 ? 'mix' : styles[0]?.culture ?? '');
+    cityHouse.title = `Silhouettes : ${cityHouse.selectedOptions[0]?.textContent ?? ''}`;
     q('[data-um-simple]').toggleAttribute('hidden', !s.small);
     const infl = q<HTMLDetailsElement>('[data-um-infl]');
     q('[data-um-infl-sum]').textContent = layout.mixCulture ? `· ${label(layout.mixCulture)} ${Math.round(layout.mixShare * 100)} %` : ''; if (layout.mixCulture) infl.open = true;
