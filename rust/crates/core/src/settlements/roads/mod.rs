@@ -248,7 +248,7 @@ fn validate(sites: &[RoadSite], cfg: &RoadConfig, width: f64) -> Result<(), Stri
         || cfg.max_grade > 1.0
         || !(0.05..=10.0).contains(&cfg.crossing_cost)
         || cfg.wobble > 5.0
-        || cfg.exits > 4
+        || cfg.exits > 16
         || level_by_id(&cfg.level).is_none()
         || (cfg.surface != "auto" && !SURFACES.contains(&cfg.surface.as_str()))
         || (cfg.culture != "auto" && profile_by_id(&cfg.culture).is_none())
@@ -328,6 +328,7 @@ impl Router<'_> {
             target: target.center,
             profile: &PROFILES[profile],
             class,
+            tight: false,
         };
         let Some(cells) = self.search.few_crossings(f, &self.net, &self.costs, &query) else {
             return false;
@@ -380,6 +381,7 @@ impl Router<'_> {
             target: end,
             profile: &PROFILES[profile],
             class: class_index(importance, self.level),
+            tight: false,
         };
         let trunk_discount = self.costs.discount;
         // A cross-country shortcut must be allowed to leave the existing spokes;
@@ -496,7 +498,13 @@ impl Router<'_> {
 
     /// A road from `site` to the map border `side`, ending wherever along that border the route
     /// is cheapest. Returns the exit point.
-    fn connect_exit(&mut self, site: usize, side: usize, importance: u32) -> Option<Point> {
+    fn connect_exit(
+        &mut self,
+        site: usize,
+        side: usize,
+        importance: u32,
+        around: Option<(Point, f64)>,
+    ) -> Option<Point> {
         let f = self.f;
         let n = f.r.n;
         let border: Vec<usize> = (0..n)
@@ -507,20 +515,32 @@ impl Router<'_> {
                 _ => (n - 1) * n + k,
             })
             .filter(|&i| f.r.water[i] == 0)
+            .filter(|&i| around.map_or(true, |(p, r)| f.pos(i).distance(p) <= r))
             .collect();
+        if border.is_empty() {
+            return None;
+        }
         let center = self.sites[site].center;
         let profile = self.profile_of(site);
-        let query = Query {
+        let mut query = Query {
             start: f.index(center),
             goals: &border,
             origin: center,
-            target: side_point(f, side, center),
+            target: around.map_or(side_point(f, side, center), |(p, _)| p),
             profile: &PROFILES[profile],
             class: class_index(importance, self.level),
+            tight: around.is_some(),
         };
-        let mut cells = self
+        let mut found = self
             .search
-            .few_crossings(f, &self.net, &self.costs, &query)?;
+            .few_crossings(f, &self.net, &self.costs, &query);
+        if found.is_none() && query.tight {
+            query.tight = false;
+            found = self
+                .search
+                .few_crossings(f, &self.net, &self.costs, &query);
+        }
+        let mut cells = found?;
         if cells.len() < 2 {
             return None;
         }
@@ -696,17 +716,63 @@ pub(super) fn route(
     // Exits: the main place towards its nearest borders, then large towns near a border. The
     // search runs from the place to every dry cell of that border, so the exit lands where the
     // ground allows rather than at the foot of a cliff.
-    let mut exits: Vec<(Point, usize)> = vec![];
+    let mut exits: Vec<(Point, usize, u32)> = vec![];
     let main = sites[hub].center;
-    let mut main_sides: Vec<_> = (0..4).collect();
-    main_sides.sort_by(|&a, &b| {
-        side_point(f, a, main)
-            .distance(main)
-            .total_cmp(&side_point(f, b, main).distance(main))
+    let spacing = 1500.0_f64.max(0.12 * f.r.width);
+    // N directions evenly spread around the main place, the first towards its nearest border.
+    let nearest = (0..4)
+        .min_by(|&a, &b| {
+            side_point(f, a, main)
+                .distance(main)
+                .total_cmp(&side_point(f, b, main).distance(main))
+        })
+        .unwrap();
+    let np = side_point(f, nearest, main);
+    let start = (np.y - main.y).atan2(np.x - main.x);
+    let mut planned: Vec<(Point, usize)> = vec![];
+    for j in 0..cfg.exits {
+        let a = start + std::f64::consts::TAU * j as f64 / cfg.exits as f64;
+        let (dx, dy) = (a.cos(), a.sin());
+        let w = f.r.width;
+        let tx = if dx > 1e-9 {
+            (w - main.x) / dx
+        } else if dx < -1e-9 {
+            -main.x / dx
+        } else {
+            f64::INFINITY
+        };
+        let ty = if dy > 1e-9 {
+            (w - main.y) / dy
+        } else if dy < -1e-9 {
+            -main.y / dy
+        } else {
+            f64::INFINITY
+        };
+        let (t, side) = if tx <= ty {
+            (tx, if dx > 0.0 { 1 } else { 0 })
+        } else {
+            (ty, if dy > 0.0 { 3 } else { 2 })
+        };
+        let hit = Point {
+            x: (main.x + dx * t).clamp(0.0, w),
+            y: (main.y + dy * t).clamp(0.0, w),
+        };
+        if planned.iter().any(|(p, _)| p.distance(hit) < spacing) {
+            continue;
+        }
+        planned.push((hit, side));
+    }
+    // Nearest border first: the first exit is the strongest.
+    planned.sort_by(|a, b| {
+        a.0.distance(main)
+            .total_cmp(&b.0.distance(main))
     });
-    for side in main_sides.into_iter().take(cfg.exits) {
-        if let Some(p) = router.connect_exit(hub, side, sites[hub].population) {
-            exits.push((p, hub));
+    for (rank, (hit, side)) in planned.into_iter().enumerate() {
+        let weight = (sites[hub].population / (rank as u32 + 1).pow(2)).max(1);
+        if let Some(p) =
+            router.connect_exit(hub, side, weight, Some((hit, 0.25 * spacing)))
+        {
+            exits.push((p, hub, weight));
         }
     }
     if cfg.exits > 0 {
@@ -723,12 +789,12 @@ pub(super) fn route(
             if p.distance(c) > 0.3 * f.r.width
                 || exits
                     .iter()
-                    .any(|(e, _)| e.distance(p) < 1500.0_f64.max(0.12 * f.r.width))
+                    .any(|(e, _, _)| e.distance(p) < spacing)
             {
                 continue;
             }
-            if let Some(p) = router.connect_exit(i, side, sites[i].population) {
-                exits.push((p, i));
+            if let Some(p) = router.connect_exit(i, side, sites[i].population, None) {
+                exits.push((p, i, sites[i].population));
             }
         }
     }
@@ -756,9 +822,9 @@ pub(super) fn route(
             trips.push((va, vb, importance(a, b)));
         }
     }
-    for &(p, s) in &exits {
+    for &(p, s, weight) in &exits {
         if let (Some(ve), Some(vs)) = (graph.vertex_of(f.index(p)), site_vertex[s]) {
-            trips.push((ve, vs, sites[s].population));
+            trips.push((ve, vs, weight));
         }
     }
     network::assign_traffic(&mut links, graph.pos.len(), &graph.pos, &trips, 3.0);

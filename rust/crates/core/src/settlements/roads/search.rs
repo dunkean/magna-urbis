@@ -169,6 +169,8 @@ pub(super) struct Query<'a> {
     pub target: Point,
     pub profile: &'a Profile,
     pub class: usize,
+    /// Narrow corridor around the straight line (long routes to a known goal).
+    pub tight: bool,
 }
 
 /// One search state, `cell * HEADINGS + sector`, kept together for locality.
@@ -313,16 +315,27 @@ impl Search {
         let tx = ((q.target.x / f.cell) as usize).min(n - 1);
         let ty = ((q.target.y / f.cell) as usize).min(n - 1);
         let span = sx.abs_diff(tx).max(sy.abs_diff(ty));
-        let margin = (span * 2 / 5).max(32);
+        let margin = if q.tight { 24 } else { (span * 2 / 5).max(32) };
         let window = (
             sx.min(tx).saturating_sub(margin),
             sy.min(ty).saturating_sub(margin),
             (sx.max(tx) + margin).min(n - 1),
             (sy.max(ty) + margin).min(n - 1),
         );
+        // A tight query is further limited to a corridor along the straight line.
+        let axis = (q.target.x - q.origin.x, q.target.y - q.origin.y);
+        let axis_len = axis.0.hypot(axis.1).max(1.0);
+        let corridor = 30.0 * f.cell;
         let inside = |i: usize| {
             let (x, y) = (i % n, i / n);
-            x >= window.0 && x <= window.2 && y >= window.1 && y <= window.3
+            if !(x >= window.0 && x <= window.2 && y >= window.1 && y <= window.3) {
+                return false;
+            }
+            if !q.tight {
+                return true;
+            }
+            let p = f.pos(i);
+            ((p.x - q.origin.x) * axis.1 - (p.y - q.origin.y) * axis.0).abs() / axis_len <= corridor
         };
         let mut bounds = (n, n, 0, 0);
         let mut any = false;
@@ -342,7 +355,12 @@ impl Search {
         // Heuristic rate just above the cost of following an existing road: much faster than a
         // strictly admissible bound, yet never so high that a route skips a trunk it should share
         // (a higher rate pulls routes straight at the goal, alongside the roads already there).
-        let h_rate = costs.discount.max(0.3) + 0.15;
+        // With no road yet there is nothing to share, so the full ground cost applies.
+        let h_rate = if net.dirs.iter().any(|&d| d != 0) {
+            costs.discount.max(0.3) + 0.15
+        } else {
+            0.9
+        };
         let heuristic = |i: usize| {
             let x = i % n;
             let y = i / n;

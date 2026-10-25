@@ -1008,3 +1008,52 @@ fn fixed_wet_points_are_not_silently_relocated_and_invalid_configs_fail() {
         assert!(t.roads("bad", &[], &bad).is_err());
     }
 }
+
+#[test]
+fn many_exits_spread_around_the_main_place_with_different_sizes() {
+    let map = Map::sized(192);
+    let mut cfg = Config {
+        distribution: "zipf".into(),
+        density: 1.0,
+        ..Default::default()
+    };
+    cfg.main.population = 12000;
+    let roads_cfg = RoadConfig {
+        exits: 8,
+        ..Default::default()
+    };
+    let start = std::time::Instant::now();
+    let (_, roads) = place_and_route(&map, "exits", &cfg, &roads_cfg);
+    assert!(start.elapsed().as_secs() < 20, "routing took {:?}", start.elapsed());
+    assert_clean_network(&roads, WIDTH / map.n as f64);
+    let exits: Vec<usize> = roads
+        .junctions
+        .iter()
+        .enumerate()
+        .filter(|(_, j)| j.site.as_deref() == Some("exit"))
+        .map(|(i, _)| i)
+        .collect();
+    let mut ends: Vec<Point> = vec![];
+    for &e in &exits {
+        let p = roads.junctions[e].point;
+        if !ends.iter().any(|q| q.distance_to(p) < 1000.0) {
+            ends.push(p);
+        }
+    }
+    assert!(ends.len() >= 6, "{} distinct border endpoints", ends.len());
+    let mut classes: Vec<&str> = roads
+        .segments
+        .iter()
+        .filter(|s| exits.contains(&s.a) || exits.contains(&s.b))
+        .map(|s| s.class.as_str())
+        .collect();
+    classes.sort();
+    classes.dedup();
+    assert!(classes.len() > 1, "exit classes: {classes:?}");
+    assert!(
+        map.terrain()
+            .roads("exits", &[], &RoadConfig { exits: 17, ..Default::default() })
+            .is_err()
+    );
+}
+
