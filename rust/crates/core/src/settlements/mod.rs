@@ -77,6 +77,7 @@ pub struct Config {
     /// Log-normal spread around the rank-size curve (0 = exact law).
     pub population_jitter: f64,
     pub spread: f64,
+    /// Retained for old saved configurations; sampling now considers all available land.
     pub small_top: f64,
     pub main_clear: f64,
     /// Small places drawn towards larger ones (satellites), 0 = independent.
@@ -148,7 +149,8 @@ pub struct Raster<'a> {
 #[serde(rename_all = "camelCase")]
 pub struct Scores {
     pub total: f64,
-    /// Legacy candidate ranking uses one reference population per class band.
+    /// Diagnostic quality ranking uses one reference population per class band;
+    /// selection samples all feasible candidates using the actual population.
     pub ranking_score: Option<f64>,
     pub candidate_rank: Option<usize>,
     pub ranking_population: Option<u32>,

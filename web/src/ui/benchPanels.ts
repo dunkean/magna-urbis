@@ -15,7 +15,7 @@ const specs: Record<string, PanelSpec> = {
   reliefStage: { main: '#width, #relief, #climate, #motifSize, #erosion, #environment, #mountainMix', method: '#terrainMethod', compute: '#terrainSource, #generationCompute, #compute', action: '#generateRelief' },
   coastStage: { main: '#coastControl', methodText: 'Découpe du relief', computeText: 'Support du terrain · Rust / WebGPU', action: '#generateCoasts' },
   hydroStage: { main: '#hydroEnabled, #rustControls', method: '#hydroEngine', compute: '#hydroCompute', action: '#generateHydrology' },
-  settlementStage: { main: '#setEnabled, #setMainPop, #setCulture, #setCounts', method: '#setMode, #setDistribution', computeText: 'CPU · Rust / WASM', action: '#setGenerate' },
+  settlementStage: { main: '#setEnabled, #setAutoRefresh, #setRefresh, #setMainPop, #setCulture, #setCounts', method: '#setMode, #setDistribution', computeText: 'CPU · Rust / WASM', action: '#setGenerate' },
   roadStage: { main: '#roadEnabled, #roadLevel, #roadCulture, [data-road="density"]', methodText: 'Routage selon le terrain', computeText: 'CPU · Rust / WASM', action: '#roadRecalculate' },
   urbanQuarterStage: { main: '[data-enabled], #urbanTarget, [data-footprint="family"], [data-config="culture"]', method: '[data-config="composition"], [data-footprint="mechanism"], [data-config="tissue"]', computeText: 'CPU · Rust / WASM', action: '[data-apply]' },
   urbanParcelStage: { main: '[data-enabled], [data-config="culture"]', method: '[data-config="operator"]', computeText: 'CPU · Rust / WASM', action: '[data-apply]' },
@@ -26,7 +26,7 @@ const specs: Record<string, PanelSpec> = {
 
 /** City Bench (citybench.html): one city, its editor, the exploration tools and the seeds stay in view. */
 const citySpecs: Record<string, PanelSpec> = {
-  settlementStage: { main: '#setEditor', methodText: 'Une ville · position fixée', computeText: 'CPU · Rust / WASM' },
+  settlementStage: { main: '#setAutoRefresh, #setRefresh, #setEditor', methodText: 'Une ville · position fixée', computeText: 'CPU · Rust / WASM' },
   urbanQuarterStage: { main: '[data-enabled], .settlement-style-controls, .urban-explorer, [data-seed], [data-warnings]', method: '[data-config="composition"]', computeText: 'CPU · Rust / WASM', action: '[data-apply]' },
   urbanParcelStage: { main: '[data-enabled], [data-config="operator"], [data-seed]', computeText: 'CPU · Rust / WASM', action: '[data-apply]' },
 };

@@ -106,12 +106,20 @@ fn matches(f: &Fields, i: usize, s: &SettlementSpec) -> bool {
 }
 /// Culture preference × global multiplier for one site type (1 = neutral).
 fn site_weight(s: &SettlementSpec, cfg: &Config, site: &str) -> f64 {
-    s.site_prefs.weights.get(site).copied().unwrap_or_else(|| crate::urban::culture_site_weight(&s.culture, site))
+    s.site_prefs
+        .weights
+        .get(site)
+        .copied()
+        .unwrap_or_else(|| crate::urban::culture_site_weight(&s.culture, site))
         * cfg.site_weights.get(site).copied().unwrap_or(1.0)
 }
 /// Log-weight: ×3 → +0.55, ×0 → −1.96 (strongly avoided, still possible as a last resort).
 fn log_weight(w: f64) -> f64 {
     0.5 * w.max(0.02).ln()
+}
+/// Small holdings can exploit a hillside without needing room for an entire town.
+fn rural_flexibility(pop: u32) -> f64 {
+    1.0 - smooth((pop.max(1) as f64).ln(), 80.0_f64.ln(), 1000.0_f64.ln())
 }
 fn score(f: &Fields, i: usize, s: &SettlementSpec, cfg: &Config, noise: &Noise) -> (Scores, bool) {
     let pop = s.population;
@@ -120,8 +128,9 @@ fn score(f: &Fields, i: usize, s: &SettlementSpec, cfg: &Config, noise: &Noise) 
     let prefs = &s.site_prefs;
     let mountain = prefs.mountain_face;
     let wood = prefs.woodland;
-    let cap_s = 0.11 + 0.18 * mountain + 0.06 * wood + if pop < 100 { 0.03 } else { 0.0 };
-    let cap_r = 0.16 + 0.25 * mountain + 0.08 * wood + if pop < 100 { 0.04 } else { 0.0 };
+    let rural = rural_flexibility(pop);
+    let cap_s = 0.11 + 0.18 * mountain + 0.06 * wood + 0.18 * rural;
+    let cap_r = 0.16 + 0.25 * mountain + 0.08 * wood + 0.24 * rural;
     let bf = f.fraction(p, (0.8 * ext).max(f.cell));
     let dw = f.dw[i];
     let sl = f.slope_s[i] as f64;
@@ -173,7 +182,8 @@ fn score(f: &Fields, i: usize, s: &SettlementSpec, cfg: &Config, noise: &Noise) 
         0.35
     } else {
         0.2
-    } * (1.0 - 0.6 * mountain).max(0.0);
+    } * (1.0 - 0.6 * mountain).max(0.0)
+        * (1.0 - rural);
     let valid = f.r.water[i] == 0
         && edge >= cfg.edge_margin * f.r.width + 0.8 * ext + 40.0
         && sl <= cap_s
@@ -251,13 +261,14 @@ fn class_requests(root: &Rng, cfg: &Config, usable: f64, requests: &mut Vec<Sett
         - isize::from((1000..20000).contains(&cfg.main.population))
         - 2 * cities as isize)
         .max(0) as usize;
-    let villages = (usable.powf(0.8) / 7.0 * rf).round() as usize;
+    let rural_places = usable.powf(0.8) / 7.0;
+    let villages = (rural_places * rf).round() as usize;
     let counts = [
         cities,
         towns,
         villages,
-        (villages as f64 * 0.5).round() as usize,
-        (villages as f64 * 0.4).round() as usize,
+        rural_places.round() as usize,
+        (rural_places * 1.4).round() as usize,
     ];
     for (k, (cls, lo, hi)) in CLASSES.iter().enumerate() {
         let count = if cfg.mode == "auto" {
@@ -440,35 +451,32 @@ pub(super) fn place(seed: &str, f: &Fields, cfg: &Config) -> Output {
                 };
                 let mut list: Vec<_> = candidates
                     .iter()
-                    .filter_map(|&i| {
-                        let (score, valid) = score(f, i, &rep, cfg, &noise);
-                        valid.then_some((i, score.total))
+                    .map(|&i| {
+                        // Keep every dry candidate: the actual population, rather than a
+                        // class representative, determines whether the site is feasible.
+                        (i, score(f, i, &rep, cfg, &noise).0.total)
                     })
                     .collect();
                 list.sort_by(|a, b| b.1.total_cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
                 list
             });
-            let limit = if cfg.mode == "auto" && index > 0 && pop < 150 {
-                (ranked.len() as f64 * cfg.small_top).ceil() as usize
-            } else {
-                ranked.len()
-            };
             let relaxations = if cfg.mode == "auto" {
                 vec![cfg.spread]
             } else {
                 vec![1.0, 0.85, 0.7, 0.55, 0.4]
             };
-            // Without clustering the first admissible candidate wins (legacy order). With it, the
-            // best of the first admissible candidates after adding the attraction term.
-            let pool = if cfg.clustering > 0.0 { 160 } else { 1 };
+            let rural = rural_flexibility(pop);
+            let temperature = 0.22 + 0.9 * rural;
+            let mut draw = root
+                .fork(&format!("settlement:{}", s.key))
+                .fork("placement");
             'search: for relax in relaxations {
                 // Built only once the cheap exact check has rejected many candidates.
                 let mut mask: Option<Vec<bool>> = None;
                 let mut rejected = 0;
                 for require_site in [true, false] {
                     let mut best: Option<(usize, usize, f64, f64)> = None;
-                    let mut seen = 0;
-                    for (rank, &(i, ranking_score)) in ranked.iter().take(limit).enumerate() {
+                    for (rank, &(i, ranking_score)) in ranked.iter().enumerate() {
                         let p = f.pos(i);
                         if mask.is_none() && rejected >= 256 {
                             mask = Some(blocked(relax));
@@ -481,22 +489,38 @@ pub(super) fn place(seed: &str, f: &Fields, cfg: &Config) -> Output {
                             rejected += 1;
                             continue;
                         }
-                        if (require_site && !matches(f, i, &s)) || !score(f, i, &s, cfg, &noise).1 {
+                        if require_site && !matches(f, i, &s) {
                             continue;
                         }
-                        let value = ranking_score + cluster_bonus(cfg, &out.settlements, pop, p);
+                        let (actual, valid) = score(f, i, &s, cfg, &noise);
+                        if !valid {
+                            continue;
+                        }
+                        // A soft preference for unoccupied territory, strongest for farms and
+                        // hamlets. Clustering remains an independent, optional attraction.
+                        let vacancy = out
+                            .settlements
+                            .iter()
+                            .map(|other| {
+                                p.distance(other.center) / pair_spacing(pop, other.spec.population)
+                            })
+                            .fold(4.0, f64::min)
+                            .clamp(0.25, 4.0);
+                        let log_weight = (actual.total
+                            + cluster_bonus(cfg, &out.settlements, pop, p))
+                            / temperature
+                            + 1.5 * rural * vacancy.ln();
+                        // Gumbel-max samples the full available land with probability proportional
+                        // to its weight, without exponent overflow or a shortlist of top sites.
+                        let value = log_weight - (-draw.float().max(1e-12).ln()).ln();
                         if best.is_none_or(|b| value > b.3) {
                             best = Some((rank, i, ranking_score, value));
-                        }
-                        seen += 1;
-                        if seen >= pool {
-                            break;
                         }
                     }
                     if let Some((rank, i, ranking_score, _)) = best {
                         if !require_site && s.site_type != "auto" {
                             out.warnings.push(format!(
-                                "{}: no {} site available; using the best other site",
+                                "{}: no {} site available; sampling another available site",
                                 s.key, s.site_type
                             ));
                         }

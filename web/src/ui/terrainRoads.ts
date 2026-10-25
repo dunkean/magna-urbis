@@ -126,7 +126,7 @@ export function createTerrainRoads(options: { map: SVGSVGElement; before: Elemen
     <label title="Sets the road classes and their surfaces">Development <select id="roadLevel">${ROAD_LEVELS.map(l => `<option value="${l.id}">${esc(l.label)}</option>`).join('')}</select></label>
     <label title="Force one surface on the whole network">Surfaces <select id="roadSurface"><option value="auto">By level &amp; culture</option>${ROAD_SURFACES.map(s => `<option value="${s}">${SURFACE_LABEL[s]} only</option>`).join('')}</select></label>
     <label title="Road-building culture: grades, straightness, bridges, causeways">Road culture <select id="roadCulture"><option value="auto">From the settlements</option>${ROAD_PROFILES.map(p => `<option value="${p.id}">${esc(p.label)}</option>`).join('')}</select></label>
-    <label title="0: spanning tree only · 1: many loops and shortcuts">Network density <input data-road="density" type="range" min="0" max="1" step="0.05"><output id="roadDensityValue"></output></label>
+    <label title="0: spanning tree only · 1: many loops, rural tracks and trails out of settlements and across the countryside">Network &amp; path density <input data-road="density" type="range" min="0" max="1" step="0.05"><output id="roadDensityValue"></output></label>
     ${number('exits', 'Map exits', 0, 4, 1, 'Roads leaving the map from the main settlement')}
     <details class="advanced"><summary>Routing</summary><div class="control-group">
     ${number('gradeWeight', 'Slope aversion', 0, 10, 0.1, '0 ignores the relief entirely')}

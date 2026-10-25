@@ -255,6 +255,151 @@ fn legacy_spacing_and_population_streams_are_preserved() {
 }
 
 #[test]
+fn valleys_keep_towns_but_scatter_small_holdings_on_unoccupied_hillsides() {
+    let mut map = Map::new();
+    for y in 0..map.n {
+        for x in 0..map.n {
+            let distance = (((x as f64 + 0.5) * WIDTH / map.n as f64) - WIDTH / 2.0).abs();
+            map.height[y * map.n + x] = (30.0 + 0.24 * (distance - 2200.0).max(0.0)) as f32;
+        }
+    }
+    let terrain = map.terrain();
+    let mut cfg = Config {
+        mode: "counts".into(),
+        relief: "valley".into(),
+        variation_weight: 0.0,
+        ..Default::default()
+    };
+    cfg.main.population = 3000;
+    cfg.counts.insert("village".into(), 4);
+    cfg.counts.insert("hamlet".into(), 8);
+    cfg.counts.insert("farmstead".into(), 12);
+    let (mut small, mut hillside, mut isolated) = (0, 0, 0);
+    for seed in 0..8 {
+        let output = terrain
+            .place(&format!("valley-colonisation:{seed}"), &cfg)
+            .unwrap();
+        assert_eq!(output.settlements.len(), output.requested);
+        for s in &output.settlements {
+            assert_eq!(map.water[map.index(s.center)], 0);
+            let from_valley = (s.center.x - WIDTH / 2.0).abs();
+            if s.spec.population >= 150 {
+                assert!(from_valley < 2700.0, "large places need valley land: {s:?}");
+            } else {
+                small += 1;
+                hillside += usize::from(from_valley > 3000.0);
+                isolated += usize::from(
+                    output
+                        .settlements
+                        .iter()
+                        .filter(|other| other.spec.population >= 150)
+                        .all(|other| s.center.distance_to(other.center) > 4000.0),
+                );
+            }
+            for other in output
+                .settlements
+                .iter()
+                .filter(|other| other.spec.key != s.spec.key)
+            {
+                assert!(
+                    s.center.distance_to(other.center)
+                        >= extent_gap(s.spec.population, other.spec.population)
+                );
+            }
+        }
+        if seed == 0 {
+            let roads = terrain
+                .roads("valley-colonisation:0", &sites(&output), &no_exits())
+                .unwrap();
+            assert!(
+                roads.unreachable.is_empty(),
+                "hillside holdings need paths: {:?}",
+                roads.unreachable
+            );
+            assert!(
+                roads
+                    .segments
+                    .iter()
+                    .any(|road| road.class == "trail" || road.class == "track")
+            );
+            for s in &output.settlements {
+                assert!(
+                    roads
+                        .junctions
+                        .iter()
+                        .any(|j| j.site.as_deref() == Some(&s.spec.key))
+                );
+            }
+        }
+    }
+    assert!(
+        hillside > small / 5,
+        "hillsides should be colonised: {hillside}/{small}"
+    );
+    assert!(
+        hillside < small * 4 / 5,
+        "some small places should stay in the valley: {hillside}/{small}"
+    );
+    assert!(
+        isolated > small / 10,
+        "remote territory should attract small holdings: {isolated}/{small}"
+    );
+}
+
+#[test]
+fn statistical_placement_varies_even_without_the_geographic_noise_term() {
+    let map = Map::new();
+    let terrain = map.terrain();
+    let cfg = Config {
+        mode: "list".into(),
+        variation_weight: 0.0,
+        small_top: 0.0,
+        list: vec![SettlementSpec {
+            key: "farm".into(),
+            population: 8,
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+    let positions: Vec<_> = (0..12)
+        .map(|seed| terrain.place(&seed.to_string(), &cfg).unwrap().settlements[0].center)
+        .collect();
+    assert!(
+        positions
+            .iter()
+            .skip(1)
+            .any(|p| p.distance_to(positions[0]) > WIDTH / 4.0),
+        "the seed must change the selected site, not just its sub-cell jitter"
+    );
+    assert_eq!(
+        positions[0],
+        terrain.place("0", &cfg).unwrap().settlements[0].center
+    );
+}
+
+#[test]
+fn automatic_small_places_are_not_cut_off_by_the_legacy_top_land_share() {
+    let map = Map::new();
+    let output = map
+        .terrain()
+        .place(
+            "whole-available-land",
+            &Config {
+                small_top: 0.0,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    assert!(output.settlements.iter().any(|s| s.spec.population < 15));
+    assert!(
+        output
+            .settlements
+            .iter()
+            .any(|s| (20..100).contains(&s.spec.population))
+    );
+}
+
+#[test]
 fn manual_positions_route_every_class_and_a_move_only_reroutes() {
     let map = Map::new();
     let mut specs = vec![
@@ -329,7 +474,12 @@ fn rivers_are_bridged_once_and_a_lake_barrier_is_reported_unreachable() {
     map.strip(2);
     let (_, lake) = place_and_route(&map, "crossing", &cfg, &no_exits());
     assert_eq!(lake.unreachable, vec!["b"]);
-    assert!(lake.segments.is_empty());
+    // Local paths can exist on either shore, but no road crosses the lake barrier.
+    assert!(
+        lake.segments
+            .iter()
+            .all(|road| road.path.iter().all(|p| map.water[map.index(*p)] == 0))
+    );
 }
 
 #[test]
@@ -756,7 +906,70 @@ fn geographic_preferences_move_the_choice_of_sites() {
         )
         .unwrap();
     assert!(mean_x(&high) > mean_x(&low) + 2000.0);
-    assert!(high.settlements.iter().all(|s| s.scores.elevation > 0.0));
+    // A preference biases the distribution; it no longer forbids every lower site.
+    assert!(
+        high.settlements
+            .iter()
+            .map(|s| s.scores.elevation)
+            .sum::<f64>()
+            > 0.0
+    );
+}
+
+#[test]
+fn local_access_paths_leave_a_lone_town_and_link_the_open_countryside() {
+    let map = Map::new();
+    let terrain = map.terrain();
+    let placed = terrain
+        .place("access", &list(vec![fixed("town", 3000, 8000.0, 8000.0)]))
+        .unwrap();
+    let tree = terrain
+        .roads(
+            "access",
+            &sites(&placed),
+            &RoadConfig {
+                density: 0.0,
+                ..no_exits()
+            },
+        )
+        .unwrap();
+    assert!(tree.segments.is_empty());
+    let paths = terrain
+        .roads(
+            "access",
+            &sites(&placed),
+            &RoadConfig {
+                density: 1.0,
+                ..no_exits()
+            },
+        )
+        .unwrap();
+    assert!(paths.routes >= 4);
+    assert!(paths.segments.iter().any(|s| s.class == "track"));
+    assert!(paths.segments.iter().any(|s| s.class == "trail"));
+    let town = paths
+        .junctions
+        .iter()
+        .find(|j| j.site.as_deref() == Some("town"))
+        .unwrap();
+    assert!(
+        town.degree >= 3,
+        "several paths should leave the town: {}",
+        town.degree
+    );
+    assert!(
+        paths.junctions.iter().any(
+            |j| j.site.as_deref() == Some("access") && j.point.distance_to(town.point) > 1500.0
+        )
+    );
+    assert!(
+        paths
+            .junctions
+            .iter()
+            .any(|j| j.site.as_deref() == Some("access") && j.degree >= 2),
+        "cross-country paths should join rural access branches"
+    );
+    assert_clean_network(&paths, WIDTH / map.n as f64);
 }
 
 #[test]

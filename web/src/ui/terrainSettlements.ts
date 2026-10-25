@@ -62,7 +62,7 @@ export function createTerrainSettlements(options: {
 }) {
   const { map, viewport } = options;
   let restoringDecor = false;
-  let config = defaultSettlementConfig(), enabled = true, showPoints = true;
+  let config = defaultSettlementConfig(), enabled = true, showPoints = true, autoRefresh = true, pending = false;
   let selection = '', picking: 'new' | string | undefined, output: SettlementOutput | undefined;
   let cachedTerrain: TerrainData | undefined, worker: Worker | undefined, id = 0, timer: ReturnType<typeof setTimeout> | undefined;
   // Placement reruns only when its inputs changed; road edits reroute between the current places.
@@ -79,6 +79,7 @@ export function createTerrainSettlements(options: {
     const saved = JSON.parse(initial);
     config = restore(saved.config, config); config.list = saved.config?.list ?? [];
     enabled = saved.enabled !== false; showPoints = saved.showPoints !== false;
+    autoRefresh = saved.autoRefresh !== false;
     if (saved.config?.roads === false || saved.showRoads === false) legacyRoads = false;
   } catch { /* An incomplete shared link keeps defaults. */ }
   const panel = document.createElement('details'); panel.className = 'stage settlement-stage'; panel.open = true; panel.id = 'settlementStage';
@@ -86,6 +87,8 @@ export function createTerrainSettlements(options: {
     `<label title="${esc(title)}"${show ? ` data-show="${show}"` : ''}>${label}<input data-setting="${key}" type="number" min="${min}" max="${max}" step="${step}"></label>`;
   panel.innerHTML = `<summary>4 · Settlements <span id="setState"></span></summary><div class="stage-controls">
     <label><input id="setEnabled" type="checkbox">Generate settlements</label>
+    <label title="Disable to move several places before recalculating settlements, roads and the plan."><input id="setAutoRefresh" type="checkbox">Auto-refresh settlements &amp; roads</label>
+    <button id="setRefresh" type="button" hidden>Apply changes &amp; recalculate</button>
     <label>Composition <select id="setMode"><option value="auto">Automatic</option><option value="counts">By class counts</option><option value="list">Editable list</option></select></label>
     <label data-show="auto" title="Rank-size: rank r holds main ÷ r^q inhabitants. Classes: the legacy city/town/village bands sized by the usable land.">Distribution <select id="setDistribution"><option value="zipf">Rank-size (Zipf)</option><option value="classes">Class bands</option></select></label>
     <label>Main population <input id="setMainPop" type="number" min="1" max="5000000" step="1"></label>
@@ -100,7 +103,7 @@ export function createTerrainSettlements(options: {
     <div class="settlement-actions"><button id="setGenerate" type="button">Recalculate settlements</button><button id="setTakeOver" type="button">Edit generated list</button><button id="setAdd" type="button">Place a settlement</button><button id="setExportDecor" type="button" title="Save terrain, water, settlements and roads as a decor for the Urban Bench">Export decor</button></div>
     <small id="setPickHint">Select a marker to inspect its scores. Drag it to move it: only the roads are recalculated.</small>
     <details class="advanced"><summary>Spacing</summary><div class="control-group">
-    ${number('spread', 'Spacing ×', 0.1, 5, 0.1, 'Automatic composition')}${number('smallTop', 'Best land share for small places', 0, 1, 0.05)}${number('mainClear', 'Main settlement clearance × radius', 0, 10, 0.1)}
+    ${number('spread', 'Spacing ×', 0.1, 5, 0.1, 'Automatic composition')}${number('mainClear', 'Main settlement clearance × radius', 0, 10, 0.1)}
     ${number('clustering', 'Clustering', 0, 5, 0.1, 'Small places drawn towards much larger ones (satellites)')}${number('edgeMargin', 'Border margin (share of width)', 0, 0.3, 0.01)}
     </div></details>
     <details class="advanced"><summary>Geography</summary><div class="control-group">
@@ -117,6 +120,8 @@ export function createTerrainSettlements(options: {
     <div id="setWarnings" role="status"></div></div>`;
   const backend = document.querySelector('.stages > .backend');
   document.querySelector('.stages')!.insertBefore(panel, backend);
+  const el = <T extends HTMLElement>(name: string): T => document.getElementById(name) as T;
+  const input = (name: string): HTMLInputElement => el<HTMLInputElement>(name);
   const roads = createTerrainRoads({
     map, before: backend,
     onConfigChange: () => { options.onChange(); schedule(); },
@@ -125,7 +130,7 @@ export function createTerrainSettlements(options: {
   const urban = createTerrainUrban({ map, before: backend, getTerrain: options.getTerrain,
     getRaster: options.getRaster, city: options.city, cityView: true,
     parcelDefault: options.parcelDefault ?? false,
-    getSeed: () => options.getSettings().seed, getAuto: options.getAuto, upstreamPending: () => enabled && !decorReady(), onChange: () => { if (!restoringDecor) publishOptions(urban.workshopDraft() ?? urban.workshopSettings()); draw(); options.onChange(); }, onPlanChange: () => { if (!restoringDecor) publishOptions(urban.workshopDraft() ?? urban.workshopSettings()); syncLanduse(); options.onPlanChange?.(); }, onFocus: options.onFocus, onProjection: options.onProjection });
+    getSeed: () => options.getSettings().seed, getAuto: () => autoRefresh && !!options.getAuto?.(), upstreamPending: () => enabled && !decorReady(), onChange: () => { if (!restoringDecor) publishOptions(urban.workshopDraft() ?? urban.workshopSettings()); draw(); options.onChange(); }, onPlanChange: () => { if (!restoringDecor) publishOptions(urban.workshopDraft() ?? urban.workshopSettings()); syncLanduse(); options.onPlanChange?.(); }, onFocus: options.onFocus, onProjection: options.onProjection });
   const publishOptions = urbanOptionSync(() => { const d = options.getDecor?.(); return d && urban.target !== 'all' ? `${d.meta.pipeline?.syncSource ?? d.meta.id}:${urban.target}` : undefined; }, state => urban.applyWorkshopDraft(state));
   if (options.active !== false && !options.city && !document.getElementById('showLanduse')) {
     const label = document.createElement('label'); label.innerHTML = '<input id="showLanduse" type="checkbox" checked>Occupation du territoire';
@@ -176,8 +181,6 @@ export function createTerrainSettlements(options: {
   const places = document.createElement('section'); places.className = 'terrain-places'; places.id = 'terrainSettlements';
   places.innerHTML = '<strong>Settlements <span id="setCount"></span></strong><div id="setList"></div><div id="setEditor"></div>';
   document.querySelector('aside')!.prepend(places);
-  const el = <T extends HTMLElement>(name: string): T => document.getElementById(name) as T;
-  const input = (name: string): HTMLInputElement => el<HTMLInputElement>(name);
   const mode = el<HTMLSelectElement>('setMode'), culture = el<HTMLSelectElement>('setCulture'), distribution = el<HTMLSelectElement>('setDistribution');
   culture.innerHTML = Object.values(CULTURES).map(c => `<option value="${esc(c.id)}">${esc(c.label)}</option>`).join('');
   // The City Bench offers every culture of the native urban catalogue.
@@ -234,11 +237,20 @@ export function createTerrainSettlements(options: {
     if (options.city) { ++id; citySearchRequested = false; needsPlacement = false; } else needsPlacement = true;
     options.onChange(); schedule();
   }
-  function schedule(): void { clearTimeout(timer); timer = setTimeout(recalculate, 180); }
+  function schedule(): void {
+    clearTimeout(timer); ++id; pending = true;
+    el('setGenerate').removeAttribute('aria-busy');
+    draw();
+    if (autoRefresh) timer = setTimeout(recalculate, 180);
+    else {
+      el('setStatus').textContent = 'Changes pending · move or edit more places, then click Apply changes & recalculate.';
+      el('setState').textContent = 'Changes pending';
+    }
+  }
   function recalculate(): void {
     clearTimeout(timer);
     const t = options.getTerrain(); if (!t || !complete || options.active === false) return;
-    if (!enabled) { ++id; output = undefined; draw(); list(); roads.set(undefined); urban.setSettlements(undefined); el('setStatus').textContent = 'Settlement generation disabled.'; el('setState').textContent = ''; return; }
+    if (!enabled) { ++id; pending = false; output = undefined; draw(); list(); roads.set(undefined); urban.setSettlements(undefined); el('setStatus').textContent = 'Settlement generation disabled.'; el('setState').textContent = ''; return; }
     config.relief = options.getSettings().relief;
     if (options.city && !citySearchRequested) {
       const retained = retainCityPlacement(output, config.mode === 'list' ? config.list : output?.settlements ?? []);
@@ -288,6 +300,7 @@ export function createTerrainSettlements(options: {
     el('setGenerate').removeAttribute('aria-busy');
     if ('error' in response) { el('setStatus').textContent = `Settlement generation: ${response.error}`; roads.error(response.error); return; }
     answered = response.id;
+    pending = false;
     if (response.settlements) {
       output = response.settlements; needsPlacement = false; citySearchRequested = false; cityPlacementScoresStale = false;
       if (options.city) el('setGenerate').textContent = 'Rechercher un nouvel emplacement';
@@ -297,6 +310,9 @@ export function createTerrainSettlements(options: {
       el('setStatus').textContent = `Rust · ${output.settlements.length}/${output.requested} places · ${people.toLocaleString()} inhabitants · ${output.ms.toFixed(0)} ms`;
       el('setState').textContent = `${output.settlements.length} places`;
       el('setWarnings').textContent = output.warnings.join('\n');
+    } else if (output) {
+      el('setStatus').textContent = `Rust · ${output.settlements.length}/${output.requested} places · roads recalculated`;
+      el('setState').textContent = `${output.settlements.length} places`;
     }
     roads.set(response.roads ?? undefined);
     urban.setSettlements(output, response.roads ?? undefined);
@@ -397,7 +413,7 @@ export function createTerrainSettlements(options: {
       const ranking = scores.rankingScore == null ? '' : `<small>Candidate rank ${scores.candidateRank} · ranking score ${scores.rankingScore.toFixed(3)} (class reference ${scores.rankingPopulation} inhabitants, before jitter)</small>`;
       const terms: [string, number][] = [['Flatness', scores.flatness], ['Buildable land', scores.buildable], ['Fresh water', scores.freshWater], ['River access', scores.river], ['Harbor', scores.harbor], ['Flood risk', scores.flood], ['Culture', scores.culture], ['Site type', scores.site], ['Defensibility', scores.defense], ['Elevation', scores.elevation], ['Clustering', scores.cluster], ['Seed variation', scores.variation]];
       const unreachable = roads.output?.unreachable.includes(result.key) ? '<br>Unreachable by road' : '';
-      el('setScore').innerHTML = `<b>${stale ? 'Score conservé' : 'Choice score'} ${scores.total.toFixed(3)}</b><small>${stale ? 'Données du site initial non réévaluées.' : scores.manual ? 'Manual position; score shown for comparison.' : 'Best available site with spacing and terrain constraints.'}<br>${result.center.x.toFixed(0)}, ${result.center.y.toFixed(0)} m · ${esc(result.archetype)} · radius ${result.radius.toFixed(0)} m</small><table>${terms.filter(([, v]) => v !== 0).map(([label, value]) => `<tr><td>${label}</td><td>${value >= 0 ? '+' : ''}${value.toFixed(3)}</td></tr>`).join('')}</table><small>Buildable ${(scores.buildableFraction * 100).toFixed(0)}% · slope ${(Math.atan(scores.slope) * 180 / Math.PI).toFixed(1)}°<br>Water ${scores.waterDistance >= 1e6 ? 'absent' : `${scores.waterDistance.toFixed(0)} m away`} · above water ${scores.heightAboveWater.toFixed(1)} m<br>Spacing × ${scores.spacingRelaxation.toFixed(2)}${unreachable}</small>`;
+      el('setScore').innerHTML = `<b>${stale ? 'Score conservé' : 'Choice score'} ${scores.total.toFixed(3)}</b><small>${stale ? 'Données du site initial non réévaluées.' : scores.manual ? 'Manual position; score shown for comparison.' : 'Weighted draw over available sites, favouring suitable ground and unoccupied territory.'}<br>${result.center.x.toFixed(0)}, ${result.center.y.toFixed(0)} m · ${esc(result.archetype)} · radius ${result.radius.toFixed(0)} m</small><table>${terms.filter(([, v]) => v !== 0).map(([label, value]) => `<tr><td>${label}</td><td>${value >= 0 ? '+' : ''}${value.toFixed(3)}</td></tr>`).join('')}</table><small>Buildable ${(scores.buildableFraction * 100).toFixed(0)}% · slope ${(Math.atan(scores.slope) * 180 / Math.PI).toFixed(1)}°<br>Water ${scores.waterDistance >= 1e6 ? 'absent' : `${scores.waterDistance.toFixed(0)} m away`} · above water ${scores.heightAboveWater.toFixed(1)} m<br>Spacing × ${scores.spacingRelaxation.toFixed(2)}${unreachable}</small>`;
       if (options.city && cityPlacementScoresStale) el('setScore').insertAdjacentHTML('afterbegin', '<p><strong>Position conservée ou déplacée manuellement ; scores, rayon et archétype du site initial non recalculés.</strong> Ces valeurs ne certifient pas les nouveaux réglages ni le nouveau centre.</p>');
       el('setScore').insertAdjacentHTML('beforeend', ranking);
     } else el('setScore').textContent = 'This settlement has no valid position yet. Use automatic position or place it on dry land.';
@@ -408,7 +424,8 @@ export function createTerrainSettlements(options: {
     roads.draw();
     // Inspector views (buildings; City Bench roles) take map clicks: markers stay visible but inert.
     layer.style.pointerEvents = urban.inspecting ? 'none' : 'auto';
-    const state = `${enabled}|${showPoints}|${selection}`;
+    const draft = pending && config.mode === 'list' ? config.list : undefined;
+    const state = `${enabled}|${showPoints}|${selection}|${draft ? JSON.stringify(draft) : ''}`;
     if (layer === drawnLayer && output === drawnOutput && state === drawnState) {
       for (const marker of Array.from(layer.querySelectorAll<SVGGElement>('[data-settlement]'))) {
         marker.setAttribute('transform', `translate(${marker.dataset.x} ${marker.dataset.y}) scale(${1 / options.getView().scale})`);
@@ -418,7 +435,11 @@ export function createTerrainSettlements(options: {
     drawnLayer = layer; drawnOutput = output; drawnState = state;
     layer.replaceChildren(); if (!enabled || !output || !showPoints) return;
     const scale = options.getView().scale;
-    for (const [index, s] of output.settlements.entries()) {
+    const displayed = draft ? draft.flatMap(spec => {
+      const placed = output?.settlements.find(s => s.key === spec.key), center = spec.position ?? placed?.center;
+      return center ? [{ ...spec, center, cls: classOfPop(spec.population), archetype: 'pending', scores: placed?.scores }] : [];
+    }) : output.settlements;
+    for (const [index, s] of displayed.entries()) {
       const marker = document.createElementNS(ns, 'g'); marker.dataset.settlement = s.key; marker.classList.add('settlement-marker'); marker.setAttribute('transform', `translate(${s.center.x} ${s.center.y}) scale(${1 / scale})`);
       marker.dataset.x = String(s.center.x); marker.dataset.y = String(s.center.y);
       marker.style.color = selection === s.key ? '#176348' : '#252b29';
@@ -426,7 +447,7 @@ export function createTerrainSettlements(options: {
       const symbol = document.createElementNS(ns, 'path'); symbol.classList.add('settlement-symbol'); symbol.setAttribute('d', settlementSymbols[classOfPop(s.population)]);
       const number = document.createElementNS(ns, 'text'); number.classList.add('settlement-number'); number.setAttribute('x', '21'); number.setAttribute('y', '5'); number.textContent = String(index + 1);
       const population = document.createElementNS(ns, 'text'); population.classList.add('settlement-population'); population.setAttribute('x', '5'); population.setAttribute('y', '27'); population.setAttribute('text-anchor', 'middle'); population.textContent = s.population.toLocaleString();
-      const title = document.createElementNS(ns, 'title'); title.textContent = `${s.cls} · ${s.culture} · ${s.archetype}\n${s.population} inhabitants · score ${s.scores.total.toFixed(3)}\nClick to edit; drag to move`;
+      const title = document.createElementNS(ns, 'title'); title.textContent = `${s.cls} · ${s.culture} · ${s.archetype}\n${s.population} inhabitants${s.scores ? ` · score ${s.scores.total.toFixed(3)}` : ''}\nClick to edit; drag to move`;
       marker.append(title, hit, symbol, number, population); layer.append(marker);
     }
   }
@@ -474,6 +495,16 @@ export function createTerrainSettlements(options: {
   }, true);
   window.addEventListener('keydown', event => { if (event.key === 'Escape') { setPicking(); drag = undefined; draw(); } });
   input('setEnabled').onchange = () => { enabled = input('setEnabled').checked; changed(); };
+  input('setAutoRefresh').checked = autoRefresh;
+  el('setRefresh').hidden = autoRefresh;
+  el('setRefresh').onclick = recalculate;
+  input('setAutoRefresh').onchange = () => {
+    autoRefresh = input('setAutoRefresh').checked;
+    el('setRefresh').hidden = autoRefresh;
+    clearTimeout(timer);
+    if (pending || answered !== id) schedule();
+    options.onChange();
+  };
   mode.onchange = () => { if (mode.value === 'list') adopt(); config.mode = mode.value as SettlementConfig['mode']; selection = ''; controls(); list(); editor(); changed(); };
   distribution.onchange = () => { config.distribution = distribution.value as SettlementConfig['distribution']; controls(); changed(); };
   input('setMainPop').onchange = () => { if (input('setMainPop').reportValidity()) { config.main.population = Math.round(Number(input('setMainPop').value)); changed(); } };
@@ -501,7 +532,7 @@ export function createTerrainSettlements(options: {
   el('setTakeOver').onclick = () => { adopt(); selection = config.list[0]?.key ?? ''; controls(); list(); editor(); changed(); };
   el('setAdd').onclick = () => setPicking(picking === 'new' ? undefined : 'new');
   /** Decor of the current map, once placement and routing answered the latest request. */
-  const decorReady = (): boolean => complete && enabled && !!output && answered === id && (!roads.enabled || !!roads.output);
+  const decorReady = (): boolean => complete && enabled && !pending && !!output && answered === id && (!roads.enabled || !!roads.output);
   const decorData = (extra?: Parameters<typeof captureDecorData>[5]): Decor => {
     const t = options.getTerrain();
     if (!t || !decorReady()) throw new Error('Wait for the settlements and roads of the completed map.');
@@ -547,7 +578,7 @@ export function createTerrainSettlements(options: {
     captureAsync: exports.captureAsync,
     captureData: decorData,
     restoreDecor(d: Decor): void {
-      clearTimeout(timer); ++id; answered = id; complete = true; cachedTerrain = undefined;
+      clearTimeout(timer); ++id; answered = id; pending = false; complete = true; cachedTerrain = undefined;
       citySearchRequested = false; cityPlacementScoresStale = false;
       if (!d.meta.settlements.length) { output = undefined; needsPlacement = !options.city; recalculate(); return; }
       // The City Bench link carries the edited city (size, culture, position); the map keeps its first placement.
@@ -595,7 +626,7 @@ export function createTerrainSettlements(options: {
     isPicking: (): boolean => !!picking,
     click(event: MouseEvent): boolean { if (!picking) return false; placeAt(world(event)); return true; },
     share(params: URLSearchParams): void {
-      params.set('settlements', JSON.stringify({ config, enabled, showPoints }));
+      params.set('settlements', JSON.stringify({ config, enabled, showPoints, autoRefresh }));
       params.set('roads', roads.share());
       urban.share(params);
       // Until land use has loaded, keep its settings from the current link.

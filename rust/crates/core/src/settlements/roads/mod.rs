@@ -99,7 +99,7 @@ pub struct RoadSegment {
 pub struct Junction {
     pub point: Point,
     pub degree: usize,
-    /// Settlement key, or "exit" at the map border.
+    /// Settlement key, "access" in the countryside, or "exit" at the map border.
     pub site: Option<String>,
 }
 #[derive(Debug, Default, Serialize, Deserialize)]
@@ -141,7 +141,7 @@ struct Plan {
     mst: bool,
 }
 /// Delaunay pairs (all of them, for traffic) and the links to build: the spanning tree plus
-/// shortcuts between places of 150+ inhabitants whose tree path exceeds `ratio` × distance.
+/// shortcuts whose tree path exceeds `ratio` × distance, including rural paths.
 fn plan(sites: &[RoadSite], ratio: f64) -> (Vec<(usize, usize)>, Vec<Plan>) {
     let k = sites.len();
     if k < 2 {
@@ -214,7 +214,14 @@ fn plan(sites: &[RoadSite], ratio: f64) -> (Vec<(usize, usize)>, Vec<Plan>) {
         d[b]
     };
     let importance = |e: &Plan| sites[e.a].population.min(sites[e.b].population);
-    edges.retain(|e| e.mst || (importance(e) >= 150 && tree_distance(e.a, e.b) > ratio * e.d));
+    edges.retain(|e| {
+        let local_ratio = if importance(e) < 150 {
+            1.0 + (ratio - 1.0) * 0.65
+        } else {
+            ratio
+        };
+        e.mst || tree_distance(e.a, e.b) > local_ratio * e.d
+    });
     edges.sort_by(|a, b| {
         importance(b)
             .cmp(&importance(a))
@@ -353,6 +360,140 @@ impl Router<'_> {
 }
 
 impl Router<'_> {
+    /// Minor access routes to fields, woods and uplands do not require a settlement at
+    /// both ends. They use the same terrain search and merged graph as regional roads.
+    fn access_path(
+        &mut self,
+        site: usize,
+        start: Point,
+        end: Point,
+        from_site: bool,
+        importance: u32,
+    ) -> bool {
+        let f = self.f;
+        let profile = self.profile_of(site);
+        let goals = [f.index(end)];
+        let query = Query {
+            start: f.index(start),
+            goals: &goals,
+            origin: start,
+            target: end,
+            profile: &PROFILES[profile],
+            class: class_index(importance, self.level),
+        };
+        let trunk_discount = self.costs.discount;
+        // A cross-country shortcut must be allowed to leave the existing spokes;
+        // the trunk discount would otherwise send it back through the town.
+        if !from_site {
+            self.costs.discount = 1.0;
+        }
+        let path = self.search.few_crossings(f, &self.net, &self.costs, &query);
+        self.costs.discount = trunk_discount;
+        let Some(cells) = path else {
+            return false;
+        };
+        if cells.len() < 2 {
+            return false;
+        }
+        self.net.add_path(f.r.n, &cells);
+        for &cell in &cells {
+            if !self.marked[cell] {
+                self.marked[cell] = true;
+                self.road_cells.push((cell, site));
+            }
+        }
+        self.routed.push(Routed {
+            cells,
+            importance,
+            profile,
+            start: (
+                start,
+                if from_site {
+                    self.sites[site].key.clone()
+                } else {
+                    "access".into()
+                },
+            ),
+            end: Some((end, "access".into())),
+        });
+        true
+    }
+
+    fn rural_access(&mut self, seed: &str, density: f64) {
+        if density <= 0.0 {
+            return;
+        }
+        let mut rng = Rng::new(&format!("magna-urbis:{seed}")).fork("rural-access");
+        let mut built = 0;
+        // Large places get several independent ways out; small places extend the mesh
+        // into open countryside. Bound the extra searches on very densely populated maps.
+        for site in 0..self.sites.len() {
+            let center = self.sites[site].center;
+            let radius = self.radius(site);
+            let population = self.sites[site].population;
+            let count = if population >= 150 {
+                (2.0 + 4.0 * density).round() as usize
+            } else {
+                usize::from(rng.chance(density))
+            };
+            let phase = rng.range(0.0, std::f64::consts::TAU);
+            let mut previous = None;
+            for direction in 0..count {
+                if built >= 96 {
+                    return;
+                }
+                let angle = phase
+                    + std::f64::consts::TAU * (direction as f64 + rng.range(-0.2, 0.2))
+                        / count as f64;
+                let reach = radius + rng.range(700.0, 2200.0) * (0.6 + density);
+                let p = Point {
+                    x: center.x + reach * angle.cos(),
+                    y: center.y + reach * angle.sin(),
+                };
+                let f = self.f;
+                let margin = 2.0 * f.cell;
+                if p.x < margin
+                    || p.y < margin
+                    || p.x >= f.r.width - margin
+                    || p.y >= f.r.width - margin
+                {
+                    continue;
+                }
+                let i = f.index(p);
+                if f.r.water[i] != 0
+                    || f.slope[i] > 0.5
+                    || f.dw[i] < f.cell
+                    || self
+                        .sites
+                        .iter()
+                        .enumerate()
+                        .any(|(other, s)| p.distance(s.center) < self.radius(other) + 2.0 * f.cell)
+                    || self
+                        .road_cells
+                        .iter()
+                        .any(|&(cell, _)| p.distance(f.pos(cell)) < 2.0 * f.cell)
+                {
+                    continue;
+                }
+                let importance = if population >= 150 { 40 } else { 8 };
+                if self.access_path(site, center, p, true, importance) {
+                    built += 1;
+                    // Cross-country links join access branches as trails instead of making
+                    // every local journey go back through the town centre.
+                    if let Some(q) = previous {
+                        if p.distance(q) < 1.7 * reach
+                            && rng.chance(density)
+                            && self.access_path(site, q, p, false, 8)
+                        {
+                            built += 1;
+                        }
+                    }
+                    previous = Some(p);
+                }
+            }
+        }
+    }
+
     /// A road from `site` to the map border `side`, ending wherever along that border the route
     /// is cheapest. Returns the exit point.
     fn connect_exit(&mut self, site: usize, side: usize, importance: u32) -> Option<Point> {
@@ -591,6 +732,7 @@ pub(super) fn route(
             }
         }
     }
+    router.rural_access(seed, density);
     out.routes = router.routed.len();
 
     // One network from all routes.
