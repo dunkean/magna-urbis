@@ -87,6 +87,7 @@ const TISSUE_KEYS: &[&str] = &[
     "plotDepth",
     "plotTilt",
     "wideLotChance",
+    "lotMergeChance",
     "cornerFill",
     "curvature",
     "fieldNoise",

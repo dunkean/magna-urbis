@@ -935,6 +935,7 @@ fn validate_param(key: &str, value: &Value, reference: &Value) -> Result<(), Str
             if [
                 "coverage",
                 "wideLotChance",
+                "lotMergeChance",
                 "deadEndRatio",
                 "slitDepth",
                 "widthJitter",

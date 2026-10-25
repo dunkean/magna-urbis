@@ -1444,3 +1444,98 @@ fn the_main_run_is_the_long_front_not_a_short_end_on_a_major_street() {
     ];
     assert_eq!(runs(&fronts)[0][0].street, 0);
 }
+
+use crate::urban::{Block, Street};
+
+fn merge_city(culture: &str, op: &str, merge: f64, seed: &str) -> Partition {
+    let mut layout: Layout = serde_json::from_value(json!({
+        "key": "lot-merge", "culture": culture,
+        "center": {"x": 100.0, "y": 70.0},
+        "quarters": [], "blocks": [], "warnings": [], "streets": []
+    }))
+    .unwrap();
+    let mut streets = Vec::new();
+    for (k, (x, y)) in [(0.0, 0.0), (240.0, 0.0), (0.0, 150.0), (240.0, 150.0)]
+        .into_iter()
+        .enumerate()
+    {
+        let _ = k;
+        layout.blocks.push(Block {
+            phase: None,
+            shape: rectangle(x, y, 200.0, 60.0),
+            quarter: 0,
+            kind: "block".into(),
+            axis: Point { x: 1.0, y: 0.0 },
+            zone: "core".into(),
+        });
+    }
+    for (x, y) in [(0.0, 0.0), (240.0, 0.0), (0.0, 150.0), (240.0, 150.0)] {
+        streets.push(Street {
+            path: vec![
+                Point { x: x - 3.0, y: y - 3.0 },
+                Point { x: x + 203.0, y: y - 3.0 },
+                Point { x: x + 203.0, y: y + 63.0 },
+                Point { x: x - 3.0, y: y + 63.0 },
+                Point { x: x - 3.0, y: y - 3.0 },
+            ],
+            widths: vec![6.0; 5],
+            rank: 2,
+            role: "street".into(),
+        });
+    }
+    layout.streets = streets;
+    let morph = Morph {
+        value: json!({"plotOp":op,"streetOp":"organic","plotTilt":4.0,"wideLotChance":0.0,
+        "lotMergeChance":merge,"deepFill":false,
+        "frontage":{"core":[5.0,8.0]},"plotDepth":{"core":[14.0,24.0]},
+        "houseArea":{"core":[100.0,300.0]},"coverage":{"core":[0.8,0.9]}}),
+    };
+    generate(seed, &layout, &ParcelConfig::default(), &morph).unwrap()
+}
+
+#[test]
+fn lot_merge_is_deterministic_and_off_at_zero() {
+    let a = merge_city("european-organic", "burgage", 0.5, "s1");
+    let b = merge_city("european-organic", "burgage", 0.5, "s1");
+    assert_eq!(serde_json::to_value(&a).unwrap(), serde_json::to_value(&b).unwrap());
+    let off = merge_city("european-organic", "burgage", 0.0, "s1");
+    assert!(off.parcels.iter().all(|p| !p.provenance.iter().any(|x| x == "lot-merge")));
+    // Absent parameter equals zero: byte-equal output.
+    let mut layout_free = merge_city("european-organic", "burgage", 0.0, "s1");
+    let again = merge_city("european-organic", "burgage", 0.0, "s1");
+    layout_free.warnings.sort();
+    assert_eq!(
+        serde_json::to_value(&layout_free).unwrap(),
+        serde_json::to_value(&again).unwrap()
+    );
+}
+
+#[test]
+fn lot_merge_joins_neighbours_into_simple_bounded_lots() {
+    let mut total = 0;
+    let mut merged = 0;
+    let mut stepped = 0;
+    for seed in ["a", "b", "c", "d"] {
+        let city = merge_city("european-organic", "burgage", 0.5, seed);
+        let ids: std::collections::HashSet<_> = city.parcels.iter().map(|p| &p.id).collect();
+        assert_eq!(ids.len(), city.parcels.len(), "unique ids");
+        for p in city.parcels.iter().filter(|p| p.use_kind == "plot") {
+            total += 1;
+            if p.provenance.iter().any(|x| x == "lot-merge") {
+                merged += 1;
+                assert_eq!(p.parent_ids.len(), 2);
+                assert!(p.parent_ids.iter().all(|id| !ids.contains(id)), "parents are gone");
+                assert!(super::super::geometry::simple(&p.shape));
+                assert!(p.shape.holes.is_empty());
+                assert!(p.envelope.is_some() && p.front.is_some());
+                if p.shape.outer.len() >= 6 {
+                    stepped += 1;
+                }
+            }
+        }
+    }
+    eprintln!("lot-merge: {merged} of {total} plots, {stepped} with 6+ corners");
+    assert!(merged > 0, "no merged lot");
+    let grid = merge_city("roman-core", "burgage", 0.0, "a");
+    assert!(grid.parcels.iter().all(|p| !p.provenance.iter().any(|x| x == "lot-merge")));
+}

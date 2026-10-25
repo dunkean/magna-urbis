@@ -38,6 +38,7 @@
       "plotDepth",
       "plotTilt",
       "wideLotChance",
+      "lotMergeChance",
       "deepFill"
     ]
   },
@@ -205,6 +206,7 @@
         },
         "plotTilt": 6,
         "wideLotChance": 0.2,
+        "lotMergeChance": 0.1,
         "buildDepth": {
           "core": [
             10,
@@ -491,6 +493,7 @@
         },
         "plotTilt": 6,
         "wideLotChance": 0.2,
+        "lotMergeChance": 0.1,
         "buildDepth": {
           "core": [
             10,
@@ -777,6 +780,7 @@
         },
         "plotTilt": 6,
         "wideLotChance": 0.2,
+        "lotMergeChance": 0.05,
         "buildDepth": {
           "core": [
             10,
@@ -1063,6 +1067,7 @@
         },
         "plotTilt": 6,
         "wideLotChance": 0.2,
+        "lotMergeChance": 0.033,
         "buildDepth": {
           "core": [
             10,
@@ -1349,6 +1354,7 @@
         },
         "plotTilt": 6,
         "wideLotChance": 0.2,
+        "lotMergeChance": 0.033,
         "buildDepth": {
           "core": [
             10,
@@ -1633,6 +1639,7 @@
         },
         "plotTilt": 1.5,
         "wideLotChance": 0.08,
+        "lotMergeChance": 0.05,
         "buildDepth": {
           "core": [
             10,
@@ -1919,6 +1926,7 @@
         },
         "plotTilt": 6,
         "wideLotChance": 0.2,
+        "lotMergeChance": 0.025,
         "buildDepth": {
           "core": [
             10,
@@ -2203,6 +2211,7 @@
         },
         "plotTilt": 1.5,
         "wideLotChance": 0.08,
+        "lotMergeChance": 0.017,
         "buildDepth": {
           "core": [
             10,
@@ -2487,6 +2496,7 @@
         },
         "plotTilt": 1.5,
         "wideLotChance": 0.08,
+        "lotMergeChance": 0.017,
         "buildDepth": {
           "core": [
             10,
@@ -2772,6 +2782,7 @@
         },
         "plotTilt": 6,
         "wideLotChance": 0.2,
+        "lotMergeChance": 0.05,
         "buildDepth": {
           "core": [
             5,
@@ -3057,6 +3068,7 @@
         },
         "plotTilt": 6,
         "wideLotChance": 0.2,
+        "lotMergeChance": 0.05,
         "buildDepth": {
           "core": [
             10,
@@ -3342,6 +3354,7 @@
         },
         "plotTilt": 6,
         "wideLotChance": 0.2,
+        "lotMergeChance": 0.025,
         "buildDepth": {
           "core": [
             10,
@@ -3627,6 +3640,7 @@
         },
         "plotTilt": 6,
         "wideLotChance": 0.2,
+        "lotMergeChance": 0.017,
         "buildDepth": {
           "core": [
             10,
@@ -3912,6 +3926,7 @@
         },
         "plotTilt": 6,
         "wideLotChance": 0.2,
+        "lotMergeChance": 0.017,
         "buildDepth": {
           "core": [
             10,
@@ -13307,6 +13322,7 @@
         },
         "plotTilt": 6,
         "wideLotChance": 0.2,
+        "lotMergeChance": 0.06,
         "buildDepth": {
           "core": [
             10,
@@ -13593,6 +13609,7 @@
         },
         "plotTilt": 6,
         "wideLotChance": 0.2,
+        "lotMergeChance": 0.06,
         "buildDepth": {
           "core": [
             10,
@@ -13879,6 +13896,7 @@
         },
         "plotTilt": 6,
         "wideLotChance": 0.2,
+        "lotMergeChance": 0.03,
         "buildDepth": {
           "core": [
             10,
@@ -14165,6 +14183,7 @@
         },
         "plotTilt": 6,
         "wideLotChance": 0.2,
+        "lotMergeChance": 0.02,
         "buildDepth": {
           "core": [
             10,
@@ -14451,6 +14470,7 @@
         },
         "plotTilt": 6,
         "wideLotChance": 0.2,
+        "lotMergeChance": 0.02,
         "buildDepth": {
           "core": [
             10,
@@ -17560,6 +17580,7 @@
         },
         "plotTilt": 6,
         "wideLotChance": 0.2,
+        "lotMergeChance": 0.06,
         "buildDepth": {
           "core": [
             7,
@@ -17845,6 +17866,7 @@
         },
         "plotTilt": 6,
         "wideLotChance": 0.2,
+        "lotMergeChance": 0.06,
         "buildDepth": {
           "core": [
             7,
@@ -18130,6 +18152,7 @@
         },
         "plotTilt": 6,
         "wideLotChance": 0.2,
+        "lotMergeChance": 0.03,
         "buildDepth": {
           "core": [
             7,
@@ -18415,6 +18438,7 @@
         },
         "plotTilt": 6,
         "wideLotChance": 0.2,
+        "lotMergeChance": 0.02,
         "buildDepth": {
           "core": [
             7,
@@ -18700,6 +18724,7 @@
         },
         "plotTilt": 6,
         "wideLotChance": 0.2,
+        "lotMergeChance": 0.02,
         "buildDepth": {
           "core": [
             7,
@@ -18985,6 +19010,7 @@
         },
         "plotTilt": 6,
         "wideLotChance": 0.2,
+        "lotMergeChance": 0.06,
         "buildDepth": {
           "core": [
             10,
@@ -19270,6 +19296,7 @@
         },
         "plotTilt": 6,
         "wideLotChance": 0.2,
+        "lotMergeChance": 0.06,
         "buildDepth": {
           "core": [
             10,
@@ -19555,6 +19582,7 @@
         },
         "plotTilt": 6,
         "wideLotChance": 0.2,
+        "lotMergeChance": 0.03,
         "buildDepth": {
           "core": [
             10,
@@ -19840,6 +19868,7 @@
         },
         "plotTilt": 6,
         "wideLotChance": 0.2,
+        "lotMergeChance": 0.02,
         "buildDepth": {
           "core": [
             10,
@@ -20125,6 +20154,7 @@
         },
         "plotTilt": 6,
         "wideLotChance": 0.2,
+        "lotMergeChance": 0.02,
         "buildDepth": {
           "core": [
             10,
@@ -21830,6 +21860,7 @@
         },
         "plotTilt": 6,
         "wideLotChance": 0.2,
+        "lotMergeChance": 0.06,
         "buildDepth": {
           "core": [
             5,
@@ -22114,6 +22145,7 @@
         },
         "plotTilt": 6,
         "wideLotChance": 0.2,
+        "lotMergeChance": 0.06,
         "buildDepth": {
           "core": [
             10,
@@ -22399,6 +22431,7 @@
         },
         "plotTilt": 6,
         "wideLotChance": 0.2,
+        "lotMergeChance": 0.03,
         "buildDepth": {
           "core": [
             10,
@@ -22684,6 +22717,7 @@
         },
         "plotTilt": 6,
         "wideLotChance": 0.2,
+        "lotMergeChance": 0.02,
         "buildDepth": {
           "core": [
             10,
@@ -22969,6 +23003,7 @@
         },
         "plotTilt": 6,
         "wideLotChance": 0.2,
+        "lotMergeChance": 0.02,
         "buildDepth": {
           "core": [
             10,
@@ -24673,6 +24708,7 @@
         },
         "plotTilt": 1,
         "wideLotChance": 0.1,
+        "lotMergeChance": 0.1,
         "buildDepth": {
           "core": [
             10,
@@ -24957,6 +24993,7 @@
         },
         "plotTilt": 1,
         "wideLotChance": 0.1,
+        "lotMergeChance": 0.1,
         "buildDepth": {
           "core": [
             10,
@@ -25244,6 +25281,7 @@
         },
         "plotTilt": 6,
         "wideLotChance": 0.2,
+        "lotMergeChance": 0.05,
         "buildDepth": {
           "core": [
             10,
@@ -25527,6 +25565,7 @@
         },
         "plotTilt": 1,
         "wideLotChance": 0.1,
+        "lotMergeChance": 0.033,
         "buildDepth": {
           "core": [
             10,
@@ -25811,6 +25850,7 @@
         },
         "plotTilt": 1,
         "wideLotChance": 0.1,
+        "lotMergeChance": 0.033,
         "buildDepth": {
           "core": [
             10,
@@ -58734,6 +58774,7 @@
         },
         "plotTilt": 6,
         "wideLotChance": 0.2,
+        "lotMergeChance": 0.1,
         "buildDepth": {
           "core": [
             10,
@@ -59018,6 +59059,7 @@
         },
         "plotTilt": 1.5,
         "wideLotChance": 0.08,
+        "lotMergeChance": 0.05,
         "buildDepth": {
           "core": [
             10,
@@ -67856,6 +67898,7 @@
         },
         "plotTilt": 6,
         "wideLotChance": 0.2,
+        "lotMergeChance": 0.08,
         "buildDepth": {
           "core": [
             10,
@@ -68708,6 +68751,7 @@
         },
         "plotTilt": 6,
         "wideLotChance": 0.2,
+        "lotMergeChance": 0.05,
         "buildDepth": {
           "core": [
             10,
@@ -68993,6 +69037,7 @@
         },
         "plotTilt": 6,
         "wideLotChance": 0.2,
+        "lotMergeChance": 0.05,
         "buildDepth": {
           "core": [
             5,
@@ -71841,6 +71886,7 @@
         },
         "plotTilt": 6,
         "wideLotChance": 0.2,
+        "lotMergeChance": 0.06,
         "buildDepth": {
           "core": [
             7,
@@ -72126,6 +72172,7 @@
         },
         "plotTilt": 6,
         "wideLotChance": 0.2,
+        "lotMergeChance": 0.06,
         "buildDepth": {
           "core": [
             10,
@@ -72978,6 +73025,7 @@
         },
         "plotTilt": 6,
         "wideLotChance": 0.2,
+        "lotMergeChance": 0.06,
         "buildDepth": {
           "core": [
             10,
@@ -73262,6 +73310,7 @@
         },
         "plotTilt": 6,
         "wideLotChance": 0.2,
+        "lotMergeChance": 0.06,
         "buildDepth": {
           "core": [
             5,
@@ -74113,6 +74162,7 @@
         },
         "plotTilt": 1,
         "wideLotChance": 0.1,
+        "lotMergeChance": 0.1,
         "buildDepth": {
           "core": [
             10,
@@ -92586,6 +92636,7 @@
         },
         "plotTilt": 6,
         "wideLotChance": 0.2,
+        "lotMergeChance": 0.06,
         "buildDepth": {
           "core": [
             5,
@@ -92862,6 +92913,7 @@
         },
         "plotTilt": 6,
         "wideLotChance": 0.2,
+        "lotMergeChance": 0.06,
         "buildDepth": {
           "core": [
             5,
@@ -93138,6 +93190,7 @@
         },
         "plotTilt": 6,
         "wideLotChance": 0.2,
+        "lotMergeChance": 0.03,
         "buildDepth": {
           "core": [
             5,
@@ -93414,6 +93467,7 @@
         },
         "plotTilt": 6,
         "wideLotChance": 0.2,
+        "lotMergeChance": 0.02,
         "buildDepth": {
           "core": [
             5,
@@ -93690,6 +93744,7 @@
         },
         "plotTilt": 6,
         "wideLotChance": 0.2,
+        "lotMergeChance": 0.02,
         "buildDepth": {
           "core": [
             5,
@@ -93967,6 +94022,7 @@
         },
         "plotTilt": 6,
         "wideLotChance": 0.2,
+        "lotMergeChance": 0.1,
         "buildDepth": {
           "core": [
             10,
@@ -94244,6 +94300,7 @@
         },
         "plotTilt": 6,
         "wideLotChance": 0.2,
+        "lotMergeChance": 0.1,
         "buildDepth": {
           "core": [
             10,
@@ -94521,6 +94578,7 @@
         },
         "plotTilt": 6,
         "wideLotChance": 0.2,
+        "lotMergeChance": 0.05,
         "buildDepth": {
           "core": [
             10,
@@ -94798,6 +94856,7 @@
         },
         "plotTilt": 6,
         "wideLotChance": 0.2,
+        "lotMergeChance": 0.033,
         "buildDepth": {
           "core": [
             10,
@@ -95075,6 +95134,7 @@
         },
         "plotTilt": 6,
         "wideLotChance": 0.2,
+        "lotMergeChance": 0.033,
         "buildDepth": {
           "core": [
             10,
@@ -95351,6 +95411,7 @@
         },
         "plotTilt": 1,
         "wideLotChance": 0.1,
+        "lotMergeChance": 0.1,
         "buildDepth": {
           "core": [
             10,
@@ -95627,6 +95688,7 @@
         },
         "plotTilt": 1,
         "wideLotChance": 0.1,
+        "lotMergeChance": 0.1,
         "buildDepth": {
           "core": [
             10,
@@ -95903,6 +95965,7 @@
         },
         "plotTilt": 1,
         "wideLotChance": 0.1,
+        "lotMergeChance": 0.05,
         "buildDepth": {
           "core": [
             10,
@@ -96179,6 +96242,7 @@
         },
         "plotTilt": 1,
         "wideLotChance": 0.1,
+        "lotMergeChance": 0.033,
         "buildDepth": {
           "core": [
             10,
@@ -96455,6 +96519,7 @@
         },
         "plotTilt": 1,
         "wideLotChance": 0.1,
+        "lotMergeChance": 0.033,
         "buildDepth": {
           "core": [
             10,
@@ -96730,6 +96795,7 @@
         },
         "plotTilt": 1.5,
         "wideLotChance": 0.08,
+        "lotMergeChance": 0.08,
         "buildDepth": {
           "core": [
             10,
@@ -97004,6 +97070,7 @@
         },
         "plotTilt": 1.5,
         "wideLotChance": 0.08,
+        "lotMergeChance": 0.08,
         "buildDepth": {
           "core": [
             10,
@@ -97278,6 +97345,7 @@
         },
         "plotTilt": 1.5,
         "wideLotChance": 0.08,
+        "lotMergeChance": 0.04,
         "buildDepth": {
           "core": [
             10,
@@ -97552,6 +97620,7 @@
         },
         "plotTilt": 1.5,
         "wideLotChance": 0.08,
+        "lotMergeChance": 0.027,
         "buildDepth": {
           "core": [
             10,
@@ -97826,6 +97895,7 @@
         },
         "plotTilt": 1.5,
         "wideLotChance": 0.08,
+        "lotMergeChance": 0.027,
         "buildDepth": {
           "core": [
             10,

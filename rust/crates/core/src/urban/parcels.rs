@@ -1797,6 +1797,129 @@ fn merge_slivers(cells: &mut Vec<Parcel>, fronts: &[Front], maximum_depth: Optio
     }
 }
 
+/// Post-cut fusion of neighbouring lots: a merchant buys the plot next door.
+/// Two admitted lots of one block that share a long side along the same front
+/// join into one lot (an L or stepped shape when their depths differ); a
+/// smaller share are two shallow lots back to back from opposite streets that
+/// join into a through lot. Each lot merges at most once; a union that is not
+/// one simple ring, passes the culture's depth or the block's lot size bound,
+/// or is refused by `requalify` leaves both lots as they were.
+fn merge_lots(
+    cells: &mut Vec<Parcel>,
+    fronts: &[Front],
+    chance: f64,
+    depth_limit: Option<f64>,
+    requalify: &dyn Fn(&mut Vec<Parcel>),
+    rng: &mut Rng,
+) {
+    let ok = |p: &Parcel| p.use_kind == "plot" && p.envelope.is_some() && p.front.is_some();
+    let mut sizes: Vec<f64> = cells.iter().filter(|p| ok(p)).map(|p| area(&p.shape)).collect();
+    if sizes.len() < 2 {
+        return;
+    }
+    sizes.sort_by(f64::total_cmp);
+    let cap = 2.5 * sizes[sizes.len() / 2];
+    let street = |p: &Parcel| p.access.as_ref().and_then(|a| a.street);
+    let n = cells.len();
+    let mut taken = vec![false; n];
+    let mut merged: Vec<(usize, usize, Parcel)> = Vec::new();
+    for i in 0..n {
+        if taken[i] || !ok(&cells[i]) || !rng.chance(chance) {
+            continue;
+        }
+        let through = rng.chance(0.15);
+        let di = lot_depth(&cells[i].shape, fronts);
+        let bi = super::geometry::bbox(&cells[i].shape);
+        let mut options: Vec<(usize, f64)> = Vec::new();
+        for j in 0..n {
+            if j == i || taken[j] || !ok(&cells[j]) {
+                continue;
+            }
+            if !boxes_touch(bi, super::geometry::bbox(&cells[j].shape)) {
+                continue;
+            }
+            let s = shared(&cells[i].shape, &cells[j].shape);
+            let dj = lot_depth(&cells[j].shape, fronts);
+            let near = di.min(dj);
+            if s < 5.0 || s < 0.35 * near {
+                continue;
+            }
+            let same = street(&cells[i]).is_some() && street(&cells[i]) == street(&cells[j]);
+            if through {
+                let shallow = depth_limit.map_or(25.0, |l| 0.6 * l);
+                if same || di.max(dj) > shallow {
+                    continue;
+                }
+            } else if !same {
+                continue;
+            }
+            // L / stepped shapes need different depths.
+            let gap = (di - dj).abs() / di.max(dj).max(1e-6);
+            options.push((j, if through { s } else { gap }));
+        }
+        if options.is_empty() {
+            continue;
+        }
+        options.sort_by(|a, b| b.1.total_cmp(&a.1).then(a.0.cmp(&b.0)));
+        if !through {
+            // Mostly the stepped pair; a straight double lot stays possible.
+            if options[0].1 < 0.15 && !rng.chance(0.25) {
+                continue;
+            }
+        }
+        for &(j, _) in options.iter().take(3) {
+            let Some(shape) = joined(&cells[i].shape, &cells[j].shape) else {
+                continue;
+            };
+            if !shape.holes.is_empty() || !super::geometry::simple(&shape) || area(&shape) > cap {
+                continue;
+            }
+            if depth_limit.is_some_and(|l| lot_depth(&shape, fronts) > l + 0.01) {
+                continue;
+            }
+            let (big, small) = if area(&cells[i].shape) >= area(&cells[j].shape) {
+                (i, j)
+            } else {
+                (j, i)
+            };
+            let mut lot = parcel(shape, cells[big].block, cells[big].axis, fronts, "plot");
+            lot.parent_ids = vec![cells[big].id.clone(), cells[small].id.clone()];
+            lot.provenance = cells[big].provenance.clone();
+            lot.provenance.push("lot-merge".into());
+            let mut probe = vec![lot];
+            requalify(&mut probe);
+            let lot = probe.remove(0);
+            if probe.is_empty()
+                && lot.use_kind == "plot"
+                && lot.envelope.is_some()
+                && lot.front.is_some()
+                && lot.access.as_ref().is_some_and(|a| a.kind != "unserved")
+            {
+                taken[i] = true;
+                taken[j] = true;
+                merged.push((i, j, lot));
+                break;
+            }
+        }
+    }
+    if merged.is_empty() {
+        return;
+    }
+    let mut drop = vec![false; n];
+    let mut out: Vec<Option<Parcel>> = vec![None; n];
+    for (i, j, lot) in merged {
+        drop[i.max(j)] = true;
+        out[i.min(j)] = Some(lot);
+    }
+    let old = std::mem::take(cells);
+    for (k, p) in old.into_iter().enumerate() {
+        if drop[k] {
+            continue;
+        }
+        cells.push(out[k].take().unwrap_or(p));
+    }
+}
+
 enum Repair {
     Merge(Shape, Shape),
     Split([(Shape, Shape); 2]),
@@ -3978,6 +4101,44 @@ pub(super) fn generate(
                 }
             }
             parcels = refined;
+        }
+        {
+            let weight = match zone.as_str() {
+                "core" => 1.0,
+                "middle" => 0.7,
+                "edge" | "ring" => 0.4,
+                "faubourg" => 0.25,
+                _ => 0.15,
+            };
+            let chance = morph.number("lotMergeChance").clamp(0.0, 1.0)
+                * weight
+                * (0.4 + 0.6 * occupation.clamp(0.0, 1.0));
+            if chance > 0.0
+                && !organic
+                && !camp
+                && !matches!(morph.text("plotOp"), "compound" | "wholeBlock" | "garden")
+            {
+                merge_lots(
+                    &mut parcels,
+                    &fronts,
+                    chance,
+                    depth_limit,
+                    &|probe: &mut Vec<Parcel>| {
+                        qualify(
+                            probe,
+                            &fronts,
+                            layout,
+                            &admission,
+                            fallback.as_ref(),
+                            family == "courtyard",
+                            family,
+                            depth_limit,
+                            false,
+                        )
+                    },
+                    &mut rng.fork("lot-merge"),
+                );
+            }
         }
         tidy::tidy(&mut parcels, &fronts, layout, depth_limit, organic, dense);
         for p in &mut parcels {
