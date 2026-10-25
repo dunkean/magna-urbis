@@ -5,7 +5,7 @@ import { prepareUrbanOpenDeficits } from '../../../rust/bridge/urbanOpenDeficits
 import { createUrbanEngine } from '../../../rust/bridge/urban';
 import type { SettlementRaster } from '../../../rust/bridge/settlements';
 import type { ArchitectureBatchOptions } from '../../../rust/bridge/architectureBatch';
-import type { PlacementBatch, PlacementRequest } from '../../../rust/bridge/urbanArchitecture';
+import { architectureProfile, type PlacementBatch, type PlacementRequest } from '../../../rust/bridge/urbanArchitecture';
 import { beginUrbanBuildingPages, URBAN_BUILDING_PAGE_LIMIT } from '../../../rust/bridge/urbanBuildingPages';
 import { RASTER_MISSING, sceneMode, usesCompactPlans, validateProjectedSiteStream, sceneRuntimeKey, urbanBuildingSitesRequest, type UrbanSceneRequest, type UrbanSceneResponse, type UrbanSceneWorkerMessage } from './urbanSceneProtocol';
 import { urbanSceneCompletion } from './urbanSceneProgress';
@@ -86,7 +86,7 @@ async function drain(): Promise<void> {
       const pipelineStart = performance.now();
       if (request.source && request.runtime?.profile === 'local' && usesCompactPlans(request) && request.progressive) {
         const pages = await beginUrbanBuildingPages({ source: request.source, keys: request.keys, seed: request.seed,
-          architectureCulture: request.settings?.culture }, request.runtime, { cancelled, requireSiteRead: request.requireProjectedSiteStream === true });
+          architectureCulture: architectureProfile(request.settings) }, request.runtime, { cancelled, requireSiteRead: request.requireProjectedSiteStream === true });
         if (cancelled()) continue;
         if (request.requireProjectedSiteStream && (!pages || !pages.siteQuery)) throw new Error('Projected site stream capabilities are unavailable; full-site fallback is forbidden.');
         if (pages) {

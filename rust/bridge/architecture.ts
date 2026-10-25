@@ -5,7 +5,7 @@ import { NATIVE_ASSEMBLY_CAPABILITY, NATIVE_ASSEMBLY_RUNTIME_CAPABILITY, NATIVE_
 import init, * as wasm from '../pkg/houses/magna_urbis_houses_wasm.js';
 import { compileHousesModule } from './houses';
 import { nativeRequest } from './nativeEngine';
-import { parseArchitectureResult, type ArchitectureWasm, type PlacementBatch, type PlacementBatchRequest, type PlacedBuilding, type EnrichedPlacement } from './urbanArchitecture';
+import { parseArchitectureResult, hasHouseMix, type ArchitectureWasm, type PlacementBatch, type PlacementBatchRequest, type PlacedBuilding, type EnrichedPlacement } from './urbanArchitecture';
 import type { ExecutionRuntime } from '../../web/src/ui/executionProfile';
 import { placeArchitectureBatches, placeArchitectureSource, streamArchitectureBatches, streamArchitectureSource, type ArchitectureBatchHeader, type ArchitectureRequestSource, type ArchitectureBatchOptions, type ArchitectureStreamOptions, type ArchitectureStreamSummary } from './architectureBatch';
 import { archivePlanBatch, resolveArchivedPlan, type PlanArchiveScene } from './compactPlanArchive';
@@ -35,6 +35,7 @@ async function requireNativeArchitecture(runtime: ExecutionRuntime, input: unkno
     const feature = kind === 'plans' || kind === 'realize-plan' ? 'houses.compact-plans' : kind === 'style-index' ? 'houses.style-index' : undefined;
     if (feature && !capabilities.includes(feature)) { nativeCapabilities.delete(runtime.server); throw new Error('Actualisez le moteur Rust local pour activer les plans architecturaux compacts et leur catalogue.'); }
     if ((input as PlacementBatchRequest | undefined)?.settings?.culture && !capabilities.includes('urban.architecture-culture')) throw new Error('Actualisez le moteur Rust local pour choisir une culture architecturale indépendante.');
+    if (hasHouseMix((input as PlacementBatchRequest | undefined)?.settings?.houses) && !capabilities.includes('urban.house-mix')) throw new Error('Actualisez le moteur Rust local pour mélanger les styles de maisons.');
     if ((input as PlacementBatchRequest | undefined)?.settings?.parcel_fit && !capabilities.includes('houses.parcel-fit')) throw new Error('Actualisez le moteur Rust local pour adapter les bâtiments à leurs parcelles.');
     const model = (input as PlacementBatchRequest | undefined)?.settings?.house_config;
     if (model && !capabilities.includes(model.workshop ? 'houses.workshop-template' : 'houses.config-template')) {

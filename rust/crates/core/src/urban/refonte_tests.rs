@@ -915,3 +915,40 @@ fn zone_overrides_change_one_zone_and_old_configs_still_load() {
     let parcels: ParcelConfig = serde_json::from_str(r#"{"zoneOperators":{"core":"courtyard"}}"#).unwrap();
     assert!(generate_parcels("zone", std::slice::from_ref(&layout), &parcels).is_ok());
 }
+
+#[test]
+fn chosen_zones_ignore_global_recipe_and_preset() {
+    let h = vec![20.0; 64 * 64];
+    let water = vec![0; h.len()];
+    let surface = Surface { geometry: None, width: 1600.0, n: 64, height: &h, water: &water };
+    let site = Site {
+        key: "chosen".into(),
+        name: String::new(),
+        population: 6000,
+        culture: "european-organic".into(),
+        center: Point { x: 800.0, y: 800.0 },
+        radius: 200.0,
+    };
+    let zones = ["core", "middle", "edge", "faubourg", "village"]
+        .map(|z| format!(r#""{z}":{{"culture":"roman-core"}}"#))
+        .join(",");
+    // A global recipe no longer erases the phase table: every phase keeps its
+    // chosen culture and the recipe that culture gives it.
+    let cfg: LayoutConfig = serde_json::from_str(&format!(
+        r#"{{"fortification":"none","recipe":"hamlet","phaseOverrides":{{{zones}}}}}"#
+    ))
+    .unwrap();
+    let layout = generate_quarters("chosen", std::slice::from_ref(&site), &cfg, surface, &[])
+        .unwrap()
+        .remove(0);
+    assert!(!layout.phases.is_empty());
+    assert!(layout.phases.iter().all(|p| p.culture == "roman-core" && p.recipe != "hamlet"));
+    // Lots: with every zone chosen, two different explicit global presets cut
+    // the same lots (both disable adaptive capacity; only the globals differ).
+    let lots = |preset: &str| {
+        let pcfg: ParcelConfig = serde_json::from_str(&format!(r#"{{"preset":"{preset}","recipe":"hamlet"}}"#)).unwrap();
+        let parcels = generate_parcels("chosen", std::slice::from_ref(&layout), &pcfg).unwrap();
+        serde_json::to_string(&parcels[0].parcels.iter().map(|p| &p.shape).collect::<Vec<_>>()).unwrap()
+    };
+    assert!(lots("roman-core/core") == lots("european-organic/faubourg"), "lots ignore the global preset and recipe");
+}

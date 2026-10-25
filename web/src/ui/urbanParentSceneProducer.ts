@@ -6,7 +6,7 @@ import { createUrbanEngine } from '../../../rust/bridge/urban';
 import type { ArchitectureRequestSource } from '../../../rust/bridge/architectureBatch';
 import { streamNativeParentSession } from '../../../rust/bridge/nativeParentSessionStream';
 import { parentWire } from '../../../rust/bridge/nativeParentBudget';
-import type { PlacementRequest } from '../../../rust/bridge/urbanArchitecture';
+import { architectureProfile, type PlacementRequest } from '../../../rust/bridge/urbanArchitecture';
 import type { NativeParentSessionApi } from '../../../rust/bridge/nativeParentSessionContract';
 import { urbanSceneTransport, urbanBuildingSitesRequest, sceneRuntimeKey, type UrbanSceneRequest } from './urbanSceneProtocol';
 import type { UrbanParentWorkerBatch, UrbanParentWorkerBegin, UrbanParentWorkerCompletion, UrbanParentAcknowledged } from './urbanParentSceneProtocol';
@@ -32,7 +32,7 @@ export async function produceUrbanParentScene(input: UrbanSceneRequest, options:
   const overrides = request.buildingOverrides ? structuredClone(request.buildingOverrides) : undefined;
   let source: ArchitectureRequestSource, prepare = 0, read = 0, paged = false;
   const pages = request.source && request.runtime?.profile === 'local'
-    ? await beginUrbanBuildingPages({ source: request.source, keys: request.keys, seed: request.seed, architectureCulture: request.settings?.culture },
+    ? await beginUrbanBuildingPages({ source: request.source, keys: request.keys, seed: request.seed, architectureCulture: architectureProfile(request.settings) },
       request.runtime, { cancelled: options.cancelled, requireSiteRead: true }) : undefined;
   cancelled();
   if (request.source && !pages) throw new Error('Parent city source requires real paged building-site support; full-source fallback forbidden.');

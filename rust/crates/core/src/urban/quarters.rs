@@ -2164,12 +2164,17 @@ fn quarter_edit(
     } else {
         composition::recipe(target, site.population, name)
     };
+    let (preset, selected) = composition::globals(
+        composition::zone_chosen(&cfg.phase_overrides, &q.zone),
+        &cfg.preset,
+        &cfg.recipe,
+    );
     let morph = composition::phase_morph(
         target,
         &recipe,
         &q.zone,
-        &cfg.preset,
-        &cfg.recipe,
+        preset,
+        selected,
         edit.density.unwrap_or(cfg.density),
         &cfg.params,
         "quarters",
@@ -3119,6 +3124,11 @@ fn generate_once(
     let raw_phase_morphs = phases
         .iter()
         .map(|p| {
+            let (preset, selected) = composition::globals(
+                composition::zone_chosen(&cfg.phase_overrides, &p.zone),
+                &cfg.preset,
+                &cfg.recipe,
+            );
             composition::phase_morph(
                 if p.culture.is_empty() {
                     culture
@@ -3127,8 +3137,8 @@ fn generate_once(
                 },
                 &p.recipe,
                 &p.zone,
-                &cfg.preset,
-                &cfg.recipe,
+                preset,
+                selected,
                 cfg.density,
                 &cfg.params,
                 "quarters",

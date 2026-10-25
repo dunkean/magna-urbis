@@ -666,12 +666,37 @@ impl BuildingSiteIndex {
             .parcels
             .get(site.parcel)
             .ok_or("Retained parcel missing")?;
-        let building_culture = architecture_culture
-            .filter(|c| !c.is_empty() && *c != "site")
-            .unwrap_or(&allocation.culture);
-        let mut culture =
-            super::culture::parcel_mapping(layout, parcel, building_culture, &allocation.function)
-                .ok_or("No contextual native recipe")?;
+        // Mixed house styles (`house_mix`): the drawn culture replaces the lot's
+        // own; a pack that refuses the lot falls back to it, never a refusal.
+        let drawn = super::house_mix::HouseSettings::parse(architecture_culture).and_then(|h| {
+            let block = layout.blocks.get(parcel.block)?;
+            let drawn = h.pick(
+                seed,
+                &layout.key,
+                &parcel.id,
+                parcel.block,
+                block.quarter,
+                &block.zone,
+            )?;
+            (drawn != allocation.culture).then(|| {
+                super::culture::parcel_mapping(layout, parcel, drawn, &allocation.function)
+                    .map(|m| (drawn.to_owned(), m))
+            })?
+        });
+        let (building_culture, mut culture) = match drawn {
+            Some(d) => d,
+            None => (
+                allocation.culture.clone(),
+                super::culture::parcel_mapping(
+                    layout,
+                    parcel,
+                    &allocation.culture,
+                    &allocation.function,
+                )
+                .ok_or("No contextual native recipe")?,
+            ),
+        };
+        let building_culture = building_culture.as_str();
         // Lots admitted by the pack's compact house (courtyard cultures)
         // request that recipe, never the court house they cannot hold.
         if let Some(small) = super::parcels::compact_fallback(

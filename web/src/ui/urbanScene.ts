@@ -1,4 +1,4 @@
-import type { PlacementBatch, PlacementBatchRequest, PlacementRequest } from '../../../rust/bridge/urbanArchitecture';
+import { architectureProfile, type PlacementBatch, type PlacementBatchRequest, type PlacementRequest } from '../../../rust/bridge/urbanArchitecture';
 import { prepareUrbanOpenDeficits } from '../../../rust/bridge/urbanOpenDeficits';
 import SceneWorker from './urbanSceneWorker?worker&inline';
 import { createUrbanEngine } from '../../../rust/bridge/urban';
@@ -122,7 +122,7 @@ export function createUrbanSceneClient() {
     if (!response.complete || !cold.stage || !response.siteQuery) throw new Error('Incomplete cold architecture stream or missing retained site descriptor.');
     const query = copyBuildingSiteQuery(response.siteQuery);
     const expectedQuery = copyBuildingSiteQuery({ source: item.request.source!, keys: item.request.keys, seed: item.request.seed,
-      architectureCulture: item.request.settings?.culture });
+      architectureCulture: architectureProfile(item.request.settings) });
     if (JSON.stringify(query) !== JSON.stringify(expectedQuery)) throw new Error('Cold building-site source identity changed.');
     if (cold.receivedSites !== cold.stage.progress.total) throw new Error('Incomplete cold building-site stream.');
     const manifest = await cold.stage.commit({ completion: response.complete, signal: cold.abort.signal });

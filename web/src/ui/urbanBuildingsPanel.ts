@@ -10,7 +10,7 @@ import urbanCatalogue from '../../../rust/crates/core/src/urban/catalogue.json';
 import './urbanBuildings.css';
 import { openMethodNote } from './methodNotes';
 import { defaultProgrammeContext, type ProgrammeContext } from '../../../rust/bridge/urbanConfig';
-import type { PlacementBatch, PlacedBuilding, PlacementBatchSettings } from '../../../rust/bridge/urbanArchitecture';
+import { hasHouseMix, type PlacementBatch, type PlacedBuilding, type PlacementBatchSettings, type HouseSettings } from '../../../rust/bridge/urbanArchitecture';
 import { openBench } from './benchHistory';
 import { readUrbanHouseModel, urbanHouseModelCode } from './urbanHouseModel';
 import { buildingHeight } from '../render/urbanBuildings';
@@ -25,7 +25,7 @@ import type { PlanArchiveScene } from '../../../rust/bridge/compactPlanArchive';
 import type { NativeBuildingProjectionRefusal } from './urbanBuildingProjection';
 import { programmeFunctionControlsHtml, bindProgrammeFunctionControls, programmeFunctionsSummary } from './urbanProgrammeFunctions';
 
-export interface UrbanBuildingDraft { seed: string; floors: string; typology: string; model: string; culture?: string; fit?: boolean }
+export interface UrbanBuildingDraft { seed: string; floors: string; typology: string; model: string; culture?: string; fit?: boolean; houses?: HouseSettings }
 export type UrbanColdBuildingState = Pick<UrbanColdSceneResponse, 'store' | 'counts'> & {
   offset?: { x: number; y: number }; cityKey?: string;
 };
@@ -283,7 +283,10 @@ export function createUrbanBuildingsPanel(options: {
   options.host.append(programme, panel);
   const $ = <T extends HTMLElement>(selector: string): T => panel.querySelector(selector) as T;
   const p$ = <T extends HTMLElement>(selector: string): T => programme.querySelector(selector) as T;
-  const architecture = document.createElement('label'); architecture.textContent = 'Profil culturel des bâtiments · surcharge';
+  // Mixed house styles (the « Maisons » column of the city panel); the single-culture select below is the older way to set the whole city.
+  const houseMix = { value: undefined as HouseSettings | undefined, get(): HouseSettings | undefined { return hasHouseMix(this.value) ? this.value : undefined; },
+    set(next?: HouseSettings): void { this.value = next && structuredClone(next); } };
+  const architecture = document.createElement('label'); architecture.textContent = 'Style unique des maisons · toute la ville (ancien réglage)';
   const architectureCulture = document.createElement('select'); architectureCulture.dataset.buildingCulture = '';
   architectureCulture.add(new Option('Selon le routage du programme appliqué', ''));
   for (const [id, culture] of Object.entries(urbanCatalogue.cultures)) architectureCulture.add(new Option(culture.label, id));
@@ -422,7 +425,7 @@ export function createUrbanBuildingsPanel(options: {
       const floors = $<HTMLInputElement>('[data-building-floors]'), typology = $<HTMLSelectElement>('[data-building-typology]').value as PlacementBatchSettings['typology'];
       if (!applied && (!floors.checkValidity() || floors.value.trim() && !Number.isSafeInteger(Number(floors.value)))) throw new Error('Le nombre de niveaux doit être un entier positif. La recette vérifie sa propre plage.');
       const house_config = applied ? applied.settings?.house_config : readUrbanHouseModel($<HTMLInputElement>('[data-building-house-model]').value, options.getProgramme().mode);
-      const settings: PlacementBatchSettings = applied ? structuredClone(applied.settings ?? {}) : { parcel_fit: $<HTMLInputElement>('[data-building-fit]').checked, ...(architectureCulture.value ? { culture: architectureCulture.value } : {}), ...(house_config ? { house_config } : {}), ...(floors.value.trim() ? { floors: Number(floors.value) } : {}), ...(typology ? { typology } : {}) };
+      const settings: PlacementBatchSettings = applied ? structuredClone(applied.settings ?? {}) : { parcel_fit: $<HTMLInputElement>('[data-building-fit]').checked, ...(architectureCulture.value ? { culture: architectureCulture.value } : {}), ...(houseMix.get() ? { houses: structuredClone(houseMix.get()!) } : {}), ...(house_config ? { house_config } : {}), ...(floors.value.trim() ? { floors: Number(floors.value) } : {}), ...(typology ? { typology } : {}) };
       const result = await options.generate(seed, settings, (completed, total) => {
         if (ticket === epoch && busy) $('[data-buildings-status]').textContent = `${completed.toLocaleString()} / ${total.toLocaleString()} lots traités`;
       });
@@ -464,8 +467,16 @@ export function createUrbanBuildingsPanel(options: {
     get state(): UrbanBuildingState { return state; },
     get busy(): boolean { return busy; },
     resetAppliedSettings(): void { model.resetAppliedSettings(); },
+    /** Mixed house styles of the draft (undefined = none chosen), and the older single culture. */
+    get houses(): HouseSettings | undefined { return houseMix.get(); },
+    get singleCulture(): string { return architectureCulture.value; },
+    /** Replaces the draft mix; a change of the city line retires the older single culture, which it supersedes. */
+    setHouses(next?: HouseSettings): void {
+      if (JSON.stringify(next?.city) !== JSON.stringify(houseMix.value?.city)) architectureCulture.value = '';
+      houseMix.set(next); $('[data-building-draft]').hidden = false;
+    },
     captureDraft(): UrbanBuildingDraft | undefined {
-      return $('[data-building-draft]').hidden ? undefined : { seed: $<HTMLInputElement>('[data-building-seed]').value, floors: $<HTMLInputElement>('[data-building-floors]').value, typology: $<HTMLSelectElement>('[data-building-typology]').value, model: $<HTMLInputElement>('[data-building-house-model]').value, culture: architectureCulture.value, fit: $<HTMLInputElement>('[data-building-fit]').checked };
+      return $('[data-building-draft]').hidden ? undefined : { seed: $<HTMLInputElement>('[data-building-seed]').value, floors: $<HTMLInputElement>('[data-building-floors]').value, typology: $<HTMLSelectElement>('[data-building-typology]').value, model: $<HTMLInputElement>('[data-building-house-model]').value, culture: architectureCulture.value, fit: $<HTMLInputElement>('[data-building-fit]').checked, ...(houseMix.get() ? { houses: structuredClone(houseMix.get()!) } : {}) };
     },
     restoreDraft(draft?: UrbanBuildingDraft): void {
       if (!draft) return;
@@ -474,6 +485,7 @@ export function createUrbanBuildingsPanel(options: {
       retainSelectValue($<HTMLSelectElement>('[data-building-typology]'), draft.typology ?? '', 'Typologie conservée hors choix UI');
       $<HTMLInputElement>('[data-building-house-model]').value = draft.model;
       retainSelectValue(architectureCulture, draft.culture ?? '', 'Profil architectural conservé hors catalogue UI');
+      houseMix.set(draft.houses);
       $<HTMLInputElement>('[data-building-fit]').checked = draft.fit !== false;
       $('[data-building-draft]').hidden = false;
     },
@@ -493,6 +505,7 @@ export function createUrbanBuildingsPanel(options: {
       retainSelectValue($<HTMLSelectElement>('[data-building-typology]'), state.settings?.typology ?? '', 'Typologie conservée hors choix UI');
       $<HTMLInputElement>('[data-building-house-model]').value = urbanHouseModelCode(state.settings?.house_config);
       retainSelectValue(architectureCulture, state.settings?.culture ?? '', 'Profil architectural conservé hors catalogue UI');
+      houseMix.set(state.settings?.houses);
       $<HTMLInputElement>('[data-building-fit]').checked = state.settings?.parcel_fit !== false;
       $<HTMLInputElement>('[data-building-visible]').checked = state.visible;
       $<HTMLSelectElement>('[data-building-style]').value = state.appearance.style;
@@ -514,6 +527,7 @@ export function createUrbanBuildingsPanel(options: {
       retainSelectValue($<HTMLSelectElement>('[data-building-typology]'), saved.settings?.typology ?? '', 'Typologie conservée hors choix UI');
       $<HTMLInputElement>('[data-building-house-model]').value = urbanHouseModelCode(saved.settings?.house_config);
       retainSelectValue(architectureCulture, saved.settings?.culture ?? '', 'Profil architectural conservé hors catalogue UI');
+      houseMix.set(saved.settings?.houses);
       $<HTMLInputElement>('[data-building-fit]').checked = saved.settings?.parcel_fit !== false;
       $('[data-building-draft]').hidden = false;
     },

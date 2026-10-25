@@ -89,7 +89,16 @@ export interface NativeMinimumCandidate {
   /** Explicit contact on the declared access segment; no pose search in Houses. */
   contact: Point;
 }
-export interface PlacementBatchSettings { culture?: string; parcel_fit?: boolean; floors?: number; typology?: ArchitectureTypology; house_config?: HouseConfig }
+/** Mixed house styles (Rust `urban::house_mix`): weighted cultures, drawn per lot, block or quarter. */
+export interface HouseMix { styles: { culture: string; weight: number }[]; spread: 'lot' | 'block' | 'quarter' }
+/** Resolution per lot: quarter, then the block's zone, then the city; none = the lot's own culture. */
+export interface HouseSettings { city?: HouseMix; zones?: Record<string, HouseMix>; quarters?: Record<string, HouseMix> }
+export interface PlacementBatchSettings { culture?: string; parcel_fit?: boolean; floors?: number; typology?: ArchitectureTypology; house_config?: HouseConfig; houses?: HouseSettings }
+export const hasHouseMix = (houses?: HouseSettings): houses is HouseSettings =>
+  !!houses && [houses.city, ...Object.values(houses.zones ?? {}), ...Object.values(houses.quarters ?? {})].some(m => m?.styles.some(s => s.weight > 0 && s.culture));
+/** The one string that carries the building profile to the native site generator: a culture id, or JSON when styles are mixed. */
+export const architectureProfile = (settings?: PlacementBatchSettings): string | undefined =>
+  hasHouseMix(settings?.houses) ? JSON.stringify({ ...(settings!.culture ? { culture: settings!.culture } : {}), houses: settings!.houses }) : settings?.culture;
 export interface PlacementBatchRequest { schema_version: '1'; requests: PlacementRequest[]; settings?: PlacementBatchSettings }
 export interface ArchitectureVolume {
   id: string; footprint: Surface;

@@ -1158,7 +1158,8 @@ pub(super) fn block_morph<'a>(
         .and_then(|i| layout.phases.get(i));
     let recipe = phase.map_or("auto", |p| p.recipe.as_str());
     let cfg = layout.config.clone().unwrap_or_default();
-    let zone = if cfg.zone == "auto" {
+    let chosen = super::composition::zone_chosen(&cfg.phase_overrides, &b.zone);
+    let zone = if cfg.zone == "auto" || chosen {
         &b.zone
     } else {
         &cfg.zone
@@ -1178,12 +1179,13 @@ pub(super) fn block_morph<'a>(
         })
         .map(|(key, value)| (key.clone(), value.clone()))
         .collect::<serde_json::Map<_, _>>();
+    let (preset, selected) = super::composition::globals(chosen, &cfg.preset, &cfg.recipe);
     let morph = super::composition::phase_morph(
         culture,
         recipe,
         zone,
-        &cfg.preset,
-        &cfg.recipe,
+        preset,
+        selected,
         cfg.density,
         &serde_json::Value::Object(params),
         "parcels",
@@ -1249,18 +1251,23 @@ pub(super) fn parcel_morph<'a>(
         .phase
         .or_else(|| layout.quarters.get(b.quarter).map(|q| q.phase))
         .and_then(|i| layout.phases.get(i));
-    let zone = if cfg.zone == "auto" {
+    let chosen = layout
+        .config
+        .as_ref()
+        .is_some_and(|c| super::composition::zone_chosen(&c.phase_overrides, &b.zone));
+    let zone = if cfg.zone == "auto" || chosen {
         b.zone.as_str()
     } else {
         cfg.zone.as_str()
     };
     let recipe = phase.map_or("auto", |p| p.recipe.as_str());
+    let (preset, selected) = super::composition::globals(chosen, &cfg.preset, &cfg.recipe);
     let morph = super::composition::phase_morph(
         culture,
         recipe,
         zone,
-        &cfg.preset,
-        &cfg.recipe,
+        preset,
+        selected,
         cfg.density,
         &cfg.params,
         "parcels",

@@ -3,7 +3,7 @@ import type { UrbanParentWorkerBegin, UrbanParentWorkerBatch, UrbanParentWorkerC
 import type { Layout, Partition, UrbanRequest } from '../../../rust/bridge/urban';
 import { validateUrbanSource, type UrbanSourceHandle } from '../../../rust/bridge/urbanSource';
 import type { SettlementRaster } from '../../../rust/bridge/settlements';
-import type { PlacementBatch } from '../../../rust/bridge/urbanArchitecture';
+import { architectureProfile, type PlacementBatch } from '../../../rust/bridge/urbanArchitecture';
 import type { ExecutionRuntime } from './executionProfile';
 import type { UrbanSceneBatch, UrbanSceneCompletion } from './urbanSceneProgress';
 
@@ -84,7 +84,7 @@ export function urbanSceneTransport(request: UrbanSceneRequest, omitRaster = fal
  * source branch. Legacy capacity reconciliation still receives full geometry. */
 export function urbanBuildingSitesRequest(request: UrbanSceneRequest, raster?: SettlementRaster): UrbanRequest {
   const message = urbanSceneTransport(request);
-  const common = { id: message.id, kind: 'buildingSites' as const, seed: message.seed, runtime: message.runtime, architectureCulture: message.settings?.culture };
+  const common = { id: message.id, kind: 'buildingSites' as const, seed: message.seed, runtime: message.runtime, architectureCulture: architectureProfile(message.settings) };
   return message.source ? { ...common, source: message.source, keys: message.keys }
     : { ...common, raster, layouts: message.layouts, partitions: message.partitions };
 }

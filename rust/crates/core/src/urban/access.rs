@@ -49,12 +49,17 @@ pub(super) fn refine(layout: &mut Layout, cfg: &LayoutConfig, morph: &Morph, sur
         .phases
         .iter()
         .map(|p| {
+            let (preset, selected) = super::composition::globals(
+                super::composition::zone_chosen(&cfg.phase_overrides, &p.zone),
+                &cfg.preset,
+                &cfg.recipe,
+            );
             super::composition::phase_morph(
                 &layout.culture,
                 &p.recipe,
                 &p.zone,
-                &cfg.preset,
-                &cfg.recipe,
+                preset,
+                selected,
                 cfg.density,
                 &cfg.params,
                 "quarters",

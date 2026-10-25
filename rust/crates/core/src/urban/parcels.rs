@@ -3329,24 +3329,29 @@ pub(super) fn generate(
     } else {
         &cfg.culture
     };
+    let chosen = |p: &super::GrowthPhase| {
+        layout.config.as_ref().is_some_and(|c| {
+            super::composition::zone_chosen(&c.phase_overrides, &p.zone) && !p.culture.is_empty()
+        })
+    };
+    let zone_of = |p: &'_ super::GrowthPhase| -> String {
+        if cfg.zone == "auto" || chosen(p) { p.zone.clone() } else { cfg.zone.clone() }
+    };
     let phase_morphs = layout
         .phases
         .iter()
         .map(|p| {
+            let (preset, selected) = super::composition::globals(chosen(p), &cfg.preset, &cfg.recipe);
             super::composition::phase_morph(
-                if cfg.culture == "site" && !p.culture.is_empty() {
+                if (cfg.culture == "site" || chosen(p)) && !p.culture.is_empty() {
                     &p.culture
                 } else {
                     culture
                 },
                 &p.recipe,
-                if cfg.zone == "auto" {
-                    &p.zone
-                } else {
-                    &cfg.zone
-                },
-                &cfg.preset,
-                &cfg.recipe,
+                &zone_of(p),
+                preset,
+                selected,
                 cfg.density,
                 &cfg.params,
                 "parcels",
@@ -3372,11 +3377,7 @@ pub(super) fn generate(
             plan,
             quarter,
             &p.recipe,
-            if cfg.zone == "auto" {
-                &p.zone
-            } else {
-                &cfg.zone
-            },
+            &zone_of(p),
             population,
             cfg.density,
             "parcels",
@@ -3412,20 +3413,18 @@ pub(super) fn generate(
             let key = (pi, density.to_bits());
             if !edited_morphs.contains_key(&key) {
                 let p = &layout.phases[pi];
+                let (preset, selected) =
+                    super::composition::globals(chosen(p), &cfg.preset, &cfg.recipe);
                 let m = super::composition::phase_morph(
-                    if cfg.culture == "site" && !p.culture.is_empty() {
+                    if (cfg.culture == "site" || chosen(p)) && !p.culture.is_empty() {
                         &p.culture
                     } else {
                         culture
                     },
                     &p.recipe,
-                    if cfg.zone == "auto" {
-                        &p.zone
-                    } else {
-                        &cfg.zone
-                    },
-                    &cfg.preset,
-                    &cfg.recipe,
+                    &zone_of(p),
+                    preset,
+                    selected,
                     density.clamp(0.1, 10.0),
                     &cfg.params,
                     "parcels",

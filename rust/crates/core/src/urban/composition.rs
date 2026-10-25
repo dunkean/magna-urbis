@@ -45,6 +45,23 @@ pub(super) fn phase_morph(
     )
 }
 
+/// A zone chosen in the phase table keeps its own culture and recipe: the global
+/// recipe, preset and zone only apply to the zones that were not chosen.
+pub(super) fn zone_chosen(
+    overrides: &std::collections::BTreeMap<String, super::PhaseOverride>,
+    zone: &str,
+) -> bool {
+    overrides
+        .get(zone)
+        .is_some_and(|o| !o.culture.is_empty() || !o.recipe.is_empty())
+}
+
+/// `(preset, selected recipe)` to resolve a phase with: the globals, or the
+/// culture's own when the zone was chosen.
+pub(super) fn globals<'a>(chosen: bool, preset: &'a str, selected: &'a str) -> (&'a str, &'a str) {
+    if chosen { ("culture", "auto") } else { (preset, selected) }
+}
+
 pub(super) fn recipe(culture: &str, population: u32, name: &str) -> String {
     let c = &catalogue()["cultures"][culture];
     let grown = !std::ptr::eq(c, culture_data(culture, population));

@@ -3,6 +3,7 @@
 //! Layouts are retained inputs to the parcel stage; this is not the future World model.
 mod access;
 pub mod building_sites;
+mod house_mix;
 pub mod display;
 mod composition;
 // Structural user edits (shape, delete, reroll): urban/edits.rs.

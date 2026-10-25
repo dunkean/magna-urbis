@@ -113,7 +113,7 @@ try {
   assert(roads.junctions.some(j => j.site === manual.key && Math.hypot(j.point.x - moved.center.x, j.point.y - moved.center.y) < 1), 'the moved place is a road node');
   // Manual refresh keeps draft markers at their new positions, batches moves, and
   // never sends an intermediate placement/routing request.
-  await page.locator('#setAutoRefresh').uncheck();
+  await page.locator('[data-um-auto]').uncheck();
   const requests = await page.evaluate(() => window.__settlementRequests);
   const pendingRoads = JSON.stringify(roads);
   for (const offset of [100, 200]) {
@@ -133,7 +133,7 @@ try {
   const batched = await page.evaluate(key => window.__settlementOutput.settlements.find(s => s.key === key), manual.key);
   assert(Math.hypot(batched.center.x - moved.center.x - 200, batched.center.y - moved.center.y - 200) < 30);
   assert.equal(JSON.parse(new URL(page.url()).searchParams.get('settlements')).autoRefresh, false);
-  await page.locator('#setAutoRefresh').check();
+  await page.locator('[data-um-auto]').check();
   if (target.protocol !== 'file:') assert.equal(await page.evaluate(() => window.__terrainReplies), 1, 'editing settlements regenerated terrain');
   await changed(async () => { await page.locator('#setRemove').click(); });
   state = await page.evaluate(() => window.__settlementOutput);
@@ -144,13 +144,13 @@ try {
   assert.equal(JSON.parse(shared.searchParams.get('roads')).config.culture, 'roman');
   mkdirSync('out/terrain-settlements', { recursive: true });
   await page.screenshot({ path: 'out/terrain-settlements/edited.png', fullPage: true });
-  await page.locator('#setAutoRefresh').uncheck();
+  await page.locator('[data-um-auto]').uncheck();
   await page.waitForTimeout(250);
   // Procedural is omitted by the legacy share serializer; pin it for this test
   // so a reload does not start the default neural model download.
   const reload = new URL(page.url()); reload.searchParams.set('source', 'procedural');
   await page.goto(reload.href, { waitUntil: 'commit' }); await settled();
-  assert.equal(await page.locator('#setAutoRefresh').isChecked(), false);
+  assert.equal(await page.locator('[data-um-auto]').isChecked(), false);
   assert.equal(await page.evaluate(() => window.__settlementOutput.settlements.find(s => s.key === 'village:0').name), 'Market on the hill');
   const waterEngines = process.argv.includes('--water') ? ['rust', 'vector'] : process.argv.includes('--vector-water') ? ['vector'] : [];
   for (const engine of waterEngines) {

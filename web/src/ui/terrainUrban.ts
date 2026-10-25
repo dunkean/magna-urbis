@@ -46,7 +46,7 @@ import { UrbanBuildingDetailController, type BuildingDetailView } from '../rende
 import type { ArchitectureBatchProgress } from '../../../rust/bridge/architectureBatch';
 import type { PlacementBatch, PlacedBuilding } from '../../../rust/bridge/urbanArchitecture';
 import { createUrbanBuildingsPanel } from './urbanBuildingsPanel';
-import { morphologyOptions, morphologyEvidenceHtml, resetMorphology, MORPHOLOGY_HINT } from './urbanMorphology';
+import { morphologyOptions, morphologyEvidenceHtml, resetMorphology, MORPHOLOGY_HINT, MORPHOLOGY_LABELS } from './urbanMorphology';
 import { urbanBuildingsSvg } from '../render/urbanBuildings';
 import { openUrbanHouseCase } from './urbanHouseTransfer';
 import { parcelInspectionHtml } from './urbanInspector';
@@ -134,7 +134,11 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
   /** City Bench drawing (plan layer, roles, inspector) and building volumes, for every settlement shown. */
   cityView?: boolean;
   /** Upstream stages (placement, regional roads) still answering: buildings wait for them. */
-  upstreamPending?(): boolean }) {
+  upstreamPending?(): boolean;
+  /** The panel's single « Auto » switch changed (Settlements also follows it for settlements and routes). */
+  onAutoChange?(value: boolean): void }) {
+  const benchOnChange = options.onChange;
+  options = { ...options, onChange: () => { benchOnChange(); mainPanel?.schedule(); } };
   let settlements: SettlementOutput | undefined, roads: RoadOutput | undefined;
   const cityView = !!(options.city || options.cityView);
   let regionalOf: RoadOutput | undefined, regional: Street[] = [];
@@ -198,8 +202,8 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
   if (options.city) { enabled = parcelEnabled = true; }
   const stages = document.querySelector('.stages')!;
   const common = (kind: Kind): string => `<label>Profil culturel urbain<select data-config="culture"><option value="site">Culture de chaque settlement</option>${Object.entries(catalogue.cultures).map(([id, c]) => `<option value="${esc(id)}">${esc(c.label)}</option>`).join('')}</select></label>
-    <label>Recette de plan / parcellaire<select data-config="recipe"></select></label><label>Préréglage<select data-config="preset"><option value="culture">Recettes culturelles</option>${Object.entries(catalogue.presets).map(([id, p]) => `<option value="${esc(id)}">${esc(p.label)}</option>`).join('')}</select></label>
-    <label>Zones<select data-config="zone"><option value="auto">Du centre vers la campagne</option>${Object.entries({ core: 'Cœur', middle: 'Quartiers intermédiaires', edge: 'Périphérie', faubourg: 'Faubourgs', village: 'Village' }).map(([id, label]) => `<option value="${id}">${label}</option>`).join('')}</select></label><label>Multiplicateur de densité<input data-config="density" type="number" min="0.1" max="10" step="any"></label>`;
+    <label>Recette de plan / parcellaire · phases non choisies<select data-config="recipe"></select></label><label>Préréglage · phases non choisies<select data-config="preset"><option value="culture">Recettes culturelles</option>${Object.entries(catalogue.presets).map(([id, p]) => `<option value="${esc(id)}">${esc(p.label)}</option>`).join('')}</select></label>
+    <label>Zones · phases non choisies<select data-config="zone"><option value="auto">Du centre vers la campagne</option>${Object.entries({ core: 'Cœur', middle: 'Quartiers intermédiaires', edge: 'Périphérie', faubourg: 'Faubourgs', village: 'Village' }).map(([id, label]) => `<option value="${id}">${label}</option>`).join('')}</select></label><label>Multiplicateur de densité<input data-config="density" type="number" min="0.1" max="10" step="any"></label>`;
   const number = (key: string, label: string, min: number, max: number, step = 1): string => `<label>${label}<input data-config="${key}" type="number" min="${min}" max="${max}" step="${step}"></label>`;
   const select = (key: string, label: string, values: Record<string, string>, footprint = false): string => `<label>${label}<select data-${footprint ? 'footprint' : 'config'}="${key}">${Object.entries(values).map(([id, text]) => `<option value="${id}">${esc(text)}</option>`).join('')}</select></label>`;
   const footprintNumber = (key: string, label: string, min: number, max: number, step = 1): string => number(key, label, min, max, step).replace('data-config=', 'data-footprint=');
@@ -915,7 +919,7 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
       if (resetBuildingDefaults) { buildingPanel.resetAppliedSettings(); resetBuildingDefaults = false; }
       successfulLayout = clone(appliedLayout); successfulQuarterSeed = appliedQuarterSeed;
       const merged = replaceCities(response.layouts, undefined);
-      invalidateArchitecture(); buildingPanel.invalidate();
+      invalidateArchitecture(); buildingPanel.invalidate(); selectedQuarter = undefined;
       layouts = merged.layouts; layoutsId = response.id; retainedLayouts = response.layouts; partitions = merged.partitions; buildingPanel.replaceScene(merged.buildingState?.scene); lastBuiltScene = buildingPanel.state.scene;
       rememberCities(response.layouts.map(layout => layout.key));
       populate('parcels'); syncCityPlanCulture();
@@ -1404,6 +1408,7 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
     const districtRoles = Object.entries(DISTRICT_ROLES).filter(([id]) => used.has(id));
     legend.innerHTML = `<strong>Quartiers</strong><div>${districtRoles.length ? districtRoles.map(([, r]) => swatch(r.color, r.label)).join('') : '<small>Rôles de quartier absents de ce plan · couleurs des phases.</small>'}</div><strong>Bâtiments et lots</strong><div>${Object.values(BUILDING_FAMILIES).map(f => swatch(f.color, f.label)).join('')}</div><small>Teinte claire : quartier modeste, soutenue : quartier aisé. Les monuments portent un pictogramme.</small>`;
   }
+  let selectedQuarter: { layout: number; quarter: number; zone: string } | undefined;
   /** Last inspected world point: after an edit round trip the inspector re-reads the same place. */
   let inspected: { x: number; y: number } | undefined, styleIndex: BuildingStyleIndex | undefined, styleLoad: Promise<BuildingStyleIndex | undefined> | undefined;
   const cultureLabels = Object.fromEntries(Object.entries(catalogue.cultures).map(([id, c]) => [id, c.label]));
@@ -1446,6 +1451,8 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
     const viewport = !architecturePreview && !comparison.state() && render.view === 'buildings' ? boundedCold() : undefined;
     const native = buildingsShown && render.view === 'buildings' ? viewport?.renderer ?? cityRenderer : undefined;
     const hit = pickCity(cityPlan, buildingsShown && !native ? cityBuilt : undefined, p);
+    const hitBlock = hit.block ?? (hit.parcel ? cityPlan.blocks.find(b => b.layout === hit.parcel!.layout && b.index === hit.parcel!.block) : undefined);
+    selectedQuarter = hitBlock ? { layout: hitBlock.layout, quarter: hitBlock.quarter, zone: hitBlock.zone } : undefined; mainPanel?.schedule();
     const boundedHit = viewport?.pick(p);
     if (viewport && boundedHit?.status === 'pending') {
       renderCityInspector(inspection, hit, cityPlan, inspectorHooks); const pending = document.createElement('small');
@@ -1839,12 +1846,51 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
     const own = layouts?.filter(l => target === 'all' || l.key === target); if (!own?.length) return undefined;
     return new Set(own.flatMap(l => l.phases?.map(p => p.zone) ?? []));
   };
+  const ARCHETYPES: Record<string, string> = { town: 'Bourg / ville', 'nucleated-village': 'Village groupé', 'street-village': 'Village-rue', hamlet: 'Hameau', district: 'Secteur isolé' };
+  const SMALL = ['nucleated-village', 'street-village', 'hamlet'];
+  /** The older single culture reads as the city line of the house mix. */
+  const effectiveHouses = (): import('../../../rust/bridge/urbanArchitecture').HouseSettings => {
+    const houses = clone(buildingPanel.houses ?? {}), single = buildingPanel.singleCulture;
+    if (!houses.city?.styles.some(s => s.weight > 0 && s.culture) && single) houses.city = { styles: [{ culture: single, weight: 100 }], spread: 'lot' };
+    return houses;
+  };
+  const legacyControl = (key: string): HTMLSelectElement | HTMLInputElement | undefined => {
+    for (const kind of ['quarters', 'parcels'] as const) { const found = one<HTMLSelectElement | HTMLInputElement>(kind, `[data-config="${key}"]`); if (found) return found; }
+    return undefined;
+  };
+  const stageStates = (): Record<'plan' | 'parcels' | 'houses', import('./urbanMainPanel').StageState> => {
+    const stage = (kind: Kind, present: boolean, enabledNow: boolean): import('./urbanMainPanel').StageState => {
+      if (one(kind, '[data-apply]').getAttribute('aria-busy') === 'true') return 'busy';
+      const draft = one(kind, '[data-draft-state]');
+      if (!draft.hidden && /refusé/.test(draft.textContent ?? '')) return 'error';
+      if (dirty[kind]) return 'stale';
+      return present && enabledNow ? 'ok' : 'none';
+    };
+    const draft = buildingPanel.panel.querySelector<HTMLElement>('[data-building-draft]');
+    return { plan: stage('quarters', !!layouts?.length, enabled), parcels: stage('parcels', !!partitions, parcelEnabled),
+      houses: buildingPanel.busy ? 'busy' : !buildingPanel.state.generated ? 'none' : draft && !draft.hidden ? 'stale' : 'ok' };
+  };
+  let housesTimer: ReturnType<typeof setTimeout> | undefined;
   mainPanel = createUrbanMainPanel({
     cultures: Object.entries(catalogue.cultures).map(([id, c]) => [id, c.label]), tissues, operators: parcelOperators,
-    state: () => ({ layout: layoutConfig, parcels: parcelConfig, siteCulture: siteCulture(), zones: zoneOf(), target }),
-    setCulture(value) {
-      const select = one<HTMLSelectElement>('quarters', '[data-config="culture"]');
-      select.value = value; select.dispatchEvent(new Event('change', { bubbles: true }));
+    options: key => Array.from(legacyControl(key)?.closest('label')?.querySelectorAll('option') ?? []).map((o): [string, string] => [o.value, o.textContent ?? o.value]),
+    state: () => {
+      const own = layouts?.filter(l => target === 'all' || l.key === target), first = own?.[0], zones = zoneOf();
+      const small = !!first && (SMALL.includes(first.archetype ?? '') || (!!zones && zones.has('village') && !zones.has('core')));
+      const layout = selectedQuarter && layouts?.[selectedQuarter.layout], key = selectedQuarter && String(selectedQuarter.quarter);
+      const quarter = selectedQuarter && layout && key !== undefined && (target === 'all' || layout.key === target) && layout.quarters[selectedQuarter.quarter] ? (() => {
+        const phase = layout.phases?.[layout.quarters[selectedQuarter.quarter].phase], zone = selectedQuarter.zone;
+        return { key, zone, culture: phase?.culture || (layoutConfig.culture !== 'site' ? layoutConfig.culture : siteCulture()) || siteCulture(),
+          tissue: layoutConfig.phaseOverrides?.[zone]?.tissue || layoutConfig.tissue, edit: edits.quarters[key] };
+      })() : undefined;
+      return { layout: layoutConfig, parcels: parcelConfig, siteCulture: siteCulture(), zones, target, small, houses: effectiveHouses(), quarter,
+        resolved: first ? MORPHOLOGY_LABELS[first.archetype as keyof typeof MORPHOLOGY_LABELS] ?? ARCHETYPES[first.archetype ?? ''] ?? first.archetype : undefined, roads: roads?.routes ?? 0, stages: stageStates(),
+        ...(cityView ? { architecture: { mode: architectureMode, options: architectureNames } } : {}) };
+    },
+    setLayout(key, value) {
+      const control = legacyControl(key);
+      if (!control) { (layoutConfig as unknown as Record<string, unknown>)[key] = value; changed('quarters'); mainPanel!.sync(); return; }
+      control.value = String(value); control.dispatchEvent(new Event('change', { bubbles: true }));
     },
     setPlan(zone, patch) {
       const next = { ...layoutConfig.phaseOverrides?.[zone], ...patch };
@@ -1860,17 +1906,37 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
       if (Object.keys(map).length) parcelConfig.zoneOperators = map; else delete parcelConfig.zoneOperators;
       changed('parcels'); mainPanel!.sync();
     },
-    steps: { quarters: () => apply('quarters'), parcels: () => apply('parcels'), buildings: () => { void buildingPanel.generate(); }, all: generateAll },
-    auto: { get: autoOn, set(value) { autoChoice = value; mainPanel!.sync(); } },
+    setCityOperator(operator) { parcelConfig.operator = operator as ParcelConfig['operator']; changed('parcels'); mainPanel!.sync(); },
+    setHouses(next) {
+      buildingPanel.setHouses(next); mainPanel!.sync(); options.onChange();
+      clearTimeout(housesTimer);
+      if (autoOn() && layouts && partitions) housesTimer = setTimeout(() => { if (autoOn() && !buildingPanel.busy && !singleCityArchitecture()) void buildingPanel.generate(); }, 220);
+    },
+    editQuarter(key, patch) {
+      const next = { ...edits.quarters[key], ...patch };
+      for (const field of ['culture', 'tissue'] as const) if (!next[field]) delete next[field];
+      inspectorHooks.editQuarter(key, Object.keys(next).length ? next : undefined);
+    },
+    setArchitecture(mode) {
+      const select = buildingPanel.panel.querySelector<HTMLSelectElement>('[data-city-architecture]');
+      if (select) { select.value = mode; select.onchange?.(new Event('change')); mainPanel!.sync(); }
+    },
+    steps: {
+      plan: generateAll,
+      parcels: () => { try { clearTimeout(draftTimers.parcels); read('parcels'); enabled = parcelEnabled = true; completeGeneration = true; populate('parcels'); request('parcels'); options.onChange(); } catch (error) { completeGeneration = false; status('parcels', String(error)); } },
+      houses: () => { void buildingPanel.generate(); },
+      all: generateAll,
+    },
+    auto: { get: autoOn, set(value) { autoChoice = value; options.onAutoChange?.(value); mainPanel!.sync(); } },
   });
   {
     const ids = ['urbanQuarterStage', 'cityFootprintStage', 'cityStreetStage', 'cityEdgeStage', 'urbanParcelStage', 'urbanProgrammeStage', 'urbanBuildingStage'];
     const members = ids.map(id => document.getElementById(id)).filter((e): e is HTMLElement => !!e);
     const frame = document.createElement('section'); frame.id = 'urbanAdvancedFrame'; frame.className = 'stage urban-advanced-frame';
-    frame.innerHTML = '<div id="urbanAdvancedBody" hidden><h3>Options avancées · par étape</h3></div>';
+    frame.innerHTML = '<div id="urbanAdvancedBody" hidden><h3>Détails · par étape</h3><small>Tout le reste des réglages. Recette, préréglage, zone et paramètres JSON valent pour les phases non choisies dans le tableau de la ville.</small></div>';
     members[0].before(mainPanel.element, frame); frame.firstElementChild!.append(...members);
     if (!options.city) { const scope = targetSelect.closest('label')!; scope.firstChild!.textContent = 'Réglages appliqués à '; mainPanel.scopeSlot.append(scope); }
-    else mainPanel.element.querySelector('.um-scope')!.setAttribute('hidden', '');
+
   }
   populate('quarters'); populate('parcels'); editsReport();
   // Plan layers hidden together (map toggle "Plan de ville"): buildings,

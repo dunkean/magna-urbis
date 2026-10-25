@@ -869,7 +869,7 @@ fn dispatch(path: &str, body: &[u8], sessions: &Mutex<Sessions>) -> ApiResult<Re
     if path == "/status" {
         return json_reply(
             json!({"ok": true, "service": "magna-urbis-local", "backend": "rust-native", "version": 1,
-                "capabilities": ["urban.programme", "urban.programme-functions-v1", "urban.building-sites", "urban.building-site-pages", "urban.building-site-read", "urban.built-capacity", "urban.architecture-culture", "urban.retained-source", "urban.display-buffers",
+                "capabilities": ["urban.programme", "urban.programme-functions-v1", "urban.building-sites", "urban.building-site-pages", "urban.building-site-read", "urban.built-capacity", "urban.architecture-culture", "urban.house-mix", "urban.retained-source", "urban.display-buffers",
                     "houses.placement", "houses.profiles", "houses.enrich", "houses.config-template", "houses.workshop-template", "houses.parcel-fit", "houses.compact-plans", "houses.style-index", "houses.native-minimum-candidates-v1", "houses.functional-choices-v1", "houses.native-assembly-pair-1", "houses.native-assembly-std-json-v1", "houses.native-parent-batch-1", "houses.native-parent-session-1"]}),
         );
     }
