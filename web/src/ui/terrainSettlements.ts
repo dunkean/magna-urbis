@@ -340,7 +340,13 @@ export function createTerrainSettlements(options: {
     draw(); list(); editor(); options.onChange();
     syncLanduse(); options.onPlanChange?.();
   }
+  /** The inspector always shows one settlement (urban.target): the list and the editor follow it when nothing is selected here. */
+  function followInspector(): void {
+    const target = urban.target;
+    if (!selection && target && target !== 'all' && output?.settlements.some(s => s.key === target)) selection = target;
+  }
   function list(): void {
+    followInspector();
     showTerrain();
     const entries = config.mode === 'list' ? config.list : output?.settlements ?? [];
     el('setCount').textContent = entries.length ? String(entries.length) : '';
@@ -371,6 +377,7 @@ export function createTerrainSettlements(options: {
     if (selection && (slot ? !slot.hasChildNodes() : !el('setEditor').hasChildNodes())) editor();
   }).observe(inspector, { childList: true, subtree: true });
   function editor(): void {
+    followInspector();
     const result = output?.settlements.find(s => s.key === selection);
     const spec = config.mode === 'list' ? config.list.find(s => s.key === selection) : result;
     const slot = inspectorSlot(), host = slot ?? el('setEditor');
