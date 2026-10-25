@@ -55,6 +55,7 @@ export interface City3d {
   getCamera(): Terrain3dCamera | undefined;
   setCamera(camera: Terrain3dCamera): void;
   capture(): Promise<Blob>;
+  captureIllustration(): Promise<{ image: Blob; depth: Blob; camera: Terrain3dCamera }>;
   stats(): City3dStats;
   dispose(): void;
 }
@@ -442,6 +443,7 @@ export function mountCity3d(options: City3dOptions): City3d {
     getCamera: () => terrain?.getCamera(),
     setCamera(camera: Terrain3dCamera): void { terrain?.setCamera(camera); focused = true; },
     capture: () => terrain ? terrain.capture() : Promise.reject(new Error('Vue 3D inactive.')),
+    captureIllustration: () => terrain ? terrain.captureIllustration() : Promise.reject(new Error('Vue 3D inactive.')),
     stats: () => ({ buildings: (display?.buildings.length ?? 0) - bridgeStats.count - wallStats.pieces, ...(display?.kinds ?? { silhouette: 0, compact: 0, detailed: 0 }), displayMs, timings: { ...timings }, realizing: converting.size, realizeError: info.dataset.detailError || undefined, bridges: bridgeStats, walls: wallStats, lod: terrain?.getLodInfo() }),
     dispose(): void { disposed = true; active = false; sourceEpoch++; clearTimeout(detailTimer); cancelAnimationFrame(detailFrame); unsubscribeDetails?.(); unsubscribeDetails = undefined; options.details?.setActiveView('2d'); resize.disconnect(); terrain?.dispose(); terrain = undefined; root.remove(); },
   };

@@ -4,6 +4,9 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
+    "illustration:setup": "node scripts/illustration.mjs --setup",
+    "illustration:serve": "node scripts/illustration.mjs",
+    "illustration:test": "node scripts/illustration_tests.mjs",
     "dev": "vite",
     "dev:benches": "vite --mode rustbench --host 127.0.0.1",
     "dev:local": "node scripts/local.mjs dev",

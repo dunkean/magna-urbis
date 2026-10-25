@@ -39,6 +39,8 @@ import { exportPng } from './pngExport';
 import { chooseExportCrop } from './exportCrop';
 import { exportSnapshot, type ExportSnapshot } from './exportSnapshot';
 import { createExportLayerControls } from './exportLayers';
+import { mountIllustration, captureViewport } from '../../../illustration/web/index.mjs';
+import { illustrationContext } from './illustrationContext';
 import { initSettlementsUI, showSettlementWarnings } from './settlementsPanel';
 import { initPlanEditor } from './planEditor';
 import { initConfiguration } from './configuration';
@@ -1115,6 +1117,18 @@ showMapId();
 updateHeightmapUI();
 // Probe the offscreen pipeline first (a few ms), then start the first run on whichever path works.
 const backendReady: Promise<OffscreenBackend | null> = forceMain ? Promise.resolve(null) : OffscreenBackend.create(backendEvents, window.devicePixelRatio || 1);
+mountIllustration({ host: document.querySelector('header') ?? $('corner'), capture: async () => {
+  captureExport();
+  const capturedOptions = { ...opts }, capturedView = { ...viewer.getView() };
+  const context = illustrationContext({ sourceStyle: String(capturedOptions.style), seed: capturedOptions.seed,
+    view: capturedView, width: map.clientWidth, height: map.clientHeight,
+    terrain: { relief: capturedOptions.relief, biome: capturedOptions.biome },
+    settlements: presentedWorld?.settlements,
+    generation: { culture: capturedOptions.culture, population: capturedOptions.population || undefined, size: capturedOptions.size, workflow: capturedOptions.workflow,
+      coast: capturedOptions.coast, river: capturedOptions.river, biome: capturedOptions.biome } });
+    const image = await captureViewport(map, { exclude: ['.hud', '#marks', '#pins', '#pinpop', '.ruler'] });
+  return { image, context };
+} });
 void backendReady.then((b) => {
   backend = b;
   if (b) { viewer.setSource({ request: (r) => b.request(r) }); if (paintedTextures) { brushStatus = 'loading'; b.setBrushSources(BRUSH_SOURCES); } b.setDisplay(display()); }

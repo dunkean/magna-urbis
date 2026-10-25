@@ -1,0 +1,11 @@
+# Separate environment: do not upgrade the terrain inference environment.
+torch==2.11.0
+diffusers==0.41.0
+transformers==5.20.2
+accelerate==1.15.0
+safetensors>=0.5
+huggingface-hub>=1.32,<2
+pillow>=11
+numpy>=2
+opencv-python-headless>=4.10
+sentencepiece>=0.2

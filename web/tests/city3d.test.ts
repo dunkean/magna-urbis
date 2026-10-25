@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { city3dScene, CITY3D_LEVEL_M } from '../src/render/city3dMeshes';
+import { buildingRoof, type MassingPiece } from '../src/render/cityMassing';
 import { eachBuildingTriangle } from '../src/render/urbanBuildingGeometry';
 import type { PlacementBatch, PlacedBuilding } from '../../rust/bridge/urbanArchitecture';
 import type { Surface } from '../../rust/bridge/housesContract';
@@ -54,5 +55,12 @@ describe('city 3D silhouettes', () => {
       const d = [s(a, b), s(b, c), s(c, a)];
       expect(d.every(x => x > 0) || d.every(x => x < 0)).toBe(false);
     }
+  });
+  it('raises city massing with the same roof faces as the 2D map', () => {
+    const footprint = rect(0, 0, 12, 6), massing = [{ floors: 2, eave_m: 6, rise_m: 3, roof: 'hip', ridges: [[3, 3, 9, 3]], cover: 'slate', wall: 'brick' }];
+    const batch: PlacementBatch = { schema_version: '1', generator_version: 'silhouette', buildings: [silhouette('m', footprint, { role: 'dwelling.house', massing })], refusals: [], open_spaces: [] };
+    const roof = city3dScene(batch).buildings[0].volumes[0].roof_mesh, plan = buildingRoof(footprint, massing as MassingPiece[]);
+    expect(roof.faces.map(f => f.vertices.map(i => [roof.vertices[i].x, roof.vertices[i].y, roof.vertices[i].z - 10])))
+      .toEqual(plan.map(f => f.points.map(p => [p.x, p.y, p.z])));
   });
 });

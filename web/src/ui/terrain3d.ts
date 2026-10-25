@@ -1,4 +1,5 @@
 import { bindForest, deleteForestTextures, forestTexture, forestTextures, RENDER_3D_FOREST_GLSL, type ForestTextures, type HeightLayer } from './terrainGl';
+import { captureWebGlFrame } from './illustrationDepth';
 import { FOREST_PRELUDE_GLSL, type ForestField, type ForestOccupation } from '../../../rust/bridge/terrainForest';
 import { bindForestBrushes, disposeForestBrushes } from '../render/forestBrushAtlas';
 import { NEURAL_EARTH_MATERIAL_GLSL } from '../../../rust/bridge/terrainMaterial';
@@ -1138,6 +1139,16 @@ export class Terrain3d {
     if (!this.active || !this.layer || this.gl.isContextLost()) return Promise.reject(new Error('Ouvrez la vue 3D avant de la capturer.'));
     this.draw();
     return new Promise((resolve, reject) => this.canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error('Capture 3D indisponible.')), 'image/png'));
+  }
+  async captureIllustration(): Promise<{ image: Blob; depth: Blob; camera: Terrain3dCamera }> {
+    if (!this.active || !this.layer || this.gl.isContextLost()) throw new Error('Ouvrez la vue 3D avant de la capturer.');
+    this.draw();
+    const camera = this.getCamera(), far = Math.max(camera.distance * 4, this.layer.width * 2 + this.heightRange * camera.exaggeration * 2);
+    const frame = captureWebGlFrame(this.gl, Math.max(.02, camera.distance * .0002), far);
+    this.request();
+    const encode = (canvas: HTMLCanvasElement): Promise<Blob> => new Promise((resolve, reject) => canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error('Capture 3D indisponible.')), 'image/png'));
+    const [image, depth] = await Promise.all([encode(frame.color), encode(frame.depth)]);
+    return { image, depth, camera };
   }
   setActive(active: boolean): void {
     this.active = active;

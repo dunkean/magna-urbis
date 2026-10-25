@@ -47,3 +47,5 @@ _agents_blackboard/*/
 __pycache__/
 
 .superpowers/
+.venv-illustration/
+illustration/output/

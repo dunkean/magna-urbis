@@ -23,6 +23,8 @@ export class CityGlCanvasLayer {
   constructor(private readonly map: SVGSVGElement, parent: Element, private readonly paint: (ctx: CanvasRenderingContext2D, frame: CityGlHostFrame) => boolean) {
     this.host = document.createElementNS('http://www.w3.org/2000/svg', 'foreignObject');
     this.host.dataset.cityCanvas = ''; this.host.dataset.cityGl = '';
+    // Capture must read the non-preserved WebGL buffer in the same task as draw.
+    this.host.addEventListener('illustration:capture', () => this.draw());
     const stack = document.createElement('div');
     stack.style.position = 'relative';
     for (const c of [this.glCanvas, this.canvas]) { c.style.display = 'block'; c.style.pointerEvents = 'none'; c.style.position = 'absolute'; c.style.left = c.style.top = '0'; stack.append(c); }

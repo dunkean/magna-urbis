@@ -8,6 +8,50 @@ use std::time::Duration;
 use tauri::{Manager, RunEvent, WebviewUrl, WebviewWindowBuilder};
 
 struct Engine(Mutex<Child>);
+struct IllustrationEngine(Mutex<Option<Child>>);
+
+impl Drop for IllustrationEngine {
+    fn drop(&mut self) {
+        if let Ok(slot) = self.0.get_mut() {
+            if let Some(child) = slot.as_mut() {
+                #[cfg(windows)]
+                {
+                    use std::os::windows::process::CommandExt;
+                    // A Windows venv executable can have its own interpreter child.
+                    let _ = Command::new("taskkill.exe")
+                        .args(["/PID", &child.id().to_string(), "/T", "/F"])
+                        .creation_flags(0x08000000).stdout(Stdio::null()).stderr(Stdio::null()).status();
+                }
+                let _ = child.kill();
+                let _ = child.wait();
+            }
+        }
+    }
+}
+
+fn start_illustration(resources: PathBuf) -> IllustrationEngine {
+    // Reuse an already-running connector without taking ownership of it.
+    if std::net::TcpStream::connect_timeout(&"127.0.0.1:8794".parse().unwrap(), Duration::from_millis(250)).is_ok() {
+        return IllustrationEngine(Mutex::new(None));
+    }
+    let checkout = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let python = std::env::var_os("MAGNA_ILLUSTRATION_PYTHON").map(PathBuf::from)
+        .or_else(|| {
+            let path = checkout.join(if cfg!(windows) { ".venv-illustration/Scripts/python.exe" } else { ".venv-illustration/bin/python" });
+            path.is_file().then_some(path)
+        });
+    let Some(python) = python else { return IllustrationEngine(Mutex::new(None)); };
+    let root = if resources.join("illustration/__main__.py").is_file() { resources } else { checkout };
+    let mut command = Command::new(python);
+    command.args(["-u", "-m", "illustration"]).current_dir(root)
+        .stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        command.creation_flags(0x08000000);
+    }
+    IllustrationEngine(Mutex::new(command.spawn().ok()))
+}
 
 impl Engine {
     fn stop(&self) {
@@ -83,6 +127,12 @@ fn main() {
                 });
             let (engine, port) = start_engine(binary)?;
             app.manage(engine);
+            let resources = if cfg!(debug_assertions) {
+                PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("resources")
+            } else {
+                app.path().resource_dir()?.join("resources")
+            };
+            app.manage(start_illustration(resources));
             let profiles: serde_json::Value =
                 serde_json::from_str(include_str!("../../../config/execution.json"))?;
             let source = profiles["local"]["neural"].as_str().unwrap_or("neural-python");

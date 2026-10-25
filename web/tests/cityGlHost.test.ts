@@ -10,7 +10,7 @@ afterEach(() => { vi.unstubAllGlobals(); vi.clearAllMocks(); gpu.ready = true; g
 
 it('presents only a GPU image drawn for the current frame, including pan, fallback, early return and resize', () => {
   const ctx = { setTransform: vi.fn(), clearRect: vi.fn() };
-  class Element {
+  class Element extends EventTarget {
     style: Record<string, string> = {}; dataset = {}; parentNode?: Element;
     attributes: Record<string, string> = {}; children: Element[] = []; width = 300; height = 150;
     append(child: Element) { this.children.push(child); child.parentNode = this; }
@@ -44,12 +44,15 @@ it('presents only a GPU image drawn for the current frame, including pan, fallba
   expect([layer.glCanvas.width, layer.glCanvas.height]).toEqual([1200, 800]);
   expect(layer.glCanvas.style.visibility).toBe('visible');
   expect(ctx.clearRect).toHaveBeenLastCalledWith(0, 400, 1200, 400); // lower strip of the resized bitmap (clearCanvas2d)
+  const beforeCapture = gpu.draw.mock.calls.length;
+  parent.children[0].dispatchEvent(new Event('illustration:capture'));
+  expect(gpu.draw).toHaveBeenCalledTimes(beforeCapture + 1);
   layer.dispose(); expect(gpu.dispose).toHaveBeenCalledOnce();
 });
 
 it('paints Canvas while GPU is lost, repaints a stationary camera after restore/import, and never presents a failed draw', () => {
   const ctx = { setTransform: vi.fn(), clearRect: vi.fn() };
-  class Element {
+  class Element extends EventTarget {
     style: Record<string, string> = {}; dataset = {}; parentNode?: Element; width = 300; height = 150;
     append(child: Element) { child.parentNode = this; }
     setAttribute() {}

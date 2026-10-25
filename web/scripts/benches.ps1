@@ -14,6 +14,7 @@ $LocalUrl = 'http://127.0.0.1:8791'
 $InitialSource = if ($NeuralBackend -eq 'native') { 'neural' } elseif ($NeuralBackend -eq 'none') { 'procedural' } else { 'neural-python' }
 $SiteUrl = "http://127.0.0.1:5173/rustbench.html?profile=local#terrain?v=4&source=$InitialSource&width=2400"
 $NeuralUrl = if ($NeuralBackend -eq 'python') { 'http://127.0.0.1:8793' } else { 'http://127.0.0.1:8792' }
+$IllustrationUrl = 'http://127.0.0.1:8794'
 if ($NeuralBackend -eq 'native') { $SiteUrl += '&neural=http%3A%2F%2F127.0.0.1%3A8792' }
 $RustDir = Join-Path $RepoDir 'rust'
 $targetDir = $env:CARGO_TARGET_DIR
@@ -40,8 +41,9 @@ function Get-ServiceProcesses {
     $neuralLauncher = $item.Name -eq 'node.exe' -and $inRepo -and $command -match 'rust\\scripts\\terrain\.mjs"?\s+"?neural\b'
     $neural = $item.Name -eq 'neural.exe' -and ($inRepo -or $item.ProcessId -in $neuralOwners)
     $python = $inRepo -and $item.Name -in @('python.exe','node.exe') -and $command -match 'web\\scripts\\neural_python\.(py|mjs)'
+    $illustration = $inRepo -and $item.Name -in @('python.exe','python3.12.exe','node.exe') -and $command -match '(?:-m"?\s+"?illustration\b|web\\scripts\\illustration\.mjs)'
     $local = $item.Name -eq [IO.Path]::GetFileName($LocalExe) -and ($inRepo -or $command.IndexOf($LocalExe, [StringComparison]::OrdinalIgnoreCase) -ge 0)
-    if ($vite -or $neuralLauncher -or $neural -or $python -or $local) { $item }
+    if ($vite -or $neuralLauncher -or $neural -or $python -or $illustration -or $local) { $item }
   }
 }
 
@@ -68,9 +70,9 @@ function Stop-Services {
   if ($remaining.Count) { throw 'Des processus du site ou du service neural ne se sont pas arretes.' }
 }
 
-function Start-HiddenProcess([string]$Executable, [string[]]$CommandArguments, [string]$Name) {
+function Start-HiddenProcess([string]$Executable, [string[]]$CommandArguments, [string]$Name, [string]$WorkingDirectory = $WebDir) {
   $quoted = @($CommandArguments | ForEach-Object { '"' + $_.Replace('"', '\"') + '"' })
-  Start-Process -FilePath $Executable -ArgumentList $quoted -WorkingDirectory $WebDir -WindowStyle Hidden -PassThru `
+  Start-Process -FilePath $Executable -ArgumentList $quoted -WorkingDirectory $WorkingDirectory -WindowStyle Hidden -PassThru `
     -RedirectStandardOutput (Join-Path $RuntimeDir "$Name.stdout.log") `
     -RedirectStandardError (Join-Path $RuntimeDir "$Name.stderr.log")
 }
@@ -110,8 +112,13 @@ try {
   if ($NeuralBackend -eq 'python' -and -not (Test-Path -LiteralPath $PythonExe -PathType Leaf)) {
     throw "Python absent : $PythonExe. Definir MAGNA_NEURAL_PYTHON vers le Python CUDA de Neural Earth."
   }
+  $IllustrationExe = $env:MAGNA_ILLUSTRATION_PYTHON
+  if (-not $IllustrationExe) { $IllustrationExe = Join-Path $RepoDir '.venv-illustration\Scripts\python.exe' }
+  $IllustrationEnabled = Test-Path -LiteralPath $IllustrationExe -PathType Leaf
+  if (-not $IllustrationEnabled) { Write-Host 'Illustration : environnement absent. Depuis web/, lancer npm run illustration:setup.' }
   Stop-Services
   $ports = if ($NeuralBackend -eq 'none') { @(5173,8791) } elseif ($NeuralBackend -eq 'python') { @(5173,8791,8793) } else { @(5173,8791,8792) }
+  if ($IllustrationEnabled) { $ports += 8794 }
   foreach ($port in $ports) {
     $owners = @(Get-NetTCPConnection -State Listen -LocalPort $port -ErrorAction SilentlyContinue)
     if ($owners.Count) { throw "Le port $port est utilise par un autre programme (PID $($owners[0].OwningProcess)). Aucun processus etranger n'a ete arrete." }
@@ -120,6 +127,11 @@ try {
   $null = New-Item -ItemType Directory -Path $RuntimeDir -Force
   $SiteProcess = Start-HiddenProcess $NodeExe @((Join-Path $WebDir 'node_modules\vite\bin\vite.js'), '--mode', 'rustbench', '--host', '127.0.0.1', '--port', '5173', '--strictPort') 'site'
   $LocalProcess = Start-HiddenProcess $LocalExe @('--port', '8791') 'local'
+  $IllustrationProcess = $null
+  if ($IllustrationEnabled) {
+    $IllustrationProcess = Start-HiddenProcess $IllustrationExe @('-u', '-m', 'illustration', '--port', '8794') 'illustration' $RepoDir
+    Write-Host "Illustration : $IllustrationUrl (SDXL Lightning / Z-Image Turbo)"
+  }
   $NeuralProcess = $null
   if ($NeuralBackend -eq 'python') {
     $NeuralProcess = Start-HiddenProcess $PythonExe @('-u', (Join-Path $WebDir 'scripts\neural_python.py'), '--port', '8793') 'neural'
@@ -139,7 +151,8 @@ try {
     $SiteProcess.Refresh()
     $LocalProcess.Refresh()
     if ($NeuralProcess) { $NeuralProcess.Refresh() }
-    if ($SiteProcess.HasExited -or $LocalProcess.HasExited -or ($NeuralProcess -and $NeuralProcess.HasExited)) { throw 'Un service a quitte pendant le demarrage.' }
+    if ($IllustrationProcess) { $IllustrationProcess.Refresh() }
+    if ($SiteProcess.HasExited -or $LocalProcess.HasExited -or ($NeuralProcess -and $NeuralProcess.HasExited) -or ($IllustrationProcess -and $IllustrationProcess.HasExited)) { throw 'Un service a quitte pendant le demarrage.' }
     $siteReady = $false
     $localReady = $false
     $neuralReady = $NeuralBackend -eq 'none'
@@ -165,7 +178,12 @@ try {
         Write-Host "Neural : $lastMessage"
       }
     }
-    if ($siteReady -and $localReady -and $neuralReady) {
+    $illustrationReady = -not $IllustrationEnabled
+    if ($IllustrationEnabled) { try {
+      $illustrationState = Invoke-RestMethod -Uri "$IllustrationUrl/status" -TimeoutSec 2
+      $illustrationReady = $illustrationState.service -eq 'magna-illustration' -and $illustrationState.protocol -eq 1
+    } catch { } }
+    if ($siteReady -and $localReady -and $neuralReady -and $illustrationReady) {
       Write-Host "Pret : $SiteUrl (site PID $($SiteProcess.Id), Rust PID $($LocalProcess.Id), neural PID $($NeuralProcess.Id))"
       exit 0
     }
@@ -175,9 +193,9 @@ try {
 } catch {
   Write-Host $_.Exception.Message -ForegroundColor Red
   # A failed launch must not leave half of the requested services running.
-  if ($SiteProcess -or $LocalProcess -or $NeuralProcess) {
+  if ($SiteProcess -or $LocalProcess -or $NeuralProcess -or $IllustrationProcess) {
     try { Stop-Services } catch { Write-Host $_.Exception.Message -ForegroundColor Red }
-    foreach ($name in @('site', 'local', 'neural')) {
+    foreach ($name in @('site', 'local', 'neural', 'illustration')) {
       $log = Join-Path $RuntimeDir "$name.stderr.log"
       if (Test-Path -LiteralPath $log) { Get-Content -LiteralPath $log -Tail 15 }
     }

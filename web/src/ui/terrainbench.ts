@@ -23,6 +23,7 @@ import { Terrain3d, TERRAIN_3D_FOV, TERRAIN_GROUND_MAX_SCALE, type Terrain3dCame
 import { terrain3dTexture } from './terrain3dTexture';
 import { withBuildingOccupation } from './forestOccupation';
 import type { PlacementBatch } from '../../../rust/bridge/urbanArchitecture';
+import { city3dScene, rasterHeight } from '../render/city3dMeshes';
 import { TerrainRefinementSession, type TerrainRefinement } from './terrainRefinement';
 import neuralModels from '../../../rust/models/neural-earth/catalog.json';
 import { CONTOUR_INTERVAL } from '../render/contours';
@@ -54,6 +55,8 @@ import { installRecipeSharing, portableRecipe } from './recipeSharing';
 import { executionRuntime, executionProfiles, applyExecutionProfile, installExecutionProfile } from './executionProfile';
 import { initialTerrainSource } from './terrainStartupState';
 import { terrainLoading } from './terrainStartup';
+import { mountIllustration, captureViewport } from '../../../illustration/web/index.mjs';
+import { illustrationContext } from './illustrationContext';
 
 const el = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T;
 const profileDefaults = executionProfiles[executionRuntime.profile];
@@ -418,6 +421,17 @@ interface ForestJob { key: string; data: TerrainData; input: ForestFieldInput; s
 let forestOccupation: ForestOccupation | undefined, forestShown: ForestEntry | undefined, forestWanted = '';
 let appliedBuildingScene: PlacementBatch | undefined;
 let buildingOccupationSource: ForestOccupation | undefined, buildingOccupationScene: PlacementBatch | undefined, buildingOccupation: ForestOccupation | undefined;
+let scene3dOf: [PlacementBatch | undefined, Decor | undefined] | undefined, scene3d: PlacementBatch | undefined;
+/** The 3D view shows the city as City Bench does (render/city3dMeshes.ts):
+ * silhouettes raised with the same massing volumes and roofs as the 2D map. */
+function buildings3d(scene: PlacementBatch | undefined): PlacementBatch | undefined {
+  if (!scene3dOf || scene3dOf[0] !== scene || scene3dOf[1] !== retainedDecor) {
+    const r = retainedDecor?.raster;
+    scene3dOf = [scene, retainedDecor];
+    scene3d = scene && city3dScene(scene, { heightAt: r ? rasterHeight(r.height, r.n, r.width) : undefined });
+  }
+  return scene3d;
+}
 /** Accepted physical footprints clear the same canopy in 2D and exported rasters. */
 function displayedForestOccupation(source: ForestOccupation | undefined): ForestOccupation | undefined {
   if (source !== buildingOccupationSource || appliedBuildingScene !== buildingOccupationScene) {
@@ -533,6 +547,15 @@ function appliedGroundOverlay(): string {
     if (node instanceof Element && node.matches('[data-urban-buildings], [data-urban-building]')) return undefined;
     // The city canvas only holds the 2D framing: load3dTile paints the plan per tile instead.
     if (node instanceof Element && node.matches('[data-city-canvas]')) return undefined;
+    // An SVG foreignObject taints Canvas/WebGL even when empty. Preserve retained
+    // rural paint as a plain image instead of cloning its HTML canvas subtree.
+    if (node instanceof Element && node.localName === 'foreignObject') {
+      const canvas = node.querySelector('canvas');
+      if (!canvas || !canvas.width || !canvas.height) return undefined;
+      const image = document.createElementNS('http://www.w3.org/2000/svg', 'image');
+      for (const key of ['x', 'y', 'width', 'height']) image.setAttribute(key, node.getAttribute(key) ?? '0');
+      image.setAttribute('href', canvas.toDataURL('image/png')); return image;
+    }
     const copy = node.cloneNode(false);
     for (const child of Array.from(node.childNodes)) {
       const kept = groundCopy(child); if (kept) copy.appendChild(kept);
@@ -744,7 +767,7 @@ async function refresh3dTexture(epoch: number): Promise<void> {
   try {
     const ground = ground3dEnabled();
     const buildings = settlements.urban.buildingState;
-    terrain3d.setBuildings(buildings.scene, buildings.appearance, settlements.urban.buildingVisible);
+    terrain3d.setBuildings(buildings3d(buildings.scene), buildings.appearance, settlements.urban.buildingVisible);
     // Establish the style's zoom range before restoring a shared camera.
     terrain3d.setGroundMaterial(ground ? {
       seed: seedHash(settings.seed), climate: climateOf(settings),
@@ -1105,7 +1128,7 @@ const settlements = createTerrainSettlements({ map, viewport, getTerrain: () => 
     const b = settlements.urban.buildingState;
     appliedBuildingScene = b.scene;
     gpu?.setForest(forestShown?.field, displayedForestOccupation(forestShown?.occupation));
-    terrain3d?.setBuildings(b.scene, b.appearance, settlements.urban.buildingVisible);
+    terrain3d?.setBuildings(buildings3d(b.scene), b.appearance, settlements.urban.buildingVisible);
     refreshUrbanPainting();
     if (!gpu && terrain && isRender3dStyle(style)) render();
     if (perspective) schedule3dTexture();
@@ -1894,6 +1917,8 @@ if (pipelineStage === 'settlements') {
   document.querySelector('#urbanQuarterStage summary')!.childNodes[0].textContent = '5 · Quartiers et îlots ';
   document.querySelector('#urbanParcelStage summary')!.childNodes[0].textContent = 'Parcelles · optionnel ';
 }
+// The city inspector (right column) belongs to the Settlements page only.
+if (pipelineStage !== 'settlements') document.getElementById('cityInspector')?.remove();
 const transfer = document.createElement('details'); transfer.className = 'stage'; transfer.open = true; transfer.id = 'pipelineTransfer';
 transfer.innerHTML = `<summary>${pipelineStage === 'terrain' ? 'Terrain → settlements' : 'Ville → atelier Ville'}</summary><div class="stage-controls">
   ${pipelineStage === 'terrain' ? '<label>Étendue<select id="transferExtent"><option value="all">Tout le terrain</option><option value="crop">Portion carrée</option></select></label><div id="transferCrop" hidden><label>X m<input id="transferX" type="number" min="0" value="0"></label><label>Y m<input id="transferY" type="number" min="0" value="0"></label><label>Côté m<input id="transferWidth" type="number" min="1" value="1200"></label><button id="transferPick">Placer la portion sur la carte</button><small>Découpe alignée sur les cellules, sans rééchantillonnage.</small></div>' : '<small>Choisissez la ville dans « Quartiers et îlots ». Le plan affiché est transmis avec ses rues et ses îlots.</small>'}
@@ -1905,8 +1930,6 @@ const historyPanel = createHistoryPanel({ before: transfer, current: () => lastE
 if (pipelineStage === 'terrain') {
   const extent = el<HTMLSelectElement>('transferExtent');
   extent.onchange = () => { el('transferCrop').hidden = extent.value !== 'crop'; drawTransferSelection?.(); };
-// The city inspector (right column) belongs to the Settlements page only.
-if (pipelineStage !== 'settlements') document.getElementById('cityInspector')?.remove();
   drawTransferSelection = () => {
     map.querySelector('#transferSelection')?.remove();
     if (extent.value !== 'crop') return;
@@ -2048,6 +2071,24 @@ installRecipeSharing({
     return portableRecipe(pipelineStage, shareQuery(), applied);
   },
 });
+
+mountIllustration({ host: document.querySelector('header')!, capture: async () => {
+  if (!terrain || overviewPending || generationError || terrain.hydrologyError || (pipelineStage === 'settlements' && !settlements.contextReady())) throw new Error('Attendez la fin de la génération avant de capturer la vue.');
+  const context = illustrationContext({ sourceStyle: el<HTMLSelectElement>('style').value, seed: settings.seed,
+    view: { ...view }, width: viewport.clientWidth, height: viewport.clientHeight,
+    terrain: { relief: settings.relief, climate: settings.climate, environment: settings.environment, ...climateOf(settings), minHeight: terrain.minHeight, maxHeight: terrain.maxHeight },
+    settlements: settlements.illustrationSettlements, buildings: settlements.urban.buildingState.scene,
+    architecture: settlements.urban.buildingState.settings });
+  if (perspective && terrain3d) {
+    const captured = await terrain3d.captureIllustration();
+    return { image: captured.image, guides: { depth: captured.depth }, context: { ...context, projection: 'perspective', camera: captured.camera } };
+  }
+  gpu?.redrawForCapture();
+  const image = captureViewport(viewport, { exclude: ['#mini', '#ruler', '#pins', '#marks', '#terrain3d'] });
+  const edges = captureViewport(viewport, { structural: true, exclude: ['#mini', '#ruler', '#pins', '#marks', '#terrain3d'] });
+  const [source, guide] = await Promise.all([image, edges]);
+  return { image: source, guides: { edges: guide }, context };
+} });
 
 if (query.get('projection') === '3d') setPerspective(true);
 else el('terrain3d').tabIndex = -1;

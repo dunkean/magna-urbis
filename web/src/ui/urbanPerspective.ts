@@ -104,6 +104,11 @@ export class UrbanPerspective {
     finally { URL.revokeObjectURL(url); }
   }
   get camera(): Terrain3dCamera | undefined { return this.viewer?.getCamera(); }
+  get isActive(): boolean { return this.active; }
+  captureIllustration(): Promise<{ image: Blob; depth: Blob; camera: Terrain3dCamera }> {
+    if (!this.active || !this.viewer) return Promise.reject(new Error('Vue 3D inactive.'));
+    return this.viewer.captureIllustration();
+  }
   private changed(): void {
     if (!this.viewer) return;
     const camera = this.viewer.getCamera();

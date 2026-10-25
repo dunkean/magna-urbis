@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { chmod, copyFile, mkdir, readFile } from 'node:fs/promises';
+import { chmod, copyFile, cp, mkdir, readFile } from 'node:fs/promises';
 import { createServer } from 'node:net';
 import { homedir } from 'node:os';
 import { delimiter, join, resolve } from 'node:path';
@@ -135,6 +135,15 @@ async function vite() {
   return service;
 }
 
+async function illustration() {
+  if (args.includes('--no-illustration') || await status('http://127.0.0.1:8794/status')) return null;
+  const python = process.env.MAGNA_ILLUSTRATION_PYTHON ?? join(root, windows ? '.venv-illustration/Scripts/python.exe' : '.venv-illustration/bin/python');
+  if (!existsSync(python)) return null;
+  const service = start(python, ['-u', '-m', 'illustration'], root);
+  await waitFor('http://127.0.0.1:8794/status', service, async response => (await response.json()).service === 'magna-illustration');
+  return service;
+}
+
 function open(url) {
   if (args.includes('--no-open')) return;
   const command = windows ? 'rundll32.exe' : process.platform === 'darwin' ? 'open' : 'xdg-open';
@@ -158,6 +167,9 @@ async function main() {
     await mkdir(join(desktop, 'resources'), { recursive: true });
     const bundledBinary = join(desktop, 'resources', `magna-urbis-local${windows ? '.exe' : ''}`);
     await copyFile(binary, bundledBinary);
+    await cp(join(root, 'illustration'), join(desktop, 'resources/illustration'), {
+      recursive: true, filter: source => !source.includes('__pycache__') && !source.endsWith('.pyc') && !source.includes('tests'),
+    });
     if (!windows) await chmod(bundledBinary, 0o755);
     if (!existsSync(join(desktop, 'icons/icon.ico'))) {
       await tauri(['icon', join(web, 'src/ui/assets/logo-magna-urbis.png'), '--output', join(desktop, 'icons')]);
@@ -167,9 +179,10 @@ async function main() {
     } else {
       await vite();
       await neural();
+      await illustration();
     }
     await tauri([action === 'desktop-build' ? 'build' : 'dev',
-      ...args.filter(arg => !['--no-build', '--no-neural', '--no-open', action].includes(arg))]);
+        ...args.filter(arg => !['--no-build', '--no-neural', '--no-illustration', '--no-open', action].includes(arg))]);
     return;
   }
   if (action !== 'dev') throw new Error('Usage : local.mjs dev|build|desktop-dev|desktop-build [--no-build] [--no-neural] [--no-open]');
@@ -195,13 +208,14 @@ async function main() {
   }
   const site = await vite();
   const python = await neural();
+  const images = await illustration();
   const url = new URL('http://127.0.0.1:5173/rustbench.html');
   url.searchParams.set('profile', 'local');
   url.searchParams.set('localServer', server.origin);
   url.hash = `terrain?source=${profiles.local.neural}&width=2400`;
   console.log(`\nMagna Urbis · profil local : ${url}\nCtrl+C arrête les services démarrés ici.`);
   open(url.href);
-  const owned = [native, site, python].filter(Boolean);
+  const owned = [native, site, python, images].filter(Boolean);
   if (owned.length) await Promise.race(owned.map(service => service.done));
 }
 

@@ -11,6 +11,8 @@ import type { TerrainData, TerrainSettings } from '../../../rust/bridge/terrain'
 import type {} from './benchContext';
 import { decodeSituation, encodeSituation, type SituationPin } from './citySituation';
 import { mountCity3d } from './city3d';
+import { mountIllustration, captureViewport } from '../../../illustration/web/index.mjs';
+import { illustrationContext } from './illustrationContext';
 
 declare global { interface Window { magnaCityBackground?: { url(): string | undefined; style(): string } } }
 
@@ -143,6 +145,25 @@ function setProjection(active: boolean): void {
 setProjection(false);
 view3d.onclick = () => setProjection(!city3d.active);
 (window as Window & { magnaCity3d?: typeof city3d }).magnaCity3d = city3d; // Automated checks (stats, capture).
+mountIllustration({ host: document.querySelector('header')!, capture: async () => {
+  if (!ready || !decor || !settlements.contextReady()) throw new Error('Chargez une ville et attendez la fin de la génération.');
+    const palette = document.querySelector<HTMLSelectElement>('select[data-render="palette"]')?.value;
+    const sourceStyle = palette === 'cadastre' || palette === 'parchment' ? palette : backgroundStyle;
+    const context = illustrationContext({ sourceStyle, seed: decor.meta.seed, view: { ...view },
+    width: viewport.clientWidth, height: viewport.clientHeight, settlements: settlements.illustrationSettlements,
+    terrain: { ...decor.meta.tags, minHeight: decor.meta.stats.minHeight, maxHeight: decor.meta.stats.maxHeight },
+    buildings: settlements.urban.buildingState.scene, architecture: settlements.urban.buildingState.settings });
+  if (city3d.active) {
+    const captured = await city3d.captureIllustration();
+    return { image: captured.image, guides: { depth: captured.depth }, context: { ...context, projection: 'perspective', camera: captured.camera } };
+  }
+    const exclude = ['#cityPins', '#mini', '.ruler'];
+    const image = await captureViewport(viewport, { exclude });
+    // Native roofs and GPU streets are raster layers. Let the connector extract
+    // Canny from the complete capture rather than send an incomplete SVG guide.
+    const guides = viewport.querySelector('[data-city-canvas]') ? {} : { edges: await captureViewport(viewport, { structural: true, exclude }) };
+    return { image, guides, context };
+} });
 const historyAnchor = document.createElement('div'); stages.append(historyAnchor);
 const historyPanel = createHistoryPanel({ before: historyAnchor, current: () => lastExport ?? decor, onOpen: d => openBench('city', new URLSearchParams({ artifact: d.meta.id })) });
 anchor.remove(); historyAnchor.remove();

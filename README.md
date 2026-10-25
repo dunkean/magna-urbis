@@ -94,6 +94,108 @@ In **Share & export**, choose the SVG / PNG layers independently: relief, water,
 
 SVG and PNG exports open a crop preview: draw a rectangle, drag it to move it, or enter its position and dimensions in meters. Choose **Carte entière** to reset the selection, then **Exporter** to download it. Rectangular exports keep their proportions, with a longest edge of 3000 px (4096 px for Fantasy exports in Terrain Bench and Urban Bench).
 
+## Illustrate the current view
+
+The **✦ Illustrer** button captures the current view in the TypeScript application,
+Terrain / Settlements Bench, City Bench and the urban workshop. Choose **Local · qualité · Z-Image Turbo** (the default), **Local · aperçu · SDXL Lightning**,
+or **API externe**, then a style (including automatic inheritance from the map),
+fidelity and optional instructions. Results include a comparison slider, a local
+history, PNG downloads and a JSON recipe containing the actual model, seed,
+controls and provenance. Illustrations do not change the generated world.
+
+**Description et prompt** previews the prose sent to the selected model before
+generation: camera angle, settlement scale and culture, relief, climate/biome,
+and known visible roof forms, storeys and construction materials. The cloud edit
+instruction explicitly treats the screenshot as the primary reference and asks
+to restyle the same scene while retaining its layout and details. Context JSON
+stays in the connector and recipe; it is compiled into prose for the model.
+SDXL receives a shorter version because its text encoder has a small context.
+Snow and weather are not inferred from the cultural preset alone.
+The default style follows the visible layer; cadastre, parchment, geographic map,
+satellite, fine art and other presets can restyle the same frozen reference image.
+**Modifier le prompt** opens the complete editable text. Edited drafts are kept
+for each combination of engine/style/fidelity/instructions during the session;
+**Revenir au template** restores the automatic template. The recipe records the
+exact edited prompt. Long overrides are validated, never silently truncated.
+
+Install the optional connector once, from `web/` (Python 3.12 and a CUDA-compatible
+NVIDIA GPU are required for the built-in local models):
+
+```sh
+npm run illustration:setup
+npm run illustration:serve
+```
+
+`npm run dev:local` and `npm run app:dev` start the connector automatically when
+its environment exists, as do `start-terrainbench.bat`, `npm run start:benches`
+and `start-terrainbench.sh`. The bench stop command also stops its illustration
+connector. The connector listens only on `127.0.0.1:8794`; keep it
+running when using the ordinary web build or a deployed static page. The advanced
+settings let you change its loopback address. The first local generation downloads
+model weights into the standard Hugging Face cache and takes longer than later
+generations. Weights are external assets, not bundled into the web application.
+
+On the tested RTX 4090, a 912 × 864 Lightning image with depth + edges took
+1.55 s for inference, or 27.17 s including cold model loading. Z-Image with edges
+and eight steps took 96.98 s for inference, or 149.73 s including loading.
+These are individual measurements, not guarantees for other GPUs or scenes.
+
+- **Rapid:** SDXL Lightning (matching 4- or 8-step checkpoint) with Xinsir SDXL Union
+  ControlNet; use 8 steps and 1 MP for a more detailed preview, preserving the source aspect ratio.
+- **Quality:** Z-Image Turbo with Fun ControlNet Union **2.1-2602-8steps**. Quality can
+  take substantially longer; the runtime stages the text encoder separately from
+  the shared transformer / ControlNet modules to fit consumer GPU memory.
+  New sessions default to this model, eight steps and 1 MP. Saved engine and
+  resolution preferences are retained. The panel checks the connector before
+  submitting a capture and reports how to restart it if it is unavailable.
+- **API:** [OpenAI GPT Image edits](https://developers.openai.com/api/docs/guides/image-generation)
+  or [Gemini Image](https://ai.google.dev/gemini-api/docs/image-generation), using the captured image and its
+  factual scene description. Enter a private API key for the current session, or
+  set `OPENAI_API_KEY` / `GEMINI_API_KEY` in the connector environment. Keys are never
+  saved in browser preferences, recipes or local image history. The provider bills
+  requests made with that key. Cancelling an already transmitted request cannot
+  guarantee that the provider stops or refunds it.
+
+3D captures include a camera-aligned depth guide with visible building geometry,
+normalized over the visible scene (near geometry is light, sky is black).
+2D views use structural contours where available, with Canny extraction as the
+fallback. Automatic control combines depth and edges with SDXL when depth is
+available. The integrated Z-Image workflow uses one guide at a time and defaults
+to edges to retain roads and rivers; depth can be selected explicitly for volume.
+Strong fidelity remains a generative constraint, not a
+guarantee of geometrically exact output. Seed reproducibility also depends on
+runtime, hardware and model versions. Cloud output may use the provider's nearest
+supported aspect ratio.
+
+Generated images and metadata are stored outside Git under
+`%LOCALAPPDATA%/MagnaUrbis/illustrations` on Windows, or
+`~/.local/share/MagnaUrbis/illustrations` elsewhere. Override with
+`MAGNA_ILLUSTRATION_OUTPUT`. `MAGNA_ILLUSTRATION_PYTHON` selects a separate Python
+interpreter; it should not upgrade the terrain inference environment. Idle local
+models are unloaded after two minutes. Model licenses remain separate: Lightning
+is OpenRAIL++, while Z-Image Turbo and the selected ControlNets are Apache 2.0.
+
+The build-free client in `illustration/web/` and the versioned Python job service
+are shared with Neural Earth. Verification: `npm run illustration:test`,
+`npx vitest run tests/illustration.test.ts`, and `node scripts/illustration_smoke.mjs`
+with the local benches running and the City Bench decor catalogue present.
+`MAGNA_ILLUSTRATION_BENCH` selects the bench origin. The browser smoke simulates
+provider responses; it does not make paid API calls. The focused WebGL test is
+`node scripts/illustration_depth_smoke.mjs`. With Neural Earth running,
+`NEURAL_EARTH_URL=http://127.0.0.1:8765` selects the server for
+`node scripts/illustration_neural_smoke.mjs` and `node scripts/illustration_panel_smoke.mjs`.
+`node scripts/illustration_main_smoke.mjs` checks the TypeScript application and
+its HUD/minimap exclusion.
+`node scripts/illustration_city_layers_smoke.mjs` checks the stacked GPU/2D city
+canvases and Canvas fallback. `node scripts/illustration_city_smoke.mjs` verifies
+native roofs in the real City Bench, using the existing native-house fixture and
+the decor catalogue. Native raster views derive Canny from the complete capture.
+`node scripts/illustration_prompt_smoke.mjs` checks the live prose preview and
+explicit cloud editing instruction without starting an image job.
+The opt-in `python -m illustration.tests.smoke_real --mode fast` runs a real GPU
+job through the connector; `--depth path.png --control both` exercises dual
+conditioning, and `--mode quality` tests Z-Image.
+
 ## Develop the Rust engine
 
 Install the toolchain pinned in `rust/rust-toolchain.toml`, the `wasm32-unknown-unknown` target and `wasm-pack`. On Windows, install the Visual Studio C++ build tools and Windows SDK.

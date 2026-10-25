@@ -657,6 +657,10 @@ export class TerrainGl {
     if (!this.look) throw new Error('Le terrain est indisponible.');
     return this.captureRegion({ x: 0, y: 0, width: this.look.mapWidth }, size, false, true, undefined, groundOverlay);
   }
+  redrawForCapture(): void {
+    if (!this.base || !this.look || this.gl.isContextLost()) throw new Error('Le terrain est indisponible.');
+    this.draw();
+  }
 
   /** Render a world-space LOD tile with the same material and detail as the map. */
   captureRegion(region: { x: number; y: number; width: number }, size = 512, includeDetails = true, restoreDisplay = true, height?: HeightLayer, groundOverlay = false, alphaOnly?: Uint8Array): HTMLCanvasElement {

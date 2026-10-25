@@ -617,6 +617,7 @@ export function createTerrainSettlements(options: {
   controls(); list();
   return {
     urban,
+    get illustrationSettlements() { return enabled ? output?.settlements : undefined; },
     contextReady: () => complete && (!enabled || answered === id) && !urban.layoutPending && !urban.generationPending,
     captureContext: () => ({ selection, urban: urban.captureContext() }),
     restoreContext(saved: { selection?: string; urban?: ReturnType<typeof urban.captureContext> }): void {
