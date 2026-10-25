@@ -8,7 +8,7 @@ import type { PlacementBatch, PlacedBuilding } from '../../../rust/bridge/urbanA
 import { urbanFunctionColor, type UrbanBuildingAppearance } from './urbanBuildingStyle';
 import { roleLabel } from './cityRoles';
 import { cityWallDetails, drawCityWallGround, drawCityWalls } from './cityWalls'; // walls hook (cityWalls.ts)
-import { buildingRoof, pieceShadow, pieceTop, readMassing, roofLight as roofLight3 } from './cityMassing';
+import { buildingRoof, pieceShadows, readMassing, roofLight as roofLight3 } from './cityMassing';
 
 export interface Box { minX: number; minY: number; maxX: number; maxY: number }
 export type CityView = 'tissue' | 'uses' | 'parcels' | 'buildings' | 'roles';
@@ -141,7 +141,7 @@ export interface CityScene {
 export interface CityBuilding { id: string; surface: Surface; fn: string; family: string; landmark: boolean; parcel?: number; building: PlacedBuilding; path?: Path2D }
 /** Roof pans of the massing (cityMassing.ts): one polygon per sloped face, its
  * building and its light; height shadows per building (sun from the north-west). */
-export interface CityRoofs { shapes: Shape[]; owner: Uint32Array; light: Float32Array; cover: string[]; shadows: Shape[][] }
+export interface CityRoofs { shapes: Shape[]; owner: Uint32Array; light: Float32Array; cover: string[]; tone: Float32Array; shadows: Shape[][] }
 export interface CityBuildings { items: CityBuilding[]; bins: SpatialBins; byId: Map<string, number>; roofs?: CityRoofs }
 
 /** Optional contract fields read defensively: older plans render without them. */
@@ -242,7 +242,7 @@ export function buildCityScene(layouts: readonly Layout[], partitions: readonly 
 /** Buildings of a scene, linked to their parcel allocation for roles. */
 export function buildCityBuildings(batch: Pick<PlacementBatch, 'buildings'> | undefined, plan?: CityScene): CityBuildings {
   const items: CityBuilding[] = [], byId = new Map<string, number>();
-  const roofShapes: Shape[] = [], roofOwner: number[] = [], roofLight: number[] = [], roofCover: string[] = [], shadows: Shape[][] = [];
+  const roofShapes: Shape[] = [], roofOwner: number[] = [], roofLight: number[] = [], roofCover: string[] = [], roofTone: number[] = [], shadows: Shape[][] = [];
   for (const building of batch?.buildings ?? []) {
     const surface = building.roof_footprint.length ? building.roof_footprint : building.footprint;
     if (!surface.length) continue;
@@ -256,11 +256,11 @@ export function buildCityBuildings(batch: Pick<PlacementBatch, 'buildings'> | un
     const owner = items.length - 1;
     for (const face of buildingRoof(building.footprint, massing)) {
       if (face.normal[2] < 0.08 || face.points.length < 3) continue; // gable ends and walls are edge-on from above
-      roofShapes.push({ outer: face.points.map(p => ({ x: p.x, y: p.y })), holes: [] }); roofOwner.push(owner); roofLight.push(roofLight3(face.normal)); roofCover.push(massing[face.piece].cover);
+      roofShapes.push({ outer: face.points.map(p => ({ x: p.x, y: p.y })), holes: [] }); roofOwner.push(owner); roofLight.push(roofLight3(face.normal)); roofCover.push(face.cover); roofTone.push(face.tone);
     }
-    shadows.push(building.footprint.flatMap((shape, i) => { const s = massing[i] && pieceShadow(shape, pieceTop(massing[i])); return s ? [s] : []; }));
+    shadows.push(building.footprint.flatMap((shape, i) => massing[i] ? pieceShadows(shape, massing[i]) : []));
   }
-  const roofs = roofShapes.length ? { shapes: roofShapes, owner: Uint32Array.from(roofOwner), light: Float32Array.from(roofLight), cover: roofCover, shadows } : undefined;
+  const roofs = roofShapes.length ? { shapes: roofShapes, owner: Uint32Array.from(roofOwner), light: Float32Array.from(roofLight), cover: roofCover, tone: Float32Array.from(roofTone), shadows } : undefined;
   return { items, byId, bins: new SpatialBins(items.map(b => surfaceBox(b.surface)), 64), ...(roofs ? { roofs } : {}) };
 }
 
@@ -594,6 +594,7 @@ export class CityCanvasLayer {
   private frame = 0;
   constructor(private readonly map: SVGSVGElement, parent: Element, private readonly paint: (ctx: CanvasRenderingContext2D, frame: CityCanvasFrame) => boolean) {
     this.host = document.createElementNS('http://www.w3.org/2000/svg', 'foreignObject');
+    this.host.addEventListener('illustration:capture', () => this.draw());
     this.host.dataset.cityCanvas = ''; this.canvas.style.display = 'block'; this.canvas.style.pointerEvents = 'none';
     this.host.append(this.canvas); this.attach(parent);
   }

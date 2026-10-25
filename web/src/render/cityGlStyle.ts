@@ -182,12 +182,15 @@ export function buildingColors(buildings: CityBuildings | undefined, s: CityGlSt
   // Roof pans: the building's colour lit by the pan's slope (sun north-west), a
   // darker hip/ridge line; flat views (roles, uses, parchment) keep a softer relief.
   if (roofs) {
-    const flatView = s.view === 'roles' || s.diagnostic === 'uses' || parchment, relief = flatView ? 0.5 : 1;
+    const flatView = s.view === 'roles' || s.diagnostic === 'uses' || parchment, relief = parchment ? 0.9 : flatView ? 0.5 : 1;
     for (let k = 0; k < roofs.shapes.length; k++) {
-      // Plan views paint the roof material (tile, slate, thatch…) varied per house.
-      const owner = items[roofs.owner[k]], material = flatView ? undefined : ROOF_COVERS[roofs.cover[k]];
-      const base = material ? shade(owner.landmark ? mix(material, '#3a3440', 0.2) : material, roofJitter(owner.id) * 1.6) : colors[roofs.owner[k]], f = items.length + k;
-      put(fill, f, shade(base, roofs.light[k] * relief)); put(line, f, shade(base, -0.38), 0.55);
+      // Plan views paint the roof material (tile, slate, thatch…) varied per house (jitter)
+      // and per volume (massing tone, ±8 %); parchment keeps its ink, tinted by the cover.
+      const cover = roofs.cover[k], owner = items[roofs.owner[k]], material = flatView ? undefined : ROOF_COVERS[cover], f = items.length + k;
+      let base = material ? shade(owner.landmark ? mix(material, '#3a3440', 0.2) : material, roofJitter(owner.id) * 1.6) : colors[roofs.owner[k]];
+      if (parchment && ROOF_COVERS[cover] && s.view !== 'roles' && s.diagnostic !== 'uses') base = mix(base, mix(ROOF_COVERS[cover], '#8a7355', 0.3), 0.7);
+      base = shade(base, ((roofs.tone?.[k] ?? 0.5) - 0.5) * 0.16);
+      put(fill, f, shade(base, roofs.light[k] * relief)); put(line, f, shade(base, -0.38), COVER_EDGE[cover] ?? 0.55);
     }
     // Shadow features are drawn with a tint; they only need to be shown.
     for (let i = 0; i < items.length; i++) put(fill, items.length + roofs.shapes.length + i, '#000000');
@@ -214,7 +217,16 @@ function shade(color: string, k: number): string {
   return `#${((c(16) << 16) | (c(8) << 8) | c(0)).toString(16).padStart(6, '0')}`;
 }
 /** Roof covers of the city massing (urban/massing.rs). */
-const ROOF_COVERS: Record<string, string> = { tile: '#9a5a42', slate: '#5d6470', thatch: '#9b8a5c', earth: '#b69a72', plaster: '#c9bba0', stone: '#8a8478', lead: '#7b8088' };
+export const ROOF_COVERS: Record<string, string> = {
+  tile: '#9a5a42', slate: '#5d6470', thatch: '#9b8a5c', reed: '#a89a62', bamboo: '#9fa86a', palm: '#7f9150', shingle: '#7a5a3e', turf: '#6f8049', bark: '#6e5238',
+  hide: '#b49a78', felt: '#c8bda3', earth: '#b69a72', plaster: '#c9bba0', stone: '#8a8478', snow: '#e4e8ea', metal: '#6f8d88', lead: '#7b8088',
+};
+/** Wall colours of the massing (seen on elevations; 2D plans only show roofs). */
+export const WALL_COLORS: Record<string, string> = {
+  timber: '#8a6a47', brick: '#a4573e', stone: '#9a968a', earth: '#b79c76', wood: '#9c7a52', plaster: '#d7c9a8', bamboo: '#b4b070', wattle: '#a98f69', hide: '#b9a07f', coral: '#d9c6b4',
+};
+/** Opacity of a pan's edge line: crisp courses (tile, shingle, slate, bamboo) read as stripes, soft ones (thatch, turf) as fuzz. */
+const COVER_EDGE: Record<string, number> = { tile: 0.72, shingle: 0.72, slate: 0.68, bamboo: 0.72, metal: 0.65, thatch: 0.35, reed: 0.35, palm: 0.4, turf: 0.3, bark: 0.45, hide: 0.4, felt: 0.4, snow: 0.3 };
 /** Roof hues by role family (render background). */
 export const PAINTED_FAMILY_ROOFS: Record<string, string> = {
   dwelling: '#8a5c45', commerce: '#9a6c3e', craft: '#74483a', civic: '#4d5d78', worship: '#5b4b72', defence: '#57595c', garden: '#7f8461',

@@ -11,7 +11,7 @@ import { isBuildingProjection, surfaceTriangles, type Building3dScene, type Buil
 import type { NativeBuildingProjection, NativeBuildingProjectionScene } from '../ui/urbanBuildingProjection';
 import { roleFamily } from './cityCanvas';
 import type { Enclosure } from '../../../rust/bridge/urban';
-import { pieceRoof, readMassing } from './cityMassing';
+import { loftRidges, pieceVolumes, readMassing, volumeRoof } from './cityMassing';
 
 type RoofMesh = ArchitectureVolume['roof_mesh'];
 type RoofMeshFace = RoofMesh['faces'][number];
@@ -41,8 +41,11 @@ const FAMILY_MASSING: Record<string, Massing> = {
   garden: { floors: 1, wall: 'wood', roof: 'thatch', pitchDeg: 30, hip: false },
 };
 /** Massing covers and walls (urban/massing.rs) on the display materials. */
-const COVERS: Record<string, MaterialPattern> = { tile: 'tile', slate: 'stone', thatch: 'thatch', earth: 'earth', plaster: 'plain', stone: 'stone', lead: 'stone' };
-const WALLS: Record<string, MaterialPattern> = { timber: 'wood', wood: 'wood', brick: 'tile', stone: 'stone', earth: 'earth', plaster: 'plain' };
+const COVERS: Record<string, MaterialPattern> = {
+  tile: 'tile', slate: 'stone', thatch: 'thatch', reed: 'thatch', palm: 'thatch', bamboo: 'wood', shingle: 'wood', bark: 'wood', turf: 'earth', hide: 'fabric', felt: 'fabric',
+  earth: 'earth', plaster: 'plain', stone: 'stone', snow: 'snow', metal: 'stone', lead: 'stone',
+};
+const WALLS: Record<string, MaterialPattern> = { timber: 'wood', wood: 'wood', brick: 'tile', stone: 'stone', earth: 'earth', plaster: 'plain', bamboo: 'wood', wattle: 'earth', hide: 'fabric', coral: 'stone' };
 function hash(text: string): number { let h = 2166136261; for (let i = 0; i < text.length; i++) h = Math.imul(h ^ text.charCodeAt(i), 16777619); return h >>> 0; }
 
 /** Floors, materials and roof of a silhouette from its role family, role and wealth. */
@@ -139,6 +142,9 @@ class RoofBuilder {
 /** Loft every eave edge to its projection on the ridges: hip, gable and L roofs. */
 export function ridgeRoof(roof: RoofBuilder, ring: readonly Point[], ridges: readonly [Point, Point][], eave: number, top: number, material: string): void {
   const at = (p: Point, z: number): Vertex3 => ({ x: p.x, y: p.y, z });
+  // Same ridge-axis construction as the 2D pans (cityMassing.loftRidges), checked in plan.
+  const faces = ridges.length ? loftRidges(ring, ridges, eave, top) : undefined;
+  if (faces) { for (const f of faces) roof.face(f, material); return; }
   for (let i = 0; i < ring.length; i++) {
     const a = ring[i], b = ring[(i + 1) % ring.length];
     if (Math.hypot(b.x - a.x, b.y - a.y) < 1e-6) continue;
@@ -147,7 +153,6 @@ export function ridgeRoof(roof: RoofBuilder, ring: readonly Point[], ridges: rea
     else roof.face([at(a, eave), at(b, eave), at(pb, top), at(pa, top)], material);
   }
 }
-/** Pitched border and flat crown for any outline, holes included (court buildings). */
 function insetRoof(roof: RoofBuilder, surface: Surface, eave: number, rise: number, material: string): void {
   for (const shape of surface) {
     const perimeter = ringLength(shape.outer) + shape.holes.reduce((s, r) => s + ringLength(r), 0);
@@ -190,10 +195,12 @@ export function silhouetteBuilding(building: PlacedBuilding, heightAt?: City3dHe
     const foundation = { footprint, z_min_m: Math.min(ground, Number.isFinite(low) ? low : ground) - 0.3, z_max_m: ground };
     const volumes = footprint.flatMap((shape, i) => {
       const piece = massing[i]; if (!piece) return [];
-      const materials = slots(WALLS[piece.wall] ?? m.wall, COVERS[piece.cover] ?? m.roof), roof = new RoofBuilder();
-      for (const face of pieceRoof(shape, piece, i)) roof.face(face.points.map(p => ({ x: p.x, y: p.y, z: p.z + ground })), materials.cladding);
-      const system = piece.roof === 'flat' ? 'RF-FLAT' : piece.roof === 'hip' || piece.roof === 'pyramid' ? 'RF-HIP' : 'RF-GABLE';
-      return [baseVolume(`${building.id}:city3d:${i}`, [shape], ground, piece.eave_m, Math.max(0, piece.rise_m), materials, roof.mesh(), system, { ...foundation, footprint: [shape] })];
+      return pieceVolumes(shape, piece).map((v, j) => {
+        const materials = slots(WALLS[v.wall] ?? m.wall, COVERS[v.cover] ?? m.roof), roof = new RoofBuilder();
+        for (const face of volumeRoof(v, i, j)) roof.face(face.points.map(p => ({ x: p.x, y: p.y, z: p.z + ground })), materials.cladding);
+        const system = v.roof === 'flat' ? 'RF-FLAT' : v.roof === 'hip' || v.roof === 'pyramid' || v.roof === 'tent' ? 'RF-HIP' : 'RF-GABLE';
+        return baseVolume(`${building.id}:city3d:${i}:${j}`, [v.shape], ground, v.eave_m, Math.max(0, v.rise_m), materials, roof.mesh(), system, { ...foundation, footprint: [v.shape] });
+      });
     });
     return { ...building, ground_z_m: ground, roof_footprint: building.roof_footprint.length ? building.roof_footprint : footprint, volumes };
   }
