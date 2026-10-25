@@ -194,7 +194,6 @@ export function createTerrainSettlements(options: {
     places.hidden = true;
   }
   /** Population ceiling of the loaded City Bench map (decor tag), else the editor's own limit. */
-  const maxPopulation = (): number => Number(options.getDecor?.()?.meta.tags.maxPopulation) || 5000000;
   /** Nearest dry cell to a point, on the raster Rust places settlements on. */
   function dryNear(p: Point): Point | undefined {
     const t = options.getTerrain(); const raster = validation ?? options.getRaster?.() ?? (t ? settlementRaster(t) : undefined);
@@ -329,7 +328,7 @@ export function createTerrainSettlements(options: {
     host.innerHTML = `<div class="settlement-editor"><b>Properties</b>
       <label>Name <input id="setName" type="text" maxlength="60"></label>
       <label>Classe démographique · raccourci de population <select id="setClass">${settlementPopulationChoices().map(c => `<option value="${c.kind}">${c.label}</option>`).join('')}</select></label><small>La classe est déduite de la population. Ce raccourci ne choisit pas une grammaire de plan ; les valeurs affichées ne sont pas les seuils des classes.</small>
-      <label>Population <input id="setPopulation" type="number" min="1" max="${options.city ? maxPopulation() : 5000000}" step="1"></label>
+      <label>Population <input id="setPopulation" type="number" min="1" max="5000000" step="1"></label>
       <label>${options.city ? 'Profil culturel urbain' : 'Culture'} <select id="setPlaceCulture">${options.city ? cityCultures.map(c => `<option value="${esc(c.id)}">${esc(c.label)}</option>`).join('') : culture.innerHTML}</select></label>${options.city ? '<div class="settlement-actions"><button id="setCulturePrevious" type="button" title="Profil précédent">◀ Profil</button><button id="setCultureNext" type="button" title="Profil suivant">Profil ▶</button></div>' : ''}
       ${options.city ? '<small>Les profils nommés combinent parfois tradition, organisation urbaine et thème. Leur présence au catalogue ne certifie pas une époque ni une taille historique. Les recettes appliquées se lisent dans le programme.</small>' : ''}
       <label>Role (label) <input id="setKind" type="text" maxlength="60"></label>
@@ -348,7 +347,7 @@ export function createTerrainSettlements(options: {
     input('setName').onchange = event => edit(s => { s.name = (event.target as HTMLInputElement).value.trim(); });
     input('setKind').onchange = event => edit(s => { s.kind = (event.target as HTMLInputElement).value.trim(); });
     input('setPopulation').onchange = event => { const c = event.target as HTMLInputElement; if (c.reportValidity()) edit(s => { s.population = Math.round(Number(c.value)); }); };
-    el<HTMLSelectElement>('setClass').onchange = event => edit(s => { const kind = settlementPopulationChoices(options.city ? maxPopulation() : 5000000).find(k => k.kind === (event.target as HTMLSelectElement).value); if (kind && classOfPop(s.population) !== kind.kind) s.population = kind.population; });
+    el<HTMLSelectElement>('setClass').onchange = event => edit(s => { const kind = settlementPopulationChoices(5000000).find(k => k.kind === (event.target as HTMLSelectElement).value); if (kind && classOfPop(s.population) !== kind.kind) s.population = kind.population; });
     el<HTMLSelectElement>('setPlaceCulture').onchange = event => edit(s => { s.culture = (event.target as HTMLSelectElement).value; s.sitePrefs = {}; });
     el<HTMLSelectElement>('setSite').onchange = event => edit(s => { s.siteType = (event.target as HTMLSelectElement).value; });
     for (const [name, key] of [['setMountain', 'mountainFace'], ['setWood', 'woodland'], ['setHill', 'hilltop']]) input(name).onchange = event => {
@@ -362,7 +361,7 @@ export function createTerrainSettlements(options: {
     };
     input('setX').onchange = input('setY').onchange = positionChanged;
     if (options.city) {
-      el<HTMLSelectElement>('setClass').replaceChildren(...settlementPopulationChoices(maxPopulation()).map(k => new Option(k.label, k.kind)));
+      el<HTMLSelectElement>('setClass').replaceChildren(...settlementPopulationChoices(5000000).map(k => new Option(k.label, k.kind)));
       el<HTMLSelectElement>('setClass').value = classOfPop(spec.population);
       el('setKind').closest('label')!.hidden = true;
       // Implantation: a fixed position (map centre by default) or a site found by the placement strategy.

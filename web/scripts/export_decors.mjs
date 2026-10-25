@@ -109,8 +109,8 @@ const ENVIRONMENTS = [
   { id: 'lake-plateau', label: 'Haut plateau lacustre', climate: 'temperate', relief: 'plateau', coast: 'inland', river: 'auto', lakes: 'some', culture: 'aztec', level: 'developed' },
 ];
 const CITY_SIZES = [
-  { id: 's', size: 'small', label: 'jusqu’à 10 000 hab.', width: 4000, population: 5000, maxPopulation: 10000, exits: 3 },
-  { id: 'l', size: 'large', label: 'jusqu’à 400 000 hab.', width: 16000, population: 100000, maxPopulation: 400000, exits: 4 },
+  { id: 's', size: 'small', label: 'petite carte', width: 4000, population: 5000, exits: 3 },
+  { id: 'l', size: 'large', label: 'grande carte', width: 16000, population: 100000, exits: 4 },
 ];
 /** `central`: the exact centre is too steep or wet; placement picks the best site of the central area instead. */
 function cityVariation(i, attempt = 0, central = false) {
@@ -137,7 +137,7 @@ function cityVariation(i, attempt = 0, central = false) {
   const n = String(i % ENVIRONMENTS.length + 1).padStart(2, '0');
   const id = `city-${n}-${env.id}-${size.id}`;
   const label = `${n} · ${env.label} · ${size.label}`;
-  const tags = { kit: 'city', environment: env.id, size: size.size, maxPopulation: String(size.maxPopulation), climate: env.climate, relief: env.relief, coast: coast.id, river: env.river, lakes: env.lakes, culture: env.culture, roads: env.level, placement: centred ? 'centre' : 'central-best', source: neuralSource, hydrology: 'rust', seed };
+  const tags = { kit: 'city', environment: env.id, size: size.size, climate: env.climate, relief: env.relief, coast: coast.id, river: env.river, lakes: env.lakes, culture: env.culture, roads: env.level, placement: centred ? 'centre' : 'central-best', source: neuralSource, hydrology: 'rust', seed };
   return { id, label, tags, query: params.toString() };
 }
 

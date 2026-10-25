@@ -1810,7 +1810,12 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
     for (const kind of ['quarters', 'parcels'] as const) { status(kind, layouts?.some(layout => target === 'all' || layout.key === target) ? 'Plan conservé · sélection seule.' : 'Plan absent pour cette sélection.'); populate(kind); }
     // Settlements of the selection without a plan are planned now; planned ones keep theirs.
     const missing = settlements?.settlements.filter(s => (target === 'all' || s.key === target) && !layouts?.some(layout => layout.key === s.key)) ?? [];
+    // Buildings stand on parcels: a selection that had them gets the whole chain.
+    if (built && cityView && !parcelEnabled) { parcelEnabled = true; populate('parcels'); }
+    const unparcelled = parcelEnabled && !!layouts?.some(layout => (target === 'all' || layout.key === target) && !partitions?.some(p => p.key === layout.key));
     if (missing.length && enabled && ready) { completeGeneration = built; request('quarters', new Set(missing.map(s => s.key))); }
+    else if (unparcelled && ready) { completeGeneration = built; request('parcels'); }
+    else if (built && cityView && layouts?.length && partitions && !singleCityArchitecture()) void buildingPanel.generate();
     draw(); options.onChange();
   };
   one<HTMLButtonElement>('quarters', '#urbanFocus').onclick = () => {

@@ -28,7 +28,7 @@ export function createTerrainDecorLibrary(options: { before: Element; city?: boo
     entries = (await response.json()).decors;
     if (!options.city) { select.append(...entries.map(e => new Option(e.label, e.id))); return; }
     entries = entries.filter(e => e.tags.kit === 'city');
-    for (const [size, title] of [['small', 'Petite ville · jusqu’à 10 000 hab. · 4 km'], ['large', 'Grande ville · jusqu’à 400 000 hab. · 16 km']]) {
+    for (const [size, title] of [['small', 'Petite carte · 4 km · 5 000 hab. au départ'], ['large', 'Grande carte · 16 km · 100 000 hab. au départ']]) {
       const group = document.createElement('optgroup'); group.label = title;
       group.append(...entries.filter(e => e.tags.size === size).map(e => new Option(`${e.label.split(' · ').slice(0, 2).join(' · ')} · ${climates[e.tags.climate] ?? e.tags.climate} · ${e.tags.culture}`, e.id)));
       select.append(group);

@@ -317,7 +317,7 @@ else if (artifact) {
     el('pipelineReturn').hidden = !(d.meta.pipeline?.parent && d.meta.pipeline.crop && d.meta.pipeline.city);
     fit(); await drawBackground(d);
     settlements.restoreDecor(d);
-    if (el('status').textContent === 'Chargement de la carte…') status(`${d.meta.label} · ${(d.raster.width / 1000).toFixed(0)} km`);
+    if (el('status').textContent === 'Chargement de la carte…') status(`${d.meta.label.replace(/ · jusqu’à [^·]* hab\.$/, '')} · ${(d.raster.width / 1000).toFixed(0)} km`);
     save(); restoreSituation();
   }).catch(error => status(String(error))).finally(() => { ready = true; });
 } else { ready = true; showView(); }
