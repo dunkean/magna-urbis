@@ -21,7 +21,7 @@ float detailAmplitude(vec2 uv,vec2 mesh_spacing){
  vec4 water=textureLod(ground_water,uv,0.0);float river=textureLod(river_footprint,uv,0.0).a;
  float dry=1.0-smoothstep(.0,.05,max(max(water.g,water.b),max(water.r,river)));
  vec4 cover=textureLod(original_cover,uv,0.0);
- float amplitude=original_cover_enabled?mix(.55,.14,max(cover.r,cover.b)):.55;
- amplitude=mix(amplitude,.08,cover.g*(original_cover_enabled?1.0:0.0));
+ float amplitude=mix(.55,.14,max(cover.r,cover.b));
+ amplitude=mix(amplitude,.08,cover.g);
  return amplitude*dry*terrain_detail_amount*(1.0-smoothstep(2.0,8.0,max(mesh_spacing.x,mesh_spacing.y)));
 }

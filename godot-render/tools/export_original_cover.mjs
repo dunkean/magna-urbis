@@ -27,8 +27,8 @@ try{
     if(!source.includes(marker))throw Error('Original cover hook changed');
     source=source.replace(marker,'originalCoverMask=vec4(surfaceCover(herbs*(1.-outcrop),sward,.12*variation),1.-(1.-flats*(1.-sstep(240.,960.,fp))*.8)*(1.-beach*.8),woods,outcrop);\n'+marker);
     source=source.replace('outColor = vec4(color, uGroundCapture==1 ? coverage : uAlpha);',
-      'outColor=uOriginalExportMode==0?originalCoverMask:(uOriginalExportMode==1?vec4(renderGuideColor,1.):(uOriginalExportMode==2?vec4(renderGuideOpen,1.):vec4(renderGuideClosed,1.)));');
-    if(!source.includes('outColor=uOriginalExportMode==0?originalCoverMask:'))throw Error('Original cover output hook changed');
+      'outColor=uOriginalExportMode==0?vec4(originalCoverMask.rgb,1.):(uOriginalExportMode==4?vec4(vec3(originalCoverMask.a),1.):(uOriginalExportMode==1?vec4(renderGuideColor,1.):(uOriginalExportMode==2?vec4(renderGuideOpen,1.):vec4(renderGuideClosed,1.))));');
+    if(!source.includes('outColor=uOriginalExportMode==0?vec4(originalCoverMask.rgb,1.)'))throw Error('Original cover output hook changed');
    }
    original.call(this,shader,source);
   };
@@ -44,16 +44,18 @@ try{
    gpu.setLook({...look,style:'render3d',climate:{temperature:meta.temperature,precipitation:meta.precipitation},globalMin:meta.min,globalMax:meta.max,contours:false,refine:false,refinement3d:'source',layers:{...look.layers,water:false},frame:false});
    gpu.setView({cx:20000,cy:20000,scale:4096/40000},4096,4096);
    const images=[];
-   for(let mode=0;mode<4;mode++){
+   for(let mode=0;mode<5;mode++){
     gpu.gl.useProgram(gpu.terrain);gpu.gl.uniform1i(gpu.gl.getUniformLocation(gpu.terrain,'uOriginalExportMode'),mode);
     const canvas=gpu.captureExact2D({width:4096,height:4096,view:{cx:20000,cy:20000,scale:4096/40000}}).canvas;
     images.push(canvas.toDataURL('image/png').split(',')[1]);
    }
    const source=window.originalCoverSource;gpu.dispose();return {images,source};
   },{base64:raw.toString('base64'),meta,look});
-  const names=['cover','color','open','closed'];const files=[];
+  // Canvas PNG exports unpremultiply RGB by alpha. A data mask must stay
+  // opaque; exporting outcrop separately avoids zeroing/clipping the RGB masks.
+  const names=['cover','color','open','closed','outcrop'];const files=[];
   for(let i=0;i<names.length;i++){const file='original-'+names[i]+'.png';const bytes=Buffer.from(result.images[i],'base64');await writeFile(path.join(dir,file),bytes);files.push({role:names[i],file,sha256:sha(bytes)});}
-  await writeFile(path.join(dir,'original-cover.json'),JSON.stringify({version:1,profile:'original-render3d',sourceHead:'dff14f387a6d1edc89d93737f861ee91e022a5aa',shaderSha256:sha(result.source),heightSha256:meta.heightSha256,n:4096,climate:[meta.temperature,meta.precipitation],seed:look.seed,files},null,2));
+  await writeFile(path.join(dir,'original-cover.json'),JSON.stringify({version:2,profile:'original-render3d',maskChannels:['herbs','sand-deposits','woods','opaque'],sourceHead:'dff14f387a6d1edc89d93737f861ee91e022a5aa',shaderSha256:sha(result.source),heightSha256:meta.heightSha256,n:4096,climate:[meta.temperature,meta.precipitation],seed:look.seed,files},null,2));
   console.log('ORIGINAL COVER '+entry.id);
  }
 }finally{await browser.close();}

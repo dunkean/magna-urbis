@@ -69,6 +69,7 @@ var ground_states:=["mean","dry","wet","fresh-snow","rough-snow","compact-snow",
 var original_cover_meta:Dictionary={}
 var original_cover_loaded_dir:=""
 var original_cover_image:Image
+var forest_placement_image:Image
 var grid_warp:=0.0
 var grid_focus:=Vector2(20000,20000)
 var detail_amount:=0.0
@@ -288,21 +289,21 @@ func load_original_cover()->void:
 	material.set_shader_parameter("original_cover_enabled",not original_cover_meta.is_empty())
 	if original_cover_meta.is_empty():return
 	if original_cover_loaded_dir==tile_dir:return
+	forest_placement_image=load_local_png(tile_dir.path_join("forest-placement.png"))
+	if forest_placement_image==null:push_error("Placement forestier absent : lancer forest_placement.py");return
+	forest_placement_image.generate_mipmaps()
+	material.set_shader_parameter("forest_placement",ImageTexture.create_from_image(forest_placement_image))
 	for role in ["cover","color","open","closed"]:
 		var image=load_local_png(tile_dir.path_join("original-"+role+".png"));image.generate_mipmaps()
 		if role=="cover":original_cover_image=image
 		material.set_shader_parameter("original_"+role,ImageTexture.create_from_image(image))
 	var forest:Dictionary=JSON.parse_string(FileAccess.get_file_as_string(tile_dir.path_join("original-forest.json")))
-	var image=load_local_png(tile_dir.path_join("original-forest-field.png"));image.generate_mipmaps()
+	var image=load_local_png(tile_dir.path_join("forest-placed-field.png"));image.generate_mipmaps()
 	material.set_shader_parameter("uForestField",ImageTexture.create_from_image(image))
 	material.set_shader_parameter("uMaterialClimate",Vector2(current_meta.temperature,current_meta.precipitation))
 	material.set_shader_parameter("uMaterialSeed",int(forest.seed))
-	var has_bank=false
-	for entry in forest.files:
-		if entry.file=="original-forest-bank.png":has_bank=true
-	material.set_shader_parameter("uHasForestBank",1 if has_bank else 0)
-	if has_bank:
-		image=load_local_png(tile_dir.path_join("original-forest-bank.png"));image.generate_mipmaps();material.set_shader_parameter("uForestBank",ImageTexture.create_from_image(image))
+	# Isolated gallery/shrub candidates must not bypass the forest biome gate.
+	material.set_shader_parameter("uHasForestBank",0)
 	material.set_shader_parameter("uForestBankDensity",float(forest.bankDensity))
 	material.set_shader_parameter("original_light",sun.global_basis.z.normalized())
 	var water_image=load_local_png(tile_dir.path_join("surface-water-detail.png"))
@@ -337,10 +338,16 @@ func ground_at(x:float,z:float)->String:
 	var support=ground_library.describe(best_id)
 	if ground_view==3:return "Support minéral · "+support
 	var cover_shares=cover_weights_image.get_pixelv(p)
-	if original_cover_image!=null and not original_cover_meta.is_empty():
-		var cover=sample_map(original_cover_image,x,z)
-		if cover.b>.025:support="Végétation Render3D original · forêt / sous-bois\nSupport : "+support
-		elif maxf(cover.r,cover.g)>.05:support=("Sable / dépôts Render original" if cover.g>cover.r else "Couvert herbacé Render original")+"\nSupport : "+support
+	if forest_placement_image!=null:
+		var policy=sample_map(forest_placement_image,x,z)
+		var matrix=shares.a+extra_shares.r+extra_shares.g
+		var amount=cover_shares.a*policy.g*matrix
+		if amount>.05:
+			var cover_ids=cover_ids_image.get_pixelv(p);var context=Vector3(cover_shares.r*policy.r,cover_shares.g,cover_shares.b);var best=0
+			for j in range(1,3):
+				if context[j]>context[best]:best=j
+			support=("Forêt · " if policy.r>.5 else "Couvert bas · ")+ground_library.describe(roundi(cover_ids[best]*255))+" · %d %%\nSupport : "%roundi(amount*100)+support
+		elif policy.b>.3:support="Sol découvert / affleurement · "+support
 	elif cover_shares.a>.05:
 		var cover_ids=cover_ids_image.get_pixelv(p);var cover_best=0
 		for j in range(1,3):

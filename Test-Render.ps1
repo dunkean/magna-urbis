@@ -27,6 +27,7 @@ if (!$Scene) {
     $groundCompilerHash = (Get-FileHash -LiteralPath (Join-Path $project 'tools/surface_context.py') -Algorithm SHA256).Hash.ToLowerInvariant()
     $surfaceCompilerHash = (Get-FileHash -LiteralPath (Join-Path $project 'tools/ground_surface.py') -Algorithm SHA256).Hash.ToLowerInvariant()
     $waterCompilerHash = (Get-FileHash -LiteralPath (Join-Path $project 'tools/prepare_surface_water.py') -Algorithm SHA256).Hash.ToLowerInvariant()
+    $placementCompilerHash = (Get-FileHash -LiteralPath (Join-Path $project 'tools/forest_placement.py') -Algorithm SHA256).Hash.ToLowerInvariant()
     foreach ($wave in @('ripples.png','capillary.png','water.json')) { $null = Require-File (Join-Path $project "materials/water/$wave") }
     $textureCatalogue = Require-File (Join-Path $project 'ground_texture_catalogue.json')
     $textureCatalogueHash = (Get-FileHash -LiteralPath $textureCatalogue -Algorithm SHA256).Hash.ToLowerInvariant()
@@ -73,8 +74,13 @@ if (!$Scene) {
             $coverPath = Require-File (Join-Path $tileDirectory "original-$role.json")
             $coverMeta = Get-Content -LiteralPath $coverPath -Raw -Encoding UTF8 | ConvertFrom-Json
             if ($coverMeta.profile -ne 'original-render3d' -or $coverMeta.sourceHead -ne 'dff14f387a6d1edc89d93737f861ee91e022a5aa' -or $coverMeta.heightSha256 -ne $meta.heightSha256) { throw "Couvert Render3D original absent ou périmé : $metaPath" }
+            if ($role -eq 'cover' -and $coverMeta.version -ne 2) { throw "Réexporter les masques opaques avec export_original_cover.mjs : $metaPath" }
             foreach ($file in $coverMeta.files) { $null = Require-File (Join-Path $tileDirectory $file.file) }
         }
+        $placementPath = Require-File (Join-Path $tileDirectory 'forest-placement.json')
+        $placement = Get-Content -LiteralPath $placementPath -Raw -Encoding UTF8 | ConvertFrom-Json
+        if ($placement.generatorSha256 -ne $placementCompilerHash -or $placement.heightSha256 -ne $meta.heightSha256 -or $placement.groundSurfaceSha256 -ne $meta.groundSurface.grids.sha256) { throw "Placement forestier périmé : $metaPath. Lancer python godot-render/tools/forest_placement.py." }
+        foreach ($file in $placement.files) { $null = Require-File (Join-Path $tileDirectory $file.file) }
         $waterDetailPath = Require-File (Join-Path $tileDirectory 'surface-water-detail.json')
         $waterDetail = Get-Content -LiteralPath $waterDetailPath -Raw -Encoding UTF8 | ConvertFrom-Json
         if ($waterDetail.heightSha256 -ne $meta.heightSha256 -or $waterDetail.generatorSha256 -ne $waterCompilerHash) { throw "Textures eau périmées : $metaPath. Lancer python godot-render/tools/prepare_surface_water.py." }

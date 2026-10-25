@@ -44,6 +44,7 @@ func run()->void:
 	metrics.surfaceDifference=difference(cover,support)
 	check(metrics.surfaceDifference>.001,"Surface cover visibly overlays mineral support")
 	app.select_ground_view(1);app.material.set_shader_parameter("ground_auto_snow",false)
+	app.material.set_shader_parameter("ground_macro_reference",false)
 	var shadows=await capture("shadows-on")
 	app.sun.shadow_enabled=false;var unshadowed=await capture("shadows-off")
 	metrics.castShadowDifference=difference(shadows,unshadowed)

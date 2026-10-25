@@ -368,24 +368,48 @@ les points hors tuile et la variation de la règle avec le zoom.
 
 ## Couvert visible, détail rapproché et eau
 
-La vue **Sol texturé** applique maintenant le couvert du **Render3D original**,
-référence `dff14f387a6d1edc89d93737f861ee91e022a5aa`. Les masques d'herbes,
-de sable/dépôts et de bois, ainsi que les guides de couleur ouvert/fermé,
-proviennent de son calcul GPU. Ils remplacent la couverture heuristique précédente
-dans cette vue. Le support PBR reste visible là où le couvert le permet ;
-**Support minéral** permet toujours d'inspecter le substrat seul.
+La vue **Sol texturé** conserve la vue Render comme référence d'ensemble au
+dézoom. Entre 4 et 24 mètres par pixel, le matériau rejoint progressivement
+ses couleurs et son ombrage ; la teinte des affleurements peut conserver celle
+du matériau minéral choisi. En rapprochant la caméra, les textures, normales,
+ombres Godot et objets forestiers prennent le relais. Les photographies des
+herbes/mousses sont recentrées autour du guide ouvert du Render : leurs détails
+restent visibles avec une couleur cohérente entre échelles.
+En forêt, le guide de canopée est conservé tant que les houppiers ne sont pas
+résolus, puis laisse progressivement voir le sol PBR entre leurs silhouettes.
+
+Le sol demeure texturé dans toutes les zones. Litière, herbe et mousse ne
+consomment que la part de **matrice** N1 : les budgets de roche et de fragments
+restent entiers. Les crêtes/sommets à 150 m, affleurements importants et pentes
+très fortes restent dégagés. **Support minéral** permet d'inspecter le substrat
+sans végétation basse. Les plages et dépôts sableux gardent leurs textures de sable.
+
+Les masques d'herbes, sable et bois proviennent du **Render3D original**,
+référence `dff14f387a6d1edc89d93737f861ee91e022a5aa`. Leur export est opaque :
+l'affleurement est exporté séparément dans `original-outcrop.png`. Un canal de
+données ne doit pas servir d'alpha de transparence lors de `canvas.toDataURL`,
+qui modifie/perd les autres canaux par prémultiplication.
 
 La végétation reprend `buildForestField`, les paramètres historiques
-`density=1`, `clearings=.45`, la graine `1905266606`, les galeries riveraines et
-le GLSL des houppiers analytiques de cette référence. Aucun profil de clairières
-V2, aucune nouvelle distribution d'arbres. L'adaptation Godot ne modifie que
+`density=1`, `clearings=.45`, la graine `1905266606` et le GLSL des houppiers
+analytiques de cette référence. `forest_placement.py` filtre maintenant le
+canal de densité du champ retenu, en conservant hauteur, type et tonalité.
+Le filtre associe le guide de bois à une densité et une hauteur suffisantes,
+au climat et au potentiel forestier ; il exclut eau, plages, crêtes et roche
+exposée, avec une marge de transition mesurée en mètres. Un faible potentiel
+d'arbres ne suffit plus à transformer une prairie en forêt. Les galeries
+automatiques sont désactivées pour empêcher des arbres isolés de contourner
+ce filtre dans le désert ou sur une plage. La végétation basse des prairies,
+steppes et déserts est portée par les textures, sans houppiers miniatures.
+Il s'agit d'une politique d'apparence déduite des couches, pas d'un inventaire
+écologique observé. Aucun profil V2 n'est utilisé. L'adaptation du GLSL ne modifie que
 les signatures de fonctions, les conversions de types et le cache de neuf
 gradients, aplati car Godot ne permet pas de tableau dans une structure.
-L'éclairage de la vue reste celui de Godot avec les ombres du relief ; il ne
-constitue pas une copie pixel à pixel du framebuffer WebGL original.
+À distance rapprochée, l'éclairage est celui de Godot avec les ombres du relief.
 Les houppiers restent analytiques dans le matériau, comme dans la référence,
 sans instances d'arbres ajoutées. Le bouton des variantes change la palette
-PBR du monde ; une forêt opaque conserve sa graine et ses couleurs originales.
+PBR du monde, y compris le sol entre les arbres ; les houppiers conservent leur
+graine et leurs couleurs originales.
 
 Une octave supplémentaire de relief, de longueur de cellule **9,5 m**, apparaît
 progressivement entre 4 km et 300 m de largeur de vue. Son amplitude maximale
@@ -407,7 +431,9 @@ profondeur retenue pour lacs/mer, d'une profondeur optique indicative de 1,5 m
 pour les rivières, et de la distance aux berges. Normales, rugosité, reflet
 spéculaire, contribution de ciel et écume côtière remplacent l'aplat émissif.
 Il ne s'agit pas d'une simulation de vagues ni de reflets de scène tracés.
-Les masques d'eau, les niveaux et les presets de glace sont conservés.
+Les niveaux et les presets de glace sont conservés. Les sources vectorielles
+utilisent maintenant un départ fin qui rejoint progressivement la largeur
+aval ; voir [Départs des rivières](RIVER_HEADWATERS.md).
 
 Reconstruction locale, après les étapes N1–N4 et la bibliothèque PBR :
 
@@ -415,6 +441,7 @@ Reconstruction locale, après les étapes N1–N4 et la bibliothèque PBR :
 # Référence originale et serveur Vite local sur 127.0.0.1:5203 requis.
 node godot-render/tools/prepare_original_cover.mjs
 node godot-render/tools/export_original_cover.mjs
+python godot-render/tools/forest_placement.py
 python godot-render/tools/prepare_surface_water.py
 python godot-render/tools/validate_surface_finish.py
 ./Test-Render.ps1 -Check
@@ -432,3 +459,10 @@ avec/sans détail géométrique et avec/sans vaguelettes. Il vérifie la référ
 originale, la stabilité des houppiers, la résolution du maillage, la stabilité
 spatiale du relief, le picking rapproché, l'immobilité des niveaux d'eau et
 l'advection des textures. Les rapports sont dans `godot-render/evidence/`.
+
+`res://tests/cover_policy_test.gd` compare les vues Render/texturée au dézoom,
+vérifie les textures des terrains ouverts et des affleurements, l'absence de
+houppiers sur prairie/désert, puis leur présence en forêt. `test_forest_placement.py`
+couvre les exclusions de plage, crête, falaise, eau et climat aride. Le validateur
+vérifie ces exclusions et les hashes des placements sur les 42 tuiles. Après
+une reconstruction des N1–N4, relancer `forest_placement.py`.
