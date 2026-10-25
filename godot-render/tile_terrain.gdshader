@@ -12,9 +12,12 @@ uniform int ground_state=0;
 uniform bool ground_stochastic=true;
 uniform bool ground_auto_snow=true;
 uniform bool original_cover_enabled=true;
+uniform sampler2D montane_forest : filter_linear_mipmap, repeat_disable;
 uniform bool ground_macro_reference=true;
 uniform bool terrain_height_probe=false;
 uniform bool terrain_normal_probe=false;
+uniform bool forest_coverage_probe=false;
+uniform bool water_domain_probe=false;
 uniform sampler2D forest_placement : filter_linear_mipmap, repeat_disable;
 uniform sampler2D original_height_map : filter_nearest, repeat_disable;
 uniform sampler2D original_cover : filter_linear_mipmap, repeat_disable;
@@ -57,6 +60,22 @@ float forestWaterCoverage(vec2 world){vec2 uv=world/40000.0;vec4 water=textureLo
 #include "res://shaders/terrain_detail.gdshaderinc"
 #include "res://shaders/meso_material.gdshaderinc"
 #include "res://shaders/surface_water.gdshaderinc"
+// Complement uses the original crown palette, never a rocky/snowy closed guide.
+vec3 montanePalette(){
+ float humid=uMaterialClimate.y/max(20.0*uMaterialClimate.x+280.0,120.0);
+ float dry=1.0-groundSmooth(.8,2.0,humid);
+ return mix(vec3(.15,.25,.16),vec3(.20,.24,.15),dry);
+}
+float montaneResolvedReveal(vec2 world,float footprint){
+ // Match the pinned forest's statistical-to-crown blend. Add the expected
+ // canopy only to its unresolved reference branch, never to openGround.
+ float reveal=forestReveal(footprint),cell=uForestRect.z/float(textureSize(uForestField,0).x);
+ float lod=max(log2(footprint/cell),0.0);vec4 f=forestField(world,lod+2.0*(1.0-reveal));
+ float dry=1.0-groundSmooth(.8,2.0,uMaterialClimate.y/max(20.0*uMaterialClimate.x+280.0,120.0));
+ float height=f.g*50.0,radius=mix((.24*height+1.0)*(1.0+.45*dry),.14*height+.9,f.b);
+ float crown=groundSmooth(.9,2.0,radius/footprint);
+ return reveal*mix(.06,1.0,crown*crown);
+}
 void vertex(){
  UV=vec2(gridCoordinate(UV.x,0),gridCoordinate(UV.y,1))/40000.0;
  VERTEX.xz=UV*40000.0-20000.0;
@@ -232,13 +251,18 @@ void fragment(){
      vec4 cover=texture(original_cover,UV);
      vec3 open=texture(original_open,UV).rgb;
      vec3 closed=texture(original_closed,UV).rgb;
+     float added=texture(montane_forest,UV).r;
+     float total=texture(uForestField,UV).r;
+     closed=mix(closed,montanePalette(),clamp(added/max(total,.00001),0.0,1.0));
      float footprint=max(max(length(dx),length(dy)),.02);
      // The historical tree model sits above the actual PBR soil. Its open
      // guide cancels itself in applyForest's colour ratio, retaining PBR detail
      // between crowns instead of replacing the whole cell with a flat colour.
      float unresolved_canopy=smoothstep(.35,3.0,footprint)*texture(forest_placement,UV).r;
      GroundMaterial legacy;legacy.albedo=mix(color,groundToLinear(texture(original_color,UV).rgb),unresolved_canopy);legacy.normal=groundWorldNormal(micro,meso_slope);legacy.roughness=roughness;legacy.occlusion=1.0;
+     vec3 forest_reference=legacy.albedo;
      applyForest(legacy,ground_position.xz,footprint,original_light,open,open,closed,cover.b,resolved_tree_cover);
+     legacy.albedo+=(1.0-montaneResolvedReveal(ground_position.xz,footprint))*added*(groundToLinear(montanePalette())-forest_reference);
      vec4 field=forestField(ground_position.xz,max(log2(footprint/(uForestRect.z/float(textureSize(uForestField,0).x))),0.0));
      original_forest_scope=groundSmooth(0.,.015,max(max(field.r,forestField(ground_position.xz,1.0).r),resolved_tree_cover));
      color=mix(color,legacy.albedo,original_forest_scope);
@@ -246,6 +270,9 @@ void fragment(){
      roughness=mix(roughness,legacy.roughness,original_forest_scope);
    }
    vec4 attrs=texture(ground_attributes,UV);vec4 water=texture(ground_water,UV);
+   float pixel_footprint=sqrt(dot(dx,dx)+dot(dy,dy));
+   vec2 shore=shoreDistance(ground_position.xz,pixel_footprint);
+   if(water_shore_smooth&&water_shore_ready)water.bg=standingWater(shore,pixel_footprint);
    float wetness=clamp(attrs.r+(ground_state==1?-.28:(ground_state==2?.24:0.0)),0.0,1.0);
    float permanent=max(water.g,water.b);float river=texture(river_footprint,UV).a;
    float water_mask=max(permanent,river);float snow=0.0;
@@ -276,7 +303,8 @@ void fragment(){
    vec3 world_normal=groundWorldNormal(micro,meso_slope);
    world_normal=normalize(mix(world_normal,original_forest_normal,original_forest_scope*(1.0-snow*(1.0-resolved_tree_cover))));
    vec3 water_color;vec3 water_normal;float water_roughness;
-   waterMaterial(ground_position.xz,dx,dy,water,normalize(CAMERA_POSITION_WORLD-ground_position),water_color,water_normal,water_roughness);
+   water_color=color;water_normal=world_normal;water_roughness=roughness;
+   if(water_mask>.0001)waterMaterial(ground_position.xz,dx,dy,water,shore,normalize(CAMERA_POSITION_WORLD-ground_position),water_color,water_normal,water_roughness);
    world_normal=normalize(mix(world_normal,water_normal,water_mask));
    NORMAL=normalize((VIEW_MATRIX*vec4(world_normal,0)).xyz);
    float overlay=info.a*info_opacity;
@@ -288,10 +316,21 @@ void fragment(){
      float rock=texture(forest_placement,UV).b;
      vec3 open=groundToLinear(texture(original_open,UV).rgb);
      vec3 reference=original*mix(vec3(1),clamp(color/max(open,vec3(.02)),vec3(.65),vec3(1.5)),smoothstep(.25,.75,rock)*(1.0-water_mask));
+     if(water_shore_smooth&&water_shore_ready){
+       float shore_band=(1.0-smoothstep(60.0,120.0,min(abs(shore.x),abs(shore.y))))*(1.0-river);
+       if(shore_band>0.0){
+         vec3 dry=texture(water_reference_dry,UV).rgb*clamp(reference/max(original,vec3(.001)),vec3(.65),vec3(1.5));
+         vec3 wet=texture(water_reference_wet,UV).rgb;
+         reference=mix(reference,mix(dry,wet,max(water.g,water.b)),shore_band);
+       }
+     }
+     if(original_cover_enabled)reference=mix(reference,groundToLinear(montanePalette()),texture(montane_forest,UV).r*(1.0-water_mask));
      ALBEDO*=1.0-macro;SPECULAR*=1.0-macro;
      EMISSION+=reference*macro*(1.0-overlay);
    }
    if(ground_view==2){EMISSION=mix(mix(color,water_color,water_mask),info.rgb,overlay);ALBEDO=vec3(0);}
+   if(forest_coverage_probe){ALBEDO=vec3(0);EMISSION=groundToLinear(vec3(resolved_tree_cover));SPECULAR=0.0;AO=1.0;}
+   if(water_domain_probe){ALBEDO=vec3(0);EMISSION=groundToLinear(vec3(water.b,water.g,river));SPECULAR=0.0;AO=1.0;}
  }else{EMISSION=mix(original,info.rgb,info.a*info_opacity);}
  }
 }

@@ -6,7 +6,7 @@ struct MesoSurface{
 };
 vec3 mesoSurfaceBand(vec2 world,float scale,uint salt,float amplitude,vec2 gradient,float pixel_spacing){
  vec2 pf=mesoBandFilter(scale,pixel_spacing*(2.0/3.0));if(pf.x<=0.0)return vec3(0);
- vec3 n=mesoNoise(world,scale,terrain_detail_seed+salt);
+ vec3 n=mesoSupportNoise(world,scale,terrain_detail_seed+salt);
  vec2 g=amplitude*n.yz+n.x*gradient;
  return vec3(n.x*pf.x,pf.x*g);
 }
@@ -46,7 +46,14 @@ MesoSurface mesoSurface(vec2 world,float footprint,bool covered){
  vec3 d=mesoSurfaceBand(world,9.5,271u,c.value.g*.72,fg*.72,footprint);
  vec3 e=mesoSurfaceBand(world,3.75,577u,c.value.g*.28,fg*.28,footprint);
  m.physical_slope=a.yz+b.yz+d.yz+e.yz;
- m.signal=.4*(.68*a.x+.32*b.x)+.6*(.72*d.x+.28*e.x);
+ // Medium-scale mineral response follows the same shapes as displacement;
+ // micro photographs keep their own detail without a second unrelated mask.
+ m.signal=.65*(.68*a.x+.32*b.x)+.35*(.72*d.x+.28*e.x);
+ if(meso_profiles_enabled){
+   MesoContext profile=mesoProfiles(world);float mineral=profile.value.r+profile.value.g+profile.value.b;
+   m.signal=mix(m.signal,.35*a.x+.65*b.x,mineral*.65);
+   m.unresolved_roughness=.025*mineral*b.x;
+ }
  float f6=mesoBandFilter(6.0,footprint*(2.0/3.0)).x,f2=mesoBandFilter(1.75,footprint*(2.0/3.0)).x;
  vec3 tufts=vec3(0),grain=vec3(0);
  if(f6>0.0)tufts=mesoNoise(world,6.0,terrain_detail_seed+991u)*f6;
@@ -60,7 +67,7 @@ MesoSurface mesoSurface(vec2 world,float footprint,bool covered){
  m.grain=.65*tufts.x+.35*grain.x;
  m.cavity=clamp(max(-tufts.x,0.0)*c.value.b,0.0,1.0);
  m.cover_mod=clamp(.86+.33*tufts.x+.13*m.signal,.45,1.0);
- m.unresolved_roughness=.018*c.value.a*(1.0-f6)+.025*c.value.b*(1.0-f2);
+ m.unresolved_roughness+=.018*c.value.a*(1.0-f6)+.025*c.value.b*(1.0-f2);
  // Gaussian cuts are narrower than their 3m carrier; fade by crack width,
  // not carrier spacing, before they can become subpixel lines.
  float fracture_filter=mesoBandFilter(.75,footprint*(2.0/3.0)).x;

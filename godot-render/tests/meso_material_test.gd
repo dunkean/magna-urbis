@@ -30,7 +30,7 @@ func run()->void:
 	var probe=SubViewport.new();probe.size=Vector2i(32,16);probe.use_hdr_2d=true;probe.render_target_update_mode=SubViewport.UPDATE_ALWAYS;root.add_child(probe)
 	var rect=ColorRect.new();rect.size=probe.size;probe.add_child(rect);var m=ShaderMaterial.new();m.shader=load("res://tests/meso_material_probe.gdshader");rect.material=m
 	app.view_width=1800;app.focus=Vector3(21000,0,20000);app.update_camera()
-	for key in ["terrain_grid_warp","terrain_grid_scale","terrain_grid_domain","terrain_grid_focus","terrain_detail_seed","meso_context","meso_ready","ground_weights","ground_structure"]:m.set_shader_parameter(key,app.material.get_shader_parameter(key))
+	for key in ["terrain_grid_warp","terrain_grid_scale","terrain_grid_domain","terrain_grid_focus","terrain_detail_seed","meso_context","meso_profiles","meso_structure","meso_ready","ground_weights","ground_structure"]:m.set_shader_parameter(key,app.material.get_shader_parameter(key))
 	m.set_shader_parameter("terrain_detail_amount",1.0)
 	var max_error=0.0
 	for footprint in [.1,.75,2.0,8.0]:

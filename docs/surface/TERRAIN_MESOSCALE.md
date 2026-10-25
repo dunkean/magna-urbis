@@ -21,6 +21,11 @@ Le gain des gradients conserve l'enveloppe [-1,1]. Les coordonnées ne
 dépendent pas de la caméra. Les gradients incluent les variations bilinéaires
 des amplitudes et les dérivées du filtrage géométrique.
 
+La bande de 27 m reçoit désormais des profils de roche massive, stratifiée,
+fragments et support tendre, mélangés selon la géologie et l'altération. Une
+enveloppe de présence de 150 m varie doucement l'amplitude. Leurs dérivées et
+la limite ±3 m sont conservées. Voir [Profils, conifères et littoral](SUPPORT_SHORES_REFINEMENT.md).
+
 Le maillage reste un unique plan de 1334² cellules, avec une redistribution
 globale en sinus hyperbolique autour du point observé. La transformation et
 son inverse sont continues, y compris lorsque le focus est excentré ; les
@@ -92,10 +97,12 @@ python godot-render/tools/validate_mesoscale.py
 ```
 
 `--tile mountains--temperate` limite la préparation ; `--workers 2` est le
-défaut. Les 42 caches occupent 1 195 861 632 octets sur disque. Seul le contexte
-de la tuile active est conservé : 28 472 896 octets CPU et la texture GPU
-correspondante. Le chargement vérifie format, taille, hash du générateur, DEM,
-N1–N4, placement, rivière et données. Un cache absent, malformé ou périmé est
+défaut. Les 42 contextes flottants occupent 1 195 861 632 octets sur disque,
+auxquels s'ajoutent les profils PNG. Seule la tuile active est conservée :
+28 472 896 octets CPU de contexte, 7 118 224 octets de profils et la structure
+RGB native, avec leurs textures GPU. Le chargement vérifie format, taille,
+hash du générateur, DEM, géologie, structure, N1–N4, placement, rivière et données.
+Un cache absent, malformé ou périmé est
 vidé et désactivé ; il ne peut pas réutiliser le contexte de la tuile précédente.
 
 Les tests GPU se lancent avec Godot et `--script res://tests/<nom>.gd` :
@@ -114,7 +121,7 @@ isole le PBR en désactivant explicitement la nouvelle matière procédurale.
 
 ## Mesures de cette itération
 
-La baseline est le commit `59db3591dd0e469211553813ce144bee4a37b31d`.
+La baseline de la comparaison courante est le commit `338efaf428ccd1f3aa6724c5749bf4f2f7fbb8ab`.
 Le protocole GPU est ABBA, 30 frames de chauffe puis 45 mesures par cas,
 avec mêmes caméra, résolution, graines et hashes de palettes. Les temps
 mesurés sont ceux du viewport GPU, pas une latence totale de l'application.
@@ -126,31 +133,39 @@ godot --path godot-render --audio-driver Dummy --script res://tests/meso_benchma
 godot --path godot-render --audio-driver Dummy --script res://tests/meso_picking_benchmark.gd
 ```
 
-Sur RTX 4090 à 1280×800, code final avec les bornes de culling resserrées.
+Sur RTX 4090 à 1280×800, profils, conifères et eaux de cette itération comparés
+au renderer intermédiaire `338efaf`. Les hashes des palettes sont identiques
+entre les quatre passages ; les niveaux et pas de grille sont communs.
 Chaque valeur est la moyenne des médianes des deux passages ABBA :
 
 | Cas | GPU baseline, médiane | GPU intermédiaire, médiane |
 | --- | ---: | ---: |
-| Prairie, vue entière | 1,78 ms | 1,69 ms |
-| Sable, vue entière | 2,27 ms | 1,98 ms |
-| Roche, vue entière | 1,83 ms | 2,49 ms |
-| Prairie, largeur 1,8 km | 2,21 ms | 4,40 ms |
-| Sable, largeur 1,8 km | 2,10 ms | 4,34 ms |
-| Roche, largeur 1,8 km | 4,33 ms | 8,83 ms |
-| Forêt, largeur 1,8 km | 5,00 ms | 9,33 ms |
-| Roche, largeur 160 m | 2,12 ms | 3,57 ms |
+| Prairie, vue entière | 1,68 ms | 1,83 ms |
+| Sable, vue entière | 3,75 ms | 1,64 ms |
+| Roche, vue entière | 1,73 ms | 1,88 ms |
+| Prairie, largeur 1,8 km | 4,41 ms | 5,07 ms |
+| Sable, largeur 1,8 km | 4,37 ms | 4,83 ms |
+| Roche, largeur 1,8 km | 8,18 ms | 9,40 ms |
+| Forêt, largeur 1,8 km | 8,37 ms | 9,93 ms |
+| Eau, largeur 1,8 km | 4,01 ms | 4,49 ms |
+| Prairie, largeur 160 m | 3,70 ms | 4,28 ms |
+| Sable, largeur 160 m | 3,41 ms | 3,89 ms |
+| Roche, largeur 160 m | 3,58 ms | 4,07 ms |
+| Eau, largeur 160 m | 3,14 ms | 3,31 ms |
 
-La vue roche entière varie de 1,74 à 3,23 ms entre les deux passages ; la
-moyenne conserve cette variation. Au zoom moyen, le coût GPU augmente
-d'environ ×2 dans ces scènes. Le nombre de triangles reste constant, mais le
-calcul des sommets et de la matière est plus coûteux.
+Au zoom moyen, le surcoût de cette itération est de 0,46–1,56 ms dans ces
+scènes, soit environ 11–19 %. Le nombre de triangles reste constant. La mesure
+baseline sable en vue entière est très variable ; sa moyenne élevée ne doit
+pas être interprétée comme un gain général de performance. Les détails par
+passage, P95 et palettes sont dans `evidence/meso-benchmark.json`.
 
 La lecture d'altitude est chronométrée séparément, cache des sommets vidé
-avant chaque requête. En perspective à 1,8 km, la traversée par blocs ramène
-la médiane mesurée d'environ 10,2 ms à 1,0 ms, contre 1,2 ms pour la baseline.
-Le test proche à 160 m reste plus coûteux : environ 3,4 ms de médiane et
-6,6 ms au maximum sur les cinq rayons de contrôle. Ces chiffres concernent
-ce matériel et ces scènes ; ils ne prédisent pas le coût à toute résolution.
+avant chacun des cinq rayons. En perspective à 1,8 km : 1,98 ms de médiane
+(2,80 ms max), contre 1,77 ms (2,59 ms max) dans la baseline. À 160 m, les
+requêtes froides restent plus coûteuses : 7,77 ms de médiane et 14,52 ms max,
+contre 5,91 / 12,26 ms. Les bornes hiérarchiques peuvent être réutilisées.
+Ces chiffres concernent ce matériel et ces scènes ; ils ne prédisent pas le
+coût à toute résolution ni les performances sur une autre machine.
 
 La lecture GPU des triangles diffère du picking de moins de 2 mm sur les
 24 contrôles top/perspective. Les champs HDR diffèrent de moins de 4 mm

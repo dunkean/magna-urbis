@@ -6,7 +6,7 @@ func _initialize()->void:call_deferred("run")
 func check(ok:bool,message:String)->void:
 	if not ok:failures.append(message);push_error(message)
 func configure_probe(m:ShaderMaterial)->void:
-	for key in ["terrain_grid_warp","terrain_grid_scale","terrain_grid_domain","terrain_grid_focus","terrain_detail_seed","meso_context","meso_ready"]:m.set_shader_parameter(key,app.material.get_shader_parameter(key))
+	for key in ["terrain_grid_warp","terrain_grid_scale","terrain_grid_domain","terrain_grid_focus","terrain_detail_seed","meso_context","meso_profiles","meso_structure","meso_ready"]:m.set_shader_parameter(key,app.material.get_shader_parameter(key))
 	m.set_shader_parameter("terrain_detail_amount",1.0)
 func run()->void:
 	root.size=Vector2i(1280,800);DirAccess.make_dir_recursive_absolute("res://evidence")

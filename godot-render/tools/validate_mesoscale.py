@@ -12,6 +12,10 @@ def main():
         assert m['sources']['generator']==sha(ROOT/'tools/prepare_mesoscale.py')
         assert m['sources']['height']==meta['heightSha256']
         assert m['sources']['surface']==meta['groundSurface']['grids']['sha256']
+        assert m['sources']['ground']==meta['ground']['grids']['sha256']
+        assert m['sources']['structure']==sha(directory/'surface-structure.png')
+        profile=directory/m['profiles']['file'];assert sha(profile)==m['profiles']['sha256']
+        p=np.asarray(Image.open(profile));assert p.shape==(n,n,4) and (p.astype(np.int16).sum(-1)==255).all()
         assert m['sources']['placement']==sha(directory/'forest-placement.png')
         assert m['sources']['river']==sha(directory/'surface-river-footprint.png')
         file=directory/m['file'];assert sha(file)==m['sha256'] and file.stat().st_size==n*n*16
@@ -29,6 +33,16 @@ def main():
         if len(yy):
             for channel in (0,1):
                 assert not map_coordinates(a[...,channel],[(yy+.5)*n/river.shape[0]-.5,(xx+.5)*n/river.shape[1]-.5],order=1,mode='nearest').any()
+        shore=directory/'surface-shoreline.png'
+        if shore.exists():
+            packed=np.asarray(Image.open(shore),dtype=np.int32)
+            for pair in (0,2):
+                coefficients=(packed[...,pair]*256+packed[...,pair+1]-32768)/32
+                yy,xx=np.where(np.abs(coefficients)<120)
+                for dy,dx in [(-.4,-.4),(0,0),(.4,.4),(-.4,.4),(.4,-.4)]:
+                    coords=[yy+dy,xx+dx];wet=map_coordinates(coefficients,coords,order=3,prefilter=False,mode='nearest')<-.05
+                    for channel in (0,1):
+                        assert not map_coordinates(a[...,channel],coords,order=1,mode='nearest')[wet].any(),entry['id']
         total+=file.stat().st_size
     print('PASS: 42 bounded contexts; native and subpixel river water remain exactly zero; bytes',total)
 if __name__=='__main__':main()

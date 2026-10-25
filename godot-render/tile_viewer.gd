@@ -295,8 +295,9 @@ func update_ground_surface()->void:
 	print(JSON.stringify({"event":"ground-view","view":ground_view,"state":ground_states[ground_state],"seed":ground_library.palette_seed,"types":ground_library.selected.size()}))
 
 func load_detail_context(directory:String,report_error:bool=true)->bool:
-	detail_context_ready=meso.load_context(directory,int(current_meta.n),{"height":current_meta.heightSha256,"surface":surface_meta.get("grids",{}).get("sha256","")})
+	detail_context_ready=meso.load_context(directory,int(current_meta.n),{"height":current_meta.heightSha256,"surface":surface_meta.get("grids",{}).get("sha256",""),"ground":current_meta.ground.grids.sha256})
 	material.set_shader_parameter("meso_context",meso.texture);material.set_shader_parameter("meso_ready",detail_context_ready)
+	material.set_shader_parameter("meso_profiles",meso.profile_texture);material.set_shader_parameter("meso_structure",meso.structure_texture)
 	if detail_context_ready:meso.seed=int(str(current_meta.seed).sha256_buffer().decode_u32(0))&0x7fffffff
 	elif report_error:push_error("Contexte méso absent ou périmé : lancer prepare_mesoscale.py")
 	material.set_shader_parameter("terrain_detail_seed",meso.seed)
@@ -317,6 +318,8 @@ func load_original_cover()->void:
 	var forest:Dictionary=JSON.parse_string(FileAccess.get_file_as_string(tile_dir.path_join("original-forest.json")))
 	var image=load_local_png(tile_dir.path_join("forest-placed-field.png"));image.generate_mipmaps()
 	material.set_shader_parameter("uForestField",ImageTexture.create_from_image(image))
+	var montane_image=load_local_png(tile_dir.path_join("montane-forest.png"));montane_image.generate_mipmaps()
+	material.set_shader_parameter("montane_forest",ImageTexture.create_from_image(montane_image))
 	material.set_shader_parameter("uMaterialClimate",Vector2(current_meta.temperature,current_meta.precipitation))
 	material.set_shader_parameter("uMaterialSeed",int(forest.seed))
 	# Isolated gallery/shrub candidates must not bypass the forest biome gate.
@@ -325,6 +328,15 @@ func load_original_cover()->void:
 	material.set_shader_parameter("original_light",sun.global_basis.z.normalized())
 	var water_image=load_local_png(tile_dir.path_join("surface-water-detail.png"))
 	if water_image!=null:material.set_shader_parameter("water_detail",ImageTexture.create_from_image(water_image))
+	var shore_image=load_local_png(tile_dir.path_join("surface-shoreline.png"))
+	material.set_shader_parameter("water_shoreline",ImageTexture.create_from_image(shore_image) if shore_image!=null else null)
+	var shore_ready=shore_image!=null
+	for role in ["dry","wet"]:
+		var reference=load_local_png(tile_dir.path_join("surface-shore-"+role+".png"))
+		if reference!=null:reference.generate_mipmaps()
+		else:shore_ready=false
+		material.set_shader_parameter("water_reference_"+role,ImageTexture.create_from_image(reference) if reference!=null else null)
+	material.set_shader_parameter("water_shore_ready",shore_ready)
 	original_cover_loaded_dir=tile_dir
 
 func randomize_ground_variants()->void:

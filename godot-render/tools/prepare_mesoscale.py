@@ -12,7 +12,7 @@ import json
 from pathlib import Path
 import numpy as np
 from PIL import Image
-from scipy.ndimage import binary_dilation, distance_transform_edt, maximum_filter
+from scipy.ndimage import binary_dilation, distance_transform_edt, maximum_filter, map_coordinates
 
 ROOT=Path(__file__).resolve().parents[1]
 def sha(file):return hashlib.sha256(file.read_bytes()).hexdigest()
@@ -42,20 +42,52 @@ def context(fields,placement,protected,cell):
     soil=fields['surfaceCover']*placement[...,1]*matrix
     return np.asarray(np.stack((coarse,fine,fragments,soil),-1),dtype='<f4')
 
+def support_profiles(g, f):
+    """Convex appearance profiles; soil/altered rock is the soft remainder."""
+    fresh=1-.65*f['alteration'];rock=f['exposedRock']
+    massive=rock*(g['bedrockGranite']+g['bedrockBasalt'])*fresh
+    bedded=rock*(g['bedrockLimestone']+g['bedrockSandstone'])*fresh
+    clastic=f['fragmentCover']*(1-.65*f['roundness'])*(.55+.45*g['colluvialPotential'])
+    total=massive+bedded+clastic
+    factor=np.maximum(total,1)
+    weights=np.stack((massive/factor,bedded/factor,clastic/factor,1-total/factor),-1)
+    # Largest remainder keeps an exact byte simplex, including profile borders.
+    scaled=np.clip(weights,0,1)*255;quant=np.floor(scaled).astype(np.uint8)
+    residual=255-quant.astype(np.int16).sum(-1);yy,xx=np.indices(residual.shape)
+    for _ in range(3):
+        best=np.argmax(scaled-quant,axis=-1);quant[yy,xx,best]+=(residual>0).astype(np.uint8);residual-=residual>0
+    return quant
+
+def presence_envelope(n, width, seed):
+    # Fixed 150m world lattice. It only modulates amplitude, never thresholds
+    # the colour into patches; its full derivative enters via the native cache.
+    size=int(np.ceil(width/150))+3;rng=np.random.default_rng(seed)
+    lattice=rng.uniform(-1,1,(size,size)).astype(np.float32)
+    axis=(np.arange(n,dtype=np.float32)+.5)/n*width/150+1
+    yy,xx=np.meshgrid(axis,axis,indexing='ij')
+    smooth=np.clip(map_coordinates(lattice,[yy,xx],order=3,mode='nearest'),-1,1)
+    return .88+.12*smooth
+
 def prepare(entry):
     directory=ROOT/'tiles'/Path(entry['file']).parent;meta=read(directory/'tile.json');n=meta['n']
     schema=meta['groundSurface']['grids'];blob=gzip.decompress((directory/schema['file']).read_bytes())
-    names=['exposedRock','fragmentCover','matrixCover','structuralRoughness','looseSand','renderSnow','surfaceCover','waterCoverage']
+    names=['exposedRock','fragmentCover','matrixCover','structuralRoughness','looseSand','renderSnow','surfaceCover','waterCoverage','alteration','roundness']
     fields={name:np.frombuffer(blob,'<f4',count=n*n,offset=schema['fields'][name]['offset']).reshape(n,n) for name in names}
+    ground=meta['ground']['grids'];ground_blob=gzip.decompress((directory/ground['file']).read_bytes())
+    g={name:np.frombuffer(ground_blob,'<f4',count=n*n,offset=ground['fields'][name]['offset']).reshape(n,n) for name in ['bedrockGranite','bedrockBasalt','bedrockLimestone','bedrockSandstone','colluvialPotential']}
     placement=np.asarray(Image.open(directory/'forest-placement.png'),np.float32)/255
     river=np.asarray(Image.open(directory/meta['groundSurface']['riverFootprint']).getchannel('A'))
     protected=conservative_water(fields['waterCoverage'],river)
     values=context(fields,placement,protected,meta['width']/n)
+    seed=int.from_bytes(hashlib.sha256(meta['seed'].encode()).digest()[:8],'little')
+    values[...,:2]*=presence_envelope(n,meta['width'],seed)[...,None]
+    profile=directory/'meso-profiles.png';Image.fromarray(support_profiles(g,fields)).save(profile)
     file=directory/'meso-context.rgba32f';file.write_bytes(values.tobytes())
     report={'version':1,'format':'RGBA32F','n':n,'width':meta['width'],'file':file.name,'sha256':sha(file),
             'channels':['coarse amplitude metres','fine amplitude metres','fragment fraction','visible matrix cover'],
             'amplitudeBoundsMetres':[2.4,.6],'residualBoundMetres':3.0,
-            'sources':{'generator':sha(Path(__file__)),'height':meta['heightSha256'],'surface':schema['sha256'],
+            'profiles':{'file':profile.name,'sha256':sha(profile),'channels':['massive rock','bedded rock','clastic','soft remainder']},
+            'sources':{'generator':sha(Path(__file__)),'height':meta['heightSha256'],'surface':schema['sha256'],'ground':ground['sha256'],'structure':sha(directory/'surface-structure.png'),
                        'placement':sha(directory/'forest-placement.png'),'river':sha(directory/meta['groundSurface']['riverFootprint'])},
             'protectedCells':int(protected.sum()),'bytes':file.stat().st_size}
     (directory/'meso-context.json').write_text(json.dumps(report,indent=2),encoding='utf-8')

@@ -405,6 +405,10 @@ Il s'agit d'une politique d'apparence déduite des couches, pas d'un inventaire
 écologique observé. Aucun profil V2 n'est utilisé. L'adaptation du GLSL ne modifie que
 les signatures de fonctions, les conversions de types et le cache de neuf
 gradients, aplati car Godot ne permet pas de tableau dans une structure.
+Un complément séparé de conifères clairsemés est maintenant fusionné dans les
+secteurs froids/montagnards favorables. Il utilise le même modèle de couronnes,
+avec son propre potentiel et sa propre moyenne de couleur ; les exports
+originaux restent conservés. Voir [Profils et littoral](SUPPORT_SHORES_REFINEMENT.md).
 À distance rapprochée, l'éclairage est celui de Godot avec les ombres du relief.
 Les houppiers restent analytiques dans le matériau, comme dans la référence,
 sans instances d'arbres ajoutées. Le bouton des variantes change la palette
@@ -419,10 +423,11 @@ les surfaces hydrauliques restent intacts. Les masques hydriques sont protégés
 strictement. Voir [Relief et matière intermédiaires](TERRAIN_MESOSCALE.md) pour
 les amplitudes, les transitions, le picking, les tests et les mesures GPU.
 
-L'eau possède deux textures procédurales de pentes de vagues, sans téléchargement.
-Leur mélange à deux échelles non commensurables est filtré avec les dérivées
-d'écran et animé indépendamment. Les rivières suivent la direction aval du
-graphe ; lacs et mer utilisent une dérive de vent. La teinte dépend de la
+L'eau utilise un spectre procédural non périodique de 233 m à 60 cm, filtré avec
+les dérivées d'écran. Les rivières suivent la direction aval dans des frames
+fixes mélangées ; lacs et mer utilisent une dérive de vent. Le littoral est
+reconstruit par un contour continu, conservé au raccord Render lointain.
+La teinte dépend de la
 profondeur retenue pour lacs/mer, d'une profondeur optique indicative de 1,5 m
 pour les rivières, et de la distance aux berges. Normales, rugosité, reflet
 spéculaire, contribution de ciel et écume côtière remplacent l'aplat émissif.
