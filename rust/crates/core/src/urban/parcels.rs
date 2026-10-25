@@ -3479,14 +3479,15 @@ pub(super) fn generate(
             })
             .unwrap_or("culture");
         let mut local_morph = super::with_tissue(morph.clone(), tissue);
-        if cfg.operator != "culture" {
-            local_morph.value["plotOp"] = serde_json::json!(match cfg.operator.as_str() {
+        let operator = cfg.zone_operators.get(&block.zone).unwrap_or(&cfg.operator);
+        if operator != "culture" {
+            local_morph.value["plotOp"] = serde_json::json!(match operator.as_str() {
                 "strips" => "burgage",
                 "oriented" => "compact",
                 op => op,
             });
         }
-        if cfg.operator == "culture"
+        if operator == "culture"
             && cfg.preset == "culture"
             && cfg.params.get("plotOp").is_none()
         {
@@ -3525,7 +3526,7 @@ pub(super) fn generate(
         let dense_souk = block_culture == "medina"
             && local_morph.text("id") == "medina-souk"
             && matches!(zone.as_str(), "core" | "middle")
-            && cfg.operator == "culture"
+            && operator == "culture"
             && cfg.preset == "culture"
             && ["plotOp", "plotDepth", "frontage", "houseArea"]
                 .iter()
@@ -3685,7 +3686,7 @@ pub(super) fn generate(
             return out;
         }
         let block_culture = cultural_context(layout, block, culture);
-        let shared_courts = matches!(cfg.operator.as_str(), "courtyard" | "compound")
+        let shared_courts = matches!(operator.as_str(), "courtyard" | "compound")
             || super::culture::mapping(block_culture)
                 .is_some_and(|m| m.admissibility.shared_access);
         // Organic tissue (catalogue `parcellation: organic`, elven groves): a
@@ -3693,8 +3694,8 @@ pub(super) fn generate(
         // Camps (catalogue `campLayout`: kraal, tipi circle, ordu, longhouse
         // rows) lay out the whole settlement's rings or rows; they share the
         // organic tissue's passes (no frontage depth bound, footpath access).
-        let camp = cfg.operator == "culture" && camp::enabled(morph);
-        let organic = camp || cfg.operator == "culture" && organic::enabled(morph);
+        let camp = operator == "culture" && camp::enabled(morph);
+        let organic = camp || operator == "culture" && organic::enabled(morph);
         let mut parcels = match morph.text("plotOp") {
             _ if camp => camp::lots(&block.shape, bi, axis, &mut fronts, morph, layout),
             _ if organic => {

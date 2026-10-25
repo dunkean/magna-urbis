@@ -1879,7 +1879,7 @@ updateErosionControl();
 document.querySelector('.brand')!.textContent = pipelineStage === 'terrain' ? 'Terrain · étapes 1–3' : 'Settlements · routes et quartiers';
 const stagePanels = Array.from(document.querySelectorAll<HTMLElement>('.stages > .stage'));
 for (const panel of stagePanels) {
-  const downstream = ['settlementStage', 'roadStage', 'urbanQuarterStage', 'urbanParcelStage', 'urbanProgrammeStage', 'urbanBuildingStage', 'landuseStage'].includes(panel.id);
+  const downstream = ['settlementStage', 'roadStage', 'urbanMainStage', 'urbanAdvancedFrame', 'urbanQuarterStage', 'urbanParcelStage', 'urbanProgrammeStage', 'urbanBuildingStage', 'landuseStage'].includes(panel.id);
   panel.hidden = legacyPipeline ? false : pipelineStage === 'terrain' ? downstream : !downstream;
 }
 if (pipelineStage === 'settlements') {

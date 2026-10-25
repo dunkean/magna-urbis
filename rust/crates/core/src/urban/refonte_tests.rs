@@ -885,3 +885,33 @@ fn unbuildable_terrain_leaves_an_explicit_budget_deficit_and_no_phantom_center()
     assert!(output.structure.metrics.shortfall_area >= output.structure.metrics.target_area * 0.99);
     assert!(!output.warnings.is_empty());
 }
+
+#[test]
+fn zone_overrides_change_one_zone_and_old_configs_still_load() {
+    let h = vec![20.0; 64 * 64];
+    let water = vec![0; h.len()];
+    let surface = Surface { geometry: None, width: 1600.0, n: 64, height: &h, water: &water };
+    let site = Site {
+        key: "zones".into(),
+        name: String::new(),
+        population: 6000,
+        culture: "european-organic".into(),
+        center: Point { x: 800.0, y: 800.0 },
+        radius: 200.0,
+    };
+    let old: LayoutConfig = serde_json::from_str("{}").unwrap();
+    assert!(old.phase_overrides.is_empty());
+    let cfg: LayoutConfig = serde_json::from_str(
+        r#"{"fortification":"none","phaseOverrides":{"core":{"culture":"roman-core","tissue":"grid"}}}"#,
+    )
+    .unwrap();
+    let layout = generate_quarters("zone", std::slice::from_ref(&site), &cfg, surface, &[])
+        .unwrap()
+        .remove(0);
+    for p in &layout.phases {
+        assert_eq!(p.culture == "roman-core", p.zone == "core", "{}", p.zone);
+    }
+    assert!(layout.phases.iter().any(|p| p.zone == "core"));
+    let parcels: ParcelConfig = serde_json::from_str(r#"{"zoneOperators":{"core":"courtyard"}}"#).unwrap();
+    assert!(generate_parcels("zone", std::slice::from_ref(&layout), &parcels).is_ok());
+}

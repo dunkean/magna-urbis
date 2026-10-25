@@ -33,7 +33,11 @@ export const defaultProgrammeContext = (): ProgrammeContext => ({ role: 'auto', 
 /** Pure configuration boundary; the legacy web editor must not load Rust/WASM. */
 export interface ParcelConfig { preset: string; culture?: string; recipe: string; zone: string; density: number; params: Record<string, unknown>; operator: 'culture' | 'strips' | 'oriented' | 'compact' | 'inherited' | 'courtyard' | 'frontage' | 'compound' | 'wholeBlock' | 'garden';
   /** User edits; the layout stage reads `quarters`, the parcel stage `parcels`. */
-  overrides?: UrbanEdits }
+  overrides?: UrbanEdits;
+  /** Parcel operator per growth zone (`core`, `middle`, `edge`, `faubourg`, `village`); absent = `operator`. */
+  zoneOperators?: Record<string, ParcelConfig['operator']> }
+/** Another culture and/or street tissue for one growth zone (Rust `PhaseOverride`); absent = the settlement's own. */
+export interface PhaseOverride { culture?: string; recipe?: string; tissue?: string }
 /** User edits of single quarters (keyed by quarter index, Rust `UrbanOverrides`)
  * and single lots (keyed by parcel id, Rust `ParcelOverrides`). */
 export interface UrbanEdits {
@@ -71,7 +75,8 @@ export interface FootprintConfig {
  * retains the cultural style when an explicit style does not fit the kind. */
 export const FORTIFICATION_STYLES = ['auto', 'palisade', 'gord', 'hedge', 'curtain', 'flanked', 'concentric', 'rammed-earth', 'wengcheng', 'bastioned'] as const;
 export type FortificationStyle = typeof FORTIFICATION_STYLES[number];
-export interface LayoutConfig extends Omit<ParcelConfig, 'operator'> {
+export interface LayoutConfig extends Omit<ParcelConfig, 'operator' | 'zoneOperators'> {
+  phaseOverrides?: Record<string, PhaseOverride>;
   programme: ProgrammeContext;
   axisAlignment: 'regional' | 'culture'; mixCulture: string; mixMode: 'phases' | 'sectors'; mixShare: number; mixAngle: number; exitTreatment: 'legacy' | 'adaptive' | 'closed'; peripheralRoad: 'auto' | 'none' | 'partial' | 'full'; siteAdaptation: number;
   composition: 'settlement' | 'district'; settlementForm: 'auto' | 'nucleated' | 'ribbon' | SettlementKind; suburbs: 'auto' | 'none' | 'few' | 'many'; phases: number;
@@ -127,11 +132,13 @@ export function normalizeLayoutConfig(saved?: Partial<Omit<LayoutConfig, 'footpr
   if (legacy && saved && !saved.composition) config.composition = 'district';
   // Edits are not part of the defaults: carried through only when present.
   if (saved?.overrides) config.overrides = saved.overrides;
+  if (saved?.phaseOverrides && Object.keys(saved.phaseOverrides).length) config.phaseOverrides = saved.phaseOverrides;
   return config;
 }
 
 export function normalizeParcelConfig(saved?: Partial<ParcelConfig>): ParcelConfig {
   const config: ParcelConfig = { ...contractFields(defaultParcelConfig(), saved), params: { ...saved?.params } };
   if (saved?.overrides) config.overrides = saved.overrides;
+  if (saved?.zoneOperators && Object.keys(saved.zoneOperators).length) config.zoneOperators = saved.zoneOperators;
   return config;
 }

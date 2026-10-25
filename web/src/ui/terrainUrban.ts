@@ -55,6 +55,7 @@ import { buildingSettings, workshopSettings, appliedWorkshopSnapshot, mergeCityW
 import { programmeSvg, refusalSvg } from '../render/urbanProgramme';
 import { openMethodNote } from './methodNotes';
 import { applySettlementStyle, installSettlementStyles } from './urbanSettlementStyles';
+import { createUrbanMainPanel } from './urbanMainPanel';
 import { editCount, emptyEdits, floorsFor, hasEdits, layoutWithEdits, normalizeEdits, packEdits, parcelWithEdits, setEdit, styledRequest, type CityEdits } from './cityEdits';
 import { renderCityInspector, type CityInspectorHooks } from './cityInspector';
 import { createShapeEditor, simplifyLotRing, simplifyRing, type Pt as ShapePt, type ShapeEditor } from './cityShapeEditor';
@@ -156,6 +157,10 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
   /** An ID can recur after history/import; only this exact scene owns the sites. */
   let sceneRequestScene: PlacementBatch | ColdCityState | undefined;
   let layoutConfig = defaultLayoutConfig(), parcelConfig = defaultParcelConfig();
+  // Automatic regeneration: the main panel's toggle, else the bench's own setting.
+  let autoChoice: boolean | undefined;
+  const autoOn = (): boolean => autoChoice ?? !!options.getAuto?.();
+  let mainPanel: ReturnType<typeof createUrbanMainPanel> | undefined;
   let quarterSeed = '', parcelSeed = '', target = '', ready = false;
   let enabled = true, parcelEnabled = options.parcelDefault ?? true, appliedKind: Kind = 'quarters', appliedOnly: Set<string> | undefined;
   let worker: Worker | undefined, fallback = false, cachedTerrain: TerrainData | SettlementRaster | undefined, id = 0;
@@ -399,6 +404,7 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
       }
       fields.append(label);
     }
+    mainPanel?.sync();
   }
   const rendering = document.createElement('details'); rendering.className = 'advanced';
   rendering.innerHTML = `<summary>Rendu · empreinte, quartiers et parcelles</summary><div class="control-group">${Object.entries({ reserve: 'Réserve de croissance', allocated: 'Terre urbaine attribuée', centers: 'Noyaux et identités de quartier', domains: 'Domaines réservés', quarters: 'Secteurs de calcul', blocks: 'Îlots', streets: 'Rues urbaines', enclosures: 'Enceintes et portes', parcels: 'Parcelles', gardens: 'Jardins', places: 'Places et communs', fronts: 'Façades accessibles', axes: 'Axes des parcelles', access: 'Statut de desserte des parcelles' }).map(([key, label]) => `<label><input data-render="${key}" type="checkbox">${label}</label>`).join('')}<label>Palette<select data-render="palette"><option value="growth">Phases de croissance</option><option value="atlas">Atlas · quartiers</option><option value="ink">Encre</option><option value="terrain">Terrain</option></select></label><label>Opacité<input data-render="opacity" type="number" min="0" max="1" step="0.05"></label><label>Épaisseur des traits (px)<input data-render="width" type="number" min="0" max="5" step="0.1"></label></div><small>Ces réglages redessinent les résultats conservés, sans appel de génération. La réserve, la terre attribuée et les enceintes sont trois objets différents.</small>`;
@@ -747,6 +753,13 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
   buildingPanel.restore(initialBuildingState);
   let completeGeneration = false;
   let resetBuildingDefaults = false;
+  function generateAll(): void {
+    try {
+      for (const kind of ['quarters', 'parcels'] as const) { clearTimeout(draftTimers[kind]); read(kind); }
+      enabled = parcelEnabled = true; completeGeneration = true;
+      populate('quarters'); populate('parcels'); request('quarters'); options.onChange();
+    } catch (error) { completeGeneration = false; status('quarters', String(error)); }
+  }
   installSettlementStyles(styleHost, style => {
     const next = applySettlementStyle(style, layoutConfig);
     layoutConfig = next.layout; parcelConfig = next.parcels;
@@ -754,13 +767,7 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
     buildingPanel.setBuildingDraft({ ...buildingPanel.state, settings: undefined });
     resetBuildingDefaults = true;
     changed('quarters'); changed('parcels');
-  }, () => {
-    try {
-      for (const kind of ['quarters', 'parcels'] as const) { clearTimeout(draftTimers[kind]); read(kind); }
-      enabled = parcelEnabled = true; completeGeneration = true;
-      populate('quarters'); populate('parcels'); request('quarters'); options.onChange();
-    } catch (error) { completeGeneration = false; status('quarters', String(error)); }
-  });
+  }, generateAll);
   const views = document.createElement('nav'); views.className = 'urban-view-tabs'; views.setAttribute('aria-label', 'Vue du plan urbain');
   for (const [view, label] of Object.entries({ tissue: 'Tissu', uses: 'Usages', parcels: 'Parcelles', buildings: 'Bâtiments', ...(cityView ? { roles: 'Rôles' } : {}) })) {
     const button = document.createElement('button'); button.type = 'button'; button.textContent = label; button.dataset.urbanView = view;
@@ -835,15 +842,16 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
   function changed(kind: Kind): void {
     dirty[kind] = true;
     const hint = one(kind, '[data-draft-state]'); hint.hidden = false;
-    hint.textContent = options.getAuto?.() ? 'Modifications en attente · application automatique…' : `Modifications non appliquées · cliquez sur « ${kind === 'quarters' ? 'Régénérer la ville' : 'Régénérer les parcelles'} ».`;
+    hint.textContent = autoOn() ? 'Modifications en attente · application automatique…' : `Modifications non appliquées · régénérez ${kind === 'quarters' ? 'le plan et les quartiers' : 'les parcelles'} (ou toute la ville).`;
+    mainPanel?.note(hint.textContent);
     clearTimeout(draftTimers[kind]);
     try { read(kind, false); if (kind === 'quarters') controlRelevance?.sync(layoutConfig, layouts); options.map.dispatchEvent(new CustomEvent('urban:settings', { detail: { layoutConfig: clone(layoutConfig), parcelConfig: clone(parcelConfig), quarterSeed: one<HTMLInputElement>('quarters', '[data-seed]').value, parcelSeed: one<HTMLInputElement>('parcels', '[data-seed]').value } })); } catch { /* Keep invalid drafts local. */ }
-    if (options.getAuto?.()) draftTimers[kind] = setTimeout(() => {
-      if (options.getAuto?.()) apply(kind);
+    if (autoOn()) draftTimers[kind] = setTimeout(() => {
+      if (autoOn()) apply(kind);
     }, 220);
   }
   function status(kind: Kind, text: string, busy = false): void {
-    one(kind, '[data-status]').textContent = text;
+    one(kind, '[data-status]').textContent = text; mainPanel?.note(text);
     one<HTMLButtonElement>(kind, '[data-apply]').setAttribute('aria-busy', String(busy));
   }
   /** `only`: plan just these settlements of the selection (the others keep their plan). */
@@ -1732,7 +1740,7 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
         config.recipe = 'auto'; config.zone = 'auto'; config.preset = 'culture';
         if (kind === 'quarters') {
           const next = applySettlementStyle('culture', layoutConfig, c.value);
-          layoutConfig = next.layout; parcelConfig = next.parcels;
+          layoutConfig = next.layout; parcelConfig = { ...next.parcels, ...(parcelConfig.zoneOperators ? { zoneOperators: parcelConfig.zoneOperators } : {}) };
           one<HTMLTextAreaElement>('parcels', '[data-json]').value = ''; populate('parcels'); changed('parcels');
           buildingPanel.setBuildingDraft({ ...buildingPanel.state, settings: undefined });
           resetBuildingDefaults = true;
@@ -1826,6 +1834,44 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
     const minX = Math.min(...selection.map(s => s.center.x - s.radius)), maxX = Math.max(...selection.map(s => s.center.x + s.radius)), minY = Math.min(...selection.map(s => s.center.y - s.radius)), maxY = Math.max(...selection.map(s => s.center.y + s.radius));
     options.onFocus({ x: (minX + maxX) / 2, y: (minY + maxY) / 2 }, Math.max(maxX - minX, maxY - minY) / 2);
   };
+  // Main generation sequence; every other control moves behind « Options avancées ».
+  const zoneOf = (): Set<string> | undefined => {
+    const own = layouts?.filter(l => target === 'all' || l.key === target); if (!own?.length) return undefined;
+    return new Set(own.flatMap(l => l.phases?.map(p => p.zone) ?? []));
+  };
+  mainPanel = createUrbanMainPanel({
+    cultures: Object.entries(catalogue.cultures).map(([id, c]) => [id, c.label]), tissues, operators: parcelOperators,
+    state: () => ({ layout: layoutConfig, parcels: parcelConfig, siteCulture: siteCulture(), zones: zoneOf(), target }),
+    setCulture(value) {
+      const select = one<HTMLSelectElement>('quarters', '[data-config="culture"]');
+      select.value = value; select.dispatchEvent(new Event('change', { bubbles: true }));
+    },
+    setPlan(zone, patch) {
+      const next = { ...layoutConfig.phaseOverrides?.[zone], ...patch };
+      for (const key of Object.keys(next) as (keyof typeof next)[]) if (!next[key]) delete next[key];
+      const map = { ...layoutConfig.phaseOverrides };
+      if (Object.keys(next).length) map[zone] = next; else delete map[zone];
+      if (Object.keys(map).length) layoutConfig.phaseOverrides = map; else delete layoutConfig.phaseOverrides;
+      changed('quarters'); mainPanel!.sync();
+    },
+    setOperator(zone, operator) {
+      const map = { ...parcelConfig.zoneOperators };
+      if (operator) map[zone] = operator as ParcelConfig['operator']; else delete map[zone];
+      if (Object.keys(map).length) parcelConfig.zoneOperators = map; else delete parcelConfig.zoneOperators;
+      changed('parcels'); mainPanel!.sync();
+    },
+    steps: { quarters: () => apply('quarters'), parcels: () => apply('parcels'), buildings: () => { void buildingPanel.generate(); }, all: generateAll },
+    auto: { get: autoOn, set(value) { autoChoice = value; mainPanel!.sync(); } },
+  });
+  {
+    const ids = ['urbanQuarterStage', 'cityFootprintStage', 'cityStreetStage', 'cityEdgeStage', 'urbanParcelStage', 'urbanProgrammeStage', 'urbanBuildingStage'];
+    const members = ids.map(id => document.getElementById(id)).filter((e): e is HTMLElement => !!e);
+    const frame = document.createElement('section'); frame.id = 'urbanAdvancedFrame'; frame.className = 'stage urban-advanced-frame';
+    frame.innerHTML = '<div id="urbanAdvancedBody" hidden><h3>Options avancées · par étape</h3></div>';
+    members[0].before(mainPanel.element, frame); frame.firstElementChild!.append(...members);
+    if (!options.city) { const scope = targetSelect.closest('label')!; scope.firstChild!.textContent = 'Réglages appliqués à '; mainPanel.scopeSlot.append(scope); }
+    else mainPanel.element.querySelector('.um-scope')!.setAttribute('hidden', '');
+  }
   populate('quarters'); populate('parcels'); editsReport();
   // Plan layers hidden together (map toggle "Plan de ville"): buildings,
   // streets and walls stay. The previous choices come back when shown again.
@@ -1851,6 +1897,8 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
       }
     },
     get target(): string { return target; },
+    /** Where the settlements panel puts its own « auto-refresh » toggle, beside the urban one. */
+    get regenerationSlot(): HTMLElement { return mainPanel!.regenerationSlot; },
     get generationPending(): boolean { return buildingPanel.busy || (['quarters', 'parcels'] as const).some(kind => one(kind, '[data-apply]').getAttribute('aria-busy') === 'true'); },
     selectCity(key: string): void { if (target !== key) { targetSelect.value = key; targetSelect.dispatchEvent(new Event('change')); } },
     restoreSnapshot(state: import('./testbenchUrban').WorkshopState): void {

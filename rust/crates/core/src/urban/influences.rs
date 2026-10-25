@@ -31,6 +31,26 @@ fn mask(center: Point, extent: f64, value: f64, angle: f64, chronological: bool)
     })
 }
 
+/// Zone overrides (`LayoutConfig::phase_overrides`): the zone's phases take the chosen culture
+/// and recipe, as a second influence does for its share.
+pub(super) fn zone_overrides(phases: &mut [GrowthPhase], site: &Site, cfg: &LayoutConfig) {
+    for p in phases.iter_mut() {
+        let Some(o) = cfg.phase_overrides.get(&p.zone) else { continue };
+        if !o.culture.is_empty() && super::catalogue()["cultures"][&o.culture].is_object() {
+            p.culture = o.culture.clone();
+        }
+        if !o.recipe.is_empty() {
+            p.recipe = o.recipe.clone();
+        } else if !o.culture.is_empty() {
+            let name = match p.zone.as_str() {
+                "village" | "core" | "faubourg" => p.zone.as_str(),
+                _ => "ring",
+            };
+            p.recipe = composition::recipe(&p.culture, site.population, name);
+        }
+    }
+}
+
 pub(super) fn apply(
     phases: &mut Vec<GrowthPhase>,
     quarters: &mut [Quarter],

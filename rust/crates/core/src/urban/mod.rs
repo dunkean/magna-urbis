@@ -518,6 +518,9 @@ pub struct LayoutConfig {
     pub max_stair_grade: f64,
     pub allow_stairs: bool,
     pub params: Value,
+    /// Per growth zone (`core`, `middle`, `edge`, `faubourg`, `village`): another culture,
+    /// recipe or street tissue than the settlement's. Empty = the culture's own.
+    pub phase_overrides: std::collections::BTreeMap<String, PhaseOverride>,
     /// Per-quarter user edits (inspector « éditer un quartier »); empty by default.
     pub overrides: UrbanOverrides,
     /// Yield correction of the adaptive-capacity plan, set only by the closed
@@ -543,6 +546,14 @@ pub struct LayoutConfig {
 #[serde(default, rename_all = "camelCase")]
 pub struct UrbanOverrides {
     pub quarters: std::collections::BTreeMap<String, QuarterOverride>,
+}
+/// Plan recipe of one growth zone; an empty field keeps the settlement's own.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase", deny_unknown_fields)]
+pub struct PhaseOverride {
+    pub culture: String,
+    pub recipe: String,
+    pub tissue: String,
 }
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
@@ -603,6 +614,7 @@ impl Default for LayoutConfig {
             max_stair_grade: 0.65,
             allow_stairs: true,
             params: json!({}),
+            phase_overrides: Default::default(),
             overrides: UrbanOverrides::default(),
             capacity_yield: 0.0,
             capacity_floor: 0.0,
@@ -625,6 +637,8 @@ pub struct ParcelConfig {
     pub zone: String,
     pub density: f64,
     pub params: Value,
+    /// Parcel operator of one growth zone, instead of `operator`.
+    pub zone_operators: std::collections::BTreeMap<String, String>,
     /// Per-lot user edits (« éditer une parcelle »); empty by default.
     pub overrides: ParcelOverrides,
 }
@@ -667,6 +681,7 @@ impl Default for ParcelConfig {
             zone: "auto".into(),
             density: 1.0,
             params: json!({}),
+            zone_operators: Default::default(),
             overrides: ParcelOverrides::default(),
         }
     }
@@ -1171,7 +1186,7 @@ pub fn generate_parcels(
     layouts: &[Layout],
     config: &ParcelConfig,
 ) -> Result<Vec<Partition>, String> {
-    if ![
+    const OPERATORS: [&str; 10] = [
         "culture",
         "strips",
         "oriented",
@@ -1182,8 +1197,12 @@ pub fn generate_parcels(
         "compound",
         "wholeBlock",
         "garden",
-    ]
-    .contains(&config.operator.as_str())
+    ];
+    if !OPERATORS.contains(&config.operator.as_str())
+        || config
+            .zone_operators
+            .values()
+            .any(|o| !OPERATORS.contains(&o.as_str()))
     {
         return Err("Opérateur de parcelles inconnu".into());
     }

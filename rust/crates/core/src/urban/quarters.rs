@@ -2980,6 +2980,7 @@ fn generate_once(
         || cfg.footprint.mechanism != "legacy"
             && walled.iter().map(g::area).sum::<f64>() < 0.95 * land;
     super::influences::apply(&mut phases, &mut quarters, site, cfg);
+    super::influences::zone_overrides(&mut phases, site, cfg);
     if !cfg.mix_culture.is_empty()
         && let Some(s) = &mut structure
     {
@@ -3185,6 +3186,12 @@ fn generate_once(
         };
         let local_tissue = edit
             .and_then(|e| e.tissue.as_deref())
+            .or_else(|| {
+                cfg.phase_overrides
+                    .get(&q.zone)
+                    .map(|o| o.tissue.as_str())
+                    .filter(|t| !t.is_empty())
+            })
             .unwrap_or(local_tissue);
         // A quarter of the plan's borrowed share is cut with the donor's
         // street spacing and lots (its houses stay the receiving culture's).
@@ -3553,6 +3560,7 @@ fn generate_once(
                 p.shapes.extend(extension.shapes);
             }
         }
+        super::influences::zone_overrides(&mut phases, site, cfg);
         let area: f64 = phases.iter().flat_map(|p| &p.shapes).map(g::area).sum();
         let density = |i: usize| {
             densities

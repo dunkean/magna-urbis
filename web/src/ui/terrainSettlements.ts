@@ -87,8 +87,8 @@ export function createTerrainSettlements(options: {
     `<label title="${esc(title)}"${show ? ` data-show="${show}"` : ''}>${label}<input data-setting="${key}" type="number" min="${min}" max="${max}" step="${step}"></label>`;
   panel.innerHTML = `<summary>4 · Settlements <span id="setState"></span></summary><div class="stage-controls">
     <label><input id="setEnabled" type="checkbox">Generate settlements</label>
-    <label title="Disable to move several places before recalculating settlements, roads and the plan."><input id="setAutoRefresh" type="checkbox">Auto-refresh settlements &amp; roads</label>
-    <button id="setRefresh" type="button" hidden>Apply changes &amp; recalculate</button>
+    <label title="Désactiver pour déplacer plusieurs lieux avant de recalculer les settlements, les routes et le plan."><input id="setAutoRefresh" type="checkbox">Régénération automatique des settlements et routes</label>
+    <button id="setRefresh" type="button" hidden>Appliquer et recalculer les settlements</button>
     <label>Composition <select id="setMode"><option value="auto">Automatic</option><option value="counts">By class counts</option><option value="list">Editable list</option></select></label>
     <label data-show="auto" title="Rank-size: rank r holds main ÷ r^q inhabitants. Classes: the legacy city/town/village bands sized by the usable land.">Distribution <select id="setDistribution"><option value="zipf">Rank-size (Zipf)</option><option value="classes">Class bands</option></select></label>
     <label>Main population <input id="setMainPop" type="number" min="1" max="5000000" step="1"></label>
@@ -131,6 +131,8 @@ export function createTerrainSettlements(options: {
     getRaster: options.getRaster, city: options.city, cityView: true,
     parcelDefault: options.parcelDefault ?? false,
     getSeed: () => options.getSettings().seed, getAuto: () => autoRefresh && !!options.getAuto?.(), upstreamPending: () => enabled && !decorReady(), onChange: () => { if (!restoringDecor) publishOptions(urban.workshopDraft() ?? urban.workshopSettings()); draw(); options.onChange(); }, onPlanChange: () => { if (!restoringDecor) publishOptions(urban.workshopDraft() ?? urban.workshopSettings()); syncLanduse(); options.onPlanChange?.(); }, onFocus: options.onFocus, onProjection: options.onProjection });
+  // The settlements & roads auto-refresh sits with the other regeneration controls.
+  urban.regenerationSlot.append(el('setAutoRefresh').closest('label')!, el('setRefresh'));
   const publishOptions = urbanOptionSync(() => { const d = options.getDecor?.(); return d && urban.target !== 'all' ? `${d.meta.pipeline?.syncSource ?? d.meta.id}:${urban.target}` : undefined; }, state => urban.applyWorkshopDraft(state));
   if (options.active !== false && !options.city && !document.getElementById('showLanduse')) {
     const label = document.createElement('label'); label.innerHTML = '<input id="showLanduse" type="checkbox" checked>Occupation du territoire';

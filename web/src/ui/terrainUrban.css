@@ -68,3 +68,30 @@
 .city-edits { display: flex; align-items: center; justify-content: space-between; gap: 6px; font-size: 11px; padding: 4px 6px; border-radius: 5px; background: #fbf1d5; }
 .city-edits:empty { display: none; }
 .city-edits button { width: auto; padding: 2px 8px; }
+.urban-main .stage-controls { gap: 6px; }
+.urban-main .um-scope { display: grid; gap: 2px; padding: 5px 6px; border: 1px solid #c5d5c9; border-radius: 4px; background: #eef4ec; }
+.urban-main .um-scope label, .urban-main .um-culture { display: grid; gap: 2px; font-weight: 600; }
+.urban-main .um-scope select, .urban-main .um-culture select { width: 100%; min-width: 0; }
+.urban-main .um-scope small, .urban-main .um-hint { font-size: 10px; color: #5c695f; }
+.urban-main .um-zones { display: grid; gap: 4px; }
+.urban-main fieldset { margin: 0; padding: 3px 6px 4px; border: 1px solid #cbd7ce; border-radius: 4px; min-width: 0; }
+.urban-main fieldset.um-absent { opacity: .55; }
+.urban-main legend { font-size: 11px; font-weight: 600; padding: 0 3px; }
+.urban-main legend em { font-weight: 400; font-style: normal; color: #6a786e; font-size: 10px; }
+.urban-main .um-row { display: grid; grid-template-columns: 56px minmax(0, 1fr) auto; align-items: center; gap: 4px; margin-top: 2px; font-size: 11px; }
+.urban-main .um-row select { min-width: 0; width: 100%; }
+.urban-main .um-row.um-over select { border-color: #b9792b; background: #fff6e8; }
+.urban-main .um-row button { padding: 1px 5px; font-size: 10px; }
+.urban-main .um-regen { display: grid; gap: 4px; padding-top: 4px; border-top: 1px solid #cbd7ce; }
+.urban-main .um-regen > span { display: grid; gap: 4px; }
+.urban-main .um-regen > span:empty { display: none; }
+.urban-main .um-steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; }
+.urban-main .um-regen button { width: 100%; font-size: 11px; }
+.urban-main .um-all { font-weight: 600; }
+.urban-main .um-regen small { font-size: 10px; color: #5c695f; }
+.urban-main .um-advanced { width: 100%; }
+.urban-advanced-frame { margin: 0; padding: 0; border: 0; }
+#urbanAdvancedBody { display: grid; gap: 6px; margin: 4px 0; padding: 6px; border: 1px dashed #9db0a2; border-radius: 5px; }
+#urbanAdvancedBody[hidden] { display: none; }
+
+#urbanAdvancedBody > h3 { margin: 0; font-size: 12px; }
