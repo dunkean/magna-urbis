@@ -1,0 +1,12 @@
+{
+  "sourceHead": "dff14f387a6d1edc89d93737f861ee91e022a5aa",
+  "forestSha256": "9932f95e364272c7ca837d11585ba45c141b5fc9c53cee6c1d99ec846632c9db",
+  "groundSha256": "bd4317ee5af8887a7afb41203310abc5b8fdba15e93d3374bf889ec4b797410a",
+  "portedSha256": "df02ff4b267405540bf681f5a41cedb2779969c3caac716778ec4601cc5edf25",
+  "profile": "original",
+  "settings": {
+    "enabled": true,
+    "density": 1,
+    "clearings": 0.45
+  }
+}

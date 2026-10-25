@@ -66,6 +66,12 @@ var ground_water_image:Image
 var ground_river_image:Image
 var ground_attributes_image:Image
 var ground_states:=["mean","dry","wet","fresh-snow","rough-snow","compact-snow","old-snow","wind-snow","partial-snow","melt","ice-fine","ice-fractured"]
+var original_cover_meta:Dictionary={}
+var original_cover_loaded_dir:=""
+var original_cover_image:Image
+var grid_warp:=0.0
+var grid_focus:=Vector2(20000,20000)
+var detail_amount:=0.0
 
 class SurveyOverlay extends Control:
 	var app:Node3D
@@ -117,6 +123,10 @@ func _ready()->void:
 	terrain.mesh=plane;terrain.position=Vector3(20000,0,20000);terrain.extra_cull_margin=12000
 	var shader:=Shader.new();shader.code=FileAccess.get_file_as_string("res://tile_terrain.gdshader")
 	material.shader=shader;terrain.material_override=material;add_child(terrain)
+	for role in ["ripples","capillary"]:
+		var water_image=load_local_png("res://materials/water/"+role+".png")
+		if water_image==null:push_error("Textures eau absentes : lancer prepare_surface_water.py");get_tree().quit(1);return
+		water_image.generate_mipmaps();material.set_shader_parameter("water_"+role,ImageTexture.create_from_image(water_image))
 	build_ui()
 	var chosen=str(catalog.get("defaultTile","mountains--temperate")) if initial_tile.is_empty() else initial_tile
 	for index in catalog.tiles.size():
@@ -188,6 +198,7 @@ func load_tile(index:int)->void:
 	current_meta=meta
 	var dir=path.get_base_dir();var raw=FileAccess.get_file_as_bytes(dir.path_join(meta.height))
 	if raw.size()!=int(meta.n)*int(meta.n)*4:push_error("Heightfield incomplet : "+path);return
+	material.set_shader_parameter("original_height_map",ImageTexture.create_from_image(Image.create_from_data(int(meta.n),int(meta.n),false,Image.FORMAT_RF,raw)))
 	# Keep the raw decoder source on disk; standing lakes use their hydraulic level.
 	var hydro:Dictionary=meta.get("hydrology",{})
 	if hydro.has("surface"):
@@ -211,6 +222,9 @@ func load_tile(index:int)->void:
 	status.text="%02d / 42 · altitude %.0f à %.0f m\n%s · %.0f °C · %.0f mm/an\nDécodeur : %.0f m · grille %d²"%[index+1,meta.min,meta.max,meta.seed,meta.temperature,meta.precipitation,float(meta.get("neural",{}).get("decoderNativeCell",40000.0/meta.n)),int(meta.n)]
 	if not hydro.is_empty():status.text+="\nEau vectorielle : %d rivières · %.1f km · %d lacs"%[hydro.rivers,hydro.riverKm,hydro.lakes]
 	tile_layers=hydro.get("layers",[]).duplicate();tile_layers.append_array(meta.get("ground",{}).get("layers",[]));tile_dir=dir
+	original_cover_meta={}
+	if FileAccess.file_exists(dir.path_join("original-cover.json")):
+		original_cover_meta=JSON.parse_string(FileAccess.get_file_as_string(dir.path_join("original-cover.json")))
 	surface_meta=meta.get("groundSurface",{});tile_layers.append_array(surface_meta.get("layers",[]))
 	info_selector.clear();info_selector.add_item("Aucun calque")
 	var selected=0
@@ -236,7 +250,7 @@ func update_ground_surface()->void:
 	variants_button.disabled=surface_meta.is_empty()
 	if surface_meta.is_empty():ground_status.text="N1–N4 absents pour cette tuile : lancer ground_surface.py.";return
 	if ground_view==0:
-		ground_status.text="Sol : 90 types · N1–N4 disponibles";return
+		update_camera();ground_status.text="Sol : 90 types · N1–N4 disponibles";return
 	if not ground_library.initialize(material):ground_status.text=ground_library.error;return
 	ground_library.resolve(str(current_meta.seed),material)
 	if not ground_library.error.is_empty():ground_status.text=ground_library.error;return
@@ -265,8 +279,35 @@ func update_ground_surface()->void:
 		material.set_shader_parameter(pair[0],ImageTexture.create_from_image(image))
 	material.set_shader_parameter("ground_state",ground_state)
 	material.set_shader_parameter("ground_view",ground_view)
+	load_original_cover()
+	update_camera()
 	ground_status.text="90 types · %d sources PBR · palette %d\n"%[ground_library.assets.size(),ground_library.palette_seed]+("Support minéral · avant les couvertures" if ground_view==3 else "Surface du sol · ombres · neige Render")
 	print(JSON.stringify({"event":"ground-view","view":ground_view,"state":ground_states[ground_state],"seed":ground_library.palette_seed,"types":ground_library.selected.size()}))
+
+func load_original_cover()->void:
+	material.set_shader_parameter("original_cover_enabled",not original_cover_meta.is_empty())
+	if original_cover_meta.is_empty():return
+	if original_cover_loaded_dir==tile_dir:return
+	for role in ["cover","color","open","closed"]:
+		var image=load_local_png(tile_dir.path_join("original-"+role+".png"));image.generate_mipmaps()
+		if role=="cover":original_cover_image=image
+		material.set_shader_parameter("original_"+role,ImageTexture.create_from_image(image))
+	var forest:Dictionary=JSON.parse_string(FileAccess.get_file_as_string(tile_dir.path_join("original-forest.json")))
+	var image=load_local_png(tile_dir.path_join("original-forest-field.png"));image.generate_mipmaps()
+	material.set_shader_parameter("uForestField",ImageTexture.create_from_image(image))
+	material.set_shader_parameter("uMaterialClimate",Vector2(current_meta.temperature,current_meta.precipitation))
+	material.set_shader_parameter("uMaterialSeed",int(forest.seed))
+	var has_bank=false
+	for entry in forest.files:
+		if entry.file=="original-forest-bank.png":has_bank=true
+	material.set_shader_parameter("uHasForestBank",1 if has_bank else 0)
+	if has_bank:
+		image=load_local_png(tile_dir.path_join("original-forest-bank.png"));image.generate_mipmaps();material.set_shader_parameter("uForestBank",ImageTexture.create_from_image(image))
+	material.set_shader_parameter("uForestBankDensity",float(forest.bankDensity))
+	material.set_shader_parameter("original_light",sun.global_basis.z.normalized())
+	var water_image=load_local_png(tile_dir.path_join("surface-water-detail.png"))
+	if water_image!=null:material.set_shader_parameter("water_detail",ImageTexture.create_from_image(water_image))
+	original_cover_loaded_dir=tile_dir
 
 func randomize_ground_variants()->void:
 	if surface_meta.is_empty():return
@@ -296,7 +337,11 @@ func ground_at(x:float,z:float)->String:
 	var support=ground_library.describe(best_id)
 	if ground_view==3:return "Support minéral · "+support
 	var cover_shares=cover_weights_image.get_pixelv(p)
-	if cover_shares.a>.05:
+	if original_cover_image!=null and not original_cover_meta.is_empty():
+		var cover=sample_map(original_cover_image,x,z)
+		if cover.b>.025:support="Végétation Render3D original · forêt / sous-bois\nSupport : "+support
+		elif maxf(cover.r,cover.g)>.05:support=("Sable / dépôts Render original" if cover.g>cover.r else "Couvert herbacé Render original")+"\nSupport : "+support
+	elif cover_shares.a>.05:
 		var cover_ids=cover_ids_image.get_pixelv(p);var cover_best=0
 		for j in range(1,3):
 			if cover_shares[j]>cover_shares[cover_best]:cover_best=j
@@ -354,6 +399,14 @@ func toggle_mode()->void:
 		orbit_yaw=yaw;orbit_elevation=elevation;top_view=true;yaw=0;elevation=PI/2.0
 	update_camera()
 func update_camera()->void:
+	var next_warp=clampf(log(12000.0/maxf(view_width,1)),0,6)
+	var next_focus=Vector2(clampf(focus.x,1,39999),clampf(focus.z,1,39999))
+	var next_detail=1.0-smoothstep(300.0,4000.0,view_width) if ground_view>0 else 0.0
+	if next_warp!=grid_warp or next_focus!=grid_focus or next_detail!=detail_amount:vertex_height_cache.clear()
+	grid_warp=next_warp;grid_focus=next_focus;detail_amount=next_detail
+	material.set_shader_parameter("terrain_grid_warp",grid_warp)
+	material.set_shader_parameter("terrain_grid_focus",grid_focus)
+	material.set_shader_parameter("terrain_detail_amount",detail_amount)
 	if height_image!=null:focus.y=surface_height(focus.x,focus.z)
 	var viewport=get_viewport().get_visible_rect().size
 	var aspect=viewport.x/maxf(1,viewport.y)
@@ -371,15 +424,57 @@ func surface_height(x:float,z:float)->float:
 	var wx=spline_weights(t.x);var wy=spline_weights(t.y);var h=0.0
 	for j in 4:
 		for i in 4:h+=height_image.get_pixel(clampi(int(base.x)+i-1,0,n-1),clampi(int(base.y)+j-1,0,n-1)).r*wx[i]*wy[j]
-	return maxf(0,h)
+	return maxf(0,h+terrain_detail_height(x,z))
+
+func sample_map(image:Image,x:float,z:float)->Color:
+	var p=Vector2(x,z)/40000.0*Vector2(image.get_width(),image.get_height())-Vector2(.5,.5)
+	var b=p.floor();var t=p-b;var n=image.get_size()-Vector2i.ONE
+	var a=image.get_pixelv(Vector2i(b).clamp(Vector2i.ZERO,n)).lerp(image.get_pixelv((Vector2i(b)+Vector2i(1,0)).clamp(Vector2i.ZERO,n)),t.x)
+	var c=image.get_pixelv((Vector2i(b)+Vector2i(0,1)).clamp(Vector2i.ZERO,n)).lerp(image.get_pixelv((Vector2i(b)+Vector2i.ONE).clamp(Vector2i.ZERO,n)),t.x)
+	return a.lerp(c,t.y)
+
+func detail_permute(x:float)->float:return fposmod((34*x+1)*x,289)
+func detail_hash(x:float,z:float)->float:return detail_permute(fposmod(x,289)+detail_permute(fposmod(z,289)))/144.0-1.0
+func terrain_detail_height(x:float,z:float)->float:
+	if detail_amount<=0 or ground_water_image==null:return 0.0
+	var water=sample_map(ground_water_image,x,z);var river=sample_map(ground_river_image,x,z).a
+	var dry=1.0-smoothstep(0.0,.05,maxf(maxf(water.g,water.b),maxf(water.r,river)))
+	var amplitude=.55
+	if original_cover_image!=null and not original_cover_meta.is_empty():
+		var cover=sample_map(original_cover_image,x,z)
+		amplitude=lerpf(lerpf(.55,.14,maxf(cover.r,cover.b)),.08,cover.g)
+	var p=Vector2(x,z)/9.5;var b=p.floor();var t=p-b
+	var u=Vector2(t.x*t.x*t.x*(t.x*(t.x*6-15)+10),t.y*t.y*t.y*(t.y*(t.y*6-15)+10))
+	var value=lerpf(lerpf(detail_hash(b.x,b.y),detail_hash(b.x+1,b.y),u.x),lerpf(detail_hash(b.x,b.y+1),detail_hash(b.x+1,b.y+1),u.x),u.y)
+	var spacing=maxf(grid_spacing(x,0),grid_spacing(z,1))
+	return value*amplitude*dry*detail_amount*(1.0-smoothstep(2.0,8.0,spacing))
+
+func grid_spacing(world:float,axis:int)->float:
+	if grid_warp<.001:return 40000.0/mesh_cells
+	var centre=grid_focus[axis];var extent=centre if world<centre else 40000-centre
+	var s=(world-centre)*sinh(grid_warp)/extent
+	var t=(log(s+sqrt(s*s+1))/grid_warp+1)*.5
+	return grid_coordinate(minf(t+.5/mesh_cells,1),axis)-grid_coordinate(maxf(t-.5/mesh_cells,0),axis)
+
+func grid_coordinate(t:float,axis:int)->float:
+	if grid_warp<.001:return t*40000.0
+	var q=t*2-1;var centre=grid_focus[axis]
+	return centre+(centre if q<0 else 40000-centre)*sinh(grid_warp*q)/sinh(grid_warp)
+func grid_index(world:float,axis:int)->int:
+	if grid_warp<.001:return clampi(int(floor(world/40000.0*mesh_cells)),0,mesh_cells-1)
+	var centre=grid_focus[axis]
+	var s=(world-centre)*sinh(grid_warp)/(centre if world<centre else 40000-centre)
+	var inverse=log(s+sqrt(s*s+1))
+	return clampi(int(floor((inverse/grid_warp+1)*.5*mesh_cells)),0,mesh_cells-1)
 func spline_weights(t:float)->Vector4:
 	var u=1-t
 	return Vector4(u*u*u,3*t*t*t-6*t*t+4,-3*t*t*t+3*t*t+3*t+1,t*t*t)/6.0
 
 func mesh_vertex(x:int,z:int)->Vector3:
 	var key=z*(mesh_cells+1)+x
-	if not vertex_height_cache.has(key):vertex_height_cache[key]=surface_height(float(x)*40000/mesh_cells,float(z)*40000/mesh_cells)
-	return Vector3(float(x)*40000/mesh_cells,vertex_height_cache[key],float(z)*40000/mesh_cells)
+	var px=grid_coordinate(float(x)/mesh_cells,0);var pz=grid_coordinate(float(z)/mesh_cells,1)
+	if not vertex_height_cache.has(key):vertex_height_cache[key]=surface_height(px,pz)
+	return Vector3(px,vertex_height_cache[key],pz)
 
 func pick_terrain(screen:Vector2)->Variant:
 	# Traverse rendered grid cells and intersect their actual displaced triangles.
@@ -394,14 +489,12 @@ func pick_terrain(screen:Vector2)->Variant:
 			var a=(lo-origin[axis])/direction[axis];var b=(hi-origin[axis])/direction[axis]
 			start=maxf(start,minf(a,b));stop=minf(stop,maxf(a,b))
 	if stop<start:return null
-	var cell=40000.0/mesh_cells;var p=origin+direction*(start+.001)
-	var x=clampi(int(floor(p.x/cell)),0,mesh_cells-1);var z=clampi(int(floor(p.z/cell)),0,mesh_cells-1)
+	var p=origin+direction*(start+.001)
+	var x=grid_index(p.x,0);var z=grid_index(p.z,1)
 	var step_x=1 if direction.x>=0 else -1;var step_z=1 if direction.z>=0 else -1
-	var dx=cell/absf(direction.x) if absf(direction.x)>1e-10 else INF
-	var dz=cell/absf(direction.z) if absf(direction.z)>1e-10 else INF
-	var tx=(((x+1)*cell if step_x>0 else x*cell)-origin.x)/direction.x if dx<INF else INF
-	var tz=(((z+1)*cell if step_z>0 else z*cell)-origin.z)/direction.z if dz<INF else INF
 	for _iteration in mesh_cells*2+2:
+		var tx=(grid_coordinate(float(x+1 if step_x>0 else x)/mesh_cells,0)-origin.x)/direction.x if absf(direction.x)>1e-10 else INF
+		var tz=(grid_coordinate(float(z+1 if step_z>0 else z)/mesh_cells,1)-origin.z)/direction.z if absf(direction.z)>1e-10 else INF
 		var a=mesh_vertex(x,z);var b=mesh_vertex(x+1,z);var c=mesh_vertex(x,z+1);var d=mesh_vertex(x+1,z+1)
 		var first=Geometry3D.ray_intersects_triangle(origin,direction,a,b,c)
 		var second=Geometry3D.ray_intersects_triangle(origin,direction,b,d,c)
@@ -409,8 +502,8 @@ func pick_terrain(screen:Vector2)->Variant:
 		if first!=null:return first
 		if second!=null:return second
 		if minf(tx,tz)>stop:return null
-		if tx<tz:x+=step_x;tx+=dx
-		else:z+=step_z;tz+=dz
+		if tx<tz:x+=step_x
+		else:z+=step_z
 		if x<0 or z<0 or x>=mesh_cells or z>=mesh_cells:return null
 	return null
 

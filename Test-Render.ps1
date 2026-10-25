@@ -26,6 +26,8 @@ if (!$Scene) {
     $data = Get-Content -LiteralPath $Catalog -Raw -Encoding UTF8 | ConvertFrom-Json
     $groundCompilerHash = (Get-FileHash -LiteralPath (Join-Path $project 'tools/surface_context.py') -Algorithm SHA256).Hash.ToLowerInvariant()
     $surfaceCompilerHash = (Get-FileHash -LiteralPath (Join-Path $project 'tools/ground_surface.py') -Algorithm SHA256).Hash.ToLowerInvariant()
+    $waterCompilerHash = (Get-FileHash -LiteralPath (Join-Path $project 'tools/prepare_surface_water.py') -Algorithm SHA256).Hash.ToLowerInvariant()
+    foreach ($wave in @('ripples.png','capillary.png','water.json')) { $null = Require-File (Join-Path $project "materials/water/$wave") }
     $textureCatalogue = Require-File (Join-Path $project 'ground_texture_catalogue.json')
     $textureCatalogueHash = (Get-FileHash -LiteralPath $textureCatalogue -Algorithm SHA256).Hash.ToLowerInvariant()
     $textureLibraryPath = Require-File (Join-Path $project 'materials/prepared/library.json')
@@ -66,9 +68,20 @@ if (!$Scene) {
             throw "N1-N4 absents ou périmés : $metaPath. Lancer node godot-render/tools/ground_render_snow.mjs puis python godot-render/tools/ground_surface.py."
         }
         foreach ($file in $meta.groundSurface.files) { $null = Require-File (Join-Path (Split-Path $metaPath -Parent) $file) }
+        $tileDirectory = Split-Path $metaPath -Parent
+        foreach ($role in @('cover','forest')) {
+            $coverPath = Require-File (Join-Path $tileDirectory "original-$role.json")
+            $coverMeta = Get-Content -LiteralPath $coverPath -Raw -Encoding UTF8 | ConvertFrom-Json
+            if ($coverMeta.profile -ne 'original-render3d' -or $coverMeta.sourceHead -ne 'dff14f387a6d1edc89d93737f861ee91e022a5aa' -or $coverMeta.heightSha256 -ne $meta.heightSha256) { throw "Couvert Render3D original absent ou périmé : $metaPath" }
+            foreach ($file in $coverMeta.files) { $null = Require-File (Join-Path $tileDirectory $file.file) }
+        }
+        $waterDetailPath = Require-File (Join-Path $tileDirectory 'surface-water-detail.json')
+        $waterDetail = Get-Content -LiteralPath $waterDetailPath -Raw -Encoding UTF8 | ConvertFrom-Json
+        if ($waterDetail.heightSha256 -ne $meta.heightSha256 -or $waterDetail.generatorSha256 -ne $waterCompilerHash) { throw "Textures eau périmées : $metaPath. Lancer python godot-render/tools/prepare_surface_water.py." }
+        $null = Require-File (Join-Path $tileDirectory $waterDetail.file)
     }
     Write-Host '42 tuiles de 40 x 40 km. Tab = Dessus / 3D ; droit = orbite ; gauche/milieu = strafe ; molette = zoom.'
-    if ($Check) { Write-Host '42 tuiles, hydrologie, 29 calques du sol + 13 N1-N4/surface, couvertures séparées, neige Render, 90 types et 142 sources PBR vérifiés.'; return }
+    if ($Check) { Write-Host '42 tuiles, hydrologie, 29 calques du sol + 13 N1-N4/surface, couvert Render3D original, eau texturée, neige Render, 90 types et 142 sources PBR vérifiés.'; return }
     $launch = @('--audio-driver','Dummy','--path',$project,'--','--catalog',$Catalog,'--tile',$Tile)
     if ($Mode -eq '3D') { $launch += '--oblique' }
     if ($Capture) { $launch += @('--capture',[IO.Path]::GetFullPath($Capture)) }

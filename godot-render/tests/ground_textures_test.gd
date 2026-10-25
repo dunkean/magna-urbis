@@ -25,7 +25,9 @@ func run()->void:
 	await capture("top")
 	app.view_width=160;app.focus=Vector3(21000,0,20000);app.update_camera()
 	await capture("local")
-	app.view_width=20;app.update_camera()
+	# A fully covered original canopy intentionally keeps its historical colour
+	# and seed when PBR variants change. Verify rerolls on exposed support.
+	app.select_ground_view(3);app.view_width=20;app.update_camera()
 	var close_before=await capture("close-before")
 	app.variants_button.pressed.emit();await process_frame
 	check(JSON.stringify(app.ground_library.selected)!=original_palette,"Variant button changes global palette")
@@ -34,6 +36,7 @@ func run()->void:
 	var changed=await capture("close-after")
 	var region=Rect2i(520,120,640,520)
 	check(changed.get_region(region).get_data()!=close_before.get_region(region).get_data(),"Variant change is visible on terrain outside UI")
+	app.select_ground_view(1)
 	var selected=JSON.stringify(app.ground_library.selected)
 	app.update_ground_surface()
 	check(JSON.stringify(app.ground_library.selected)==selected,"Repeated resolution is stable")

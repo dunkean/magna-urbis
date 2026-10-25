@@ -365,3 +365,70 @@ rapport sont écrits dans `godot-render/evidence/`.
 `res://tests/survey_test.gd` vérifie en plus l'altitude sur un terrain plat puis
 le relief réel sous plusieurs angles, la reprojection du point sous le curseur,
 les points hors tuile et la variation de la règle avec le zoom.
+
+## Couvert visible, détail rapproché et eau
+
+La vue **Sol texturé** applique maintenant le couvert du **Render3D original**,
+référence `dff14f387a6d1edc89d93737f861ee91e022a5aa`. Les masques d'herbes,
+de sable/dépôts et de bois, ainsi que les guides de couleur ouvert/fermé,
+proviennent de son calcul GPU. Ils remplacent la couverture heuristique précédente
+dans cette vue. Le support PBR reste visible là où le couvert le permet ;
+**Support minéral** permet toujours d'inspecter le substrat seul.
+
+La végétation reprend `buildForestField`, les paramètres historiques
+`density=1`, `clearings=.45`, la graine `1905266606`, les galeries riveraines et
+le GLSL des houppiers analytiques de cette référence. Aucun profil de clairières
+V2, aucune nouvelle distribution d'arbres. L'adaptation Godot ne modifie que
+les signatures de fonctions, les conversions de types et le cache de neuf
+gradients, aplati car Godot ne permet pas de tableau dans une structure.
+L'éclairage de la vue reste celui de Godot avec les ombres du relief ; il ne
+constitue pas une copie pixel à pixel du framebuffer WebGL original.
+Les houppiers restent analytiques dans le matériau, comme dans la référence,
+sans instances d'arbres ajoutées. Le bouton des variantes change la palette
+PBR du monde ; une forêt opaque conserve sa graine et ses couleurs originales.
+
+Une octave supplémentaire de relief, de longueur de cellule **9,5 m**, apparaît
+progressivement entre 4 km et 300 m de largeur de vue. Son amplitude maximale
+est de **55 cm** sur le minéral, réduite vers 14 cm sous couvert et 8 cm dans
+le sable. Elle est fixe dans le monde, interpolée par un quintique, filtrée
+selon le pas local du maillage et exclue
+des cellules hydriques/berges. Le même maillage conserve toute l'étendue de
+40 km et concentre ses sommets autour du point observé par une transformation
+monotone en sinus hyperbolique. À fort zoom les cellules centrales passent
+sous 2 m. L'altitude sous le curseur utilise les triangles effectivement
+déplacés et cette même octave. Le DEM natif et les surfaces hydrauliques
+sur disque restent intacts. La vue Render conserve sa hauteur sans cette octave.
+
+L'eau possède deux textures procédurales de pentes de vagues, sans téléchargement.
+Leur mélange à deux échelles non commensurables est filtré avec les dérivées
+d'écran et animé indépendamment. Les rivières suivent la direction aval du
+graphe ; lacs et mer utilisent une dérive de vent. La teinte dépend de la
+profondeur retenue pour lacs/mer, d'une profondeur optique indicative de 1,5 m
+pour les rivières, et de la distance aux berges. Normales, rugosité, reflet
+spéculaire, contribution de ciel et écume côtière remplacent l'aplat émissif.
+Il ne s'agit pas d'une simulation de vagues ni de reflets de scène tracés.
+Les masques d'eau, les niveaux et les presets de glace sont conservés.
+
+Reconstruction locale, après les étapes N1–N4 et la bibliothèque PBR :
+
+```powershell
+# Référence originale et serveur Vite local sur 127.0.0.1:5203 requis.
+node godot-render/tools/prepare_original_cover.mjs
+node godot-render/tools/export_original_cover.mjs
+python godot-render/tools/prepare_surface_water.py
+python godot-render/tools/validate_surface_finish.py
+./Test-Render.ps1 -Check
+```
+
+Chaque préparateur accepte `--tile mountains--temperate`. Le générateur du
+GLSL accepte aussi `--shader-only`. Les descripteurs locaux conservent le commit
+source, les paramètres et hashes des guides, des champs forestiers et des
+textures d'eau. Ces données générées restent hors Git. Les textures du couvert
+sont chargées une fois par tuile et réutilisées lors des changements de preset
+ou de palette.
+
+`res://tests/surface_finish_test.gd` produit des captures avec/sans couvert,
+avec/sans détail géométrique et avec/sans vaguelettes. Il vérifie la référence
+originale, la stabilité des houppiers, la résolution du maillage, la stabilité
+spatiale du relief, le picking rapproché, l'immobilité des niveaux d'eau et
+l'advection des textures. Les rapports sont dans `godot-render/evidence/`.

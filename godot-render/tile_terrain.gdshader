@@ -11,6 +11,13 @@ uniform int ground_view=0;
 uniform int ground_state=0;
 uniform bool ground_stochastic=true;
 uniform bool ground_auto_snow=true;
+uniform bool original_cover_enabled=true;
+uniform sampler2D original_height_map : filter_nearest, repeat_disable;
+uniform sampler2D original_cover : filter_linear_mipmap, repeat_disable;
+uniform sampler2D original_color : filter_linear_mipmap, repeat_disable;
+uniform sampler2D original_open : filter_linear_mipmap, repeat_disable;
+uniform sampler2D original_closed : filter_linear_mipmap, repeat_disable;
+uniform vec3 original_light=vec3(-.5,.70710678,-.5);
 uniform sampler2D ground_indices : filter_nearest, repeat_disable;
 uniform sampler2D ground_weights : filter_nearest, repeat_disable;
 uniform sampler2D ground_indices_extra : filter_nearest, repeat_disable;
@@ -30,14 +37,31 @@ varying vec3 ground_position;
 varying vec3 ground_geometric_normal;
 vec4 weights(float t){float u=1.0-t;return vec4(u*u*u,3.0*t*t*t-6.0*t*t+4.0,-3.0*t*t*t+3.0*t*t+3.0*t+1.0,t*t*t)/6.0;}
 vec4 gradient_weights(float t){float u=1.0-t;return vec4(-.5*u*u,1.5*t*t-2.0*t,-1.5*t*t+t+.5,.5*t*t);}
+vec3 forestRootSurface(vec2 world){
+ vec2 p=world/40000.0*height_n-.5;vec2 base=floor(p);vec4 wx=weights(fract(p.x)),wy=weights(fract(p.y));
+ vec4 gx=gradient_weights(fract(p.x)),gy=gradient_weights(fract(p.y));vec3 h=vec3(0);
+ for(int j=0;j<4;j++)for(int i=0;i<4;i++){
+  float sample_height=textureLod(original_height_map,(base+vec2(float(i)-1.0,float(j)-1.0)+.5)/height_n,0.0).r;
+  h+=sample_height*vec3(wx[i]*wy[j],gx[i]*wy[j]*height_n/40000.0,wx[i]*gy[j]*height_n/40000.0);
+ }
+ return h;
+}
+float forestWaterCoverage(vec2 world){vec2 uv=world/40000.0;vec4 water=textureLod(ground_water,uv,0.0);return max(max(water.g,water.b),textureLod(river_footprint,uv,0.0).a);}
+#include "res://shaders/original_forest.gdshaderinc"
+#include "res://shaders/terrain_detail.gdshaderinc"
+#include "res://shaders/surface_water.gdshaderinc"
 void vertex(){
+ vec2 mesh_spacing=vec2(gridCoordinate(min(UV.x+.5/height_n,1.0),terrain_grid_focus.x)-gridCoordinate(max(UV.x-.5/height_n,0.0),terrain_grid_focus.x),gridCoordinate(min(UV.y+.5/height_n,1.0),terrain_grid_focus.y)-gridCoordinate(max(UV.y-.5/height_n,0.0),terrain_grid_focus.y));
+ UV=vec2(gridCoordinate(UV.x,terrain_grid_focus.x),gridCoordinate(UV.y,terrain_grid_focus.y))/40000.0;
+ VERTEX.xz=UV*40000.0-20000.0;
  vec2 p=UV*height_n-0.5;vec2 base=floor(p);vec4 wx=weights(fract(p.x));vec4 wy=weights(fract(p.y));float h=0.0;
  vec4 gx=gradient_weights(fract(p.x));vec4 gy=gradient_weights(fract(p.y));vec2 gradient=vec2(0);
  for(int j=0;j<4;j++)for(int i=0;i<4;i++){
    float sample_height=textureLod(height_map,(base+vec2(float(i)-1.0,float(j)-1.0)+0.5)/height_n,0.0).r;
    h+=sample_height*wx[i]*wy[j];gradient+=sample_height*vec2(gx[i]*wy[j],wx[i]*gy[j])*height_n/40000.0;
  }
- VERTEX.y=max(0.0,h);ground_position=(MODEL_MATRIX*vec4(VERTEX,1.0)).xyz;
+ vec3 detail=detailNoise(UV*40000.0)*detailAmplitude(UV,mesh_spacing);
+ VERTEX.y=max(0.0,h+detail.x);gradient+=detail.yz;ground_position=(MODEL_MATRIX*vec4(VERTEX,1.0)).xyz;
  ground_geometric_normal=normalize(mat3(MODEL_MATRIX)*vec3(-gradient.x,1,-gradient.y));
 }
 
@@ -140,14 +164,15 @@ void fragment(){
    vec2 p=UV*height_n-.5;ivec2 base=ivec2(floor(p));vec2 t=fract(p);
    vec3 color=vec3(0);vec3 micro=vec3(0);float roughness=0.0;
    vec3 surface_color=vec3(0);vec3 surface_normal=vec3(0);float surface_roughness=0.0;float surface_coverage=0.0;
-   if(ground_view!=3){
+   if(ground_view!=3&&!original_cover_enabled){
      cover_cell(base,(1.0-t.x)*(1.0-t.y),ground_position.xz,dx,dy,surface_color,surface_normal,surface_roughness,surface_coverage);
      cover_cell(base+ivec2(1,0),t.x*(1.0-t.y),ground_position.xz,dx,dy,surface_color,surface_normal,surface_roughness,surface_coverage);
      cover_cell(base+ivec2(0,1),(1.0-t.x)*t.y,ground_position.xz,dx,dy,surface_color,surface_normal,surface_roughness,surface_coverage);
      cover_cell(base+ivec2(1,1),t.x*t.y,ground_position.xz,dx,dy,surface_color,surface_normal,surface_roughness,surface_coverage);
    }
    // Interpolate four material responses, never the categorical IDs.
-   if(surface_coverage<.999){
+   bool hidden_by_original=original_cover_enabled&&ground_view==1&&texture(original_cover,UV).b>=.025;
+   if(surface_coverage<.999&&!hidden_by_original){
    ground_cell(base,(1.0-t.x)*(1.0-t.y),ground_position.xz,dx,dy,color,micro,roughness);
    ground_cell(base+ivec2(1,0),t.x*(1.0-t.y),ground_position.xz,dx,dy,color,micro,roughness);
    ground_cell(base+ivec2(0,1),(1.0-t.x)*t.y,ground_position.xz,dx,dy,color,micro,roughness);
@@ -156,12 +181,38 @@ void fragment(){
    color=color*(1.0-surface_coverage)+surface_color;
    micro=micro*(1.0-surface_coverage)+surface_normal;
    roughness=roughness*(1.0-surface_coverage)+surface_roughness;
+   if(hidden_by_original){micro=vec3(0,0,1);roughness=.9;}
+   float original_forest_scope=0.0;
+   vec3 original_forest_normal=vec3(0,1,0);
+   float original_forest_occlusion=1.0;
+   if(original_cover_enabled&&ground_view!=3&&ground_view!=2){
+     vec4 cover=texture(original_cover,UV);
+     vec3 guide=texture(original_color,UV).rgb;
+     vec3 open=texture(original_open,UV).rgb;
+     vec3 closed=texture(original_closed,UV).rgb;
+     float herb_or_sand=max(cover.r,cover.g);
+     // The original guide controls cover and colour. Opaque grass/sand also
+     // hides the substrate's mineral normal and specular response.
+     color=mix(color,groundToLinear(open),herb_or_sand);
+     micro=mix(micro,vec3(0,0,1),herb_or_sand);
+     roughness=mix(roughness,mix(.95,.83,cover.g),herb_or_sand);
+     float footprint=max(max(length(dx),length(dy)),.02);
+     vec3 macro=forestRootSurface(ground_position.xz);
+     GroundMaterial legacy=terrainGroundMaterial(macro,ground_position.xz,footprint,guide,uMaterialClimate,uMaterialSeed);
+     float resolved;
+     applyForest(legacy,ground_position.xz,footprint,original_light,guide,open,closed,cover.b,resolved);
+     vec4 field=forestField(ground_position.xz,max(log2(footprint/(uForestRect.z/float(textureSize(uForestField,0).x))),0.0));
+     original_forest_scope=groundSmooth(0.,.025,max(max(cover.b,field.r),max(resolved,forestBankCover(ground_position.xz,footprint))));
+     color=mix(color,legacy.albedo,original_forest_scope);
+     original_forest_normal=legacy.normal;original_forest_occlusion=legacy.occlusion;
+     roughness=mix(roughness,legacy.roughness,original_forest_scope);
+   }
    vec4 attrs=texture(ground_attributes,UV);vec4 water=texture(ground_water,UV);
    float wetness=clamp(attrs.r+(ground_state==1?-.28:(ground_state==2?.24:0.0)),0.0,1.0);
    float permanent=max(water.g,water.b);float river=texture(river_footprint,UV).a;
    float water_mask=max(permanent,river);float snow=0.0;
    if(ground_state<3&&ground_auto_snow&&ground_view!=3){
-     snow=texture(render_snow,UV).r*(1.0-water_mask);
+     snow=texture(render_snow,UV).r*(1.0-water_mask)*(1.0-original_forest_scope);
      if(snow>.001){vec3 sc;vec3 sn;float sr;ground_sample(80,ground_position.xz,dx,dy,sc,sn,sr);color=mix(color,sc,snow);micro=mix(micro,sn,snow);roughness=mix(roughness,sr,snow);}
    }
    if(ground_state>=3&&ground_state<=9&&ground_view!=3){
@@ -187,12 +238,15 @@ void fragment(){
    if(geom.y<0.0)geom=-geom;
    vec3 tangent=normalize(vec3(max(geom.y,.01),-geom.x,0));vec3 bitangent=normalize(cross(geom,tangent));
    vec3 world_normal=normalize(tangent*micro.x+bitangent*micro.y+geom*micro.z);
+   world_normal=normalize(mix(world_normal,original_forest_normal,original_forest_scope));
+   vec3 water_color;vec3 water_normal;float water_roughness;
+   waterMaterial(ground_position.xz,dx,dy,water,normalize(CAMERA_POSITION_WORLD-ground_position),water_color,water_normal,water_roughness);
+   world_normal=normalize(mix(world_normal,water_normal,water_mask));
    NORMAL=normalize((VIEW_MATRIX*vec4(world_normal,0)).xyz);
-   float overlay=info.a*info_opacity;float lit=(1.0-water_mask)*(1.0-overlay);
-   ALBEDO=color*lit;ROUGHNESS=clamp(roughness-.25*wetness,.1,1.0);SPECULAR=.25*lit;
-   AO=texture(ground_structure,UV).b;AO_LIGHT_AFFECT=0.0;
-   vec3 water_color=mix(vec3(.035,.13,.17),vec3(.025,.085,.12),water.b);
-   EMISSION=mix(water_color*water_mask,info.rgb,overlay);
+   float overlay=info.a*info_opacity;
+   ALBEDO=mix(color,water_color,water_mask)*(1.0-overlay);ROUGHNESS=mix(clamp(roughness-.25*wetness,.1,1.0),water_roughness,water_mask);SPECULAR=mix(.25,.85,water_mask)*(1.0-overlay);
+   AO=mix(texture(ground_structure,UV).b*mix(1.0,original_forest_occlusion,original_forest_scope),1.0,water_mask);AO_LIGHT_AFFECT=0.0;
+   EMISSION=info.rgb*overlay;
    if(ground_view==2){EMISSION=mix(mix(color,water_color,water_mask),info.rgb,overlay);ALBEDO=vec3(0);}
  }else{EMISSION=mix(original,info.rgb,info.a*info_opacity);}
 }

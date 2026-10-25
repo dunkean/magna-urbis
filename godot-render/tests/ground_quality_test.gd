@@ -21,6 +21,7 @@ func run()->void:
 	root.size=Vector2i(1280,800);DirAccess.make_dir_recursive_absolute("res://evidence")
 	app=load("res://tile_viewer.gd").new();root.add_child(app);await process_frame
 	app.set_process(false);app.select_ground_view(1)
+	app.material.set_shader_parameter("water_time_override",0.0)
 	check(app.surface_meta.get("version")==2 and app.surface_meta.get("coverSlots")==3,"Separate support and surface metadata")
 	check(app.sun.shadow_enabled,"Terrain casts directional shadows")
 	var palette=app.ground_library.palette_texture.get_image()
@@ -54,6 +55,8 @@ func run()->void:
 	for child in app.get_children():
 		if child is CanvasLayer:child.visible=false
 	app.sun.shadow_enabled=false;app.material.set_shader_parameter("ground_auto_snow",false)
+	app.material.set_shader_parameter("original_cover_enabled",false)
+	app.material.set_shader_parameter("terrain_detail_enabled",false)
 	app.height_image=Image.create(16,16,false,Image.FORMAT_RF);app.height_image.fill(Color(100,0,0))
 	app.material.set_shader_parameter("height_map",ImageTexture.create_from_image(app.height_image));app.material.set_shader_parameter("height_n",16.0)
 	app.material.set_shader_parameter("ground_indices",constant_texture(Color(21.0/255,0,0,0)))
