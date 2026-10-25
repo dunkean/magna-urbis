@@ -16,3 +16,7 @@ Payload: 3497089 PNG bytes; base64 adds about one third. Only the main bundle em
     "sha256": "889759ad696b9ace262b73236ab114bc202c1d8f215ae959cd77dec49dbee3c4"
   }
 }
+
+# Building and road materials (textured view)
+
+`materials/albedo.webp`, `materials/normal.webp`, `materials/materials.json`: 256×256 tiles (vertical strip, LANCZOS downscale of the 1K maps) of CC0 PBR sets from [Poly Haven](https://polyhaven.com/) and [ambientCG](https://ambientcg.com/), built by `scripts/pack_building_textures.py` from `assets/materials/buildings` (sources and per-set provenance in `catalog.json`). Cover/wall/road → layer mapping is in `materials.json`. Loaded lazily, only when "Matières texturées" is on.

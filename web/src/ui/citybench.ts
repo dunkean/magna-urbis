@@ -129,7 +129,7 @@ const settlements = createTerrainSettlements({ map, viewport, city: true, active
 // 3D view (city3d.ts): the decor relief draped with the map image, the plan and the buildings in volume.
 const city3d = mountCity3d({ host: viewport, getDecor: () => decor, getScene: () => settlements.urban.buildingState.scene,
   getProjection: () => settlements.urban.buildingProjection,
-  getLayouts: () => settlements.urban.layouts, getRegionalStreets: () => settlements.urban.regionalStreets, getPartitions: () => settlements.urban.partitions, getSelected: () => settlements.urban.buildingState.selected,
+  getLayouts: () => settlements.urban.layouts, getRegionalStreets: () => settlements.urban.regionalStreets, getPartitions: () => settlements.urban.partitions, getSelected: () => settlements.urban.buildingState.selected, getTextured: () => settlements.urban.textured,
   details: settlements.urban.buildingDetails,
   getBackground: () => background.querySelector('image')?.getAttribute('href') ?? undefined,
   onSelect: id => settlements.urban.selectBuilding(id) });

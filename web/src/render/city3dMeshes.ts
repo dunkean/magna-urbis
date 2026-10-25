@@ -26,8 +26,19 @@ export type City3dHeight = (x: number, y: number) => number;
 /** Display-only materials: their pattern picks the shared house colour. */
 const PATTERNS: MaterialPattern[] = ['tile', 'thatch', 'wood', 'stone', 'earth', 'fabric', 'snow', 'plain'];
 export const CITY3D_MATERIALS: HouseMaterial[] = PATTERNS.map(pattern => ({ id: `city3d:${pattern}`, label: pattern, roles: [], pattern, origin: 'city3d', source_ref: null }));
-const mat = (pattern: MaterialPattern): string => `city3d:${pattern}`;
-const slots = (wall: MaterialPattern, roof: MaterialPattern): MaterialSlots => ({ frame: mat(wall), infill: mat(wall), coating: mat(wall), cladding: mat(roof), base: mat('stone'), roof_frame: mat('wood') });
+// Layered ids `city3d:cover:<massing cover>`, `city3d:wall:<massing wall>`, `city3d:road:<surface>` keep the original massing
+// material for the textured view (urbanBuilding3d.ts); their display pattern is the pattern the flat render always used.
+const MESH_ROAD_PATTERNS: Record<string, MaterialPattern> = { bridge: 'stone', timber: 'wood' };
+const WALL_ID: Record<MaterialPattern, string> = { tile: 'wall:brick', thatch: 'cover:thatch', wood: 'wall:timber', stone: 'wall:stone', earth: 'wall:earth', fabric: 'wall:hide', snow: 'cover:snow', plain: 'wall:plaster' };
+const COVER_ID: Record<MaterialPattern, string> = { tile: 'cover:tile', thatch: 'cover:thatch', wood: 'cover:shingle', stone: 'cover:slate', earth: 'cover:earth', fabric: 'cover:felt', snow: 'cover:snow', plain: 'cover:plaster' };
+const mat = (pattern: MaterialPattern): string => `city3d:${WALL_ID[pattern]}`;
+const roofMat = (pattern: MaterialPattern): string => `city3d:${COVER_ID[pattern]}`;
+const slots = (wall: MaterialPattern, roof: MaterialPattern): MaterialSlots => ({ frame: mat(wall), infill: mat(wall), coating: mat(wall), cladding: roofMat(roof), base: mat('stone'), roof_frame: mat('wood') });
+/** Slots from the massing's own cover / wall ids (fallback patterns when unknown). */
+const massingSlots = (wall: string, cover: string, fallbackWall: MaterialPattern, fallbackRoof: MaterialPattern): MaterialSlots => {
+  const w = wall in WALLS ? `city3d:wall:${wall}` : mat(fallbackWall), c = cover in COVERS ? `city3d:cover:${cover}` : roofMat(fallbackRoof);
+  return { frame: w, infill: w, coating: w, cladding: c, base: mat('stone'), roof_frame: mat('wood') };
+};
 
 // ---------------------------------------------------------------- massing rules
 interface Massing { floors: number; wall: MaterialPattern; roof: MaterialPattern; pitchDeg: number; hip: boolean; flat?: boolean }
@@ -46,6 +57,9 @@ const COVERS: Record<string, MaterialPattern> = {
   earth: 'earth', plaster: 'plain', stone: 'stone', snow: 'snow', metal: 'stone', lead: 'stone',
 };
 const WALLS: Record<string, MaterialPattern> = { timber: 'wood', wood: 'wood', brick: 'tile', stone: 'stone', earth: 'earth', plaster: 'plain', bamboo: 'wood', wattle: 'earth', hide: 'fabric', coral: 'stone' };
+CITY3D_MATERIALS.push(...Object.entries(COVERS).map(([k, pattern]) => ({ id: `city3d:cover:${k}`, label: k, roles: [], pattern, origin: 'city3d', source_ref: null } as HouseMaterial)),
+  ...Object.entries(WALLS).map(([k, pattern]) => ({ id: `city3d:wall:${k}`, label: k, roles: [], pattern, origin: 'city3d', source_ref: null } as HouseMaterial)),
+  ...Object.entries(MESH_ROAD_PATTERNS).map(([k, pattern]) => ({ id: `city3d:road:${k}`, label: k, roles: [], pattern, origin: 'city3d', source_ref: null } as HouseMaterial)));
 function hash(text: string): number { let h = 2166136261; for (let i = 0; i < text.length; i++) h = Math.imul(h ^ text.charCodeAt(i), 16777619); return h >>> 0; }
 
 /** Floors, materials and roof of a silhouette from its role family, role and wealth. */
@@ -196,7 +210,7 @@ export function silhouetteBuilding(building: PlacedBuilding, heightAt?: City3dHe
     const volumes = footprint.flatMap((shape, i) => {
       const piece = massing[i]; if (!piece) return [];
       return pieceVolumes(shape, piece).map((v, j) => {
-        const materials = slots(WALLS[v.wall] ?? m.wall, COVERS[v.cover] ?? m.roof), roof = new RoofBuilder();
+        const materials = massingSlots(v.wall, v.cover, WALLS[v.wall] ?? m.wall, COVERS[v.cover] ?? m.roof), roof = new RoofBuilder();
         for (const face of volumeRoof(v, i, j)) roof.face(face.points.map(p => ({ x: p.x, y: p.y, z: p.z + ground })), materials.cladding);
         const system = v.roof === 'flat' ? 'RF-FLAT' : v.roof === 'hip' || v.roof === 'pyramid' || v.roof === 'tent' ? 'RF-HIP' : 'RF-GABLE';
         return baseVolume(`${building.id}:city3d:${i}:${j}`, [v.shape], ground, v.eave_m, Math.max(0, v.rise_m), materials, roof.mesh(), system, { ...foundation, footprint: [v.shape] });
@@ -305,7 +319,8 @@ export function city3dBridges(streets: readonly { path: Point[]; widths: number[
     const span = street.path.slice(1).reduce((sum, p, i) => sum + Math.hypot(p.x - street.path[i].x, p.y - street.path[i].y), 0);
     const deck = Math.max(h(a), h(b)) + 0.6 + (street.role === 'bridge' ? Math.min(4, span / 40) : 0);
     const width = Math.max(3, ...street.widths.filter(Number.isFinite)) + 0.8;
-    const materials = slots('stone', 'stone'), volumes: ArchitectureVolume[] = [], footprint: Surface = [];
+    // Narrow bridges are timber decks (as in the textured 2D plan), wider ones stone paving.
+    const materials: MaterialSlots = { ...slots('stone', 'stone'), cladding: width < 4.8 ? 'city3d:road:timber' : 'city3d:road:bridge' }, volumes: ArchitectureVolume[] = [], footprint: Surface = [];
     for (let i = 1; i < street.path.length; i++) {
       const p = street.path[i - 1], q = street.path[i], len = Math.hypot(q.x - p.x, q.y - p.y);
       if (len < 0.2) continue;
@@ -519,7 +534,7 @@ export function city3dWalls(enclosures: readonly Enclosure[], heightAt?: City3dH
       const ring = t.footprint?.outer; if (!ring || ring.length < 3) return;
       const mesh = new WallMesh(), z = g(t.center) + (t.height_m || H + 3), low = Math.min(...ring.map(g)) - 1;
       mesh.prism({ outer: ring, holes: [] }, () => low, () => z, wall ? side : wood, wall ? top : wood);
-      if (t.shape === 'round' && wall && ROUND_ROOFED.has(style) && t.kind !== 'flank') mesh.cone(ring, z, 1.4 * t.radius_m, mat('tile'));
+      if (t.shape === 'round' && wall && ROUND_ROOFED.has(style) && t.kind !== 'flank') mesh.cone(ring, z, 1.4 * t.radius_m, roofMat('tile'));
       else if (!wall) mesh.pitched({ outer: ring, holes: [] }, z, 1.6, wood);
       push(wallPiece(`${id}:tower:${ti}`, `${style}:tower:${t.shape}`, mesh, wall ? pattern : 'wood'));
     });
@@ -549,7 +564,7 @@ export function city3dWalls(enclosures: readonly Enclosure[], heightAt?: City3dH
       if (gh.shape?.outer?.length >= 3) {
         mesh.prism(gh.shape, () => ground + clear, () => zTop, material, top, true);
         if (gh.kind === 'timber') mesh.pitched(gh.shape, zTop, 2, wood);
-        else if (style === 'wengcheng') mesh.pitched(gh.shape, zTop, 3.5, mat('tile'));
+        else if (style === 'wengcheng') mesh.pitched(gh.shape, zTop, 3.5, roofMat('tile'));
       }
       push(wallPiece(`${id}:gate:${gi}`, `${style}:gate:${gh.kind}`, mesh, gh.kind === 'timber' ? 'wood' : pattern));
     });
@@ -566,7 +581,7 @@ export function city3dWalls(enclosures: readonly Enclosure[], heightAt?: City3dH
       if (!a.shape?.outer || a.shape.outer.length < 3) return;
       const mesh = new WallMesh(), eave = g(centroid(a.shape.outer)) + Math.max(2.4, (a.height_m || 5) - 1.6);
       mesh.prism(a.shape, p => g(p) - 0.5, () => eave, mat('plain'), undefined);
-      mesh.pitched(a.shape, eave, 1.6, mat('tile'));
+      mesh.pitched(a.shape, eave, 1.6, roofMat('tile'));
       push(wallPiece(`${id}:lean-to:${ai}`, `${style}:lean-to`, mesh, 'plain'));
     });
   });

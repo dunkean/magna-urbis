@@ -366,7 +366,7 @@ export class Terrain3d {
     const gl = this.gl;
     this.clippedIndices.clear();
     this.terrainProgram = program(gl, vertexShader, fragmentShader); this.skyProgram = program(gl, skyVertex, skyFragment);
-    this.buildings?.dispose(); this.buildings = new UrbanBuildingPass(gl);
+    this.buildings?.dispose(); this.buildings = new UrbanBuildingPass(gl, () => this.request());
     this.buildings.setScene(this.buildingsVisible ? this.buildingScene : undefined, this.buildingAppearance);
     const side = GRID + 1, surfaceVertices = side * side, count = GRID * GRID * 6 + GRID * 4 * 6;
     const indices = new Uint16Array(count);

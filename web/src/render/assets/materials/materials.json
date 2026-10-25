@@ -1,0 +1,320 @@
+{
+ "tile": 256,
+ "layers": [
+  {
+   "id": "clay_roof_tiles",
+   "source": "roof/polyhaven-clay_roof_tiles",
+   "extent_m": 4.0,
+   "mean_rgb": [
+    89,
+    51,
+    28
+   ]
+  },
+  {
+   "id": "roof_slates_02",
+   "source": "roof/polyhaven-roof_slates_02",
+   "extent_m": 3.0,
+   "mean_rgb": [
+    144,
+    134,
+    117
+   ]
+  },
+  {
+   "id": "roof_slates_03",
+   "source": "roof/polyhaven-roof_slates_03",
+   "extent_m": 3.0,
+   "mean_rgb": [
+    113,
+    110,
+    104
+   ]
+  },
+  {
+   "id": "reed_roof_03",
+   "source": "roof/polyhaven-reed_roof_03",
+   "extent_m": 2.5,
+   "mean_rgb": [
+    138,
+    118,
+    90
+   ]
+  },
+  {
+   "id": "reed_roof_04",
+   "source": "roof/polyhaven-reed_roof_04",
+   "extent_m": 2.5,
+   "mean_rgb": [
+    156,
+    134,
+    103
+   ]
+  },
+  {
+   "id": "thatch_roof_angled",
+   "source": "roof/polyhaven-thatch_roof_angled",
+   "extent_m": 0.54,
+   "mean_rgb": [
+    84,
+    80,
+    73
+   ]
+  },
+  {
+   "id": "WoodSiding010",
+   "source": "roof/ambientcg-WoodSiding010",
+   "extent_m": 1.4,
+   "mean_rgb": [
+    84,
+    78,
+    65
+   ]
+  },
+  {
+   "id": "grass_ground",
+   "source": "special/polyhaven-grass_ground",
+   "extent_m": 2.51,
+   "mean_rgb": [
+    110,
+    96,
+    62
+   ]
+  },
+  {
+   "id": "bark_brown_01",
+   "source": "wood/polyhaven-bark_brown_01",
+   "extent_m": 1.0,
+   "mean_rgb": [
+    114,
+    93,
+    53
+   ]
+  },
+  {
+   "id": "Leather039",
+   "source": "special/ambientcg-Leather039",
+   "extent_m": 2,
+   "mean_rgb": [
+    252,
+    196,
+    119
+   ]
+  },
+  {
+   "id": "Fabric034",
+   "source": "special/ambientcg-Fabric034",
+   "extent_m": 2,
+   "mean_rgb": [
+    161,
+    159,
+    165
+   ]
+  },
+  {
+   "id": "clay_plaster",
+   "source": "wall/polyhaven-clay_plaster",
+   "extent_m": 2.0,
+   "mean_rgb": [
+    114,
+    90,
+    60
+   ]
+  },
+  {
+   "id": "white_plaster_rough_01",
+   "source": "wall/polyhaven-white_plaster_rough_01",
+   "extent_m": 1.0,
+   "mean_rgb": [
+    124,
+    113,
+    87
+   ]
+  },
+  {
+   "id": "snow_02",
+   "source": "special/polyhaven-snow_02",
+   "extent_m": 2.0,
+   "mean_rgb": [
+    165,
+    165,
+    167
+   ]
+  },
+  {
+   "id": "japanese_stone_wall",
+   "source": "wall/polyhaven-japanese_stone_wall",
+   "extent_m": 1.9,
+   "mean_rgb": [
+    124,
+    120,
+    111
+   ]
+  },
+  {
+   "id": "medieval_wood",
+   "source": "wood/polyhaven-medieval_wood",
+   "extent_m": 2.0,
+   "mean_rgb": [
+    115,
+    104,
+    92
+   ]
+  },
+  {
+   "id": "brick_wall_001",
+   "source": "wall/polyhaven-brick_wall_001",
+   "extent_m": 3.0,
+   "mean_rgb": [
+    100,
+    74,
+    60
+   ]
+  },
+  {
+   "id": "stone_wall",
+   "source": "wall/polyhaven-stone_wall",
+   "extent_m": 2.0,
+   "mean_rgb": [
+    162,
+    146,
+    122
+   ]
+  },
+  {
+   "id": "raw_plank_wall",
+   "source": "wood/polyhaven-raw_plank_wall",
+   "extent_m": 1.87,
+   "mean_rgb": [
+    165,
+    129,
+    86
+   ]
+  },
+  {
+   "id": "bamboo_wall",
+   "source": "wood/polyhaven-bamboo_wall",
+   "extent_m": 2.0,
+   "mean_rgb": [
+    133,
+    107,
+    83
+   ]
+  },
+  {
+   "id": "Wicker013",
+   "source": "wood/ambientcg-Wicker013",
+   "extent_m": 0.5,
+   "mean_rgb": [
+    176,
+    125,
+    63
+   ]
+  },
+  {
+   "id": "coral_stone_wall",
+   "source": "wall/polyhaven-coral_stone_wall",
+   "extent_m": 2.0,
+   "mean_rgb": [
+    144,
+    131,
+    114
+   ]
+  },
+  {
+   "id": "cobblestone_floor_04",
+   "source": "ground_built/polyhaven-cobblestone_floor_04",
+   "extent_m": 1.5,
+   "mean_rgb": [
+    138,
+    125,
+    98
+   ]
+  },
+  {
+   "id": "stone_tiles",
+   "source": "ground_built/polyhaven-stone_tiles",
+   "extent_m": 3.17,
+   "mean_rgb": [
+    82,
+    87,
+    73
+   ]
+  },
+  {
+   "id": "gravel_ground_01",
+   "source": "ground_built/polyhaven-gravel_ground_01",
+   "extent_m": 3.0,
+   "mean_rgb": [
+    146,
+    131,
+    104
+   ]
+  },
+  {
+   "id": "dirt_floor",
+   "source": "ground_built/polyhaven-dirt_floor",
+   "extent_m": 2.07,
+   "mean_rgb": [
+    182,
+    140,
+    100
+   ]
+  },
+  {
+   "id": "old_planks_02",
+   "source": "ground_built/polyhaven-old_planks_02",
+   "extent_m": 2.0,
+   "mean_rgb": [
+    98,
+    85,
+    71
+   ]
+  }
+ ],
+ "cover": {
+  "tile": 0,
+  "slate": 1,
+  "thatch": 5,
+  "reed": 3,
+  "bamboo": 19,
+  "palm": 4,
+  "shingle": 6,
+  "turf": 7,
+  "bark": 8,
+  "hide": 9,
+  "felt": 10,
+  "earth": 11,
+  "plaster": 12,
+  "stone": 14,
+  "snow": 13,
+  "metal": 2,
+  "lead": 2
+ },
+ "wall": {
+  "timber": 15,
+  "brick": 16,
+  "stone": 17,
+  "earth": 11,
+  "wood": 18,
+  "plaster": 12,
+  "bamboo": 19,
+  "wattle": 20,
+  "hide": 9,
+  "coral": 21
+ },
+ "road": {
+  "street_main": 22,
+  "street_lane": 24,
+  "track": 25,
+  "ford": 25,
+  "place": 23,
+  "market": 23,
+  "quay": 23,
+  "stairs": 23,
+  "bridge": 23,
+  "bridge_timber": 26,
+  "causeway": 24,
+  "wall": 17
+ }
+}

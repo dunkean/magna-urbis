@@ -7,6 +7,7 @@ import type { CityBuildings, CityLayers, CityLod, CityPalette, CityScene, CityVi
 import { BUILDING_FAMILIES, DISTRICT_ROLES, districtRoleKey, roleFamily } from './cityCanvas';
 import { urbanFunctionColor } from './urbanBuildingStyle';
 import type { CityGlFillMesh } from './cityGlBuild';
+import { MATERIALS, coverLayer, placeLayer, streetLayer } from './buildingMaterials';
 
 export interface CityGlStyleState {
   view: CityView; lod: CityLod; palette: CityPalette; layers: CityLayers;
@@ -255,3 +256,37 @@ export function wallColors(scene: CityScene, palette: CityPalette): { outer: Uin
   return { outer, inner, tower: [parchment ? PARCH.tower : '#5a5248', parchment ? PARCH.wall : '#2f2a24'] };
 }
 export const rgba01 = (color: string, alpha = 1): [number, number, number, number] => { const v = rgb(color); return [((v >> 16) & 255) / 255, ((v >> 8) & 255) / 255, (v & 255) / 255, alpha]; };
+
+// ---------------------------------------------------------------- textured materials
+// Per-feature material tables (RGBA8, same layout as the colour tables): R = layer + 1 (0: none, keep the flat colour),
+// G = roof downslope angle (0..255 → 0..2π) or, for streets, 1 = texture follows the street, B = brightness × 128.
+const matPut = (out: Uint8Array, i: number, layer: number, g: number, bright: number): void => {
+  out[i * 4] = layer < 0 ? 0 : layer + 1; out[i * 4 + 1] = g; out[i * 4 + 2] = Math.max(0, Math.min(255, Math.round(bright * 128))); out[i * 4 + 3] = 255;
+};
+/** Roof pans: cover layer, downslope angle, and the brightness of the flat render (per-house jitter, volume tone, slope light). */
+export function roofMaterialTable(buildings: CityBuildings | undefined, s: CityGlStyleState): Uint8Array {
+  const items = buildings?.items ?? [], roofs = buildings?.roofs, n = items.length + (roofs ? roofs.shapes.length + items.length : 0), out = new Uint8Array(Math.max(1, n) * 4);
+  if (!roofs || s.view === 'roles' || s.diagnostic === 'uses' || s.palette === 'parchment') return out;
+  for (let k = 0; k < roofs.shapes.length; k++) {
+    const layer = coverLayer(roofs.cover[k]), owner = items[roofs.owner[k]];
+    if (layer < 0) continue;
+    const bright = (1 + roofJitter(owner.id) * 1.6) * (1 + ((roofs.tone?.[k] ?? 0.5) - 0.5) * 0.16) * (1 + roofs.light[k]);
+    matPut(out, items.length + k, layer, Math.round(((roofs.dir[k] ?? 0) / (2 * Math.PI) + 1) % 1 * 255), bright);
+  }
+  return out;
+}
+/** Plan fills drawn textured: plazas (place / market blocks and parcels). */
+export function planMaterialTable(scene: CityScene, mesh: Pick<CityGlFillMesh, 'layers' | 'featureCount'>): Uint8Array {
+  const out = new Uint8Array(mesh.featureCount * 4), layer = placeLayer();
+  const b0 = mesh.layers.blocks.features[0], p0 = mesh.layers.parcels.features[0];
+  scene.blocks.forEach((b, i) => { if (b.kind === 'place') matPut(out, b0 + i, layer, 0, 1); });
+  scene.parcels.forEach((p, i) => { if (p.use === 'place' || p.use === 'market') matPut(out, p0 + i, layer, 0, 1); });
+  return out;
+}
+/** Street surfaces by role and rank; planks (timber decks) run along the street. */
+export function streetMaterialTable(scene: CityScene): Uint8Array {
+  const out = new Uint8Array(Math.max(1, scene.streets.length) * 4);
+  // Narrow bridges are timber decks (planks along the span); wider ones are stone paving.
+  scene.streets.forEach((st, i) => { const planks = st.role === 'bridge' && st.width < 4, layer = planks ? MATERIALS.road.bridge_timber : streetLayer(st.role, st.rank); matPut(out, i, layer, planks ? 1 : 0, 1); });
+  return out;
+}

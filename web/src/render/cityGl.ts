@@ -20,7 +20,8 @@ import {
   slicePolygons, splitPolygons, STROKE_STRIDE, triangulatePolygons, visibleRanges,
   type CityGlFillMesh, type CityGlFillSource, type CityGlStrokes, type CityGlTriangulation,
 } from './cityGlBuild';
-import { buildingColors, DEFAULT_LAYERS, PAINTED_SHADOW, planColors, rgba01, streetColors, wallColors, type CityGlDraws, type CityGlStyleState } from './cityGlStyle';
+import { buildingColors, DEFAULT_LAYERS, PAINTED_SHADOW, planColors, planMaterialTable, rgba01, roofMaterialTable, streetColors, streetMaterialTable, wallColors, type CityGlDraws, type CityGlStyleState } from './cityGlStyle';
+import { MATERIALS, loadMaterialImages, uploadMaterialArrays } from './buildingMaterials';
 import { cityLegacyWalls, cityWallColors, cityWallStrokes, createCityGlWalls, type CityGlWalls } from './cityWalls'; // walls hook (cityWalls.ts)
 
 export interface CityGlDrawOptions {
@@ -38,6 +39,8 @@ export interface CityGlDrawOptions {
   bridgeDeck?: boolean;
   /** Painted building silhouettes (tints, ground shadows, edges). Same default as bridgeDeck. */
   paintedBuildings?: boolean;
+  /** Textured materials: roofs, streets and plazas sample the PBR albedo atlas in world metres. */
+  textured?: boolean;
 }
 export interface CityGlFrame { lod: CityLod; drawCalls: number; instances: number; triangles: number; cpuMs: number }
 export interface CityGlBuildStats { packMs: number; triangulateMs: number; assembleMs: number; uploadMs: number; workers: number; totalMs: number }
@@ -136,6 +139,10 @@ uniform float uMpp, uDevPx, uEdgePx, uInnerScale, uMinPxScale;
 uniform int uPass, uMaxRank, uCrossings;
 uniform vec4 uOverride;
 uniform highp sampler2D uColors;
+#if VARIANT == 3
+uniform highp sampler2D uMats;
+out vec2 vWorld; flat out vec2 vMat;
+#endif
 out vec4 vColor; out vec2 vLocal; out float vAlong;
 flat out float vLen; flat out float vHw; flat out uint vMeta; flat out float vFoot; flat out float vBase;
 void main() {
@@ -163,6 +170,11 @@ void main() {
   float s0 = (meta & 32u) != 0u ? -uDevPx : -pad, s1 = (meta & 64u) != 0u ? len + uDevPx : len + pad;
   float s = mix(s0, s1, float(gl_VertexID & 1)), t = mix(-pad, pad, float(gl_VertexID >> 1));
   vLocal = vec2(s, t); vLen = len; vHw = hw; vMeta = meta; vAlong = aShape.z + s;
+#if VARIANT == 3
+  vWorld = a + dir * s + n * t;
+  vec4 m = texelFetch(uMats, ivec2(f & 4095, f >> 12), 0) * 255.0;
+  vMat = vec2(m.r - 1.0, m.g);
+#endif
   gl_Position = visible ? vec4((a + dir * s + n * t) * uView.xy + uView.zw, 0.0, 1.0) : vec4(2.0, 2.0, 2.0, 1.0);
 }`;
 /** Stroke shaders come in three variants (VARIANT, see strokeVariant): 0 = plain strokes
@@ -174,6 +186,11 @@ precision highp float;
 precision highp int;
 in vec4 vColor; in vec2 vLocal; in float vAlong;
 flat in float vLen; flat in float vHw; flat in uint vMeta; flat in float vFoot; flat in float vBase;
+#if VARIANT == 3
+in vec2 vWorld; flat in vec2 vMat;
+uniform highp sampler2DArray uAlbedo;
+uniform float uExt[32];
+#endif
 uniform float uMpp, uDevPx;
 uniform int uPass, uDashKind, uBridgeDeck;
 out vec4 outColor;
@@ -221,6 +238,16 @@ void main() {
     cover = 1.0 - 0.5 * wear;
   }
 #endif
+  // Textured streets: the road layer of the street's role sampled in world metres (planks follow the street),
+  // darkened toward the edge so the casing stays readable. Sampled outside any branch (derivatives).
+#if VARIANT == 3
+  {
+    float ext = uExt[int(max(vMat.x, 0.0))];
+    vec2 p = vMat.y > 0.5 ? vec2(vAlong, vLocal.y) : vWorld;
+    vec3 tex = texture(uAlbedo, vec3(p / ext, max(vMat.x, 0.0))).rgb;
+    if ((vMeta & 16u) == 0u && vMat.x >= 0.0) color = tex * (1.0 - 0.3 * smoothstep(0.8, 1.0, t / max(vHw, 1e-3)));
+  }
+#endif
   // Stone deck (render background): light parapets, a dark kerb line inside them, a deck a
   // shade darker with transverse joints once they are at least 3 px apart.
 #if VARIANT != 1
@@ -256,6 +283,38 @@ void main() {
   if (a <= 0.0) discard;
   outColor = vec4(color, 1.0) * (vColor.a * a * cover);
 }`;
+/** Textured fills (roof pans, plazas): the albedo array sampled in world metres, rotated by the feature's
+ * angle (roofs: u along the ridge, v down the slope), times its brightness. uOnly = 1 keeps only the features
+ * that have a material (plazas over the flat plan fill); uOnly = 0 draws every feature, flat colour where none. */
+const TFILL_VS = `#version 300 es
+layout(location = 0) in vec2 aPos;
+layout(location = 1) in uint aFeature;
+uniform vec4 uView;
+uniform highp sampler2D uColors, uMats;
+uniform float uExt[32];
+uniform int uOnly;
+out vec4 vColor; out vec2 vUv; flat out float vLayer; flat out float vBright;
+void main() {
+  int f = int(aFeature);
+  ivec2 q = ivec2(f & 4095, f >> 12);
+  vColor = texelFetch(uColors, q, 0);
+  vec4 m = texelFetch(uMats, q, 0) * 255.0;
+  float layer = m.r - 1.0, ang = m.g / 255.0 * 6.2831853;
+  vec2 dir = vec2(cos(ang), sin(ang)), p = aPos / uExt[int(max(layer, 0.0))];
+  vUv = vec2(dot(p, vec2(-dir.y, dir.x)), dot(p, dir)); vLayer = layer; vBright = m.b / 128.0;
+  bool shown = vColor.a > 0.0 && (uOnly == 0 || layer >= 0.0);
+  gl_Position = shown ? vec4(aPos * uView.xy + uView.zw, 0.0, 1.0) : vec4(2.0, 2.0, 2.0, 1.0);
+}`;
+const TFILL_FS = `#version 300 es
+precision highp float;
+in vec4 vColor; in vec2 vUv; flat in float vLayer; flat in float vBright;
+uniform highp sampler2DArray uAlbedo;
+out vec4 outColor;
+void main() {
+  vec3 tex = texture(uAlbedo, vec3(vUv, max(vLayer, 0.0))).rgb * vBright;
+  vec3 c = vLayer >= 0.0 ? min(tex, vec3(1.0)) : vColor.rgb;
+  outColor = vec4(c * vColor.a, vColor.a);
+}`;
 const DISC_VS = `#version 300 es
 layout(location = 0) in vec2 aCenter;
 uniform vec4 uView;
@@ -278,7 +337,7 @@ void main() {
   outColor = vec4(c.rgb, 1.0) * (c.a * a);
 }`;
 
-const strokeVariant = (source: string, variant: 0 | 1 | 2): string => source.replace(/^#version 300 es\n/, `#version 300 es\n#define VARIANT ${variant}\n`);
+const strokeVariant = (source: string, variant: 0 | 1 | 2 | 3): string => source.replace(/^#version 300 es\n/, `#version 300 es\n#define VARIANT ${variant}\n`);
 // ---------------------------------------------------------------- GL helpers
 type Uniforms = Record<string, WebGLUniformLocation | null>;
 interface Program { program: WebGLProgram; u: Uniforms }
@@ -307,7 +366,7 @@ function uploadTable(gl: WebGL2RenderingContext, texture: WebGLTexture, rgba: Ui
 
 /** A fill mesh on the GPU: shared vertices, one VAO for triangles, one for lines, two colour tables. */
 class FillPack {
-  vbo: WebGLBuffer[] = []; tri: WebGLVertexArrayObject; line: WebGLVertexArrayObject; fill: WebGLTexture; edge: WebGLTexture; bytes: number;
+  vbo: WebGLBuffer[] = []; tri: WebGLVertexArrayObject; line: WebGLVertexArrayObject; fill: WebGLTexture; edge: WebGLTexture; mats?: WebGLTexture; bytes: number;
   constructor(private gl: WebGL2RenderingContext, readonly mesh: CityGlFillMesh) {
     const buffer = (target: number, data: ArrayBufferView): WebGLBuffer => { const b = gl.createBuffer()!; gl.bindBuffer(target, b); gl.bufferData(target, data, gl.STATIC_DRAW); this.vbo.push(b); return b; };
     const pos = buffer(gl.ARRAY_BUFFER, mesh.positions), feat = buffer(gl.ARRAY_BUFFER, mesh.vertexFeatures);
@@ -323,11 +382,12 @@ class FillPack {
     this.bytes = mesh.positions.byteLength + mesh.vertexFeatures.byteLength + mesh.triangles.byteLength + mesh.lines.byteLength + Math.ceil(mesh.featureCount / TEX_W) * TEX_W * 8;
   }
   colors(fill: Uint8Array, edge: Uint8Array): void { uploadTable(this.gl, this.fill, fill); uploadTable(this.gl, this.edge, edge); }
-  dispose(): void { const gl = this.gl; this.vbo.forEach(b => gl.deleteBuffer(b)); gl.deleteVertexArray(this.tri); gl.deleteVertexArray(this.line); gl.deleteTexture(this.fill); gl.deleteTexture(this.edge); }
+  materials(table: Uint8Array): void { uploadTable(this.gl, this.mats ??= this.gl.createTexture()!, table); }
+  dispose(): void { const gl = this.gl; if (this.mats) gl.deleteTexture(this.mats); this.vbo.forEach(b => gl.deleteBuffer(b)); gl.deleteVertexArray(this.tri); gl.deleteVertexArray(this.line); gl.deleteTexture(this.fill); gl.deleteTexture(this.edge); }
 }
 /** Segment instances on the GPU (36-byte stride), with outer/inner colour tables. */
 class StrokePack {
-  vbo: WebGLBuffer; vao: WebGLVertexArrayObject; outer: WebGLTexture; inner: WebGLTexture; bytes: number;
+  vbo: WebGLBuffer; vao: WebGLVertexArrayObject; outer: WebGLTexture; inner: WebGLTexture; mats?: WebGLTexture; bytes: number;
   constructor(private gl: WebGL2RenderingContext, readonly strokes: CityGlStrokes, dynamic = false) {
     this.vbo = gl.createBuffer()!; gl.bindBuffer(gl.ARRAY_BUFFER, this.vbo); gl.bufferData(gl.ARRAY_BUFFER, strokes.data, dynamic ? gl.DYNAMIC_DRAW : gl.STATIC_DRAW);
     this.vao = gl.createVertexArray()!; this.bind(0);
@@ -343,7 +403,8 @@ class StrokePack {
     gl.enableVertexAttribArray(2); gl.vertexAttribIPointer(2, 2, gl.UNSIGNED_INT, stride, o + 28); gl.vertexAttribDivisor(2, 1);
   }
   colors(outer: Uint8Array, inner: Uint8Array): void { uploadTable(this.gl, this.outer, outer); uploadTable(this.gl, this.inner, inner); }
-  dispose(): void { const gl = this.gl; gl.deleteBuffer(this.vbo); gl.deleteVertexArray(this.vao); gl.deleteTexture(this.outer); gl.deleteTexture(this.inner); }
+  materials(table: Uint8Array): void { uploadTable(this.gl, this.mats ??= this.gl.createTexture()!, table); }
+  dispose(): void { const gl = this.gl; if (this.mats) gl.deleteTexture(this.mats); gl.deleteBuffer(this.vbo); gl.deleteVertexArray(this.vao); gl.deleteTexture(this.outer); gl.deleteTexture(this.inner); }
 }
 
 // ---------------------------------------------------------------- triangulation pool
@@ -407,7 +468,9 @@ export function createCityGlRenderer(canvas: HTMLCanvasElement | OffscreenCanvas
     const info = gl.getExtension('WEBGL_debug_renderer_info'), name = String(gl.getParameter(info ? info.UNMASKED_RENDERER_WEBGL : gl.RENDERER));
     if (SOFTWARE_GL.test(name)) { gl.getExtension('WEBGL_lose_context')?.loseContext(); throw new Error(`WebGL2 logiciel (${name})`); }
   }
-  let fillP: Program, strokeP: Program, casingP: Program, surfaceP: Program, discP: Program, pavedP: Program;
+  let fillP: Program, strokeP: Program, casingP: Program, surfaceP: Program, discP: Program, pavedP: Program, tfillP: Program, texturedP: Program;
+  // Textured materials: the albedo array (loaded lazily on the first textured draw) and the key of each uploaded material table.
+  let albedoTex: WebGLTexture | undefined, albedoLoading = false, planMatKey = '', streetMatKey = '', builtMatKey = '';
   let plan: FillPack | undefined, built: FillPack | undefined, streets: StrokePack | undefined, walls: StrokePack | undefined, selection: StrokePack | undefined;
   let towers: { vbo: WebGLBuffer; vao: WebGLVertexArrayObject; count: number } | undefined;
   let scene: CityScene | undefined, buildings: CityBuildings | undefined, origin: Point = { x: 0, y: 0 };
@@ -421,6 +484,7 @@ export function createCityGlRenderer(canvas: HTMLCanvasElement | OffscreenCanvas
   function init(): void {
     fillP = compile(gl, FILL_VS, FILL_FS); strokeP = compile(gl, strokeVariant(STROKE_VS, 0), strokeVariant(STROKE_FS, 0));
     casingP = compile(gl, strokeVariant(STROKE_VS, 1), strokeVariant(STROKE_FS, 1)); surfaceP = compile(gl, strokeVariant(STROKE_VS, 2), strokeVariant(STROKE_FS, 2)); discP = compile(gl, DISC_VS, DISC_FS); pavedP = compile(gl, PAVED_VS, PAVED_FS);
+    tfillP = compile(gl, TFILL_VS, TFILL_FS); texturedP = compile(gl, strokeVariant(STROKE_VS, 3), strokeVariant(STROKE_FS, 3));
     wallGl = createCityGlWalls(gl); // walls hook
   }
   init();
@@ -437,12 +501,12 @@ export function createCityGlRenderer(canvas: HTMLCanvasElement | OffscreenCanvas
       gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0); gl.vertexAttribDivisor(0, 1); gl.bindVertexArray(null);
       towers = { vbo, vao, count: towerData.length / 2 };
     }
-    styleKey = streetKey = selectionKey = '';
+    styleKey = streetKey = selectionKey = planMatKey = streetMatKey = '';
     return performance.now() - t;
   }
   function uploadBuildings(): number {
     const t = performance.now();
-    built?.dispose(); built = builtMesh && new FillPack(gl, builtMesh); builtKey = '';
+    built?.dispose(); built = builtMesh && new FillPack(gl, builtMesh); builtKey = builtMatKey = '';
     return performance.now() - t;
   }
   const invalidate = (): void => { if (!disposed) create.onInvalidate?.(); };
@@ -450,7 +514,7 @@ export function createCityGlRenderer(canvas: HTMLCanvasElement | OffscreenCanvas
   const onRestored = (): void => {
     // Old GL objects are invalid after restoration. Keep Canvas active until
     // programmes and the latest retained CPU meshes have all been reuploaded.
-    lost = true; plan = built = streets = walls = selection = undefined; towers = undefined;
+    lost = true; plan = built = streets = walls = selection = undefined; towers = undefined; albedoTex = undefined; albedoLoading = false;
     try { init(); uploadPlan(); uploadBuildings(); lost = false; }
     catch (error) { console.warn('Restauration WebGL de la ville indisponible, Canvas 2D utilisé', error); }
     finally { invalidate(); }
@@ -518,12 +582,34 @@ export function createCityGlRenderer(canvas: HTMLCanvasElement | OffscreenCanvas
       }
       const bKey = `${o.view}|${palette}|${style.diagnostic}|${buildingGeneration}|${painted}`;
       if (built && bKey !== builtKey) { const bc = buildingColors(buildings, style, scene); built.colors(bc.fill, bc.line); builtKey = bKey; }
+      // Textured materials: albedo array loaded once (the plan is drawn flat until it arrives, then repainted).
+      const textured = !!o.textured && !!albedoTex;
+      if (o.textured && !albedoTex && !albedoLoading) {
+        albedoLoading = true;
+        loadMaterialImages().then(images => { if (disposed || lost || gl.isContextLost()) return; albedoTex = uploadMaterialArrays(gl, images, false).albedo; invalidate(); }).catch(e => { console.warn('Matières texturées indisponibles', e); }).finally(() => { albedoLoading = false; });
+      }
+      if (textured) {
+        const pk = `${styleKey}|${o.textured}`;
+        if (plan && planMatKey !== pk) { plan.materials(planMaterialTable(scene, plan.mesh)); planMatKey = pk; }
+        if (streets && streetMatKey !== 'on') { streets.materials(streetMaterialTable(scene)); streetMatKey = 'on'; }
+        if (built && builtMatKey !== bKey) { built.materials(roofMaterialTable(buildings, style)); builtMatKey = bKey; }
+      }
       const d = draws!;
       const v = o.viewport, sx = 2 / (v.maxX - v.minX), sy = -2 / (v.maxY - v.minY);
       const view = [sx, sy, -1 - (v.minX - origin.x) * sx, 1 - (v.minY - origin.y) * sy];
       const devPx = (v.maxX - v.minX) / Math.max(1, W);
       gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA); gl.disable(gl.DEPTH_TEST);
       gl.activeTexture(gl.TEXTURE0);
+      // Binds a material table (unit 1) and the albedo array (unit 2) to a textured program.
+      const extents = new Float32Array(32).fill(2); MATERIALS.layers.forEach((l, i) => { extents[i] = l.extent_m; });
+      const useTextured = (prog: Program, mats: WebGLTexture | undefined, only: boolean): void => {
+        gl.useProgram(prog.program);
+        gl.uniform4fv(prog.u.uView, view); gl.uniform1i(prog.u.uColors, 0); gl.uniform1i(prog.u.uMats, 1); gl.uniform1i(prog.u.uAlbedo, 2); gl.uniform1fv(prog.u['uExt[0]'], extents);
+        gl.uniform1i(prog.u.uOnly, only ? 1 : 0);
+        gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, mats ?? null);
+        gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D_ARRAY, albedoTex ?? null);
+        gl.activeTexture(gl.TEXTURE0);
+      };
 
       // Fills and outlines.
       gl.useProgram(fillP.program); gl.uniform4fv(fillP.u.uView, view); gl.uniform1i(fillP.u.uColors, 0); gl.uniform4f(fillP.u.uTint, 0, 0, 0, 0);
@@ -545,6 +631,11 @@ export function createCityGlRenderer(canvas: HTMLCanvasElement | OffscreenCanvas
           gl.useProgram(pavedP.program); gl.uniform4fv(pavedP.u.uView, view); gl.uniform1i(pavedP.u.uColors, 0); gl.uniform1f(pavedP.u.uMpp, mpp);
           fills(plan, 'blocks', false); fills(plan, 'parcels', false);
           gl.useProgram(fillP.program);
+        }
+        if (textured && plan.mats) { // plazas: flagstones over the flat fill, outlines redrawn on top
+          useTextured(tfillP, plan.mats, true); fills(plan, 'blocks', false); fills(plan, 'parcels', false);
+          gl.useProgram(fillP.program); gl.uniform4fv(fillP.u.uView, view); gl.uniform1i(fillP.u.uColors, 0);
+          if (d.blockLines) fills(plan, 'blocks', true); if (d.parcelLines) fills(plan, 'parcels', true);
         }
       }
       const wallDraw = { view, mpp, lod, palette, painted: renderBackground && palette !== 'parchment' && palette !== 'ink', enabled: layers.enclosures }; // walls hook
@@ -572,7 +663,8 @@ export function createCityGlRenderer(canvas: HTMLCanvasElement | OffscreenCanvas
         const paintRoads = renderBackground && palette !== 'parchment' && palette !== 'ink';
         if (paintRoads) useStroke(casingP);
         if (d.streetCasing) strokes(streets, first, 0, s);
-        if (paintRoads) useStroke(surfaceP);
+        if (textured && streets.mats && palette !== 'parchment' && palette !== 'ink') { useStroke(texturedP); useTextured(texturedP, streets.mats, false); u = texturedP.u; }
+        else if (paintRoads) useStroke(surfaceP);
         gl.uniform1i(u.uBridgeDeck, (o.bridgeDeck ?? renderBackground) ? 1 : 0);
         strokes(streets, first, 1, s);
         gl.uniform1i(u.uBridgeDeck, 0);
@@ -608,7 +700,11 @@ export function createCityGlRenderer(canvas: HTMLCanvasElement | OffscreenCanvas
           gl.uniform4fv(fillP.u.uView, view); gl.uniform4f(fillP.u.uTint, 0, 0, 0, 0);
         }
         fills(built, 'buildings', false);
-        if (pans) { fills(built, 'roofs', false); if (lod === 'close') fills(built, 'roofs', true); }
+        if (pans) {
+          if (textured && built.mats && palette !== 'parchment') { useTextured(tfillP, built.mats, false); fills(built, 'roofs', false); gl.useProgram(fillP.program); gl.uniform4fv(fillP.u.uView, view); gl.uniform1i(fillP.u.uColors, 0); }
+          else fills(built, 'roofs', false);
+          if (lod === 'close') fills(built, 'roofs', true);
+        }
         if (d.buildingLines) fills(built, 'buildings', true);
       }
       // Selection: a 2 px outline built on demand (a few segments).
@@ -651,7 +747,7 @@ export function createCityGlRenderer(canvas: HTMLCanvasElement | OffscreenCanvas
       triangulator.dispose();
       plan?.dispose(); built?.dispose(); streets?.dispose(); walls?.dispose(); selection?.dispose();
       if (towers) { gl.deleteBuffer(towers.vbo); gl.deleteVertexArray(towers.vao); }
-      gl.deleteProgram(fillP.program); gl.deleteProgram(strokeP.program); gl.deleteProgram(casingP.program); gl.deleteProgram(surfaceP.program); gl.deleteProgram(discP.program); gl.deleteProgram(pavedP.program);
+      gl.deleteProgram(fillP.program); gl.deleteProgram(strokeP.program); gl.deleteProgram(casingP.program); gl.deleteProgram(surfaceP.program); gl.deleteProgram(discP.program); gl.deleteProgram(pavedP.program); gl.deleteProgram(tfillP.program); gl.deleteProgram(texturedP.program); if (albedoTex) gl.deleteTexture(albedoTex);
       wallGl.dispose(); // walls hook
       canvas.removeEventListener('webglcontextlost', onLost as EventListener); canvas.removeEventListener('webglcontextrestored', onRestored as EventListener);
       plan = built = streets = walls = selection = undefined; towers = undefined; scene = undefined; buildings = undefined; planMesh = builtMesh = undefined;

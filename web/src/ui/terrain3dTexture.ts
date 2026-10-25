@@ -48,7 +48,7 @@ function decodeLibrary(library: BrushLibrary): Promise<Map<string, HTMLImageElem
 }
 
 /** Complete the whole-map material with the same water and brush layers as 2D. */
-export async function terrain3dTexture(base: HTMLCanvasElement, terrain: TerrainData, style: TerrainStyle, settings: TerrainSettings, options: FantasyOptions, drawBrushes: boolean, overlaySvg: string, region = { x: 0, y: 0, width: terrain.width }, urban?: UrbanPaintingContext): Promise<HTMLCanvasElement> {
+export async function terrain3dTexture(base: HTMLCanvasElement, terrain: TerrainData, style: TerrainStyle, settings: TerrainSettings, options: FantasyOptions, drawBrushes: boolean, overlaySvg: string, region = { x: 0, y: 0, width: terrain.width }, urban?: UrbanPaintingContext, ground?: (ctx: CanvasRenderingContext2D) => void): Promise<HTMLCanvasElement> {
   const context = base.getContext('2d');
   if (!context) throw new Error('Impossible de préparer le style 3D.');
   context.imageSmoothingQuality = 'high';
@@ -60,6 +60,8 @@ export async function terrain3dTexture(base: HTMLCanvasElement, terrain: Terrain
       context.drawImage(image, 0, 0, base.width, base.height);
     } finally { URL.revokeObjectURL(url); }
   }
+  // Ground painted per tile (the city plan), above the overlay and under the brushes.
+  ground?.(context);
   if (drawBrushes && isFantasyStyle(style)) {
     const painting = prepareFantasyTerrain(terrain, style, settings, options, urban);
     if (painting?.stamps.length) {

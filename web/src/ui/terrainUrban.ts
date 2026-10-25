@@ -124,7 +124,7 @@ const mechanisms: Record<string, string> = { auto: 'Selon le relief et les accè
 const families: Record<string, string> = { auto: 'Selon culture, relief et accès', circle: 'Circulaire / ovalaire', rectangle: 'Carrée / rectangulaire', polygon: 'Polygonale', compact: 'Organique compacte', elongated: 'Allongée / fusiforme', linear: 'Linéaire / ruban', fan: 'Éventail / secteur', fingers: 'Radiale à bras', dendritic: 'Ramifiée / dendritique', lobed: 'Lobée / polynucléaire', archipelago: 'Discontinue / archipel', composite: 'Composite / asymétrique' };
 const tissues: Record<string, string> = { culture: 'Recettes culturelles par phase', grid: 'Grille orthogonale', organic: 'Organique', radial: 'Radial', terraces: 'Topographique / terrasses', dendritic: 'Ramifié', clusters: 'Groupes autour de communs' };
 const parcelOperators: Record<string, string> = { culture: 'Recettes culturelles par phase', strips: 'Bandes de façade', compact: 'Lots compacts', courtyard: 'Cours et enclos', inherited: 'Parcellaire hérité', oriented: 'Subdivision orientée', frontage: 'Territoires de façade', compound: 'Domaines / compounds', wholeBlock: 'Îlot entier', garden: 'Jardin' };
-interface Render { view: 'tissue' | 'uses' | 'parcels' | 'buildings' | 'roles'; reserve: boolean; allocated: boolean; centers: boolean; domains: boolean; quarters: boolean; blocks: boolean; streets: boolean; enclosures: boolean; parcels: boolean; gardens: boolean; places: boolean; fronts: boolean; axes: boolean; access: boolean; opacity: number; width: number; palette: 'growth' | 'atlas' | 'ink' | 'terrain' }
+interface Render { view: 'tissue' | 'uses' | 'parcels' | 'buildings' | 'roles'; reserve: boolean; allocated: boolean; centers: boolean; domains: boolean; quarters: boolean; blocks: boolean; streets: boolean; enclosures: boolean; parcels: boolean; gardens: boolean; places: boolean; fronts: boolean; axes: boolean; access: boolean; opacity: number; width: number; palette: 'growth' | 'atlas' | 'ink' | 'terrain'; /** PBR textures on constructions (roofs, streets, plazas, bridges, walls). */ textured?: boolean }
 type Kind = 'quarters' | 'parcels';
 
 /** `getRaster` replaces `getTerrain` where the raster is already adapted (Urban Bench decors). */
@@ -181,7 +181,7 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
     if (d === undefined) { d = prepare(source); paths.set(source, d); }
     return d;
   };
-  let render: Render = { view: 'parcels', reserve: false, allocated: false, centers: false, domains: true, quarters: false, blocks: true, streets: true, enclosures: true, parcels: true, gardens: true, places: true, fronts: false, axes: false, access: false, opacity: 0.8, width: 0.6, palette: 'growth' };
+  let render: Render = { view: 'parcels', reserve: false, allocated: false, centers: false, domains: true, quarters: false, blocks: true, streets: true, enclosures: true, parcels: true, gardens: true, places: true, fronts: false, axes: false, access: false, opacity: 0.8, width: 0.6, palette: 'growth', textured: false };
   function restoreState(saved: string | null): boolean {
     if (!saved) return false;
     try {
@@ -411,7 +411,7 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
     mainPanel?.sync();
   }
   const rendering = document.createElement('details'); rendering.className = 'advanced';
-  rendering.innerHTML = `<summary>⚙ Rendu · couches, palette, opacité</summary><div class="control-group">${Object.entries({ reserve: 'Réserve de croissance', allocated: 'Terre urbaine attribuée', centers: 'Noyaux et identités de quartier', domains: 'Domaines réservés', quarters: 'Secteurs de calcul', blocks: 'Îlots', streets: 'Rues urbaines', enclosures: 'Enceintes et portes', parcels: 'Parcelles', gardens: 'Jardins', places: 'Places et communs', fronts: 'Façades accessibles', axes: 'Axes des parcelles', access: 'Statut de desserte des parcelles' }).map(([key, label]) => `<label><input data-render="${key}" type="checkbox">${label}</label>`).join('')}<label>Palette<select data-render="palette"><option value="growth">Phases de croissance</option><option value="atlas">Atlas · quartiers</option><option value="ink">Encre</option><option value="terrain">Terrain</option></select></label><label>Opacité<input data-render="opacity" type="number" min="0" max="1" step="0.05"></label><label>Épaisseur des traits (px)<input data-render="width" type="number" min="0" max="5" step="0.1"></label></div><small>Ces réglages redessinent les résultats conservés, sans appel de génération. La réserve, la terre attribuée et les enceintes sont trois objets différents.</small>`;
+  rendering.innerHTML = `<summary>⚙ Rendu · couches, palette, opacité</summary><div class="control-group">${Object.entries({ reserve: 'Réserve de croissance', allocated: 'Terre urbaine attribuée', centers: 'Noyaux et identités de quartier', domains: 'Domaines réservés', quarters: 'Secteurs de calcul', blocks: 'Îlots', streets: 'Rues urbaines', enclosures: 'Enceintes et portes', parcels: 'Parcelles', gardens: 'Jardins', places: 'Places et communs', fronts: 'Façades accessibles', axes: 'Axes des parcelles', access: 'Statut de desserte des parcelles', textured: 'Matières texturées' }).map(([key, label]) => `<label><input data-render="${key}" type="checkbox">${label}</label>`).join('')}<label>Palette<select data-render="palette"><option value="growth">Phases de croissance</option><option value="atlas">Atlas · quartiers</option><option value="ink">Encre</option><option value="terrain">Terrain</option></select></label><label>Opacité<input data-render="opacity" type="number" min="0" max="1" step="0.05"></label><label>Épaisseur des traits (px)<input data-render="width" type="number" min="0" max="5" step="0.1"></label></div><small>Ces réglages redessinent les résultats conservés, sans appel de génération. La réserve, la terre attribuée et les enceintes sont trois objets différents.</small>`;
   displayHost.append(rendering);
   for (const e of Array.from(rendering.querySelectorAll<HTMLInputElement | HTMLSelectElement>('[data-render]'))) {
     const key = e.dataset.render as keyof Render;
@@ -1332,11 +1332,11 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
     const drawGl = !compare && glReady === cityPlan && (render.palette as string) !== 'parchment' ? frame.drawGl : undefined;
     const refused = appearance.diagnostic === 'access' ? refusedParcels : undefined;
     const glFrame = drawGl?.({ viewport: frame.viewport, metresPerPixel: frame.mpp, lod: cityLod, view, palette: render.palette, layers: render, selectedId: selected, selectedParcel,
-      buildingsVisible: buildingPanel.state.visible && !native && !parentOwned, diagnostic: appearance.diagnostic, refusedParcels: refused });
+      buildingsVisible: buildingPanel.state.visible && !native && !parentOwned, diagnostic: appearance.diagnostic, refusedParcels: refused, textured: !!render.textured });
     cityFrame = drawCity(ctx, cityPlan, { ...frame, lod: cityLod, view, palette: render.palette, width: render.width, layers: glFrame ? cityGlOverlayLayers(render) : render,
       buildings: compare ? (silhouetteCompare ? comparisonBuilt?.[2] : native ? landmarkOverlay() : cityBuilt) : native ? landmarkOverlay() : cityBuilt,
       buildingsVisible: !parentOwned && (compare ? view === 'buildings' : buildingPanel.state.visible && (!glFrame || !!native)), appearance,
-      selectedBuilding: selected, selectedParcel, refusedParcels: refused });
+      selectedBuilding: selected, selectedParcel, refusedParcels: refused, textured: !!render.textured, onTexturesReady: draw });
     // Native plans have their own screen-size LOD and bounded overview tiles.
     // They must remain visible while the first chunks arrive, even at city scale.
     if (native) {
@@ -1970,6 +1970,8 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
   let planSaved: Partial<Record<(typeof PLAN_LAYERS)[number], boolean>> | undefined;
   return {
     get planVisible(): boolean { return !planSaved; },
+    /** « Matières texturées » of the Rendu panel (read by the City Bench 3D view). */
+    get textured(): boolean { return !!render.textured; },
     setPlanVisible(visible: boolean): void {
       if (visible === !planSaved) return;
       if (!visible) { planSaved = Object.fromEntries(PLAN_LAYERS.map(k => [k, render[k]])); for (const k of PLAN_LAYERS) render[k] = false; }
@@ -2037,6 +2039,16 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
     },
     get layouts(): Layout[] | undefined { return layouts; },
     get partitions(): Partition[] | undefined { return partitions; },
+    /** The city plan (no buildings: they stand in the 3D pass) painted into a 3D ground tile
+     * at the tile's own resolution, over the whole city; the 2D canvas only covers the 2D framing. */
+    drawGround(ctx: CanvasRenderingContext2D, region: { x: number; y: number; width: number }, size: number): void {
+      if (!enabled || !cityPlan) return;
+      const k = size / region.width, mpp = 1 / k;
+      ctx.save(); ctx.setTransform(k, 0, 0, k, -region.x * k, -region.y * k); ctx.globalAlpha = render.opacity;
+      drawCity(ctx, cityPlan, { viewport: { minX: region.x, minY: region.y, maxX: region.x + region.width, maxY: region.y + region.width }, mpp, dpr: 1, lod: selectCityLod(mpp),
+        view: render.view, palette: render.palette, width: render.width, layers: render, buildingsVisible: false, appearance: { style: 'cartographic', diagnostic: 'none' }, textured: !!render.textured, onTexturesReady: () => options.onChange() });
+      ctx.restore();
+    },
     /** Regional road pieces (with their bridge/ford/causeway roles), memoized per road output. */
     get regionalStreets(): Street[] { if (regionalOf !== roads) { regionalOf = roads; regional = regionalStreets(roads); } return regional; },
     get buildingState() { return buildingPanel.state; },

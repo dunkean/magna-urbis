@@ -531,6 +531,8 @@ function appliedGroundOverlay(): string {
   // of thousands of nodes and never contributes to a ground material texture.
   const groundCopy = (node: Node): Node | undefined => {
     if (node instanceof Element && node.matches('[data-urban-buildings], [data-urban-building]')) return undefined;
+    // The city canvas only holds the 2D framing: load3dTile paints the plan per tile instead.
+    if (node instanceof Element && node.matches('[data-city-canvas]')) return undefined;
     const copy = node.cloneNode(false);
     for (const child of Array.from(node.childNodes)) {
       const kept = groundCopy(child); if (kept) copy.appendChild(kept);
@@ -559,7 +561,8 @@ async function load3dTile(tile: Terrain3dTile) {
   const gutter = 2, pad = tile.width / tile.pixels * gutter;
   const region = { x: tile.x - pad, y: tile.y - pad, width: tile.width + 2 * pad };
   const canvas = gpu.captureRegion(region, tile.pixels + 2 * gutter, true, false, height, ground3dEnabled());
-  const result = await terrain3dTexture(canvas, terrain, style, settings, fantasyOptions, layers.relief, appliedGroundOverlay(), region, settlements.paintingContext);
+  const result = await terrain3dTexture(canvas, terrain, style, settings, fantasyOptions, layers.relief, appliedGroundOverlay(), region, settlements.paintingContext,
+    ctx => settlements.urban.drawGround(ctx, region, canvas.width));
   if (!perspective || epoch !== texture3dEpoch) throw new DOMException('Tuile remplacée', 'AbortError');
   // Crown centres can lie outside the displayed patch. A separate, globally
   // aligned 1 m mask retains a 64 m halo without enlarging the fine colour tile.

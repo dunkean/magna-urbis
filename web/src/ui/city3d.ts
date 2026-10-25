@@ -29,6 +29,8 @@ export interface City3dOptions {
   getRegionalStreets?(): readonly Street[] | undefined;
   getPartitions?(): readonly Partition[] | undefined;
   getSelected?(): string | undefined;
+  /** Textured materials (PBR roofs, walls, streets, plazas): the 2D map's « Matières texturées » switch. */
+  getTextured?(): boolean;
   /** URL of the 2D map image; default `decors/<id>.png` (or the parent decor's). */
   getBackground?(): string | undefined;
   onSelect?(id: string): void;
@@ -105,6 +107,8 @@ export function mountCity3d(options: City3dOptions): City3d {
   let terrain: Terrain3d | undefined, active = false, disposed = false, error = '';
   let ground: Ground = 'map', colors: Colors = 'materials', planOverlay = true;
   let surfaceDecor: Decor | undefined, imageUrl: string | undefined, heightAt: City3dHeight | undefined, image: HTMLImageElement | HTMLCanvasElement | undefined, waterMask: HTMLCanvasElement | undefined, waterPaths: Path2D | undefined;
+  const textured = (): boolean => options.getTextured?.() ?? false;
+  let texturedSeen = false;
   let plan: CityScene | undefined, planOf: [unknown, unknown] | undefined;
   let sceneOf: PlacementBatch | NativeBuildingProjectionScene | undefined, display: City3dDisplayScene | undefined, displayMs = 0, focused = false, sourceEpoch = 0;
   const details = new Map<string, PlacedBuilding>(), detailBases = new Map<string, Building3dVisual>(), converting = new Set<string>();
@@ -220,10 +224,10 @@ export function mountCity3d(options: City3dOptions): City3d {
     const k = size / tile.width, mpp = tile.width / size;
     if (ground === 'render' && waterPaths) { ctx.save(); ctx.setTransform(k, 0, 0, k, -tile.x * k, -tile.y * k); ctx.fillStyle = `rgb(${WATER})`; ctx.fill(waterPaths, 'evenodd'); ctx.restore(); }
     const city = planOverlay ? cityPlan() : undefined;
-    if (city && mpp < 4 && city.extent.maxX >= tile.x && city.extent.minX <= tile.x + tile.width && city.extent.maxY >= tile.y && city.extent.minY <= tile.y + tile.width) {
+    if (city && city.extent.maxX >= tile.x && city.extent.minX <= tile.x + tile.width && city.extent.maxY >= tile.y && city.extent.minY <= tile.y + tile.width) {
       ctx.save(); ctx.setTransform(k, 0, 0, k, -tile.x * k, -tile.y * k);
       drawCity(ctx, city, { viewport: { minX: tile.x, minY: tile.y, maxX: tile.x + tile.width, maxY: tile.y + tile.width }, mpp, dpr: 1, lod: selectCityLod(mpp),
-        view: 'parcels', palette: 'terrain', width: 0.6, layers: PLAN_LAYERS, buildingsVisible: false, appearance: { style: 'cartographic', diagnostic: 'none' } });
+        view: 'parcels', palette: 'terrain', width: 0.6, layers: PLAN_LAYERS, buildingsVisible: false, appearance: { style: 'cartographic', diagnostic: 'none' }, textured: textured(), onTexturesReady: () => terrain?.invalidateTiles() });
       ctx.restore();
     }
     return c;
@@ -268,7 +272,7 @@ export function mountCity3d(options: City3dOptions): City3d {
         : { materials: city3dScene({ schema_version: '1', generator_version: '', buildings: [], refusals: [], open_spaces: [] }).materials, buildings: extra, kinds: { silhouette: 0, compact: 0, detailed: 0 } };
       displayMs = performance.now() - started;
     }
-    t.setBuildings(display, { style: 'cartographic', diagnostic: colors === 'uses' ? 'uses' : 'none' }, true);
+    t.setBuildings(display, { style: 'cartographic', diagnostic: colors === 'uses' ? 'uses' : 'none', textured: textured() && colors !== 'uses' }, true);
     ($('[data-detail]') as HTMLButtonElement).disabled = !display?.kinds.compact || !!scene && 'projection' in scene && !options.details;
     if (options.details) { applyServiceDetails(); driveDetails(); }
     placeMarker(); updateInfo();
@@ -399,6 +403,7 @@ export function mountCity3d(options: City3dOptions): City3d {
     if (d !== surfaceDecor) { setSurface(d); lap('surface'); } else syncImage(d);
     const layouts = options.getLayouts?.(), partitions = options.getPartitions?.();
     if (planOverlay && (!planOf ? layouts?.length : planOf[0] !== layouts || planOf[1] !== partitions)) { cityPlan(); t.invalidateTiles(); lap('plan'); }
+    if (textured() !== texturedSeen) { texturedSeen = textured(); t.invalidateTiles(); } // the appearance below carries the flag
     syncBuildings(); lap('buildings');
     if (!focused) {
       focused = true;

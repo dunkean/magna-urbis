@@ -5,7 +5,7 @@ import type { ArchitectureFunction } from '../../../rust/bridge/urbanArchitectur
 /** `silhouette`: flat footprints only (City Bench), no roofs or materials. */
 export type UrbanBuildingStyle = 'geometric' | 'cartographic' | 'silhouette';
 export type UrbanBuildingDiagnostic = 'none' | 'uses' | 'height' | 'access';
-export interface UrbanBuildingAppearance { style: UrbanBuildingStyle; diagnostic: UrbanBuildingDiagnostic }
+export interface UrbanBuildingAppearance { style: UrbanBuildingStyle; diagnostic: UrbanBuildingDiagnostic; /** Textured materials (3D): PBR roofs and walls by cover / wall id. */ textured?: boolean }
 export interface BuildingPaint { wall: string; roof: string; edge: string; courtyard: string }
 export const URBAN_FUNCTION_LABELS: Record<ArchitectureFunction, string> = {
   domestic: 'Habitat', mixed: 'Habitat et boutique', workshop: 'Atelier', warehouse: 'Entrepôt', collective: 'Établissement collectif', open_space: 'Espace ouvert',
