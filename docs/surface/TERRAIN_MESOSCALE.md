@@ -71,10 +71,11 @@ Le calcul intermédiaire est mutualisé une fois par fragment :
   normales, rugosité et cavités. Les creux découvrent de la terre. Cette
   modulation ne consomme que la matrice : les budgets roche/fragments restent
   intacts. La vue Support minéral exclut les touffes du couvert.
-- Sur la roche, des dépressions orientées de 6 cm maximum utilisent quatre
+- Sur la roche, des dépressions orientées de 10 cm maximum utilisent quatre
   patches fixes de 48 m et l'axe local de structure. Leur hauteur et leurs
   normales partagent les dérivées des patches et des poids. Leur filtre tient
-  compte de la largeur des creux, plus petite que leur porteuse 12×3 m.
+  compte de la largeur des creux, plus petite que leur porteuse 8×2,5 m.
+  Il s'agit de hauteur de matière et de normales, pas de déplacement du mesh.
 - Un warp monde de ±28 cm utilise le même Jacobien pour les UV, les dérivées
   et les normales de toutes les cartes PBR. Il n'est pas interrompu à un zoom
   où les photographies restent encore résolues.
@@ -121,7 +122,10 @@ isole le PBR en désactivant explicitement la nouvelle matière procédurale.
 
 ## Mesures de cette itération
 
-La baseline de la comparaison courante est le commit `338efaf428ccd1f3aa6724c5749bf4f2f7fbb8ab`.
+Les chiffres historiques ci-dessous comparent cette étape au commit
+`338efaf428ccd1f3aa6724c5749bf4f2f7fbb8ab`. Le préparateur de baseline est
+désormais fixé à `69527c7` pour l'itération suivante : voir
+[Roche rapprochée](ROCK_CLOSE_DETAIL.md) pour les mesures et commandes actuelles.
 Le protocole GPU est ABBA, 30 frames de chauffe puis 45 mesures par cas,
 avec mêmes caméra, résolution, graines et hashes de palettes. Les temps
 mesurés sont ceux du viewport GPU, pas une latence totale de l'application.

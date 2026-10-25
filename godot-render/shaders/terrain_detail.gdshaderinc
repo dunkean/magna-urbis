@@ -11,6 +11,7 @@ uniform sampler2D meso_context : filter_nearest, repeat_disable;
 uniform sampler2D meso_profiles : filter_nearest, repeat_disable;
 uniform sampler2D meso_structure : filter_linear, repeat_disable;
 uniform bool meso_profiles_enabled=true;
+uniform bool rock_small_enabled=true;
 float gridCoordinate(float t,int axis){
  if(t<=0.0)return 0.0;if(t>=1.0)return 40000.0;
  if(terrain_grid_warp<.001)return t*40000.0;
@@ -75,10 +76,17 @@ vec3 mesoBedded(vec2 world,float scale,uint salt){
  }
  return result;
 }
-vec3 mesoSupportNoise(vec2 world,float scale,uint salt){
+vec3 mesoProfileNoise(vec2 world,float scale,uint salt,MesoContext p){
  vec3 n=mesoNoise(world,scale,salt);
- if(!meso_profiles_enabled||scale!=27.0)return n;
- MesoContext p=mesoProfiles(world);
+ if(!meso_profiles_enabled)return n;
+ if(scale==3.75&&rock_small_enabled){
+   // A bounded broad shoulder/cut response, without a new noise octave or
+   // narrow threshold that could alias before the mesh resolves it.
+   float h=1.4*n.x-.4*n.x*n.x*n.x,d=1.4-1.2*n.x*n.x;
+   float rock=p.value.r+p.value.g;vec2 gradient=vec2(p.dx.r+p.dx.g,p.dz.r+p.dz.g);
+   return vec3(mix(n.x,h,rock),mix(n.yz,n.yz*d,rock)+(h-n.x)*gradient);
+ }
+ if(scale!=27.0)return n;
  float massive=(n.x+.25*(n.x*n.x-.125))/1.22;
  float clastic=1.35*n.x-.4*n.x*n.x*n.x;
  vec3 a=vec3(massive,(1.0+.5*n.x)/1.22*n.yz),b=n;
@@ -90,13 +98,14 @@ vec3 mesoSupportNoise(vec2 world,float scale,uint salt){
  result.yz+=(a.x-n.x)*vec2(p.dx.r,p.dz.r)+(b.x-n.x)*vec2(p.dx.g,p.dz.g)+(c.x-n.x)*vec2(p.dx.b,p.dz.b);
  return result;
 }
+vec3 mesoSupportNoise(vec2 world,float scale,uint salt){return mesoProfileNoise(world,scale,salt,mesoProfiles(world));}
 vec2 mesoBandFilter(float scale,float spacing){
  float lo=scale/6.0,hi=scale/3.0,t=clamp((spacing-lo)/(hi-lo),0.0,1.0);
  return vec2(1.0-t*t*(3.0-2.0*t),-6.0*t*(1.0-t)/(hi-lo));
 }
-vec3 mesoBand(vec2 world,float scale,uint salt,float amplitude,vec2 gradient,float spacing,vec2 ds){
+vec3 mesoBand(vec2 world,float scale,uint salt,float amplitude,vec2 gradient,float spacing,vec2 ds,MesoContext profile){
  vec2 filter=mesoBandFilter(scale,spacing);if(filter.x<=0.0)return vec3(0);
- vec3 noise=mesoSupportNoise(world,scale,terrain_detail_seed+salt);
+ vec3 noise=mesoProfileNoise(world,scale,terrain_detail_seed+salt,profile);
  return vec3(amplitude*noise.x*filter.x,filter.x*(amplitude*noise.yz+noise.x*gradient)+amplitude*noise.x*filter.y*ds);
 }
 vec3 mesoSample(vec2 world,vec4 density){
@@ -104,9 +113,10 @@ vec3 mesoSample(vec2 world,vec4 density){
  float spacing=length(density.xy);vec2 ds=density.xy*density.zw/max(spacing,.00001);
  if(spacing>=64.0/3.0)return vec3(0);
  MesoContext ctx=mesoContext(world);if(ctx.value.r+ctx.value.g<=0.0)return vec3(0);
+ MesoContext profile=mesoProfiles(world);
  vec2 coarse=vec2(ctx.dx.r,ctx.dz.r),fine=vec2(ctx.dx.g,ctx.dz.g);
- return terrain_detail_amount*(mesoBand(world,64.0,17u,ctx.value.r*.68,coarse*.68,spacing,ds)
-  +mesoBand(world,27.0,109u,ctx.value.r*.32,coarse*.32,spacing,ds)
-  +mesoBand(world,9.5,271u,ctx.value.g*.72,fine*.72,spacing,ds)
-  +mesoBand(world,3.75,577u,ctx.value.g*.28,fine*.28,spacing,ds));
+ return terrain_detail_amount*(mesoBand(world,64.0,17u,ctx.value.r*.68,coarse*.68,spacing,ds,profile)
+  +mesoBand(world,27.0,109u,ctx.value.r*.32,coarse*.32,spacing,ds,profile)
+  +mesoBand(world,9.5,271u,ctx.value.g*.72,fine*.72,spacing,ds,profile)
+  +mesoBand(world,3.75,577u,ctx.value.g*.28,fine*.28,spacing,ds,profile));
 }

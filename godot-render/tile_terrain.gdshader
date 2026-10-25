@@ -18,6 +18,7 @@ uniform bool terrain_height_probe=false;
 uniform bool terrain_normal_probe=false;
 uniform bool forest_coverage_probe=false;
 uniform bool water_domain_probe=false;
+uniform bool rock_normal_probe=false;
 uniform sampler2D forest_placement : filter_linear_mipmap, repeat_disable;
 uniform sampler2D original_height_map : filter_nearest, repeat_disable;
 uniform sampler2D original_cover : filter_linear_mipmap, repeat_disable;
@@ -60,6 +61,7 @@ float forestWaterCoverage(vec2 world){vec2 uv=world/40000.0;vec4 water=textureLo
 #include "res://shaders/terrain_detail.gdshaderinc"
 #include "res://shaders/meso_material.gdshaderinc"
 #include "res://shaders/surface_water.gdshaderinc"
+#include "res://shaders/rock_projection.gdshaderinc"
 // Complement uses the original crown palette, never a rocky/snowy closed guide.
 vec3 montanePalette(){
  float humid=uMaterialClimate.y/max(20.0*uMaterialClimate.x+280.0,120.0);
@@ -100,9 +102,9 @@ vec3 patch_random(ivec2 cell,int type_id,float seed){
  uint k=patch_hash(h+1013904223u);uint j=patch_hash(k+1664525u);
  return vec3(float(h&65535u),float(k&65535u),float(j&65535u))/65535.0;
 }
-void source_patch(int type_id,vec4 params,vec2 uv,vec2 dx,vec2 dy,ivec2 patch,float seed,float direction,out vec3 color,out vec3 normal,out float roughness){
+void source_patch(int type_id,vec4 params,vec2 uv,vec2 dx,vec2 dy,ivec2 patch,float seed,float direction,RockProjection projection,out vec3 color,out vec3 normal,out float roughness){
  vec3 random=patch_random(patch,type_id,seed);
- if(params.z>.5&&type_id!=16&&type_id!=84&&ground_stochastic){
+ if(params.z>.5&&type_id!=16&&type_id!=84&&(ground_stochastic||(projection.enabled&&rock_projection_enabled&&type_id<22))){
    // Sample the axis at the patch anchor, so the modulo-pi branch cannot
    // flip one photograph halfway through a patch. Neighbour patches blend.
    vec2 anchor=vec2(float(patch.x)+.5*float(patch.y),.866025404*float(patch.y))*1.4*params.y;
@@ -113,6 +115,11 @@ void source_patch(int type_id,vec4 params,vec2 uv,vec2 dx,vec2 dy,ivec2 patch,fl
  if(!ground_stochastic)angle=params.z>.5?direction:floor(seed*4.0)*1.5707963;
  mat2 rotation=mat2(vec2(cos(angle),sin(angle)),vec2(-sin(angle),cos(angle)));
  vec2 offset=ground_stochastic?random.yz:vec2(seed,seed*.731);
+ vec3 chart_x=vec3(1,0,0),chart_z=vec3(0,0,1);
+ if(projection.enabled&&rock_projection_enabled&&type_id<22&&projection.amount>0.0){
+   vec2 anchor=vec2(float(patch.x)+.5*float(patch.y),.866025404*float(patch.y))*1.4*params.y;
+   rockChart(projection,anchor,params.y,uv,dx,dy,chart_x,chart_z);
+ }
  vec2 at=rotation*uv+offset;
  vec2 gx=rotation*dx;vec2 gy=rotation*dy;
  vec4 nr=textureGrad(ground_normals,vec3(at,params.x),gx,gy);
@@ -122,14 +129,18 @@ void source_patch(int type_id,vec4 params,vec2 uv,vec2 dx,vec2 dy,ivec2 patch,fl
  vec3 gain=texelFetch(ground_palette,ivec2(type_id,2),0).rgb;
  color=mean+(textureGrad(ground_colors,vec3(at,params.x),gx,gy).rgb-source_mean)*gain;
  normal=normalize(nr.rgb*2.0-1.0);normal.xy=transpose(rotation)*normal.xy;
+ if(projection.enabled&&rock_projection_enabled&&type_id<22)normal=rockChartNormal(normal,chart_x,chart_z,projection);
  roughness=clamp(nr.a+(height-.5)*.04,.08,1.0);
+ if(type_id<22&&rock_detail_enabled){color*=1.0+.028*(height-.5)*projection.amount;roughness=clamp(roughness+.045*(height-.5)*projection.amount,.08,1.0);}
 }
 
 // Linear source means and PBR detail share the same resolved palette.
-void ground_sample(int type_id,vec2 metres,vec2 dx,vec2 dy,out vec3 color,out vec3 normal,out float roughness){
+void ground_sample_projected(int type_id,vec2 metres,vec2 dx,vec2 dy,RockProjection projection,out vec3 color,out vec3 normal,out float roughness){
  vec4 params=texelFetch(ground_palette,ivec2(type_id,0),0);
  vec3 mean=texelFetch(ground_palette,ivec2(type_id,1),0).rgb;
- float detail=1.0-smoothstep(params.y*.12,params.y*.65,max(length(dx),length(dy)));
+ float footprint=max(length(dx),length(dy));
+ if(projection.enabled&&rock_projection_enabled&&type_id<22)footprint=mix(footprint,sqrt(max(dot(dx,dx)+projection.dh.x*projection.dh.x,dot(dy,dy)+projection.dh.y*projection.dh.y)),projection.amount);
+ float detail=1.0-smoothstep(params.y*.12,params.y*.65,footprint);
  normal=vec3(0.0,0.0,1.0);roughness=.85;color=mean;
  if(ground_view==2){color=.15+.7*fract(sin(vec3(float(type_id)+1.0)*vec3(12.9898,78.233,35.425))*43758.5453);return;}
  if(detail>.001){
@@ -151,30 +162,41 @@ void ground_sample(int type_id,vec2 metres,vec2 dx,vec2 dy,out vec3 color,out ve
    for(int patch=0;patch<3;patch++){
      if(w[patch]>.0001){
        vec3 pc;vec3 pn;float pr;
-       source_patch(type_id,params,uv,dx/params.y,dy/params.y,patch==0?a:(patch==1?b:c),offset,angle,pc,pn,pr);
+       source_patch(type_id,params,uv,dx/params.y,dy/params.y,patch==0?a:(patch==1?b:c),offset,angle,projection,pc,pn,pr);
        sample_color+=pc*w[patch];sample_normal+=pn*w[patch];sample_roughness+=pr*w[patch];
      }
    }
    float contrast=min(1.4,inversesqrt(dot(w,w)));
    sample_color=clamp(mean+(sample_color-mean)*contrast,vec3(0),vec3(1));
    color=mix(mean,sample_color,detail);
-   normal=normalize(mix(vec3(0,0,1),normalize(sample_normal),params.w*detail));
+   float normal_gain=params.w;
+   if(type_id<22&&rock_detail_enabled){sample_normal.xy*=mix(1.0,min(1.25,contrast),projection.amount);normal_gain=mix(normal_gain,min(.75,normal_gain*1.35),projection.amount);}
+   normal=normalize(mix(vec3(0,0,1),normalize(sample_normal),normal_gain*detail));
    roughness=mix(.85,sample_roughness,detail);
  }
+}
+void ground_sample(int type_id,vec2 metres,vec2 dx,vec2 dy,out vec3 color,out vec3 normal,out float roughness){
+ RockProjection p;p.height=ground_position.y;p.dh=vec2(0);
+ p.tangent=vec3(1,0,0);p.across=vec3(0,0,1);p.amount=0.0;p.enabled=false;
+ ground_sample_projected(type_id,metres,dx,dy,p,color,normal,roughness);
 }
 float matrixCoverAt(ivec2 cell,float cover_mod){
  vec4 c=texelFetch(cover_weights,cell,0);vec4 p=texelFetch(forest_placement,cell,0);
  return ground_view==3||c.r*p.r+c.g+c.b<.00001?0.0:c.a*p.g*cover_mod;
 }
-void ground_cell(ivec2 cell,float cell_weight,vec2 metres,vec2 dx,vec2 dy,float cover_mod,inout vec3 color,inout vec3 normal,inout float roughness){
+void ground_cell(ivec2 cell,float cell_weight,vec2 metres,vec2 dx,vec2 dy,float cover_mod,RockProjection projection,inout vec3 color,inout vec3 normal,inout float roughness){
  ivec2 valid=clamp(cell,ivec2(0),ivec2(int(height_n)-1));
  ivec4 ids=ivec4(round(texelFetch(ground_indices,valid,0)*255.0));vec4 shares=texelFetch(ground_weights,valid,0);
  ivec4 extra_ids=ivec4(round(texelFetch(ground_indices_extra,valid,0)*255.0));vec4 extra_shares=texelFetch(ground_weights_extra,valid,0);
  float soil_cover=matrixCoverAt(valid,cover_mod);
+ // Cell recipes are fixed fields; their four responses are interpolated by
+ // the existing material weights. A weak rock trace does not justify chart
+ // reads under a whole meadow/forest, and the gate has no pixel-varying UV.
+ projection.amount=smoothstep(.35,.65,shares.r+shares.g);
  for(int k=0;k<6;k++){
    float w=(k<4?shares[k]:extra_shares[k-4])*cell_weight*(k<3?1.0:1.0-soil_cover);
    int id=k<4?ids[k]:extra_ids[k-4];
-   if(w>.0001){vec3 c;vec3 n;float r;ground_sample(id,metres,dx,dy,c,n,r);color+=c*w;normal+=n*w;roughness+=r*w;}
+   if(w>.0001){vec3 c;vec3 n;float r;ground_sample_projected(id,metres,dx,dy,projection,c,n,r);color+=c*w;normal+=n*w;roughness+=r*w;}
  }
 }
 void cover_cell(ivec2 cell,float cell_weight,vec2 metres,vec2 dx,vec2 dy,float cover_mod,inout vec3 color,inout vec3 normal,inout float roughness,inout float coverage){
@@ -220,6 +242,7 @@ void fragment(){
  ALBEDO=vec3(0);EMISSION=original;ROUGHNESS=1.0;SPECULAR=0.0;
  if(ground_view>0){
    vec2 dx=dFdx(ground_position.xz);vec2 dy=dFdy(ground_position.xz);
+   vec4 native_water=texture(ground_water,UV);float vector_river=texture(river_footprint,UV).a;
    MesoSurface meso=mesoSurface(ground_position.xz,sqrt(dot(dx,dx)+dot(dy,dy)),ground_view!=3);
    vec2 texture_world=ground_position.xz;vec2 texture_dx=dx,texture_dy=dy;
    if(ground_stochastic){texture_world+=meso.warp;texture_dx=meso.jacobian*dx;texture_dy=meso.jacobian*dy;}
@@ -232,12 +255,22 @@ void fragment(){
      cover_cell(base+ivec2(0,1),(1.0-t.x)*t.y,texture_world,texture_dx,texture_dy,meso.cover_mod,surface_color,surface_normal,surface_roughness,surface_coverage);
      cover_cell(base+ivec2(1,1),t.x*t.y,texture_world,texture_dx,texture_dy,meso.cover_mod,surface_color,surface_normal,surface_roughness,surface_coverage);
    }
+   // Keep these chart values out of the cover-pass live register set. The
+   // catalogue's rock repeats are <=5.4m; by 8m/px all photo detail is gone.
+   RockProjection projection;projection.height=ground_position.y;projection.dh=vec2(dFdx(ground_position.y),dFdy(ground_position.y));
+   projection.amount=1.0;projection.enabled=max(native_water.a,vector_river)<.999&&max(length(texture_dx),length(texture_dy))<8.0;
+   projection.tangent=vec3(1,0,0);projection.across=vec3(0,0,1);
+   if(projection.enabled){
+     vec2 physical_slope=ground_macro_slope+(meso_material_enabled&&meso_ready?meso.physical_slope:ground_detail_slope);
+     vec3 physical_normal=normalize(vec3(-physical_slope.x,1,-physical_slope.y));
+     rockProjectionBasis(physical_normal,ground_stochastic?meso.jacobian:mat2(vec2(1,0),vec2(0,1)),projection.tangent,projection.across);
+   }
    // Interpolate four material responses, never the categorical IDs.
    {
-   ground_cell(base,(1.0-t.x)*(1.0-t.y),texture_world,texture_dx,texture_dy,meso.cover_mod,color,micro,roughness);
-   ground_cell(base+ivec2(1,0),t.x*(1.0-t.y),texture_world,texture_dx,texture_dy,meso.cover_mod,color,micro,roughness);
-   ground_cell(base+ivec2(0,1),(1.0-t.x)*t.y,texture_world,texture_dx,texture_dy,meso.cover_mod,color,micro,roughness);
-   ground_cell(base+ivec2(1,1),t.x*t.y,texture_world,texture_dx,texture_dy,meso.cover_mod,color,micro,roughness);
+   ground_cell(base,(1.0-t.x)*(1.0-t.y),texture_world,texture_dx,texture_dy,meso.cover_mod,projection,color,micro,roughness);
+   ground_cell(base+ivec2(1,0),t.x*(1.0-t.y),texture_world,texture_dx,texture_dy,meso.cover_mod,projection,color,micro,roughness);
+   ground_cell(base+ivec2(0,1),(1.0-t.x)*t.y,texture_world,texture_dx,texture_dy,meso.cover_mod,projection,color,micro,roughness);
+   ground_cell(base+ivec2(1,1),t.x*t.y,texture_world,texture_dx,texture_dy,meso.cover_mod,projection,color,micro,roughness);
    }
    color+=surface_color;micro+=surface_normal;roughness+=surface_roughness;
    if(ground_stochastic){vec2 xy=transpose(meso.jacobian)*vec2(micro.x,-micro.y);micro=normalize(vec3(xy.x,-xy.y,micro.z));}
@@ -269,12 +302,12 @@ void fragment(){
      original_forest_normal=legacy.normal;original_forest_occlusion=legacy.occlusion;
      roughness=mix(roughness,legacy.roughness,original_forest_scope);
    }
-   vec4 attrs=texture(ground_attributes,UV);vec4 water=texture(ground_water,UV);
+   vec4 attrs=texture(ground_attributes,UV);vec4 water=native_water;
    float pixel_footprint=sqrt(dot(dx,dx)+dot(dy,dy));
    vec2 shore=shoreDistance(ground_position.xz,pixel_footprint);
    if(water_shore_smooth&&water_shore_ready)water.bg=standingWater(shore,pixel_footprint);
    float wetness=clamp(attrs.r+(ground_state==1?-.28:(ground_state==2?.24:0.0)),0.0,1.0);
-   float permanent=max(water.g,water.b);float river=texture(river_footprint,UV).a;
+   float permanent=max(water.g,water.b);float river=vector_river;
    float water_mask=max(permanent,river);float snow=0.0;
    if(ground_state<3&&ground_auto_snow&&ground_view!=3){
      snow=texture(render_snow,UV).r*(1.0-water_mask)*(1.0-resolved_tree_cover);
@@ -331,6 +364,7 @@ void fragment(){
    if(ground_view==2){EMISSION=mix(mix(color,water_color,water_mask),info.rgb,overlay);ALBEDO=vec3(0);}
    if(forest_coverage_probe){ALBEDO=vec3(0);EMISSION=groundToLinear(vec3(resolved_tree_cover));SPECULAR=0.0;AO=1.0;}
    if(water_domain_probe){ALBEDO=vec3(0);EMISSION=groundToLinear(vec3(water.b,water.g,river));SPECULAR=0.0;AO=1.0;}
+   if(rock_normal_probe){vec3 display=world_normal*.5+.5;ALBEDO=vec3(0);EMISSION=mix(display/12.92,pow((display+.055)/1.055,vec3(2.4)),step(vec3(.04045),display));SPECULAR=0.0;AO=1.0;}
  }else{EMISSION=mix(original,info.rgb,info.a*info_opacity);}
  }
 }

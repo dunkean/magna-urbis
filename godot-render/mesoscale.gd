@@ -12,6 +12,7 @@ var structure:Image
 var profile_texture:ImageTexture
 var structure_texture:ImageTexture
 var profiles_enabled:=true
+var rock_small_enabled:=true
 var generator_sha:=""
 func digest(data:PackedByteArray)->String:
 	var h=HashingContext.new();h.start(HashingContext.HASH_SHA256);h.update(data);return h.finish().hex_encode()
@@ -81,10 +82,15 @@ func bedded_noise(world:Vector2,scale:float,salt:int)->Vector3:
 			var dw=Vector2((-du.x if i==0 else du.x)*wz,(-du.y if j==0 else du.y)*wx)
 			result+=Vector3(h*wx*wz,gradient.x*wx*wz+h*dw.x,gradient.y*wx*wz+h*dw.y)
 	return result
-func support_noise(world:Vector2,scale:float,salt:int)->Vector3:
+func support_noise(world:Vector2,scale:float,salt:int,profile:Array[Vector4]=[])->Vector3:
 	var n=noise_at(world,scale,salt)
-	if not profiles_enabled or scale!=27.0 or profiles==null:return n
-	var p=read_context(profiles,world)
+	if not profiles_enabled or profiles==null:return n
+	if scale!=27.0 and scale!=3.75:return n
+	var p=read_context(profiles,world) if profile.is_empty() else profile
+	if scale==3.75:
+		if not rock_small_enabled:return n
+		var h=1.4*n.x-.4*n.x*n.x*n.x;var derivative=1.4-1.2*n.x*n.x;var rock=p[0].x+p[0].y
+		return Vector3(lerpf(n.x,h,rock),lerpf(n.y,n.y*derivative,rock)+(h-n.x)*(p[1].x+p[1].y),lerpf(n.z,n.z*derivative,rock)+(h-n.x)*(p[2].x+p[2].y))
 	var massive=(n.x+.25*(n.x*n.x-.125))/1.22;var clastic=1.35*n.x-.4*n.x*n.x*n.x
 	var a=Vector3(massive,(1+.5*n.x)/1.22*n.y,(1+.5*n.x)/1.22*n.z)
 	var b=n;var c=Vector3(clastic,(1.35-1.2*n.x*n.x)*n.y,(1.35-1.2*n.x*n.x)*n.z)
@@ -101,13 +107,14 @@ func sample_field(world:Vector2,density:Vector4=Vector4.ZERO)->Vector3:
 	if Vector2(density.x,density.y).length()>=64.0/3:return Vector3.ZERO
 	var ctx=context_at(world)
 	if ctx[0].x+ctx[0].y<=0:return Vector3.ZERO
+	var profile:Array[Vector4]=read_context(profiles,world) if profiles!=null and profiles_enabled else []
 	var spacing=Vector2(density.x,density.y).length()
 	var ds=Vector2(density.x*density.z,density.y*density.w)/maxf(spacing,.00001)
 	var result=Vector3.ZERO
 	for k in 4:
 		var channel=0 if k<2 else 1;var filter=band_filter(SCALES[k],spacing)
 		if filter.x<=0:continue
-		var noise=support_noise(world,SCALES[k],seed+SALTS[k]);var amplitude=ctx[0][channel]*WEIGHTS[k]
+		var noise=support_noise(world,SCALES[k],seed+SALTS[k],profile);var amplitude=ctx[0][channel]*WEIGHTS[k]
 		var gradient=Vector2(ctx[1][channel],ctx[2][channel])*WEIGHTS[k]
 		var slope=filter.x*(amplitude*Vector2(noise.y,noise.z)+noise.x*gradient)+amplitude*noise.x*filter.y*ds
 		result+=Vector3(amplitude*noise.x*filter.x,slope.x,slope.y)

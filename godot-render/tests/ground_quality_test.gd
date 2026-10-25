@@ -59,6 +59,7 @@ func run()->void:
 	app.material.set_shader_parameter("original_cover_enabled",false)
 	app.set_detail_enabled(false)
 	app.material.set_shader_parameter("meso_material_enabled",false)
+	app.material.set_shader_parameter("rock_projection_enabled",false);app.material.set_shader_parameter("rock_detail_enabled",false)
 	app.height_image=Image.create(16,16,false,Image.FORMAT_RF);app.height_image.fill(Color(100,0,0))
 	app.material.set_shader_parameter("height_map",ImageTexture.create_from_image(app.height_image));app.material.set_shader_parameter("height_n",16.0)
 	app.material.set_shader_parameter("ground_indices",constant_texture(Color(21.0/255,0,0,0)))

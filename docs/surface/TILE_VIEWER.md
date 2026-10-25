@@ -423,6 +423,12 @@ les surfaces hydrauliques restent intacts. Les masques hydriques sont protégés
 strictement. Voir [Relief et matière intermédiaires](TERRAIN_MESOSCALE.md) pour
 les amplitudes, les transitions, le picking, les tests et les mesures GPU.
 
+Les affleurements rapprochés utilisent une projection tangentielle par patch
+pour limiter l'étirement des photographies sur les versants, avec un profil
+géométrique et des normales plus lisibles à quelques mètres. Les trois
+patches PBR existants sont réutilisés. Voir [Roche rapprochée](ROCK_CLOSE_DETAIL.md)
+pour le fonctionnement, les limites et le coût GPU mesuré.
+
 L'eau utilise un spectre procédural non périodique de 233 m à 60 cm, filtré avec
 les dérivées d'écran. Les rivières suivent la direction aval dans des frames
 fixes mélangées ; lacs et mer utilisent une dérive de vent. Le littoral est

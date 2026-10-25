@@ -4,9 +4,9 @@ struct MesoSurface{
  vec2 physical_slope;vec2 grain_slope;float signal;float grain;float cavity;float cover_mod;float unresolved_roughness;
  vec2 warp;mat2 jacobian;
 };
-vec3 mesoSurfaceBand(vec2 world,float scale,uint salt,float amplitude,vec2 gradient,float pixel_spacing){
+vec3 mesoSurfaceBand(vec2 world,float scale,uint salt,float amplitude,vec2 gradient,float pixel_spacing,MesoContext profile){
  vec2 pf=mesoBandFilter(scale,pixel_spacing*(2.0/3.0));if(pf.x<=0.0)return vec3(0);
- vec3 n=mesoSupportNoise(world,scale,terrain_detail_seed+salt);
+ vec3 n=mesoProfileNoise(world,scale,terrain_detail_seed+salt,profile);
  vec2 g=amplitude*n.yz+n.x*gradient;
  return vec3(n.x*pf.x,pf.x*g);
 }
@@ -21,8 +21,8 @@ vec3 mesoFractures(vec2 world){
    vec2 field=textureLod(ground_structure,anchor/40000.0,0.0).rg*2.0-1.0;
    float angle=.5*atan(field.y,field.x);vec2 axis=vec2(cos(angle),sin(angle)),cross_axis=vec2(-axis.y,axis.x),v=world-anchor;
    uint salt=4111u+uint(cell.x)*92821u+uint(cell.y)*68917u;
-   vec3 n=mesoNoise(vec2(dot(v,axis)/12.0,dot(v,cross_axis)/3.0),1.0,terrain_detail_seed+salt);
-   float h=-.06*exp(-n.x*n.x/.04);vec2 gradient=h*(-2.0*n.x/.04)*(n.y*axis/12.0+n.z*cross_axis/3.0);
+   vec3 n=mesoNoise(vec2(dot(v,axis)/8.0,dot(v,cross_axis)/2.5),1.0,terrain_detail_seed+salt);
+   float h=-.10*exp(-n.x*n.x/.10);vec2 gradient=h*(-2.0*n.x/.10)*(n.y*axis/8.0+n.z*cross_axis/2.5);
    float wx=i==0?1.0-u.x:u.x,wz=j==0?1.0-u.y:u.y;
    vec2 dw=vec2((i==0?-du.x:du.x)*wz,(j==0?-du.y:du.y)*wx);
    result+=vec3(h*wx*wz,gradient*wx*wz+h*dw);
@@ -40,17 +40,18 @@ MesoSurface mesoSurface(vec2 world,float footprint,bool covered){
  MesoSurface m;m.physical_slope=vec2(0);m.grain_slope=vec2(0);m.signal=0.0;m.grain=0.0;m.cavity=0.0;m.cover_mod=1.0;m.unresolved_roughness=0.0;m.warp=vec2(0);m.jacobian=mat2(vec2(1,0),vec2(0,1));
  if(!meso_ready||!meso_material_enabled||footprint>=24.0)return m;
  MesoContext c=mesoContext(world);if(!covered){c.value.a=0.0;c.dx.a=0.0;c.dz.a=0.0;}
+ MesoContext profile=mesoProfiles(world);
  vec2 cg=vec2(c.dx.r,c.dz.r),fg=vec2(c.dx.g,c.dz.g);
- vec3 a=mesoSurfaceBand(world,64.0,17u,c.value.r*.68,cg*.68,footprint);
- vec3 b=mesoSurfaceBand(world,27.0,109u,c.value.r*.32,cg*.32,footprint);
- vec3 d=mesoSurfaceBand(world,9.5,271u,c.value.g*.72,fg*.72,footprint);
- vec3 e=mesoSurfaceBand(world,3.75,577u,c.value.g*.28,fg*.28,footprint);
+ vec3 a=mesoSurfaceBand(world,64.0,17u,c.value.r*.68,cg*.68,footprint,profile);
+ vec3 b=mesoSurfaceBand(world,27.0,109u,c.value.r*.32,cg*.32,footprint,profile);
+ vec3 d=mesoSurfaceBand(world,9.5,271u,c.value.g*.72,fg*.72,footprint,profile);
+ vec3 e=mesoSurfaceBand(world,3.75,577u,c.value.g*.28,fg*.28,footprint,profile);
  m.physical_slope=a.yz+b.yz+d.yz+e.yz;
  // Medium-scale mineral response follows the same shapes as displacement;
  // micro photographs keep their own detail without a second unrelated mask.
  m.signal=.65*(.68*a.x+.32*b.x)+.35*(.72*d.x+.28*e.x);
  if(meso_profiles_enabled){
-   MesoContext profile=mesoProfiles(world);float mineral=profile.value.r+profile.value.g+profile.value.b;
+   float mineral=profile.value.r+profile.value.g+profile.value.b;
    m.signal=mix(m.signal,.35*a.x+.65*b.x,mineral*.65);
    m.unresolved_roughness=.025*mineral*b.x;
  }
@@ -68,7 +69,7 @@ MesoSurface mesoSurface(vec2 world,float footprint,bool covered){
  m.cavity=clamp(max(-tufts.x,0.0)*c.value.b,0.0,1.0);
  m.cover_mod=clamp(.86+.33*tufts.x+.13*m.signal,.45,1.0);
  m.unresolved_roughness+=.018*c.value.a*(1.0-f6)+.025*c.value.b*(1.0-f2);
- // Gaussian cuts are narrower than their 3m carrier; fade by crack width,
+ // Gaussian cuts are narrower than their 2.5m carrier; fade by crack width,
  // not carrier spacing, before they can become subpixel lines.
  float fracture_filter=mesoBandFilter(.75,footprint*(2.0/3.0)).x;
  if(fracture_filter>0.0){
@@ -76,7 +77,7 @@ MesoSurface mesoSurface(vec2 world,float footprint,bool covered){
    if(gate>0.0){
      vec3 fracture=mesoFractures(world)*fracture_filter;
      m.grain_slope+=fracture.yz*rock.x*gate+fracture.x*(gate+rock.x*dg)*rock.yz;
-     m.cavity+=clamp(-fracture.x/.06,0.0,1.0)*rock.x*gate;
+     m.cavity+=clamp(-fracture.x/.10,0.0,1.0)*rock.x*gate;
    }
  }
  // Fixed world warp, never faded by camera. Exact Jacobian feeds all texture
