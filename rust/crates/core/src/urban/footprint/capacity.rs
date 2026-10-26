@@ -217,7 +217,32 @@ pub(in crate::urban) fn adapt(
         morph
     };
     densify(&mut morph, plan.densify);
+    compact_village(&mut morph, zone, population);
     morph
+}
+
+/// Smallest share of its catalogue lot a small open village keeps.
+const VILLAGE_LOT: f64 = 0.7;
+/// A small open village (the village tissue under 1200 inhabitants; a walled
+/// one is laid out as core) is cut in lots in proportion to its houses, not to
+/// the catalogue's town burgage (18-40 x 40-80 m): a house on seven times its
+/// footprint reads as scattered farms. Frontage and depth shrink to
+/// `VILLAGE_LOT` up to 600 inhabitants and fade out by 1200.
+fn compact_village(morph: &mut Morph, zone: &str, population: u32) {
+    let k = 1.0 - (1.0 - VILLAGE_LOT) * ((1200.0 - population as f64) / 600.0).clamp(0.0, 1.0);
+    if zone != "village" || k >= 1.0 {
+        return;
+    }
+    for (key, floor) in [("frontage", 9.0_f64), ("plotDepth", 18.0_f64)] {
+        if let Some([lo, hi]) = morph.value[key][zone]
+            .as_array()
+            .and_then(|a| Some([a.first()?.as_f64()?, a.get(1)?.as_f64()?]))
+        {
+            let lo = (lo * k).max(floor.min(lo));
+            let hi = (hi * k).max(lo);
+            morph.value[key][zone] = serde_json::json!([lo, hi]);
+        }
+    }
 }
 
 /// Households and garden land that the parcel stage gives each block of a

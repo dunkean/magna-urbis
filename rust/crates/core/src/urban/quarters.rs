@@ -3834,6 +3834,11 @@ fn generate_once(
         }
     }
     let vacancy_scale = plan.as_ref().map_or(1.0, |p| p.vacancy);
+    // Invariant: the fringe never empties the settlement. The draws are
+    // independent per block, so on a settlement of one or two blocks (a camp,
+    // a street village) a single draw can leave the whole place open ground:
+    // the last built block always stays.
+    let mut built = blocks.iter().filter(|b| b.kind == "block").count();
     for (b, vacancy) in blocks.iter_mut().zip(&vacancies) {
         if let Some(vacancy) = vacancy
             && b.kind == "block"
@@ -3842,8 +3847,9 @@ fn generate_once(
             // The block's interior point on a 2 m grid: its identity, blind
             // to sub-metre jitter of its outline.
             let key = format!("block:{:.0}:{:.0}", c.x / 2.0, c.y / 2.0);
-            if fringe.fork(&key).chance(vacancy * vacancy_scale) {
+            if fringe.fork(&key).chance(vacancy * vacancy_scale) && built > 1 {
                 b.kind = "reserve".into();
+                built -= 1;
             }
         }
     }

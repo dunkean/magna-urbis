@@ -225,6 +225,19 @@ function featureDome(roof: RoofBuilder, x: number, y: number, r: number, h: numb
   const at = (i: number, k: number, zz: number): Vertex3 => ({ x: x + Math.cos(i / n * Math.PI * 2) * r * k, y: y + Math.sin(i / n * Math.PI * 2) * r * k, z: zz });
   for (let s = 0; s + 1 < rings.length; s++) for (let i = 0; i < n; i++) roof.face([at(i, rings[s].k, rings[s].z), at(i + 1, rings[s].k, rings[s].z), at(i + 1, rings[s + 1].k, rings[s + 1].z), at(i, rings[s + 1].k, rings[s + 1].z)], material);
 }
+/** Posts and a floor under a body raised on stilts: thin prisms on a 2.2 m grid inside the ring, a plank floor above them. */
+function stiltPosts(roof: RoofBuilder, ring: readonly Point[], ground: number, h: number, floor: string, post: string): void {
+  const xs = ring.map(p => p.x), ys = ring.map(p => p.y), inside = (x: number, y: number): boolean => {
+    let c = false; for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) if ((ring[i].y > y) !== (ring[j].y > y) && x < (ring[j].x - ring[i].x) * (y - ring[i].y) / (ring[j].y - ring[i].y) + ring[i].x) c = !c; return c;
+  };
+  const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys), nx = Math.max(1, Math.round((x1 - x0) / 2.2)), ny = Math.max(1, Math.round((y1 - y0) / 2.2));
+  for (let i = 0; i <= nx; i++) for (let j = 0; j <= ny; j++) {
+    const x = x0 + (x1 - x0) * i / nx, y = y0 + (y1 - y0) * j / ny;
+    if (inside(x, y) && (inside(x + 0.3, y) || inside(x - 0.3, y) || inside(x, y + 0.3))) featureBox(roof, x, y, 0.22, 0.22, h, 0, ground, post);
+  }
+  const top = ring.map(p => ({ x: p.x, y: p.y, z: ground + h }));
+  roof.face(top, floor); roof.face([...top].reverse(), floor);
+}
 /** Parapet, roof-top features, trim, facade openings and tent pole of a volume (detailed LOD only), into its roof mesh. */
 function volumeDetails(roof: RoofBuilder, v: ResolvedVolume, ground: number, wallId: string, id: string): void {
   const ring = v.shape.outer, n = ring.length, eave = ground + v.eave_m, d = v.detail ?? {}, out = ringArea(ring) >= 0 ? -1 : 1;
@@ -249,7 +262,36 @@ function volumeDetails(roof: RoofBuilder, v: ResolvedVolume, ground: number, wal
     if (f.kind === 'windcatcher') for (const [s, t] of [[-sx, 0], [0, sy], [0, -sy]]) roof.face(s ? [at(s, -hw, z0), at(s, hw, z0), at(s, hw, z1), at(s, -hw, z1)] : [at(-hw, t, z0), at(hw, t, z0), at(hw, t, z1), at(-hw, t, z1)], OPENING);
   }
   if (v.roof === 'tent' && v.rise_m > 0.05) {
-    const c = ringCentre(ring), top = eave + v.rise_m, r = 0.07;
+    const c = ringCentre(ring), top = eave + v.rise_m, r = 0.07, form = d.form, DARK = 'city3d:wall:wood@333';
+    if (form) {
+      // Door on the longest facet: a dark flap rising up the slope.
+      const e = ring.map((a, i) => ({ a, b: ring[(i + 1) % n] })).sort((x, y) => Math.hypot(y.b.x - y.a.x, y.b.y - y.a.y) - Math.hypot(x.b.x - x.a.x, x.b.y - x.a.y))[0];
+      const m = { x: (e.a.x + e.b.x) / 2, y: (e.a.y + e.b.y) / 2 }, l = Math.hypot(e.b.x - e.a.x, e.b.y - e.a.y) || 1, ux = (e.b.x - e.a.x) / l, uy = (e.b.y - e.a.y) / l;
+      const ol = Math.hypot(m.x - c.x, m.y - c.y) || 1, ox = (m.x - c.x) / ol * 0.04, oy = (m.y - c.y) / ol * 0.04, w = Math.min(0.5, l * 0.3);
+      if (form === 'yurt') facadeQuad(roof, e.a, e.b, out, l / 2 - w, l / 2 + w, ground + 0.02, ground + Math.min(1.4, v.eave_m - 0.1), 0.04, DARK);
+      else {
+        const t = 0.4, lift = (p: Point, k: number): Vertex3 => ({ x: p.x + (c.x - p.x) * k + ox, y: p.y + (c.y - p.y) * k + oy, z: ground + 0.02 + (top - ground - 0.02) * k });
+        const b0 = { x: m.x - ux * w, y: m.y - uy * w }, b1 = { x: m.x + ux * w, y: m.y + uy * w };
+        roof.face([lift(b0, 0), lift(b1, 0), lift({ x: b1.x - ux * w * 0.5, y: b1.y - uy * w * 0.5 }, t), lift({ x: b0.x + ux * w * 0.5, y: b0.y + uy * w * 0.5 }, t)], DARK);
+      }
+    }
+    if (form === 'yurt') {
+      // Dark crown ring on the apex (a flat cap seen from above and the side).
+      const cr = Math.min(0.55, v.rise_m * 0.9), z0 = top - 0.12;
+      for (let i = 0; i < 8; i++) { const a = i * Math.PI / 4, b = a + Math.PI / 4; roof.face([{ x: c.x + Math.cos(a) * cr, y: c.y + Math.sin(a) * cr, z: z0 }, { x: c.x + Math.cos(b) * cr, y: c.y + Math.sin(b) * cr, z: z0 }, { x: c.x + Math.cos(b) * cr * 0.7, y: c.y + Math.sin(b) * cr * 0.7, z: top + 0.1 }, { x: c.x + Math.cos(a) * cr * 0.7, y: c.y + Math.sin(a) * cr * 0.7, z: top + 0.1 }], DARK); }
+      roof.face(Array.from({ length: 8 }, (_, i) => ({ x: c.x + Math.cos(i * Math.PI / 4) * cr * 0.7, y: c.y + Math.sin(i * Math.PI / 4) * cr * 0.7, z: top + 0.1 })), DARK);
+      return;
+    }
+    if (form === 'tipi') {
+      // Poles crossing above the apex: thin crossed blades.
+      const h = hash(id);
+      for (let k = 0; k < 6; k++) {
+        const a = k / 6 * Math.PI * 2 + (h % 7) * 0.1, tx = c.x + Math.cos(a) * 0.35, ty = c.y + Math.sin(a) * 0.35, hw = 0.035, sx = -Math.sin(a) * hw, sy = Math.cos(a) * hw;
+        roof.face([{ x: c.x * 0.9 + tx * 0.1 + sx, y: c.y * 0.9 + ty * 0.1 + sy, z: top - 0.5 }, { x: c.x * 0.9 + tx * 0.1 - sx, y: c.y * 0.9 + ty * 0.1 - sy, z: top - 0.5 }, { x: tx - sx, y: ty - sy, z: top + 0.9 }, { x: tx + sx, y: ty + sy, z: top + 0.9 }], 'city3d:wall:wood');
+        roof.face([{ x: c.x * 0.9 + tx * 0.1 - sy, y: c.y * 0.9 + ty * 0.1 + sx, z: top - 0.5 }, { x: c.x * 0.9 + tx * 0.1 + sy, y: c.y * 0.9 + ty * 0.1 - sx, z: top - 0.5 }, { x: tx + sy, y: ty - sx, z: top + 0.9 }, { x: tx - sy, y: ty + sx, z: top + 0.9 }], 'city3d:wall:wood');
+      }
+      return;
+    }
     for (let i = 0; i < 4; i++) { const a = i * Math.PI / 2, b = a + Math.PI / 2; roof.face([{ x: c.x + Math.cos(a) * r, y: c.y + Math.sin(a) * r, z: top }, { x: c.x + Math.cos(b) * r, y: c.y + Math.sin(b) * r, z: top }, { x: c.x, y: c.y, z: top + 1 }], 'city3d:wall:wood'); }
     return;
   }
@@ -297,11 +339,16 @@ export function silhouetteBuilding(building: PlacedBuilding, heightAt?: City3dHe
         const plain = massingSlots(v.wall, v.cover, WALLS[v.wall] ?? m.wall, COVERS[v.cover] ?? m.roof), tint = wallTint(v.wall, v.tone), roof = new RoofBuilder();
         const pale = v.roof === 'flat' || v.roof === 'dome' || v.roof === 'barrel', wallId = tinted(plain.coating, tint);
         const materials = { ...plain, frame: wallId, infill: wallId, coating: wallId, cladding: pale && /^(earth|plaster)$/.test(v.cover) ? tinted(plain.cladding, tint) : plain.cladding };
-        const over = v.detail?.overhang_m ?? 0, centre = ringCentre(v.shape.outer);
-        for (const face of volumeRoof(v, i, j)) roof.face((over > 0 ? overhung(face.points, v.eave_m, centre, over) : face.points).map(p => ({ x: p.x, y: p.y, z: p.z + ground })), materials.cladding);
-        volumeDetails(roof, v, ground, wallId, `${building.id}:${i}:${j}`);
+        const over = v.detail?.overhang_m ?? 0, centre = ringCentre(v.shape.outer), lift = v.detail?.stilts_m ?? 0, form = v.detail?.form;
+        const tent = form === 'yurt' ? 'aab' : form === 'tipi' ? 'a98' : '';
+        if (tent) { materials.cladding = tinted(materials.cladding, tent); materials.coating = materials.frame = materials.infill = tinted(plain.coating, tent); }
+        const body = tent ? materials.coating : wallId;
+        if (lift > 0) stiltPosts(roof, v.shape.outer, ground, lift, wallId, 'city3d:wall:wood');
+        const base = ground + lift;
+        for (const face of volumeRoof(v, i, j)) roof.face((over > 0 ? overhung(face.points, v.eave_m, centre, over) : face.points).map(p => ({ x: p.x, y: p.y, z: p.z + base })), materials.cladding);
+        volumeDetails(roof, v, base, body, `${building.id}:${i}:${j}`);
         const system = v.roof === 'flat' ? 'RF-FLAT' : v.roof === 'hip' || v.roof === 'pyramid' || v.roof === 'tent' ? 'RF-HIP' : 'RF-GABLE';
-        return baseVolume(`${building.id}:city3d:${i}:${j}`, [v.shape], ground, v.eave_m, Math.max(0, v.rise_m), materials, roof.mesh(), system, { ...foundation, footprint: [v.shape] });
+        return baseVolume(`${building.id}:city3d:${i}:${j}`, [v.shape], base, v.eave_m, Math.max(0, v.rise_m), materials, roof.mesh(), system, { ...foundation, footprint: [v.shape] });
       });
     });
     return { ...building, ground_z_m: ground, roof_footprint: building.roof_footprint.length ? building.roof_footprint : footprint, volumes };

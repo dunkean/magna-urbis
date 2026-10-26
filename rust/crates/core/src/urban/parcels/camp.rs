@@ -205,6 +205,9 @@ impl Frame {
 /// kraal crossed by its road, measured on the s3 P01 replays).
 const ADMITTED: f64 = 0.8;
 
+/// Narrowest street contact (m) that anchors a camp lane to its road.
+const GATE_MIN: f64 = 2.0;
+
 /// Dwelling cells the camp's programme fills: its households (one per cell,
 /// or as many as a cell of `nominal` m² holds at the programme's own area per
 /// household) and its facilities sited on a plot, over the `ADMITTED` share.
@@ -752,7 +755,11 @@ fn assemble_with_contacts(
     let (paths,rejected):(Vec<Shape>,Vec<Shape>) = union(&paths).iter()
         .filter(|p| boxes_overlap(bbox(p), b))
         .flat_map(|p| intersection(p, shape)).partition(|p| area(p)>0.5);
-    let shared = connected_path_fronts(shape, &paths, &eligible, native_contacts, morph.number_or("campPath", 3.0).clamp(1.2, 3.0));
+    // A lane meeting a road slantwise, or against the corner of a notch cut
+    // for the road, keeps less than its full width as contact: a gate needs
+    // only a passage's width (2 m), not the lane's.
+    let gate = morph.number_or("campPath", 3.0).clamp(1.2, 3.0).min(GATE_MIN);
+    let shared = connected_path_fronts(shape, &paths, &eligible, native_contacts, gate);
     let first_shared=fronts.len();
     fronts.extend(shared);
     let connected_shared: Vec<usize> = (first_shared..fronts.len()).collect();

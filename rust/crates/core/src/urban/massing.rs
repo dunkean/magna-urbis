@@ -44,6 +44,8 @@ struct Tradition {
     /// Ridge perpendicular to the street (gabled row houses), else along the
     /// street for street bodies.
     gable_to_street: bool,
+    /// Building form the typology names (`yurt`, `tipi`, `stilt`), else empty.
+    form: &'static str,
 }
 
 const fn t(
@@ -60,6 +62,7 @@ const fn t(
         cover,
         wall,
         gable_to_street: false,
+        form: "",
     }
 }
 
@@ -196,6 +199,12 @@ fn tradition(arch: &Value, culture: &str) -> Tradition {
         gable_to_street: kind == "gable"
             && !mediterranean
             && (typology.contains("gable") || typology.contains("giebel")),
+        form: match typology {
+            "ger" | "yurt" => "yurt",
+            "tipi" | "tepee" => "tipi",
+            "stilt-house" => "stilt",
+            _ => "",
+        },
     }
 }
 
@@ -659,6 +668,9 @@ struct Vol {
     features: Vec<Value>,
     overhang: f64,
     trim: &'static str,
+    form: &'static str,
+    /// Height (m) of the posts the body stands on.
+    stilts: f64,
 }
 impl Vol {
     fn json(&self) -> Value {
@@ -669,6 +681,12 @@ impl Vol {
         }
         if self.overhang > 0.0 {
             v["overhang_m"] = json!(round2(self.overhang));
+        }
+        if !self.form.is_empty() && self.form != "stilt" {
+            v["form"] = json!(self.form);
+        }
+        if self.stilts > 0.0 {
+            v["stilts_m"] = json!(round2(self.stilts));
         }
         if !self.trim.is_empty() {
             v["trim"] = json!(self.trim);
@@ -813,7 +831,10 @@ pub(super) fn massing(m: &Input) -> Value {
             let mut n = floors;
             let mut eave: Option<f64> = None;
             let mut composable = false;
-            match *label {
+            // A tent people's landmark is a larger tent of its own tradition,
+            // never a stone nave or tower of another one.
+            let tribal = tr.roof == "tent";
+            match if tribal { "building" } else { *label } {
                 "tower" | "belfry" | "minaret" | "keep" => {
                     n = floors.max(2) + 3 + rng.int(0, 2);
                     kind = if tr.roof == "flat" { "flat" } else { "pyramid" };
@@ -872,7 +893,7 @@ pub(super) fn massing(m: &Input) -> Value {
                         let front = on_front(shape);
                         let drop = if front { rng.int(0, 1) } else { 1 + u32::from(rng.chance(0.35)) };
                         n = floors.saturating_sub(drop).max(1);
-                        if area < 32.0 && kind != "flat" && touches(&m.parts[main].0, shape) {
+                        if area < 32.0 && kind != "flat" && !tribal && touches(&m.parts[main].0, shape) {
                             n = 1;
                             kind = "shed";
                             pitch = pitch.clamp(15.0, 28.0);
@@ -881,7 +902,7 @@ pub(super) fn massing(m: &Input) -> Value {
                     }
                 }
             }
-            if m.landmark && *label == "building" {
+            if m.landmark && *label == "building" && !tribal {
                 n = n.max(floors) + 1;
                 cover = if tr.cover == "thatch" { "thatch" } else { "slate" };
             }
@@ -969,7 +990,19 @@ pub(super) fn massing(m: &Input) -> Value {
                     };
                     let thatchy = matches!(cover, "thatch" | "reed" | "palm" | "bamboo" | "bark" | "felt" | "hide" | "turf");
                     let hut = sn == 1 && thatchy && !m.landmark && matches!(roof.kind, "cone" | "tent" | "hip" | "gable" | "pyramid");
+                    // Yurt: round felt wall and a shallow cone; tipi: a tall hide cone
+                    // on poles, no wall; stilt house: the body on posts.
+                    let radius = min_frame(&sr).map_or(0.0, |f| f.half_w.max(f.half_l.min(f.half_w * 1.4)));
+                    let tent = roof.kind == "tent" && tr.form != "";
+                    let roof = match (tent, tr.form) {
+                        (true, "yurt") => Roof { rise: radius * 0.4, ..roof },
+                        (true, "tipi") => Roof { rise: (radius * 1.8).min(rise_cap), ..roof },
+                        _ => roof,
+                    };
+                    let stilts = if tr.form == "stilt" && sn == 1 && !m.landmark { 1.8 + 0.7 * drng.float() } else { 0.0 };
                     let (eave_v, overhang) = match (hut, roof.kind) {
+                        (true, "tent") if tent && tr.form == "yurt" => (1.6, 0.2),
+                        (true, "tent") if tent && tr.form == "tipi" => (0.1, 0.0),
                         (true, "tent") => (0.5, 0.3),
                         (true, _) => (base_eave(sn).min(2.2), 0.65),
                         _ => (base_eave(sn), 0.0),
@@ -981,6 +1014,8 @@ pub(super) fn massing(m: &Input) -> Value {
                         features,
                         overhang,
                         trim,
+                        form: if tent { tr.form } else { "" },
+                        stilts,
                         eave: eave_v,
                         n: sn,
                         cover,
@@ -1170,6 +1205,27 @@ mod tests {
         let arch = json!({"roof":"conical","typology":"tipi","storeys":[1,1],"material":"hide"});
         let m = massing(&input(&parts, &arch, &fronts, "k"));
         assert_eq!((m[0]["roof"].as_str(), m[0]["cover"].as_str(), m[0]["wall"].as_str()), (Some("tent"), Some("hide"), Some("hide")), "{m}");
+    }
+
+    #[test]
+    fn yurts_tipis_and_stilt_houses_read_as_themselves() {
+        let parts = [(rect(0.0, 0.0, 6.0, 6.0), "building")];
+        let fronts = [[Point { x: 0.0, y: 0.0 }, Point { x: 6.0, y: 0.0 }]];
+        let vol = |arch: &Value| massing(&input(&parts, arch, &fronts, "k"))[0]["volumes"][0].clone();
+        let yurt = vol(&json!({"roof":"dome","typology":"ger","storeys":[1,1],"material":"felt"}));
+        assert_eq!((yurt["form"].as_str(), yurt["roof"].as_str(), yurt["eave_m"].as_f64()), (Some("yurt"), Some("tent"), Some(1.6)), "{yurt}");
+        assert!(yurt["rise_m"].as_f64().unwrap() < 1.6, "{yurt}");
+        let tipi = vol(&json!({"roof":"conical","typology":"tipi","storeys":[1,1],"material":"hide"}));
+        assert_eq!(tipi["form"], "tipi", "{tipi}");
+        assert!(tipi["rise_m"].as_f64().unwrap() > 4.0 && tipi["eave_m"].as_f64().unwrap() < 0.3, "{tipi}");
+        let stilt = vol(&json!({"roof":"thatch-round","typology":"stilt-house","storeys":[1,1],"material":"thatch"}));
+        assert!(stilt["stilts_m"].as_f64().unwrap() >= 1.8, "{stilt}");
+        // A landmark of a tent people is a tent, not a stone nave.
+        let church = [(rect(0.0, 0.0, 8.0, 14.0), "nave"), (rect(0.0, 14.0, 5.0, 19.0), "tower")];
+        let tipi_arch = json!({"roof":"conical","typology":"tipi","storeys":[1,1],"material":"hide"});
+        let mut i = input(&church, &tipi_arch, &fronts, "k");
+        i.landmark = true;
+        for m in massing(&i).as_array().unwrap() { assert_eq!(m["roof"], "tent", "{m}"); }
     }
 
     #[test]

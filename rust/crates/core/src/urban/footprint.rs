@@ -249,7 +249,7 @@ pub(super) fn epoch_densities(site: &Site, cfg: &LayoutConfig, morph: &Morph) ->
             if inside_wall {
                 density.max(ENCLOSED_DENSITY)
             } else {
-                density
+                density.max(open_village_floor(site.population))
             }
         })
         .collect()
@@ -367,6 +367,15 @@ const ENCLOSED_BLOCKS: f64 = 6.0;
 /// is paid per metre, so it never encloses open land.
 const ENCLOSED_DENSITY: f64 = 100.0;
 const ENCLOSED_GRID_MIN: f64 = 70_000.0;
+/// Gross inhabitants/hectare below which a small open village is not spread:
+/// the catalogue's 25-40 hab./ha scatters a few hundred people over 15-25 ha of
+/// large lots, a string of farms rather than a village. The floor holds up to
+/// 600 inhabitants and fades out by 1200, where the catalogue's town tissue
+/// takes over; denser cultures keep their own density.
+const OPEN_VILLAGE_DENSITY: f64 = 70.0;
+fn open_village_floor(population: u32) -> f64 {
+    OPEN_VILLAGE_DENSITY * ((1200.0 - population as f64) / 600.0).clamp(0.0, 1.0)
+}
 fn enclosed_floor(site: &Site, cfg: &LayoutConfig, morph: &Morph, target: f64) -> f64 {
     let culture = if cfg.culture == "site" {
         &site.culture

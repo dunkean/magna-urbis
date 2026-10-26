@@ -9,7 +9,7 @@ type Shape = Surface[number];
 /** Roof-top feature of a flat roof (massing.rs `flat_details`): plan centre, footprint w × d turned by `angle`, height h. */
 export interface MassingFeature { kind: 'stair' | 'dome' | 'windcatcher'; x: number; y: number; w: number; d: number; h: number; angle: number }
 /** Detail of a volume decided in Rust: parapet above a flat eave, roof-top features, hut roof overhang, trim colour. */
-export interface VolumeDetail { parapet_m?: number; features?: MassingFeature[]; overhang_m?: number; trim?: string }
+export interface VolumeDetail { parapet_m?: number; features?: MassingFeature[]; overhang_m?: number; trim?: string; form?: 'yurt' | 'tipi'; stilts_m?: number }
 export type MassingRoof = 'gable' | 'hip' | 'shed' | 'pyramid' | 'cone' | 'dome' | 'barrel' | 'ring' | 'tent' | 'flat';
 /** One sub-volume partitioning a preview piece: own ring, heights, roof and (optionally) materials. */
 export interface MassingVolume extends VolumeDetail {
@@ -38,6 +38,7 @@ export function pieceVolumes(shape: Shape, m: MassingPiece): ResolvedVolume[] {
       ridges: Array.isArray(v.ridges) ? v.ridges.filter(r => Array.isArray(r) && r.length === 4 && r.every(finite)) : [],
       cover: v.cover ?? m.cover, wall: v.wall ?? m.wall, tone: clamp01(v.tone, clamp01(m.tone)),
       detail: { parapet_m: finite(v.parapet_m) ? v.parapet_m : undefined, overhang_m: finite(v.overhang_m) ? v.overhang_m : undefined, trim: v.trim,
+        form: v.form === 'yurt' || v.form === 'tipi' ? v.form : undefined, stilts_m: finite(v.stilts_m) && v.stilts_m > 0 ? Math.min(v.stilts_m, 4) : undefined,
         features: Array.isArray(v.features) ? v.features.filter(f => f && ['x', 'y', 'w', 'd', 'h', 'angle'].every(k => finite((f as unknown as Record<string, unknown>)[k]))) : undefined } });
   }
   if (out.length) return out;

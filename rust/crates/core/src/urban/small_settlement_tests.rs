@@ -3,7 +3,7 @@ use super::geometry as g;
 use super::*;
 
 /// (parcels, building requests, enclosed area m2, walled) of one 500-hab. village on flat land.
-fn village(culture: &str, population: u32) -> (usize, usize, f64, bool) {
+fn village(culture: &str, population: u32) -> (usize, usize, f64, bool, f64) {
     let n = 64;
     let h = vec![10.0_f32; n * n];
     let w = vec![0_u8; n * n];
@@ -35,12 +35,14 @@ fn village(culture: &str, population: u32) -> (usize, usize, f64, bool) {
     let enclosure = layouts[0].enclosures.first().map_or(0.0, |e| {
         g::area(&Shape { outer: e.path.clone(), holes: vec![] })
     });
-    (parts.iter().map(|p| p.parcels.len()).sum(), sites, enclosure, !layouts[0].enclosures.is_empty())
+    let plots: Vec<f64> = parts.iter().flat_map(|p| p.parcels.iter()).filter(|p| p.use_kind == "plot").map(|p| g::area(&p.shape)).collect();
+    let mean = plots.iter().sum::<f64>() / plots.len().max(1) as f64;
+    (parts.iter().map(|p| p.parcels.len()).sum(), sites, enclosure, !layouts[0].enclosures.is_empty(), mean)
 }
 
 #[test]
 fn a_walled_medina_of_500_is_packed_inside_its_wall() {
-    let (parcels, sites, enclosed, walled) = village("medina", 500);
+    let (parcels, sites, enclosed, walled, _) = village("medina", 500);
     eprintln!("medina parcels={parcels} sites={sites} enclosed_ha={:.2}", enclosed / 1e4);
     assert!(walled);
     // 500 inhabitants at an intra-muros gross density of at least 150 hab./ha.
@@ -53,7 +55,31 @@ fn a_walled_medina_of_500_is_packed_inside_its_wall() {
 fn survey_every_culture_at_500() {
     let cat = catalogue();
     for id in cat["cultures"].as_object().unwrap().keys() {
-        let (p, s, e, w) = village(id, 500);
+        let (p, s, e, w, _) = village(id, 500);
         println!("SURVEY {id:24} parcels={p:4} sites={s:4} enclosed_ha={:6.2} walled={w}", e / 1e4);
     }
+}
+
+#[test]
+fn an_open_village_is_cut_in_house_sized_lots() {
+    // The catalogue's town burgage (about 1000 m2) scattered 500 people over
+    // 20 ha; a small open village keeps lots in proportion to its houses.
+    for culture in ["european-organic", "korean", "byzantine-greek"] {
+        let (_, sites, _, _, mean) = village(culture, 500);
+        assert!(mean < 800.0, "{culture}: mean plot {mean:.0} m2");
+        assert!(sites >= 60, "{culture}: sites {sites}");
+    }
+}
+
+#[test]
+fn a_camp_lane_reaching_its_road_with_a_slanted_contact_serves_the_longhouses() {
+    // Real PNW layout (one ragged shore block, a road notch whose contact with
+    // the lane lattice is 2.6 m wide): the lanes anchor on the road and the
+    // longhouses are served plots, not unserved gardens.
+    let layouts: Vec<Layout> = serde_json::from_str(include_str!("fixtures/pnw-road-notch-layouts.json")).unwrap();
+    let cfg: ParcelConfig = serde_json::from_str(include_str!("fixtures/small-parcel-config.json")).unwrap();
+    let parts = generate_parcels("pnw-notch", &layouts, &cfg).unwrap();
+    let served = parts.iter().flat_map(|p| p.parcels.iter())
+        .filter(|p| p.use_kind == "plot" && p.access.as_ref().is_some_and(|a| a.kind != "unserved")).count();
+    assert!(served >= 10, "served plots {served}");
 }
