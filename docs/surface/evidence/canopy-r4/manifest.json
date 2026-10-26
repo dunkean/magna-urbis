@@ -1,0 +1,133 @@
+{
+  "recordedAtUtc": "2026-10-23T21:07:35.138867+00:00",
+  "scope": "Retained V7 neural source and unchanged canonical fields, source archive, urban packet and exact candidate inventory. Renderer-only replay qualification, not a new neural/live campaign.",
+  "input": {
+    "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-model-2026-10-23\\web\\out\\surface\\v7-retained-page480\\v7-retained-page480.surfacebin",
+    "bytes": 80045705,
+    "sha256": "2ec3ec6d75042be4a985153a1375fae28e97c10d93ac0f2519abfe1cffdf163c"
+  },
+  "runtimeFiles": [
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-viewer-2026-10-23\\viewer-local\\adapters\\surface_canopy.gd",
+      "bytes": 7856,
+      "sha256": "f0025ccf13a0642a6d2225274021fe7627bf705b695a6a9bf7ae9f78fd4c56ee"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-viewer-2026-10-23\\viewer-local\\scene\\main.gd",
+      "bytes": 75468,
+      "sha256": "4f6e32fc87df6dec328bb5ba04bf7251fd167fc496efc6cf4e9ba32469437835"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-viewer-2026-10-23\\viewer-local\\shaders\\canopy.gdshaderinc",
+      "bytes": 5408,
+      "sha256": "41ae0255ea87ffe054071586d78a584400e10b82daca54f0bbaf3fbcac92a51b"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-viewer-2026-10-23\\viewer-local\\shaders\\canopy_lod.gdshaderinc",
+      "bytes": 1086,
+      "sha256": "0adf6c41c5a5ff675341259024aa224183adec07bf2423ae9d84a2be68df514e"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-viewer-2026-10-23\\viewer-local\\shaders\\canopy_meso.gdshaderinc",
+      "bytes": 3743,
+      "sha256": "dc02d4074e20a207892a2761b2e80c42161cf9f7f787a02b4a188f3868c95e1f"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-viewer-2026-10-23\\viewer-local\\shaders\\canopy_instance.gdshader",
+      "bytes": 1078,
+      "sha256": "c612f3aac287dec22be23ca32847811213b68edd726e0e3d50cb57915b779453"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-viewer-2026-10-23\\viewer-local\\shaders\\surface_body.gdshaderinc",
+      "bytes": 12242,
+      "sha256": "ea70f150ec1b91ba28fbfbca2909ef7c1d7753138fe1b0d6289331275353a4a6"
+    }
+  ],
+  "views": [
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-viewer-2026-10-23\\viewer-local\\captures\\f1-r4-final-top\\10000m.png",
+      "bytes": 8604034,
+      "sha256": "faeb40a06c51b0dcbaa4caa7792d5387ea79a6a1fbe164d244c20bfd98ae1f47",
+      "camera": "top",
+      "widthM": 10000,
+      "resolution": [
+        2048,
+        2048
+      ],
+      "focus": [
+        20000,
+        20000
+      ]
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-viewer-2026-10-23\\viewer-local\\captures\\f1-r4-final-top\\2560m.png",
+      "bytes": 6373514,
+      "sha256": "ce207b6cc2a453cfceb13e173585b88d0d288a078a4cc1cbacdbdf319c9b580c",
+      "camera": "top",
+      "widthM": 2560,
+      "resolution": [
+        2048,
+        2048
+      ],
+      "focus": [
+        20000,
+        20000
+      ]
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-viewer-2026-10-23\\viewer-local\\captures\\f1-r4-final-top\\640m.png",
+      "bytes": 4210709,
+      "sha256": "f0dfacaed8cda2893f3c9d118f13f57538df0c0288de21c62409d76be237e370",
+      "camera": "top",
+      "widthM": 640,
+      "resolution": [
+        2048,
+        2048
+      ],
+      "focus": [
+        20000,
+        20000
+      ]
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-viewer-2026-10-23\\viewer-local\\captures\\f1-r4-final-oblique\\2560m.png",
+      "bytes": 6923932,
+      "sha256": "1a5fd04706087cb21eb93cb687b0faa6ece1496d9d76c6c736377a9cbdeeb3bc",
+      "camera": "oblique",
+      "widthM": 2560,
+      "resolution": [
+        2048,
+        2048
+      ],
+      "focus": [
+        20000,
+        20000
+      ]
+    }
+  ],
+  "renderer": "Godot4.7.2 / Terrain3D1.0.2 / Forward+ RTX4090",
+  "policy": {
+    "mesoCellM": 16,
+    "opticalPixels": [
+      1.25,
+      3
+    ],
+    "geometryPixels": [
+      3,
+      8
+    ],
+    "approximatePositionsClaimedAsInventory": false,
+    "shadow": "total optical canopy C; native canopy and trunks cast OFF; terrain/buildings physical settings unchanged",
+    "shadowTransmittance": [
+      0.25,
+      0.34,
+      0.5
+    ],
+    "sourceSeedOnly": true
+  },
+  "limits": [
+    "Mesoscopic crowns outside the inventory are an optical approximation, not accepted source trees.",
+    "Sphere crowns remain stylized; morphology, height variability, contact shading and non-flat shadow energy are not photorealistically equivalent.",
+    "Oblique and top are recorded separately. No --view option is used; the final top commands explicitly use --top."
+  ]
+}

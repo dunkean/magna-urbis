@@ -1,0 +1,875 @@
+{
+  "format": "native419-v13-retained-static-evidence",
+  "version": 1,
+  "rootHead": "6ef8d3c6f2b88f884a2ad199c7b305dfaf3649c1",
+  "runtimeHashCount": 624,
+  "frozenSnapshotsEqual": true,
+  "source": {
+    "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\native-current-419-v12-final\\source.surfacebin",
+    "bytes": 251582841,
+    "sha256": "54616775da71a5fb94e32d1cce13b59cad38f79f410f04525be72bc14edf589e"
+  },
+  "sourceScope": "419 authentic current native realizations; 81 explicit planning refusals retained as plots. Retained Magna parent terrain 15.625m, source LOD unrecorded; decoderUsed=false in retained child provenance. No fresh neural generation, new city, fine-detail or performance qualification.",
+  "realization": {
+    "format": "new-native-realization-from-source-footprints",
+    "version": 1,
+    "attemptedSourcePlots": 500,
+    "realizedExteriorBuildings": 419,
+    "retainedUnrealizedSourcePlots": 81,
+    "currentPlanVersion": "architectural-plans-2",
+    "currentGeneratorVersion": "houses-3",
+    "interiors": false,
+    "occupationBaseline": "all500-original-accepted-source-plots-retained; canonical occupation unchanged"
+  },
+  "groundResponse": "Unavailable legacy1.5.3 physical potentials; these images do not validate the new GR path.",
+  "views": [
+    {
+      "name": "blueprint-native-close-top",
+      "command": [
+        "C:\\Program Files\\nodejs\\node.EXE",
+        "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\scripts\\surface_viewer.mjs",
+        "--godot",
+        "D:/workspace/self/_surface-tools/godot-4.7.2/Godot_v4.7.2-stable_win64_console.exe",
+        "--renderer",
+        "forward_plus",
+        "--world",
+        "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\native-current-419-v12-final\\source.surfacebin",
+        "--assets",
+        "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface-assets\\resolved.json",
+        "--x",
+        "6536.4762957318035",
+        "--z",
+        "8462.943018929407",
+        "--width",
+        "400",
+        "--frames",
+        "32",
+        "--water-symbol-width-px",
+        "1.25",
+        "--capture",
+        "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\native-current-419-v13-final\\blueprint-native-close-top.png",
+        "--metrics",
+        "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\native-current-419-v13-final\\blueprint-native-close-top.json",
+        "--presentation",
+        "cartographic",
+        "--style",
+        "blueprint",
+        "--top",
+        "--tree-assets",
+        "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\vegetation-tree\\resolved.json",
+        "--vegetation-assets",
+        "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\vegetation-assets\\resolved.json",
+        "--native-log-mode",
+        "threaded"
+      ],
+      "code": 0,
+      "runtimeErrors": 0,
+      "knownDeprecationWarning": true,
+      "nativeLog": {
+        "mode": "threaded",
+        "version": "native-log-timing-2",
+        "writerAccepted": 2,
+        "writerWritten": 2,
+        "pending": 0,
+        "rejected": 0
+      },
+      "adapter": "NVIDIA GeForce RTX 5090",
+      "backend": "forward_plus",
+      "durationIncludingStartupMs": 46163,
+      "requestedFrames": 32,
+      "metricsFrameSamples": 44,
+      "captureError": 0,
+      "urban": {
+        "budgetLimited": false,
+        "materialBatches": 15,
+        "nativeBuildings": 254,
+        "proxyBuildings": 0,
+        "scope": "prepared submitted mesh batches; not a GPU visibility or occlusion count",
+        "worldId": "0de1e8948131f56a677a8e24e8ecbac8",
+        "buildingIdsSha256": "d28e013e3f44b6fe3836e40750e58c5a4e2706dbe21d0b7c9c8a8a5b0440029c"
+      },
+      "frustumCPU": {
+        "intersectingSourceTriangleProjectedBounds": 91,
+        "fullyContainedSourceTriangleProjectedBounds": 82,
+        "fullyContainedSourceBodyFootprints": 83,
+        "idsSubsetOfSubmitted": true,
+        "method": "float64 projection of retained native triangle vertices, positive camera depth only,48deg camera; top rectangle or retained oblique camera fromV11; parity with earlier CPU counts checked",
+        "scope": "Geometric projected bounds, not GPU visibility or occlusion"
+      },
+      "cityMap": {
+        "budgetLimited": false,
+        "missingRoofFootprintIds": [],
+        "omittedBuildingIds": [],
+        "representation": "cartographic-source-roof-overlay",
+        "sourceRoofAreaM2": 12864.9122342673,
+        "buildingIdCount": 254
+      },
+      "roadProjectors": 90,
+      "canopy": {
+        "phase": 2.0,
+        "reason": "complete-frustum-plus-halo",
+        "pendingAtlas": false,
+        "transitionPending": false,
+        "treeAssets": {
+          "enabled": false,
+          "profile": {
+            "available": true,
+            "cpuOnly": false,
+            "digest": "e3243d0df97653ccdaecf9e9a22e49d488fdc9a6e5253813bff76ed384ef4bde",
+            "impostorTriangles": 2,
+            "pipelineVersion": "tree-render-cpu-packed-v1",
+            "scope": "experimental; shared top cutout C/V; oblique view-indexed planar depth approximation",
+            "sourceAssetDigest": "ef89df3fa4e374b778f57f385e072fd6bcc6c2d5e95884bdb7bcd67343723aa6",
+            "triangles": 134295.0,
+            "views": 5
+          }
+        },
+        "treePage": {
+          "bounds": {
+            "maxX": 8500.0,
+            "maxZ": 10500.0,
+            "minX": 4500.0,
+            "minZ": 6500.0
+          },
+          "complete": true,
+          "count": 71834.0,
+          "includeOverhang": true,
+          "limitedBy": "none",
+          "requestedBounds": {
+            "maxX": 8500.0,
+            "maxZ": 10500.0,
+            "minX": 4500.0,
+            "minZ": 6500.0
+          },
+          "retention": 1.0
+        },
+        "geometryFilterRatio": 0.625627013983809,
+        "geometryFilterMaximumRatio": 8.0,
+        "activeAtlasSpacingM": 0.5
+      },
+      "populationInstances": {
+        "families": {
+          "boulder": {
+            "alphaPositiveInFrustum": 22,
+            "nodeVisible": 57,
+            "submitted": 57
+          },
+          "debris": {
+            "alphaPositiveInFrustum": 64,
+            "nodeVisible": 220,
+            "submitted": 220
+          },
+          "grass": {
+            "alphaPositiveInFrustum": 305,
+            "nodeVisible": 1000,
+            "submitted": 1000
+          },
+          "shrub": {
+            "alphaPositiveInFrustum": 74,
+            "nodeVisible": 225,
+            "submitted": 225
+          },
+          "tree": {
+            "alphaPositiveInFrustum": 158,
+            "nodeVisible": 1504,
+            "submitted": 1504
+          },
+          "trunk": {
+            "alphaPositiveInFrustum": 158,
+            "nodeVisible": 1504,
+            "submitted": 1504
+          }
+        },
+        "scope": "submitted buffers, actual node/camera visibility, shader ALPHA gate>0 and centres in frustum; no GPU occlusion or per-mask fragment claim",
+        "treeOpticalShadowEnabled": false,
+        "treeResidualEnabled": true,
+        "treeShaderUniformAvailable": true
+      },
+      "presentation": {
+        "cartographic": true,
+        "coverage": "native geometry, palette, material groups and orthographic preview; SVG/Canvas retain brush effects, labels and final layout",
+        "mapStyle": "blueprint",
+        "mode": "cartographic",
+        "source": {}
+      },
+      "vegetationApplied": false,
+      "vegetationAssetDigest": "2164daf367e44704795bba98add4cf7ee8b51404f06dfd60dec623a74768a0e3",
+      "surfaceLayers": {
+        "canonicalFieldsVersion": "f10d130472641a2c13bec4e8ca4eacf2",
+        "canonicalVersion": "f10d130472641a2c13bec4e8ca4eacf2",
+        "fieldsVersion": "d0ad060649253b0035de84de3683e2aa",
+        "groundAvailability": "explicit",
+        "groundResponse": {
+          "available": false,
+          "reason": "baked-color-legacy: physical response potentials were not retained"
+        },
+        "legacyFallback": false,
+        "lowCoverAvailability": "explicit",
+        "projectedFieldsVersion": "d0ad060649253b0035de84de3683e2aa",
+        "renderMode": "three-physical-layers",
+        "textureFieldsVersion": "f10d130472641a2c13bec4e8ca4eacf2",
+        "textureGrid": {
+          "height": 1024.0,
+          "originX": 7.8125,
+          "originZ": 7.8125,
+          "spacingM": 15.625,
+          "width": 1024.0
+        },
+        "textureSource": "canonical",
+        "version": "surface-layers-1",
+        "visibility": {
+          "ground": true,
+          "lowCover": true,
+          "trees": true
+        },
+        "worldId": "0de1e8948131f56a677a8e24e8ecbac8"
+      },
+      "actualSource": {
+        "id": "infinite:47:e6f0c520536077f7cdd3284dbd1ce85e",
+        "nativeSpacingM": 15.625,
+        "sourceLOD": 0.0,
+        "sourceLODKnown": false,
+        "version": "decoder-v12-nyquist-notch:magna-retained-v1:e2bf5473c0ff:f21afa261ed7"
+      },
+      "fineContributionWeight": 0.0,
+      "sourceContributionsAtFocus": [
+        {
+          "activeChild": false,
+          "weight": 1.0
+        }
+      ],
+      "viewSatisfaction": {
+        "covered": false,
+        "preview": false,
+        "reason": "finer source density required",
+        "serial": 0
+      },
+      "water": {
+        "waterPresentation": "source-map-terrain-projection",
+        "authority": "magna-urbis-fixed-hydrology",
+        "sourceVectorRequestedAreaM2": 7555.2953585289,
+        "sourceVectorMissingAreaM2": 0.0,
+        "sourceVectorCoverageComplete": true,
+        "missingLevelTriangles": 0,
+        "budgetLimited": false,
+        "sourceContourComplete": true,
+        "sourceContourBudgetLimited": false,
+        "projectionCullMask": 1,
+        "physicalWaterSurfaceClaimed": false,
+        "minimumRiverStrokeApplied": false
+      },
+      "pixels": {
+        "pngSha256": "c69ecb23fc11944e7553908834b1fa934634869b9ef121ce8068e909fb0d2452",
+        "sameImageAsV12": false,
+        "rgbMean": [
+          36.14163671875,
+          81.746810546875,
+          145.4006826171875
+        ],
+        "absoluteRgbDifferenceMeanVsV12": 1.3020833333333333e-06,
+        "fractionPixelsChangedVsV12": 3.90625e-06,
+        "pixelsChangedVsV12": 4,
+        "attribution": "Differences observed only; GPU and runtime differ, no causal attribution."
+      }
+    },
+    {
+      "name": "aerial-native-close-oblique",
+      "command": [
+        "C:\\Program Files\\nodejs\\node.EXE",
+        "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\scripts\\surface_viewer.mjs",
+        "--godot",
+        "D:/workspace/self/_surface-tools/godot-4.7.2/Godot_v4.7.2-stable_win64_console.exe",
+        "--renderer",
+        "forward_plus",
+        "--world",
+        "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\native-current-419-v12-final\\source.surfacebin",
+        "--assets",
+        "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface-assets\\resolved.json",
+        "--x",
+        "6530.0539967287295",
+        "--z",
+        "8494.492978230568",
+        "--width",
+        "600",
+        "--frames",
+        "32",
+        "--water-symbol-width-px",
+        "1.25",
+        "--capture",
+        "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\native-current-419-v13-final\\aerial-native-close-oblique.png",
+        "--metrics",
+        "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\native-current-419-v13-final\\aerial-native-close-oblique.json",
+        "--presentation",
+        "aerial",
+        "--oblique",
+        "--tree-assets",
+        "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\vegetation-tree\\resolved.json",
+        "--vegetation-assets",
+        "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\vegetation-assets\\resolved.json",
+        "--native-log-mode",
+        "threaded"
+      ],
+      "code": 0,
+      "runtimeErrors": 0,
+      "knownDeprecationWarning": true,
+      "nativeLog": {
+        "mode": "threaded",
+        "version": "native-log-timing-2",
+        "writerAccepted": 2,
+        "writerWritten": 2,
+        "pending": 0,
+        "rejected": 0
+      },
+      "adapter": "NVIDIA GeForce RTX 5090",
+      "backend": "forward_plus",
+      "durationIncludingStartupMs": 62208,
+      "requestedFrames": 32,
+      "metricsFrameSamples": 46,
+      "captureError": 0,
+      "urban": {
+        "budgetLimited": false,
+        "materialBatches": 15,
+        "nativeBuildings": 335,
+        "proxyBuildings": 0,
+        "scope": "prepared submitted mesh batches; not a GPU visibility or occlusion count",
+        "worldId": "0de1e8948131f56a677a8e24e8ecbac8",
+        "buildingIdsSha256": "60f93e6ea84db59bf7c91d36008d93d94dde93987eb0f23ded9ea49f110eabe9"
+      },
+      "frustumCPU": {
+        "intersectingSourceTriangleProjectedBounds": 139,
+        "fullyContainedSourceTriangleProjectedBounds": 134,
+        "fullyContainedSourceBodyFootprints": null,
+        "idsSubsetOfSubmitted": true,
+        "method": "float64 projection of retained native triangle vertices, positive camera depth only,48deg camera; top rectangle or retained oblique camera fromV11; parity with earlier CPU counts checked",
+        "scope": "Geometric projected bounds, not GPU visibility or occlusion"
+      },
+      "cityMap": {
+        "buildingIdCount": 0
+      },
+      "roadProjectors": 210,
+      "canopy": {
+        "phase": 2.0,
+        "reason": "complete-frustum-plus-halo",
+        "pendingAtlas": false,
+        "transitionPending": false,
+        "treeAssets": {
+          "droppedCount": 0,
+          "enabled": true,
+          "highBudget": 2000000.0,
+          "highCount": 0,
+          "highMinPixels": 500.0,
+          "highTriangles": 0,
+          "impostorCount": 10000,
+          "impostorTriangles": 20000,
+          "profile": {
+            "available": true,
+            "cpuOnly": false,
+            "digest": "e3243d0df97653ccdaecf9e9a22e49d488fdc9a6e5253813bff76ed384ef4bde",
+            "impostorTriangles": 2,
+            "pipelineVersion": "tree-render-cpu-packed-v1",
+            "scope": "experimental; shared top cutout C/V; oblique view-indexed planar depth approximation",
+            "sourceAssetDigest": "ef89df3fa4e374b778f57f385e072fd6bcc6c2d5e95884bdb7bcd67343723aa6",
+            "triangles": 134295.0,
+            "views": 5
+          },
+          "retainedCount": 10000,
+          "scope": "top shared-mask C/V; oblique view-indexed planar-depth approximation; no source edits",
+          "shadowFiltering": {
+            "physicalPenumbraClaimed": false,
+            "policy": "shadow footprint=max(main pixel, declared solar penumbra, two active atlas texels); visibility C/V unchanged",
+            "reconstructionFootprintTexels": 2.0,
+            "referenceHeightM": 9.80388349514563,
+            "solarAngularDiameterDegrees": 0.53
+          }
+        },
+        "treePage": {
+          "bounds": {
+            "maxX": 8500.0,
+            "maxZ": 10500.0,
+            "minX": 4500.0,
+            "minZ": 6500.0
+          },
+          "complete": true,
+          "count": 71834.0,
+          "includeOverhang": true,
+          "limitedBy": "none",
+          "requestedBounds": {
+            "maxX": 8500.0,
+            "maxZ": 10500.0,
+            "minX": 4500.0,
+            "minZ": 6500.0
+          },
+          "retention": 1.0
+        },
+        "geometryFilterRatio": 2.00557597199649,
+        "geometryFilterMaximumRatio": 8.0,
+        "activeAtlasSpacingM": 1.0
+      },
+      "populationInstances": {
+        "families": {
+          "boulder": {
+            "alphaPositiveInFrustum": 35,
+            "nodeVisible": 45,
+            "submitted": 45
+          },
+          "debris": {
+            "alphaPositiveInFrustum": 46,
+            "nodeVisible": 109,
+            "submitted": 109
+          },
+          "grass": {
+            "alphaPositiveInFrustum": 210,
+            "nodeVisible": 620,
+            "submitted": 620
+          },
+          "shrub": {
+            "alphaPositiveInFrustum": 158,
+            "nodeVisible": 218,
+            "submitted": 218
+          },
+          "tree": {
+            "alphaPositiveInFrustum": 1367,
+            "nodeVisible": 10000,
+            "submitted": 10000
+          },
+          "trunk": {
+            "alphaPositiveInFrustum": 0,
+            "nodeVisible": 0,
+            "submitted": 0
+          }
+        },
+        "scope": "submitted buffers, actual node/camera visibility, shader ALPHA gate>0 and centres in frustum; no GPU occlusion or per-mask fragment claim",
+        "treeOpticalShadowEnabled": true,
+        "treeResidualEnabled": true,
+        "treeShaderUniformAvailable": true
+      },
+      "presentation": {
+        "cartographic": false,
+        "coverage": "native geometry, palette, material groups and orthographic preview; SVG/Canvas retain brush effects, labels and final layout",
+        "mapStyle": "unspecified",
+        "mode": "aerial",
+        "source": {}
+      },
+      "vegetationApplied": true,
+      "vegetationAssetDigest": "2164daf367e44704795bba98add4cf7ee8b51404f06dfd60dec623a74768a0e3",
+      "surfaceLayers": {
+        "canonicalFieldsVersion": "f10d130472641a2c13bec4e8ca4eacf2",
+        "canonicalVersion": "f10d130472641a2c13bec4e8ca4eacf2",
+        "fieldsVersion": "d0ad060649253b0035de84de3683e2aa",
+        "groundAvailability": "explicit",
+        "groundResponse": {
+          "available": false,
+          "reason": "baked-color-legacy: physical response potentials were not retained"
+        },
+        "legacyFallback": false,
+        "lowCoverAvailability": "explicit",
+        "projectedFieldsVersion": "d0ad060649253b0035de84de3683e2aa",
+        "renderMode": "three-physical-layers",
+        "textureFieldsVersion": "f10d130472641a2c13bec4e8ca4eacf2",
+        "textureGrid": {
+          "height": 1024.0,
+          "originX": 7.8125,
+          "originZ": 7.8125,
+          "spacingM": 15.625,
+          "width": 1024.0
+        },
+        "textureSource": "canonical",
+        "version": "surface-layers-1",
+        "visibility": {
+          "ground": true,
+          "lowCover": true,
+          "trees": true
+        },
+        "worldId": "0de1e8948131f56a677a8e24e8ecbac8"
+      },
+      "actualSource": {
+        "id": "infinite:47:e6f0c520536077f7cdd3284dbd1ce85e",
+        "nativeSpacingM": 15.625,
+        "sourceLOD": 0.0,
+        "sourceLODKnown": false,
+        "version": "decoder-v12-nyquist-notch:magna-retained-v1:e2bf5473c0ff:f21afa261ed7"
+      },
+      "fineContributionWeight": 0.0,
+      "sourceContributionsAtFocus": [
+        {
+          "activeChild": false,
+          "weight": 1.0
+        }
+      ],
+      "viewSatisfaction": {
+        "covered": false,
+        "preview": false,
+        "reason": "finer source density required",
+        "serial": 0
+      },
+      "water": {
+        "waterPresentation": "source-map-terrain-projection",
+        "authority": "magna-urbis-fixed-hydrology",
+        "sourceVectorRequestedAreaM2": 195616.91151938,
+        "sourceVectorMissingAreaM2": 0.0,
+        "sourceVectorCoverageComplete": true,
+        "missingLevelTriangles": 0,
+        "budgetLimited": false,
+        "sourceContourComplete": true,
+        "sourceContourBudgetLimited": false,
+        "projectionCullMask": 1,
+        "physicalWaterSurfaceClaimed": false,
+        "minimumRiverStrokeApplied": false
+      },
+      "pixels": {
+        "pngSha256": "4fabbdd2357952dea6c855a0ebc1e455cf6cb60818b770740fb449d0c023248d",
+        "sameImageAsV12": false,
+        "rgbMean": [
+          163.221099609375,
+          150.8871103515625,
+          116.8141728515625
+        ],
+        "absoluteRgbDifferenceMeanVsV12": 12.8339228515625,
+        "fractionPixelsChangedVsV12": 0.3599140625,
+        "pixelsChangedVsV12": 368552,
+        "attribution": "Differences observed only; GPU and runtime differ, no causal attribution."
+      }
+    },
+    {
+      "name": "aerial-native-overall-top",
+      "command": [
+        "C:\\Program Files\\nodejs\\node.EXE",
+        "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\scripts\\surface_viewer.mjs",
+        "--godot",
+        "D:/workspace/self/_surface-tools/godot-4.7.2/Godot_v4.7.2-stable_win64_console.exe",
+        "--renderer",
+        "forward_plus",
+        "--world",
+        "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\native-current-419-v12-final\\source.surfacebin",
+        "--assets",
+        "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface-assets\\resolved.json",
+        "--x",
+        "6846.66",
+        "--z",
+        "8024.22",
+        "--width",
+        "8400",
+        "--frames",
+        "32",
+        "--water-symbol-width-px",
+        "1.25",
+        "--capture",
+        "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\native-current-419-v13-final\\aerial-native-overall-top.png",
+        "--metrics",
+        "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\native-current-419-v13-final\\aerial-native-overall-top.json",
+        "--presentation",
+        "aerial",
+        "--top",
+        "--tree-assets",
+        "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\vegetation-tree\\resolved.json",
+        "--vegetation-assets",
+        "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\vegetation-assets\\resolved.json",
+        "--native-log-mode",
+        "threaded"
+      ],
+      "code": 0,
+      "runtimeErrors": 0,
+      "knownDeprecationWarning": true,
+      "nativeLog": {
+        "mode": "threaded",
+        "version": "native-log-timing-2",
+        "writerAccepted": 2,
+        "writerWritten": 2,
+        "pending": 0,
+        "rejected": 0
+      },
+      "adapter": "NVIDIA GeForce RTX 5090",
+      "backend": "forward_plus",
+      "durationIncludingStartupMs": 45435,
+      "requestedFrames": 32,
+      "metricsFrameSamples": 2,
+      "captureError": 0,
+      "urban": {
+        "budgetLimited": false,
+        "materialBatches": 15,
+        "nativeBuildings": 419,
+        "proxyBuildings": 0,
+        "scope": "prepared submitted mesh batches; not a GPU visibility or occlusion count",
+        "worldId": "0de1e8948131f56a677a8e24e8ecbac8",
+        "buildingIdsSha256": "eb067475108a1811d8d1ee68a4dbd38e1464ffc228bfa95309aaeb6550237cd5"
+      },
+      "frustumCPU": {
+        "intersectingSourceTriangleProjectedBounds": 419,
+        "fullyContainedSourceTriangleProjectedBounds": 419,
+        "fullyContainedSourceBodyFootprints": 419,
+        "idsSubsetOfSubmitted": true,
+        "method": "float64 projection of retained native triangle vertices, positive camera depth only,48deg camera; top rectangle or retained oblique camera fromV11; parity with earlier CPU counts checked",
+        "scope": "Geometric projected bounds, not GPU visibility or occlusion"
+      },
+      "cityMap": {
+        "buildingIdCount": 0
+      },
+      "roadProjectors": 256,
+      "canopy": {
+        "phase": 0.0,
+        "reason": "Complete tree page does not cover this view",
+        "pendingAtlas": false,
+        "transitionPending": false,
+        "treeAssets": {
+          "enabled": true,
+          "profile": {
+            "available": true,
+            "cpuOnly": false,
+            "digest": "e3243d0df97653ccdaecf9e9a22e49d488fdc9a6e5253813bff76ed384ef4bde",
+            "impostorTriangles": 2,
+            "pipelineVersion": "tree-render-cpu-packed-v1",
+            "scope": "experimental; shared top cutout C/V; oblique view-indexed planar depth approximation",
+            "sourceAssetDigest": "ef89df3fa4e374b778f57f385e072fd6bcc6c2d5e95884bdb7bcd67343723aa6",
+            "triangles": 134295.0,
+            "views": 5
+          },
+          "shadowFiltering": {
+            "physicalPenumbraClaimed": false,
+            "policy": "shadow footprint=max(main pixel, declared solar penumbra, two active atlas texels); visibility C/V unchanged",
+            "reconstructionFootprintTexels": 2.0,
+            "referenceHeightM": 9.80388349514563,
+            "solarAngularDiameterDegrees": 0.53
+          }
+        },
+        "treePage": {
+          "bounds": {
+            "maxX": 8500.0,
+            "maxZ": 10500.0,
+            "minX": 4500.0,
+            "minZ": 6500.0
+          },
+          "complete": true,
+          "count": 71834.0,
+          "includeOverhang": true,
+          "limitedBy": "none",
+          "requestedBounds": {
+            "maxX": 8500.0,
+            "maxZ": 10500.0,
+            "minX": 4500.0,
+            "minZ": 6500.0
+          },
+          "retention": 1.0
+        },
+        "geometryFilterRatio": null,
+        "geometryFilterMaximumRatio": null,
+        "activeAtlasSpacingM": null
+      },
+      "populationInstances": {
+        "families": {
+          "boulder": {
+            "alphaPositiveInFrustum": 0,
+            "nodeVisible": 0,
+            "submitted": 0
+          },
+          "debris": {
+            "alphaPositiveInFrustum": 0,
+            "nodeVisible": 0,
+            "submitted": 0
+          },
+          "grass": {
+            "alphaPositiveInFrustum": 0,
+            "nodeVisible": 0,
+            "submitted": 0
+          },
+          "shrub": {
+            "alphaPositiveInFrustum": 0,
+            "nodeVisible": 0,
+            "submitted": 0
+          },
+          "tree": {
+            "alphaPositiveInFrustum": 0,
+            "nodeVisible": 0,
+            "submitted": 0
+          },
+          "trunk": {
+            "alphaPositiveInFrustum": 0,
+            "nodeVisible": 0,
+            "submitted": 0
+          }
+        },
+        "scope": "submitted buffers, actual node/camera visibility, shader ALPHA gate>0 and centres in frustum; no GPU occlusion or per-mask fragment claim",
+        "treeOpticalShadowEnabled": true,
+        "treeResidualEnabled": true,
+        "treeShaderUniformAvailable": true
+      },
+      "presentation": {
+        "cartographic": false,
+        "coverage": "native geometry, palette, material groups and orthographic preview; SVG/Canvas retain brush effects, labels and final layout",
+        "mapStyle": "unspecified",
+        "mode": "aerial",
+        "source": {}
+      },
+      "vegetationApplied": true,
+      "vegetationAssetDigest": "2164daf367e44704795bba98add4cf7ee8b51404f06dfd60dec623a74768a0e3",
+      "surfaceLayers": {
+        "canonicalFieldsVersion": "f10d130472641a2c13bec4e8ca4eacf2",
+        "canonicalVersion": "f10d130472641a2c13bec4e8ca4eacf2",
+        "fieldsVersion": "d0ad060649253b0035de84de3683e2aa",
+        "groundAvailability": "explicit",
+        "groundResponse": {
+          "available": false,
+          "reason": "baked-color-legacy: physical response potentials were not retained"
+        },
+        "legacyFallback": false,
+        "lowCoverAvailability": "explicit",
+        "projectedFieldsVersion": "d0ad060649253b0035de84de3683e2aa",
+        "renderMode": "three-physical-layers",
+        "textureFieldsVersion": "f10d130472641a2c13bec4e8ca4eacf2",
+        "textureGrid": {
+          "height": 1024.0,
+          "originX": 7.8125,
+          "originZ": 7.8125,
+          "spacingM": 15.625,
+          "width": 1024.0
+        },
+        "textureSource": "canonical",
+        "version": "surface-layers-1",
+        "visibility": {
+          "ground": true,
+          "lowCover": true,
+          "trees": true
+        },
+        "worldId": "0de1e8948131f56a677a8e24e8ecbac8"
+      },
+      "actualSource": {
+        "id": "infinite:47:e6f0c520536077f7cdd3284dbd1ce85e",
+        "nativeSpacingM": 15.625,
+        "sourceLOD": 0.0,
+        "sourceLODKnown": false,
+        "version": "decoder-v12-nyquist-notch:magna-retained-v1:e2bf5473c0ff:f21afa261ed7"
+      },
+      "fineContributionWeight": 0.0,
+      "sourceContributionsAtFocus": [
+        {
+          "activeChild": false,
+          "weight": 1.0
+        }
+      ],
+      "viewSatisfaction": {
+        "covered": false,
+        "preview": false,
+        "reason": "final 512 source request required",
+        "serial": 0
+      },
+      "water": {
+        "waterPresentation": "source-map-terrain-projection",
+        "authority": "magna-urbis-fixed-hydrology",
+        "sourceVectorRequestedAreaM2": 2716542.16819078,
+        "sourceVectorMissingAreaM2": 0.0,
+        "sourceVectorCoverageComplete": true,
+        "missingLevelTriangles": 0,
+        "budgetLimited": false,
+        "sourceContourComplete": true,
+        "sourceContourBudgetLimited": false,
+        "projectionCullMask": 1,
+        "physicalWaterSurfaceClaimed": false,
+        "minimumRiverStrokeApplied": false
+      },
+      "pixels": {
+        "pngSha256": "1a9743b3fbe5021c302bd5fe9a01b36e45bba5fd46ecf8cd395183faed7b418b",
+        "sameImageAsV12": false,
+        "rgbMean": [
+          153.8066259765625,
+          147.01366015625,
+          111.807578125
+        ],
+        "absoluteRgbDifferenceMeanVsV12": 11.8882197265625,
+        "fractionPixelsChangedVsV12": 0.9879619140625,
+        "pixelsChangedVsV12": 1011673,
+        "attribution": "Differences observed only; GPU and runtime differ, no causal attribution."
+      }
+    }
+  ],
+  "artifacts": [
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\native-current-419-v13-final\\capture-run.json",
+      "bytes": 263853,
+      "sha256": "dd303ebbf6814463ce203936bb059a2b34a4378c40eaf6b9fd30227245ce4fd8"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\native-current-419-v13-final\\snapshot-before.json",
+      "bytes": 66443,
+      "sha256": "415049085e8dbcbbcf52811035aa51d7b2ad7212e116283c6747fc98224dca91"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\native-current-419-v13-final\\snapshot-after.json",
+      "bytes": 66443,
+      "sha256": "415049085e8dbcbbcf52811035aa51d7b2ad7212e116283c6747fc98224dca91"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\native-current-419-v13-final\\capture.py",
+      "bytes": 3603,
+      "sha256": "c04cf4694fef164b181717d5bea5ae44f931d50399f779454195f731d66132c5"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\native-current-419-v13-final\\blueprint-native-close-top.png",
+      "bytes": 88896,
+      "sha256": "c69ecb23fc11944e7553908834b1fa934634869b9ef121ce8068e909fb0d2452"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\native-current-419-v13-final\\blueprint-native-close-top.json",
+      "bytes": 128659,
+      "sha256": "ae906228aac53e5d0615613652c4cc8bc1b699ce63583bef9252d8baefb62a5d"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\native-current-419-v13-final\\blueprint-native-close-top.stdout.log",
+      "bytes": 146505,
+      "sha256": "7bdba6de0e698913fbeaccb00b1a684ca6931ee91fbf404026db9d45a5ade761"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\native-current-419-v13-final\\blueprint-native-close-top.stderr.log",
+      "bytes": 470,
+      "sha256": "7c2c55e0dabd98fe42db9921c9cb356108df0a8e64e0a592b0cc36b0bdb06bc9"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\native-current-419-v13-final\\aerial-native-close-oblique.png",
+      "bytes": 1230147,
+      "sha256": "4fabbdd2357952dea6c855a0ebc1e455cf6cb60818b770740fb449d0c023248d"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\native-current-419-v13-final\\aerial-native-close-oblique.json",
+      "bytes": 105132,
+      "sha256": "843c7d5db112ec1b611a4e69fcd680b182f3168d39476958b404f833e2ee9776"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\native-current-419-v13-final\\aerial-native-close-oblique.stdout.log",
+      "bytes": 135456,
+      "sha256": "2e032816690b73ffa183e0ebd52fa88f9d2da35b8c251fd7b2c5f71be7c3870e"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\native-current-419-v13-final\\aerial-native-close-oblique.stderr.log",
+      "bytes": 470,
+      "sha256": "7c2c55e0dabd98fe42db9921c9cb356108df0a8e64e0a592b0cc36b0bdb06bc9"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\native-current-419-v13-final\\aerial-native-overall-top.png",
+      "bytes": 1380972,
+      "sha256": "1a9743b3fbe5021c302bd5fe9a01b36e45bba5fd46ecf8cd395183faed7b418b"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\native-current-419-v13-final\\aerial-native-overall-top.json",
+      "bytes": 108117,
+      "sha256": "a46ddae9635f57dae43b5b9272189357342bd6c8fd10d6cfe45f7a2a52fd2d1c"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\native-current-419-v13-final\\aerial-native-overall-top.stdout.log",
+      "bytes": 142020,
+      "sha256": "f68cde624af8b1cfa1c77de10e010e4ea439c9eab512db395bdf325c9e152031"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\native-current-419-v13-final\\aerial-native-overall-top.stderr.log",
+      "bytes": 470,
+      "sha256": "7c2c55e0dabd98fe42db9921c9cb356108df0a8e64e0a592b0cc36b0bdb06bc9"
+    }
+  ],
+  "limitations": [
+    "Not a fresh neural generation or navigation/performance campaign. Source419, old500 archive and81 native planning refusals remain distinct.",
+    "Prepared urban batches and CPU projected bounds do not establish per-building GPU visibility.",
+    "Overall8400m submits419 but exceeds the exact4km tree page; canopy phase0 is declared, not exact asset geometry coverage.",
+    "Oblique assets use10000 planar view-indexed impostors, no high-poly trees; this is not3D optical equivalence.",
+    "Physical source-quality satisfaction remains false offline: finer source density required.",
+    "Terrain3D deprecation warning retained; no runtime SCRIPT/SHADER ERROR or ERROR.",
+    "Images differ fromV12; RTX5090 and runtime changes confound attribution. No identical-image, artistic acceptance or60FPS claim.",
+    "Blueprint is an explicit source-roof overlay, not a substitute native roof realization; final SVG labels/brush/layout are outside this renderer."
+  ]
+}

@@ -1,0 +1,470 @@
+{
+  "format": "hydro-v12-visual-cpu-diagnostic",
+  "version": 1,
+  "scope": "Read-only retained V12 source arrays/vector contours and existing pixels; no GPU re-render, level edit, source repair or flow/topology equivalence claim",
+  "referenceFrame": {
+    "widthPx": 2048,
+    "heightPx": 1280,
+    "focusX": 20000,
+    "focusZ": 20000,
+    "viewWidthM": 10000,
+    "pixelCenterMapping": "x=15000+(px+.5)*10000/2048; z=16875+(py+.5)*10000/2048"
+  },
+  "sourcePacket": {
+    "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\native-e2e-40km-v12\\fresh-source.surfacebin",
+    "sha256": "fe28ffce5c4fb20824b1940276e91ea9946dc1da53a0ce06607a4312ef499570"
+  },
+  "image": {
+    "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\native-e2e-40km-v12\\native-layer-isolation\\10000m\\ground-mean-unlit.png",
+    "sha256": "dc828daa5e2212405e71d9565475a86bd5abb309a0df72fd17a9b44e11bb4da9"
+  },
+  "sourceFieldsMatchLiveCanonical": {
+    "scope": "Raw descriptor bytes fresh world.fields versus live-refinement world.canonicalContext.fields; all five equal",
+    "groundMaterialMeanColor": "6b5d27cd7fecb3f438bdf73101e655f709418afbd64c4c855e4bf934dda54b4c",
+    "waterClass": "8cff9c7beb2e62c8350c1ea4727957544661e84cc20d31798d44524633bc4c6b",
+    "depositOrigin": "14de2ffdc1adf6df6facfcdec3e1fe679ce518d7d93ff5d0ac526b436fa172ee",
+    "groundMaterial": "9deec89552bea6b64fa7be01345bc829431df136883c052c442a11e531d86361",
+    "groundMaterialBlend": "c17436e362ecd3d37982fe85fce7a705b1e43184d171e425356145e02491ce24"
+  },
+  "samples": [
+    {
+      "pixel": [
+        1562,
+        451
+      ],
+      "world": [
+        22629.39453125,
+        19079.58984375
+      ],
+      "rawGroundBilerpRGB": [
+        145.0,
+        133.0,
+        112.0
+      ],
+      "renderedRGB": [
+        180,
+        167,
+        143
+      ],
+      "neighborWater": [
+        [
+          0,
+          0
+        ],
+        [
+          1,
+          1
+        ]
+      ],
+      "neighborDeposit": [
+        [
+          0,
+          2
+        ],
+        [
+          2,
+          2
+        ]
+      ],
+      "neighborGroundMaterial": [
+        [
+          0,
+          0
+        ],
+        [
+          7,
+          7
+        ]
+      ],
+      "blend": [
+        [
+          0.236719012260437,
+          0.2833649814128876
+        ],
+        [
+          0.11356381326913834,
+          0.03711581602692604
+        ]
+      ],
+      "sourceVectorBoundaryDistanceM": 47.04901870954284,
+      "insideSourceWaterGroups": []
+    },
+    {
+      "pixel": [
+        1935,
+        246
+      ],
+      "world": [
+        24450.68359375,
+        18078.61328125
+      ],
+      "rawGroundBilerpRGB": [
+        147.0,
+        136.0,
+        115.0
+      ],
+      "renderedRGB": [
+        188,
+        196,
+        185
+      ],
+      "neighborWater": [
+        [
+          0,
+          1
+        ],
+        [
+          1,
+          1
+        ]
+      ],
+      "neighborDeposit": [
+        [
+          0,
+          2
+        ],
+        [
+          2,
+          2
+        ]
+      ],
+      "neighborGroundMaterial": [
+        [
+          0,
+          7
+        ],
+        [
+          7,
+          7
+        ]
+      ],
+      "blend": [
+        [
+          0.2715096175670624,
+          0.12095068395137787
+        ],
+        [
+          0.11649549007415771,
+          0.0708305835723877
+        ]
+      ],
+      "sourceVectorBoundaryDistanceM": 0.6764557773537919,
+      "insideSourceWaterGroups": [
+        311
+      ]
+    },
+    {
+      "pixel": [
+        1014,
+        1091
+      ],
+      "world": [
+        19953.61328125,
+        22204.58984375
+      ],
+      "rawGroundBilerpRGB": [
+        150.0,
+        140.0,
+        119.0
+      ],
+      "renderedRGB": [
+        185,
+        175,
+        151
+      ],
+      "neighborWater": [
+        [
+          0,
+          1
+        ],
+        [
+          1,
+          1
+        ]
+      ],
+      "neighborDeposit": [
+        [
+          2,
+          2
+        ],
+        [
+          2,
+          2
+        ]
+      ],
+      "neighborGroundMaterial": [
+        [
+          19,
+          7
+        ],
+        [
+          7,
+          7
+        ]
+      ],
+      "blend": [
+        [
+          0.4849778711795807,
+          0.05728330835700035
+        ],
+        [
+          0.05765542387962341,
+          0.00626988522708416
+        ]
+      ],
+      "sourceVectorBoundaryDistanceM": 8.260191985920526,
+      "insideSourceWaterGroups": []
+    },
+    {
+      "pixel": [
+        620,
+        1193
+      ],
+      "world": [
+        18029.78515625,
+        22702.63671875
+      ],
+      "rawGroundBilerpRGB": [
+        148.0,
+        138.0,
+        117.0
+      ],
+      "renderedRGB": [
+        189,
+        194,
+        181
+      ],
+      "neighborWater": [
+        [
+          1,
+          1
+        ],
+        [
+          0,
+          0
+        ]
+      ],
+      "neighborDeposit": [
+        [
+          2,
+          2
+        ],
+        [
+          2,
+          0
+        ]
+      ],
+      "neighborGroundMaterial": [
+        [
+          7,
+          7
+        ],
+        [
+          19,
+          19
+        ]
+      ],
+      "blend": [
+        [
+          0.010424220003187656,
+          0.02439914457499981
+        ],
+        [
+          0.416342169046402,
+          0.06632193922996521
+        ]
+      ],
+      "sourceVectorBoundaryDistanceM": 2.360301521551718,
+      "insideSourceWaterGroups": []
+    },
+    {
+      "pixel": [
+        1572,
+        543
+      ],
+      "world": [
+        22678.22265625,
+        19528.80859375
+      ],
+      "rawGroundBilerpRGB": [
+        146.0,
+        136.0,
+        115.0
+      ],
+      "renderedRGB": [
+        189,
+        199,
+        189
+      ],
+      "neighborWater": [
+        [
+          0,
+          1
+        ],
+        [
+          0,
+          1
+        ]
+      ],
+      "neighborDeposit": [
+        [
+          2,
+          2
+        ],
+        [
+          2,
+          2
+        ]
+      ],
+      "neighborGroundMaterial": [
+        [
+          7,
+          7
+        ],
+        [
+          7,
+          7
+        ]
+      ],
+      "blend": [
+        [
+          0.42901331186294556,
+          0.02827368676662445
+        ],
+        [
+          0.4883733093738556,
+          0.016287798061966896
+        ]
+      ],
+      "sourceVectorBoundaryDistanceM": 0.8345667843297669,
+      "insideSourceWaterGroups": []
+    },
+    {
+      "pixel": [
+        563,
+        415
+      ],
+      "world": [
+        17751.46484375,
+        18903.80859375
+      ],
+      "rawGroundBilerpRGB": [
+        145.0,
+        133.0,
+        113.0
+      ],
+      "renderedRGB": [
+        180,
+        168,
+        144
+      ],
+      "neighborWater": [
+        [
+          0,
+          1
+        ],
+        [
+          0,
+          1
+        ]
+      ],
+      "neighborDeposit": [
+        [
+          0,
+          2
+        ],
+        [
+          0,
+          2
+        ]
+      ],
+      "neighborGroundMaterial": [
+        [
+          0,
+          7
+        ],
+        [
+          0,
+          7
+        ]
+      ],
+      "blend": [
+        [
+          0.29340124130249023,
+          0.06574229151010513
+        ],
+        [
+          0.3500073552131653,
+          0.12210344523191452
+        ]
+      ],
+      "sourceVectorBoundaryDistanceM": 16.52775929535406,
+      "insideSourceWaterGroups": []
+    }
+  ],
+  "interpretation": {
+    "groundDominatedPixels": [
+      [
+        1562,
+        451
+      ],
+      [
+        1014,
+        1091
+      ],
+      [
+        563,
+        415
+      ]
+    ],
+    "groundFinding": "These points lie outside retained water polygons by47.05m/8.26m/16.53m and interpolate alluvial support, material7=alluvial-bars/depositOrigin2. A broad pale support patch must not be deleted by changing water authority.",
+    "nearBankPixels": [
+      [
+        1935,
+        246
+      ],
+      [
+        620,
+        1193
+      ],
+      [
+        1572,
+        543
+      ]
+    ],
+    "bankFinding": "These are inside or within2.4m of an actual retained vector boundary. Cyan composite cannot be attributed to raw ground alone.",
+    "diagnosticFinding": "Original diagnostic7 used terrain EMISSION plus active water Decal ALBEDO. It was not an overlay-free raw-ground image. af1b648 now hides the objects container and explicitly records diagnostic layers.",
+    "colorLimit": "CPU packed mean colors are not a calibrated match to final screenshot exposure/compositing; no pixel error or lighting correction is inferred from their absolute difference."
+  },
+  "borderFinding": {
+    "sourceCentersM": [
+      39.0625,
+      39960.9375
+    ],
+    "viewWidthM": 40000,
+    "trueUncoveredWidthPxPerSide": 2,
+    "observedEastBandPxApprox": 33,
+    "pinnedShaderMechanism": "Terrain3D1.0.2 minimum shader sets NaN on any vertex whose native control hole bit is set; coarse triangles meeting that vertex disappear. Existing surface shader had no exact source-domain fragment clip.",
+    "proposedFixCommit": "f947c82",
+    "gpuStatus": "PENDING: CPU23assertions and native shader parse passed; no claim of visually corrected border yet",
+    "sourceSafety": "Native hole bits/collision preserved. Only display tessellation edge samples are clamped; source arrays/geometry/levels and actual source domain stay unchanged.",
+    "reviewCorrections": {
+      "cacheKeys": "Nested Dictionary<float64 x, Dictionary<float64 z, altitude>>; distinct doubles below one FP32 ULP tested with different heights",
+      "nativeHolePolicy": "Data.prepare writes hole bits only outside actual height domains; cave/water source rasters never author terrain cutouts. Visual shader bypasses an off-domain hole only; any native hole inside a true source domain remains honoured.",
+      "cpuAssertions": 27,
+      "sourceInsideSafety": "Actual Data.prepare analytic-plane test keeps all inside heights exact, Float32 source bytes unchanged, and native hole control bits outside-only"
+    }
+  },
+  "channelProbe": {
+    "script": "viewer-local/diagnostics/water_confluence_channels.gd",
+    "status": "Parse PASS; GPU execution pending parent scheduling",
+    "channels": [
+      "source-fill-rgba.png",
+      "source-fill-alpha.png",
+      "symbol-rgba.png",
+      "symbol-alpha.png",
+      "class-source-bytes.bin"
+    ],
+    "sourceSafety": "Before/after source and geometry hashes required equal; no alpha/class threshold result claimed before actual run."
+  }
+}

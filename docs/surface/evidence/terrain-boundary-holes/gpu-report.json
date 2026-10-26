@@ -1,0 +1,264 @@
+{
+  "adapter": "NVIDIA GeForce RTX 4090",
+  "backend": "forward_plus",
+  "cases": [
+    {
+      "actualSamples": 9902,
+      "exactFragmentClip": false,
+      "expectedSamples": 10220,
+      "halfWidthM": 19960.0,
+      "image": "holes_19960_0.png",
+      "imageSize": 1024,
+      "imageStartM": -39921.875,
+      "importedHeightBytesUnchanged": true,
+      "maximumEncodedHeightError": 0.0,
+      "meshLods": 10,
+      "meshSize": 32,
+      "missingExpectedSamples": 318,
+      "nativeSpacingM": 77.972412109375,
+      "offDomainVertexHoles": true,
+      "rows": [
+        {
+          "actualFirstPx": 34,
+          "actualLastPx": 2013,
+          "eastInsetPx": 32,
+          "expectedFirstPx": 2,
+          "expectedLastPx": 2045,
+          "westInsetPx": 32,
+          "yPx": 512
+        },
+        {
+          "actualFirstPx": 34,
+          "actualLastPx": 2013,
+          "eastInsetPx": 32,
+          "expectedFirstPx": 2,
+          "expectedLastPx": 2045,
+          "westInsetPx": 32,
+          "yPx": 768
+        },
+        {
+          "actualFirstPx": 33,
+          "actualLastPx": 2014,
+          "eastInsetPx": 31,
+          "expectedFirstPx": 2,
+          "expectedLastPx": 2045,
+          "westInsetPx": 31,
+          "yPx": 1024
+        },
+        {
+          "actualFirstPx": 34,
+          "actualLastPx": 2013,
+          "eastInsetPx": 32,
+          "expectedFirstPx": 2,
+          "expectedLastPx": 2045,
+          "westInsetPx": 32,
+          "yPx": 1280
+        },
+        {
+          "actualFirstPx": 34,
+          "actualLastPx": 2013,
+          "eastInsetPx": 32,
+          "expectedFirstPx": 2,
+          "expectedLastPx": 2045,
+          "westInsetPx": 32,
+          "yPx": 1536
+        }
+      ],
+      "spacingM": 77.972412109375
+    },
+    {
+      "actualSamples": 10220,
+      "exactFragmentClip": true,
+      "expectedSamples": 10220,
+      "halfWidthM": 19960.0,
+      "image": "fragment_19960_0.png",
+      "imageSize": 1024,
+      "imageStartM": -39921.875,
+      "importedHeightBytesUnchanged": true,
+      "maximumEncodedHeightError": 0.0,
+      "meshLods": 10,
+      "meshSize": 32,
+      "missingExpectedSamples": 0,
+      "nativeSpacingM": 77.972412109375,
+      "offDomainVertexHoles": false,
+      "rows": [
+        {
+          "actualFirstPx": 2,
+          "actualLastPx": 2045,
+          "eastInsetPx": 0,
+          "expectedFirstPx": 2,
+          "expectedLastPx": 2045,
+          "westInsetPx": 0,
+          "yPx": 512
+        },
+        {
+          "actualFirstPx": 2,
+          "actualLastPx": 2045,
+          "eastInsetPx": 0,
+          "expectedFirstPx": 2,
+          "expectedLastPx": 2045,
+          "westInsetPx": 0,
+          "yPx": 768
+        },
+        {
+          "actualFirstPx": 2,
+          "actualLastPx": 2045,
+          "eastInsetPx": 0,
+          "expectedFirstPx": 2,
+          "expectedLastPx": 2045,
+          "westInsetPx": 0,
+          "yPx": 1024
+        },
+        {
+          "actualFirstPx": 2,
+          "actualLastPx": 2045,
+          "eastInsetPx": 0,
+          "expectedFirstPx": 2,
+          "expectedLastPx": 2045,
+          "westInsetPx": 0,
+          "yPx": 1280
+        },
+        {
+          "actualFirstPx": 2,
+          "actualLastPx": 2045,
+          "eastInsetPx": 0,
+          "expectedFirstPx": 2,
+          "expectedLastPx": 2045,
+          "westInsetPx": 0,
+          "yPx": 1536
+        }
+      ],
+      "spacingM": 77.972412109375
+    },
+    {
+      "actualSamples": 10220,
+      "exactFragmentClip": false,
+      "expectedSamples": 10220,
+      "halfWidthM": 19960.9375,
+      "image": "holes_19960_9375.png",
+      "imageSize": 1024,
+      "imageStartM": -39921.875,
+      "importedHeightBytesUnchanged": true,
+      "maximumEncodedHeightError": 0.0,
+      "meshLods": 10,
+      "meshSize": 32,
+      "missingExpectedSamples": 0,
+      "nativeSpacingM": 77.972412109375,
+      "offDomainVertexHoles": true,
+      "rows": [
+        {
+          "actualFirstPx": 2,
+          "actualLastPx": 2045,
+          "eastInsetPx": 0,
+          "expectedFirstPx": 2,
+          "expectedLastPx": 2045,
+          "westInsetPx": 0,
+          "yPx": 512
+        },
+        {
+          "actualFirstPx": 2,
+          "actualLastPx": 2045,
+          "eastInsetPx": 0,
+          "expectedFirstPx": 2,
+          "expectedLastPx": 2045,
+          "westInsetPx": 0,
+          "yPx": 768
+        },
+        {
+          "actualFirstPx": 2,
+          "actualLastPx": 2045,
+          "eastInsetPx": 0,
+          "expectedFirstPx": 2,
+          "expectedLastPx": 2045,
+          "westInsetPx": 0,
+          "yPx": 1024
+        },
+        {
+          "actualFirstPx": 2,
+          "actualLastPx": 2045,
+          "eastInsetPx": 0,
+          "expectedFirstPx": 2,
+          "expectedLastPx": 2045,
+          "westInsetPx": 0,
+          "yPx": 1280
+        },
+        {
+          "actualFirstPx": 2,
+          "actualLastPx": 2045,
+          "eastInsetPx": 0,
+          "expectedFirstPx": 2,
+          "expectedLastPx": 2045,
+          "westInsetPx": 0,
+          "yPx": 1536
+        }
+      ],
+      "spacingM": 77.972412109375
+    },
+    {
+      "actualSamples": 10220,
+      "exactFragmentClip": true,
+      "expectedSamples": 10220,
+      "halfWidthM": 19960.9375,
+      "image": "fragment_19960_9375.png",
+      "imageSize": 1024,
+      "imageStartM": -39921.875,
+      "importedHeightBytesUnchanged": true,
+      "maximumEncodedHeightError": 0.0,
+      "meshLods": 10,
+      "meshSize": 32,
+      "missingExpectedSamples": 0,
+      "nativeSpacingM": 77.972412109375,
+      "offDomainVertexHoles": false,
+      "rows": [
+        {
+          "actualFirstPx": 2,
+          "actualLastPx": 2045,
+          "eastInsetPx": 0,
+          "expectedFirstPx": 2,
+          "expectedLastPx": 2045,
+          "westInsetPx": 0,
+          "yPx": 512
+        },
+        {
+          "actualFirstPx": 2,
+          "actualLastPx": 2045,
+          "eastInsetPx": 0,
+          "expectedFirstPx": 2,
+          "expectedLastPx": 2045,
+          "westInsetPx": 0,
+          "yPx": 768
+        },
+        {
+          "actualFirstPx": 2,
+          "actualLastPx": 2045,
+          "eastInsetPx": 0,
+          "expectedFirstPx": 2,
+          "expectedLastPx": 2045,
+          "westInsetPx": 0,
+          "yPx": 1024
+        },
+        {
+          "actualFirstPx": 2,
+          "actualLastPx": 2045,
+          "eastInsetPx": 0,
+          "expectedFirstPx": 2,
+          "expectedLastPx": 2045,
+          "westInsetPx": 0,
+          "yPx": 1280
+        },
+        {
+          "actualFirstPx": 2,
+          "actualLastPx": 2045,
+          "eastInsetPx": 0,
+          "expectedFirstPx": 2,
+          "expectedLastPx": 2045,
+          "westInsetPx": 0,
+          "yPx": 1536
+        }
+      ],
+      "spacingM": 77.972412109375
+    }
+  ],
+  "pinnedMinimumShaderSHA256": "d00dd00050ff35ae20386295243373b48908865e1ea75d8f9f932988683881d6",
+  "scope": "synthetic constant-height native clipmap boundary diagnostic; not a replay of the actual V5 source or proof of its screenshot cause"
+}

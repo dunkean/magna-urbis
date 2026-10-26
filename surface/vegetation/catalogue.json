@@ -1,0 +1,28 @@
+{
+  "format": "magna-vegetation-assets",
+  "version": 1,
+  "pipelineVersion": "grass-source-tufts-v1",
+  "assets": [{
+    "id": "polyhaven-grass-medium-01-tiny",
+    "family": "grass",
+    "provider": "Poly Haven",
+    "providerAssetId": "grass_medium_01",
+    "sourcePage": "https://polyhaven.com/a/grass_medium_01",
+    "license": "CC0-1.0",
+    "licenseUrl": "https://polyhaven.com/license",
+    "authors": ["Rob Tuytel", "Rico Cilliers"],
+    "sourceMeshNames": ["grass_medium_01_tiny_b_LOD0", "grass_medium_01_tiny_c_LOD0", "grass_medium_01_tiny_a_LOD0"],
+    "normalization": "uniform measured height=1; bottom pivot centered XZ; mesh centered Y=.5 for existing candidate transform",
+    "variantPolicy": "candidate.variant modulo variant count; no camera/world-id input",
+    "alphaPolicy": "source alpha texture; hashed coverage multiplied by existing physical pixel fade",
+    "colorSpace": {"baseColor": "srgb", "normal": "linear-normal-gl", "arm": "linear", "alpha": "linear"},
+    "sourceFiles": {
+      "gltf": {"url":"https://dl.polyhaven.org/file/ph-assets/Models/gltf/1k/grass_medium_01/grass_medium_01_1k.gltf", "bytes":27110, "sha256":"3e5e2a314c94e16de54fd7c28e41709731fbd2b1613ab539f1544f622ddb6a85"},
+      "geometry": {"url":"https://dl.polyhaven.org/file/ph-assets/Models/gltf/8k/grass_medium_01/grass_medium_01.bin", "bytes":1006632, "sha256":"f4587cabdb96a2e96d8be644923dc954a248edfaaa717a0ff224cacb898bee1f"},
+      "baseColor": {"url":"https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/grass_medium_01/grass_medium_01_diff_1k.jpg", "bytes":395673, "sha256":"71495bd6a11fddcab0aaff38246fea1a7b802a705483f1c7cbca53955daa8050"},
+      "normal": {"url":"https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/grass_medium_01/grass_medium_01_nor_gl_1k.jpg", "bytes":956166, "sha256":"cae298d3d1d7ff7c7e210ad8ac772b96706e356f9315a6b04fde373ce01ccf1e"},
+      "arm": {"url":"https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/grass_medium_01/grass_medium_01_arm_1k.jpg", "bytes":679518, "sha256":"9a3a30f72bc02f4398967c5b08f2d20cce30bd423a2613b42a727034296fa3ae"},
+      "alpha": {"url":"https://dl.polyhaven.org/file/ph-assets/Models/png/1k/grass_medium_01/grass_medium_01_alpha_1k.png", "bytes":648718, "sha256":"711a8e49af758d6a6ce1f610db858899a27be19da6d1866bd35c13bc7b8ffeff"}
+    }
+  }]
+}

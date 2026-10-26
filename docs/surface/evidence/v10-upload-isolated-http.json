@@ -1,0 +1,517 @@
+{
+  "scope": "CPU HTTP-only test of actual production broker and upload function, using the recorded69.8MB live-refinement body. NOT the unarchived9.35MB preview and not a full UI/native chain.",
+  "sourceSha256": "29c2412100d1327d320c694c01774763c59f2c7c7d5d4912f0adbcd2bd75fb07",
+  "bytes": 69774425,
+  "elapsedMs": 3813.3958000000002,
+  "chunks": [
+    {
+      "start": 5412,
+      "offset": "0",
+      "headers": 5617,
+      "ack": 5617.800000011921
+    },
+    {
+      "start": 5617.9000000059605,
+      "offset": "4194304",
+      "headers": 5828.5,
+      "ack": 5829.200000017881
+    },
+    {
+      "start": 5829.200000017881,
+      "offset": "8388608",
+      "headers": 6031.4000000059605,
+      "ack": 6032.200000017881
+    },
+    {
+      "start": 6032.200000017881,
+      "offset": "12582912",
+      "headers": 6202.100000023842,
+      "ack": 6202.800000011921
+    },
+    {
+      "start": 6202.800000011921,
+      "offset": "16777216",
+      "headers": 6388.600000023842,
+      "ack": 6389.4000000059605
+    },
+    {
+      "start": 6389.4000000059605,
+      "offset": "20971520",
+      "headers": 6594.4000000059605,
+      "ack": 6595.200000017881
+    },
+    {
+      "start": 6595.200000017881,
+      "offset": "25165824",
+      "headers": 6802.800000011921,
+      "ack": 6803.600000023842
+    },
+    {
+      "start": 6803.600000023842,
+      "offset": "29360128",
+      "headers": 7026,
+      "ack": 7026.600000023842
+    },
+    {
+      "start": 7026.700000017881,
+      "offset": "33554432",
+      "headers": 7219.300000011921,
+      "ack": 7220
+    },
+    {
+      "start": 7220.100000023842,
+      "offset": "37748736",
+      "headers": 7417.600000023842,
+      "ack": 7418.200000017881
+    },
+    {
+      "start": 7418.300000011921,
+      "offset": "41943040",
+      "headers": 7603.5,
+      "ack": 7604.300000011921
+    },
+    {
+      "start": 7604.300000011921,
+      "offset": "46137344",
+      "headers": 7836,
+      "ack": 7836.800000011921
+    },
+    {
+      "start": 7836.800000011921,
+      "offset": "50331648",
+      "headers": 8056.9000000059605,
+      "ack": 8057.600000023842
+    },
+    {
+      "start": 8057.600000023842,
+      "offset": "54525952",
+      "headers": 8266.100000023842,
+      "ack": 8266.700000017881
+    },
+    {
+      "start": 8266.800000011921,
+      "offset": "58720256",
+      "headers": 8502.700000017881,
+      "ack": 8503.5
+    },
+    {
+      "start": 8503.5,
+      "offset": "62914560",
+      "headers": 8633.600000023842,
+      "ack": 8634.200000017881
+    },
+    {
+      "start": 8634.200000017881,
+      "offset": "67108864",
+      "headers": 8709.700000017881,
+      "ack": 8710.40000000596
+    }
+  ],
+  "serverRequests": [
+    {
+      "url": "/surface-live/reply/f36caf6f-fe8c-4828-9a95-af7e02a2c1ff",
+      "begin": 7405.4469,
+      "firstData": 7406.6846,
+      "lastData": 7437.026,
+      "bytes": 4194304,
+      "finish": 7441.0871,
+      "status": 200
+    },
+    {
+      "url": "/surface-live/reply/f36caf6f-fe8c-4828-9a95-af7e02a2c1ff",
+      "begin": 7735.6172,
+      "firstData": 7735.9803,
+      "lastData": 7751.4328,
+      "bytes": 4194304,
+      "finish": 7755.8206,
+      "status": 200
+    },
+    {
+      "url": "/surface-live/reply/f36caf6f-fe8c-4828-9a95-af7e02a2c1ff",
+      "begin": 7882.0957,
+      "firstData": 7882.3135,
+      "lastData": 7897.4767,
+      "bytes": 4194304,
+      "finish": 7900.6751,
+      "status": 200
+    },
+    {
+      "url": "/surface-live/reply/f36caf6f-fe8c-4828-9a95-af7e02a2c1ff",
+      "begin": 8106.9923,
+      "firstData": 8108.1444,
+      "lastData": 8122.2323,
+      "bytes": 4194304,
+      "finish": 8125.9303,
+      "status": 200
+    },
+    {
+      "url": "/surface-live/reply/f36caf6f-fe8c-4828-9a95-af7e02a2c1ff",
+      "begin": 8281.8398,
+      "firstData": 8282.0549,
+      "lastData": 8295.7532,
+      "bytes": 4194304,
+      "finish": 8300.0271,
+      "status": 200
+    },
+    {
+      "url": "/surface-live/reply/f36caf6f-fe8c-4828-9a95-af7e02a2c1ff",
+      "begin": 8465.3468,
+      "firstData": 8465.5165,
+      "lastData": 8505.4916,
+      "bytes": 4194304,
+      "finish": 8509.056,
+      "status": 200
+    },
+    {
+      "url": "/surface-live/reply/f36caf6f-fe8c-4828-9a95-af7e02a2c1ff",
+      "begin": 8691.6005,
+      "firstData": 8691.8241,
+      "lastData": 8707.3052,
+      "bytes": 4194304,
+      "finish": 8710.7231,
+      "status": 200
+    },
+    {
+      "url": "/surface-live/reply/f36caf6f-fe8c-4828-9a95-af7e02a2c1ff",
+      "begin": 8877.0853,
+      "firstData": 8877.3681,
+      "lastData": 8895.705,
+      "bytes": 4194304,
+      "finish": 8901.113,
+      "status": 200
+    },
+    {
+      "url": "/surface-live/reply/f36caf6f-fe8c-4828-9a95-af7e02a2c1ff",
+      "begin": 9003.0231,
+      "firstData": 9003.2377,
+      "lastData": 9024.3339,
+      "bytes": 4194304,
+      "finish": 9028.6653,
+      "status": 200
+    },
+    {
+      "url": "/surface-live/reply/f36caf6f-fe8c-4828-9a95-af7e02a2c1ff",
+      "begin": 9254.4208,
+      "firstData": 9256.2598,
+      "lastData": 9275.9024,
+      "bytes": 4194304,
+      "finish": 9279.2965,
+      "status": 200
+    },
+    {
+      "url": "/surface-live/reply/f36caf6f-fe8c-4828-9a95-af7e02a2c1ff",
+      "begin": 9492.4464,
+      "firstData": 9492.6437,
+      "lastData": 9503.5441,
+      "bytes": 4194304,
+      "finish": 9506.0371,
+      "status": 200
+    },
+    {
+      "url": "/surface-live/reply/f36caf6f-fe8c-4828-9a95-af7e02a2c1ff",
+      "begin": 9682.2982,
+      "firstData": 9682.5414,
+      "lastData": 9698.594,
+      "bytes": 4194304,
+      "finish": 9702.9081,
+      "status": 200
+    },
+    {
+      "url": "/surface-live/reply/f36caf6f-fe8c-4828-9a95-af7e02a2c1ff",
+      "begin": 9805.1022,
+      "firstData": 9805.3134,
+      "lastData": 9824.2136,
+      "bytes": 4194304,
+      "finish": 9826.9036,
+      "status": 200
+    },
+    {
+      "url": "/surface-live/reply/f36caf6f-fe8c-4828-9a95-af7e02a2c1ff",
+      "begin": 10040.2876,
+      "firstData": 10040.514,
+      "lastData": 10059.9059,
+      "bytes": 4194304,
+      "finish": 10065.1232,
+      "status": 200
+    },
+    {
+      "url": "/surface-live/reply/f36caf6f-fe8c-4828-9a95-af7e02a2c1ff",
+      "begin": 10383.5096,
+      "firstData": 10383.7327,
+      "lastData": 10424.3791,
+      "bytes": 4194304,
+      "finish": 10430.0092,
+      "status": 200
+    },
+    {
+      "url": "/surface-live/reply/f36caf6f-fe8c-4828-9a95-af7e02a2c1ff",
+      "begin": 10517.6116,
+      "firstData": 10517.808,
+      "lastData": 10537.265,
+      "bytes": 4194304,
+      "finish": 10540.9632,
+      "status": 200
+    },
+    {
+      "url": "/surface-live/reply/f36caf6f-fe8c-4828-9a95-af7e02a2c1ff",
+      "begin": 10592.313,
+      "firstData": 10592.5597,
+      "lastData": 10621.4497,
+      "bytes": 2665561,
+      "finish": 10637.2314,
+      "status": 200
+    }
+  ],
+  "network": [
+    {
+      "callbackAt": 7762.3074,
+      "timing": {
+        "startTime": 1792804207754.256,
+        "domainLookupStart": 0.118,
+        "domainLookupEnd": 0.124,
+        "connectStart": 0.124,
+        "secureConnectionStart": -1,
+        "connectEnd": 1.56,
+        "requestStart": 1.69,
+        "responseStart": 37.565,
+        "responseEnd": 99.182
+      }
+    },
+    {
+      "callbackAt": 7902.2642,
+      "timing": {
+        "startTime": 1792804207952.638,
+        "domainLookupStart": -1,
+        "domainLookupEnd": -1,
+        "connectStart": -1,
+        "secureConnectionStart": -1,
+        "connectEnd": -1,
+        "requestStart": 0.242,
+        "responseStart": 154.618,
+        "responseEnd": 208.446
+      }
+    },
+    {
+      "callbackAt": 8130.6712,
+      "timing": {
+        "startTime": 1792804208161.222,
+        "domainLookupStart": -1,
+        "domainLookupEnd": -1,
+        "connectStart": -1,
+        "secureConnectionStart": -1,
+        "connectEnd": -1,
+        "requestStart": 0.255,
+        "responseStart": 89.992,
+        "responseEnd": 141.455
+      }
+    },
+    {
+      "callbackAt": 8300.8766,
+      "timing": {
+        "startTime": 1792804208366.563,
+        "domainLookupStart": -1,
+        "domainLookupEnd": -1,
+        "connectStart": -1,
+        "secureConnectionStart": -1,
+        "connectEnd": -1,
+        "requestStart": 0.207,
+        "responseStart": 109.217,
+        "responseEnd": 162.517
+      }
+    },
+    {
+      "callbackAt": 8510.452,
+      "timing": {
+        "startTime": 1792804208539.131,
+        "domainLookupStart": -1,
+        "domainLookupEnd": -1,
+        "connectStart": -1,
+        "secureConnectionStart": -1,
+        "connectEnd": -1,
+        "requestStart": 5.452,
+        "responseStart": 111.719,
+        "responseEnd": 167.71
+      }
+    },
+    {
+      "callbackAt": 8711.6977,
+      "timing": {
+        "startTime": 1792804208725.952,
+        "domainLookupStart": -1,
+        "domainLookupEnd": -1,
+        "connectStart": -1,
+        "secureConnectionStart": -1,
+        "connectEnd": -1,
+        "requestStart": 0.198,
+        "responseStart": 134.517,
+        "responseEnd": 190.075
+      }
+    },
+    {
+      "callbackAt": 8902.0886,
+      "timing": {
+        "startTime": 1792804208923.8381,
+        "domainLookupStart": -1,
+        "domainLookupEnd": -1,
+        "connectStart": -1,
+        "secureConnectionStart": -1,
+        "connectEnd": -1,
+        "requestStart": 0.235,
+        "responseStart": 138.916,
+        "responseEnd": 185.985
+      }
+    },
+    {
+      "callbackAt": 9151.1436,
+      "timing": {
+        "startTime": 1792804209126.117,
+        "domainLookupStart": -1,
+        "domainLookupEnd": -1,
+        "connectStart": -1,
+        "secureConnectionStart": -1,
+        "connectEnd": -1,
+        "requestStart": 0.208,
+        "responseStart": 123.914,
+        "responseEnd": 165.115
+      }
+    },
+    {
+      "callbackAt": 9291.7938,
+      "timing": {
+        "startTime": 1792804209351.721,
+        "domainLookupStart": -1,
+        "domainLookupEnd": -1,
+        "connectStart": -1,
+        "secureConnectionStart": -1,
+        "connectEnd": -1,
+        "requestStart": 0.208,
+        "responseStart": 27.887,
+        "responseEnd": 72.237
+      }
+    },
+    {
+      "callbackAt": 9506.8241,
+      "timing": {
+        "startTime": 1792804209550.455,
+        "domainLookupStart": -1,
+        "domainLookupEnd": -1,
+        "connectStart": -1,
+        "secureConnectionStart": -1,
+        "connectEnd": -1,
+        "requestStart": 3.829,
+        "responseStart": 79.651,
+        "responseEnd": 128.453
+      }
+    },
+    {
+      "callbackAt": 9703.9054,
+      "timing": {
+        "startTime": 1792804209754.0823,
+        "domainLookupStart": -1,
+        "domainLookupEnd": -1,
+        "connectStart": -1,
+        "secureConnectionStart": -1,
+        "connectEnd": -1,
+        "requestStart": 0.183,
+        "responseStart": 103.192,
+        "responseEnd": 158.042
+      }
+    },
+    {
+      "callbackAt": 9964.503,
+      "timing": {
+        "startTime": 1792804209932.389,
+        "domainLookupStart": -1,
+        "domainLookupEnd": -1,
+        "connectStart": -1,
+        "secureConnectionStart": -1,
+        "connectEnd": -1,
+        "requestStart": 0.205,
+        "responseStart": 121.578,
+        "responseEnd": 169.16
+      }
+    },
+    {
+      "callbackAt": 10198.6108,
+      "timing": {
+        "startTime": 1792804210154.5342,
+        "domainLookupStart": -1,
+        "domainLookupEnd": -1,
+        "connectStart": -1,
+        "secureConnectionStart": -1,
+        "connectEnd": -1,
+        "requestStart": 0.196,
+        "responseStart": 23.62,
+        "responseEnd": 60.414
+      }
+    },
+    {
+      "callbackAt": 10467.5495,
+      "timing": {
+        "startTime": 1792804210390.953,
+        "domainLookupStart": -1,
+        "domainLookupEnd": -1,
+        "connectStart": -1,
+        "secureConnectionStart": -1,
+        "connectEnd": -1,
+        "requestStart": 0.211,
+        "responseStart": 26.079,
+        "responseEnd": 77.805
+      }
+    },
+    {
+      "callbackAt": 10541.7046,
+      "timing": {
+        "startTime": 1792804210589.7178,
+        "domainLookupStart": -1,
+        "domainLookupEnd": -1,
+        "connectStart": -1,
+        "secureConnectionStart": -1,
+        "connectEnd": -1,
+        "requestStart": 10.436,
+        "responseStart": 191.112,
+        "responseEnd": 233.761
+      }
+    },
+    {
+      "callbackAt": 11010.6015,
+      "timing": {
+        "startTime": 1792804210823.501,
+        "domainLookupStart": -1,
+        "domainLookupEnd": -1,
+        "connectStart": -1,
+        "secureConnectionStart": -1,
+        "connectEnd": -1,
+        "requestStart": 0.181,
+        "responseStart": 66.754,
+        "responseEnd": 106.34
+      }
+    },
+    {
+      "callbackAt": 11142.2289,
+      "timing": {
+        "startTime": 1792804210922.7441,
+        "domainLookupStart": -1,
+        "domainLookupEnd": -1,
+        "connectStart": -1,
+        "secureConnectionStart": -1,
+        "connectEnd": -1,
+        "requestStart": 0.222,
+        "responseStart": 61.844,
+        "responseEnd": 73.782
+      }
+    }
+  ],
+  "serverEventLoopDelayMs": {
+    "max": 359.399423,
+    "mean": 20.978241858921162
+  },
+  "gpuDisabled": true,
+  "exact": true,
+  "baselineRuntime": "f4d25e105195f9a57f2622b2ee7ea70f5e923940",
+  "limitations": [
+    "Standalone Node HTTP server around the actual production broker. It does not measure Vite middleware/file watchers, TerrainBench UI, software rasterization, native GPU work or OS load during V10.",
+    "The archived body is69.8MB live-refinement.surfacebin, not the unarchived9.35MB preview. No body substitution is presented as the failed preview.",
+    "No cause of the10s V10 pause is established by this negative isolated reproduction."
+  ]
+}

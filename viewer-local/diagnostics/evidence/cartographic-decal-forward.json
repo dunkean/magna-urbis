@@ -1,0 +1,22 @@
+{
+  "deformedRoadPixels": 9856,
+  "differentPixels": 0,
+  "excludedLayerRoadPixels": 0,
+  "failures": [],
+  "flatRoadPixels": 9856,
+  "groundError": 0.00196078419685364,
+  "groundRGB": [
+    0.498039215803146,
+    0.400000005960464,
+    0.298039227724075
+  ],
+  "renderer": "forward_plus",
+  "roadError": 0.0,
+  "roadRGB": [
+    0.800000011920929,
+    0.600000023841858,
+    0.400000005960464
+  ],
+  "godot": "4.7.2.stable.official.ed1daf0bf",
+  "adapter": "NVIDIA GeForce RTX 4090"
+}

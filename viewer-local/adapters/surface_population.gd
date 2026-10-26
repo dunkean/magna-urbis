@@ -1,0 +1,52 @@
+class_name SurfacePopulation
+extends RefCounted
+const Canopy = preload("res://adapters/surface_canopy.gd")
+const FAMILY_BUDGETS := {"tree":10000,"shrub":2500,"boulder":2000,"grass":1000,"debris":500}
+
+# Pure CPU query. Run on a worker, never sort the full population on the UI thread.
+static func prepare(packet: Dictionary, focus: Dictionary, width_m: float, viewport_width: float, oblique: bool, geometry_enabled := true,atlas_bounds:Dictionary={}) -> Dictionary:
+	var candidates: Array = packet.get("candidates",packet.get("populations",[]))
+	var columns: Dictionary = packet.get("candidateColumns",{})
+	var count := int(columns.count) if not columns.is_empty() else candidates.size()
+	var families := {"tree":[],"shrub":[],"boulder":[],"grass":[],"debris":[]}
+	if not geometry_enabled: return {"families":families,"selectedCount":0,"candidateCount":count,"canopy":Canopy.prepare(packet,{},atlas_bounds),"familyBudgets":FAMILY_BUDGETS}
+	var canopy_bounds:Dictionary=Canopy.tree_page(packet).get("bounds",{})
+	var unsupported: Dictionary = packet.get("_unsupportedTreeIDs",{})
+	var radius := clampf(width_m*(1.5 if oblique else 1.0),40.0,5000.0)
+	var query_radius := radius+float(packet.get("_maximumCrownRadiusM",0.0))
+	# Oblique tree geometry and atlas use the SAME planned support rectangle.
+	# Other families retain their original circular eligibility and budgets.
+	var planned_tree_bounds:Dictionary=atlas_bounds if oblique and not atlas_bounds.is_empty() and not atlas_bounds.get("disabled",false) else {}
+	if not planned_tree_bounds.is_empty():query_radius=maxf(query_radius,maxf(maxf(absf(float(planned_tree_bounds.minX)-float(focus.x)),absf(float(planned_tree_bounds.maxX)-float(focus.x))),maxf(absf(float(planned_tree_bounds.minZ)-float(focus.y)),absf(float(planned_tree_bounds.maxZ)-float(focus.y))))+float(packet.get("_maximumCrownRadiusM",7.56)))
+	var buckets: Dictionary = packet.get("_candidateBuckets",{})
+	var nearby: Array = []
+	for z in range(floori((focus.y-query_radius)/128.0),floori((focus.y+query_radius)/128.0)+1):
+		for x in range(floori((focus.x-query_radius)/128.0),floori((focus.x+query_radius)/128.0)+1): nearby.append_array(buckets.get(Vector2i(x,z),[]))
+	var eligible: Array = []
+	for index in nearby:
+		var i := int(index)
+		var px: float = columns.positions[i*3] if not columns.is_empty() else float(candidates[i].x)
+		var pz: float = columns.positions[i*3+2] if not columns.is_empty() else float(candidates[i].z)
+		var size: float = columns.size[i] if not columns.is_empty() else float(candidates[i].size)
+		var crown_radius: float = columns.crownRadiusM[i] if not columns.is_empty() else float(candidates[i].get("crownRadiusM",size*0.42))
+		if not is_finite(crown_radius): crown_radius=size*0.42
+		var family_name=str(columns.families[int(columns.family[i])]) if not columns.is_empty() else str(candidates[i].family)
+		if family_name=="tree" and not planned_tree_bounds.is_empty():
+			if not Canopy.can_select(px,pz,crown_radius,planned_tree_bounds):continue
+		elif Vector2(px-focus.x,pz-focus.y).length()>radius+crown_radius: continue
+		if maxf(size,2.0*crown_radius)/width_m*viewport_width<1.25: continue
+		var candidate: Dictionary = candidates[i] if columns.is_empty() else {"stableId":columns.ids[i],"family":columns.families[int(columns.family[i])],"x":px,"y":columns.positions[i*3+1],"z":pz,"size":size,"orientation":columns.orientation[i],"rank":columns.rank[i],"variant":columns.variant[i],"crownRadiusM":crown_radius}
+		if str(candidate.family)=="tree":
+			if atlas_bounds.get("disabled",false):continue
+			if unsupported.has(str(candidate.stableId)): continue
+			if canopy_bounds.is_empty() or not Canopy.can_select(px,pz,crown_radius,canopy_bounds,float(candidate.get("rank",0.0))): continue
+			candidate=candidate.duplicate()
+			candidate["canopyClass"]=Canopy.radius_class(crown_radius)
+		if families.has(candidate.family): eligible.append(candidate)
+	eligible.sort_custom(func(a,b): return float(a.get("rank",0.0))<float(b.get("rank",0.0)) if float(a.get("rank",0.0))!=float(b.get("rank",0.0)) else str(a.stableId)<str(b.stableId))
+	var selected := {}; var selected_count := 0
+	for candidate in eligible:
+		if families[candidate.family].size()>=int(FAMILY_BUDGETS[candidate.family]): continue
+		families[candidate.family].append(candidate); selected_count+=1
+		if str(candidate.family)=="tree": selected[str(candidate.stableId)]=true
+	return {"families":families,"selectedCount":selected_count,"candidateCount":count,"canopy":Canopy.prepare(packet,selected,atlas_bounds),"familyBudgets":FAMILY_BUDGETS}

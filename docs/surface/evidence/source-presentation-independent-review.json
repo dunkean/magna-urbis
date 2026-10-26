@@ -1,0 +1,71 @@
+{
+  "format": "source-presentation-independent-review",
+  "version": 1,
+  "verdict": "PASS",
+  "reviewedCommit": "bd1764e3e336cb65f71c52919cf9f690bd5ede84",
+  "baseCommit": "f5d0c629be432ec32c4f37a0714b7f712a19eb40",
+  "findings": [],
+  "productionChangesReviewed": [
+    "Prepared.presentation stores the default separately from reversible source metadata.",
+    "packet.presentation priority is job, prepared default, legacy valid source metadata fallback.",
+    "Per-job styles no longer overwrite packet.source.presentation.",
+    "sourceArchive executable code is unchanged; diff adds only a producer invariant comment."
+  ],
+  "invariants": [
+    "Canonical compilation and retarget inputs/options are unchanged. Source/scene epoch routing and sceneContextId fingerprint inputs are unchanged.",
+    "Only job presentation changes across repeated style jobs; all other packet bytes compare exactly in binary.",
+    "Full source metadata preserves archive attachment paths, bytes and null targets. Original source typed arrays and opaque editor presentation survive complete restoration.",
+    "Matching known scene omits source-only metadata; joining to its first scene restores the original source. Unmatched scene sends full metadata/urban.",
+    "The authored default survives a prior override and a null archived original presentation. Legacy adapters without Prepared.presentation retain a valid unarchived source-style fallback.",
+    "Historical occupied slots stay rejected. No generic normalizer, guessed null, migration or archive schema relaxation was added."
+  ],
+  "testCommand": "npx vitest run tests/surface.live-source-presentation.test.ts tests/surface.source-presentation-independent.test.ts tests/surface.source-archive.test.ts tests/surface.live-session.test.ts tests/surface.worker-timing.test.ts",
+  "tests": {
+    "files": 5,
+    "passed": 20,
+    "producerRegressionCases": 4,
+    "independentCases": 3,
+    "independentScope": [
+      "nested attachment under opaque source.presentation with typed sibling and Float64 signed zero",
+      "source metadata remains unmodified after several style jobs",
+      "default and per-job precedence, full binary source restoration",
+      "legacy valid fallback with known and unmatched scene handshakes",
+      "known-context and known-scene omission are independent",
+      "whole source.presentation null target, then matching compact join",
+      "default returns after per-job override",
+      "five occupied-slot negatives: job object,false,0,empty string,undefined",
+      "partial compact source remains partial, with no invented original records"
+    ],
+    "initialAuthoredFixtureCorrections": [
+      "Supplied an explicit urbanId for the intentionally opaque authored urban fixture rather than asking the native urban-column identity helper to interpret it.",
+      "Changed the whole-slot fixture to a sub-limit string whose aggregate record is archived; a larger individual string correctly produced a nested attachment instead. These were test authoring errors, not producer defects."
+    ]
+  },
+  "files": {
+    "web/src/surface/workerProcessor.ts": {
+      "sha256Worktree": "9cb2c4219aa1fa3ba5049ce2616a058969350ef8c3320abdb60dcc050602be41",
+      "gitBlob": "b4623aa940877f155633851c1e566edde51ea4ae"
+    },
+    "web/src/ui/surfaceWorkerSource.ts": {
+      "sha256Worktree": "aab279dcad1b711a3ed77ef4bea45d05927484feea3de58ebbe559b679a5749a",
+      "gitBlob": "f8b5aa497464b1230fcf523aa884e7fbbc9d77ca"
+    },
+    "web/src/surface/workerProtocol.ts": {
+      "sha256Worktree": "c68cf23e954fa1407eb4db224d811736b8b65195fd01e7efddc06fa2e21c913d",
+      "gitBlob": "28d8d56a9505f38a6ccd3357fb26239e542b6f42"
+    },
+    "web/src/surface/adapters/sourceArchive.ts": {
+      "sha256Worktree": "6cee98f8ca07b5054c321a7b87c8b47309511818b28d65c6733caf8a12941f49",
+      "gitBlob": "4c235d18b4672e3b006467e937ea607bd0584cf6"
+    },
+    "web/tests/surface.live-source-presentation.test.ts": {
+      "sha256Worktree": "55eca3ee02f73b918774ba4f8dabe177f5aefd2e7c49de301dccd8c6be4c6bad",
+      "gitBlob": "ae64b6b2322ec4231114b0632c4322466c997a8d"
+    },
+    "web/tests/surface.source-presentation-independent.test.ts": {
+      "sha256Worktree": "9b7370810e8dd396e47b8fcba4259a289859c4ec5d765fe4483624311c63a322",
+      "gitBlob": "92cec14419515a8cb690ccd177230a567b2a2e34"
+    }
+  },
+  "scope": "Independent code review and short authored CPU regression tests only. No original fresh neural source, native/GPU rendering, performance qualification or recovery of historical broken packets is claimed. The producer author reported219 Surface tests and global typecheck; this reviewer reran the20 listed tests only. ROOT and other agents worktrees were not modified."
+}

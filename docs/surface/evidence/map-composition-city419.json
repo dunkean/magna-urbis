@@ -1,0 +1,198 @@
+{
+  "format": "surface-map-composition-proof",
+  "version": 1,
+  "compositionCommit": "8e1e771f2b498edd8109da6ad61db2b30462cdaa",
+  "base": "c36c5a4",
+  "captureRuntimeHead": "6ef8d3c6f2b88f884a2ad199c7b305dfaf3649c1",
+  "scope": "CPU-only SVG composition and resvg PNG export over an existing retained CITY419 native TOP capture; no new native render or source generation.",
+  "binding": {
+    "format": "surface-map-capture",
+    "version": 1,
+    "sourcePacketSha256": "54616775da71a5fb94e32d1cce13b59cad38f79f410f04525be72bc14edf589e",
+    "metricsSha256": "ae906228aac53e5d0615613652c4cc8bc1b699ce63583bef9252d8baefb62a5d",
+    "imageSha256": "c69ecb23fc11944e7553908834b1fa934634869b9ef121ce8068e909fb0d2452",
+    "worldId": "0de1e8948131f56a677a8e24e8ecbac8",
+    "canonicalContextId": "00eb9ae088b9342e0ce55680861edf6c",
+    "widthPx": 1280,
+    "heightPx": 800,
+    "projection": {
+      "kind": "orthographic-top",
+      "bounds": {
+        "minX": 6336.4762957318035,
+        "maxX": 6736.4762957318035,
+        "minZ": 8337.943018929407,
+        "maxZ": 8587.943018929407
+      },
+      "north": "local-negative-z"
+    },
+    "presentation": "cartographic",
+    "mapStyle": "blueprint"
+  },
+  "bindingProofSha256": "dd303ebbf6814463ce203936bb059a2b34a4378c40eaf6b9fd30227245ce4fd8",
+  "sourcePacketBytes": 251582841,
+  "sourcePacketScope": "419 authentic native exteriors,81 explicit refusals; retained15.625m parent with unknown sourceLOD; legacy1.5.3 soil, not fresh neural terrain or groundResponse validation.",
+  "evidence": {
+    "format": "surface-map-composition",
+    "version": 1,
+    "capture": {
+      "format": "surface-map-capture",
+      "version": 1,
+      "sourcePacketSha256": "54616775da71a5fb94e32d1cce13b59cad38f79f410f04525be72bc14edf589e",
+      "metricsSha256": "ae906228aac53e5d0615613652c4cc8bc1b699ce63583bef9252d8baefb62a5d",
+      "imageSha256": "c69ecb23fc11944e7553908834b1fa934634869b9ef121ce8068e909fb0d2452",
+      "worldId": "0de1e8948131f56a677a8e24e8ecbac8",
+      "canonicalContextId": "00eb9ae088b9342e0ce55680861edf6c",
+      "widthPx": 1280,
+      "heightPx": 800,
+      "projection": {
+        "kind": "orthographic-top",
+        "bounds": {
+          "minX": 6336.4762957318035,
+          "maxX": 6736.4762957318035,
+          "minZ": 8337.943018929407,
+          "maxZ": 8587.943018929407
+        },
+        "north": "local-negative-z"
+      },
+      "presentation": "cartographic",
+      "mapStyle": "blueprint"
+    },
+    "style": "blueprint",
+    "sourceLabelCount": 0,
+    "placedLabelIds": [],
+    "droppedLabels": [],
+    "legend": [
+      {
+        "id": "native-buildings",
+        "text": "B\u00c3\u00a2timents natifs (source)",
+        "sourcePath": "urban.buildings",
+        "semantic": "native-buildings",
+        "count": 419
+      },
+      {
+        "id": "roads",
+        "text": "Voirie (source)",
+        "sourcePath": "urban.roads",
+        "semantic": "roads",
+        "count": 6
+      },
+      {
+        "id": "trees",
+        "text": "Arbres (potentiel)",
+        "sourcePath": "world.canonicalContext.fields.treeCover",
+        "semantic": "trees",
+        "count": 228
+      },
+      {
+        "id": "low-cover",
+        "text": "Couvert bas (potentiel)",
+        "sourcePath": "world.canonicalContext.fields.grassCover/shrubCover/litter",
+        "semantic": "low-cover",
+        "count": 228
+      },
+      {
+        "id": "recipe:mineral-soil",
+        "text": "Sol : mineral-soil",
+        "sourcePath": "world.materials[0] / canonicalContext.fields.groundMaterial",
+        "semantic": "ground-recipe",
+        "count": 486
+      }
+    ],
+    "gridMeters": 5,
+    "gridLines": 130,
+    "scaleBar": {
+      "lengthM": 25,
+      "pixels": 80
+    },
+    "fontFamily": "'Segoe UI', 'Helvetica Neue', Arial, 'Liberation Sans', sans-serif",
+    "coverage": {
+      "raster": "Pinned original PNG, unchanged",
+      "overlay": "Shared label placement, font stack, panel primitives, frame, north and palette tokens",
+      "style": "Overlay only; captured raster presentation is not restyled",
+      "perspective": null
+    },
+    "unsupported": [
+      "SVG brush strokes, terrain hatching, labels absent from source, per-pixel occlusion and perspective path draping are not reconstructed"
+    ]
+  },
+  "encodedRasterSha256Verified": "c69ecb23fc11944e7553908834b1fa934634869b9ef121ce8068e909fb0d2452",
+  "sourceRecordsPreserved": true,
+  "sourceFiles": [
+    {
+      "path": "web/src/surface/mapComposition.ts",
+      "lfSha256": "99b2f3472dbb334e5bba0b7fdbb08ca39fed787fcbdcec744b92ae4c6ff3a4f5"
+    },
+    {
+      "path": "web/src/surface/adapters/mapComposition.ts",
+      "lfSha256": "37b5b00480ab2c90b271f3ffb78d728d4c6a9a228ebb2b646e71441ed29d5171"
+    },
+    {
+      "path": "web/scripts/compose_surface_map.ts",
+      "lfSha256": "49b47db7c331ff54e7bc81be26b87a38d33a3dcb3f0a90d48b914761389bed2a"
+    },
+    {
+      "path": "web/src/render/svgLabels.ts",
+      "lfSha256": "7b32409c4332fe6239293bca11d357d36dc2c4df620114bcafff7493355ae09b"
+    },
+    {
+      "path": "web/src/render/styles.ts",
+      "lfSha256": "27a1f7c496ad739d2f762ae50b49c335c8cc535648acb5630ae5ebca87b5b440"
+    },
+    {
+      "path": "web/src/render/legend.ts",
+      "lfSha256": "c4f79bd76fc464de724f62a7a121cd185a05b5f779bc1f45016c288f3222c7fd"
+    },
+    {
+      "path": "web/src/render/frame.ts",
+      "lfSha256": "0f7c5f2321673c628b32eabab56cfd233fc6f1e4a64b4da6846c937d174f5433"
+    },
+    {
+      "path": "web/src/render/labelStyles.ts",
+      "lfSha256": "b01545920ad9c7efdb7f42ab07ad07aab7bf50272ac271e7e02130db5cf34540"
+    }
+  ],
+  "artifacts": [
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-v14-map-composition\\web\\out\\surface\\map-composition\\city419-blueprint.json",
+      "bytes": 5011,
+      "sha256": "7520ea96b81ac25c24ae54b3c8b74018c2ec8a2573f12f1eb0329ea196dc9b8a"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-v14-map-composition\\web\\out\\surface\\map-composition\\city419-blueprint.svg",
+      "bytes": 137380,
+      "sha256": "34718f907374a9c2db11c08be83aca8b52a6715dbd91a0ac30457bfc1b95538b"
+    },
+    {
+      "path": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-v14-map-composition\\web\\out\\surface\\map-composition\\city419-blueprint.png",
+      "bytes": 277874,
+      "sha256": "75621009d8f089f98e7949f152ea2af9cff72b00dfbf4d0a6c32263aa98fbb26"
+    }
+  ],
+  "tests": {
+    "dedicatedTests": 9,
+    "existingM5aM5bTests": 28,
+    "combinedBeforeFinalSidecarAddition": 36,
+    "fullTypeScript": "PASS",
+    "standaloneCliTypeScript": "PASS",
+    "covered": [
+      "source/world/hash/dimension mismatches",
+      "metric ruler/grid and bounds",
+      "no invented names",
+      "source label translation and immutability",
+      "all9shared overlay palettes",
+      "perspective explicit matrix/elevation and rejection of uniform metric grid",
+      "native sidecar validation and F64 rebasing at1e9",
+      "existing label serializer parity across9palettes"
+    ]
+  },
+  "nativeProjectionStatus": "Typed bridge ready; actual V14 native projection capture is pending ROOT. This proof uses the existing explicit TOP command binding only; no approximate oblique camera is inferred.",
+  "limits": [
+    "Zero retained names in source.meta.names: zero toponyms orPOIs added. A source-aware producer may supply genuine world.names.entries through sourceMapLabels.",
+    "Shared overlay styling does not restyle the captured raster.9map palettes are not15fully qualified native final styles.",
+    "Ground recipe legend describes source semantics; canonical support node counts are not area or visible pixels.",
+    "Perspective points require source elevations; path draping andGPU occlusion are not implemented.",
+    "Local grid north only, not surveyed geographic north.",
+    "System font stacks remain shared with web; fonts are not embedded, so cross-machine PNG identity is not promised.",
+    "SVG brush effects, terrain hatching, relief and source-absent labels are not reconstructed."
+  ]
+}

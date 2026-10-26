@@ -1,0 +1,273 @@
+{
+  "format": "magna-surface-native-e2e-evidence",
+  "version": 1,
+  "campaign": "V7",
+  "status": "failed",
+  "scope": "Fresh 40 km teacher source through browser compiler worker, broker and native renderer; strict regional source-water gate failed after all seven tour captures. Layer visibility probe did not run.",
+  "repository": {
+    "head": "398d16e0e150b36dcfb5f1fc6122d25ad5d52fc5",
+    "finalHead": "398d16e0e150b36dcfb5f1fc6122d25ad5d52fc5",
+    "initialTrackedStatus": "",
+    "finalTrackedStatus": "",
+    "trackedRuntimeFiles": 529,
+    "sameRuntimeHashes": true
+  },
+  "originalReport": {
+    "relativePath": "web/out/surface/native-e2e-40km-v7/report.json",
+    "sha256": "4e39f474b8597f107579fe6bd1b2c0d2cc8d5a6e6ef5e2ab41e075a7752a6465",
+    "bytes": 1671602,
+    "status": "failed",
+    "failure": "Error: Source vector omission, budget limit or mixed fallback",
+    "durationMs": 467769
+  },
+  "source": {
+    "widthM": 40000,
+    "seed": "surface-native-e2e-40km",
+    "decoderModel": "original",
+    "geologyScenario": "tilted-strata-v1 (explicit authored geology; not observed geology)",
+    "rawHeightfieldSha256": "3c7c2f32e37844842f058208e21522543bcec69125348e115390f83d5b814159",
+    "neuralToken": "1d1d0d6b79e04f42b46c81c240ad3dfa",
+    "registrationId": "f9fe8d3766fb59b2bf18555f1a104eeb",
+    "surfaceLayersVersion": "surface-layers-1",
+    "canonicalFieldsVersion": "70533423386cea0d08667aa3e2d535af",
+    "freshDecoderUsed": true,
+    "manualPacketSwaps": 0,
+    "urbanBuildings": 0
+  },
+  "navigation": {
+    "status": "complete",
+    "requestedMotionSeconds": 20,
+    "motionActualWallSeconds": 20.002,
+    "motionStartTickMs": 103668,
+    "motionEndTickMs": 123668,
+    "warmupSeconds": 66.264,
+    "drainSeconds": 10.238,
+    "maximumInputGapSeconds": 0.258999999999999,
+    "longestMotionApplicationGapSeconds": 9.98,
+    "finalReady": true,
+    "frameWallMs": {
+      "max": 620.135,
+      "p50": 31.188,
+      "p95": 37.811,
+      "p99": 58.183
+    },
+    "freshDisplayedWorlds": [
+      {
+        "worldId": "ad6df02827b999b643bf30385e438554",
+        "liveSerial": 111,
+        "appliedTickMs": 116824,
+        "nativeSpacingM": 7.5,
+        "request": {
+          "extent": 1207.20823923227,
+          "knownContextId": "89bd848e06b33da0715e94de83fe3472",
+          "knownSceneContextId": "8cf33e3ad0a671a2f9ccd0d6bb11ce74",
+          "preview": true,
+          "resolution": 128,
+          "x": 19009.5839092669,
+          "y": 19161.0620079789
+        }
+      },
+      {
+        "worldId": "a8728fb6bd4be128de4f0c065b8e366a",
+        "liveSerial": 203,
+        "appliedTickMs": 120157,
+        "nativeSpacingM": 0.46875,
+        "request": {
+          "extent": 110.586224305157,
+          "knownContextId": "89bd848e06b33da0715e94de83fe3472",
+          "knownSceneContextId": "8cf33e3ad0a671a2f9ccd0d6bb11ce74",
+          "preview": true,
+          "resolution": 128,
+          "x": 19554.1628419616,
+          "y": 19697.9805490823
+        }
+      }
+    ],
+    "final": {
+      "worldId": "773fba5f5047c2e195f4e9df9b6c1f33",
+      "request": {
+        "extent": 65.1935943202764,
+        "knownContextId": "89bd848e06b33da0715e94de83fe3472",
+        "knownSceneContextId": "8cf33e3ad0a671a2f9ccd0d6bb11ce74",
+        "preview": false,
+        "resolution": 512,
+        "x": 19577.0846848646,
+        "y": 19720.6832478518
+      },
+      "deliveredGrid": {
+        "height": 140,
+        "spacingM": 0.465668530859122,
+        "width": 140
+      },
+      "nativeSpacingM": 0.46875,
+      "sourceLODKnown": true
+    }
+  },
+  "tour": {
+    "nativeExitCode": 0,
+    "captureCount": 7,
+    "resolution": [
+      2048,
+      1280
+    ],
+    "driverGate": "failed",
+    "captures": [
+      {
+        "path": "00_40000m_top.png",
+        "widthM": 40000,
+        "metresPerPixel": 19.53125,
+        "nativeSpacingM": 30,
+        "sourceLODKnown": true,
+        "surfaceLayerRenderMode": "three-physical-layers",
+        "groundAvailability": "explicit",
+        "lowCoverAvailability": "explicit",
+        "waterPresentation": "source-map-terrain-projection",
+        "requestedVectorAreaM2": 48038668.5275281,
+        "emittedVectorAreaM2": 48005422.2454026,
+        "missingVectorAreaM2": 33242.4971079826,
+        "missingLevelTriangles": 43,
+        "coverageComplete": false,
+        "budgetLimited": false,
+        "vectorBedDiagnosticConflicts": 2927
+      },
+      {
+        "path": "01_10000m_top.png",
+        "widthM": 10000,
+        "metresPerPixel": 4.8828125,
+        "nativeSpacingM": 15,
+        "sourceLODKnown": true,
+        "surfaceLayerRenderMode": "three-physical-layers",
+        "groundAvailability": "explicit",
+        "lowCoverAvailability": "explicit",
+        "waterPresentation": "source-map-terrain-projection",
+        "requestedVectorAreaM2": 48038668.5275281,
+        "emittedVectorAreaM2": 48038663.8714227,
+        "missingVectorAreaM2": 0,
+        "missingLevelTriangles": 0,
+        "coverageComplete": true,
+        "budgetLimited": false,
+        "vectorBedDiagnosticConflicts": 2929
+      },
+      {
+        "path": "02_2560m_top.png",
+        "widthM": 2560,
+        "metresPerPixel": 1.25,
+        "nativeSpacingM": 3.75,
+        "sourceLODKnown": true,
+        "surfaceLayerRenderMode": "three-physical-layers",
+        "groundAvailability": "explicit",
+        "lowCoverAvailability": "explicit",
+        "waterPresentation": "source-map-terrain-projection",
+        "requestedVectorAreaM2": 720224.411397081,
+        "emittedVectorAreaM2": 720224.489952497,
+        "missingVectorAreaM2": 0,
+        "missingLevelTriangles": 0,
+        "coverageComplete": true,
+        "budgetLimited": false,
+        "vectorBedDiagnosticConflicts": 3882
+      },
+      {
+        "path": "03_640m_top.png",
+        "widthM": 640,
+        "metresPerPixel": 0.3125,
+        "nativeSpacingM": 0.9375,
+        "sourceLODKnown": true,
+        "surfaceLayerRenderMode": "three-physical-layers",
+        "groundAvailability": "explicit",
+        "lowCoverAvailability": "explicit",
+        "waterPresentation": "source-map-terrain-projection",
+        "requestedVectorAreaM2": 3086.09714400111,
+        "emittedVectorAreaM2": 3086.10043913126,
+        "missingVectorAreaM2": 0,
+        "missingLevelTriangles": 0,
+        "coverageComplete": true,
+        "budgetLimited": false,
+        "vectorBedDiagnosticConflicts": 393
+      },
+      {
+        "path": "04_160m_top.png",
+        "widthM": 160,
+        "metresPerPixel": 0.078125,
+        "nativeSpacingM": 0.46875,
+        "sourceLODKnown": true,
+        "surfaceLayerRenderMode": "three-physical-layers",
+        "groundAvailability": "explicit",
+        "lowCoverAvailability": "explicit",
+        "waterPresentation": "source-map-terrain-projection",
+        "requestedVectorAreaM2": 0,
+        "emittedVectorAreaM2": 0,
+        "missingVectorAreaM2": 0,
+        "missingLevelTriangles": 0,
+        "coverageComplete": true,
+        "budgetLimited": false,
+        "vectorBedDiagnosticConflicts": 0
+      },
+      {
+        "path": "05_40m_top.png",
+        "widthM": 40,
+        "metresPerPixel": 0.01953125,
+        "nativeSpacingM": 0.46875,
+        "sourceLODKnown": true,
+        "surfaceLayerRenderMode": "three-physical-layers",
+        "groundAvailability": "explicit",
+        "lowCoverAvailability": "explicit",
+        "waterPresentation": "source-map-terrain-projection",
+        "requestedVectorAreaM2": 0,
+        "emittedVectorAreaM2": 0,
+        "missingVectorAreaM2": 0,
+        "missingLevelTriangles": 0,
+        "coverageComplete": true,
+        "budgetLimited": false,
+        "vectorBedDiagnosticConflicts": 0
+      },
+      {
+        "path": "06_10m_top.png",
+        "widthM": 10,
+        "metresPerPixel": 0.0048828125,
+        "nativeSpacingM": 0.46875,
+        "sourceLODKnown": true,
+        "surfaceLayerRenderMode": "three-physical-layers",
+        "groundAvailability": "explicit",
+        "lowCoverAvailability": "explicit",
+        "waterPresentation": "source-map-terrain-projection",
+        "requestedVectorAreaM2": 0,
+        "emittedVectorAreaM2": 0,
+        "missingVectorAreaM2": 0,
+        "missingLevelTriangles": 0,
+        "coverageComplete": true,
+        "budgetLimited": false,
+        "vectorBedDiagnosticConflicts": 0
+      }
+    ]
+  },
+  "failureDiagnostics": {
+    "confirmed": "40 km capture omitted 43 source triangles because at least one triangle vertex could not obtain a finite original wet source level. The existing strict gate rejected the omission.",
+    "missingFraction": 0.0006919945561966045,
+    "sourceAreaScope": "input geometry clip window; projection camera may be narrower",
+    "sourceGroups": 703,
+    "displayGroups": 702,
+    "sourceDuplicateGroups": 1,
+    "rootCause": "Pending CPU localisation. No assertion that omissions are outside the actual view or caused by bounds; no fallback accepted.",
+    "bedConflicts": "Diagnostic only. Source-map projection does not claim a physical water surface or repair measured source levels."
+  },
+  "layerVisibilityProbe": {
+    "status": "not-run",
+    "reason": "Tour gate threw before the requested next phase; four visibility-isolation captures and their physical invariance checks are absent from V7."
+  },
+  "cleanup": {
+    "ownedDriverAndNativePidsAbsent": [
+      159556,
+      159652,
+      164892
+    ],
+    "rootOwnedViteAndPythonUntouched": true
+  },
+  "limitations": [
+    "Overall E2E campaign failed; seven generated PNGs do not override the failed water coverage gate.",
+    "Navigation proves source replacement during 20 seconds and final quality request, not constant frame rate or latency SLA.",
+    "10 m at 2048 pixels is 0.0048828125 m per screen pixel; finest native source remains 0.46875 m.",
+    "Fresh terrain campaign contains zero buildings; separate city500 retained-source evidence is not a fresh neural city claim.",
+    "Three explicit physical layer descriptors were present, but V7 did not execute the four-state layer visibility proof.",
+    "No full production or artistic acceptance is claimed."
+  ]
+}

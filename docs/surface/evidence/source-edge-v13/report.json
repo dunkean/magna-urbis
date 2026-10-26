@@ -1,0 +1,103 @@
+{
+  "format": "source-edge-v13-gpu-evidence",
+  "scope": "Static retained V12 fresh packet on new viewer; no live/fresh V13/global/artistic qualification. Historical tour uses a refined RPC world, so screenshots are not a controlled whole-image pixel A/B.",
+  "status": "PASS bounded source-edge rendering and unchanged source",
+  "run": {
+    "format": "surface-source-edge-capture",
+    "head": "3e46b872923e89b398456673d0530ef0e21b7684",
+    "statusBefore": "",
+    "command": [
+      "C:\\Program Files\\nodejs\\node.EXE",
+      "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\scripts\\surface_viewer.mjs",
+      "--godot",
+      "D:\\workspace\\self\\_surface-tools\\godot-4.7.2\\Godot_v4.7.2-stable_win64_console.exe",
+      "--renderer",
+      "forward_plus",
+      "--world",
+      "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\native-e2e-40km-v12\\fresh-source.surfacebin",
+      "--assets",
+      "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface-assets\\resolved.json",
+      "--top",
+      "--width",
+      "40000",
+      "--resolution",
+      "2048x1280",
+      "--water-mode",
+      "source-map",
+      "--water-symbol-width-px",
+      "1.25",
+      "--frames",
+      "32",
+      "--capture",
+      "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\source-edge-v13\\40000m.png",
+      "--metrics",
+      "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\source-edge-v13\\metrics.json"
+    ],
+    "sourceSha256Before": "fe28ffce5c4fb20824b1940276e91ea9946dc1da53a0ce06607a4312ef499570",
+    "scope": "Static capture of retained V12 fresh packet, not new generation/live navigation or full V13 qualification.",
+    "exitCode": 0,
+    "durationMs": 31642.35749997897,
+    "sourceSha256After": "fe28ffce5c4fb20824b1940276e91ea9946dc1da53a0ce06607a4312ef499570",
+    "headAfter": "3e46b872923e89b398456673d0530ef0e21b7684",
+    "statusAfter": ""
+  },
+  "adapter": "NVIDIA GeForce RTX 5090",
+  "backend": "forward_plus",
+  "frameSamples": 2,
+  "frameSamplesAreNotFPS": true,
+  "sourceBounds": {
+    "minX": 39.0625,
+    "minZ": 39.0625,
+    "maxX": 39960.9375,
+    "maxZ": 39960.9375
+  },
+  "sourceGrid": {
+    "originX": 39.0625,
+    "originZ": 39.0625,
+    "spacingM": 78.125,
+    "width": 512,
+    "height": 512
+  },
+  "backgroundClassifier": "RGB r>175,g>190,b>205 on >99% of column pixels; bounded count of sky band, not a universal terrain mask.",
+  "images": [
+    {
+      "path": "web/out/surface/native-e2e-40km-v12/native-tour/00_40000m_top.png",
+      "sha256": "e184e1965528e55a921c5b0948280fc5886afaccb157074528e6fab87df23a52",
+      "bytes": 2104646,
+      "size": [
+        2048,
+        1280
+      ],
+      "rightBackgroundColumns99pct": 31,
+      "leftBackgroundColumns99pct": 4
+    },
+    {
+      "path": "web/out/surface/source-edge-v13/40000m.png",
+      "sha256": "90600e3cd7b0cbdfae7fa2061e5128d037cdc1cda4ce77aa9287b92f7e466f31",
+      "bytes": 2141848,
+      "size": [
+        2048,
+        1280
+      ],
+      "rightBackgroundColumns99pct": 2,
+      "leftBackgroundColumns99pct": 2
+    }
+  ],
+  "water": {
+    "sourceVectorRequestedAreaM2": 48038668.5275281,
+    "sourceVectorAreaM2": 48038664.0287199,
+    "sourceVectorMissingAreaM2": 0.0,
+    "missingLevelTriangles": 0,
+    "budgetLimited": false,
+    "sourceVectorCoverageComplete": true,
+    "sourceLevelsUnchanged": true,
+    "physicalWaterSurfaceClaimed": false
+  },
+  "stderrErrors": [],
+  "limits": [
+    "The two boundary pixels are outside retained sample-centre support, not newly supplied terrain.",
+    "CPU tests retain original height bytes and collision hole bits; shader clips to the exact union and preserves interior native holes.",
+    "No change to source contours/levels; alluvial support and original axis-aligned streams remain.",
+    "Only2steady samples; no FPS or cold performance certificate."
+  ]
+}

@@ -1,0 +1,39 @@
+{
+  "format": "native-exterior-fixture-tool-reproduction",
+  "version": 1,
+  "fullOrchestrationReplayPassed": true,
+  "sameExistingExecutedNativeBinaryReused": true,
+  "executableSha256": "12d66cd80bb2a4090eeb8b3629b33557a65dabde97518d12d4727d58465256f6",
+  "originalAndTrackedToolFixtureBytesIdentical": true,
+  "fixtureSha256": "3bc88b136930baa83d31b9ca3f41a05a768365a6fa8ad6719a93f204d430da81",
+  "fixtureBytes": 246787817,
+  "worldMeshUrbanIdentity": "963cb15129efcccd7849a1adae4c81fb",
+  "legacyPlansRetagged": false,
+  "nativeCrateSourcesModified": false,
+  "sharedRuntimeModified": false,
+  "runnerSourceAndCargoManifestAndLockByteIdenticalToExecutedProbe": true,
+  "trackedToolFiles": {
+    "runner/src/main.rs": {
+      "sha256": "c31439837583a027e6d44fb15ff75f5cb705e72de276973c551a7ed71c0f54fa",
+      "lfNormalizedSha256": "c31439837583a027e6d44fb15ff75f5cb705e72de276973c551a7ed71c0f54fa"
+    },
+    "runner/Cargo.toml": {
+      "sha256": "ca55d581f9f8b88b3d6c565b7ad3cfed335a1303c7152c00c814701809595808",
+      "lfNormalizedSha256": "ca55d581f9f8b88b3d6c565b7ad3cfed335a1303c7152c00c814701809595808"
+    },
+    "runner/Cargo.lock": {
+      "sha256": "8527df270de003c0a0e256674cb85b1a94bfd3c2b8b9c7e27fdca014842fd7de",
+      "lfNormalizedSha256": "8527df270de003c0a0e256674cb85b1a94bfd3c2b8b9c7e27fdca014842fd7de"
+    },
+    "assemble-fixture.ts": {
+      "sha256": "2039ca81349dbb41edd6b6062e83528c73778805b14472c204edb108dbd69f9c",
+      "lfNormalizedSha256": "2039ca81349dbb41edd6b6062e83528c73778805b14472c204edb108dbd69f9c"
+    },
+    "produce.py": {
+      "sha256": "b50742d07909bc236a829c20994d75c1031d163ffeae54172e4f2b359ea6687b",
+      "lfNormalizedSha256": "b50742d07909bc236a829c20994d75c1031d163ffeae54172e4f2b359ea6687b"
+    }
+  },
+  "assemblerChanges": "configurable root/out/base paths and pinned reference count assertion only; same native geometry logic",
+  "scope": "CPU producer/source fixture reproduction, not GPU rendering or cross-toolchain bit-identical executable claim"
+}

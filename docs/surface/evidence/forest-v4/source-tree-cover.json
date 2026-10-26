@@ -1,0 +1,213 @@
+{
+  "sourcePacket": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\native-e2e-40km-v4\\fresh-source.surfacebin",
+  "canonicalGrid": {
+    "width": 512,
+    "height": 512,
+    "originX": 39.0625,
+    "originZ": 39.0625,
+    "spacingM": 78.125
+  },
+  "canonicalTreeCoverIdenticalFreshVsLiveContext": true,
+  "points": [
+    {
+      "x": 20000,
+      "z": 20000,
+      "bilinearTreeCover": 0.2740267924964428,
+      "nearestFields": {
+        "treeCover": 0.2525103986263275,
+        "grassCover": 0.2842459976673126,
+        "shrubCover": 0.0811348482966423,
+        "slope": 0.2440333366394043,
+        "waterClass": 0,
+        "occupation": 0
+      }
+    },
+    {
+      "x": 19744,
+      "z": 20000,
+      "bilinearTreeCover": 0.13929791525006166,
+      "nearestFields": {
+        "treeCover": 0.091825470328331,
+        "grassCover": 0.22605742514133453,
+        "shrubCover": 0.06645816564559937,
+        "slope": 0.4120701551437378,
+        "waterClass": 0,
+        "occupation": 0
+      }
+    },
+    {
+      "x": 20256,
+      "z": 20000,
+      "bilinearTreeCover": 0.24008398877978313,
+      "nearestFields": {
+        "treeCover": 0.25300896167755127,
+        "grassCover": 0.2911345362663269,
+        "shrubCover": 0.08328179270029068,
+        "slope": 0.2552076280117035,
+        "waterClass": 0,
+        "occupation": 0
+      }
+    },
+    {
+      "x": 19500,
+      "z": 20000,
+      "bilinearTreeCover": 0.07264256700873377,
+      "nearestFields": {
+        "treeCover": 0.08558561652898788,
+        "grassCover": 0.22845636308193207,
+        "shrubCover": 0.06732501089572906,
+        "slope": 0.42485931515693665,
+        "waterClass": 0,
+        "occupation": 0
+      }
+    },
+    {
+      "x": 20500,
+      "z": 20000,
+      "bilinearTreeCover": 0.27644014656543714,
+      "nearestFields": {
+        "treeCover": 0.28036075830459595,
+        "grassCover": 0.29854756593704224,
+        "shrubCover": 0.08472996205091476,
+        "slope": 0.23328566551208496,
+        "waterClass": 0,
+        "occupation": 0
+      }
+    },
+    {
+      "x": 19000,
+      "z": 20000,
+      "bilinearTreeCover": 0.11933376304805264,
+      "nearestFields": {
+        "treeCover": 0.10801074653863907,
+        "grassCover": 0.256276398897171,
+        "shrubCover": 0.07580742985010147,
+        "slope": 0.4133129417896271,
+        "waterClass": 0,
+        "occupation": 0
+      }
+    },
+    {
+      "x": 21000,
+      "z": 20000,
+      "bilinearTreeCover": 0.24006969258189167,
+      "nearestFields": {
+        "treeCover": 0.23884862661361694,
+        "grassCover": 0.3069440424442291,
+        "shrubCover": 0.08874461054801941,
+        "slope": 0.2984793782234192,
+        "waterClass": 0,
+        "occupation": 0
+      }
+    },
+    {
+      "x": 20000,
+      "z": 19000,
+      "bilinearTreeCover": 0.01847538920119397,
+      "nearestFields": {
+        "treeCover": 0.012591393664479256,
+        "grassCover": 0.09223209321498871,
+        "shrubCover": 0.02645939029753208,
+        "slope": 0.5918009877204895,
+        "waterClass": 0,
+        "occupation": 0
+      }
+    },
+    {
+      "x": 20000,
+      "z": 21000,
+      "bilinearTreeCover": 0.2946671709418296,
+      "nearestFields": {
+        "treeCover": 0.29155808687210083,
+        "grassCover": 0.2914658486843109,
+        "shrubCover": 0.08215309679508209,
+        "slope": 0.2072104662656784,
+        "waterClass": 0,
+        "occupation": 0
+      }
+    },
+    {
+      "x": 20000,
+      "z": 19744,
+      "bilinearTreeCover": 0.22905531647205332,
+      "nearestFields": {
+        "treeCover": 0.19972147047519684,
+        "grassCover": 0.28504106402397156,
+        "shrubCover": 0.08288759738206863,
+        "slope": 0.32205167412757874,
+        "waterClass": 0,
+        "occupation": 0
+      }
+    },
+    {
+      "x": 20000,
+      "z": 20256,
+      "bilinearTreeCover": 0.40738507853746403,
+      "nearestFields": {
+        "treeCover": 0.4500068724155426,
+        "grassCover": 0.27693450450897217,
+        "shrubCover": 0.07179106026887894,
+        "slope": 0.02428724803030491,
+        "waterClass": 0,
+        "occupation": 0
+      }
+    }
+  ],
+  "regions": [
+    {
+      "region": "candidate480",
+      "canonicalSamples": 36,
+      "meanTreeCover": 0.2819489873945713,
+      "minTreeCover": 0.176996111869812,
+      "maxTreeCover": 0.41403791308403015,
+      "nonzeroSamples": 36
+    },
+    {
+      "region": "visible640Outside480",
+      "canonicalSamples": 28,
+      "meanTreeCover": 0.24390324524470738,
+      "minTreeCover": 0.091825470328331,
+      "maxTreeCover": 0.4500068724155426,
+      "nonzeroSamples": 28
+    },
+    {
+      "region": "visible2560Outside480",
+      "canonicalSamples": 988,
+      "meanTreeCover": 0.24350652143949272,
+      "minTreeCover": 0.0055155367590487,
+      "maxTreeCover": 0.5072186589241028,
+      "nonzeroSamples": 988
+    },
+    {
+      "region": "visible2560All",
+      "canonicalSamples": 1024,
+      "meanTreeCover": 0.24485801438322596,
+      "minTreeCover": 0.0055155367590487,
+      "maxTreeCover": 0.5072186589241028,
+      "nonzeroSamples": 1024
+    }
+  ],
+  "freshCandidateBounds": {
+    "minX": 19840,
+    "maxX": 20160,
+    "minZ": 19840,
+    "maxZ": 20160
+  },
+  "freshCandidateCount": 4032,
+  "freshFamilyCounts": {
+    "tree": 476,
+    "shrub": 83,
+    "boulder": 177,
+    "grass": 2897,
+    "debris": 399
+  },
+  "freshTreeCount": 476,
+  "freshTreeDiscAreaSumM2": 36495.66206262932,
+  "freshCandidateAreaM2": 102400,
+  "freshDiscAreaSumOverBBox": 0.35640294983036447,
+  "notes": [
+    "Disc-area sum includes overlaps and is not union canopy cover.",
+    "Saved fresh export query is320m; live worker code bounds width480m plus atlas halo, not this standalone40m live diagnostic query.",
+    "No GPU or root mutation; only existing fields and CPU source values read."
+  ]
+}

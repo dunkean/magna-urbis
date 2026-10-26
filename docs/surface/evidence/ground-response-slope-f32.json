@@ -1,0 +1,194 @@
+{
+  "format": "ground-response-slope-f32-interoperability",
+  "version": 1,
+  "scope": "Authored finite numeric boundary fixture, not a reproduced current Infinite Generation terrain defect, GPU or performance qualification",
+  "beforeNativeCommit": "0b6b81b",
+  "beforeNativeGuard": "slope <= PI/2.0 in Float64",
+  "before": {
+    "typescript": [
+      {
+        "name": "ordinary-finite-cliff",
+        "rise": 1000,
+        "spacing": 0.25,
+        "compiled": true,
+        "tsRoundtrip": true,
+        "slopes": [
+          1.570546269416809,
+          1.570546269416809,
+          1.570546269416809,
+          1.570546269416809,
+          1.570546269416809,
+          1.570546269416809,
+          1.570546269416809,
+          1.570546269416809,
+          1.570546269416809
+        ],
+        "maximumSlope": 1.570546269416809,
+        "mathematicalPiHalf": 1.5707963267948966,
+        "float32PiHalf": 1.5707963705062866,
+        "aboveMathematicalBound": false,
+        "worldId": "3866b01fd488a0d14688d307fe1dcf4b",
+        "groundResponseId": "gr-sha256-1:f7f58a56e616cf1782ec20a35d1cb888ad176a5c505b2622e20be6a31d8a2679",
+        "physicalRoundtripExact": true
+      },
+      {
+        "name": "near-vertical-microscopic-horizontal",
+        "rise": 20,
+        "spacing": 1e-07,
+        "compiled": true,
+        "tsRoundtrip": true,
+        "slopes": [
+          1.5707963705062866,
+          1.5707963705062866,
+          1.5707963705062866,
+          1.5707963705062866,
+          1.5707963705062866,
+          1.5707963705062866,
+          1.5707963705062866,
+          1.5707963705062866,
+          1.5707963705062866
+        ],
+        "maximumSlope": 1.5707963705062866,
+        "mathematicalPiHalf": 1.5707963267948966,
+        "float32PiHalf": 1.5707963705062866,
+        "aboveMathematicalBound": true,
+        "worldId": "610a35cd307d38a32f246755c7bdce99",
+        "groundResponseId": "gr-sha256-1:5a015e3fb86bbe01c9f5d443178cbf488ba22ad6e59b9a4df2909ead80b0af4b",
+        "physicalRoundtripExact": true
+      },
+      {
+        "name": "extreme-finite-height",
+        "rise": 100000000,
+        "spacing": 1,
+        "compiled": true,
+        "tsRoundtrip": true,
+        "slopes": [
+          1.5707963705062866,
+          1.5707963705062866,
+          1.5707963705062866,
+          1.5707963705062866,
+          1.5707963705062866,
+          1.5707963705062866,
+          1.5707963705062866,
+          1.5707963705062866,
+          1.5707963705062866
+        ],
+        "maximumSlope": 1.5707963705062866,
+        "mathematicalPiHalf": 1.5707963267948966,
+        "float32PiHalf": 1.5707963705062866,
+        "aboveMathematicalBound": true,
+        "worldId": "ea71f23076b5e13ea47bb0d0d79727bc",
+        "groundResponseId": "gr-sha256-1:a8e67baeb3eab206b69963b6809ade156758e2abc34687ca83a6a2519f064f12",
+        "physicalRoundtripExact": true
+      }
+    ],
+    "godot": [
+      {
+        "firstSlope": 1.57054626941681,
+        "float32Max": 1.57079637050629,
+        "mathematicalMax": 1.5707963267949,
+        "name": "ordinary-finite-cliff",
+        "nativeAccepted": true,
+        "nativeGroundIdentityMatches": true
+      },
+      {
+        "firstSlope": 1.57079637050629,
+        "float32Max": 1.57079637050629,
+        "mathematicalMax": 1.5707963267949,
+        "name": "near-vertical-microscopic-horizontal",
+        "nativeAccepted": false,
+        "nativeGroundIdentityMatches": true
+      },
+      {
+        "firstSlope": 1.57079637050629,
+        "float32Max": 1.57079637050629,
+        "mathematicalMax": 1.5707963267949,
+        "name": "extreme-finite-height",
+        "nativeAccepted": false,
+        "nativeGroundIdentityMatches": true
+      }
+    ]
+  },
+  "correction": {
+    "guard": "slope <= 1.5707963705062866, exactly Float32(PI/2)",
+    "genericEpsilon": false,
+    "nextRepresentableFloat32Rejected": 1.5707964897155762,
+    "physicalDataEdited": false
+  },
+  "after": {
+    "typescript": {
+      "scope": "Unmodified finite compilation, no edited fields/hash. Microscopic near-vertical case is not current IG output.",
+      "rows": [
+        {
+          "name": "ordinary-finite-cliff",
+          "rise": 1000,
+          "spacing": 0.25,
+          "compiled": true,
+          "tsRoundtrip": true,
+          "maximumSlope": 1.570546269416809,
+          "mathematicalPiHalf": 1.5707963267948966,
+          "float32PiHalf": 1.5707963705062866,
+          "aboveMathematicalBound": false,
+          "allPhysicalAndTerrainRoundtripExact": true,
+          "sourceHeightsUnchanged": true,
+          "worldId": "3866b01fd488a0d14688d307fe1dcf4b",
+          "groundResponseId": "gr-sha256-1:f7f58a56e616cf1782ec20a35d1cb888ad176a5c505b2622e20be6a31d8a2679",
+          "worldJsonSha256": "287f6b7edef3c21c06098c2591173b51dc2bbd15074dd5f76959280aeaefdcd9"
+        },
+        {
+          "name": "near-vertical-microscopic-horizontal",
+          "rise": 20,
+          "spacing": 1e-07,
+          "compiled": true,
+          "tsRoundtrip": true,
+          "maximumSlope": 1.5707963705062866,
+          "mathematicalPiHalf": 1.5707963267948966,
+          "float32PiHalf": 1.5707963705062866,
+          "aboveMathematicalBound": true,
+          "allPhysicalAndTerrainRoundtripExact": true,
+          "sourceHeightsUnchanged": true,
+          "worldId": "610a35cd307d38a32f246755c7bdce99",
+          "groundResponseId": "gr-sha256-1:5a015e3fb86bbe01c9f5d443178cbf488ba22ad6e59b9a4df2909ead80b0af4b",
+          "worldJsonSha256": "5ce754a3163b482a99925c34683fd44d622d86f19935ea3d100f5cf7e46a05df"
+        }
+      ]
+    },
+    "godot": {
+      "checks": 10,
+      "maximumSlopeF32": 1.57079637050629,
+      "nextFloat32Rejected": 1.57079648971558,
+      "rows": [
+        {
+          "firstSlope": 1.57054626941681,
+          "identityMatches": true,
+          "name": "ordinary-finite-cliff",
+          "nativeAccepted": true,
+          "sourceUnchanged": true
+        },
+        {
+          "firstSlope": 1.57079637050629,
+          "identityMatches": true,
+          "name": "near-vertical-microscopic-horizontal",
+          "nativeAccepted": true,
+          "sourceUnchanged": true
+        }
+      ],
+      "scope": "Finite compilation interoperability at Float32 upper bound, not a current IG terrain defect or GPU proof",
+      "status": "PASS"
+    }
+  },
+  "reproduce": [
+    "cd web && node --import tsx scripts/generate_ground_slope_boundary_fixture.ts --out out/surface/ground-response-slope-corrected",
+    "Godot4.7.2 --headless --path viewer-local --script res://tests/ground_response_slope_boundary_test.gd -- ABSOLUTE_GENERATED_DIRECTORY"
+  ],
+  "limitations": [
+    "20m rise over0.1micrometre horizontal spacing is mathematically finite and schema-accepted, not an operational current provider resolution.",
+    "Ordinary finite cliff control1000m/.25m already passed both implementations.",
+    "The extreme1e8m height example is retained as an additional negative diagnosis only; no physical reality is claimed."
+  ],
+  "sourceSha256Lf": {
+    "viewer-local/adapters/surface_ground_response.gd": "b4e93de324dec61d5c498edfe331c15be5d3dc62056e48de936ade148b12aa04",
+    "viewer-local/tests/ground_response_slope_boundary_test.gd": "625ac95c341d9a545b6102a159f1a6bff74c8c1bb35506d0a6e4ae60ad0cb4d1",
+    "web/scripts/generate_ground_slope_boundary_fixture.ts": "32d7a53fd37004b31855a9199aad50359941091a1118a13695572bcbcb352e9f"
+  }
+}

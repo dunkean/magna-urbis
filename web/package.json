@@ -34,7 +34,12 @@
     "test:fast": "vitest run --project fast",
     "test:slow": "vitest run --project slow",
     "typecheck": "tsc --noEmit",
-    "preview:png": "tsx scripts/preview.ts"
+    "preview:png": "tsx scripts/preview.ts",
+    "surface:assets": "node scripts/surface_assets.mjs",
+    "surface:export": "tsx scripts/export_surface_world.ts",
+    "surface:viewer": "node scripts/surface_viewer.mjs",
+    "surface:benchmark": "tsx scripts/benchmark_surface.ts",
+    "surface:test": "vitest run tests/surface"
   },
   "dependencies": {
     "d3-delaunay": "^6.0.4",

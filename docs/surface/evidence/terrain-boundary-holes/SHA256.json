@@ -1,0 +1,27 @@
+{
+  "files": [
+    {
+      "path": "viewer-local/diagnostics/terrain_boundary_holes_probe.gd",
+      "sha256": "f9e2329eb2c714bbf0ac76d865151eb8e146ebc0b4f70e6702986ee8b18ee4c9"
+    },
+    {
+      "path": "docs/surface/evidence/terrain-boundary-holes/fragment_19960_0.png",
+      "sha256": "feaed3984710fc4b3e5c3580f21a33b02d163cf686245ffa86514b2029bd5256"
+    },
+    {
+      "path": "docs/surface/evidence/terrain-boundary-holes/gpu-report.json",
+      "sha256": "fe6314134737a364c484731b961179c77ce349d3e29f4c9028f6ff04b94fe297"
+    },
+    {
+      "path": "docs/surface/evidence/terrain-boundary-holes/holes_19960_0.png",
+      "sha256": "42485d6e9b5bbc0113c8ae6db21d0fd0cf20b96d1d13f01657dc0a901be4dda1"
+    },
+    {
+      "path": "docs/surface/evidence/terrain-boundary-holes/v5-frame-phase.json",
+      "sha256": "6198d0a4caeba71d9cd5f549c65c063c0a21d2352ca725070a1144d3e543c631"
+    }
+  ],
+  "nativeBinarySha256": "bf72686a7e1d8d8370ba9ba5eaa70c59375ee2cb5638d63b8942f1ad7d448cda",
+  "version": 1,
+  "format": "native-terrain-boundary-evidence"
+}

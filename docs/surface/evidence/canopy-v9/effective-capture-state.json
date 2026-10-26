@@ -1,0 +1,1393 @@
+[
+  {
+    "canopyView": {
+      "activeAtlasHash": "",
+      "activeAtlasSource": {},
+      "activeAtlasWorldId": "",
+      "atlasBounds": {},
+      "exactWeight": 0.0,
+      "geometryWeight": 0.0,
+      "pendingAtlas": false,
+      "pendingAtlasHash": "",
+      "phase": 0.0,
+      "reason": "Complete tree page does not cover this view",
+      "safePhase": 0.0,
+      "spatialBlend": "none; one phase for the whole viewport",
+      "transitionPending": false,
+      "treePage": {
+        "bounds": {
+          "maxX": 22000.0,
+          "maxZ": 22000.0,
+          "minX": 18000.0,
+          "minZ": 18000.0
+        },
+        "complete": true,
+        "count": 67221.0,
+        "includeOverhang": true,
+        "limitedBy": "none",
+        "requestedBounds": {
+          "maxX": 22000.0,
+          "maxZ": 22000.0,
+          "minX": 18000.0,
+          "minZ": 18000.0
+        },
+        "retention": 1.0
+      }
+    },
+    "captureTickMs": 25281,
+    "error": 0,
+    "event": "capture",
+    "metresPerPixel": 4.8828125,
+    "path": "D:/workspace/self/_worktrees/magna-urbis-surface-v9-viewer/viewer-local/captures/v9-qualified-top/10000m-top.png",
+    "populationInstances": {
+      "families": {
+        "boulder": {
+          "alphaPositiveInFrustum": 0,
+          "nodeVisible": 0,
+          "submitted": 0
+        },
+        "debris": {
+          "alphaPositiveInFrustum": 0,
+          "nodeVisible": 0,
+          "submitted": 0
+        },
+        "grass": {
+          "alphaPositiveInFrustum": 0,
+          "nodeVisible": 0,
+          "submitted": 0
+        },
+        "shrub": {
+          "alphaPositiveInFrustum": 0,
+          "nodeVisible": 0,
+          "submitted": 0
+        },
+        "tree": {
+          "alphaPositiveInFrustum": 0,
+          "nodeVisible": 0,
+          "submitted": 0
+        },
+        "trunk": {
+          "alphaPositiveInFrustum": 0,
+          "nodeVisible": 0,
+          "submitted": 0
+        }
+      },
+      "scope": "submitted buffers, actual node/camera visibility, shader ALPHA>0 and centres in frustum; no GPU occlusion claim",
+      "treeOpticalShadowEnabled": true,
+      "treeResidualEnabled": true
+    },
+    "renderedLiveSerial": -1,
+    "renderedSnapshot": {
+      "appliedTickMs": 24637,
+      "deliveredGrid": {
+        "height": 64,
+        "spacingM": 0.625,
+        "width": 64
+      },
+      "displaySamples": 256,
+      "fineContributionWeight": 0.151878476142883,
+      "focusAtApply": {
+        "x": 20000.0,
+        "y": 20000.0
+      },
+      "focusInsideSource": true,
+      "heightImageSize": 1024,
+      "liveSerial": -1,
+      "loadedHeightRangeWorld": [
+        1111.46842552569,
+        2386.00748802569
+      ],
+      "request": {
+        "extent": 40.0,
+        "resolution": 64.0,
+        "x": 19980.0,
+        "y": 19980.0
+      },
+      "sceneEpoch": "bench-scene-1",
+      "seamWeight": 0.151878476142883,
+      "source": {
+        "id": "infinite:2814899424497554030:a12b8cf77f3a7265d3c18a02dab36f94",
+        "nativeSpacingM": 78.125,
+        "provenance": "Exact retained registration controls; fieldFingerprint=rf1-019b8aa8fc4b7a3a38e7adce2163d4ea; reconstruction=cubic-bspline-controls; sourceLOD unknown",
+        "sourceLOD": 0.0,
+        "sourceLODKnown": false,
+        "version": "decoder-v12-nyquist-notch:magna-retained-v1:e2bf5473c0ff:f21afa261ed7"
+      },
+      "sourceActualAtFocus": {
+        "id": "infinite:2814899424497554030:a12b8cf77f3a7265d3c18a02dab36f94",
+        "nativeSpacingM": 78.125,
+        "provenance": "Exact retained registration controls; fieldFingerprint=rf1-019b8aa8fc4b7a3a38e7adce2163d4ea; reconstruction=cubic-bspline-controls; sourceLOD unknown",
+        "sourceLOD": 0.0,
+        "sourceLODKnown": false,
+        "version": "decoder-v12-nyquist-notch:magna-retained-v1:e2bf5473c0ff:f21afa261ed7"
+      },
+      "sourceBounds": {
+        "maxX": 20019.6875,
+        "maxZ": 20019.6875,
+        "minX": 19980.3125,
+        "minZ": 19980.3125
+      },
+      "sourceContributionsAtFocus": [
+        {
+          "activeChild": false,
+          "source": {
+            "id": "infinite:2814899424497554030:a12b8cf77f3a7265d3c18a02dab36f94",
+            "nativeSpacingM": 78.125,
+            "provenance": "Exact retained registration controls; fieldFingerprint=rf1-019b8aa8fc4b7a3a38e7adce2163d4ea; reconstruction=cubic-bspline-controls; sourceLOD unknown",
+            "sourceLOD": 0.0,
+            "sourceLODKnown": false,
+            "version": "decoder-v12-nyquist-notch:magna-retained-v1:e2bf5473c0ff:f21afa261ed7"
+          },
+          "weight": 0.848121523857117
+        },
+        {
+          "activeChild": true,
+          "source": {
+            "id": "infinite:2814899424497554030:a12b8cf77f3a7265d3c18a02dab36f94",
+            "nativeSpacingM": 0.46875,
+            "provenance": "Infinite retained refinement; seed=2814899424497554030; decoderUsed=true; registrationNativeMpp=30; fieldFingerprint=rf1-019b8aa8fc4b7a3a38e7adce2163d4ea; parent=cell-centred cubic B-spline control reconstruction (not interpolation through control centres); parentComparison={\"samples\":4096,\"parentCorrelation\":0.998382058896566,\"transposedParentCorrelation\":-0.9929963571086565,\"maxAbsDeltaM\":0.5784265781248905,\"rmsDeltaM\":0.23423732073587164,\"meanDeltaM\":-0.14524888992310991,\"controlSmoothingMaxAbsM\":0.5617818190412436,\"refinementResidualMaxAbsM\":0.4947925234214381}",
+            "sourceLOD": -6.0,
+            "sourceLODKnown": true,
+            "version": "decoder-v12-nyquist-notch:magna-retained-v1:e2bf5473c0ff:f21afa261ed7"
+          },
+          "weight": 0.151878476142883
+        }
+      ],
+      "sourceEpoch": "bench-source-1",
+      "tileSource": {
+        "id": "infinite:2814899424497554030:a12b8cf77f3a7265d3c18a02dab36f94",
+        "nativeSpacingM": 0.46875,
+        "provenance": "Infinite retained refinement; seed=2814899424497554030; decoderUsed=true; registrationNativeMpp=30; fieldFingerprint=rf1-019b8aa8fc4b7a3a38e7adce2163d4ea; parent=cell-centred cubic B-spline control reconstruction (not interpolation through control centres); parentComparison={\"samples\":4096,\"parentCorrelation\":0.998382058896566,\"transposedParentCorrelation\":-0.9929963571086565,\"maxAbsDeltaM\":0.5784265781248905,\"rmsDeltaM\":0.23423732073587164,\"meanDeltaM\":-0.14524888992310991,\"controlSmoothingMaxAbsM\":0.5617818190412436,\"refinementResidualMaxAbsM\":0.4947925234214381}",
+        "sourceLOD": -6.0,
+        "sourceLODKnown": true,
+        "version": "decoder-v12-nyquist-notch:magna-retained-v1:e2bf5473c0ff:f21afa261ed7"
+      },
+      "worldId": "8d07d5dcd69b258208c2040cd4a37720",
+      "worldRevision": 0
+    },
+    "renderedSource": {
+      "id": "infinite:2814899424497554030:a12b8cf77f3a7265d3c18a02dab36f94",
+      "nativeSpacingM": 78.125,
+      "provenance": "Exact retained registration controls; fieldFingerprint=rf1-019b8aa8fc4b7a3a38e7adce2163d4ea; reconstruction=cubic-bspline-controls; sourceLOD unknown",
+      "sourceLOD": 0.0,
+      "sourceLODKnown": false,
+      "version": "decoder-v12-nyquist-notch:magna-retained-v1:e2bf5473c0ff:f21afa261ed7"
+    },
+    "renderedWorldId": "8d07d5dcd69b258208c2040cd4a37720",
+    "surfaceLayers": {
+      "canonicalFieldsVersion": "70533423386cea0d08667aa3e2d535af",
+      "canonicalVersion": "70533423386cea0d08667aa3e2d535af",
+      "fieldsVersion": "8f7a9dd26509910cfc4d87d231471c6e",
+      "groundAvailability": "explicit",
+      "legacyFallback": false,
+      "lowCoverAvailability": "explicit",
+      "projectedFieldsVersion": "8f7a9dd26509910cfc4d87d231471c6e",
+      "renderMode": "three-physical-layers",
+      "textureFieldsVersion": "70533423386cea0d08667aa3e2d535af",
+      "textureGrid": {
+        "height": 512.0,
+        "originX": 39.0625,
+        "originZ": 39.0625,
+        "spacingM": 78.125,
+        "width": 512.0
+      },
+      "textureSource": "canonical",
+      "version": "surface-layers-1",
+      "visibility": {
+        "ground": true,
+        "lowCover": true,
+        "trees": true
+      },
+      "worldId": "8d07d5dcd69b258208c2040cd4a37720"
+    },
+    "urban": {
+      "budgetLimited": false,
+      "buildingIds": [],
+      "materialBatches": 0,
+      "nativeBuildings": 0,
+      "proxyBuildings": 0,
+      "scope": "prepared submitted mesh batches; not a GPU visibility or occlusion count",
+      "worldId": "8d07d5dcd69b258208c2040cd4a37720"
+    },
+    "viewSatisfaction": {
+      "covered": false,
+      "preview": false,
+      "reason": "final 512 source request required",
+      "serial": 0
+    },
+    "viewSatisfiedSerial": -1,
+    "water": {
+      "authority": "magna-urbis-fixed-hydrology",
+      "bedReconstruction": "bilinear-samples",
+      "bedSpacingM": 0.625,
+      "budgetLimited": false,
+      "buildMs": 491.584,
+      "cacheUsed": true,
+      "classSpacingM": 78.125,
+      "displayGroups": 702,
+      "fixedVectorCartographicPolicy": "project retained contours independently of terrain depth; keep measured source levels unchanged",
+      "fixedVectorDisplayAvailable": true,
+      "fixedVectorPhysicalPolicy": "measured source levels with display-bed occlusion; conflicts are not repaired or rerouted",
+      "levelInterpolation": "finite original wet source levels only; no channel generation or level editing",
+      "maximumBedAboveWaterM": 0.0,
+      "maximumNativeFloatAreaErrorM2": 0.48153613274917,
+      "maximumNativeFloatAreaToleranceM2": 61.3688388299862,
+      "metresPerTexel": 4.88138310524005,
+      "minimumRiverStrokeApplied": false,
+      "missingLevelTriangles": 0,
+      "paddingSymbolMetres": 3.0517578125,
+      "physicalWaterSurfaceClaimed": false,
+      "projectionCullMask": 1,
+      "quads": 119864,
+      "renderAlgorithm": "retained even-odd boundary-vertex scan bands; native ear clipping only for one contour with explicit float-area validation",
+      "representation": "Magna retained vector lakes/rivers and original sea-cell union",
+      "requiresCoverageMask": false,
+      "resolution": 2562,
+      "resolvedBedConflictScope": "physical raster only; vector visibility uses bounded vectorBedDiagnostic samples",
+      "resolvedBedConflicts": 0,
+      "screenMetresPerPixel": 4.8828125,
+      "screenScalePolicy": "orthographic-map-ground-scale",
+      "sourceAuthority": "magna-urbis-fixed-hydrology",
+      "sourceCoverageImageSha256": "0d4ef2566cb099874fbeb93d665fcb1adede664996d4252db017a17f35138b6e",
+      "sourceDuplicateGroups": 1,
+      "sourceEvenOddSweepGroups": 1,
+      "sourceGeometrySha256": "43da1a7eee8416681007821fe7c16f2d57b8b24a3754fee914c3893e66c72492",
+      "sourceGeometryUnchanged": true,
+      "sourceGroups": 703,
+      "sourceLevelBoundaryPolicy": "Only queries of float64-clipped vertices displaced outside source support by <= half an FP32 relative-coordinate ULP are clamped; source levels and mesh vertices stay unchanged",
+      "sourceLevelBoundaryQueriesResolved": 0,
+      "sourceLevelMaximumBoundaryQueryRoundoffM": 0.0,
+      "sourceLevelsUnchanged": true,
+      "sourceSimpleRingNativeGroups": 701,
+      "sourceStride": 1,
+      "sourceTopologyPolicy": "source contours unchanged; no self-intersection repair or survey-level topology equivalence claimed",
+      "sourceVectorAreaM2": 48038663.809907,
+      "sourceVectorAreaScope": "input geometry clip window; projection camera may be narrower",
+      "sourceVectorClipBounds": {
+        "maxX": 40000.0,
+        "maxZ": 40000.0,
+        "minX": 0.0,
+        "minZ": 0.0
+      },
+      "sourceVectorCoverageComplete": true,
+      "sourceVectorMissingAreaM2": 0.0,
+      "sourceVectorPoints": 157220,
+      "sourceVectorRequestedAreaM2": 48038668.5275281,
+      "sourceVectorScanWork": 480887,
+      "sourceVertices": 719184,
+      "sourceWetCells": 8855,
+      "subpixelPolicy": "declared all-water coverage symbol; original source contours, levels and physical area unchanged",
+      "symbolColorPolicy": "nearest contributing source coverage colour; no new hydrology classes",
+      "symbolCoverageEstimatedImageBytes": 87517920,
+      "symbolCoverageImageBudgetBytes": 268435456,
+      "symbolCoverageImageSha256": "e2f588c6dc19a88065b230eded3c63dcc17a308330b3ed4ca73f951d65c9d63e",
+      "symbolCoverageSeparateFromSourceArea": true,
+      "symbolKernelRadiusTexels": 0.625183016105417,
+      "symbolRasterLimit": "A segment absent from the initial AA source raster cannot be reconstructed by dilation",
+      "symbolWidthMeaning": "AA disk diameter around nonzero coverage samples; not a measured or edited physical water width",
+      "symbolWidthPx": 1.25,
+      "symbolicPhysicalWidthClaim": false,
+      "vectorBedDiagnosticBudget": 4096,
+      "vectorBedDiagnosticConflicts": 2892,
+      "vectorBedDiagnosticMaximumDeltaM": 56.7157509392759,
+      "vectorBedDiagnosticMissing": 0,
+      "vectorBedDiagnosticSamples": 4087,
+      "vectorBedDiagnosticToleranceM": 0.001,
+      "vertexBudget": 999996,
+      "waterPresentation": "source-map-terrain-projection",
+      "waterSymbolPolicy": "all-water-source-coverage-aa-disk",
+      "waterSymbolVersion": "source-water-symbol-1",
+      "worldId": "8d07d5dcd69b258208c2040cd4a37720"
+    },
+    "widthM": 10000.0
+  },
+  {
+    "canopyView": {
+      "activeAtlasHash": "bf3f66194bd5c4ddb0a9022a2a6c0ae042e39f816bd2b317efe638b3971363f4",
+      "activeAtlasSource": {
+        "canonicalContextId": "2970937aae85cc1474c8fda223fb066e",
+        "completeTreePage": {
+          "bounds": {
+            "maxX": 22000.0,
+            "maxZ": 22000.0,
+            "minX": 18000.0,
+            "minZ": 18000.0
+          },
+          "complete": true,
+          "count": 67221.0,
+          "includeOverhang": true,
+          "limitedBy": "none",
+          "requestedBounds": {
+            "maxX": 22000.0,
+            "maxZ": 22000.0,
+            "minX": 18000.0,
+            "minZ": 18000.0
+          },
+          "retention": 1.0
+        },
+        "sceneEpoch": "bench-scene-1",
+        "seed": 1905266606.0,
+        "sourceEpoch": "bench-source-1",
+        "terrainSource": {
+          "id": "infinite:2814899424497554030:a12b8cf77f3a7265d3c18a02dab36f94",
+          "nativeSpacingM": 0.46875,
+          "provenance": "Infinite retained refinement; seed=2814899424497554030; decoderUsed=true; registrationNativeMpp=30; fieldFingerprint=rf1-019b8aa8fc4b7a3a38e7adce2163d4ea; parent=cell-centred cubic B-spline control reconstruction (not interpolation through control centres); parentComparison={\"samples\":4096,\"parentCorrelation\":0.998382058896566,\"transposedParentCorrelation\":-0.9929963571086565,\"maxAbsDeltaM\":0.5784265781248905,\"rmsDeltaM\":0.23423732073587164,\"meanDeltaM\":-0.14524888992310991,\"controlSmoothingMaxAbsM\":0.5617818190412436,\"refinementResidualMaxAbsM\":0.4947925234214381}",
+          "sourceLOD": -6.0,
+          "sourceLODKnown": true,
+          "version": "decoder-v12-nyquist-notch:magna-retained-v1:e2bf5473c0ff:f21afa261ed7"
+        },
+        "versions": {
+          "environment": "c2bf1f8fae3bce7120f04a275bd01deb",
+          "geology": "8bd3bb76f8694708ff61364ee78b5042",
+          "hydrology": "e38985feef377c986e6aa75e609fde3a",
+          "materialLibrary": "dcbc2046e7bedd286bfec31699d0e1fa",
+          "occupation": "70e5d5bb5ee15be5dd153f8351b52fcf",
+          "population": "7c431dc00ceb337e8d330ee0ff6c0f0c",
+          "surfaceLayers": "70533423386cea0d08667aa3e2d535af",
+          "surfaceState": "bff43cd574c24f4bcfae0375a382b719",
+          "terrain": "63b53a2aabf475e05b3c6b3a4fec3ad2"
+        },
+        "worldId": "8d07d5dcd69b258208c2040cd4a37720"
+      },
+      "activeAtlasWorldId": "8d07d5dcd69b258208c2040cd4a37720",
+      "atlasBounds": {
+        "maxX": 21408.0,
+        "maxZ": 21408.0002441406,
+        "minX": 18592.0,
+        "minZ": 18592.0002441406
+      },
+      "crownHeightEnvelopeM": 20.0,
+      "exactWeight": 1.0,
+      "frustumBounds": {
+        "maxX": 21280.0,
+        "maxZ": 21280.0002441406,
+        "minX": 18720.0,
+        "minZ": 18720.0002441406
+      },
+      "geometryWeight": 1.0,
+      "haloM": 22.6789927482605,
+      "heightEnvelopeWorld": [
+        2170.05847167969,
+        2190.05847167969
+      ],
+      "marginM": 105.32100725174,
+      "maximumPixelFootprintM": 1.25011445139631,
+      "pageBounds": {
+        "maxX": 21408.0,
+        "maxZ": 21408.0002441406,
+        "minX": 18592.0,
+        "minZ": 18592.0002441406
+      },
+      "pendingAtlas": false,
+      "pendingAtlasHash": "",
+      "phase": 2.0,
+      "reason": "complete-frustum-plus-halo",
+      "referenceY": 2170.05847167969,
+      "residentTerrainBounds": {
+        "maxX": 22510.3125,
+        "maxZ": 22510.3125,
+        "minX": 17440.3125,
+        "minZ": 17440.3125
+      },
+      "safePhase": 2.0,
+      "spatialBlend": "none; one phase for the whole viewport",
+      "transitionM": 45.7514563106796,
+      "transitionPending": false,
+      "treePage": {
+        "bounds": {
+          "maxX": 22000.0,
+          "maxZ": 22000.0,
+          "minX": 18000.0,
+          "minZ": 18000.0
+        },
+        "complete": true,
+        "count": 67221.0,
+        "includeOverhang": true,
+        "limitedBy": "none",
+        "requestedBounds": {
+          "maxX": 22000.0,
+          "maxZ": 22000.0,
+          "minX": 18000.0,
+          "minZ": 18000.0
+        },
+        "retention": 1.0
+      }
+    },
+    "captureTickMs": 32916,
+    "error": 0,
+    "event": "capture",
+    "metresPerPixel": 1.25,
+    "path": "D:/workspace/self/_worktrees/magna-urbis-surface-v9-viewer/viewer-local/captures/v9-qualified-top/2560m-top.png",
+    "populationInstances": {
+      "families": {
+        "boulder": {
+          "alphaPositiveInFrustum": 102,
+          "nodeVisible": 103,
+          "submitted": 103
+        },
+        "debris": {
+          "alphaPositiveInFrustum": 0,
+          "nodeVisible": 0,
+          "submitted": 0
+        },
+        "grass": {
+          "alphaPositiveInFrustum": 0,
+          "nodeVisible": 0,
+          "submitted": 0
+        },
+        "shrub": {
+          "alphaPositiveInFrustum": 95,
+          "nodeVisible": 95,
+          "submitted": 95
+        },
+        "tree": {
+          "alphaPositiveInFrustum": 3815,
+          "nodeVisible": 10000,
+          "submitted": 10000
+        },
+        "trunk": {
+          "alphaPositiveInFrustum": 3815,
+          "nodeVisible": 10000,
+          "submitted": 10000
+        }
+      },
+      "scope": "submitted buffers, actual node/camera visibility, shader ALPHA>0 and centres in frustum; no GPU occlusion claim",
+      "treeOpticalShadowEnabled": true,
+      "treeResidualEnabled": true
+    },
+    "renderedLiveSerial": -1,
+    "renderedSnapshot": {
+      "appliedTickMs": 30413,
+      "deliveredGrid": {
+        "height": 64,
+        "spacingM": 0.625,
+        "width": 64
+      },
+      "displaySamples": 256,
+      "fineContributionWeight": 0.488282203674316,
+      "focusAtApply": {
+        "x": 20000.0,
+        "y": 20000.0
+      },
+      "focusInsideSource": true,
+      "heightImageSize": 512,
+      "liveSerial": -1,
+      "loadedHeightRangeWorld": [
+        1463.99210716631,
+        2191.34635521319
+      ],
+      "request": {
+        "extent": 40.0,
+        "resolution": 64.0,
+        "x": 19980.0,
+        "y": 19980.0
+      },
+      "sceneEpoch": "bench-scene-1",
+      "seamWeight": 0.488282203674316,
+      "source": {
+        "id": "infinite:2814899424497554030:a12b8cf77f3a7265d3c18a02dab36f94",
+        "nativeSpacingM": 78.125,
+        "provenance": "Exact retained registration controls; fieldFingerprint=rf1-019b8aa8fc4b7a3a38e7adce2163d4ea; reconstruction=cubic-bspline-controls; sourceLOD unknown",
+        "sourceLOD": 0.0,
+        "sourceLODKnown": false,
+        "version": "decoder-v12-nyquist-notch:magna-retained-v1:e2bf5473c0ff:f21afa261ed7"
+      },
+      "sourceActualAtFocus": {
+        "id": "infinite:2814899424497554030:a12b8cf77f3a7265d3c18a02dab36f94",
+        "nativeSpacingM": 78.125,
+        "provenance": "Exact retained registration controls; fieldFingerprint=rf1-019b8aa8fc4b7a3a38e7adce2163d4ea; reconstruction=cubic-bspline-controls; sourceLOD unknown",
+        "sourceLOD": 0.0,
+        "sourceLODKnown": false,
+        "version": "decoder-v12-nyquist-notch:magna-retained-v1:e2bf5473c0ff:f21afa261ed7"
+      },
+      "sourceBounds": {
+        "maxX": 20019.6875,
+        "maxZ": 20019.6875,
+        "minX": 19980.3125,
+        "minZ": 19980.3125
+      },
+      "sourceContributionsAtFocus": [
+        {
+          "activeChild": false,
+          "source": {
+            "id": "infinite:2814899424497554030:a12b8cf77f3a7265d3c18a02dab36f94",
+            "nativeSpacingM": 78.125,
+            "provenance": "Exact retained registration controls; fieldFingerprint=rf1-019b8aa8fc4b7a3a38e7adce2163d4ea; reconstruction=cubic-bspline-controls; sourceLOD unknown",
+            "sourceLOD": 0.0,
+            "sourceLODKnown": false,
+            "version": "decoder-v12-nyquist-notch:magna-retained-v1:e2bf5473c0ff:f21afa261ed7"
+          },
+          "weight": 0.511717796325684
+        },
+        {
+          "activeChild": true,
+          "source": {
+            "id": "infinite:2814899424497554030:a12b8cf77f3a7265d3c18a02dab36f94",
+            "nativeSpacingM": 0.46875,
+            "provenance": "Infinite retained refinement; seed=2814899424497554030; decoderUsed=true; registrationNativeMpp=30; fieldFingerprint=rf1-019b8aa8fc4b7a3a38e7adce2163d4ea; parent=cell-centred cubic B-spline control reconstruction (not interpolation through control centres); parentComparison={\"samples\":4096,\"parentCorrelation\":0.998382058896566,\"transposedParentCorrelation\":-0.9929963571086565,\"maxAbsDeltaM\":0.5784265781248905,\"rmsDeltaM\":0.23423732073587164,\"meanDeltaM\":-0.14524888992310991,\"controlSmoothingMaxAbsM\":0.5617818190412436,\"refinementResidualMaxAbsM\":0.4947925234214381}",
+            "sourceLOD": -6.0,
+            "sourceLODKnown": true,
+            "version": "decoder-v12-nyquist-notch:magna-retained-v1:e2bf5473c0ff:f21afa261ed7"
+          },
+          "weight": 0.488282203674316
+        }
+      ],
+      "sourceEpoch": "bench-source-1",
+      "tileSource": {
+        "id": "infinite:2814899424497554030:a12b8cf77f3a7265d3c18a02dab36f94",
+        "nativeSpacingM": 0.46875,
+        "provenance": "Infinite retained refinement; seed=2814899424497554030; decoderUsed=true; registrationNativeMpp=30; fieldFingerprint=rf1-019b8aa8fc4b7a3a38e7adce2163d4ea; parent=cell-centred cubic B-spline control reconstruction (not interpolation through control centres); parentComparison={\"samples\":4096,\"parentCorrelation\":0.998382058896566,\"transposedParentCorrelation\":-0.9929963571086565,\"maxAbsDeltaM\":0.5784265781248905,\"rmsDeltaM\":0.23423732073587164,\"meanDeltaM\":-0.14524888992310991,\"controlSmoothingMaxAbsM\":0.5617818190412436,\"refinementResidualMaxAbsM\":0.4947925234214381}",
+        "sourceLOD": -6.0,
+        "sourceLODKnown": true,
+        "version": "decoder-v12-nyquist-notch:magna-retained-v1:e2bf5473c0ff:f21afa261ed7"
+      },
+      "worldId": "8d07d5dcd69b258208c2040cd4a37720",
+      "worldRevision": 0
+    },
+    "renderedSource": {
+      "id": "infinite:2814899424497554030:a12b8cf77f3a7265d3c18a02dab36f94",
+      "nativeSpacingM": 78.125,
+      "provenance": "Exact retained registration controls; fieldFingerprint=rf1-019b8aa8fc4b7a3a38e7adce2163d4ea; reconstruction=cubic-bspline-controls; sourceLOD unknown",
+      "sourceLOD": 0.0,
+      "sourceLODKnown": false,
+      "version": "decoder-v12-nyquist-notch:magna-retained-v1:e2bf5473c0ff:f21afa261ed7"
+    },
+    "renderedWorldId": "8d07d5dcd69b258208c2040cd4a37720",
+    "surfaceLayers": {
+      "canonicalFieldsVersion": "70533423386cea0d08667aa3e2d535af",
+      "canonicalVersion": "70533423386cea0d08667aa3e2d535af",
+      "fieldsVersion": "8f7a9dd26509910cfc4d87d231471c6e",
+      "groundAvailability": "explicit",
+      "legacyFallback": false,
+      "lowCoverAvailability": "explicit",
+      "projectedFieldsVersion": "8f7a9dd26509910cfc4d87d231471c6e",
+      "renderMode": "three-physical-layers",
+      "textureFieldsVersion": "70533423386cea0d08667aa3e2d535af",
+      "textureGrid": {
+        "height": 512.0,
+        "originX": 39.0625,
+        "originZ": 39.0625,
+        "spacingM": 78.125,
+        "width": 512.0
+      },
+      "textureSource": "canonical",
+      "version": "surface-layers-1",
+      "visibility": {
+        "ground": true,
+        "lowCover": true,
+        "trees": true
+      },
+      "worldId": "8d07d5dcd69b258208c2040cd4a37720"
+    },
+    "urban": {
+      "budgetLimited": false,
+      "buildingIds": [],
+      "materialBatches": 0,
+      "nativeBuildings": 0,
+      "proxyBuildings": 0,
+      "scope": "prepared submitted mesh batches; not a GPU visibility or occlusion count",
+      "worldId": "8d07d5dcd69b258208c2040cd4a37720"
+    },
+    "viewSatisfaction": {
+      "covered": false,
+      "preview": false,
+      "reason": "final 512 source request required",
+      "serial": 0
+    },
+    "viewSatisfiedSerial": -1,
+    "water": {
+      "authority": "magna-urbis-fixed-hydrology",
+      "bedReconstruction": "bilinear-samples",
+      "bedSpacingM": 0.625,
+      "budgetLimited": false,
+      "buildMs": 366.73,
+      "cacheUsed": false,
+      "classSpacingM": 78.125,
+      "displayGroups": 59,
+      "fixedVectorCartographicPolicy": "project retained contours independently of terrain depth; keep measured source levels unchanged",
+      "fixedVectorDisplayAvailable": true,
+      "fixedVectorPhysicalPolicy": "measured source levels with display-bed occlusion; conflicts are not repaired or rerouted",
+      "levelInterpolation": "finite original wet source levels only; no channel generation or level editing",
+      "maximumBedAboveWaterM": 0.0,
+      "maximumNativeFloatAreaErrorM2": 0.0787910313229077,
+      "maximumNativeFloatAreaToleranceM2": 11.1919744793927,
+      "metresPerTexel": 1.24963407494145,
+      "minimumRiverStrokeApplied": false,
+      "missingLevelTriangles": 0,
+      "paddingSymbolMetres": 0.78125,
+      "physicalWaterSurfaceClaimed": false,
+      "projectionCullMask": 1,
+      "quads": 3961,
+      "renderAlgorithm": "retained even-odd boundary-vertex scan bands; native ear clipping only for one contour with explicit float-area validation",
+      "representation": "Magna retained vector lakes/rivers and original sea-cell union",
+      "requiresCoverageMask": false,
+      "resolution": 2562,
+      "resolvedBedConflictScope": "physical raster only; vector visibility uses bounded vectorBedDiagnostic samples",
+      "resolvedBedConflicts": 0,
+      "screenMetresPerPixel": 1.25,
+      "screenScalePolicy": "orthographic-map-ground-scale",
+      "sourceAuthority": "magna-urbis-fixed-hydrology",
+      "sourceCoverageImageSha256": "b3e8c71faa8a76f417a7002931745278f74cc944e9996872f561a89932baaa75",
+      "sourceDuplicateGroups": 1,
+      "sourceEvenOddSweepGroups": 0,
+      "sourceGeometrySha256": "eb1c90a4e62885eccc83002f18979ad7bd5d8da135f0b5f8e496c74ec68cd973",
+      "sourceGeometryUnchanged": true,
+      "sourceGroups": 703,
+      "sourceLevelBoundaryPolicy": "Only queries of float64-clipped vertices displaced outside source support by <= half an FP32 relative-coordinate ULP are clamped; source levels and mesh vertices stay unchanged",
+      "sourceLevelBoundaryQueriesResolved": 0,
+      "sourceLevelMaximumBoundaryQueryRoundoffM": 0.0,
+      "sourceLevelsUnchanged": true,
+      "sourceSimpleRingNativeGroups": 59,
+      "sourceStride": 1,
+      "sourceTopologyPolicy": "source contours unchanged; no self-intersection repair or survey-level topology equivalence claimed",
+      "sourceVectorAreaM2": 720224.452299468,
+      "sourceVectorAreaScope": "input geometry clip window; projection camera may be narrower",
+      "sourceVectorClipBounds": {
+        "maxX": 24576.0,
+        "maxZ": 24576.0,
+        "minX": 14336.0,
+        "minZ": 14336.0
+      },
+      "sourceVectorCoverageComplete": true,
+      "sourceVectorMissingAreaM2": 0.0,
+      "sourceVectorPoints": 157220,
+      "sourceVectorRequestedAreaM2": 720224.411397081,
+      "sourceVectorScanWork": 15960,
+      "sourceVertices": 23763,
+      "sourceWetCells": 146,
+      "subpixelPolicy": "declared all-water coverage symbol; original source contours, levels and physical area unchanged",
+      "symbolColorPolicy": "nearest contributing source coverage colour; no new hydrology classes",
+      "symbolCoverageEstimatedImageBytes": 87517920,
+      "symbolCoverageImageBudgetBytes": 268435456,
+      "symbolCoverageImageSha256": "bb1334be7819cb7b37bd8e149d7d94adf2aa3f4c706d8cc532ac2c276637252a",
+      "symbolCoverageSeparateFromSourceArea": true,
+      "symbolKernelRadiusTexels": 0.625183016105417,
+      "symbolRasterLimit": "A segment absent from the initial AA source raster cannot be reconstructed by dilation",
+      "symbolWidthMeaning": "AA disk diameter around nonzero coverage samples; not a measured or edited physical water width",
+      "symbolWidthPx": 1.25,
+      "symbolicPhysicalWidthClaim": false,
+      "vectorBedDiagnosticBudget": 4096,
+      "vectorBedDiagnosticConflicts": 3876,
+      "vectorBedDiagnosticMaximumDeltaM": 35.6514230509158,
+      "vectorBedDiagnosticMissing": 0,
+      "vectorBedDiagnosticSamples": 3961,
+      "vectorBedDiagnosticToleranceM": 0.001,
+      "vertexBudget": 999996,
+      "waterPresentation": "source-map-terrain-projection",
+      "waterSymbolPolicy": "all-water-source-coverage-aa-disk",
+      "waterSymbolVersion": "source-water-symbol-1",
+      "worldId": "8d07d5dcd69b258208c2040cd4a37720"
+    },
+    "widthM": 2560.0
+  },
+  {
+    "canopyView": {
+      "activeAtlasHash": "298319bcebaab5b534de51d66582fc91d3d1f1abfedfcbf4cf8e7b8fdf3f7128",
+      "activeAtlasSource": {
+        "canonicalContextId": "2970937aae85cc1474c8fda223fb066e",
+        "completeTreePage": {
+          "bounds": {
+            "maxX": 22000.0,
+            "maxZ": 22000.0,
+            "minX": 18000.0,
+            "minZ": 18000.0
+          },
+          "complete": true,
+          "count": 67221.0,
+          "includeOverhang": true,
+          "limitedBy": "none",
+          "requestedBounds": {
+            "maxX": 22000.0,
+            "maxZ": 22000.0,
+            "minX": 18000.0,
+            "minZ": 18000.0
+          },
+          "retention": 1.0
+        },
+        "sceneEpoch": "bench-scene-1",
+        "seed": 1905266606.0,
+        "sourceEpoch": "bench-source-1",
+        "terrainSource": {
+          "id": "infinite:2814899424497554030:a12b8cf77f3a7265d3c18a02dab36f94",
+          "nativeSpacingM": 0.46875,
+          "provenance": "Infinite retained refinement; seed=2814899424497554030; decoderUsed=true; registrationNativeMpp=30; fieldFingerprint=rf1-019b8aa8fc4b7a3a38e7adce2163d4ea; parent=cell-centred cubic B-spline control reconstruction (not interpolation through control centres); parentComparison={\"samples\":4096,\"parentCorrelation\":0.998382058896566,\"transposedParentCorrelation\":-0.9929963571086565,\"maxAbsDeltaM\":0.5784265781248905,\"rmsDeltaM\":0.23423732073587164,\"meanDeltaM\":-0.14524888992310991,\"controlSmoothingMaxAbsM\":0.5617818190412436,\"refinementResidualMaxAbsM\":0.4947925234214381}",
+          "sourceLOD": -6.0,
+          "sourceLODKnown": true,
+          "version": "decoder-v12-nyquist-notch:magna-retained-v1:e2bf5473c0ff:f21afa261ed7"
+        },
+        "versions": {
+          "environment": "c2bf1f8fae3bce7120f04a275bd01deb",
+          "geology": "8bd3bb76f8694708ff61364ee78b5042",
+          "hydrology": "e38985feef377c986e6aa75e609fde3a",
+          "materialLibrary": "dcbc2046e7bedd286bfec31699d0e1fa",
+          "occupation": "70e5d5bb5ee15be5dd153f8351b52fcf",
+          "population": "7c431dc00ceb337e8d330ee0ff6c0f0c",
+          "surfaceLayers": "70533423386cea0d08667aa3e2d535af",
+          "surfaceState": "bff43cd574c24f4bcfae0375a382b719",
+          "terrain": "63b53a2aabf475e05b3c6b3a4fec3ad2"
+        },
+        "worldId": "8d07d5dcd69b258208c2040cd4a37720"
+      },
+      "activeAtlasWorldId": "8d07d5dcd69b258208c2040cd4a37720",
+      "atlasBounds": {
+        "maxX": 20448.0,
+        "maxZ": 20448.0001220703,
+        "minX": 19552.0,
+        "minZ": 19552.0001220703
+      },
+      "crownHeightEnvelopeM": 20.0,
+      "exactWeight": 1.0,
+      "frustumBounds": {
+        "maxX": 20320.0,
+        "maxZ": 20320.0001220703,
+        "minX": 19680.0,
+        "minZ": 19680.0001220703
+      },
+      "geometryWeight": 1.0,
+      "haloM": 22.6789927482605,
+      "heightEnvelopeWorld": [
+        2170.05847167969,
+        2190.05847167969
+      ],
+      "marginM": 105.32100725174,
+      "maximumPixelFootprintM": 0.312504768444343,
+      "pageBounds": {
+        "maxX": 20448.0,
+        "maxZ": 20448.0001220703,
+        "minX": 19552.0,
+        "minZ": 19552.0001220703
+      },
+      "pendingAtlas": false,
+      "pendingAtlasHash": "",
+      "phase": 2.0,
+      "reason": "complete-frustum-plus-halo",
+      "referenceY": 2170.05847167969,
+      "residentTerrainBounds": {
+        "maxX": 20612.8125,
+        "maxZ": 20612.8125,
+        "minX": 19345.3125,
+        "minZ": 19345.3125
+      },
+      "safePhase": 2.0,
+      "spatialBlend": "none; one phase for the whole viewport",
+      "transitionM": 45.7514563106796,
+      "transitionPending": false,
+      "treePage": {
+        "bounds": {
+          "maxX": 22000.0,
+          "maxZ": 22000.0,
+          "minX": 18000.0,
+          "minZ": 18000.0
+        },
+        "complete": true,
+        "count": 67221.0,
+        "includeOverhang": true,
+        "limitedBy": "none",
+        "requestedBounds": {
+          "maxX": 22000.0,
+          "maxZ": 22000.0,
+          "minX": 18000.0,
+          "minZ": 18000.0
+        },
+        "retention": 1.0
+      }
+    },
+    "captureTickMs": 40734,
+    "error": 0,
+    "event": "capture",
+    "metresPerPixel": 0.3125,
+    "path": "D:/workspace/self/_worktrees/magna-urbis-surface-v9-viewer/viewer-local/captures/v9-qualified-top/640m-top.png",
+    "populationInstances": {
+      "families": {
+        "boulder": {
+          "alphaPositiveInFrustum": 271,
+          "nodeVisible": 271,
+          "submitted": 271
+        },
+        "debris": {
+          "alphaPositiveInFrustum": 479,
+          "nodeVisible": 479,
+          "submitted": 479
+        },
+        "grass": {
+          "alphaPositiveInFrustum": 999,
+          "nodeVisible": 1000,
+          "submitted": 1000
+        },
+        "shrub": {
+          "alphaPositiveInFrustum": 186,
+          "nodeVisible": 186,
+          "submitted": 186
+        },
+        "tree": {
+          "alphaPositiveInFrustum": 1664,
+          "nodeVisible": 4883,
+          "submitted": 4883
+        },
+        "trunk": {
+          "alphaPositiveInFrustum": 1664,
+          "nodeVisible": 4883,
+          "submitted": 4883
+        }
+      },
+      "scope": "submitted buffers, actual node/camera visibility, shader ALPHA>0 and centres in frustum; no GPU occlusion claim",
+      "treeOpticalShadowEnabled": true,
+      "treeResidualEnabled": true
+    },
+    "renderedLiveSerial": -1,
+    "renderedSnapshot": {
+      "appliedTickMs": 37130,
+      "deliveredGrid": {
+        "height": 64,
+        "spacingM": 0.625,
+        "width": 64
+      },
+      "displaySamples": 256,
+      "fineContributionWeight": 1.0,
+      "focusAtApply": {
+        "x": 20000.0,
+        "y": 20000.0
+      },
+      "focusInsideSource": true,
+      "heightImageSize": 512,
+      "liveSerial": -1,
+      "loadedHeightRangeWorld": [
+        1948.12504173662,
+        2189.96573997881
+      ],
+      "request": {
+        "extent": 40.0,
+        "resolution": 64.0,
+        "x": 19980.0,
+        "y": 19980.0
+      },
+      "sceneEpoch": "bench-scene-1",
+      "seamWeight": 1.0,
+      "source": {
+        "id": "infinite:2814899424497554030:a12b8cf77f3a7265d3c18a02dab36f94",
+        "nativeSpacingM": 0.46875,
+        "provenance": "Infinite retained refinement; seed=2814899424497554030; decoderUsed=true; registrationNativeMpp=30; fieldFingerprint=rf1-019b8aa8fc4b7a3a38e7adce2163d4ea; parent=cell-centred cubic B-spline control reconstruction (not interpolation through control centres); parentComparison={\"samples\":4096,\"parentCorrelation\":0.998382058896566,\"transposedParentCorrelation\":-0.9929963571086565,\"maxAbsDeltaM\":0.5784265781248905,\"rmsDeltaM\":0.23423732073587164,\"meanDeltaM\":-0.14524888992310991,\"controlSmoothingMaxAbsM\":0.5617818190412436,\"refinementResidualMaxAbsM\":0.4947925234214381}",
+        "sourceLOD": -6.0,
+        "sourceLODKnown": true,
+        "version": "decoder-v12-nyquist-notch:magna-retained-v1:e2bf5473c0ff:f21afa261ed7"
+      },
+      "sourceActualAtFocus": {
+        "id": "infinite:2814899424497554030:a12b8cf77f3a7265d3c18a02dab36f94",
+        "nativeSpacingM": 0.46875,
+        "provenance": "Infinite retained refinement; seed=2814899424497554030; decoderUsed=true; registrationNativeMpp=30; fieldFingerprint=rf1-019b8aa8fc4b7a3a38e7adce2163d4ea; parent=cell-centred cubic B-spline control reconstruction (not interpolation through control centres); parentComparison={\"samples\":4096,\"parentCorrelation\":0.998382058896566,\"transposedParentCorrelation\":-0.9929963571086565,\"maxAbsDeltaM\":0.5784265781248905,\"rmsDeltaM\":0.23423732073587164,\"meanDeltaM\":-0.14524888992310991,\"controlSmoothingMaxAbsM\":0.5617818190412436,\"refinementResidualMaxAbsM\":0.4947925234214381}",
+        "sourceLOD": -6.0,
+        "sourceLODKnown": true,
+        "version": "decoder-v12-nyquist-notch:magna-retained-v1:e2bf5473c0ff:f21afa261ed7"
+      },
+      "sourceBounds": {
+        "maxX": 20019.6875,
+        "maxZ": 20019.6875,
+        "minX": 19980.3125,
+        "minZ": 19980.3125
+      },
+      "sourceContributionsAtFocus": [
+        {
+          "activeChild": false,
+          "source": {
+            "id": "infinite:2814899424497554030:a12b8cf77f3a7265d3c18a02dab36f94",
+            "nativeSpacingM": 78.125,
+            "provenance": "Exact retained registration controls; fieldFingerprint=rf1-019b8aa8fc4b7a3a38e7adce2163d4ea; reconstruction=cubic-bspline-controls; sourceLOD unknown",
+            "sourceLOD": 0.0,
+            "sourceLODKnown": false,
+            "version": "decoder-v12-nyquist-notch:magna-retained-v1:e2bf5473c0ff:f21afa261ed7"
+          },
+          "weight": 0.0
+        },
+        {
+          "activeChild": true,
+          "source": {
+            "id": "infinite:2814899424497554030:a12b8cf77f3a7265d3c18a02dab36f94",
+            "nativeSpacingM": 0.46875,
+            "provenance": "Infinite retained refinement; seed=2814899424497554030; decoderUsed=true; registrationNativeMpp=30; fieldFingerprint=rf1-019b8aa8fc4b7a3a38e7adce2163d4ea; parent=cell-centred cubic B-spline control reconstruction (not interpolation through control centres); parentComparison={\"samples\":4096,\"parentCorrelation\":0.998382058896566,\"transposedParentCorrelation\":-0.9929963571086565,\"maxAbsDeltaM\":0.5784265781248905,\"rmsDeltaM\":0.23423732073587164,\"meanDeltaM\":-0.14524888992310991,\"controlSmoothingMaxAbsM\":0.5617818190412436,\"refinementResidualMaxAbsM\":0.4947925234214381}",
+            "sourceLOD": -6.0,
+            "sourceLODKnown": true,
+            "version": "decoder-v12-nyquist-notch:magna-retained-v1:e2bf5473c0ff:f21afa261ed7"
+          },
+          "weight": 1.0
+        }
+      ],
+      "sourceEpoch": "bench-source-1",
+      "tileSource": {
+        "id": "infinite:2814899424497554030:a12b8cf77f3a7265d3c18a02dab36f94",
+        "nativeSpacingM": 0.46875,
+        "provenance": "Infinite retained refinement; seed=2814899424497554030; decoderUsed=true; registrationNativeMpp=30; fieldFingerprint=rf1-019b8aa8fc4b7a3a38e7adce2163d4ea; parent=cell-centred cubic B-spline control reconstruction (not interpolation through control centres); parentComparison={\"samples\":4096,\"parentCorrelation\":0.998382058896566,\"transposedParentCorrelation\":-0.9929963571086565,\"maxAbsDeltaM\":0.5784265781248905,\"rmsDeltaM\":0.23423732073587164,\"meanDeltaM\":-0.14524888992310991,\"controlSmoothingMaxAbsM\":0.5617818190412436,\"refinementResidualMaxAbsM\":0.4947925234214381}",
+        "sourceLOD": -6.0,
+        "sourceLODKnown": true,
+        "version": "decoder-v12-nyquist-notch:magna-retained-v1:e2bf5473c0ff:f21afa261ed7"
+      },
+      "worldId": "8d07d5dcd69b258208c2040cd4a37720",
+      "worldRevision": 0
+    },
+    "renderedSource": {
+      "id": "infinite:2814899424497554030:a12b8cf77f3a7265d3c18a02dab36f94",
+      "nativeSpacingM": 0.46875,
+      "provenance": "Infinite retained refinement; seed=2814899424497554030; decoderUsed=true; registrationNativeMpp=30; fieldFingerprint=rf1-019b8aa8fc4b7a3a38e7adce2163d4ea; parent=cell-centred cubic B-spline control reconstruction (not interpolation through control centres); parentComparison={\"samples\":4096,\"parentCorrelation\":0.998382058896566,\"transposedParentCorrelation\":-0.9929963571086565,\"maxAbsDeltaM\":0.5784265781248905,\"rmsDeltaM\":0.23423732073587164,\"meanDeltaM\":-0.14524888992310991,\"controlSmoothingMaxAbsM\":0.5617818190412436,\"refinementResidualMaxAbsM\":0.4947925234214381}",
+      "sourceLOD": -6.0,
+      "sourceLODKnown": true,
+      "version": "decoder-v12-nyquist-notch:magna-retained-v1:e2bf5473c0ff:f21afa261ed7"
+    },
+    "renderedWorldId": "8d07d5dcd69b258208c2040cd4a37720",
+    "surfaceLayers": {
+      "canonicalFieldsVersion": "70533423386cea0d08667aa3e2d535af",
+      "canonicalVersion": "70533423386cea0d08667aa3e2d535af",
+      "fieldsVersion": "8f7a9dd26509910cfc4d87d231471c6e",
+      "groundAvailability": "explicit",
+      "legacyFallback": false,
+      "lowCoverAvailability": "explicit",
+      "projectedFieldsVersion": "8f7a9dd26509910cfc4d87d231471c6e",
+      "renderMode": "three-physical-layers",
+      "textureFieldsVersion": "70533423386cea0d08667aa3e2d535af",
+      "textureGrid": {
+        "height": 512.0,
+        "originX": 39.0625,
+        "originZ": 39.0625,
+        "spacingM": 78.125,
+        "width": 512.0
+      },
+      "textureSource": "canonical",
+      "version": "surface-layers-1",
+      "visibility": {
+        "ground": true,
+        "lowCover": true,
+        "trees": true
+      },
+      "worldId": "8d07d5dcd69b258208c2040cd4a37720"
+    },
+    "urban": {
+      "budgetLimited": false,
+      "buildingIds": [],
+      "materialBatches": 0,
+      "nativeBuildings": 0,
+      "proxyBuildings": 0,
+      "scope": "prepared submitted mesh batches; not a GPU visibility or occlusion count",
+      "worldId": "8d07d5dcd69b258208c2040cd4a37720"
+    },
+    "viewSatisfaction": {
+      "covered": false,
+      "preview": false,
+      "reason": "final 512 source request required",
+      "serial": 0
+    },
+    "viewSatisfiedSerial": -1,
+    "water": {
+      "authority": "magna-urbis-fixed-hydrology",
+      "bedReconstruction": "bilinear-samples",
+      "bedSpacingM": 0.625,
+      "budgetLimited": false,
+      "buildMs": 402.036,
+      "cacheUsed": false,
+      "classSpacingM": 78.125,
+      "displayGroups": 2,
+      "fixedVectorCartographicPolicy": "project retained contours independently of terrain depth; keep measured source levels unchanged",
+      "fixedVectorDisplayAvailable": true,
+      "fixedVectorPhysicalPolicy": "measured source levels with display-bed occlusion; conflicts are not repaired or rerouted",
+      "levelInterpolation": "finite original wet source levels only; no channel generation or level editing",
+      "maximumBedAboveWaterM": 0.0,
+      "maximumNativeFloatAreaErrorM2": 0.00242857103603455,
+      "maximumNativeFloatAreaToleranceM2": 0.263053583226113,
+      "metresPerTexel": 0.312408518735363,
+      "minimumRiverStrokeApplied": false,
+      "missingLevelTriangles": 0,
+      "paddingSymbolMetres": 0.1953125,
+      "physicalWaterSurfaceClaimed": false,
+      "projectionCullMask": 1,
+      "quads": 66,
+      "renderAlgorithm": "retained even-odd boundary-vertex scan bands; native ear clipping only for one contour with explicit float-area validation",
+      "representation": "Magna retained vector lakes/rivers and original sea-cell union",
+      "requiresCoverageMask": false,
+      "resolution": 2562,
+      "resolvedBedConflictScope": "physical raster only; vector visibility uses bounded vectorBedDiagnostic samples",
+      "resolvedBedConflicts": 0,
+      "screenMetresPerPixel": 0.3125,
+      "screenScalePolicy": "orthographic-map-ground-scale",
+      "sourceAuthority": "magna-urbis-fixed-hydrology",
+      "sourceCoverageImageSha256": "e0e631d443238d38ec55f5866782c52c3a832d51af0e6b460fa8debf8c6be491",
+      "sourceDuplicateGroups": 1,
+      "sourceEvenOddSweepGroups": 0,
+      "sourceGeometrySha256": "55c9611c1e44f836eec0aca49ed899f37aefe4484d503f1026f9c443bb1ee157",
+      "sourceGeometryUnchanged": true,
+      "sourceGroups": 703,
+      "sourceLevelBoundaryPolicy": "Only queries of float64-clipped vertices displaced outside source support by <= half an FP32 relative-coordinate ULP are clamped; source levels and mesh vertices stay unchanged",
+      "sourceLevelBoundaryQueriesResolved": 0,
+      "sourceLevelMaximumBoundaryQueryRoundoffM": 0.0,
+      "sourceLevelsUnchanged": true,
+      "sourceSimpleRingNativeGroups": 2,
+      "sourceStride": 1,
+      "sourceTopologyPolicy": "source contours unchanged; no self-intersection repair or survey-level topology equivalence claimed",
+      "sourceVectorAreaM2": 3086.09939348698,
+      "sourceVectorAreaScope": "input geometry clip window; projection camera may be narrower",
+      "sourceVectorClipBounds": {
+        "maxX": 21504.0,
+        "maxZ": 21504.0,
+        "minX": 18944.0,
+        "minZ": 18944.0
+      },
+      "sourceVectorCoverageComplete": true,
+      "sourceVectorMissingAreaM2": 0.0,
+      "sourceVectorPoints": 157220,
+      "sourceVectorRequestedAreaM2": 3086.09714400111,
+      "sourceVectorScanWork": 266,
+      "sourceVertices": 393,
+      "sourceWetCells": 0,
+      "subpixelPolicy": "declared all-water coverage symbol; original source contours, levels and physical area unchanged",
+      "symbolColorPolicy": "nearest contributing source coverage colour; no new hydrology classes",
+      "symbolCoverageEstimatedImageBytes": 87517920,
+      "symbolCoverageImageBudgetBytes": 268435456,
+      "symbolCoverageImageSha256": "e0e631d443238d38ec55f5866782c52c3a832d51af0e6b460fa8debf8c6be491",
+      "symbolCoverageSeparateFromSourceArea": true,
+      "symbolKernelRadiusTexels": 0.625183016105417,
+      "symbolRasterLimit": "A segment absent from the initial AA source raster cannot be reconstructed by dilation",
+      "symbolWidthMeaning": "AA disk diameter around nonzero coverage samples; not a measured or edited physical water width",
+      "symbolWidthPx": 1.25,
+      "symbolicPhysicalWidthClaim": false,
+      "vectorBedDiagnosticBudget": 4096,
+      "vectorBedDiagnosticConflicts": 393,
+      "vectorBedDiagnosticMaximumDeltaM": 20.6852918840998,
+      "vectorBedDiagnosticMissing": 0,
+      "vectorBedDiagnosticSamples": 393,
+      "vectorBedDiagnosticToleranceM": 0.001,
+      "vertexBudget": 999996,
+      "waterPresentation": "source-map-terrain-projection",
+      "waterSymbolPolicy": "all-water-source-coverage-aa-disk",
+      "waterSymbolVersion": "source-water-symbol-1",
+      "worldId": "8d07d5dcd69b258208c2040cd4a37720"
+    },
+    "widthM": 640.0
+  },
+  {
+    "canopyView": {
+      "activeAtlasWorldId": "8d07d5dcd69b258208c2040cd4a37720",
+      "atlasBounds": {
+        "maxX": 21164.1376953125,
+        "maxZ": 20450.8388061523,
+        "minX": 18835.8623046875,
+        "minZ": 18017.4956054688
+      },
+      "crownHeightEnvelopeM": 20.0,
+      "exactWeight": 0.0,
+      "frustumBounds": {
+        "maxX": 21036.1376953125,
+        "maxZ": 20322.8388061523,
+        "minX": 18963.8623046875,
+        "minZ": 18145.4956054688
+      },
+      "geometryWeight": 0.0,
+      "haloM": 22.6789927482605,
+      "heightEnvelopeWorld": [
+        1699.33988548662,
+        2209.96573997881
+      ],
+      "marginM": -582.495887279511,
+      "maximumPixelFootprintM": 3.88060375375403,
+      "pageBounds": {
+        "maxX": 21164.1376953125,
+        "maxZ": 20450.8388061523,
+        "minX": 18835.8623046875,
+        "minZ": 18705.3125
+      },
+      "pendingAtlas": false,
+      "phase": 0.0,
+      "reason": "tree-page-does-not-cover-frustum-plus-halo",
+      "referenceY": 2170.05847167969,
+      "residentTerrainBounds": {
+        "maxX": 21252.8125,
+        "maxZ": 21252.8125,
+        "minX": 18705.3125,
+        "minZ": 18705.3125
+      },
+      "safePhase": 0.0,
+      "spatialBlend": "none; one phase for the whole viewport",
+      "transitionM": 45.7514563106796,
+      "treePage": {
+        "bounds": {
+          "maxX": 22000.0,
+          "maxZ": 22000.0,
+          "minX": 18000.0,
+          "minZ": 18000.0
+        },
+        "complete": true,
+        "count": 67221.0,
+        "includeOverhang": true,
+        "limitedBy": "none",
+        "requestedBounds": {
+          "maxX": 22000.0,
+          "maxZ": 22000.0,
+          "minX": 18000.0,
+          "minZ": 18000.0
+        },
+        "retention": 1.0
+      }
+    },
+    "captureTickMs": 34154,
+    "error": 0,
+    "event": "capture",
+    "metresPerPixel": 0.625,
+    "path": "D:/workspace/self/_worktrees/magna-urbis-surface-v9-viewer/viewer-local/captures/v9-oblique-final/640m.png",
+    "populationInstances": {
+      "families": {
+        "boulder": {
+          "alphaPositiveInFrustum": 193,
+          "nodeVisible": 201,
+          "submitted": 201
+        },
+        "debris": {
+          "alphaPositiveInFrustum": 13,
+          "nodeVisible": 23,
+          "submitted": 23
+        },
+        "grass": {
+          "alphaPositiveInFrustum": 0,
+          "nodeVisible": 0,
+          "submitted": 0
+        },
+        "shrub": {
+          "alphaPositiveInFrustum": 153,
+          "nodeVisible": 156,
+          "submitted": 156
+        },
+        "tree": {
+          "alphaPositiveInFrustum": 0,
+          "nodeVisible": 10000,
+          "submitted": 10000
+        },
+        "trunk": {
+          "alphaPositiveInFrustum": 0,
+          "nodeVisible": 10000,
+          "submitted": 10000
+        }
+      },
+      "scope": "submitted buffers, actual node/camera visibility, shader ALPHA>0 and centres in frustum; no GPU occlusion claim",
+      "treeOpticalShadowEnabled": true,
+      "treeResidualEnabled": true
+    },
+    "renderedLiveSerial": -1,
+    "renderedSnapshot": {
+      "appliedTickMs": 33469,
+      "deliveredGrid": {
+        "height": 64,
+        "spacingM": 0.625,
+        "width": 64
+      },
+      "displaySamples": 256,
+      "fineContributionWeight": 1.0,
+      "focusAtApply": {
+        "x": 20000.0,
+        "y": 20000.0
+      },
+      "focusInsideSource": true,
+      "heightImageSize": 1024,
+      "liveSerial": -1,
+      "loadedHeightRangeWorld": [
+        1699.33988548662,
+        2189.96573997881
+      ],
+      "request": {
+        "extent": 40.0,
+        "resolution": 64.0,
+        "x": 19980.0,
+        "y": 19980.0
+      },
+      "sceneEpoch": "bench-scene-1",
+      "seamWeight": 1.0,
+      "source": {
+        "id": "infinite:2814899424497554030:a12b8cf77f3a7265d3c18a02dab36f94",
+        "nativeSpacingM": 0.46875,
+        "provenance": "Infinite retained refinement; seed=2814899424497554030; decoderUsed=true; registrationNativeMpp=30; fieldFingerprint=rf1-019b8aa8fc4b7a3a38e7adce2163d4ea; parent=cell-centred cubic B-spline control reconstruction (not interpolation through control centres); parentComparison={\"samples\":4096,\"parentCorrelation\":0.998382058896566,\"transposedParentCorrelation\":-0.9929963571086565,\"maxAbsDeltaM\":0.5784265781248905,\"rmsDeltaM\":0.23423732073587164,\"meanDeltaM\":-0.14524888992310991,\"controlSmoothingMaxAbsM\":0.5617818190412436,\"refinementResidualMaxAbsM\":0.4947925234214381}",
+        "sourceLOD": -6.0,
+        "sourceLODKnown": true,
+        "version": "decoder-v12-nyquist-notch:magna-retained-v1:e2bf5473c0ff:f21afa261ed7"
+      },
+      "sourceActualAtFocus": {
+        "id": "infinite:2814899424497554030:a12b8cf77f3a7265d3c18a02dab36f94",
+        "nativeSpacingM": 0.46875,
+        "provenance": "Infinite retained refinement; seed=2814899424497554030; decoderUsed=true; registrationNativeMpp=30; fieldFingerprint=rf1-019b8aa8fc4b7a3a38e7adce2163d4ea; parent=cell-centred cubic B-spline control reconstruction (not interpolation through control centres); parentComparison={\"samples\":4096,\"parentCorrelation\":0.998382058896566,\"transposedParentCorrelation\":-0.9929963571086565,\"maxAbsDeltaM\":0.5784265781248905,\"rmsDeltaM\":0.23423732073587164,\"meanDeltaM\":-0.14524888992310991,\"controlSmoothingMaxAbsM\":0.5617818190412436,\"refinementResidualMaxAbsM\":0.4947925234214381}",
+        "sourceLOD": -6.0,
+        "sourceLODKnown": true,
+        "version": "decoder-v12-nyquist-notch:magna-retained-v1:e2bf5473c0ff:f21afa261ed7"
+      },
+      "sourceBounds": {
+        "maxX": 20019.6875,
+        "maxZ": 20019.6875,
+        "minX": 19980.3125,
+        "minZ": 19980.3125
+      },
+      "sourceContributionsAtFocus": [
+        {
+          "activeChild": false,
+          "source": {
+            "id": "infinite:2814899424497554030:a12b8cf77f3a7265d3c18a02dab36f94",
+            "nativeSpacingM": 78.125,
+            "provenance": "Exact retained registration controls; fieldFingerprint=rf1-019b8aa8fc4b7a3a38e7adce2163d4ea; reconstruction=cubic-bspline-controls; sourceLOD unknown",
+            "sourceLOD": 0.0,
+            "sourceLODKnown": false,
+            "version": "decoder-v12-nyquist-notch:magna-retained-v1:e2bf5473c0ff:f21afa261ed7"
+          },
+          "weight": 0.0
+        },
+        {
+          "activeChild": true,
+          "source": {
+            "id": "infinite:2814899424497554030:a12b8cf77f3a7265d3c18a02dab36f94",
+            "nativeSpacingM": 0.46875,
+            "provenance": "Infinite retained refinement; seed=2814899424497554030; decoderUsed=true; registrationNativeMpp=30; fieldFingerprint=rf1-019b8aa8fc4b7a3a38e7adce2163d4ea; parent=cell-centred cubic B-spline control reconstruction (not interpolation through control centres); parentComparison={\"samples\":4096,\"parentCorrelation\":0.998382058896566,\"transposedParentCorrelation\":-0.9929963571086565,\"maxAbsDeltaM\":0.5784265781248905,\"rmsDeltaM\":0.23423732073587164,\"meanDeltaM\":-0.14524888992310991,\"controlSmoothingMaxAbsM\":0.5617818190412436,\"refinementResidualMaxAbsM\":0.4947925234214381}",
+            "sourceLOD": -6.0,
+            "sourceLODKnown": true,
+            "version": "decoder-v12-nyquist-notch:magna-retained-v1:e2bf5473c0ff:f21afa261ed7"
+          },
+          "weight": 1.0
+        }
+      ],
+      "sourceEpoch": "bench-source-1",
+      "tileSource": {
+        "id": "infinite:2814899424497554030:a12b8cf77f3a7265d3c18a02dab36f94",
+        "nativeSpacingM": 0.46875,
+        "provenance": "Infinite retained refinement; seed=2814899424497554030; decoderUsed=true; registrationNativeMpp=30; fieldFingerprint=rf1-019b8aa8fc4b7a3a38e7adce2163d4ea; parent=cell-centred cubic B-spline control reconstruction (not interpolation through control centres); parentComparison={\"samples\":4096,\"parentCorrelation\":0.998382058896566,\"transposedParentCorrelation\":-0.9929963571086565,\"maxAbsDeltaM\":0.5784265781248905,\"rmsDeltaM\":0.23423732073587164,\"meanDeltaM\":-0.14524888992310991,\"controlSmoothingMaxAbsM\":0.5617818190412436,\"refinementResidualMaxAbsM\":0.4947925234214381}",
+        "sourceLOD": -6.0,
+        "sourceLODKnown": true,
+        "version": "decoder-v12-nyquist-notch:magna-retained-v1:e2bf5473c0ff:f21afa261ed7"
+      },
+      "worldId": "8d07d5dcd69b258208c2040cd4a37720",
+      "worldRevision": 0
+    },
+    "renderedSource": {
+      "id": "infinite:2814899424497554030:a12b8cf77f3a7265d3c18a02dab36f94",
+      "nativeSpacingM": 0.46875,
+      "provenance": "Infinite retained refinement; seed=2814899424497554030; decoderUsed=true; registrationNativeMpp=30; fieldFingerprint=rf1-019b8aa8fc4b7a3a38e7adce2163d4ea; parent=cell-centred cubic B-spline control reconstruction (not interpolation through control centres); parentComparison={\"samples\":4096,\"parentCorrelation\":0.998382058896566,\"transposedParentCorrelation\":-0.9929963571086565,\"maxAbsDeltaM\":0.5784265781248905,\"rmsDeltaM\":0.23423732073587164,\"meanDeltaM\":-0.14524888992310991,\"controlSmoothingMaxAbsM\":0.5617818190412436,\"refinementResidualMaxAbsM\":0.4947925234214381}",
+      "sourceLOD": -6.0,
+      "sourceLODKnown": true,
+      "version": "decoder-v12-nyquist-notch:magna-retained-v1:e2bf5473c0ff:f21afa261ed7"
+    },
+    "renderedWorldId": "8d07d5dcd69b258208c2040cd4a37720",
+    "surfaceLayers": {
+      "canonicalFieldsVersion": "70533423386cea0d08667aa3e2d535af",
+      "canonicalVersion": "70533423386cea0d08667aa3e2d535af",
+      "fieldsVersion": "8f7a9dd26509910cfc4d87d231471c6e",
+      "groundAvailability": "explicit",
+      "legacyFallback": false,
+      "lowCoverAvailability": "explicit",
+      "projectedFieldsVersion": "8f7a9dd26509910cfc4d87d231471c6e",
+      "renderMode": "three-physical-layers",
+      "textureFieldsVersion": "70533423386cea0d08667aa3e2d535af",
+      "textureGrid": {
+        "height": 512.0,
+        "originX": 39.0625,
+        "originZ": 39.0625,
+        "spacingM": 78.125,
+        "width": 512.0
+      },
+      "textureSource": "canonical",
+      "version": "surface-layers-1",
+      "visibility": {
+        "ground": true,
+        "lowCover": true,
+        "trees": true
+      },
+      "worldId": "8d07d5dcd69b258208c2040cd4a37720"
+    },
+    "urban": {
+      "budgetLimited": false,
+      "buildingIds": [],
+      "materialBatches": 0,
+      "nativeBuildings": 0,
+      "proxyBuildings": 0,
+      "scope": "prepared submitted mesh batches; not a GPU visibility or occlusion count",
+      "worldId": "8d07d5dcd69b258208c2040cd4a37720"
+    },
+    "viewSatisfaction": {
+      "covered": false,
+      "preview": false,
+      "reason": "final 512 source request required",
+      "serial": 0
+    },
+    "viewSatisfiedSerial": -1,
+    "water": {
+      "authority": "magna-urbis-fixed-hydrology",
+      "bedReconstruction": "bilinear-samples",
+      "bedSpacingM": 0.625,
+      "budgetLimited": false,
+      "buildMs": 368.486,
+      "cacheUsed": true,
+      "classSpacingM": 78.125,
+      "displayGroups": 2,
+      "fixedVectorCartographicPolicy": "project retained contours independently of terrain depth; keep measured source levels unchanged",
+      "fixedVectorDisplayAvailable": true,
+      "fixedVectorPhysicalPolicy": "measured source levels with display-bed occlusion; conflicts are not repaired or rerouted",
+      "levelInterpolation": "finite original wet source levels only; no channel generation or level editing",
+      "maximumBedAboveWaterM": 0.0,
+      "maximumNativeFloatAreaErrorM2": 0.00242857103603455,
+      "maximumNativeFloatAreaToleranceM2": 0.263053583226113,
+      "metresPerTexel": 0.879764556884766,
+      "minimumRiverStrokeApplied": false,
+      "missingLevelTriangles": 0,
+      "paddingSymbolMetres": 0.87890625,
+      "physicalWaterSurfaceClaimed": false,
+      "projectionCullMask": 1,
+      "quads": 66,
+      "renderAlgorithm": "retained even-odd boundary-vertex scan bands; native ear clipping only for one contour with explicit float-area validation",
+      "representation": "Magna retained vector lakes/rivers and original sea-cell union",
+      "requiresCoverageMask": false,
+      "resolution": 2048,
+      "resolvedBedConflictScope": "physical raster only; vector visibility uses bounded vectorBedDiagnostic samples",
+      "resolvedBedConflicts": 0,
+      "screenMetresPerPixel": 1.40625,
+      "screenScalePolicy": "oblique-ground-scale-approximation",
+      "sourceAuthority": "magna-urbis-fixed-hydrology",
+      "sourceCoverageImageSha256": "2f757e2e9a0ca6f2dcf8cc34c3e45f7bbfe00cd2d54fa15de776553b670cda80",
+      "sourceDuplicateGroups": 1,
+      "sourceEvenOddSweepGroups": 0,
+      "sourceGeometrySha256": "55c9611c1e44f836eec0aca49ed899f37aefe4484d503f1026f9c443bb1ee157",
+      "sourceGeometryUnchanged": true,
+      "sourceGroups": 703,
+      "sourceLevelBoundaryPolicy": "Only queries of float64-clipped vertices displaced outside source support by <= half an FP32 relative-coordinate ULP are clamped; source levels and mesh vertices stay unchanged",
+      "sourceLevelBoundaryQueriesResolved": 0,
+      "sourceLevelMaximumBoundaryQueryRoundoffM": 0.0,
+      "sourceLevelsUnchanged": true,
+      "sourceSimpleRingNativeGroups": 2,
+      "sourceStride": 1,
+      "sourceTopologyPolicy": "source contours unchanged; no self-intersection repair or survey-level topology equivalence claimed",
+      "sourceVectorAreaM2": 3086.09939348698,
+      "sourceVectorAreaScope": "input geometry clip window; projection camera may be narrower",
+      "sourceVectorClipBounds": {
+        "maxX": 21504.0,
+        "maxZ": 21504.0,
+        "minX": 18944.0,
+        "minZ": 18944.0
+      },
+      "sourceVectorCoverageComplete": true,
+      "sourceVectorMissingAreaM2": 0.0,
+      "sourceVectorPoints": 157220,
+      "sourceVectorRequestedAreaM2": 3086.09714400111,
+      "sourceVectorScanWork": 266,
+      "sourceVertices": 393,
+      "sourceWetCells": 0,
+      "subpixelPolicy": "declared all-water coverage symbol; original source contours, levels and physical area unchanged",
+      "symbolColorPolicy": "nearest contributing source coverage colour; no new hydrology classes",
+      "symbolCoverageEstimatedImageBytes": 55924054,
+      "symbolCoverageImageBudgetBytes": 268435456,
+      "symbolCoverageImageSha256": "727eb3a50fa275bc697baaefe800ead19a2568cde78448c798614d06c1a3823c",
+      "symbolCoverageSeparateFromSourceArea": true,
+      "symbolKernelRadiusTexels": 0.999024390243902,
+      "symbolRasterLimit": "A segment absent from the initial AA source raster cannot be reconstructed by dilation",
+      "symbolWidthMeaning": "AA disk diameter around nonzero coverage samples; not a measured or edited physical water width",
+      "symbolWidthPx": 1.25,
+      "symbolicPhysicalWidthClaim": false,
+      "vectorBedDiagnosticBudget": 4096,
+      "vectorBedDiagnosticConflicts": 393,
+      "vectorBedDiagnosticMaximumDeltaM": 20.6852918840998,
+      "vectorBedDiagnosticMissing": 0,
+      "vectorBedDiagnosticSamples": 393,
+      "vectorBedDiagnosticToleranceM": 0.001,
+      "vertexBudget": 999996,
+      "waterPresentation": "source-map-terrain-projection",
+      "waterSymbolPolicy": "all-water-source-coverage-aa-disk",
+      "waterSymbolVersion": "source-water-symbol-1",
+      "worldId": "8d07d5dcd69b258208c2040cd4a37720"
+    },
+    "widthM": 640.0
+  }
+]

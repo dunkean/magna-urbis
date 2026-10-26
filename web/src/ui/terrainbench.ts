@@ -41,6 +41,8 @@ import type { ForestRaster } from '../../../rust/bridge/terrainMaterialRaster';
 import ForestWorker from './forestWorker?worker&inline';
 import type { ForestReply, ForestRequest } from './forestWorker';
 import { pinsFromString, pinsToString, viewFromString, viewToString } from './share';
+import { copySurfaceGeologyQuery } from '../surface/adapters/geology';
+import { assertSurfaceLiveFrame } from '../surface/adapters/frame';
 import { clampView, fitView, panBy, screenToWorld, worldToScreen, zoomAt, type View } from '../render/view';
 import { COAST_DIRECTIONS, ISLAND_MODES, type IslandMode, TERRAIN_SOURCES, NEURAL_RELIEFS, NEURAL_CLIMATES, NEURAL_EXTENT, DEFAULT_NEURAL_SERVER, DEFAULT_PYTHON_SERVER, neuralServerForSource, isNeuralSource, type TerrainSource, type NeuralClimate } from '../../../rust/bridge/terrain';
 import { captureDecorData, downloadBytes } from './decorCapture';
@@ -58,6 +60,8 @@ import { initialTerrainSource } from './terrainStartupState';
 import { terrainLoading } from './terrainStartup';
 import { mountIllustration, captureViewport } from '../../../illustration/web/index.mjs';
 import { illustrationContext } from './illustrationContext';
+import { installSurfaceLive } from './surfaceLive';
+import { createSurfaceBenchRevisionReader } from './surfaceBenchRevision';
 
 const el = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T;
 const profileDefaults = executionProfiles[executionRuntime.profile];
@@ -615,6 +619,7 @@ function forestRaster(region = terrain): ForestRaster | undefined {
 /** Keep the applied terrain recipe while recording its displayed style and forest controls. */
 function withForestQuery(d: Decor): Decor {
   const params = new URLSearchParams(d.meta.query);
+  if (query.has('surface_geology') || query.has('surface_geology_descriptor')) copySurfaceGeologyQuery(params, query);
   params.set('style', baseStyle);
   params.set('v2season',String(v2Season));
   params.set('forest', forest.enabled ? '1' : '0');
@@ -1051,6 +1056,7 @@ function status(message: string, error = false): void {
 }
 function shareQuery(): string {
   const params = new URLSearchParams({ brush_density: String(fantasyOptions.density), brush_size: String(fantasyOptions.size), brush_spacing: String(fantasyOptions.spacing), engine: 'rust', v: '4', seed: settings.seed, width: String(settings.width), motif: String(settings.motifSize), relief: settings.relief, erosion: String(settings.erosion), style: baseStyle, auto: input('auto').checked ? '1' : '0' });
+  copySurfaceGeologyQuery(params, query.has('surface_geology') || query.has('surface_geology_descriptor') ? query : retainedDecor?.meta.query ?? query);
   if (!gpu) params.set('render', 'svg');
   params.set('brush_landuse', fantasyOptions.followLanduse ? '1' : '0');
   for (const [key, value] of Object.entries(settings.hydrology ?? DEFAULT_HYDROLOGY)) params.set(`hydro_${key}`, typeof value === 'boolean' ? value ? '1' : '0' : String(value));
@@ -1962,7 +1968,7 @@ if (pipelineStage !== 'settlements') document.getElementById('cityInspector')?.r
 const transfer = document.createElement('details'); transfer.className = 'stage'; transfer.open = true; transfer.id = 'pipelineTransfer';
 transfer.innerHTML = `<summary>${pipelineStage === 'terrain' ? 'Terrain → settlements' : 'Ville → atelier Ville'}</summary><div class="stage-controls">
   ${pipelineStage === 'terrain' ? '<label>Étendue<select id="transferExtent"><option value="all">Tout le terrain</option><option value="crop">Portion carrée</option></select></label><div id="transferCrop" hidden><label>X m<input id="transferX" type="number" min="0" value="0"></label><label>Y m<input id="transferY" type="number" min="0" value="0"></label><label>Côté m<input id="transferWidth" type="number" min="1" value="1200"></label><button id="transferPick">Placer la portion sur la carte</button><small>Découpe alignée sur les cellules, sans rééchantillonnage.</small></div>' : '<small>Choisissez la ville dans « Quartiers et îlots ». Le plan affiché est transmis avec ses rues et ses îlots.</small>'}
-  <div class="settlement-actions"><button id="pipelineSave">Conserver cet export</button><button id="pipelineNext">${pipelineStage === 'terrain' ? 'Envoyer aux settlements' : 'Ouvrir la ville dans l’atelier'}</button><button id="pipelineDownload">Partager .decor</button></div><small id="pipelineStatus" role="status"></small></div>`;
+  <div class="settlement-actions"><button id="pipelineSave">Conserver cet export</button><button id="pipelineNext">${pipelineStage === 'terrain' ? 'Envoyer aux settlements' : 'Ouvrir la ville dans l’atelier'}</button><button id="pipelineDownload">Partager .decor</button><button id="pipelineSurface">Exporter la surface 3D</button></div><small id="pipelineStatus" role="status"></small></div>`;
 document.querySelector('.stages')!.append(transfer);
 createTerrainDecorLibrary({ before: transfer, onOpen: d => { const params = new URLSearchParams(d.meta.query); params.set('artifact', d.meta.id); params.set('stage', 'settlements'); openBench('settlements', params); } });
 const historyPanel = createHistoryPanel({ before: transfer, current: () => lastExport ?? retainedDecor,
@@ -2004,7 +2010,7 @@ function pipelineCapture(): Decor {
   }
   let d = retainedDecor ? withForestQuery(retainedDecor) : captureDecorData(terrain, settings, { settlements: [], warnings: [], requested: 0, usableKm2: 0, ms: 0 }, undefined, null, { query: shareQuery() });
   if (!retainedDecor) d = { ...d, meta: { ...d.meta, regeneration: { query: shareQuery(), crops: [] } } };
-  d = { ...d, meta: { ...d.meta, settlements: [], roads: null, roadConfig: null, pipeline: { stage: 'terrain', parent: retainedDecor?.meta.id } } };
+  d = { ...d, meta: { ...d.meta, settlements: [], roads: null, roadConfig: null, pipeline: { stage: 'terrain', parent: retainedDecor?.meta.id, crop:retainedDecor?.meta.pipeline?.crop } } };
   if (el<HTMLSelectElement>('transferExtent').value === 'crop') {
     d = cropTerrain(d, Number(input('transferX').value), Number(input('transferY').value), Number(input('transferWidth').value));
     const crop = d.meta.pipeline!.crop!;
@@ -2058,6 +2064,73 @@ async function exportPipeline(action: 'save' | 'next' | 'download'): Promise<voi
 el('pipelineSave').onclick = () => void exportPipeline('save');
 el('pipelineNext').onclick = () => void exportPipeline('next');
 el('pipelineDownload').onclick = () => void exportPipeline('download');
+let surfaceExportAbort: AbortController | undefined;
+window.addEventListener('pagehide', () => surfaceExportAbort?.abort(), { once: true });
+el('pipelineSurface').onclick = async () => {
+  if (surfaceExportAbort) { surfaceExportAbort.abort(); return; }
+  const button = el<HTMLButtonElement>('pipelineSurface'), label = button.textContent;
+  const controller = new AbortController(); surfaceExportAbort = controller; button.textContent = 'Annuler l’export surface';
+  try {
+    const { exportSurfaceInWorker } = await import('./surfaceExport');
+    const retained = pipelineCapture(), scene = pipelineStage === 'settlements' ? settlements.urban.buildingState.scene : undefined;
+    el('pipelineStatus').textContent = 'Compilation des surfaces et conservation des bâtiments…';
+    await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
+    const bytes = await exportSurfaceInWorker(retained, scene, controller.signal);
+    const blob = new Blob([bytes], { type: 'application/octet-stream' });
+    const url = URL.createObjectURL(blob), link = document.createElement('a');
+    link.href = url; link.download = `${retained.meta.id}.surfacebin`; link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+    el('pipelineStatus').textContent = 'Surface exportée pour le visualiseur local ; données de ville conservées.';
+  } catch (error) { el('pipelineStatus').textContent = error instanceof Error && error.name === 'AbortError' ? 'Export surface annulé.' : error instanceof Error ? error.message : String(error); }
+  finally { if (surfaceExportAbort === controller) surfaceExportAbort = undefined; button.textContent = label; button.disabled = false; }
+};
+
+if (import.meta.env.DEV) {
+  const revisionFor = createSurfaceBenchRevisionReader();
+  const liveRevision = () => revisionFor(pipelineStage === 'settlements' ? { ...capturePipelineState(), stage: pipelineStage, settings }
+    : { query: shareQuery(), workshop: '', draft: '', terrain, stage: pipelineStage, settings });
+  let appliedLiveRevision: ReturnType<typeof liveRevision> | undefined;
+  let liveHandler: Promise<ReturnType<typeof import('./surfaceLiveSession').createSurfaceLiveBinarySession>> | undefined;
+  const disconnect = installSurfaceLive(async (region, signal) => {
+    if (!terrain || overviewPending || generationError) throw new Error('Attendez un terrain conservé avant la connexion du visualiseur.');
+    if (el<HTMLSelectElement>('transferExtent').value === 'crop') throw new Error('Le mode live demande le monde source complet. La portion sélectionnée reste disponible pour un export surface hors ligne.');
+    const scene = pipelineStage === 'settlements' ? settlements.urban.buildingState.scene : undefined;
+    const revision = liveRevision();
+    if (!liveHandler || appliedLiveRevision?.sourceEpoch !== revision.sourceEpoch || appliedLiveRevision?.sceneEpoch !== revision.sceneEpoch) {
+      if (liveHandler) void liveHandler.then(handler => handler.dispose()).catch(() => {});
+      const retained = terrain, applied = settings;
+      // Export-crop controls do not change the world currently being viewed.
+      // Live requests use the full retained world, never that optional crop.
+      const decor = pipelineStage === 'settlements' ? settlements.captureData()
+        : retainedDecor ? withForestQuery(retainedDecor)
+        : captureDecorData(retained, applied, { settlements: [], warnings: [], requested: 0, usableKm2: 0, ms: 0 }, undefined, null, { query: shareQuery() });
+      assertSurfaceLiveFrame(decor);
+      if (decor.raster.width !== retained.width) throw new Error('Le contexte conservé ne correspond pas à la largeur du fournisseur de relief.');
+      if (pipelineStage === 'settlements' && decor.meta.pipeline?.urban?.buildingState?.cold && !scene) throw new Error('Chargez les bâtiments conservés avant leur rendu local.');
+      appliedLiveRevision = revision;
+      liveHandler = (async () => {
+        const [{ createInfiniteRefinementProvider }, { createSurfaceLiveBinarySession }, { magnaSurfacePresentation }] = await Promise.all([
+          import('../surface/adapters/infiniteRefinement'), import('./surfaceLiveSession'), import('../surface/presentation'),
+        ]);
+        const field = retained.field;
+        const provider = await createInfiniteRefinementProvider(
+          applied.source === 'neural-python' ? applied.neuralServer ?? DEFAULT_PYTHON_SERVER : DEFAULT_PYTHON_SERVER,
+          { width: retained.width, n: field?.n ?? retained.resolution, data: field?.data ?? retained.height },
+          { seed: retained.neural?.neuralSeed ?? String(seedHash(applied.seed) >>> 0), source: applied.source,
+            neuralToken: retained.neural?.neuralToken,
+            neuralWindow: isNeuralSource(applied.source) ? neuralWindow(NEURAL_EXTENT, retained.width, applied.neuralFit ?? 'crop', applied.neuralSlopes ?? true, applied.coastMask ?? 0) : undefined });
+        const registrationBinding = provider.bindCanonicalField({ width: decor.raster.width, n: decor.raster.n, data: decor.raster.height });
+        return createSurfaceLiveBinarySession(decor, scene, provider, () => {
+          const current = liveRevision();
+          return terrain === retained && settings === applied && current.sourceEpoch === revision.sourceEpoch
+            && current.sceneEpoch === revision.sceneEpoch && !overviewPending;
+        }, { ...revision, registrationBinding, presentation: () => magnaSurfacePresentation(shareQuery()) });
+      })().catch(error => { if (appliedLiveRevision === revision) liveHandler = undefined; throw error; });
+    }
+    return (await liveHandler)(region, signal);
+  }, message => { el('pipelineStatus').textContent = message; });
+  window.addEventListener('pagehide', () => { disconnect(); if (liveHandler) void liveHandler.then(handler => handler.dispose()).catch(() => {}); }, { once: true });
+}
 updateView();
 terrainLoading('ready');
 if (query.get('artifact')) void readHistory(query.get('artifact')!).then(d => {

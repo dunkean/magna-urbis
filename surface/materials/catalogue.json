@@ -1,0 +1,189 @@
+{
+  "schemaVersion": 1,
+  "name": "Magna Urbis natural surface library (15 source materials)",
+  "license": "CC0-1.0",
+  "licenseUrl": "https://polyhaven.com/license",
+  "scalePolicy": "physicalExtentMetres and heightAmplitudeMetres are authored rendering parameters, not claims about capture dimensions. Original provider dimensions are retained in the resolved manifest.",
+  "materials": [
+    {
+      "id": "rock",
+      "assetId": "rocky_terrain_02",
+      "physicalExtentMetres": 8,
+      "heightAmplitudeMetres": 0.08,
+      "families": [
+        "bedrock",
+        "gravity",
+        "rocky-coast",
+        "volcanic",
+        "karst"
+      ],
+      "recipeIds": [
+        "fractured-bedrock",
+        "coastal-rock"
+      ]
+    },
+    {
+      "id": "soil",
+      "assetId": "brown_mud",
+      "physicalExtentMetres": 2,
+      "heightAmplitudeMetres": 0.018,
+      "families": [
+        "mineral-plains",
+        "arid-erosion",
+        "wetland"
+      ],
+      "recipeIds": [
+        "mineral-soil",
+        "compacted-road",
+        "built-foundation"
+      ]
+    },
+    {
+      "id": "litter",
+      "assetId": "forest_ground_04",
+      "physicalExtentMetres": 3,
+      "heightAmplitudeMetres": 0.025,
+      "families": [
+        "vegetation"
+      ],
+      "recipeIds": [
+        "forest-litter"
+      ]
+    },
+    {
+      "id": "grass",
+      "assetId": "aerial_grass_rock",
+      "physicalExtentMetres": 12,
+      "heightAmplitudeMetres": 0.025,
+      "families": [
+        "vegetation"
+      ],
+      "recipeIds": [
+        "vegetation-litter"
+      ]
+    },
+    {
+      "id": "sand",
+      "assetId": "gravelly_sand",
+      "physicalExtentMetres": 3,
+      "heightAmplitudeMetres": 0.012,
+      "families": [
+        "aeolian",
+        "sedimentary-coast",
+        "marine"
+      ],
+      "recipeIds": []
+    },
+    {
+      "id": "gravel",
+      "assetId": "gravel_stones",
+      "physicalExtentMetres": 3,
+      "heightAmplitudeMetres": 0.045,
+      "families": [
+        "alluvial",
+        "gravity"
+      ],
+      "recipeIds": [
+        "alluvial-bars",
+        "angular-talus"
+      ]
+    },
+    {
+      "id": "dry-cracked-soil",
+      "assetId": "dry_mud_field_001",
+      "physicalExtentMetres": 3,
+      "heightAmplitudeMetres": 0.025,
+      "families": [],
+      "recipeIds": [
+        "arid-reg"
+      ],
+      "substitutionPolicy": "Appearance exemplar only; lithology and process assignments come from SurfaceWorld, never inferred from the photograph."
+    },
+    {
+      "id": "cultivated-soil",
+      "assetId": "farm_soil",
+      "physicalExtentMetres": 3,
+      "heightAmplitudeMetres": 0.045,
+      "families": [],
+      "recipeIds": [
+        "cultivated-soil"
+      ],
+      "substitutionPolicy": "Appearance exemplar only; lithology and process assignments come from SurfaceWorld, never inferred from the photograph."
+    },
+    {
+      "id": "dark-rock",
+      "assetId": "dark_rock",
+      "physicalExtentMetres": 4,
+      "heightAmplitudeMetres": 0.06,
+      "families": [],
+      "recipeIds": [
+        "volcanic-crust"
+      ],
+      "substitutionPolicy": "Appearance exemplar only; lithology and process assignments come from SurfaceWorld, never inferred from the photograph."
+    },
+    {
+      "id": "weathered-cliff",
+      "assetId": "cliff_side",
+      "physicalExtentMetres": 8,
+      "heightAmplitudeMetres": 0.1,
+      "families": [],
+      "recipeIds": [
+        "carbonate-karst"
+      ],
+      "substitutionPolicy": "Appearance exemplar only; lithology and process assignments come from SurfaceWorld, never inferred from the photograph."
+    },
+    {
+      "id": "wet-beach",
+      "assetId": "coast_sand_02",
+      "physicalExtentMetres": 6,
+      "heightAmplitudeMetres": 0.018,
+      "families": [],
+      "recipeIds": [
+        "coastal-sediment"
+      ],
+      "substitutionPolicy": "Appearance exemplar only; lithology and process assignments come from SurfaceWorld, never inferred from the photograph."
+    },
+    {
+      "id": "clean-sand",
+      "assetId": "sand_02",
+      "physicalExtentMetres": 2,
+      "heightAmplitudeMetres": 0.014,
+      "families": [],
+      "recipeIds": [
+        "wind-ripple-sand"
+      ],
+      "substitutionPolicy": "Appearance exemplar only; lithology and process assignments come from SurfaceWorld, never inferred from the photograph."
+    },
+    {
+      "id": "snow",
+      "assetId": "snow_02",
+      "physicalExtentMetres": 4,
+      "heightAmplitudeMetres": 0.035,
+      "families": [],
+      "recipeIds": [
+        "snow-ice"
+      ],
+      "substitutionPolicy": "Appearance exemplar only; lithology and process assignments come from SurfaceWorld, never inferred from the photograph."
+    },
+    {
+      "id": "leaf-litter",
+      "assetId": "forest_leaves_03",
+      "physicalExtentMetres": 2,
+      "heightAmplitudeMetres": 0.025,
+      "families": [],
+      "recipeIds": [],
+      "substitutionPolicy": "Appearance exemplar only; lithology and process assignments come from SurfaceWorld, never inferred from the photograph."
+    },
+    {
+      "id": "wet-organic-soil",
+      "assetId": "brown_mud_03",
+      "physicalExtentMetres": 2,
+      "heightAmplitudeMetres": 0.02,
+      "families": [],
+      "recipeIds": [
+        "wetland-organic"
+      ],
+      "substitutionPolicy": "Appearance exemplar only; lithology and process assignments come from SurfaceWorld, never inferred from the photograph."
+    }
+  ]
+}

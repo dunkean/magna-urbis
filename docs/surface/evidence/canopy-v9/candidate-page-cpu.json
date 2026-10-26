@@ -1,0 +1,176 @@
+{
+  "format": "surface-candidate-pages-cpu-benchmark",
+  "version": 1,
+  "status": "passed",
+  "scope": "CPU retained/replay, not fresh generation, refinement or GPU evidence. Eligibility from exact canonical fields; Y from saved fine source inside its support, then saved actual parent/canonical heights.",
+  "input": {
+    "sourcePath": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\native-e2e-40km-v8\\fresh-source.surfacebin",
+    "sourceSha256": "c10d3c5ce4c05c82b1d9d3cd1aad647bb3a647a04f1e6dce4391066fcd4bf695",
+    "refinementPath": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\native-e2e-40km-v8\\live-refinement.surfacebin",
+    "refinementSha256": "2cba6f23dc13f2714187c539244a9a80f28a04a3b8d8e5d2005df703d72eff57"
+  },
+  "output": {
+    "file": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-v9-model\\web\\out\\surface\\v9-page4000-r2\\retained-candidate-pages.surfacebin",
+    "bytes": 75113473,
+    "sha256": "efe7581ea017d9407e7e8312144b0b81d93776a96f7105ab410fa2663b5940f6"
+  },
+  "queryMs": 2447.4489,
+  "rssBefore": 312524800,
+  "rssAfter": 648671232,
+  "view": {
+    "minX": 18000,
+    "minZ": 18000,
+    "maxX": 22000,
+    "maxZ": 22000
+  },
+  "candidatePages": {
+    "version": "surface-candidate-pages-1",
+    "tree": {
+      "bounds": {
+        "minX": 18000,
+        "minZ": 18000,
+        "maxX": 22000,
+        "maxZ": 22000
+      },
+      "requestedBounds": {
+        "minX": 18000,
+        "minZ": 18000,
+        "maxX": 22000,
+        "maxZ": 22000
+      },
+      "count": 67221,
+      "complete": true,
+      "includeOverhang": true,
+      "retention": 1,
+      "limitedBy": "none"
+    },
+    "support": {
+      "policy": "fine-inside-centres-otherwise-parent-or-canonical",
+      "canonicalSource": {
+        "id": "infinite:2814899424497554030:a12b8cf77f3a7265d3c18a02dab36f94",
+        "version": "decoder-v12-nyquist-notch:magna-retained-v1:e2bf5473c0ff:f21afa261ed7",
+        "nativeSpacingM": 39.0625,
+        "reconstruction": "bilinear-samples"
+      },
+      "canonicalContextId": "2970937aae85cc1474c8fda223fb066e",
+      "fineSource": {
+        "id": "infinite:2814899424497554030:a12b8cf77f3a7265d3c18a02dab36f94",
+        "version": "decoder-v12-nyquist-notch:magna-retained-v1:e2bf5473c0ff:f21afa261ed7",
+        "nativeSpacingM": 0.46875,
+        "reconstruction": "bilinear-samples"
+      },
+      "fineBounds": {
+        "minX": 19980.3125,
+        "minZ": 19980.3125,
+        "maxX": 20019.6875,
+        "maxZ": 20019.6875
+      },
+      "parentSource": {
+        "id": "infinite:2814899424497554030:a12b8cf77f3a7265d3c18a02dab36f94",
+        "version": "decoder-v12-nyquist-notch:magna-retained-v1:e2bf5473c0ff:f21afa261ed7",
+        "nativeSpacingM": 78.125,
+        "reconstruction": "cubic-bspline-controls"
+      },
+      "parentBounds": {
+        "minX": 39.0625,
+        "minZ": 39.0625,
+        "maxX": 39960.9375,
+        "maxZ": 39960.9375
+      },
+      "fineSampleCount": 58,
+      "parentSampleCount": 75202,
+      "canonicalSampleCount": 0
+    },
+    "shrub": {
+      "bounds": {
+        "minX": 19760,
+        "minZ": 19760,
+        "maxX": 20240,
+        "maxZ": 20240
+      },
+      "requestedBounds": {
+        "minX": 19760,
+        "minZ": 19760,
+        "maxX": 20240,
+        "maxZ": 20240
+      },
+      "count": 186,
+      "complete": true,
+      "includeOverhang": true,
+      "retention": 1,
+      "limitedBy": "none"
+    },
+    "boulder": {
+      "bounds": {
+        "minX": 19760,
+        "minZ": 19760,
+        "maxX": 20240,
+        "maxZ": 20240
+      },
+      "requestedBounds": {
+        "minX": 19760,
+        "minZ": 19760,
+        "maxX": 20240,
+        "maxZ": 20240
+      },
+      "count": 426,
+      "complete": true,
+      "includeOverhang": true,
+      "retention": 1,
+      "limitedBy": "none"
+    },
+    "grass": {
+      "bounds": {
+        "minX": 19760,
+        "minZ": 19760,
+        "maxX": 20240,
+        "maxZ": 20240
+      },
+      "requestedBounds": {
+        "minX": 19760,
+        "minZ": 19760,
+        "maxX": 20240,
+        "maxZ": 20240
+      },
+      "count": 6572,
+      "complete": true,
+      "includeOverhang": true,
+      "retention": 1,
+      "limitedBy": "none"
+    },
+    "debris": {
+      "bounds": {
+        "minX": 19760,
+        "minZ": 19760,
+        "maxX": 20240,
+        "maxZ": 20240
+      },
+      "requestedBounds": {
+        "minX": 19760,
+        "minZ": 19760,
+        "maxX": 20240,
+        "maxZ": 20240
+      },
+      "count": 855,
+      "complete": true,
+      "includeOverhang": true,
+      "retention": 1,
+      "limitedBy": "none"
+    }
+  },
+  "invariants": {
+    "allOtherPacketBytesIdentical": true,
+    "immutablePacketSha256": "55fd9d3b52555b8b8463b8e4c85c49bc882806598e9ad269acbadd906d3c82f6",
+    "canonicalFieldsExact": true,
+    "worldId": "8d07d5dcd69b258208c2040cd4a37720",
+    "sharedStableCandidates": 58,
+    "sharedIdentitiesExact": true,
+    "sharedSupportYChanges": 0,
+    "oldCandidateCount": 58,
+    "newCandidateCount": 75260
+  },
+  "limits": [
+    "Complete inventory applies only to each declared family bounds; no full-world coverage claim.",
+    "Raw native RSS includes binary input/context/archive copies; it is not the page algorithm workspace alone."
+  ]
+}

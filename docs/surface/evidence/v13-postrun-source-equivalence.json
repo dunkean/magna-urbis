@@ -1,0 +1,16 @@
+{
+  "format": "v13-postrun-source-equivalence",
+  "campaignHead": "6ef8d3c6f2b88f884a2ad199c7b305dfaf3649c1",
+  "currentHead": "dd886c8e47cbe5d366adfd018182bb6a1709a55a",
+  "currentStatus": "",
+  "campaignFiles": 624,
+  "currentFiles": 626,
+  "unchangedCampaignFiles": 624,
+  "changed": [],
+  "added": [
+    "viewer-local/diagnostics/tree_asset_gpu_probe.gd",
+    "web/scripts/surface_tree_gpu.mjs"
+  ],
+  "fullSnapshotEqual": false,
+  "scope": "All campaign runtime files remain byte-identical. Added files are a standalone GPU diagnostic and its reproduction runner, not executed by the campaign; later docs/proof tools do not requalify future production changes."
+}

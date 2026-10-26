@@ -2,9 +2,16 @@
 
 Document de conception et backlog — 23 octobre 2026.
 
+Ce document décrit la conception initiale. L'état du code, les preuves réellement
+exécutées et les écarts encore ouverts sont tenus dans
+[SurfaceWorld — implémentation](surface/IMPLEMENTATION.md). La séparation
+**sol, couvert bas, arbres** est précisée par le
+[contrat de couches](SURFACE_RENDER_LAYERS.md) : un composite visuel historique
+ne remplace pas la matière du sol sous les herbes ou les couronnes.
+
 **Proposition : construire un monde de surfaces explicite, puis le rendre avec une combinaison de matériaux PBR existants, de motifs procéduraux et d'objets instanciés.** Le principal travail est de décider ce qui existe à chaque endroit et comment cette description traverse les échelles. Constituer une nouvelle bibliothèque de textures n'est pas le chantier central.
 
-Le premier produit visé est un visualiseur local de Magna Urbis, indépendant de son interface actuelle, pour un territoire d'environ **40 × 40 km**, observable du dessus et en perspective jusqu'à **1–5 cm par pixel**, avec une extension expérimentale vers **5 mm/px**. Une intégration web et un transfert vers Neural Earth viennent après la validation de cette tranche complète.
+La première tranche vise les **cartes et plans de JDR en 2D et 3D** produits par Magna Urbis : styles choisis, projection orthographique, vues en perspective et exports utilisables. Elle est éprouvée dans une application locale séparée sur un territoire d'environ **40 × 40 km**, observable jusqu'à **1–5 cm par pixel**, avec une extension expérimentale vers **5 mm/px**. Cette séparation facilite la qualification du moteur ; elle ne fixe pas son rôle final. Une intégration web et un transfert vers Neural Earth viennent après la validation de cette tranche complète.
 
 **Infinite Generation reste la référence pour produire les heightfields et leur détail à la demande.** Les 40 × 40 km définissent la fenêtre initiale de validation du rendu, pas une limite du générateur ni l'obligation de figer le monde dans une heightmap. Godot et Terrain3D sont d'abord évalués comme consommateurs de ce relief. Une source de hauteur complémentaire ou alternative reste possible si elle apporte un gain démontré en préservant les capacités recherchées de génération, de continuité et de raffinement multi-échelle.
 
@@ -24,6 +31,10 @@ Les décisions de conception proposées sont les suivantes :
 6. **Finir une tranche verticale avant d'élargir le catalogue.** Un paysage rocheux avec éboulis, rivière, prairie et forêt, puis une côte et un secteur habité. Les centaines de variantes du catalogue sont une cible de couverture progressive.
 
 Le choix du fournisseur de relief et celui du renderer restent indépendants : adopter Godot n'impose pas de remplacer Infinite Generation, et tester un autre générateur n'impose pas de changer le renderer.
+
+**Magna Urbis reste un générateur de villes et un outil de cartographie.** La finalité est une carte et une ville dont le style est choisi, avec une représentation de surface plus riche ; le visualiseur n'en fait pas une application de jeu. Les palettes, l'encre, la hiérarchie des routes, les silhouettes, les matériaux natifs, les étiquettes et la composition finale appartiennent au produit. Un rendu physique aérien est une présentation parmi d'autres. Les styles cartographiques existants restent des sorties de référence, évaluées au même titre que la vue proche du sol.
+
+Godot/Terrain3D est un **candidat au moteur principal de rendu**, évalué sur ces usages de cartographie autant que sur la vue aérienne. Son adoption et son périmètre seront décidés d'après les résultats : qualité des styles et plans, orthographique, exports, intégration de la ville, navigation et coût de maintenance. Le modèle canonique, les recettes, les choix de présentation et les formats d'échange restent indépendants du moteur. L'implémentation locale actuelle est un prototype de qualification ; les sorties existantes restent disponibles pendant cette évaluation. Toute extension vers le Web ou Neural Earth consomme les mêmes descriptions. Le format de sauvegarde et le fournisseur Infinite Generation restent des décisions séparées de ce choix de renderer.
 
 La première livraison doit montrer une différence de nature du terrain dès la vue régionale, puis révéler les structures correspondantes au zoom. Un magnifique carré de gravier isolé ne valide pas ce produit.
 
@@ -228,7 +239,7 @@ Deux entrées doivent être possibles sans deux architectures :
 
 **Extrait d'un monde Neural Earth/Orogen.** Importer emprise, repère, climat et contexte régional depuis les champs physiques, puis recalculer les dérivés sur le DEM local de Magna Urbis. Préserver les conditions amont et la référence d'altitude ; éviter une double correction de température avec l'altitude. En particulier, les champs normalisés d'Orogen doivent être convertis en unités physiques par l'adaptateur, pas consommés comme des °C ou mm.
 
-Orogen peut fournir des indices tectoniques et une origine régionale, mais **plaques et uplift ne sont pas une carte de lithologie**. L'adaptateur doit signaler ce qui est fourni, inféré et synthétisé. L'[intégration Orogen existante](../../infinite_map/native/orogen/PROVENANCE.md) conserve déjà une provenance et des adaptations locales ; leur [maintenance](../../infinite_map/docs/orogen-maintenance.md) exclut de traiter le dernier upstream comme un remplacement direct.
+Orogen peut fournir des indices tectoniques et une origine régionale, mais **plaques et uplift ne sont pas une carte de lithologie**. L'adaptateur doit signaler ce qui est fourni, inféré et synthétisé. L'[intégration Orogen existante](D:/workspace/self/infinite_map/native/orogen/PROVENANCE.md) conserve déjà une provenance et des adaptations locales ; leur [maintenance](D:/workspace/self/infinite_map/docs/orogen-maintenance.md) exclut de traiter le dernier upstream comme un remplacement direct.
 
 La priorité est d'extraire des modules utiles et un format d'échange, pas d'ajouter Flask/CUDA/Orogen comme dépendances obligatoires au visualiseur. Les calculs lourds peuvent rester dans un outil de préparation local. Les données exportées permettent ensuite une navigation sans serveur ni modèle neuronal actif.
 
@@ -468,7 +479,7 @@ Les tailles **S/M/L** indiquent un ordre de difficulté relatif ; ce document ne
 | B03 | P0 / M | éprouver Godot/Terrain3D sur 40 km, mises à jour du générateur, shader, précision et navigation proche ; qualifier séparément toute source alternative | B02 | choix moteur écrit, vrai raffinement source conservé, vidéo 40 km → 1 cm/px ; pas de dérive de phase aux bords |
 | B04 | P0 / M | intégrer un vrai matériau PBR stochastique et une population visible limitée | B03 | même scène avec sol, eau, ombres et instances ; temps/mémoire instrumentés |
 
-**Décision de sortie :** conserver Godot/Terrain3D seulement si son alimentation par Infinite Generation, ses mises à jour, son adressage et le coût du shader sont maîtrisés. Sinon, porter cette même tranche dans un viewer WebGPU dédié avant de poursuivre. Une éventuelle alternative de génération doit disposer de sa propre comparaison ; elle ne découle pas du choix du moteur. Ne pas lancer une migration générale d'interface à ce stade.
+**Décision de sortie :** qualifier Godot/Terrain3D comme moteur de rendu des cartes/plans JDR2D/3D si l'alimentation par Infinite Generation, les mises à jour, l'adressage, les styles, la projection orthographique, les exports et le coût du shader sont maîtrisés. Son rôle pourra alors devenir principal. Si un obstacle structurel subsiste, porter cette même tranche dans le candidat WebGPU avant de poursuivre. Une éventuelle alternative de génération doit disposer de sa propre comparaison ; elle ne découle pas du choix du moteur. La migration générale de l'interface doit suivre cette décision et ses mesures.
 
 ### 11.2. J1 — Construire le contexte qui explique les matières
 

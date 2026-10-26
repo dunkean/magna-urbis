@@ -1,0 +1,870 @@
+{
+  "cases": [
+    {
+      "getHeightQueries": [
+        {
+          "absoluteError": 96.0,
+          "expectedPixelHeight": 1000.75,
+          "nativeGetHeight": 1096.75,
+          "pixel": [
+            1,
+            1
+          ],
+          "position": [
+            -127.0,
+            -127.0
+          ]
+        },
+        {
+          "absoluteError": null,
+          "expectedPixelHeight": 1096.0,
+          "nativeGetHeight": null,
+          "pixel": [
+            128,
+            128
+          ],
+          "position": [
+            0.0,
+            0.0
+          ]
+        },
+        {
+          "absoluteError": null,
+          "expectedPixelHeight": 1064.0,
+          "nativeGetHeight": null,
+          "pixel": [
+            254,
+            1
+          ],
+          "position": [
+            126.0,
+            -127.0
+          ]
+        },
+        {
+          "absoluteError": null,
+          "expectedPixelHeight": 1127.25,
+          "nativeGetHeight": null,
+          "pixel": [
+            1,
+            254
+          ],
+          "position": [
+            -127.0,
+            126.0
+          ]
+        },
+        {
+          "absoluteError": null,
+          "expectedPixelHeight": 1190.5,
+          "nativeGetHeight": null,
+          "pixel": [
+            254,
+            254
+          ],
+          "position": [
+            126.0,
+            126.0
+          ]
+        }
+      ],
+      "imageSize": 256,
+      "maximumAxisScaleRoundingM": 0.0,
+      "maximumNearVertexGetHeightErrorM": 96.0,
+      "nativeSpacingM": 1.0,
+      "regions": [
+        {
+          "allRFBytesIdentical": false,
+          "regionLocation": [
+            -1,
+            -1
+          ],
+          "sourcePixelOffset": [
+            -128,
+            -128
+          ],
+          "withinPlannedImage": false
+        }
+      ],
+      "requestedSpacingM": 1.0,
+      "storageAlignedAndAllBytesExact": false
+    },
+    {
+      "getHeightQueries": [
+        {
+          "absoluteError": 0.0,
+          "expectedPixelHeight": 1000.75,
+          "nativeGetHeight": 1000.75,
+          "pixel": [
+            1,
+            1
+          ],
+          "position": [
+            -255.0,
+            -255.0
+          ]
+        },
+        {
+          "absoluteError": 0.0,
+          "expectedPixelHeight": 1192.0,
+          "nativeGetHeight": 1192.0,
+          "pixel": [
+            256,
+            256
+          ],
+          "position": [
+            0.0,
+            0.0
+          ]
+        },
+        {
+          "absoluteError": 0.0,
+          "expectedPixelHeight": 1128.0,
+          "nativeGetHeight": 1128.0,
+          "pixel": [
+            510,
+            1
+          ],
+          "position": [
+            254.0,
+            -255.0
+          ]
+        },
+        {
+          "absoluteError": 0.0,
+          "expectedPixelHeight": 1255.25,
+          "nativeGetHeight": 1255.25,
+          "pixel": [
+            1,
+            510
+          ],
+          "position": [
+            -255.0,
+            254.0
+          ]
+        },
+        {
+          "absoluteError": 0.0,
+          "expectedPixelHeight": 1382.5,
+          "nativeGetHeight": 1382.5,
+          "pixel": [
+            510,
+            510
+          ],
+          "position": [
+            254.0,
+            254.0
+          ]
+        }
+      ],
+      "imageSize": 512,
+      "maximumAxisScaleRoundingM": 0.0,
+      "maximumNearVertexGetHeightErrorM": 0.0,
+      "nativeSpacingM": 1.0,
+      "regions": [
+        {
+          "allRFBytesIdentical": true,
+          "regionLocation": [
+            -1,
+            -1
+          ],
+          "sourcePixelOffset": [
+            0,
+            0
+          ],
+          "withinPlannedImage": true
+        },
+        {
+          "allRFBytesIdentical": true,
+          "regionLocation": [
+            0,
+            -1
+          ],
+          "sourcePixelOffset": [
+            256,
+            0
+          ],
+          "withinPlannedImage": true
+        },
+        {
+          "allRFBytesIdentical": true,
+          "regionLocation": [
+            -1,
+            0
+          ],
+          "sourcePixelOffset": [
+            0,
+            256
+          ],
+          "withinPlannedImage": true
+        },
+        {
+          "allRFBytesIdentical": true,
+          "regionLocation": [
+            0,
+            0
+          ],
+          "sourcePixelOffset": [
+            256,
+            256
+          ],
+          "withinPlannedImage": true
+        }
+      ],
+      "requestedSpacingM": 1.0,
+      "storageAlignedAndAllBytesExact": true
+    },
+    {
+      "getHeightQueries": [
+        {
+          "absoluteError": 0.75,
+          "expectedPixelHeight": 1000.75,
+          "nativeGetHeight": 1000.0,
+          "pixel": [
+            1,
+            1
+          ],
+          "position": [
+            -119.158882141113,
+            -119.158882141113
+          ]
+        },
+        {
+          "absoluteError": 0.0,
+          "expectedPixelHeight": 1192.0,
+          "nativeGetHeight": 1192.0,
+          "pixel": [
+            256,
+            256
+          ],
+          "position": [
+            0.0,
+            0.0
+          ]
+        },
+        {
+          "absoluteError": 0.5,
+          "expectedPixelHeight": 1128.0,
+          "nativeGetHeight": 1127.5,
+          "pixel": [
+            510,
+            1
+          ],
+          "position": [
+            118.691589355469,
+            -119.158882141113
+          ]
+        },
+        {
+          "absoluteError": 0.25,
+          "expectedPixelHeight": 1255.25,
+          "nativeGetHeight": 1255.0,
+          "pixel": [
+            1,
+            510
+          ],
+          "position": [
+            -119.158882141113,
+            118.691589355469
+          ]
+        },
+        {
+          "absoluteError": 0.0,
+          "expectedPixelHeight": 1382.5,
+          "nativeGetHeight": 1382.5,
+          "pixel": [
+            510,
+            510
+          ],
+          "position": [
+            118.691589355469,
+            118.691589355469
+          ]
+        }
+      ],
+      "imageSize": 512,
+      "maximumAxisScaleRoundingM": 0.000000926935783240879,
+      "maximumNearVertexGetHeightErrorM": 0.75,
+      "nativeSpacingM": 0.467289716005325,
+      "regions": [
+        {
+          "allRFBytesIdentical": true,
+          "regionLocation": [
+            -1,
+            -1
+          ],
+          "sourcePixelOffset": [
+            0,
+            0
+          ],
+          "withinPlannedImage": true
+        },
+        {
+          "allRFBytesIdentical": true,
+          "regionLocation": [
+            0,
+            -1
+          ],
+          "sourcePixelOffset": [
+            256,
+            0
+          ],
+          "withinPlannedImage": true
+        },
+        {
+          "allRFBytesIdentical": true,
+          "regionLocation": [
+            -1,
+            0
+          ],
+          "sourcePixelOffset": [
+            0,
+            256
+          ],
+          "withinPlannedImage": true
+        },
+        {
+          "allRFBytesIdentical": true,
+          "regionLocation": [
+            0,
+            0
+          ],
+          "sourcePixelOffset": [
+            256,
+            256
+          ],
+          "withinPlannedImage": true
+        }
+      ],
+      "requestedSpacingM": 0.467289719626168,
+      "storageAlignedAndAllBytesExact": true
+    },
+    {
+      "getHeightQueries": [
+        {
+          "absoluteError": 0.0,
+          "expectedPixelHeight": 1000.75,
+          "nativeGetHeight": 1000.75,
+          "pixel": [
+            1,
+            1
+          ],
+          "position": [
+            -19882.96484375,
+            -19882.96484375
+          ]
+        },
+        {
+          "absoluteError": 0.0,
+          "expectedPixelHeight": 1192.0,
+          "nativeGetHeight": 1192.0,
+          "pixel": [
+            256,
+            256
+          ],
+          "position": [
+            0.0,
+            0.0
+          ]
+        },
+        {
+          "absoluteError": 0.0,
+          "expectedPixelHeight": 1128.0,
+          "nativeGetHeight": 1128.0,
+          "pixel": [
+            510,
+            1
+          ],
+          "position": [
+            19804.9921875,
+            -19882.96484375
+          ]
+        },
+        {
+          "absoluteError": 0.0,
+          "expectedPixelHeight": 1255.25,
+          "nativeGetHeight": 1255.25,
+          "pixel": [
+            1,
+            510
+          ],
+          "position": [
+            -19882.96484375,
+            19804.9921875
+          ]
+        },
+        {
+          "absoluteError": 0.0,
+          "expectedPixelHeight": 1382.5,
+          "nativeGetHeight": 1382.5,
+          "pixel": [
+            510,
+            510
+          ],
+          "position": [
+            19804.9921875,
+            19804.9921875
+          ]
+        }
+      ],
+      "imageSize": 512,
+      "maximumAxisScaleRoundingM": 0.0,
+      "maximumNearVertexGetHeightErrorM": 0.0,
+      "nativeSpacingM": 77.972412109375,
+      "regions": [
+        {
+          "allRFBytesIdentical": true,
+          "regionLocation": [
+            -1,
+            -1
+          ],
+          "sourcePixelOffset": [
+            0,
+            0
+          ],
+          "withinPlannedImage": true
+        },
+        {
+          "allRFBytesIdentical": true,
+          "regionLocation": [
+            0,
+            -1
+          ],
+          "sourcePixelOffset": [
+            256,
+            0
+          ],
+          "withinPlannedImage": true
+        },
+        {
+          "allRFBytesIdentical": true,
+          "regionLocation": [
+            -1,
+            0
+          ],
+          "sourcePixelOffset": [
+            0,
+            256
+          ],
+          "withinPlannedImage": true
+        },
+        {
+          "allRFBytesIdentical": true,
+          "regionLocation": [
+            0,
+            0
+          ],
+          "sourcePixelOffset": [
+            256,
+            256
+          ],
+          "withinPlannedImage": true
+        }
+      ],
+      "requestedSpacingM": 77.972412109375,
+      "storageAlignedAndAllBytesExact": true
+    },
+    {
+      "getHeightQueries": [
+        {
+          "absoluteError": 0.0,
+          "expectedPixelHeight": 1000.75,
+          "nativeGetHeight": 1000.75,
+          "pixel": [
+            1,
+            1
+          ],
+          "position": [
+            -407.40234375,
+            -407.40234375
+          ]
+        },
+        {
+          "absoluteError": 0.0,
+          "expectedPixelHeight": 1192.0,
+          "nativeGetHeight": 1192.0,
+          "pixel": [
+            256,
+            256
+          ],
+          "position": [
+            0.0,
+            0.0
+          ]
+        },
+        {
+          "absoluteError": 0.0,
+          "expectedPixelHeight": 1128.0,
+          "nativeGetHeight": 1128.0,
+          "pixel": [
+            510,
+            1
+          ],
+          "position": [
+            405.8046875,
+            -407.40234375
+          ]
+        },
+        {
+          "absoluteError": 0.0,
+          "expectedPixelHeight": 1255.25,
+          "nativeGetHeight": 1255.25,
+          "pixel": [
+            1,
+            510
+          ],
+          "position": [
+            -407.40234375,
+            405.8046875
+          ]
+        },
+        {
+          "absoluteError": 0.0,
+          "expectedPixelHeight": 1382.5,
+          "nativeGetHeight": 1382.5,
+          "pixel": [
+            510,
+            510
+          ],
+          "position": [
+            405.8046875,
+            405.8046875
+          ]
+        }
+      ],
+      "imageSize": 512,
+      "maximumAxisScaleRoundingM": 0.0,
+      "maximumNearVertexGetHeightErrorM": 0.0,
+      "nativeSpacingM": 1.59765625,
+      "regions": [
+        {
+          "allRFBytesIdentical": true,
+          "regionLocation": [
+            -1,
+            -1
+          ],
+          "sourcePixelOffset": [
+            0,
+            0
+          ],
+          "withinPlannedImage": true
+        },
+        {
+          "allRFBytesIdentical": true,
+          "regionLocation": [
+            0,
+            -1
+          ],
+          "sourcePixelOffset": [
+            256,
+            0
+          ],
+          "withinPlannedImage": true
+        },
+        {
+          "allRFBytesIdentical": true,
+          "regionLocation": [
+            -1,
+            0
+          ],
+          "sourcePixelOffset": [
+            0,
+            256
+          ],
+          "withinPlannedImage": true
+        },
+        {
+          "allRFBytesIdentical": true,
+          "regionLocation": [
+            0,
+            0
+          ],
+          "sourcePixelOffset": [
+            256,
+            256
+          ],
+          "withinPlannedImage": true
+        }
+      ],
+      "requestedSpacingM": 1.59765625,
+      "storageAlignedAndAllBytesExact": true
+    },
+    {
+      "getHeightQueries": [
+        {
+          "absoluteError": 0.0,
+          "expectedPixelHeight": 1000.75,
+          "nativeGetHeight": 1000.75,
+          "pixel": [
+            1,
+            1
+          ],
+          "position": [
+            -241.519546508789,
+            -241.519546508789
+          ]
+        },
+        {
+          "absoluteError": 0.0,
+          "expectedPixelHeight": 1384.0,
+          "nativeGetHeight": 1384.0,
+          "pixel": [
+            512,
+            512
+          ],
+          "position": [
+            0.0,
+            0.0
+          ]
+        },
+        {
+          "absoluteError": 0.0,
+          "expectedPixelHeight": 1256.0,
+          "nativeGetHeight": 1256.0,
+          "pixel": [
+            1022,
+            1
+          ],
+          "position": [
+            241.046905517578,
+            -241.519546508789
+          ]
+        },
+        {
+          "absoluteError": 0.0,
+          "expectedPixelHeight": 1511.25,
+          "nativeGetHeight": 1511.25,
+          "pixel": [
+            1,
+            1022
+          ],
+          "position": [
+            -241.519546508789,
+            241.046905517578
+          ]
+        },
+        {
+          "absoluteError": 0.0,
+          "expectedPixelHeight": 1766.5,
+          "nativeGetHeight": 1766.5,
+          "pixel": [
+            1022,
+            1022
+          ],
+          "position": [
+            241.046905517578,
+            241.046905517578
+          ]
+        }
+      ],
+      "imageSize": 1024,
+      "maximumAxisScaleRoundingM": 0.0,
+      "maximumNearVertexGetHeightErrorM": 0.0,
+      "nativeSpacingM": 0.472640991210938,
+      "regions": [
+        {
+          "allRFBytesIdentical": true,
+          "regionLocation": [
+            -2,
+            -2
+          ],
+          "sourcePixelOffset": [
+            0,
+            0
+          ],
+          "withinPlannedImage": true
+        },
+        {
+          "allRFBytesIdentical": true,
+          "regionLocation": [
+            -1,
+            -2
+          ],
+          "sourcePixelOffset": [
+            256,
+            0
+          ],
+          "withinPlannedImage": true
+        },
+        {
+          "allRFBytesIdentical": true,
+          "regionLocation": [
+            0,
+            -2
+          ],
+          "sourcePixelOffset": [
+            512,
+            0
+          ],
+          "withinPlannedImage": true
+        },
+        {
+          "allRFBytesIdentical": true,
+          "regionLocation": [
+            1,
+            -2
+          ],
+          "sourcePixelOffset": [
+            768,
+            0
+          ],
+          "withinPlannedImage": true
+        },
+        {
+          "allRFBytesIdentical": true,
+          "regionLocation": [
+            -2,
+            -1
+          ],
+          "sourcePixelOffset": [
+            0,
+            256
+          ],
+          "withinPlannedImage": true
+        },
+        {
+          "allRFBytesIdentical": true,
+          "regionLocation": [
+            -1,
+            -1
+          ],
+          "sourcePixelOffset": [
+            256,
+            256
+          ],
+          "withinPlannedImage": true
+        },
+        {
+          "allRFBytesIdentical": true,
+          "regionLocation": [
+            0,
+            -1
+          ],
+          "sourcePixelOffset": [
+            512,
+            256
+          ],
+          "withinPlannedImage": true
+        },
+        {
+          "allRFBytesIdentical": true,
+          "regionLocation": [
+            1,
+            -1
+          ],
+          "sourcePixelOffset": [
+            768,
+            256
+          ],
+          "withinPlannedImage": true
+        },
+        {
+          "allRFBytesIdentical": true,
+          "regionLocation": [
+            -2,
+            0
+          ],
+          "sourcePixelOffset": [
+            0,
+            512
+          ],
+          "withinPlannedImage": true
+        },
+        {
+          "allRFBytesIdentical": true,
+          "regionLocation": [
+            -1,
+            0
+          ],
+          "sourcePixelOffset": [
+            256,
+            512
+          ],
+          "withinPlannedImage": true
+        },
+        {
+          "allRFBytesIdentical": true,
+          "regionLocation": [
+            0,
+            0
+          ],
+          "sourcePixelOffset": [
+            512,
+            512
+          ],
+          "withinPlannedImage": true
+        },
+        {
+          "allRFBytesIdentical": true,
+          "regionLocation": [
+            1,
+            0
+          ],
+          "sourcePixelOffset": [
+            768,
+            512
+          ],
+          "withinPlannedImage": true
+        },
+        {
+          "allRFBytesIdentical": true,
+          "regionLocation": [
+            -2,
+            1
+          ],
+          "sourcePixelOffset": [
+            0,
+            768
+          ],
+          "withinPlannedImage": true
+        },
+        {
+          "allRFBytesIdentical": true,
+          "regionLocation": [
+            -1,
+            1
+          ],
+          "sourcePixelOffset": [
+            256,
+            768
+          ],
+          "withinPlannedImage": true
+        },
+        {
+          "allRFBytesIdentical": true,
+          "regionLocation": [
+            0,
+            1
+          ],
+          "sourcePixelOffset": [
+            512,
+            768
+          ],
+          "withinPlannedImage": true
+        },
+        {
+          "allRFBytesIdentical": true,
+          "regionLocation": [
+            1,
+            1
+          ],
+          "sourcePixelOffset": [
+            768,
+            768
+          ],
+          "withinPlannedImage": true
+        }
+      ],
+      "requestedSpacingM": 0.472640991210938,
+      "storageAlignedAndAllBytesExact": true
+    }
+  ],
+  "failures": [],
+  "godot": "4.7.2-stable (official)",
+  "headless": true,
+  "passed": true,
+  "probe": "pinned native Terrain3D region address + complete RF byte comparison after import",
+  "scope": "CPU native storage and fractional vertex spacing; GPU position is not measured. get_height discrepancies are reported separately, never treated as GPU errors.",
+  "terrain3d": "1.0.2",
+  "upstreamGetHeightSource": "https://github.com/TokisanGames/Terrain3D/blob/v1.0.2-stable/src/terrain_3d_data.cpp#L586-L632"
+}

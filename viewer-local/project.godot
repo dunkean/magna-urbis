@@ -1,0 +1,21 @@
+config_version=5
+
+[application]
+config/name="Magna Urbis • SurfaceWorld"
+run/main_scene="res://scene/main.tscn"
+
+[display]
+window/size/viewport_width=1280
+window/size/viewport_height=800
+window/size/window_width_override=1280
+window/size/window_height_override=800
+
+[rendering]
+renderer/rendering_method="forward_plus"
+renderer/rendering_method.mobile="gl_compatibility"
+textures/default_filters/use_nearest_mipmap_filter=false
+lights_and_shadows/directional_shadow/size=2048
+environment/defaults/default_clear_color=Color(0.42,0.59,0.72,1)
+
+[filesystem]
+import/blender/enabled=false

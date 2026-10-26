@@ -1,0 +1,87 @@
+{
+  "adapter": "NVIDIA GeForce RTX 4090",
+  "cases": [
+    {
+      "actualTerrainSamples": 900,
+      "alignedPlaneAccepted": false,
+      "conservativeMaximumErrorM": null,
+      "image": "256_1_0.png",
+      "imageSize": 256,
+      "maximumEncodedRed": 1.0,
+      "nativeSpacingM": 1.0,
+      "requestedSpacingM": 1.0,
+      "sampleCount": 3600,
+      "saturatedErrorSamples": 900
+    },
+    {
+      "actualTerrainSamples": 3600,
+      "alignedPlaneAccepted": true,
+      "conservativeMaximumErrorM": 0.000529411792755127,
+      "image": "512_1_0.png",
+      "imageSize": 512,
+      "maximumEncodedRed": 0.529411792755127,
+      "nativeSpacingM": 1.0,
+      "requestedSpacingM": 1.0,
+      "sampleCount": 3600,
+      "saturatedErrorSamples": 0
+    },
+    {
+      "actualTerrainSamples": 3600,
+      "alignedPlaneAccepted": true,
+      "conservativeMaximumErrorM": 0.000529411792755127,
+      "image": "512_0_46728971962617.png",
+      "imageSize": 512,
+      "maximumEncodedRed": 0.529411792755127,
+      "nativeSpacingM": 0.467289716005325,
+      "requestedSpacingM": 0.467289719626168,
+      "sampleCount": 3600,
+      "saturatedErrorSamples": 0
+    },
+    {
+      "actualTerrainSamples": 3600,
+      "alignedPlaneAccepted": true,
+      "conservativeMaximumErrorM": 0.000529411792755127,
+      "image": "512_77_972412109375.png",
+      "imageSize": 512,
+      "maximumEncodedRed": 0.529411792755127,
+      "nativeSpacingM": 77.972412109375,
+      "requestedSpacingM": 77.972412109375,
+      "sampleCount": 3600,
+      "saturatedErrorSamples": 0
+    },
+    {
+      "actualTerrainSamples": 3600,
+      "alignedPlaneAccepted": true,
+      "conservativeMaximumErrorM": 0.000529411792755127,
+      "image": "512_1_59765625.png",
+      "imageSize": 512,
+      "maximumEncodedRed": 0.529411792755127,
+      "nativeSpacingM": 1.59765625,
+      "requestedSpacingM": 1.59765625,
+      "sampleCount": 3600,
+      "saturatedErrorSamples": 0
+    },
+    {
+      "actualTerrainSamples": 3600,
+      "alignedPlaneAccepted": true,
+      "conservativeMaximumErrorM": 0.000529411792755127,
+      "image": "1024_0_47264099121094.png",
+      "imageSize": 1024,
+      "maximumEncodedRed": 0.529411792755127,
+      "nativeSpacingM": 0.472640991210938,
+      "requestedSpacingM": 0.472640991210938,
+      "sampleCount": 3600,
+      "saturatedErrorSamples": 0
+    }
+  ],
+  "failures": [],
+  "godot": "4.7.2-stable (official)",
+  "maximumAllowedErrorM": 0.001,
+  "passed": true,
+  "pinnedMinimumShaderSHA256": "d00dd00050ff35ae20386295243373b48908865e1ea75d8f9f932988683881d6",
+  "probe": "actual Terrain3D GPU vertex placement against analytic source plane",
+  "probeShaderSHA256": "936015a141f1ce001e57802fbc2aaf93b7b520640a7a2dc0287c1c6e37b501a0",
+  "renderer": "forward_plus",
+  "scope": "Pinned minimum vertex shader and production region imports. Flat analytic fixture, no PBR, cities or nonlinear source relief; no CPU get_height as substitute for GPU.",
+  "terrain3d": "1.0.2"
+}

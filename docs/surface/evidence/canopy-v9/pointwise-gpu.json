@@ -1,0 +1,188 @@
+{
+  "adapter": "NVIDIA GeForce RTX 4090",
+  "atlasSpacingM": 0.5,
+  "backend": "forward_plus",
+  "exactSourceTrees": 67221,
+  "passed": true,
+  "pointwiseViolations": 0,
+  "samples": [
+    {
+      "footprintM": 0.25,
+      "phase": 0.0,
+      "pointwiseViolations": 0
+    },
+    {
+      "footprintM": 0.625,
+      "phase": 0.0,
+      "pointwiseViolations": 0
+    },
+    {
+      "footprintM": 1.0,
+      "phase": 0.0,
+      "pointwiseViolations": 0
+    },
+    {
+      "footprintM": 2.0,
+      "phase": 0.0,
+      "pointwiseViolations": 0
+    },
+    {
+      "footprintM": 4.0,
+      "phase": 0.0,
+      "pointwiseViolations": 0
+    },
+    {
+      "footprintM": 0.25,
+      "phase": 0.5,
+      "pointwiseViolations": 0
+    },
+    {
+      "footprintM": 0.625,
+      "phase": 0.5,
+      "pointwiseViolations": 0
+    },
+    {
+      "footprintM": 1.0,
+      "phase": 0.5,
+      "pointwiseViolations": 0
+    },
+    {
+      "footprintM": 2.0,
+      "phase": 0.5,
+      "pointwiseViolations": 0
+    },
+    {
+      "footprintM": 4.0,
+      "phase": 0.5,
+      "pointwiseViolations": 0
+    },
+    {
+      "footprintM": 0.25,
+      "phase": 1.0,
+      "pointwiseViolations": 0
+    },
+    {
+      "footprintM": 0.625,
+      "phase": 1.0,
+      "pointwiseViolations": 0
+    },
+    {
+      "footprintM": 1.0,
+      "phase": 1.0,
+      "pointwiseViolations": 0
+    },
+    {
+      "footprintM": 2.0,
+      "phase": 1.0,
+      "pointwiseViolations": 0
+    },
+    {
+      "footprintM": 4.0,
+      "phase": 1.0,
+      "pointwiseViolations": 0
+    },
+    {
+      "footprintM": 0.25,
+      "phase": 1.25,
+      "pointwiseViolations": 0
+    },
+    {
+      "footprintM": 0.625,
+      "phase": 1.25,
+      "pointwiseViolations": 0
+    },
+    {
+      "footprintM": 1.0,
+      "phase": 1.25,
+      "pointwiseViolations": 0
+    },
+    {
+      "footprintM": 2.0,
+      "phase": 1.25,
+      "pointwiseViolations": 0
+    },
+    {
+      "footprintM": 4.0,
+      "phase": 1.25,
+      "pointwiseViolations": 0
+    },
+    {
+      "footprintM": 0.25,
+      "phase": 1.5,
+      "pointwiseViolations": 0
+    },
+    {
+      "footprintM": 0.625,
+      "phase": 1.5,
+      "pointwiseViolations": 0
+    },
+    {
+      "footprintM": 1.0,
+      "phase": 1.5,
+      "pointwiseViolations": 0
+    },
+    {
+      "footprintM": 2.0,
+      "phase": 1.5,
+      "pointwiseViolations": 0
+    },
+    {
+      "footprintM": 4.0,
+      "phase": 1.5,
+      "pointwiseViolations": 0
+    },
+    {
+      "footprintM": 0.25,
+      "phase": 1.75,
+      "pointwiseViolations": 0
+    },
+    {
+      "footprintM": 0.625,
+      "phase": 1.75,
+      "pointwiseViolations": 0
+    },
+    {
+      "footprintM": 1.0,
+      "phase": 1.75,
+      "pointwiseViolations": 0
+    },
+    {
+      "footprintM": 2.0,
+      "phase": 1.75,
+      "pointwiseViolations": 0
+    },
+    {
+      "footprintM": 4.0,
+      "phase": 1.75,
+      "pointwiseViolations": 0
+    },
+    {
+      "footprintM": 0.25,
+      "phase": 2.0,
+      "pointwiseViolations": 0
+    },
+    {
+      "footprintM": 0.625,
+      "phase": 2.0,
+      "pointwiseViolations": 0
+    },
+    {
+      "footprintM": 1.0,
+      "phase": 2.0,
+      "pointwiseViolations": 0
+    },
+    {
+      "footprintM": 2.0,
+      "phase": 2.0,
+      "pointwiseViolations": 0
+    },
+    {
+      "footprintM": 4.0,
+      "phase": 2.0,
+      "pointwiseViolations": 0
+    }
+  ],
+  "scope": "Production shader V<=C and V+(1-V)*G=C at every GPU sampled point across both global phases; not a claim that stylized sphere silhouettes equal the atlas raster exactly",
+  "selectedTrees": 4883,
+  "shaderPixelsPerCase": 262144
+}

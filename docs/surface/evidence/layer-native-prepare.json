@@ -1,0 +1,32 @@
+{
+  "compilerVersion": "surface-1.5.1",
+  "decodeMs": 6951.755,
+  "format": "surface-native-layer-preparation-proof",
+  "input": "D:/workspace/self/_worktrees/magna-urbis-surface-model-2026-10-23/web/out/surface/real-layer-fixture/teacher-v5-layers-1.5.1.surfacebin",
+  "inputSHA256": "69268e41ab15b5fa6f8fbabe5512e2164660bf309a33fe923947f0224b4ff1c8",
+  "metadata": {
+    "canonicalFieldsVersion": "eebe1d15436a39a72b701465f1ccb275",
+    "groundAvailability": "explicit",
+    "legacyFallback": false,
+    "lowCoverAvailability": "explicit",
+    "projectedFieldsVersion": "eebe1d15436a39a72b701465f1ccb275",
+    "textureFieldsVersion": "eebe1d15436a39a72b701465f1ccb275",
+    "textureGrid": {
+      "height": 512.0,
+      "originX": 39.0625,
+      "originZ": 39.0625,
+      "spacingM": 78.125,
+      "width": 512.0
+    },
+    "textureSource": "world",
+    "version": "surface-layers-1"
+  },
+  "passed": true,
+  "prepareMs": 641.26,
+  "reuseMs": 0.019,
+  "sameImageObjectsOnReuse": true,
+  "scope": "CPU layer validation/image preparation/cache, not a GPU rendering or fresh generation proof",
+  "validateMs": 2700.181,
+  "version": 1,
+  "worldId": "e9f3dd422540ef2c452d54f226cc14de"
+}

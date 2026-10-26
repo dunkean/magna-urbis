@@ -1,0 +1,150 @@
+{
+  "format": "v9-worker-population-cpu-profile",
+  "version": 1,
+  "baseline": "ab3c4996e16be503dbcc5e3f04cd5592e361009a",
+  "optimizedPopulationSourceSha256": "875472e5e5493d8c42900f15c9b2407657ac2e7a17df50c458f134ed9c6b9338",
+  "gpuRun": false,
+  "browserRuntimeRerun": false,
+  "scope": "Node CPU-only replay from actual retained V9 canonical fields. Child128 samples resampled from same original parent for transport-only, not a new neural generation. All comparisons use identical old/new inputs.",
+  "productionTrace": {
+    "sourceReport": "web/out/surface/native-e2e-40km-v9/report.json",
+    "request2": {
+      "regionExtentM": 39921.875,
+      "requestedResolution": 512,
+      "tileResponseElapsedMs": 144815,
+      "workerCompiledElapsedMs": 160121,
+      "postTileToCompiledMs": 15306,
+      "uploadAcceptedElapsedMs": 179624,
+      "compiledToUploadCompleteMs": 19503,
+      "bytes": 140658841,
+      "includesCanonicalContext": true
+    },
+    "request3": {
+      "regionExtentM": 8483.47305035776,
+      "preview": true,
+      "tileResponseElapsedMs": 223782,
+      "workerCompiledElapsedMs": 237710,
+      "postTileToCompiledMs": 13928,
+      "uploadAcceptedElapsedMs": 238328,
+      "compiledToUploadCompleteMs": 618,
+      "bytes": 9348380,
+      "includesCanonicalContext": false
+    },
+    "request4": {
+      "regionExtentM": 62.2910035698156,
+      "preview": true,
+      "tileResponseElapsedMs": 249677,
+      "workerCompiledElapsedMs": 250240,
+      "postTileToCompiledMs": 563,
+      "uploadAcceptedElapsedMs": 250597,
+      "compiledToUploadCompleteMs": 357,
+      "bytes": 4290068,
+      "includesCanonicalContext": false
+    },
+    "request5": {
+      "regionExtentM": 65.1935943202764,
+      "preview": false,
+      "tileResponseElapsedMs": 252126,
+      "workerCompiledElapsedMs": 252587,
+      "postTileToCompiledMs": 461,
+      "uploadAcceptedElapsedMs": 252976,
+      "compiledToUploadCompleteMs": 389,
+      "bytes": 5107856,
+      "includesCanonicalContext": false
+    }
+  },
+  "before": {
+    "pagesModule": "D:/workspace/self/_worktrees/magna-urbis-surface-world-2026-10-23/web/src/surface/candidatePages.ts",
+    "sources": {
+      "live-refinement.surfacebin": "25f93200da531bf73ba9b03a887281f0586dc460864894e24b4e1448b540925c",
+      "fresh-source.surfacebin": "4ff6594cfa108eea00abe85fd14b713ea8b8ae92bdf3957be21fd64e11a64af7"
+    },
+    "scope": "CPU replay of fresh retained canonical environment; synthetic transport-only resample of same parent for128 child heights, not new generation",
+    "timings": [
+      {
+        "extent": 8483.47305035776,
+        "retargetMs": 212.56540000000007,
+        "pagesMs": 3105.1985,
+        "packMs": 124.48979999999983,
+        "validateMs": 53.69770000000017,
+        "encodeMs": 23.732200000000375,
+        "bytes": 9323636,
+        "candidates": 71355,
+        "trees": 64099,
+        "recordsFingerprint": "3501f7f03756cdde98ab23b0daa3f09c",
+        "pagesFingerprint": "641f2f9040fb1aee2d6043a803513a64",
+        "packetFingerprint": "abdbb0b1d7cc13dfdc72f691578d536d"
+      },
+      {
+        "extent": 62.2910035698156,
+        "retargetMs": 500.10030000000006,
+        "pagesMs": 112.01800000000003,
+        "packMs": 0.8739999999997963,
+        "validateMs": 0.6680999999998676,
+        "encodeMs": 2.697400000000016,
+        "bytes": 4265212,
+        "candidates": 999,
+        "trees": 871,
+        "recordsFingerprint": "76f7e1973c251339b89c115726cc217b",
+        "pagesFingerprint": "60bc27dc3ba1b1d2ab11cd34eefaf778",
+        "packetFingerprint": "a80073cf6b9b343949cbf6476387e663"
+      }
+    ]
+  },
+  "after": {
+    "pagesModule": "current",
+    "sources": {
+      "live-refinement.surfacebin": "25f93200da531bf73ba9b03a887281f0586dc460864894e24b4e1448b540925c",
+      "fresh-source.surfacebin": "4ff6594cfa108eea00abe85fd14b713ea8b8ae92bdf3957be21fd64e11a64af7"
+    },
+    "scope": "CPU replay of fresh retained canonical environment; synthetic transport-only resample of same parent for128 child heights, not new generation",
+    "timings": [
+      {
+        "extent": 8483.47305035776,
+        "retargetMs": 208.07049999999998,
+        "pagesMs": 486.87749999999994,
+        "packMs": 25.12189999999987,
+        "validateMs": 17.567199999999957,
+        "encodeMs": 12.046199999999999,
+        "bytes": 9323636,
+        "candidates": 71355,
+        "trees": 64099,
+        "recordsFingerprint": "3501f7f03756cdde98ab23b0daa3f09c",
+        "pagesFingerprint": "641f2f9040fb1aee2d6043a803513a64",
+        "packetFingerprint": "abdbb0b1d7cc13dfdc72f691578d536d"
+      },
+      {
+        "extent": 62.2910035698156,
+        "retargetMs": 186.92619999999988,
+        "pagesMs": 9.126700000000028,
+        "packMs": 0.49880000000007385,
+        "validateMs": 0.28559999999993124,
+        "encodeMs": 2.49330000000009,
+        "bytes": 4265212,
+        "candidates": 999,
+        "trees": 871,
+        "recordsFingerprint": "76f7e1973c251339b89c115726cc217b",
+        "pagesFingerprint": "60bc27dc3ba1b1d2ab11cd34eefaf778",
+        "packetFingerprint": "a80073cf6b9b343949cbf6476387e663"
+      }
+    ]
+  },
+  "exactness": {
+    "entireCandidateRecords": true,
+    "pageProvenanceMetadata": true,
+    "entireEncodedPacket": true,
+    "populationVersionUnchanged": true,
+    "noInventoryOrDensityReduction": true
+  },
+  "validation": {
+    "surfaceTests": 206,
+    "files": 37,
+    "typecheck": "pass"
+  },
+  "limits": [
+    "Production trace times after tile response do not isolate all worker subphases; CPU profile attributes cost only in the controlled replay.",
+    "Node speedups are not a browser/native/display acceptance result.",
+    "Large initial canonical/context transfer and neural tile latency are separate unchanged costs.",
+    "No GPU or generation was invoked by this benchmark."
+  ]
+}

@@ -1,0 +1,596 @@
+{
+  "format": "native419-v11-final-static-qualification",
+  "version": 1,
+  "rootHead": "176e77403152e9893f5f9303728db0e1ecd033e5",
+  "runtimeFileCount": 573,
+  "rootRuntimeUnchanged": true,
+  "sourceUnchanged": true,
+  "assetsUnchanged": true,
+  "assetManifestSha256": "c9f5beb9d4cdbdb7eb5a83340d72d882f36322c73272244408374a260b7e8e26",
+  "sourcePacketSha256": "54616775da71a5fb94e32d1cce13b59cad38f79f410f04525be72bc14edf589e",
+  "sourcePacketBytes": 251582841,
+  "worldId": "0de1e8948131f56a677a8e24e8ecbac8",
+  "canonicalContextId": "00eb9ae088b9342e0ce55680861edf6c",
+  "urbanIdentity": "963cb15129efcccd7849a1adae4c81fb",
+  "logTransport": "inherited-file-descriptors; no Node stdout/stderr drain",
+  "readinessEvidence": "All images emitted by the frozen native --frames capture branch, gated on scene revision, finished prepare/packet workers, water projection and canopy transition. Exported canopy flags, world identity and water completeness independently checked. Individual pending-job booleans are not separately exported.",
+  "sourceScope": {
+    "nativeCurrentExteriors": 419,
+    "explicitNativePlanningRefusals": 81,
+    "legacyAcceptedOccupationPlots": 500,
+    "terrain": "Retained original15.625m parent, sourceLOD unknown at all camera foci; decoderUsed=false. No fresh neural terrain or active fine-child claim.",
+    "treePageCount": 71834,
+    "allCandidateCount": 77412,
+    "treePageBounds": {
+      "minX": 4500,
+      "maxX": 8500,
+      "minZ": 6500,
+      "maxZ": 10500
+    }
+  },
+  "physicalAndGroundProvenance": {
+    "groundMigrationProof": "urban-ground-v9-migration.json",
+    "sourceGroundChangedArrays": 4,
+    "sourceInfrastructureCellsChanged": 4712,
+    "naturalGroundCellsUnchanged": 1043864,
+    "physicalLegacyLowCoverUrbanTerrainArchivesPreserved": true,
+    "populationPageProof": "source-page-report.json"
+  },
+  "views": [
+    {
+      "name": "blueprint-native-close-top",
+      "pngSha256": "c349e28ec4dab300dbc1f1f348612e60296712322c519c5ae4e60c7bfae79ed0",
+      "pngByteIdenticalToV9": true,
+      "metricsSha256": "6eaccfc36dbed771bf09e288d3e69d34ab54c11c15237d7e37fbd86b85b362fa",
+      "durationIncludingStartupMs": 41678.8895,
+      "code": 0,
+      "runtimeErrors": 0,
+      "commandedWarmFrames": 32,
+      "recordedFrameSamples": 12,
+      "captureError": 0,
+      "sourceFrustumCPU": {
+        "name": "blueprint-native-close-top",
+        "widthM": 400.0,
+        "focus": {
+          "x": 6536.4762957318035,
+          "z": 8462.943018929407
+        },
+        "fullyContainedSourceBodyFootprints": 83,
+        "intersectingSourceTriangleProjectedBounds": 91,
+        "fullyContainedSourceTriangleProjectedBounds": 82,
+        "strictSubsetOf419": true,
+        "cameraWorld": null,
+        "scope": "CPU geometric source frustum query, not GPU per-building visibility/occlusion count"
+      },
+      "urban": {
+        "budgetLimited": false,
+        "materialBatches": 15,
+        "nativeBuildings": 254,
+        "proxyBuildings": 0,
+        "scope": "prepared submitted mesh batches; not a GPU visibility or occlusion count",
+        "worldId": "0de1e8948131f56a677a8e24e8ecbac8"
+      },
+      "frustumIDsSubsetOfSubmittedIDs": true,
+      "cityMapBuildingIdsCount": 254,
+      "cityMapBudgetLimited": false,
+      "roadProjectors": 90,
+      "candidateCount": 77412,
+      "populationInstances": {
+        "families": {
+          "boulder": {
+            "alphaPositiveInFrustum": 22,
+            "nodeVisible": 57,
+            "submitted": 57
+          },
+          "debris": {
+            "alphaPositiveInFrustum": 64,
+            "nodeVisible": 220,
+            "submitted": 220
+          },
+          "grass": {
+            "alphaPositiveInFrustum": 305,
+            "nodeVisible": 1000,
+            "submitted": 1000
+          },
+          "shrub": {
+            "alphaPositiveInFrustum": 74,
+            "nodeVisible": 225,
+            "submitted": 225
+          },
+          "tree": {
+            "alphaPositiveInFrustum": 158,
+            "nodeVisible": 1504,
+            "submitted": 1504
+          },
+          "trunk": {
+            "alphaPositiveInFrustum": 158,
+            "nodeVisible": 1504,
+            "submitted": 1504
+          }
+        },
+        "scope": "submitted buffers, actual node/camera visibility, shader ALPHA>0 and centres in frustum; no GPU occlusion claim",
+        "treeOpticalShadowEnabled": false,
+        "treeResidualEnabled": true
+      },
+      "canopyView": {
+        "phase": 2.0,
+        "safePhase": 2.0,
+        "exactWeight": 1.0,
+        "geometryWeight": 1.0,
+        "transitionPending": false,
+        "pendingAtlas": false,
+        "reason": "complete-frustum-plus-halo",
+        "spatialBlend": "none; one phase for the whole viewport",
+        "treePage": {
+          "bounds": {
+            "maxX": 8500.0,
+            "maxZ": 10500.0,
+            "minX": 4500.0,
+            "minZ": 6500.0
+          },
+          "complete": true,
+          "count": 71834.0,
+          "includeOverhang": true,
+          "limitedBy": "none",
+          "requestedBounds": {
+            "maxX": 8500.0,
+            "maxZ": 10500.0,
+            "minX": 4500.0,
+            "minZ": 6500.0
+          },
+          "retention": 1.0
+        }
+      },
+      "surfaceLayers": {
+        "canonicalFieldsVersion": "f10d130472641a2c13bec4e8ca4eacf2",
+        "canonicalVersion": "f10d130472641a2c13bec4e8ca4eacf2",
+        "fieldsVersion": "d0ad060649253b0035de84de3683e2aa",
+        "groundAvailability": "explicit",
+        "legacyFallback": false,
+        "lowCoverAvailability": "explicit",
+        "projectedFieldsVersion": "d0ad060649253b0035de84de3683e2aa",
+        "renderMode": "three-physical-layers",
+        "textureFieldsVersion": "f10d130472641a2c13bec4e8ca4eacf2",
+        "textureGrid": {
+          "height": 1024.0,
+          "originX": 7.8125,
+          "originZ": 7.8125,
+          "spacingM": 15.625,
+          "width": 1024.0
+        },
+        "textureSource": "canonical",
+        "version": "surface-layers-1",
+        "visibility": {
+          "ground": true,
+          "lowCover": true,
+          "trees": true
+        },
+        "worldId": "0de1e8948131f56a677a8e24e8ecbac8"
+      },
+      "terrain": {
+        "focusInsideChild": false,
+        "fineContributionWeight": 0.0,
+        "sourceActualAtFocus": {
+          "id": "infinite:47:e6f0c520536077f7cdd3284dbd1ce85e",
+          "nativeSpacingM": 15.625,
+          "sourceLOD": 0.0,
+          "sourceLODKnown": false,
+          "version": "decoder-v12-nyquist-notch:magna-retained-v1:e2bf5473c0ff:f21afa261ed7"
+        },
+        "sourceContributionsAtFocus": [
+          {
+            "activeChild": false,
+            "weight": 1.0,
+            "source": {
+              "id": "infinite:47:e6f0c520536077f7cdd3284dbd1ce85e",
+              "nativeSpacingM": 15.625,
+              "sourceLOD": 0.0,
+              "sourceLODKnown": false,
+              "version": "decoder-v12-nyquist-notch:magna-retained-v1:e2bf5473c0ff:f21afa261ed7"
+            }
+          }
+        ]
+      },
+      "water": {
+        "waterPresentation": "source-map-terrain-projection",
+        "physicalWaterSurfaceClaimed": false,
+        "sourceVectorCoverageComplete": true,
+        "sourceContourComplete": true,
+        "sourceVectorRequestedAreaM2": 7555.2953585289,
+        "sourceVectorAreaM2": 7555.28957366943,
+        "sourceVectorMissingAreaM2": 0.0,
+        "missingLevelTriangles": 0,
+        "budgetLimited": false,
+        "sourceLevelsUnchanged": true,
+        "symbolWidthPx": 1.25,
+        "waterSymbolVersion": "source-water-symbol-2",
+        "waterSymbolPolicy": "retained-vector-water-ring-outline",
+        "symbolicPhysicalWidthClaim": false
+      },
+      "nativeLogMaximaByEvent": {
+        "terrain-replaced": {
+          "characters": 382,
+          "count": 1,
+          "printMs": 176.568,
+          "serializeMs": 0.021
+        }
+      },
+      "preparationCancellationCount": 0
+    },
+    {
+      "name": "aerial-native-close-oblique",
+      "pngSha256": "43119d2893e48ed636b29fc5742477f7ff6a7e1644aa477db804dd2e65c30349",
+      "pngByteIdenticalToV9": true,
+      "metricsSha256": "e940bdb455e83843e1d96cdbd0a8e528e1d6167b1f73fe692f1c9882109736c2",
+      "durationIncludingStartupMs": 59213.2766,
+      "code": 0,
+      "runtimeErrors": 0,
+      "commandedWarmFrames": 32,
+      "recordedFrameSamples": 12,
+      "captureError": 0,
+      "sourceFrustumCPU": {
+        "name": "aerial-native-close-oblique",
+        "widthM": 600.0,
+        "focus": {
+          "x": 6530.0539967287295,
+          "z": 8494.492978230568
+        },
+        "fullyContainedSourceBodyFootprints": null,
+        "intersectingSourceTriangleProjectedBounds": 139,
+        "fullyContainedSourceTriangleProjectedBounds": 134,
+        "strictSubsetOf419": true,
+        "cameraWorld": {
+          "x": 6530.0539967287295,
+          "y": 357.9636442060883,
+          "z": 8781.538017216193
+        },
+        "scope": "CPU geometric source frustum query, not GPU per-building visibility/occlusion count"
+      },
+      "urban": {
+        "budgetLimited": false,
+        "materialBatches": 15,
+        "nativeBuildings": 335,
+        "proxyBuildings": 0,
+        "scope": "prepared submitted mesh batches; not a GPU visibility or occlusion count",
+        "worldId": "0de1e8948131f56a677a8e24e8ecbac8"
+      },
+      "frustumIDsSubsetOfSubmittedIDs": true,
+      "cityMapBuildingIdsCount": 0,
+      "cityMapBudgetLimited": false,
+      "roadProjectors": 210,
+      "candidateCount": 77412,
+      "populationInstances": {
+        "families": {
+          "boulder": {
+            "alphaPositiveInFrustum": 35,
+            "nodeVisible": 45,
+            "submitted": 45
+          },
+          "debris": {
+            "alphaPositiveInFrustum": 46,
+            "nodeVisible": 109,
+            "submitted": 109
+          },
+          "grass": {
+            "alphaPositiveInFrustum": 210,
+            "nodeVisible": 620,
+            "submitted": 620
+          },
+          "shrub": {
+            "alphaPositiveInFrustum": 158,
+            "nodeVisible": 218,
+            "submitted": 218
+          },
+          "tree": {
+            "alphaPositiveInFrustum": 1269,
+            "nodeVisible": 10000,
+            "submitted": 10000
+          },
+          "trunk": {
+            "alphaPositiveInFrustum": 1316,
+            "nodeVisible": 10000,
+            "submitted": 10000
+          }
+        },
+        "scope": "submitted buffers, actual node/camera visibility, shader ALPHA>0 and centres in frustum; no GPU occlusion claim",
+        "treeOpticalShadowEnabled": true,
+        "treeResidualEnabled": true
+      },
+      "canopyView": {
+        "phase": 2.0,
+        "safePhase": 2.0,
+        "exactWeight": 1.0,
+        "geometryWeight": 1.0,
+        "transitionPending": false,
+        "pendingAtlas": false,
+        "reason": "complete-frustum-plus-halo",
+        "spatialBlend": "none; one phase for the whole viewport",
+        "treePage": {
+          "bounds": {
+            "maxX": 8500.0,
+            "maxZ": 10500.0,
+            "minX": 4500.0,
+            "minZ": 6500.0
+          },
+          "complete": true,
+          "count": 71834.0,
+          "includeOverhang": true,
+          "limitedBy": "none",
+          "requestedBounds": {
+            "maxX": 8500.0,
+            "maxZ": 10500.0,
+            "minX": 4500.0,
+            "minZ": 6500.0
+          },
+          "retention": 1.0
+        }
+      },
+      "surfaceLayers": {
+        "canonicalFieldsVersion": "f10d130472641a2c13bec4e8ca4eacf2",
+        "canonicalVersion": "f10d130472641a2c13bec4e8ca4eacf2",
+        "fieldsVersion": "d0ad060649253b0035de84de3683e2aa",
+        "groundAvailability": "explicit",
+        "legacyFallback": false,
+        "lowCoverAvailability": "explicit",
+        "projectedFieldsVersion": "d0ad060649253b0035de84de3683e2aa",
+        "renderMode": "three-physical-layers",
+        "textureFieldsVersion": "f10d130472641a2c13bec4e8ca4eacf2",
+        "textureGrid": {
+          "height": 1024.0,
+          "originX": 7.8125,
+          "originZ": 7.8125,
+          "spacingM": 15.625,
+          "width": 1024.0
+        },
+        "textureSource": "canonical",
+        "version": "surface-layers-1",
+        "visibility": {
+          "ground": true,
+          "lowCover": true,
+          "trees": true
+        },
+        "worldId": "0de1e8948131f56a677a8e24e8ecbac8"
+      },
+      "terrain": {
+        "focusInsideChild": false,
+        "fineContributionWeight": 0.0,
+        "sourceActualAtFocus": {
+          "id": "infinite:47:e6f0c520536077f7cdd3284dbd1ce85e",
+          "nativeSpacingM": 15.625,
+          "sourceLOD": 0.0,
+          "sourceLODKnown": false,
+          "version": "decoder-v12-nyquist-notch:magna-retained-v1:e2bf5473c0ff:f21afa261ed7"
+        },
+        "sourceContributionsAtFocus": [
+          {
+            "activeChild": false,
+            "weight": 1.0,
+            "source": {
+              "id": "infinite:47:e6f0c520536077f7cdd3284dbd1ce85e",
+              "nativeSpacingM": 15.625,
+              "sourceLOD": 0.0,
+              "sourceLODKnown": false,
+              "version": "decoder-v12-nyquist-notch:magna-retained-v1:e2bf5473c0ff:f21afa261ed7"
+            }
+          }
+        ]
+      },
+      "water": {
+        "waterPresentation": "source-map-terrain-projection",
+        "physicalWaterSurfaceClaimed": false,
+        "sourceVectorCoverageComplete": true,
+        "sourceContourComplete": true,
+        "sourceVectorRequestedAreaM2": 195616.91151938,
+        "sourceVectorAreaM2": 195616.918302536,
+        "sourceVectorMissingAreaM2": 0.0,
+        "missingLevelTriangles": 0,
+        "budgetLimited": false,
+        "sourceLevelsUnchanged": true,
+        "symbolWidthPx": 1.25,
+        "waterSymbolVersion": "source-water-symbol-2",
+        "waterSymbolPolicy": "retained-vector-water-ring-outline",
+        "symbolicPhysicalWidthClaim": false
+      },
+      "nativeLogMaximaByEvent": {
+        "terrain-replaced": {
+          "characters": 380,
+          "count": 1,
+          "printMs": 204.144,
+          "serializeMs": 0.021
+        }
+      },
+      "preparationCancellationCount": 0
+    },
+    {
+      "name": "aerial-native-overall-top",
+      "pngSha256": "a15e54b5571608064d62951e9f98567f8d1748c510b67af00ae0d8918cd0e71b",
+      "pngByteIdenticalToV9": true,
+      "metricsSha256": "96833c1e9d0c67e0876bd04886bac39657d9d40c146eecc8c13e6233911bf813",
+      "durationIncludingStartupMs": 45722.68070000001,
+      "code": 0,
+      "runtimeErrors": 0,
+      "commandedWarmFrames": 32,
+      "recordedFrameSamples": 2,
+      "captureError": 0,
+      "sourceFrustumCPU": {
+        "name": "aerial-native-overall-top",
+        "widthM": 8400.0,
+        "focus": {
+          "x": 6846.66,
+          "z": 8024.22
+        },
+        "fullyContainedSourceBodyFootprints": 419,
+        "intersectingSourceTriangleProjectedBounds": 419,
+        "fullyContainedSourceTriangleProjectedBounds": 419,
+        "strictSubsetOf419": false,
+        "cameraWorld": null,
+        "scope": "CPU geometric source frustum query, not GPU per-building visibility/occlusion count"
+      },
+      "urban": {
+        "budgetLimited": false,
+        "materialBatches": 15,
+        "nativeBuildings": 419,
+        "proxyBuildings": 0,
+        "scope": "prepared submitted mesh batches; not a GPU visibility or occlusion count",
+        "worldId": "0de1e8948131f56a677a8e24e8ecbac8"
+      },
+      "frustumIDsSubsetOfSubmittedIDs": true,
+      "cityMapBuildingIdsCount": 0,
+      "cityMapBudgetLimited": false,
+      "roadProjectors": 256,
+      "candidateCount": 77412,
+      "populationInstances": {
+        "families": {
+          "boulder": {
+            "alphaPositiveInFrustum": 0,
+            "nodeVisible": 0,
+            "submitted": 0
+          },
+          "debris": {
+            "alphaPositiveInFrustum": 0,
+            "nodeVisible": 0,
+            "submitted": 0
+          },
+          "grass": {
+            "alphaPositiveInFrustum": 0,
+            "nodeVisible": 0,
+            "submitted": 0
+          },
+          "shrub": {
+            "alphaPositiveInFrustum": 0,
+            "nodeVisible": 0,
+            "submitted": 0
+          },
+          "tree": {
+            "alphaPositiveInFrustum": 0,
+            "nodeVisible": 0,
+            "submitted": 0
+          },
+          "trunk": {
+            "alphaPositiveInFrustum": 0,
+            "nodeVisible": 0,
+            "submitted": 0
+          }
+        },
+        "scope": "submitted buffers, actual node/camera visibility, shader ALPHA>0 and centres in frustum; no GPU occlusion claim",
+        "treeOpticalShadowEnabled": true,
+        "treeResidualEnabled": true
+      },
+      "canopyView": {
+        "phase": 0.0,
+        "safePhase": 0.0,
+        "exactWeight": 0.0,
+        "geometryWeight": 0.0,
+        "transitionPending": false,
+        "pendingAtlas": false,
+        "reason": "Complete tree page does not cover this view",
+        "spatialBlend": "none; one phase for the whole viewport",
+        "treePage": {
+          "bounds": {
+            "maxX": 8500.0,
+            "maxZ": 10500.0,
+            "minX": 4500.0,
+            "minZ": 6500.0
+          },
+          "complete": true,
+          "count": 71834.0,
+          "includeOverhang": true,
+          "limitedBy": "none",
+          "requestedBounds": {
+            "maxX": 8500.0,
+            "maxZ": 10500.0,
+            "minX": 4500.0,
+            "minZ": 6500.0
+          },
+          "retention": 1.0
+        }
+      },
+      "surfaceLayers": {
+        "canonicalFieldsVersion": "f10d130472641a2c13bec4e8ca4eacf2",
+        "canonicalVersion": "f10d130472641a2c13bec4e8ca4eacf2",
+        "fieldsVersion": "d0ad060649253b0035de84de3683e2aa",
+        "groundAvailability": "explicit",
+        "legacyFallback": false,
+        "lowCoverAvailability": "explicit",
+        "projectedFieldsVersion": "d0ad060649253b0035de84de3683e2aa",
+        "renderMode": "three-physical-layers",
+        "textureFieldsVersion": "f10d130472641a2c13bec4e8ca4eacf2",
+        "textureGrid": {
+          "height": 1024.0,
+          "originX": 7.8125,
+          "originZ": 7.8125,
+          "spacingM": 15.625,
+          "width": 1024.0
+        },
+        "textureSource": "canonical",
+        "version": "surface-layers-1",
+        "visibility": {
+          "ground": true,
+          "lowCover": true,
+          "trees": true
+        },
+        "worldId": "0de1e8948131f56a677a8e24e8ecbac8"
+      },
+      "terrain": {
+        "focusInsideChild": false,
+        "fineContributionWeight": 0.0,
+        "sourceActualAtFocus": {
+          "id": "infinite:47:e6f0c520536077f7cdd3284dbd1ce85e",
+          "nativeSpacingM": 15.625,
+          "sourceLOD": 0.0,
+          "sourceLODKnown": false,
+          "version": "decoder-v12-nyquist-notch:magna-retained-v1:e2bf5473c0ff:f21afa261ed7"
+        },
+        "sourceContributionsAtFocus": [
+          {
+            "activeChild": false,
+            "weight": 1.0,
+            "source": {
+              "id": "infinite:47:e6f0c520536077f7cdd3284dbd1ce85e",
+              "nativeSpacingM": 15.625,
+              "sourceLOD": 0.0,
+              "sourceLODKnown": false,
+              "version": "decoder-v12-nyquist-notch:magna-retained-v1:e2bf5473c0ff:f21afa261ed7"
+            }
+          }
+        ]
+      },
+      "water": {
+        "waterPresentation": "source-map-terrain-projection",
+        "physicalWaterSurfaceClaimed": false,
+        "sourceVectorCoverageComplete": true,
+        "sourceContourComplete": true,
+        "sourceVectorRequestedAreaM2": 2716542.16819078,
+        "sourceVectorAreaM2": 2716542.58946538,
+        "sourceVectorMissingAreaM2": 0.0,
+        "missingLevelTriangles": 0,
+        "budgetLimited": false,
+        "sourceLevelsUnchanged": true,
+        "symbolWidthPx": 1.25,
+        "waterSymbolVersion": "source-water-symbol-2",
+        "waterSymbolPolicy": "retained-vector-water-ring-outline",
+        "symbolicPhysicalWidthClaim": false
+      },
+      "nativeLogMaximaByEvent": {
+        "terrain-replaced": {
+          "characters": 376,
+          "count": 1,
+          "printMs": 122.709,
+          "serializeMs": 0.026
+        }
+      },
+      "preparationCancellationCount": 0
+    }
+  ],
+  "limits": [
+    "Static view source compatibility and readiness only; no fresh navigation, FPS or production artistic qualification.",
+    "All three images are byte-identical toV9; this shows no visual regression, not a new artistic improvement.",
+    "CPU frustum counts do not measure GPU occlusion. Submitted native mesh counts include a cached window larger than the visible frame.",
+    "Overall canopy phase0 is an explicitly approximate aggregate, not exact instance inventory outside the retained4km page. Near captures are exact phase2.",
+    "Overall roads reach the bounded256-projector cap; full regional road completeness is not claimed.",
+    "Water boundary symbol1.25px is declared display width; physical contours and source levels are unchanged.",
+    "Native logging timings are preserved: compact terrain-replaced print still measures about123\u2013204ms with file descriptors in these runs; no cause or all-print zero-cost claim.",
+    "Frame samples are distinct from commanded32 warm frames and do not qualify60FPS."
+  ],
+  "outputDirectory": "web/out/surface/native-current-419-v11-final"
+}

@@ -1,0 +1,24 @@
+{
+  "passed": true,
+  "meanByteError": 0.20820986346538461,
+  "maximumByteError": 0.6105326206389066,
+  "sourceWorldId": "e9f3dd422540ef2c452d54f226cc14de",
+  "sourceId": "mountains-surface-native-e2e-40km",
+  "sourceVersion": "2026-10-23T16:56:44.708Z",
+  "surfaceLayers": {
+    "version": "surface-layers-1",
+    "groundAvailability": "explicit",
+    "lowCoverAvailability": "explicit",
+    "fieldsVersion": "eebe1d15436a39a72b701465f1ccb275"
+  },
+  "sourcePacketSha256": "69268e41ab15b5fa6f8fbabe5512e2164660bf309a33fe923947f0224b4ff1c8",
+  "gpuImageSha256": "60f57bd73667591a775c3441533afbbaca5da66c29833b001c4c05bae20b9645",
+  "focus": [
+    20000.0,
+    20000.0
+  ],
+  "widthM": 10000.0,
+  "pixelMetres": 9.765625,
+  "comparedPixels": 1048576,
+  "scope": "Independent exact canonical groundMean bilinear reconstruction versus a saved unlit raw-ground top-view GPU image, with urban/water/canopy objects hidden; excludes lighting, geometryDetail and source upsampling claims."
+}

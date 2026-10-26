@@ -1,0 +1,27 @@
+{
+  "format": "opus-v12-review-provenance",
+  "model": "claude-opus-5-5",
+  "requestedEffort": "high",
+  "isError": false,
+  "durationMs": 513112,
+  "modelUsage": {
+    "claude-opus-5-5": {
+      "inputTokens": 102,
+      "outputTokens": 45285,
+      "cacheReadInputTokens": 10237545,
+      "cacheCreationInputTokens": 339581,
+      "webSearchRequests": 0,
+      "costUSD": 5.670265000000001,
+      "contextWindow": 1000000,
+      "maxOutputTokens": 128000,
+      "thinkingTokens": 19386,
+      "canonicalModel": "claude-opus-5-5",
+      "provider": "firstParty",
+      "costBasis": "list"
+    }
+  },
+  "rawReview": "web/out/surface-reviews/phase06-followup-v12-preserved.json",
+  "rawReviewSha256": "69610245097cd3c01a3b54fda67898115d237a1216cd7eb8a426bbf650181d17",
+  "markdown": "docs/surface/reviews/phase06-followup-v12.md",
+  "scope": "Actual CLI review; read-only Read/Glob/Grep; no shell/GPU. Original text preserved verbatim. Root counts55 unique names in its enumerated image sets; the reported71 openings were not independently counted."
+}

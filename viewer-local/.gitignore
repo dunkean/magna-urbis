@@ -1,0 +1,5 @@
+.godot/
+.deps/
+addons/
+captures/
+*.uid

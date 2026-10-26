@@ -1,0 +1,48 @@
+{
+  "physicalShaderPath": "D:/workspace/self/_worktrees/magna-urbis-surface-world-2026-10-23/viewer-local/shaders/water.gdshader",
+  "physicalShaderSha256": "69f62719e7cce6d7de2c266829174fd1a7fb648606290cce9bad5bf5697f7634",
+  "format": "surface-hydrology-f2-evidence",
+  "files": [
+    {
+      "sha256": "ff659cfdf6f213f3160c6576a954e60520357f0166eb05aee9fb521a0c07fddf",
+      "path": "viewer-local/diagnostics/hydrology_source_map_probe.gd"
+    },
+    {
+      "sha256": "d30de2161a3c9af8535745d209240b745fcdd8bd6b3e5f7c2aa51d75cb404067",
+      "path": "viewer-local/tests/surface_hydrology_visibility_test.gd"
+    },
+    {
+      "sha256": "0f1c87f8d164226146474465ec50c471c57825c9343ecdd4b5e77f805d08d11d",
+      "path": "viewer-local/adapters/surface_hydrology.gd"
+    },
+    {
+      "sha256": "b33e8278781c766554dbc1a49069a3aa18877d3153de1b7f656b6edf4a2aa752",
+      "path": "viewer-local/shaders/water_source_map.gdshader"
+    },
+    {
+      "sha256": "d9bd382ad8f47d12a60bebadc689858054b4bbd27d4b4402619254510d697e1f",
+      "path": "docs/surface/evidence/hydrology-f2/cpu-visibility.json"
+    },
+    {
+      "sha256": "7656e0abb734837ac0ece943d97bf68572bf6d8ef7a3b61610bf39fe6fa18f44",
+      "path": "docs/surface/evidence/hydrology-f2/diagnostic-overlay-over-roof.png"
+    },
+    {
+      "sha256": "53e4b885b50ab4f8571ed58afd2033229b5200f5cbade46ffb5b87f683b1221e",
+      "path": "docs/surface/evidence/hydrology-f2/gpu-report.json"
+    },
+    {
+      "sha256": "83d6176575311c7a6c0579ae76e6e895e5117fb0e0325679c782d8dace350421",
+      "path": "docs/surface/evidence/hydrology-f2/source-contours.png"
+    },
+    {
+      "sha256": "c6ada778de7ef567236befe839a21d167dd46b397812f3f7a4c21a917e8ddaae",
+      "path": "docs/surface/evidence/hydrology-f2/source-levels-with-depth.png"
+    },
+    {
+      "sha256": "fdb631c2f3202c053ae0a7df6991b4786f7daedac3e81496e557d4ec65145838",
+      "path": "docs/surface/evidence/hydrology-f2/terrain-only-source-map-roof.png"
+    }
+  ],
+  "version": 1
+}

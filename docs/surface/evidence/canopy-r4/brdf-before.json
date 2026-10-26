@@ -1,0 +1,28 @@
+{
+  "adapter": "NVIDIA GeForce RTX 4090",
+  "backend": "forward_plus",
+  "meshVsMultiMeshMaximumByteError": 34.0,
+  "meshVsMultiMeshMeanByteError": 1.4747276515684,
+  "passed": false,
+  "results": [
+    {
+      "comparedChannels": 113352,
+      "maximumByteError": 26.0000019073486,
+      "meanByteError": 3.95924209238752,
+      "normalMapDepth": 0.75
+    },
+    {
+      "comparedChannels": 113352,
+      "maximumByteError": 8.00000286102295,
+      "meanByteError": 0.740692738239851,
+      "normalMapDepth": 1.0
+    },
+    {
+      "comparedChannels": 113352,
+      "maximumByteError": 35.0,
+      "meanByteError": 9.36132593845099,
+      "normalMapDepth": 2.0
+    }
+  ],
+  "scope": "Independent actual production SphereMesh radius.42 height1 scale(12,7.92,12), versus production exact crown-normal atlas on a flat receiver. Same footprint, tint, BRDF and lighting; shadows disabled to isolate normals/illumination. Core radius85percent excludes silhouette tessellation."
+}

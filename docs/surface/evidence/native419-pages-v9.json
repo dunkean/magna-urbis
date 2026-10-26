@@ -1,0 +1,199 @@
+{
+  "format": "explicit-retained-population-page-refresh",
+  "version": 1,
+  "status": "passed",
+  "source": {
+    "path": "ROOT/web/out/surface/native-current-419-ground-v153/native-current-419-ground-1.5.3.surfacebin",
+    "bytes": 246789041,
+    "sha256": "79fb75b31448278c561076eb92bf3f82c8c55d50b707af5052fc4fb27a8aa141"
+  },
+  "output": {
+    "path": "MODEL/web/out/surface/native419-pages-v9-r2/native419-ground-v153-pages.surfacebin",
+    "bytes": 251582841,
+    "sha256": "54616775da71a5fb94e32d1cce13b59cad38f79f410f04525be72bc14edf589e"
+  },
+  "worldId": "0de1e8948131f56a677a8e24e8ecbac8",
+  "canonicalContextId": "00eb9ae088b9342e0ce55680861edf6c",
+  "canonicalTerrainHashVerified": "da183c8d605365f7ec9fbcf59036c6ed",
+  "oldCandidatesReplayedExactly": 9593,
+  "intersectingCandidatesExactExceptDeclaredY": 0,
+  "intersectingYChanges": 0,
+  "newCount": 77412,
+  "candidatePages": {
+    "version": "surface-candidate-pages-1",
+    "tree": {
+      "bounds": {
+        "minX": 4500,
+        "maxX": 8500,
+        "minZ": 6500,
+        "maxZ": 10500
+      },
+      "requestedBounds": {
+        "minX": 4500,
+        "maxX": 8500,
+        "minZ": 6500,
+        "maxZ": 10500
+      },
+      "count": 71834,
+      "complete": true,
+      "includeOverhang": true,
+      "retention": 1,
+      "limitedBy": "none"
+    },
+    "support": {
+      "policy": "fine-inside-centres-otherwise-parent-or-canonical",
+      "canonicalSource": {
+        "id": "infinite:47:e6f0c520536077f7cdd3284dbd1ce85e",
+        "version": "decoder-v12-nyquist-notch:magna-retained-v1:e2bf5473c0ff:f21afa261ed7",
+        "nativeSpacingM": 15.625,
+        "reconstruction": "bilinear-samples"
+      },
+      "canonicalContextId": "00eb9ae088b9342e0ce55680861edf6c",
+      "fineSource": {
+        "id": "infinite:47:e6f0c520536077f7cdd3284dbd1ce85e",
+        "version": "decoder-v12-nyquist-notch:magna-retained-v1:e2bf5473c0ff:f21afa261ed7",
+        "nativeSpacingM": 15,
+        "reconstruction": "bilinear-samples"
+      },
+      "fineBounds": {
+        "minX": 6757.8125,
+        "minZ": 3507.8125,
+        "maxX": 7742.1875,
+        "maxZ": 4492.1875
+      },
+      "parentSource": {
+        "id": "infinite:47:e6f0c520536077f7cdd3284dbd1ce85e",
+        "version": "decoder-v12-nyquist-notch:magna-retained-v1:e2bf5473c0ff:f21afa261ed7",
+        "nativeSpacingM": 15.625,
+        "reconstruction": "bilinear-samples"
+      },
+      "parentBounds": {
+        "minX": 7.8125,
+        "minZ": 7.8125,
+        "maxX": 15992.1875,
+        "maxZ": 15992.1875
+      },
+      "fineSampleCount": 0,
+      "parentSampleCount": 77412,
+      "canonicalSampleCount": 0
+    },
+    "query": {
+      "version": "surface-population-query-1",
+      "recipeVersion": "population-1.2.0",
+      "mode": "paged",
+      "requestedBounds": {
+        "minX": 4500,
+        "maxX": 8500,
+        "minZ": 6500,
+        "maxZ": 10500
+      },
+      "canonicalDomain": {
+        "minX": 7.8125,
+        "minZ": 7.8125,
+        "maxX": 15992.1875,
+        "maxZ": 15992.1875
+      },
+      "sourceToWorldTranslation": {
+        "x": 0,
+        "z": 0
+      },
+      "identityDomain": {
+        "minX": 7.8125,
+        "minZ": 7.8125,
+        "maxX": 15992.1875,
+        "maxZ": 15992.1875
+      },
+      "producer": "explicit-retained-refresh"
+    },
+    "shrub": {
+      "bounds": {
+        "minX": 6260,
+        "maxX": 6740,
+        "minZ": 8260,
+        "maxZ": 8740
+      },
+      "requestedBounds": {
+        "minX": 6260,
+        "maxX": 6740,
+        "minZ": 8260,
+        "maxZ": 8740
+      },
+      "count": 225,
+      "complete": true,
+      "includeOverhang": true,
+      "retention": 1,
+      "limitedBy": "none"
+    },
+    "boulder": {
+      "bounds": {
+        "minX": 6260,
+        "maxX": 6740,
+        "minZ": 8260,
+        "maxZ": 8740
+      },
+      "requestedBounds": {
+        "minX": 6260,
+        "maxX": 6740,
+        "minZ": 8260,
+        "maxZ": 8740
+      },
+      "count": 105,
+      "complete": true,
+      "includeOverhang": true,
+      "retention": 1,
+      "limitedBy": "none"
+    },
+    "grass": {
+      "bounds": {
+        "minX": 6260,
+        "maxX": 6740,
+        "minZ": 8260,
+        "maxZ": 8740
+      },
+      "requestedBounds": {
+        "minX": 6260,
+        "maxX": 6740,
+        "minZ": 8260,
+        "maxZ": 8740
+      },
+      "count": 4845,
+      "complete": true,
+      "includeOverhang": true,
+      "retention": 1,
+      "limitedBy": "none"
+    },
+    "debris": {
+      "bounds": {
+        "minX": 6260,
+        "maxX": 6740,
+        "minZ": 8260,
+        "maxZ": 8740
+      },
+      "requestedBounds": {
+        "minX": 6260,
+        "maxX": 6740,
+        "minZ": 8260,
+        "maxZ": 8740
+      },
+      "count": 403,
+      "complete": true,
+      "includeOverhang": true,
+      "retention": 1,
+      "limitedBy": "none"
+    }
+  },
+  "allOtherPacketBytesExact": true,
+  "immutablePacketSha256": "1a1b9d4ba02668a892afa32c3e046267136ae55028da6768b184c13fc2abbe73",
+  "scope": "Explicit retained population query only. Original world, ground, terrain, source, urban, indices and archives preserved. Not a new source/terrain refinement/native realization or GPU proof.",
+  "validation": {
+    "kind": "CPU-only; no GPU or fresh generation",
+    "script": "web/scripts/refresh_surface_candidate_pages.ts",
+    "queryFocus": {
+      "x": 6500,
+      "z": 8500
+    },
+    "queryWidthM": 4000,
+    "allOldRecordsReplayed": true,
+    "overlapIsDisjoint": true
+  }
+}

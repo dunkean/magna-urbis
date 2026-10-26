@@ -1,0 +1,190 @@
+{
+  "format": "surface-material-mean-source-equivalence",
+  "version": 1,
+  "createdUtc": "2026-10-23T16:04:34.801673+00:00",
+  "baselineCommit": "9d86d00cfa9cb8de772432ade68572c3e86f96a6",
+  "rootHeadReadOnly": "22ca81393d89abbed0abfd14432f2d74de749f10",
+  "GPUrerun": false,
+  "wholeCriticalFilesAreNotClaimedIdentical": true,
+  "testedCriticalBlocksAllIdentical": true,
+  "files": [
+    {
+      "path": "viewer-local/shaders/surface_uniforms.gdshaderinc",
+      "baselineExists": true,
+      "baselineSha256": "e0479b23f1a7e81fe5aebe83dec42b964b7ef2b1b50b47aec709dabdee4ca289",
+      "currentSha256": "829bd87ccb3f2a6150f63e68dc33d064c53ae46b43aa0a44090b9c042dbda0dc",
+      "baselineLFNormalizedSha256": "e0479b23f1a7e81fe5aebe83dec42b964b7ef2b1b50b47aec709dabdee4ca289",
+      "currentLFNormalizedSha256": "4c621c6af28653994f31cecba12a7970b3769275d7c77b7df6a80c492663b770",
+      "entireFileLFEqual": false
+    },
+    {
+      "path": "viewer-local/shaders/color_space.gdshaderinc",
+      "baselineExists": true,
+      "baselineSha256": "3e0a66b2da684f0e80f4ec81d75a9fd65c33319f3665539f43cf59048bf7ed38",
+      "currentSha256": "e7497c7082104e09d1f7bf13e7a21fdf85d5f35f30b4c09ddf528cbfa713fa00",
+      "baselineLFNormalizedSha256": "3e0a66b2da684f0e80f4ec81d75a9fd65c33319f3665539f43cf59048bf7ed38",
+      "currentLFNormalizedSha256": "3e0a66b2da684f0e80f4ec81d75a9fd65c33319f3665539f43cf59048bf7ed38",
+      "entireFileLFEqual": true
+    },
+    {
+      "path": "viewer-local/shaders/normal_frame.gdshaderinc",
+      "baselineExists": true,
+      "baselineSha256": "b295e8dc760c94fc083bfe92f9a680aadf438409042f1312903a65031bba74c0",
+      "currentSha256": "bbbdd7af06bbc462ac145b1ec4192f51b81a97f50186576be34afcc7dde30477",
+      "baselineLFNormalizedSha256": "b295e8dc760c94fc083bfe92f9a680aadf438409042f1312903a65031bba74c0",
+      "currentLFNormalizedSha256": "b295e8dc760c94fc083bfe92f9a680aadf438409042f1312903a65031bba74c0",
+      "entireFileLFEqual": true
+    },
+    {
+      "path": "viewer-local/shaders/canopy.gdshaderinc",
+      "baselineExists": false,
+      "baselineSha256": null,
+      "currentSha256": "8a27b0f5f52806cade4ac4b5f78c0b91a337ba6738f076862624995a700b899b",
+      "baselineLFNormalizedSha256": null,
+      "currentLFNormalizedSha256": "062fa2b9c5c780c8b0cb3eb2c098ac3de14de00b4e8e260d3438895131a3c620",
+      "entireFileLFEqual": false
+    },
+    {
+      "path": "viewer-local/adapters/material_library.gd",
+      "baselineExists": true,
+      "baselineSha256": "bd998ba8a566b98d7af5f5c6b8f8c4b4724f3569ead769aca61c83f2ca9268de",
+      "currentSha256": "bd4ff1babe5dd31cb5433dde482971a53178792b7c6f30e52a0c936ea135555a",
+      "baselineLFNormalizedSha256": "bd998ba8a566b98d7af5f5c6b8f8c4b4724f3569ead769aca61c83f2ca9268de",
+      "currentLFNormalizedSha256": "54efdef1f4aae13b75fdc1805c4588b4a31f1deb7dbc3c297a83d817de04366b",
+      "entireFileLFEqual": false
+    },
+    {
+      "path": "viewer-local/shaders/surface_body.gdshaderinc",
+      "baselineExists": true,
+      "baselineSha256": "c035a99938b9ec34b072d94f33a1286cf8b535cf625b4395fadd8f29470d21d7",
+      "currentSha256": "d96159d08205e7e82d7c8953885e2e10d35a1223dee9bcc8ce4d2ac3859037f7",
+      "baselineLFNormalizedSha256": "c035a99938b9ec34b072d94f33a1286cf8b535cf625b4395fadd8f29470d21d7",
+      "currentLFNormalizedSha256": "0db6fce2533ffa63d2473e5d002c67911b7261cd7d55284eaaadf51a84512a01",
+      "entireFileLFEqual": false
+    },
+    {
+      "path": "viewer-local/shaders/geometry_detail.gdshaderinc",
+      "baselineExists": false,
+      "baselineSha256": null,
+      "currentSha256": "59108006fd922484de06269a91d3df5580e7832baa2cd3589fd211caa646de2b",
+      "baselineLFNormalizedSha256": null,
+      "currentLFNormalizedSha256": "4a5d2209d9844a223c6a3a244add590ae097b8a2053951d571af9c49a7f2cfb0",
+      "entireFileLFEqual": false
+    }
+  ],
+  "criticalBlocks": [
+    {
+      "testedCriticalBlock": "surface_uniforms::surface_hash",
+      "baselineLFNormalizedSha256": "2d410a1fab6da51680863e0f7158490c24d45abf824f8789ef960488389640d1",
+      "currentLFNormalizedSha256": "2d410a1fab6da51680863e0f7158490c24d45abf824f8789ef960488389640d1",
+      "exactLFNormalizedEqual": true
+    },
+    {
+      "testedCriticalBlock": "surface_uniforms::surface_rotation",
+      "baselineLFNormalizedSha256": "558e01098983ca5b8b4aa2f3e0ce95558c52421101be30d63859667d6734fb45",
+      "currentLFNormalizedSha256": "558e01098983ca5b8b4aa2f3e0ce95558c52421101be30d63859667d6734fb45",
+      "exactLFNormalizedEqual": true
+    },
+    {
+      "testedCriticalBlock": "surface_uniforms::surface_noise",
+      "baselineLFNormalizedSha256": "c5c787f4156b27eb292c2c363febd723d5e52d6b9cf92f89a310f64138c09583",
+      "currentLFNormalizedSha256": "c5c787f4156b27eb292c2c363febd723d5e52d6b9cf92f89a310f64138c09583",
+      "exactLFNormalizedEqual": true
+    },
+    {
+      "testedCriticalBlock": "surface_uniforms::sample_pbr",
+      "baselineLFNormalizedSha256": "a1831c9d2ce1aace50846bbc8ac279e1ba283cefa3b795d94bcb9454e05c042e",
+      "currentLFNormalizedSha256": "a1831c9d2ce1aace50846bbc8ac279e1ba283cefa3b795d94bcb9454e05c042e",
+      "exactLFNormalizedEqual": true
+    },
+    {
+      "testedCriticalBlock": "surface_uniforms::sample_surface_material",
+      "baselineLFNormalizedSha256": "37a18bc67bf6f759c57c198f226de41490d00454e20fb20db42fc978218ee02f",
+      "currentLFNormalizedSha256": "37a18bc67bf6f759c57c198f226de41490d00454e20fb20db42fc978218ee02f",
+      "exactLFNormalizedEqual": true
+    },
+    {
+      "testedCriticalBlock": "surface_uniforms entire source excluding one new geometry_detail include",
+      "baselineLFNormalizedSha256": "e0479b23f1a7e81fe5aebe83dec42b964b7ef2b1b50b47aec709dabdee4ca289",
+      "currentLFNormalizedSha256": "e0479b23f1a7e81fe5aebe83dec42b964b7ef2b1b50b47aec709dabdee4ca289",
+      "exactLFNormalizedEqual": true
+    },
+    {
+      "testedCriticalBlock": "material_library::_load_image",
+      "baselineLFNormalizedSha256": "c6e8bb4db23c979508247cdb03ca6856b96b3a2792167142ad3d4dd9205730a8",
+      "currentLFNormalizedSha256": "c6e8bb4db23c979508247cdb03ca6856b96b3a2792167142ad3d4dd9205730a8",
+      "exactLFNormalizedEqual": true
+    },
+    {
+      "testedCriticalBlock": "material_library::configure",
+      "baselineLFNormalizedSha256": "eac8a620b41e4135ad1f55261724dd4bb481c3e45ef194e2b589774d789dcf71",
+      "currentLFNormalizedSha256": "eac8a620b41e4135ad1f55261724dd4bb481c3e45ef194e2b589774d789dcf71",
+      "exactLFNormalizedEqual": true
+    },
+    {
+      "testedCriticalBlock": "material_library::_lattice_phase",
+      "baselineLFNormalizedSha256": "fa20e1ea4fd3d59050b55eb3f90abb3b12801c86b57a44b7cdfc9fcdeebf29d5",
+      "currentLFNormalizedSha256": "fa20e1ea4fd3d59050b55eb3f90abb3b12801c86b57a44b7cdfc9fcdeebf29d5",
+      "exactLFNormalizedEqual": true
+    },
+    {
+      "testedCriticalBlock": "material_library::_cell_phase",
+      "baselineLFNormalizedSha256": "13918a9513bf8ec6d9d7e972e98718d1133ee3b09fbcc58e03b652863ec5c8e0",
+      "currentLFNormalizedSha256": "13918a9513bf8ec6d9d7e972e98718d1133ee3b09fbcc58e03b652863ec5c8e0",
+      "exactLFNormalizedEqual": true
+    },
+    {
+      "testedCriticalBlock": "material_library::linearFallbackMeanAndMips",
+      "baselineLFNormalizedSha256": "418a45c88c611dceb933f4f363418c9ab19e2b89510f68de60c5150523c77380",
+      "currentLFNormalizedSha256": "418a45c88c611dceb933f4f363418c9ab19e2b89510f68de60c5150523c77380",
+      "exactLFNormalizedEqual": true
+    },
+    {
+      "testedCriticalBlock": "material_library::linearPixelPackingAndMips",
+      "baselineLFNormalizedSha256": "30b909c8f7dda360075cfd05ceaec5cd801e3ed859712d12714ea927c7072e87",
+      "currentLFNormalizedSha256": "30b909c8f7dda360075cfd05ceaec5cd801e3ed859712d12714ea927c7072e87",
+      "exactLFNormalizedEqual": true
+    },
+    {
+      "testedCriticalBlock": "material_library::linearLayerMeanReduction",
+      "baselineLFNormalizedSha256": "f37daebe5becb6f45d78acf4fc758c22bd18a6b0d3cfe5e5f573c2349333313e",
+      "currentLFNormalizedSha256": "f37daebe5becb6f45d78acf4fc758c22bd18a6b0d3cfe5e5f573c2349333313e",
+      "exactLFNormalizedEqual": true
+    }
+  ],
+  "existingReports": [
+    {
+      "originalPath": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-viewer-2026-10-23\\viewer-local\\diagnostics\\evidence\\material-mean-forward.json",
+      "collectedPath": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-adapters-2026-10-23\\web\\out\\surface\\evidence-collect\\material-mean-source-equivalence\\material-mean-forward.json",
+      "sha256": "99a2abb1fc8d39a799d6cda4ad5a80f75e649b93ac773b2571e44e958189e840",
+      "recordedShaderCommit": "9d86d00cfa9cb8de772432ade68572c3e86f96a6",
+      "maximumRelativeMeanError": 0.0015329122543335,
+      "maximumRebaseByteError": 1,
+      "adapter": "NVIDIA GeForce RTX 4090",
+      "backend": "forward_plus"
+    },
+    {
+      "originalPath": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-viewer-2026-10-23\\viewer-local\\diagnostics\\evidence\\material-mean-gl.json",
+      "collectedPath": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-adapters-2026-10-23\\web\\out\\surface\\evidence-collect\\material-mean-source-equivalence\\material-mean-gl.json",
+      "sha256": "da1fc2ab9c2b6f1825b3ad40da5467e5f4c663318eb4c46996e7e77e3802efad",
+      "recordedShaderCommit": "9d86d00cfa9cb8de772432ade68572c3e86f96a6",
+      "maximumRelativeMeanError": 0.00424790382385254,
+      "maximumRebaseByteError": 1,
+      "adapter": "NVIDIA GeForce RTX 5090",
+      "backend": "gl_compatibility"
+    }
+  ],
+  "differences": {
+    "surface_uniforms": "Exactly one geometry_detail include added; all stochastic sampler math/functions and numeric uniforms are identical after LF normalization.",
+    "material_library": "Added asset provenance/version/hash records and cache clearing on reload; configure() including PackedVector4 layer_mean upload, fallback/image linear conversion, half-float/mip packing and mean reduction are identical.",
+    "excludedFromProbeScope": "surface_body and geometry_detail changed/are new. The historical mean probe supplies its own fragment and does not exercise their environment/body/detail composition. No whole-scene or full artistic-parity claim."
+  },
+  "currentProbeSnapshot": {
+    "originalPath": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\viewer-local\\diagnostics\\material_mean_probe.gd",
+    "collectedPath": "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-adapters-2026-10-23\\web\\out\\surface\\evidence-collect\\material-mean-source-equivalence\\current-root\\diagnostics\\material_mean_probe.gd",
+    "sha256": "52fea2f794d2d0ced920a4800ac3b8d50e9747421edd61913b9e7341dbdae942",
+    "lfNormalizedSha256": "ce8037f81b515f1147f0e45b50108dc5c5a5258063d4dd227816dbbf511ab017",
+    "probeFileTrackedAtRecordedShaderCommit": false,
+    "scope": "Collected current probe source only. Historical reports pin the production shader commit; no unsupported claim that a previously untracked probe file existed in that commit."
+  }
+}

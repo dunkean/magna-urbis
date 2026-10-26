@@ -1,0 +1,137 @@
+{
+  "format": "surface-population-optimization-independent-review",
+  "version": 1,
+  "status": "PASS",
+  "baselineCommit": "ab3c4996e16be503dbcc5e3f04cd5592e361009a",
+  "baselineNormalizedBlobExpected": "378f693c425d19f4a8abe14320729aeabe7c7fcf",
+  "codeReview": {
+    "verdict": "No equivalence blocker found in the reviewed population.ts optimization.",
+    "observations": [
+      "The common FNV prefix retains exactly the same32-bit state as hashing stableId plus colon; the private callers use only single-digit channels1–8.",
+      "Signed imul intermediates and the unsigned coercion retain the same subsequent avalanche bits.",
+      "Family-specific eligibility preserves the original bilinear arithmetic order and nearest fallback; exclusions still run before density acceptance.",
+      "NaN/Infinity adversarial direct fields preserve the existing errors/acceptance arithmetic; these are not claimed valid serialized world inputs.",
+      "Population recipe,stableIDs,ranks,positions,variants,sizes,crown radii,retention and budgets are unchanged."
+    ],
+    "limit": "This sub-phase proof does not establish that the14s V9 full-browser request or native3.7s preparation is fixed."
+  },
+  "node": {
+    "format": "independent-surface-population-optimization-review",
+    "version": 1,
+    "status": "PASS",
+    "baseline": {
+      "path": "MODEL/web/src/surface/population.ts",
+      "sha256": "8f57f5adc5154ee4df8332071decd8b5a344009c19dd0fd86ca6e216e54b42d8",
+      "normalizedGitBlob": "378f693c425d19f4a8abe14320729aeabe7c7fcf"
+    },
+    "optimized": {
+      "path": "ADAPTERS-V10/web/src/surface/population.ts",
+      "sha256": "875472e5e5493d8c42900f15c9b2407657ac2e7a17df50c458f134ed9c6b9338",
+      "normalizedGitBlob": "c1df42313aa98f7f168bd91c747bf1b4454a2abf"
+    },
+    "frozen": {
+      "count": 6422,
+      "fingerprint": "2a6337b19df0b68fc0004919dda225d5"
+    },
+    "matrixQueries": 480,
+    "matrixFullRecordComparisons": 45444,
+    "matchedErrors": 24,
+    "checks": [
+      {
+        "name": "frozen-pre-layer-6422",
+        "count": 6422,
+        "fingerprint": "2a6337b19df0b68fc0004919dda225d5",
+        "baselineMs": 131.971,
+        "optimizedMs": 47.23349999999999
+      },
+      {
+        "name": "real-retained-tree-4km",
+        "count": 67221,
+        "fingerprint": "4cf8ed38b305e1f60a904c60e833952c",
+        "baselineMs": 3269.7944,
+        "optimizedMs": 759.5797000000002
+      },
+      {
+        "name": "real-retained-all-families-480m",
+        "count": 9043,
+        "fingerprint": "42c9918881fcee6681de4c805fa4550c",
+        "baselineMs": 241.6907000000001,
+        "optimizedMs": 38.046800000000076
+      }
+    ],
+    "realSource": {
+      "path": "ROOT/web/out/surface/native-e2e-40km-v9/live-refinement.surfacebin",
+      "sha256": "25f93200da531bf73ba9b03a887281f0586dc460864894e24b4e1448b540925c",
+      "canonicalTerrainHash": "2d73efaf62ae528bf2b49943ad061cdd",
+      "canonicalContextId": "0fbdbbb1fef585df4fcfa0b9f0c09935"
+    },
+    "limits": "CPU/Node equivalence and single-run timings only. Adversarial nonfinite direct fields test legacy arithmetic compatibility, not hydrator validity. No browser, renderer or20s navigation claim."
+  },
+  "chromiumWorker": {
+    "format": "chromium-worker-population-optimization-proof",
+    "version": 1,
+    "status": "PASS",
+    "checks": [
+      {
+        "name": "trees-4km",
+        "count": 67221,
+        "fingerprint": "4cf8ed38b305e1f60a904c60e833952c",
+        "baselineMs": [
+          1599.7000000178814,
+          3316,
+          3629.0999999940395
+        ],
+        "optimizedMs": [
+          286.69999998807907,
+          609.7000000178814,
+          725
+        ],
+        "baselineMedianMs": 3316,
+        "optimizedMedianMs": 609.7000000178814,
+        "speedup": 5.43874036395399
+      },
+      {
+        "name": "all-families-480m",
+        "count": 9043,
+        "fingerprint": "42c9918881fcee6681de4c805fa4550c",
+        "baselineMs": [
+          202.19999998807907,
+          185.69999998807907,
+          223.7000000178814
+        ],
+        "optimizedMs": [
+          61.400000005960464,
+          29.200000017881393,
+          30.900000005960464
+        ],
+        "baselineMedianMs": 202.19999998807907,
+        "optimizedMedianMs": 30.900000005960464,
+        "speedup": 6.543689318740312
+      }
+    ],
+    "canonicalContextId": "0fbdbbb1fef585df4fcfa0b9f0c09935",
+    "canonicalTerrainHash": "2d73efaf62ae528bf2b49943ad061cdd",
+    "canonicalInputUnchanged": true,
+    "hardwareConcurrency": 24,
+    "browser": "145.0.7632.6",
+    "baseline": {
+      "path": "MODEL/web/src/surface/population.ts",
+      "sha256": "8f57f5adc5154ee4df8332071decd8b5a344009c19dd0fd86ca6e216e54b42d8"
+    },
+    "optimized": {
+      "path": "ADAPTERS-V10/web/src/surface/population.ts",
+      "sha256": "875472e5e5493d8c42900f15c9b2407657ac2e7a17df50c458f134ed9c6b9338"
+    },
+    "source": {
+      "path": "ROOT/web/out/surface/native-e2e-40km-v9/live-refinement.surfacebin",
+      "bytes": 69774425,
+      "sha256": "25f93200da531bf73ba9b03a887281f0586dc460864894e24b4e1448b540925c"
+    },
+    "scope": "Real Chromium module Worker, same retained source and full records. CPU only, GPU disabled,3 repetitions per query, alternating order. No native rendering/fresh-generation/navigation or60FPS claim."
+  },
+  "scripts": [
+    "web/scripts/verify_surface_population_optimization.ts",
+    "web/scripts/benchmark_surface_population_browser.mjs"
+  ],
+  "scope": "CPU and real Chromium Worker only. Same retained source, no fresh generation or native/GPU run. V9FAILED is preserved; V10 must independently pass all original gates."
+}

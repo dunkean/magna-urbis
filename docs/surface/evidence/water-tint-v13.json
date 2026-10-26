@@ -1,0 +1,768 @@
+{
+  "format": "water-uniform-tint-v13-gpu-proof",
+  "status": "PASS bounded tint A/B; unchanged legacy bytes, alpha, classes, source geometry",
+  "run": {
+    "headBefore": "cb37de275c09232d558a28ae3c7544b3379c37a9",
+    "headAfter": "cb37de275c09232d558a28ae3c7544b3379c37a9",
+    "statusAfter": "",
+    "sourceShaBefore": "fe28ffce5c4fb20824b1940276e91ea9946dc1da53a0ce06607a4312ef499570",
+    "sourceShaAfter": "fe28ffce5c4fb20824b1940276e91ea9946dc1da53a0ce06607a4312ef499570",
+    "runs": [
+      {
+        "mode": "source-classes",
+        "command": [
+          "D:\\workspace\\self\\_surface-tools\\godot-4.7.2\\Godot_v4.7.2-stable_win64_console.exe",
+          "--audio-driver",
+          "Dummy",
+          "--path",
+          "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\viewer-local",
+          "--rendering-method",
+          "forward_plus",
+          "--script",
+          "res://diagnostics/water_confluence_channels.gd",
+          "--",
+          "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\native-e2e-40km-v12\\fresh-source.surfacebin",
+          "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\water-tint-v13\\source-classes",
+          "source-classes"
+        ],
+        "exitCode": 0,
+        "durationMs": 16457.375500001945
+      },
+      {
+        "mode": "uniform",
+        "command": [
+          "D:\\workspace\\self\\_surface-tools\\godot-4.7.2\\Godot_v4.7.2-stable_win64_console.exe",
+          "--audio-driver",
+          "Dummy",
+          "--path",
+          "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\viewer-local",
+          "--rendering-method",
+          "forward_plus",
+          "--script",
+          "res://diagnostics/water_confluence_channels.gd",
+          "--",
+          "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\native-e2e-40km-v12\\fresh-source.surfacebin",
+          "D:\\workspace\\self\\_worktrees\\magna-urbis-surface-world-2026-10-23\\web\\out\\surface\\water-tint-v13\\uniform",
+          "uniform"
+        ],
+        "exitCode": 0,
+        "durationMs": 15863.695100008044
+      }
+    ]
+  },
+  "adapter": "NVIDIA GeForce RTX 5090",
+  "backend": "Forward+",
+  "worldScope": "Retained V12 source packet; six512m crops at reference10km screenMPP. No new source, navigation or globalV13/artistic qualification.",
+  "rows": [
+    {
+      "pixel": [
+        1562,
+        451
+      ],
+      "sourceVerticesUnchanged": true,
+      "sourceBeforeAfterEqual": true,
+      "checks": {
+        "source-fill-rgba.png": {
+          "legacyPngByteExact": true,
+          "alphaByteExact": true,
+          "alphaSha256": "94bbfb769c379232c2bc8e7f919b957a3d456e7e9178f35c998b631584f45a2b",
+          "sourceClassesPngSha256": "7fefff563bc7df1c9b3737ef5027b2a0ebdebc593b2cf3525d5f0c367764baa9",
+          "uniformPngSha256": "f2c23be79fcb63088b785447819d8bd2ff19eeeb4a1173ad8054a6fdad78bfa8"
+        },
+        "symbol-rgba.png": {
+          "legacyPngByteExact": true,
+          "alphaByteExact": true,
+          "alphaSha256": "1ba5cd47d5d9307755d7078b829896a902423e47d94958737965f107b2621cc7",
+          "sourceClassesPngSha256": "fa98c40ba1e19e84938d3affb4bacb937ea77a529cfe0a61273c6d95082c6636",
+          "uniformPngSha256": "378aef5b6e290e8dbc19068770f9527d2491a68b176abd672427a7fc8e98f0ee"
+        }
+      },
+      "sourceClasses": {
+        "available": true,
+        "encoding": "Raw original Image data, numeric class values; not inferred from water tint",
+        "format": 8,
+        "height": 512,
+        "origin": {
+          "x": 39.0625,
+          "z": 39.0625
+        },
+        "sha256": "0f0a70a90502fff35a60aa46894ae429eb5bd7dac748263b17ff934dba185c68",
+        "spacingM": 78.125,
+        "width": 512
+      },
+      "uniformClasses": {
+        "available": true,
+        "encoding": "Raw original Image data, numeric class values; not inferred from water tint",
+        "format": 8,
+        "height": 512,
+        "origin": {
+          "x": 39.0625,
+          "z": 39.0625
+        },
+        "sha256": "0f0a70a90502fff35a60aa46894ae429eb5bd7dac748263b17ff934dba185c68",
+        "spacingM": 78.125,
+        "width": 512
+      },
+      "centerSourceBefore": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "centerSourceUniform": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "centerSymbolUniform": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "uniformTintDiagnostics": {
+        "bankSymbolLinearTint": [
+          0.0280000008642673,
+          0.100000001490116,
+          0.115000002086163
+        ],
+        "seaLinearTint": [
+          0.0179999992251396,
+          0.0949999988079071,
+          0.125
+        ],
+        "sourceSeaVertexCount": 0,
+        "sourceVectorTintPolicy": "uniform-untyped-vectors-explicit-sea",
+        "sourceVectorTintVersion": "source-vector-tint-1",
+        "sourceVectorVertexCount": 570,
+        "sourceWaterPartitionAvailable": true,
+        "uniformVectorTint": true,
+        "vectorLinearTint": [
+          0.0280000008642673,
+          0.100000001490116,
+          0.115000002086163
+        ],
+        "vectorTintClassClaim": "untyped retained vector polygons; explicit sea union only"
+      }
+    },
+    {
+      "pixel": [
+        1935,
+        246
+      ],
+      "sourceVerticesUnchanged": true,
+      "sourceBeforeAfterEqual": true,
+      "checks": {
+        "source-fill-rgba.png": {
+          "legacyPngByteExact": true,
+          "alphaByteExact": true,
+          "alphaSha256": "a48ff95139ea8ebdeebe9cd2ec8140812d2cbf854fee2375b6b37663fdf57b61",
+          "sourceClassesPngSha256": "886b55549232b740da4ef43c9bc292c41a7f149859c86802a67733da25008f1b",
+          "uniformPngSha256": "0ed32ef0c07a203fb3d06f6c05f1749b96a2ca8d605e7b725983906841c244f5"
+        },
+        "symbol-rgba.png": {
+          "legacyPngByteExact": true,
+          "alphaByteExact": true,
+          "alphaSha256": "70bcebb361ee6188c1de88bbd54b77588e5160036dcd55688271be412c528c7a",
+          "sourceClassesPngSha256": "b6f274290226fb3ec9fe24c131a9ffc195486f1a613a710f8d088f7f0b91d2e5",
+          "uniformPngSha256": "13b2dab8d484243fcfe42be5eec4db95f5099552626cb3b310c89cb405427ab2"
+        }
+      },
+      "sourceClasses": {
+        "available": true,
+        "encoding": "Raw original Image data, numeric class values; not inferred from water tint",
+        "format": 8,
+        "height": 512,
+        "origin": {
+          "x": 39.0625,
+          "z": 39.0625
+        },
+        "sha256": "0f0a70a90502fff35a60aa46894ae429eb5bd7dac748263b17ff934dba185c68",
+        "spacingM": 78.125,
+        "width": 512
+      },
+      "uniformClasses": {
+        "available": true,
+        "encoding": "Raw original Image data, numeric class values; not inferred from water tint",
+        "format": 8,
+        "height": 512,
+        "origin": {
+          "x": 39.0625,
+          "z": 39.0625
+        },
+        "sha256": "0f0a70a90502fff35a60aa46894ae429eb5bd7dac748263b17ff934dba185c68",
+        "spacingM": 78.125,
+        "width": 512
+      },
+      "centerSourceBefore": [
+        0.20392157137394,
+        0.447058826684952,
+        0.486274510622025,
+        1.0
+      ],
+      "centerSourceUniform": [
+        0.184313729405403,
+        0.34901961684227,
+        0.372549027204514,
+        1.0
+      ],
+      "centerSymbolUniform": [
+        0.184313729405403,
+        0.34901961684227,
+        0.372549027204514,
+        1.0
+      ],
+      "uniformTintDiagnostics": {
+        "bankSymbolLinearTint": [
+          0.0280000008642673,
+          0.100000001490116,
+          0.115000002086163
+        ],
+        "seaLinearTint": [
+          0.0179999992251396,
+          0.0949999988079071,
+          0.125
+        ],
+        "sourceSeaVertexCount": 0,
+        "sourceVectorTintPolicy": "uniform-untyped-vectors-explicit-sea",
+        "sourceVectorTintVersion": "source-vector-tint-1",
+        "sourceVectorVertexCount": 504,
+        "sourceWaterPartitionAvailable": true,
+        "uniformVectorTint": true,
+        "vectorLinearTint": [
+          0.0280000008642673,
+          0.100000001490116,
+          0.115000002086163
+        ],
+        "vectorTintClassClaim": "untyped retained vector polygons; explicit sea union only"
+      }
+    },
+    {
+      "pixel": [
+        1014,
+        1091
+      ],
+      "sourceVerticesUnchanged": true,
+      "sourceBeforeAfterEqual": true,
+      "checks": {
+        "source-fill-rgba.png": {
+          "legacyPngByteExact": true,
+          "alphaByteExact": true,
+          "alphaSha256": "9e33eb4d99d9c9f1049392a955fc10c92c3b2d2cfdc7eade84491f6df5049e5f",
+          "sourceClassesPngSha256": "7576f883245668715b3101c82d0cfa9a3ffcef9fe681f0712856c1bcc062f0b7",
+          "uniformPngSha256": "1c7c101e186233266fbf0636c23e5b5a62fecc35856fb423ebe6e02d42ffc191"
+        },
+        "symbol-rgba.png": {
+          "legacyPngByteExact": true,
+          "alphaByteExact": true,
+          "alphaSha256": "430ae11ce02439fa109c3496d95c49dd33ef184fda6776e60d4d5bacaff440d1",
+          "sourceClassesPngSha256": "0e7a39b0afc9624f1771e0acf6c296e83e3032560adc05802aea632656a34f1a",
+          "uniformPngSha256": "3da1196a9012cba01a6bfb80aef1a7ad72d3c496196879ad012e9fe4eeadbbe8"
+        }
+      },
+      "sourceClasses": {
+        "available": true,
+        "encoding": "Raw original Image data, numeric class values; not inferred from water tint",
+        "format": 8,
+        "height": 512,
+        "origin": {
+          "x": 39.0625,
+          "z": 39.0625
+        },
+        "sha256": "0f0a70a90502fff35a60aa46894ae429eb5bd7dac748263b17ff934dba185c68",
+        "spacingM": 78.125,
+        "width": 512
+      },
+      "uniformClasses": {
+        "available": true,
+        "encoding": "Raw original Image data, numeric class values; not inferred from water tint",
+        "format": 8,
+        "height": 512,
+        "origin": {
+          "x": 39.0625,
+          "z": 39.0625
+        },
+        "sha256": "0f0a70a90502fff35a60aa46894ae429eb5bd7dac748263b17ff934dba185c68",
+        "spacingM": 78.125,
+        "width": 512
+      },
+      "centerSourceBefore": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "centerSourceUniform": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "centerSymbolUniform": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "uniformTintDiagnostics": {
+        "bankSymbolLinearTint": [
+          0.0280000008642673,
+          0.100000001490116,
+          0.115000002086163
+        ],
+        "seaLinearTint": [
+          0.0179999992251396,
+          0.0949999988079071,
+          0.125
+        ],
+        "sourceSeaVertexCount": 0,
+        "sourceVectorTintPolicy": "uniform-untyped-vectors-explicit-sea",
+        "sourceVectorTintVersion": "source-vector-tint-1",
+        "sourceVectorVertexCount": 702,
+        "sourceWaterPartitionAvailable": true,
+        "uniformVectorTint": true,
+        "vectorLinearTint": [
+          0.0280000008642673,
+          0.100000001490116,
+          0.115000002086163
+        ],
+        "vectorTintClassClaim": "untyped retained vector polygons; explicit sea union only"
+      }
+    },
+    {
+      "pixel": [
+        620,
+        1193
+      ],
+      "sourceVerticesUnchanged": true,
+      "sourceBeforeAfterEqual": true,
+      "checks": {
+        "source-fill-rgba.png": {
+          "legacyPngByteExact": true,
+          "alphaByteExact": true,
+          "alphaSha256": "fc436575d8d0f921561981c6a1aa54b6428b9764ea43898fb15c9e1b103436e0",
+          "sourceClassesPngSha256": "06a5e7025547a4d0ce256100dafb49fd07daf955b8b4151b59ffd01a86042a80",
+          "uniformPngSha256": "434d05c29bc6e9348b219aef651b49b553920dca901688fdee6dbf5374da2a91"
+        },
+        "symbol-rgba.png": {
+          "legacyPngByteExact": true,
+          "alphaByteExact": true,
+          "alphaSha256": "03eee269989b0d9ce784619af083c464d7b48fa7aeb49949d21f70c7303ad933",
+          "sourceClassesPngSha256": "cb1faba626a677bb9ac8a9c8f0692d7436cc4e3710eeda5d2828127481c76cbf",
+          "uniformPngSha256": "25c8b0e83bef4c0db41998eeccce80dbc4e6f7b2cbae20d9e60445771f6fff48"
+        }
+      },
+      "sourceClasses": {
+        "available": true,
+        "encoding": "Raw original Image data, numeric class values; not inferred from water tint",
+        "format": 8,
+        "height": 512,
+        "origin": {
+          "x": 39.0625,
+          "z": 39.0625
+        },
+        "sha256": "0f0a70a90502fff35a60aa46894ae429eb5bd7dac748263b17ff934dba185c68",
+        "spacingM": 78.125,
+        "width": 512
+      },
+      "uniformClasses": {
+        "available": true,
+        "encoding": "Raw original Image data, numeric class values; not inferred from water tint",
+        "format": 8,
+        "height": 512,
+        "origin": {
+          "x": 39.0625,
+          "z": 39.0625
+        },
+        "sha256": "0f0a70a90502fff35a60aa46894ae429eb5bd7dac748263b17ff934dba185c68",
+        "spacingM": 78.125,
+        "width": 512
+      },
+      "centerSourceBefore": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "centerSourceUniform": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "centerSymbolUniform": [
+        0.184313729405403,
+        0.34901961684227,
+        0.372549027204514,
+        1.0
+      ],
+      "uniformTintDiagnostics": {
+        "bankSymbolLinearTint": [
+          0.0280000008642673,
+          0.100000001490116,
+          0.115000002086163
+        ],
+        "seaLinearTint": [
+          0.0179999992251396,
+          0.0949999988079071,
+          0.125
+        ],
+        "sourceSeaVertexCount": 0,
+        "sourceVectorTintPolicy": "uniform-untyped-vectors-explicit-sea",
+        "sourceVectorTintVersion": "source-vector-tint-1",
+        "sourceVectorVertexCount": 774,
+        "sourceWaterPartitionAvailable": true,
+        "uniformVectorTint": true,
+        "vectorLinearTint": [
+          0.0280000008642673,
+          0.100000001490116,
+          0.115000002086163
+        ],
+        "vectorTintClassClaim": "untyped retained vector polygons; explicit sea union only"
+      }
+    },
+    {
+      "pixel": [
+        1572,
+        543
+      ],
+      "sourceVerticesUnchanged": true,
+      "sourceBeforeAfterEqual": true,
+      "checks": {
+        "source-fill-rgba.png": {
+          "legacyPngByteExact": true,
+          "alphaByteExact": true,
+          "alphaSha256": "81078c0c68804ba8b7bff3d38bb0af220196535d326d40e77f84f3752470e013",
+          "sourceClassesPngSha256": "327ef638cbb9f9231712ecb3a2eb5210c0d45b6dda35cc7a578bb290a8ea6575",
+          "uniformPngSha256": "072acd2802a93c7d7ddb20669068b00cdd2a6acc875846146e521adb3e8c7aac"
+        },
+        "symbol-rgba.png": {
+          "legacyPngByteExact": true,
+          "alphaByteExact": true,
+          "alphaSha256": "8c1ff9e545e500f9ca51f8d25310851482b3acb281ae2a51d20394317598251c",
+          "sourceClassesPngSha256": "57b2757f34c754a2ecd89aab90e759e1180bc6cc51b53dff0d0fb4b46b1881fe",
+          "uniformPngSha256": "7a51b79b1ae2b8b38f2d0979d2cd5a8af24872648534d5f4d72c3ef5c9785ea0"
+        }
+      },
+      "sourceClasses": {
+        "available": true,
+        "encoding": "Raw original Image data, numeric class values; not inferred from water tint",
+        "format": 8,
+        "height": 512,
+        "origin": {
+          "x": 39.0625,
+          "z": 39.0625
+        },
+        "sha256": "0f0a70a90502fff35a60aa46894ae429eb5bd7dac748263b17ff934dba185c68",
+        "spacingM": 78.125,
+        "width": 512
+      },
+      "uniformClasses": {
+        "available": true,
+        "encoding": "Raw original Image data, numeric class values; not inferred from water tint",
+        "format": 8,
+        "height": 512,
+        "origin": {
+          "x": 39.0625,
+          "z": 39.0625
+        },
+        "sha256": "0f0a70a90502fff35a60aa46894ae429eb5bd7dac748263b17ff934dba185c68",
+        "spacingM": 78.125,
+        "width": 512
+      },
+      "centerSourceBefore": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "centerSourceUniform": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "centerSymbolUniform": [
+        0.184313729405403,
+        0.34901961684227,
+        0.372549027204514,
+        1.0
+      ],
+      "uniformTintDiagnostics": {
+        "bankSymbolLinearTint": [
+          0.0280000008642673,
+          0.100000001490116,
+          0.115000002086163
+        ],
+        "seaLinearTint": [
+          0.0179999992251396,
+          0.0949999988079071,
+          0.125
+        ],
+        "sourceSeaVertexCount": 0,
+        "sourceVectorTintPolicy": "uniform-untyped-vectors-explicit-sea",
+        "sourceVectorTintVersion": "source-vector-tint-1",
+        "sourceVectorVertexCount": 450,
+        "sourceWaterPartitionAvailable": true,
+        "uniformVectorTint": true,
+        "vectorLinearTint": [
+          0.0280000008642673,
+          0.100000001490116,
+          0.115000002086163
+        ],
+        "vectorTintClassClaim": "untyped retained vector polygons; explicit sea union only"
+      }
+    },
+    {
+      "pixel": [
+        563,
+        415
+      ],
+      "sourceVerticesUnchanged": true,
+      "sourceBeforeAfterEqual": true,
+      "checks": {
+        "source-fill-rgba.png": {
+          "legacyPngByteExact": true,
+          "alphaByteExact": true,
+          "alphaSha256": "5ac0c7847085dd41f2c1584c92f1aef9a195904a20e10e0145738a4a4d54eae3",
+          "sourceClassesPngSha256": "168b726f6488fd61fd6f0904dc7b717699f0e4e74d0ae9e5829f0054d5027eb6",
+          "uniformPngSha256": "64f3e9779b5ad5cb8df45d9145f209a0c4ecc1ad0ac4d3f692542a12fd7e3168"
+        },
+        "symbol-rgba.png": {
+          "legacyPngByteExact": true,
+          "alphaByteExact": true,
+          "alphaSha256": "2a43102204e82afe60df889897cee9fdeebcb6d6cd6616bba51a1e0f2102b138",
+          "sourceClassesPngSha256": "9d11e4d8913848b6d2dccc742f7f20708e41f9d1572ae5671c4286d04b4636a0",
+          "uniformPngSha256": "a25f4898e55cb64ed6a396994dc0d8c92dc7d15cff3f62708a2c2a6d96ea8e07"
+        }
+      },
+      "sourceClasses": {
+        "available": true,
+        "encoding": "Raw original Image data, numeric class values; not inferred from water tint",
+        "format": 8,
+        "height": 512,
+        "origin": {
+          "x": 39.0625,
+          "z": 39.0625
+        },
+        "sha256": "0f0a70a90502fff35a60aa46894ae429eb5bd7dac748263b17ff934dba185c68",
+        "spacingM": 78.125,
+        "width": 512
+      },
+      "uniformClasses": {
+        "available": true,
+        "encoding": "Raw original Image data, numeric class values; not inferred from water tint",
+        "format": 8,
+        "height": 512,
+        "origin": {
+          "x": 39.0625,
+          "z": 39.0625
+        },
+        "sha256": "0f0a70a90502fff35a60aa46894ae429eb5bd7dac748263b17ff934dba185c68",
+        "spacingM": 78.125,
+        "width": 512
+      },
+      "centerSourceBefore": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "centerSourceUniform": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "centerSymbolUniform": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "uniformTintDiagnostics": {
+        "bankSymbolLinearTint": [
+          0.0280000008642673,
+          0.100000001490116,
+          0.115000002086163
+        ],
+        "seaLinearTint": [
+          0.0179999992251396,
+          0.0949999988079071,
+          0.125
+        ],
+        "sourceSeaVertexCount": 0,
+        "sourceVectorTintPolicy": "uniform-untyped-vectors-explicit-sea",
+        "sourceVectorTintVersion": "source-vector-tint-1",
+        "sourceVectorVertexCount": 741,
+        "sourceWaterPartitionAvailable": true,
+        "uniformVectorTint": true,
+        "vectorLinearTint": [
+          0.0280000008642673,
+          0.100000001490116,
+          0.115000002086163
+        ],
+        "vectorTintClassClaim": "untyped retained vector polygons; explicit sea union only"
+      }
+    }
+  ],
+  "authoredPartitionControl": {
+    "adapter": "NVIDIA GeForce RTX 5090",
+    "backend": "forward_plus",
+    "format": "water-tint-partition-gpu-1",
+    "runs": [
+      {
+        "counts": {
+          "fallback": 0,
+          "river": 240,
+          "sea": 0
+        },
+        "diagnostics": {
+          "bankSymbolLinearTint": [
+            0.0280000008642673,
+            0.100000001490116,
+            0.115000002086163
+          ],
+          "buildMs": 45.035,
+          "metresPerTexel": 0.0625,
+          "minimumRiverStrokeApplied": false,
+          "paddingSymbolMetres": 0.0,
+          "physicalWaterSurfaceClaimed": false,
+          "projectionCullMask": 1,
+          "resolution": 128,
+          "screenMetresPerPixel": 0.0,
+          "screenScalePolicy": "orthographic-map-ground-scale",
+          "seaLinearTint": [
+            0.0179999992251396,
+            0.0949999988079071,
+            0.125
+          ],
+          "sourceAuthority": "magna-urbis-fixed-hydrology",
+          "sourceCoverageImageSha256": "2f7a8f249f1aa9bcd86ee70071c878a1202d9b0691620b34d166d8614c054164",
+          "sourceGeometrySha256": "0e31270b9c334574946dfbcb39a0c0aa279c5c83114fb2dbec158147ef2043d0",
+          "sourceGeometryUnchanged": true,
+          "sourceLevelsUnchanged": true,
+          "sourceSeaVertexCount": 3,
+          "sourceVectorAreaM2": 0.0,
+          "sourceVectorAreaScope": "input geometry clip window; projection camera may be narrower",
+          "sourceVectorTintPolicy": "source-classes",
+          "sourceVectorTintVersion": "source-vector-tint-1",
+          "sourceVectorVertexCount": 3,
+          "sourceVertices": 6,
+          "sourceWaterPartitionAvailable": true,
+          "subpixelPolicy": "original contour coverage only; no minimum stroke or physical-width edits",
+          "symbolColorPolicy": "single declared fallback water tint; no river/lake class asserted for outline",
+          "symbolCoverageEstimatedImageBytes": 218454,
+          "symbolCoverageImageBudgetBytes": 268435456,
+          "symbolCoverageSeparateFromSourceArea": true,
+          "symbolKernelRadiusTexels": 0.0,
+          "symbolRasterLimit": "vector rings are stroked before raster sampling; subpixel source fill may remain absent, while its declared boundary symbol is visible",
+          "symbolSeaPolicy": "original sea-cell union fill unchanged; no sea outlines synthesised without retained vector rings",
+          "symbolStrokeWidthBakePx": 0.0,
+          "symbolWidthMeaning": "stroke diameter on retained vector polygon boundaries, not a measured or edited physical water width",
+          "symbolWidthPx": 0.0,
+          "symbolicPhysicalWidthClaim": false,
+          "uniformVectorTint": false,
+          "vectorLinearTint": [
+            0.0280000008642673,
+            0.100000001490116,
+            0.115000002086163
+          ],
+          "vectorTintClassClaim": "original retained class raster and declared fallback",
+          "waterPresentation": "source-map-terrain-projection",
+          "waterSymbolPolicy": "disabled-original-contours",
+          "waterSymbolVersion": "source-water-symbol-2"
+        },
+        "path": "D:/workspace/self/_worktrees/magna-urbis-surface-world-2026-10-23/web/out/surface/water-tint-partition-v13/source-classes.png",
+        "rgbaSha256": "f7d8eaca2b49e73be235048d054f2c53060c9bf7974ad30aab36fcb4b7f6e6a8",
+        "sourceClassesUnchanged": true,
+        "sourceVerticesUnchanged": true,
+        "uniform": false
+      },
+      {
+        "counts": {
+          "fallback": 120,
+          "river": 0,
+          "sea": 120
+        },
+        "diagnostics": {
+          "bankSymbolLinearTint": [
+            0.0280000008642673,
+            0.100000001490116,
+            0.115000002086163
+          ],
+          "buildMs": 47.426,
+          "metresPerTexel": 0.0625,
+          "minimumRiverStrokeApplied": false,
+          "paddingSymbolMetres": 0.0,
+          "physicalWaterSurfaceClaimed": false,
+          "projectionCullMask": 1,
+          "resolution": 128,
+          "screenMetresPerPixel": 0.0,
+          "screenScalePolicy": "orthographic-map-ground-scale",
+          "seaLinearTint": [
+            0.0179999992251396,
+            0.0949999988079071,
+            0.125
+          ],
+          "sourceAuthority": "magna-urbis-fixed-hydrology",
+          "sourceCoverageImageSha256": "090b8ebf698196a59b72ec60ffe4bce291bec63653e6c6086b1efcb20fb69899",
+          "sourceGeometrySha256": "0e31270b9c334574946dfbcb39a0c0aa279c5c83114fb2dbec158147ef2043d0",
+          "sourceGeometryUnchanged": true,
+          "sourceLevelsUnchanged": true,
+          "sourceSeaVertexCount": 3,
+          "sourceVectorAreaM2": 0.0,
+          "sourceVectorAreaScope": "input geometry clip window; projection camera may be narrower",
+          "sourceVectorTintPolicy": "uniform-untyped-vectors-explicit-sea",
+          "sourceVectorTintVersion": "source-vector-tint-1",
+          "sourceVectorVertexCount": 3,
+          "sourceVertices": 6,
+          "sourceWaterPartitionAvailable": true,
+          "subpixelPolicy": "original contour coverage only; no minimum stroke or physical-width edits",
+          "symbolColorPolicy": "single declared fallback water tint; no river/lake class asserted for outline",
+          "symbolCoverageEstimatedImageBytes": 218454,
+          "symbolCoverageImageBudgetBytes": 268435456,
+          "symbolCoverageSeparateFromSourceArea": true,
+          "symbolKernelRadiusTexels": 0.0,
+          "symbolRasterLimit": "vector rings are stroked before raster sampling; subpixel source fill may remain absent, while its declared boundary symbol is visible",
+          "symbolSeaPolicy": "original sea-cell union fill unchanged; no sea outlines synthesised without retained vector rings",
+          "symbolStrokeWidthBakePx": 0.0,
+          "symbolWidthMeaning": "stroke diameter on retained vector polygon boundaries, not a measured or edited physical water width",
+          "symbolWidthPx": 0.0,
+          "symbolicPhysicalWidthClaim": false,
+          "uniformVectorTint": true,
+          "vectorLinearTint": [
+            0.0280000008642673,
+            0.100000001490116,
+            0.115000002086163
+          ],
+          "vectorTintClassClaim": "untyped retained vector polygons; explicit sea union only",
+          "waterPresentation": "source-map-terrain-projection",
+          "waterSymbolPolicy": "disabled-original-contours",
+          "waterSymbolVersion": "source-water-symbol-2"
+        },
+        "path": "D:/workspace/self/_worktrees/magna-urbis-surface-world-2026-10-23/web/out/surface/water-tint-partition-v13/uniform.png",
+        "rgbaSha256": "ba24f06e8652e8fed86697feee922466c76f0e70ef0a99f1089a026b09c3dc1b",
+        "sourceClassesUnchanged": true,
+        "sourceVerticesUnchanged": true,
+        "uniform": true
+      }
+    ],
+    "scope": "Authored two-triangle branch control only, not real-world water/terrain",
+    "status": "PASS authored GPU partition control"
+  },
+  "runtimeDependencies": {
+    "viewer-local/adapters/surface_water_projection.gd": "0f06770388f6406e3f07982504e3315cc808b8bea1ef2f658385873f5bf875b6",
+    "viewer-local/adapters/surface_hydrology.gd": "f9315dcae53da64da1cf6b027e70398575ffd7dd0e1b83bc3d291718c739894b",
+    "viewer-local/shaders/water_source_map.gdshader": "474a1bb39a1027753f9ef733172f0eae0e5ca4b45102dc6929b795eb393ed3e1",
+    "viewer-local/diagnostics/water_confluence_channels.gd": "95074211e2741de86924ebfc149a7877129fca738e16d6678a2fb519ce3ba260",
+    "viewer-local/diagnostics/water_tint_partition_gpu.gd": "0c941dcb15bbacc77ffe5249fedd1e081b5f5ec881ab311206de073770554706"
+  },
+  "limitations": [
+    "No real sea occurs in these six crops; explicit sea-versus-vector GPU selection is checked by the separately labelled authored two-triangle fixture.",
+    "The three alluvial-halo points remain alpha0 in both modes. They are not erased.",
+    "Uniform vector tint is an explicit mapper representation, not a new river/lake classification or physical water change.",
+    "Source-classes remains the default. Runtime accepts uniform only for retained source-map partitions; source-levels/generic/fallback reject it."
+  ]
+}

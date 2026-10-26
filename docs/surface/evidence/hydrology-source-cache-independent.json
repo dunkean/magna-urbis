@@ -1,0 +1,303 @@
+{
+  "format": "independent-hydrology-source-cache-review",
+  "version": 1,
+  "status": "PASS_WITH_STATED_SCOPE",
+  "reviewedCommit": "e5bcea94ffc9c248b396065c78ca838b8ac3bf5b",
+  "filesSha256": {
+    "viewer-local/adapters/surface_hydrology.gd": "47e739102ecf5c023a1432772a40c87be09ac11b948ea10d8859761af998269f",
+    "viewer-local/tests/hydrology_source_cache_test.gd": "33c70db0fad64860ff89dfa9ce941f2ee7b30d0477e01f6fbcbdb1550cdd5018"
+  },
+  "baseline": {
+    "revision": "a3aaacd602bdba9ca5b58faac6985c02e05ec8ea",
+    "scriptSha256": "4796ead720c1db6b2c8cb022aeed98eac4c645ec9be529fb230c7e814b7cc633",
+    "source": "Exact pre-cache git object, loaded without global class name in the isolated test project"
+  },
+  "findings": [],
+  "codeReview": {
+    "keys": "Exact copied geometry attachment PackedByteArray and exact copied successfully validated class bytes. Source IDs and hashes alone are not keys.",
+    "mutation": "JSON rings stay private read-only inputs. Each point is copied into a translated dictionary before clipping; sweep sees fresh arrays. Returned vertices,contours and images do not expose cached JSON.",
+    "invalidation": "Shape,n,width,origin,levels,frame,source query,clipping and all source-point/scan/vertex budgets remain evaluated on every call. Invalid JSON never falls back to an unrelated cached dictionary.",
+    "concurrency": "Mutex protects lookup/replacement. Decoding occurs outside the lock; copied immutable keys and locally retained dictionary references keep concurrently replaced entries alive for readers.",
+    "bound": "One geometry entry,64MiB encoded-input guard before lookup; one successful byte-class entry bounded by4096² after shape validation. Decoded dictionary memory is additional, as documented; no measured RSS budget claim."
+  },
+  "verification": {
+    "engine": "Godot4.7.2 headless; no GPU",
+    "isolatedCopyMatchesReviewedFiles": true,
+    "parity": {
+      "checks": 51,
+      "failures": [],
+      "measured": [
+        {
+          "authority": "magna-urbis-fixed-hydrology",
+          "baselineMs": 0.25,
+          "cachedMs": 0.188,
+          "contourSha256": "88287727f987e1015cdf8791f8bc4aecece1481b5d455e0bd5a907395c9ccd52",
+          "fallback": null,
+          "label": "authored cold/hot 0",
+          "sourceVertices": 6
+        },
+        {
+          "authority": "magna-urbis-fixed-hydrology",
+          "baselineMs": 0.176,
+          "cachedMs": 0.159,
+          "contourSha256": "88287727f987e1015cdf8791f8bc4aecece1481b5d455e0bd5a907395c9ccd52",
+          "fallback": null,
+          "label": "authored cold/hot 1",
+          "sourceVertices": 6
+        },
+        {
+          "authority": "magna-urbis-fixed-hydrology",
+          "baselineMs": 0.159,
+          "cachedMs": 0.151,
+          "contourSha256": "88287727f987e1015cdf8791f8bc4aecece1481b5d455e0bd5a907395c9ccd52",
+          "fallback": null,
+          "label": "authored cold/hot 2",
+          "sourceVertices": 6
+        },
+        {
+          "authority": "magna-urbis-fixed-hydrology",
+          "baselineMs": 0.159,
+          "cachedMs": 0.152,
+          "contourSha256": "0debe3fea1e233f2212fc1ad8bf041eb6eff3da88af697629dabbf3a5e9eb86d",
+          "fallback": null,
+          "label": "frame 1000000000.0",
+          "sourceVertices": 6
+        },
+        {
+          "authority": "magna-urbis-fixed-hydrology",
+          "baselineMs": 0.157,
+          "cachedMs": 0.149,
+          "contourSha256": "50abcdd6c6facf3728dabe4bf08922e4f918c7c8d47967da7aff6da1af5aea19",
+          "fallback": null,
+          "label": "frame -1000000000.0",
+          "sourceVertices": 6
+        },
+        {
+          "authority": "magna-urbis-fixed-hydrology",
+          "baselineMs": 0.158,
+          "cachedMs": 0.15,
+          "contourSha256": "88287727f987e1015cdf8791f8bc4aecece1481b5d455e0bd5a907395c9ccd52",
+          "fallback": null,
+          "label": "frame 0.0",
+          "sourceVertices": 6
+        },
+        {
+          "authority": "magna-urbis-fixed-hydrology",
+          "baselineMs": 0.153,
+          "cachedMs": 0.147,
+          "contourSha256": "0debe3fea1e233f2212fc1ad8bf041eb6eff3da88af697629dabbf3a5e9eb86d",
+          "fallback": null,
+          "label": "frame 1000000000.0",
+          "sourceVertices": 6
+        },
+        {
+          "authority": "magna-urbis-fixed-hydrology",
+          "baselineMs": 0.154,
+          "cachedMs": 0.148,
+          "contourSha256": "88287727f987e1015cdf8791f8bc4aecece1481b5d455e0bd5a907395c9ccd52",
+          "fallback": null,
+          "label": "frame 0.0",
+          "sourceVertices": 6
+        },
+        {
+          "authority": "magna-urbis-fixed-hydrology",
+          "baselineMs": 0.168,
+          "cachedMs": 0.159,
+          "contourSha256": "eb7a2979d6c0bf90e7e8e59f3c5d5f77563b989d79bb575a0ed39a71395b1350",
+          "fallback": null,
+          "label": "one byte edit under same scene ID",
+          "sourceVertices": 6
+        },
+        {
+          "authority": "magna-urbis-fixed-hydrology",
+          "baselineMs": 0.155,
+          "cachedMs": 0.157,
+          "contourSha256": "88287727f987e1015cdf8791f8bc4aecece1481b5d455e0bd5a907395c9ccd52",
+          "fallback": null,
+          "label": "class-valid",
+          "sourceVertices": 6
+        },
+        {
+          "authority": "magna-retained-physical-raster",
+          "baselineMs": 0.017,
+          "cachedMs": 0.012,
+          "contourSha256": null,
+          "fallback": "invalid retained Magna water class",
+          "label": "class-invalid",
+          "sourceVertices": 6
+        },
+        {
+          "authority": "magna-retained-physical-raster",
+          "baselineMs": 0.014,
+          "cachedMs": 0.01,
+          "contourSha256": null,
+          "fallback": "missing or mis-sized retained water columns",
+          "label": "size",
+          "sourceVertices": 6
+        },
+        {
+          "authority": "magna-retained-physical-raster",
+          "baselineMs": 0.02,
+          "cachedMs": 0.015,
+          "contourSha256": null,
+          "fallback": "invalid retained first-sample water origin",
+          "label": "origin",
+          "sourceVertices": 6
+        },
+        {
+          "authority": "magna-retained-physical-raster",
+          "baselineMs": 0.013,
+          "cachedMs": 0.008,
+          "contourSha256": null,
+          "fallback": "invalid retained water grid shape",
+          "label": "width",
+          "sourceVertices": 6
+        },
+        {
+          "authority": "magna-urbis-fixed-hydrology",
+          "baselineMs": 0.121,
+          "cachedMs": 0.11,
+          "contourSha256": "88287727f987e1015cdf8791f8bc4aecece1481b5d455e0bd5a907395c9ccd52",
+          "fallback": null,
+          "label": "levels",
+          "sourceVertices": 0
+        },
+        {
+          "authority": "magna-retained-physical-raster",
+          "baselineMs": 0.016,
+          "cachedMs": 0.011,
+          "contourSha256": null,
+          "fallback": "invalid retained Magna water class",
+          "label": "fractional-array-class",
+          "sourceVertices": 6
+        },
+        {
+          "authority": "magna-retained-physical-raster",
+          "baselineMs": 0.011,
+          "cachedMs": 0.006,
+          "contourSha256": null,
+          "fallback": "cavern class 2 is ambiguous; retained physical contextual water only",
+          "label": "cavern",
+          "sourceVertices": 6
+        },
+        {
+          "authority": "magna-retained-physical-raster",
+          "baselineMs": 0.011,
+          "cachedMs": 0.008,
+          "contourSha256": null,
+          "fallback": "retained source vector water geometry unavailable",
+          "label": "malformed-json",
+          "sourceVertices": 6
+        },
+        {
+          "authority": "magna-retained-physical-raster",
+          "baselineMs": 424.388,
+          "cachedMs": 295.467,
+          "contourSha256": null,
+          "fallback": "source vector point budget exceeded",
+          "label": "unchanged source point budget rejection",
+          "sourceVertices": 6
+        },
+        {
+          "authority": "magna-urbis-fixed-hydrology",
+          "baselineMs": 1015.562,
+          "cachedMs": 1073.663,
+          "contourSha256": "286deb4c05ca9983309487538399ea7aeb8a32c748022bd05e1c60ed278afe40",
+          "fallback": null,
+          "label": "retained V11 21 attempt 0",
+          "sourceVertices": 0
+        },
+        {
+          "authority": "magna-urbis-fixed-hydrology",
+          "baselineMs": 978.717,
+          "cachedMs": 749.2,
+          "contourSha256": "286deb4c05ca9983309487538399ea7aeb8a32c748022bd05e1c60ed278afe40",
+          "fallback": null,
+          "label": "retained V11 21 attempt 1",
+          "sourceVertices": 0
+        },
+        {
+          "authority": "magna-urbis-fixed-hydrology",
+          "baselineMs": 996.511,
+          "cachedMs": 613.064,
+          "contourSha256": "286deb4c05ca9983309487538399ea7aeb8a32c748022bd05e1c60ed278afe40",
+          "fallback": null,
+          "label": "retained V11 21 attempt 2",
+          "sourceVertices": 0
+        },
+        {
+          "authority": "magna-urbis-fixed-hydrology",
+          "baselineMs": 10789.698,
+          "cachedMs": 641.256,
+          "contourSha256": "286deb4c05ca9983309487538399ea7aeb8a32c748022bd05e1c60ed278afe40",
+          "fallback": null,
+          "label": "retained V11 204 attempt 0",
+          "sourceVertices": 0
+        },
+        {
+          "authority": "magna-urbis-fixed-hydrology",
+          "baselineMs": 984.506,
+          "cachedMs": 620.709,
+          "contourSha256": "286deb4c05ca9983309487538399ea7aeb8a32c748022bd05e1c60ed278afe40",
+          "fallback": null,
+          "label": "retained V11 204 attempt 1",
+          "sourceVertices": 0
+        },
+        {
+          "authority": "magna-urbis-fixed-hydrology",
+          "baselineMs": 1008.707,
+          "cachedMs": 10343.674,
+          "contourSha256": "286deb4c05ca9983309487538399ea7aeb8a32c748022bd05e1c60ed278afe40",
+          "fallback": null,
+          "label": "retained V11 204 attempt 2",
+          "sourceVertices": 0
+        }
+      ],
+      "passed": true,
+      "scope": "CPU exact source-cache outputs/rejections, elapsed buildMs excluded; retained V11 replays not archived original BODYs; no GPU or navigation claim"
+    },
+    "independentMutationCases": {
+      "checks": 26,
+      "failures": [],
+      "scope": "Independent authored CPU cache mutation tests; no GPU/performance claim",
+      "status": "PASS"
+    },
+    "additionalCases": [
+      "Same source object edits/restores bytes and valid/invalid classes under unchanged ID",
+      "Same source object changes/restores n,width,origin after warm cache",
+      "Returned vertex/contour/classImage mutation does not affect the next output",
+      "Original cached decoded dictionary remains unchanged while retained in an independent reference"
+    ],
+    "mutationTest": "viewer-local/tests/hydrology_source_cache_mutation_test.gd"
+  },
+  "timingLimits": {
+    "navigationQualification": false,
+    "gpuQualification": false,
+    "observedUnattributedOutliers": [
+      {
+        "authority": "magna-urbis-fixed-hydrology",
+        "baselineMs": 10789.698,
+        "cachedMs": 641.256,
+        "contourSha256": "286deb4c05ca9983309487538399ea7aeb8a32c748022bd05e1c60ed278afe40",
+        "fallback": null,
+        "label": "retained V11 204 attempt 0",
+        "sourceVertices": 0
+      },
+      {
+        "authority": "magna-urbis-fixed-hydrology",
+        "baselineMs": 1008.707,
+        "cachedMs": 10343.674,
+        "contourSha256": "286deb4c05ca9983309487538399ea7aeb8a32c748022bd05e1c60ed278afe40",
+        "fallback": null,
+        "label": "retained V11 204 attempt 2",
+        "sourceVertices": 0
+      }
+    ],
+    "note": "Independent rerun also contains ~10.79s baseline and~10.34s cached outliers. All timing rows are retained, no cache/GC/OS attribution or general speed/latency guarantee. Existing author8289ms stress outlier remains preserved in its separate evidence."
+  },
+  "sourceScope": "Real retained V11 previews21/204 are replay packets with original terrain/world/versions checked, not archived original BODYs. Their near clipped outputs are empty; authored cases exercise nonempty geometry. V11FAILED and the separate Worker/Page investigation are unchanged.",
+  "cleanup": {
+    "rootAndViewerTrackedFilesReadOnly": true,
+    "noOwnedGodotProcessSurvives": true
+  }
+}

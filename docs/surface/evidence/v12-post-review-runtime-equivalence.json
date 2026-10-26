@@ -1,0 +1,10 @@
+{
+  "format": "v12-post-documentation-runtime-equivalence",
+  "frozenHead": "bc6579f208ce1e4f05b471a1699de2ba05fae6b8",
+  "currentHead": "6820ff329d3c58687256b113edc7e11ce4320699",
+  "runtimeFileCount": 584,
+  "allFilesIdentical": true,
+  "mismatches": [],
+  "runtimeDiffNames": [],
+  "scope": "Recomputed SHA-256 of all584 runtime files after final review; git diff restricted to these paths. Documentation changes only since V12."
+}

@@ -1,0 +1,15 @@
+{
+  "format": "v13-post-review-campaign-file-check",
+  "campaignHead": "6ef8d3c6f2b88f884a2ad199c7b305dfaf3649c1",
+  "verifiedThroughHead": "9d87f7817d870f30dfef4bb19bf8ec15c6aac812",
+  "campaignFileCount": 624,
+  "currentFileCount": 626,
+  "unchangedCampaignFiles": 624,
+  "changed": [],
+  "added": [
+    "viewer-local/diagnostics/tree_asset_gpu_probe.gd",
+    "web/scripts/surface_tree_gpu.mjs"
+  ],
+  "fullSnapshotIdentical": false,
+  "scope": "Root recomputation after Opus; closes the recorded dd886c8-to-c36c5a4 evidence gap. Does not rewrite the reviewer or qualify later V14 changes."
+}
