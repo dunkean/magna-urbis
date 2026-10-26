@@ -11,11 +11,17 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--server', default='http://127.0.0.1:8794')
     parser.add_argument('--mode', choices=['fast', 'quality'], default='fast')
+    parser.add_argument('--variant', choices=['base', 'lightning', 'distilled'])
+    parser.add_argument('--steps', type=int)
+    parser.add_argument('--reference', choices=['source', 'source+edges', 'source+depth', 'edges'], default='source+edges')
     parser.add_argument('--source', default='_agents_blackboard/illustration/source.png')
     parser.add_argument('--depth')
     parser.add_argument('--control', choices=['auto', 'edges', 'depth', 'both'], default='auto')
     parser.add_argument('--output', default='_agents_blackboard/illustration')
     args = parser.parse_args()
+    variant = args.variant or ('base' if args.mode == 'quality' else 'lightning')
+    if (args.mode == 'fast' and variant == 'distilled') or (args.mode == 'quality' and variant == 'lightning'):
+        parser.error('Variant incompatible with engine.')
     def request(path, body=None):
         req = urllib.request.Request(args.server + path, json.dumps(body).encode() if body is not None else None,
                                      {'Content-Type': 'application/json'})
@@ -27,7 +33,8 @@ def main():
             'context': {'application': 'magna-urbis', 'sourceStyle': 'parchment',
                         'projection': 'perspective' if args.depth else 'orthographic',
                         'environment': {'relief': 'hills', 'climate': 'warm temperate'}},
-            'settings': {'mode': args.mode, 'steps': 4 if args.mode == 'fast' else 8, 'seed': 42,
+            'settings': {'mode': args.mode, 'steps': args.steps or (30 if variant == 'base' else 4), 'seed': 42,
+                         'sdxlVariant' if args.mode == 'fast' else 'fluxVariant': variant, 'referenceMode': args.reference,
                          'style': 'auto', 'fidelity': 'strong', 'pixels': 786432, 'control': args.control}}
     job = request('/v1/illustrations/jobs', body)
     previous = None

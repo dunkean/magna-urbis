@@ -3,7 +3,7 @@ import argparse
 import json
 import os
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, urlsplit
 from .service import IllustrationService
 
 
@@ -21,7 +21,7 @@ def handler_for(service):
         def log_message(self, *_args):
             pass
 
-        def reply(self, status, value, content_type="application/json"):
+        def reply(self, status, value, content_type="application/json", filename=None):
             raw = json.dumps(value, ensure_ascii=False).encode() if content_type == "application/json" else value
             self.send_response(status)
             origin = self.headers.get("Origin")
@@ -32,6 +32,8 @@ def handler_for(service):
             self.send_header("Access-Control-Allow-Headers", "Content-Type")
             self.send_header("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
             self.send_header("Content-Type", content_type)
+            if filename:
+                self.send_header("Content-Disposition", f'attachment; filename="{filename}"')
             self.send_header("Content-Length", str(len(raw)))
             self.send_header("Cache-Control", "no-store")
             self.send_header("X-Content-Type-Options", "nosniff")
@@ -64,7 +66,7 @@ def handler_for(service):
                     self.reply(200, service.capabilities())
                 elif path == "/v1/illustrations/jobs" and self.command == "GET":
                     self.reply(200, {"jobs": service.history()})
-                elif path in ("/v1/illustrations/jobs", "/v1/illustrations/prompt") and self.command == "POST":
+                elif path in ("/v1/illustrations/jobs", "/v1/illustrations/prompt", "/v1/illustrations/guides") and self.command == "POST":
                     length = int(self.headers.get("Content-Length", "0"))
                     limit = (2 if path.endswith("/prompt") else 48) * 1024 * 1024
                     if not 0 < length <= limit:
@@ -75,6 +77,8 @@ def handler_for(service):
                     body = json.loads(self.rfile.read(length))
                     if path.endswith("/prompt"):
                         self.reply(200, service.preview_prompt(body))
+                    elif path.endswith('/guides'):
+                        self.reply(200, service.preview_guides(body))
                     else:
                         self.reply(202, service.submit(body))
                 elif path.startswith("/v1/illustrations/jobs/"):
@@ -87,7 +91,9 @@ def handler_for(service):
                         self.reply(200, service.cancel(tail[0]))
                     elif len(tail) == 2 and self.command == "GET":
                         asset = service.asset(*tail)
-                        self.reply(200, asset.read_bytes(), "application/json" if asset.suffix == ".json" else "image/png")
+                        downloading = parse_qs(urlsplit(self.path).query).get("download") == ["1"]
+                        filename = f"illustration-{tail[0]}.png" if tail[1] == "result.png" else f"illustration-{tail[0]}-{tail[1]}"
+                        self.reply(200, asset.read_bytes(), "application/json" if asset.suffix == ".json" else "image/png", filename if downloading else None)
                     else:
                         raise KeyError("Route inconnue.")
                 else:

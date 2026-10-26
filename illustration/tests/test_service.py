@@ -1,6 +1,7 @@
 import base64
 import io
 import json
+import queue
 import tempfile
 import threading
 import time
@@ -15,7 +16,7 @@ from illustration.context import compile_prompt, dimensions
 from illustration.images import png
 from illustration.service import IllustrationService
 from illustration.providers import generate
-from illustration.local import control_kinds
+from illustration.local import LocalRuntime, control_kinds
 from illustration.__main__ import handler_for, origin_allowed
 
 
@@ -30,9 +31,10 @@ def request(**settings):
 
 
 class FakeRuntime:
-    def generate(self, mode, prompt, guides, size, settings, progress, check):
+    def generate(self, mode, prompt, guides, size, settings, progress, check, *, source=None):
         check()
-        return png(Image.new('RGB', size, 'green')), {'model': 'fake', 'seed': settings['seed'], 'controls': list(guides)}
+        return png(Image.new('RGB', size, 'green')), {'model': 'fake', 'seed': settings['seed'], 'controls': list(guides),
+                                                   'referenceSize': list(source.size) if source else None}
 
 
 class ServiceTests(unittest.TestCase):
@@ -90,13 +92,74 @@ class ServiceTests(unittest.TestCase):
         self.assertEqual(job['provenance']['seed'], 42)
         self.assertIn('edges', job['provenance']['controls'])
 
+    def test_quality_receives_the_original_color_source_in_addition_to_guides(self):
+        job = self.finish(self.service.submit(request(mode='quality')))
+        self.assertEqual(job['status'], 'succeeded')
+        self.assertEqual(job['provenance']['referenceSize'], [96, 64])
+
+    def test_complete_controls_are_validated_and_persisted_in_the_recipe(self):
+        job = self.finish(self.service.submit(request(mode='fast', sdxlVariant='base', steps=30, edgeScale=.2, edgeEnd=.4, depthScale=.7)))
+        self.assertEqual(job['status'], 'succeeded')
+        self.assertEqual(job['settings']['edgeScale'], .2)
+        self.assertEqual(job['settings']['edgeEnd'], .4)
+        self.assertEqual(job['settings']['sdxlGuidance'], 6)
+        self.assertEqual(job['settings']['steps'], 30)
+        with self.assertRaises(ValueError): self.service.submit(request(mode='fast', edgeStart=.9, edgeEnd=.5))
+        with self.assertRaises(ValueError): self.service.submit(request(mode='quality', referenceMode='source+depth'))
+
+    def test_guide_preview_returns_actual_references_without_creating_a_job(self):
+        body = request(mode='quality', fluxVariant='base', referenceMode='source+edges')
+        result = self.service.preview_guides(body)
+        self.assertEqual([guide['label'] for guide in result['guides']], ['Capture', 'Contours'])
+        self.assertTrue(all(guide['image'].startswith('data:image/png;base64,') for guide in result['guides']))
+        self.assertEqual(self.service.history(), [])
+
+    def test_idle_service_keeps_loaded_weights_and_shutdown_releases_them(self):
+        class ShortIdleQueue(queue.Queue):
+            # Accelerate any idle timer without waiting minutes in a regression test.
+            def get(self, block=True, timeout=None):
+                return super().get(block, .01 if timeout is not None else None)
+
+        class CachedRuntime(FakeRuntime):
+            loaded = False
+            loads = 0
+            releases = 0
+            def generate(self, *args, **kwargs):
+                if not self.loaded:
+                    self.loads += 1
+                    self.loaded = True
+                return super().generate(*args, **kwargs)
+            def release(self):
+                self.loaded = False
+                self.releases += 1
+
+        runtime = CachedRuntime()
+        with patch('illustration.service.queue.Queue', ShortIdleQueue):
+            service = IllustrationService(self.directory.name, runtime)
+        try:
+            first = service.submit(request(mode='fast', seed=1))
+            service.queue.join()
+            self.assertEqual(service.get(first['id'])['status'], 'succeeded')
+            # Multiple accelerated idle intervals elapse between independent jobs.
+            threading.Event().wait(.08)
+            second = service.submit(request(mode='fast', seed=2))
+            service.queue.join()
+            self.assertEqual(service.get(second['id'])['status'], 'succeeded')
+            self.assertEqual(runtime.loads, 1)
+            self.assertEqual(runtime.releases, 0)
+        finally:
+            service.close()
+            service.worker.join(3)
+        self.assertFalse(service.worker.is_alive())
+        self.assertEqual(runtime.releases, 1)
+
     def test_rejects_misaligned_and_missing_depth(self):
         body = request(); body['guides']['depth'] = encoded((80, 64))
         with self.assertRaises(ValueError): self.service.submit(body)
         with self.assertRaises(ValueError): self.service.submit(request(control='depth'))
 
     def test_rejects_invalid_steps_resolution_and_protocol(self):
-        for body in (request(mode='quality', steps=4), request(mode='fast', pixels=2097152), {**request(), 'version': 99}, request(seed=-1)):
+        for body in (request(mode='quality', steps=8), request(mode='fast', pixels=2097152), {**request(), 'version': 99}, request(seed=-1)):
             with self.assertRaises(ValueError): self.service.submit(body)
         body = request(provider='openai'); body.update(image=encoded((256, 64)), guides={})
         with self.assertRaisesRegex(ValueError, 'ratio 3:1'): self.service.submit(body)
@@ -162,16 +225,28 @@ class ServiceTests(unittest.TestCase):
             self.finish(job)
             with urllib.request.urlopen(url + f'/v1/illustrations/jobs/{job["id"]}/result.png') as response:
                 self.assertEqual(response.headers['Content-Type'], 'image/png')
+                self.assertIsNone(response.headers.get('Content-Disposition'))
+            with urllib.request.urlopen(url + f'/v1/illustrations/jobs/{job["id"]}/result.png?download=1') as response:
+                self.assertEqual(response.headers['Content-Disposition'], f'attachment; filename="illustration-{job["id"]}.png"')
+                self.assertTrue(response.read().startswith(b'\x89PNG'))
         finally:
             server.shutdown(); server.server_close(); thread.join(3)
 
 
 class AdapterTests(unittest.TestCase):
+    def test_matching_model_reuses_pipeline_without_reloading_libraries_or_weights(self):
+        runtime = LocalRuntime()
+        pipeline = object()
+        runtime.pipe, runtime.identity = pipeline, ('quality', 'distilled', None)
+        messages = []
+        self.assertIs(runtime.load('quality', 4, lambda *args: messages.append(args), lambda: None), pipeline)
+        self.assertIn('déjà en mémoire', messages[0][2])
+
     def test_automatic_control_preserves_plan_in_both_local_engines(self):
         guides = {'edges': object(), 'depth': object()}
         self.assertEqual(control_kinds('fast', 'auto', guides), ['edges', 'depth'])
-        self.assertEqual(control_kinds('quality', 'auto', guides), ['edges'])
-        self.assertEqual(control_kinds('quality', 'depth', guides), ['depth'])
+        self.assertEqual(control_kinds('quality', 'auto', guides), ['reference'])
+        with self.assertRaises(ValueError): control_kinds('quality', 'depth', guides)
         with self.assertRaises(ValueError): control_kinds('quality', 'both', guides)
         with self.assertRaises(ValueError): control_kinds('fast', 'depth', {'edges': object()})
 
@@ -202,7 +277,7 @@ class AdapterTests(unittest.TestCase):
         compiled = compile_prompt({'sourceStyle': 'parchment', 'projection': 'orthographic', 'biome': 'arid', 'apiKey': 'hidden'}, {'fidelity': 'strong'})
         self.assertEqual(compiled['style'], 'parchment')
         self.assertIn('arid', compiled['prompt'])
-        self.assertIn('building footprints', compiled['prompt'])
+        self.assertIn('block and parcel boundaries', compiled['prompt'])
         self.assertNotIn('hidden', compiled['prompt'])
         width, height = dimensions(1920, 1080, 786432)
         self.assertLess(abs(width / height - 1920 / 1080), .04)
@@ -213,7 +288,7 @@ class AdapterTests(unittest.TestCase):
         roman = compile_prompt({'projection': 'orthographic', 'environment': {'relief': 'flat', 'climate': 'mediterranean'},
             'settlements': [{'urbanCulture': 'roman-core', 'name': 'Roma', 'population': 30000}],
             'architecture': {'roofSystems': ['tiled_hip'], 'materials': [{'label': 'fired clay tiles'}], 'storeys': [1, 2]}}, {'style': 'photorealistic'})
-        self.assertIn('a Roman city in a Mediterranean plain', roman['description'])
+        self.assertIn('an ancient Roman city of approximately 30,000 inhabitants in a Mediterranean plain', roman['description'])
         self.assertIn('fired clay tiles', roman['description'])
         self.assertIn('tiled hip', roman['description'])
         self.assertNotIn('Scene data:', roman['prompt'])
@@ -222,16 +297,58 @@ class AdapterTests(unittest.TestCase):
         self.assertIn('do not create a different scene', roman['prompt'])
         context = {'projection': 'perspective', 'environment': {'relief': 'mountains', 'snowCover': True},
                    'settlements': [{'urbanCulture': 'inca', 'population': 600}]}
-        self.assertIn('an Inca village in snow-covered mountains', compile_prompt(context, {})['description'])
+        self.assertIn('a pre-Columbian Inca village of approximately 600 inhabitants in snow-covered mountains', compile_prompt(context, {})['description'])
         context['environment'].pop('snowCover')
         self.assertNotIn('snow', compile_prompt(context, {})['description'])
         self.assertNotIn('Mediterranean', compile_prompt(context, {})['description'])
+
+    def test_every_model_receives_camera_population_culture_era_and_biome_up_front(self):
+        context = {'projection': 'perspective', 'camera': {'pitch': .7853981633974483, 'distance': 1000,
+                   'viewAngleDegrees': 30, 'heightAboveTargetMetres': 650, 'altitudeMetres': 850},
+                   'environment': {'relief': 'valley', 'climate': 'oceanic', 'biome': 'temperate forest'},
+                   'settlements': [{'culture': 'japanese-jokamachi', 'population': 1000}]}
+        compiled = compile_prompt(context, {})
+        for key in ('fastPrompt', 'localPrompt', 'prompt'):
+            for fact in ('30 degrees below the horizon', '650 metres above the target terrain',
+                         'medieval Japanese village', '1,000 inhabitants', 'oceanic valley', 'temperate forest'):
+                self.assertIn(fact, compiled[key], key)
+        self.assertIn('850 metres above the terrain datum', compiled['description'])
+        self.assertLess(compiled['prompt'].index('medieval Japanese'), compiled['prompt'].index('Requested style:'))
+
+    def test_applied_era_and_visible_architecture_supply_missing_settlement_culture(self):
+        compiled = compile_prompt({'architecture': {'traditions': ['inca'], 'settings': {'house_config': {'era': 'A'}}},
+                                   'generation': {'population': 1000}}, {})
+        self.assertIn('an ancient Inca village of approximately 1,000 inhabitants', compiled['fastPrompt'])
+        self.assertNotIn('European', compiled['description'])
+
+    def test_2d_scale_is_not_a_camera_altitude_and_legacy_3d_camera_is_understood(self):
+        context = {'camera': {'cx': 100, 'cy': 100, 'scale': 3}, 'extentMetres': {'width': 500, 'height': 300}}
+        description = compile_prompt(context, {})['description']
+        self.assertIn('90 degrees', description)
+        self.assertIn('500 by 300 metres', description)
+        self.assertNotIn('above the target terrain', description)
+        context.update(projection='perspective', camera={'pitch': .5235987755982988, 'distance': 1000})
+        self.assertIn('500 metres above the target terrain', compile_prompt(context, {})['fastPrompt'])
 
     def test_natural_world_does_not_inherit_an_unused_city_culture(self):
         compiled = compile_prompt({'application': 'neural-earth', 'generation': {'workflow': 'environment', 'culture': 'roman-core'},
                                    'environment': {'relief': 'mountains'}}, {})
         self.assertNotIn('Roman', compiled['description'])
         self.assertIn('natural terrain landscape', compiled['description'])
+        self.assertNotIn('complete three-dimensional buildings', compiled['localPrompt'])
+
+    def test_local_art_direction_omits_technical_noise_and_unrequested_recipe_cultures(self):
+        compiled = compile_prompt({'projection': 'perspective',
+            'settlements': [{'urbanCulture': 'aztec', 'population': 100000}],
+            'environment': {'relief': 'plateau', 'climate': 'temperate', 'minHeight': 50, 'maxHeight': 744, 'temperature': 18},
+            'architecture': {'settings': {'parcel_fit': True}, 'traditions': ['rajput-fort']}}, {'style': 'fineart'})
+        self.assertIn('pre-Columbian Aztec', compiled['localPrompt'])
+        self.assertIn('lime plaster', compiled['localPrompt'])
+        self.assertIn('only the visible crop', compiled['localPrompt'])
+        self.assertIn('oil painting', compiled['localPrompt'])
+        self.assertNotIn('rajput', compiled['prompt'].lower())
+        self.assertNotIn('Reported terrain elevation', compiled['localPrompt'])
+        self.assertNotIn('mean temperature', compiled['localPrompt'])
 
     def test_visible_layer_is_default_but_requested_style_overrides_it(self):
         for layer, expected in [('cadastre', 'cadastre'), ('parchment', 'parchment'), ('topographic', 'geographic'), ('satellite', 'satellite'), ('render', 'photorealistic')]:

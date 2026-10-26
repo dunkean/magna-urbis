@@ -13,8 +13,9 @@ import time
 from PIL import Image
 from . import PROTOCOL
 from .context import clean, compile_prompt, dimensions
-from .images import decode_image, guide_images, png
+from .images import decode_image, guide_images, png, reference_images, simplify_guide
 from .providers import DEFAULT_MODELS
+from .settings import local_settings, CONTROL_PRESETS
 
 TERMINAL = {"succeeded", "failed", "cancelled"}
 
@@ -57,9 +58,11 @@ class IllustrationService:
         dependencies = all(importlib.util.find_spec(name) is not None for name in ("torch", "diffusers", "transformers", "cv2", "accelerate"))
         return {"service": "magna-illustration", "protocol": PROTOCOL, "localDependencies": dependencies,
                 "models": DEFAULT_MODELS, "modes": ["cloud", "fast", "quality"],
-                "controls": {"fast": ["auto", "edges", "depth", "both"], "quality": ["auto", "edges", "depth"], "cloud": ["auto"]},
+                "controls": {"fast": ["auto", "edges", "depth", "both"], "quality": ["auto"], "cloud": ["auto"]},
                 "configuredKeys": {"openai": bool(os.environ.get("OPENAI_API_KEY")), "gemini": bool(os.environ.get("GEMINI_API_KEY"))},
-                "steps": {"fast": [4, 8], "quality": [8]}, "queueLimit": 6}
+                "steps": {"fast": [4, 8, 20, 30, 40, 50], "quality": [4, 20, 30, 40, 50]},
+                "variants": {"fast": ["base", "lightning"], "quality": ["base", "distilled"]},
+                "controlPresets": CONTROL_PRESETS, "queueLimit": 6}
 
     def preview_prompt(self, body):
         if not isinstance(body, dict) or body.get("version") != PROTOCOL:
@@ -70,9 +73,41 @@ class IllustrationService:
         mode = settings.get("mode", "fast")
         if mode not in ("fast", "quality", "cloud"):
             raise ValueError("Moteur inconnu.")
+        settings.update(local_settings(mode, settings))
         compiled = compile_prompt(context, settings)
         return {"description": compiled["description"], "style": compiled["style"], "customized": compiled["customized"],
                 "prompt": compiled["prompt"] if mode == "cloud" else compiled["fastPrompt"] if mode == "fast" else compiled["localPrompt"]}
+
+    def preview_guides(self, body):
+        if not isinstance(body, dict) or body.get('version') != PROTOCOL:
+            raise ValueError('Version de capture incompatible.')
+        settings = prompt_settings(body)
+        mode = settings.get('mode', 'quality')
+        if mode not in ('fast', 'quality'):
+            raise ValueError('Les guides concernent les moteurs locaux.')
+        settings.update(local_settings(mode, settings))
+        source = decode_image(body.get('image'))
+        pixels = int(settings.get('pixels', 1048576))
+        if pixels not in (393216, 786432, 1048576, 2097152):
+            raise ValueError('Résolution non prise en charge.')
+        supplied = body.get('guides', {})
+        if not isinstance(supplied, dict):
+            raise ValueError('Guides invalides.')
+        size = dimensions(*source.size, pixels)
+        guides = guide_images(source, supplied, size)
+        if mode == 'quality':
+            images = reference_images(source, guides, size, settings)
+            labels = ['Capture' if name == 'source' else 'Profondeur' if name == 'depth' else 'Contours' for name in settings['referenceMode'].split('+')]
+        else:
+            from .local import control_kinds
+            kinds = control_kinds(mode, settings.get('control', 'auto'), guides)
+            images = [simplify_guide(guides[kind], settings['guideResolution'], size, kind == 'edges') for kind in kinds]
+            labels = [f"{'Contours' if kind == 'edges' else 'Profondeur'} · poids {settings['edgeScale' if kind == 'edges' else 'depthScale']:g}" for kind in kinds]
+            if settings['sdxlVariant'] == 'base' and settings['sdxlInit'] == 'source':
+                images.insert(0, source.resize(size, Image.Resampling.LANCZOS))
+                labels.insert(0, f"Capture · transformation {settings['denoiseStrength']:g}")
+        return {'guides': [{'label': label, 'image': 'data:image/png;base64,' + base64.b64encode(png(image)).decode(), 'size': list(image.size)}
+                           for label, image in zip(labels, images)]}
 
     def submit(self, body):
         if not isinstance(body, dict) or body.get("version") != PROTOCOL:
@@ -84,6 +119,7 @@ class IllustrationService:
         mode = settings.get("mode", "fast")
         if mode not in ("fast", "quality", "cloud"):
             raise ValueError("Moteur inconnu.")
+        settings.update(local_settings(mode, settings))
         if mode != "cloud" and not self.capabilities()["localDependencies"] and self.local_runtime is None:
             raise ValueError("Dépendances locales absentes. Installez illustration/requirements.txt dans l’environnement du service.")
         source = decode_image(body.get("image"))
@@ -96,16 +132,16 @@ class IllustrationService:
                 raise ValueError("Les guides et la capture doivent avoir les mêmes dimensions.")
         if settings.get("control") in ("depth", "both") and "depth" not in supplied:
             raise ValueError("La capture ne contient pas de profondeur.")
-        if mode == "quality" and settings.get("control") == "both":
-            raise ValueError("Z-Image accepte un guide à la fois ; choisissez SDXL pour profondeur + contours.")
-        steps = int(settings.get("steps", 4 if mode == "fast" else 8))
-        if mode != "cloud" and steps not in ([4, 8] if mode == "fast" else [8]):
-            raise ValueError("Nombre d’étapes incompatible avec ce moteur.")
+        if mode == "quality" and settings.get("control", "auto") != "auto":
+            raise ValueError("FLUX utilise directement la capture source. Choisissez le guide automatique.")
+        if mode == 'quality' and settings.get('referenceMode') == 'source+depth' and 'depth' not in supplied:
+            raise ValueError('La référence FLUX « capture + profondeur » nécessite une capture 3D avec profondeur.')
+        steps = int(settings.get("steps", 4))
         pixels = int(settings.get("pixels", 786432 if mode == "fast" else 1048576))
         if pixels not in (393216, 786432, 1048576, 2097152):
             raise ValueError("Résolution non prise en charge.")
-        if mode == "fast" and pixels > 1048576:
-            raise ValueError("Le mode rapide est limité à un mégapixel.")
+        if mode == "fast" and settings['sdxlVariant'] == 'lightning' and pixels > 1048576:
+            raise ValueError("Lightning est limité à un mégapixel ; choisissez SDXL complet pour 2 MP.")
         if max(source.size) / min(source.size) > 4:
             raise ValueError("Recadrez la capture à un ratio inférieur ou égal à 4:1.")
         if mode == "cloud" and settings.get("provider", "openai") == "openai" and max(source.size) / min(source.size) > 3:
@@ -198,15 +234,19 @@ class IllustrationService:
         return path
 
     def _work(self):
+        try:
+            self._process_jobs()
+        finally:
+            if self.local_runtime is not None and hasattr(self.local_runtime, "release"):
+                self.local_runtime.release()
+
+    def _process_jobs(self):
         while True:
-            try:
-                item = self.queue.get(timeout=120)
-            except queue.Empty:
-                if self.local_runtime is not None and hasattr(self.local_runtime, "release"):
-                    self.local_runtime.release()
-                if self.closed:
-                    return
-                continue
+            # Keep the current model warm while waiting for another illustration.
+            # close() wakes an idle worker; a full queue is drained before exit.
+            if self.closed and self.queue.empty():
+                return
+            item = self.queue.get()
             if item is None:
                 self.queue.task_done()
                 return
@@ -241,7 +281,7 @@ class IllustrationService:
                     from .local import LocalRuntime
                     if self.local_runtime is None:
                         self.local_runtime = LocalRuntime()
-                    data, provenance = self.local_runtime.generate(mode, job["localPrompt"], guides, tuple(job["size"]), settings, progress, check)
+                    data, provenance = self.local_runtime.generate(mode, job["localPrompt"], guides, tuple(job["size"]), settings, progress, check, source=source)
                 check()
                 with Image.open(io.BytesIO(data)) as image:
                     result = png(image.convert("RGB"))

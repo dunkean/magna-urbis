@@ -8,14 +8,26 @@ STYLES = {
     "satellite": "realistic overhead satellite imagery, natural surface colors, physically plausible terrain and vegetation textures, clearly resolved roads, roofs and water",
     "engraving": "fine copperplate engraving, delicate hatching, monochrome ink, precise architectural linework",
     "watercolor": "fine-art watercolor, translucent washes, textured paper, delicate architectural details",
-    "fineart": "fine-art landscape painting, carefully observed architecture, rich natural materials and atmospheric light",
+    "fineart": "architectural oil painting, fine brushwork, rich restrained pigments, carefully resolved buildings, coherent natural light and soft atmospheric depth",
     "photorealistic": "photorealistic landscape and architectural visualization, physically plausible materials, natural light",
     "atlas": "finely illustrated geographic atlas, clear terrain and settlement hierarchy, restrained natural colors",
 }
+VISUAL_TRADITIONS = {
+    "egyptian-planned": "ancient Egyptian mudbrick courtyard houses, plastered facades with doorways and small windows, roof terraces with parapets, shaded lanes, palms and riverside cultivation",
+    "egyptian-organic": "ancient Egyptian mudbrick courtyard houses, plastered facades with doorways and small windows, roof terraces with parapets and shaded lanes",
+    "aztec": "pre-Columbian Mesoamerican masonry and lime plaster, flat roof terraces, enclosed courtyards and pedestrian causeways",
+    "inca": "pre-Columbian Andean stone buildings, carefully fitted masonry, compact courtyard compounds and stone terraces",
+    "roman-core": "ancient Roman courtyard houses, plastered masonry, tiled roofs and stone-paved streets",
+    "japanese": "medieval Japanese timber architecture, plastered walls, ceramic tiled roofs and enclosed gardens",
+    "japanese-jokamachi": "medieval Japanese timber architecture, plastered walls, ceramic tiled roofs and enclosed gardens",
+    "chinese": "traditional Chinese timber courtyard compounds, tiled roofs and clearly articulated walled precincts",
+    "european-organic": "medieval European masonry and timber houses, individually resolved pitched roofs and narrow pedestrian streets",
+    "medina": "North African courtyard houses, plastered masonry, roof terraces and narrow shaded lanes",
+}
 FIDELITY = {
-    "strong": "Preserve the exact framing, projection, shoreline, river courses, bridges, major roads, walls, building footprints and landmark positions. Add surface detail without redesigning the geography or urban plan.",
-    "balanced": "Preserve the framing, geography, settlement layout and important landmarks. Interpret materials and small details freely.",
-    "free": "Keep the geographic identity and principal composition, with artistic freedom in details.",
+    "strong": "Keep the source framing, street topology, block and parcel boundaries, shoreline, river courses, bridges and landmark positions. Freely enrich the buildings, materials, vegetation and fine details within that fixed plan, in the requested style.",
+    "balanced": "Keep the source framing, street topology, urban blocks, water courses and landmark positions. Freely reinterpret architecture, materials and small details within that plan, in the requested style.",
+    "free": "Keep the source plan, street topology, water courses and framing. Freely redesign the visual details, architecture, materials and atmosphere in the requested style.",
 }
 
 
@@ -69,11 +81,65 @@ def number(value):
 
 
 def culture_name(value, label=None):
-    names = {"roman-core": "Roman", "roman": "Roman", "inca": "Inca", "european-organic": "medieval European",
-             "medieval": "medieval European", "japanese-jokamachi": "Japanese",
+    names = {"roman-core": "Roman", "roman": "Roman", "inca": "Inca", "aztec": "Aztec", "egyptian-planned": "Egyptian", "egyptian-organic": "Egyptian", "european-organic": "European",
+             "medieval": "European", "japanese": "Japanese", "japanese-jokamachi": "Japanese", "bastide": "European bastide",
              "chinese": "Chinese", "javanese-courts": "Javanese", "medina": "North African",
              "elven": "elven", "dwarven": "dwarven"}
     return names.get(value) or words(label or value)
+
+
+def cultural_identity(value, label=None, era=None):
+    # Broad art-direction periods for the application's cultural presets, not
+    # invented dates for individual buildings. An applied house era wins.
+    periods = {"roman-core": "ancient", "roman": "ancient", "egyptian-planned": "ancient", "egyptian-organic": "ancient", "inca": "pre-Columbian", "aztec": "pre-Columbian",
+               "european-organic": "medieval", "medieval": "medieval", "bastide": "medieval",
+               "japanese": "medieval", "japanese-jokamachi": "medieval", "chinese": "pre-modern",
+               "medina": "medieval", "indian-temple": "pre-modern", "javanese-courts": "pre-modern",
+               "byzantine-greek": "medieval", "hanseatic": "medieval", "venetian-lagoon": "medieval",
+               "korean": "pre-modern", "ottoman": "Ottoman-era", "persian": "pre-modern", "sahel": "pre-modern"}
+    name = culture_name(value, label)
+    era = era if isinstance(era, str) else None
+    period = {"A": "ancient", "M": "medieval", "ancient": "ancient", "medieval": "medieval"}.get(era)
+    if not period and era and era != "any":
+        period = words(era)
+    period = period or periods.get(value, "")
+    return f"{period} {name}" if period and period.lower() not in name.lower() else name
+
+
+def describe_camera(context):
+    projection, camera = context.get("projection", "orthographic"), record(context.get("camera"))
+    if projection == "orthographic":
+        return "A strictly top-down aerial view", "The view is an orthographic map, looking vertically down at 90 degrees; map zoom does not define a physical camera altitude."
+    if projection == "globe":
+        return "A globe view", "Keep the source globe curvature and framing."
+    angle = number(camera.get("viewAngleDegrees"))
+    pitch = number(camera.get("pitch"))
+    if angle is None and pitch is not None and 0 <= pitch <= math.pi / 2:
+        angle = math.degrees(pitch)
+    above = number(camera.get("heightAboveTargetMetres"))
+    distance = number(camera.get("distance"))
+    if above is None and distance is not None and distance > 0 and angle is not None:
+        above = distance * math.sin(math.radians(angle))
+    view = ("A near-horizontal view" if angle is not None and angle < 15 else
+            "A near-vertical aerial view" if angle is not None and angle >= 75 else "An elevated oblique aerial view")
+    measurements = []
+    if angle is not None and 0 <= angle <= 90:
+        measurements.append(f"looking down {angle:.0f} degrees below the horizon")
+    if above is not None and above >= 0:
+        measurements.append(f"approximately {above:,.0f} metres above the target terrain")
+    if measurements:
+        view += " (" + ", ".join(measurements) + ")"
+    details = []
+    altitude = number(camera.get("altitudeMetres"))
+    if altitude is not None:
+        details.append(f"Camera altitude is approximately {altitude:,.0f} metres above the terrain datum.")
+    heading = number(camera.get("azimuthDegrees"))
+    if heading is not None:
+        details.append(f"The viewing azimuth is {heading % 360:.0f} degrees in the map coordinate frame.")
+    exaggeration = number(camera.get("exaggeration"))
+    if exaggeration is not None and exaggeration != 1:
+        details.append(f"The reference relief uses {exaggeration:g} times vertical exaggeration; camera clearance is measured in the rendered scene.")
+    return view, " ".join(details)
 
 
 def settlement_kind(population=None, size=None):
@@ -101,17 +167,25 @@ def describe_scene(context):
     primary = max(settlements, key=lambda s: number(s.get("population")) or 0) if settlements else {}
     configured_city = generation.get("workflow") != "environment" and bool(generation.get("culture"))
     has_city = bool(settlements or configured_city or architecture.get("traditions"))
-    culture = culture_name(primary.get("urbanCulture") or generation.get("culture"), primary.get("cultureDescription") or generation.get("cultureDescription")) if has_city else ""
-    kind = settlement_kind(primary.get("population", generation.get("population")), generation.get("size"))
+    traditions = [c for c in architecture.get("traditions", []) if isinstance(c, str)]
+    culture_id = primary.get("urbanCulture") or primary.get("culture") or generation.get("culture") or next(iter(traditions), None) or record(architecture.get("settings")).get("culture")
+    house_config = record(record(architecture.get("settings")).get("house_config"))
+    era = primary.get("era") or generation.get("era") or architecture.get("era") or house_config.get("era")
+    culture = cultural_identity(culture_id, primary.get("cultureDescription") or generation.get("cultureDescription"), era) if has_city else ""
+    population = number(primary.get("population", generation.get("population")))
+    kind = settlement_kind(population, generation.get("size"))
     city = f"{culture + ' ' if culture else ''}{kind}"
     subject = f"{'an' if city[:1].lower() in 'aeiou' and not city.startswith('European') else 'a'} {city}" if has_city else "a natural terrain landscape"
+    if has_city and population is not None and population > 0:
+        subject += f" of approximately {population:,.0f} inhabitants"
     if len(settlements) > 1:
-        subject = f"a regional landscape with {len(settlements)} visible settlements"
-    projection = context.get("projection", "orthographic")
-    camera = {"orthographic": "A strictly top-down aerial view", "perspective": "An elevated oblique aerial view", "globe": "A globe view"}.get(projection, "A view from the source camera")
+        subject = f"a regional landscape with {len(settlements)} visible settlements, including {subject}"
+    camera, camera_details = describe_camera(context)
     article = "" if terrain.endswith("mountains") else "an " if setting[:1].lower() in "aeiou" else "a "
     summary = f"{camera} of {subject}" + (f" in {article}{setting}" if setting else "") + "."
-    sentences = [summary]
+    if biome:
+        summary += f" Biome: {biome}."
+    sentences = [summary] + ([camera_details] if camera_details else [])
     if biome:
         sentences.append(f"The available biome estimate is {biome}." if environment.get("biomeEvidence") else f"The landscape biome is {biome}.")
     if environment.get("environment") and environment["environment"] != "mixed":
@@ -131,7 +205,7 @@ def describe_scene(context):
         sentences.append(words(environment["biomeEvidence"]).rstrip(".") + ".")
     for index, settlement in enumerate(settlements):
         name = words(settlement.get("name"))
-        tradition = culture_name(settlement.get("urbanCulture"), settlement.get("cultureDescription"))
+        tradition = cultural_identity(settlement.get("urbanCulture") or settlement.get("culture"), settlement.get("cultureDescription"), settlement.get("era") or era)
         kind = settlement_kind(settlement.get("population"))
         detail = f"The {tradition + ' ' if tradition else ''}{kind}" + (f' named "{name}"' if name else f" (visible settlement {index + 1})")
         population = number(settlement.get("population"))
@@ -146,7 +220,11 @@ def describe_scene(context):
         sentences.append(detail + ".")
     if not settlements and configured_city and number(generation.get("population")):
         sentences.append(f"The configured whole-settlement population is approximately {generation['population']:,.0f} inhabitants; only the portion shown in the image should be depicted.")
-    traditions = list(dict.fromkeys(culture_name(c) for c in architecture.get("traditions", []) if isinstance(c, str)))
+    # A sampled native recipe/pack id is not a second urban culture. In particular,
+    # a generic fort recipe must not turn an Aztec city into a Rajput city.
+    explicit_architecture = record(architecture.get("settings")).get("culture")
+    traditions = list(dict.fromkeys(cultural_identity(c, era=era) for c in traditions
+                                   if not culture_id or c == culture_id or c == explicit_architecture or c in VISUAL_TRADITIONS))
     if traditions:
         sentences.append("Visible building traditions include " + ", ".join(traditions[:8]) + ".")
     roofs = [words(r) for r in architecture.get("roofSystems", []) if isinstance(r, str)]
@@ -181,20 +259,19 @@ def compile_prompt(context, settings):
               if projection == "orthographic" else "Keep the source camera angle and projection.")
     summary, description = describe_scene(context)
     instruction = str(settings.get("instruction", "")).strip()[:3000]
-    details = ("Preserve the visible details and their relative positions, orientations, shapes, proportions and density: "
-               "street intersections, parcels, roof outlines, courtyards, open spaces, vegetation, terrain contours and water boundaries. "
-               if fidelity == "strong" else "Retain the visible geographic identity and principal landmarks, respecting the chosen fidelity level. ")
+    details = ("Preserve the relative positions and connectivity of street intersections, parcels, urban blocks, open spaces, terrain contours and water boundaries. "
+               "Within that layout, create convincing complete architecture and freely develop materials, facades, roofs, vegetation and fine details appropriate to the culture and period. ")
     prompt = ("Edit the supplied source image itself, using it as the authoritative visual reference. "
               "Reproduce this same place in the requested artistic style; do not create a different scene merely inspired by the description. "
+              f"\n\nScene description: {description[:18000]}\n\n"
               f"Requested style: {STYLES[style]}.\n\n"
               f"{camera} {FIDELITY[fidelity]} "
               f"{details}"
-              "Change the visual rendering of textures, palette, material surfaces and lighting to achieve the requested style. "
+              "Achieve a finished, high-quality image in the requested style; replace neutral placeholder surfaces and simple block masses with rich, coherent visual detail. "
               "Where the description is incomplete or ambiguous, follow the source image. Do not infer weather, snow or a different biome from the culture alone. "
               "Use the specified architectural traditions without replacing the actual buildings with generic European castles or stereotypical monuments. "
               "Keep distinct cultural districts in their original locations. Only depict features visible at this scale. "
               "Do not add labels, text, legends, UI, watermarks, modern vehicles or modern infrastructure unless explicitly part of the scene. "
-              f"\n\nScene description: {description[:18000]}\n\n"
               f"Additional artistic request: {instruction or 'None.'}")
     # CLIP in SDXL has a short context; prioritize the concrete subject and style.
     architecture = record(context.get("architecture"))
@@ -202,7 +279,36 @@ def compile_prompt(context, settings):
     materials = ", ".join(words(m.get("label") or m.get("pattern")) for m in architecture.get("materials", [])[:2] if isinstance(m, dict))
     short_architecture = (f" Roof forms: {roofs}." if roofs else "") + (f" Materials: {materials}." if materials else "")
     fast_prompt = f"{summary} {STYLES[style]}.{short_architecture} Preserve the source layout, roads, rivers and buildings. No labels. {instruction}"
-    local_prompt = f"{summary} {STYLES[style]}. {camera} {FIDELITY[fidelity]} {description} {instruction}"
+    generation = record(context.get("generation"))
+    settlements = [s for s in context.get("settlements", []) if isinstance(s, dict)]
+    primary = max(settlements, key=lambda s: number(s.get("population")) or 0) if settlements else {}
+    culture_id = (primary.get("urbanCulture") or primary.get("culture") or generation.get("culture")
+                  or next(iter(architecture.get("traditions", [])), None))
+    visual_tradition = VISUAL_TRADITIONS.get(culture_id, "")
+    natural = "natural terrain landscape" in summary
+    geometry = ("Keep the reference framing, terrain forms, shorelines, water courses and vegetation zones. "
+                "Resolve natural ground textures, coherent shadows and readable relief. " if natural else
+                "Keep the reference street topology, urban blocks, open squares, bridge positions, water courses and camera framing. "
+                "Within that fixed plan, freely turn the placeholder masses into convincing complete buildings, with richly detailed materials, facades, roofs, gardens and coherent shadows. ")
+    local_prompt = (f"Transform the supplied reference image into a finished, high-quality image in this style: {STYLES[style]}. {summary} "
+                    f"{visual_tradition + '. ' if visual_tradition else ''}{short_architecture} "
+                    "Depict only the visible crop of this place, not the entire settlement or a new panorama. "
+                    f"{geometry}"
+                    "No text, labels or interface. "
+                    f"{instruction}")
+    if natural:
+        local_prompt += " No settlement is identified; do not invent urban development."
+    reference_mode = settings.get('referenceMode', 'source')
+    if reference_mode in ('source+edges', 'source+depth'):
+        guide = 'white structural contours on black' if reference_mode == 'source+edges' else 'a grayscale depth map'
+        local_prompt += (f" Image 1 is the source view. Image 2 is {guide} of the same scene: use it only to constrain the street layout, framing and volumes, not as an output style. "
+                         "Keep the exact positions and connections of the roads and water from these aligned references while freely refining architecture and surface detail.")
+    elif reference_mode == 'edges':
+        local_prompt += " The reference image contains structural contours only: preserve their plan and camera framing while freely creating complete architecture in the requested style."
+    # SDXL's complete caption is chunked through both CLIP encoders in local.py.
+    # Put style/culture before generic preservation instructions.
+    fast_prompt = (f"{STYLES[style]}. {summary} {visual_tradition + '. ' if visual_tradition else ''}{short_architecture} "
+                   f"{geometry} {instruction}")
     customized = "promptOverride" in settings
     if customized:
         override = settings["promptOverride"]
