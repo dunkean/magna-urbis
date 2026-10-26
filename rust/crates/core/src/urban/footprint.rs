@@ -166,16 +166,30 @@ fn guides(family: &str, center: Point, radius: f64, angle: f64, rng: &Rng) -> Ve
         .collect()
 }
 
+/// A walled, palisaded or hedged settlement. A wall is paid for by its
+/// perimeter, so what stands inside is packed: the enclosed land uses the
+/// culture's compact (core) tissue, never the open-village one.
+pub(super) fn enclosed(cfg: &LayoutConfig, culture: &str, population: u32) -> bool {
+    let profile = profiles::settlement_profile(culture, population, cfg.footprint.epochs);
+    matches!(
+        profiles::fortification(profile, &cfg.fortification, population),
+        "wall" | "palisade" | "hedge"
+    )
+}
 /// Zone and recipe of one growth epoch: the founding core, its first extension,
-/// then the periphery. Villages keep a single village tissue.
-pub(super) fn epoch_zone(
-    cfg: &LayoutConfig,
+/// then the periphery. Open villages keep a single village tissue; an enclosed
+/// one is built as the culture's compact core inside its wall.
+pub(super) fn epoch_zone<'a>(
+    cfg: &'a LayoutConfig,
+    culture: &str,
     population: u32,
     epoch: usize,
-) -> (&str, &'static str) {
+) -> (&'a str, &'static str) {
     let small = population < 1200;
     let zone = if cfg.zone != "auto" {
         cfg.zone.as_str()
+    } else if small && enclosed(cfg, culture, population) {
+        "core"
     } else if small {
         "village"
     } else {
@@ -206,9 +220,10 @@ pub(super) fn epoch_densities(site: &Site, cfg: &LayoutConfig, morph: &Morph) ->
         &cfg.culture
     };
     let boost = (1.0 + 0.25 * (site.population as f64 / 5000.0).max(1.0).log10()).min(1.5);
+    let inside_wall = site.population < 1200 && enclosed(cfg, culture, site.population);
     (0..epochs)
         .map(|epoch| {
-            let (zone, name) = epoch_zone(cfg, site.population, epoch);
+            let (zone, name) = epoch_zone(cfg, culture, site.population, epoch);
             let recipe = super::composition::recipe(culture, site.population, name);
             let local = super::composition::phase_morph(
                 culture,
@@ -230,7 +245,12 @@ pub(super) fn epoch_densities(site: &Site, cfg: &LayoutConfig, morph: &Morph) ->
                 1 => 1.0 + (boost - 1.0) * 0.5,
                 _ => 1.0,
             };
-            (base * cfg.density * lift).clamp(5.0, 600.0)
+            let density = (base * cfg.density * lift).clamp(5.0, 600.0);
+            if inside_wall {
+                density.max(ENCLOSED_DENSITY)
+            } else {
+                density
+            }
         })
         .collect()
 }
@@ -318,7 +338,7 @@ fn capacity_epochs(
         .zip(access)
         .enumerate()
         .map(|(epoch, (&f, (pressure, offset)))| {
-            let (zone, name) = epoch_zone(cfg, site.population, epoch);
+            let (zone, name) = epoch_zone(cfg, culture, site.population, epoch);
             let share = f - previous;
             previous = f;
             capacity::Epoch {
@@ -337,6 +357,39 @@ fn capacity_epochs(
         })
         .collect()
 }
+/// An enceinte encloses at least a handful of the culture's own blocks (a few
+/// blocks, within 2.5x the density budget) and, for a planned grid, enough land
+/// to lay the grid at all: below that the streets and blocks cannot be drawn.
+/// The wall's cost comes from its perimeter, so the budget stays the target;
+/// the floor only guards degenerate sizes.
+const ENCLOSED_BLOCKS: f64 = 6.0;
+/// Gross inhabitants/hectare an enceinte is sized for at village scale: a wall
+/// is paid per metre, so it never encloses open land.
+const ENCLOSED_DENSITY: f64 = 100.0;
+const ENCLOSED_GRID_MIN: f64 = 70_000.0;
+fn enclosed_floor(site: &Site, cfg: &LayoutConfig, morph: &Morph, target: f64) -> f64 {
+    let culture = if cfg.culture == "site" {
+        &site.culture
+    } else {
+        &cfg.culture
+    };
+    if cfg.footprint.budget == "radius"
+        || site.population >= 1200
+        || !enclosed(cfg, culture, site.population)
+    {
+        return target;
+    }
+    let (zone, _) = epoch_zone(cfg, culture, site.population, 0);
+    let pattern = profiles::settlement_profile(culture, site.population, cfg.footprint.epochs).pattern;
+    // Rings of compounds (kraal, longhouse villages) have no street blocks.
+    let blocks = if matches!(pattern, "radial" | "linear" | "dispersed") {
+        0.0
+    } else {
+        (ENCLOSED_BLOCKS * morph.range("blockSize", zone)[1]).min(2.5 * target)
+    };
+    let grid = if pattern == "grid" { ENCLOSED_GRID_MIN } else { 0.0 };
+    target.max(blocks).max(grid)
+}
 fn budget(site: &Site, cfg: &LayoutConfig, morph: &Morph, radius: f64) -> (f64, f64) {
     // Equal population per epoch: the overall gross density is their harmonic mean.
     let densities = epoch_densities(site, cfg, morph);
@@ -348,6 +401,7 @@ fn budget(site: &Site, cfg: &LayoutConfig, morph: &Morph, radius: f64) -> (f64, 
     } else {
         site.population as f64 / density * 10_000.0
     };
+    let target = enclosed_floor(site, cfg, morph, target);
     let target = target.max(1.0);
     let density = if cfg.footprint.budget == "radius" {
         site.population as f64 * 10_000.0 / target

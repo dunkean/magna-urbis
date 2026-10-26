@@ -33,6 +33,8 @@ mod refonte_tests;
 #[cfg(test)]
 mod stilt_ground_tests;
 #[cfg(test)]
+mod small_settlement_tests;
+#[cfg(test)]
 mod regression;
 pub mod roles;
 mod routing;

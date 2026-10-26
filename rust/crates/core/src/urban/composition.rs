@@ -394,6 +394,8 @@ pub(super) fn generate(
     for (i, &share) in shares.iter().enumerate() {
         let zone = if cfg.zone != "auto" {
             cfg.zone.as_str()
+        } else if small && footprint::enclosed(cfg, culture, site.population) {
+            "core"
         } else if small {
             "village"
         } else if i == 0 {
@@ -730,6 +732,8 @@ fn generate_modern(
     );
     let initial_zone = if cfg.zone != "auto" {
         cfg.zone.as_str()
+    } else if small && footprint::enclosed(cfg, culture, site.population) {
+        "core"
     } else if small {
         "village"
     } else {
@@ -926,7 +930,7 @@ fn generate_modern(
         .sum::<f64>()
         .max(1e-9);
     for (epoch, shapes) in footprint.phases.iter().enumerate() {
-        let zone = footprint::epoch_zone(cfg, site.population, epoch)
+        let zone = footprint::epoch_zone(cfg, culture, site.population, epoch)
             .0
             .to_owned();
         let recipe = if cfg.recipe != "auto" {
