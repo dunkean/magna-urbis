@@ -219,12 +219,21 @@ fn village_form(site: &Site, cfg: &LayoutConfig, culture: &str, roads: &[Street]
     let form = composition::culture_data(culture, site.population)["village"]["form"]
         .as_str()
         .unwrap_or("auto");
-    if form != "auto" || nearest(site.center, roads, site.radius.max(80.0)).is_none() {
+    // A culture whose village has an enclosure grammar of its own (oval, square,
+    // organic, terraced) is a clustered village; the street ribbon is for the
+    // cultures that have no village plan.
+    let shaped = !composition::culture_data(culture, site.population)["village"]["enclosure"]["shape"]
+        .is_null();
+    if form != "auto" || shaped || nearest(site.center, roads, site.radius.max(80.0)).is_none() {
         return Kind::NucleatedVillage;
     }
     match cfg.site_archetype.as_str() {
         "hilltop" | "spur" | "island" | "harbor" | "lakeshore" => Kind::NucleatedVillage,
-        "bridge" | "pass" | "valley" => Kind::StreetVillage,
+        "bridge" | "pass" => Kind::StreetVillage,
+        // A ribbon of a few hundred inhabitants is already a kilometre of road: past 350
+        // people the village gathers round its centre instead.
+        _ if site.population >= 350 => Kind::NucleatedVillage,
+        "valley" => Kind::StreetVillage,
         _ => {
             if Rng::new(&format!("settlement-kind:{}", site.key)).chance(0.5) {
                 Kind::StreetVillage
@@ -1052,14 +1061,16 @@ fn linear(
         let households = (pop / 4.5).ceil();
         let front = morph.range("frontage", "village");
         let front = if front[1] > 0.0 {
-            ((front[0] + front[1]) * 0.5).clamp(12.0, 48.0)
+            // A compact village: house lots, never the town burgage, so the
+            // ribbon stays about as long as it is wide in houses.
+            ((front[0] + front[1]) * 0.5).clamp(12.0, 16.0)
         } else {
             30.0
         };
         let d = depth[1].clamp(40.0, 90.0);
         (
             d,
-            (households / 2.0 * front * 1.2 + 80.0).clamp(120.0, 2400.0),
+            (households / 2.0 * front * 1.15 + 60.0).clamp(120.0, 2400.0),
         )
     } else {
         let farms = (pop / 5.0).ceil().clamp(2.0, 30.0);
@@ -1166,6 +1177,17 @@ fn linear(
         if let Some(green) = green.and_then(|g| settle(&g, &blocked, &surface, 0.5)) {
             blocks.push((green, "place"));
         }
+        // A cross-lane that no plot touches leads nowhere: drop it.
+        cuts.retain(|lane| {
+            let (a, b) = (lane.path[0], lane.path[lane.path.len() - 1]);
+            blocks.iter().any(|(shape, kind)| {
+                *kind == "block"
+                    && shape
+                        .outer
+                        .iter()
+                        .any(|&v| g::distance(v, a, b).0 < lane.widths[0] * 0.5 + 3.0)
+            })
+        });
         streets.extend(cuts);
     } else {
         // Separate farms, alternating sides, with fields between them.

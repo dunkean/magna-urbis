@@ -192,7 +192,7 @@ function flatRoof(roof: RoofBuilder, surface: Surface, z: number, material: stri
 
 // ---------------------------------------------------------------- volume details
 // Materials may carry a colour tint `@rgb` (hex digits, 8 = 1.0) that UrbanBuildingPass multiplies into the albedo.
-const TINTS: [number, number, number][] = [[1.2, 1.15, 1.05], [1.05, 1, 0.88], [1, 0.85, 0.62], [1.1, 0.9, 0.88], [0.95, 0.75, 0.62], [0.95, 0.92, 0.88]];
+const TINTS: [number, number, number][] = [[1.15, 1.12, 1.05], [1.02, 0.98, 0.9], [0.96, 0.88, 0.72], [1.04, 0.92, 0.88], [0.9, 0.8, 0.7], [0.95, 0.92, 0.88]];
 const hex3 = (t: readonly number[]): string => t.map(v => Math.max(0, Math.min(15, Math.round(v * 8))).toString(16)).join('');
 /** Wall tint of a volume from its lot tone: whitewash / sand / ochre / pink / terracotta on earth and plaster, a mild jitter elsewhere. */
 function wallTint(wall: string, tone: number): string {

@@ -1,0 +1,3 @@
+# Leave two cores free for the desktop during builds.
+[build]
+jobs = -2

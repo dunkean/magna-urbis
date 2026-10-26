@@ -1247,6 +1247,9 @@ pub(super) fn generate_domain(
     }
     let desired = if camp {
         1
+    } else if pattern == "grid" && site.population < 1200 {
+        // A walled grid always has its crossing streets, however small its land.
+        (cfg.count * cfg.rings).clamp(4, 256)
     } else {
         (cfg.count * cfg.rings).min(256)
     };
@@ -1307,7 +1310,12 @@ pub(super) fn generate_domain(
                 continue;
             }
             let heading = local_angle + turn;
-            let sp = spacing[usize::from(turn != 0.0)];
+            let mut sp = spacing[usize::from(turn != 0.0)];
+            // A small settlement's ward lines keep the module of its own land: a 240 m
+            // lattice cannot cross a 160 m walled core, so the grid scales down with it.
+            if site.population < 1200 {
+                sp = sp.min(0.55 * g::area(shape).sqrt());
+            }
             if lattice && sp > 0.0 {
                 let n = Point {
                     x: -heading.sin(),

@@ -45,9 +45,9 @@ fn archetype(f: &Fields, i: usize, pop: u32, relief: &str) -> &'static str {
 fn site_matches(f: &Fields, i: usize, site: &str, pop: u32) -> bool {
     let ext = extent_radius(pop);
     match site {
-        "harbor" => f.ds[i] < ext + 60.0,
+        "harbor" => f.ds[i] < water_reach(ext),
         "estuary" => f.ds[i] < 700.0 && f.db[i] < ext + 60.0,
-        "bridge" | "meander" => f.db[i] < ext + 60.0,
+        "bridge" | "meander" => f.db[i] < water_reach(ext),
         "confluence" => {
             let x = i % f.r.n;
             let y = i / f.r.n;
@@ -101,6 +101,14 @@ fn is_pass(f: &Fields, i: usize, ext: f64) -> bool {
                 && fall.iter().all(|d| d.is_some_and(|d| d < -10.0))
         })
 }
+/// 1 on the shore strip (one block), fading to 0 half an extent further inland.
+fn waterfront(d: f64, ext: f64) -> f64 {
+    1.0 - smooth(d, 90.0, 90.0 + 0.5 * ext)
+}
+/// How far from the water a site of a water type may sit: its core fronts the shore.
+fn water_reach(ext: f64) -> f64 {
+    90.0 + 0.2 * ext
+}
 fn matches(f: &Fields, i: usize, s: &SettlementSpec) -> bool {
     site_matches(f, i, &s.site_type, s.population)
 }
@@ -144,16 +152,19 @@ fn score(f: &Fields, i: usize, s: &SettlementSpec, cfg: &Config, noise: &Noise) 
         } else {
             0.0
         } * cfg.fresh_water_weight;
+    // A place chosen for its water sits on it: the reason is worth most at the shore and fades
+    // with distance, so a flat bonus over the whole extent never parks the core inland.
     let river = if pop >= 150 && f.db[i] < ext + 120.0 && hab > 2.0 {
-        if pop >= 1000 { 0.9 } else { 0.4 }
+        (if pop >= 1000 { 1.6 } else { 0.5 }) * (0.15 + 0.85 * waterfront(f.db[i], ext))
     } else {
         0.0
     } * cfg.river_weight;
     let harbor = if pop >= 150 && f.ds[i] < ext + 80.0 {
-        if pop >= 1000 { 1.0 } else { 0.5 }
+        (if pop >= 1000 { 2.0 } else { 0.6 }) * (0.15 + 0.85 * waterfront(f.ds[i], ext))
     } else {
         0.0
     } * cfg.coast_weight;
+    let water_site = pop >= 150 && (f.ds[i] < ext + 80.0 || (f.db[i] < ext + 120.0 && hab > 2.0));
     let flood = if dw < 250.0 {
         -0.6 * (1.0 - smooth(hab, 1.5, 4.0))
     } else {
@@ -188,7 +199,7 @@ fn score(f: &Fields, i: usize, s: &SettlementSpec, cfg: &Config, noise: &Noise) 
         && edge >= cfg.edge_margin * f.r.width + 0.8 * ext + 40.0
         && sl <= cap_s
         && f.slope[i] as f64 <= cap_r
-        && dw >= 25.0_f64.max(0.35 * ext)
+        && dw >= if water_site { 40.0 } else { 25.0_f64.max(0.35 * ext) }
         && !(dw < 200.0 && hab < 1.5)
         && bf >= min_bf;
     (

@@ -1057,3 +1057,35 @@ fn many_exits_spread_around_the_main_place_with_different_sizes() {
     );
 }
 
+
+#[test]
+fn a_harbor_town_fronts_its_sea_instead_of_standing_inland() {
+    let mut map = Map::sized(256);
+    let cell = WIDTH / map.n as f64;
+    for y in 0..map.n {
+        for x in 0..map.n {
+            let i = y * map.n + x;
+            if (x as f64 + 0.5) * cell < 5000.0 {
+                map.water[i] = 1;
+                map.height[i] = -5.0;
+                map.level[i] = 0.0;
+            } else {
+                map.height[i] = 3.0 + 0.002 * ((x as f64 + 0.5) * cell - 5000.0) as f32;
+                map.level[i] = 0.0;
+            }
+        }
+    }
+    let cfg = list(vec![SettlementSpec {
+        key: "port".into(),
+        population: 10000,
+        site_type: "harbor".into(),
+        ..Default::default()
+    }]);
+    let out = map.terrain().place("harbor-front", &cfg).unwrap();
+    let s = &out.settlements[0];
+    assert!(
+        s.scores.water_distance <= 150.0,
+        "core {} m from the sea",
+        s.scores.water_distance
+    );
+}

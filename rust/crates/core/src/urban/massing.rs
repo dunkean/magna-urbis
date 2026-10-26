@@ -84,6 +84,8 @@ fn table(culture: &str) -> Option<Tradition> {
         "nubian-fortified" => t("dome", 0.0, [1, 2], "earth", "earth"),
         "merfolk-tidal" => t("dome", 0.0, [1, 2], "stone", "stone"),
         "ethiopian-highland" | "great-zimbabwe" => t("cone", 38.0, [1, 1], "thatch", "wood"),
+        // A landmark or untyped lot of a tipi people is a tipi too, never a stone nave.
+        "native-plains" => Tradition { form: "tipi", ..t("tent", 40.0, [1, 1], "hide", "hide") },
         "mongol-ordu" => t("tent", 30.0, [1, 1], "felt", "hide"),
         "siberian-camp" => t("tent", 36.0, [1, 1], "hide", "hide"),
         "flemish-cloth-town" => Tradition {

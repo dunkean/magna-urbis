@@ -143,6 +143,8 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
   const cityView = !!(options.city || options.cityView);
   let regionalOf: RoadOutput | undefined, regional: Street[] = [];
   let layouts: Layout[] | undefined, partitions: Partition[] | undefined;
+  // Automated checks (shot scripts): the quarter layouts and the water raster they sit on.
+  (window as unknown as { magnaCityProbe?: unknown }).magnaCityProbe = () => ({ layouts, raster: options.getRaster?.() });
   let initialBuildingState: import('./urbanBuildingsPanel').UrbanBuildingState | undefined;
   // Retained quarter layouts: parcels reuse them by id instead of resending the plan.
   let layoutsId: number | undefined, retainedLayouts: Layout[] | undefined, parcelsById = false;
@@ -1400,7 +1402,7 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
       return;
     }
     const preview = architecturePreview?.scene === scene ? architecturePreview : undefined;
-    const key = `${target}/${scene?.buildings.length}/${scene?.refusals.length}/${preview?.completed}`;
+    const key = `${target}/${scene?.buildings.length}/${scene?.refusals.length}/${preview?.completed}/${site?.population}`;
     if (countsScene === scene && countsKey === key) return;
     countsScene = scene; countsKey = key;
     cityCounts.dataset.planning = String(!!preview); cityCounts.dataset.completed = String(preview?.completed ?? 0); cityCounts.dataset.total = String(preview?.total ?? 0);

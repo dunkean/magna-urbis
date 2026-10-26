@@ -2240,6 +2240,28 @@ pub fn allocate(layout: &Layout, partition: &mut Partition) {
             ));
         }
     }
+    // A small village is cut to the lots its programme fills: a block that received no
+    // building at all is open land (garden, field), not a built quarter standing empty.
+    if pr.population < 1200 {
+        let used: std::collections::HashSet<&str> = pr
+            .allocations
+            .iter()
+            .map(|a| a.parcel_id.as_str())
+            .collect();
+        let mut built = vec![false; layout.blocks.len()];
+        for p in &partition.parcels {
+            if used.contains(p.id.as_str()) && p.block < built.len() {
+                built[p.block] = true;
+            }
+        }
+        for p in &mut partition.parcels {
+            let open = layout.blocks.get(p.block).is_some_and(|b| b.kind == "block");
+            if open && !built[p.block] && matches!(p.use_kind.as_str(), "plot" | "residual") {
+                p.use_kind = "garden".into();
+                p.reason = "unbuilt-block".into();
+            }
+        }
+    }
     partition.programme = Some(pr);
     lap("done");
 }

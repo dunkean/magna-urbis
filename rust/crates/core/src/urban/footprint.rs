@@ -362,11 +362,17 @@ fn capacity_epochs(
 /// to lay the grid at all: below that the streets and blocks cannot be drawn.
 /// The wall's cost comes from its perimeter, so the budget stays the target;
 /// the floor only guards degenerate sizes.
-const ENCLOSED_BLOCKS: f64 = 6.0;
+const ENCLOSED_BLOCKS: f64 = 4.0;
 /// Gross inhabitants/hectare an enceinte is sized for at village scale: a wall
 /// is paid per metre, so it never encloses open land.
-const ENCLOSED_DENSITY: f64 = 100.0;
-const ENCLOSED_GRID_MIN: f64 = 70_000.0;
+const ENCLOSED_DENSITY: f64 = 150.0;
+/// m2 of walled land per inhabitant a planned grid needs to be drawn at all (scaled with the
+/// population, never a flat minimum that would inflate a small village's wall).
+/// m2 of walled land per inhabitant a planned grid needs to be drawn at all (scaled with the
+/// population, never a flat minimum that would inflate a small village's wall).
+/// m2 the founding epoch of a planned grid needs (about six blocks and their streets).
+const ENCLOSED_GRID_CORE: f64 = 30_000.0;
+const ENCLOSED_GRID_PER_INHABITANT: f64 = 70.0;
 /// Gross inhabitants/hectare below which a small open village is not spread:
 /// the catalogue's 25-40 hab./ha scatters a few hundred people over 15-25 ha of
 /// large lots, a string of farms rather than a village. The floor holds up to
@@ -394,9 +400,19 @@ fn enclosed_floor(site: &Site, cfg: &LayoutConfig, morph: &Morph, target: f64) -
     let blocks = if matches!(pattern, "radial" | "linear" | "dispersed") {
         0.0
     } else {
-        (ENCLOSED_BLOCKS * morph.range("blockSize", zone)[1]).min(2.5 * target)
+        // A grid's ward lines and blocks scale down with its land (macroplan), so only a
+        // few blocks are required, never the culture's full-size module.
+        if pattern == "grid" {
+            (3.0 * morph.range("blockSize", zone)[1]).min(1.3 * target)
+        } else {
+            (ENCLOSED_BLOCKS * morph.range("blockSize", zone)[1]).min(1.6 * target)
+        }
     };
-    let grid = if pattern == "grid" { ENCLOSED_GRID_MIN } else { 0.0 };
+    let grid = if pattern == "grid" {
+        ENCLOSED_GRID_PER_INHABITANT * site.population as f64
+    } else {
+        0.0
+    };
     target.max(blocks).max(grid)
 }
 fn budget(site: &Site, cfg: &LayoutConfig, morph: &Morph, radius: f64) -> (f64, f64) {
@@ -1476,7 +1492,12 @@ fn fill_holes(mask: &mut [bool], grid: &Grid, max_cells: usize) {
 }
 
 #[allow(clippy::too_many_arguments)]
+fn smooth_step(v: f64, lo: f64, hi: f64) -> f64 {
+    let t = ((v - lo) / (hi - lo)).clamp(0.0, 1.0);
+    t * t * (3.0 - 2.0 * t)
+}
 fn accessible(
+    site_population: u32,
     target: f64,
     family: &str,
     cfg: &LayoutConfig,
@@ -1491,30 +1512,36 @@ fn accessible(
     water_affinity: f64,
     service: Service,
 ) -> (Vec<Shape>, Vec<Vec<Shape>>, Vec<Street>) {
+    // A small settlement is a compact cluster: its growth window and its far-field cost shrink
+    // with its population, so a thin buildable strip (a road bench, a contour) is not stretched
+    // into a corridor much longer than the village is wide.
+    let small = 1.0 - smooth_step(site_population as f64, 600.0, 1200.0);
     let aspect = if matches!(family, "elongated" | "linear") {
         cfg.footprint.aspect.max(2.8)
     } else {
         cfg.footprint.aspect
     };
-    let reach = radius * 2.65 * aspect.sqrt();
+    let aspect = aspect + (aspect.min(1.4) - aspect) * small;
+    let window = radius * 2.65 * aspect.sqrt();
+    let reach = window * (1.0 - 0.35 * small);
     let mut x0 = centers
         .iter()
-        .map(|c| c.point.x - reach)
+        .map(|c| c.point.x - window)
         .fold(f64::INFINITY, f64::min)
         .max(0.0);
     let mut y0 = centers
         .iter()
-        .map(|c| c.point.y - reach)
+        .map(|c| c.point.y - window)
         .fold(f64::INFINITY, f64::min)
         .max(0.0);
     let x1 = centers
         .iter()
-        .map(|c| c.point.x + reach)
+        .map(|c| c.point.x + window)
         .fold(f64::NEG_INFINITY, f64::max)
         .min(surface.width);
     let y1 = centers
         .iter()
-        .map(|c| c.point.y + reach)
+        .map(|c| c.point.y + window)
         .fold(f64::NEG_INFINITY, f64::max)
         .min(surface.width);
     let step = ((x1 - x0).max(y1 - y0) / 192.0).max(1.0);
@@ -2140,7 +2167,7 @@ pub(super) fn generate(
             tick.elapsed().as_secs_f64() * 1000.0
         );
     }
-    let target = nominal * plan.as_ref().map_or(1.0, |p| p.extension);
+let target = nominal * plan.as_ref().map_or(1.0, |p| p.extension);
     let density = density * nominal / target;
     let radius = (target / PI).sqrt();
     let geography = geography(site, cfg, surface, radius);
@@ -2272,6 +2299,7 @@ pub(super) fn generate(
             },
         };
         accessible(
+            site.population,
             target,
             family,
             cfg,

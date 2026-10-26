@@ -3853,6 +3853,50 @@ fn generate_once(
             }
         }
     }
+    // A small village is cut to the lots it fills: the outermost blocks beyond the housing the
+    // plan needs (with a margin) are open land, and the lanes that served only them go too.
+    if site.population < 1200
+        && measured.is_some()
+        && let Some(p) = plan.as_ref()
+        && p.required > 0.0
+    {
+        let need = p.required * capacity::MEASURE_MARGIN * 1.2 / (1.0 - capacity::BLOCK_LOSS);
+        let all_area: f64 = blocks.iter().filter(|b| b.kind == "block").map(|b| g::area(&b.shape)).sum::<f64>().max(1.0);
+        let yield_of = |i: usize, b: &Block| match &measured {
+            Some(m) => m.get(i).copied().unwrap_or(0.0),
+            None => p.forecast / (1.0 - capacity::BLOCK_LOSS) * g::area(&b.shape) / all_area,
+        };
+        let mut order: Vec<usize> = (0..blocks.len()).filter(|&i| blocks[i].kind == "block").collect();
+        let from_centre = |i: usize| {
+            let c = g::interior_point(&blocks[i].shape);
+            (c.x - center.x).hypot(c.y - center.y)
+        };
+        order.sort_by(|&a, &b| from_centre(a).total_cmp(&from_centre(b)));
+        let mut have = 0.0;
+        let mut dropped = 0;
+        for i in order {
+            if have >= need && built > 1 {
+                blocks[i].kind = "reserve".into();
+                built -= 1;
+                dropped += 1;
+            } else {
+                have += yield_of(i, &blocks[i]);
+            }
+        }
+        if dropped > 0 {
+            // Lanes that now touch no built block lead nowhere.
+            let live: Vec<&Block> = blocks.iter().filter(|b| b.kind == "block").collect();
+            streets.retain(|st| {
+                st.role != "lane"
+                    || live.iter().any(|b| {
+                        b.shape.outer.iter().any(|&v| {
+                            st.path.windows(2).any(|w| g::distance(v, w[0], w[1]).0 < st.widths[0] * 0.5 + 3.0)
+                        })
+                    })
+            });
+            warnings.push(format!("{dropped} îlot(s) au-delà du besoin en logements laissé(s) en espace ouvert."));
+        }
+    }
     let predicted: f64 = measured.as_ref().map_or_else(
         || {
             plan.as_ref()

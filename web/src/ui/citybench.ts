@@ -320,7 +320,8 @@ map.addEventListener('click', event => {
 }, true);
 new ResizeObserver(() => showView()).observe(viewport);
 el('fit').onclick = fit;
-el('focusCity').onclick = () => { const e = settlements.urban.extent; if (e && city3d.active) city3d.focus(e.center, e.radius); else if (e) setView({ cx: e.center.x, cy: e.center.y, scale: Math.min(viewport.clientWidth, viewport.clientHeight) / Math.max(200, 2.4 * e.radius) }); else fit(); };
+// The 2D frame is never wider than the near LOD (2.2 m/px): the buildings stay drawn on a big town.
+el('focusCity').onclick = () => { const e = settlements.urban.extent; if (e && city3d.active) city3d.focus(e.center, e.radius); else if (e) setView({ cx: e.center.x, cy: e.center.y, scale: Math.max(1 / 2.0, Math.min(viewport.clientWidth, viewport.clientHeight) / Math.max(200, 2.4 * e.radius)) }); else fit(); };
 el<HTMLInputElement>('showBackground').onchange = event => { background.style.display = (event.target as HTMLInputElement).checked ? '' : 'none'; };
 el<HTMLInputElement>('showPlan').onchange = event => settlements.urban.setPlanVisible((event.target as HTMLInputElement).checked);
 el<HTMLSelectElement>('backgroundStyle').value = backgroundStyle;

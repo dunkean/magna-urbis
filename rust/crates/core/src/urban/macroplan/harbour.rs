@@ -108,7 +108,7 @@ fn code(surface: Surface<'_>, p: Point) -> u8 {
 /// Distance from the town centre to its harbour front: the core reaches the
 /// water, with land behind it.
 fn front_distance(radius: f64) -> f64 {
-    (0.25 * radius).clamp(60.0, 250.0)
+    (0.12 * radius).clamp(50.0, 110.0)
 }
 
 /// A port town placed inland moves to the nearest gentle shore of its sea or
@@ -215,7 +215,8 @@ pub(in super::super) fn sited(
     let kind = usize::from(banks[0].is_empty());
     let mut banks = std::mem::take(&mut banks[kind]);
     banks.sort_by(|a, b| a.0.total_cmp(&b.0));
-    if banks.first().is_none_or(|b| b.0 <= reach) {
+    // Within about a block of the water the town already fronts it.
+    if banks.first().is_none_or(|b| b.0 <= reach.max(120.0)) {
         return None;
     }
     // The nearest bank whose town ground is buildable: on the line from the
@@ -1420,7 +1421,7 @@ mod tests {
         // Already on the water: stays.
         let near = Site {
             center: Point {
-                x: 520.0,
+                x: 470.0,
                 y: 1000.0,
             },
             ..site.clone()
