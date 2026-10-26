@@ -97,7 +97,7 @@ SVG and PNG exports open a crop preview: draw a rectangle, drag it to move it, o
 ## Illustrate the current view
 
 The **✦ Illustrer** button captures the current view in the TypeScript application,
-Terrain / Settlements Bench, City Bench and the urban workshop. Choose **Local · qualité · Z-Image Turbo** (the default), **Local · aperçu · SDXL Lightning**,
+Terrain / Settlements Bench, City Bench and the urban workshop. Choose **Local · FLUX · édition** (the default), **Local · SDXL · ControlNet**,
 or **API externe**, then a style (including automatic inheritance from the map),
 fidelity and optional instructions. Results include a comparison slider, a local
 history, PNG downloads and a JSON recipe containing the actual model, seed,
@@ -109,7 +109,14 @@ and known visible roof forms, storeys and construction materials. The cloud edit
 instruction explicitly treats the screenshot as the primary reference and asks
 to restyle the same scene while retaining its layout and details. Context JSON
 stays in the connector and recipe; it is compiled into prose for the model.
-SDXL receives a shorter version because its text encoder has a small context.
+SDXL encodes the complete caption in CLIP-sized chunks instead of silently
+discarding the end. Local captions put the style and concrete subject first,
+including the camera view, settlement population, cultural tradition and broad
+historical period, followed by relief and climate/biome.
+3D captures measure the actual downward angle and height above the target;
+orthographic maps describe a vertical view and map extent without inventing an
+altitude from zoom. An explicit house era takes precedence over the cultural
+preset's broad period.
 Snow and weather are not inferred from the cultural preset alone.
 The default style follows the visible layer; cadastre, parchment, geographic map,
 satellite, fine art and other presets can restyle the same frozen reference image.
@@ -117,6 +124,9 @@ satellite, fine art and other presets can restyle the same frozen reference imag
 for each combination of engine/style/fidelity/instructions during the session;
 **Revenir au template** restores the automatic template. The recipe records the
 exact edited prompt. Long overrides are validated, never silently truncated.
+**Illustration PNG** opens **Save As** with a `.png` filename where supported.
+Otherwise it downloads the complete original PNG and points to the browser's
+download list (Ctrl+J) to locate the file. Cancelling Save As creates no file.
 
 Install the optional connector once, from `web/` (Python 3.12 and a CUDA-compatible
 NVIDIA GPU are required for the built-in local models):
@@ -135,19 +145,22 @@ settings let you change its loopback address. The first local generation downloa
 model weights into the standard Hugging Face cache and takes longer than later
 generations. Weights are external assets, not bundled into the web application.
 
-On the tested RTX 4090, a 912 × 864 Lightning image with depth + edges took
-1.55 s for inference, or 27.17 s including cold model loading. Z-Image with edges
-and eight steps took 96.98 s for inference, or 149.73 s including loading.
-These are individual measurements, not guarantees for other GPUs or scenes.
-
-- **Rapid:** SDXL Lightning (matching 4- or 8-step checkpoint) with Xinsir SDXL Union
-  ControlNet; use 8 steps and 1 MP for a more detailed preview, preserving the source aspect ratio.
-- **Quality:** Z-Image Turbo with Fun ControlNet Union **2.1-2602-8steps**. Quality can
-  take substantially longer; the runtime stages the text encoder separately from
-  the shared transformer / ControlNet modules to fit consumer GPU memory.
-  New sessions default to this model, eight steps and 1 MP. Saved engine and
-  resolution preferences are retained. The panel checks the connector before
-  submitting a capture and reports how to restart it if it is unavailable.
+- **SDXL:** complete SDXL Base 1.0 with Xinsir Union ControlNet, 20/30/40/50 steps,
+  editable CFG and negative prompt. By default only the structural guides constrain
+  synthesis. Optionally start from the color capture with editable image-to-image
+  transformation strength to retain more source forms and colors. This can also
+  preserve placeholder cubes; use guides alone for more architectural freedom.
+  Changing this starting point reuses the loaded weights. Lightning
+  remains available with its matching 4- or 8-step checkpoint for quick previews.
+- **FLUX:** [FLUX.2 Klein Base 4B](https://huggingface.co/black-forest-labs/FLUX.2-klein-base-4B),
+  a complete local image editor with 20/30/40/50 steps, real CFG and an editable
+  negative prompt. The distilled [four-step version](https://huggingface.co/black-forest-labs/FLUX.2-klein-4B)
+  remains available with fixed CFG. Choose a color capture, capture + contours,
+  capture + depth, or contours alone as visual references. Capture + contours
+  reinforces the road/block layout; capture + depth reinforces volumes. These
+  are image references, not FLUX ControlNets. No API call is made. New sessions
+  use the complete model, 30 steps, 1 MP and capture + contours. Saved preferences
+  are retained. The panel checks the connector before submitting a capture.
 - **API:** [OpenAI GPT Image edits](https://developers.openai.com/api/docs/guides/image-generation)
   or [Gemini Image](https://ai.google.dev/gemini-api/docs/image-generation), using the captured image and its
   factual scene description. Enter a private API key for the current session, or
@@ -160,8 +173,17 @@ These are individual measurements, not guarantees for other GPUs or scenes.
 normalized over the visible scene (near geometry is light, sky is black).
 2D views use structural contours where available, with Canny extraction as the
 fallback. Automatic control combines depth and edges with SDXL when depth is
-available. The integrated Z-Image workflow uses one guide at a time and defaults
-to edges to retain roads and rivers; depth can be selected explicitly for volume.
+available. **Contrôles du modèle** exposes separate weights and start/end fractions
+for each SDXL guide, plus guide resolution and four presets. The balanced preset
+uses contours at 0.3 until 45% of denoising and depth at 0.6 until 70%, leaving late
+steps free to resolve facades and materials. Increasing control duration/weight
+improves structural adherence but can preserve the source's placeholder cubes;
+reducing it can alter the plan. FLUX exposes reference and guide resolution instead.
+**Aperçu des guides / références** shows the actual preprocessed images before
+generation without creating an image job. Recipes record all effective settings.
+Local prompts
+prioritize visible content, cultural architecture and the requested art style,
+without repeating technical altitude ranges or unrelated native recipe pack names.
 Strong fidelity remains a generative constraint, not a
 guarantee of geometrically exact output. Seed reproducibility also depends on
 runtime, hardware and model versions. Cloud output may use the provider's nearest
@@ -171,9 +193,13 @@ Generated images and metadata are stored outside Git under
 `%LOCALAPPDATA%/MagnaUrbis/illustrations` on Windows, or
 `~/.local/share/MagnaUrbis/illustrations` elsewhere. Override with
 `MAGNA_ILLUSTRATION_OUTPUT`. `MAGNA_ILLUSTRATION_PYTHON` selects a separate Python
-interpreter; it should not upgrade the terrain inference environment. Idle local
-models are unloaded after two minutes. Model licenses remain separate: Lightning
-is OpenRAIL++, while Z-Image Turbo and the selected ControlNets are Apache 2.0.
+interpreter; it should not upgrade the terrain inference environment. The current
+local model stays in memory between generations, including after long pauses.
+Weights are released when switching model/checkpoint, recovering from GPU memory
+exhaustion, or stopping the connector. FLUX still stages modules between CPU
+and GPU to fit VRAM; this does not reload the model files from disk.
+Model licenses remain separate: Lightning
+is OpenRAIL++, while FLUX.2 Klein 4B and the selected ControlNets are Apache 2.0.
 
 The build-free client in `illustration/web/` and the versioned Python job service
 are shared with Neural Earth. Verification: `npm run illustration:test`,
@@ -194,7 +220,8 @@ the decor catalogue. Native raster views derive Canny from the complete capture.
 explicit cloud editing instruction without starting an image job.
 The opt-in `python -m illustration.tests.smoke_real --mode fast` runs a real GPU
 job through the connector; `--depth path.png --control both` exercises dual
-conditioning, and `--mode quality` tests Z-Image.
+conditioning, `--variant base --steps 30` selects complete SDXL, and
+`--mode quality --reference source+edges` tests complete FLUX.2 Klein editing.
 
 ## Develop the Rust engine
 

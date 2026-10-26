@@ -130,7 +130,7 @@ try {
   $IllustrationProcess = $null
   if ($IllustrationEnabled) {
     $IllustrationProcess = Start-HiddenProcess $IllustrationExe @('-u', '-m', 'illustration', '--port', '8794') 'illustration' $RepoDir
-    Write-Host "Illustration : $IllustrationUrl (SDXL Lightning / Z-Image Turbo)"
+    Write-Host "Illustration : $IllustrationUrl (SDXL Lightning / FLUX.2 Klein)"
   }
   $NeuralProcess = $null
   if ($NeuralBackend -eq 'python') {

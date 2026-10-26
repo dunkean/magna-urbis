@@ -63,6 +63,7 @@ try {
   assert.equal(submitted.version, 1); assert.equal(submitted.context.application, 'magna-urbis');
   assert.ok(submitted.guides.edges.startsWith('data:image/png;base64,'));
   assert.equal(submitted.context.projection, 'orthographic');
+  await page.evaluate(() => { window.showSaveFilePicker = undefined; });
   const download = page.waitForEvent('download'); await page.locator('[data-recipe]').click(); await download;
   await page.waitForFunction(()=>!document.querySelector('.illustration-dialog [data-generate]').disabled);
   await page.locator('[data-close]').click();
@@ -80,6 +81,10 @@ try {
   await page.locator('.illustration-dialog [data-download]').waitFor({ state: 'visible' });
   assert.ok(submitted.guides.depth?.startsWith('data:image/png;base64,'), '3D capture includes exact scene depth');
   assert.equal(submitted.context.projection, 'perspective');
+  assert.ok(submitted.context.camera.heightAboveTargetMetres > 0, 'Capture carries the actual rendered camera height.');
+  assert.ok(submitted.context.camera.viewAngleDegrees > 0 && submitted.context.camera.viewAngleDegrees <= 90, 'Capture carries the actual downward view angle.');
+  assert.ok(submitted.context.camera.verticalFovDegrees > 0);
+  assert.equal(submitted.context.extentMetres, undefined, 'A 3D capture must not retain the inactive 2D map extent.');
   await writeFile(new URL('source-3d.png', output), Buffer.from(submitted.image.split(',')[1], 'base64'));
   await writeFile(new URL('depth.png', output), Buffer.from(submitted.guides.depth.split(',')[1], 'base64'));
   await page.screenshot({ path: new URL('terrain-3d-dialog.png', output).pathname.replace(/^\/(\w:)/, '$1'), fullPage: true });

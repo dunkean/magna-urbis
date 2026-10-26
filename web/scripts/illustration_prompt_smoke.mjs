@@ -20,7 +20,7 @@ try {
       architecture: { roofSystems: ['tiled_hip'], materials: [{ label: 'fired clay tiles' }], storeys: [1, 2] } } }) });
   }, '/@fs/' + resolve('../illustration/web/index.mjs').replaceAll('\\', '/'));
   await page.locator('.illustration-trigger').click();
-  await page.waitForFunction(() => document.querySelector('[data-scene-description]').textContent.includes('a Roman city in a Mediterranean plain'));
+  await page.waitForFunction(() => document.querySelector('[data-scene-description]').textContent.includes('an ancient Roman city of approximately 30,000 inhabitants in a Mediterranean plain'));
   const description = await page.locator('[data-scene-description]').textContent();
   assert.ok(description.includes('fired clay tiles')); assert.ok(!description.includes('"urbanCulture"'));
   const short = await page.locator('.illustration-prompt').textContent();

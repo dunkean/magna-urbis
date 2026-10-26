@@ -80,6 +80,11 @@ The complete retained per-instance plans still consume memory. Neither these
 changes nor a population field establish that a million-inhabitant scene is
 validated; generation, transfer, rendering and navigation need measured stages.
 
+An offline collection of roof, wall, timber and other envelope PBR textures is
+documented in [Building texture library](../BUILDING_TEXTURE_LIBRARY.md). It
+records sources, map conventions, physical scales and qualified material/pack
+coverage for future integration; this rendering pass does not load that library.
+
 ## Reproduction and validation
 
 In Urban, generate streets and parcels, then **Implanter les bâtiments**.
