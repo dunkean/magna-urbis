@@ -1,3 +1,4 @@
+import renderV2Note from '../../../docs/methods/render-v2.md?raw';
 import groundNote from '../../../docs/methods/render3d-ground.md?raw';
 import fantasyNote from '../../../docs/methods/fantasy-landuse.md?raw';
 import vegetationNote from '../../../docs/methods/render3d-vegetation.md?raw';
@@ -13,8 +14,9 @@ const bundledFigures = import.meta.glob<string>('../../../docs/methods/images/*.
 });
 const figures = Object.fromEntries(Object.entries(bundledFigures).map(([path, image]) => [path.slice(path.indexOf('images/')), image]));
 
-export type MethodNoteId = 'render3d-ground' | 'fantasy-landuse' | 'render3d-vegetation' | 'render3d-brush' | 'urban-parcels' | 'urban-programme-allocation' | 'urban-architecture-placement' | 'urban-buildings-rendering' | 'urban-settlement-styles';
+export type MethodNoteId = 'render-v2' | 'render3d-ground' | 'fantasy-landuse' | 'render3d-vegetation' | 'render3d-brush' | 'urban-parcels' | 'urban-programme-allocation' | 'urban-architecture-placement' | 'urban-buildings-rendering' | 'urban-settlement-styles';
 const notes: Record<MethodNoteId, { title: string; markdown: string; images: Record<string, string> }> = {
+  'render-v2': { title:'Render v2: procedural satellite environment',markdown:renderV2Note,images:{} },
   'urban-settlement-styles': { title: 'Settlement styles and independent stages', markdown: settlementStylesNote, images: {} },
   'urban-buildings-rendering': { title: 'Applied urban buildings in 2D and perspective', markdown: urbanRenderingNote, images: {} },
   'urban-parcels': { title: 'Continuous frontage and cultural parcels', markdown: parcelNote, images: {} },

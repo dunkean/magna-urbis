@@ -1,0 +1,6 @@
+/.godot/
+/tiles/
+/evidence/
+/materials/
+*.import
+**/__pycache__/

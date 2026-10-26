@@ -1,0 +1,20 @@
+config_version=5
+
+[application]
+config/name="Magna Urbis — Tuiles 40 km · Dessus / 3D"
+run/main_scene="res://tile_viewer.tscn"
+
+[display]
+window/size/viewport_width=1280
+window/size/viewport_height=800
+window/size/window_width_override=1280
+window/size/window_height_override=800
+window/size/resizable=true
+
+[rendering]
+renderer/rendering_method="forward_plus"
+lights_and_shadows/directional_shadow/size=8192
+textures/default_filters/use_nearest_mipmap_filter=false
+
+[filesystem]
+import/blender/enabled=false

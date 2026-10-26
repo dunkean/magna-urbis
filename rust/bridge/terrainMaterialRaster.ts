@@ -1,3 +1,4 @@
+import { RENDER_V2_GLSL, renderV2GlacierSources } from './terrainRenderV2';
 import { NEURAL_EARTH_MATERIAL_GLSL } from './terrainMaterial';
 import { RENDER_3D_MATERIAL_GLSL } from './terrainMaterial3d';
 import { FOREST_PRELUDE_GLSL, type ForestField, type ForestOccupation } from './terrainForest';
@@ -9,7 +10,7 @@ import { bindForestBrushes } from '../../web/src/render/forestBrushAtlas';
 /** Render3D forest for rasters: the live view's canonical field/occupation and
  * its sun direction (map x, map y, up; terrainLights().primary). */
 export interface ForestWaterRaster { x: number; y: number; width: number; n: number; alpha: Uint8Array; key: string }
-export interface ForestRaster { field?: ForestField; occupation?: ForestOccupation; water?: ForestWaterRaster; light?: readonly number[]; brushes?: boolean }
+export interface ForestRaster { field?: ForestField; occupation?: ForestOccupation; water?: ForestWaterRaster; light?: readonly number[]; light2?: readonly number[]; lightingStrength?: number; brushes?: boolean; renderV2?: number; v2Season?: number; waterVisible?: boolean }
 export interface MaterialRaster { rgb: Uint8Array; canopyAlpha: Uint8Array }
 interface Uploaded { key: string; texture: WebGLTexture }
 let renderer: { gl: WebGL2RenderingContext; canvas: OffscreenCanvas; program: WebGLProgram; texture: WebGLTexture; field?: Uploaded; bank?: Uploaded; occupation?: Uploaded; water?: Uploaded } | undefined;
@@ -47,7 +48,7 @@ export function renderMaterialRaster(terrain: TerrainData, settings: Pick<Terrai
       precision highp float;precision highp int;precision highp sampler2D;
       uniform sampler2D heights;uniform int n;uniform float cell;uniform vec2 origin;
       out vec4 color;
-      ${enhanced3d ? `${FOREST_PRELUDE_GLSL}uniform vec3 uForestLight;
+      ${enhanced3d ? `${FOREST_PRELUDE_GLSL}uniform vec3 uForestLight,uForestLight2;uniform float uForestStrength;
       uniform sampler2D uForestWater;uniform int uHasForestWater;uniform vec3 uForestWaterRect;
       float forestWaterCoverage(vec2 world){
         vec2 uv=(world-uForestWaterRect.xy)/uForestWaterRect.z;
@@ -55,8 +56,37 @@ export function renderMaterialRaster(terrain: TerrainData, settings: Pick<Terrai
         return textureLod(uForestWater,uv,0.).r;
       }` : ''}
       ${NEURAL_EARTH_MATERIAL_GLSL}
-      ${enhanced3d ? RENDER_3D_MATERIAL_GLSL : ''}
+      ${enhanced3d ? RENDER_3D_MATERIAL_GLSL + RENDER_V2_GLSL + `
+      vec3 rasterMaterial(vec3 s,vec2 world,float fp,float tpi,float shore,float openness,vec3 light){
+        GroundMaterial m;
+        vec3 macro=earthMaterial(s,world,max(fp,1.),tpi,shore,openness);
+        if(uRenderV2>0)m=v2Ground(s,world,fp,tpi,light,uForestLight2,uForestStrength,renderGuideBaseOpen);
+        else {m=terrainGroundMaterial(s,world,fp,macro,uMaterialClimate,uMaterialSeed);}
+        vec3 rgb;
+        if(uRenderV2>0){
+          GroundMaterial bareMaterial=v2MeanOpen;
+          if(uForest==1)applyForest(m,world,fp,light);
+          vec3 bareLit=shadeTerrainGround(bareMaterial,vec3(0.,1.,0.),light,uForestLight2,uForestStrength);
+          rgb=v2ShadeGround(m,vec3(0.,1.,0.),light,uForestLight2,uForestStrength)*groundToDisplay(bareMaterial.albedo)/max(bareLit,vec3(.0001));
+        }
+        else if(uForest==1){vec3 l=normalize(light);float bare=forestRasterLight(m,l);applyForest(m,world,fp,l);rgb=groundToDisplay(m.albedo*forestRasterLight(m,l)/max(bare,1e-3));}
+        else rgb=groundToDisplay(m.albedo);
+        return uRenderV2>0?v2DisplayShoulder(rgb):rgb;
+      }` : ''}
       float h(ivec2 p){return texelFetch(heights,clamp(p,ivec2(0),ivec2(n-1)),0).r;}
+      ${enhanced3d ? `
+      vec3 forestRootSurface(vec2 world){
+        vec2 g=(world-origin)/cell-.5,t=fract(g);ivec2 b=ivec2(floor(g))-1;
+        vec4 wx=vec4(pow(1.-t.x,3.),3.*t.x*t.x*t.x-6.*t.x*t.x+4.,-3.*t.x*t.x*t.x+3.*t.x*t.x+3.*t.x+1.,t.x*t.x*t.x)/6.;
+        vec4 wy=vec4(pow(1.-t.y,3.),3.*t.y*t.y*t.y-6.*t.y*t.y+4.,-3.*t.y*t.y*t.y+3.*t.y*t.y+3.*t.y+1.,t.y*t.y*t.y)/6.;
+        vec4 dx=vec4(-.5*(1.-t.x)*(1.-t.x),1.5*t.x*t.x-2.*t.x,-1.5*t.x*t.x+t.x+.5,.5*t.x*t.x);
+        vec4 dy=vec4(-.5*(1.-t.y)*(1.-t.y),1.5*t.y*t.y-2.*t.y,-1.5*t.y*t.y+t.y+.5,.5*t.y*t.y);
+        vec3 s=vec3(0.);
+        for(int j=0;j<4;j++)for(int i=0;i<4;i++)s+=h(b+ivec2(i,j))*vec3(wx[i]*wy[j],dx[i]*wy[j]/cell,wx[i]*dy[j]/cell);
+        return s;
+      }
+      float forestRootCell(){return cell;}` : ''}
+
       void main(){
         ivec2 p=ivec2(int(gl_FragCoord.x),n-1-int(gl_FragCoord.y));
         float height=h(p);vec2 gradient=vec2(h(p+ivec2(1,0))-h(p-ivec2(1,0)),h(p+ivec2(0,1))-h(p-ivec2(0,1)))/(2.*cell);
@@ -68,7 +98,8 @@ export function renderMaterialRaster(terrain: TerrainData, settings: Pick<Terrai
           if(h(p+ivec2(round(d*float(r)*.5)))<0.)shore=min(shore,radius*.5);
         }
         shore=min(shore,max(height,0.)/max(length(gradient),.0001));
-        vec3 material=${enhanced3d ? 'terrain3dMaterial' : 'earthMaterial'}(vec3(height,gradient),origin+(vec2(p)+.5)*cell,cell,(height-mean)/(6.*radius),shore,openness${enhanced3d ? ',uForestLight' : ''});
+        vec3 material=${enhanced3d ? 'rasterMaterial' : 'earthMaterial'}(vec3(height,gradient),origin+(vec2(p)+.5)*cell,cell,(height-mean)/(6.*radius),shore,openness${enhanced3d ? ',uForestLight' : ''});
+        ${enhanced3d ? `if(uRenderV2>0){V2Env e=v2Local(vec3(height,gradient),origin+(vec2(p)+.5)*cell,(height-mean)/(6.*radius),cell);if(uRenderV2>1)material=v2Color(e,float(uRenderV2-1));float water=forestWaterCoverage(origin+(vec2(p)+.5)*cell);water=max(water,height<0.?1.:0.);material=v2WaterAt(material,vec3(height,gradient),origin+(vec2(p)+.5)*cell,cell,water,height<0.?1.:3.,height<0.?-height:8.*water);}` : ''}
         color=vec4(material,${enhanced3d ? 'forestResolvedCover' : '0.'});
       }`);
     const program = gl.createProgram()!;
@@ -90,7 +121,8 @@ export function renderMaterialRaster(terrain: TerrainData, settings: Pick<Terrai
   gl.uniform2f(u('uMaterialClimate'), climate.temperature, climate.precipitation); gl.uniform1ui(u('uMaterialSeed'), seedHash(settings.seed));
   if (enhanced3d) {
     // Units 1 field, 2 occupation, 4 water, 5 bank envelope; undefined keeps the legacy macro canopy exactly.
-    const field = forest?.field, occupation = field ? forest?.occupation : undefined, water = field ? forest?.water : undefined, light = forest?.light ?? [-.5, -.5, .7071];
+    gl.uniform1i(u('uRenderV2'),forest?.renderV2??0);gl.uniform1i(u('uV2WaterVisible'),forest?.waterVisible===false?0:1);gl.uniform4fv(u('uV2GlacierSources[0]'),renderV2GlacierSources({x:terrain.x,y:terrain.y,width:terrain.width,n,data:terrain.height},climate));gl.uniform1f(u('uV2Season'),forest?.v2Season??.5);
+    const field = forest?.field, occupation = field ? forest?.occupation : undefined, water = (field||forest?.renderV2) ? forest?.water : undefined, light = forest?.light ?? [-.5, -.5, .7071];
     gl.activeTexture(gl.TEXTURE3); // upload unit: keep the heights bound on unit 0
     if (field) active.field = forestTexture(gl, active.field, field, true);
     if (field?.bank) active.bank = forestTexture(gl, active.bank, { n: field.n, rgba: field.bank, key: `${field.key}:bank` }, true);
@@ -111,6 +143,8 @@ export function renderMaterialRaster(terrain: TerrainData, settings: Pick<Terrai
     gl.uniform1i(u('uHasOccupation'), occupation ? 1 : 0);
     gl.uniform3f(u('uOccupationRect'), occupation?.x ?? 0, occupation?.y ?? 0, occupation?.width ?? 1); gl.uniform1f(u('uOccupationN'), occupation?.n ?? 1);
     gl.uniform3f(u('uForestLight'), light[0], light[2], light[1]);
+    const light2=forest?.light2??[.2,-.75,.63];
+    gl.uniform3f(u('uForestLight2'),light2[0],light2[2],light2[1]);gl.uniform1f(u('uForestStrength'),forest?.lightingStrength??1);
     gl.activeTexture(gl.TEXTURE4); gl.bindTexture(gl.TEXTURE_2D, water ? active.water!.texture : texture);
     gl.uniform1i(u('uForestWater'), 4); gl.uniform1i(u('uHasForestWater'), water ? 1 : 0);
     gl.uniform3f(u('uForestWaterRect'), water?.x ?? 0, water?.y ?? 0, water?.width ?? 1);

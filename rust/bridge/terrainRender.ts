@@ -1,3 +1,4 @@
+import { renderV2Number } from './terrainRenderV2';
 import { isFantasyStyle, renderFantasyTerrain, DEFAULT_FANTASY_OPTIONS, type FantasyOptions } from './fantasyTerrain';
 import { renderMaterialRaster, type ForestRaster } from './terrainMaterialRaster';
 import { terrainLights, DEFAULT_TERRAIN_LAYERS, DEFAULT_TERRAIN_LIGHTING, type TerrainLayers, type TerrainLighting } from '../../web/src/render/terrainLighting';
@@ -111,7 +112,7 @@ function renderElevation(terrain: TerrainData, frame: boolean, clipNamespace: st
 
 /** Transitional renderer adapter. Rust never depends on the legacy World schema. */
 /** settings.forest: display-only Render3D forest raster input (field, occupation); absent keeps the legacy canopy. */
-export function renderRustTerrain(terrain: TerrainData, style: TerrainStyle, frame = true, settings: Pick<TerrainSettings, 'relief' | 'width'> & Partial<Pick<TerrainSettings, 'seed' | 'climate' | 'climateValues'>> & { forest?: Omit<ForestRaster, 'light'> } = { relief: 'mountains', width: terrain.width }, showContours = true, clipNamespace = 'main', lighting: TerrainLighting = DEFAULT_TERRAIN_LIGHTING, layers: TerrainLayers = DEFAULT_TERRAIN_LAYERS, fantasyOptions: FantasyOptions = DEFAULT_FANTASY_OPTIONS, paintBrushes = true, waterStyle: TerrainStyle = style): TerrainScene {
+export function renderRustTerrain(terrain: TerrainData, style: TerrainStyle, frame = true, settings: Pick<TerrainSettings, 'relief' | 'width'> & Partial<Pick<TerrainSettings, 'seed' | 'climate' | 'climateValues'>> & { forest?: Omit<ForestRaster, 'light'>; v2Season?: number } = { relief: 'mountains', width: terrain.width }, showContours = true, clipNamespace = 'main', lighting: TerrainLighting = DEFAULT_TERRAIN_LIGHTING, layers: TerrainLayers = DEFAULT_TERRAIN_LAYERS, fantasyOptions: FantasyOptions = DEFAULT_FANTASY_OPTIONS, paintBrushes = true, waterStyle: TerrainStyle = style): TerrainScene {
   frame &&= layers.frame;
   if (style === 'copernicus') {
     const scene = renderElevation(terrain, frame, clipNamespace, waterStyle, layers.water !== false, settings.width, layers.relief);
@@ -140,7 +141,7 @@ export function renderRustTerrain(terrain: TerrainData, style: TerrainStyle, fra
   let canopyAlpha: Uint8Array | undefined;
   if ((style === 'render' || isRender3dStyle(style)) && layers.hypsometry) {
     const material = renderMaterialRaster(terrain, { seed: settings.seed ?? '42', climate: settings.climate, climateValues: settings.climateValues }, isRender3dStyle(style),
-      settings.forest?.field && { ...settings.forest, brushes: style === 'render3d-brush', light: terrainLights(lighting).primary });
+      { ...settings.forest, renderV2:renderV2Number(style), v2Season:settings.v2Season, brushes: style === 'render3d-brush', light: terrainLights(lighting).primary, light2: terrainLights(lighting).secondary, lightingStrength: lighting.enabled ? lighting.strength : 0 });
     if (isRender3dStyle(style) && settings.forest?.field) canopyAlpha = material.canopyAlpha;
     const neutral = renderTerrainPixels(legacyRasterInput, { ...pal, hypso: [[0, '#ffffff'], [1, '#ffffff']] }, {
       pixels: n, surface: terrain.height, normals: { x: terrain.normalX, y: terrain.normalY, z: terrain.normalZ }, lighting,
@@ -152,9 +153,9 @@ export function renderRustTerrain(terrain: TerrainData, style: TerrainStyle, fra
   }
   let sea = '';
   if (coastal) {
-    sea = layers.water !== false ? seaMaterialSvg(seaDistanceSurface(terrain, settings.width), terrain.x, terrain.y, waterStyle, terrain.width) : '';
+    sea = style.startsWith('render-v2') ? '' : layers.water !== false ? seaMaterialSvg(seaDistanceSurface(terrain, settings.width), terrain.x, terrain.y, waterStyle, terrain.width) : '';
   }
-  if (coastal) extendLandColors(pixels.rgb, terrain);
+  if (coastal && !style.startsWith('render-v2')) extendLandColors(pixels.rgb, terrain);
   if (cavern) {
     const light = terrainLights(lighting).primary;
     for (let i = 0; i < n * n; i++) if (terrain.caveMask[i]) {
@@ -198,7 +199,7 @@ export function renderRustTerrain(terrain: TerrainData, style: TerrainStyle, fra
   let svg = `<rect width="${width}" height="${width}" fill="${pal.paper}"/>`;
   if (waterMask) svg += waterMask.svg;
   if (!layers.relief && coastal && layers.water !== false) svg += sea + `<path d="${terrainLandClip(terrain)}" fill="${pal.paper}" fill-rule="evenodd"/>`;
-  if (layers.relief) svg += coastal ? coastImage(terrain, background, sea, clipNamespace) : `<image width="${width}" height="${width}" href="${background}"/>`;
+  if (layers.relief) svg += coastal && !style.startsWith('render-v2') ? coastImage(terrain, background, sea, clipNamespace) : `<image width="${width}" height="${width}" href="${background}"/>`;
   if (paintBrushes && clipNamespace !== 'detail' && isFantasyStyle(style) && layers.relief) svg += renderFantasyTerrain(terrain, style, { ...settings, seed: settings.seed ?? '42' }, fantasyOptions);
   if (!cavern && showContours && !isFantasyStyle(style)) svg += `<g class="layer-contours" fill="none" stroke="${pal.contour}" stroke-linejoin="round" stroke-linecap="round"><path d="${paths!.thin}" style="stroke-width:var(--terrain-contour-width,${weights.thin}px)" vector-effect="non-scaling-stroke" opacity="${pal.contourOpacity * 0.5}"/><path d="${paths!.index}" style="stroke-width:var(--terrain-contour-index-width,${weights.index}px)" vector-effect="non-scaling-stroke" opacity="${pal.contourOpacity * 0.75}"/></g>`;
   if (frame) svg += `<rect x="0" y="0" width="${width}" height="${width}" fill="none" stroke="${pal.frame}" stroke-width="1.2" vector-effect="non-scaling-stroke"/>`;

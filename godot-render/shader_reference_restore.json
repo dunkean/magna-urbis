@@ -1,0 +1,148 @@
+{
+  "referenceHead": "dff14f387a6d1edc89d93737f861ee91e022a5aa",
+  "upstream": "f229884",
+  "templates": [
+    {
+      "name": "TERRAIN_VS",
+      "originalSha256": "609a23d2cbc17890617476d6fbc2c63d7b04d37fd10464aa3c0a856543150d33",
+      "currentSha256": "609a23d2cbc17890617476d6fbc2c63d7b04d37fd10464aa3c0a856543150d33",
+      "exact": true
+    },
+    {
+      "name": "TERRAIN_FS",
+      "originalSha256": "f4b211205f103f9bbed5374469d43bd5176da6b782593dc260670817d159a06e",
+      "currentSha256": "f4b211205f103f9bbed5374469d43bd5176da6b782593dc260670817d159a06e",
+      "exact": true
+    },
+    {
+      "name": "RIVER_VS",
+      "originalSha256": "8058bf413bb4584681a2766d5c9e170c8755b38afbf4a7caf5cff9f14dfd74fe",
+      "currentSha256": "8058bf413bb4584681a2766d5c9e170c8755b38afbf4a7caf5cff9f14dfd74fe",
+      "exact": true
+    },
+    {
+      "name": "RIVER_FS",
+      "originalSha256": "de7f564daa799e33c05eef8bf4028b01bfaeaebf1852dfc2c4a7a25049069fa2",
+      "currentSha256": "de7f564daa799e33c05eef8bf4028b01bfaeaebf1852dfc2c4a7a25049069fa2",
+      "exact": true
+    },
+    {
+      "name": "COMPOSITE_VS",
+      "originalSha256": "a2a355f2b6097e8887d7cafd5ed0bbd716946dc123774a1027c5167afd5b7f7e",
+      "currentSha256": "a2a355f2b6097e8887d7cafd5ed0bbd716946dc123774a1027c5167afd5b7f7e",
+      "exact": true
+    },
+    {
+      "name": "COMPOSITE_FS",
+      "originalSha256": "ecbde7394d5380dcd1942a63fe5fdad654aac7704516be02163d98ec730c85b8",
+      "currentSha256": "ecbde7394d5380dcd1942a63fe5fdad654aac7704516be02163d98ec730c85b8",
+      "exact": true
+    }
+  ],
+  "stages": [
+    {
+      "name": "terrain",
+      "stage": "vertex",
+      "oldSha": "8fce436962b3a69ee80f165c7f834d7b588c4243f83cac52b270ec0b1859edea",
+      "currentSha": "8fce436962b3a69ee80f165c7f834d7b588c4243f83cac52b270ec0b1859edea",
+      "byteEqual": true,
+      "codeTokensEqual": true
+    },
+    {
+      "name": "terrain",
+      "stage": "fragment",
+      "oldSha": "8e783805773aadfc0908d0af76514b8fb41a2c7f34780e2f62b224bd86eb169e",
+      "currentSha": "105b4c41714fabd122db9a2cabd6d9827105ab5441575b26d8b3d81f685fe00c",
+      "byteEqual": false,
+      "codeTokensEqual": true
+    },
+    {
+      "name": "river",
+      "stage": "vertex",
+      "oldSha": "83b1c9d1cebb785ceb05b70cf5cfbbabf10f7564a7eb7f8452b443fb71791d5e",
+      "currentSha": "50029ffb81ee72c7f1136dad021e22f6bda6df6cac3c401392eee8b15040c31f",
+      "byteEqual": false,
+      "codeTokensEqual": true
+    },
+    {
+      "name": "river",
+      "stage": "fragment",
+      "oldSha": "2c634915ab1eac26d7dec59f75188c8fc6c80378816328eb075ec8a2e5a14317",
+      "currentSha": "2c634915ab1eac26d7dec59f75188c8fc6c80378816328eb075ec8a2e5a14317",
+      "byteEqual": true,
+      "codeTokensEqual": true
+    },
+    {
+      "name": "composite",
+      "stage": "vertex",
+      "oldSha": "34097fc87f0c82fc934383e6c3d5a2dfe3f56517cdd26b7f691a357a5aa635c0",
+      "currentSha": "34097fc87f0c82fc934383e6c3d5a2dfe3f56517cdd26b7f691a357a5aa635c0",
+      "byteEqual": true,
+      "codeTokensEqual": true
+    },
+    {
+      "name": "composite",
+      "stage": "fragment",
+      "oldSha": "a28731c1db98af345960c61ab1bdcd7fd65119d6da1ceb1148bbeb7686f75503",
+      "currentSha": "a28731c1db98af345960c61ab1bdcd7fd65119d6da1ceb1148bbeb7686f75503",
+      "byteEqual": true,
+      "codeTokensEqual": true
+    },
+    {
+      "name": "renderWater",
+      "stage": "vertex",
+      "oldSha": "f68e2fc58bdb19d37f532b03969b7580f58b276a1b048440905e8b23514c3f92",
+      "currentSha": "f68e2fc58bdb19d37f532b03969b7580f58b276a1b048440905e8b23514c3f92",
+      "byteEqual": true,
+      "codeTokensEqual": true
+    },
+    {
+      "name": "renderWater",
+      "stage": "fragment",
+      "oldSha": "31938e9f5a4e0ab089d6b8cdbc64843bb24c14f9ae583f45ae614eba2b0739b8",
+      "currentSha": "31938e9f5a4e0ab089d6b8cdbc64843bb24c14f9ae583f45ae614eba2b0739b8",
+      "byteEqual": true,
+      "codeTokensEqual": true
+    }
+  ],
+  "status": "COMMENT_ONLY_REFERENCE_RESTORATION",
+  "oldGeneratedCommit": "8312106",
+  "finding": "Only original comment encodings changed in terrain.frag moire and river.vert km-squared. All eight stages have identical noncomment code tokens. All six current raw source literals match upstream f229 git object, with CRLF normalisation only. No maths/layout/orientation changes.",
+  "currentLiteralAudit": {
+    "revision": "f2298841d9fe09729df02f8ecc92e7ffbefa6505",
+    "module": "web/src/ui/terrainGl.ts",
+    "normalisation": "CRLF to LF only; original byte values retained",
+    "entries": [
+      {
+        "name": "TERRAIN_VS",
+        "normalisedSourceLiteralBytesSha256": "609a23d2cbc17890617476d6fbc2c63d7b04d37fd10464aa3c0a856543150d33",
+        "exact": true
+      },
+      {
+        "name": "TERRAIN_FS",
+        "normalisedSourceLiteralBytesSha256": "f4b211205f103f9bbed5374469d43bd5176da6b782593dc260670817d159a06e",
+        "exact": true
+      },
+      {
+        "name": "RIVER_VS",
+        "normalisedSourceLiteralBytesSha256": "8058bf413bb4584681a2766d5c9e170c8755b38afbf4a7caf5cff9f14dfd74fe",
+        "exact": true
+      },
+      {
+        "name": "RIVER_FS",
+        "normalisedSourceLiteralBytesSha256": "de7f564daa799e33c05eef8bf4028b01bfaeaebf1852dfc2c4a7a25049069fa2",
+        "exact": true
+      },
+      {
+        "name": "COMPOSITE_VS",
+        "normalisedSourceLiteralBytesSha256": "a2a355f2b6097e8887d7cafd5ed0bbd716946dc123774a1027c5167afd5b7f7e",
+        "exact": true
+      },
+      {
+        "name": "COMPOSITE_FS",
+        "normalisedSourceLiteralBytesSha256": "ecbde7394d5380dcd1942a63fe5fdad654aac7704516be02163d98ec730c85b8",
+        "exact": true
+      }
+    ]
+  }
+}
