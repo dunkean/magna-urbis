@@ -94,9 +94,15 @@ export function layerPattern(ctx: CanvasRenderingContext2D, images: MaterialImag
   return pattern;
 }
 let loaded: MaterialImages | undefined, requested = false;
-/** The decoded atlases when already loaded; otherwise starts the load once and calls `onReady` when done (Canvas 2D paths). */
+const waiting = new Set<() => void>();
+/** The decoded atlases when already loaded; otherwise starts the load once and calls every `onReady` when done (Canvas 2D paths). */
 export function materialImagesNow(onReady?: () => void): MaterialImages | undefined {
   if (loaded) return loaded;
-  if (!requested) { requested = true; loadMaterialImages().then(i => { loaded = i; onReady?.(); }, e => { requested = false; console.warn('Matières texturées indisponibles', e); }); }
+  if (onReady) waiting.add(onReady);
+  if (!requested) {
+    requested = true;
+    loadMaterialImages().then(i => { loaded = i; const calls = [...waiting]; waiting.clear(); for (const call of calls) call(); },
+      e => { requested = false; waiting.clear(); console.warn('Matières texturées indisponibles', e); });
+  }
   return undefined;
 }

@@ -588,7 +588,7 @@ async function load3dTile(tile: Terrain3dTile) {
   const region = { x: tile.x - pad, y: tile.y - pad, width: tile.width + 2 * pad };
   const canvas = gpu.captureRegion(region, tile.pixels + 2 * gutter, true, false, height, ground3dEnabled());
   const result = await terrain3dTexture(canvas, terrain, style, settings, fantasyOptions, layers.relief, appliedGroundOverlay(), region, settlements.paintingContext,
-    ctx => settlements.urban.drawGround(ctx, region, canvas.width));
+    ctx => settlements.urban.drawGround(ctx, region, canvas.width, schedule3dTexture));
   if (!perspective || epoch !== texture3dEpoch) throw new DOMException('Tuile remplacée', 'AbortError');
   // Crown centres can lie outside the displayed patch. A separate, globally
   // aligned 1 m mask retains a 64 m halo without enlarging the fine colour tile.
@@ -766,6 +766,14 @@ function setPerspective(active: boolean): void {
   deferSave();
 }
 
+/** « Textures » of the 3D bar mirrors the Rendu panel's « Matières texturées »: the
+ * building pass and the ground tiles (streets, places) redraw when it changes. */
+let textured3d = false;
+function syncTextured3d(): void {
+  const on = settlements.urban.textured; input('textured3d').checked = on;
+  if (on === textured3d) return;
+  textured3d = on; if (perspective) schedule3dTexture();
+}
 function schedule3dTexture(): void {
   // Only scene changes invalidate the LOD cache; camera motion selects reusable tiles.
   ++texture3dEpoch;
@@ -780,7 +788,7 @@ async function refresh3dTexture(epoch: number): Promise<void> {
   try {
     const ground = ground3dEnabled();
     const buildings = settlements.urban.buildingState;
-    terrain3d.setBuildings(buildings3d(buildings.scene), buildings.appearance, settlements.urban.buildingVisible);
+    terrain3d.setBuildings(buildings3d(buildings.scene), { ...buildings.appearance, textured: settlements.urban.textured }, settlements.urban.buildingVisible);
     // Establish the style's zoom range before restoring a shared camera.
     terrain3d.setGroundMaterial(ground ? {
       seed: seedHash(settings.seed), climate: climateOf(settings),
@@ -1143,7 +1151,7 @@ const settlements = createTerrainSettlements({ map, viewport, getTerrain: () => 
   parcelDefault: legacyPipeline,
   getRaster: pipelineStage === 'settlements' ? () => retainedDecor?.raster : undefined,
   getDecor: () => retainedDecor,
-  getView: () => view, getAuto: () => input('auto').checked, getQuery: shareQuery, onChange: deferSave,
+  getView: () => view, getAuto: () => input('auto').checked, getQuery: shareQuery, onChange: () => { deferSave(); queueMicrotask(syncTextured3d); }, // after construction (the binding)
   useForestMaterial: forestActive,
   onForestOccupation: occupation => { forestOccupation = occupation; scheduleForest(); },
   onPlanChange: () => queueMicrotask(() => {
@@ -1151,7 +1159,7 @@ const settlements = createTerrainSettlements({ map, viewport, getTerrain: () => 
     const b = settlements.urban.buildingState;
     appliedBuildingScene = b.scene;
     gpu?.setForest(forestShown?.field, displayedForestOccupation(forestShown?.occupation));
-    terrain3d?.setBuildings(buildings3d(b.scene), b.appearance, settlements.urban.buildingVisible);
+    terrain3d?.setBuildings(buildings3d(b.scene), { ...b.appearance, textured: settlements.urban.textured }, settlements.urban.buildingVisible);
     refreshUrbanPainting();
     if (!gpu && terrain && isRender3dStyle(style)) render();
     if (perspective) schedule3dTexture();
@@ -1774,6 +1782,7 @@ el('refinement3dControl').hidden = !perspective && !isRender3dStyle(style);
 el<HTMLButtonElement>('projection3d').disabled = !gpu;
 if (!gpu) el('projection3d').title = 'La vue 3D nécessite le rendu WebGL2.';
 el('projection3d').onclick = () => setPerspective(!perspective);
+input('textured3d').onchange = () => settlements.urban.setTextured(input('textured3d').checked);
 const capture3d = document.createElement('button'); capture3d.id = 'capture3d'; capture3d.type = 'button'; capture3d.textContent = 'Capturer PNG';
 capture3d.style.width = 'auto'; capture3d.style.whiteSpace = 'nowrap';
 capture3d.title = 'Exporter la vue 3D affichée avec ses bâtiments';
@@ -2105,14 +2114,14 @@ installRecipeSharing({
 
 mountIllustration({ host: document.querySelector('header')!, capture: async () => {
   if (!terrain || overviewPending || generationError || terrain.hydrologyError || (pipelineStage === 'settlements' && !settlements.contextReady())) throw new Error('Attendez la fin de la génération avant de capturer la vue.');
-  const context = illustrationContext({ sourceStyle: el<HTMLSelectElement>('style').value, seed: settings.seed,
+  const captured = perspective && terrain3d ? await terrain3d.captureIllustration() : undefined;
+  const context = illustrationContext({ sourceStyle: el<HTMLSelectElement>('style').value, seed: settings.seed, camera: captured?.camera,
     view: { ...view }, width: viewport.clientWidth, height: viewport.clientHeight,
     terrain: { relief: settings.relief, climate: settings.climate, environment: settings.environment, ...climateOf(settings), minHeight: terrain.minHeight, maxHeight: terrain.maxHeight },
     settlements: settlements.illustrationSettlements, buildings: settlements.urban.buildingState.scene,
     architecture: settlements.urban.buildingState.settings });
-  if (perspective && terrain3d) {
-    const captured = await terrain3d.captureIllustration();
-    return { image: captured.image, guides: { depth: captured.depth }, context: { ...context, projection: 'perspective', camera: captured.camera } };
+  if (captured) {
+    return { image: captured.image, guides: { depth: captured.depth }, context };
   }
   gpu?.redrawForCapture();
   const image = captureViewport(viewport, { exclude: ['#mini', '#ruler', '#pins', '#marks', '#terrain3d'] });

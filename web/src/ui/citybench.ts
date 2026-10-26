@@ -16,7 +16,7 @@ import type {} from './benchContext';
 import { decodeSituation, encodeSituation, type SituationPin } from './citySituation';
 import { mountCity3d } from './city3d';
 import { mountIllustration, captureViewport } from '../../../illustration/web/index.mjs';
-import { illustrationContext } from './illustrationContext';
+import { illustrationContext, illustrationTerrainFromDecor } from './illustrationContext';
 
 declare global { interface Window { magnaCityBackground?: { url(): string | undefined; style(): string } } }
 
@@ -144,7 +144,7 @@ const settlements = createTerrainSettlements({ map, viewport, city: true, active
 // 3D view (city3d.ts): the decor relief draped with the map image, the plan and the buildings in volume.
 const city3d = mountCity3d({ host: viewport, getDecor: () => decor, getScene: () => settlements.urban.buildingState.scene,
   getProjection: () => settlements.urban.buildingProjection,
-  getLayouts: () => settlements.urban.layouts, getRegionalStreets: () => settlements.urban.regionalStreets, getPartitions: () => settlements.urban.partitions, getSelected: () => settlements.urban.buildingState.selected, getTextured: () => settlements.urban.textured,
+  getLayouts: () => settlements.urban.layouts, getRegionalStreets: () => settlements.urban.regionalStreets, getPartitions: () => settlements.urban.partitions, getSelected: () => settlements.urban.buildingState.selected, getTextured: () => settlements.urban.textured, setTextured: on => settlements.urban.setTextured(on),
   details: settlements.urban.buildingDetails,
   getBackground: () => background.querySelector('image')?.getAttribute('href') ?? undefined,
   onSelect: id => settlements.urban.selectBuilding(id) });
@@ -162,13 +162,13 @@ mountIllustration({ host: document.querySelector('header')!, capture: async () =
   if (!ready || !decor || !settlements.contextReady()) throw new Error('Chargez une ville et attendez la fin de la génération.');
     const palette = document.querySelector<HTMLSelectElement>('select[data-render="palette"]')?.value;
     const sourceStyle = palette === 'cadastre' || palette === 'parchment' ? palette : backgroundStyle;
-    const context = illustrationContext({ sourceStyle, seed: decor.meta.seed, view: { ...view },
+    const captured = city3d.active ? await city3d.captureIllustration() : undefined;
+    const context = illustrationContext({ sourceStyle, seed: decor.meta.seed, view: { ...view }, camera: captured?.camera,
     width: viewport.clientWidth, height: viewport.clientHeight, settlements: settlements.illustrationSettlements,
-    terrain: { ...decor.meta.tags, minHeight: decor.meta.stats.minHeight, maxHeight: decor.meta.stats.maxHeight },
+    terrain: illustrationTerrainFromDecor(decor.meta),
     buildings: settlements.urban.buildingState.scene, architecture: settlements.urban.buildingState.settings });
-  if (city3d.active) {
-    const captured = await city3d.captureIllustration();
-    return { image: captured.image, guides: { depth: captured.depth }, context: { ...context, projection: 'perspective', camera: captured.camera } };
+  if (captured) {
+    return { image: captured.image, guides: { depth: captured.depth }, context };
   }
     const exclude = ['#cityPins', '#mini', '.ruler'];
     const image = await captureViewport(viewport, { exclude });

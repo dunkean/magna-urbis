@@ -1972,6 +1972,13 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
     get planVisible(): boolean { return !planSaved; },
     /** « Matières texturées » of the Rendu panel (read by the City Bench 3D view). */
     get textured(): boolean { return !!render.textured; },
+    /** Set « Matières texturées » from a 3D bar: the Rendu panel's box follows, the map redraws. */
+    setTextured(on: boolean): void {
+      if (!!render.textured === on) return;
+      render.textured = on;
+      const box = rendering.querySelector<HTMLInputElement>('input[data-render="textured"]'); if (box) box.checked = on;
+      draw(); options.onChange();
+    },
     setPlanVisible(visible: boolean): void {
       if (visible === !planSaved) return;
       if (!visible) { planSaved = Object.fromEntries(PLAN_LAYERS.map(k => [k, render[k]])); for (const k of PLAN_LAYERS) render[k] = false; }
@@ -2041,12 +2048,12 @@ export function createTerrainUrban(options: { map: SVGSVGElement; before: Elemen
     get partitions(): Partition[] | undefined { return partitions; },
     /** The city plan (no buildings: they stand in the 3D pass) painted into a 3D ground tile
      * at the tile's own resolution, over the whole city; the 2D canvas only covers the 2D framing. */
-    drawGround(ctx: CanvasRenderingContext2D, region: { x: number; y: number; width: number }, size: number): void {
+    drawGround(ctx: CanvasRenderingContext2D, region: { x: number; y: number; width: number }, size: number, onTexturesReady: () => void = options.onChange): void {
       if (!enabled || !cityPlan) return;
       const k = size / region.width, mpp = 1 / k;
       ctx.save(); ctx.setTransform(k, 0, 0, k, -region.x * k, -region.y * k); ctx.globalAlpha = render.opacity;
       drawCity(ctx, cityPlan, { viewport: { minX: region.x, minY: region.y, maxX: region.x + region.width, maxY: region.y + region.width }, mpp, dpr: 1, lod: selectCityLod(mpp),
-        view: render.view, palette: render.palette, width: render.width, layers: render, buildingsVisible: false, appearance: { style: 'cartographic', diagnostic: 'none' }, textured: !!render.textured, onTexturesReady: () => options.onChange() });
+        view: render.view, palette: render.palette, width: render.width, layers: render, buildingsVisible: false, appearance: { style: 'cartographic', diagnostic: 'none' }, textured: !!render.textured, onTexturesReady });
       ctx.restore();
     },
     /** Regional road pieces (with their bridge/ford/causeway roles), memoized per road output. */

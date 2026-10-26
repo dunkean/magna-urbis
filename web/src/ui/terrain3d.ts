@@ -18,6 +18,8 @@ import { UrbanBuildingGround } from './urbanBuildingGround';
 /** Target and orbit distance in world metres; yaw/pitch in radians. */
 export interface Terrain3dCamera {
   x: number; y: number; distance: number; yaw: number; pitch: number; exaggeration: number;
+  /** Capture-only measurements from the actual eye, including terrain clearance. */
+  heightAboveTargetMetres?: number; altitudeMetres?: number; viewAngleDegrees?: number; azimuthDegrees?: number; verticalFovDegrees?: number;
 }
 
 interface WaterSurface { n: number; levels: Float32Array; mask: Float32Array }
@@ -1170,7 +1172,14 @@ export class Terrain3d {
   async captureIllustration(): Promise<{ image: Blob; depth: Blob; camera: Terrain3dCamera }> {
     if (!this.active || !this.layer || this.gl.isContextLost()) throw new Error('Ouvrez la vue 3D avant de la capturer.');
     this.draw();
-    const camera = this.getCamera(), far = Math.max(camera.distance * 4, this.layer.width * 2 + this.heightRange * camera.exaggeration * 2);
+    const camera = this.getCamera(), geometry = this.frameGeometry();
+    camera.heightAboveTargetMetres = geometry.eye[1];
+    camera.viewAngleDegrees = Math.atan2(geometry.eye[1], Math.hypot(geometry.eye[0], geometry.eye[2])) * 180 / Math.PI;
+    // Map north is decreasing world y; yaw=0 puts the eye south of the target.
+    camera.azimuthDegrees = ((-camera.yaw * 180 / Math.PI) % 360 + 360) % 360;
+    camera.verticalFovDegrees = FOV * 180 / Math.PI;
+    if (camera.exaggeration === 1) camera.altitudeMetres = geometry.targetHeight + geometry.eye[1];
+    const far = Math.max(camera.distance * 4, this.layer.width * 2 + this.heightRange * camera.exaggeration * 2);
     const frame = captureWebGlFrame(this.gl, Math.max(.02, camera.distance * .0002), far);
     this.request();
     const encode = (canvas: HTMLCanvasElement): Promise<Blob> => new Promise((resolve, reject) => canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error('Capture 3D indisponible.')), 'image/png'));

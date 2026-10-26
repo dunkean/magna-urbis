@@ -985,11 +985,12 @@ if (awaitingMapImport) status('Chargement du plan appliqué de la carte…'); el
 mountIllustration({ host: document.querySelector('header') ?? document.querySelector('.workshop-controls') ?? el('stages'), capture: async () => {
   if (busy || !layout) throw new Error('Attendez la fin de la génération du plan.');
   const host = map.parentElement!, [x, y, width, height] = state.view;
-  const context = illustrationContext({ sourceStyle: select('mapStyle').value, seed: state.layoutSeed,
+  const captured = perspective.isActive ? await perspective.captureIllustration() : undefined;
+  const context = illustrationContext({ sourceStyle: select('mapStyle').value, seed: state.layoutSeed, camera: captured?.camera,
     view: { cx: x + width / 2, cy: y + height / 2, scale: Math.min(map.clientWidth / width, map.clientHeight / height) },
     width: map.clientWidth, height: map.clientHeight, architecture: buildingPanel.state.settings, buildings: buildingPanel.state.scene,
     generation: { culture: state.options.culture, recipe: state.options.recipe, population: state.urban?.population } });
-  if (perspective.isActive) { const captured = await perspective.captureIllustration(); return { image: captured.image, guides: { depth: captured.depth }, context: { ...context, projection: 'perspective', camera: captured.camera } }; }
+  if (captured) return { image: captured.image, guides: { depth: captured.depth }, context };
   const [image, edges] = await Promise.all([captureViewport(host, { exclude: ['aside', '.urban-perspective-tools'] }), captureViewport(host, { structural: true, exclude: ['aside', '.urban-perspective-tools'] })]);
   return { image, guides: { edges }, context };
 } });

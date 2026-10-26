@@ -32,6 +32,8 @@ export interface City3dOptions {
   getSelected?(): string | undefined;
   /** Textured materials (PBR roofs, walls, streets, plazas): the 2D map's « Matières texturées » switch. */
   getTextured?(): boolean;
+  /** The 3D bar's « Textures » box sets the same switch. */
+  setTextured?(on: boolean): void;
   /** URL of the 2D map image; default `decors/<id>.png` (or the parent decor's). */
   getBackground?(): string | undefined;
   onSelect?(id: string): void;
@@ -92,6 +94,7 @@ export function mountCity3d(options: City3dOptions): City3d {
     <div class="city3d-bar" role="group" aria-label="Vue 3D">
       <label title="Fond drapé sur le relief">Sol <select data-ground><option value="map">Carte pré-rendue</option><option value="render">Rendu 3D (sol procédural)</option></select></label>
       <label title="Rues, îlots et parcelles dessinés sur le sol en vue rapprochée"><input type="checkbox" data-plan checked>Plan</label>
+      <label title="Textures des toits, murs, rues et places (bâtiments et constructions seulement)"><input type="checkbox" data-textured>Textures</label>
       <label>Couleurs <select data-colors><option value="materials">Matériaux</option><option value="uses">Usages</option></select></label>
       <label title="Exagération du relief">Relief <input type="range" data-relief min="1" max="5" step="0.5" value="1"></label>
       <button type="button" data-north title="Nord en haut">N</button>
@@ -387,6 +390,9 @@ export function mountCity3d(options: City3dOptions): City3d {
   // ------------------------------------------------------------ controls
   $<HTMLSelectElement>('[data-ground]').onchange = event => { ground = (event.target as HTMLSelectElement).value as Ground; applyGround(); };
   $<HTMLInputElement>('[data-plan]').onchange = event => { planOverlay = (event.target as HTMLInputElement).checked; terrain?.invalidateTiles(); };
+  const texturedBox = $<HTMLInputElement>('[data-textured]');
+  texturedBox.closest('label')!.hidden = !options.setTextured;
+  texturedBox.onchange = () => options.setTextured?.(texturedBox.checked);
   $<HTMLSelectElement>('[data-colors]').onchange = event => { colors = (event.target as HTMLSelectElement).value as Colors; syncBuildings(); };
   $<HTMLInputElement>('[data-relief]').oninput = event => { if (terrain) terrain.setCamera({ ...terrain.getCamera(), exaggeration: Number((event.target as HTMLInputElement).value) }); updateInfo(); };
   $<HTMLButtonElement>('[data-north]').onclick = () => { terrain?.north(); };
@@ -402,6 +408,7 @@ export function mountCity3d(options: City3dOptions): City3d {
     const layouts = options.getLayouts?.(), partitions = options.getPartitions?.();
     if (planOverlay && (!planOf ? layouts?.length : planOf[0] !== layouts || planOf[1] !== partitions)) { cityPlan(); t.invalidateTiles(); lap('plan'); }
     if (textured() !== texturedSeen) { texturedSeen = textured(); t.invalidateTiles(); } // the appearance below carries the flag
+    $<HTMLInputElement>('[data-textured]').checked = texturedSeen;
     syncBuildings(); lap('buildings');
     if (!focused) {
       focused = true;
