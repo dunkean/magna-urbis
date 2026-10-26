@@ -1,0 +1,104 @@
+{
+  "provider": "polyhaven",
+  "asset_id": "wood_trunk_wall",
+  "family": "wood",
+  "type_fr": "Paroi de troncs et rondins",
+  "native_material_ids": [
+    "MAT-LOG"
+  ],
+  "notes_fr": "Les joints et sections de rondins de l’asset ne remplacent pas les rondins géométriques.",
+  "provenance": {
+    "page": "https://polyhaven.com/a/wood_trunk_wall",
+    "license": "CC0-1.0",
+    "license_url": "https://polyhaven.com/license",
+    "authors": {
+      "Amal Kumar": "All"
+    },
+    "name": "Wood Trunk Wall",
+    "tags": [
+      "tree trunk",
+      "wood",
+      "wall",
+      "trunk",
+      "logs",
+      "log cabin",
+      "brown",
+      "timber",
+      "lumber",
+      "forest",
+      "cabin"
+    ],
+    "api_info_url": "https://api.polyhaven.com/info/wood_trunk_wall"
+  },
+  "resolution": "1k",
+  "normal_convention": "OpenGL (+Y)",
+  "physical_extent_m": [
+    1.25,
+    1.25
+  ],
+  "scale_source": "Poly Haven API dimensions (mm converted to m)",
+  "height_amplitude_m": null,
+  "maps": {
+    "base_color": {
+      "path": "wood/polyhaven-wood_trunk_wall/wood_trunk_wall_diff_1k.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/wood_trunk_wall/wood_trunk_wall_diff_1k.jpg",
+      "bytes": 553436,
+      "sha256": "44c7885fd4370e2a89ca3d910c798d836df580c23df750982ca44cd874dcca6b",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "8b31fab9bb6645c17b9e58061331f780",
+      "color_space": "sRGB"
+    },
+    "normal_gl": {
+      "path": "wood/polyhaven-wood_trunk_wall/wood_trunk_wall_nor_gl_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/wood_trunk_wall/wood_trunk_wall_nor_gl_1k.png",
+      "bytes": 6290374,
+      "sha256": "7596f87efd88da05ff9025650482d25859111c32c720a3580ae6c91019f8e1dd",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "e5518a3d7b3661cd0ddc8fe802bcf0de",
+      "color_space": "linear"
+    },
+    "roughness": {
+      "path": "wood/polyhaven-wood_trunk_wall/wood_trunk_wall_rough_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/wood_trunk_wall/wood_trunk_wall_rough_1k.png",
+      "bytes": 1724415,
+      "sha256": "1d643b7dfd420b7c7bce4b6b8851232da82b726edec9184e81df2b430ec80e79",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "511401ef9b7eee32754193812cb40ba8",
+      "color_space": "linear"
+    },
+    "height": {
+      "path": "wood/polyhaven-wood_trunk_wall/wood_trunk_wall_disp_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/wood_trunk_wall/wood_trunk_wall_disp_1k.png",
+      "bytes": 1395381,
+      "sha256": "2357f07b21dc24f397e6632b13471c5f34ab549a5ac3214fad69f3d747a5cfd9",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "ab0171382c6839196ac1a4e75c192770",
+      "color_space": "linear"
+    },
+    "ao": {
+      "path": "wood/polyhaven-wood_trunk_wall/wood_trunk_wall_ao_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/wood_trunk_wall/wood_trunk_wall_ao_1k.png",
+      "bytes": 1193225,
+      "sha256": "37f3b4fa048da4f4928f4f84506c4cfa9792f059f26d974ea206bd942862d0a6",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "4f734a9cff8df07dd8092213580dee3a",
+      "color_space": "linear"
+    }
+  },
+  "downloaded_at": "2026-10-25T17:31:02.226202+00:00"
+}

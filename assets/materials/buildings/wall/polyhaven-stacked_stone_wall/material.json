@@ -1,0 +1,101 @@
+{
+  "provider": "polyhaven",
+  "asset_id": "stacked_stone_wall",
+  "family": "wall",
+  "type_fr": "Pierres empilées en assises",
+  "native_material_ids": [
+    "MAT-STONE-DRY"
+  ],
+  "notes_fr": "Vérifier la présence de mortier photographié avant de l’utiliser en pierre sèche stricte.",
+  "provenance": {
+    "page": "https://polyhaven.com/a/stacked_stone_wall",
+    "license": "CC0-1.0",
+    "license_url": "https://polyhaven.com/license",
+    "authors": {
+      "Dimitrios Savva": "All"
+    },
+    "name": "Stacked Stone Wall",
+    "tags": [
+      "rock",
+      "stonework",
+      "wall",
+      "exterior wall",
+      "stone wall",
+      "stone",
+      "layered rock",
+      "stacked stones"
+    ],
+    "api_info_url": "https://api.polyhaven.com/info/stacked_stone_wall"
+  },
+  "resolution": "1k",
+  "normal_convention": "OpenGL (+Y)",
+  "physical_extent_m": [
+    2.0,
+    2.0
+  ],
+  "scale_source": "Poly Haven API dimensions (mm converted to m)",
+  "height_amplitude_m": null,
+  "maps": {
+    "base_color": {
+      "path": "wall/polyhaven-stacked_stone_wall/stacked_stone_wall_diff_1k.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/stacked_stone_wall/stacked_stone_wall_diff_1k.jpg",
+      "bytes": 746206,
+      "sha256": "91217c3edf4f288eb8fa31ef208d8f6067d75320a8a66b32cd6f3965b763c45a",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "2cbffed522bb448211a3641fc6e5a9dc",
+      "color_space": "sRGB"
+    },
+    "normal_gl": {
+      "path": "wall/polyhaven-stacked_stone_wall/stacked_stone_wall_nor_gl_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/stacked_stone_wall/stacked_stone_wall_nor_gl_1k.png",
+      "bytes": 5787037,
+      "sha256": "3c4dd9a457eec01cca705d742bf028a99b25fafbf916b398164a6272e8595a14",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "211815ee71f34113a9e4ee3a2a11cf4e",
+      "color_space": "linear"
+    },
+    "roughness": {
+      "path": "wall/polyhaven-stacked_stone_wall/stacked_stone_wall_rough_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/stacked_stone_wall/stacked_stone_wall_rough_1k.png",
+      "bytes": 1844225,
+      "sha256": "1c4606eb03caab36099ddb5c7b7366a8ab839aecdd43af105ed5fcf90e57941e",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "ad1a42641220f13b706462469c669531",
+      "color_space": "linear"
+    },
+    "height": {
+      "path": "wall/polyhaven-stacked_stone_wall/stacked_stone_wall_disp_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/stacked_stone_wall/stacked_stone_wall_disp_1k.png",
+      "bytes": 1618925,
+      "sha256": "2f90428ce94a231b89fcbe7b6f1baf14cb267b323e63a9805b6311ad5d980028",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "e1d328e21cf50014328c5eb2a7437f45",
+      "color_space": "linear"
+    },
+    "ao": {
+      "path": "wall/polyhaven-stacked_stone_wall/stacked_stone_wall_ao_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/stacked_stone_wall/stacked_stone_wall_ao_1k.png",
+      "bytes": 1776803,
+      "sha256": "a66ba523cd31030f114c1ef18f999f186938a1a5ed33dc371c86bb9b87bf1479",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "809820ee7f07f067a3ce39e97ea69bff",
+      "color_space": "linear"
+    }
+  },
+  "downloaded_at": "2026-10-25T17:30:29.980245+00:00"
+}

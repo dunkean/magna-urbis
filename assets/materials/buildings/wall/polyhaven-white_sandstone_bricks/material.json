@@ -1,0 +1,103 @@
+{
+  "provider": "polyhaven",
+  "asset_id": "white_sandstone_bricks",
+  "family": "wall",
+  "type_fr": "Blocs de grès clair",
+  "native_material_ids": [
+    "MAT-STONE-ASHLAR",
+    "MAT-CHALK",
+    "MAT-LIMESTONE"
+  ],
+  "notes_fr": "Grès réel ; approximation pour calcaire/craie sans identification géologique équivalente.",
+  "provenance": {
+    "page": "https://polyhaven.com/a/white_sandstone_bricks",
+    "license": "CC0-1.0",
+    "license_url": "https://polyhaven.com/license",
+    "authors": {
+      "Rob Tuytel": "All"
+    },
+    "name": "White Sandstone Bricks",
+    "tags": [
+      "blocks",
+      "sandstone",
+      "uneven",
+      "damaged",
+      "worn",
+      "plastered",
+      "old",
+      "crumbling"
+    ],
+    "api_info_url": "https://api.polyhaven.com/info/white_sandstone_bricks"
+  },
+  "resolution": "1k",
+  "normal_convention": "OpenGL (+Y)",
+  "physical_extent_m": [
+    2.0,
+    2.0
+  ],
+  "scale_source": "Poly Haven API dimensions (mm converted to m)",
+  "height_amplitude_m": null,
+  "maps": {
+    "base_color": {
+      "path": "wall/polyhaven-white_sandstone_bricks/white_sandstone_bricks_diff_1k.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/white_sandstone_bricks/white_sandstone_bricks_diff_1k.jpg",
+      "bytes": 651114,
+      "sha256": "b578317a0c92a314cf6e380803357fb6981d7487f82d225ccfd54914bea40c90",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "dbd59785a1705f16f23e8eb4f52f3701",
+      "color_space": "sRGB"
+    },
+    "normal_gl": {
+      "path": "wall/polyhaven-white_sandstone_bricks/white_sandstone_bricks_nor_gl_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/white_sandstone_bricks/white_sandstone_bricks_nor_gl_1k.png",
+      "bytes": 1480061,
+      "sha256": "8e5975fc7b3913d50243e342759449806747f31409e06490956845f721c0cf8b",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "cd859922f3cddea0b85d71621a2f798e",
+      "color_space": "linear"
+    },
+    "roughness": {
+      "path": "wall/polyhaven-white_sandstone_bricks/white_sandstone_bricks_rough_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/white_sandstone_bricks/white_sandstone_bricks_rough_1k.png",
+      "bytes": 949603,
+      "sha256": "80726ec17fb57ca03964b63da1ee4c851c3502d1d1ecdf490594a5c5dba758ad",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "0ad7de1ab009a1b7e4d230c8371e06e6",
+      "color_space": "linear"
+    },
+    "height": {
+      "path": "wall/polyhaven-white_sandstone_bricks/white_sandstone_bricks_disp_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/white_sandstone_bricks/white_sandstone_bricks_disp_1k.png",
+      "bytes": 1982143,
+      "sha256": "1b74c71a85479b27c1fe8aea57c0c503a2a0b2cc930678b170f44db2a5a5a779",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "0d1278867cb69db662ca03708fa2abba",
+      "color_space": "linear"
+    },
+    "ao": {
+      "path": "wall/polyhaven-white_sandstone_bricks/white_sandstone_bricks_ao_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/white_sandstone_bricks/white_sandstone_bricks_ao_1k.png",
+      "bytes": 511100,
+      "sha256": "cf46de10ea2a26ef3ff14ec2518026e2e6c93f953c03ba85d80b91fa4a5208d1",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "d9c18920542079b5624d255d2fc19eb8",
+      "color_space": "linear"
+    }
+  },
+  "downloaded_at": "2026-10-25T17:30:19.086954+00:00"
+}

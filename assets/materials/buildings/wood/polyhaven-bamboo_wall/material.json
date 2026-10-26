@@ -1,0 +1,104 @@
+{
+  "provider": "polyhaven",
+  "asset_id": "bamboo_wall",
+  "family": "wood",
+  "type_fr": "Paroi de bambous ronds",
+  "native_material_ids": [
+    "MAT-BAMBOO"
+  ],
+  "notes_fr": "Orienter les chaumes selon les éléments constructifs.",
+  "provenance": {
+    "page": "https://polyhaven.com/a/bamboo_wall",
+    "license": "CC0-1.0",
+    "license_url": "https://polyhaven.com/license",
+    "authors": {
+      "Amal Kumar": "All"
+    },
+    "name": "Bamboo Wall",
+    "tags": [
+      "wood",
+      "raw",
+      "bamboo",
+      "wood wall",
+      "wooden",
+      "culm",
+      "bamboo culm",
+      "bamboo pole",
+      "bamboo texture",
+      "organic",
+      "paneling"
+    ],
+    "api_info_url": "https://api.polyhaven.com/info/bamboo_wall"
+  },
+  "resolution": "1k",
+  "normal_convention": "OpenGL (+Y)",
+  "physical_extent_m": [
+    2.0,
+    2.0
+  ],
+  "scale_source": "Poly Haven API dimensions (mm converted to m)",
+  "height_amplitude_m": null,
+  "maps": {
+    "base_color": {
+      "path": "wood/polyhaven-bamboo_wall/bamboo_wall_diff_1k.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/bamboo_wall/bamboo_wall_diff_1k.jpg",
+      "bytes": 677974,
+      "sha256": "5321f063d8d03d8666202e6f0e10619598f4d2814712f1d08f28d11b689ee79a",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "ad341e84a39181511ce42178c4c4e174",
+      "color_space": "sRGB"
+    },
+    "normal_gl": {
+      "path": "wood/polyhaven-bamboo_wall/bamboo_wall_nor_gl_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/bamboo_wall/bamboo_wall_nor_gl_1k.png",
+      "bytes": 5211280,
+      "sha256": "17020bf4cfdd12836ad6b199c0d8ec9e679f268ca3f2e68feb82006c8e2944ae",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "d214e1e51988c3f15d9cd612a51e516c",
+      "color_space": "linear"
+    },
+    "roughness": {
+      "path": "wood/polyhaven-bamboo_wall/bamboo_wall_rough_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/bamboo_wall/bamboo_wall_rough_1k.png",
+      "bytes": 1707789,
+      "sha256": "f03fca5b78025adc2048295e0127a6f40bf87c4e884c54020920d3da6ae4bf0f",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "4c13b1b1f775d082dc043dcf4aeeadd8",
+      "color_space": "linear"
+    },
+    "height": {
+      "path": "wood/polyhaven-bamboo_wall/bamboo_wall_disp_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/bamboo_wall/bamboo_wall_disp_1k.png",
+      "bytes": 1406528,
+      "sha256": "738b3f1b097d674fdccbcb7f4abe90b575641a5b73c84effa4e575e7988655af",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "9997a52070910aa6a4c1f2abd5042429",
+      "color_space": "linear"
+    },
+    "ao": {
+      "path": "wood/polyhaven-bamboo_wall/bamboo_wall_ao_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/bamboo_wall/bamboo_wall_ao_1k.png",
+      "bytes": 1168179,
+      "sha256": "18b0e86ea77f23290f3fa3aec825e0df7e1b0e7ad99392c48c8d9887d26ce12a",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "13925854cc259f18ae519713d6d86d78",
+      "color_space": "linear"
+    }
+  },
+  "downloaded_at": "2026-10-25T17:31:06.529762+00:00"
+}

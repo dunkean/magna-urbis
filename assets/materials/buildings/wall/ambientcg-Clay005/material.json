@@ -1,0 +1,93 @@
+{
+  "provider": "ambientcg",
+  "asset_id": "Clay005",
+  "family": "wall",
+  "type_fr": "Argile lissée",
+  "native_material_ids": [
+    "MAT-MUD-PLASTER",
+    "MAT-COB",
+    "MAT-ADOBE",
+    "MAT-RAMMED-EARTH"
+  ],
+  "notes_fr": "Base lisse de terre ; ni joints d’adobe ni strates de pisé.",
+  "provenance": {
+    "page": "https://ambientcg.com/a/Clay005",
+    "license": "CC0-1.0",
+    "license_url": "https://docs.ambientcg.com/license/",
+    "authors": [
+      "ambientCG / Lennart Demes"
+    ],
+    "name": "Clay 005",
+    "tags": [
+      "005",
+      "5",
+      "clay",
+      "clay005",
+      "clean",
+      "flat",
+      "smooth"
+    ],
+    "api_info_url": "https://ambientcg.com/api/v2/full_json?id=Clay005&include=downloadData%2CdimensionsData%2CtagData",
+    "archive_url": "https://ambientcg.com/get?file=Clay005_1K-JPG.zip",
+    "archive_sha256": "ad7dd46445c99281367a015fe33179310c97ddc7ab3df6fdc59286e20f04457e"
+  },
+  "resolution": "1k",
+  "normal_convention": "OpenGL (+Y)",
+  "physical_extent_m": [
+    0.2,
+    0.2
+  ],
+  "scale_source": "ambientCG API dimensions (cm converted to m)",
+  "height_amplitude_m": null,
+  "maps": {
+    "base_color": {
+      "path": "wall/ambientcg-Clay005/Clay005_1K-JPG_Color.jpg",
+      "url": "https://ambientcg.com/get?file=Clay005_1K-JPG.zip",
+      "bytes": 852483,
+      "sha256": "10389821e482eb0e4cdc92b2198e65a8c5b1ae10f8c6ff5de8329da6af220d79",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "archive_member": "Clay005_1K-JPG_Color.jpg",
+      "color_space": "sRGB"
+    },
+    "height": {
+      "path": "wall/ambientcg-Clay005/Clay005_1K-JPG_Displacement.jpg",
+      "url": "https://ambientcg.com/get?file=Clay005_1K-JPG.zip",
+      "bytes": 734435,
+      "sha256": "11db8613a1d99a0378cf09c80c4366724b04b16e6235f840ae96bbaac7f46013",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "archive_member": "Clay005_1K-JPG_Displacement.jpg",
+      "color_space": "linear"
+    },
+    "normal_gl": {
+      "path": "wall/ambientcg-Clay005/Clay005_1K-JPG_NormalGL.jpg",
+      "url": "https://ambientcg.com/get?file=Clay005_1K-JPG.zip",
+      "bytes": 1840706,
+      "sha256": "4f3256d5f53d08f69690c86fc959e393149623116810f25dba78aae2cdc680c1",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "archive_member": "Clay005_1K-JPG_NormalGL.jpg",
+      "color_space": "linear"
+    },
+    "roughness": {
+      "path": "wall/ambientcg-Clay005/Clay005_1K-JPG_Roughness.jpg",
+      "url": "https://ambientcg.com/get?file=Clay005_1K-JPG.zip",
+      "bytes": 638771,
+      "sha256": "70230aa7237f30f71a079638769859aae4a601d649b94ef9e5814fe69299b0f2",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "archive_member": "Clay005_1K-JPG_Roughness.jpg",
+      "color_space": "linear"
+    }
+  },
+  "downloaded_at": "2026-10-25T17:29:45.838295+00:00"
+}

@@ -1,0 +1,102 @@
+{
+  "provider": "polyhaven",
+  "asset_id": "reed_roof_03",
+  "family": "roof",
+  "type_fr": "Chaume de roseaux",
+  "native_material_ids": [
+    "MAT-THATCH",
+    "MAT-REED"
+  ],
+  "notes_fr": "Roseaux et traverses visibles dans la carte ; vérifier leur répétition et ne pas doubler ces traverses avec une structure géométrique.",
+  "provenance": {
+    "page": "https://polyhaven.com/a/reed_roof_03",
+    "license": "CC0-1.0",
+    "license_url": "https://polyhaven.com/license",
+    "authors": {
+      "Rob Tuytel": "All"
+    },
+    "name": "Reed Roof 03",
+    "tags": [
+      "reed",
+      "rough",
+      "village",
+      "thatch",
+      "hay",
+      "straw",
+      "hut",
+      "medieval"
+    ],
+    "api_info_url": "https://api.polyhaven.com/info/reed_roof_03"
+  },
+  "resolution": "1k",
+  "normal_convention": "OpenGL (+Y)",
+  "physical_extent_m": [
+    2.5,
+    2.5
+  ],
+  "scale_source": "Poly Haven API dimensions (mm converted to m)",
+  "height_amplitude_m": null,
+  "maps": {
+    "base_color": {
+      "path": "roof/polyhaven-reed_roof_03/reed_roof_03_diff_1k.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/reed_roof_03/reed_roof_03_diff_1k.jpg",
+      "bytes": 661238,
+      "sha256": "be5e3d941b4c46215a2198f8b641df820b198afc6790149394299ec3c5e8d98d",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "04a976b9cce671035a35f74d5c24bdf4",
+      "color_space": "sRGB"
+    },
+    "normal_gl": {
+      "path": "roof/polyhaven-reed_roof_03/reed_roof_03_nor_gl_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/reed_roof_03/reed_roof_03_nor_gl_1k.png",
+      "bytes": 6624786,
+      "sha256": "fe96f374173b5888aadfd624993c34b1c5da3fa1966e24de930d512c625e8501",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "d42f7b8ba50c231430cace9f85866e01",
+      "color_space": "linear"
+    },
+    "roughness": {
+      "path": "roof/polyhaven-reed_roof_03/reed_roof_03_rough_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/reed_roof_03/reed_roof_03_rough_1k.png",
+      "bytes": 2266878,
+      "sha256": "fe480fcf529b777eda98219c64d585096580ba8f8841c205809e947b3525b892",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "8cb6fc8e08b2d1a209679cac14f042ab",
+      "color_space": "linear"
+    },
+    "height": {
+      "path": "roof/polyhaven-reed_roof_03/reed_roof_03_disp_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/reed_roof_03/reed_roof_03_disp_1k.png",
+      "bytes": 1975811,
+      "sha256": "5310243e852cba066fbf4805df1ecd73f7ed4bed3f9f269d7707fbdcc8cfc012",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "1ae23f5cf2963f7f3c76731d573db30b",
+      "color_space": "linear"
+    },
+    "ao": {
+      "path": "roof/polyhaven-reed_roof_03/reed_roof_03_ao_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/reed_roof_03/reed_roof_03_ao_1k.png",
+      "bytes": 2430195,
+      "sha256": "94866b5f993cf767a6105cf377a75cd96b81832fb412a20e98acc2b8e16022a0",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "389047c2c913ca17a7638dec6ab0be24",
+      "color_space": "linear"
+    }
+  },
+  "downloaded_at": "2026-10-25T17:29:34.272837+00:00"
+}

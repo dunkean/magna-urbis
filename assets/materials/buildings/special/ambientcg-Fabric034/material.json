@@ -1,0 +1,85 @@
+{
+  "provider": "ambientcg",
+  "asset_id": "Fabric034",
+  "family": "special",
+  "type_fr": "Feutre clair",
+  "native_material_ids": [
+    "MAT-FELT"
+  ],
+  "notes_fr": "Yourtes et enveloppes en feutre ; épaisseur et coutures à ajouter.",
+  "provenance": {
+    "page": "https://ambientcg.com/a/Fabric034",
+    "license": "CC0-1.0",
+    "license_url": "https://docs.ambientcg.com/license/",
+    "authors": [
+      "ambientCG / Lennart Demes"
+    ],
+    "name": "Fabric 034",
+    "tags": [
+      "34",
+      "fabric",
+      "felt",
+      "grey",
+      "white"
+    ],
+    "api_info_url": "https://ambientcg.com/api/v2/full_json?id=Fabric034&include=downloadData%2CdimensionsData%2CtagData",
+    "archive_url": "https://ambientcg.com/get?file=Fabric034_1K-JPG.zip",
+    "archive_sha256": "10ce98f31a2fd336d2bcb82731d35502932f38da42446980bc91a08166d5fb53"
+  },
+  "resolution": "1k",
+  "normal_convention": "OpenGL (+Y)",
+  "physical_extent_m": null,
+  "scale_source": "unknown",
+  "height_amplitude_m": null,
+  "maps": {
+    "base_color": {
+      "path": "special/ambientcg-Fabric034/Fabric034_1K-JPG_Color.jpg",
+      "url": "https://ambientcg.com/get?file=Fabric034_1K-JPG.zip",
+      "bytes": 1153031,
+      "sha256": "23d4da86236b98235a493d5ab9a79f0345d041fc721544fd5f148a76d96d1f01",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "archive_member": "Fabric034_1K-JPG_Color.jpg",
+      "color_space": "sRGB"
+    },
+    "height": {
+      "path": "special/ambientcg-Fabric034/Fabric034_1K-JPG_Displacement.jpg",
+      "url": "https://ambientcg.com/get?file=Fabric034_1K-JPG.zip",
+      "bytes": 821665,
+      "sha256": "a46cd53f5161256e902d6d34b82856792065829ea37f7d5411135a4bc8f919f8",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "archive_member": "Fabric034_1K-JPG_Displacement.jpg",
+      "color_space": "linear"
+    },
+    "normal_gl": {
+      "path": "special/ambientcg-Fabric034/Fabric034_1K-JPG_NormalGL.jpg",
+      "url": "https://ambientcg.com/get?file=Fabric034_1K-JPG.zip",
+      "bytes": 2096180,
+      "sha256": "2e8bcb8be56ff6f1f529ac0d9f798120210e54d98adc7e3d437904cf9287ce94",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "archive_member": "Fabric034_1K-JPG_NormalGL.jpg",
+      "color_space": "linear"
+    },
+    "roughness": {
+      "path": "special/ambientcg-Fabric034/Fabric034_1K-JPG_Roughness.jpg",
+      "url": "https://ambientcg.com/get?file=Fabric034_1K-JPG.zip",
+      "bytes": 686699,
+      "sha256": "768c4d09770b4198a7525d406e30c3a4c1197846a14e4cd67132fa91c7065893",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "archive_member": "Fabric034_1K-JPG_Roughness.jpg",
+      "color_space": "linear"
+    }
+  },
+  "downloaded_at": "2026-10-25T17:31:11.798865+00:00"
+}

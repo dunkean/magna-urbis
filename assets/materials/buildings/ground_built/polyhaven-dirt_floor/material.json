@@ -1,0 +1,101 @@
+{
+  "provider": "polyhaven",
+  "asset_id": "dirt_floor",
+  "family": "ground_built",
+  "type_fr": "Terre battue",
+  "native_material_ids": [],
+  "notes_fr": "Chemins de terre et gués ; usage voirie.",
+  "provenance": {
+    "page": "https://polyhaven.com/a/dirt_floor",
+    "license": "CC0-1.0",
+    "license_url": "https://polyhaven.com/license",
+    "authors": {
+      "eye-candy.xyz": "All"
+    },
+    "name": "Dirt Floor",
+    "tags": [
+      "dirt",
+      "ground",
+      "brown",
+      "nature",
+      "uneven",
+      "mud",
+      "debris",
+      "forest",
+      "pathway",
+      "woodland"
+    ],
+    "api_info_url": "https://api.polyhaven.com/info/dirt_floor"
+  },
+  "resolution": "1k",
+  "normal_convention": "OpenGL (+Y)",
+  "physical_extent_m": [
+    2.0699996948242188,
+    2.0699996948242188
+  ],
+  "scale_source": "Poly Haven API dimensions (mm converted to m)",
+  "height_amplitude_m": null,
+  "maps": {
+    "base_color": {
+      "path": "ground_built/polyhaven-dirt_floor/dirt_floor_diff_1k.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/dirt_floor/dirt_floor_diff_1k.jpg",
+      "bytes": 903417,
+      "sha256": "6c2e7f1c5eab8239fec561f255c607d0e3a86046925ba3a8b9340805efc1ab62",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "8cc8bfdfb74fd7761c6d518d13dc4e45",
+      "color_space": "sRGB"
+    },
+    "normal_gl": {
+      "path": "ground_built/polyhaven-dirt_floor/dirt_floor_nor_gl_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/dirt_floor/dirt_floor_nor_gl_1k.png",
+      "bytes": 5892641,
+      "sha256": "be9a1f51360e7bd44e65b34840408a1dfc48f8d1f3d5d9de79b658dfe83d21cc",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "0d25ea4ede83a17ea8fedb4102fcee9f",
+      "color_space": "linear"
+    },
+    "roughness": {
+      "path": "ground_built/polyhaven-dirt_floor/dirt_floor_rough_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/dirt_floor/dirt_floor_rough_1k.png",
+      "bytes": 2336546,
+      "sha256": "b4232b4e0cf8a8c5f88ac3925b8dcc4f1b20784f4369f7c53af301a09b1abaf4",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "ebe5f4f6c32ef56ae3645d03bc4b62e1",
+      "color_space": "linear"
+    },
+    "height": {
+      "path": "ground_built/polyhaven-dirt_floor/dirt_floor_disp_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/dirt_floor/dirt_floor_disp_1k.png",
+      "bytes": 2404795,
+      "sha256": "1a1def3f7a2bad5ebaed19fa7c7efdf923437a7427bf0a1da38dbd65be661419",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "53ca8eac661673980476af2e436ffc80",
+      "color_space": "linear"
+    },
+    "ao": {
+      "path": "ground_built/polyhaven-dirt_floor/dirt_floor_ao_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/dirt_floor/dirt_floor_ao_1k.png",
+      "bytes": 2542347,
+      "sha256": "8ca3fcc1c65f7b13d732af9746989f864b1f4aed4c50b87b9861d0fa3a61ab2e",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "b77782f245255d549e437845d22a8710",
+      "color_space": "linear"
+    }
+  },
+  "downloaded_at": "2026-10-25T17:47:22.807171+00:00"
+}

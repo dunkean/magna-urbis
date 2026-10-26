@@ -1,0 +1,107 @@
+{
+  "provider": "polyhaven",
+  "asset_id": "hinoki_planks",
+  "family": "wood",
+  "type_fr": "Planches de hinoki",
+  "native_material_ids": [
+    "MAT-TIMBER-POST",
+    "MAT-WOOD-MORTISE"
+  ],
+  "notes_fr": "Variante claire de bois à fil fin.",
+  "provenance": {
+    "page": "https://polyhaven.com/a/hinoki_planks",
+    "license": "CC0-1.0",
+    "license_url": "https://polyhaven.com/license",
+    "authors": {
+      "Charlotte Baglioni": "All"
+    },
+    "name": "Hinoki Planks",
+    "tags": [
+      "grain",
+      "wood",
+      "wooden planks",
+      "wooden plank",
+      "hinoki",
+      "knotty wood",
+      "knots",
+      "wooden",
+      "wooden knots",
+      "timber",
+      "plank",
+      "lumber",
+      "wood siding"
+    ],
+    "api_info_url": "https://api.polyhaven.com/info/hinoki_planks"
+  },
+  "resolution": "1k",
+  "normal_convention": "OpenGL (+Y)",
+  "physical_extent_m": [
+    1.8899999856948853,
+    1.8899999856948853
+  ],
+  "scale_source": "Poly Haven API dimensions (mm converted to m)",
+  "height_amplitude_m": null,
+  "maps": {
+    "base_color": {
+      "path": "wood/polyhaven-hinoki_planks/hinoki_planks_diff_1k.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/hinoki_planks/hinoki_planks_diff_1k.jpg",
+      "bytes": 527974,
+      "sha256": "a0166cad69a255971bf25f336c9947d2853b4dae5707c84a86f25f79aec347a5",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "7d59516b8cc9b8f55cd330099970e665",
+      "color_space": "sRGB"
+    },
+    "normal_gl": {
+      "path": "wood/polyhaven-hinoki_planks/hinoki_planks_nor_gl_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/hinoki_planks/hinoki_planks_nor_gl_1k.png",
+      "bytes": 5558656,
+      "sha256": "52522abdac94eb6cb355b3448ac0bfee1c0883bbf92ba348d52af5d9e5386437",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "565d60796a048e18770aca73999041cb",
+      "color_space": "linear"
+    },
+    "roughness": {
+      "path": "wood/polyhaven-hinoki_planks/hinoki_planks_rough_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/hinoki_planks/hinoki_planks_rough_1k.png",
+      "bytes": 1361740,
+      "sha256": "e5fb0431a4886f8ce07fde6940b6dd1d2be48ba15b0c7dda8de7639655e70800",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "d9e7a95026c8cbcb7d4719801a7e9dd2",
+      "color_space": "linear"
+    },
+    "height": {
+      "path": "wood/polyhaven-hinoki_planks/hinoki_planks_disp_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/hinoki_planks/hinoki_planks_disp_1k.png",
+      "bytes": 1549069,
+      "sha256": "bc69b0b3a0cd75ff342691c87ade7a5ec6ee03dcfc5252b3d43a3a9444a5efa3",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "6cfb83c60552e45df9d741093b775519",
+      "color_space": "linear"
+    },
+    "ao": {
+      "path": "wood/polyhaven-hinoki_planks/hinoki_planks_ao_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/hinoki_planks/hinoki_planks_ao_1k.png",
+      "bytes": 1761580,
+      "sha256": "15cee75cda8241673676057377872df6e82c6026d9db1ac578b803a5a9629554",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "140a93f7aed60f6e7ce7e97ca024537b",
+      "color_space": "linear"
+    }
+  },
+  "downloaded_at": "2026-10-25T17:31:02.748598+00:00"
+}

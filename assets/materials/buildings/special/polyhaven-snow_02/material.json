@@ -1,0 +1,101 @@
+{
+  "provider": "polyhaven",
+  "asset_id": "snow_02",
+  "family": "special",
+  "type_fr": "Neige claire douce",
+  "native_material_ids": [
+    "MAT-ICE-SNOW"
+  ],
+  "notes_fr": "Approximation de neige compactée ; blocs d’igloo et densité restent à définir.",
+  "provenance": {
+    "page": "https://polyhaven.com/a/snow_02",
+    "license": "CC0-1.0",
+    "license_url": "https://polyhaven.com/license",
+    "authors": {
+      "Rob Tuytel": "All"
+    },
+    "name": "Snow 02",
+    "tags": [
+      "snow",
+      "uneven",
+      "smooth",
+      "powdery",
+      "frosty",
+      "snowfield",
+      "soft",
+      "wintery"
+    ],
+    "api_info_url": "https://api.polyhaven.com/info/snow_02"
+  },
+  "resolution": "1k",
+  "normal_convention": "OpenGL (+Y)",
+  "physical_extent_m": [
+    2.0,
+    2.0
+  ],
+  "scale_source": "Poly Haven API dimensions (mm converted to m)",
+  "height_amplitude_m": null,
+  "maps": {
+    "base_color": {
+      "path": "special/polyhaven-snow_02/snow_02_diff_1k.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/snow_02/snow_02_diff_1k.jpg",
+      "bytes": 325497,
+      "sha256": "523a4e69c90b96d787dd69b897f29a2b3761a017024405c60aa630d1e8e9009a",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "fc54766c6b36ff298699115a619d440b",
+      "color_space": "sRGB"
+    },
+    "normal_gl": {
+      "path": "special/polyhaven-snow_02/snow_02_nor_gl_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/snow_02/snow_02_nor_gl_1k.png",
+      "bytes": 2118417,
+      "sha256": "110f8f0b4668c780412480a459d1276a52633f2d0af6c3eb30fd7ef90c6426fa",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "57d7f4e2501db746c862c6efee9fb38f",
+      "color_space": "linear"
+    },
+    "roughness": {
+      "path": "special/polyhaven-snow_02/snow_02_rough_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/snow_02/snow_02_rough_1k.png",
+      "bytes": 407196,
+      "sha256": "162da34b174b0f3339d612c3c27a6253d2ff5eb3632494710b9df295d54d6ebb",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "bf38d1229a80dcfb44669b43ba1a8d81",
+      "color_space": "linear"
+    },
+    "height": {
+      "path": "special/polyhaven-snow_02/snow_02_disp_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/snow_02/snow_02_disp_1k.png",
+      "bytes": 1889438,
+      "sha256": "7ea857f5b1f4c3f4cf99471fbd9e4b5885d25e5e79296a9d9aedd39bbf7035c4",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "ac190f15723eb0850917e8812b7a6808",
+      "color_space": "linear"
+    },
+    "ao": {
+      "path": "special/polyhaven-snow_02/snow_02_ao_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/snow_02/snow_02_ao_1k.png",
+      "bytes": 620285,
+      "sha256": "29b98a8c7436bd5d127b251059fc0548e9195371cbb941a3a6942ffcc1d483e8",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "de69407f5db75e2c4b1c90340b3bea84",
+      "color_space": "linear"
+    }
+  },
+  "downloaded_at": "2026-10-25T17:31:19.971048+00:00"
+}

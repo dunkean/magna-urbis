@@ -1,0 +1,104 @@
+{
+  "provider": "polyhaven",
+  "asset_id": "grey_roof_tiles",
+  "family": "roof",
+  "type_fr": "Tuiles céramiques grises",
+  "native_material_ids": [
+    "MAT-TILE-CLAY"
+  ],
+  "notes_fr": "Base sombre pour Asie orientale ; ne remplace pas les profils chinois, coréens ou japonais.",
+  "provenance": {
+    "page": "https://polyhaven.com/a/grey_roof_tiles",
+    "license": "CC0-1.0",
+    "license_url": "https://polyhaven.com/license",
+    "authors": {
+      "Rob Tuytel": "All"
+    },
+    "name": "Grey Roof Tiles",
+    "tags": [
+      "grey",
+      "moss",
+      "damp",
+      "mosscovered",
+      "ceramic tiles",
+      "overlapping",
+      "weathered",
+      "overlapping tiles",
+      "roofing material",
+      "roof tiles",
+      "traditional roof tiles"
+    ],
+    "api_info_url": "https://api.polyhaven.com/info/grey_roof_tiles"
+  },
+  "resolution": "1k",
+  "normal_convention": "OpenGL (+Y)",
+  "physical_extent_m": [
+    3.0,
+    3.0
+  ],
+  "scale_source": "Poly Haven API dimensions (mm converted to m)",
+  "height_amplitude_m": null,
+  "maps": {
+    "base_color": {
+      "path": "roof/polyhaven-grey_roof_tiles/grey_roof_tiles_diff_1k.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/grey_roof_tiles/grey_roof_tiles_diff_1k.jpg",
+      "bytes": 596156,
+      "sha256": "f61107b70cf56074c9db09384a332620c94c678ed2baabfae78029a8242e49a3",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "9a0d2c1ca66e79972c7c35cefa238cf7",
+      "color_space": "sRGB"
+    },
+    "normal_gl": {
+      "path": "roof/polyhaven-grey_roof_tiles/grey_roof_tiles_nor_gl_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/grey_roof_tiles/grey_roof_tiles_nor_gl_1k.png",
+      "bytes": 1412599,
+      "sha256": "95e5e98c35f3797c689881fbf88c966ff42f4c3ebb777fbe1002f7199d9c0640",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "928bb588c62f1424462fc37769ec4e6a",
+      "color_space": "linear"
+    },
+    "roughness": {
+      "path": "roof/polyhaven-grey_roof_tiles/grey_roof_tiles_rough_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/grey_roof_tiles/grey_roof_tiles_rough_1k.png",
+      "bytes": 1846721,
+      "sha256": "84714e5620cbac031417eb3acf0771c55dffb1d6117faaf4b0c5ff69cccd12be",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "d7368384653b3a976953a80691d8a0ea",
+      "color_space": "linear"
+    },
+    "height": {
+      "path": "roof/polyhaven-grey_roof_tiles/grey_roof_tiles_disp_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/grey_roof_tiles/grey_roof_tiles_disp_1k.png",
+      "bytes": 1833742,
+      "sha256": "fcee6b446c52ab4bb2792f6068da255680afa8e9c10a7f1ec94e89942c2c5072",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "dec4d68caf036352d01551d59eddb250",
+      "color_space": "linear"
+    },
+    "ao": {
+      "path": "roof/polyhaven-grey_roof_tiles/grey_roof_tiles_ao_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/grey_roof_tiles/grey_roof_tiles_ao_1k.png",
+      "bytes": 751495,
+      "sha256": "0d1f41220a84d17d695070c19eb1ea76159dcab7f72977f4f61077d065ecb760",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "53f1e5f5c2870529e0bd974f8d8d2646",
+      "color_space": "linear"
+    }
+  },
+  "downloaded_at": "2026-10-25T17:29:26.133489+00:00"
+}

@@ -1,0 +1,107 @@
+{
+  "provider": "polyhaven",
+  "asset_id": "roof_slates_02",
+  "family": "roof",
+  "type_fr": "Ardoises irrégulières patinées",
+  "native_material_ids": [
+    "MAT-SLATE"
+  ],
+  "notes_fr": "Rangs orientés selon la pente.",
+  "provenance": {
+    "page": "https://polyhaven.com/a/roof_slates_02",
+    "license": "CC0-1.0",
+    "license_url": "https://polyhaven.com/license",
+    "authors": {
+      "Rob Tuytel": "All"
+    },
+    "name": "Roof Slates 02",
+    "tags": [
+      "slates",
+      "uneven",
+      "old",
+      "tiles",
+      "weathered",
+      "discolored",
+      "slate roofing",
+      "slate",
+      "roofing material",
+      "roof",
+      "roofing",
+      "tile roofing",
+      "housing material",
+      "flat tiles"
+    ],
+    "api_info_url": "https://api.polyhaven.com/info/roof_slates_02"
+  },
+  "resolution": "1k",
+  "normal_convention": "OpenGL (+Y)",
+  "physical_extent_m": [
+    3.0,
+    3.0
+  ],
+  "scale_source": "Poly Haven API dimensions (mm converted to m)",
+  "height_amplitude_m": null,
+  "maps": {
+    "base_color": {
+      "path": "roof/polyhaven-roof_slates_02/roof_slates_02_diff_1k.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/roof_slates_02/roof_slates_02_diff_1k.jpg",
+      "bytes": 515626,
+      "sha256": "de3d2729ab385c5f7dd7106d3b435c737f6d2c3ea8883cea37de53cec2a34867",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "d7683ac63f6d46159790186f2e19919f",
+      "color_space": "sRGB"
+    },
+    "normal_gl": {
+      "path": "roof/polyhaven-roof_slates_02/roof_slates_02_nor_gl_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/roof_slates_02/roof_slates_02_nor_gl_1k.png",
+      "bytes": 5938579,
+      "sha256": "2c0f9debeb90dd8339ee6f0843b0acbb8a0d90b620c48282c9f0e8fb7d7a0ceb",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "1d3068e48dc21785e8dde02e04b223e2",
+      "color_space": "linear"
+    },
+    "roughness": {
+      "path": "roof/polyhaven-roof_slates_02/roof_slates_02_rough_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/roof_slates_02/roof_slates_02_rough_1k.png",
+      "bytes": 2098723,
+      "sha256": "f44071fa02c84518e5783998f5372b3dd9287c7e8056b19b6c9087e458028481",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "9ee0faddc3326510c6ab01484954495f",
+      "color_space": "linear"
+    },
+    "height": {
+      "path": "roof/polyhaven-roof_slates_02/roof_slates_02_disp_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/roof_slates_02/roof_slates_02_disp_1k.png",
+      "bytes": 1860530,
+      "sha256": "65e7f39146e049b6e564d5418f28be6a2bfcfc55162a2e27b0c9e89f04ee146b",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "7745b0dddd9331f74b4867d255455865",
+      "color_space": "linear"
+    },
+    "ao": {
+      "path": "roof/polyhaven-roof_slates_02/roof_slates_02_ao_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/roof_slates_02/roof_slates_02_ao_1k.png",
+      "bytes": 2237074,
+      "sha256": "52f2a6ce9e58e779ac4e592cdc1fbd7178c7a25c5d84fba9827549460f643712",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "2f01068faa47fcdefb54b76b9c224dc0",
+      "color_space": "linear"
+    }
+  },
+  "downloaded_at": "2026-10-25T17:29:27.478421+00:00"
+}

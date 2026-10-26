@@ -1,0 +1,103 @@
+{
+  "provider": "polyhaven",
+  "asset_id": "clay_roof_tiles",
+  "family": "roof",
+  "type_fr": "Tuiles de terre cuite patinées, profil courbe",
+  "native_material_ids": [
+    "MAT-TILE-CLAY"
+  ],
+  "notes_fr": "Lignes de tuiles à orienter vers l’égout ; ne décrit pas une tegula antique exacte.",
+  "provenance": {
+    "page": "https://polyhaven.com/a/clay_roof_tiles",
+    "license": "CC0-1.0",
+    "license_url": "https://polyhaven.com/license",
+    "authors": {
+      "Amal Kumar": "All"
+    },
+    "name": "Clay Roof Tiles",
+    "tags": [
+      "weathered",
+      "rough",
+      "worn",
+      "uneven",
+      "discolored",
+      "clay",
+      "roof",
+      "roofing",
+      "tile roofing",
+      "exterior"
+    ],
+    "api_info_url": "https://api.polyhaven.com/info/clay_roof_tiles"
+  },
+  "resolution": "1k",
+  "normal_convention": "OpenGL (+Y)",
+  "physical_extent_m": [
+    4.0,
+    4.0
+  ],
+  "scale_source": "Poly Haven API dimensions (mm converted to m)",
+  "height_amplitude_m": null,
+  "maps": {
+    "base_color": {
+      "path": "roof/polyhaven-clay_roof_tiles/clay_roof_tiles_diff_1k.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/clay_roof_tiles/clay_roof_tiles_diff_1k.jpg",
+      "bytes": 878367,
+      "sha256": "aac0f4e742a2cce21afb5dfb523b47c720c6a8e2782a312b823608fe3f80eae6",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "d862ac9932b09b0918b5971ddb77099c",
+      "color_space": "sRGB"
+    },
+    "normal_gl": {
+      "path": "roof/polyhaven-clay_roof_tiles/clay_roof_tiles_nor_gl_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/clay_roof_tiles/clay_roof_tiles_nor_gl_1k.png",
+      "bytes": 5756083,
+      "sha256": "c36aca4343b0e223ca7b4bc0f6600946c11a2e80ea995bc73abf30a109651956",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "4d77fe7956a96288a31cd357a12b218b",
+      "color_space": "linear"
+    },
+    "roughness": {
+      "path": "roof/polyhaven-clay_roof_tiles/clay_roof_tiles_rough_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/clay_roof_tiles/clay_roof_tiles_rough_1k.png",
+      "bytes": 1628339,
+      "sha256": "3fbb2fed1f31105bf1f398169ff3c655e5bcbd30512da2d32a534ec3f887f09e",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "0df576815543c5f633085f4c03e7bcc4",
+      "color_space": "linear"
+    },
+    "height": {
+      "path": "roof/polyhaven-clay_roof_tiles/clay_roof_tiles_disp_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/clay_roof_tiles/clay_roof_tiles_disp_1k.png",
+      "bytes": 1674345,
+      "sha256": "32a924b63e19d7e79e02be9f1da60c8d4e67723424c91a7efb04564c2c9c44db",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "7e09600a259d444e02a8f43090c5ae22",
+      "color_space": "linear"
+    },
+    "ao": {
+      "path": "roof/polyhaven-clay_roof_tiles/clay_roof_tiles_ao_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/clay_roof_tiles/clay_roof_tiles_ao_1k.png",
+      "bytes": 1406577,
+      "sha256": "b3b5ca43926d20f65d2f1b3ecc410d20e2d27f91b8144e90675946d5c7475ae1",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "1e383d9d55369710364d5006441c9afa",
+      "color_space": "linear"
+    }
+  },
+  "downloaded_at": "2026-10-25T17:29:20.585974+00:00"
+}

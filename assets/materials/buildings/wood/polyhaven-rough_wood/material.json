@@ -1,0 +1,106 @@
+{
+  "provider": "polyhaven",
+  "asset_id": "rough_wood",
+  "family": "wood",
+  "type_fr": "Bois brut à fil visible",
+  "native_material_ids": [
+    "MAT-TIMBER-POST",
+    "MAT-HALF-TIMBER",
+    "MAT-RAISED-POST",
+    "MAT-WOOD-MORTISE"
+  ],
+  "notes_fr": "Texture du bois seul ; poteaux, colombages et assemblages restent géométriques.",
+  "provenance": {
+    "page": "https://polyhaven.com/a/rough_wood",
+    "license": "CC0-1.0",
+    "license_url": "https://polyhaven.com/license",
+    "authors": {
+      "Rob Tuytel": "All"
+    },
+    "name": "Rough Wood",
+    "tags": [
+      "rough",
+      "weathered",
+      "old",
+      "uneven",
+      "aged",
+      "cracked",
+      "natural grain",
+      "natural wood",
+      "natural",
+      "timber"
+    ],
+    "api_info_url": "https://api.polyhaven.com/info/rough_wood"
+  },
+  "resolution": "1k",
+  "normal_convention": "OpenGL (+Y)",
+  "physical_extent_m": [
+    0.5,
+    0.5
+  ],
+  "scale_source": "Poly Haven API dimensions (mm converted to m)",
+  "height_amplitude_m": null,
+  "maps": {
+    "base_color": {
+      "path": "wood/polyhaven-rough_wood/rough_wood_diff_1k.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/rough_wood/rough_wood_diff_1k.jpg",
+      "bytes": 567074,
+      "sha256": "abc46d8e3163d911220f4ec3a4043b68d2b0c6d750513f80871211acfefb2a98",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "92d4b3dd46bab95248f5a7680b7882e7",
+      "color_space": "sRGB"
+    },
+    "normal_gl": {
+      "path": "wood/polyhaven-rough_wood/rough_wood_nor_gl_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/rough_wood/rough_wood_nor_gl_1k.png",
+      "bytes": 1910586,
+      "sha256": "acd7cfd9ebb63baed0a31e144ee60bb98d4f2b244121a0836c4dc2b7829608c8",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "81f9ca07bf2aceab03888336e279e529",
+      "color_space": "linear"
+    },
+    "roughness": {
+      "path": "wood/polyhaven-rough_wood/rough_wood_rough_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/rough_wood/rough_wood_rough_1k.png",
+      "bytes": 1789229,
+      "sha256": "0ea5fac374fa836ed284ddad6b9efa42b9677acaf9d2769b0263c00c5fe5ae67",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "671f057529aa1cb32886c4026d764d91",
+      "color_space": "linear"
+    },
+    "height": {
+      "path": "wood/polyhaven-rough_wood/rough_wood_disp_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/rough_wood/rough_wood_disp_1k.png",
+      "bytes": 1962712,
+      "sha256": "1baffcfcf71ea1975a6aefb21a144c49c035c5bf21946fb2bb6bf1036047efec",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "7f7cce46cd6460e7f6ab3f544b821d62",
+      "color_space": "linear"
+    },
+    "ao": {
+      "path": "wood/polyhaven-rough_wood/rough_wood_ao_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/rough_wood/rough_wood_ao_1k.png",
+      "bytes": 811994,
+      "sha256": "4d8b56eb1821c7bc4a20be0e89898e8b881f7d4f94fd63d079aa5a1fa241ed55",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "f589cb4ca72e8c0e702569aa0d02a43f",
+      "color_space": "linear"
+    }
+  },
+  "downloaded_at": "2026-10-25T17:30:40.697926+00:00"
+}

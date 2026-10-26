@@ -1,0 +1,104 @@
+{
+  "provider": "polyhaven",
+  "asset_id": "stone_tiles",
+  "family": "ground_built",
+  "type_fr": "Dalles de pierre plates",
+  "native_material_ids": [],
+  "notes_fr": "Places et ponts de pierre ; usage voirie.",
+  "provenance": {
+    "page": "https://polyhaven.com/a/stone_tiles",
+    "license": "CC0-1.0",
+    "license_url": "https://polyhaven.com/license",
+    "authors": {
+      "Christopher Melani": "All"
+    },
+    "name": "Stone Tiles",
+    "tags": [
+      "tiles",
+      "stones",
+      "flat",
+      "rocks",
+      "shiny",
+      "reflective",
+      "uneven",
+      "rock",
+      "floor",
+      "smooth",
+      "wall",
+      "pavement",
+      "pathway"
+    ],
+    "api_info_url": "https://api.polyhaven.com/info/stone_tiles"
+  },
+  "resolution": "1k",
+  "normal_convention": "OpenGL (+Y)",
+  "physical_extent_m": [
+    3.1700000762939453,
+    3.169999837875366
+  ],
+  "scale_source": "Poly Haven API dimensions (mm converted to m)",
+  "height_amplitude_m": null,
+  "maps": {
+    "base_color": {
+      "path": "ground_built/polyhaven-stone_tiles/stone_tiles_diff_1k.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/stone_tiles/stone_tiles_diff_1k.jpg",
+      "bytes": 787339,
+      "sha256": "4eec49c2e56010e32bd9cdeedeb0de941982b28877473f822b11b102da8357f3",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "2ee931a368a415f5cc2e916171e19bdf",
+      "color_space": "sRGB"
+    },
+    "normal_gl": {
+      "path": "ground_built/polyhaven-stone_tiles/stone_tiles_nor_gl_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/stone_tiles/stone_tiles_nor_gl_1k.png",
+      "bytes": 5550385,
+      "sha256": "6838fa1569269e287a2927bb38579e7497f70544962b6f0f59b310d190ef1187",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "e9d984ec7da5cafb24b0888ead5f44d0",
+      "color_space": "linear"
+    },
+    "roughness": {
+      "path": "ground_built/polyhaven-stone_tiles/stone_tiles_rough_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/stone_tiles/stone_tiles_rough_1k.png",
+      "bytes": 1919296,
+      "sha256": "3286fc2c383104a300d12689ef90cd98c1dddf58a051fed9c01f05731eee87ba",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "f39e5228951c4f685670a361c46c37d6",
+      "color_space": "linear"
+    },
+    "height": {
+      "path": "ground_built/polyhaven-stone_tiles/stone_tiles_disp_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/stone_tiles/stone_tiles_disp_1k.png",
+      "bytes": 1741082,
+      "sha256": "6e83f669ecfe1654c6cb4856b9b52026327559ffb7310a863ca44247c085e14e",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "b6015f6cee130d9e697bd7fc501f9dff",
+      "color_space": "linear"
+    },
+    "ao": {
+      "path": "ground_built/polyhaven-stone_tiles/stone_tiles_ao_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/stone_tiles/stone_tiles_ao_1k.png",
+      "bytes": 1908466,
+      "sha256": "eb836d4f3043ea08cf900c5937657508b4a0c10ba3a9594abec779ead6ba4aef",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "3d2aa7044e6d0c1978ee433425a82e5e",
+      "color_space": "linear"
+    }
+  },
+  "downloaded_at": "2026-10-25T17:47:18.207821+00:00"
+}

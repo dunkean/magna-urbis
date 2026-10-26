@@ -1,0 +1,102 @@
+{
+  "provider": "polyhaven",
+  "asset_id": "rough_linen",
+  "family": "special",
+  "type_fr": "Toile grossière tissée bleue",
+  "native_material_ids": [
+    "MAT-WOVEN-TEXTILE"
+  ],
+  "notes_fr": "Teinte bleue présente dans l’original ; prévoir une autre variante si une toile écrue est nécessaire. Tissage à orienter.",
+  "provenance": {
+    "page": "https://polyhaven.com/a/rough_linen",
+    "license": "CC0-1.0",
+    "license_url": "https://polyhaven.com/license",
+    "authors": {
+      "colormass": "Photography",
+      "Rico Cilliers": "Processing"
+    },
+    "name": "Rough Linen",
+    "tags": [
+      "blue",
+      "fine",
+      "textile ",
+      "fabric",
+      "woven",
+      "linen",
+      "weave",
+      "crosshatch"
+    ],
+    "api_info_url": "https://api.polyhaven.com/info/rough_linen"
+  },
+  "resolution": "1k",
+  "normal_convention": "OpenGL (+Y)",
+  "physical_extent_m": [
+    0.2707081392676629,
+    0.27129998803138733
+  ],
+  "scale_source": "Poly Haven API dimensions (mm converted to m)",
+  "height_amplitude_m": null,
+  "maps": {
+    "base_color": {
+      "path": "special/polyhaven-rough_linen/rough_linen_diff_1k.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/rough_linen/rough_linen_diff_1k.jpg",
+      "bytes": 835801,
+      "sha256": "04897d7611d7390ddf5b2c6f7273f448dfc48341fdbd1f4f207fa30b331d7f57",
+      "pixels": [
+        1024,
+        1026
+      ],
+      "source_md5": "663db789fb075462b685c1f740e58930",
+      "color_space": "sRGB"
+    },
+    "normal_gl": {
+      "path": "special/polyhaven-rough_linen/rough_linen_nor_gl_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/rough_linen/rough_linen_nor_gl_1k.png",
+      "bytes": 5653944,
+      "sha256": "ebafddfe30e304f9479e1005c800c4b0b2280fd8de9eeb1a96f92f57b999ea72",
+      "pixels": [
+        1024,
+        1026
+      ],
+      "source_md5": "46ebc7a3ca1e8650d7de6b5737b63c12",
+      "color_space": "linear"
+    },
+    "roughness": {
+      "path": "special/polyhaven-rough_linen/rough_linen_rough_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/rough_linen/rough_linen_rough_1k.png",
+      "bytes": 2045070,
+      "sha256": "040eeef8041e3c619e5a17a76bb5f376416ce17f1ac42a04003a67952cc206a3",
+      "pixels": [
+        1024,
+        1026
+      ],
+      "source_md5": "e9107cbc7aae80fe39d140a7fe592c79",
+      "color_space": "linear"
+    },
+    "height": {
+      "path": "special/polyhaven-rough_linen/rough_linen_disp_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/rough_linen/rough_linen_disp_1k.png",
+      "bytes": 1983815,
+      "sha256": "78b56241190055fce94238d587bc71504b155c5785ace241b455b256166c24a2",
+      "pixels": [
+        1024,
+        1026
+      ],
+      "source_md5": "f14e9d5ba191b0bc6f6a56c1c37811f5",
+      "color_space": "linear"
+    },
+    "ao": {
+      "path": "special/polyhaven-rough_linen/rough_linen_ao_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/rough_linen/rough_linen_ao_1k.png",
+      "bytes": 2042272,
+      "sha256": "3f9958470d582e5a5a8395acc68733984b8c045413755ef34a2e42da81e5a5b7",
+      "pixels": [
+        1024,
+        1026
+      ],
+      "source_md5": "ba55d8b3e59351a58bc5b1076a41b3ea",
+      "color_space": "linear"
+    }
+  },
+  "downloaded_at": "2026-10-25T17:31:19.132616+00:00"
+}

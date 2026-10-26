@@ -1,0 +1,100 @@
+{
+  "provider": "polyhaven",
+  "asset_id": "brown_mud_dry",
+  "family": "special",
+  "type_fr": "Terre brune sèche",
+  "native_material_ids": [
+    "MAT-MUD-PLASTER",
+    "MAT-COB",
+    "MAT-TURF"
+  ],
+  "notes_fr": "Surface pour terrasses en terre ; TURF seulement pour la tranche terreuse approchée.",
+  "provenance": {
+    "page": "https://polyhaven.com/a/brown_mud_dry",
+    "license": "CC0-1.0",
+    "license_url": "https://polyhaven.com/license",
+    "authors": {
+      "Rob Tuytel": "All"
+    },
+    "name": "Brown Mud Dry",
+    "tags": [
+      "mud",
+      "dirt",
+      "stones",
+      "dry",
+      "ground"
+    ],
+    "api_info_url": "https://api.polyhaven.com/info/brown_mud_dry"
+  },
+  "resolution": "1k",
+  "normal_convention": "OpenGL (+Y)",
+  "physical_extent_m": [
+    1.299996018409729,
+    1.299996018409729
+  ],
+  "scale_source": "Poly Haven API dimensions (mm converted to m)",
+  "height_amplitude_m": null,
+  "maps": {
+    "base_color": {
+      "path": "special/polyhaven-brown_mud_dry/brown_mud_dry_diff_1k.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/brown_mud_dry/brown_mud_dry_diff_1k.jpg",
+      "bytes": 920456,
+      "sha256": "a56281b644de614787340f3db45e28d2f72ec32fc19a442f99002bae0ab11398",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "0c0ad82fec60f091690c69c23657cb74",
+      "color_space": "sRGB"
+    },
+    "normal_gl": {
+      "path": "special/polyhaven-brown_mud_dry/brown_mud_dry_nor_gl_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/brown_mud_dry/brown_mud_dry_nor_gl_1k.png",
+      "bytes": 2602244,
+      "sha256": "725f8a314d112c0581bdd88d2ef990f6e0821cc072860bd207ff7fa2879411c8",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "9db228ea7ef6cd633a848250aab38676",
+      "color_space": "linear"
+    },
+    "roughness": {
+      "path": "special/polyhaven-brown_mud_dry/brown_mud_dry_rough_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/brown_mud_dry/brown_mud_dry_rough_1k.png",
+      "bytes": 1926111,
+      "sha256": "5810871fd9bf07528e5cf58c1f468b47e7c439f9ecdc0d56bac77eda1c75f1c4",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "5690709e1384ac5adf43597f2f43f73c",
+      "color_space": "linear"
+    },
+    "height": {
+      "path": "special/polyhaven-brown_mud_dry/brown_mud_dry_disp_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/brown_mud_dry/brown_mud_dry_disp_1k.png",
+      "bytes": 2046817,
+      "sha256": "8097421e9ab89d9cfcdfee1049c3a6959987b43dfd97948e43ebe3ccdb40ed49",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "f9d2c16e26632b87dc8d79408d5e25d8",
+      "color_space": "linear"
+    },
+    "ao": {
+      "path": "special/polyhaven-brown_mud_dry/brown_mud_dry_ao_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/brown_mud_dry/brown_mud_dry_ao_1k.png",
+      "bytes": 936102,
+      "sha256": "c5b270fc565c32c4e362634e1c3fa082203e5ca5b0606027aa57212d3218b08a",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "b7e154f16aed37412b70863f57c77130",
+      "color_space": "linear"
+    }
+  },
+  "downloaded_at": "2026-10-25T17:31:22.537280+00:00"
+}

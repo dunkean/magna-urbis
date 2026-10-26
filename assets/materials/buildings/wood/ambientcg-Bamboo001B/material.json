@@ -1,0 +1,112 @@
+{
+  "provider": "ambientcg",
+  "asset_id": "Bamboo001B",
+  "family": "wood",
+  "type_fr": "Bambou sec beige",
+  "native_material_ids": [
+    "MAT-BAMBOO"
+  ],
+  "notes_fr": "Variante claire pour parois et ossatures.",
+  "provenance": {
+    "page": "https://ambientcg.com/a/Bamboo001B",
+    "license": "CC0-1.0",
+    "license_url": "https://docs.ambientcg.com/license/",
+    "authors": [
+      "ambientCG / Lennart Demes"
+    ],
+    "name": "Bamboo 001 B",
+    "tags": [
+      "1",
+      "bamboo",
+      "beige",
+      "wall",
+      "wood"
+    ],
+    "api_info_url": "https://ambientcg.com/api/v2/full_json?id=Bamboo001B&include=downloadData%2CdimensionsData%2CtagData",
+    "archive_url": "https://ambientcg.com/get?file=Bamboo001B_1K-JPG.zip",
+    "archive_sha256": "ce0f2151edad9b8b8ec62a26b1a9554227570ff7480f0204f6b66d4c815ce374"
+  },
+  "resolution": "1k",
+  "normal_convention": "OpenGL (+Y)",
+  "physical_extent_m": [
+    1.3,
+    1.3
+  ],
+  "scale_source": "ambientCG API dimensions (cm converted to m)",
+  "height_amplitude_m": null,
+  "maps": {
+    "ao": {
+      "path": "wood/ambientcg-Bamboo001B/Bamboo001B_1K-JPG_AmbientOcclusion.jpg",
+      "url": "https://ambientcg.com/get?file=Bamboo001B_1K-JPG.zip",
+      "bytes": 276944,
+      "sha256": "2c7c3c8037969b46dd791e928c07c672c75a922fac2718289b4939453b3fd9ad",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "archive_member": "Bamboo001B_1K-JPG_AmbientOcclusion.jpg",
+      "color_space": "linear"
+    },
+    "base_color": {
+      "path": "wood/ambientcg-Bamboo001B/Bamboo001B_1K-JPG_Color.jpg",
+      "url": "https://ambientcg.com/get?file=Bamboo001B_1K-JPG.zip",
+      "bytes": 850303,
+      "sha256": "fd2dabd398f2e98dd2927a3cb14b906653532626b81088555d4db271fe2d3e53",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "archive_member": "Bamboo001B_1K-JPG_Color.jpg",
+      "color_space": "sRGB"
+    },
+    "height": {
+      "path": "wood/ambientcg-Bamboo001B/Bamboo001B_1K-JPG_Displacement.jpg",
+      "url": "https://ambientcg.com/get?file=Bamboo001B_1K-JPG.zip",
+      "bytes": 256573,
+      "sha256": "7f55eb1f874ad435e3206f6efbf3e947f1da7b80ef25baa24649d3a4d9e30c89",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "archive_member": "Bamboo001B_1K-JPG_Displacement.jpg",
+      "color_space": "linear"
+    },
+    "normal_gl": {
+      "path": "wood/ambientcg-Bamboo001B/Bamboo001B_1K-JPG_NormalGL.jpg",
+      "url": "https://ambientcg.com/get?file=Bamboo001B_1K-JPG.zip",
+      "bytes": 1020925,
+      "sha256": "924bc9d21bea4832351ae1837c72189e2cdd1572d238f7460d1b08fefe81f167",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "archive_member": "Bamboo001B_1K-JPG_NormalGL.jpg",
+      "color_space": "linear"
+    },
+    "opacity": {
+      "path": "wood/ambientcg-Bamboo001B/Bamboo001B_1K-JPG_Opacity.jpg",
+      "url": "https://ambientcg.com/get?file=Bamboo001B_1K-JPG.zip",
+      "bytes": 77677,
+      "sha256": "ae70d52a40b612478af846f0f817885960e01400e29b71372018ef833a137f19",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "archive_member": "Bamboo001B_1K-JPG_Opacity.jpg",
+      "color_space": "linear"
+    },
+    "roughness": {
+      "path": "wood/ambientcg-Bamboo001B/Bamboo001B_1K-JPG_Roughness.jpg",
+      "url": "https://ambientcg.com/get?file=Bamboo001B_1K-JPG.zip",
+      "bytes": 452832,
+      "sha256": "36903c95b3036bab7e5e646b4342e76284b064357eb099367786e67aa4007d01",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "archive_member": "Bamboo001B_1K-JPG_Roughness.jpg",
+      "color_space": "linear"
+    }
+  },
+  "downloaded_at": "2026-10-25T17:31:09.638043+00:00"
+}

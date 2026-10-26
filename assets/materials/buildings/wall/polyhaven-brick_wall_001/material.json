@@ -1,0 +1,99 @@
+{
+  "provider": "polyhaven",
+  "asset_id": "brick_wall_001",
+  "family": "wall",
+  "type_fr": "Briques cuites rouges appareillées",
+  "native_material_ids": [
+    "MAT-BURNT-BRICK"
+  ],
+  "notes_fr": "Conserver le module réel des briques et des joints.",
+  "provenance": {
+    "page": "https://polyhaven.com/a/brick_wall_001",
+    "license": "CC0-1.0",
+    "license_url": "https://polyhaven.com/license",
+    "authors": {
+      "Rob Tuytel": "Processing",
+      "Dimitrios Savva": "Photography"
+    },
+    "name": "Brick Wall 001",
+    "tags": [
+      "red",
+      "rough",
+      "industrial",
+      "plain",
+      "baked"
+    ],
+    "api_info_url": "https://api.polyhaven.com/info/brick_wall_001"
+  },
+  "resolution": "1k",
+  "normal_convention": "OpenGL (+Y)",
+  "physical_extent_m": [
+    3.0,
+    3.0
+  ],
+  "scale_source": "Poly Haven API dimensions (mm converted to m)",
+  "height_amplitude_m": null,
+  "maps": {
+    "base_color": {
+      "path": "wall/polyhaven-brick_wall_001/brick_wall_001_diffuse_1k.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/brick_wall_001/brick_wall_001_diffuse_1k.jpg",
+      "bytes": 574381,
+      "sha256": "6a1233ec0186703de830354d89f122991e61e67fb67e0846c7eaf6c5aefea902",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "955d2d4500eb549be0f2873305782798",
+      "color_space": "sRGB"
+    },
+    "normal_gl": {
+      "path": "wall/polyhaven-brick_wall_001/brick_wall_001_nor_gl_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/brick_wall_001/brick_wall_001_nor_gl_1k.png",
+      "bytes": 2562545,
+      "sha256": "0b51c30896a1706d8a5bb24448bcff791ec2e51458a90fef9498e61f74de9efe",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "99200c9dd07ae8bc85f5a027deea4b78",
+      "color_space": "linear"
+    },
+    "roughness": {
+      "path": "wall/polyhaven-brick_wall_001/brick_wall_001_rough_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/brick_wall_001/brick_wall_001_rough_1k.png",
+      "bytes": 412987,
+      "sha256": "ee186ae7aeaf5857acc9efb34b16678b774dd5c28d43b208b6b7786fb646b6e8",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "29388613a9bd406979e5d82ba58e7dec",
+      "color_space": "linear"
+    },
+    "height": {
+      "path": "wall/polyhaven-brick_wall_001/brick_wall_001_displacement_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/brick_wall_001/brick_wall_001_displacement_1k.png",
+      "bytes": 1874946,
+      "sha256": "52cb4288e90fafc2e3e17cf2a5699391e946b397c12ba68c0ea48ed47e3166af",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "2b5d461ef87420993fe52ff13753dcb1",
+      "color_space": "linear"
+    },
+    "ao": {
+      "path": "wall/polyhaven-brick_wall_001/brick_wall_001_ao_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/brick_wall_001/brick_wall_001_ao_1k.png",
+      "bytes": 470899,
+      "sha256": "9118618cca518fb3ef4fba9f2338a8265759b2143445347d732afaa181f4db76",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "a7194fda48f7fc52a5f3c915b6ec40bb",
+      "color_space": "linear"
+    }
+  },
+  "downloaded_at": "2026-10-25T17:30:10.657436+00:00"
+}

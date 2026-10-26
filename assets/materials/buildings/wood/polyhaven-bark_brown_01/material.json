@@ -1,0 +1,100 @@
+{
+  "provider": "polyhaven",
+  "asset_id": "bark_brown_01",
+  "family": "wood",
+  "type_fr": "Écorce brune rugueuse",
+  "native_material_ids": [
+    "MAT-BARK"
+  ],
+  "notes_fr": "Surface d’écorce, pas une paroi complète de plaques d’écorce.",
+  "provenance": {
+    "page": "https://polyhaven.com/a/bark_brown_01",
+    "license": "CC0-1.0",
+    "license_url": "https://polyhaven.com/license",
+    "authors": {
+      "Rob Tuytel": "All"
+    },
+    "name": "Bark Brown 01",
+    "tags": [
+      "bark",
+      "tree",
+      "forest",
+      "knots",
+      "bark grooves",
+      "tree bark",
+      "tree trunk"
+    ],
+    "api_info_url": "https://api.polyhaven.com/info/bark_brown_01"
+  },
+  "resolution": "1k",
+  "normal_convention": "OpenGL (+Y)",
+  "physical_extent_m": [
+    0.9999990463256836,
+    0.999998927116394
+  ],
+  "scale_source": "Poly Haven API dimensions (mm converted to m)",
+  "height_amplitude_m": null,
+  "maps": {
+    "base_color": {
+      "path": "wood/polyhaven-bark_brown_01/bark_brown_01_diff_1k.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/bark_brown_01/bark_brown_01_diff_1k.jpg",
+      "bytes": 729893,
+      "sha256": "4213441aebcb72b9911f5a860e9ce74a61a8f6ce3b9c23d1f204173e7e7f6066",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "b6d5dcde10b7cd1b36d70cd33a34724a",
+      "color_space": "sRGB"
+    },
+    "normal_gl": {
+      "path": "wood/polyhaven-bark_brown_01/bark_brown_01_nor_gl_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/bark_brown_01/bark_brown_01_nor_gl_1k.png",
+      "bytes": 2313976,
+      "sha256": "1d35617ca492eef42b85d877ef99a3a78389920858e37ffadf8f874fa3f18983",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "531b131bcb9f178357fa948bc06fae71",
+      "color_space": "linear"
+    },
+    "roughness": {
+      "path": "wood/polyhaven-bark_brown_01/bark_brown_01_rough_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/bark_brown_01/bark_brown_01_rough_1k.png",
+      "bytes": 1783164,
+      "sha256": "7c58dc22fb622f44c59d15a5f076d4651a81d24bbe7f40c1bada42604766f9d4",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "01853f420746ad757a3add59bcd1a9e4",
+      "color_space": "linear"
+    },
+    "height": {
+      "path": "wood/polyhaven-bark_brown_01/bark_brown_01_disp_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/bark_brown_01/bark_brown_01_disp_1k.png",
+      "bytes": 1911139,
+      "sha256": "3c84b1ddafeddd3352558be6c1a267119462fb87e601ffc4fc284b84d412a5b0",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "57cfa75bd8f00742a4acda4162a1d3ea",
+      "color_space": "linear"
+    },
+    "ao": {
+      "path": "wood/polyhaven-bark_brown_01/bark_brown_01_ao_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/bark_brown_01/bark_brown_01_ao_1k.png",
+      "bytes": 1002316,
+      "sha256": "ffb39f251abf02cc74de6898057150cc1168d03834f5c038e76ca65941967abd",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "a653abb7614e8d6abbb53a78256e4070",
+      "color_space": "linear"
+    }
+  },
+  "downloaded_at": "2026-10-25T17:31:11.789787+00:00"
+}

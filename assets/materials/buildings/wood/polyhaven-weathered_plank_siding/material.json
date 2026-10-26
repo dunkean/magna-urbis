@@ -1,0 +1,108 @@
+{
+  "provider": "polyhaven",
+  "asset_id": "weathered_plank_siding",
+  "family": "wood",
+  "type_fr": "Bardage de planches patinées",
+  "native_material_ids": [
+    "MAT-TIMBER-POST",
+    "MAT-DRIFTWOOD"
+  ],
+  "notes_fr": "DRIFTWOOD est une approximation de bois altéré, pas un bois flotté identifié.",
+  "provenance": {
+    "page": "https://polyhaven.com/a/weathered_plank_siding",
+    "license": "CC0-1.0",
+    "license_url": "https://polyhaven.com/license",
+    "authors": {
+      "Dimitrios Savva": "All"
+    },
+    "name": "Weathered Plank Siding",
+    "tags": [
+      "rough",
+      "wood",
+      "wooden planks",
+      "exterior",
+      "rustic",
+      "plank siding",
+      "weathered",
+      "weatherbeaten",
+      "horizontal planks",
+      "cladding",
+      "lap siding",
+      "lumber",
+      "timber",
+      "plank"
+    ],
+    "api_info_url": "https://api.polyhaven.com/info/weathered_plank_siding"
+  },
+  "resolution": "1k",
+  "normal_convention": "OpenGL (+Y)",
+  "physical_extent_m": [
+    1.5700000524520874,
+    1.5700000524520874
+  ],
+  "scale_source": "Poly Haven API dimensions (mm converted to m)",
+  "height_amplitude_m": null,
+  "maps": {
+    "base_color": {
+      "path": "wood/polyhaven-weathered_plank_siding/weathered_plank_siding_diff_1k.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/weathered_plank_siding/weathered_plank_siding_diff_1k.jpg",
+      "bytes": 567956,
+      "sha256": "dad0442114f1efd9a25195f2e2ac480693c2a6199f3987f4cfac4002b2820fbd",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "90f818fd61602ac7268ee89857e77396",
+      "color_space": "sRGB"
+    },
+    "normal_gl": {
+      "path": "wood/polyhaven-weathered_plank_siding/weathered_plank_siding_nor_gl_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/weathered_plank_siding/weathered_plank_siding_nor_gl_1k.png",
+      "bytes": 5156561,
+      "sha256": "0ab20ef6a7573a2768a582aed3dcf850ba5785019578cea3c116361894fb904f",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "4352c5cdf94ee1ab3eb211faa5d0ce16",
+      "color_space": "linear"
+    },
+    "roughness": {
+      "path": "wood/polyhaven-weathered_plank_siding/weathered_plank_siding_rough_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/weathered_plank_siding/weathered_plank_siding_rough_1k.png",
+      "bytes": 1678689,
+      "sha256": "ab80ae51d491657d9dc345ce7b56fcc6850e574a0162468b8abbd72f80f19ee2",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "477f69594bd6fa8f051beea6460dd940",
+      "color_space": "linear"
+    },
+    "height": {
+      "path": "wood/polyhaven-weathered_plank_siding/weathered_plank_siding_disp_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/weathered_plank_siding/weathered_plank_siding_disp_1k.png",
+      "bytes": 1339475,
+      "sha256": "c22b4f5808a54e88684e05fa5fdeb2a22139348eec117d964cbbeaf8e4abbd19",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "1bb06885943b8eba24692d314d064492",
+      "color_space": "linear"
+    },
+    "ao": {
+      "path": "wood/polyhaven-weathered_plank_siding/weathered_plank_siding_ao_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/weathered_plank_siding/weathered_plank_siding_ao_1k.png",
+      "bytes": 1644320,
+      "sha256": "241c6fde725da89a1724b400ec88635c6298682faddc1a558a71714764a2bef0",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "ba068aa40693c87706bf2da96b111daf",
+      "color_space": "linear"
+    }
+  },
+  "downloaded_at": "2026-10-25T17:30:49.332238+00:00"
+}

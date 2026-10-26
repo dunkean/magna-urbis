@@ -1,0 +1,109 @@
+{
+  "provider": "polyhaven",
+  "asset_id": "red_sandstone_wall",
+  "family": "wall",
+  "type_fr": "Mur de grès rouge",
+  "native_material_ids": [
+    "MAT-STONE-MORTAR"
+  ],
+  "notes_fr": "Maçonnerie rouge ; module à contrôler pour Inde et régions arides.",
+  "provenance": {
+    "page": "https://polyhaven.com/a/red_sandstone_wall",
+    "license": "CC0-1.0",
+    "license_url": "https://polyhaven.com/license",
+    "authors": {
+      "Amal Kumar": "All"
+    },
+    "name": "Red Sandstone Wall",
+    "tags": [
+      "rough",
+      "uneven",
+      "old",
+      "weathered",
+      "wall",
+      "worn",
+      "chipped",
+      "damaged",
+      "cracked",
+      "discolored",
+      "dirty",
+      "concrete",
+      "sandstone",
+      "crumbling",
+      "brown",
+      "dusty"
+    ],
+    "api_info_url": "https://api.polyhaven.com/info/red_sandstone_wall"
+  },
+  "resolution": "1k",
+  "normal_convention": "OpenGL (+Y)",
+  "physical_extent_m": [
+    2.0,
+    2.0
+  ],
+  "scale_source": "Poly Haven API dimensions (mm converted to m)",
+  "height_amplitude_m": null,
+  "maps": {
+    "base_color": {
+      "path": "wall/polyhaven-red_sandstone_wall/red_sandstone_wall_diff_1k.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/red_sandstone_wall/red_sandstone_wall_diff_1k.jpg",
+      "bytes": 656819,
+      "sha256": "0b4baed4fa6357aa61c498b5425f46ed771d112270dc54cb7a7343a52f33a6ff",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "8639968c2ce8b0b2e54cc6ca0c19cd76",
+      "color_space": "sRGB"
+    },
+    "normal_gl": {
+      "path": "wall/polyhaven-red_sandstone_wall/red_sandstone_wall_nor_gl_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/red_sandstone_wall/red_sandstone_wall_nor_gl_1k.png",
+      "bytes": 5668685,
+      "sha256": "f7013a95a319e3533ad7679e53fe14ea9ab732429eac1777b389b2f93004fdc8",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "ce22f258378909a9db607f375b8f3891",
+      "color_space": "linear"
+    },
+    "roughness": {
+      "path": "wall/polyhaven-red_sandstone_wall/red_sandstone_wall_rough_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/red_sandstone_wall/red_sandstone_wall_rough_1k.png",
+      "bytes": 1722265,
+      "sha256": "cf61d82dd7f52f9cd6f8e01f5e39c0e5b79d221c28b9feb24fa2fe7748489e0d",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "47a832f79854a959d4763c70af1b82ae",
+      "color_space": "linear"
+    },
+    "height": {
+      "path": "wall/polyhaven-red_sandstone_wall/red_sandstone_wall_disp_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/red_sandstone_wall/red_sandstone_wall_disp_1k.png",
+      "bytes": 1609439,
+      "sha256": "8071e6c7c5ad72a09ab1f92db9668c82793b88a571d39c418b409445050e31ad",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "15e1edf6e43c241e8502ff93299bb3a9",
+      "color_space": "linear"
+    },
+    "ao": {
+      "path": "wall/polyhaven-red_sandstone_wall/red_sandstone_wall_ao_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/red_sandstone_wall/red_sandstone_wall_ao_1k.png",
+      "bytes": 1393284,
+      "sha256": "3cfce98cf26451bad7b60ce6d2e6b3bc1eab4b18f247f55a43af312068c6c839",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "0f3e5e93aeb70d2fa7ee6c2bbedda645",
+      "color_space": "linear"
+    }
+  },
+  "downloaded_at": "2026-10-25T17:30:24.104021+00:00"
+}

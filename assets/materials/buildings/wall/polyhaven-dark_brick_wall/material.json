@@ -1,0 +1,101 @@
+{
+  "provider": "polyhaven",
+  "asset_id": "dark_brick_wall",
+  "family": "wall",
+  "type_fr": "Briques foncées patinées",
+  "native_material_ids": [
+    "MAT-BURNT-BRICK"
+  ],
+  "notes_fr": "Variante sombre pour façades en brique.",
+  "provenance": {
+    "page": "https://polyhaven.com/a/dark_brick_wall",
+    "license": "CC0-1.0",
+    "license_url": "https://polyhaven.com/license",
+    "authors": {
+      "Dario Barresi": "Processing",
+      "Dimitrios Savva": "Photography"
+    },
+    "name": "Dark Brick Wall",
+    "tags": [
+      "rough",
+      "uneven",
+      "wall",
+      "dry",
+      "bricks",
+      "brick",
+      "dark"
+    ],
+    "api_info_url": "https://api.polyhaven.com/info/dark_brick_wall"
+  },
+  "resolution": "1k",
+  "normal_convention": "OpenGL (+Y)",
+  "physical_extent_m": [
+    1.0499998331069946,
+    1.0499999523162842
+  ],
+  "scale_source": "Poly Haven API dimensions (mm converted to m)",
+  "height_amplitude_m": null,
+  "maps": {
+    "base_color": {
+      "path": "wall/polyhaven-dark_brick_wall/dark_brick_wall_diff_1k.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/dark_brick_wall/dark_brick_wall_diff_1k.jpg",
+      "bytes": 917619,
+      "sha256": "5ec2718d497fadae9492d0b6977a1de3f0867c9ccbf65a835f9bbe48d632a228",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "b1e82a72dddf31ae97c3b0b8fab0e690",
+      "color_space": "sRGB"
+    },
+    "normal_gl": {
+      "path": "wall/polyhaven-dark_brick_wall/dark_brick_wall_nor_gl_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/dark_brick_wall/dark_brick_wall_nor_gl_1k.png",
+      "bytes": 5929429,
+      "sha256": "fea4334c535ed4ca764a2b6640641dd4fa93d94917f9687f05f89fa97a837bd2",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "1c76d0e2ae8c6d288d12ae407219742d",
+      "color_space": "linear"
+    },
+    "roughness": {
+      "path": "wall/polyhaven-dark_brick_wall/dark_brick_wall_rough_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/dark_brick_wall/dark_brick_wall_rough_1k.png",
+      "bytes": 2257238,
+      "sha256": "73377f0fae48a2c4093c23b13452fe4f2ec0c2b9c713db2b581127a78ca63bc9",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "5922d509ff469ac0d7528c073638f95e",
+      "color_space": "linear"
+    },
+    "height": {
+      "path": "wall/polyhaven-dark_brick_wall/dark_brick_wall_disp_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/dark_brick_wall/dark_brick_wall_disp_1k.png",
+      "bytes": 1740838,
+      "sha256": "464ea9490c2e452995287a518402fe02e78982dda83c3a0241731b42823f08bd",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "98a5e6811e9f40e660f730766b4eec6d",
+      "color_space": "linear"
+    },
+    "ao": {
+      "path": "wall/polyhaven-dark_brick_wall/dark_brick_wall_ao_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/dark_brick_wall/dark_brick_wall_ao_1k.png",
+      "bytes": 2605150,
+      "sha256": "30dc61d14d00797d75a10b8bfcf9d3c9e6bed25570ceae01226911a0269240d6",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "9713683634f1d90e1af5dfe4b15fd07c",
+      "color_space": "linear"
+    }
+  },
+  "downloaded_at": "2026-10-25T17:30:13.555385+00:00"
+}

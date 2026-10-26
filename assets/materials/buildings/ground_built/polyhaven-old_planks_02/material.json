@@ -1,0 +1,95 @@
+{
+  "provider": "polyhaven",
+  "asset_id": "old_planks_02",
+  "family": "ground_built",
+  "type_fr": "Planches anciennes de tablier",
+  "native_material_ids": [],
+  "notes_fr": "Tabliers de ponts en bois ; usage voirie.",
+  "provenance": {
+    "page": "https://polyhaven.com/a/old_planks_02",
+    "license": "CC0-1.0",
+    "license_url": "https://polyhaven.com/license",
+    "authors": {
+      "Rob Tuytel": "All"
+    },
+    "name": "Old Planks 02",
+    "tags": [
+      "planks",
+      "old",
+      "damaged",
+      "worn"
+    ],
+    "api_info_url": "https://api.polyhaven.com/info/old_planks_02"
+  },
+  "resolution": "1k",
+  "normal_convention": "OpenGL (+Y)",
+  "physical_extent_m": [
+    2.0,
+    2.0
+  ],
+  "scale_source": "Poly Haven API dimensions (mm converted to m)",
+  "height_amplitude_m": null,
+  "maps": {
+    "base_color": {
+      "path": "ground_built/polyhaven-old_planks_02/old_planks_02_diff_1k.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/old_planks_02/old_planks_02_diff_1k.jpg",
+      "bytes": 334200,
+      "sha256": "fda6019406a61ce5eb0ccb1cb92fd8f196eca6421cb2e118791ffa51ea005d45",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "c3f0cbe96566c8c0001e325475065fd4",
+      "color_space": "sRGB"
+    },
+    "normal_gl": {
+      "path": "ground_built/polyhaven-old_planks_02/old_planks_02_nor_gl_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/old_planks_02/old_planks_02_nor_gl_1k.png",
+      "bytes": 1716785,
+      "sha256": "7caa5eeaa46a66ee18a7282094756aaad2532fceb41c85c3c42adca3b7fddee8",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "64d050aa5ec6324eccb4912fadb1913d",
+      "color_space": "linear"
+    },
+    "roughness": {
+      "path": "ground_built/polyhaven-old_planks_02/old_planks_02_rough_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/old_planks_02/old_planks_02_rough_1k.png",
+      "bytes": 1790636,
+      "sha256": "fe2e3502bf0d5c58eddb80a4bbf631afc568ef3bf9958fd7bc4d5ca8479f6a63",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "7aec857464bca571045cc33ab6193576",
+      "color_space": "linear"
+    },
+    "height": {
+      "path": "ground_built/polyhaven-old_planks_02/old_planks_02_disp_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/old_planks_02/old_planks_02_disp_1k.png",
+      "bytes": 1825948,
+      "sha256": "85658e5e26a6b8c0242dc490686ee1ad9b47bd8813daf7b7fcce97752b391f13",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "d0275137a85b08699b9ef93300d470d9",
+      "color_space": "linear"
+    },
+    "ao": {
+      "path": "ground_built/polyhaven-old_planks_02/old_planks_02_ao_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/old_planks_02/old_planks_02_ao_1k.png",
+      "bytes": 661056,
+      "sha256": "7f9e13bbc8eb574daabae7b833d423231bfec51dd4c2cb2087ae128ab4340d0c",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "03e9e0884a7ec0259d78ab3bd0f046d7",
+      "color_space": "linear"
+    }
+  },
+  "downloaded_at": "2026-10-25T17:47:26.570066+00:00"
+}

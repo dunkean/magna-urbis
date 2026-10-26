@@ -1,0 +1,99 @@
+{
+  "provider": "polyhaven",
+  "asset_id": "medieval_wood",
+  "family": "wood",
+  "type_fr": "Bois ancien marqué",
+  "native_material_ids": [
+    "MAT-TIMBER-POST",
+    "MAT-HALF-TIMBER",
+    "MAT-WOOD-MORTISE"
+  ],
+  "notes_fr": "Variante vieillie ; traces de surface conservées.",
+  "provenance": {
+    "page": "https://polyhaven.com/a/medieval_wood",
+    "license": "CC0-1.0",
+    "license_url": "https://polyhaven.com/license",
+    "authors": {
+      "Rob Tuytel": "All"
+    },
+    "name": "Medieval Wood",
+    "tags": [
+      "planks",
+      "weathered",
+      "old",
+      "uneven"
+    ],
+    "api_info_url": "https://api.polyhaven.com/info/medieval_wood"
+  },
+  "resolution": "1k",
+  "normal_convention": "OpenGL (+Y)",
+  "physical_extent_m": [
+    2.0,
+    2.0
+  ],
+  "scale_source": "Poly Haven API dimensions (mm converted to m)",
+  "height_amplitude_m": null,
+  "maps": {
+    "base_color": {
+      "path": "wood/polyhaven-medieval_wood/medieval_wood_diff_1k.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/medieval_wood/medieval_wood_diff_1k.jpg",
+      "bytes": 747216,
+      "sha256": "66a36635dc3f2db696dbb6939b1d4f86c0b666c898c1b55c6b5d6d9f1896b43e",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "6c464ccb8e5dc5b1ab1b93c05dcc4a8c",
+      "color_space": "sRGB"
+    },
+    "normal_gl": {
+      "path": "wood/polyhaven-medieval_wood/medieval_wood_nor_gl_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/medieval_wood/medieval_wood_nor_gl_1k.png",
+      "bytes": 1946766,
+      "sha256": "79a6a4302a0e5ce97030c2a5b144dd77b19514a1492860be21dc3c3d8229c46f",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "0f06c9e0ee1b06a6e7136cd8d656b7c7",
+      "color_space": "linear"
+    },
+    "roughness": {
+      "path": "wood/polyhaven-medieval_wood/medieval_wood_rough_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/medieval_wood/medieval_wood_rough_1k.png",
+      "bytes": 1926742,
+      "sha256": "0eb91a428c10537f16b43e93839da8bd129643205174aff054cbd55816f1a96e",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "4fcdc6b1e080c5b6ae797a029e9a3b2c",
+      "color_space": "linear"
+    },
+    "height": {
+      "path": "wood/polyhaven-medieval_wood/medieval_wood_disp_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/medieval_wood/medieval_wood_disp_1k.png",
+      "bytes": 2032047,
+      "sha256": "5df7ae5ec435b31a9cd61e96935adf2056335823f8588790cbd13d24970152ea",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "2da8373dbebc223f2b6857389853fe83",
+      "color_space": "linear"
+    },
+    "ao": {
+      "path": "wood/polyhaven-medieval_wood/medieval_wood_ao_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/medieval_wood/medieval_wood_ao_1k.png",
+      "bytes": 856562,
+      "sha256": "c8b9b851cd8cb9cd012378d06b09d1d1b1df5ee585c18b2bc368f64ccc12ea46",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "ea11df135641a4ad9e83846b7379e487",
+      "color_space": "linear"
+    }
+  },
+  "downloaded_at": "2026-10-25T17:30:46.537448+00:00"
+}

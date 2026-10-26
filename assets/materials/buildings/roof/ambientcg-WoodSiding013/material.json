@@ -1,0 +1,100 @@
+{
+  "provider": "ambientcg",
+  "asset_id": "WoodSiding013",
+  "family": "roof",
+  "type_fr": "Bardeaux de bois, variante",
+  "native_material_ids": [
+    "MAT-WOOD-SHINGLES"
+  ],
+  "notes_fr": "Vérifier recouvrement et module ; pas de silhouette générée par la texture.",
+  "provenance": {
+    "page": "https://ambientcg.com/a/WoodSiding013",
+    "license": "CC0-1.0",
+    "license_url": "https://docs.ambientcg.com/license/",
+    "authors": [
+      "ambientCG / Lennart Demes"
+    ],
+    "name": "Wood Siding 013",
+    "tags": [
+      "13",
+      "shingles",
+      "siding",
+      "weathered",
+      "wood"
+    ],
+    "api_info_url": "https://ambientcg.com/api/v2/full_json?id=WoodSiding013&include=downloadData%2CdimensionsData%2CtagData",
+    "archive_url": "https://ambientcg.com/get?file=WoodSiding013_1K-JPG.zip",
+    "archive_sha256": "f6389c9630f90c48ba3831369def19c5cacaa75c036ec5a6d7621eb23af8075a"
+  },
+  "resolution": "1k",
+  "normal_convention": "OpenGL (+Y)",
+  "physical_extent_m": [
+    1.4,
+    1.4
+  ],
+  "scale_source": "ambientCG API dimensions (cm converted to m)",
+  "height_amplitude_m": null,
+  "maps": {
+    "ao": {
+      "path": "roof/ambientcg-WoodSiding013/WoodSiding013_1K-JPG_AmbientOcclusion.jpg",
+      "url": "https://ambientcg.com/get?file=WoodSiding013_1K-JPG.zip",
+      "bytes": 731452,
+      "sha256": "c132a2a06a918d664056cec2e0f23b8f74d03a65cce439e09865ce9f7de4c53b",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "archive_member": "WoodSiding013_1K-JPG_AmbientOcclusion.jpg",
+      "color_space": "linear"
+    },
+    "base_color": {
+      "path": "roof/ambientcg-WoodSiding013/WoodSiding013_1K-JPG_Color.jpg",
+      "url": "https://ambientcg.com/get?file=WoodSiding013_1K-JPG.zip",
+      "bytes": 1076071,
+      "sha256": "1d02899d68bdf1aa7b73580a8ec0cf666da3c5d85d74314223ee83ae1c2c35cb",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "archive_member": "WoodSiding013_1K-JPG_Color.jpg",
+      "color_space": "sRGB"
+    },
+    "height": {
+      "path": "roof/ambientcg-WoodSiding013/WoodSiding013_1K-JPG_Displacement.jpg",
+      "url": "https://ambientcg.com/get?file=WoodSiding013_1K-JPG.zip",
+      "bytes": 328864,
+      "sha256": "4184bd55f20cbf5ab1d461507377f776d5ad2c48a3f3dcf47ee1d3c9aa1c5b8f",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "archive_member": "WoodSiding013_1K-JPG_Displacement.jpg",
+      "color_space": "linear"
+    },
+    "normal_gl": {
+      "path": "roof/ambientcg-WoodSiding013/WoodSiding013_1K-JPG_NormalGL.jpg",
+      "url": "https://ambientcg.com/get?file=WoodSiding013_1K-JPG.zip",
+      "bytes": 1419892,
+      "sha256": "4a69a76e6d7c66d5a82eceb9a597824415d424f6a90a3d45445057650824b161",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "archive_member": "WoodSiding013_1K-JPG_NormalGL.jpg",
+      "color_space": "linear"
+    },
+    "roughness": {
+      "path": "roof/ambientcg-WoodSiding013/WoodSiding013_1K-JPG_Roughness.jpg",
+      "url": "https://ambientcg.com/get?file=WoodSiding013_1K-JPG.zip",
+      "bytes": 626255,
+      "sha256": "2b9ef2bb3a151df137a317736174be3909989ce309f3c660bce6c1a88ea80181",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "archive_member": "WoodSiding013_1K-JPG_Roughness.jpg",
+      "color_space": "linear"
+    }
+  },
+  "downloaded_at": "2026-10-25T17:29:42.302381+00:00"
+}

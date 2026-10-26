@@ -1,0 +1,98 @@
+{
+  "provider": "polyhaven",
+  "asset_id": "sandstone_blocks_04",
+  "family": "wall",
+  "type_fr": "Blocs de grès taillés",
+  "native_material_ids": [
+    "MAT-STONE-ASHLAR"
+  ],
+  "notes_fr": "Pierre de taille ; ce grès ne doit pas être nommé calcaire.",
+  "provenance": {
+    "page": "https://polyhaven.com/a/sandstone_blocks_04",
+    "license": "CC0-1.0",
+    "license_url": "https://polyhaven.com/license",
+    "authors": {
+      "Rob Tuytel": "All"
+    },
+    "name": "Sandstone Blocks 04",
+    "tags": [
+      "rough",
+      "sandstone",
+      "flat",
+      "uneven",
+      "old"
+    ],
+    "api_info_url": "https://api.polyhaven.com/info/sandstone_blocks_04"
+  },
+  "resolution": "1k",
+  "normal_convention": "OpenGL (+Y)",
+  "physical_extent_m": [
+    3.0,
+    3.0
+  ],
+  "scale_source": "Poly Haven API dimensions (mm converted to m)",
+  "height_amplitude_m": null,
+  "maps": {
+    "base_color": {
+      "path": "wall/polyhaven-sandstone_blocks_04/sandstone_blocks_04_diff_1k.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/sandstone_blocks_04/sandstone_blocks_04_diff_1k.jpg",
+      "bytes": 499843,
+      "sha256": "a1399a26a60b5024a832c8dd0f1a27bc7ad6c4d06fd60143d803ff6d93b778ed",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "77d432c47fa77c827fb06a2f6986d054",
+      "color_space": "sRGB"
+    },
+    "normal_gl": {
+      "path": "wall/polyhaven-sandstone_blocks_04/sandstone_blocks_04_nor_gl_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/sandstone_blocks_04/sandstone_blocks_04_nor_gl_1k.png",
+      "bytes": 1619120,
+      "sha256": "89c0e63c39c22e0e72ec9bd2c508216599cdd6c3b9087ab9854c0c16e713f987",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "03b67cdc9e583049b289032b5db560b7",
+      "color_space": "linear"
+    },
+    "roughness": {
+      "path": "wall/polyhaven-sandstone_blocks_04/sandstone_blocks_04_rough_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/sandstone_blocks_04/sandstone_blocks_04_rough_1k.png",
+      "bytes": 717785,
+      "sha256": "a5ce587bda70bca377dbda7c71b45bb69f79d3cda2b87bfcf67ede7da0a6dae7",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "aab5958410a26779a0ecb19a2e3ea54f",
+      "color_space": "linear"
+    },
+    "height": {
+      "path": "wall/polyhaven-sandstone_blocks_04/sandstone_blocks_04_disp_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/sandstone_blocks_04/sandstone_blocks_04_disp_1k.png",
+      "bytes": 1987947,
+      "sha256": "8846248e08a1037bd2df79fe967a108ac1364dd22dc4e140ed80ca5ea994fd77",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "0da038e9626e124423a79d1e20a7804c",
+      "color_space": "linear"
+    },
+    "ao": {
+      "path": "wall/polyhaven-sandstone_blocks_04/sandstone_blocks_04_ao_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/sandstone_blocks_04/sandstone_blocks_04_ao_1k.png",
+      "bytes": 717829,
+      "sha256": "939f33bed81491a5429a288c44b4860acfd2fe5bd1667f1d8ad513293508fe87",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "113421dbdef04dbb7bd6209129b7e9d0",
+      "color_space": "linear"
+    }
+  },
+  "downloaded_at": "2026-10-25T17:30:16.377020+00:00"
+}

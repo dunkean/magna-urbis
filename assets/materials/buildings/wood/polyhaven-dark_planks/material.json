@@ -1,0 +1,104 @@
+{
+  "provider": "polyhaven",
+  "asset_id": "dark_planks",
+  "family": "wood",
+  "type_fr": "Planches sombres",
+  "native_material_ids": [
+    "MAT-TIMBER-POST",
+    "MAT-HALF-TIMBER"
+  ],
+  "notes_fr": "Variante de teinte déjà présente dans les cartes.",
+  "provenance": {
+    "page": "https://polyhaven.com/a/dark_planks",
+    "license": "CC0-1.0",
+    "license_url": "https://polyhaven.com/license",
+    "authors": {
+      "Rob Tuytel": "All"
+    },
+    "name": "Dark Planks",
+    "tags": [
+      "planks",
+      "cabin",
+      "shed",
+      "overlapping planks ",
+      "nail holes",
+      "weathered",
+      "distressed",
+      "knots",
+      "plank",
+      "wooden planks"
+    ],
+    "api_info_url": "https://api.polyhaven.com/info/dark_planks"
+  },
+  "resolution": "1k",
+  "normal_convention": "OpenGL (+Y)",
+  "physical_extent_m": [
+    2.0,
+    2.0
+  ],
+  "scale_source": "Poly Haven API dimensions (mm converted to m)",
+  "height_amplitude_m": null,
+  "maps": {
+    "base_color": {
+      "path": "wood/polyhaven-dark_planks/dark_planks_diff_1k.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/dark_planks/dark_planks_diff_1k.jpg",
+      "bytes": 379047,
+      "sha256": "df66caef5af1bbd98d2efa553053e8c5700f2ebd4824832d3fa8aac3ebb85290",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "8fcc9957942c4a187269030c2cdf1342",
+      "color_space": "sRGB"
+    },
+    "normal_gl": {
+      "path": "wood/polyhaven-dark_planks/dark_planks_nor_gl_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/dark_planks/dark_planks_nor_gl_1k.png",
+      "bytes": 1528201,
+      "sha256": "8344125c4b1141749bf6a40537af4b03462f253936a575d3f2d0f537916cef7a",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "a07a12ffdbf5bc5092dfb0504aa55ddd",
+      "color_space": "linear"
+    },
+    "roughness": {
+      "path": "wood/polyhaven-dark_planks/dark_planks_rough_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/dark_planks/dark_planks_rough_1k.png",
+      "bytes": 1668382,
+      "sha256": "ea7d015e1c2ef39c734126ff7bb1411e8353a6e45a66b26612985e1c3457a888",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "c4a4b8a590d90c549fbc633b5d87f090",
+      "color_space": "linear"
+    },
+    "height": {
+      "path": "wood/polyhaven-dark_planks/dark_planks_disp_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/dark_planks/dark_planks_disp_1k.png",
+      "bytes": 1863168,
+      "sha256": "c37cce878acb51748097eb80609ed8ac60753ab57bd7a6cbdf906e5e82e9ab90",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "e68d0fc0a704aca4d816e1ffaec41495",
+      "color_space": "linear"
+    },
+    "ao": {
+      "path": "wood/polyhaven-dark_planks/dark_planks_ao_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/dark_planks/dark_planks_ao_1k.png",
+      "bytes": 689998,
+      "sha256": "58e64e412232dc6ec18b4413fe5c7817a26ba73f31a7ab0394907c0b17613a9b",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "a4c125fc208126d253e720c491330860",
+      "color_space": "linear"
+    }
+  },
+  "downloaded_at": "2026-10-25T17:30:54.105701+00:00"
+}

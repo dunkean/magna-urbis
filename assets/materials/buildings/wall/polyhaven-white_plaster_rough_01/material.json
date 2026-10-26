@@ -1,0 +1,98 @@
+{
+  "provider": "polyhaven",
+  "asset_id": "white_plaster_rough_01",
+  "family": "wall",
+  "type_fr": "Enduit blanc rugueux et patiné",
+  "native_material_ids": [
+    "MAT-PLASTER-LIME"
+  ],
+  "notes_fr": "Variante de vieillissement pour murs et terrasses enduites.",
+  "provenance": {
+    "page": "https://polyhaven.com/a/white_plaster_rough_01",
+    "license": "CC0-1.0",
+    "license_url": "https://polyhaven.com/license",
+    "authors": {
+      "Rob Tuytel": "All"
+    },
+    "name": "White Plaster Rough 01",
+    "tags": [
+      "moss",
+      "smooth",
+      "flat",
+      "even",
+      "patches"
+    ],
+    "api_info_url": "https://api.polyhaven.com/info/white_plaster_rough_01"
+  },
+  "resolution": "1k",
+  "normal_convention": "OpenGL (+Y)",
+  "physical_extent_m": [
+    1.0,
+    1.0
+  ],
+  "scale_source": "Poly Haven API dimensions (mm converted to m)",
+  "height_amplitude_m": null,
+  "maps": {
+    "base_color": {
+      "path": "wall/polyhaven-white_plaster_rough_01/white_plaster_rough_01_diff_1k.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/white_plaster_rough_01/white_plaster_rough_01_diff_1k.jpg",
+      "bytes": 628421,
+      "sha256": "8d3b209ec5bbcee3db7a883c6c2eee982b7c18a268e6f43766ee540c7c28ebcb",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "c0964b0628920619f0364f19f2d9973d",
+      "color_space": "sRGB"
+    },
+    "normal_gl": {
+      "path": "wall/polyhaven-white_plaster_rough_01/white_plaster_rough_01_nor_gl_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/white_plaster_rough_01/white_plaster_rough_01_nor_gl_1k.png",
+      "bytes": 1349604,
+      "sha256": "db029b8cdb754eb503f0d29dd70ef4ea2615fafb9010bf25e6e9d065190f08e4",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "a68f5d57274a34ff526ceb640e6c8b6d",
+      "color_space": "linear"
+    },
+    "roughness": {
+      "path": "wall/polyhaven-white_plaster_rough_01/white_plaster_rough_01_rough_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/white_plaster_rough_01/white_plaster_rough_01_rough_1k.png",
+      "bytes": 860198,
+      "sha256": "3a8f65bc373028e0bc1dec54cc2f1ffc213e169984d6f976f1cb49f7565eeb21",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "6ee38a0f493ffa15cbc356ed81f43f09",
+      "color_space": "linear"
+    },
+    "height": {
+      "path": "wall/polyhaven-white_plaster_rough_01/white_plaster_rough_01_disp_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/white_plaster_rough_01/white_plaster_rough_01_disp_1k.png",
+      "bytes": 1998490,
+      "sha256": "707722c72a0cdbfa66908c79cc4e456c1ea72e45794ce232ee874a7fa623bb1f",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "1ef4d357b1ee8636c109f42ca4b7a751",
+      "color_space": "linear"
+    },
+    "ao": {
+      "path": "wall/polyhaven-white_plaster_rough_01/white_plaster_rough_01_ao_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/white_plaster_rough_01/white_plaster_rough_01_ao_1k.png",
+      "bytes": 608918,
+      "sha256": "83ccf4513ea524847bfe01d3ec132675daaec3af4b0013dfbb94ea57ab9afc14",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "f129146d30a1386a37a24c7a652776a4",
+      "color_space": "linear"
+    }
+  },
+  "downloaded_at": "2026-10-25T17:29:50.504181+00:00"
+}

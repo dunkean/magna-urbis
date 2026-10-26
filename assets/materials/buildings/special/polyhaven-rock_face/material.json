@@ -1,0 +1,101 @@
+{
+  "provider": "polyhaven",
+  "asset_id": "rock_face",
+  "family": "special",
+  "type_fr": "Roche naturelle affleurante",
+  "native_material_ids": [
+    "MAT-ROCKCUT",
+    "MAT-MEGALITH"
+  ],
+  "notes_fr": "Excavations et monolithes : la roche apporte la matière, les volumes viennent de la géométrie.",
+  "provenance": {
+    "page": "https://polyhaven.com/a/rock_face",
+    "license": "CC0-1.0",
+    "license_url": "https://polyhaven.com/license",
+    "authors": {
+      "Greg Zaal": "Photography",
+      "Dario Barresi": "Processing"
+    },
+    "name": "Rock Face",
+    "tags": [
+      "terrain",
+      "landscape",
+      "rock face",
+      "solid rock",
+      "cliff",
+      "solid"
+    ],
+    "api_info_url": "https://api.polyhaven.com/info/rock_face"
+  },
+  "resolution": "1k",
+  "normal_convention": "OpenGL (+Y)",
+  "physical_extent_m": [
+    2.380000114440918,
+    2.380000114440918
+  ],
+  "scale_source": "Poly Haven API dimensions (mm converted to m)",
+  "height_amplitude_m": null,
+  "maps": {
+    "base_color": {
+      "path": "special/polyhaven-rock_face/rock_face_diff_1k.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/rock_face/rock_face_diff_1k.jpg",
+      "bytes": 732721,
+      "sha256": "cce4b50517161264bdef196f5e247e328ca3739083cd6044ad3cc54d88cb82e2",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "220c637db6056b45e7c0a17e6ed8514e",
+      "color_space": "sRGB"
+    },
+    "normal_gl": {
+      "path": "special/polyhaven-rock_face/rock_face_nor_gl_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/rock_face/rock_face_nor_gl_1k.png",
+      "bytes": 5796887,
+      "sha256": "969bafe93574768ba2efc9874c6d96ce8326f8e8908f2b1734eddeca14c8ef10",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "9d13dc8de098d5c2a5bee844c317b946",
+      "color_space": "linear"
+    },
+    "roughness": {
+      "path": "special/polyhaven-rock_face/rock_face_rough_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/rock_face/rock_face_rough_1k.png",
+      "bytes": 1561719,
+      "sha256": "8166fea57c520baf39a1665b2b44e594400d96d2069b3062365566531048f352",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "76f3046b958dad65712f05aa87eb3318",
+      "color_space": "linear"
+    },
+    "height": {
+      "path": "special/polyhaven-rock_face/rock_face_disp_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/rock_face/rock_face_disp_1k.png",
+      "bytes": 1642402,
+      "sha256": "6277b01c2aaa6e76e1bac41f37e8bfce6408b9baf609824f8a95aa8e442b7fd7",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "8bf91d98c1a607239630e21968821621",
+      "color_space": "linear"
+    },
+    "ao": {
+      "path": "special/polyhaven-rock_face/rock_face_ao_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/rock_face/rock_face_ao_1k.png",
+      "bytes": 1756696,
+      "sha256": "766dba9fa9265ca51a5231802c5a696e88d85169b12e950213eeec48ca3c5406",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "7397cd43e327d6d46277e8b897c7e665",
+      "color_space": "linear"
+    }
+  },
+  "downloaded_at": "2026-10-25T17:31:25.689494+00:00"
+}

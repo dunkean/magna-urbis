@@ -1,0 +1,99 @@
+{
+  "provider": "polyhaven",
+  "asset_id": "gravel_ground_01",
+  "family": "ground_built",
+  "type_fr": "Gravier compacté",
+  "native_material_ids": [],
+  "notes_fr": "Ruelles et chemins ; usage voirie.",
+  "provenance": {
+    "page": "https://polyhaven.com/a/gravel_ground_01",
+    "license": "CC0-1.0",
+    "license_url": "https://polyhaven.com/license",
+    "authors": {
+      "Rob Tuytel": "All"
+    },
+    "name": "Gravel Ground 01",
+    "tags": [
+      "gravel",
+      "pathway",
+      "path",
+      "stones",
+      "ground",
+      "sidewalk",
+      "rural",
+      "farm"
+    ],
+    "api_info_url": "https://api.polyhaven.com/info/gravel_ground_01"
+  },
+  "resolution": "1k",
+  "normal_convention": "OpenGL (+Y)",
+  "physical_extent_m": [
+    3.0,
+    3.0
+  ],
+  "scale_source": "Poly Haven API dimensions (mm converted to m)",
+  "height_amplitude_m": null,
+  "maps": {
+    "base_color": {
+      "path": "ground_built/polyhaven-gravel_ground_01/gravel_ground_01_diff_1k.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/gravel_ground_01/gravel_ground_01_diff_1k.jpg",
+      "bytes": 954257,
+      "sha256": "c3a12b0e3a9399913158dd5cfa1d67ede066970acd1f99e5b89969ac13f89089",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "ee99ef89fb50cfeb198db369bb7151f0",
+      "color_space": "sRGB"
+    },
+    "normal_gl": {
+      "path": "ground_built/polyhaven-gravel_ground_01/gravel_ground_01_nor_gl_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/gravel_ground_01/gravel_ground_01_nor_gl_1k.png",
+      "bytes": 2422235,
+      "sha256": "4e20f2dd84237fb46b3ae7005b8134ec2f8f08c6dc57c69df7c24d28df7d83b0",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "08f7ae92c0e126ea2bd9bf72c34497df",
+      "color_space": "linear"
+    },
+    "roughness": {
+      "path": "ground_built/polyhaven-gravel_ground_01/gravel_ground_01_rough_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/gravel_ground_01/gravel_ground_01_rough_1k.png",
+      "bytes": 588347,
+      "sha256": "88cedfeef6e57ed0a57908a6063596cc82377d39978158f8e1ee85b5c22f3c8f",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "454efc5eb7f91dd08372a442a86381c6",
+      "color_space": "linear"
+    },
+    "height": {
+      "path": "ground_built/polyhaven-gravel_ground_01/gravel_ground_01_disp_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/gravel_ground_01/gravel_ground_01_disp_1k.png",
+      "bytes": 2153451,
+      "sha256": "90a54449b97c927bdfd3fe70f1a4fa022025044c75a9bacdb87cbbbe6b342a5e",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "75e2627757a8655ae1ce605fc94b6e8e",
+      "color_space": "linear"
+    },
+    "ao": {
+      "path": "ground_built/polyhaven-gravel_ground_01/gravel_ground_01_ao_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/gravel_ground_01/gravel_ground_01_ao_1k.png",
+      "bytes": 660754,
+      "sha256": "76f9868d5fbecc978ce360349cec53ac05454fafc20a7df3b5453823b148ef14",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "637489b47716d47e7f2cff7dab629f9b",
+      "color_space": "linear"
+    }
+  },
+  "downloaded_at": "2026-10-25T17:47:20.551457+00:00"
+}

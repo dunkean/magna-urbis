@@ -1,0 +1,105 @@
+{
+  "provider": "polyhaven",
+  "asset_id": "stone_wall",
+  "family": "wall",
+  "type_fr": "Mur de moellons irréguliers",
+  "native_material_ids": [
+    "MAT-STONE-MORTAR"
+  ],
+  "notes_fr": "Pierres et joints visibles ; assemblage non universel.",
+  "provenance": {
+    "page": "https://polyhaven.com/a/stone_wall",
+    "license": "CC0-1.0",
+    "license_url": "https://polyhaven.com/license",
+    "authors": {
+      "Dario Barresi": "Processing",
+      "Charlotte Baglioni": "Photography"
+    },
+    "name": "Stone Wall",
+    "tags": [
+      "rough",
+      "uneven",
+      "weathered",
+      "cracked",
+      "stones",
+      "worn",
+      "chipped",
+      "dry",
+      "rocks",
+      "rock",
+      "dirty"
+    ],
+    "api_info_url": "https://api.polyhaven.com/info/stone_wall"
+  },
+  "resolution": "1k",
+  "normal_convention": "OpenGL (+Y)",
+  "physical_extent_m": [
+    2.0,
+    2.0
+  ],
+  "scale_source": "Poly Haven API dimensions (mm converted to m)",
+  "height_amplitude_m": null,
+  "maps": {
+    "base_color": {
+      "path": "wall/polyhaven-stone_wall/stone_wall_diff_1k.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/stone_wall/stone_wall_diff_1k.jpg",
+      "bytes": 836975,
+      "sha256": "390969aead48d9a10ac731a5e0af8761cc4ed89faa02ba775b913930b4398d87",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "451e4c5e2309af341fcdc1f1d637b1d6",
+      "color_space": "sRGB"
+    },
+    "normal_gl": {
+      "path": "wall/polyhaven-stone_wall/stone_wall_nor_gl_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/stone_wall/stone_wall_nor_gl_1k.png",
+      "bytes": 5802456,
+      "sha256": "003d0e9ae1f2411b400c088cc92be89e99b9febe74034a75d2a3a51fd0a7c5af",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "574a859d4a02b16c7aa6601717c36e39",
+      "color_space": "linear"
+    },
+    "roughness": {
+      "path": "wall/polyhaven-stone_wall/stone_wall_rough_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/stone_wall/stone_wall_rough_1k.png",
+      "bytes": 2226710,
+      "sha256": "b6d643665c3b55725c40d9af3e926c0067556da962c9c63594c358c2ea52734a",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "bc807c1da342a1a42938aa4a234f7655",
+      "color_space": "linear"
+    },
+    "height": {
+      "path": "wall/polyhaven-stone_wall/stone_wall_disp_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/stone_wall/stone_wall_disp_1k.png",
+      "bytes": 1621430,
+      "sha256": "f1e0daadb0c14bafcdea0dd6332edc984775c7a0e87b0938ec29a8eecd305af0",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "5bac0ada1f51a497f7602f26183c5205",
+      "color_space": "linear"
+    },
+    "ao": {
+      "path": "wall/polyhaven-stone_wall/stone_wall_ao_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/stone_wall/stone_wall_ao_1k.png",
+      "bytes": 1808203,
+      "sha256": "8e136ee04656e2d651b42ad61ec8aa3cb17ef6a0cc27b969bf7924935cabcd2c",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "1e9c205abbca7599f67328007f4dbd08",
+      "color_space": "linear"
+    }
+  },
+  "downloaded_at": "2026-10-25T17:30:21.662797+00:00"
+}

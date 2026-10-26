@@ -1,0 +1,106 @@
+{
+  "provider": "polyhaven",
+  "asset_id": "red_plaster_weathered",
+  "family": "wall",
+  "type_fr": "Enduit rouge patiné",
+  "native_material_ids": [
+    "MAT-PLASTER-LIME"
+  ],
+  "notes_fr": "Pigmentation et usure photographiques conservées.",
+  "provenance": {
+    "page": "https://polyhaven.com/a/red_plaster_weathered",
+    "license": "CC0-1.0",
+    "license_url": "https://polyhaven.com/license",
+    "authors": {
+      "Amal Kumar": "All"
+    },
+    "name": "Red Plaster Weathered",
+    "tags": [
+      "weathered",
+      "red",
+      "wall",
+      "old",
+      "worn",
+      "damaged",
+      "discolored",
+      "stained",
+      "cracked",
+      "brown",
+      "dirty",
+      "plaster",
+      "house"
+    ],
+    "api_info_url": "https://api.polyhaven.com/info/red_plaster_weathered"
+  },
+  "resolution": "1k",
+  "normal_convention": "OpenGL (+Y)",
+  "physical_extent_m": [
+    2.0,
+    2.0
+  ],
+  "scale_source": "Poly Haven API dimensions (mm converted to m)",
+  "height_amplitude_m": null,
+  "maps": {
+    "base_color": {
+      "path": "wall/polyhaven-red_plaster_weathered/red_plaster_weathered_diff_1k.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/red_plaster_weathered/red_plaster_weathered_diff_1k.jpg",
+      "bytes": 710340,
+      "sha256": "b49519d865609f137b1796114234183f512d936a51989b74a17a67b47d3bf668",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "67a54f08b3cba2bc58616a377f65884f",
+      "color_space": "sRGB"
+    },
+    "normal_gl": {
+      "path": "wall/polyhaven-red_plaster_weathered/red_plaster_weathered_nor_gl_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/red_plaster_weathered/red_plaster_weathered_nor_gl_1k.png",
+      "bytes": 5868479,
+      "sha256": "19170d8d6186cdfb1454a903e540162ffc0f22f39a292e0bcd2cc18f6bb35388",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "0e3dad6e4eebf9ab3c24bd915a61c490",
+      "color_space": "linear"
+    },
+    "roughness": {
+      "path": "wall/polyhaven-red_plaster_weathered/red_plaster_weathered_rough_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/red_plaster_weathered/red_plaster_weathered_rough_1k.png",
+      "bytes": 1842724,
+      "sha256": "b83f7f6d6b1dcf78d27d54857e9d048d0f54d2d3577bac06c46b7bc716aad0a8",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "c664af4a2fbd1cf91b059f4c1987d495",
+      "color_space": "linear"
+    },
+    "height": {
+      "path": "wall/polyhaven-red_plaster_weathered/red_plaster_weathered_disp_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/red_plaster_weathered/red_plaster_weathered_disp_1k.png",
+      "bytes": 1709404,
+      "sha256": "f33b436c02996e0b9cc35a64486f86a58a1dd9ff1c87adf2c747fd14fdb7aa6d",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "2d82ad34bb9f2e84b803aa6d87d77dda",
+      "color_space": "linear"
+    },
+    "ao": {
+      "path": "wall/polyhaven-red_plaster_weathered/red_plaster_weathered_ao_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/red_plaster_weathered/red_plaster_weathered_ao_1k.png",
+      "bytes": 1446912,
+      "sha256": "1b36878e1b0d17e91d200b1c8a888da09053972b9329b3a8703ba98d80ed16c1",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "fd22970c76e9dbd1cbd16f73f9608e02",
+      "color_space": "linear"
+    }
+  },
+  "downloaded_at": "2026-10-25T17:30:04.184250+00:00"
+}

@@ -1,0 +1,103 @@
+{
+  "provider": "polyhaven",
+  "asset_id": "brown_leather",
+  "family": "special",
+  "type_fr": "Cuir brun plissé",
+  "native_material_ids": [
+    "MAT-HIDE"
+  ],
+  "notes_fr": "Variante moderne de cuir ; approximation pour peaux tendues historiques.",
+  "provenance": {
+    "page": "https://polyhaven.com/a/brown_leather",
+    "license": "CC0-1.0",
+    "license_url": "https://polyhaven.com/license",
+    "authors": {
+      "Rob Tuytel": "All"
+    },
+    "name": "Brown Leather",
+    "tags": [
+      "leather",
+      "brown",
+      "chair",
+      "seat",
+      "upholstery",
+      "vintage",
+      "matte",
+      "wrinkled",
+      "textile ",
+      "creased"
+    ],
+    "api_info_url": "https://api.polyhaven.com/info/brown_leather"
+  },
+  "resolution": "1k",
+  "normal_convention": "OpenGL (+Y)",
+  "physical_extent_m": [
+    0.4000000059604645,
+    0.40000003576278687
+  ],
+  "scale_source": "Poly Haven API dimensions (mm converted to m)",
+  "height_amplitude_m": null,
+  "maps": {
+    "base_color": {
+      "path": "special/polyhaven-brown_leather/brown_leather_albedo_1k.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/brown_leather/brown_leather_albedo_1k.jpg",
+      "bytes": 503348,
+      "sha256": "7e9e1d6566d1fd91d4ceb4966c4820361e85d53a7a828b6bab3b2a093a876cd1",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "080b3bf1372766ff2c7ff121ed07b5e8",
+      "color_space": "sRGB"
+    },
+    "normal_gl": {
+      "path": "special/polyhaven-brown_leather/brown_leather_nor_gl_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/brown_leather/brown_leather_nor_gl_1k.png",
+      "bytes": 1925895,
+      "sha256": "6354daff40330a2fcd6c1061912876ddc79889c960975adba336b013db5edcd5",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "dce9f0828b9dd7c3fb560f6c27b7c6d0",
+      "color_space": "linear"
+    },
+    "roughness": {
+      "path": "special/polyhaven-brown_leather/brown_leather_rough_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/brown_leather/brown_leather_rough_1k.png",
+      "bytes": 959330,
+      "sha256": "80f3b3b886e2ca6deb1b54559457fc50945745df021c7773e39e1bebc9d8daa1",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "0b8b2c76bbccb6811987f631d3ed4219",
+      "color_space": "linear"
+    },
+    "height": {
+      "path": "special/polyhaven-brown_leather/brown_leather_disp_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/brown_leather/brown_leather_disp_1k.png",
+      "bytes": 2033575,
+      "sha256": "3da0d0926efdc124a09961b966b83f42607c1e8a834e9ed5981456d663696c59",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "925c21ab29253ceb1a3df99bb4aa1528",
+      "color_space": "linear"
+    },
+    "ao": {
+      "path": "special/polyhaven-brown_leather/brown_leather_ao_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/brown_leather/brown_leather_ao_1k.png",
+      "bytes": 789048,
+      "sha256": "aa70b757229abd29c8f54789e6c41d48eb19258b42193830ae5c3fc2e7296cb0",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "3464b9fe3bcb1a6b267eb08ce5465f49",
+      "color_space": "linear"
+    }
+  },
+  "downloaded_at": "2026-10-25T17:31:17.039004+00:00"
+}

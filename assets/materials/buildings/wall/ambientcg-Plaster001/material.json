@@ -1,0 +1,93 @@
+{
+  "provider": "ambientcg",
+  "asset_id": "Plaster001",
+  "family": "wall",
+  "type_fr": "Crépi blanc uniforme",
+  "native_material_ids": [
+    "MAT-PLASTER-LIME"
+  ],
+  "notes_fr": "Base neutre pour variantes de teinte.",
+  "provenance": {
+    "page": "https://ambientcg.com/a/Plaster001",
+    "license": "CC0-1.0",
+    "license_url": "https://docs.ambientcg.com/license/",
+    "authors": [
+      "ambientCG / Lennart Demes"
+    ],
+    "name": "Plaster 001",
+    "tags": [
+      "001",
+      "1",
+      "clean",
+      "matte",
+      "modern",
+      "outdoor",
+      "plaster",
+      "rough",
+      "solid",
+      "stucco",
+      "surface",
+      "wall",
+      "white"
+    ],
+    "api_info_url": "https://ambientcg.com/api/v2/full_json?id=Plaster001&include=downloadData%2CdimensionsData%2CtagData",
+    "archive_url": "https://ambientcg.com/get?file=Plaster001_1K-JPG.zip",
+    "archive_sha256": "944b4831016e42ace4a89422e4e7190912ca2f7fed6f561354c48ec7bb54d3a4"
+  },
+  "resolution": "1k",
+  "normal_convention": "OpenGL (+Y)",
+  "physical_extent_m": null,
+  "scale_source": "unknown",
+  "height_amplitude_m": null,
+  "maps": {
+    "base_color": {
+      "path": "wall/ambientcg-Plaster001/Plaster001_1K-JPG_Color.jpg",
+      "url": "https://ambientcg.com/get?file=Plaster001_1K-JPG.zip",
+      "bytes": 828790,
+      "sha256": "d3fe43282859ab7293ad41f2fa3c29f02df077e5bc326cf90a65cc588a4ac5a4",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "archive_member": "Plaster001_1K-JPG_Color.jpg",
+      "color_space": "sRGB"
+    },
+    "height": {
+      "path": "wall/ambientcg-Plaster001/Plaster001_1K-JPG_Displacement.jpg",
+      "url": "https://ambientcg.com/get?file=Plaster001_1K-JPG.zip",
+      "bytes": 601909,
+      "sha256": "e022a44a2c2ce246de96594f0b7c75371ddd9f68a308d2bcb433131df76a278e",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "archive_member": "Plaster001_1K-JPG_Displacement.jpg",
+      "color_space": "linear"
+    },
+    "normal_gl": {
+      "path": "wall/ambientcg-Plaster001/Plaster001_1K-JPG_NormalGL.jpg",
+      "url": "https://ambientcg.com/get?file=Plaster001_1K-JPG.zip",
+      "bytes": 2091491,
+      "sha256": "ea293c335a0b9243f0a825573b81304b8f99e60b2c067e493d0792adf96dfc72",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "archive_member": "Plaster001_1K-JPG_NormalGL.jpg",
+      "color_space": "linear"
+    },
+    "roughness": {
+      "path": "wall/ambientcg-Plaster001/Plaster001_1K-JPG_Roughness.jpg",
+      "url": "https://ambientcg.com/get?file=Plaster001_1K-JPG.zip",
+      "bytes": 367391,
+      "sha256": "6028dbe3cb2ea250eacf3fb87d2c4e5ae8c2a7ff10ecad7883c27d721f2f8e88",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "archive_member": "Plaster001_1K-JPG_Roughness.jpg",
+      "color_space": "linear"
+    }
+  },
+  "downloaded_at": "2026-10-25T17:30:04.322101+00:00"
+}

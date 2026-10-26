@@ -1,0 +1,104 @@
+{
+  "provider": "polyhaven",
+  "asset_id": "blue_plaster_wall",
+  "family": "wall",
+  "type_fr": "Enduit bleu rugueux",
+  "native_material_ids": [
+    "MAT-PLASTER-LIME"
+  ],
+  "notes_fr": "Couleur présente dans l’asset ; usage culturel à choisir lors de l’intégration.",
+  "provenance": {
+    "page": "https://polyhaven.com/a/blue_plaster_wall",
+    "license": "CC0-1.0",
+    "license_url": "https://polyhaven.com/license",
+    "authors": {
+      "Dimitrios Savva": "All"
+    },
+    "name": "Blue Plaster Wall",
+    "tags": [
+      "rough",
+      "painted",
+      "cracking paint",
+      "cracks",
+      "bumpy",
+      "cracking",
+      "plaster",
+      "blue",
+      "plastering",
+      "painted concrete",
+      "chalky"
+    ],
+    "api_info_url": "https://api.polyhaven.com/info/blue_plaster_wall"
+  },
+  "resolution": "1k",
+  "normal_convention": "OpenGL (+Y)",
+  "physical_extent_m": [
+    2.0,
+    2.0
+  ],
+  "scale_source": "Poly Haven API dimensions (mm converted to m)",
+  "height_amplitude_m": null,
+  "maps": {
+    "base_color": {
+      "path": "wall/polyhaven-blue_plaster_wall/blue_plaster_wall_diff_1k.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/blue_plaster_wall/blue_plaster_wall_diff_1k.jpg",
+      "bytes": 593044,
+      "sha256": "e578c59abefcc0c2a1f95af5b16b3c3ba561efa5f0bc10d825e3a787fde84924",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "88f91871d26d251b544530f6f121c39b",
+      "color_space": "sRGB"
+    },
+    "normal_gl": {
+      "path": "wall/polyhaven-blue_plaster_wall/blue_plaster_wall_nor_gl_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/blue_plaster_wall/blue_plaster_wall_nor_gl_1k.png",
+      "bytes": 5481208,
+      "sha256": "d2e04d9e4803a33ebb29531d44f414c3f134c5b26955d6e6145e4853462ae00e",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "0ef245496d475687affbd970f8344351",
+      "color_space": "linear"
+    },
+    "roughness": {
+      "path": "wall/polyhaven-blue_plaster_wall/blue_plaster_wall_rough_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/blue_plaster_wall/blue_plaster_wall_rough_1k.png",
+      "bytes": 1640048,
+      "sha256": "cae80d23ef29382ac9a16b7169272caab1d7910279ad097cb771a1592ba97b34",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "86484c81a09bd6545a4df5fa73b4aa16",
+      "color_space": "linear"
+    },
+    "height": {
+      "path": "wall/polyhaven-blue_plaster_wall/blue_plaster_wall_disp_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/blue_plaster_wall/blue_plaster_wall_disp_1k.png",
+      "bytes": 1613943,
+      "sha256": "4ec417680620eec5d6d98a26a63b37ccdb56e17837f2e0a2d21cb0104035b5bf",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "fee383878e53b4314b2bc2ec8839a668",
+      "color_space": "linear"
+    },
+    "ao": {
+      "path": "wall/polyhaven-blue_plaster_wall/blue_plaster_wall_ao_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/blue_plaster_wall/blue_plaster_wall_ao_1k.png",
+      "bytes": 1852941,
+      "sha256": "e181784037b3940ea1a9ec25368f30aa70815c10da8d9359ba1288f0081cebe2",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "2740675d5e9fa679db4e0225ed628bba",
+      "color_space": "linear"
+    }
+  },
+  "downloaded_at": "2026-10-25T17:30:02.442572+00:00"
+}

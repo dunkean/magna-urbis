@@ -1,0 +1,97 @@
+{
+  "provider": "ambientcg",
+  "asset_id": "Rope001",
+  "family": "special",
+  "type_fr": "Cordage beige",
+  "native_material_ids": [
+    "MAT-CORDAGE"
+  ],
+  "notes_fr": "Surface de cordage ; géométrie des liens et diamètre à fournir.",
+  "provenance": {
+    "page": "https://ambientcg.com/a/Rope001",
+    "license": "CC0-1.0",
+    "license_url": "https://docs.ambientcg.com/license/",
+    "authors": [
+      "ambientCG / Lennart Demes"
+    ],
+    "name": "Rope 001",
+    "tags": [
+      "1",
+      "beige",
+      "light",
+      "rope",
+      "string"
+    ],
+    "api_info_url": "https://ambientcg.com/api/v2/full_json?id=Rope001&include=downloadData%2CdimensionsData%2CtagData",
+    "archive_url": "https://ambientcg.com/get?file=Rope001_1K-JPG.zip",
+    "archive_sha256": "0f4daf2c2720b9bd910369cab753090b0ad6560435526ec5aaab293bae5fdbfc"
+  },
+  "resolution": "1k",
+  "normal_convention": "OpenGL (+Y)",
+  "physical_extent_m": null,
+  "scale_source": "unknown",
+  "height_amplitude_m": null,
+  "maps": {
+    "base_color": {
+      "path": "special/ambientcg-Rope001/Rope001_1K-JPG_Color.jpg",
+      "url": "https://ambientcg.com/get?file=Rope001_1K-JPG.zip",
+      "bytes": 527156,
+      "sha256": "ce37f5da3b4762a2264d2d9a7f133f7caf8809f42f1216da506301e84f212e97",
+      "pixels": [
+        1024,
+        512
+      ],
+      "archive_member": "Rope001_1K-JPG_Color.jpg",
+      "color_space": "sRGB"
+    },
+    "height": {
+      "path": "special/ambientcg-Rope001/Rope001_1K-JPG_Displacement.jpg",
+      "url": "https://ambientcg.com/get?file=Rope001_1K-JPG.zip",
+      "bytes": 199324,
+      "sha256": "898609a67dd5ace9951885b38cc76ad458b6eac7ff6689ee020623af2feaf9fd",
+      "pixels": [
+        1024,
+        512
+      ],
+      "archive_member": "Rope001_1K-JPG_Displacement.jpg",
+      "color_space": "linear"
+    },
+    "metalness": {
+      "path": "special/ambientcg-Rope001/Rope001_1K-JPG_Metalness.jpg",
+      "url": "https://ambientcg.com/get?file=Rope001_1K-JPG.zip",
+      "bytes": 2209,
+      "sha256": "2ecca5789f5263c440bacc93c04a8175ff3ec093d58c77e6593456b31e2dbcc7",
+      "pixels": [
+        1024,
+        512
+      ],
+      "archive_member": "Rope001_1K-JPG_Metalness.jpg",
+      "color_space": "linear"
+    },
+    "normal_gl": {
+      "path": "special/ambientcg-Rope001/Rope001_1K-JPG_NormalGL.jpg",
+      "url": "https://ambientcg.com/get?file=Rope001_1K-JPG.zip",
+      "bytes": 860675,
+      "sha256": "bf1e55638aa756bd2512b0f6ab9de2fb5ceb9fc5db159607cf6b872cca9bb7fc",
+      "pixels": [
+        1024,
+        512
+      ],
+      "archive_member": "Rope001_1K-JPG_NormalGL.jpg",
+      "color_space": "linear"
+    },
+    "roughness": {
+      "path": "special/ambientcg-Rope001/Rope001_1K-JPG_Roughness.jpg",
+      "url": "https://ambientcg.com/get?file=Rope001_1K-JPG.zip",
+      "bytes": 248515,
+      "sha256": "b7092a728f1ef9165d52afea65a6c96d9ce927ff1150073afd86263c43f92054",
+      "pixels": [
+        1024,
+        512
+      ],
+      "archive_member": "Rope001_1K-JPG_Roughness.jpg",
+      "color_space": "linear"
+    }
+  },
+  "downloaded_at": "2026-10-25T17:31:24.126951+00:00"
+}

@@ -1,0 +1,100 @@
+{
+  "provider": "polyhaven",
+  "asset_id": "volcanic_rock_tiles",
+  "family": "wall",
+  "type_fr": "Parement de pierre volcanique sombre",
+  "native_material_ids": [
+    "MAT-BASALT",
+    "MAT-CLINKER"
+  ],
+  "notes_fr": "Roche volcanique annoncée ; composition basaltique et scories non certifiées.",
+  "provenance": {
+    "page": "https://polyhaven.com/a/volcanic_rock_tiles",
+    "license": "CC0-1.0",
+    "license_url": "https://polyhaven.com/license",
+    "authors": {
+      "Charlotte Baglioni": "All"
+    },
+    "name": "Volcanic Rock Tiles",
+    "tags": [
+      "wall",
+      "rocks",
+      "rock",
+      "mosaic",
+      "rough",
+      "volcanic rock"
+    ],
+    "api_info_url": "https://api.polyhaven.com/info/volcanic_rock_tiles"
+  },
+  "resolution": "1k",
+  "normal_convention": "OpenGL (+Y)",
+  "physical_extent_m": [
+    1.8000000715255737,
+    1.8000000715255737
+  ],
+  "scale_source": "Poly Haven API dimensions (mm converted to m)",
+  "height_amplitude_m": null,
+  "maps": {
+    "base_color": {
+      "path": "wall/polyhaven-volcanic_rock_tiles/volcanic_rock_tiles_diff_1k.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/volcanic_rock_tiles/volcanic_rock_tiles_diff_1k.jpg",
+      "bytes": 777492,
+      "sha256": "fc0de61673330dd57e9414332d9fe5da377aebafca24f560ceb9b29f3efec1d2",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "15f53f44ac13edf392185bb808c1d3b8",
+      "color_space": "sRGB"
+    },
+    "normal_gl": {
+      "path": "wall/polyhaven-volcanic_rock_tiles/volcanic_rock_tiles_nor_gl_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/volcanic_rock_tiles/volcanic_rock_tiles_nor_gl_1k.png",
+      "bytes": 5746719,
+      "sha256": "a74a7f75692947a0c8d967cb14f3ba6dc5b0414dd1a86e25e00d98765b96230b",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "8264ef89f05206f259b82077d5ba19f3",
+      "color_space": "linear"
+    },
+    "roughness": {
+      "path": "wall/polyhaven-volcanic_rock_tiles/volcanic_rock_tiles_rough_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/volcanic_rock_tiles/volcanic_rock_tiles_rough_1k.png",
+      "bytes": 1508750,
+      "sha256": "672ae6b5f9776a08f8729381db25e05cdb10e6daa612851c3d773ff7a588e000",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "033e1afb9ce5224dcd3de1c6d0ace063",
+      "color_space": "linear"
+    },
+    "height": {
+      "path": "wall/polyhaven-volcanic_rock_tiles/volcanic_rock_tiles_disp_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/volcanic_rock_tiles/volcanic_rock_tiles_disp_1k.png",
+      "bytes": 1771793,
+      "sha256": "8bf2ae1d6b43c718e51608cf5ebd1c807481cf08ee9d8b776a95b6b041916e3d",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "2e0c1f6d80cc2dd94201cf60917fdaf4",
+      "color_space": "linear"
+    },
+    "ao": {
+      "path": "wall/polyhaven-volcanic_rock_tiles/volcanic_rock_tiles_ao_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/volcanic_rock_tiles/volcanic_rock_tiles_ao_1k.png",
+      "bytes": 1879078,
+      "sha256": "7b48b0d5aafe02fcfb01bd353880a4724d44911908b265532ba186cb6deb304f",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "bf50934a1e8e9d787d3fbbe35e0b8db6",
+      "color_space": "linear"
+    }
+  },
+  "downloaded_at": "2026-10-25T17:30:38.305649+00:00"
+}

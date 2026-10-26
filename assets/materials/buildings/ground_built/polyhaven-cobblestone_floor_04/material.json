@@ -1,0 +1,95 @@
+{
+  "provider": "polyhaven",
+  "asset_id": "cobblestone_floor_04",
+  "family": "ground_built",
+  "type_fr": "Pavé de galets et pierres arrondies",
+  "native_material_ids": [],
+  "notes_fr": "Voirie principale ; usage voirie, non rattaché à un matériau natif de bâtiment.",
+  "provenance": {
+    "page": "https://polyhaven.com/a/cobblestone_floor_04",
+    "license": "CC0-1.0",
+    "license_url": "https://polyhaven.com/license",
+    "authors": {
+      "Rob Tuytel": "All"
+    },
+    "name": "Cobblestone Floor 04",
+    "tags": [
+      "cobblestone",
+      "moss",
+      "damp",
+      "wet"
+    ],
+    "api_info_url": "https://api.polyhaven.com/info/cobblestone_floor_04"
+  },
+  "resolution": "1k",
+  "normal_convention": "OpenGL (+Y)",
+  "physical_extent_m": [
+    1.5,
+    1.5
+  ],
+  "scale_source": "Poly Haven API dimensions (mm converted to m)",
+  "height_amplitude_m": null,
+  "maps": {
+    "base_color": {
+      "path": "ground_built/polyhaven-cobblestone_floor_04/cobblestone_floor_04_diff_1k.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/cobblestone_floor_04/cobblestone_floor_04_diff_1k.jpg",
+      "bytes": 575440,
+      "sha256": "b0662eaec38a2056ef00abc66d1a0e8da421d704ed3ff8f9e268ad4c7b2aa58c",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "b57737026948ed8b4fce9b0cb3c91e81",
+      "color_space": "sRGB"
+    },
+    "normal_gl": {
+      "path": "ground_built/polyhaven-cobblestone_floor_04/cobblestone_floor_04_nor_gl_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/cobblestone_floor_04/cobblestone_floor_04_nor_gl_1k.png",
+      "bytes": 6073334,
+      "sha256": "f7f3d803a4f132bd8a813b78a93df9696a51be9073d2dbc1a47600edb2b90fdf",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "64fee09bc07a110b4d07b9189c042acf",
+      "color_space": "linear"
+    },
+    "roughness": {
+      "path": "ground_built/polyhaven-cobblestone_floor_04/cobblestone_floor_04_rough_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/cobblestone_floor_04/cobblestone_floor_04_rough_1k.png",
+      "bytes": 2277356,
+      "sha256": "f6ea17e1929c6e3b2675653460e7a79af31af9dc93c954529244e26d8320cfc4",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "3d5aecb73d57cc703919beb4b066b683",
+      "color_space": "linear"
+    },
+    "height": {
+      "path": "ground_built/polyhaven-cobblestone_floor_04/cobblestone_floor_04_disp_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/cobblestone_floor_04/cobblestone_floor_04_disp_1k.png",
+      "bytes": 1951058,
+      "sha256": "98321d77ebae71be9e897b01653e2b570cbca121e0515c06c1ca4b424a3441d8",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "702b6725945c233f2781b800b5c77301",
+      "color_space": "linear"
+    },
+    "ao": {
+      "path": "ground_built/polyhaven-cobblestone_floor_04/cobblestone_floor_04_ao_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/cobblestone_floor_04/cobblestone_floor_04_ao_1k.png",
+      "bytes": 2258059,
+      "sha256": "861ea7ba54d6c7d0d9d970be39ced408e1ab09087245769797e834121c67bafb",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "faa124f91dfe7dbfd2dee765292c9629",
+      "color_space": "linear"
+    }
+  },
+  "downloaded_at": "2026-10-25T17:47:19.426947+00:00"
+}

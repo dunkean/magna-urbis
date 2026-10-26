@@ -1,0 +1,109 @@
+{
+  "provider": "polyhaven",
+  "asset_id": "thatch_roof_angled",
+  "family": "roof",
+  "type_fr": "Chaume de paille incliné",
+  "native_material_ids": [
+    "MAT-THATCH"
+  ],
+  "notes_fr": "Orientation native à inspecter avant création des UV.",
+  "provenance": {
+    "page": "https://polyhaven.com/a/thatch_roof_angled",
+    "license": "CC0-1.0",
+    "license_url": "https://polyhaven.com/license",
+    "authors": {
+      "Rob Tuytel": "Processing",
+      "Dimitrios Savva": "Photography"
+    },
+    "name": "Thatch Roof Angled",
+    "tags": [
+      "rough",
+      "thatch",
+      "reed",
+      "roof",
+      "roofing",
+      "structure",
+      "structural",
+      "weathered",
+      "straw",
+      "grass",
+      "hut",
+      "medieval",
+      "village",
+      "house",
+      "hay"
+    ],
+    "api_info_url": "https://api.polyhaven.com/info/thatch_roof_angled"
+  },
+  "resolution": "1k",
+  "normal_convention": "OpenGL (+Y)",
+  "physical_extent_m": [
+    0.5399999618530273,
+    0.5399999618530273
+  ],
+  "scale_source": "Poly Haven API dimensions (mm converted to m)",
+  "height_amplitude_m": null,
+  "maps": {
+    "base_color": {
+      "path": "roof/polyhaven-thatch_roof_angled/thatch_roof_angled_diff_1k.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/thatch_roof_angled/thatch_roof_angled_diff_1k.jpg",
+      "bytes": 860319,
+      "sha256": "ad84b9bf0a826c6e573f4bac09a0b96f33aec673a7e31cdd360667dc355f3599",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "645a32cd470a4b14aa033793d0e7aa83",
+      "color_space": "sRGB"
+    },
+    "normal_gl": {
+      "path": "roof/polyhaven-thatch_roof_angled/thatch_roof_angled_nor_gl_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/thatch_roof_angled/thatch_roof_angled_nor_gl_1k.png",
+      "bytes": 5907083,
+      "sha256": "cfe7b6084739d26965b692c25d9d1649e64497b2b27209edbd2ec68d20bb13ce",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "3d91b8298369b319027efe8c22248b38",
+      "color_space": "linear"
+    },
+    "roughness": {
+      "path": "roof/polyhaven-thatch_roof_angled/thatch_roof_angled_rough_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/thatch_roof_angled/thatch_roof_angled_rough_1k.png",
+      "bytes": 1790482,
+      "sha256": "1cfd787cef6bfcb3ee1ff225f509e26585226e16f9367ba46c73936880ea5926",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "d4bf8852c23338af413cd98d9bad9fdb",
+      "color_space": "linear"
+    },
+    "height": {
+      "path": "roof/polyhaven-thatch_roof_angled/thatch_roof_angled_disp_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/thatch_roof_angled/thatch_roof_angled_disp_1k.png",
+      "bytes": 1663258,
+      "sha256": "13ddcb77659105d5cdcc2d3b47f150fd16497893dea77fe8494432769c803c67",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "b8a5bcbc0a1f8f848f4840614c1fa841",
+      "color_space": "linear"
+    },
+    "ao": {
+      "path": "roof/polyhaven-thatch_roof_angled/thatch_roof_angled_ao_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/thatch_roof_angled/thatch_roof_angled_ao_1k.png",
+      "bytes": 1901094,
+      "sha256": "c13110dab2a275f4850780507b1728abe6dceb877205162719c714d49f698cce",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "1496df7bdd1f5222ff67ad9efc4e07f2",
+      "color_space": "linear"
+    }
+  },
+  "downloaded_at": "2026-10-25T17:29:40.496786+00:00"
+}

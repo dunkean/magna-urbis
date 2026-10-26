@@ -1,0 +1,102 @@
+{
+  "provider": "polyhaven",
+  "asset_id": "japanese_stone_wall",
+  "family": "wall",
+  "type_fr": "Mur japonais en blocs de pierre appareillés",
+  "native_material_ids": [
+    "MAT-STONE-DRY",
+    "MAT-MEGALITH"
+  ],
+  "notes_fr": "Blocs pour soubassements ; MEGALITH est une approximation de matière, sans échelle monumentale.",
+  "provenance": {
+    "page": "https://polyhaven.com/a/japanese_stone_wall",
+    "license": "CC0-1.0",
+    "license_url": "https://polyhaven.com/license",
+    "authors": {
+      "Rico Cilliers": "Tiling",
+      "Charlotte Baglioni": "Photography",
+      "Dario Barresi": "Processing"
+    },
+    "name": "Japanese Stone Wall",
+    "tags": [
+      "uneven",
+      "stones",
+      "wall",
+      "rocks",
+      "stone",
+      "rock"
+    ],
+    "api_info_url": "https://api.polyhaven.com/info/japanese_stone_wall"
+  },
+  "resolution": "1k",
+  "normal_convention": "OpenGL (+Y)",
+  "physical_extent_m": [
+    1.8999998569488525,
+    1.8999998569488525
+  ],
+  "scale_source": "Poly Haven API dimensions (mm converted to m)",
+  "height_amplitude_m": null,
+  "maps": {
+    "base_color": {
+      "path": "wall/polyhaven-japanese_stone_wall/japanese_stone_wall_diff_1k.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/japanese_stone_wall/japanese_stone_wall_diff_1k.jpg",
+      "bytes": 1028056,
+      "sha256": "34d8a9ebf646a2f868cecc085b9aa2e1efb697038542455f0ed8a90fe70f78a9",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "b4c088dad912242317866f042ccb83ab",
+      "color_space": "sRGB"
+    },
+    "normal_gl": {
+      "path": "wall/polyhaven-japanese_stone_wall/japanese_stone_wall_nor_gl_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/japanese_stone_wall/japanese_stone_wall_nor_gl_1k.png",
+      "bytes": 6608832,
+      "sha256": "d45b633bc6d5f9cd00b06ff655b98dcabd709df7da140f41b7af4ab395f389c4",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "766040433d474700ef9f93b42fde2d43",
+      "color_space": "linear"
+    },
+    "roughness": {
+      "path": "wall/polyhaven-japanese_stone_wall/japanese_stone_wall_rough_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/japanese_stone_wall/japanese_stone_wall_rough_1k.png",
+      "bytes": 2965069,
+      "sha256": "64e9dc91c6dc77485f0bc8cccb5e8455e60ff17de2948e1ee50fc1a2ed5cbd70",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "8bf5020c2b233e6bb97bb6420b01e132",
+      "color_space": "linear"
+    },
+    "height": {
+      "path": "wall/polyhaven-japanese_stone_wall/japanese_stone_wall_disp_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/japanese_stone_wall/japanese_stone_wall_disp_1k.png",
+      "bytes": 1612291,
+      "sha256": "6cceb1c999185fb748d1ccd5490fdecffaa2ad581ae2ab89043fdef556872aa4",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "fe166b3113d8da6fe051b207874a9e4c",
+      "color_space": "linear"
+    },
+    "ao": {
+      "path": "wall/polyhaven-japanese_stone_wall/japanese_stone_wall_ao_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/japanese_stone_wall/japanese_stone_wall_ao_1k.png",
+      "bytes": 2276118,
+      "sha256": "5a690bb81e512efab3e323aa2c02c831687df2fbdce1aef4e18f9a246e9497c5",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "905e3c93add577a8779294861e81af6f",
+      "color_space": "linear"
+    }
+  },
+  "downloaded_at": "2026-10-25T17:30:31.140091+00:00"
+}

@@ -1,0 +1,105 @@
+{
+  "provider": "polyhaven",
+  "asset_id": "coral_stone_wall",
+  "family": "wall",
+  "type_fr": "Maçonnerie de pierre corallienne",
+  "native_material_ids": [
+    "MAT-CORAL",
+    "MAT-SHELLSTONE"
+  ],
+  "notes_fr": "Direct pour corail ; pierre coquillière seulement approchée.",
+  "provenance": {
+    "page": "https://polyhaven.com/a/coral_stone_wall",
+    "license": "CC0-1.0",
+    "license_url": "https://polyhaven.com/license",
+    "authors": {
+      "Dimitrios Savva": "All"
+    },
+    "name": "Coral Stone Wall",
+    "tags": [
+      "rough",
+      "wall",
+      "chipped",
+      "coral",
+      "stone",
+      "rocks",
+      "rock",
+      "fort",
+      "stonework",
+      "coastal",
+      "seaside"
+    ],
+    "api_info_url": "https://api.polyhaven.com/info/coral_stone_wall"
+  },
+  "resolution": "1k",
+  "normal_convention": "OpenGL (+Y)",
+  "physical_extent_m": [
+    1.9999996423721313,
+    1.9999996423721313
+  ],
+  "scale_source": "Poly Haven API dimensions (mm converted to m)",
+  "height_amplitude_m": null,
+  "maps": {
+    "base_color": {
+      "path": "wall/polyhaven-coral_stone_wall/coral_stone_wall_diff_1k.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/coral_stone_wall/coral_stone_wall_diff_1k.jpg",
+      "bytes": 794995,
+      "sha256": "45e4bcbb4ac9b03d34896f5d9f9be26dd0b5ec9f161484f6284b949dc25f9f31",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "a1119e1d4d898370da2b9df6a6efb557",
+      "color_space": "sRGB"
+    },
+    "normal_gl": {
+      "path": "wall/polyhaven-coral_stone_wall/coral_stone_wall_nor_gl_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/coral_stone_wall/coral_stone_wall_nor_gl_1k.png",
+      "bytes": 5903197,
+      "sha256": "4f71e359098f3ca2a58cc6b4b5538405c0c1e8e20f6807926f96c076fa28f8af",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "eba708151823594fe48e65db69e8e3c0",
+      "color_space": "linear"
+    },
+    "roughness": {
+      "path": "wall/polyhaven-coral_stone_wall/coral_stone_wall_rough_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/coral_stone_wall/coral_stone_wall_rough_1k.png",
+      "bytes": 2346745,
+      "sha256": "1c47df715e212b83ba498bb314999e5c29389f7d9b6a9df780594c50d86cb602",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "d41bd54fe0cd187942630332e05cdad3",
+      "color_space": "linear"
+    },
+    "height": {
+      "path": "wall/polyhaven-coral_stone_wall/coral_stone_wall_disp_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/coral_stone_wall/coral_stone_wall_disp_1k.png",
+      "bytes": 1633533,
+      "sha256": "69aaebad6f0787f9917648145c1c9a3e1ea63dae1134afccd65c12fdebb97318",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "4f5b690a0aef0dc82650605070bdb680",
+      "color_space": "linear"
+    },
+    "ao": {
+      "path": "wall/polyhaven-coral_stone_wall/coral_stone_wall_ao_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/coral_stone_wall/coral_stone_wall_ao_1k.png",
+      "bytes": 1901110,
+      "sha256": "86e6a0cad46a174ed2417a5da591955ae17bfa7a2c494a99bdc488301f60986c",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "759e99d16b4286bfd1e7419325c4b741",
+      "color_space": "linear"
+    }
+  },
+  "downloaded_at": "2026-10-25T17:30:35.718136+00:00"
+}

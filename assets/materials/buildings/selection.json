@@ -1,0 +1,660 @@
+{
+  "schema_version": 1,
+  "textures": [
+    {
+      "provider": "polyhaven",
+      "asset_id": "clay_roof_tiles",
+      "family": "roof",
+      "type_fr": "Tuiles de terre cuite patinées, profil courbe",
+      "native_material_ids": [
+        "MAT-TILE-CLAY"
+      ],
+      "notes_fr": "Lignes de tuiles à orienter vers l’égout ; ne décrit pas une tegula antique exacte."
+    },
+    {
+      "provider": "polyhaven",
+      "asset_id": "clay_roof_tiles_02",
+      "family": "roof",
+      "type_fr": "Tuiles de terre cuite à recouvrement",
+      "native_material_ids": [
+        "MAT-TILE-CLAY"
+      ],
+      "notes_fr": "Variante de profil et de vieillissement ; vérifier le module pour chaque tradition."
+    },
+    {
+      "provider": "polyhaven",
+      "asset_id": "ceramic_roof_01",
+      "family": "roof",
+      "type_fr": "Couverture céramique vieillie",
+      "native_material_ids": [
+        "MAT-TILE-CLAY"
+      ],
+      "notes_fr": "Variante rustique moussue."
+    },
+    {
+      "provider": "polyhaven",
+      "asset_id": "grey_roof_tiles",
+      "family": "roof",
+      "type_fr": "Tuiles céramiques grises",
+      "native_material_ids": [
+        "MAT-TILE-CLAY"
+      ],
+      "notes_fr": "Base sombre pour Asie orientale ; ne remplace pas les profils chinois, coréens ou japonais."
+    },
+    {
+      "provider": "polyhaven",
+      "asset_id": "roof_slates_02",
+      "family": "roof",
+      "type_fr": "Ardoises irrégulières patinées",
+      "native_material_ids": [
+        "MAT-SLATE"
+      ],
+      "notes_fr": "Rangs orientés selon la pente."
+    },
+    {
+      "provider": "polyhaven",
+      "asset_id": "roof_slates_03",
+      "family": "roof",
+      "type_fr": "Ardoises régulières",
+      "native_material_ids": [
+        "MAT-SLATE"
+      ],
+      "notes_fr": "Ardoise et non lauze calcaire épaisse."
+    },
+    {
+      "provider": "polyhaven",
+      "asset_id": "reed_roof_03",
+      "family": "roof",
+      "type_fr": "Chaume de roseaux",
+      "native_material_ids": [
+        "MAT-THATCH",
+        "MAT-REED"
+      ],
+      "notes_fr": "Roseaux et traverses visibles dans la carte ; vérifier leur répétition et ne pas doubler ces traverses avec une structure géométrique."
+    },
+    {
+      "provider": "polyhaven",
+      "asset_id": "reed_roof_04",
+      "family": "roof",
+      "type_fr": "Chaume de roseaux, variante",
+      "native_material_ids": [
+        "MAT-THATCH",
+        "MAT-REED",
+        "MAT-PALM"
+      ],
+      "notes_fr": "Pour PALM : approximation fibreuse, aucune palme identifiable."
+    },
+    {
+      "provider": "polyhaven",
+      "asset_id": "thatch_roof_angled",
+      "family": "roof",
+      "type_fr": "Chaume de paille incliné",
+      "native_material_ids": [
+        "MAT-THATCH"
+      ],
+      "notes_fr": "Orientation native à inspecter avant création des UV."
+    },
+    {
+      "provider": "ambientcg",
+      "asset_id": "WoodSiding010",
+      "family": "roof",
+      "type_fr": "Bardeaux de bois patinés",
+      "native_material_ids": [
+        "MAT-WOOD-SHINGLES"
+      ],
+      "notes_fr": "Asset de bardage utilisable comme surface de bardeaux ; raccords et égouts à construire."
+    },
+    {
+      "provider": "ambientcg",
+      "asset_id": "WoodSiding013",
+      "family": "roof",
+      "type_fr": "Bardeaux de bois, variante",
+      "native_material_ids": [
+        "MAT-WOOD-SHINGLES"
+      ],
+      "notes_fr": "Vérifier recouvrement et module ; pas de silhouette générée par la texture."
+    },
+    {
+      "provider": "ambientcg",
+      "asset_id": "RoofingTiles015A",
+      "family": "roof",
+      "type_fr": "Tuiles d’argile grises régulières",
+      "native_material_ids": [
+        "MAT-TILE-CLAY"
+      ],
+      "notes_fr": "Complément sobre pour couvertures grises ; pas une validation historique de leur profil."
+    },
+    {
+      "provider": "polyhaven",
+      "asset_id": "clay_plaster",
+      "family": "wall",
+      "type_fr": "Enduit de terre rugueux",
+      "native_material_ids": [
+        "MAT-MUD-PLASTER",
+        "MAT-COB",
+        "MAT-WATTLE-DAUB",
+        "MAT-ADOBE",
+        "MAT-RAMMED-EARTH"
+      ],
+      "notes_fr": "Direct pour enduit ; bauge, torchis, adobe et pisé sont des approximations de surface sans leur structure."
+    },
+    {
+      "provider": "ambientcg",
+      "asset_id": "Clay005",
+      "family": "wall",
+      "type_fr": "Argile lissée",
+      "native_material_ids": [
+        "MAT-MUD-PLASTER",
+        "MAT-COB",
+        "MAT-ADOBE",
+        "MAT-RAMMED-EARTH"
+      ],
+      "notes_fr": "Base lisse de terre ; ni joints d’adobe ni strates de pisé."
+    },
+    {
+      "provider": "polyhaven",
+      "asset_id": "patterned_clay_plaster",
+      "family": "wall",
+      "type_fr": "Enduit de terre à traces décoratives",
+      "native_material_ids": [
+        "MAT-MUD-PLASTER"
+      ],
+      "notes_fr": "Réserver aux façades dont la tradition justifie ce motif."
+    },
+    {
+      "provider": "polyhaven",
+      "asset_id": "white_plaster_02",
+      "family": "wall",
+      "type_fr": "Enduit blanc lisse",
+      "native_material_ids": [
+        "MAT-PLASTER-LIME",
+        "MAT-CHALK"
+      ],
+      "notes_fr": "Chaux/stuc de surface ; CHALK est une approximation chromatique, pas une craie identifiée."
+    },
+    {
+      "provider": "polyhaven",
+      "asset_id": "white_plaster_rough_01",
+      "family": "wall",
+      "type_fr": "Enduit blanc rugueux et patiné",
+      "native_material_ids": [
+        "MAT-PLASTER-LIME"
+      ],
+      "notes_fr": "Variante de vieillissement pour murs et terrasses enduites."
+    },
+    {
+      "provider": "polyhaven",
+      "asset_id": "red_plaster_weathered",
+      "family": "wall",
+      "type_fr": "Enduit rouge patiné",
+      "native_material_ids": [
+        "MAT-PLASTER-LIME"
+      ],
+      "notes_fr": "Pigmentation et usure photographiques conservées."
+    },
+    {
+      "provider": "polyhaven",
+      "asset_id": "blue_plaster_wall",
+      "family": "wall",
+      "type_fr": "Enduit bleu rugueux",
+      "native_material_ids": [
+        "MAT-PLASTER-LIME"
+      ],
+      "notes_fr": "Couleur présente dans l’asset ; usage culturel à choisir lors de l’intégration."
+    },
+    {
+      "provider": "ambientcg",
+      "asset_id": "Plaster001",
+      "family": "wall",
+      "type_fr": "Crépi blanc uniforme",
+      "native_material_ids": [
+        "MAT-PLASTER-LIME"
+      ],
+      "notes_fr": "Base neutre pour variantes de teinte."
+    },
+    {
+      "provider": "polyhaven",
+      "asset_id": "brick_wall_001",
+      "family": "wall",
+      "type_fr": "Briques cuites rouges appareillées",
+      "native_material_ids": [
+        "MAT-BURNT-BRICK"
+      ],
+      "notes_fr": "Conserver le module réel des briques et des joints."
+    },
+    {
+      "provider": "polyhaven",
+      "asset_id": "dark_brick_wall",
+      "family": "wall",
+      "type_fr": "Briques foncées patinées",
+      "native_material_ids": [
+        "MAT-BURNT-BRICK"
+      ],
+      "notes_fr": "Variante sombre pour façades en brique."
+    },
+    {
+      "provider": "polyhaven",
+      "asset_id": "sandstone_blocks_04",
+      "family": "wall",
+      "type_fr": "Blocs de grès taillés",
+      "native_material_ids": [
+        "MAT-STONE-ASHLAR"
+      ],
+      "notes_fr": "Pierre de taille ; ce grès ne doit pas être nommé calcaire."
+    },
+    {
+      "provider": "polyhaven",
+      "asset_id": "white_sandstone_bricks",
+      "family": "wall",
+      "type_fr": "Blocs de grès clair",
+      "native_material_ids": [
+        "MAT-STONE-ASHLAR",
+        "MAT-CHALK",
+        "MAT-LIMESTONE"
+      ],
+      "notes_fr": "Grès réel ; approximation pour calcaire/craie sans identification géologique équivalente."
+    },
+    {
+      "provider": "polyhaven",
+      "asset_id": "red_sandstone_wall",
+      "family": "wall",
+      "type_fr": "Mur de grès rouge",
+      "native_material_ids": [
+        "MAT-STONE-MORTAR"
+      ],
+      "notes_fr": "Maçonnerie rouge ; module à contrôler pour Inde et régions arides."
+    },
+    {
+      "provider": "polyhaven",
+      "asset_id": "stone_wall",
+      "family": "wall",
+      "type_fr": "Mur de moellons irréguliers",
+      "native_material_ids": [
+        "MAT-STONE-MORTAR"
+      ],
+      "notes_fr": "Pierres et joints visibles ; assemblage non universel."
+    },
+    {
+      "provider": "polyhaven",
+      "asset_id": "stacked_stone_wall",
+      "family": "wall",
+      "type_fr": "Pierres empilées en assises",
+      "native_material_ids": [
+        "MAT-STONE-DRY"
+      ],
+      "notes_fr": "Vérifier la présence de mortier photographié avant de l’utiliser en pierre sèche stricte."
+    },
+    {
+      "provider": "polyhaven",
+      "asset_id": "japanese_stone_wall",
+      "family": "wall",
+      "type_fr": "Mur japonais en blocs de pierre appareillés",
+      "native_material_ids": [
+        "MAT-STONE-DRY",
+        "MAT-MEGALITH"
+      ],
+      "notes_fr": "Blocs pour soubassements ; MEGALITH est une approximation de matière, sans échelle monumentale."
+    },
+    {
+      "provider": "polyhaven",
+      "asset_id": "coral_stone_wall",
+      "family": "wall",
+      "type_fr": "Maçonnerie de pierre corallienne",
+      "native_material_ids": [
+        "MAT-CORAL",
+        "MAT-SHELLSTONE"
+      ],
+      "notes_fr": "Direct pour corail ; pierre coquillière seulement approchée."
+    },
+    {
+      "provider": "polyhaven",
+      "asset_id": "volcanic_rock_tiles",
+      "family": "wall",
+      "type_fr": "Parement de pierre volcanique sombre",
+      "native_material_ids": [
+        "MAT-BASALT",
+        "MAT-CLINKER"
+      ],
+      "notes_fr": "Roche volcanique annoncée ; composition basaltique et scories non certifiées."
+    },
+    {
+      "provider": "polyhaven",
+      "asset_id": "mossy_stone_wall",
+      "family": "wall",
+      "type_fr": "Mur de pierre moussu",
+      "native_material_ids": [
+        "MAT-STONE-MORTAR"
+      ],
+      "notes_fr": "Variante humide pour ruines et habitat forestier."
+    },
+    {
+      "provider": "polyhaven",
+      "asset_id": "rough_wood",
+      "family": "wood",
+      "type_fr": "Bois brut à fil visible",
+      "native_material_ids": [
+        "MAT-TIMBER-POST",
+        "MAT-HALF-TIMBER",
+        "MAT-RAISED-POST",
+        "MAT-WOOD-MORTISE"
+      ],
+      "notes_fr": "Texture du bois seul ; poteaux, colombages et assemblages restent géométriques."
+    },
+    {
+      "provider": "polyhaven",
+      "asset_id": "medieval_wood",
+      "family": "wood",
+      "type_fr": "Bois ancien marqué",
+      "native_material_ids": [
+        "MAT-TIMBER-POST",
+        "MAT-HALF-TIMBER",
+        "MAT-WOOD-MORTISE"
+      ],
+      "notes_fr": "Variante vieillie ; traces de surface conservées."
+    },
+    {
+      "provider": "polyhaven",
+      "asset_id": "raw_plank_wall",
+      "family": "wood",
+      "type_fr": "Mur de planches brutes",
+      "native_material_ids": [
+        "MAT-TIMBER-POST"
+      ],
+      "notes_fr": "Bardage, cloisons et grandes maisons de planches."
+    },
+    {
+      "provider": "polyhaven",
+      "asset_id": "weathered_plank_siding",
+      "family": "wood",
+      "type_fr": "Bardage de planches patinées",
+      "native_material_ids": [
+        "MAT-TIMBER-POST",
+        "MAT-DRIFTWOOD"
+      ],
+      "notes_fr": "DRIFTWOOD est une approximation de bois altéré, pas un bois flotté identifié."
+    },
+    {
+      "provider": "polyhaven",
+      "asset_id": "dark_planks",
+      "family": "wood",
+      "type_fr": "Planches sombres",
+      "native_material_ids": [
+        "MAT-TIMBER-POST",
+        "MAT-HALF-TIMBER"
+      ],
+      "notes_fr": "Variante de teinte déjà présente dans les cartes."
+    },
+    {
+      "provider": "polyhaven",
+      "asset_id": "japanese_cedar_planks",
+      "family": "wood",
+      "type_fr": "Planches de cèdre japonais",
+      "native_material_ids": [
+        "MAT-TIMBER-POST",
+        "MAT-WOOD-MORTISE"
+      ],
+      "notes_fr": "Surface locale ; n’atteste pas les assemblages de la charpente."
+    },
+    {
+      "provider": "polyhaven",
+      "asset_id": "hinoki_planks",
+      "family": "wood",
+      "type_fr": "Planches de hinoki",
+      "native_material_ids": [
+        "MAT-TIMBER-POST",
+        "MAT-WOOD-MORTISE"
+      ],
+      "notes_fr": "Variante claire de bois à fil fin."
+    },
+    {
+      "provider": "polyhaven",
+      "asset_id": "wood_trunk_wall",
+      "family": "wood",
+      "type_fr": "Paroi de troncs et rondins",
+      "native_material_ids": [
+        "MAT-LOG"
+      ],
+      "notes_fr": "Les joints et sections de rondins de l’asset ne remplacent pas les rondins géométriques."
+    },
+    {
+      "provider": "polyhaven",
+      "asset_id": "bamboo_wall",
+      "family": "wood",
+      "type_fr": "Paroi de bambous ronds",
+      "native_material_ids": [
+        "MAT-BAMBOO"
+      ],
+      "notes_fr": "Orienter les chaumes selon les éléments constructifs."
+    },
+    {
+      "provider": "ambientcg",
+      "asset_id": "Bamboo001B",
+      "family": "wood",
+      "type_fr": "Bambou sec beige",
+      "native_material_ids": [
+        "MAT-BAMBOO"
+      ],
+      "notes_fr": "Variante claire pour parois et ossatures."
+    },
+    {
+      "provider": "polyhaven",
+      "asset_id": "bark_brown_01",
+      "family": "wood",
+      "type_fr": "Écorce brune rugueuse",
+      "native_material_ids": [
+        "MAT-BARK"
+      ],
+      "notes_fr": "Surface d’écorce, pas une paroi complète de plaques d’écorce."
+    },
+    {
+      "provider": "ambientcg",
+      "asset_id": "Wicker013",
+      "family": "wood",
+      "type_fr": "Bambou tressé",
+      "native_material_ids": [
+        "MAT-BAMBOO",
+        "MAT-WATTLE-DAUB"
+      ],
+      "notes_fr": "Tressage réel ; approximation du clayonnage, à combiner à l’enduit de terre."
+    },
+    {
+      "provider": "ambientcg",
+      "asset_id": "Fabric034",
+      "family": "special",
+      "type_fr": "Feutre clair",
+      "native_material_ids": [
+        "MAT-FELT"
+      ],
+      "notes_fr": "Yourtes et enveloppes en feutre ; épaisseur et coutures à ajouter."
+    },
+    {
+      "provider": "polyhaven",
+      "asset_id": "rough_linen",
+      "family": "special",
+      "type_fr": "Toile grossière tissée bleue",
+      "native_material_ids": [
+        "MAT-WOVEN-TEXTILE"
+      ],
+      "notes_fr": "Teinte bleue présente dans l’original ; prévoir une autre variante si une toile écrue est nécessaire. Tissage à orienter."
+    },
+    {
+      "provider": "ambientcg",
+      "asset_id": "Leather039",
+      "family": "special",
+      "type_fr": "Peau claire d’aspect suédé",
+      "native_material_ids": [
+        "MAT-HIDE"
+      ],
+      "notes_fr": "Approximation de peau architecturale ; source moderne, sans coutures de tente."
+    },
+    {
+      "provider": "polyhaven",
+      "asset_id": "brown_leather",
+      "family": "special",
+      "type_fr": "Cuir brun plissé",
+      "native_material_ids": [
+        "MAT-HIDE"
+      ],
+      "notes_fr": "Variante moderne de cuir ; approximation pour peaux tendues historiques."
+    },
+    {
+      "provider": "polyhaven",
+      "asset_id": "snow_02",
+      "family": "special",
+      "type_fr": "Neige claire douce",
+      "native_material_ids": [
+        "MAT-ICE-SNOW"
+      ],
+      "notes_fr": "Approximation de neige compactée ; blocs d’igloo et densité restent à définir."
+    },
+    {
+      "provider": "polyhaven",
+      "asset_id": "grass_ground",
+      "family": "special",
+      "type_fr": "Terre couverte d’herbe",
+      "native_material_ids": [
+        "MAT-TURF"
+      ],
+      "notes_fr": "Aspect de couverture végétale ; ni blocs de tourbe ni tranche de motte."
+    },
+    {
+      "provider": "polyhaven",
+      "asset_id": "brown_mud_dry",
+      "family": "special",
+      "type_fr": "Terre brune sèche",
+      "native_material_ids": [
+        "MAT-MUD-PLASTER",
+        "MAT-COB",
+        "MAT-TURF"
+      ],
+      "notes_fr": "Surface pour terrasses en terre ; TURF seulement pour la tranche terreuse approchée."
+    },
+    {
+      "provider": "polyhaven",
+      "asset_id": "rock_face",
+      "family": "special",
+      "type_fr": "Roche naturelle affleurante",
+      "native_material_ids": [
+        "MAT-ROCKCUT",
+        "MAT-MEGALITH"
+      ],
+      "notes_fr": "Excavations et monolithes : la roche apporte la matière, les volumes viennent de la géométrie."
+    },
+    {
+      "provider": "ambientcg",
+      "asset_id": "Rope001",
+      "family": "special",
+      "type_fr": "Cordage beige",
+      "native_material_ids": [
+        "MAT-CORDAGE"
+      ],
+      "notes_fr": "Surface de cordage ; géométrie des liens et diamètre à fournir."
+    },
+    {
+      "provider": "polyhaven",
+      "asset_id": "cobblestone_floor_04",
+      "family": "ground_built",
+      "type_fr": "Pavé de galets et pierres arrondies",
+      "native_material_ids": [],
+      "notes_fr": "Voirie principale ; usage voirie, non rattaché à un matériau natif de bâtiment."
+    },
+    {
+      "provider": "polyhaven",
+      "asset_id": "stone_tiles",
+      "family": "ground_built",
+      "type_fr": "Dalles de pierre plates",
+      "native_material_ids": [],
+      "notes_fr": "Places et ponts de pierre ; usage voirie."
+    },
+    {
+      "provider": "polyhaven",
+      "asset_id": "gravel_ground_01",
+      "family": "ground_built",
+      "type_fr": "Gravier compacté",
+      "native_material_ids": [],
+      "notes_fr": "Ruelles et chemins ; usage voirie."
+    },
+    {
+      "provider": "polyhaven",
+      "asset_id": "dirt_floor",
+      "family": "ground_built",
+      "type_fr": "Terre battue",
+      "native_material_ids": [],
+      "notes_fr": "Chemins de terre et gués ; usage voirie."
+    },
+    {
+      "provider": "polyhaven",
+      "asset_id": "old_planks_02",
+      "family": "ground_built",
+      "type_fr": "Planches anciennes de tablier",
+      "native_material_ids": [],
+      "notes_fr": "Tabliers de ponts en bois ; usage voirie."
+    }
+  ],
+  "material_qualifications": {
+    "MAT-WATTLE-DAUB": {
+      "status": "proxy",
+      "note": "Enduit de terre + tressage en bambou ; clayonnage/torchis exact non acquis."
+    },
+    "MAT-COB": {
+      "status": "proxy",
+      "note": "Argile et enduit approchent la surface ; fibres et construction de bauge non représentées."
+    },
+    "MAT-ADOBE": {
+      "status": "proxy",
+      "note": "Argile/enduit seulement ; aucune texture de briques crues identifiée dans cette sélection."
+    },
+    "MAT-RAMMED-EARTH": {
+      "status": "proxy",
+      "note": "Argile/enduit seulement ; texture de pisé stratifié non trouvée dans cette sélection."
+    },
+    "MAT-PALM": {
+      "status": "proxy",
+      "note": "Roseaux en remplacement visuel ; pas de texture de palmes tressées ou superposées."
+    },
+    "MAT-BASALT": {
+      "status": "proxy",
+      "note": "Pierre volcanique sombre ; nature basaltique exacte non attestée par le fournisseur."
+    },
+    "MAT-CLINKER": {
+      "status": "proxy",
+      "note": "Pierre volcanique sombre ; porosité de scories non couverte fidèlement."
+    },
+    "MAT-HIDE": {
+      "status": "proxy",
+      "note": "Cuir/suède modernes comme matière approchée ; pas de peaux de tente documentées."
+    },
+    "MAT-TURF": {
+      "status": "proxy",
+      "note": "Herbe/terre comme surface ; coupe de tourbe et blocs de mottes absents."
+    },
+    "MAT-CHALK": {
+      "status": "proxy",
+      "note": "Enduit et grès clairs comme approximation ; aucune craie identifiée."
+    },
+    "MAT-SHELLSTONE": {
+      "status": "proxy",
+      "note": "Pierre corallienne approchante ; aucune coquina/pierre coquillière identifiée."
+    },
+    "MAT-ICE-SNOW": {
+      "status": "proxy",
+      "note": "Neige de surface ; neige de construction compactée et blocs absents."
+    },
+    "MAT-MEGALITH": {
+      "status": "proxy",
+      "note": "Pierre de mur/affleurement comme matière ; aucun monolithe à échelle monumentale."
+    },
+    "MAT-DRIFTWOOD": {
+      "status": "proxy",
+      "note": "Bois patiné ; origine flottée et usure marine non attestées."
+    },
+    "MAT-LIMESTONE": {
+      "status": "proxy",
+      "note": "Grès clair seulement ; aucune texture calcaire certaine retenue."
+    },
+    "MAT-BONE": {
+      "status": "missing",
+      "note": "Aucun os architectural acquis dans les deux banques ; les résultats bone sont des panneaux de danger et ont été écartés."
+    }
+  }
+}

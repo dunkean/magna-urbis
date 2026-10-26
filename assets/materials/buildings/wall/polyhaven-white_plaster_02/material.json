@@ -1,0 +1,97 @@
+{
+  "provider": "polyhaven",
+  "asset_id": "white_plaster_02",
+  "family": "wall",
+  "type_fr": "Enduit blanc lisse",
+  "native_material_ids": [
+    "MAT-PLASTER-LIME",
+    "MAT-CHALK"
+  ],
+  "notes_fr": "Chaux/stuc de surface ; CHALK est une approximation chromatique, pas une craie identifiée.",
+  "provenance": {
+    "page": "https://polyhaven.com/a/white_plaster_02",
+    "license": "CC0-1.0",
+    "license_url": "https://polyhaven.com/license",
+    "authors": {
+      "Rob Tuytel": "All"
+    },
+    "name": "White Plaster 02",
+    "tags": [
+      "smooth",
+      "flat",
+      "even"
+    ],
+    "api_info_url": "https://api.polyhaven.com/info/white_plaster_02"
+  },
+  "resolution": "1k",
+  "normal_convention": "OpenGL (+Y)",
+  "physical_extent_m": [
+    1.0,
+    1.0
+  ],
+  "scale_source": "Poly Haven API dimensions (mm converted to m)",
+  "height_amplitude_m": null,
+  "maps": {
+    "base_color": {
+      "path": "wall/polyhaven-white_plaster_02/white_plaster_02_diff_1k.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/white_plaster_02/white_plaster_02_diff_1k.jpg",
+      "bytes": 527219,
+      "sha256": "a1ebbe091bd1ae93d2abd5de8d69f9003a8d0ee6532bcf9a87c2492c97051f23",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "7b10c2686bcfd76d1f309a20fd06b57e",
+      "color_space": "sRGB"
+    },
+    "normal_gl": {
+      "path": "wall/polyhaven-white_plaster_02/white_plaster_02_nor_gl_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/white_plaster_02/white_plaster_02_nor_gl_1k.png",
+      "bytes": 6075625,
+      "sha256": "36ac2eec35a5678eda0c1ccfd81f6ab8a2e2fed0ca3e77d6e1d44e372e130450",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "576d036eb85d0887c7613f8d3f5e13df",
+      "color_space": "linear"
+    },
+    "roughness": {
+      "path": "wall/polyhaven-white_plaster_02/white_plaster_02_rough_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/white_plaster_02/white_plaster_02_rough_1k.png",
+      "bytes": 2185125,
+      "sha256": "972b33f86442d3d4546f70c9e535d187f2b28d3f27788226563fe0aef671e707",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "1569e94584ed319ac49e57c23a86c59b",
+      "color_space": "linear"
+    },
+    "height": {
+      "path": "wall/polyhaven-white_plaster_02/white_plaster_02_disp_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/white_plaster_02/white_plaster_02_disp_1k.png",
+      "bytes": 2142823,
+      "sha256": "86c8d78e9e529bb9db53a3ed7d6ad2aec8db362fe85e7a3602ec9fd7b6e20661",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "e3f8b9b4b78ab512f6bf94eb32f6a6a8",
+      "color_space": "linear"
+    },
+    "ao": {
+      "path": "wall/polyhaven-white_plaster_02/white_plaster_02_ao_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/white_plaster_02/white_plaster_02_ao_1k.png",
+      "bytes": 2369707,
+      "sha256": "6f84e468cfcdc7e831a2d1552bae2f88972529b1126f27023bda6469ec0c1340",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "fb0f2d011dc6ce3f9349a85bb4a09098",
+      "color_space": "linear"
+    }
+  },
+  "downloaded_at": "2026-10-25T17:29:48.069764+00:00"
+}

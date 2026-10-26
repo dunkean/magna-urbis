@@ -1,0 +1,108 @@
+{
+  "provider": "polyhaven",
+  "asset_id": "mossy_stone_wall",
+  "family": "wall",
+  "type_fr": "Mur de pierre moussu",
+  "native_material_ids": [
+    "MAT-STONE-MORTAR"
+  ],
+  "notes_fr": "Variante humide pour ruines et habitat forestier.",
+  "provenance": {
+    "page": "https://polyhaven.com/a/mossy_stone_wall",
+    "license": "CC0-1.0",
+    "license_url": "https://polyhaven.com/license",
+    "authors": {
+      "Amal Kumar": "All"
+    },
+    "name": "Mossy Stone Wall",
+    "tags": [
+      "discolored",
+      "weathered",
+      "uneven",
+      "exterior",
+      "moss",
+      "concrete",
+      "weatherbeaten",
+      "aged",
+      "worn",
+      "wall",
+      "outdoor",
+      "mosscovered",
+      "dungeon",
+      "stonework",
+      "dilapidated"
+    ],
+    "api_info_url": "https://api.polyhaven.com/info/mossy_stone_wall"
+  },
+  "resolution": "1k",
+  "normal_convention": "OpenGL (+Y)",
+  "physical_extent_m": [
+    1.9999996423721313,
+    1.9999996423721313
+  ],
+  "scale_source": "Poly Haven API dimensions (mm converted to m)",
+  "height_amplitude_m": null,
+  "maps": {
+    "base_color": {
+      "path": "wall/polyhaven-mossy_stone_wall/mossy_stone_wall_diff_1k.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/mossy_stone_wall/mossy_stone_wall_diff_1k.jpg",
+      "bytes": 939649,
+      "sha256": "7240e55cfc662ea403600fc7d5143f72983fbe8098d55fc6ccae75d21421dce4",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "ae70425d2aec4b8f454dc1762c1ec881",
+      "color_space": "sRGB"
+    },
+    "normal_gl": {
+      "path": "wall/polyhaven-mossy_stone_wall/mossy_stone_wall_nor_gl_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/mossy_stone_wall/mossy_stone_wall_nor_gl_1k.png",
+      "bytes": 6874147,
+      "sha256": "a8f8a22381d4ae45ea0e749515bce386640a3319faf106efee4b0ec16001d105",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "f2557dea73f18196d5c51c6ee226a093",
+      "color_space": "linear"
+    },
+    "roughness": {
+      "path": "wall/polyhaven-mossy_stone_wall/mossy_stone_wall_rough_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/mossy_stone_wall/mossy_stone_wall_rough_1k.png",
+      "bytes": 1756221,
+      "sha256": "99edac0405bc8febeca66495561d4ad336b3bc937481ac54ba56e7902131cdd4",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "cb4263fbc08d7acbea3e20c0d256c8df",
+      "color_space": "linear"
+    },
+    "height": {
+      "path": "wall/polyhaven-mossy_stone_wall/mossy_stone_wall_disp_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/mossy_stone_wall/mossy_stone_wall_disp_1k.png",
+      "bytes": 1741022,
+      "sha256": "d66a9ea14dddbcdd72b1511a359d77e999f3c9960c55e058f2cf17f332fc7229",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "1668c0533b35e542884585d5136a6b40",
+      "color_space": "linear"
+    },
+    "ao": {
+      "path": "wall/polyhaven-mossy_stone_wall/mossy_stone_wall_ao_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/mossy_stone_wall/mossy_stone_wall_ao_1k.png",
+      "bytes": 1760659,
+      "sha256": "5d8a84a29b6fa9abe4b8e1a20270067f24c7e8c3076e79cc28ef8b7fcf426533",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "516ef77222ddafbb4a1a97f45391aab8",
+      "color_space": "linear"
+    }
+  },
+  "downloaded_at": "2026-10-25T17:30:42.618004+00:00"
+}

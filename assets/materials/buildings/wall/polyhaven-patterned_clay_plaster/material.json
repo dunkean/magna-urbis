@@ -1,0 +1,105 @@
+{
+  "provider": "polyhaven",
+  "asset_id": "patterned_clay_plaster",
+  "family": "wall",
+  "type_fr": "Enduit de terre à traces décoratives",
+  "native_material_ids": [
+    "MAT-MUD-PLASTER"
+  ],
+  "notes_fr": "Réserver aux façades dont la tradition justifie ce motif.",
+  "provenance": {
+    "page": "https://polyhaven.com/a/patterned_clay_plaster",
+    "license": "CC0-1.0",
+    "license_url": "https://polyhaven.com/license",
+    "authors": {
+      "Amal Kumar": "All"
+    },
+    "name": "Patterned Clay Plaster",
+    "tags": [
+      "weathered",
+      "rough",
+      "wall",
+      "pattern",
+      "clay",
+      "patterned",
+      "lines",
+      "decorative",
+      "traditional",
+      "outdoor",
+      "exterior",
+      "handmade"
+    ],
+    "api_info_url": "https://api.polyhaven.com/info/patterned_clay_plaster"
+  },
+  "resolution": "1k",
+  "normal_convention": "OpenGL (+Y)",
+  "physical_extent_m": [
+    2.0,
+    2.0
+  ],
+  "scale_source": "Poly Haven API dimensions (mm converted to m)",
+  "height_amplitude_m": null,
+  "maps": {
+    "base_color": {
+      "path": "wall/polyhaven-patterned_clay_plaster/patterned_clay_plaster_diff_1k.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/patterned_clay_plaster/patterned_clay_plaster_diff_1k.jpg",
+      "bytes": 647943,
+      "sha256": "228a74bbdee4272f86d1d4c9fa79c181600249bccf9fd25e200180c60050a64c",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "767f5f813174ed65c438cc3839e9f804",
+      "color_space": "sRGB"
+    },
+    "normal_gl": {
+      "path": "wall/polyhaven-patterned_clay_plaster/patterned_clay_plaster_nor_gl_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/patterned_clay_plaster/patterned_clay_plaster_nor_gl_1k.png",
+      "bytes": 5448635,
+      "sha256": "ec1440a84861e6c5b4dd22524bc3e820e8cafad1f88d2fdf443d4fe3b497ce75",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "f072968ff0906c2d1616e3ceecae878f",
+      "color_space": "linear"
+    },
+    "roughness": {
+      "path": "wall/polyhaven-patterned_clay_plaster/patterned_clay_plaster_rough_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/patterned_clay_plaster/patterned_clay_plaster_rough_1k.png",
+      "bytes": 1739120,
+      "sha256": "b7a9f0fb0e702e5d9934fb7aaf37599b27244c6c0489f51a8ef209f2f445bdd4",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "9d2d71b68d9e62ec096c6fba13eea0cd",
+      "color_space": "linear"
+    },
+    "height": {
+      "path": "wall/polyhaven-patterned_clay_plaster/patterned_clay_plaster_disp_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/patterned_clay_plaster/patterned_clay_plaster_disp_1k.png",
+      "bytes": 1665060,
+      "sha256": "cf466dc1c38dfe7bd69d49f00ab0226b36f971da06b298ae0caaef8fe37e9119",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "c1b5bbc9a8593a899b3b76d444a02e9c",
+      "color_space": "linear"
+    },
+    "ao": {
+      "path": "wall/polyhaven-patterned_clay_plaster/patterned_clay_plaster_ao_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/patterned_clay_plaster/patterned_clay_plaster_ao_1k.png",
+      "bytes": 1661641,
+      "sha256": "8e9f52667d43993ddc429f952a750334176b1324e66c7304a3e4c7c1363c7b8d",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "93a20037bc237aaf1892f3715f4eaaa1",
+      "color_space": "linear"
+    }
+  },
+  "downloaded_at": "2026-10-25T17:29:52.958038+00:00"
+}

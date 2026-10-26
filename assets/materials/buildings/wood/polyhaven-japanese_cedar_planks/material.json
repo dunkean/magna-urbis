@@ -1,0 +1,108 @@
+{
+  "provider": "polyhaven",
+  "asset_id": "japanese_cedar_planks",
+  "family": "wood",
+  "type_fr": "Planches de cèdre japonais",
+  "native_material_ids": [
+    "MAT-TIMBER-POST",
+    "MAT-WOOD-MORTISE"
+  ],
+  "notes_fr": "Surface locale ; n’atteste pas les assemblages de la charpente.",
+  "provenance": {
+    "page": "https://polyhaven.com/a/japanese_cedar_planks",
+    "license": "CC0-1.0",
+    "license_url": "https://polyhaven.com/license",
+    "authors": {
+      "Charlotte Baglioni": "Scanning",
+      "Rico Cilliers": "Processing "
+    },
+    "name": "Japanese Cedar Planks",
+    "tags": [
+      "japanese",
+      "cedar",
+      "japanses cedar",
+      "natural wood grain",
+      "vertical planks",
+      "wood planks",
+      "wooden plank",
+      "paneling",
+      "roughhewn",
+      "sawn timber",
+      "hardwood",
+      "grain",
+      "wood grain"
+    ],
+    "api_info_url": "https://api.polyhaven.com/info/japanese_cedar_planks"
+  },
+  "resolution": "1k",
+  "normal_convention": "OpenGL (+Y)",
+  "physical_extent_m": [
+    1.130000114440918,
+    1.130000114440918
+  ],
+  "scale_source": "Poly Haven API dimensions (mm converted to m)",
+  "height_amplitude_m": null,
+  "maps": {
+    "base_color": {
+      "path": "wood/polyhaven-japanese_cedar_planks/japanese_cedar_planks_diff_1k.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/japanese_cedar_planks/japanese_cedar_planks_diff_1k.jpg",
+      "bytes": 704030,
+      "sha256": "cce8e8c5e5e6ba7956a6edf9fa6121c57fa2bfab0ebd672951bede9e053cbec4",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "a88e63ae003679e2d356807c57363eaf",
+      "color_space": "sRGB"
+    },
+    "normal_gl": {
+      "path": "wood/polyhaven-japanese_cedar_planks/japanese_cedar_planks_nor_gl_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/japanese_cedar_planks/japanese_cedar_planks_nor_gl_1k.png",
+      "bytes": 5584027,
+      "sha256": "ed382cb9b6467ea0960bb25dfa5d988b1b37de5bce164bfbf1e910f561031184",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "51b30704d9a22703573ce5ae7a8b3240",
+      "color_space": "linear"
+    },
+    "roughness": {
+      "path": "wood/polyhaven-japanese_cedar_planks/japanese_cedar_planks_rough_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/japanese_cedar_planks/japanese_cedar_planks_rough_1k.png",
+      "bytes": 1885954,
+      "sha256": "7c529eb6b576eb415fcfbb6ed756b47ea58a957057c8d61254110cb9541d30c5",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "4f2c4b424217ae8aa0639b43deae8282",
+      "color_space": "linear"
+    },
+    "height": {
+      "path": "wood/polyhaven-japanese_cedar_planks/japanese_cedar_planks_disp_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/japanese_cedar_planks/japanese_cedar_planks_disp_1k.png",
+      "bytes": 1464109,
+      "sha256": "2379172e2ecbfdd08fbe642ab043a84ac6ae50f6e5f2e703bb4f52cb8972cb5e",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "1b5b34730d6c6e991ee87dd28fccc3e6",
+      "color_space": "linear"
+    },
+    "ao": {
+      "path": "wood/polyhaven-japanese_cedar_planks/japanese_cedar_planks_ao_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/japanese_cedar_planks/japanese_cedar_planks_ao_1k.png",
+      "bytes": 1896435,
+      "sha256": "650bdf2fd7f7752afb8046b8410f6bc5cb38369b65c0645f82b649ab2bfd8c29",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "17f5b6141870f6668fd565596ad1a7f0",
+      "color_space": "linear"
+    }
+  },
+  "downloaded_at": "2026-10-25T17:30:56.650301+00:00"
+}

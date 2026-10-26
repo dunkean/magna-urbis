@@ -1,0 +1,114 @@
+{
+  "provider": "ambientcg",
+  "asset_id": "RoofingTiles015A",
+  "family": "roof",
+  "type_fr": "Tuiles d’argile grises régulières",
+  "native_material_ids": [
+    "MAT-TILE-CLAY"
+  ],
+  "notes_fr": "Complément sobre pour couvertures grises ; pas une validation historique de leur profil.",
+  "provenance": {
+    "page": "https://ambientcg.com/a/RoofingTiles015A",
+    "license": "CC0-1.0",
+    "license_url": "https://docs.ambientcg.com/license/",
+    "authors": [
+      "ambientCG / Lennart Demes"
+    ],
+    "name": "Roofing Tiles 015 A",
+    "tags": [
+      "15",
+      "clay",
+      "grey",
+      "roof",
+      "roofing",
+      "tiles",
+      "tiling"
+    ],
+    "api_info_url": "https://ambientcg.com/api/v2/full_json?id=RoofingTiles015A&include=downloadData%2CdimensionsData%2CtagData",
+    "archive_url": "https://ambientcg.com/get?file=RoofingTiles015A_1K-JPG.zip",
+    "archive_sha256": "5bb040c4c08592b607bba47cbf7384c2769bea1b49d088c463fa296708c0f743"
+  },
+  "resolution": "1k",
+  "normal_convention": "OpenGL (+Y)",
+  "physical_extent_m": [
+    2.9,
+    2.9
+  ],
+  "scale_source": "ambientCG API dimensions (cm converted to m)",
+  "height_amplitude_m": null,
+  "maps": {
+    "ao": {
+      "path": "roof/ambientcg-RoofingTiles015A/RoofingTiles015A_1K-JPG_AmbientOcclusion.jpg",
+      "url": "https://ambientcg.com/get?file=RoofingTiles015A_1K-JPG.zip",
+      "bytes": 288843,
+      "sha256": "9ad7ce2f2fd95d934cc8ef63fda920046b15df6634ccc9763989e34fd0c8cc32",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "archive_member": "RoofingTiles015A_1K-JPG_AmbientOcclusion.jpg",
+      "color_space": "linear"
+    },
+    "base_color": {
+      "path": "roof/ambientcg-RoofingTiles015A/RoofingTiles015A_1K-JPG_Color.jpg",
+      "url": "https://ambientcg.com/get?file=RoofingTiles015A_1K-JPG.zip",
+      "bytes": 367457,
+      "sha256": "dae17178f67eefdda86ba6390c285062959196e9582cdba35732cc717f38cf51",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "archive_member": "RoofingTiles015A_1K-JPG_Color.jpg",
+      "color_space": "sRGB"
+    },
+    "height": {
+      "path": "roof/ambientcg-RoofingTiles015A/RoofingTiles015A_1K-JPG_Displacement.jpg",
+      "url": "https://ambientcg.com/get?file=RoofingTiles015A_1K-JPG.zip",
+      "bytes": 213289,
+      "sha256": "d05deb9d60e9dd43ce422a1a66c78831dc35d22d7843af10f4ec5861695e9b18",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "archive_member": "RoofingTiles015A_1K-JPG_Displacement.jpg",
+      "color_space": "linear"
+    },
+    "normal_gl": {
+      "path": "roof/ambientcg-RoofingTiles015A/RoofingTiles015A_1K-JPG_NormalGL.jpg",
+      "url": "https://ambientcg.com/get?file=RoofingTiles015A_1K-JPG.zip",
+      "bytes": 689869,
+      "sha256": "d3b0bb671f70f45015088da5685c63757addaa49c856609451cc374f8f46c298",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "archive_member": "RoofingTiles015A_1K-JPG_NormalGL.jpg",
+      "color_space": "linear"
+    },
+    "opacity": {
+      "path": "roof/ambientcg-RoofingTiles015A/RoofingTiles015A_1K-JPG_Opacity.jpg",
+      "url": "https://ambientcg.com/get?file=RoofingTiles015A_1K-JPG.zip",
+      "bytes": 5273,
+      "sha256": "cfe3da02004f6f276aa62f27dfd8a319b9052cfa8ce901608e9a990bc73afac4",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "archive_member": "RoofingTiles015A_1K-JPG_Opacity.jpg",
+      "color_space": "linear"
+    },
+    "roughness": {
+      "path": "roof/ambientcg-RoofingTiles015A/RoofingTiles015A_1K-JPG_Roughness.jpg",
+      "url": "https://ambientcg.com/get?file=RoofingTiles015A_1K-JPG.zip",
+      "bytes": 563055,
+      "sha256": "5ebac0cccdaccadfa67fc365c01f18b6506e0ca84b619cdbbe5b24e73efc226d",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "archive_member": "RoofingTiles015A_1K-JPG_Roughness.jpg",
+      "color_space": "linear"
+    }
+  },
+  "downloaded_at": "2026-10-25T17:29:44.064435+00:00"
+}

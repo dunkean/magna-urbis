@@ -1,0 +1,87 @@
+{
+  "provider": "ambientcg",
+  "asset_id": "Leather039",
+  "family": "special",
+  "type_fr": "Peau claire d’aspect suédé",
+  "native_material_ids": [
+    "MAT-HIDE"
+  ],
+  "notes_fr": "Approximation de peau architecturale ; source moderne, sans coutures de tente.",
+  "provenance": {
+    "page": "https://ambientcg.com/a/Leather039",
+    "license": "CC0-1.0",
+    "license_url": "https://docs.ambientcg.com/license/",
+    "authors": [
+      "ambientCG / Lennart Demes"
+    ],
+    "name": "Leather 039",
+    "tags": [
+      "39",
+      "bright",
+      "fine",
+      "leather",
+      "light",
+      "rough",
+      "suede"
+    ],
+    "api_info_url": "https://ambientcg.com/api/v2/full_json?id=Leather039&include=downloadData%2CdimensionsData%2CtagData",
+    "archive_url": "https://ambientcg.com/get?file=Leather039_1K-JPG.zip",
+    "archive_sha256": "c59bdb7bfb40185cd2f0db6201124771e92cb0994be9d1382eb94175ac99f632"
+  },
+  "resolution": "1k",
+  "normal_convention": "OpenGL (+Y)",
+  "physical_extent_m": null,
+  "scale_source": "unknown",
+  "height_amplitude_m": null,
+  "maps": {
+    "base_color": {
+      "path": "special/ambientcg-Leather039/Leather039_1K-JPG_Color.jpg",
+      "url": "https://ambientcg.com/get?file=Leather039_1K-JPG.zip",
+      "bytes": 1381930,
+      "sha256": "19a5fb3782a8f1f7ceab22886878a272aecac7f1ca33adf6162ad912fcab440c",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "archive_member": "Leather039_1K-JPG_Color.jpg",
+      "color_space": "sRGB"
+    },
+    "height": {
+      "path": "special/ambientcg-Leather039/Leather039_1K-JPG_Displacement.jpg",
+      "url": "https://ambientcg.com/get?file=Leather039_1K-JPG.zip",
+      "bytes": 845422,
+      "sha256": "b0c21fc6e9cef8d480a31e677c8f506a57bc075735ad2c6246c5f4ac03593f34",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "archive_member": "Leather039_1K-JPG_Displacement.jpg",
+      "color_space": "linear"
+    },
+    "normal_gl": {
+      "path": "special/ambientcg-Leather039/Leather039_1K-JPG_NormalGL.jpg",
+      "url": "https://ambientcg.com/get?file=Leather039_1K-JPG.zip",
+      "bytes": 1688065,
+      "sha256": "0dbc2fec478a1bb5ca6337ff006a17230af9e95201bc06ad849b4414ca6a851e",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "archive_member": "Leather039_1K-JPG_NormalGL.jpg",
+      "color_space": "linear"
+    },
+    "roughness": {
+      "path": "special/ambientcg-Leather039/Leather039_1K-JPG_Roughness.jpg",
+      "url": "https://ambientcg.com/get?file=Leather039_1K-JPG.zip",
+      "bytes": 730740,
+      "sha256": "bee4f43dc94d70e98f59ae08756c6ffb4ed97db124ce13527430dd31c2b1ace7",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "archive_member": "Leather039_1K-JPG_Roughness.jpg",
+      "color_space": "linear"
+    }
+  },
+  "downloaded_at": "2026-10-25T17:31:12.723299+00:00"
+}

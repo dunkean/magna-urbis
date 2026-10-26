@@ -1,0 +1,106 @@
+{
+  "provider": "polyhaven",
+  "asset_id": "raw_plank_wall",
+  "family": "wood",
+  "type_fr": "Mur de planches brutes",
+  "native_material_ids": [
+    "MAT-TIMBER-POST"
+  ],
+  "notes_fr": "Bardage, cloisons et grandes maisons de planches.",
+  "provenance": {
+    "page": "https://polyhaven.com/a/raw_plank_wall",
+    "license": "CC0-1.0",
+    "license_url": "https://polyhaven.com/license",
+    "authors": {
+      "Dimitrios Savva": "All"
+    },
+    "name": "Raw Plank Wall",
+    "tags": [
+      "weathered",
+      "chipped",
+      "worn",
+      "scratched",
+      "wooden",
+      "discolored",
+      "damaged",
+      "wood",
+      "planks",
+      "cabin",
+      "grain",
+      "knotty pine",
+      "roughhewn"
+    ],
+    "api_info_url": "https://api.polyhaven.com/info/raw_plank_wall"
+  },
+  "resolution": "1k",
+  "normal_convention": "OpenGL (+Y)",
+  "physical_extent_m": [
+    1.8700001239776611,
+    1.8700001239776611
+  ],
+  "scale_source": "Poly Haven API dimensions (mm converted to m)",
+  "height_amplitude_m": null,
+  "maps": {
+    "base_color": {
+      "path": "wood/polyhaven-raw_plank_wall/raw_plank_wall_diff_1k.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/raw_plank_wall/raw_plank_wall_diff_1k.jpg",
+      "bytes": 640551,
+      "sha256": "c1cb9c95325897e40c3173ed86ad862feaa394cf6c091952b0b1ca0403ac8b43",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "2eef61339d80b5f7ba8ce389861d2b10",
+      "color_space": "sRGB"
+    },
+    "normal_gl": {
+      "path": "wood/polyhaven-raw_plank_wall/raw_plank_wall_nor_gl_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/raw_plank_wall/raw_plank_wall_nor_gl_1k.png",
+      "bytes": 5356267,
+      "sha256": "dcc2d5779532b6d2a2d86f363591d9f9ccb3df43df9bf5456235d78b5af2ea1b",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "b0d9d77c79fae59faf03bd1a9638a7fa",
+      "color_space": "linear"
+    },
+    "roughness": {
+      "path": "wood/polyhaven-raw_plank_wall/raw_plank_wall_rough_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/raw_plank_wall/raw_plank_wall_rough_1k.png",
+      "bytes": 2312661,
+      "sha256": "53a6124f84181f5c62722b46ffaf4fb9924b16f2d2f979e6f531e506fae1531c",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "7f932a0fa1716bd57e32eed7e3d3b6d8",
+      "color_space": "linear"
+    },
+    "height": {
+      "path": "wood/polyhaven-raw_plank_wall/raw_plank_wall_disp_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/raw_plank_wall/raw_plank_wall_disp_1k.png",
+      "bytes": 1523024,
+      "sha256": "f6e5c00cfac0204e1c66cbbe62922bd40ebc8ccf16ee446ae025db082831409d",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "3ec2fdcc3a6891db37f1133f7a132826",
+      "color_space": "linear"
+    },
+    "ao": {
+      "path": "wood/polyhaven-raw_plank_wall/raw_plank_wall_ao_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/raw_plank_wall/raw_plank_wall_ao_1k.png",
+      "bytes": 1819299,
+      "sha256": "be3d4728c197bfdd6993a5503fe8de6897542c1a310e6929e76b81806abd14f7",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "750840a19542fb4d22a46e0708b0358c",
+      "color_space": "linear"
+    }
+  },
+  "downloaded_at": "2026-10-25T17:30:48.617546+00:00"
+}

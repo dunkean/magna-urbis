@@ -1,0 +1,105 @@
+{
+  "provider": "ambientcg",
+  "asset_id": "Wicker013",
+  "family": "wood",
+  "type_fr": "Bambou tressé",
+  "native_material_ids": [
+    "MAT-BAMBOO",
+    "MAT-WATTLE-DAUB"
+  ],
+  "notes_fr": "Tressage réel ; approximation du clayonnage, à combiner à l’enduit de terre.",
+  "provenance": {
+    "page": "https://ambientcg.com/a/Wicker013",
+    "license": "CC0-1.0",
+    "license_url": "https://docs.ambientcg.com/license/",
+    "authors": [
+      "ambientCG / Lennart Demes"
+    ],
+    "name": "Wicker 013",
+    "tags": [
+      "13",
+      "bamboo",
+      "set",
+      "table",
+      "tableset",
+      "weave",
+      "wicker",
+      "wood",
+      "woven"
+    ],
+    "api_info_url": "https://ambientcg.com/api/v2/full_json?id=Wicker013&include=downloadData%2CdimensionsData%2CtagData",
+    "archive_url": "https://ambientcg.com/get?file=Wicker013_1K-JPG.zip",
+    "archive_sha256": "c5a716e57e20a6f785342a2725cfec25a62b27f808dea76bcd878002b8a921e0"
+  },
+  "resolution": "1k",
+  "normal_convention": "OpenGL (+Y)",
+  "physical_extent_m": [
+    0.5,
+    0.5
+  ],
+  "scale_source": "ambientCG API dimensions (cm converted to m)",
+  "height_amplitude_m": null,
+  "maps": {
+    "ao": {
+      "path": "wood/ambientcg-Wicker013/Wicker013_1K-JPG_AmbientOcclusion.jpg",
+      "url": "https://ambientcg.com/get?file=Wicker013_1K-JPG.zip",
+      "bytes": 565289,
+      "sha256": "1e1b025599464b5a562cfd6673d9f1d2501bb5a91ee6404c41cd730c509bf00f",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "archive_member": "Wicker013_1K-JPG_AmbientOcclusion.jpg",
+      "color_space": "linear"
+    },
+    "base_color": {
+      "path": "wood/ambientcg-Wicker013/Wicker013_1K-JPG_Color.jpg",
+      "url": "https://ambientcg.com/get?file=Wicker013_1K-JPG.zip",
+      "bytes": 1235588,
+      "sha256": "c91c172d05fdec3963086246e5a7c32f3dee5e3979dd0a231fde83daaec64965",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "archive_member": "Wicker013_1K-JPG_Color.jpg",
+      "color_space": "sRGB"
+    },
+    "height": {
+      "path": "wood/ambientcg-Wicker013/Wicker013_1K-JPG_Displacement.jpg",
+      "url": "https://ambientcg.com/get?file=Wicker013_1K-JPG.zip",
+      "bytes": 484639,
+      "sha256": "ab800466358f37a38b800f8a4af279fad199df7562076ac4a70101f7a062934c",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "archive_member": "Wicker013_1K-JPG_Displacement.jpg",
+      "color_space": "linear"
+    },
+    "normal_gl": {
+      "path": "wood/ambientcg-Wicker013/Wicker013_1K-JPG_NormalGL.jpg",
+      "url": "https://ambientcg.com/get?file=Wicker013_1K-JPG.zip",
+      "bytes": 1642802,
+      "sha256": "56bd332b58a642b54c2229d1500e07ad5b1a3bf42c928e752ed00759e00dc07c",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "archive_member": "Wicker013_1K-JPG_NormalGL.jpg",
+      "color_space": "linear"
+    },
+    "roughness": {
+      "path": "wood/ambientcg-Wicker013/Wicker013_1K-JPG_Roughness.jpg",
+      "url": "https://ambientcg.com/get?file=Wicker013_1K-JPG.zip",
+      "bytes": 549443,
+      "sha256": "b9bf286a6084b84db6246ea9dacf76a6794cdb566e10d40b9815172e20dd7977",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "archive_member": "Wicker013_1K-JPG_Roughness.jpg",
+      "color_space": "linear"
+    }
+  },
+  "downloaded_at": "2026-10-25T17:31:10.979606+00:00"
+}

@@ -1,0 +1,99 @@
+{
+  "provider": "polyhaven",
+  "asset_id": "ceramic_roof_01",
+  "family": "roof",
+  "type_fr": "Couverture céramique vieillie",
+  "native_material_ids": [
+    "MAT-TILE-CLAY"
+  ],
+  "notes_fr": "Variante rustique moussue.",
+  "provenance": {
+    "page": "https://polyhaven.com/a/ceramic_roof_01",
+    "license": "CC0-1.0",
+    "license_url": "https://polyhaven.com/license",
+    "authors": {
+      "Rob Tuytel": "All"
+    },
+    "name": "Ceramic Roof 01",
+    "tags": [
+      "ceramic",
+      "tiles",
+      "roof",
+      "old",
+      "city",
+      "moss"
+    ],
+    "api_info_url": "https://api.polyhaven.com/info/ceramic_roof_01"
+  },
+  "resolution": "1k",
+  "normal_convention": "OpenGL (+Y)",
+  "physical_extent_m": [
+    3.500000238418579,
+    3.500000238418579
+  ],
+  "scale_source": "Poly Haven API dimensions (mm converted to m)",
+  "height_amplitude_m": null,
+  "maps": {
+    "base_color": {
+      "path": "roof/polyhaven-ceramic_roof_01/ceramic_roof_01_diff_1k.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/ceramic_roof_01/ceramic_roof_01_diff_1k.jpg",
+      "bytes": 547031,
+      "sha256": "d16264943b3a052a6b91f4ad7c9c1f37c09f2a9e9c503bdb3477f4705c03ff8c",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "5c8b9deb160ae011b496f7d0b8470cbb",
+      "color_space": "sRGB"
+    },
+    "normal_gl": {
+      "path": "roof/polyhaven-ceramic_roof_01/ceramic_roof_01_nor_gl_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/ceramic_roof_01/ceramic_roof_01_nor_gl_1k.png",
+      "bytes": 5997209,
+      "sha256": "b886b5b9d8b40ce547eb83ce1210512999c1611534f808530f3f9f583fd14855",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "10bdb07067f0db248b0e69025c1eede4",
+      "color_space": "linear"
+    },
+    "roughness": {
+      "path": "roof/polyhaven-ceramic_roof_01/ceramic_roof_01_rough_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/ceramic_roof_01/ceramic_roof_01_rough_1k.png",
+      "bytes": 2105742,
+      "sha256": "a7058e69fd13ff76ab0466995eb167a4c6d8ecf1dfeda79652d2af2ea5b463d3",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "0718d1b51b538d0795a16176460040eb",
+      "color_space": "linear"
+    },
+    "height": {
+      "path": "roof/polyhaven-ceramic_roof_01/ceramic_roof_01_disp_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/ceramic_roof_01/ceramic_roof_01_disp_1k.png",
+      "bytes": 1853321,
+      "sha256": "74b314d70cb9f9e4953d81c196204af4d3514563cd39f47ee5c34ec7fe0b2f78",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "d5b001c4eef09c7bfdd6b03ccbc8bdc4",
+      "color_space": "linear"
+    },
+    "ao": {
+      "path": "roof/polyhaven-ceramic_roof_01/ceramic_roof_01_ao_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/ceramic_roof_01/ceramic_roof_01_ao_1k.png",
+      "bytes": 2142319,
+      "sha256": "3349f5477eb3b64b96c3c7d39f8f7e6473539210de1a1701e03d9b7f92a78ac0",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "33ac7cd78d82dbf0233a4c6e29712e75",
+      "color_space": "linear"
+    }
+  },
+  "downloaded_at": "2026-10-25T17:29:22.938926+00:00"
+}

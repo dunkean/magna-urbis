@@ -1,0 +1,100 @@
+{
+  "provider": "polyhaven",
+  "asset_id": "grass_ground",
+  "family": "special",
+  "type_fr": "Terre couverte d’herbe",
+  "native_material_ids": [
+    "MAT-TURF"
+  ],
+  "notes_fr": "Aspect de couverture végétale ; ni blocs de tourbe ni tranche de motte.",
+  "provenance": {
+    "page": "https://polyhaven.com/a/grass_ground",
+    "license": "CC0-1.0",
+    "license_url": "https://polyhaven.com/license",
+    "authors": {
+      "Charlotte Baglioni": "All"
+    },
+    "name": "Grass Ground",
+    "tags": [
+      "grass",
+      "dry grass",
+      "dirt",
+      "root",
+      "dead grass",
+      "turf",
+      "dry"
+    ],
+    "api_info_url": "https://api.polyhaven.com/info/grass_ground"
+  },
+  "resolution": "1k",
+  "normal_convention": "OpenGL (+Y)",
+  "physical_extent_m": [
+    2.509999990463257,
+    2.509999990463257
+  ],
+  "scale_source": "Poly Haven API dimensions (mm converted to m)",
+  "height_amplitude_m": null,
+  "maps": {
+    "base_color": {
+      "path": "special/polyhaven-grass_ground/grass_ground_diff_1k.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/grass_ground/grass_ground_diff_1k.jpg",
+      "bytes": 876584,
+      "sha256": "a79cc5ed65af0f80261b39a383b64a8c5272c5144d724deb43dbc29f0e4cd19b",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "299047258586c762735b7284d3c662c3",
+      "color_space": "sRGB"
+    },
+    "normal_gl": {
+      "path": "special/polyhaven-grass_ground/grass_ground_nor_gl_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/grass_ground/grass_ground_nor_gl_1k.png",
+      "bytes": 6072059,
+      "sha256": "27b4902c4cf5d70c35045f1855ff2bd2eda015037fb5c36187fa69de0077d689",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "2e799a8262487811e672cb8a847bd64c",
+      "color_space": "linear"
+    },
+    "roughness": {
+      "path": "special/polyhaven-grass_ground/grass_ground_rough_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/grass_ground/grass_ground_rough_1k.png",
+      "bytes": 1648048,
+      "sha256": "3f9d83af217765364d96fbffcbf384e57c0e9f7b88c9150d4c8657b2c5ef2f13",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "7dc49108560aaf4cc506756875d61ac3",
+      "color_space": "linear"
+    },
+    "height": {
+      "path": "special/polyhaven-grass_ground/grass_ground_disp_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/grass_ground/grass_ground_disp_1k.png",
+      "bytes": 1897975,
+      "sha256": "919a6fe7abe0cc966b3f8f6a3f529b13326ea91fa1d172f6e22497dc358b48d8",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "c26729d66abbb9b402b605f200974a09",
+      "color_space": "linear"
+    },
+    "ao": {
+      "path": "special/polyhaven-grass_ground/grass_ground_ao_1k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/grass_ground/grass_ground_ao_1k.png",
+      "bytes": 2000077,
+      "sha256": "c3f018cfe9293ee43541c54422b77e420b6e95b1d66d32f87f233f4fd9fec41a",
+      "pixels": [
+        1024,
+        1024
+      ],
+      "source_md5": "f0e39fc7ecf70ff308e43c89c00318bc",
+      "color_space": "linear"
+    }
+  },
+  "downloaded_at": "2026-10-25T17:31:23.332089+00:00"
+}
