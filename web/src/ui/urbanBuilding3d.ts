@@ -7,7 +7,7 @@ type Vec3 = [number, number, number];
 type Bounds = [number, number, number, number, number, number];
 interface BuildingFrame { matrix: Float32Array; cameraX: number; cameraY: number; targetHeight: number; exaggeration: number; focal: number; distance: number }
 /** `stride`: floats per vertex, 6 (position, normal) or 9 (+ uv in tiles, material layer) for textured materials. */
-interface Batch { color: Vec3; values: number[]; buffer?: WebGLBuffer; vao?: WebGLVertexArrayObject; count: number; stride: number }
+interface Batch { color: Vec3; tint: Vec3; values: number[]; buffer?: WebGLBuffer; vao?: WebGLVertexArrayObject; count: number; stride: number }
 interface Entry { building: Building3dVisual; bounds: Bounds }
 interface Sector { origin: [number, number]; entries: Entry[]; bounds: Bounds; width: number; featureLodEligible: boolean; overview: boolean; shown: boolean; cached?: { overview: boolean; featureLod?: BuildingFeatureLod; batches: Batch[]; used: number } }
 const SECTOR = 256, MAX_CACHE_BYTES = 96 * 1024 * 1024;
@@ -44,6 +44,7 @@ const texFragment = `#version 300 es
 precision highp float;
 in vec3 n; in vec3 wp; in vec2 uv; flat in float layer;
 uniform vec3 material;
+uniform vec3 tint;
 uniform int useTex;
 uniform highp sampler2DArray albedoTex;
 uniform highp sampler2DArray normalTex;
@@ -59,7 +60,7 @@ void main(){
     vec3 dp2perp=cross(dp2,N), dp1perp=cross(N,dp1);
     vec3 T=dp2perp*duv1.x+dp1perp*duv2.x, B=dp2perp*duv1.y+dp1perp*duv2.y;
     float invmax=inversesqrt(max(max(dot(T,T),dot(B,B)),1e-20));
-    base=albedo; N=normalize(mat3(T*invmax,-B*invmax,N)*normalize(tn));
+    base=albedo*tint; N=normalize(mat3(T*invmax,-B*invmax,N)*normalize(tn));
   }
   float light=.55+.45*abs(dot(N,normalize(vec3(-.4,.85,.3))));color=vec4(base*light,1.);
 }`;
@@ -181,10 +182,12 @@ export class UrbanBuildingPass {
     this.release(sector);
     const groups = new Map<string, Batch>(), textured = !!this.appearance.textured, stride = textured ? 9 : 6;
     for (const { building } of sector.entries) eachBuildingTriangle(building, face => {
-      const paint = buildingPaint(face.materials, building.function, building3dHeight(building), this.appearance, face.material, {materials: this.source?.materials ?? []});
-      const color = face.surface === 'roof' ? paint.roof : paint.wall;
-      let batch = groups.get(color); if (!batch) { batch = { color: rgb(color), values: [], count: 0, stride }; groups.set(color, batch); }
-      const layer = textured ? materialLayer(face.surface === 'roof' ? face.material ?? face.materials.cladding : face.material ?? face.materials.coating) : -1;
+      const raw = face.material ?? (face.surface === 'roof' ? face.materials.cladding : face.materials.coating), tm = /@([0-9a-f]{3})$/.exec(raw ?? '');
+      const tint = tm ? [...tm[1]].map(c => parseInt(c, 16) / 8) as Vec3 : [1, 1, 1] as Vec3, id = tm ? raw.slice(0, tm.index) : face.material;
+      const paint = buildingPaint(face.materials, building.function, building3dHeight(building), this.appearance, id, {materials: this.source?.materials ?? []});
+      const base = face.surface === 'roof' ? paint.roof : paint.wall, color = tm ? `${base}|${tm[1]}` : base;
+      let batch = groups.get(color); if (!batch) { const c = rgb(base); batch = { color: tm ? c.map((v, i) => Math.min(1, v * tint[i])) as Vec3 : c, tint, values: [], count: 0, stride }; groups.set(color, batch); }
+      const layer = textured ? materialLayer(id ?? (face.surface === 'roof' ? face.materials.cladding : face.materials.coating)) : -1;
       for (const p of face.points) {
         batch.values.push(p[0] - sector.origin[0], p[2], p[1] - sector.origin[1], face.normal[0], face.normal[2], face.normal[1]);
         if (textured) { const [u, v] = faceUv(p, face.normal, layer); batch.values.push(u, v, layer); }
@@ -245,7 +248,7 @@ export class UrbanBuildingPass {
       sector.shown = true; sector.overview = sector.cached!.overview; sector.cached!.used = this.tick;
       gl.uniform3f(gl.getUniformLocation(p, 'offset'), sector.origin[0] - frame.cameraX, -frame.targetHeight, sector.origin[1] - frame.cameraY);
       for (const batch of sector.cached!.batches) {
-        gl.uniform3fv(gl.getUniformLocation(p, 'material'), batch.color); gl.bindVertexArray(batch.vao!); gl.drawArrays(gl.TRIANGLES, 0, batch.count);
+        gl.uniform3fv(gl.getUniformLocation(p, 'material'), batch.color); gl.uniform3fv(gl.getUniformLocation(p, 'tint'), batch.tint); gl.bindVertexArray(batch.vao!); gl.drawArrays(gl.TRIANGLES, 0, batch.count);
       }
     }
     gl.bindVertexArray(null);

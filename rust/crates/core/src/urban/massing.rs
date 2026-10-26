@@ -21,6 +21,11 @@
 //! bark | hide | felt | earth | plaster | stone | snow | metal; `wall` ∈
 //! timber | brick | stone | earth | wood | plaster | bamboo | wattle | hide |
 //! coral; `tone` ∈ 0..1 per lot.
+//! Flat roofs also carry `parapet_m` (wall rising above the eave, 0.35–1.1 m
+//! by culture), `trim` (red band of mesoamerican flat roofs) and
+//! `features:[{kind,x,y,w,d,h,angle}]` (roof-top stair heads,
+//! domes, wind-catchers) standing strictly inside the parapet. Huts (one floor
+//! of thatch, reed, hide…) have low walls and an `overhang_m` of roof past them.
 use super::{Point, Shape};
 use crate::rng::Rng;
 use serde_json::{Value, json};
@@ -650,12 +655,108 @@ struct Vol {
     cover: &'static str,
     wall: &'static str,
     tone: f64,
+    parapet: f64,
+    features: Vec<Value>,
+    overhang: f64,
+    trim: &'static str,
 }
 impl Vol {
     fn json(&self) -> Value {
-        json!({"ring":ring_json(&self.ring),"floors":self.n,"eave_m":round2(self.eave),"rise_m":round2(self.roof.rise),
-            "roof":self.roof.kind,"ridges":self.roof.ridges,"cover":self.cover,"wall":self.wall,"tone":round2(self.tone)})
+        let mut v = json!({"ring":ring_json(&self.ring),"floors":self.n,"eave_m":round2(self.eave),"rise_m":round2(self.roof.rise),
+            "roof":self.roof.kind,"ridges":self.roof.ridges,"cover":self.cover,"wall":self.wall,"tone":round2(self.tone)});
+        if self.parapet > 0.0 {
+            v["parapet_m"] = json!(round2(self.parapet));
+        }
+        if self.overhang > 0.0 {
+            v["overhang_m"] = json!(round2(self.overhang));
+        }
+        if !self.trim.is_empty() {
+            v["trim"] = json!(self.trim);
+        }
+        if !self.features.is_empty() {
+            v["features"] = Value::Array(self.features.clone());
+        }
+        v
     }
+}
+
+/// Regional family of a culture for roof-top detail.
+fn flavor(culture: &str) -> &'static str {
+    match culture {
+        "medina" | "sahel" | "ksar-oasis" | "oasis-caravan" | "hausa-kano" | "swahili-stone-town" => "maghreb",
+        "levantine-tell" | "mesopotamian" | "egyptian-planned" | "nubian-fortified" | "ottoman" | "indus-planned" => "levant",
+        "persian" | "hadhrami-tower" => "persian",
+        "native-pueblo" => "pueblo",
+        "aztec" | "maya" | "inca" => "meso",
+        _ => "other",
+    }
+}
+
+/// Distance of `p` inside a convex ring (negative outside).
+fn depth_in(ring: &[Point], p: Point) -> f64 {
+    let sg = orient(ring);
+    (0..ring.len())
+        .map(|i| {
+            let (a, b) = (ring[i], ring[(i + 1) % ring.len()]);
+            sg * cross3(a, b, p) / (b.x - a.x).hypot(b.y - a.y).max(1e-9)
+        })
+        .fold(f64::MAX, f64::min)
+}
+
+/// Parapet height and roof-top features of a flat-roofed volume, from the
+/// culture's family and the lot's own draw; features stand inside the parapet.
+fn flat_details(ring: &[Point], label: &str, fl: &str, wall: &str, wealth: f64, landmark: bool, rng: &mut Rng) -> (f64, Vec<Value>) {
+    if matches!(wall, "hide" | "bamboo" | "wattle") {
+        return (0.0, vec![]);
+    }
+    let base = match fl { "maghreb" | "persian" => 0.9, "levant" => 0.8, "pueblo" => 0.35, _ => 0.6 };
+    let parapet = (base * rng.range(0.85, 1.2)).min(1.1);
+    let area = ring_area(ring);
+    let Some(f) = min_frame(ring) else { return (parapet, vec![]) };
+    if area < 14.0 || !matches!(label, "building" | "tower" | "keep" | "minaret" | "nave" | "hall" | "prayer-hall" | "cella" | "portico") {
+        return (parapet, vec![]);
+    }
+    let dwelling = label == "building";
+    let mut plan: Vec<(&str, f64, f64, f64)> = Vec::new();
+    let r = (f.half_w * 0.55).clamp(1.4, 4.5);
+    if label != "tower" && label != "minaret" && (landmark || label != "building") && !matches!(fl, "pueblo" | "meso") && area >= 40.0 {
+        plan.push(("dome", 2.0 * r, 2.0 * r, 0.85 * r));
+    } else if dwelling && area >= 40.0 && wealth > 0.6 && rng.chance(0.07) {
+        plan.push(("dome", 2.0 * 1.6, 2.0 * 1.6, 1.4));
+    }
+    if dwelling && area >= 25.0 && rng.chance(0.5) {
+        plan.push(("stair", rng.range(1.8, 2.3), rng.range(2.2, 2.8), rng.range(2.0, 2.4)));
+    }
+    if dwelling && fl == "persian" && area >= 30.0 {
+        for _ in 0..(1 + u32::from(area > 80.0 && rng.chance(0.5))) {
+            if rng.chance(0.55) {
+                plan.push(("windcatcher", 1.5, 1.5, rng.range(3.0, 5.0)));
+            }
+        }
+    }
+    let mut out: Vec<Value> = Vec::new();
+    let mut placed: Vec<(Point, f64)> = Vec::new();
+    for (kind, w, d, h) in plan {
+        let reach = (w * w + d * d).sqrt() / 2.0;
+        let margin = parapet + 0.35;
+        for _ in 0..14 {
+            let s = rng.range(-f.half_l, f.half_l);
+            let t = rng.range(-f.half_w, f.half_w);
+            let c = at_st(f.u, s, t);
+            let c = Point { x: f.c.x + c.x, y: f.c.y + c.y };
+            let corners = [(w, d), (w, -d), (-w, d), (-w, -d)];
+            let ok = corners.iter().all(|&(a, b)| {
+                let o = at_st(f.u, a / 2.0, b / 2.0);
+                depth_in(ring, Point { x: c.x + o.x, y: c.y + o.y }) >= margin
+            }) && placed.iter().all(|&(q, rq)| (q.x - c.x).hypot(q.y - c.y) >= reach + rq + 0.5);
+            if ok {
+                placed.push((c, reach));
+                out.push(json!({"kind":kind,"x":round2(c.x),"y":round2(c.y),"w":round2(w),"d":round2(d),"h":round2(h),"angle":round2(f.u.y.atan2(f.u.x))}));
+                break;
+            }
+        }
+    }
+    (parapet, out)
 }
 
 /// Massing of every preview piece, aligned with `preview` (empty when none).
@@ -696,6 +797,7 @@ pub(super) fn massing(m: &Input) -> Value {
         Point { x: (f[1].x - f[0].x) / l, y: (f[1].y - f[0].y) / l }
     });
     let main_c = super::geometry::centroid(&m.parts[main].0);
+    let detail_rng = rng.fork("details");
     let out: Vec<Value> = m
         .parts
         .iter()
@@ -703,6 +805,7 @@ pub(super) fn massing(m: &Input) -> Value {
         .map(|(i, (shape, label))| {
             let area = areas[i];
             let ring = &shape.outer;
+            let mut drng = detail_rng.fork(&i.to_string());
             let mut kind = tr.roof;
             let mut pitch = (tr.pitch * pitch_k).max(0.0);
             let mut cover = lot_cover;
@@ -859,8 +962,26 @@ pub(super) fn massing(m: &Input) -> Value {
                     let roof = roof_of(&sr, sk, vp, su, high);
                     let rise_cap = if *label == "tower" { 14.0 } else { 12.0 };
                     let roof = Roof { rise: roof.rise.min(rise_cap), ..roof };
+                    let (parapet, features) = if roof.kind == "flat" {
+                        flat_details(&sr, label, flavor(m.culture), wall, m.wealth, m.landmark, &mut drng)
+                    } else {
+                        (0.0, vec![])
+                    };
+                    let thatchy = matches!(cover, "thatch" | "reed" | "palm" | "bamboo" | "bark" | "felt" | "hide" | "turf");
+                    let hut = sn == 1 && thatchy && !m.landmark && matches!(roof.kind, "cone" | "tent" | "hip" | "gable" | "pyramid");
+                    let (eave_v, overhang) = match (hut, roof.kind) {
+                        (true, "tent") => (0.5, 0.3),
+                        (true, _) => (base_eave(sn).min(2.2), 0.65),
+                        _ => (base_eave(sn), 0.0),
+                    };
+                    let roof = if hut && roof.kind == "cone" { Roof { rise: roof.rise * 1.12, ..roof } } else { roof };
+                    let trim = if roof.kind == "flat" && parapet > 0.0 && flavor(m.culture) == "meso" && sn >= 1 { "red" } else { "" };
                     vols.push(Vol {
-                        eave: base_eave(sn),
+                        parapet,
+                        features,
+                        overhang,
+                        trim,
+                        eave: eave_v,
                         n: sn,
                         cover,
                         wall,
@@ -1049,5 +1170,30 @@ mod tests {
         let arch = json!({"roof":"conical","typology":"tipi","storeys":[1,1],"material":"hide"});
         let m = massing(&input(&parts, &arch, &fronts, "k"));
         assert_eq!((m[0]["roof"].as_str(), m[0]["cover"].as_str(), m[0]["wall"].as_str()), (Some("tent"), Some("hide"), Some("hide")), "{m}");
+    }
+
+    #[test]
+    fn medina_flat_roofs_get_parapets_and_inner_features() {
+        let parts = [(rect(0.0, 0.0, 12.0, 10.0), "building")];
+        let fronts = [[Point { x: 0.0, y: 0.0 }, Point { x: 12.0, y: 0.0 }]];
+        let arch = json!({"roof":"flat","storeys":[1,2],"material":"adobe"});
+        let (mut seen, mut kinds) = (0, std::collections::BTreeSet::new());
+        for k in 0..40 {
+            let seed = format!("m{k}");
+            let mut i = input(&parts, &arch, &fronts, &seed);
+            i.culture = "persian";
+            let m = massing(&i);
+            for v in volumes_of(&m, 0) {
+                assert!(v["parapet_m"].as_f64().unwrap() >= 0.5, "{v}");
+                let ring = ring_of(&v);
+                for f in v["features"].as_array().into_iter().flatten() {
+                    let p = Point { x: f["x"].as_f64().unwrap(), y: f["y"].as_f64().unwrap() };
+                    assert!(depth_in(&ring.outer, p) > 1.0, "{f} outside {v}");
+                    kinds.insert(f["kind"].as_str().unwrap().to_string());
+                    seen += 1;
+                }
+            }
+        }
+        assert!(seen > 0 && kinds.contains("stair") && kinds.contains("windcatcher"), "{kinds:?}");
     }
 }

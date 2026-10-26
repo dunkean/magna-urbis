@@ -6,9 +6,13 @@
 import type { Point, Surface, Vertex3 } from '../../../rust/bridge/housesContract';
 type Shape = Surface[number];
 
+/** Roof-top feature of a flat roof (massing.rs `flat_details`): plan centre, footprint w × d turned by `angle`, height h. */
+export interface MassingFeature { kind: 'stair' | 'dome' | 'windcatcher'; x: number; y: number; w: number; d: number; h: number; angle: number }
+/** Detail of a volume decided in Rust: parapet above a flat eave, roof-top features, hut roof overhang, trim colour. */
+export interface VolumeDetail { parapet_m?: number; features?: MassingFeature[]; overhang_m?: number; trim?: string }
 export type MassingRoof = 'gable' | 'hip' | 'shed' | 'pyramid' | 'cone' | 'dome' | 'barrel' | 'ring' | 'tent' | 'flat';
 /** One sub-volume partitioning a preview piece: own ring, heights, roof and (optionally) materials. */
-export interface MassingVolume {
+export interface MassingVolume extends VolumeDetail {
   ring: [number, number][]; floors?: number; eave_m: number; rise_m: number; roof: MassingRoof;
   ridges: [number, number, number, number][]; cover?: string; wall?: string; tone?: number;
 }
@@ -23,7 +27,7 @@ export interface MassingPiece {
 export interface RoofFace { points: Vertex3[]; normal: [number, number, number]; piece: number; vol: number; cover: string; wall: string; tone: number }
 
 /** A piece resolved to the volumes to draw (the piece itself when it has no `volumes`). */
-export interface ResolvedVolume { shape: Shape; floors: number; eave_m: number; rise_m: number; roof: MassingRoof; ridges: [number, number, number, number][]; cover: string; wall: string; tone: number }
+export interface ResolvedVolume { shape: Shape; floors: number; eave_m: number; rise_m: number; roof: MassingRoof; ridges: [number, number, number, number][]; cover: string; wall: string; tone: number; detail?: VolumeDetail }
 const finite = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
 const clamp01 = (v: unknown, d = 0.5): number => finite(v) ? Math.max(0, Math.min(1, v)) : d;
 export function pieceVolumes(shape: Shape, m: MassingPiece): ResolvedVolume[] {
@@ -32,7 +36,9 @@ export function pieceVolumes(shape: Shape, m: MassingPiece): ResolvedVolume[] {
     if (!v || !Array.isArray(v.ring) || v.ring.length < 3 || !v.ring.every(q => Array.isArray(q) && finite(q[0]) && finite(q[1])) || !finite(v.eave_m) || typeof v.roof !== 'string') continue;
     out.push({ shape: { outer: v.ring.map(([x, y]) => ({ x, y })), holes: [] }, floors: finite(v.floors) ? v.floors : m.floors, eave_m: v.eave_m, rise_m: finite(v.rise_m) ? v.rise_m : 0, roof: v.roof,
       ridges: Array.isArray(v.ridges) ? v.ridges.filter(r => Array.isArray(r) && r.length === 4 && r.every(finite)) : [],
-      cover: v.cover ?? m.cover, wall: v.wall ?? m.wall, tone: clamp01(v.tone, clamp01(m.tone)) });
+      cover: v.cover ?? m.cover, wall: v.wall ?? m.wall, tone: clamp01(v.tone, clamp01(m.tone)),
+      detail: { parapet_m: finite(v.parapet_m) ? v.parapet_m : undefined, overhang_m: finite(v.overhang_m) ? v.overhang_m : undefined, trim: v.trim,
+        features: Array.isArray(v.features) ? v.features.filter(f => f && ['x', 'y', 'w', 'd', 'h', 'angle'].every(k => finite((f as unknown as Record<string, unknown>)[k]))) : undefined } });
   }
   if (out.length) return out;
   return [{ shape, floors: m.floors, eave_m: m.eave_m, rise_m: m.rise_m, roof: m.roof, ridges: m.ridges ?? [], cover: m.cover, wall: m.wall, tone: clamp01(m.tone) }];
