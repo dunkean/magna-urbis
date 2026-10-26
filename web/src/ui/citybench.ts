@@ -1,4 +1,8 @@
 import { createTerrainSettlements } from './terrainSettlements';
+import { decorClimate } from './decorClimate';
+import { seedHash } from '../../../rust/bridge/terrainAdjust';
+import { DEFAULT_FOREST_SETTINGS } from '../../../rust/bridge/terrainForest';
+import { forestRetainedRiverSegments } from '../../../rust/bridge/terrainForestRiparian';
 import { createTerrainDecorLibrary } from './terrainDecorLibrary';
 import { createHistoryPanel, downloadHistory, openBench, readHistory, saveHistory, syncBenchUrl } from './benchHistory';
 import { applyWorkshopPopulation, mergeCityWorkshop, translateWorkshopState, workshopSettings } from './urbanSnapshot';
@@ -121,6 +125,15 @@ function save(): void {
 const anchor = document.createElement('div'); stages.append(anchor);
 createTerrainDecorLibrary({ before: anchor, city: true, onOpen: d => openBench('city', new URLSearchParams({ artifact: d.meta.id })) });
 const settlements = createTerrainSettlements({ map, viewport, city: true, active: true, parcelDefault: false,
+  getForestSource: () => {
+    if (!decor) return undefined;
+    const r = decor.raster, climate = decorClimate(decor.meta), q = new URLSearchParams(decor.meta.query);
+    const bounded = (name: string, fallback: number, max: number) => q.has(name) && Number.isFinite(Number(q.get(name))) ? Math.max(0, Math.min(max, Number(q.get(name)))) : fallback;
+    return { key: `${decor.meta.id}:${decor.meta.query}`, input: { seed: seedHash(decor.meta.seed), climate: [climate.temperature, climate.precipitation],
+      height: { x: 0, y: 0, width: r.width, n: r.n, data: r.height }, water: r.water,
+      riverSegments: forestRetainedRiverSegments(decor.meta.waterSvg, r.width) }, settings: { enabled: true,
+      density: bounded('forestDensity', DEFAULT_FOREST_SETTINGS.density, 2), clearings: bounded('forestClearings', DEFAULT_FOREST_SETTINGS.clearings, 1) } };
+  },
   getTerrain: () => terrain,
   getSettings: () => ({ seed: decor?.meta.seed ?? '', width: decor?.raster.width ?? 0, relief: new URLSearchParams(decor?.meta.query).get('relief') ?? 'flat' }) as TerrainSettings,
   getRaster: () => decor?.raster, getDecor: () => decor, getView: () => view, getAuto: () => false, getQuery: shareQuery,

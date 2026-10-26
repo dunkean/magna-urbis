@@ -5,6 +5,7 @@
  * material) as texture, the city plan drawn into close-up tiles, and every
  * architecture mode as display volumes (render/city3dMeshes.ts). */
 import { Terrain3d, TERRAIN_3D_FOV, type Terrain3dCamera, type Terrain3dTile } from './terrain3d';
+import { decorClimate } from './decorClimate';
 import { city3dBridges, city3dScene, city3dProjectionScene, city3dWalls, city3dDisplayKind, compactBuilding, projectionDetailMatches, rasterHeight, type City3dHeight, type City3dDisplayScene } from '../render/city3dMeshes';
 import { building3dHeight, isBuildingProjection, type Building3dVisual } from '../render/urbanBuildingGeometry';
 import type { NativeBuildingProjectionScene } from './urbanBuildingProjection';
@@ -66,10 +67,6 @@ export interface City3dWallStats { count: number; pieces: number; triangles: num
 
 type Ground = 'map' | 'render';
 type Colors = 'materials' | 'uses';
-const CLIMATES: Record<string, { temperature: number; precipitation: number }> = {
-  temperate: { temperature: 18, precipitation: 1000 }, oceanic: { temperature: 11, precipitation: 1300 }, mediterranean: { temperature: 16, precipitation: 600 },
-  arid: { temperature: 23, precipitation: 150 }, cold: { temperature: 1, precipitation: 550 }, tropical: { temperature: 26, precipitation: 2300 },
-};
 const seedHash = (text: string): number => { let h = 2166136261; for (let i = 0; i < text.length; i++) h = Math.imul(h ^ text.charCodeAt(i), 16777619); return h | 0; };
 const PLAN_LAYERS: CityLayers = { reserve: false, allocated: false, centers: false, domains: false, quarters: false, blocks: true, streets: true, enclosures: true, parcels: true, gardens: true, places: true, fronts: false, axes: false, access: false };
 const WATER = [74, 134, 179];
@@ -206,7 +203,7 @@ export function mountCity3d(options: City3dOptions): City3d {
     const t = terrain, d = surfaceDecor; if (!t || !d) return;
     if (ground === 'render') {
       waterMask ??= water(d); waterPaths ??= waterPath(d);
-      const climate = CLIMATES[d.meta.tags.climate ?? ''] ?? CLIMATES.temperate;
+      const climate = decorClimate(d.meta);
       t.setGroundMaterial({ seed: seedHash(d.meta.seed), climate, sourceCell: d.meta.terrainDisplay?.sourceCell ?? d.raster.width / 1024, lighting: DEFAULT_TERRAIN_LIGHTING, displacement: false });
       t.setTexture(waterMask);
     } else {

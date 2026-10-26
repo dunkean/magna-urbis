@@ -58,9 +58,10 @@ export function createTerrainSettlements(options: {
   getView(): View; getAuto?(): boolean; getQuery?(): string; onChange(): void; onPlanChange?(): void; onPicking(): void; onFocus?(center: Point, radius: number): void; onProjection?(active: boolean, camera?: import('./terrain3d').Terrain3dCamera): boolean | void;
   /** Render3D forest material is displayed: it replaces the cartoon landuse woods. */
   useForestMaterial?(): boolean;
+  getForestSource?(): import('./urbanLanduseData').UrbanLanduseInput['forest'];
   /** Applied rural occupation in the displayed terrain frame, or undefined. */
   onForestOccupation?(occupation: ForestOccupation | undefined): void;
-  /** City Bench: one editable city (size, culture, position); no rural land use. */
+  /** City Bench: one editable city (size, culture, position). */
   city?: boolean;
 }) {
   const { map, viewport } = options;
@@ -148,9 +149,9 @@ export function createTerrainSettlements(options: {
   // Only an applied rural plan constrains the forest; natural cover never does.
   let landuseScene: UrbanLanduseScene | undefined, occupationScene: UrbanLanduseScene | undefined;
   let occupation: ForestOccupation | undefined, published: ForestOccupation | undefined;
-  // Rural land use brings the fantasy brush atlases: loaded on demand, never by the City Bench.
+  // Rural drawing and its brush atlases are loaded separately from the native plan.
   let landuse: ReturnType<typeof import('./urbanLanduse')['createUrbanLanduse']> | undefined;
-  if (options.active !== false && !options.city) void import('./urbanLanduse').then(({ createUrbanLanduse }) => {
+  if (options.active !== false) void import('./urbanLanduse').then(({ createUrbanLanduse }) => {
     landuse = createUrbanLanduse({ map, before: backend ?? panel,
       onChange: options.onChange,
       onPlanChange: () => options.onPlanChange?.(),
@@ -180,7 +181,8 @@ export function createTerrainSettlements(options: {
     const city = output.settlements.find(s => s.key === urban.target) ?? output.settlements.find(s => s.key === selection) ?? output.settlements[0];
     const relief = options.getSettings().relief;
     landuse?.set({ raster, seed: options.getSettings().seed, relief: (['flat', 'hills', 'valley'].includes(relief) ? relief : 'mountains') as Relief,
-      city, neighbours: output.settlements.filter(s => s.key !== city?.key), roads: roads.output, layouts: urban.layouts });
+      city, neighbours: output.settlements.filter(s => s.key !== city?.key), roads: roads.output, layouts: urban.layouts,
+      forest: options.getForestSource?.() });
   }
   let paintingContext: UrbanPaintingContext | undefined;
   if (legacyRoads === false && !new URLSearchParams(location.search).has('roads')) {
@@ -664,7 +666,7 @@ export function createTerrainSettlements(options: {
     applyUrbanChanges: urban.applyPending,
     cancelPicking(): void { setPicking(); },
     /** Style or forest settings changed: update the Canvas woods and republish the occupation. */
-    refreshForestMaterial(): void { landuse?.refreshForest(); publishForest(true); },
+    refreshForestMaterial(): void { syncLanduse(); landuse?.refreshForest(); publishForest(true); },
     terrainReady(): void { complete = true; citySearchRequested = false; needsPlacement = !options.city; recalculate(); },
     terrainFailed(message: string): void {
       complete = false; ++id; clearTimeout(timer);

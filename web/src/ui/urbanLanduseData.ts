@@ -12,6 +12,9 @@ import type { BiomeName } from '../gen/biomes';
 import type { PolyH, SiteFields, TerrainLayer, World } from '../gen/types';
 import { generateRural } from '../gen/landuse/rural';
 import { generateNaturalCover } from '../gen/landuse/natural';
+import { buildForestField, type ForestField, type ForestFieldInput, type ForestSettings } from '../../../rust/bridge/terrainForest';
+import { CLIMATE_VALUES } from '../../../rust/bridge/terrainClimate';
+import { seedHash } from '../../../rust/bridge/terrainAdjust';
 
 export interface UrbanLanduseSite extends RoadSite {
   archetype?: string; siteType?: string; offers?: Partial<Record<SiteArchetype, number>>;
@@ -28,6 +31,8 @@ export interface UrbanLanduseInput {
   roads?: RoadOutput;
   /** undefined: urban generation disabled; []: an actual empty plan. */
   layouts?: Layout[];
+  /** Same unoccupied terrain, climate and controls as Render3D, before rural clearings. */
+  forest?: { input?: ForestFieldInput; settings: ForestSettings; field?: ForestField; key?: string };
 }
 export type UrbanLanduseScene = Pick<World, 'seed' | 'options' | 'mapSize' | 'landuse' | 'stats'> & {
   /** Retained known programme inputs; rural cover currently consumes site geography and culture. */
@@ -54,6 +59,13 @@ function extent(site: RoadSite): PolyH {
     const angle = i * Math.PI / 24;
     return { x: site.center.x + site.radius * Math.cos(angle), y: site.center.y + site.radius * Math.sin(angle) };
   }), holes: [] };
+}
+
+function ruralFootprint(layout: Layout): PolyH[] {
+  const open = unionS(layout.blocks.filter((b, i) => b.kind === 'reserve'
+    && !layout.programme?.reservations.some(reserve => reserve.block === i)).map(b => b.shape));
+  return differenceS(layout.structure && layout.structure.mechanism !== 'legacy'
+    ? layout.structure.allocated : unionS(layout.quarters.map(q => q.shape)), open);
 }
 
 /** Adapt cell-centred metres and water levels, without generating or relocating anything. */
@@ -122,29 +134,77 @@ export function urbanLanduseWorld(input: UrbanLanduseInput): World {
 }
 
 export function generateUrbanLanduse(input: UrbanLanduseInput): UrbanLanduseScene {
-  const start = performance.now(), world = urbanLanduseWorld(input), root = new Rng('magna-urbis:' + input.seed);
+  const start = performance.now();
+  input = ruralResolution(input);
+  const world = urbanLanduseWorld(input), root = new Rng('magna-urbis:' + input.seed);
+  const r = input.raster;
+  const forestInput = input.forest?.input ?? {
+    seed: seedHash(input.seed), climate: [CLIMATE_VALUES.temperate.temperature, CLIMATE_VALUES.temperate.precipitation],
+    height: { x: 0, y: 0, width: r.width, n: r.n, data: r.height }, water: r.water,
+  } satisfies ForestFieldInput;
+  const retained = input.forest?.field;
+  const forest = input.biome === 'underdark' || input.biome === 'underdark-caverns' ? undefined : retained ?? buildForestField(forestInput,
+    input.forest && { ...input.forest.settings, enabled: true });
+  if (forest && (Math.abs(forest.x) > .001 || Math.abs(forest.y) > .001 || Math.abs(forest.width - r.width) > .001)) {
+    throw new Error('Le couvert forestier et le terrain doivent partager la même emprise.');
+  }
+  const naturalForest = forest && Float32Array.from(r.height, (_, i) => {
+    const x = Math.min(forest.n - 1, Math.floor(((i % r.n) + .5) / r.n * forest.n));
+    const y = Math.min(forest.n - 1, Math.floor((Math.floor(i / r.n) + .5) / r.n * forest.n));
+    // Box average when the cartographic raster is coarser than the control field.
+    const x0 = Math.floor(i % r.n / r.n * forest.n), y0 = Math.floor(Math.floor(i / r.n) / r.n * forest.n);
+    const x1 = Math.max(x0 + 1, Math.floor(((i % r.n) + 1) / r.n * forest.n));
+    const y1 = Math.max(y0 + 1, Math.floor((Math.floor(i / r.n) + 1) / r.n * forest.n));
+    if (forest.n <= r.n) return forest.rgba[(y * forest.n + x) * 4] / 255;
+    let sum = 0;
+    for (let yy = y0; yy < y1; yy++) for (let xx = x0; xx < x1; xx++) sum += forest.rgba[(yy * forest.n + xx) * 4];
+    return sum / ((x1 - x0) * (y1 - y0) * 255);
+  });
   const profile = input.city?.profile ?? input.layouts?.find(layout => layout.key === input.city?.key)?.programme?.context;
   if (input.city) {
+    const settlementFootprints = input.layouts && Object.fromEntries(input.layouts.map(layout => [layout.key, ruralFootprint(layout)]));
     const footprint = input.layouts === undefined ? [extent(input.city)]
-      : unionS(input.layouts.flatMap(layout => layout.structure && layout.structure.mechanism !== 'legacy'
-        ? differenceS(layout.structure.allocated, unionS(layout.blocks.filter((b, block) => b.kind === 'reserve'
-          && !layout.programme?.reservations.some(reserve => reserve.block === block)).map(b => b.shape)))
-        : differenceS(unionS(layout.quarters.map(q => q.shape)), unionS(layout.blocks.filter((b, block) => b.kind === 'reserve'
-          && !layout.programme?.reservations.some(reserve => reserve.block === block)).map(b => b.shape)))));
+      : unionS(Object.values(settlementFootprints!).flat());
     const generated = generateRural(world, root, undefined, undefined,
       { footprint, population: input.city.population,
         // Existing TS rural buildings remain opt-in through an explicit agricultural
         // role; the retained urban footprint excludes their lots without cropping roofs.
-        farmsteads: profile?.role === 'agricultural' });
+        farmsteads: profile?.role === 'agricultural', naturalForest, settlementFootprints });
     world.landuse = generated.layer; world.stats = generated.stats;
   } else {
-    world.landuse = generateNaturalCover(world.terrain, input.biome, root);
+    world.landuse = generateNaturalCover(world.terrain, input.biome, root, naturalForest);
   }
   world.stats.ms = Math.round(performance.now() - start);
+  world.stats.rasterCellMeters = input.raster.width / input.raster.n;
   world.stats.areas = world.landuse.areas.length;
   const { seed, options, mapSize, landuse, stats } = world;
   return { seed, options, mapSize, landuse, stats, context: input.city && {
     archetype: siteArchetype(input.city), offers: { ...input.city.offers },
     resources: [...(input.city.resources ?? profile?.resources ?? [])], profile,
   } };
+}
+
+/** Settlement placement tolerates coarse cells; small agricultural holdings do
+ * not. Refine the display adapter only, with a bounded 1024² working grid.
+ * Heights remain an interpolation of retained samples, water keeps its native
+ * classification and the source arrays are never modified. */
+function ruralResolution(input: UrbanLanduseInput): UrbanLanduseInput {
+  const r = input.raster, n = Math.min(1024, Math.ceil(r.width / 20));
+  if (n <= r.n) return input;
+  const height = new Float32Array(n * n), water = new Uint8Array(n * n), waterLevel = new Float32Array(n * n);
+  const riverWidth = new Float32Array(n * n), riverIds = new Int32Array(n * n);
+  // Agricultural geometry always uses the retained placement raster. Reusing a
+  // previously displayed forest field must not change the height source.
+  const source = { n: r.n, width: r.width, data: r.height };
+  for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
+    const i = y * n + x, sx = Math.max(0, Math.min(source.n - 1, (x + .5) / n * source.n - .5));
+    const sy = Math.max(0, Math.min(source.n - 1, (y + .5) / n * source.n - .5));
+    const x0 = Math.floor(sx), y0 = Math.floor(sy), x1 = Math.min(source.n - 1, x0 + 1), y1 = Math.min(source.n - 1, y0 + 1);
+    const tx = sx - x0, ty = sy - y0;
+    height[i] = (source.data[y0 * source.n + x0] * (1 - tx) + source.data[y0 * source.n + x1] * tx) * (1 - ty)
+      + (source.data[y1 * source.n + x0] * (1 - tx) + source.data[y1 * source.n + x1] * tx) * ty;
+    const j = Math.min(r.n - 1, Math.floor((y + .5) / n * r.n)) * r.n + Math.min(r.n - 1, Math.floor((x + .5) / n * r.n));
+    water[i] = r.water[j]; waterLevel[i] = r.waterLevel[j]; riverWidth[i] = r.riverWidth[j]; riverIds[i] = r.riverIds[j];
+  }
+  return { ...input, raster: { ...r, n, height, water, waterLevel, riverWidth, riverIds } };
 }

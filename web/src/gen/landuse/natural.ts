@@ -6,7 +6,7 @@ import type { LandKind, LandUseLayer, TerrainLayer } from '../types';
 import { vectorize } from './rural';
 
 /** Undeveloped cover for the environment-only workflow: terrain and vegetation, without cultivation or sites. */
-export function generateNaturalCover(terrain: TerrainLayer, biomeOption: string | undefined, root: Rng): LandUseLayer {
+export function generateNaturalCover(terrain: TerrainLayer, biomeOption: string | undefined, root: Rng, naturalForest?: Float32Array): LandUseLayer {
   const { w, h, cell } = terrain.height;
   const N = w * h;
   const water = terrain.water;
@@ -35,6 +35,10 @@ export function generateNaturalCover(terrain: TerrainLayer, biomeOption: string 
     else if (biome === 'steppe') kind = low ? 'meadow' : n > 0.45 && dWater[i] < 500 ? 'forest' : 'pasture';
     else if (biome === 'forest' || biome === 'tropical') kind = low && n < -0.35 ? 'meadow' : slope[i] > 0.5 ? 'commons' : 'forest';
     else kind = low ? 'meadow' : slope[i] > 0.2 || n > 0.16 ? 'forest' : 'pasture';
+    if (naturalForest) {
+      if (kind === 'forest') kind = 'commons';
+      if (naturalForest[i] >= .22 && kind !== 'marsh') kind = 'forest';
+    }
     const k = kinds.indexOf(kind);
     classes[i] = k + 1;
     const win = windows[k];

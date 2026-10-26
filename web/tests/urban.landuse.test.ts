@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { UrbanLanduseInput } from '../src/ui/urbanLanduseData';
 import { generateUrbanLanduse, urbanLanduseWorld } from '../src/ui/urbanLanduseData';
+import { buildForestField } from '../../rust/bridge/terrainForest';
 import { intersectionS, mpArea } from '../src/gen/geo/bool';
 import type { PolyH } from '../src/gen/types';
 
@@ -21,13 +22,51 @@ function fixture(): UrbanLanduseInput {
 }
 
 describe('Urban Bench countryside on retained plans', () => {
-  it('reserves the real quarters without houses, keeps strips and source buffers deterministic', () => {
+  it('keeps the natural cover when its Render3D display is disabled and retains open grazing land', () => {
+    const input = fixture(), r = input.raster;
+    input.forest = {input:{seed:42,climate:[18,1000],height:{x:0,y:0,width:r.width,n:r.n,data:r.height},water:r.water},settings:{enabled:true,density:1,clearings:.45}};
+    const a = generateUrbanLanduse(input);
+    input.forest.settings.enabled = false;
+    expect(generateUrbanLanduse(input).landuse).toEqual(a.landuse);
+    expect(a.landuse!.areas.some(a => ['pasture','meadow','commons'].includes(a.kind))).toBe(true);
+  });
+  it('keeps the same agricultural geometry with and without a cached forest field', () => {
+    const input = fixture(), r = input.raster, n = r.n * 2;
+    const height = Float32Array.from({length:n*n}, (_, i) => 30 + 20 * Math.sin((i % n) / 8));
+    const source = { seed:42, climate:[18,1000] as const, height:{x:0,y:0,width:r.width,n,data:height} };
+    const settings = {enabled:true,density:1,clearings:.45};
+    input.forest = {input:source,settings};
+    const cold = generateUrbanLanduse(input);
+    input.forest = {field:buildForestField(source, settings),settings};
+    expect(generateUrbanLanduse(input).landuse).toEqual(cold.landuse);
+  });
+  it('reserves an adjacent native town by its actual plan rather than a projected disc', () => {
+    const input = fixture();
+    input.neighbours = [{key:'town',center:{x:500,y:1600},radius:250,population:500,culture:'european-organic'}];
+    input.layouts!.push({key:'town',center:{x:500,y:1600},culture:'european-organic',blocks:[],streets:[],warnings:[],quarters:[{phase:0,shape:box(480,1580,40)}]});
+    const scene = generateUrbanLanduse(input);
+    const cover = scene.landuse!.areas.map(a => ({outer:a.poly,holes:a.holes??[]}));
+    expect(mpArea(intersectionS(cover,box(620,1540,80)))).toBeGreaterThan(500);
+    expect(mpArea(intersectionS(cover,box(480,1580,40)))).toBeLessThan(.01);
+  });
+  it('uses retained forest controls and never restores woodland when Render3D has none', () => {
+    const input = fixture(), r = input.raster;
+    input.biome = 'forest';
+    input.forest = { input: { seed: 42, climate: [12, 850],
+      height: {x:0,y:0,width:r.width,n:r.n,data:r.height}, water:r.water },
+      settings: {enabled:true,density:0,clearings:.45} };
+    expect(generateUrbanLanduse(input).landuse!.areas.some(a => a.kind === 'forest')).toBe(false);
+    input.city = undefined; input.layouts = undefined;
+    expect(generateUrbanLanduse(input).landuse!.areas.some(a => a.kind === 'forest')).toBe(false);
+  });
+
+  it('reserves the real quarters without houses, keeps compact holdings and source buffers deterministic', () => {
     const input = fixture(), before = structuredClone(input);
     const a = generateUrbanLanduse(input), b = generateUrbanLanduse(input);
     expect(a.landuse).toEqual(b.landuse);
     expect(input).toEqual(before);
     expect(a.landuse!.farmsteads).toEqual([]);
-    expect(a.landuse!.areas.some(area => area.kind === 'field' && area.strips?.length)).toBe(true);
+    expect(a.landuse!.areas.some(area => area.kind === 'field' && area.fieldLayout === 'parcel')).toBe(true);
     const quarters = input.layouts![0].quarters.map(q => q.shape);
     for (const area of a.landuse!.areas) {
       expect(mpArea(intersectionS([{ outer: area.poly, holes: area.holes ?? [] }], quarters))).toBeLessThan(0.01);

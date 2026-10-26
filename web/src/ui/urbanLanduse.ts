@@ -251,10 +251,13 @@ export function createUrbanLanduse(options: { map: SVGSVGElement; before: Elemen
     refreshForest(): void { if (withoutForest !== !!options.forestMaterial?.()) draw(); },
     set(next?: Context, pending = false): void {
       context = next; waiting = pending;
-      const key = next ? JSON.stringify({ seed: next.seed, city: next.city, neighbours: next.neighbours, relief: next.relief }) : '';
+      const key = next ? JSON.stringify({ seed: next.seed, city: next.city, neighbours: next.neighbours, relief: next.relief,
+        forest: next.forest?.key ?? (next.forest && { seed: next.forest.input?.seed,
+          climate: next.forest.input?.climate, settings: next.forest.settings }) }) : '';
       if (next?.raster === previous?.raster && next?.layouts === previous?.layouts && next?.roads === previous?.roads && key === previousKey && pending === previousWaiting) return;
+      const samePlan = next?.raster === previous?.raster && next?.layouts === previous?.layouts && next?.roads === previous?.roads;
       previous = next; previousKey = key; previousWaiting = pending;
-      cancel(); manual = false; scene = undefined; draw(); notify(); q('landuseState').textContent = '';
+      cancel(); manual = manual && samePlan; scene = undefined; draw(); notify(); q('landuseState').textContent = '';
       schedule();
     },
     share(params: URLSearchParams): void { params.set('landuse', JSON.stringify(settings)); },

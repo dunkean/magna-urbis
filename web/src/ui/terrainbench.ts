@@ -416,7 +416,7 @@ let forest: ForestSettings = {
   density: bounded(finite(query.get('forestDensity'), DEFAULT_FOREST_SETTINGS.density), 0, 2),
   clearings: bounded(finite(query.get('forestClearings'), DEFAULT_FOREST_SETTINGS.clearings), 0, 1),
 };
-interface ForestEntry { field: ForestField; occupation?: ForestOccupation; source: Float32Array }
+interface ForestEntry { field: ForestField; occupation?: ForestOccupation; source: Float32Array; naturalKey?: string }
 interface ForestJob { key: string; data: TerrainData; input: ForestFieldInput; settings: ForestSettings }
 let forestOccupation: ForestOccupation | undefined, forestShown: ForestEntry | undefined, forestWanted = '';
 let appliedBuildingScene: PlacementBatch | undefined;
@@ -664,7 +664,8 @@ function runForest(): void {
   const done = (field: ForestField | undefined, ms: number, thread: string, error?: string): void => {
     forestRunning = false;
     if (field) {
-      const entry = { field, occupation: job.input.occupation, source: job.input.height.data };
+      const entry = { field, occupation: job.input.occupation, source: job.input.height.data,
+        naturalKey: naturalForestKey(job.input, job.settings) };
       forestCache.set(job.key, entry);
       while (forestCache.size > 3) forestCache.delete(forestCache.keys().next().value!);
       const controls = el('forestControls3d');
@@ -712,6 +713,10 @@ function scheduleForest(delay = 0): void {
 function forestChanged(): void {
   forest = { enabled: input('forestEnabled').checked, density: bounded(Number(input('forestDensity').value) / 100, 0, 2), clearings: bounded(Number(input('forestClearings').value) / 100, 0, 1) };
   updateForestControls(); scheduleForest(120); settlements.refreshForestMaterial(); deferSave();
+}
+function naturalForestKey(source: ForestFieldInput, controls: ForestSettings): string {
+  return [forestId(source.height.data), source.height.n, source.height.width, source.seed, ...source.climate,
+    forestId(source.water), forestId(source.riverSegments), controls.density, controls.clearings].join(':');
 }
 for (const id of ['forestEnabled', 'forestDensity', 'forestClearings']) input(id).addEventListener('input', forestChanged);
 updateForestControls();
@@ -1116,6 +1121,15 @@ const ruler = createRuler({ container: viewport, surface: map, getView: () => vi
 } });
 
 const settlements = createTerrainSettlements({ map, viewport, getTerrain: () => terrain, getSettings: () => settings,
+  getForestSource: () => {
+    if (!terrain) return undefined;
+    const n = terrain.field?.n ?? terrain.resolution, climate = climateOf(settings);
+    const source: ForestFieldInput = { seed: seedHash(settings.seed), climate: [climate.temperature, climate.precipitation],
+      height: { x: 0, y: 0, width: terrain.width, n, data: terrain.field?.data ?? terrain.height },
+      water: forestWater(terrain, n), riverSegments: forestRivers(terrain) };
+    const key = naturalForestKey(source, forest), field = forestShown?.naturalKey === key ? forestShown.field : undefined;
+    return { input: field ? undefined : source, field, key, settings: { ...forest, enabled: true } };
+  },
   active: pipelineStage === 'settlements' || legacyPipeline,
   parcelDefault: legacyPipeline,
   getRaster: pipelineStage === 'settlements' ? () => retainedDecor?.raster : undefined,
@@ -1798,8 +1812,8 @@ el('resetLighting').onclick = () => {
   changeLighting();
 };
 input('showWater').onchange = () => { layers = { ...layers, water: input('showWater').checked }; detailRequest = undefined; render(); save(); };
-input('showLakes').onchange = () => { renderWater(); scheduleForest(); save(); };
-input('showOxbows').onchange = () => { renderWater(); scheduleForest(); save(); };
+input('showLakes').onchange = () => { renderWater(); scheduleForest(); settlements.refreshForestMaterial(); save(); };
+input('showOxbows').onchange = () => { renderWater(); scheduleForest(); settlements.refreshForestMaterial(); save(); };
 diagnosticSelect.onchange = () => {
   elevationDiagnostic = diagnosticSelect.value === 'elevation';
   hydroOverlay = elevationDiagnostic ? 'none' : diagnosticSelect.value as HydrologyOverlay | VectorOverlay;

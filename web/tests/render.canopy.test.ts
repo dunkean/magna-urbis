@@ -11,6 +11,22 @@ const pal = biomePalette('parchment', 'temperate');
 const rect = (x: number, y: number, size: number) => [{ x, y }, { x: x + size, y }, { x: x + size, y: y + size }, { x, y: y + size }];
 
 describe('individual canopy stamps', () => {
+  it('aligns orchard rows to the holding and retains identical trees across tile sizes', () => {
+    const angle = .63, ca = Math.cos(angle), sa = Math.sin(angle);
+    const areas = [{kind:'orchard' as const, poly:rect(20,20,200), holes:[rect(80,80,45)], stripAngle:angle}];
+    const collect = (tileSize:number) => {
+      const layer:TextureLayer = {kind:'orchard',areas,index:new TileIndex(256,tileSize,boxesOf(areas.map(a=>a.poly)),'overlap')};
+      return layer.index.tilesInRect({minX:0,minY:0,maxX:256,maxY:256}).flatMap(t=>canopyMarks(layer,t,'rows')).sort((a,b)=>a.y-b.y||a.x-b.x);
+    };
+    const marks = collect(64);
+    expect(marks).toEqual(collect(128));
+    expect(marks.length).toBeGreaterThan(100);
+    const rows = marks.map(m => -m.x*sa+m.y*ca);
+    const phase = rows[0];
+    for (const row of rows) expect((row-phase)/11).toBeCloseTo(Math.round((row-phase)/11),8);
+    for (const m of marks) for (const [dx,dy] of [[4.5,0],[-4.5,0],[0,4.5],[0,-4.5]]) expect(insideArea(areas[0],m.x+dx,m.y+dy)).toBe(true);
+  });
+
   it('varies colour and placement deterministically without repeating the old 64m motif', () => {
     const areas = [{ kind: 'forest' as const, poly: rect(0, 0, 256) }];
     const a = canopyAreaMarks(areas, 'forest', 256, '42');

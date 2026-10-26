@@ -1406,7 +1406,7 @@ export function createCanvasRenderer(canvas: CanvasLike, world0: World, style: M
     for (const t of tiles) {
       const key = `tex-${tl.kind}|${band}|t${t}`;
       const p = cached(key, () => {
-        const marks = textureMarks(tl, t, spec.sp, TEX_SALT[tl.kind] ?? 1);
+        const marks = textureMarks(tl, t, spec.sp, TEX_SALT[tl.kind] ?? 1, world.seed);
         if (!marks.length) return null;
         const path = new P();
         for (const m of marks) {

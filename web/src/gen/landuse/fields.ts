@@ -39,6 +39,11 @@ export interface FieldCtx {
   rng: Rng;
   /** Level of detail: cut the strips only where this returns true. */
   stripsAt?(c: Vec2): boolean;
+  minArea?: number;
+  accessWays?: boolean;
+  /** Compact holdings with straight shared boundaries; legacy open fields keep
+   * their separate strip system. Curved terrain edges remain authoritative. */
+  regular?: boolean;
 }
 
 export interface Furlong {
@@ -48,9 +53,10 @@ export interface Furlong {
   strips?: Polygon[];
   /** Strip width used (m). */
   stripW: number;
+  layout?: 'parcel';
 }
 
-export interface FieldNet { furlongs: Furlong[]; ways: Polyline[]; headlands: Polyline[] }
+export interface FieldNet { furlongs: Furlong[]; ways: Polyline[]; headlands: Polyline[]; margins?: { outer: Polygon; holes: Polygon[] }[] }
 
 /**
  * Field ways worth drawing as cart tracks: a way that duplicates a road or an earlier way (most of its length within
@@ -112,8 +118,6 @@ export function pruneWays(net: FieldNet, connectors: { path: Polyline; width: nu
   return { dropped, demoted };
 }
 
-/** Largest total bending (rad) of the central line for which the strips follow it. */
-const MAX_BEND = 0.42;
 const GAP = { way: 4.4, headland: 2.4, hedge: 1.3 };
 
 interface Node { rings: Ring[]; rot: number; depth: number }
@@ -178,31 +182,34 @@ export function clipToRings(pl: Polyline, rings: Ring[]): Polyline[] {
     }
     return c;
   };
-  const crossing = (a: Vec2, b: Vec2): Vec2 => {
-    let bt = 1;
-    for (const r of rings) for (let i = 1; i < r.length; i++) {
-      const c = r[i - 1], d = r[i];
-      const rx = b.x - a.x, ry = b.y - a.y, sx = d[0] - c[0], sy = d[1] - c[1];
-      const den = rx * sy - ry * sx;
-      if (Math.abs(den) < 1e-12) continue;
-      const t = ((c[0] - a.x) * sy - (c[1] - a.y) * sx) / den, u = ((c[0] - a.x) * ry - (c[1] - a.y) * rx) / den;
-      if (t >= 0 && t <= 1 && u >= 0 && u <= 1 && t < bt) bt = t;
-    }
-    return { x: a.x + (b.x - a.x) * bt, y: a.y + (b.y - a.y) * bt };
-  };
   const out: Polyline[] = [];
-  let cur: Vec2[] = [];
-  let prevIn = false, prev: Vec2 | null = null;
-  for (const p of pl) {
-    const ins = inside(p);
-    if (prev) {
-      if (ins && !prevIn) cur = [crossing(p, prev)];
-      else if (!ins && prevIn) { cur.push(crossing(prev, p)); if (cur.length > 1) out.push(cur); cur = []; }
+  let current: Polyline = [];
+  const flush = () => { if (current.length > 1) out.push(current); current = []; };
+  for (let k = 1; k < pl.length; k++) {
+    const a = pl[k - 1], b = pl[k], dx = b.x - a.x, dy = b.y - a.y;
+    if (Math.hypot(dx, dy) < 1e-9) continue;
+    const cuts = [0, 1];
+    for (const ring of rings) for (let i = 1; i < ring.length; i++) {
+      const c = ring[i - 1], d = ring[i], sx = d[0] - c[0], sy = d[1] - c[1];
+      const den = dx * sy - dy * sx;
+      if (Math.abs(den) < 1e-12) continue;
+      const t = ((c[0] - a.x) * sy - (c[1] - a.y) * sx) / den;
+      const u = ((c[0] - a.x) * dy - (c[1] - a.y) * dx) / den;
+      if (t > 0 && t < 1 && u >= 0 && u <= 1) cuts.push(t);
     }
-    if (ins) cur.push(p);
-    prevIn = ins; prev = p;
+    cuts.sort((a, b) => a - b);
+    for (let i = 1; i < cuts.length; i++) {
+      const lo = cuts[i - 1], hi = cuts[i];
+      if (hi - lo < 1e-9) continue;
+      const point = (t: number) => ({ x: a.x + dx * t, y: a.y + dy * t });
+      if (!inside(point((lo + hi) / 2))) { flush(); continue; }
+      const start = point(lo), end = point(hi), last = current[current.length - 1];
+      if (last && Math.hypot(last.x - start.x, last.y - start.y) > 1e-7) flush();
+      if (!current.length) current.push(start);
+      current.push(end);
+    }
   }
-  if (prevIn && cur.length > 1) out.push(cur);
+  flush();
   return out;
 }
 
@@ -216,73 +223,6 @@ const extents = (outer: Ring, ca: number, sa: number) => {
   return { umin, umax, vmin, vmax };
 };
 
-/**
- * Exact intersection of a simple polygon with the band v0 <= v <= v1 (any number of pieces): the ring is cut into fragments
- * inside the band, which are joined along the two band lines (CCW rings: along the top line towards -u, along the bottom line towards +u).
- */
-function bandClip(P: [number, number][], v0: number, v1: number, ccw: boolean): [number, number][][] {
-  const n = P.length;
-  const side = (v: number) => (v < v0 ? -1 : v > v1 ? 1 : 0);
-  let start = -1;
-  for (let i = 0; i < n; i++) if (side(P[i][1]) !== 0) { start = i; break; }
-  if (start < 0) return [P.slice()];
-  interface Frag { pts: [number, number][]; entry: number; exit: number; eu: number; xu: number; used: boolean }
-  const frags: Frag[] = [];
-  let cur: [number, number][] | null = null;
-  let entrySide = 0;
-  for (let k = 0; k < n; k++) {
-    const a = P[(start + k) % n], b = P[(start + k + 1) % n];
-    // parameter range of the edge inside the band
-    let t0 = 0, t1 = 1;
-    const dv = b[1] - a[1];
-    if (dv === 0) { if (a[1] < v0 || a[1] > v1) continue; }
-    else {
-      let ta = (v0 - a[1]) / dv, tb = (v1 - a[1]) / dv;
-      if (ta > tb) { const t = ta; ta = tb; tb = t; }
-      t0 = Math.max(0, ta); t1 = Math.min(1, tb);
-      if (t0 >= t1) continue;
-    }
-    const sa0 = side(a[1]), sb0 = side(b[1]);
-    const pa: [number, number] = t0 > 0 ? [a[0] + (b[0] - a[0]) * t0, sa0 < 0 ? v0 : v1] : [a[0], a[1]];
-    const pb: [number, number] = t1 < 1 ? [a[0] + (b[0] - a[0]) * t1, sb0 < 0 ? v0 : v1] : [b[0], b[1]];
-    if (t0 > 0) { cur = [pa]; entrySide = sa0; } else if (!cur) { cur = [pa]; entrySide = Math.abs(a[1] - v0) < Math.abs(a[1] - v1) ? -1 : 1; }
-    if (t1 < 1) {
-      cur!.push(pb);
-      frags.push({ pts: cur!, entry: entrySide, exit: side(b[1]), eu: cur![0][0], xu: pb[0], used: false });
-      cur = null;
-    } else cur!.push(pb);
-  }
-  if (cur) { // cannot happen when the ring starts outside the band, kept for safety
-    return [];
-  }
-  const out: [number, number][][] = [];
-  const entries = frags.map((f, i) => ({ i, f }));
-  const nextOf = (f: Frag): Frag | null => {
-    // the nearest entry on the exit line in the travelling direction
-    const dir = (f.exit > 0) === ccw ? -1 : 1;
-    let best: Frag | null = null, bd = Infinity;
-    for (const { f: g } of entries) {
-      if (g.entry !== f.exit) continue;
-      const du = (g.eu - f.xu) * dir;
-      if (du > -1e-9 && du < bd) { bd = du; best = g; }
-    }
-    return best;
-  };
-  for (const f0 of frags) {
-    if (f0.used) continue;
-    const ring: [number, number][] = [];
-    let f: Frag | null = f0;
-    let guard = 0;
-    while (f && !f.used && guard++ < 500) {
-      f.used = true;
-      for (const p of f.pts) ring.push(p);
-      f = nextOf(f);
-    }
-    if (ring.length >= 3) out.push(ring);
-  }
-  return out;
-}
-
 const ringArea = (r: Ring): number => {
   let a = 0;
   for (let i = 1; i < r.length; i++) a += r[i - 1][0] * r[i][1] - r[i][0] * r[i - 1][1];
@@ -294,11 +234,16 @@ export function partitionRegion(outer: Polygon, holes: Polygon[], ctx: FieldCtx,
   const rng = ctx.rng;
   const leaves: { rings: Ring[]; rot: number; enclosed: boolean }[] = [];
   const closed = ctx.closeAt(0, 0);
+  const regular = !!ctx.regular, rootCenter = polygonCentroid(outer);
+  const rootAngle = ctx.dirAt(rootCenter.x, rootCenter.y);
+  // A holding inherits its estate's frame. Re-evaluating a noisy direction at
+  // every cut used to turn even flat countryside into flowing ribbons.
+  const direction = regular ? () => rootAngle : ctx.dirAt;
 
   /** Cut `rings` along (or across) the strips of direction field + rot with a streamline cut of width `gap`; null when it does not split. */
   const cutOnce = (rings: Ring[], rot: number, across: boolean, f: number, gap: number, wobAmp: number, bucket: Polyline[], jitter: boolean, straightCut = false): Ring[][] | null => {
     const cen = polygonCentroid(fromRing(rings[0]));
-    const phi = ctx.dirAt(cen.x, cen.y) + rot;
+    const phi = direction(cen.x, cen.y) + rot;
     const ca = Math.cos(phi), sa = Math.sin(phi);
     const ex = extents(rings[0], ca, sa);
     let ox: number, oy: number, cdx: number, cdy: number;
@@ -314,6 +259,29 @@ export function partitionRegion(outer: Polygon, holes: Polygon[], ctx: FieldCtx,
     }
     const mid = chordMid(rings, ox, oy, cdx, cdy);
     if (!mid) return null;
+    if (regular) {
+      const ex = extents(rings[0], ca, sa), span = 4 * Math.hypot(ex.umax - ex.umin, ex.vmax - ex.vmin) + 32;
+      const nx = -cdy, ny = cdx;
+      const point = (u: number, v: number): [number, number] => [mid.x + u * cdx + v * nx, mid.y + u * cdy + v * ny];
+      const pieces: Ring[][] = [];
+      try {
+        for (const sign of [-1, 1]) {
+          const clip: Ring = [point(-span, 0), point(span, 0), point(span, sign * span), point(-span, sign * span), point(-span, 0)];
+          pieces.push(...polygonClipping.intersection([rings], [[clip]]) as Ring[][]);
+        }
+      } catch { return null; }
+      if (pieces.length < 2) return null;
+      const minimum = ctx.minArea ?? 1000, minWidth = minimum < 500 ? 7 : 18;
+      if (pieces.some(pg => {
+        const area = ringArea(pg[0]) - pg.slice(1).reduce((sum, hole) => sum + ringArea(hole), 0);
+        const box = extents(pg[0], ca, sa);
+        return area < minimum || area / Math.max(box.umax - box.umin, box.vmax - box.vmin, 1) < minWidth;
+      })) return null;
+      // Only estate boundaries are candidate lanes. Minor parcel boundaries
+      // share an edge, without a ribbon of paper resembling another road.
+      for (const line of clipToRings([{ x: mid.x - span * cdx, y: mid.y - span * cdy }, { x: mid.x + span * cdx, y: mid.y + span * cdy }], rings)) bucket.push(line);
+      return pieces;
+    }
     let bx0 = Infinity, bx1 = -Infinity, by0 = Infinity, by1 = -Infinity;
     for (const q of rings[0]) { if (q[0] < bx0) bx0 = q[0]; if (q[0] > bx1) bx1 = q[0]; if (q[1] < by0) by0 = q[1]; if (q[1] > by1) by1 = q[1]; }
     bx0 -= 30; bx1 += 30; by0 -= 30; by1 += 30;
@@ -341,7 +309,7 @@ export function partitionRegion(outer: Polygon, holes: Polygon[], ctx: FieldCtx,
   const areaOf = (rings: Ring[]) => ringArea(rings[0]) - rings.slice(1).reduce((a, r) => a + ringArea(r), 0);
   const dims = (rings: Ring[], rot: number) => {
     const cen = polygonCentroid(fromRing(rings[0]));
-    const phi = ctx.dirAt(cen.x, cen.y) + rot;
+    const phi = direction(cen.x, cen.y) + rot;
     const ex = extents(rings[0], Math.cos(phi), Math.sin(phi));
     const L = ex.umax - ex.umin;
     // mean width (a curved band has a large bounding box but a narrow body)
@@ -352,7 +320,7 @@ export function partitionRegion(outer: Polygon, holes: Polygon[], ctx: FieldCtx,
   // phase A: blocks of ~15-30 ha cut by cart ways (open fields only), each with its own strip direction (the patchwork)
   const blocks: { rings: Ring[]; rot: number }[] = [];
   const root: Ring[] = [toRing(outer), ...holes.map(toRing)];
-  if (closed) blocks.push({ rings: root, rot: 0 });
+  if (closed && !regular) blocks.push({ rings: root, rot: 0 });
   else {
     const stack: { rings: Ring[]; depth: number }[] = [{ rings: root, depth: 0 }];
     let guard = 0;
@@ -360,18 +328,25 @@ export function partitionRegion(outer: Polygon, holes: Polygon[], ctx: FieldCtx,
       const nd = stack.pop()!;
       const a = areaOf(nd.rings);
       const { L, W } = dims(nd.rings, 0);
-      const Ab = rng.range(14, 28) * 1e4;
+      const Ab = (regular ? rng.range(55, 90) : rng.range(14, 28)) * 1e4;
       let pcs: Ring[][] | null = null;
       if (a > Ab && nd.depth < 10) pcs = cut(nd.rings, 0, L >= W * 1.15, rng.range(0.4, 0.6), GAP.way, 3.5, net.ways, false);
       if (!pcs) { blocks.push({ rings: nd.rings, rot: 0 }); continue; }
       for (const pg of pcs) stack.push({ rings: pg, depth: nd.depth + 1 });
     }
+    for (const nd of stack) blocks.push({ rings: nd.rings, rot: 0 });
     for (const b of blocks) {
       const c = polygonCentroid(fromRing(b.rings[0]));
       const sl = ctx.slopeAt(c.x, c.y);
       const flat = 1 - Math.min(1, Math.max(0, (sl - 0.03) / 0.05));
       // mostly a quarter turn (the furlongs stay square to the block's ways); an occasional skew
-      if (blocks.length > 1) { const r = rng.float(); if (r < 0.4) b.rot = Math.PI / 2; else if (r < 0.52) b.rot = rng.range(0.25, 0.5) * (rng.chance(0.5) ? 1 : -1) * flat; }
+      if (blocks.length > 1) { const r = rng.float(); if (r < 0.4) b.rot = Math.PI / 2; else if (!regular && r < 0.52) b.rot = rng.range(0.25, 0.5) * (rng.chance(0.5) ? 1 : -1) * flat; }
+      if (regular && sl >= .08) {
+        // Reorient each estate to the local contour on stronger slopes, then
+        // keep that frame fixed throughout its compact parcel subdivision.
+        const relative = ctx.dirAt(c.x, c.y) - rootAngle;
+        b.rot = Math.atan2(Math.sin(2 * relative), Math.cos(2 * relative)) / 2;
+      }
     }
   }
 
@@ -382,166 +357,92 @@ export function partitionRegion(outer: Polygon, holes: Polygon[], ctx: FieldCtx,
     while (stack.length && guard++ < 3000) {
       const nd = stack.pop()!;
       const a = areaOf(nd.rings);
-      const { L, W, fill } = dims(nd.rings, nd.rot);
-      const Lmax = closed ? rng.range(110, 190) : rng.range(305, 345);
+      const { L, W, fill, cen } = dims(nd.rings, nd.rot);
+      const Lmax = regular ? rng.range(150, 240) : closed ? rng.range(110, 190) : rng.range(305, 345);
       const Wmax = closed ? rng.range(100, 170) : rng.range(130, 250);
       // a bent furlong (low fill of its box) is cut across so that each part is straight enough for long strips
       const bent = !closed && fill < 0.6 && L > 270;
-      const across = bent || (L > Lmax && (L / Lmax >= W / Wmax || W <= Wmax));
+      const long = regular && L > 75 && L > W * (ctx.slopeAt(cen.x, cen.y) >= .12 ? 5.5 : 3.2);
+      const across = long || bent || (L > Lmax && (L / Lmax >= W / Wmax || W <= Wmax));
       const along = !across && W > Wmax;
-      if (a < (closed ? 5000 : 14000) || nd.depth > 14 || (!across && !along)) { leaves.push({ rings: nd.rings, rot: nd.rot, enclosed: closed }); continue; }
-      const pcs = cut(nd.rings, nd.rot, across, closed || !across ? rng.range(0.4, 0.6) : rng.range(0.46, 0.54), closed ? GAP.hedge : GAP.headland, closed ? 5.5 : 3.5, net.headlands, closed);
+      if (a < (regular ? 2.2 * (ctx.minArea ?? 1000) : closed ? 5000 : 14000) || nd.depth > 14 || (!across && !along)) { leaves.push({ rings: nd.rings, rot: nd.rot, enclosed: closed }); continue; }
+      const access = !regular && closed && ctx.accessWays && nd.depth === 0;
+      const pcs = cut(nd.rings, nd.rot, across, closed || !across ? rng.range(0.4, 0.6) : rng.range(0.46, 0.54), access ? GAP.way : closed ? GAP.hedge : GAP.headland, closed ? 5.5 : 3.5, regular ? [] : access ? net.ways : net.headlands, closed);
       if (!pcs) { leaves.push({ rings: nd.rings, rot: nd.rot, enclosed: closed }); continue; }
-      for (const pg of pcs) stack.push({ rings: pg, rot: closed ? nd.rot + rng.range(-0.5, 0.5) : nd.rot, depth: nd.depth + 1 });
+      for (const pg of pcs) stack.push({ rings: pg, rot: closed && !regular ? nd.rot + rng.range(-0.5, 0.5) : nd.rot, depth: nd.depth + 1 });
     }
+    for (const nd of stack) leaves.push({ rings: nd.rings, rot: nd.rot, enclosed: closed });
   }
 
   // leaves: strips
   for (const lf of leaves) {
     const o = fromRing(lf.rings[0]);
     const a = ringArea(lf.rings[0]) - lf.rings.slice(1).reduce((s, r) => s + ringArea(r), 0);
-    if (a < 1400) continue;
+    if (a < (ctx.minArea ?? 1400)) {
+      if (regular) (net.margins ??= []).push({ outer: o, holes: lf.rings.slice(1).map(fromRing) });
+      continue;
+    }
     const cen = polygonCentroid(o);
-    const ang0 = ((ctx.dirAt(cen.x, cen.y) + lf.rot) % Math.PI + Math.PI) % Math.PI;
+    const ang0 = ((direction(cen.x, cen.y) + lf.rot) % Math.PI + Math.PI) % Math.PI;
     const ca = Math.cos(ang0), sa = Math.sin(ang0);
     const ex = extents(lf.rings[0], ca, sa);
     const holes = lf.rings.slice(1).map(fromRing);
-    const fl: Furlong = { outer: o, holes, angle: ang0, enclosed: lf.enclosed, stripW: 0 };
+    if (regular && a / Math.max(ex.umax - ex.umin, ex.vmax - ex.vmin, 1) < ((ctx.minArea ?? 1400) < 500 ? 7 : 18)) {
+      (net.margins ??= []).push({ outer: o, holes }); continue;
+    }
+    const fl: Furlong = { outer: o, holes, angle: ang0, enclosed: lf.enclosed, stripW: 0, ...(regular ? { layout: 'parcel' as const } : {}) };
     net.furlongs.push(fl);
+    if (regular) continue;
     if (lf.enclosed) continue;
     const ws = rng.range(11, 22);
     fl.stripW = ws;
     const L = ex.umax - ex.umin;
     const slabs = Math.ceil((ex.vmax - ex.vmin) / ws);
     if (slabs < 2 || slabs > 70 || a <= 2500 || (ctx.stripsAt && !ctx.stripsAt(cen))) continue;
-    const A = rng.range(-1, 1) * Math.min(0.03 * L, 7);
-    const phase = rng.range(0, 0.4);
-    const d = (u: number) => A * Math.sin(2 * Math.PI * ((u - ex.umin) / (L || 1) + phase));
-    const us: number[] = [];
-    for (let k = 0; k <= 6; k++) us.push(ex.umin - 5 + ((L + 10) * k) / 6);
+    // Work in a fixed affine frame. Curved nearest-streamline coordinates are
+    // not invertible in concavities and used to fold strips over themselves.
+    // The same gently curved band is intersected with the complete polygon,
+    // including holes, by the existing robust Boolean kernel.
+    const amplitude = rng.range(-1, 1) * Math.min(.012 * L, 2.5);
+    const phase = rng.range(0, .4);
+    const bend = (u: number) => amplitude * Math.sin(2 * Math.PI * ((u - ex.umin) / Math.max(1, L) + phase));
+    const local: Ring[] = lf.rings.map(ring => ring.map(([x, y]) => [x * ca + y * sa, -x * sa + y * ca]));
+    const extent = Math.max(L, ex.vmax - ex.vmin) + 100;
     const strips: Polygon[] = [];
-    const vlo = (s: number) => ex.vmin + s * ws;
-    const gaps: number[] = [];
-    for (let s = 0; s < slabs; s++) gaps.push(rng.range(0.9, 0.99));
-    if (lf.rings.length === 1) {
-      // the strips follow the field: a central streamline C(t) through the furlong, strips are bands at offsets v from it
-      const attempt = (allowCurve: boolean): Polygon[] => {
-        const strips: Polygon[] = [];
-        const rg = lf.rings[0];
-        const dense: [number, number][] = [];
-        let bx0 = Infinity, bx1 = -Infinity, by0 = Infinity, by1 = -Infinity;
-        for (let k = 0; k < rg.length - 1; k++) {
-          const p0 = rg[k], p1 = rg[k + 1];
-          const m = Math.max(1, Math.ceil(Math.hypot(p1[0] - p0[0], p1[1] - p0[1]) / 14));
-          for (let q = 0; q < m; q++) dense.push([p0[0] + ((p1[0] - p0[0]) * q) / m, p0[1] + ((p1[1] - p0[1]) * q) / m]);
-          if (p0[0] < bx0) bx0 = p0[0]; if (p0[0] > bx1) bx1 = p0[0]; if (p0[1] < by0) by0 = p0[1]; if (p0[1] > by1) by1 = p0[1];
-        }
-        const C = trace(cen, (x, y) => ctx.dirAt(x, y) + lf.rot, { x0: bx0 - 40, y0: by0 - 40, x1: bx1 + 40, y1: by1 + 40 }, 8, 1.15 * Math.hypot(bx1 - bx0, by1 - by0), () => 0);
-        let straight = !allowCurve;
-        const nC = C.length;
-        const S = [0];
-        for (let k = 1; k < nC; k++) S.push(S[k - 1] + Math.hypot(C[k].x - C[k - 1].x, C[k].y - C[k - 1].y));
-        const T = C.map((_, k) => { const a1 = C[Math.max(0, k - 1)], b1 = C[Math.min(nC - 1, k + 1)]; const l = Math.hypot(b1.x - a1.x, b1.y - a1.y) || 1; return { x: (b1.x - a1.x) / l, y: (b1.y - a1.y) / l }; });
-        const toTV = (x: number, y: number): [number, number] => {
-          let bd = Infinity, bt = 0, bv = 0;
-          for (let k = 1; k < nC; k++) {
-            const ax = C[k - 1].x, ay = C[k - 1].y, dx = C[k].x - ax, dy = C[k].y - ay, l2 = dx * dx + dy * dy || 1;
-            const f = Math.max(0, Math.min(1, ((x - ax) * dx + (y - ay) * dy) / l2));
-            const px = ax + f * dx, py = ay + f * dy;
-            const dd = (x - px) * (x - px) + (y - py) * (y - py);
-            if (dd < bd) {
-              bd = dd; bt = S[k - 1] + f * (S[k] - S[k - 1]);
-              bv = ((x - px) * -dy + (y - py) * dx) / Math.sqrt(l2);
-            }
-          }
-          return [bt, bv];
-        };
-        const fromTV = (t: number, v: number): Vec2 => {
-          let lo = 1, hi = nC - 1;
-          while (lo < hi) { const mid = (lo + hi) >> 1; if (S[mid] < t) lo = mid + 1; else hi = mid; }
-          const k = lo, f = Math.max(0, Math.min(1, (t - S[k - 1]) / ((S[k] - S[k - 1]) || 1)));
-          const px = C[k - 1].x + f * (C[k].x - C[k - 1].x), py = C[k - 1].y + f * (C[k].y - C[k - 1].y);
-          const dx = C[k].x - C[k - 1].x, dy = C[k].y - C[k - 1].y, tl = Math.hypot(dx, dy) || 1;
-          return { x: px - (dy / tl) * v, y: py + (dx / tl) * v };
-        };
-        // turning of the central line over the furlong: only a gently bending one is used as the frame
-        let tvC = straight ? dense.map((q) => [q[0] * ca + q[1] * sa, -q[0] * sa + q[1] * ca] as [number, number]) : dense.map((q) => toTV(q[0], q[1]));
-        if (!straight) {
-          let t0 = Infinity, t1 = -Infinity;
-          for (const [t] of tvC) { if (t < t0) t0 = t; if (t > t1) t1 = t; }
-          const segOf = (t: number) => { let k = 1; while (k < nC - 1 && S[k] < t) k++; return k; };
-          const ka = segOf(t0), kb = segOf(t1);
-          let turn = 0; // total bending (not the net: an S-bend must not pass)
-        for (let k = ka; k < kb; k++) turn += Math.abs(Math.atan2(T[k].x * T[k + 1].y - T[k].y * T[k + 1].x, T[k].x * T[k + 1].x + T[k].y * T[k + 1].y));
-          let vabs = 0;
-          for (const [, v] of tvC) vabs = Math.max(vabs, Math.abs(v));
-          // the offset lines must not fold: radius of the central line >= 2.5 x the half width
-          if (!straight && (turn > MAX_BEND || turn * 2.5 * vabs > Math.max(1, t1 - t0))) { straight = true; tvC = dense.map((q) => [q[0] * ca + q[1] * sa, -q[0] * sa + q[1] * ca] as [number, number]); }
-        }
-        const tv = tvC;
-        let tmin = Infinity, tmax = -Infinity, vmin = Infinity, vmax = -Infinity;
-        for (const [t, v] of tv) { if (t < tmin) tmin = t; if (t > tmax) tmax = t; if (v < vmin) vmin = v; if (v > vmax) vmax = v; }
-        const Lc = tmax - tmin;
-        const nSlab = Math.ceil((vmax - vmin) / ws);
-        if (nSlab >= 2 && nSlab <= 70) {
-          const A2 = A * Math.min(1, Lc / (L || 1));
-          const dd = (t: number) => A2 * Math.sin(2 * Math.PI * ((t - tmin) / (Lc || 1) + phase));
-          const base: [number, number][] = tv.map(([t, v]) => [t, v - dd(t)]);
-          let sg = 0;
-          for (let k = 0; k < base.length; k++) { const p = base[k], q = base[(k + 1) % base.length]; sg += p[0] * q[1] - q[0] * p[1]; }
-          const bmin = Math.min(...base.map((q) => q[1]));
-          for (let sIdx = 0; sIdx < nSlab; sIdx++) {
-            const v0 = bmin + sIdx * ws, v1 = v0 + ws * gaps[sIdx % gaps.length];
-            for (const pg of bandClip(base, v0, v1, sg > 0)) {
-              const out: Polygon = [];
-              for (let k = 0; k < pg.length; k++) {
-                const a0 = pg[k], b0 = pg[(k + 1) % pg.length];
-                const m = Math.max(1, Math.ceil(Math.abs(b0[0] - a0[0]) / 14));
-                for (let q = 0; q < m; q++) {
-                  const t = a0[0] + ((b0[0] - a0[0]) * q) / m, vv = a0[1] + ((b0[1] - a0[1]) * q) / m + dd(t);
-                  out.push(straight ? { x: t * ca - vv * sa, y: t * sa + vv * ca } : fromTV(t, vv));
-                }
-              }
-              if (Math.abs(polygonArea(out)) >= 120) strips.push(out);
-            }
-          }
-        }
-        return strips;
-      };
-      const furlongA = a;
-      const oc = [...o, o[0]];
-      const okStrips = (st: Polygon[], strict: boolean) => {
-        let sum = 0;
-        for (const p of st) {
-          sum += Math.abs(polygonArea(p));
-          let cx = 0, cy = 0;
-          for (const q of p) { cx += q.x; cy += q.y; if (q.x < bxA - 3 || q.x > bxB + 3 || q.y < byA - 3 || q.y > byB + 3) return false; }
-          if (!polygonContains(o, { x: cx / p.length, y: cy / p.length })) return false;
-          if (strict) for (const q of p) if (!polygonContains(o, q) && distToPolyline(q, oc) > 1.2) return false;
-        }
-        return sum <= 1.02 * furlongA + 60;
-      };
-      let bxA = Infinity, bxB = -Infinity, byA = Infinity, byB = -Infinity;
-      for (const q of lf.rings[0]) { if (q[0] < bxA) bxA = q[0]; if (q[0] > bxB) bxB = q[0]; if (q[1] < byA) byA = q[1]; if (q[1] > byB) byB = q[1]; }
-      let got = attempt(true);
-      if (!okStrips(got, true)) got = attempt(false);
-      if (okStrips(got, false)) strips.push(...got);
-    } else {
-      const furlongMP = [lf.rings as unknown as [number, number][][]];
-      const ww = (u: number, v: number): [number, number] => [u * ca - v * sa, u * sa + v * ca];
-      for (let sIdx = 0; sIdx < slabs; sIdx++) {
-        const v0 = vlo(sIdx), v1 = v0 + ws * gaps[sIdx];
-        const ring: Ring = [];
-        for (const u of us) ring.push(ww(u, v0 + d(u)));
-        for (let k = us.length - 1; k >= 0; k--) ring.push(ww(us[k], v1 + d(us[k])));
-        ring.push(ring[0]);
-        let res: ReturnType<typeof polygonClipping.intersection>;
-        try { res = polygonClipping.intersection(furlongMP as never, [[ring]]); } catch { continue; }
-        for (const sp of res) {
-          const poly = fromRing(sp[0] as Ring);
-          if (Math.abs(polygonArea(poly)) >= 120) strips.push(poly);
-        }
+    // A strip stores a simple ring. Split any remaining internal holes along a
+    // line through their interior, rather than silently filling the holes.
+    const append = (piece: Ring[], depth = 0): void => {
+      if (piece.length === 1) {
+        const poly = fromRing(piece[0]).map(p => ({ x: p.x * ca - p.y * sa, y: p.x * sa + p.y * ca }));
+        if (Math.abs(polygonArea(poly)) >= 120) strips.push(poly);
+        return;
       }
+      if (depth >= 32) return;
+      const hole = piece[1], xs = hole.map(p => p[0]);
+      const split = (Math.min(...xs) + Math.max(...xs)) / 2;
+      const bounds = extents(piece[0], 1, 0);
+      for (const [lo, hi] of [[bounds.umin - 1, split], [split, bounds.umax + 1]]) {
+        const box: Ring = [[lo, ex.vmin - extent], [hi, ex.vmin - extent], [hi, ex.vmax + extent], [lo, ex.vmax + extent], [lo, ex.vmin - extent]];
+        for (const pg of polygonClipping.intersection([piece], [[box]])) append(pg as Ring[], depth + 1);
+      }
+    };
+    const count = Math.ceil((ex.vmax - ex.vmin + 2 * Math.abs(amplitude)) / ws);
+    for (let i = 0; i < count; i++) {
+      const lo = ex.vmin - Math.abs(amplitude) + i * ws;
+      const hi = lo + ws - .65; // narrow unploughed baulk, in metres
+      const band: Ring = [];
+      const steps = Math.max(8, Math.ceil(L / 20));
+      for (let k = 0; k <= steps; k++) {
+        const u = ex.umin - 1 + (L + 2) * k / steps;
+        band.push([u, lo + bend(u)]);
+      }
+      for (let k = steps; k >= 0; k--) {
+        const u = ex.umin - 1 + (L + 2) * k / steps;
+        band.push([u, hi + bend(u)]);
+      }
+      band.push(band[0]);
+      try { for (const pg of polygonClipping.intersection([local], [[band]])) append(pg as Ring[]); }
+      catch { strips.length = 0; break; } // Retain the holding when a Boolean degeneracy defeats its texture.
     }
     if (strips.length) fl.strips = strips;
   }

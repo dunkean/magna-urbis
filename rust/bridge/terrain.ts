@@ -1,3 +1,5 @@
+import { CLIMATE_VALUES, type ClimateValues } from './terrainClimate';
+export { CLIMATE_VALUES, type ClimateValues } from './terrainClimate';
 import type { TerrainLayers, TerrainLighting } from '../../web/src/render/terrainLighting';
 import init, { TerrainEngine, erosion_defaults, flood_hydrology, set_erosion_tuning } from '../pkg/wasm/magna_urbis_wasm.js';
 import wasmUrl from '../pkg/wasm/magna_urbis_wasm_bg.wasm?url&inline';
@@ -50,15 +52,6 @@ export function neuralServerForSource(source?: TerrainSource, override?: string 
   return server;
 }
 /** Sketch climate (`crates/neural/src/sketch.rs`): T °C at sea level, σT °C × 100, rain mm, rain CV %. */
-export interface ClimateValues { temperature: number; temperatureStd: number; precipitation: number; precipitationCv: number }
-export const CLIMATE_VALUES: Record<NeuralClimate, ClimateValues> = {
-  temperate: { temperature: 18, temperatureStd: 600, precipitation: 1000, precipitationCv: 35 },
-  oceanic: { temperature: 11, temperatureStd: 450, precipitation: 1300, precipitationCv: 25 },
-  mediterranean: { temperature: 16, temperatureStd: 550, precipitation: 600, precipitationCv: 60 },
-  arid: { temperature: 23, temperatureStd: 800, precipitation: 150, precipitationCv: 85 },
-  cold: { temperature: 1, temperatureStd: 1100, precipitation: 550, precipitationCv: 35 },
-  tropical: { temperature: 26, temperatureStd: 150, precipitation: 2300, precipitationCv: 50 },
-};
 /** Network properties of the neural chain (former neural bench). */
 export interface NeuralTuning {
   landScale: number; steps: number;

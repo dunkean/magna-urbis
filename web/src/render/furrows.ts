@@ -24,3 +24,10 @@ export function furrowLines(poly: Polygon, mapSize: number, angle: number): Poly
   }
   return out;
 }
+/** Stable crop tone for a whole holding, shared by SVG and Canvas. */
+export function holdingTone(poly: readonly { x: number; y: number }[]): number {
+  const p = poly[0];
+  if (!p) return 0;
+  const hash = Math.imul(Math.round(p.x * 10), 0x45d9f3b) ^ Math.imul(Math.round(p.y * 10), 0x119de1f3);
+  return (hash ^ (hash >>> 16)) & 3;
+}

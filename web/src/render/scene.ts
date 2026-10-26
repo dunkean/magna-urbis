@@ -23,6 +23,7 @@ import { urbanStrokeSpace } from './roadSurfaces';
 import { offsetRibbon, polygonCentroid } from '../gen/core/geom';
 import { pointInRing, orientPos } from '../gen/geo/poly';
 import { TileIndex, boxesOf, chunkPolyline } from './tileindex';
+import { holdingTone } from './furrows';
 
 export const TILE_SIZE = 250;
 
@@ -49,7 +50,7 @@ export interface LineLayer {
   bigKeys?: string[];
 }
 export interface DensityMap { w: number; h: number; cell: number; /** built-up fraction 0..1 */ cov: Float32Array; max: number }
-export interface TextureArea { kind: LandKind; poly: Polygon; holes?: Polygon[] }
+export interface TextureArea { kind: LandKind; poly: Polygon; holes?: Polygon[]; stripAngle?: number }
 export interface TextureLayer { kind: LandKind; areas: TextureArea[]; index: TileIndex }
 export interface FurrowArea { poly: Polygon; holes?: Polygon[]; strips: Polygon[]; angle: number }
 
@@ -242,18 +243,22 @@ export function buildScene(world0: World, tileSize = TILE_SIZE, build: SceneBuil
   const lu = world.landuse;
   if (lu) {
     const tones: Polygon[][] = [[], [], [], []];
+    const toneHoles: (Polygon[] | undefined)[][] = [[], [], [], []];
     const open: Polygon[] = [], open_h: (Polygon[] | undefined)[] = [];
     let fi = 0;
-    const byKind = new Map<LandKind, { poly: Polygon; holes?: Polygon[] }[]>();
+    const byKind = new Map<LandKind, { poly: Polygon; holes?: Polygon[]; stripAngle?: number }[]>();
     for (const a of lu.areas) {
       let l = byKind.get(a.kind);
       if (!l) byKind.set(a.kind, (l = []));
-      l.push({ poly: a.poly, holes: a.holes });
+      l.push({ poly: a.poly, holes: a.holes, stripAngle: a.stripAngle });
       if (a.kind === 'field') {
-        if (!(a as { enclosed?: boolean }).enclosed) { open.push(a.poly); open_h.push(a.holes); }
-        if (a.strips && a.stripAngle !== undefined) {
+        if (a.fieldLayout === 'parcel' || !(a as { enclosed?: boolean }).enclosed) { open.push(a.poly); open_h.push(a.holes); }
+        if (a.fieldLayout === 'parcel' && a.stripAngle !== undefined) {
+          furrowAreas.push({ poly: a.poly, holes: a.holes, strips: [a.poly], angle: a.stripAngle });
+          const tone = holdingTone(a.poly); tones[tone].push(a.poly); toneHoles[tone].push(a.holes);
+        } else if (a.strips && a.stripAngle !== undefined) {
           if (a.strips.length && Number.isFinite(a.stripAngle)) furrowAreas.push({ poly: a.poly, holes: a.holes, strips: a.strips, angle: a.stripAngle });
-          a.strips.forEach((s, i) => tones[(i * 5 + fi * 3 + (i >> 2)) & 3].push(s));
+          a.strips.forEach((s, i) => { const tone = (i * 5 + fi * 3 + (i >> 2)) & 3; tones[tone].push(s); toneHoles[tone].push(undefined); });
           fi++;
         }
       }
@@ -263,11 +268,11 @@ export function buildScene(world0: World, tileSize = TILE_SIZE, build: SceneBuil
       if (!l) continue;
       addPoly('lu-' + kind, l.map((x) => x.poly), l.map((x) => x.holes));
       if (TEXTURE_KINDS.includes(kind) || (isUnderdarkBiome(world.options.biome) && (kind === 'garden' || kind === 'field'))) {
-        const areas: TextureArea[] = l.map((x) => ({ kind, poly: x.poly, holes: x.holes }));
+        const areas: TextureArea[] = l.map((x) => ({ kind, poly: x.poly, holes: x.holes, stripAngle: x.stripAngle }));
         textures.push({ kind, areas, index: new TileIndex(S, tileSize, boxesOf(areas.map((a) => a.poly)), 'overlap') });
       }
     }
-    tones.forEach((t, k) => addPoly('stripT' + k, t));
+    tones.forEach((t, k) => addPoly('stripT' + k, t, toneHoles[k]));
     addPoly('furlong-edges', open, open_h);
     const hedges = fieldHedges(lu.areas, S / 1600);
     addPoly('hedge-trees', hedges.trees.map((t) => ngon(t.center, t.radius)));
@@ -484,7 +489,8 @@ export interface Mark { x: number; y: number; r: number; k: number }
  * grid (spacing `sp`), a tile owns the grid cells whose origin lies inside it, so marks
  * are deterministic and never duplicated or shifted between tiles or frames.
  */
-export function textureMarks(layer: TextureLayer, tile: number, sp: number, salt: number): Mark[] {
+export function textureMarks(layer: TextureLayer, tile: number, sp: number, salt: number, seed?: string): Mark[] {
+  if (layer.kind === 'orchard' && seed !== undefined) return orchardMarks(layer, tile, seed);
   const idx = layer.index;
   const tr = idx.tileRect(tile);
   const out: Mark[] = [];
@@ -501,6 +507,32 @@ export function textureMarks(layer: TextureLayer, tile: number, sp: number, salt
     for (let n = 0; n < ids.length; n++) {
       const a = layer.areas[ids[n]];
       if (insideArea(a, x, y)) { out.push({ x, y, r: 0.75 + 0.25 * hash3(i, j, salt + 13), k: hash3(i, j, salt + 29) }); break; }
+    }
+  }
+  return out;
+}
+
+/** Rows belong to each holding, aligned to its access/contours. World-space
+ * coordinates and a crown setback keep rows stable across tiles and zooms. */
+export function orchardMarks(layer: TextureLayer, tile: number, seed: string): Mark[] {
+  const rect = layer.index.tileRect(tile), out: Mark[] = [];
+  let seedValue = 2166136261;
+  for (let i = 0; i < seed.length; i++) seedValue = Math.imul(seedValue ^ seed.charCodeAt(i), 16777619);
+  for (const id of layer.index.itemsOf(tile)) {
+    const area = layer.areas[id], angle = area.stripAngle ?? 0;
+    const ca = Math.cos(angle), sa = Math.sin(angle);
+    const corners = [[rect.minX, rect.minY], [rect.maxX, rect.minY], [rect.maxX, rect.maxY], [rect.minX, rect.maxY]];
+    const us = corners.map(([x, y]) => x * ca + y * sa), vs = corners.map(([x, y]) => -x * sa + y * ca);
+    const salt = Math.floor(hash3(Math.round(area.poly[0].x * 7), Math.round(area.poly[0].y * 7), seedValue) * 0x7fffffff);
+    const spacing = 11, offset = hash3(salt, 0, 31) * spacing;
+    for (let j = Math.floor((Math.min(...vs) - offset) / spacing); j <= Math.ceil((Math.max(...vs) - offset) / spacing); j++) {
+      for (let i = Math.floor(Math.min(...us) / spacing); i <= Math.ceil(Math.max(...us) / spacing); i++) {
+        const u = (i + .5) * spacing, v = j * spacing + offset;
+        const x = u * ca - v * sa, y = u * sa + v * ca;
+        if (x < rect.minX || x >= rect.maxX || y < rect.minY || y >= rect.maxY || !insideArea(area, x, y)) continue;
+        if (Array.from({ length: 8 }, (_, k) => [5.3 * Math.cos(angle + k * Math.PI / 4), 5.3 * Math.sin(angle + k * Math.PI / 4)]).some(([dx, dy]) => !insideArea(area, x + dx, y + dy))) continue;
+        out.push({ x, y, r: .8 + .3 * hash3(i, j, salt + 23), k: hash3(i, j, salt + 29) });
+      }
     }
   }
   return out;

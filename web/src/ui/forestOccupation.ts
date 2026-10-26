@@ -1,12 +1,14 @@
 import type { ForestOccupation } from '../../../rust/bridge/terrainForest';
 import type { Polygon } from '../gen/core/geom';
+import { offsetRibbon } from '../gen/core/geom';
+import { visitSegmentCells } from '../gen/core/grid';
 import type { LandKind, LandUseLayer } from '../gen/types';
 import type { Building3dScene } from '../render/urbanBuildingGeometry';
 import { buildingOccupationSurfaces } from './urbanBuildingProjection';
 
-/** Shared classes: 7 is a general built reserve, 8 an occupied construction. */
+/** Shared classes: 7 built reserve, 8 construction, 9 agricultural lane clearance. */
 const CLASS: Partial<Record<LandKind, number>> = { field: 1, meadow: 2, pasture: 3, orchard: 4, garden: 5, commons: 6 };
-const BUILT = 7, OCCUPIED = 8, RANGE = 8;
+const BUILT = 7, OCCUPIED = 8, CLEARANCE = 9, RANGE = 8;
 
 /** Merge accepted footprints and authorized circulation into the same retained
  * occupation contract, regardless of the building layer's visibility. */
@@ -75,6 +77,10 @@ export function forestOccupation(landuse: LandUseLayer, maxN = 1536, minCell = 2
     if (cls || area.kind === 'forest') shapes.push({ rings: [area.poly, ...area.holes ?? []], cls, forest: !cls });
   }
   for (const ring of landuse.reserve) shapes.push({ rings: [ring], cls: BUILT, forest: false });
+  for (const path of landuse.ways ?? []) {
+    if (path.length < 2) continue;
+    shapes.push({ rings: [offsetRibbon(path, 12)], cls: CLEARANCE, forest: false });
+  }
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
   for (const s of shapes) for (const p of s.rings[0]) {
     minX = Math.min(minX, p.x); minY = Math.min(minY, p.y); maxX = Math.max(maxX, p.x); maxY = Math.max(maxY, p.y);
@@ -90,6 +96,12 @@ export function forestOccupation(landuse: LandUseLayer, maxN = 1536, minCell = 2
     fill(s.rings, x, y, cell, n, (from, to) => {
       cls.fill(s.cls, from, to); open.fill(s.forest ? 0 : 1, from, to); forest.fill(s.forest ? 1 : 0, from, to);
     });
+  }
+  // A 12 m lane can be thinner than a texel on a large map. Keep every crossed
+  // cell open, as for thin building walls, rather than dropping the whole lane.
+  for (const path of landuse.ways ?? []) for (let i = 1; i < path.length; i++) {
+    visitSegmentCells({ w: n, h: n, cell }, { x: path[i - 1].x - x, y: path[i - 1].y - y },
+      { x: path[i].x - x, y: path[i].y - y }, at => { cls[at] = CLEARANCE; open[at] = 1; forest[at] = 0; });
   }
   const dOpen = signedDistance(open, n), dForest = signedDistance(forest, n);
   const rgba = new Uint8Array(n * n * 4);

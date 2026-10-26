@@ -104,6 +104,8 @@ export interface LandArea {
   cultivation?: 'fungal';
   /** Furlongs (kind 'field'): strip direction in radians and the strips themselves. */
   stripAngle?: number; strips?: Polygon[];
+  /** One compact holding; furrows and tone cover the holding, respecting holes. */
+  fieldLayout?: 'parcel';
 }
 export type RoofKind = 'gable' | 'hip' | 'flat' | 'dome' | 'pyramidal' | 'pagoda' | 'thatch-round' | 'none' | 'tiled-hip' | 'conical' | 'barrel' | 'terraced';
 export type FarmSize = 'cottage' | 'family' | 'large' | 'manor';
@@ -141,6 +143,8 @@ export interface Farmstead {
 export interface LandUseLayer {
   areas: LandArea[];
   farmsteads: Farmstead[];
+  ways?: Polyline[];
+  headlands?: Polyline[];
   /** Outline(s) of the urban reserve (kept free of rural land use). */
   reserve: Polygon[];
   /** Permission generated with these areas; late settlement detail must not invent uncovered render patches. */

@@ -2,7 +2,7 @@ import type { Vec2 } from '../gen/types';
 import type { Palette } from './styles';
 import type { CanvasLike } from './canvas';
 import { brushHash } from './brushes';
-import { hash3, insideArea, type TextureLayer, type Mark } from './scene';
+import { hash3, insideArea, orchardMarks, type TextureLayer, type Mark } from './scene';
 import { TileIndex, boxesOf } from './tileindex';
 
 export type VegetationStyle = 'classic' | 'canopy';
@@ -20,7 +20,8 @@ function mix(a: string, b: string, t: number): string {
 /** Global candidates with a local exclusion radius: no repeated tile and no visible grid.
  * A tile owns centres, never clips crowns. Neighbours participate even outside the tile. */
 export function canopyMarks(layer: TextureLayer, tile: number, seed: string): Mark[] {
-  const orchard = layer.kind === 'orchard', spacing = orchard ? 11 : 6;
+  if (layer.kind === 'orchard') return orchardMarks(layer, tile, seed);
+  const orchard = false, spacing = 6;
   const salt = Math.floor(brushHash(seed, 0, 0, orchard ? 211 : 101) * 0x7fffffff);
   const rect = layer.index.tileRect(tile), ids = layer.index.itemsOf(tile), out: Mark[] = [];
   const candidate = (i: number, j: number) => ({ x: (i + (orchard ? .5 : hash3(i, j, salt))) * spacing,
@@ -45,6 +46,7 @@ export function canopyMarks(layer: TextureLayer, tile: number, seed: string): Ma
   }
   return out;
 }
+
 
 export function canopyAppearance(seed: string, m: Mark): { variant: number; tone: number } {
   return { variant: Math.floor(m.k * 24), tone: Math.floor(brushHash(seed, m.x, m.y, 83) * 12) };

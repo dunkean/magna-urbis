@@ -7,7 +7,7 @@ import { isKinded } from './townbridges';
 import type { World, LandArea, LandKind, Farmstead, PolyH } from '../gen/types';
 import { farmRidges } from './farms';
 import { fieldHedges, fieldHedgeStyle } from './hedges';
-import { furrowDegrees, furrowOffset, furrowSpacing } from './furrows';
+import { furrowDegrees, furrowOffset, furrowSpacing, holdingTone } from './furrows';
 import type { Vec2 } from '../gen/core/geom';
 import { type Palette, ruralInk } from './styles';
 import { f1, pathD } from './util';
@@ -92,6 +92,8 @@ function patterns(world: Pick<World, 'options' | 'mapSize' | 'landuse'> & { seed
     seen.add(furrowDegrees(a.stripAngle));
   }
   const sp = furrowSpacing(world.mapSize);
+  const orchardAngles = new Set((world.landuse?.areas ?? []).filter(a => a.kind === 'orchard').map(a => furrowDegrees(a.stripAngle ?? 0)));
+  for (const deg of orchardAngles) out.push(`<pattern id="p-orchard-${deg}" href="#p-orchard" xlink:href="#p-orchard" patternTransform="rotate(${deg})"/>`);
   for (const deg of seen) {
     pat(`p-fur-${deg}`, 40, sp, `<path d="M0 ${f1(furrowOffset(world.mapSize))}H40" stroke="${pal.furrow}" ${svgMapStroke(MAP_STROKES.furrow, scale)} opacity="${pal.furrowAlpha}"/>`, ` patternTransform="rotate(${deg})"`);
   }
@@ -103,7 +105,7 @@ export function landuseLayer(world: Pick<World, 'options' | 'mapSize' | 'landuse
   if (!lu) return '';
   const s = Math.max(1, u);
   let out = patterns(world, pal, s, scale);
-  const individualTrees = (vegetation === 'canopy' || !!brushes) && !isUnderdarkBiome(world.options.biome);
+  const individualTrees = scale >= .7 && (vegetation === 'canopy' || !!brushes) && !isUnderdarkBiome(world.options.biome);
   const order: LandKind[] = ['meadow', 'marsh', 'pasture', 'commons', 'forest', 'garden', 'orchard', 'field'];
   out += `<g class="layer-landuse" stroke-linejoin="round">`;
   for (const kind of order) {
@@ -116,6 +118,11 @@ export function landuseLayer(world: Pick<World, 'options' | 'mapSize' | 'landuse
       const tone: string[] = ['', '', '', ''];
       let fi = 0;
       for (const a of list) {
+        if (a.fieldLayout === 'parcel' && a.stripAngle !== undefined) {
+          const d = ringsD(a); tone[holdingTone(a.poly)] += d;
+          out += `<path d="${d}" fill="url(#p-fur-${furrowDegrees(a.stripAngle)})" fill-rule="evenodd"/>`;
+          continue;
+        }
         if (!a.strips || a.stripAngle === undefined) continue;
         const deg = furrowDegrees(a.stripAngle);
         let all = '';
@@ -124,9 +131,9 @@ export function landuseLayer(world: Pick<World, 'options' | 'mapSize' | 'landuse
         out += `<path d="${all}" fill="url(#p-fur-${deg})" stroke="${pal.furrow}" ${svgMapStroke(MAP_STROKES.strip, scale)} stroke-opacity="${Math.min(1, pal.furrowAlpha * 0.9)}"/>`;
       }
       const mk = [0.5, 0.75, 0.3, 0.9];
-      tone.forEach((d, k) => { if (d) out += `<path d="${d}" fill="${k & 1 ? pal.stripB : pal.stripA}" fill-opacity="${Math.min(1, pal.stripAlpha[k & 1] * mk[k])}"${mul(pal)}/>`; });
+      tone.forEach((d, k) => { if (d) out += `<path d="${d}" fill="${k & 1 ? pal.stripB : pal.stripA}" fill-opacity="${Math.min(1, pal.stripAlpha[k & 1] * mk[k])}" fill-rule="evenodd"${mul(pal)}/>`; });
       // furlong edges: a faint line where the strips end (open fields carry no hedges)
-      out += `<g fill="none" stroke="${pal.furrow}" ${svgMapStroke(MAP_STROKES.furlong, scale)} stroke-opacity="0.55" stroke-linejoin="round">${list.filter((a) => !(a as Enc).enclosed).map((a) => `<path d="${ringsD(a)}"/>`).join('')}</g>`;
+      out += `<g fill="none" stroke="${pal.furrow}" ${svgMapStroke(MAP_STROKES.furlong, scale)} stroke-opacity="0.55" stroke-linejoin="round">${list.filter((a) => a.fieldLayout === 'parcel' || !(a as Enc).enclosed).map((a) => `<path d="${ringsD(a)}"/>`).join('')}</g>`;
     } else {
       out += coverAreasSvg(kind, list, pal, s, true, brushes, world.options.biome, individualTrees && (kind === 'forest' || kind === 'orchard'));
     }
@@ -153,7 +160,9 @@ function coverAreasSvg(kind: LandKind, list: LandArea[], pal: Palette, s: number
   let out = `<path d="${d}" fill="${pal.land[kind]}" fill-opacity="${alpha}" fill-rule="evenodd" stroke="${pal.land[kind]}" stroke-width="${f1(0.6 * s)}"${mul(pal)}/>`;
   if (!individualTrees) {
     if (brushes && isBrushKind(kind) && brushTextureOn(kind, pal, biome)) out += `<path d="${d}" fill="url(#${brushes.pattern(kind)})" fill-rule="evenodd"/>`;
-    else if (pal.tex[kind]) out += `<path d="${d}" fill="url(#p-${kind})" fill-rule="evenodd"/>`;
+    else if (pal.tex[kind]) out += kind === 'orchard'
+      ? list.map(a => `<path d="${ringsD(a)}" fill="url(#p-orchard-${furrowDegrees(a.stripAngle ?? 0)})" fill-rule="evenodd"/>`).join('')
+      : `<path d="${d}" fill="url(#p-${kind})" fill-rule="evenodd"/>`;
   }
   if (edges && kind === 'forest') out += `<path d="${d}" fill="none" stroke="${pal.treeInk}" stroke-width="${f1(0.7 * s)}" stroke-opacity="0.55" stroke-linejoin="round"/>`;
   else if (kind === 'orchard' || kind === 'garden') out += `<path d="${d}" fill="none" stroke="${pal.hedge}" stroke-width="${f1(0.8 * s)}" stroke-opacity="0.7"/>`;

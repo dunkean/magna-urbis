@@ -16,7 +16,7 @@ export const DEFAULT_FOREST_SETTINGS: ForestSettings = { enabled: true, density:
 /** Occupation RGBA8: R/G signed distance to open/forest land, encoded
  * clamp(128+16d) in native texels (positive inside); B class id (0 none,
  * 1 field, 2 meadow, 3 pasture, 4 orchard, 5 garden, 6 commons, 7 built reserve, 8 occupied construction);
- * A 255 inside applied polygons. */
+ * 9 agricultural lane clearance; A 255 inside applied polygons. */
 export interface ForestOccupation { x: number; y: number; width: number; n: number; rgba: Uint8Array; key: string }
 /** RGBA8 world raster on the height layer's square: R canopy cover 0..1,
  * G potential canopy height 0..50 m (also where cover is 0), B needleleaf
@@ -465,8 +465,8 @@ ForestCrown forestCrown(ivec2 cell,int level,float s,ForestStand st,ForestPatch 
       int cls=int(texelFetch(uOccupation,clamp(ivec2(ouv*uOccupationN),ivec2(0),ivec2(int(uOccupationN)-1)),0).b*255.+.5);
       allow=(cls==4?.45:cls==5?.22:cls==6?.12:cls==3?.05:cls==2?.02:cls==7?.03:0.)*forestHeightGate(height);
       hedge=(cls>=1&&cls<=3?.6:0.)*groundSmooth(3.,8.,height)*(1.-st.dry);
-      if(cls==7||cls==8)openGallery=0.;
-      occupied=cls==8;
+      if(cls==7||cls==8||cls==9)openGallery=0.;
+      occupied=cls==8||cls==9;
     }
   }
   if(forced>0.)cover=forestWoods(cover,height);
@@ -631,8 +631,8 @@ void applyForest(inout GroundMaterial m,vec2 world,float footprint,vec3 light){
       vec2 dist=(o*255.-128.)/16.*texel;
       st.open=dist.x;st.forced=dist.y;
       int cls=int(texelFetch(uOccupation,clamp(ivec2(ouv*uOccupationN),ivec2(0),ivec2(int(uOccupationN)-1)),0).b*255.+.5);
-      // Construction class 8 forbids crowns, including overhang from neighbours.
-      occupied=cls==8;
+      // Construction and lane clearance forbid crowns, including overhang.
+      occupied=cls==8||cls==9;
       // Trees retained in general open land and built reserves (class 7).
       st.allow=(cls==4?.45:cls==5?.22:cls==6?.12:cls==3?.05:cls==2?.02:cls==7?.03:0.)*forestHeightGate(st.height);
       st.hedge=(cls>=1&&cls<=3?.6:0.)*groundSmooth(3.,8.,st.height)*(1.-st.dry);
