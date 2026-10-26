@@ -13,7 +13,7 @@ import { readFileSync } from 'node:fs';
 
 describe('renderer independent Magna adapters', () => {
   it('keeps offline climate presets exactly aligned with the existing source and converts units', () => {
-    const text = readFileSync(new URL('../../rust/bridge/terrain.ts', import.meta.url), 'utf8');
+    const text = readFileSync(new URL('../../rust/bridge/terrainClimate.ts', import.meta.url), 'utf8');
     const literal = text.match(/export const CLIMATE_VALUES[^=]*=\s*(\{[\s\S]*?\n\});/)?.[1];
     expect(literal).toBeDefined();
     // Evaluate only the checked-in constant object, never import the browser runtime.
